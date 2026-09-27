@@ -204,7 +204,7 @@ An owned child is a bounded task under you. **You keep synthesis, integration an
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
+  [--persona <id>] [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
 ```
 
 It makes the id and the secret, reads the inventory for `generation` and `task_root`, writes
@@ -218,6 +218,11 @@ yours unless `--assistant` says otherwise; the project is this directory's git t
 `--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. The secret is
 never in argv, in `task.json` or in what it prints, and the token is read as every thin command
 reads it.
+
+`--persona <id>` launches the child as a built-in persona (`persona` in `task.json`); an id this
+build lacks is refused locally. No kind gets one by default, `plan_review` included: name
+`code-reviewer` yourself when you want it. What a persona is, and the eight ids, are in the Epic
+part of §10 (`clawdline guide epic`).
 
 The steps it takes, for a caller without the binary:
 
@@ -253,6 +258,7 @@ included — so the task the child reads is the one that was validated, and it d
 | `timeout_minutes` | 1–240, default 30 |
 | `kind`, `deliverables`, `model` | optional; `model` is `[a-z0-9._-]`, at most 64 characters |
 | `work_id` | optional UUID of the board item this serves |
+| `persona` | optional built-in persona id (`GET /v1/personas`); none by default |
 | `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
 | `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
 
@@ -939,8 +945,8 @@ Sessions, create Feature or Issue items under it and assign them:
 ```
 clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]… \
   [--description-file f | description on stdin] [--deploy policy] \
-  [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m]]
-clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m])
+  [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m] [--persona <id>]]
+clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona <id>])
 ```
 
 - Terminal ids are in the session address book, `GET /v1/orchestrator/sessions` (`clawdline guide
@@ -951,7 +957,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   write) and prints the child. It is `POST /v1/work/v2/agent/items/<epic id>/children` with
   `{"expected_version", "session_id", "kind", "title", "description", "steps"?, "deployment_policy"?,
   "assign"?: {"mode": "existing_session", "terminal_id"} | {"mode": "new_session", "assistant"?,
-  "model"?}}`, answered `201` with `{"item", "assigned", "assignment_error"?: {"code", "message"}}`.
+  "model"?, "persona"?}}`, answered `201` with `{"item", "assigned", "assignment_error"?: {"code", "message"}}`.
   The child is in the Epic's Project, carries `parent_id` (the Epic), and its card says the Epic's
   owner Session created it. Its steps are your `--step` rows, or — when you give none — its
   description's list once it is assigned.
@@ -960,14 +966,28 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   (`session_unavailable`, `project_mismatch`, `assignment_failed`, …), and the command exits 1:
   assign it again with `item assign`, or leave it for the person.
 - `item assign` is `POST /v1/work/v2/agent/items/<child id>/assign` with `{"expected_version",
-  "session_id", "mode", "terminal_id"? | "assistant"?, "model"?}`; it moves an open child of your Epic
+  "session_id", "mode", "terminal_id"? | "assistant"?, "model"?, "persona"?}`; it moves an open child of your Epic
   to another Session, the same assignment a person's choice makes.
 - Refusals, each writing nothing: `not_epic_owner` (you are not the Epic's owner), `parent_not_epic`
   (the parent is not an Epic), `epic_not_planned` (the Epic is still before `implementing`: the
   children come out of a reviewed plan), `item_terminal` (the Epic is finished),
   `child_kind_not_allowed` (only `feature` or `issue`), `epic_children_full` (an Epic holds at most
   32 children, open or closed), `not_epic_child` (`item assign` of an item that is no Epic's child —
-  the person assigns it), `invalid_assignment`, `version_conflict`.
+  the person assigns it), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422: a
+  persona with an existing Session) and `unknown_persona` (400: an id the catalog lacks).
+- **A persona** is a role a new Session is launched with: text added to its system prompt that makes
+  it work the way that role works, for the whole conversation. It is only for a new Session
+  (`--assign-new`, `--new`, `dispatch`); an existing Session keeps the one it opened with. None by
+  default. A persona never overrides `CLAUDE.md`/`AGENTS.md`, the brief, `CHILD.md` or this
+  protocol. `GET /v1/personas` lists them; the eight ids:
+  - `architect` — planning an Epic;
+  - `backend` — a daemon, API or store feature;
+  - `frontend` — a console or phone-layout feature;
+  - `minimal-change` — an issue: the smallest fix that holds;
+  - `code-reviewer` — review and `plan_review` children;
+  - `reality-checker` — verifying: evidence before "it works";
+  - `security` — work touching permissions, pairing or Cloud;
+  - `technical-writer` — docs and guides.
 - **You remain responsible for the Epic.** Follow every child to done (`clawdline item steps <child
   id>` reads one), integrate their work, and move the Epic to done only when every child is done or
   cancelled: `clawdline item phase <epic id> done` is refused `epic_children_open`, naming how many

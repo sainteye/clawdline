@@ -523,3 +523,62 @@ func TestItemAssignPostsTheChosenSession(t *testing.T) {
 		t.Fatalf("no Session named: exit %d, %d requests", code, len(s.requests()))
 	}
 }
+
+// --persona goes with a new Session: `item child --assign-new` and `item
+// assign --new` send it in the assign object, and with an existing terminal,
+// without a new Session, or naming an id this build lacks it is a usage error
+// before anything is asked.
+func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			return 200, epicItem
+		}
+		return 201, `{"ok":true,"assigned":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":2}}`
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "child", itemFlags{kind: "feature", title: "Part", description: "d",
+		assign: assignFlags{open: true, assistant: "claude", persona: "backend"}}, []string{"epic-1"}, thinConversation, "",
+		envOf(nil)); code != 0 {
+		t.Fatalf("child: exit %d: %s", code, errs.String())
+	}
+	var child struct {
+		Assign map[string]string `json:"assign"`
+	}
+	if seen := s.requests(); len(seen) != 2 || json.Unmarshal(seen[1].Body, &child) != nil ||
+		child.Assign["mode"] != "new_session" || child.Assign["persona"] != "backend" {
+		t.Fatalf("child body = %+v", seen)
+	}
+
+	s, b = newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4}}`
+	})
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, persona: "code-reviewer"}},
+		[]string{"child-1"}, thinConversation, "", envOf(nil)); code != 0 {
+		t.Fatalf("assign: exit %d: %s", code, errs.String())
+	}
+	var assigned map[string]any
+	if seen := s.requests(); len(seen) != 2 || json.Unmarshal(seen[1].Body, &assigned) != nil ||
+		assigned["mode"] != "new_session" || assigned["persona"] != "code-reviewer" {
+		t.Fatalf("assign body = %+v", seen)
+	}
+
+	for _, tc := range []struct {
+		op     string
+		assign assignFlags
+		says   string
+	}{
+		{"child", assignFlags{terminal: "%9", persona: "backend"}, "not with --assign-terminal"},
+		{"child", assignFlags{persona: "backend"}, "goes with --assign-new"},
+		{"child", assignFlags{open: true, persona: "wizard"}, `"wizard" is not a persona`},
+		{"assign", assignFlags{terminal: "%9", persona: "backend"}, "not with --terminal"},
+		{"assign", assignFlags{open: true, persona: "wizard"}, `"wizard" is not a persona`},
+	} {
+		s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, epicItem })
+		errs.Reset()
+		f := itemFlags{kind: "feature", title: "Part", assign: tc.assign}
+		if code := sessionItem(&out, &errs, b, tc.op, f, []string{"epic-1"}, thinConversation, "", envOf(nil)); code != 2 ||
+			len(s.requests()) != 0 || !strings.Contains(errs.String(), tc.says) {
+			t.Errorf("%s %+v: exit %d, %d requests, %q", tc.op, tc.assign, code, len(s.requests()), errs.String())
+		}
+	}
+}

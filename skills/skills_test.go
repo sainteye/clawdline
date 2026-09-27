@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
 // routeInGuide is a path as the guides write one: from /v1/ up to the first
@@ -494,5 +496,37 @@ func TestEveryGuideExplainsAnEpicsChildItems(t *testing.T) {
 	}
 	if !bytes.Contains(epic, []byte("clawdline item child")) {
 		t.Error("`clawdline guide epic` does not carry the child-item procedure")
+	}
+}
+
+// A session may open a new Session as a built-in persona on three paths.
+// Every guide names the flags, the body field, both refusals, the catalog
+// route and every id the catalog has, and that none is given by default; the
+// epic part carries it for a reader of that part alone.
+func TestEveryGuideExplainsPersonas(t *testing.T) {
+	wants := []string{
+		"clawdline dispatch", "--persona <id>", `"persona"?`, "GET /v1/personas",
+		"persona_not_applicable", "unknown_persona", "plan_review", "CHILD.md",
+	}
+	wants = append(wants, persona.IDs()...)
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain personas with %q", topic, want)
+			}
+		}
+		epic, err := Section(topic, "epic")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range append([]string{"--assign-new", "--persona <id>", "GET /v1/personas"}, persona.IDs()...) {
+			if !bytes.Contains(epic, []byte(want)) {
+				t.Errorf("`clawdline guide epic` (%s) does not carry %q", topic, want)
+			}
+		}
 	}
 }
