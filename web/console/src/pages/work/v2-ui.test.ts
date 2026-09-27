@@ -272,3 +272,16 @@ test("an Epic shows its plan gate, its plan documents, and what assigning it mea
   assert.match(source, /epic: \{ icon: "◆", label: "Epic", description: "可指派的大型工作/)
   assert.doesNotMatch(source, /先放在規劃區的大型工作主題/)
 })
+
+test("an Epic lists its children with progress, and a child links back to its Epic", () => {
+  assert.match(source, /\{epic && <EpicChildren item=\{item\} sessions=\{sessions\} \/>\}/)
+  assert.match(source, /<EpicParentLine item=\{item\} \/>/)
+  assert.match(source, /aria-label="子項目"/)
+  assert.match(source, /屬於 Epic：/)
+  assert.match(source, /shortWorkID\(parent\.id\)/)
+  // Closed children are left out of the 進行中 list, so the family is read with every status.
+  assert.match(source, /readWorkV2\(project \|\| undefined, "all"\)/)
+  assert.match(source, /#work \[data-work-id=/)
+  assert.match(styles, /\.work-epic-children \{/)
+  assert.match(styles, /\.work-epic-parent \{[^}]*var\(--work-epic\)/)
+})

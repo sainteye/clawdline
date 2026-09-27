@@ -619,3 +619,45 @@
     border-color: color-mix(in srgb, var(--work-epic) 38%, var(--line)); background: color-mix(in srgb, var(--work-epic) 7%, var(--card));
 }
 .work-completion-report:is([data-role="plan"], [data-role="plan_review"]) > summary { color: var(--work-epic); }
+
+/* An Epic's children and a child's Epic, in the Epic's colour. A child row
+   is a button that brings that card into view; one whose card is not on the
+   Board is the same row without the press. */
+.work-epic-children {
+    display: grid; gap: 7px; padding: 9px 11px; border: 1px solid var(--work-epic-ed); border-radius: 10px;
+    background: var(--work-epic-in); min-width: 0;
+}
+.work-epic-children-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.work-epic-children-head strong { color: var(--work-epic); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.work-epic-children-head span { color: var(--dim); font: 600 11px/1.4 var(--mono); }
+.work-epic-children[data-complete] .work-epic-children-head span { color: var(--ok); }
+.work-epic-progress { height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--work-epic) 16%, var(--card)); overflow: hidden; }
+.work-epic-progress > i { display: block; height: 100%; border-radius: inherit; background: var(--work-epic); }
+.work-epic-children[data-complete] .work-epic-progress > i { background: var(--ok); }
+.work-epic-children ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.work-epic-child {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: baseline; gap: 2px 8px;
+    width: 100%; min-width: 0; padding: 5px 6px; border: 0; border-radius: 7px; background: none;
+    color: var(--ink); font: inherit; font-size: 13px; line-height: 1.4; text-align: left;
+}
+button.work-epic-child { cursor: pointer; }
+button.work-epic-child:hover { background: color-mix(in srgb, var(--work-epic) 10%, transparent); }
+button.work-epic-child:focus-visible { outline: 2px solid var(--work-epic); outline-offset: -2px; }
+.work-epic-child-kind { color: var(--work-epic); font-weight: 700; text-align: center; }
+.work-epic-child-title { min-width: 0; overflow-wrap: anywhere; }
+.work-epic-child-meta { color: var(--dim); font: 11px/1.4 var(--mono); text-align: right; overflow-wrap: anywhere; }
+.work-epic-children li:is([data-phase="done"], [data-phase="cancelled"]) .work-epic-child-title { color: var(--dim); }
+.work-epic-children li[data-phase="cancelled"] .work-epic-child-title { text-decoration: line-through; }
+.work-epic-parent { margin: 0; color: var(--work-epic); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.work-epic-parent-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; }
+button.work-epic-parent-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--work-epic-ed); }
+.work-epic-parent-link code { font: 600 11px var(--mono); }
+/* A card reached through a family link takes focus so a keyboard or screen
+   reader continues from it; the ring marks where the page went, briefly. */
+.work-v2-card:focus { outline: none; }
+.work-v2-card[data-arrived] { outline: 2px solid var(--work-epic); outline-offset: 2px; }
+@media (max-width: 560px) {
+    /* On a phone the phase and owner go under the title rather than squeezing it. */
+    .work-epic-child { grid-template-columns: 16px minmax(0, 1fr); }
+    .work-epic-child-meta { grid-column: 2; text-align: left; }
+}

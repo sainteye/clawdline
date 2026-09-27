@@ -337,6 +337,8 @@ export interface WorkV2Item {
   created_via?: CreatedVia
   /** Present when the owning Session claimed the item on the person's message through Clawdline. */
   claimed_via?: CreatedVia
+  /** The Epic this item was created under by the Epic's owning Session; empty or absent when none. */
+  parent_id?: string
   created_at: number
   updated_at: number
   closed_at: number | null
