@@ -123,11 +123,15 @@ export function ProjectSetup({ shown }: { shown: boolean }) {
       type="button"
       ref={trigger}
       aria-haspopup="dialog"
-      onClick={() => dialog.current?.showModal()}
+      onClick={() => {
+        dialog.current?.showModal()
+        dialog.current?.focus({ preventScroll: true })
+      }}
     >查看健檢</button>
     <dialog
       className="project-setup-dialog"
       ref={dialog}
+      tabIndex={-1}
       aria-labelledby="project-setup-title"
       onClose={() => {
         const place = pendingSelection.current
