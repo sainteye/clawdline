@@ -58,8 +58,9 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline task ack <task id> <notice id>` | ACK 一則 child 完成通知（§5） |
 | `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
+| `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 從任何一台機器透過 Cloud webhook 啟動一個排程，並等它的結果；exit code 說明它怎麼結束（「排程」一節）。不需要 daemon |
 
-上面那些 orchestration 指令成功時會印出 daemon 回的 JSON；被拒絕時印出
+上面那些 orchestration 指令（`webhook fire` 除外）成功時會印出 daemon 回的 JSON；被拒絕時印出
 `refused, <status> <code>: <message>`，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
 `--port` 可以覆寫 port。
 
@@ -419,6 +420,24 @@ body）與 `DELETE /v1/orchestrator/schedules/<id>`（以 JSON body 送出兩個
 `invalid_user_authorization`。使用者若直接在 terminal 打字，就沒有 run：請他透過 Clawdline 送出這項
 指示。絕對不要把一次 run 當成使用者沒有要求之工作的概括授權。這份證據讓代轉行為可以稽核；它不會把
 整台機器共用的 orchestrator token 變成某個 Session 專屬的憑證。
+
+排程可以不設時間：用 `"trigger_only": true` 取代 `at`、`days` 與 `on`。時鐘永遠不會執行它；它只由
+`…/run` 或它的 webhook 啟動，而且只在 `enabled` 時。它和重複排程一樣是長期指示，需要同一份證據。
+
+**在另一台機器啟動任務，並知道它怎麼結束。** 機器之間沒有直接的通道。把任務做成目標機器上的
+trigger-only 排程，替它綁一個 Cloud webhook，把網址存在呼叫端讀得到的地方（它是憑證：只有你能讀的
+檔案，或 `CLAWDLINE_WEBHOOK_URL`；絕不放在命令列參數）。然後在呼叫端的機器上：
+
+```sh
+clawdline webhook fire --url-file <path>
+```
+
+它會送出 `{"deliver_within_seconds": 60}`（`--deliver-within`），所以關機中的目標之後不會補跑；它追蹤
+這筆 delivery 的狀態直到結束或超過 `--timeout`（60m），變化印在 stderr，最後一行印在 stdout。Exit
+`0` 成功 · `1` 結束但沒成功（failure、timed_out、cancelled、spawn_failed）· `2` 沒送到機器（expired、
+canceled、連不到）· `3` 被拒絕（dispatch_refused 與它的 code、網址已不可用、速率限制）· `4` 不等了，
+附上最後看到的狀態。`--no-wait` 在 `202` 之後印出 delivery id 就返回。回報時照實寫 exit code 與最後一行：
+`2` 代表什麼都沒跑，不是失敗。
 
 排程啟動的 task 若是替某件「等待驗收」的事讀資料（側欄的「驗收」，見 docs/verifications.md），用它自己的
 task secret 把讀數寫成那筆紀錄上的一則紀錄——不用 orchestrator token，它本來就不該拿著：

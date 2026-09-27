@@ -4,6 +4,7 @@ import { nextWord, type NextWord } from "../next-strings.js"
 import { toast } from "../overlays/index.js"
 import { readAnswer, readFailure, readReady, type ReadState } from "../read-state.js"
 import { invalidScheduleErrorHTML } from "../schedule-errors.js"
+import { isTriggerOnly, scheduleNextLine, scheduleWhenFields } from "../schedule-when.js"
 import "../schedule-errors.css"
 import {
   createPlacesCache,
@@ -165,9 +166,12 @@ function validRow(schedule: ScheduleListRow, at?: number): string {
   const next = schedule.next_fire ? relativeTime(schedule.next_fire, at) : ""
   const nextTitle = schedule.next_fire ? new Date(schedule.next_fire * 1000).toLocaleString() : ""
   const enabled = schedule.enabled ? T().webScheduleEnabled : T().webScheduleDisabled
-  const nextLine = schedule.next_fire
-    ? (schedule.enabled ? T().webScheduleNext + " " : T().webScheduleDisabled + " · next ") + next
-    : T().webScheduleNoNext
+  const nextLine = scheduleNextLine(schedule, next, {
+    next: T().webScheduleNext,
+    disabled: T().webScheduleDisabled,
+    noNext: T().webScheduleNoNext,
+    triggerOnly: nextWord("scheduleTriggerOnlyNext"),
+  })
   const missed = schedule.last_missed_at
     ? '<time class="schedule-missed" title="' +
       esc(new Date(schedule.last_missed_at * 1000).toLocaleString()) +
@@ -511,6 +515,10 @@ const Schedule = (() => {
   let storedPermission = ""
   let days: string | string[] = "daily"
   let daysGuessed = false
+  // No time: the clock never fires it; Run now and its webhook do.
+  let triggerOnly = false
+  // The schedule being edited runs once; it stays once, so the no-time switch is not offered.
+  let editingOnce = false
   let closeTab = "on_success"
   let enabled = true
   let notify = true
@@ -539,7 +547,7 @@ const Schedule = (() => {
   function hint(): string {
     const reading = placeReadProblem()
     if (reading) return reading
-    if (!el<HTMLInputElement>("schedule-at").value) return T().webScheduleNeedsTime
+    if (!triggerOnly && !el<HTMLInputElement>("schedule-at").value) return T().webScheduleNeedsTime
     if (!chosenPlace) return T().webScheduleNeedsPlace
     return ""
   }
@@ -566,6 +574,7 @@ const Schedule = (() => {
       "schedule-with",
       "schedule-model",
       "schedule-permission",
+      "schedule-trigger",
       "schedule-days",
       "schedule-close",
       "schedule-flags",
@@ -733,6 +742,23 @@ const Schedule = (() => {
     days = picked.length ? DAY_CODES.filter((c) => picked.indexOf(c) >= 0) : "daily"
     daysGuessed = false
     drawDays()
+  }
+
+  /** The no-time switch, and the time and days it hides while on. */
+  function drawTrigger(): void {
+    const row = el("schedule-trigger")
+    row.innerHTML = ""
+    el("schedule-trigger-block").hidden = editingOnce
+    const chip = checkChip(triggerOnly, nextWord("scheduleTriggerOnly"))
+    chip.onclick = () => {
+      triggerOnly = !triggerOnly
+      said("")
+      drawTrigger()
+    }
+    row.appendChild(chip)
+    el("schedule-at-block").hidden = triggerOnly
+    el("schedule-days-block").hidden = triggerOnly
+    paint()
   }
 
   function drawClose(): void {
@@ -938,6 +964,8 @@ const Schedule = (() => {
     storedPermission = ""
     days = "daily"
     daysGuessed = false
+    triggerOnly = false
+    editingOnce = false
     closeTab = "on_success"
     enabled = true
     notify = true
@@ -957,6 +985,7 @@ const Schedule = (() => {
     drawWith()
     drawModel()
     drawPermission()
+    drawTrigger()
     drawDays()
     drawClose()
     drawFlags()
@@ -1047,6 +1076,8 @@ const Schedule = (() => {
     const heard = Array.isArray(whenDays) ? DAY_CODES.filter((c) => whenDays.indexOf(c) >= 0) : null
     days = heard && heard.length ? heard : "daily"
     daysGuessed = false
+    triggerOnly = isTriggerOnly(record)
+    editingOnce = !triggerOnly && (record.once === true || !!when.on)
     el<HTMLTextAreaElement>("schedule-instructions").value = task.instructions || ""
     enabled = record.enabled !== false
     closeTab = record.close_tab && CLOSE_VALUES.indexOf(record.close_tab) >= 0 ? record.close_tab : "on_success"
@@ -1059,6 +1090,7 @@ const Schedule = (() => {
     el<HTMLInputElement>("schedule-timeout").value = String(
       task.timeout_minutes != null ? task.timeout_minutes : TIMEOUT_DEFAULT,
     )
+    drawTrigger()
     drawDays()
     drawClose()
     drawFlags()
@@ -1166,10 +1198,11 @@ const Schedule = (() => {
     }
     // A move names its own refusals — an offline machine, no clone of the
     // project there — which are more use than "pick a project".
-    const problem = moving() ? (el<HTMLInputElement>("schedule-at").value ? "" : T().webScheduleNeedsTime) : hint()
+    const needsTime = !triggerOnly && !el<HTMLInputElement>("schedule-at").value
+    const problem = moving() ? (needsTime ? T().webScheduleNeedsTime : "") : hint()
     if (problem) {
       said(problem)
-      if (!el<HTMLInputElement>("schedule-at").value) el("schedule-at").focus({ preventScroll: true })
+      if (needsTime) el("schedule-at").focus({ preventScroll: true })
       return
     }
     const editing = !!editingId
@@ -1181,8 +1214,8 @@ const Schedule = (() => {
 
     const payload: ScheduleBody = {
       title: el<HTMLInputElement>("schedule-title").value.trim(),
-      at: el<HTMLInputElement>("schedule-at").value,
-      days,
+      // A time and its days, or `trigger_only` with neither.
+      ...scheduleWhenFields(triggerOnly, el<HTMLInputElement>("schedule-at").value, days),
       place_id: chosenPlace,
       assistant: chosenAssistant,
       model: chosenModel,
@@ -1793,7 +1826,11 @@ const ScheduleHistory = (() => {
     el("schedule-history-sheet").setAttribute("aria-busy", loading || pressing || runningNow ? "true" : "false")
     el("schedule-history-title").textContent = (record && record.title) || T().webScheduleEdit
     const path = record && record.task && record.task.project_dir
-    const next = record && record.next_fire ? new Date(record.next_fire * 1000).toLocaleString() : ""
+    const next = isTriggerOnly(record)
+      ? nextWord("scheduleTriggerOnlyNext")
+      : record && record.next_fire
+        ? new Date(record.next_fire * 1000).toLocaleString()
+        : ""
     el("schedule-history-meta").textContent = [path, next].filter(Boolean).join(" · ")
     el("schedule-history-runs-label").textContent = T().webResumePick
     el("schedule-run-rows").innerHTML = scheduleRunsHTML(runs, Date.now() / 1000, terminalIsOpen)

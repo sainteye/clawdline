@@ -83,6 +83,8 @@ export interface ScheduleListRow {
   enabled?: boolean
   next_fire?: number
   once?: boolean
+  /** A schedule with no time, run only by Run now or its webhook: never a `next_fire`. */
+  trigger_only?: boolean
   fired_at?: number
   project_dir?: string
   last_run?: ScheduleLastRun
@@ -126,7 +128,8 @@ export interface ScheduleRecord {
   title?: string
   enabled?: boolean
   file?: string
-  when?: { at?: string; days?: string | string[]; on?: string }
+  /** `{ trigger_only: true }` alone for a schedule with no time. */
+  when?: { at?: string; days?: string | string[]; on?: string; trigger_only?: boolean }
   task?: {
     assistant?: string
     model?: string
@@ -140,6 +143,8 @@ export interface ScheduleRecord {
   catch_up_hours?: number
   notify_on_failure?: boolean
   once?: boolean
+  /** True for a schedule with no time, whose `when` is `{ trigger_only: true }`. */
+  trigger_only?: boolean
   fired_at?: number
   next_fire?: number
   last_run?: ScheduleLastRun
@@ -157,11 +162,13 @@ export interface ScheduleWriteAnswer {
   dispatch_enabled?: boolean
 }
 
-/** The body create and save send: `input/schedule.js`'s `payload`, field for field. */
+/** The body create and save send: `input/schedule.js`'s `payload`, field for field, and `trigger_only`, which it never had. */
 export interface ScheduleBody {
   title: string
-  at: string
-  days: string | string[]
+  /** `at` and `days`, or `trigger_only` alone: never both (`schedule-when.ts`). */
+  at?: string
+  days?: string | string[]
+  trigger_only?: true
   place_id: string | null
   assistant: string | null
   model: string

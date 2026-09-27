@@ -58,8 +58,13 @@ type Day struct{ Year, Month, Day int }
 func (d Day) String() string { return fmt.Sprintf("%04d-%02d-%02d", d.Year, d.Month, d.Day) }
 
 // When is `when`: a time of day and exactly one of every day, some weekdays,
-// or one named date.
+// or one named date — or, with TriggerOnly, no time at all.
 type When struct {
+	// TriggerOnly is `{"trigger_only": true}`: a schedule the clock never
+	// fires. It runs by a manual Run or by a webhook and by nothing else, so it
+	// has no occurrences — nothing to miss, nothing to catch up, no next fire.
+	// The other fields are zero.
+	TriggerOnly  bool
 	Hour, Minute int
 	Daily        bool
 	// Weekdays is indexed by time.Weekday. Meaningful only when Daily is false
@@ -76,7 +81,8 @@ func (w When) Once() bool { return w.On != nil }
 // save asks to decide whether it moved them. Compared as values, not as
 // spellings: `09:00` and a re-typed `09:00` are the same time.
 func (w When) Same(o When) bool {
-	if w.Hour != o.Hour || w.Minute != o.Minute || w.Daily != o.Daily || w.Weekdays != o.Weekdays {
+	if w.TriggerOnly != o.TriggerOnly || w.Hour != o.Hour || w.Minute != o.Minute || w.Daily != o.Daily ||
+		w.Weekdays != o.Weekdays {
 		return false
 	}
 	if (w.On == nil) != (o.On == nil) {
@@ -88,8 +94,12 @@ func (w When) Same(o When) bool {
 // At is `when.at` as the file spells it.
 func (w When) At() string { return fmt.Sprintf("%02d:%02d", w.Hour, w.Minute) }
 
-// Object is `when` back in the file's own spelling: `{at, days}` or `{at, on}`.
+// Object is `when` back in the file's own spelling: `{at, days}`, `{at, on}`
+// or `{trigger_only: true}`.
 func (w When) Object() map[string]any {
+	if w.TriggerOnly {
+		return map[string]any{"trigger_only": true}
+	}
 	out := map[string]any{"at": w.At()}
 	switch {
 	case w.On != nil:
@@ -283,6 +293,9 @@ func Parse(obj map[string]any, id string, isDirectory func(string) bool) (Schedu
 		*stamp.to = time.Unix(n, 0)
 	}
 	if !out.FiredAt.IsZero() && !when.Once() {
+		if when.TriggerOnly {
+			return Schedule{}, bad("fired_at belongs to a schedule that runs once; this one has when.trigger_only")
+		}
 		return Schedule{}, bad("fired_at belongs to a schedule that runs once; this one has when.days")
 	}
 	return out, nil
@@ -292,9 +305,17 @@ func Parse(obj map[string]any, id string, isDirectory func(string) bool) (Schedu
 // be wrong.
 func ParseWhen(raw any) (When, error) {
 	obj, ok := raw.(map[string]any)
+	if flag, named := obj["trigger_only"]; ok && named {
+		// Exactly `{"trigger_only": true}`: a time beside it would be a
+		// schedule that both does and does not run on the clock.
+		if on, _ := flag.(bool); !on || len(obj) != 1 {
+			return When{}, bad("when.trigger_only must be true and the only key of when")
+		}
+		return When{TriggerOnly: true}, nil
+	}
 	_, hasAt := obj["at"]
 	if !ok || len(obj) != 2 || !hasAt || len(unknownKeys(obj, map[string]bool{"at": true, "days": true, "on": true})) > 0 {
-		return When{}, bad("when must contain at and exactly one of days or on")
+		return When{}, bad("when must contain at and exactly one of days or on, or be {\"trigger_only\": true}")
 	}
 	var w When
 	if on, present := obj["on"]; present {
@@ -535,9 +556,12 @@ func (w When) runsOn(t time.Time) bool {
 }
 
 // LatestFire is the most recent occurrence at or before now, or zero for none —
-// a one-shot whose date is still ahead, or a pattern with no day in the last
+// a trigger-only schedule, a one-shot whose date is still ahead, or a pattern with no day in the last
 // week, which the grammar cannot express but the arithmetic still answers.
 func (w When) LatestFire(now time.Time, loc *time.Location) time.Time {
+	if w.TriggerOnly {
+		return time.Time{}
+	}
 	now = now.In(loc)
 	if w.On != nil {
 		fire := w.fireOn(w.On.Year, time.Month(w.On.Month), w.On.Day, loc)
@@ -558,8 +582,12 @@ func (w When) LatestFire(now time.Time, loc *time.Location) time.Time {
 }
 
 // NextFire is the next occurrence after now, or zero for a schedule that will
-// never fire again — a one-shot whose instant has passed.
+// never fire again — a one-shot whose instant has passed, or a trigger-only
+// schedule, which the clock never fires.
 func (w When) NextFire(now time.Time, loc *time.Location) time.Time {
+	if w.TriggerOnly {
+		return time.Time{}
+	}
 	now = now.In(loc)
 	if w.On != nil {
 		fire := w.fireOn(w.On.Year, time.Month(w.On.Month), w.On.Day, loc)
@@ -594,6 +622,9 @@ const (
 	BeforeRetiming Action = "before_retiming"
 	BeforeSighting Action = "before_sighting"
 	Spent          Action = "spent"
+	// NoClock is a trigger-only schedule asked about an occurrence it cannot
+	// have: the clock never runs it and never calls it missed.
+	NoClock Action = "no_clock"
 )
 
 // Occurrence is everything the decision reads besides the schedule itself.
@@ -627,6 +658,9 @@ func (s Schedule) Window() time.Duration {
 // Decide is `Orchestrator.scheduleAction`, with the first-sighting gate added
 // after the two gates the file carries.
 func (s Schedule) Decide(o Occurrence) Action {
+	if s.When.TriggerOnly {
+		return NoClock
+	}
 	if !s.FiredAt.IsZero() {
 		return Spent
 	}

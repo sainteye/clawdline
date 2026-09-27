@@ -3972,6 +3972,7 @@ type ScheduleRecord struct {
 	RunsMayBeTruncated         bool             `json:"runs_may_be_truncated,omitempty"`
 	Task                       ScheduleTask     `json:"task"`
 	Title                      string           `json:"title"`
+	TriggerOnly                bool             `json:"trigger_only,omitempty"`
 	WebhookBindingAvailability string           `json:"webhook_binding_availability"`
 	WebhookHookID              string           `json:"webhook_hook_id,omitempty"`
 	When                       ScheduleWhen     `json:"when"`
@@ -3979,18 +3980,20 @@ type ScheduleRecord struct {
 
 // The body POST /v1/orchestrator/schedules and PATCH
 // /v1/orchestrator/schedules/:id take — the form's fields, flattened.
-// `place_id` is an id from GET /v1/places, never a path. Exactly one of `days`
-// and `on`; `days` is not defaulted. schedule_id, created_at, when_changed_at,
-// fired_at and project_dir are the machine's and are refused as unknown fields.
-// Writes need an Idempotency-Key and either a device that may send or, for a
-// schedule that runs once, this machine's orchestrator token. A session
-// carrying a person's recent instruction may write a repeating schedule by
-// sending both `session_id` and `via.run`; the run must have been issued for a
-// message to that conversation. Those proof fields are audit evidence and are
-// not stored in the schedule.
+// `place_id` is an id from GET /v1/places, never a path. Either `at` with
+// exactly one of `days` and `on` (`days` is not defaulted), or `trigger_only:
+// true` with none of `at`, `days` and `on` — a schedule the clock never
+// fires, run only by hand or by webhook. schedule_id, created_at,
+// when_changed_at, fired_at and project_dir are the machine's and are refused
+// as unknown fields. Writes need an Idempotency-Key and either a device that
+// may send or, for a schedule that runs once, this machine's orchestrator
+// token. A session carrying a person's recent instruction may write a repeating
+// schedule by sending both `session_id` and `via.run`; the run must have been
+// issued for a message to that conversation. Those proof fields are audit
+// evidence and are not stored in the schedule.
 type ScheduleRequest struct {
 	Assistant    string   `json:"assistant"`
-	At           string   `json:"at"`
+	At           string   `json:"at,omitempty"`
 	CatchUpHours int64    `json:"catch_up_hours,omitempty"`
 	CloseTab     string   `json:"close_tab,omitempty"`
 	Days         []string `json:"days,omitempty"`
@@ -4012,11 +4015,16 @@ type ScheduleRequest struct {
 
 	// The conversation the person's message was sent to. Required with via for a
 	// session-authorized repeating write.
-	SessionID      string                     `json:"session_id,omitempty"`
-	Template       *ScheduleTemplate          `json:"template,omitempty"`
-	TimeoutMinutes int64                      `json:"timeout_minutes,omitempty"`
-	Title          string                     `json:"title"`
-	Via            *ScheduleUserAuthorization `json:"via,omitempty"`
+	SessionID      string            `json:"session_id,omitempty"`
+	Template       *ScheduleTemplate `json:"template,omitempty"`
+	TimeoutMinutes int64             `json:"timeout_minutes,omitempty"`
+	Title          string            `json:"title"`
+
+	// True for a schedule with no time: send it without at, days and on. A save may
+	// turn a timed repeating schedule into one and back; a schedule that runs once
+	// stays once.
+	TriggerOnly bool                       `json:"trigger_only,omitempty"`
+	Via         *ScheduleUserAuthorization `json:"via,omitempty"`
 }
 
 // One row of the list, in one of two shapes. A valid schedule carries id, title
@@ -4051,6 +4059,10 @@ type ScheduleRow struct {
 	// `invalid` on a row that could not be parsed; absent otherwise.
 	State string `json:"state,omitempty"`
 	Title string `json:"title,omitempty"`
+
+	// Present and true for a schedule with no time (`when.trigger_only`): the clock
+	// never fires it, and it runs only by hand or by webhook. It never has next_fire.
+	TriggerOnly bool `json:"trigger_only,omitempty"`
 }
 
 // One task a schedule made, newest first in the detail. `summary` is what the
@@ -4133,11 +4145,13 @@ type ScheduleUserAuthorization struct {
 
 // `when` in the file's own spelling: `at` (HH:MM, local time) and exactly one
 // of `days` (`daily`, or weekday names sun…sat) or `on` (YYYY-MM-DD, a
-// schedule that runs once).
+// schedule that runs once) — or, alone, `trigger_only: true`, a schedule with
+// no time that runs only by hand or by webhook.
 type ScheduleWhen struct {
-	At   string   `json:"at"`
-	Days []string `json:"days,omitempty"`
-	On   string   `json:"on,omitempty"`
+	At          string   `json:"at,omitempty"`
+	Days        []string `json:"days,omitempty"`
+	On          string   `json:"on,omitempty"`
+	TriggerOnly bool     `json:"trigger_only,omitempty"`
 }
 
 // What the clock says about its own last pass. A pass that fired nothing and a

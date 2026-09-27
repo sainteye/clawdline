@@ -160,3 +160,46 @@ func TestWhenGrammar(t *testing.T) {
 		t.Errorf("next after Monday 08:00: %v", next)
 	}
 }
+
+// A trigger-only schedule has no clock: it is spelled exactly
+// `{"trigger_only": true}`, it has no occurrence to run, miss or catch up at
+// any moment, and it reads back in its own spelling.
+func TestATriggerOnlyScheduleHasNoClock(t *testing.T) {
+	w, err := ParseWhen(map[string]any{"trigger_only": true})
+	if err != nil || !w.TriggerOnly || w.Once() {
+		t.Fatalf("trigger_only: %+v %v", w, err)
+	}
+	for _, bad := range []map[string]any{
+		{"trigger_only": false},
+		{"trigger_only": "true"},
+		{"trigger_only": true, "at": "09:00"},
+		{"trigger_only": true, "days": "daily"},
+		{"trigger_only": true, "on": "2026-09-30"},
+		{"at": "09:00"},
+		{},
+	} {
+		if _, err := ParseWhen(bad); err == nil {
+			t.Errorf("%v was accepted", bad)
+		}
+	}
+	if got := w.Object(); len(got) != 1 || got["trigger_only"] != true {
+		t.Fatalf("Object: %v", got)
+	}
+	timed := When{Hour: 9, Daily: true}
+	if w.Same(timed) || timed.Same(w) || !w.Same(When{TriggerOnly: true}) {
+		t.Fatal("Same does not tell a trigger-only schedule from a timed one")
+	}
+	s := Schedule{Enabled: true, When: w, CatchUpHours: MaxCatchUpHours}
+	// Across a week of minutes-apart moments, including midnight (Hour and
+	// Minute are zero), there is never a latest or a next fire.
+	for now := local(2026, 9, 14, 0, 0); now.Before(local(2026, 9, 21, 0, 0)); now = now.Add(97 * time.Minute) {
+		if !w.LatestFire(now, loc).IsZero() || !w.NextFire(now, loc).IsZero() {
+			t.Fatalf("a trigger-only schedule has an occurrence at %s", now)
+		}
+	}
+	// Even asked directly about a moment, the decision is never run or missed.
+	now := local(2026, 9, 16, 12, 0)
+	if got := s.Decide(Occurrence{Now: now, Fire: local(2026, 9, 16, 0, 0), FirstSeen: local(2026, 9, 1, 0, 0)}); got != NoClock {
+		t.Fatalf("Decide: %s, want %s", got, NoClock)
+	}
+}

@@ -62,8 +62,9 @@ transcript.
 | `clawdline task ack <task id> <notice id>` | Acknowledges a child's completion notice (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
+| `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
 
-The orchestration commands above print the daemon's JSON on success; on a refusal they print
+The orchestration commands above (not `webhook fire`) print the daemon's JSON on success; on a refusal they print
 `refused, <status> <code>: <message>` and exit 1. Cloud commands use their own human-readable
 success and error output. `--port` overrides the port.
 
@@ -457,6 +458,27 @@ malformed proof is `invalid_user_authorization`. If the person typed straight in
 there is no run: ask them to send the instruction through Clawdline. Never reuse a run as blanket
 permission for work the person's message did not request. This proof makes the relay auditable; it
 does not turn the machine-wide orchestrator token into a session-specific credential.
+
+A schedule may have no time: send `"trigger_only": true` instead of `at`, `days` and `on`. The
+clock never runs it; it runs only by `…/run` or by its webhook, and only while `enabled`. It is a
+standing instruction like a repeating one and needs the same proof.
+
+**Start a task on another machine and learn how it ended.** There is no machine-to-machine channel.
+Make the task a trigger-only schedule on the target machine, bind a Cloud webhook to it, and store
+the URL where the caller can read it (it is a credential: a file readable only by you, or
+`CLAWDLINE_WEBHOOK_URL`; never a command-line argument). Then, on the calling machine:
+
+```sh
+clawdline webhook fire --url-file <path>
+```
+
+It sends `{"deliver_within_seconds": 60}` (`--deliver-within`), so a target that is off does not
+run it later; it follows the delivery's status until it ends or `--timeout` (60m) passes, printing
+changes on stderr and one final line on stdout. Exit `0` succeeded · `1` finished without success
+(failure, timed_out, cancelled, spawn_failed) · `2` never reached the machine (expired, canceled,
+unreachable) · `3` refused (dispatch_refused and its code, the URL unavailable, rate-limited) · `4`
+stopped waiting, with the last state seen. `--no-wait` prints the delivery id and returns after the
+`202`. Report the exit code and final line as they are: `2` means nothing ran, not that it failed.
 
 A scheduled task that reads data for something waiting to be verified (the sidebar's 驗收,
 docs/verifications.md) writes its readout as a note on that record with its own task secret — not

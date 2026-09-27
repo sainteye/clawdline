@@ -294,6 +294,9 @@ func (b *ScheduleBook) List(ctx context.Context) ([]map[string]any, error) {
 		if h.s.When.Once() {
 			row["once"] = true
 		}
+		if h.s.When.TriggerOnly {
+			row["trigger_only"] = true
+		}
 		if !h.s.FiredAt.IsZero() {
 			row["fired_at"] = h.s.FiredAt.Unix()
 		}
@@ -345,6 +348,9 @@ func (b *ScheduleBook) Detail(ctx context.Context, id string) (map[string]any, b
 	out["when"] = s.When.Object()
 	if s.When.Once() {
 		out["once"] = true
+	}
+	if s.When.TriggerOnly {
+		out["trigger_only"] = true
 	}
 	if !s.FiredAt.IsZero() {
 		out["fired_at"] = s.FiredAt.Unix()
@@ -416,6 +422,7 @@ var formFields = map[string]bool{
 	"title": true, "at": true, "days": true, "on": true, "place_id": true, "assistant": true,
 	"instructions": true, "enabled": true, "close_tab": true, "catch_up_hours": true,
 	"notify_on_failure": true, "timeout_minutes": true, "model": true, "permission_mode": true,
+	"trigger_only": true,
 }
 
 // templateFields are the task-template keys a create may carry in `template`:
@@ -549,7 +556,18 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 		}
 	}
 	when := map[string]any{"at": orEmpty(body, "at"), "days": orEmpty(body, "days")}
-	if on, ok := body["on"]; ok {
+	if flag, ok := body["trigger_only"]; ok && flag != false {
+		// A form that says trigger_only says it instead of a time: the file
+		// carries only the flag, and a time sent beside it is refused rather
+		// than quietly dropped.
+		for _, key := range []string{"at", "days", "on"} {
+			if _, named := body[key]; named {
+				r := refusedSchedule(400, "bad_request", "trigger_only is sent instead of at, days and on, not beside them.")
+				return nil, schedule.Schedule{}, &r
+			}
+		}
+		when = map[string]any{"trigger_only": flag}
+	} else if on, ok := body["on"]; ok {
 		when["on"] = on
 		if _, days := body["days"]; !days {
 			delete(when, "days")
@@ -784,6 +802,10 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 			return refusedSchedule(400, "bad_request", "This schedule runs once, on "+existing.s.When.On.String()+
 				". A save may change when it runs, not whether it repeats: send when.on, or remove it and make a new one.")
 		}
+		if existing.s.When.TriggerOnly {
+			return refusedSchedule(400, "bad_request", "This schedule has no time and runs only by hand or by webhook. "+
+				"A save may give it a repeating time, not a date it runs once on: send at and days, or remove it and make a new one.")
+		}
 		return refusedSchedule(400, "bad_request", "This schedule repeats. A save may change when it runs, "+
 			"not whether it repeats: send when.days, or remove it and make a new one.")
 	}
@@ -859,6 +881,10 @@ func (b *ScheduleBook) Delete(ctx context.Context, id string, authority Schedule
 
 // Run is `runSchedule`: now, ignoring `enabled` and the clock, and refusing
 // while a run from this schedule is still working or a one-shot has run.
+//
+// A trigger-only schedule is the exception to ignoring `enabled`: it has no
+// clock, so a press is not a check of what the clock will do but the thing
+// itself, and a disabled one refuses it exactly as its webhook does.
 func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	if !b.dispatchEnabled() {
 		return refusedSchedule(403, "orchestrator_disabled", "Task dispatch is switched off in Settings.")
@@ -877,6 +903,9 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	if !h.s.FiredAt.IsZero() {
 		return refusedSchedule(409, "schedule_spent", fmt.Sprintf(
 			"This schedule was made to run once and already ran at %d. Make a new one.", h.s.FiredAt.Unix()))
+	}
+	if h.s.When.TriggerOnly && !h.s.Enabled {
+		return refusedSchedule(409, "schedule_disabled", "This schedule is disabled.")
 	}
 	runs, err := b.Store.ScheduleRuns(ctx, id)
 	if err != nil {

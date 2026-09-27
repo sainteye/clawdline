@@ -133,6 +133,10 @@ func main() {
 		projectCommand(os.Args[2:])
 	case "task":
 		taskCommand(os.Args[2:])
+	case "webhook":
+		// The caller's side of a schedule webhook, from any machine; no
+		// daemon needed (webhook_fire.go).
+		webhookCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 	default:
@@ -368,7 +372,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|heavy|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|heavy|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
@@ -394,4 +398,5 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
 	fmt.Fprintln(os.Stderr, "  task ack <task id> <notice id>      acknowledge a child's completion notice, so it stops being typed")
 	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing")
+	fmt.Fprintln(os.Stderr, "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   start a schedule through its webhook URL (from --url-file or CLAWDLINE_WEBHOOK_URL) and wait for its outcome; no daemon needed")
 }
