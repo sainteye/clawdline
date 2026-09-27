@@ -3857,6 +3857,12 @@ export interface Persona {
    */
   suggested_kinds: string[]
   summary: PersonaNames
+
+  /**
+   * The team the console's switcher shows this persona under. A closed set; the
+   * console names each team, so the catalog only says which one.
+   */
+  team: string
 }
 
 /**

@@ -52,6 +52,22 @@ const (
 var Order = []string{
 	"architect", "backend", "frontend", "minimal-change",
 	"code-reviewer", "reality-checker", "security", "technical-writer",
+	"seo", "content-writer", "ai-search", "social-media",
+	"instagram", "email", "growth", "pr",
+}
+
+// Teams are the closed set a persona belongs to, in the order the console's
+// team switcher lists them. The console names them; the catalog only says
+// which one.
+var Teams = []string{"engineering", "marketing"}
+
+func knownTeam(team string) bool {
+	for _, t := range Teams {
+		if t == team {
+			return true
+		}
+	}
+	return false
 }
 
 // Preamble opens every persona's injected text. It says where the persona
@@ -72,7 +88,9 @@ type Names struct {
 
 // Persona is one entry of the catalog.
 type Persona struct {
-	ID      string
+	ID string
+	// Team is one of Teams: the group the console's switcher shows it in.
+	Team    string
 	Name    Names
 	Summary Names
 	// SuggestedKinds are the Board item kinds this persona is offered for
@@ -230,7 +248,7 @@ func parse(raw string) (Persona, error) {
 		}
 		fields[key] = value
 	}
-	want := []string{"id", "name_en", "name_zh", "summary_en", "summary_zh", "suggested_kinds", "source"}
+	want := []string{"id", "team", "name_en", "name_zh", "summary_en", "summary_zh", "suggested_kinds", "source"}
 	for _, key := range want {
 		if _, ok := fields[key]; !ok {
 			return Persona{}, fmt.Errorf("frontmatter has no %s", key)
@@ -244,6 +262,7 @@ func parse(raw string) (Persona, error) {
 	}
 	p := Persona{
 		ID:      fields["id"],
+		Team:    fields["team"],
 		Name:    Names{En: fields["name_en"], ZhHant: fields["name_zh"]},
 		Summary: Names{En: fields["summary_en"], ZhHant: fields["summary_zh"]},
 		Source:  fields["source"],
@@ -251,6 +270,9 @@ func parse(raw string) (Persona, error) {
 	}
 	if !idShape.MatchString(p.ID) {
 		return Persona{}, fmt.Errorf("id %q is not lower-case words joined by hyphens", p.ID)
+	}
+	if !knownTeam(p.Team) {
+		return Persona{}, fmt.Errorf("team %q is not one of %v", p.Team, Teams)
 	}
 	// The English name goes into a Codex command line, which `ps` renders
 	// under LC_ALL=C: anything but printable ASCII would come back escaped.

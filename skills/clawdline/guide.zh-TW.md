@@ -877,7 +877,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
   那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的
   角色。預設沒有。角色絕不凌駕 `CLAUDE.md`／`AGENTS.md`、brief、`CHILD.md` 或這份協定。
-  `GET /v1/personas` 列出全部；八個 id：
+  `GET /v1/personas` 列出全部；十六個 id，每個團隊八個（每筆有 `team`）：
   - `architect`——規劃 Epic；
   - `backend`——daemon、API 或 store 的 Feature；
   - `frontend`——console 或手機版面的 Feature；
@@ -885,7 +885,10 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - `code-reviewer`——審查與 `plan_review` 類的 child；
   - `reality-checker`——驗證：先有證據才說「會動」；
   - `security`——動到權限、配對或 Cloud 的工作；
-  - `technical-writer`——文件與 guide。
+  - `technical-writer`——文件與 guide；
+  - 行銷團隊，用在部落格、網站或文件 repository：`seo`（頁面與 metadata）、`content-writer`（在檔案裡寫文章）、
+    `ai-search`（讓 AI 搜尋引用的頁面）、`social-media`、`instagram`、`email`（電子報）、`growth`（可量測的
+    實驗）與 `pr`（對外公告）。
 - **Epic 仍然由你負責。** 追每個子項目到完成（`clawdline item steps <child id>` 可以讀一個），整合它們的
   成果，所有子項目都完成或取消後才把 Epic 移到 done：在那之前 `clawdline item phase <epic id> done` 會被
   `epic_children_open` 拒絕，並寫明還有幾個沒結束。除了 Epic 的子項目，不要建立任何其他看板項目。

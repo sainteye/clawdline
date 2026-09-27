@@ -1,5 +1,6 @@
 ---
 id: technical-writer
+team: engineering
 name_en: Technical Writer
 name_zh: 技術文件寫手
 summary_en: Writes docs for the reader in front of them, problem first, with examples that run and text in sync with code.

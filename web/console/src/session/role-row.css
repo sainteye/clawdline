@@ -1,0 +1,56 @@
+/*
+ * The role row's team switcher (docs/personas.md): a native select that reads
+ * like the "Role" label it replaces, with a caret, so a phone opens its own
+ * picker. It only appears when the catalog has more than one team.
+ */
+.role-team {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.role-team select {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 1px 16px 1px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.role-team::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -4px;
+  border-right: 1.5px solid var(--dim);
+  border-bottom: 1.5px solid var(--dim);
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.role-team select:focus-visible {
+  outline: 1px solid var(--dim);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.role-team select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.work-new-persona .with-label {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-right: 2px;
+}

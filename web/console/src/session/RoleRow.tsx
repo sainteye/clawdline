@@ -1,0 +1,106 @@
+import { useEffect, useRef } from "react"
+import type { Persona } from "@clawdline/contract"
+import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
+import {
+  type PersonaTeam,
+  personaById,
+  personaName,
+  personasOfTeam,
+  personaTitle,
+  shownTeam,
+  teamsOffered,
+} from "../personas.js"
+import "./persona.css"
+import "./role-row.css"
+
+/** What one role row draws and what it answers to. */
+export interface RoleRowChoice {
+  personas: readonly Persona[]
+  /** The chosen persona's id; "" for no role. */
+  chosen: string
+  /** The team last picked here, shown when no persona is chosen. */
+  team: string
+  disabled: boolean
+  /** How a chip says it is chosen: a radio in a radiogroup, or a pressed button. */
+  press: "radio" | "pressed"
+  onPick: (id: string) => void
+  onTeam: (team: PersonaTeam) => void
+}
+
+/**
+ * The role row (docs/personas.md), drawn into `row` by the start sheet, its
+ * resume step and the Board's new-Session assignment alike: the label, then
+ * "No role" and one chip per persona of the team shown.
+ *
+ * With personas in more than one team the label is a native select naming the
+ * team (a phone gets its own picker); with one team, or a catalog from a daemon
+ * older than `team`, it is the plain label it always was.
+ */
+export function drawRoleRow(row: HTMLElement, c: RoleRowChoice): void {
+  row.innerHTML = ""
+  const offered = teamsOffered(c.personas)
+  const chosen = personaById(c.personas, c.chosen) ? c.chosen : ""
+  const team = shownTeam(c.personas, chosen, c.team)
+  if (offered.length > 1) {
+    const wrap = document.createElement("span")
+    wrap.className = "with-label role-team"
+    const select = document.createElement("select")
+    select.setAttribute("aria-label", nextWord("personaTeamPicker"))
+    select.disabled = c.disabled
+    offered.forEach((t) => {
+      const option = document.createElement("option")
+      option.value = t
+      option.textContent = nextWord(t === "marketing" ? "personaTeamMarketing" : "personaTeamEngineering")
+      option.selected = t === team
+      select.appendChild(option)
+    })
+    select.onchange = () => c.onTeam(select.value as PersonaTeam)
+    wrap.appendChild(select)
+    row.appendChild(wrap)
+  } else {
+    const label = document.createElement("span")
+    label.className = "with-label"
+    label.textContent = nextWord("personaPicker")
+    row.appendChild(label)
+  }
+  const chip = (id: string, words: string, title: string) => {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.className = "chip" + (id ? " persona-chip" : "") + (id === chosen ? " on" : "")
+    button.disabled = c.disabled
+    if (c.press === "radio") {
+      button.setAttribute("role", "radio")
+      button.setAttribute("aria-checked", id === chosen ? "true" : "false")
+    } else {
+      button.setAttribute("aria-pressed", id === chosen ? "true" : "false")
+    }
+    if (title) button.title = title
+    button.onclick = () => c.onPick(id)
+    const name = document.createElement("span")
+    name.textContent = words
+    button.appendChild(name)
+    row.appendChild(button)
+    return button
+  }
+  chip("", nextWord("personaNone"), "")
+  personasOfTeam(c.personas, team).forEach((p) => {
+    const button = chip(p.id, personaName(p), personaTitle(p))
+    const bot = document.createElement("canvas")
+    bot.className = "persona-tag-bot"
+    bot.setAttribute("aria-hidden", "true")
+    if (L.drawIcon(bot, p.icon, 2)) button.insertBefore(bot, button.firstChild)
+  })
+}
+
+/** The role row as a React element, for the Board. */
+export function RoleRow(props: RoleRowChoice & { className: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!ref.current) return
+    const scrolled = ref.current.scrollLeft
+    drawRoleRow(ref.current, props)
+    ref.current.scrollLeft = scrolled
+  })
+  return <div className={props.className} ref={ref} role="radiogroup" aria-label={nextWord("personaPicker")} />
+}

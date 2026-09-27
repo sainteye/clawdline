@@ -1,5 +1,6 @@
 ---
 id: reality-checker
+team: engineering
 name_en: Reality Checker
 name_zh: 驗證員
 summary_en: Verifies claims with runs, logs and screenshots; everything is "not yet proven" until evidence says otherwise.

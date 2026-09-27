@@ -2,11 +2,12 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Persona } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { headPersona, personaById, rowPersonaLine, suggestedPersona } from "./personas.ts"
+import { headPersona, personaById, personasOfTeam, rowPersonaLine, shownTeam, suggestedPersona, switchTeam, teamsOffered } from "./personas.ts"
 
 const icon = { accent: "#000000", cells: [["#000000"]] }
-const persona = (id: string, kinds: string[]): Persona => ({
+const persona = (id: string, kinds: string[], team = "engineering"): Persona => ({
   id,
+  team,
   name: { en: id, "zh-Hant": id },
   summary: { en: "", "zh-Hant": "" },
   suggested_kinds: kinds,
@@ -99,4 +100,43 @@ test("a session row has a role line only for a persona the catalog names", () =>
   assert.equal(rowPersonaLine(catalog, undefined), null)
   assert.equal(rowPersonaLine(catalog, ""), null)
   assert.equal(rowPersonaLine(null, "frontend"), null)
+})
+
+const teams = [
+  ...catalog,
+  persona("seo", [], "marketing"),
+  persona("content-writer", [], "marketing"),
+]
+// A daemon older than the `team` field sends personas without one.
+const untagged = catalog.map(({ team: _team, ...rest }) => rest as unknown as Persona)
+
+test("the switcher offers the teams that have personas, and the chips show one team", () => {
+  assert.deepEqual(teamsOffered(teams), ["engineering", "marketing"])
+  assert.deepEqual(personasOfTeam(teams, "marketing").map((p) => p.id), ["seo", "content-writer"])
+  assert.deepEqual(personasOfTeam(teams, "engineering").map((p) => p.id), catalog.map((p) => p.id))
+})
+
+test("a catalog without teams is all engineering, one team, so no switcher", () => {
+  assert.deepEqual(teamsOffered(untagged), ["engineering"])
+  assert.equal(personasOfTeam(untagged, "engineering").length, catalog.length)
+  assert.equal(personasOfTeam(untagged, "marketing").length, 0)
+  assert.equal(shownTeam(untagged, "", "marketing"), "engineering")
+  assert.deepEqual(teamsOffered([persona("x", [], "sales")]), ["engineering"])
+  assert.deepEqual(teamsOffered(null), [])
+})
+
+test("the team shown is the chosen persona's, then the remembered one, then engineering", () => {
+  assert.equal(shownTeam(teams, "seo", "engineering"), "marketing")
+  assert.equal(shownTeam(teams, "architect", "marketing"), "engineering")
+  assert.equal(shownTeam(teams, "", "marketing"), "marketing")
+  assert.equal(shownTeam(teams, "janitor", "sales"), "engineering")
+  assert.equal(shownTeam(teams, null, ""), "engineering")
+  // The Board's kind default (epic → architect) shows the engineering team.
+  assert.equal(shownTeam(teams, suggestedPersona(teams, "epic")?.id, "marketing"), "engineering")
+})
+
+test("switching team keeps a choice only when that team shows it", () => {
+  assert.deepEqual(switchTeam(teams, "architect", "marketing"), { team: "marketing", chosen: "" })
+  assert.deepEqual(switchTeam(teams, "seo", "marketing"), { team: "marketing", chosen: "seo" })
+  assert.deepEqual(switchTeam(teams, "", "engineering"), { team: "engineering", chosen: "" })
 })

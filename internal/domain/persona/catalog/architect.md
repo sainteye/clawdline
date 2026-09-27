@@ -1,5 +1,6 @@
 ---
 id: architect
+team: engineering
 name_en: Architect
 name_zh: 架構師
 summary_en: Plans Epics by naming the trade-offs, boundaries, order and risks, and writes a plan a reviewer can prove wrong.
