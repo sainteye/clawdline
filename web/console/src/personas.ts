@@ -150,3 +150,85 @@ export function rememberPersona(id: string): void {
     // refusal-ok: a browser without storage just does not remember.
   }
 }
+
+/**
+ * The teams a persona belongs to (`team` in personas.schema.json), in the
+ * order the role row's switcher lists them. The console names them
+ * (`personaTeam_*` in next-strings.ts); the catalog only says which one.
+ */
+export const PERSONA_TEAMS = ["engineering", "marketing"] as const
+export type PersonaTeam = (typeof PERSONA_TEAMS)[number]
+
+/**
+ * A persona's team. A catalog from a daemon older than the field (or a Cloud
+ * machine not yet updated) has none, and a name this console does not know is
+ * no team it can show: both are engineering, which is every persona such a
+ * daemon has.
+ */
+export function personaTeam(p: Persona): PersonaTeam {
+  const team = (p as { team?: unknown }).team
+  return (PERSONA_TEAMS as readonly unknown[]).includes(team) ? (team as PersonaTeam) : "engineering"
+}
+
+/** The teams that have at least one persona, in switcher order. One or none hides the switcher. */
+export function teamsOffered(list: readonly Persona[] | null): PersonaTeam[] {
+  const present = new Set((list ?? []).map(personaTeam))
+  return PERSONA_TEAMS.filter((t) => present.has(t))
+}
+
+/** The personas the chips show for one team, in catalog order. */
+export function personasOfTeam(list: readonly Persona[] | null, team: PersonaTeam): Persona[] {
+  return (list ?? []).filter((p) => personaTeam(p) === team)
+}
+
+/**
+ * The team the role row shows: the chosen persona's own team, so a choice is
+ * never hidden behind the other team; otherwise the team last picked in this
+ * browser, when it still has personas; otherwise engineering (or the only
+ * team there is).
+ */
+export function shownTeam(
+  list: readonly Persona[] | null,
+  chosen: string | null | undefined,
+  preferred: string | null | undefined,
+): PersonaTeam {
+  const persona = personaById(list, chosen)
+  if (persona) return personaTeam(persona)
+  const offered = teamsOffered(list)
+  if (preferred && (offered as string[]).includes(preferred)) return preferred as PersonaTeam
+  return offered.includes("engineering") || !offered.length ? "engineering" : offered[0]
+}
+
+/**
+ * Switching team: the chosen persona stays only when it is one of the new
+ * team's chips; otherwise the choice becomes no role, so a start never sends a
+ * persona the person cannot see.
+ */
+export function switchTeam(
+  list: readonly Persona[] | null,
+  chosen: string | null | undefined,
+  team: PersonaTeam,
+): { team: PersonaTeam; chosen: string } {
+  const persona = personaById(list, chosen)
+  return { team, chosen: persona && personaTeam(persona) === team ? persona.id : "" }
+}
+
+const REMEMBERED_TEAM = "clawdline.persona.team"
+
+/** The team last picked in this browser; "" for none. */
+export function rememberedTeam(): string {
+  try {
+    return localStorage.getItem(REMEMBERED_TEAM) || ""
+  } catch {
+    // refusal-ok: a browser without storage just does not remember.
+    return ""
+  }
+}
+
+export function rememberTeam(team: PersonaTeam): void {
+  try {
+    localStorage.setItem(REMEMBERED_TEAM, team)
+  } catch {
+    // refusal-ok: a browser without storage just does not remember.
+  }
+}
