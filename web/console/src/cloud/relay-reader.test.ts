@@ -72,6 +72,16 @@ class FakeClient implements CloudReadClient {
     this.reads.push({ machine, word, body: reqBody })
     return this.readAnswer(word)
   }
+  /** Every session read by its own method: the word, the identity and the id. */
+  sessionReads: { word: string; identity: CloudIdentity; id: string }[] = []
+  agent?: (identity: CloudIdentity, agent: string) => Promise<unknown> = (identity, agent) => {
+    this.sessionReads.push({ word: "agent", identity, id: agent })
+    return this.readAnswer("agent")
+  }
+  shell?: (identity: CloudIdentity, shell: string) => Promise<unknown> = (identity, shell) => {
+    this.sessionReads.push({ word: "shell", identity, id: shell })
+    return this.readAnswer("shell")
+  }
   _place(value: unknown) {
     if (value === "cloud-p1") return { machine: "mac-a", id: "p1", path: "/repo" }
     throw Object.assign(new Error("Project not found"), { code: "not_found", status: 404 })
@@ -116,39 +126,57 @@ test("the list is the chosen machine's rows, with the machine kept and the relay
   assert.equal("identity" in snap.sessions[0], false)
 })
 
-test("an agent transcript is asked of the chosen machine with both decoded ids and the local limit", async () => {
+test("an agent transcript is a session read of the chosen machine, never the generic machine request", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })
 
-  const answer = await r.fetch("/v1/sessions/root%20pane/agents/agent%204?limit=5000")
+  const answer = await r.fetch("/v1/sessions/root%20pane/agents/agent%204?limit=200")
   assert.equal(answer.status, 200)
-  assert.deepEqual(client.reads, [{
-    machine: "mac-a",
-    word: "agent",
-    body: { session: "root pane", agent: "agent 4", limit: 1000 },
+  assert.deepEqual(client.sessionReads, [{
+    word: "agent", identity: { machine: "mac-a", session: "root pane" }, id: "agent 4",
   }])
+  assert.deepEqual(client.reads, [])
   assert.deepEqual(await answer.json(), { read: "agent" })
   assert.equal(r.log.at(-1)?.word, "agent")
 })
 
-test("a shell's output is asked of the chosen machine with both decoded ids and the local byte window", async () => {
+test("a shell's output is a session read of the chosen machine, never the generic machine request", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })
 
-  const answer = await r.fetch("/v1/sessions/root%20pane/shells/b0aau3e6s?bytes=99999999")
+  const answer = await r.fetch("/v1/sessions/root%20pane/shells/b0aau3e6s?bytes=65536")
   assert.equal(answer.status, 200)
-  const small = await r.fetch("/v1/sessions/root%20pane/shells/b0aau3e6s")
-  assert.equal(small.status, 200)
-  assert.deepEqual(client.reads, [{
-    machine: "mac-a",
-    word: "shell",
-    body: { session: "root pane", shell: "b0aau3e6s", bytes: 1048576 },
-  }, {
-    machine: "mac-a",
-    word: "shell",
-    body: { session: "root pane", shell: "b0aau3e6s", bytes: 65536 },
-  }])
+  const bare = await r.fetch("/v1/sessions/root%20pane/shells/b0aau3e6s")
+  assert.equal(bare.status, 200)
+  assert.deepEqual(client.sessionReads, [
+    { word: "shell", identity: { machine: "mac-a", session: "root pane" }, id: "b0aau3e6s" },
+    { word: "shell", identity: { machine: "mac-a", session: "root pane" }, id: "b0aau3e6s" },
+  ])
+  assert.deepEqual(client.reads, [])
   assert.equal(r.log.at(-1)?.word, "shell")
+})
+
+test("an agent or shell window other than the one the client reads is refused by name, and nothing is sent", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+
+  const agent = await r.fetch("/v1/sessions/s1/agents/a1?limit=40")
+  assert.equal(agent.status, 501)
+  assert.equal((await body<{ error: string }>(agent)).error, "cloud_not_carried")
+  const shell = await r.fetch("/v1/sessions/s1/shells/b1?bytes=1024")
+  assert.equal(shell.status, 501)
+  assert.deepEqual(client.sessionReads, [])
+})
+
+test("a copied client without the agent reader refuses the read by name instead of hanging", async () => {
+  const client = new FakeClient()
+  client.agent = undefined
+  const r = reader(client, { t: 1000 })
+
+  const answer = await r.fetch("/v1/sessions/s1/agents/a1")
+  assert.equal(answer.status, 501)
+  assert.equal((await body<{ error: string }>(answer)).error, "cloud_not_carried")
+  assert.deepEqual(client.reads, [])
 })
 
 test("empty is believed only after the machine's inventory, and not while it is still sending rows", async () => {

@@ -305,10 +305,12 @@ function AgentHead({
   return (
     <div className="agent-head">
       <button className="back" type="button" onClick={onBack}>‹ {T.agentBack}</button>
-      <span className="who">
-        <span className="name">{agentName(agent, assistant, ordinal)}</span>
-        <span className="sub">{facts}</span>
-      </span>
+      {/* Two lines, as `detail.css` draws them: inline spans ran the name and
+          the facts together ("…session UIExplore · …"). */}
+      <div className="who">
+        <div className="name">{agentName(agent, assistant, ordinal)}</div>
+        <div className="sub">{facts}</div>
+      </div>
     </div>
   )
 }

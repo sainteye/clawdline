@@ -322,6 +322,11 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
       await click("#bg-sheet .agents .one.child")
       await until("the agent's transcript opens", `!!document.querySelector(".agent-head") && /three files/.test(document.getElementById("tx").textContent)`)
       seen.agentHead = await run(`document.querySelector(".agent-head .name").textContent`)
+      // The name and its facts are two lines. As inline spans they ran
+      // together on one ("…session UIExplore · appears to be running").
+      const nameBottom = await run(`document.querySelector(".agent-head .name").getBoundingClientRect().bottom`)
+      const subTop = await run(`document.querySelector(".agent-head .sub").getBoundingClientRect().top`)
+      assert.ok(Number(subTop) >= Number(nameBottom) - 1, `the facts start below the name: ${subTop} < ${nameBottom}`)
       await shot("agent")
     } finally {
       report[name] = seen
