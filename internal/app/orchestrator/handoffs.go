@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	personas "github.com/sainteye/clawdline/internal/domain/persona"
 )
 
 // The hand-over routes (broker-design B8; the dispatch role contract in this
@@ -54,8 +55,9 @@ type openedSession struct {
 // openSession opens a new session running assistant in cwd, in a tmux session
 // of its own named name, or an iTerm2 tab — whichever the machine's terminal
 // setting and what is running choose, exactly as a child's tab is chosen.
-// addDirs are the directories outside cwd the session is told it may read.
-func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model string, addDirs []string) (openedSession, error) {
+// addDirs are the directories outside cwd the session is told it may read;
+// persona is the built-in persona it is launched as, "" for none.
+func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, persona string, addDirs []string) (openedSession, error) {
 	if err := outside(); err != nil {
 		return openedSession{}, err
 	}
@@ -63,7 +65,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model st
 		return openedSession{}, errors.New("this daemon cannot open a terminal")
 	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model,
-		Language: b.ClaudeLanguage(assistant)})
+		Language: b.ClaudeLanguage(assistant), Persona: persona, PersonaDir: b.PersonaDir()})
 	if err != nil {
 		return openedSession{}, err
 	}
@@ -366,7 +368,9 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	}
 	refund = false
 
-	opened, openErr := b.openSession(ctx, project, sessionName("handoff", h.ID), assistant, model, []string{dir})
+	// A handoff carries no persona in this version: the receiver continues
+	// the sender's work, whatever the sender was launched as.
+	opened, openErr := b.openSession(ctx, project, sessionName("handoff", h.ID), assistant, model, "", []string{dir})
 	if openErr != nil {
 		var ref Refusal
 		if errors.As(openErr, &ref) {
@@ -555,6 +559,10 @@ type RootAssignmentRequest struct {
 	ProjectDir string     `json:"project_dir"`
 	Label      string     `json:"label"`
 	Assignment Assignment `json:"assignment"`
+	// Persona is the built-in persona the Feature Root is launched as, empty
+	// for none. Omitted from the JSON when empty, so the digest of a request
+	// without one is the digest it had before the field existed.
+	Persona string `json:"persona,omitempty"`
 }
 
 // RootAssignment is one Feature Root as this broker keeps it. It carries no
@@ -573,6 +581,7 @@ type RootAssignment struct {
 	Ownership  string         `json:"ownership"`
 	Executor   *openedSession `json:"executor,omitempty"`
 	BriefPath  string         `json:"brief_path"`
+	Persona    string         `json:"persona,omitempty"`
 	// BriefAttemptedAt is durable before the keystroke (O5).
 	BriefAttemptedAt int64  `json:"brief_attempted_at,omitempty"`
 	BriefedAt        int64  `json:"briefed_at,omitempty"`
@@ -586,6 +595,9 @@ const (
 	assignmentLabelLimit = 200
 	assignmentListLimit  = 200
 )
+
+// PersonaDir is where the daemon wrote the persona texts every launch names.
+func (b *Broker) PersonaDir() string { return personas.Dir(b.Dir) }
 
 // AssignmentRoot is where Feature Roots' briefs are written.
 func (b *Broker) AssignmentRoot() string { return filepath.Join(b.Dir, "root-assignments") }
@@ -607,6 +619,11 @@ func validateAssignment(req RootAssignmentRequest) error {
 	}
 	if !filepath.IsAbs(req.ProjectDir) || !dirExists(req.ProjectDir) {
 		return badAssignment("project_dir must be an absolute path to an existing directory.")
+	}
+	if req.Persona != "" {
+		if _, ok := personas.Known(req.Persona); !ok {
+			return badAssignment("persona must be one of: " + strings.Join(personas.IDs(), ", ") + ".")
+		}
 	}
 	label := strings.TrimSpace(req.Label)
 	if label == "" || len(req.Label) > assignmentLabelLimit {
@@ -630,7 +647,11 @@ func validateAssignment(req RootAssignmentRequest) error {
 }
 
 // AssignmentBrief is the file a Feature Root is told to read first.
-func AssignmentBrief(id string, a Assignment) string {
+//
+// With a persona, a PERSONA section names it and the file its definition is
+// in: the session was launched with that file already in its system prompt,
+// and the section says so where the rest of its brief is.
+func AssignmentBrief(id string, a Assignment, persona, personaFile string) string {
 	var sb strings.Builder
 	sb.WriteString("You are an independently owned Clawdline Feature Root for Root Assignment " + id + ".\n")
 	sb.WriteString("Own this feature through implementation, verification, integration, and landing.\n\n")
@@ -639,6 +660,11 @@ func AssignmentBrief(id string, a Assignment) string {
 		{"RELEVANT REFERENCES", a.RelevantReferences}, {"ACCEPTANCE", a.Acceptance},
 	} {
 		sb.WriteString(s.head + "\n" + strings.TrimSpace(s.body) + "\n\n")
+	}
+	if p, ok := personas.Known(persona); ok {
+		sb.WriteString("PERSONA\n" + p.Name.En + " (" + p.ID + "). Its definition is " + personaFile +
+			", which this session was launched with. It shapes how you work; it never overrides the " +
+			"project's instruction files, this assignment or the Clawdline protocol.\n\n")
 	}
 	return sb.String()
 }
@@ -715,13 +741,14 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		ID: id, RequestID: req.RequestID, Assistant: req.Assistant, Model: req.Model,
 		ProjectDir: filepath.Clean(req.ProjectDir), Label: strings.TrimSpace(req.Label), State: AssignmentAccepted,
 		Assignment: req.Assignment, CreatedAt: now.Unix(), Ownership: "independent_root",
-		BriefPath: filepath.Join(dir, "ASSIGNMENT.md"),
+		BriefPath: filepath.Join(dir, "ASSIGNMENT.md"), Persona: req.Persona,
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		b.refundDispatch()
 		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
-	if err := writeFileSync(a.BriefPath, []byte(AssignmentBrief(id, req.Assignment))); err != nil {
+	brief := AssignmentBrief(id, req.Assignment, req.Persona, personas.Path(b.Dir, req.Persona))
+	if err := writeFileSync(a.BriefPath, []byte(brief)); err != nil {
 		b.refundDispatch()
 		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
@@ -738,7 +765,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 	if model == "default" {
 		model = ""
 	}
-	opened, err := b.openSession(ctx, a.ProjectDir, sessionName("root", id), req.Assistant, model, []string{dir})
+	opened, err := b.openSession(ctx, a.ProjectDir, sessionName("root", id), req.Assistant, model, req.Persona, []string{dir})
 	if err != nil {
 		out, _ := b.updateAssignment(ctx, id, "root_assignment.failed", func(x *RootAssignment) {
 			x.State, x.Failure = AssignmentFailed, "terminal_open_failed: "+err.Error()

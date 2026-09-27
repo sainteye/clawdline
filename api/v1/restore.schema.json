@@ -15,6 +15,7 @@
       "additionalProperties": false,
       "required": ["conversation_id", "assistant", "place", "place_label", "cwd", "title", "last_seen"],
       "properties": {
+        "persona": { "description": "The persona the conversation was launched with, as its command line said; restoring it launches it with the same one. Absent for none.", "type": "string" },
         "conversation_id": { "type": "string" },
         "assistant": {
           "description": "`claude` or `codex`.",

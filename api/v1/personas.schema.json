@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "personas.schema.json",
+  "title": "Session personas",
+  "description": "GET /v1/personas. The built-in personas a session can be launched as (docs/personas.md): a role definition written into the session's system prompt at launch. The catalog is compiled into the daemon; the texts themselves never travel on this route.",
+  "$defs": {
+    "PersonaNames": {
+      "description": "A name or a one-sentence summary in the two languages the console speaks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["en", "zh-Hant"],
+      "properties": {
+        "en": { "type": "string" },
+        "zh-Hant": { "type": "string" }
+      }
+    },
+    "Persona": {
+      "description": "One persona. `id` is what a start or resume path ends `/as/{id}` with, what a dispatch's `persona` and a Root Assignment's `persona` name, and what a session row's `persona` reads back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "summary", "suggested_kinds", "icon", "source"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "$ref": "#/$defs/PersonaNames" },
+        "summary": { "$ref": "#/$defs/PersonaNames" },
+        "suggested_kinds": { "description": "Board item kinds (epic, feature, issue) this persona is offered for first. A suggestion: nothing is given a persona nobody chose.", "type": "array", "items": { "type": "string" } },
+        "icon": { "description": "The persona's pixel bot, eight columns by seven rows, in the shape a project's mark has.", "$ref": "common.schema.json#/$defs/Icon" },
+        "source": { "description": "The upstream file this persona was adapted from, at a fixed commit.", "type": "string" }
+      }
+    },
+    "PersonaCatalog": {
+      "description": "Every persona in the order a picker shows them, and where the texts came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["personas", "license"],
+      "properties": {
+        "personas": { "type": "array", "items": { "$ref": "#/$defs/Persona" } },
+        "license": { "description": "The upstream licence the texts are adapted under, by its SPDX name (MIT).", "type": "string" }
+      }
+    }
+  }
+}

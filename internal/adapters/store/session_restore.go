@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS restore_sessions (
   place           TEXT    NOT NULL,
   title           TEXT    NOT NULL DEFAULT '',
   backend         TEXT    NOT NULL DEFAULT '',
+  persona         TEXT    NOT NULL DEFAULT '',
   first_seen      INTEGER NOT NULL,
   last_seen       INTEGER NOT NULL,
   resolution      TEXT    CHECK (resolution IS NULL OR resolution IN ('restored', 'dismissed')),
@@ -61,6 +62,9 @@ CREATE TABLE IF NOT EXISTS restore_sessions (
 var sessionRestoreColumns = []struct{ column, ddl string }{
 	{"gone_at", "ALTER TABLE restore_sessions ADD COLUMN gone_at INTEGER"},
 	{"closed_at", "ALTER TABLE restore_sessions ADD COLUMN closed_at INTEGER"},
+	// No CHECK: the persona catalog is closed in Go (internal/domain/persona),
+	// and a CHECK would rebuild this table every time a persona is added.
+	{"persona", "ALTER TABLE restore_sessions ADD COLUMN persona TEXT NOT NULL DEFAULT ''"},
 }
 
 func openSessionRestore(db *sql.DB) error {
@@ -97,8 +101,12 @@ type RestoreRow struct {
 	Place          string
 	Title          string
 	Backend        string
-	FirstSeen      time.Time
-	LastSeen       time.Time
+	// Persona is the built-in persona the session's command line was
+	// launched with, as the reading saw it; empty for none. Restoring the
+	// conversation launches it with the same one.
+	Persona   string
+	FirstSeen time.Time
+	LastSeen  time.Time
 	// Resolution is empty, RestoreRestored or RestoreDismissed.
 	Resolution string
 	ResolvedAt time.Time
@@ -172,14 +180,15 @@ func (s *Store) RecordBoot(ctx context.Context, rd BootReading) (int64, error) {
 		for _, r := range rd.Rows {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO restore_sessions
-				   (boot_id, conversation_id, assistant, cwd, place, title, backend, first_seen, last_seen)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				   (boot_id, conversation_id, assistant, cwd, place, title, backend, persona, first_seen, last_seen)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				 ON CONFLICT(boot_id, conversation_id) DO UPDATE SET
 				   assistant = excluded.assistant, cwd = excluded.cwd, place = excluded.place,
-				   title = excluded.title, backend = excluded.backend, last_seen = excluded.last_seen,
+				   title = excluded.title, backend = excluded.backend, persona = excluded.persona,
+				   last_seen = excluded.last_seen,
 				   gone_at   = CASE WHEN closed_at >= ? THEN gone_at ELSE NULL END,
 				   closed_at = CASE WHEN closed_at >= ? THEN closed_at ELSE NULL END`,
-				boot, r.ConversationID, r.Assistant, r.CWD, r.Place, r.Title, r.Backend, at, at,
+				boot, r.ConversationID, r.Assistant, r.CWD, r.Place, r.Title, r.Backend, r.Persona, at, at,
 				scanned, scanned); err != nil {
 				return 0, err
 			}
@@ -290,7 +299,7 @@ func (s *Store) RestoreRows(ctx context.Context, boot string) ([]RestoreRow, err
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT conversation_id, assistant, cwd, place, title, backend, first_seen, last_seen,
+		`SELECT conversation_id, assistant, cwd, place, title, backend, persona, first_seen, last_seen,
 		        resolution, resolved_at, gone_at, closed_at
 		 FROM restore_sessions WHERE boot_id = ?
 		 ORDER BY last_seen DESC, first_seen DESC, conversation_id`, boot)
@@ -304,7 +313,7 @@ func (s *Store) RestoreRows(ctx context.Context, boot string) ([]RestoreRow, err
 		var first, last int64
 		var resolution sql.NullString
 		var resolved, gone, closed sql.NullInt64
-		if err := rows.Scan(&r.ConversationID, &r.Assistant, &r.CWD, &r.Place, &r.Title, &r.Backend,
+		if err := rows.Scan(&r.ConversationID, &r.Assistant, &r.CWD, &r.Place, &r.Title, &r.Backend, &r.Persona,
 			&first, &last, &resolution, &resolved, &gone, &closed); err != nil {
 			return nil, classify(err)
 		}

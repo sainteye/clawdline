@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -81,6 +82,27 @@ type draft struct {
 	// AutoCompactWindow is raw for the same reason, and because null and
 	// absent mean different things (compact.go admitAutoCompact).
 	AutoCompactWindow json.RawMessage `json:"auto_compact_window"`
+	// Persona is raw for the same reason ReasoningEffort is.
+	Persona json.RawMessage `json:"persona"`
+}
+
+// admitPersona reads `persona`: a built-in persona id, or nothing. A name
+// that is not in the catalog is refused by name and the catalog listed,
+// rather than dropped: a child launched without the persona its brief asked
+// for would be answered yes to something that did not happen.
+func admitPersona(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var id string
+	if json.Unmarshal(raw, &id) != nil {
+		return "", refuse(http.StatusUnprocessableEntity, "bad_task", "persona must be a string")
+	}
+	if _, ok := persona.Known(id); !ok {
+		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
+			"persona must be one of: "+strings.Join(persona.IDs(), ", "))
+	}
+	return id, nil
 }
 
 // admitReasoningEffort reads `reasoning_effort`: Codex's
@@ -293,6 +315,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if err != nil {
 		return Record{}, err
 	}
+	personaID, err := admitPersona(d.Persona)
+	if err != nil {
+		return Record{}, err
+	}
 	workID, err := admitWorkID(d.WorkID)
 	if err != nil {
 		return Record{}, err
@@ -327,6 +353,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		Root:                 root,
 		Model:                model,
 		ReasoningEffort:      effort,
+		Persona:              personaID,
 		AutoCompactRequested: compact,
 		WorkID:               workID,
 		Graph:                graph,

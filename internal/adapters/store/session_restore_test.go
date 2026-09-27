@@ -304,3 +304,42 @@ func TestResolveRestoreAnswersOnceAndAllMeansTheUnresolved(t *testing.T) {
 		t.Fatal("an unknown resolution was written")
 	}
 }
+
+// A row keeps the persona its session was launched as, a later reading may
+// change it, and a table from before the column gains it empty.
+func TestARestoreRowKeepsItsPersona(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(restoreSchemaBeforeGone); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if row := byConversation(t, s, "boot-old")["c-old"]; row.Title != "kept" || row.Persona != "" {
+		t.Fatalf("migrated row = %+v", row)
+	}
+
+	as := restoreRow("c-1", "one")
+	as.Persona = "architect"
+	if err := recordAt(s, "boot-new", []RestoreRow{as, restoreRow("c-2", "two")}, time.Unix(400, 0)); err != nil {
+		t.Fatal(err)
+	}
+	rows := byConversation(t, s, "boot-new")
+	if rows["c-1"].Persona != "architect" || rows["c-2"].Persona != "" {
+		t.Fatalf("recorded %+v / %+v", rows["c-1"], rows["c-2"])
+	}
+	as.Persona = "security"
+	if err := recordAt(s, "boot-new", []RestoreRow{as}, time.Unix(500, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if row := byConversation(t, s, "boot-new")["c-1"]; row.Persona != "security" {
+		t.Fatalf("a later reading = %+v", row)
+	}
+}

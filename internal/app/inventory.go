@@ -377,6 +377,11 @@ func richer(a, b session.Session) session.Session {
 	if out.Assistant == "" {
 		out.Assistant = b.Assistant
 	}
+	// Only the process row reads a command line, so whichever side of the
+	// merge it arrives on, its persona is kept.
+	if out.Persona == "" {
+		out.Persona = b.Persona
+	}
 	// Codex background threads are learned from the process row's open files.
 	// A terminal row normally wins the identity merge, but it must not erase
 	// that stronger, already-scoped reading.

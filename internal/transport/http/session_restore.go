@@ -18,6 +18,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -146,6 +147,7 @@ func (s *Server) restorableList(w http.ResponseWriter, r *http.Request) {
 		out.Sessions = append(out.Sessions, contract.RestorableSession{
 			ConversationID: row.ConversationID, Assistant: row.Assistant, Place: row.Place,
 			PlaceLabel: s.placeLabel(row.CWD), CWD: row.CWD, Title: row.Title, LastSeen: row.LastSeen.Unix(),
+			Persona: restorablePersona(row.Persona),
 		})
 	}
 	writeJSON(w, out)
@@ -269,7 +271,8 @@ func (s *Server) resumeRestorable(ctx context.Context, reading startReading, row
 		log.Printf("audit place.restore place=%.64s ok=0 why=place_unavailable", row.Place)
 		return app.Started{}, app.ErrRestorePlaceUnavailable
 	}
-	made, err := starter.Resume(ctx, place, row.ConversationID, row.Assistant)
+	// With the persona it was launched with, as its command line said.
+	made, err := starter.Resume(ctx, place, row.ConversationID, row.Assistant, restorablePersona(row.Persona))
 	if err != nil {
 		log.Printf("audit place.restore place=%s cwd=%q assistant=%s session=%.64s ok=0 why=%v",
 			place.ID, place.Path, row.Assistant, row.ConversationID, err)
@@ -333,4 +336,14 @@ func (s *Server) restoreRowsReading() capacity.Reading {
 	}
 	return capacity.Reading{Known: true, Counters: capacity.Counters{Evicted: s.restore.Dropped()},
 		Note: "conversations recorded per boot; evicted counts the ones left unrecorded past the limit"}
+}
+
+// restorablePersona is the persona a restored session comes back as: the one
+// it was recorded with while this build still has it. A build that dropped
+// it restores the conversation as nobody rather than not at all.
+func restorablePersona(id string) string {
+	if _, ok := personas.Known(id); !ok {
+		return ""
+	}
+	return id
 }

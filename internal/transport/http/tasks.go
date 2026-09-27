@@ -109,6 +109,7 @@ func (s *Server) tasksPayload(ctx context.Context, cursor, limit int) (contract.
 				Title:          t.Title,
 				Kind:           t.Kind,
 				ScheduleID:     t.ScheduleID,
+				Persona:        t.Persona,
 			}
 			if !t.FinishedAt.IsZero() {
 				row.FinishedAt = t.FinishedAt.Unix()

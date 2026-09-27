@@ -208,7 +208,7 @@ func TestASessionTheBrokerOpensCarriesTheWindow(t *testing.T) {
 	launcher := &recordingLauncher{pane: "%91"}
 	b.Launcher = launcher
 	project := t.TempDir()
-	opened, err := b.openSession(ctx, project, "clawdline-root-test", "claude", "", []string{b.Dir})
+	opened, err := b.openSession(ctx, project, "clawdline-root-test", "claude", "", "", []string{b.Dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestASessionTheBrokerOpensCarriesTheWindow(t *testing.T) {
 		t.Fatalf("the opened session records %v", opened.AutoCompactWindow)
 	}
 
-	opened, err = b.openSession(ctx, project, "clawdline-root-test2", "codex", "", []string{b.Dir})
+	opened, err = b.openSession(ctx, project, "clawdline-root-test2", "codex", "", "", []string{b.Dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestASessionTheBrokerOpensCarriesTheWindow(t *testing.T) {
 	}
 
 	b.AutoCompactWindow = nil
-	opened, err = b.openSession(ctx, project, "clawdline-root-test3", "claude", "", []string{b.Dir})
+	opened, err = b.openSession(ctx, project, "clawdline-root-test3", "claude", "", "", []string{b.Dir})
 	if err != nil {
 		t.Fatal(err)
 	}

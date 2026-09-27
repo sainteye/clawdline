@@ -409,6 +409,8 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// When this row last moved, from this daemon: the list's order no
 		// longer depends on what any one browser happened to have watched.
 		Activity: wireActivity(item.Activity),
+		// Read back from the process's command line; absent for none.
+		Persona: item.Persona,
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
 

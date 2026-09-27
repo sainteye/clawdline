@@ -105,6 +105,7 @@
       "additionalProperties": false,
       "required": ["backend", "closeability", "evidence", "id", "isClaude", "state", "work_state"],
       "properties": {
+        "persona": { "description": "The built-in persona (GET /v1/personas) this session was launched as, read back from its process command line; absent for none, and absent on a row with no process reading.", "type": "string" },
         "activity": { "$ref": "#/$defs/SessionActivity" },
 		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
 		"agents_reading": { "$ref": "#/$defs/SessionAgentReading" },

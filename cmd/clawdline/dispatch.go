@@ -14,6 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
 // `clawdline dispatch`: an owned child in one command, the four steps of guide
@@ -70,6 +72,7 @@ func (l *listFlag) Set(v string) error {
 type dispatchOptions struct {
 	Title, ProjectDir, Assistant, Isolation, PermissionMode string
 	Kind, Model, WorkID, Label, Conversation, RootAssistant string
+	Persona                                                 string
 	Claims                                                  []string
 	ClaimsGiven                                             bool
 	Deliverables                                            []string
@@ -103,6 +106,7 @@ func dispatchCommand(args []string) {
 	fs.StringVar(&o.Kind, "kind", "", "optional")
 	fs.Var(&deliverables, "deliverable", "a path the child delivers; repeatable")
 	fs.StringVar(&o.Model, "model", "", "optional model override")
+	fs.StringVar(&o.Persona, "persona", "", "a built-in persona to launch the child as (none by default)")
 	fs.StringVar(&o.WorkID, "work-id", "", "the board item this serves (a UUID)")
 	fs.StringVar(&o.Label, "label", "", "this root's label on screen")
 	instructionsFile := fs.String("instructions-file", "", "the brief (default: stdin)")
@@ -137,7 +141,7 @@ func dispatchCommand(args []string) {
 func dispatchUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
 		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
-		"[--kind k] [--deliverable p …] [--model m] [--work-id uuid] [--label l] "+
+		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid] [--label l] "+
 		"[--instructions-file f | instructions on stdin] [--conversation id] [--port n] [--json]")
 	fmt.Fprintln(os.Stderr, "  dispatches an owned child: writes task.json, reads the inventory, posts the task")
 	os.Exit(2)
@@ -179,6 +183,12 @@ func checkDispatchFlags(stderr io.Writer, o dispatchOptions) int {
 	}
 	if !o.ClaimsGiven {
 		return dispatchRefusal(stderr, "--claims is required: the relative paths the child may write (--claims '' for none).")
+	}
+	if o.Persona != "" {
+		if _, ok := persona.Known(o.Persona); !ok {
+			return dispatchRefusal(stderr, "--persona %q is not a persona this build has; it has %s.",
+				o.Persona, strings.Join(persona.IDs(), ", "))
+		}
 	}
 	return 0
 }
@@ -405,6 +415,9 @@ func taskFile(id string, o dispatchOptions, conversation, rootAssistant string) 
 	}
 	if o.Model != "" {
 		task["model"] = o.Model
+	}
+	if o.Persona != "" {
+		task["persona"] = o.Persona
 	}
 	if o.WorkID != "" {
 		task["work_id"] = o.WorkID

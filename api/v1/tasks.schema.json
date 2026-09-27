@@ -73,6 +73,7 @@
       "additionalProperties": false,
       "required": ["assistant", "claims", "claims_declared", "created", "created_at", "depth", "dir", "id", "kind", "permission", "project_dir", "state", "task_id", "title"],
       "properties": {
+        "persona": { "description": "The built-in persona the child was launched as (task.json `persona`, GET /v1/personas); absent for none.", "type": "string" },
         "artifacts": { "type": "array", "items": { "type": "string" } },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
         "attachSession": { "type": "string" },

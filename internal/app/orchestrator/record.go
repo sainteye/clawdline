@@ -357,6 +357,10 @@ type Record struct {
 	// session afterwards, and a task list that cannot say it cannot answer why
 	// two runs of one brief cost differently.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// Persona is the built-in persona the child is launched as
+	// (internal/domain/persona), empty for none. No kind has a default: a
+	// child is given one only when its brief names it.
+	Persona string `json:"persona,omitempty"`
 	// AutoCompactRequested is task.json's `auto_compact_window` as admitted:
 	// nil when the brief said nothing and the machine's setting decides, 0
 	// when it said null, otherwise the window it asked for (compact.go).
