@@ -19,6 +19,45 @@
         "label": { "type": "string" }
       }
     },
+    "ProjectIconSetup": {
+      "description": "Where this Project's icon comes from. `generated` is the stable path-derived fallback, not a configured identity.",
+      "type": "string",
+      "enum": ["mirrored", "override", "registry", "generated"]
+    },
+    "ProjectDeploySetup": {
+      "description": "Whether local workflow-status evidence is connected. This reports configuration, separately from the current run's outcome.",
+      "type": "string",
+      "enum": ["ready", "missing", "attention", "not_applicable"]
+    },
+    "ProjectDeployActivity": {
+      "description": "The current deploy evidence, when a producer has written one. `idle` includes a configured producer with no run worth drawing.",
+      "type": "string",
+      "enum": ["idle", "running", "succeeded", "failed", "unknown"]
+    },
+    "ProjectServerSetup": {
+      "description": "Whether a readable .devstack.json declares at least one server. This is static configuration; it does not probe or start anything.",
+      "type": "string",
+      "enum": ["ready", "missing", "empty", "attention"]
+    },
+    "ProjectSyncSetup": {
+      "description": "Whether an origin repository gives this checkout an identity that another machine can match.",
+      "type": "string",
+      "enum": ["ready", "missing"]
+    },
+    "ProjectSetup": {
+      "description": "Cheap, local-only configuration evidence for a Project. It executes no repository command, probes no port and reaches no network.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["icon", "deploy", "deploy_activity", "servers", "server_count", "sync"],
+      "properties": {
+        "icon": { "$ref": "#/$defs/ProjectIconSetup" },
+        "deploy": { "$ref": "#/$defs/ProjectDeploySetup" },
+        "deploy_activity": { "$ref": "#/$defs/ProjectDeployActivity" },
+        "servers": { "$ref": "#/$defs/ProjectServerSetup" },
+        "server_count": { "type": "integer", "minimum": 0 },
+        "sync": { "$ref": "#/$defs/ProjectSyncSetup" }
+      }
+    },
     "StartPlace": {
       "description": "One directory a session can be started in. `id` is sixteen hex characters of the path's SHA-256 and is the only part a client sends back; `path` is here so two projects with one name can be told apart.",
       "type": "object",
@@ -30,6 +69,7 @@
         "id": { "type": "string" },
         "label": { "type": "string" },
         "path": { "type": "string" },
+        "setup": { "$ref": "#/$defs/ProjectSetup" },
         "repo": {
           "description": "The repository this place's checkout clones, host/owner/name from its origin remote, or empty when it has none. Always sent, so a console can tell a machine whose projects have no origin from one whose Clawdline is too old to say. `id` is a digest of a path on this machine, so this is the name one project has on two machines; a schedule is moved between machines by it.",
           "type": "string"

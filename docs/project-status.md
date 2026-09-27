@@ -22,8 +22,9 @@ commands rather than reporting a state, and much the largest format. It is liste
 because this is the page somebody reads to find out what a project can say about itself, and a
 list that leaves one out is how a project ends up with six of seven and nobody noticing.
 
-An agent doing the wiring wants `connect.md` instead, which walks all seven in order
-and ends with how to check its own work. This page is the contract the two of them share.
+An agent doing the wiring should run `clawdline guide project`, which walks the visible Project,
+icon, progress and server layers in order and ends with how to check its own work. This page is the
+contract the two of them share.
 
 Clawdline **only reads** them. Something else has to keep them current, and that something can be
 a cron job, a git hook, a shell one-liner, the test script itself, or
@@ -443,8 +444,8 @@ taking the time**, and it is the one with a helper: `clawdline-progress run --la
 Writing it by hand is three lines at the top of the script, one at each phase boundary, and traps on
 `EXIT`, `INT` and `TERM` that each `exit` rather than return — so an interrupted run writes `fail`
 instead of a tick, and instead of leaving `running` behind for the staleness rule to clear up
-fifteen minutes later. `connect.md` has both, and the sketch in
-full.
+fifteen minutes later. `clawdline guide project` carries the setup sequence; this page carries the
+full file contract.
 
 If you would rather not write any of this yourself,
 [claude-bestiary](https://github.com/sainteye/claude-bestiary) already does: it keeps these files

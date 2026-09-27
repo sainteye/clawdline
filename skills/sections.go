@@ -23,7 +23,7 @@ import (
 
 // section is one printable part: a name, and the heading that opens it in
 // each guide. Headings are matched by their order in the file: both guides
-// carry the same sixteen, and TestBothGuidesHaveTheSameSections holds them to
+// carry the same seventeen, and TestBothGuidesHaveTheSameSections holds them to
 // it.
 type section struct {
 	Name    string
@@ -38,6 +38,7 @@ var sections = []section{
 	{"roles", "root or child", true},
 	{"connect", "reaching the daemon, and the commands", true},
 	{"cloud", "pairing a Cloud browser", false},
+	{"project", "setting up a Project's name, icon, progress and servers", false},
 	{"inventory", "before you dispatch: read what is already there", false},
 	{"dispatch", "dispatching an owned child", false},
 	{"running", "while a child runs, and when it finishes", false},

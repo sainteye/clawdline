@@ -163,6 +163,58 @@ upstream_unreachable` names the address that did not answer. Neither is an answe
 daemon. Before 2026-09-19 the forwarding was on by default and went to the Swift app on 7717, so a
 note written then will say an unowned route reaches that app; it does not.
 
+### Set up a Project's Clawdline display
+
+Use this section when the person asks you to make the Project you are working in legible in
+Clawdline. The outcome is not “some files exist”; it is that the Project has a truthful name and
+mark, long-running work can report progress, and its development servers can be seen without
+Clawdline starting them.
+
+Start by reading this repository's instructions, README, deploy/build scripts and existing process
+manager configuration. Preserve the commands the Project already uses. Do not add a second deploy
+path or process supervisor merely for Clawdline, and do not start, stop, restart or deploy anything
+unless the person asked for that operational change. Configuration and an actual deployment are
+different work.
+
+Work through these four checks, skipping a check only when it genuinely does not apply:
+
+1. **Project.** Run `clawdline project list`. If this checkout is absent, add its repository root
+   with `clawdline project add <absolute-root>` and list again. This records a place from which a
+   Session may start; it does not change the repository.
+2. **Name and icon.** Clawdline derives a stable icon when none is configured. If the person wants
+   a deliberate name or pixel mark, preserve every other entry in `~/.claude/project-icons.json`
+   and edit only the longest-containing path for this Project. The format is documented in the
+   Clawdline repository's `docs/project-status.md`; the Projects page can also copy an existing
+   resolved icon without hand-editing JSON. A global user file is not repository content: show the
+   exact proposed entry before changing it when the request did not already authorize that edit.
+3. **Deploy and long work.** Clawdline only reads status receipts; it never runs a deploy. For a
+   GitHub repository, a deploy receipt is
+   `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json`, where owner and repo come from `origin`.
+   The producer that already knows the run writes `state` (`running`, `ok`, `fail` or `none`),
+   `label`, `url`, `started_at` and a measured `typical_seconds`, atomically. For a local build,
+   test, import or deploy command, use `clawdline-progress run --label <label> -- <command>` when
+   that helper exists, or implement the `run-<path>.json` contract from `docs/project-status.md`.
+   Never invent a duration; omit it until it has been measured. A killed producer must not leave a
+   permanent running state.
+4. **Development servers.** Add or update `.devstack.json` at the nearest deployable root. The Go
+   daemon currently reads the declared `processes` and probes their loopback `port` or opens their
+   `url`; it does **not** execute `status`, `up`, `down`, `restart` or `logs` commands from the
+   browser. Prefer the smallest truthful Tier 0 file, for example:
+
+   ```json
+   {"version":1,"name":"myapp","processes":[{"name":"api","port":8002},{"name":"web","port":3001}]}
+   ```
+
+   A process with no stable port or URL should not be guessed into the file. Do not probe or
+   restart production while verifying a development declaration.
+
+Verify each changed layer separately: `clawdline project list` names the checkout; every JSON file
+parses; the repository's own tests for changed scripts pass; `GET /v1/devstacks` shows declared
+servers as running, stopped or unknown rather than silently omitting them; and a Session in the
+Project shows a fresh progress/deploy receipt. If a read is unavailable, malformed or stale, say
+which one and leave it unknown — never report absence as success. Finish by listing what was
+configured, what was intentionally not applicable, and any user-owned file changed outside git.
+
 ## 3. Before you dispatch: read what is already there
 
 Another session's work may already be doing your job, and it is invisible from the shared tree: a

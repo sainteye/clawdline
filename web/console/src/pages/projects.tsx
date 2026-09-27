@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom"
 import { IconCopy } from "./projects/IconCopy.js"
+import { ProjectSetup } from "./projects/ProjectSetup.js"
 import { ProjectSync } from "./projects/ProjectSync.js"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
@@ -151,6 +152,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       dangerouslySetInnerHTML={{ __html: sectionMarkup }}
     />
     {iconHost && createPortal(<>
+      <ProjectSetup shown={shown} />
       <ProjectSync shown={shown} changed={() => { void page.current?.enter() }} />
       <IconCopy shown={shown} changed={() => { void page.current?.enter() }} />
     </>, iconHost)}

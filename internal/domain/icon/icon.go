@@ -189,6 +189,18 @@ type Registry struct {
 	projects map[string]entry
 }
 
+// Source says where a project's mark came from. Generated is the stable
+// fallback: it keeps a Project recognisable, but it is also the honest signal
+// that nobody has chosen or synced that Project's identity yet.
+type Source string
+
+const (
+	SourceMirrored  Source = "mirrored"
+	SourceOverride  Source = "override"
+	SourceRegistry  Source = "registry"
+	SourceGenerated Source = "generated"
+)
+
 func NewRegistry() *Registry {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -236,18 +248,26 @@ func (r *Registry) load() map[string]entry {
 // the project is `shop` — and `shop/backend` may have a row of its own,
 // which should win for anything inside it.
 func (r *Registry) For(cwd string) Grid {
+	grid, _ := r.Resolve(cwd)
+	return grid
+}
+
+// Resolve returns both the mark and the evidence that selected it. Keeping
+// this decision beside For prevents the Projects health view from guessing
+// that every deterministic fallback was a deliberately configured icon.
+func (r *Registry) Resolve(cwd string) (Grid, Source) {
 	if cwd == "" {
-		return Grid{Cells: [][]*string{}}
+		return Grid{Cells: [][]*string{}}, SourceGenerated
 	}
 	if r.mirror != nil {
 		if g, _, ok := r.mirror(cwd); ok {
-			return g
+			return g, SourceMirrored
 		}
 	}
 	if g, ok := r.override(cwd); ok {
-		return g
+		return g, SourceOverride
 	}
-	return r.legacyFor(cwd)
+	return r.legacyResolve(cwd)
 }
 
 // SetMirror attaches the mirrored settings lookup. Set once, before serving.
@@ -263,8 +283,13 @@ func (r *Registry) Mirrored(cwd string) bool {
 }
 
 func (r *Registry) legacyFor(cwd string) Grid {
+	grid, _ := r.legacyResolve(cwd)
+	return grid
+}
+
+func (r *Registry) legacyResolve(cwd string) (Grid, Source) {
 	if cwd == "" {
-		return Grid{Cells: [][]*string{}}
+		return Grid{Cells: [][]*string{}}, SourceGenerated
 	}
 	best := ""
 	var bestRow entry
@@ -277,12 +302,12 @@ func (r *Registry) legacyFor(cwd string) Grid {
 	}
 	if best != "" {
 		if g, ok := fromEntry(bestRow); ok {
-			return g
+			return g, SourceRegistry
 		}
 	}
 	// No registry, or a project it has never seen. The path still decides the
 	// colour, so it is at least stable from one launch to the next.
-	return creatureFromSeed(StableHash(cwd))
+	return creatureFromSeed(StableHash(cwd)), SourceGenerated
 }
 
 // Label returns the name the registry gives a directory, if it gives one.

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Both guides cut into the same sixteen parts, and the parts put back
+// Both guides cut into the same seventeen parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts
 // must not lose a sentence that printing it whole carried.
 func TestThePartsAreTheWholeGuide(t *testing.T) {
@@ -40,7 +40,7 @@ func TestBothGuidesHaveTheSameSections(t *testing.T) {
 	want := map[string]string{"swift": "## 0.", "roles": "## 1.", "connect": "## 2.", "inventory": "## 3.",
 		"dispatch": "## 4.", "running": "## 5.", "landing": "## 6.", "report": "## 7.", "send": "## 8.",
 		"notify": "## 9.", "board": "## 10.", "coordination": "## 11.", "refused": "## 12.",
-		"cloud": "### ", "schedule": "### "}
+		"cloud": "### ", "project": "### ", "schedule": "### "}
 	for _, lang := range Topics() {
 		for _, name := range SectionNames() {
 			text, err := Section(lang, name)
