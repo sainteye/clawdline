@@ -291,7 +291,7 @@ test("the Board puts each open question inside the item that explains it", () =>
   assert.match(source, /decisionsForWorkItem\(decisions, item\.id\)/)
   assert.match(source, /<WorkItemDecisions decisions=\{decisions\}/)
   assert.match(source, /answerDecision\(decision\.id, option\.id\)/)
-  assert.match(source, /未連結的舊問題/)
+  assert.doesNotMatch(source, /未連結的舊問題/)
   assert.match(styles, /\.work-item-decisions/)
 })
 
