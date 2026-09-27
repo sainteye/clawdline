@@ -54,6 +54,8 @@ var Order = []string{
 	"code-reviewer", "reality-checker", "security", "technical-writer",
 	"seo", "content-writer", "ai-search", "social-media",
 	"instagram", "email", "growth", "pr",
+	"ui-designer", "ux-architect", "brand-guardian", "ui-finish-gate", "image-prompt",
+	"pricing", "customer-success", "support", "analytics", "devrel", "privacy",
 }
 
 // Teams are the closed set a persona belongs to, in the order the console's

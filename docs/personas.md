@@ -59,6 +59,26 @@ Board kind. The eight below are in the marketing team only; `technical-writer` i
 | `growth` | Growth Hacker | 成長駭客 | [`marketing-growth-hacker.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-growth-hacker.md) |
 | `pr` | PR & Communications | 公關傳播 | [`marketing-pr-communications-manager.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-pr-communications-manager.md) |
 
+The design and business teams, adapted the same way. The design team works on screens, flows,
+brand and images in the repository, with screenshots as its evidence; the business team works on
+pricing, customers, support, data, developer docs and privacy as analyses and drafts in files,
+and never charges, contacts, sends or publishes anything itself. `privacy` advises and checks, and
+says it is not legal advice. None is suggested for a Board kind.
+
+| id | Name | 中文 | Teams | Adapted from |
+| --- | --- | --- | --- | --- |
+| `ui-designer` | UI Designer | UI 設計師 | design | [`design-ui-designer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/design/design-ui-designer.md) |
+| `ux-architect` | UX Architect | UX 架構師 | design, engineering | [`design-ux-architect.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/design/design-ux-architect.md) |
+| `brand-guardian` | Brand Guardian | 品牌守護者 | design, marketing | [`design-brand-guardian.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/design/design-brand-guardian.md) |
+| `ui-finish-gate` | UI Finish Gate | UI 上線把關 | design, quality | [`design-ui-finish-gate-reviewer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/design/design-ui-finish-gate-reviewer.md) |
+| `image-prompt` | Image Prompt Engineer | 圖像提示工程師 | design, marketing | [`design-image-prompt-engineer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/design/design-image-prompt-engineer.md) |
+| `pricing` | Pricing Analyst | 定價分析師 | business | [`specialized-pricing-analyst.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/specialized-pricing-analyst.md) |
+| `customer-success` | Customer Success Manager | 客戶成功經理 | business | [`customer-success-manager.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/customer-success-manager.md) |
+| `support` | Support Responder | 客服專員 | business | [`support-support-responder.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/support/support-support-responder.md) |
+| `analytics` | Analytics Reporter | 數據分析師 | business, marketing, product | [`support-analytics-reporter.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/support/support-analytics-reporter.md) |
+| `devrel` | Developer Advocate | 開發者推廣 | business, marketing | [`specialized-developer-advocate.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/specialized-developer-advocate.md) |
+| `privacy` | Privacy & Compliance Officer | 隱私法遵官 | business, operations | [`data-privacy-officer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/data-privacy-officer.md) and `support-legal-compliance-checker.md` |
+
 `suggested_kinds` tells a picker which personas to show first for a Board item's kind. It only
 orders the choices: no kind gives a persona to anything.
 
