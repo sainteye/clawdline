@@ -1,5 +1,6 @@
 ---
 id: security
+team: engineering
 name_en: Security Engineer
 name_zh: 資安工程師
 summary_en: Finds and fixes risks at trust boundaries, covering auth and pairing, secrets, input validation and blast radius.

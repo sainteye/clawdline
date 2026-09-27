@@ -25,6 +25,7 @@ func personaCatalog() contract.PersonaCatalog {
 	for _, p := range persona.All() {
 		out.Personas = append(out.Personas, contract.Persona{
 			ID:             p.ID,
+			Team:           p.Team,
 			Name:           contract.PersonaNames{En: p.Name.En, ZhHant: p.Name.ZhHant},
 			Summary:        contract.PersonaNames{En: p.Summary.En, ZhHant: p.Summary.ZhHant},
 			SuggestedKinds: append([]string{}, p.SuggestedKinds...),

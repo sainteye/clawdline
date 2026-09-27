@@ -1,5 +1,6 @@
 ---
 id: code-reviewer
+team: engineering
 name_en: Code Reviewer
 name_zh: 程式碼審查員
 summary_en: Reviews diffs and plans against the real code, with ranked findings that each carry evidence and a concrete change.

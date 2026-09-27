@@ -12,11 +12,26 @@ func TestTheCatalogLoads(t *testing.T) {
 		t.Fatalf("the catalog does not load: %v", loadErr)
 	}
 	want := []string{"architect", "backend", "frontend", "minimal-change",
-		"code-reviewer", "reality-checker", "security", "technical-writer"}
+		"code-reviewer", "reality-checker", "security", "technical-writer",
+		"seo", "content-writer", "ai-search", "social-media",
+		"instagram", "email", "growth", "pr"}
 	if got := strings.Join(IDs(), ","); got != strings.Join(want, ",") {
 		t.Fatalf("catalog order %s, want %s", got, strings.Join(want, ","))
 	}
+	if len(All()) != 16 {
+		t.Fatalf("%d personas, want 16", len(All()))
+	}
+	perTeam := map[string]int{}
+	seen := map[string]bool{}
 	for _, p := range All() {
+		if seen[p.ID] {
+			t.Errorf("%s twice", p.ID)
+		}
+		seen[p.ID] = true
+		if !knownTeam(p.Team) {
+			t.Errorf("%s has team %q", p.ID, p.Team)
+		}
+		perTeam[p.Team]++
 		raw, err := files.ReadFile("catalog/" + FileName(p.ID))
 		if err != nil {
 			t.Fatal(err)
@@ -46,6 +61,9 @@ func TestTheCatalogLoads(t *testing.T) {
 			}
 		}
 	}
+	if perTeam["engineering"] != 8 || perTeam["marketing"] != 8 {
+		t.Errorf("personas per team %v, want 8 and 8", perTeam)
+	}
 	if len(All()) > MaxPersonas {
 		t.Errorf("%d personas; at most %d", len(All()), MaxPersonas)
 	}
@@ -68,7 +86,7 @@ func TestThePreambleSaysWhatItNeverOverrides(t *testing.T) {
 }
 
 func TestParseRefusesAMalformedFile(t *testing.T) {
-	good := "---\nid: x\nname_en: X\nname_zh: 叉\nsummary_en: s\nsummary_zh: 說\nsuggested_kinds: [epic]\n" +
+	good := "---\nid: x\nteam: marketing\nname_en: X\nname_zh: 叉\nsummary_en: s\nsummary_zh: 說\nsuggested_kinds: [epic]\n" +
 		"source: " + UpstreamRepository + "/blob/" + UpstreamCommit + "/a.md\n---\n# X\nbody\n"
 	if _, err := parse(good); err != nil {
 		t.Fatalf("the control file is refused: %v", err)
@@ -78,6 +96,9 @@ func TestParseRefusesAMalformedFile(t *testing.T) {
 		"unclosed":       "---\nid: x\n",
 		"missing key":    strings.Replace(good, "name_zh: 叉\n", "", 1),
 		"extra key":      strings.Replace(good, "id: x\n", "id: x\ncolour: red\n", 1),
+		"unknown team":   strings.Replace(good, "team: marketing", "team: sales", 1),
+		"empty team":     strings.Replace(good, "team: marketing", "team:", 1),
+		"no team":        strings.Replace(good, "team: marketing\n", "", 1),
 		"unknown kind":   strings.Replace(good, "[epic]", "[epic, chore]", 1),
 		"not a list":     strings.Replace(good, "[epic]", "epic", 1),
 		"bad id":         strings.Replace(good, "id: x", "id: X_1", 1),

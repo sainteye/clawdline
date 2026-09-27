@@ -15,7 +15,9 @@ type Icon struct {
 
 // Every bot is the same eight-by-seven body — antenna, square head, two eyes —
 // told apart by its colour and one accessory: a hard hat, server stripes, a
-// screen face, a needle, glasses, a ticked chest, a shield, a pen.
+// screen face, a needle, glasses, a ticked chest, a shield, a pen; and for the
+// marketing team a magnifier, a quill, a sparkle, a speech bubble, a camera,
+// an envelope, an up-arrow and a megaphone.
 const (
 	iconWidth  = 8
 	iconHeight = 7
@@ -142,5 +144,85 @@ var icons = map[string]art{
 			".BBBBBB.",
 			".BWWWWB.",
 			"..B..B..",
+		}},
+	"seo": {accent: 'B', palette: map[byte]string{'B': "#d9822b", 'o': ink, 'G': "#9fd8ff", 'h': "#5a3a1a"},
+		rows: [iconHeight]string{
+			"....GGG.",
+			"...G..G.",
+			".BBBGGGB",
+			".BoBBhoB",
+			".BBBhBB.",
+			".BBhBBB.",
+			"..B..B..",
+		}},
+	"content-writer": {accent: 'B', palette: map[byte]string{'B': "#c2566b", 'o': ink, 'Q': "#f4efe3", 'n': ink, 'W': "#f4efe3", 'l': "#8c8c99"},
+		rows: [iconHeight]string{
+			"......QQ",
+			".....Qn.",
+			".BBBBnB.",
+			".BoBBoB.",
+			".BBBBBB.",
+			".BWlWlB.",
+			"..B..B..",
+		}},
+	"ai-search": {accent: 'B', palette: map[byte]string{'B': "#4f5bd5", 'o': "#c8f7ff", 'S': "#ffe066"},
+		rows: [iconHeight]string{
+			"S.....S.",
+			".S...SSS",
+			".BBBBBS.",
+			".BoBBoB.",
+			".BBBBBB.",
+			".BBBBBB.",
+			"..B..B..",
+		}},
+	"social-media": {accent: 'B', palette: map[byte]string{'B': "#1f9bd1", 'o': ink, 'W': "#f4efe3", 'd': ink},
+		rows: [iconHeight]string{
+			"..WWWWW.",
+			"..WdWdW.",
+			".BBBWWB.",
+			".BoBBoB.",
+			".BBBBBB.",
+			".BBBBBB.",
+			"..B..B..",
+		}},
+	"instagram": {accent: 'B', palette: map[byte]string{'B': "#d6307a", 'o': ink, 'C': "#2b2b33", 'L': "#ffb347", 'A': "#ffd6e7"},
+		rows: [iconHeight]string{
+			"...AA...",
+			"...BB...",
+			".BBBBBB.",
+			".BoBBoB.",
+			".CCCCCC.",
+			".CCLLCC.",
+			"..B..B..",
+		}},
+	"email": {accent: 'B', palette: map[byte]string{'B': "#e0a526", 'o': ink, 'W': "#f4efe3", 'v': "#b0503b", 'A': "#fff1c7"},
+		rows: [iconHeight]string{
+			"...AA...",
+			"...BB...",
+			".BBBBBB.",
+			".BoBBoB.",
+			".WWWWWW.",
+			".WvWWvW.",
+			".WWvvWW.",
+		}},
+	"growth": {accent: 'B', palette: map[byte]string{'B': "#5aa832", 'o': ink, 'U': "#e5484d"},
+		rows: [iconHeight]string{
+			"......U.",
+			".....UUU",
+			".BBBBBU.",
+			".BoBBoU.",
+			".BBBBBB.",
+			".BBBBBB.",
+			"..B..B..",
+		}},
+	"pr": {accent: 'B', palette: map[byte]string{'B': "#8a5cc2", 'o': ink, 'M': "#e8ecf2", 'm': "#9aa3b2", 'A': "#ffd166"},
+		rows: [iconHeight]string{
+			"...AA...",
+			"...BB...",
+			".BBBBBB.",
+			".BoBBoBM",
+			".BBBBBMM",
+			".BBBBmMM",
+			"..B..B.M",
 		}},
 }
