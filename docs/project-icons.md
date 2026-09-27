@@ -12,6 +12,8 @@ logos are separate assets, outside the project registry.
    path. A copied project mark also applies to sessions in its subdirectories.
 2. The longest containing entry in `~/.claude/project-icons.json`. This compatibility input stays
    read-only. It supports palette/row artwork and the original hue/tone/shape creature generator.
+   An entry at the home directory names the home directory alone, never a folder under it, so a
+   project without its own entry is not labelled or drawn as the home directory.
 3. The deterministic creature generated from the working directory's FNV-1a hash.
 
 A local path is not a cross-machine project identity. Two checkouts can have different paths;
