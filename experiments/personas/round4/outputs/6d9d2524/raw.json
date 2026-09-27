@@ -1,0 +1,14 @@
+{
+  "id": "6d9d2524",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 373712,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 367171,
+    "num_turns": 47,
+    "total_cost_usd": 0.7808144,
+    "subtype": "success",
+    "is_error": false
+  }
+}

@@ -1,0 +1,633 @@
+{
+  "environment": {
+    "date": "2026-09-27T10:27:03.966Z",
+    "claude_cli": "2.1.283 (Claude Code)",
+    "model": "claude-sonnet-5",
+    "go": "go version go1.27.1 darwin/arm64",
+    "node": "v24.1.0",
+    "platform": "darwin 24.6.0 arm64",
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "sandbox": {
+      "sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": true,
+        "allowUnsandboxedCommands": false,
+        "network": {
+          "allowedDomains": [
+            "localhost",
+            "127.0.0.1"
+          ],
+          "allowLocalBinding": true
+        }
+      }
+    },
+    "persona_sha256": {
+      "performance": "9a98733d70bb50866e5ffcd5a08b572a9ba0bd576f15132a6830b1236213959f",
+      "security": "30b458cb296544c5f2171cf19fe3e0a101501e52b153bbdc797baf34913724fe"
+    },
+    "persona_catalog_commit": "af9e493e"
+  },
+  "total_cost_usd": {
+    "pilot_runs": 0.529,
+    "runs": 8.605,
+    "grading": 0,
+    "total": 9.134
+  },
+  "table": {
+    "performance": {
+      "none-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "1afb6eb3",
+            "rep": 1,
+            "primary": 273.74,
+            "cost": 0.17221560000000005,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 7.8,
+              "speedup": 273.74,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 7,
+              "edits": 2,
+              "curl_calls": 2,
+              "started_server": 1,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          },
+          {
+            "id": "6ccd3786",
+            "rep": 2,
+            "primary": 158.16,
+            "cost": 0.2723436,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 13.5,
+              "speedup": 158.16,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 11,
+              "edits": 3,
+              "curl_calls": 5,
+              "started_server": 0,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          }
+        ],
+        "mean": {
+          "primary": 215.95,
+          "cost": 0.222,
+          "bash_calls": 9,
+          "edits": 2.5,
+          "curl_calls": 3.5,
+          "started_server": 0.5,
+          "measured": 1,
+          "measured_before_first_edit": 1
+        }
+      },
+      "persona-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "e9a60f10",
+            "rep": 1,
+            "primary": 248.28,
+            "cost": 0.44206559999999995,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 8.6,
+              "speedup": 248.28,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 25,
+              "edits": 2,
+              "curl_calls": 7,
+              "started_server": 0,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          },
+          {
+            "id": "064a066b",
+            "rep": 2,
+            "primary": 277.3,
+            "cost": 0.5410839999999999,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 7.7,
+              "speedup": 277.3,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 26,
+              "edits": 2,
+              "curl_calls": 5,
+              "started_server": 0,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          }
+        ],
+        "mean": {
+          "primary": 262.79,
+          "cost": 0.492,
+          "bash_calls": 25.5,
+          "edits": 2,
+          "curl_calls": 6,
+          "started_server": 0,
+          "measured": 1,
+          "measured_before_first_edit": 1
+        }
+      },
+      "none-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "ef07f58e",
+            "rep": 1,
+            "primary": 224.76,
+            "cost": 0.3692546,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 9.5,
+              "speedup": 224.76,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 18,
+              "edits": 2,
+              "curl_calls": 7,
+              "started_server": 0,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          },
+          {
+            "id": "8a884ffb",
+            "rep": 2,
+            "primary": 229.59,
+            "cost": 0.4930895999999999,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 9.3,
+              "speedup": 229.59,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 25,
+              "edits": 2,
+              "curl_calls": 8,
+              "started_server": 1,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          }
+        ],
+        "mean": {
+          "primary": 227.175,
+          "cost": 0.431,
+          "bash_calls": 21.5,
+          "edits": 2,
+          "curl_calls": 7.5,
+          "started_server": 0.5,
+          "measured": 1,
+          "measured_before_first_edit": 1
+        }
+      },
+      "persona-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "ccde8fe9",
+            "rep": 1,
+            "primary": 217.88,
+            "cost": 0.9088593999999999,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 9.8,
+              "speedup": 217.88,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 35,
+              "edits": 3,
+              "curl_calls": 12,
+              "started_server": 1,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          },
+          {
+            "id": "6d9d2524",
+            "rep": 2,
+            "primary": 211.41,
+            "cost": 0.7808144,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "golden": true,
+              "heldout_ms": 10.1,
+              "speedup": 211.41,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 32,
+              "edits": 6,
+              "curl_calls": 4,
+              "started_server": 1,
+              "measured": 1,
+              "measured_before_first_edit": 1
+            }
+          }
+        ],
+        "mean": {
+          "primary": 214.645,
+          "cost": 0.845,
+          "bash_calls": 33.5,
+          "edits": 4.5,
+          "curl_calls": 8,
+          "started_server": 1,
+          "measured": 1,
+          "measured_before_first_edit": 1
+        }
+      },
+      "effects": {
+        "unit": "ratio of mean speedups",
+        "persona_given_vague": 1.22,
+        "persona_given_brief": 0.94,
+        "brief_given_none": 1.05,
+        "brief_given_persona": 0.82,
+        "both_vs_neither": 0.99
+      }
+    },
+    "security": {
+      "none-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "931cc3e0",
+            "rep": 1,
+            "primary": 5,
+            "cost": 0.2992780000000001,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": false,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": true
+              },
+              "blocked_n": 5,
+              "score": 5,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 17,
+              "edits": 5,
+              "curl_calls": 5,
+              "started_server": 1,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          },
+          {
+            "id": "30141196",
+            "rep": 2,
+            "primary": 6,
+            "cost": 0.34653680000000003,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": true
+              },
+              "blocked_n": 6,
+              "score": 6,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 10,
+              "edits": 8,
+              "curl_calls": 0,
+              "started_server": 0,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          }
+        ],
+        "mean": {
+          "primary": 5.5,
+          "cost": 0.323,
+          "bash_calls": 13.5,
+          "edits": 6.5,
+          "curl_calls": 2.5,
+          "started_server": 0.5,
+          "measured": 0,
+          "measured_before_first_edit": 0
+        }
+      },
+      "persona-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "bbad47ec",
+            "rep": 1,
+            "primary": 6,
+            "cost": 0.4709012,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": true
+              },
+              "blocked_n": 6,
+              "score": 6,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 10,
+              "edits": 11,
+              "curl_calls": 0,
+              "started_server": 0,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          },
+          {
+            "id": "15c3e7db",
+            "rep": 2,
+            "primary": 6,
+            "cost": 0.6660105999999999,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": true
+              },
+              "blocked_n": 6,
+              "score": 6,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 12,
+              "edits": 10,
+              "curl_calls": 0,
+              "started_server": 0,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          }
+        ],
+        "mean": {
+          "primary": 6,
+          "cost": 0.568,
+          "bash_calls": 11,
+          "edits": 10.5,
+          "curl_calls": 0,
+          "started_server": 0,
+          "measured": 0,
+          "measured_before_first_edit": 0
+        }
+      },
+      "none-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "f259c16b",
+            "rep": 1,
+            "primary": 5,
+            "cost": 0.6103728,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": false
+              },
+              "blocked_n": 5,
+              "score": 5,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 23,
+              "edits": 7,
+              "curl_calls": 15,
+              "started_server": 1,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          },
+          {
+            "id": "04391ec9",
+            "rep": 2,
+            "primary": 5,
+            "cost": 0.4894362,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": false
+              },
+              "blocked_n": 5,
+              "score": 5,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 20,
+              "edits": 5,
+              "curl_calls": 9,
+              "started_server": 0,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          }
+        ],
+        "mean": {
+          "primary": 5,
+          "cost": 0.55,
+          "bash_calls": 21.5,
+          "edits": 6,
+          "curl_calls": 12,
+          "started_server": 0.5,
+          "measured": 0,
+          "measured_before_first_edit": 0
+        }
+      },
+      "persona-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "a1d4b499",
+            "rep": 1,
+            "primary": 5,
+            "cost": 0.7769522,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": false
+              },
+              "blocked_n": 5,
+              "score": 5,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 25,
+              "edits": 9,
+              "curl_calls": 9,
+              "started_server": 1,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          },
+          {
+            "id": "3f60d899",
+            "rep": 2,
+            "primary": 6,
+            "cost": 0.9658738000000002,
+            "score": {
+              "vet": true,
+              "own_tests": true,
+              "functional": {
+                "TestHeldoutFunc_OwnerFlow": true,
+                "TestHeldoutFunc_Admin": true,
+                "TestHeldoutFunc_ProfileAndFiles": true
+              },
+              "blocked": {
+                "S1": true,
+                "S2": true,
+                "S3": true,
+                "S4": true,
+                "S5": true,
+                "S6": true
+              },
+              "blocked_n": 6,
+              "score": 6,
+              "gate": true
+            },
+            "method": {
+              "bash_calls": 31,
+              "edits": 8,
+              "curl_calls": 20,
+              "started_server": 1,
+              "measured": 0,
+              "measured_before_first_edit": 0
+            }
+          }
+        ],
+        "mean": {
+          "primary": 5.5,
+          "cost": 0.871,
+          "bash_calls": 28,
+          "edits": 8.5,
+          "curl_calls": 14.5,
+          "started_server": 1,
+          "measured": 0,
+          "measured_before_first_edit": 0
+        }
+      },
+      "effects": {
+        "unit": "difference in mean exploits blocked",
+        "persona_given_vague": 0.5,
+        "persona_given_brief": 0.5,
+        "brief_given_none": -0.5,
+        "brief_given_persona": -0.5,
+        "both_vs_neither": 0
+      }
+    }
+  }
+}

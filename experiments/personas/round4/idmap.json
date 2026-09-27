@@ -1,0 +1,117 @@
+{
+  "seed": "persona-exp-2026-r4",
+  "runs": [
+    {
+      "id": "6ccd3786",
+      "order": 1,
+      "role": "performance",
+      "arm": "none-vague",
+      "rep": 2
+    },
+    {
+      "id": "a1d4b499",
+      "order": 2,
+      "role": "security",
+      "arm": "persona-brief",
+      "rep": 1
+    },
+    {
+      "id": "15c3e7db",
+      "order": 3,
+      "role": "security",
+      "arm": "persona-vague",
+      "rep": 2
+    },
+    {
+      "id": "30141196",
+      "order": 4,
+      "role": "security",
+      "arm": "none-vague",
+      "rep": 2
+    },
+    {
+      "id": "e9a60f10",
+      "order": 5,
+      "role": "performance",
+      "arm": "persona-vague",
+      "rep": 1
+    },
+    {
+      "id": "064a066b",
+      "order": 6,
+      "role": "performance",
+      "arm": "persona-vague",
+      "rep": 2
+    },
+    {
+      "id": "bbad47ec",
+      "order": 7,
+      "role": "security",
+      "arm": "persona-vague",
+      "rep": 1
+    },
+    {
+      "id": "1afb6eb3",
+      "order": 8,
+      "role": "performance",
+      "arm": "none-vague",
+      "rep": 1
+    },
+    {
+      "id": "f259c16b",
+      "order": 9,
+      "role": "security",
+      "arm": "none-brief",
+      "rep": 1
+    },
+    {
+      "id": "04391ec9",
+      "order": 10,
+      "role": "security",
+      "arm": "none-brief",
+      "rep": 2
+    },
+    {
+      "id": "ef07f58e",
+      "order": 11,
+      "role": "performance",
+      "arm": "none-brief",
+      "rep": 1
+    },
+    {
+      "id": "931cc3e0",
+      "order": 12,
+      "role": "security",
+      "arm": "none-vague",
+      "rep": 1
+    },
+    {
+      "id": "6d9d2524",
+      "order": 13,
+      "role": "performance",
+      "arm": "persona-brief",
+      "rep": 2
+    },
+    {
+      "id": "3f60d899",
+      "order": 14,
+      "role": "security",
+      "arm": "persona-brief",
+      "rep": 2
+    },
+    {
+      "id": "ccde8fe9",
+      "order": 15,
+      "role": "performance",
+      "arm": "persona-brief",
+      "rep": 1
+    },
+    {
+      "id": "8a884ffb",
+      "order": 16,
+      "role": "performance",
+      "arm": "none-brief",
+      "rep": 2
+    }
+  ]
+}

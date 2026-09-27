@@ -1,0 +1,14 @@
+{
+  "id": "30141196",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 187785,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 186469,
+    "num_turns": 25,
+    "total_cost_usd": 0.34653680000000003,
+    "subtype": "success",
+    "is_error": false
+  }
+}

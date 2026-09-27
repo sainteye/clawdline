@@ -27,14 +27,17 @@ n = 2 per arm is a demonstration, not proof. See "Threats to validity" in `resul
 | 1 | Four small fixtures, none vs right persona | No gain; the no-persona runs were at or near the ceiling | this directory: [`results.md`](results.md) |
 | 2 | Harder fixtures calibrated by pilots, a wrong-persona control, transcripts | No consistent effect: right better in accessibility, worse in minimal-change, no difference in code-reviewer and seo | [`round2/`](round2/README.md): [`results.md`](round2/results.md) |
 | 3 | Upstream setup: a separate verifier with tools (tests, server, curl, headless browser), 2×2 persona × structured brief | All 16 runs refused to pass and found 7–9/9 defects; no factor moved a primary metric (ceiling). The brief changed method; the evidence-collector persona alone gave no verdict | [`round3/`](round3/README.md): [`results.md`](round3/results.md) |
+| 4 | Maker tasks (performance, security) scored by held-out benchmark and exploit tests, 2×2 persona × brief | The none + vague pilots were already at the ceiling; no factor made a difference. The brief made security runs attack the running service, and its evidence rule made 3/4 brief runs skip a timing-unsafe compare fix | [`round4/`](round4/README.md): [`results.md`](round4/results.md) |
 
-**Combined headline:** across three rounds, a matching persona never reliably improved the
+**Combined headline:** across four rounds, a matching persona never reliably improved the
 result. Rounds 1–2 (one session, vague prompt, few tools): no gain in round 1, one role better and
-one worse in round 2. Round 3 (the upstream way: a separate verifier with real tools, persona ×
-structured brief): the plain verifier was already at the ceiling, so neither persona nor brief
-could show a gain; the brief changed how it verified, and one persona (evidence-collector) on its
-own withheld the verdict a merge gate needs. Personas reliably change style and usually cost.
-Every comparison is n = 2 per arm: directional, not significant.
+one worse in round 2. Rounds 3–4 (the upstream way: persona × structured brief, real tools, a
+verifier in round 3 and makers with held-out scores in round 4): the plain run was already at the
+ceiling, so neither persona nor brief nor both together could show a gain. The brief reliably
+changed the method (it started the service and used curl), and role instructions had side effects:
+the evidence-collector persona withheld a verdict, and the brief's evidence rule withheld a correct
+fix. Personas reliably change style and raise cost (≈2×; with the brief ≈3–4×). Every comparison
+is n = 2 per arm: directional, not significant.
 
 ## Design in one paragraph
 

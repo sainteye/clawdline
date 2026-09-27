@@ -1,0 +1,14 @@
+{
+  "id": "ef07f58e",
+  "ok": true,
+  "exit": 0,
+  "wall_ms": 199743,
+  "stderr": "",
+  "meta": {
+    "duration_ms": 198382,
+    "num_turns": 28,
+    "total_cost_usd": 0.3692546,
+    "subtype": "success",
+    "is_error": false
+  }
+}
