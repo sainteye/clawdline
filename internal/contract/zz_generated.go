@@ -1990,21 +1990,29 @@ type CatalogIngestion struct {
 	Status string `json:"status"`
 }
 
-// One Project in the Board store. `label`, `displayPath` and `icon` are present
-// only for a Project a start place resolves to (`isStartPoint`).
-// `activeItemCount` and `summaryCoverage` are absent: they are the Swift app's
-// progress projection, which this daemon does not restate, and an absent count
-// is drawn as unknown, never as zero.
+// One Project in the catalog. `label`, `displayPath` and `icon` are present
+// only for a Project a start place resolves to (`isStartPoint`). When the
+// current work-system summary was read, `itemCount` and `activeItemCount` are
+// its complete and open counts and `summaryCoverage` is complete. Otherwise
+// coverage is unknown and consumers ignore both numbers rather than drawing
+// zero.
 type CatalogProject struct {
-	DisplayPath  string `json:"displayPath,omitempty"`
-	Icon         *Icon  `json:"icon,omitempty"`
-	ID           string `json:"id"`
-	IsStartPoint bool   `json:"isStartPoint"`
+	// Open Work System v2 items in this Project.
+	ActiveItemCount int64  `json:"activeItemCount"`
+	DisplayPath     string `json:"displayPath,omitempty"`
+	Icon            *Icon  `json:"icon,omitempty"`
+	ID              string `json:"id"`
+	IsStartPoint    bool   `json:"isStartPoint"`
 
-	// Items the store files under this Project.
+	// Items the current work system files under this Project when its summary was
+	// read; otherwise the catalog's historical total.
 	ItemCount int64  `json:"itemCount"`
 	Label     string `json:"label,omitempty"`
 	Name      string `json:"name"`
+
+	// Complete when the item counts came from one successful current-store
+	// aggregation.
+	SummaryCoverage string `json:"summaryCoverage"`
 }
 
 type CatalogReadState struct {

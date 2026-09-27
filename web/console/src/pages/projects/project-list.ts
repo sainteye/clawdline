@@ -23,3 +23,21 @@ export function projectListWords(language: string): ProjectListWords {
 export function replaceSuffix(value: string, before: string, after: string): string {
   return value.endsWith(before) ? value.slice(0, -before.length) + after : value
 }
+
+/** Repeating the same unknown badge on every row adds no comparison value. */
+export function activityUnknownScope(rows: number, unknown: number): "none" | "row" | "list" {
+  if (unknown === 0) return "none"
+  return rows > 0 && unknown === rows ? "list" : "row"
+}
+
+export function completeProjectSummary(coverage: unknown): boolean {
+  return coverage === "complete"
+    || (!!coverage && typeof coverage === "object" && (coverage as { status?: unknown }).status === "complete")
+}
+
+/** Counts from the retired catalog do not describe the Board the row opens. */
+export function currentProjectSummary(project: Record<string, unknown>): Record<string, unknown> {
+  if (completeProjectSummary(project.summaryCoverage)) return project
+  const { activeItemCount: _active, itemCount: _items, ...withoutHistoricalCounts } = project
+  return withoutHistoricalCounts
+}
