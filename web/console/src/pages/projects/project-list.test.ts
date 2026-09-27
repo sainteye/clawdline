@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { projectListWords, replaceSuffix } from "./project-list.ts"
+import { activityUnknownScope, currentProjectSummary, projectListWords, replaceSuffix } from "./project-list.ts"
 
 test("an unavailable activity read says which number is missing without judging Project progress", () => {
   const zh = projectListWords("zh-TW")
@@ -12,13 +12,32 @@ test("an unavailable activity read says which number is missing without judging 
   assert.equal(en.unknownAfter, "In-progress count unavailable")
 })
 
-test("the historical item total opens the work board instead of claiming to be progress", () => {
+test("the current item total opens the work board instead of claiming to be progress", () => {
   const words = projectListWords("zh-TW")
   assert.equal(
     replaceSuffix("503 個工作項目 · 查看進度 →", words.boardBefore, words.boardAfter),
     "503 個工作項目 · 開啟工作看板 →",
   )
   assert.equal(replaceSuffix("/work/project", words.boardBefore, words.boardAfter), "/work/project")
+})
+
+test("a missing count repeated on every Project is explained once for the list", () => {
+  assert.equal(activityUnknownScope(4, 4), "list")
+  assert.equal(activityUnknownScope(4, 1), "row")
+  assert.equal(activityUnknownScope(4, 0), "none")
+})
+
+test("only current work-system counts reach a Project row", () => {
+  assert.deepEqual(currentProjectSummary({ id: "p", itemCount: 503, activeItemCount: 0, summaryCoverage: "unknown" }), {
+    id: "p",
+    summaryCoverage: "unknown",
+  })
+  assert.deepEqual(currentProjectSummary({ id: "p", itemCount: 8, activeItemCount: 4, summaryCoverage: "complete" }), {
+    id: "p",
+    itemCount: 8,
+    activeItemCount: 4,
+    summaryCoverage: "complete",
+  })
 })
 
 test("Project maintenance is one secondary group while the Project list stays outside it", () => {

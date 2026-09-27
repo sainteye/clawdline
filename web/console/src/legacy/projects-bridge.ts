@@ -26,6 +26,7 @@ import { tint } from "./js/core/util.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import { bindProjectsPage as bindProjectsPageOriginal, readProjectPlaces } from "./js/view/projects.js"
 import { openBoard } from "./board-bridge.js"
+import { completeProjectSummary, currentProjectSummary } from "../pages/projects/project-list.js"
 
 /** `net/client.js`'s LOCAL_MACHINE: a page served by this daemon is looking at this machine. */
 const LOCAL_MACHINE = "this-mac"
@@ -94,11 +95,18 @@ const transport = {
     const answer = await jsonFetch("/v1/projects")
     const catalog = (answer.catalog ?? {}) as Record<string, unknown> & {
       available?: boolean
+      projects?: Record<string, unknown>[]
       readState?: { error?: { code: string; message: string } }
     }
+    // The Project row opens Work System v2, so its numbers must come from the
+    // same store. Older daemons and failed summary reads may still carry the
+    // retired catalog's totals; remove those rather than placing unrelated
+    // numbers beside a link to the current Board.
+    const projects = catalog.projects?.map(currentProjectSummary)
+    const currentCatalog = projects ? { ...catalog, projects } : catalog
     const board = catalog.available === false
-      ? { ...catalog, error: catalog.readState?.error ?? { code: "board_unavailable", message: "Board unavailable" } }
-      : catalog
+      ? { ...currentCatalog, error: catalog.readState?.error ?? { code: "board_unavailable", message: "Board unavailable" } }
+      : currentCatalog
     return { board }
   },
   projectWorktreeLifecycle: async (project: string) => {
@@ -144,10 +152,23 @@ export function bindProjects(doc: Document, navigate: (name: string) => void): P
       // feature-presence flag before falling back from Board to local places.
       // Supply that flag only to the catalog read; no Projects-page environment
       // receives a worktree-usage reader, so the removed projection is unreachable.
-      places: () => (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<unknown>)(
-        { ...transport, projectWorktrees: () => Promise.resolve({}) },
-        applyBoardMode,
-      ),
+      places: async () => {
+        const answer = await (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<{
+          places?: Array<{ summaryCoverage?: unknown; activityReadStatus?: string; activitySourcePartial?: boolean }>
+        }>)(
+          { ...transport, projectWorktrees: () => Promise.resolve({}) },
+          applyBoardMode,
+        )
+        // The catalog's Project membership can be an older/stale read while
+        // the v2 item summary was read now. Qualify the activity from its own
+        // coverage instead of inheriting the retired catalog's read state.
+        for (const place of answer.places ?? []) {
+          if (!completeProjectSummary(place.summaryCoverage)) continue
+          place.activityReadStatus = "ready"
+          place.activitySourcePartial = false
+        }
+        return answer
+      },
       openBoard: (place: Place) => openBoard(place.boardProjectId, null, place),
       lifecycleAvailable: () => true,
       projectWorktreeLifecycle: (place: Place) => transport.projectWorktreeLifecycle(place.boardProjectId || place.id),

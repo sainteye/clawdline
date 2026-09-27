@@ -390,6 +390,44 @@ func TestWorkV2ListFiltersLifecycleAndSearchesTitleOrDescription(t *testing.T) {
 	}
 }
 
+func TestWorkV2ProjectCountsMatchTheBoardsOpenFilter(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	rows := []work.ItemV2{
+		v2Item("11100000-0000-4000-8000-000000000001", at),
+		v2Item("11100000-0000-4000-8000-000000000002", at.Add(time.Second)),
+		v2Item("11100000-0000-4000-8000-000000000003", at.Add(2*time.Second)),
+		v2Item("11100000-0000-4000-8000-000000000004", at.Add(3*time.Second)),
+	}
+	rows[0].Phase = work.PhaseImplementing
+	rows[1].Phase, rows[1].ClosedAt = work.PhaseDone, at.Add(4*time.Second)
+	rows[2].ProjectID, rows[2].ProjectPath = "project-b", "/project-b"
+	rows[2].Phase = work.PhaseAssigned
+	rows[3].ProjectID, rows[3].ProjectPath = "project-b", "/project-b"
+	rows[3].Phase, rows[3].ClosedAt = work.PhaseCancelled, at.Add(5*time.Second)
+	for _, item := range rows {
+		item := item
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateItem(item, "local", `{}`) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counts, err := s.WorkV2ProjectCounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := counts["project-a"]; got != (WorkV2ProjectCount{Items: 2, Open: 1}) {
+		t.Errorf("project-a = %+v", got)
+	}
+	if got := counts["project-b"]; got != (WorkV2ProjectCount{Items: 2, Open: 1}) {
+		t.Errorf("project-b = %+v", got)
+	}
+}
+
 func TestWorkV2ListPagesByNewestUpdateWithoutRepeatingRows(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

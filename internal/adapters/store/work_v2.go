@@ -1391,6 +1391,41 @@ func (s *Store) WorkV2Counts(ctx context.Context) (map[string]int64, error) {
 	return out, nil
 }
 
+// WorkV2ProjectCount is the complete item count and the same open count the
+// Board's "open" filter calls in progress. Keeping this aggregation in one
+// store read lets the Projects catalog summarize every Project without one
+// Board request per row.
+type WorkV2ProjectCount struct {
+	Items int64
+	Open  int64
+}
+
+// WorkV2ProjectCounts groups the current work-system items by their durable
+// Project id. Terminal work remains in Items, while Open excludes done and
+// cancelled exactly as WorkV2Items(status="open") does.
+func (s *Store) WorkV2ProjectCounts(ctx context.Context) (map[string]WorkV2ProjectCount, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT project_id,COUNT(*),
+    SUM(CASE WHEN phase NOT IN ('done','cancelled') THEN 1 ELSE 0 END)
+    FROM work_v2_items GROUP BY project_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]WorkV2ProjectCount{}
+	for rows.Next() {
+		var project string
+		var count WorkV2ProjectCount
+		if err := rows.Scan(&project, &count.Items, &count.Open); err != nil {
+			return nil, err
+		}
+		out[project] = count
+	}
+	return out, rows.Err()
+}
+
 func scanProposalV2(sc scanner) (work.ProposalV2, error) {
 	var p work.ProposalV2
 	var created int64

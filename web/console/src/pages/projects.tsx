@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom"
 import { ProjectTools } from "./projects/ProjectTools.js"
-import { projectListWords, replaceSuffix } from "./projects/project-list.js"
+import { activityUnknownScope, projectListWords, replaceSuffix } from "./projects/project-list.js"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
@@ -96,16 +96,25 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
     if (!rows || !help) return
     const decorate = () => {
       const words = projectListWords(document.documentElement.lang || navigator.language || "")
-      let unknown = 0
+      const unknownActivities: HTMLElement[] = []
       for (const activity of rows.querySelectorAll<HTMLElement>(".project-row-activity.is-unknown")) {
         if (activity.textContent?.trim() === words.unknownBefore) activity.textContent = words.unknownAfter
         if (activity.textContent?.trim() !== words.unknownAfter) continue
-        unknown += 1
+        unknownActivities.push(activity)
+      }
+      const rowCount = rows.querySelectorAll("button.project-row[data-place-id]").length
+      const scope = activityUnknownScope(rowCount, unknownActivities.length)
+      for (const activity of unknownActivities) {
+        activity.hidden = scope === "list"
         const button = activity.closest<HTMLButtonElement>("button.project-row")
         if (!button) continue
         const label = button.getAttribute("aria-label")
         if (label?.includes(words.unknownBefore)) {
           button.setAttribute("aria-label", label.replace(words.unknownBefore, words.unknownAfter))
+        }
+        if (scope === "list") {
+          const current = button.getAttribute("aria-label") ?? ""
+          button.setAttribute("aria-label", replaceSuffix(current, ", " + words.unknownAfter, ""))
         }
         button.setAttribute("aria-describedby", help.id)
       }
@@ -114,7 +123,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         const next = replaceSuffix(value, words.boardBefore, words.boardAfter)
         if (next !== value) line.textContent = next
       }
-      help.hidden = unknown === 0
+      help.hidden = scope === "none"
     }
     const observer = new MutationObserver(decorate)
     observer.observe(rows, { childList: true, subtree: true })

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -200,6 +201,18 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+func summarizeProjectWork(row contract.CatalogProject, counts map[string]store.WorkV2ProjectCount, err error) contract.CatalogProject {
+	row.SummaryCoverage = "unknown"
+	if err != nil {
+		return row
+	}
+	count := counts[row.ID]
+	row.ItemCount = count.Items
+	row.ActiveItemCount = count.Open
+	row.SummaryCoverage = "complete"
+	return row
+}
+
 // projectCatalogRoute is the catalog half of ProjectBoardIntegration's
 // materializeReadModel: the store's Projects, each joined to the start place
 // that resolves to it, start places first in their own order.
@@ -263,8 +276,10 @@ func (s *Server) projectCatalogRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		byID[id] = presentation{label: label, path: canonical, order: i}
 	}
+	workCounts, workCountsErr := s.store.WorkV2ProjectCounts(r.Context())
 	for _, p := range board.Projects {
-		row := contract.CatalogProject{ID: p.ID, Name: p.Name, ItemCount: int64(p.ItemCount)}
+		row := summarizeProjectWork(contract.CatalogProject{ID: p.ID, Name: p.Name, ItemCount: int64(p.ItemCount)},
+			workCounts, workCountsErr)
 		if pres, ok := byID[p.ID]; ok {
 			row.IsStartPoint = true
 			row.Label = pres.label
