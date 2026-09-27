@@ -956,16 +956,22 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
     const reviewed = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const open = () => {
+        const management = document.querySelector(".project-tools")
         const launcher = document.querySelector(".project-setup")
         const trigger = launcher?.querySelector(".project-setup-open")
         const dialog = launcher?.querySelector(".project-setup-dialog")
         const readiness = dialog?.querySelector(".project-readiness-card")
         const button = readiness?.querySelector(".project-readiness-action")
-        if (!launcher || !trigger || !dialog || !readiness || !button) {
+        if (!management || !launcher || !trigger || !dialog || !readiness || !button) {
           if (Date.now() >= deadline) return reject(new Error("the Project setup launcher did not load its Projects"))
           return setTimeout(open, 25)
         }
+        const managementBox = management.getBoundingClientRect()
+        const managementWasClosed = !management.open
+        management.open = true
         const launcherBox = launcher.getBoundingClientRect()
+        const groupedTools = management.querySelectorAll(":scope > .project-tools-body > .project-setup, :scope > .project-tools-body > .project-sync, :scope > .project-tools-body > .project-icon-copy").length
+        const topLevelGroups = document.querySelectorAll("#project-icon-copy-host > .project-tools").length
         const inlineCards = launcher.querySelectorAll(":scope > .project-readiness-list").length
         trigger.click()
         setTimeout(() => {
@@ -1000,6 +1006,10 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
               cardWidth: actionBox.width,
               capabilities,
               launcherHeight: launcherBox.height,
+              managementHeight: managementBox.height,
+              managementWasClosed,
+              groupedTools,
+              topLevelGroups,
               inlineCards,
               returnedFocus,
               initialFocus,
@@ -1027,6 +1037,10 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
     assert.match(reviewed.instructions, /clawdline guide zh-TW project/)
     assert.match(reviewed.instructions, /deploy／CI/)
     assert.match(reviewed.instructions, /\.devstack\.json/)
+    assert.equal(reviewed.managementWasClosed, true, "Project maintenance is secondary on arrival")
+    assert.ok(reviewed.managementHeight <= 82, `the collapsed management group is ${reviewed.managementHeight}px tall`)
+    assert.equal(reviewed.topLevelGroups, 1, "the three maintenance tools have one top-level group")
+    assert.equal(reviewed.groupedTools, 3, "health, sync and icon tools stay together inside the group")
     assert.equal(reviewed.inlineCards, 0, "the Project page does not repeat the readiness list in its main flow")
     assert.ok(reviewed.launcherHeight <= 110, `the compact launcher is ${reviewed.launcherHeight}px tall`)
     assert.equal(reviewed.initialFocus, true, "opening the audit focuses its labelled dialog instead of outlining Close")
