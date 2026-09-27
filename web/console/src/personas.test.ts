@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Persona } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { headPersona, personaById, suggestedPersona } from "./personas.ts"
+import { headPersona, personaById, rowPersonaLine, suggestedPersona } from "./personas.ts"
 
 const icon = { accent: "#000000", cells: [["#000000"]] }
 const persona = (id: string, kinds: string[]): Persona => ({
@@ -87,4 +87,16 @@ test("the detail header shows a persona only when the catalog names it", () => {
   assert.equal(headPersona(named, ""), null, "an empty persona")
   assert.equal(headPersona(null, "architect"), null, "catalog not read")
   assert.equal(headPersona([], "architect"), null, "catalog unreadable")
+})
+
+test("a session row has a role line only for a persona the catalog names", () => {
+  const known = { ...persona("frontend", ["feature"]), summary: { en: "Builds the console.", "zh-Hant": "" } }
+  const line = rowPersonaLine([known, ...catalog], "frontend")
+  assert.equal(line?.persona, known)
+  assert.equal(line?.name, "frontend")
+  assert.equal(line?.title, "frontend — Builds the console.")
+  assert.equal(rowPersonaLine(catalog, "janitor"), null)
+  assert.equal(rowPersonaLine(catalog, undefined), null)
+  assert.equal(rowPersonaLine(catalog, ""), null)
+  assert.equal(rowPersonaLine(null, "frontend"), null)
 })

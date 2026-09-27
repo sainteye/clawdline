@@ -106,6 +106,20 @@ export function headPersona(list: readonly Persona[] | null, id: string | null |
 }
 
 /**
+ * What a session row's bottom line shows for the role it was launched as: the
+ * bot, the full name in the page's language, and name plus summary for its
+ * title. A row with no persona, or one whose id this machine's catalog does
+ * not name, has no such line and stays as tall as it was.
+ */
+export function rowPersonaLine(
+  list: readonly Persona[] | null,
+  id: string | null | undefined,
+): { persona: Persona; name: string; title: string } | null {
+  const persona = personaById(list, id)
+  return persona ? { persona, name: personaName(persona), title: personaTitle(persona) } : null
+}
+
+/**
  * The persona a Board item of this kind is offered first: the first catalog
  * entry whose `suggested_kinds` names the kind, and only when exactly one does.
  * A kind two personas suggest (feature: backend and frontend) is the person's

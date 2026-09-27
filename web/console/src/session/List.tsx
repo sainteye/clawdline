@@ -6,7 +6,7 @@ import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
 import { retainedStateWords } from "../session-reading.js"
-import { personaById, personaName, personaTitle } from "../personas.js"
+import { rowPersonaLine } from "../personas.js"
 import { PersonaBot, usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
 
@@ -291,9 +291,9 @@ export function Row({
   }
   const mark = <Mark icon={row.icon} cellPx={4} />
   // The role this session was launched as (docs/personas.md), when the
-  // machine's catalog names it: its bot and short name after the assistant's.
-  // An id the catalog does not have draws nothing.
-  const persona = personaById(usePersonas(), row.persona)
+  // machine's catalog names it: its bot and full name on a line of its own at
+  // the bottom of the row. An id the catalog does not have draws nothing.
+  const role = rowPersonaLine(usePersonas(), row.persona)
   return (
     <li
       ref={ref}
@@ -340,12 +340,6 @@ export function Row({
       <div className="title" style={{ color: L.accentTint(row.icon?.accent) }}>
         <span className="label">{row.label || row.tty || row.id}</span>
         <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
-        {persona ? (
-          <span className="persona-name" title={personaTitle(persona)} aria-label={personaTitle(persona)}>
-            <PersonaBot persona={persona} cellPx={2} className="persona-name-bot" />
-            <span className="persona-name-words">{personaName(persona)}</span>
-          </span>
-        ) : null}
       </div>
       <div className="meta">
         <span className="path">{L.path(row.cwd)}</span>
@@ -372,6 +366,12 @@ export function Row({
         </span>
       </div>
       <StateLine row={row} />
+      {role ? (
+        <div className="persona-line" title={role.title} aria-label={role.title}>
+          <PersonaBot persona={role.persona} cellPx={3} className="persona-line-bot" />
+          <span className="persona-line-name">{role.name}</span>
+        </div>
+      ) : null}
       {/* The phone's swipe control, in `buildRow`'s markup and uncovered by
           `swipe.ts`. It never closes anything: it opens the confirmation every
           other close in this console goes through, which is where the reasons

@@ -185,11 +185,14 @@ per machine. A read that fails for any reason is an empty catalog, and an empty 
 chips and no bots: an older daemon, or a machine on Cloud that cannot answer, shows the console it
 showed before this feature, never a sheet that breaks after a press.
 
-- **Session list.** A row whose `persona` the catalog names shows the bot at two pixels a cell and
-  the short name after the assistant's, with the full name and summary as its title. The bot was
-  first drawn at three pixels a cell under the project mark; measured at 390 px that made each such
-  row taller (93.2 → 95.4 px, and 88.4 → 95.4 px for a working row), so it moved into the title
-  line, where the rows measure the same with and without it (phone 93.2, desktop 82.9).
+- **Session list.** A row whose `persona` the catalog names ends in a line of its own, in the text
+  column under the state line: the bot at three pixels a cell and the role's full name in the
+  console's language, with the full name and summary as its title. It first rode in the title line
+  after the assistant's name at two pixels a cell, where a 390 px phone cut the name to its first
+  character. Measured 2026-09-27 with mocked rows (long title, `tmux` row): a row without a persona
+  is as tall as before (phone 87.9 px, 88.4 working; desktop 77.6, 78.1), and a row with one grows
+  by this line (phone 112.9, 113.4; desktop 101.6, 102.1). All eight names fit whole at 390 px in
+  both languages.
 - **Session detail header.** A row whose `persona` the catalog names shows the bot at four pixels
   a cell (32×28) between the session's name and its tools, with the full name and the one-line
   summary beside it on a desktop (at most 300 px, ellipsised). On a phone (below 900 px) only the
