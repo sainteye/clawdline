@@ -1,0 +1,14 @@
+{
+  "name": "shop-cart",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "shot": "node scripts/shot.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.52.0"
+  }
+}

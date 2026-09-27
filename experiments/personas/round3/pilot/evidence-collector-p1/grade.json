@@ -1,0 +1,84 @@
+{
+  "id": "evidence-collector-p1",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.13686360000000003,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "**Not ready to merge.**",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "`.summary` has an unconditional `min-width: 400px` that isn't overridden on mobile, causing real horizontal scroll at 375px and pushing the Checkout button partly off-screen.",
+        "executed": true,
+        "evidence": "cat > scripts/verify-tmp.mjs (Playwright script) → 'LAYOUT 375px: scrollWidth= 420 clientWidth= 375 horizontal overflow? true checkout box= {\"x\":41,\"y\":649,\"width\":358,\"height\":42}'"
+      },
+      "E2": {
+        "found": true,
+        "quote": "the two-column breakpoint is `min-width: 769px`, so at exactly 768px (which the ticket calls out explicitly) it's still single-column.",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'LAYOUT 768px: .cart flex-direction = column (spec wants row/two-column at >=768px)'"
+      },
+      "E3": {
+        "found": true,
+        "quote": "`+` lets qty reach **11** (not capped at 10)",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'STEPPER MAX: clicks until disabled = 10 | final qty = 11 (expected: disabled after 9 clicks at qty=10, never qty=11)'"
+      },
+      "E4": {
+        "found": true,
+        "quote": "`−` lets qty reach **0** (not floored at 1)",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'STEPPER MIN: clicks until disabled = 1 | final qty = 0 (expected: disabled immediately at qty=1, 0 clicks succeed)'"
+      },
+      "E5": {
+        "found": true,
+        "quote": "the discount is frozen in cents at apply-time and does **not** follow later quantity changes, directly contradicting the ticket.",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'DISCOUNT FOLLOWS QTY: before= −$105.30 after +2 qty= −$105.30 (expected to differ)'"
+      },
+      "E6": {
+        "found": true,
+        "quote": "applying a valid code after a bad one never clears \"Code not recognised\" (the error is only ever set, never reset).",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'PROMO CLEAR: error visible after invalid code? true | still visible after valid code applied? true (expected false)'"
+      },
+      "E7": {
+        "found": true,
+        "quote": "no thousands separator at all: the default cart's subtotal renders as `$1053.00`, not `$1,234.50`-style.",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'MONEY FORMAT: subtotal text = \"$1053.00\" (expected $1,053.00)'"
+      },
+      "E8": {
+        "found": true,
+        "quote": "`#summary` gets an `is-hidden` class when the cart empties, but that class doesn't exist anywhere in `cart.css`. Confirmed live: removing all lines leaves the summary and Checkout button fully visible.",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'EMPTY STATE: empty msg visible? true checkout still visible? true summary boundingBox (null=display:none)= {\"x\":820,\"y\":67,\"width\":340,\"height\":304}'"
+      },
+      "E9": {
+        "found": true,
+        "quote": "quantity changes are never saved to `localStorage` (only Remove calls `save()`). Bump a qty, reload, and it reverts.",
+        "executed": true,
+        "evidence": "node scripts/verify-tmp.mjs → 'PERSISTENCE: qty before reload= 3 qty after reload= 1 (expected equal)'"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

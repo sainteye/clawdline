@@ -1,0 +1,61 @@
+{
+  "id": "13edbec0",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0343996,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "Pagination offset is off by one page — store.go:106 ... `Page` is 1-based, so offset should be `(p.Page-1)*p.PageSize`. As written, page 1 (offset 20 for the default page size) skips the first page of results entirely"
+      },
+      "G2": {
+        "found": true,
+        "quote": "SQL injection via `sort` — `store.go:102` ... `p.Sort` comes straight from `q.Get(\"sort\")` in `handler.go` with zero validation ... This lets a caller inject arbitrary SQL into the query"
+      },
+      "G3": {
+        "found": true,
+        "quote": "Unauthenticated order deletion — `main.go:61` ... This one doesn't [wrap in requireAdmin], and `deleteOrder` itself performs no auth check. Anyone who can reach this service can delete any order"
+      },
+      "G4": {
+        "found": true,
+        "quote": "Unsynchronized map read in the cache — `cache.go:31` ... `Get` reads the map without any lock. Under concurrent requests ... this is a data race on a Go map, which can crash the process with `fatal error: concurrent map read and map write`"
+      },
+      "G5": {
+        "found": true,
+        "quote": "Unclosed `Rows` in the count query — `store.go:90-98` ... `countRows` is never closed (no `defer countRows.Close()`, and it's not drained to EOF). Under load this leaks connections back to the pool."
+      },
+      "G6": {
+        "found": true,
+        "quote": "`DeleteOrder` errors are swallowed but still return success — `handler.go:194-198` ... Any non-`ErrNotFound` DB error ... is logged but the handler still responds `204 No Content`, telling the caller the delete succeeded when it may not have."
+      },
+      "G7": {
+        "found": true,
+        "quote": "Cache TTL is nanoseconds, not seconds — `main.go:52` ... `time.Duration(30)` is 30 *nanoseconds*. Every cache entry expires effectively immediately"
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Unauthenticated order deletion — main.go:61 (DELETE /admin/orders/{id} missing requireAdmin wrapper)",
+    "leads_with_high": true
+  },
+  "hand_check": {
+    "checked_by": "experimenter (read the full output/diff against the key)",
+    "items_checked": 12,
+    "corrections": []
+  }
+}

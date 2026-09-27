@@ -1,0 +1,87 @@
+{
+  "id": "4a2faad9",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1419276,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "Not ready to merge yet.",
+    "defects": {
+      "D1": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      },
+      "D2": {
+        "found": true,
+        "quote": "Wipes fields not present in the body. `t.Due = due` and `t.Tags = req.Tags` run unconditionally, so `PATCH {\"title\":\"y\"}` erases the task's existing due date and tags. Violates \"fields not present in the body keep their values.\"",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"due wiped by unrelated PATCH: got \\\"0001-01-01\\\"\" and \"tags wiped by unrelated PATCH: got []\""
+      },
+      "D3": {
+        "found": true,
+        "quote": "`CreatedAt` is dropped. The new `Task{}` never copies `o.Created`, so migrated tasks lose their creation time, contradicting \"every task keeps its ... creation time.\"",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"CreatedAt lost during migration: {... CreatedAt:0001-01-01 00:00:00 +0000 UTC}\""
+      },
+      "D4": {
+        "found": true,
+        "quote": "v1 labels aren't normalized. `strings.Split(o.Labels, \",\")` skips trim/lowercase/max-5, so migrated tags don't follow \"the same rules as in create.\"",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"migrated tags not normalized: [ Home   Urgent ]\""
+      },
+      "D5": {
+        "found": true,
+        "quote": "Due-today tasks show as overdue. Same check doesn't exclude `Due == today`; spec requires \"before today.\"",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"task due today shown as overdue: [{ID:t0001 Title:due today Done:false Due:2026-03-10 00:00:00 +0000 UTC ...}]\""
+      },
+      "D6": {
+        "found": true,
+        "quote": "No-due-date tasks show as overdue. The exclusion check `t.Due.After(today.Time)` treats the zero-value `Date{}` (year 1) as \"not after today,\" so tasks with no due date incorrectly appear when `overdue=true`.",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"task with no due date shown as overdue: [{ID:t0001 Title:no due date Done:false Due:0001-01-01 00:00:00 +0000 UTC ...}]\""
+      },
+      "D7": {
+        "found": true,
+        "quote": "Tags aren't normalized. `t.Tags = req.Tags` skips `normalizeTags`, so PATCH lets tags in with whitespace/mixed case and bypasses the max-5 check — inconsistent with create and breaks the case-insensitive tag filter.",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"PATCH tags not normalized: [ Work  URGENT]\""
+      },
+      "D8": {
+        "found": true,
+        "quote": "Unknown id returns 204, not 404. `Store.Delete` silently no-ops on a missing key and never surfaces `ErrNotFound`, so the handler always returns 204.",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"delete unknown id: got 204, want 404\""
+      },
+      "D9": {
+        "found": true,
+        "quote": "Malformed JSON body doesn't 400. The decode error is discarded (`json.NewDecoder(r.Body).Decode(&req)`), so `PATCH` with invalid JSON returns 200 instead of 400.",
+        "executed": true,
+        "evidence": "go test ./... -run Repro -v → \"malformed PATCH body: got 200, want 400\""
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  },
+  "hand_checked": true,
+  "corrections": [],
+  "hand_check_note": "All items checked against the report and the tool results; no change."
+}

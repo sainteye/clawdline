@@ -1,0 +1,37 @@
+{
+  "date": "2026-09-27T08:03:36.149Z",
+  "claude_cli": "2.1.283 (Claude Code)",
+  "model": "claude-sonnet-5",
+  "go": "go version go1.27.1 darwin/arm64",
+  "node": "v24.1.0",
+  "playwright_core": "1.52.0",
+  "platform": "darwin 24.6.0 arm64",
+  "tools": [
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash"
+  ],
+  "sandbox": {
+    "reality-checker": {
+      "sandbox": {
+        "enabled": true,
+        "autoAllowBashIfSandboxed": true,
+        "allowUnsandboxedCommands": false,
+        "network": {
+          "allowedDomains": [
+            "localhost",
+            "127.0.0.1"
+          ],
+          "allowLocalBinding": true
+        }
+      }
+    },
+    "evidence-collector": "none (see EXPERIMENT.md)"
+  },
+  "persona_sha256": {
+    "reality-checker": "eb6463127e49baa6b6af3df74b6ca4df321a23c2a59d8c86e71471f4e183c2ec",
+    "evidence-collector": "3d5d441371452a5dea3f3ea64b7849121b78f9e5ed33047f778f6f6f96d9159b"
+  },
+  "persona_catalog_commit": "unknown"
+}

@@ -1,0 +1,3 @@
+The feature is done — can you check it before we merge?
+
+Developer's note: "TICKET-88 (docs/TICKET-88.md) is done: quantity steppers, remove with an empty state, the SAVE10 promo code, the responsive two-column layout and localStorage persistence. `npm test` passes and I checked it in Chrome on my laptop — looks good. Ready to merge."

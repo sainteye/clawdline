@@ -1,0 +1,50 @@
+{
+  "id": "e447f9bc",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0470654,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": true,
+        "evidence": "<html lang=\"en\"> added to the article page."
+      },
+      "S2": {
+        "fixed": true,
+        "evidence": "<title>How to Season a Cast Iron Skillet in the Oven | Iron &amp; Ember</title> replaces the generic homepage title."
+      },
+      "S3": {
+        "fixed": true,
+        "evidence": "<meta name=\"description\" content=\"A tested, three-round method for seasoning a cast iron skillet in a home oven, with oil amounts, temperature and timing, and what to do if it turns sticky.\"> added, accurately summarizing the article."
+      },
+      "S4": {
+        "fixed": true,
+        "evidence": "<h1 class=\"post-title\">How I season a cast iron skillet in the oven</h1> replaces the styled <div>, and it is the only <h1> on the page."
+      },
+      "S5": {
+        "fixed": true,
+        "evidence": "Both images now have descriptive alt text: alt=\"Cast iron skillet rubbed with a thin, even coat of oil\" and alt=\"Cast iron skillet baking upside down on the oven's middle rack\", both consistent with the surrounding paragraphs."
+      },
+      "S6": {
+        "fixed": true,
+        "evidence": "<link rel=\"canonical\" href=\"https://ironandember.example/posts/seasoning-cast-iron.html\"> added, matching the exact page URL."
+      },
+      "S7": {
+        "fixed": false,
+        "evidence": "No JSON-LD or any structured data block was added anywhere in the diff."
+      },
+      "S8": {
+        "fixed": true,
+        "evidence": "'click here' replaced with descriptive anchor text: <a href=\"/posts/cast-iron-cornbread.html\">skillet cornbread with brown butter</a>."
+      }
+    },
+    "regressions": [],
+    "invented_claims": [
+      {
+        "what": "The anchor text asserts the linked cornbread post is specifically about 'brown butter', a detail not present anywhere in the seasoning article's fixture content and not verifiable from the diff (the cornbread post file itself was not shown as changed/viewed).",
+        "evidence": "try <a href=\"/posts/cast-iron-cornbread.html\">skillet cornbread with brown butter</a>"
+      }
+    ]
+  }
+}

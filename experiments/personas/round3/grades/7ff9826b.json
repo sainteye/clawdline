@@ -1,0 +1,84 @@
+{
+  "id": "7ff9826b",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.17055959999999998,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "**FAIL — needs work.**",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "document.documentElement.scrollWidth is 420px against a 375px viewport (45px overflow), and the full-page screenshot at \"375px\" actually renders 420px wide; Checkout's right edge (399px) sits outside the 375px viewport.",
+        "executed": true,
+        "evidence": "node scripts/interact-qa2.mjs → '375px scroll info { scrollWidth: 420, clientWidth: 375, bodyScrollWidth: 420 }' and '375px checkout fully within viewport width? false'"
+      },
+      "E2": {
+        "found": true,
+        "quote": "Actual: summary stacks below (only switches to side-by-side at 769px). Evidence: /tmp/qa-88/layout-768-check.png, bounding-box measurements in /tmp/qa-88/interact2.log.",
+        "executed": true,
+        "evidence": "node scripts/interact-qa2.mjs → '768px summary right of items? (x >= items right edge) false' ... '769px summary right of items? true'"
+      },
+      "E3": {
+        "found": true,
+        "quote": "Symmetric bug on the top end: \"+\" isn't disabled until qty reaches 11, so a 10th click on a fresh cart pushes qty to 11 before disabling.",
+        "executed": true,
+        "evidence": "node scripts/interact-qa.mjs → 'line0 qty after 9 clicks (expect 10) 10', 'line0 inc disabled at qty=10? false', 'line0 qty after 10th click (overflow attempt) 11'"
+      },
+      "E4": {
+        "found": true,
+        "quote": "Actual: qty drops to 0, line total shows $0.00; only then does the button become disabled.",
+        "executed": true,
+        "evidence": "node scripts/interact-qa2.mjs → 'qty after underflow click 0'; screenshot /tmp/qa-88/stepper-underflow.png read (tool [28])"
+      },
+      "E5": {
+        "found": true,
+        "quote": "Discount tracking: after applying SAVE10 at subtotal $1053.00 → discount −$105.30; after bumping qty (subtotal → $1440.00), discount stayed −$105.30 instead of −$144.00",
+        "executed": true,
+        "evidence": "node scripts/interact-qa.mjs → 'discount after applying SAVE10 (qty1=1) −$105.30' ... 'subtotal after qty bump (+3 to line0) $1440.00' / 'discount after qty bump (expect 10% of new subtotal) −$105.30'"
+      },
+      "E6": {
+        "found": true,
+        "quote": "message \"Code not recognised\" is still visible even though the 10% discount was correctly applied (/tmp/qa-88/promo-valid-after-invalid.png).",
+        "executed": true,
+        "evidence": "node scripts/interact-qa.mjs → 'promo-error hidden after valid code? false'"
+      },
+      "E7": {
+        "found": true,
+        "quote": "Subtotal/Total render as $1053.00, not $1,053.00.",
+        "executed": true,
+        "evidence": "Read of /tmp/qa-88/desktop-1280.png (tool [15]), described as showing '$1053.00' in the report"
+      },
+      "E8": {
+        "found": true,
+        "quote": "Actual: empty message shows correctly, but the entire Order summary card, including a clickable Checkout button, remains visible showing $0.00 totals.",
+        "executed": true,
+        "evidence": "node scripts/interact-qa.mjs → 'checkout visible? true'; screenshot /tmp/qa-88/empty-cart.png read (tool [21])"
+      },
+      "E9": {
+        "found": true,
+        "quote": "localStorage['cart:v1'] is null right after stepper clicks; reload reverts the quantity to its original value.",
+        "executed": true,
+        "evidence": "node scripts/interact-qa2.mjs → 'AC6: localStorage content right after stepper clicks (before any reload) null' / 'AC6: qty after reload 1'"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

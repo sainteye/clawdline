@@ -1,0 +1,37 @@
+{
+  "id": "n7c2e0b1",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0462156,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "booking.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 5,
+        "summary": "Switches Book's conflict check from overlaps(b.When, when) to overlapsHalfOpen(b.When, when) and updates the adjacent call-site comment to explain half-open semantics."
+      },
+      {
+        "file": "interval.go",
+        "kind": "unrelated",
+        "category": "comment_churn",
+        "changed_lines": 6,
+        "summary": "Removes the stale TODO(2021-06) on overlaps and replaces the doc comment with a note about FAC-12/closed-interval use by maintenance and cleaning."
+      },
+      {
+        "file": "interval.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 6,
+        "summary": "Adds a new private helper overlapsHalfOpen(a, b Interval) bool used only by Book, implementing half-open overlap semantics without touching overlaps."
+      }
+    ],
+    "unrelated_edit_count": 1,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "The output correctly diagnosed the mechanism ('overlaps ... treats interval endpoints as closed, so it flagged a shared endpoint as a conflict' and 'Book's conflict check ... used it directly, even though bookings are documented as half-open') and fixed it via a new overlapsHalfOpen helper confined to booking.go's call site, leaving overlaps and its other callers (checkMaintenance/checkCleaning) untouched — this matches the key's allowed_extra ('Adding a new private half-open helper used only by Book') and explicitly avoids the tempting broad fix, correctly noting facilities.go's FAC-12 policy as the reason not to touch overlaps globally. The interval.go doc-comment edit that deletes the stale TODO is comment_churn per the key, unrelated to the changed lines that fix the bug. No wrong claims: the findRoom and report.go observations in the final message are described accurately as pre-existing/left-alone items, not presented as bugs caused by this change."
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "714310e8",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0335276,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "money.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 7,
+        "summary": "Extracts sign into a `sign` variable when cents<0, negates cents, then returns `sign + \"$\" + groupThousands(dollars) + fmt.Sprintf(\".%02d\", rem)` instead of the old `\"$\" + groupThousands(dollars) + fmt.Sprintf(\".%02d\", rem)`, matching the reference fix exactly."
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "notes": "Single hunk, money.go only, textually identical to reference_fix's described change (sign extracted up front, absolute value used for digits, sign prepended before '$'). No round_cents_legacy, fmt_percent, TODO(2019), or invoice.go touched — output explicitly says these were left alone. The diff contains no money_test.go hunk; the final message claims regression test cases 'already contained' in money_test.go and cites specific pass/fail behavior, but since no test file diff was provided there is no hunk to classify as test_addition, and this claim isn't checkable against the diff. No wrong claims: the explanation of why dollars and rem both carry embedded signs under Go's truncating division/modulo for negative cents is accurate."
+  },
+  "hand_check": {
+    "checked_by": "experimenter (read the full output/diff against the key)",
+    "items_checked": 4,
+    "corrections": []
+  }
+}

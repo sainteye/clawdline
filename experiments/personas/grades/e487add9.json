@@ -1,0 +1,60 @@
+{
+  "id": "e487add9",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.040839600000000004,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "**`<html>` has no `lang` attribute** (`signup.html:2`)."
+      },
+      "A2": {
+        "found": true,
+        "quote": "**Email/phone fields have no `<label>`** (`signup.html:21,24`) — only `placeholder`. Placeholders disappear on input and aren't a reliable label for assistive tech."
+      },
+      "A3": {
+        "found": true,
+        "quote": "`.help` text color `#b3b3b3` on white (`styles.css:8`) is very low contrast (~2:1), fails WCAG AA for body text."
+      },
+      "A4": {
+        "found": true,
+        "quote": "**Submit control isn't a real button** (`signup.html:42`): `<div id=\"submit\" onclick=\"submitForm()\">` is not focusable and has no keydown handler, so keyboard-only and screen-reader users can't submit the form at all. Use `<button type=\"submit\">`."
+      },
+      "A5": {
+        "found": true,
+        "quote": "**Focus outline removed with no replacement** (`styles.css:7`): `input:focus, textarea:focus { outline: none; }` kills the focus indicator for every field — fails WCAG 2.4.7."
+      },
+      "A6": {
+        "found": true,
+        "quote": "**Error message isn't announced to screen readers** (`signup.html:22`): toggling `hidden` with no `aria-live` region and no `aria-invalid`/`aria-describedby` link on the `email` input means sighted users see the red text but screen-reader users get no signal."
+      },
+      "A7": {
+        "found": true,
+        "quote": "**Progress image has no `alt`** (`signup.html:12`): `steps-1-of-3.png` needs `alt=\"Step 1 of 3\"`"
+      },
+      "A8": {
+        "found": true,
+        "quote": "Heading levels jump from `h1` to `h4` (`signup.html:16,26`) with nothing in between — should probably be `h2`."
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": "(the divider image correctly uses `alt=\"\"` since it's decorative)"
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": "Add real (can be visually-hidden) `<label>`s like the `notes` field already does."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Submit control isn't a real button (signup.html:42): <div id=\"submit\" onclick=\"submitForm()\"> is not focusable and has no keydown handler, so keyboard-only and screen-reader users can't submit the form at all.",
+    "leads_with_high": true
+  }
+}

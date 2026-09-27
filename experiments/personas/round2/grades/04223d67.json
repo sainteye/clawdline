@@ -1,0 +1,75 @@
+{
+  "id": "04223d67",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0276036,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": false,
+        "evidence": "No diff; assistant found no files present and made no changes."
+      },
+      "S2": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S3": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S4": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S5": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S6": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S7": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S8": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S9": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S10": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S11": {
+        "fixed": false,
+        "evidence": "No changes made."
+      },
+      "S12": {
+        "fixed": false,
+        "evidence": "No changes made."
+      }
+    },
+    "decoys": {
+      "DS1": {
+        "changed": false,
+        "evidence": "No diff produced."
+      },
+      "DS2": {
+        "changed": false,
+        "evidence": "No diff produced."
+      },
+      "DS3": {
+        "changed": false,
+        "evidence": "No diff produced."
+      }
+    },
+    "regressions": [],
+    "invented_claims": []
+  }
+}

@@ -1,0 +1,25 @@
+/* Werkbank Cycles – shared stylesheet */
+:root { --ink: #1f2328; --muted: #5a6068; --accent: #b3541e; --paper: #fbfaf7; --line: #ddd8cf; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; line-height: 1.55; color: var(--ink); background: var(--paper); }
+a { color: var(--accent); }
+.site-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 0.5rem; font-weight: bold; color: var(--ink); text-decoration: none; }
+.site-header nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+.site-header nav a, .nav-link { color: var(--ink); text-decoration: none; cursor: pointer; }
+.site-header nav a:hover, .nav-link:hover { color: var(--accent); }
+main { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+main img { max-width: 100%; height: auto; }
+.meta { color: var(--muted); font-size: 0.9rem; }
+.price { font-weight: bold; }
+.prices { width: 100%; border-collapse: collapse; }
+.prices th, .prices td { text-align: left; padding: 0.4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.hours { list-style: none; padding: 0; }
+form label { display: block; margin-top: 0.75rem; }
+form input, form textarea { width: 100%; padding: 0.4rem; font: inherit; }
+form button { margin-top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: #fff; border: 0; font: inherit; }
+.comments { border-top: 1px solid var(--line); margin-top: 2rem; }
+.comment { margin: 1rem 0; }
+.site-footer { max-width: 46rem; margin: 2rem auto 0; padding: 1rem; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); }
+.print-page { max-width: 40rem; }
+@media print { .no-print { display: none; } body { background: #fff; } }

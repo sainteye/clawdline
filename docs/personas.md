@@ -344,10 +344,20 @@ persona, the conversation is restored with none rather than not at all.
 
 ## Bounds
 
-The catalog holds at most **32** personas (`persona.MaxPersonas`). Each injected text is at most
+The catalog holds at most **64** personas (`persona.MaxPersonas`). Each injected text is at most
 **8 KiB** (`persona.MaxPersonaBytes`), counting the preamble, the body and the source line. Both
 are registered as `personas.catalog` and `personas.text_bytes`, and `/v1/diagnostics.capacity`
-reports them. See docs/limits.md N52. The eight shipped texts are 4–5 KiB each.
+reports them. See docs/limits.md N52. The 42 shipped texts are 4–5 KiB each.
+
+## Does a persona help?
+
+`experiments/personas/` holds three rounds of blind experiments with Claude Sonnet 5 that ask whether
+giving a session the matching persona measurably improves its work. The short answer so far: a
+matching persona reliably changes the style and usually the cost, but it did not reliably improve
+the result. One round showed a gain for accessibility and a loss for minimal-change (the text was
+then rewritten; see `round2-followup/`). A structured brief changed how a verifier worked more than
+the persona did. Every comparison is n = 2 per arm: directional, not significant. Start at
+`experiments/personas/README.md`.
 
 ## Attribution
 

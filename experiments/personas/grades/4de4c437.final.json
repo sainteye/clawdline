@@ -1,0 +1,61 @@
+{
+  "id": "4de4c437",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.06597339999999999,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "Pagination off-by-one drops the real first page. store.go:338: args = append(args, p.PageSize, p.Page*p.PageSize) computes OFFSET = page*pageSize instead of (page-1)*pageSize."
+      },
+      "G2": {
+        "found": true,
+        "quote": "SQL injection via sort. ... Unlike status, which is checked against allowedStatus (store.go:314-316), sort has no allow-list — GET /orders?sort=... reaches the DB as raw SQL."
+      },
+      "G3": {
+        "found": true,
+        "quote": "Unauthenticated hard-delete of any order. main.go:61 registers mux.HandleFunc(\"DELETE /admin/orders/{id}\", h.deleteOrder) with no middleware at all ... Anyone can delete any order with zero credentials."
+      },
+      "G4": {
+        "found": true,
+        "quote": "Data race in OrderCache.Get. cache.go:24-30 reads c.entries without taking c.mu, while Set/Delete (cache.go:32-42) do lock it. ... this is a genuine Go data race on a map and can crash the process (fatal error: concurrent map read and map write) under real load."
+      },
+      "G5": {
+        "found": true,
+        "quote": "DB connection leak on every list call. store.go:322-330 issues the count query with QueryContext and calls .Next() once but never .Close()s the Rows (no defer, unlike the second query at store.go:345). Under sustained traffic this leaks connections out of the pool."
+      },
+      "G6": {
+        "found": false,
+        "quote": ""
+      },
+      "G7": {
+        "found": true,
+        "quote": "Cache TTL is 30 nanoseconds, not 30 seconds. main.go:52: NewOrderCache(time.Duration(cfg.CacheTTLSeconds)). time.Duration is int64 nanoseconds, so CacheTTLSeconds=30 gives a 30ns TTL — every entry is expired before the next request can ever observe it."
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": "DeleteOrder wraps both deletes in a transaction with defer tx.Rollback() and only commits after confirming RowsAffected() > 0 (store.go:387-408) — no partial deletes."
+      },
+      "D2": {
+        "flagged": false,
+        "quote": "go.mod pins Go 1.22, which has per-iteration loop variables, so the go func(){...}() closures over i/chunk in batchGetOrders (handler.go:157-162) are race-free despite not being passed as params."
+      },
+      "D3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Unauthenticated hard-delete of any order (main.go:61 DELETE /admin/orders/{id} registered without requireAdmin).",
+    "leads_with_high": true
+  },
+  "hand_check": {
+    "checked_by": "experimenter (read the full output/diff against the key)",
+    "items_checked": 12,
+    "corrections": []
+  }
+}

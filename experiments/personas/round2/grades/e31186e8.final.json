@@ -1,0 +1,77 @@
+{
+  "id": "e31186e8",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.12162959999999999,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": true,
+        "evidence": "robots.txt diff removes '-Disallow: /blog/' and the leftover comment '-# Keep the unfinished blog out of search while we write the first posts.', leaving only 'User-agent: *' / 'Allow: /'."
+      },
+      "S2": {
+        "fixed": true,
+        "evidence": "services.html diff removes the line '-<meta name=\"robots\" content=\"noindex, nofollow\">' entirely, with no replacement noindex/nofollow directive."
+      },
+      "S3": {
+        "fixed": true,
+        "evidence": "sitemap.xml diff removes both '-<url><loc>https://werkbankcycles.example/repairs.html</loc></url>' and '-<url><loc>https://werkbankcycles.example/thanks.html</loc></url>' while keeping the '/services.html' entry intact."
+      },
+      "S4": {
+        "fixed": true,
+        "evidence": "blog/winter-chain-care.html: '-<a href=\"/repairs.html\">repair prices</a>' changed to '+<a href=\"/services.html\">repair prices</a>'; shop/tubeless-kit.html: '-<a href=\"/repairs.html\">repairs and prices page</a>' changed to '+<a href=\"/services.html\">repairs and prices page</a>'."
+      },
+      "S5": {
+        "fixed": true,
+        "evidence": "de/index.html: '-<link rel=\"canonical\" href=\"https://werkbankcycles.example/\">' changed to '+<link rel=\"canonical\" href=\"https://werkbankcycles.example/de/\">', with only one canonical tag remaining."
+      },
+      "S6": {
+        "fixed": true,
+        "evidence": "blog/tyre-pressure.html: '-<link rel=\"canonical\" href=\"http://werkbankcycles.example/blog/tyre-pressure.html\">' changed to '+<link rel=\"canonical\" href=\"https://werkbankcycles.example/blog/tyre-pressure.html\">'."
+      },
+      "S7": {
+        "fixed": true,
+        "evidence": "shop/tubeless-kit.html: the first canonical (originally '/shop/') was rewritten to '+<link rel=\"canonical\" href=\"https://werkbankcycles.example/shop/tubeless-kit.html\">' and the duplicate second canonical line was deleted ('-<link rel=\"canonical\" href=\"https://werkbankcycles.example/shop/tubeless-kit.html\">'), leaving exactly one correct canonical."
+      },
+      "S8": {
+        "fixed": true,
+        "evidence": "contact.html: '-<link rel=\"alternate\" hreflang=\"ge\" ...>' changed to '+<link rel=\"alternate\" hreflang=\"de\" ...>'; de/kontakt.html: same '-hreflang=\"ge\"' to '+hreflang=\"de\"' change in both files."
+      },
+      "S9": {
+        "fixed": true,
+        "evidence": "de/leistungen.html diff adds '+<link rel=\"alternate\" hreflang=\"en\" href=\"https://werkbankcycles.example/services.html\">', giving the reciprocal English alternate while the existing de self-reference and services.html's alternates are untouched."
+      },
+      "S10": {
+        "fixed": true,
+        "evidence": "blog/tyre-pressure.html gets unique '+<title>How to choose tyre pressure for city riding – Werkbank Cycles</title>' and '+<meta name=\"description\" content=\"Starting tyre pressures by width...\">'; blog/winter-chain-care.html gets '+<title>Winter chain care for the salt season – Werkbank Cycles</title>' and '+<meta name=\"description\" content=\"How to clean, lube and measure wear...\">', both distinct from each other and from the blog index."
+      },
+      "S11": {
+        "fixed": true,
+        "evidence": "index.html and de/index.html both add a valid JSON-LD block with '\"@type\": \"BicycleStore\"', '\"name\": \"Werkbank Cycles\"', address 'Speichenweg 12'/'10999'/'Berlin'/'DE', '\"telephone\": \"+49 30 5550 1234\"', and opening hours 'Tuesday...Friday' 10:00-18:30 and 'Saturday' 10:00-14:00 matching the key exactly, with no fabricated facts like ratings or price range."
+      },
+      "S12": {
+        "fixed": true,
+        "evidence": "Every one of the 12 header pages (index.html, services.html, contact.html, thanks.html, shop/index.html, shop/tubeless-kit.html, blog/index.html, blog/winter-chain-care.html, blog/tyre-pressure.html, de/index.html, de/leistungen.html, de/kontakt.html) changes '-<span class=\"nav-link\" onclick=\"location.href=\\'/shop/\\'\">Shop</span>' to '+<a href=\"/shop/\">Shop</a>'."
+      }
+    },
+    "decoys": {
+      "DS1": {
+        "changed": false,
+        "evidence": "thanks.html diff only touches the nav Shop link; the noindex meta tag on thanks.html is not present in the diff, meaning it is untouched."
+      },
+      "DS2": {
+        "changed": false,
+        "evidence": "blog/winter-chain-care-print.html does not appear anywhere in the diff, so its canonical is untouched."
+      },
+      "DS3": {
+        "changed": false,
+        "evidence": "blog/tyre-pressure.html's diff only touches title, meta description, canonical, and the nav Shop link; the rel=\"nofollow ugc\" comment link (further down the file) is not shown as changed."
+      }
+    },
+    "regressions": [],
+    "invented_claims": []
+  },
+  "hand_checked": true,
+  "corrections": []
+}

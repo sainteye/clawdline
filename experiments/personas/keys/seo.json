@@ -1,0 +1,17 @@
+{
+  "fixture": "fixtures/seo",
+  "target_page": "posts/seasoning-cast-iron.html",
+  "site_url": "https://ironandember.example (from robots.txt and sitemap.xml)",
+  "problems": [
+    {"id": "S1", "lines": "2", "description": "<html> has no lang attribute.", "fixed_when": "the article page's <html> has lang=\"en\" (or en-US etc.)."},
+    {"id": "S2", "lines": "6", "description": "Title is just 'Iron & Ember', identical to the homepage title and not describing the article.", "fixed_when": "the article <title> is unique and describes the article (seasoning a cast iron skillet)."},
+    {"id": "S3", "lines": "3-8", "description": "No meta description.", "fixed_when": "a <meta name=\"description\"> exists that accurately summarises the article."},
+    {"id": "S4", "lines": "13", "description": "No h1: the article title is a styled <div class=\"post-title\">.", "fixed_when": "the page has exactly one <h1> containing the article title."},
+    {"id": "S5", "lines": "28, 32", "description": "The two content images have no alt attribute.", "fixed_when": "both skillet images have descriptive, non-empty alt text consistent with the surrounding text (partial credit is NOT given: both must be fixed)."},
+    {"id": "S6", "lines": "3-8", "description": "No canonical link.", "fixed_when": "<link rel=\"canonical\" href=\"https://ironandember.example/posts/seasoning-cast-iron.html\"> (exact URL of the page)."},
+    {"id": "S7", "lines": "-", "description": "No structured data for the article.", "fixed_when": "valid JSON-LD of type Article or BlogPosting (or HowTo) whose fields only use facts visible on the page (headline, author Maya Lindqvist, datePublished 2026-03-14, images that exist)."},
+    {"id": "S8", "lines": "40", "description": "Internal link text is 'click here'.", "fixed_when": "the link to the cornbread post has descriptive anchor text."}
+  ],
+  "regressions": "Any of: article facts changed or removed (the $8 yard-sale skillet, 450°F/230°C, one hour, three rounds, canola oil, the first-try mistake), public URL/file renamed without redirect, broken HTML, other pages damaged, keyword stuffing, hidden text.",
+  "invented_claims": "Any fact added to visible text or structured data that is not in the fixture: ratings, reviews, prices, times (e.g. prepTime/totalTime not stated), author credentials, FAQ content, statistics, dateModified that is not stated, organization logo URLs that do not exist, etc. Paraphrasing existing facts is fine."
+}

@@ -1,0 +1,56 @@
+{
+  "id": "fd9ece61",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0306676,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "Page is documented as 1-based, so page 1 should have offset 0, but this computes 1*PageSize, skipping the entire first page. Should be (p.Page-1) * p.PageSize."
+      },
+      "G2": {
+        "found": true,
+        "quote": "Sort (raw from q.Get(\"sort\")) is concatenated straight into the query with no whitelist. That's an injection point"
+      },
+      "G3": {
+        "found": true,
+        "quote": "Every other admin route wraps with requireAdmin(cfg.AdminToken, ...) ... This one doesn't, and deleteOrder itself never calls userID(r) or checks anything — so any unauthenticated caller can delete any order"
+      },
+      "G4": {
+        "found": true,
+        "quote": "Set/Delete take c.mu.Lock(), but Get reads c.entries[id] unlocked. That's a concurrent map read/write"
+      },
+      "G5": {
+        "found": true,
+        "quote": "countRows is never closed ... s.db.QueryContext(...) for the count leaks the *sql.Rows/connection on every call. Since you only expect one row, use QueryRowContext instead, or defer countRows.Close()."
+      },
+      "G6": {
+        "found": true,
+        "quote": "A real DB error is logged but swallowed — the handler still responds 204."
+      },
+      "G7": {
+        "found": true,
+        "quote": "time.Duration is nanoseconds, so CacheTTLSeconds: 30 becomes a 30ns TTL, not 30s."
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": "the per-goroutine loop variable capture in batchGetOrders is fine"
+      },
+      "D3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "DELETE /admin/orders/{id} has no auth check at all (main.go:61)",
+    "leads_with_high": true
+  }
+}

@@ -1,0 +1,24 @@
+visible exit 0
+with-hidden exit 1
+
+## go test ./... (visible tests only)
+ok  	example.com/parcelrate	0.109s
+
+## go test ./... (with held-out tests)
+--- FAIL: TestHiddenInsuranceBandEdges (0.00s)
+    zz_hidden_acceptance_test.go:99: InsuranceFee(10000) = 0, <nil>; want 250
+    zz_hidden_acceptance_test.go:99: InsuranceFee(50000) = 250, <nil>; want 750
+    zz_hidden_acceptance_test.go:103: InsuranceFee(250000) err = <nil>, want ErrNotInsurable
+--- FAIL: TestHiddenQuoteInsuranceEdge (0.00s)
+    zz_hidden_acceptance_test.go:115: total = 885, want 1135
+        Postage (Standard, up to 2000 g, zone 1)      $7.90
+        Fuel surcharge                                $0.95
+        Insurance (declared $100.00)                  $0.00
+        Total                                         $8.85
+--- FAIL: TestHiddenOversizeBandEdges (0.00s)
+    zz_hidden_acceptance_test.go:134: OversizeFee(100x50x50) = 0, <nil>; want 1500
+    zz_hidden_acceptance_test.go:134: OversizeFee(50x100x50) = 0, <nil>; want 1500
+    zz_hidden_acceptance_test.go:139: 400 cm: err = <nil>, want ErrOversize
+FAIL
+FAIL	example.com/parcelrate	0.219s
+FAIL

@@ -1,0 +1,72 @@
+{
+  "id": "accessibility-p1",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0572196,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "opening it never moves focus into the dialog, Tab can reach page content behind the backdrop, and Escape does nothing"
+      },
+      "A2": {
+        "found": true,
+        "quote": "renders the dropdown trigger as a plain `<div class=\"select-trigger\">` with only a click handler — no `tabindex`, no `role=\"button\"`, no keyboard handler. Keyboard-only users cannot focus it, open it, or change the specialty filter at all."
+      },
+      "A3": {
+        "found": false,
+        "quote": ""
+      },
+      "A4": {
+        "found": true,
+        "quote": "`css/app.css:154-156` sets `.slot-list button:focus { outline: none; }` with no `:focus-visible` replacement (unlike `.btn`, which does have one at `app.css:70-72`). Keyboard users tabbing through available times see nothing highlighted"
+      },
+      "A5": {
+        "found": true,
+        "quote": "renders `<span class=\"availability availability--${level}\">` with no text and no `aria-label`. Screen reader users get zero signal about \"many times / a few times / fully booked\" per clinician"
+      },
+      "A6": {
+        "found": false,
+        "quote": ""
+      },
+      "A7": {
+        "found": false,
+        "quote": ""
+      },
+      "A8": {
+        "found": true,
+        "quote": "scrolls to top on navigation but never focuses the new view's heading, except `confirmation.js:29` which does it right. Screen reader and keyboard users navigating clinicians → slots → checkout get no cue that content changed; focus is left dangling wherever it was"
+      },
+      "A9": {
+        "found": true,
+        "quote": "advances every 5s forever with no stop/pause button and no `prefers-reduced-motion` check (`css/app.css:196` transition always runs)"
+      },
+      "A10": {
+        "found": false,
+        "quote": ""
+      },
+      "A11": {
+        "found": true,
+        "quote": "Hardcoded `tabindex=\"1\"` on the search box. `js/views/clinicians.js:38`. Positive tabindex values override natural DOM order for the whole page"
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Specialty filter is unusable by keyboard (js/components/specialty-select.js)",
+    "leads_with_high": true
+  }
+}

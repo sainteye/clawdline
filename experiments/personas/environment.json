@@ -1,0 +1,16 @@
+{
+  "date": "2026-09-27T05:45:55.398Z",
+  "claude_cli": "2.1.283 (Claude Code)",
+  "model": "claude-sonnet-5",
+  "go": "go version go1.27.1 darwin/arm64",
+  "node": "v24.1.0",
+  "platform": "darwin 24.6.0 arm64",
+  "persona_dir": "personas (snapshot in this directory)",
+  "persona_sha256": {
+    "code-reviewer": "faf9b81e627b3556424389368e6215b6b5c7964ea2acbec9a8b677204a6c8435",
+    "minimal-change": "9dd3ebc6b8a9f93bcb624b541f8d03a383a918e01336832a5d18625bec8b6664",
+    "seo": "c82a1afe78d6e19cd13a1cfcbd6cc18045d434c27a544ebcf032afc9950a86e4",
+    "accessibility": "d3e185300e8a1ce6afb013880b384931b3830d6d8075729887431ddbcc195a3f"
+  },
+  "persona_catalog_commit": "24d0fb1ab7b346f86f0d43157abdbc34cfe5c09b"
+}

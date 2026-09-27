@@ -1,0 +1,74 @@
+{
+  "id": "6bab1d1c",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0661316,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "the middleware ends up checking \"does the caller own the account whose ID happens to equal this transfer ID?\" — a completely unrelated check... `getTransfer` itself (`transfer.go:73-85`) never checks `from_account_id`/`to_account_id` against the caller."
+      },
+      "G2": {
+        "found": false,
+        "quote": ""
+      },
+      "G3": {
+        "found": true,
+        "quote": "Two concurrent transfers/payouts on the same account can both pass the stale check and both debit, driving the balance negative."
+      },
+      "G4": {
+        "found": false,
+        "quote": ""
+      },
+      "G5": {
+        "found": false,
+        "quote": ""
+      },
+      "G6": {
+        "found": true,
+        "quote": "If the context is canceled while waiting to retry, the function returns before reaching `resp.Body.Close()`, leaking the connection."
+      },
+      "G7": {
+        "found": false,
+        "quote": ""
+      },
+      "G8": {
+        "found": true,
+        "quote": "the config doc says `DailyTransferLimit` is in \"whole currency units (1000 means 1,000.00)\", but `checkDailyLimit` compares it directly against `sent + amount`, which are in **minor units (cents)**... 100x too strict"
+      },
+      "G9": {
+        "found": true,
+        "quote": "`startOfBusinessDay` uses the UTC calendar date, not the local one"
+      },
+      "G10": {
+        "found": true,
+        "quote": "`r.URL` here is `/accounts/{id}/transfers`, so this produces `/accounts/{id}/transfers/{transferID}`. But the only registered read route is `GET /transfers/{id}` (`main.go:70`)."
+      },
+      "G11": {
+        "found": false,
+        "quote": ""
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Broken authorization on GET /transfers/{id} — owned()/requireOwner checks the account with the same numeric id instead of verifying the caller is a party to the transfer.",
+    "leads_with_high": true
+  },
+  "hand_checked": true,
+  "corrections": []
+}

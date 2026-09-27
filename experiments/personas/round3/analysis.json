@@ -1,0 +1,688 @@
+{
+  "environment": {
+    "date": "2026-09-27T08:03:36.149Z",
+    "claude_cli": "2.1.283 (Claude Code)",
+    "model": "claude-sonnet-5",
+    "go": "go version go1.27.1 darwin/arm64",
+    "node": "v24.1.0",
+    "playwright_core": "1.52.0",
+    "platform": "darwin 24.6.0 arm64",
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash"
+    ],
+    "sandbox": {
+      "reality-checker": {
+        "sandbox": {
+          "enabled": true,
+          "autoAllowBashIfSandboxed": true,
+          "allowUnsandboxedCommands": false,
+          "network": {
+            "allowedDomains": [
+              "localhost",
+              "127.0.0.1"
+            ],
+            "allowLocalBinding": true
+          }
+        }
+      },
+      "evidence-collector": "none (see EXPERIMENT.md)"
+    },
+    "persona_sha256": {
+      "reality-checker": "eb6463127e49baa6b6af3df74b6ca4df321a23c2a59d8c86e71471f4e183c2ec",
+      "evidence-collector": "3d5d441371452a5dea3f3ea64b7849121b78f9e5ed33047f778f6f6f96d9159b"
+    },
+    "persona_catalog_commit": "unknown"
+  },
+  "total_cost_usd": {
+    "pilot_runs": 1.232,
+    "pilot_grading": 0.326,
+    "runs": 6.439,
+    "grading": 2.824,
+    "total": 10.822
+  },
+  "table": {
+    "reality-checker": {
+      "none-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "a9db3d1e",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 7,
+            "executed": 6,
+            "high_found": 2,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 1,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 9,
+            "tool_calls": 19,
+            "images_viewed": 0,
+            "cost_usd": 0.26471,
+            "turns": 20,
+            "duration_s": 101
+          },
+          {
+            "id": "4a2faad9",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 8,
+            "executed": 8,
+            "high_found": 3,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 6,
+            "tool_calls": 14,
+            "images_viewed": 0,
+            "cost_usd": 0.23292499999999997,
+            "turns": 15,
+            "duration_s": 100
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 7.5,
+          "executed": 7,
+          "high_found": 2.5,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0.5,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 7.5,
+          "tool_calls": 16.5,
+          "images_viewed": 0,
+          "cost_usd": 0.249,
+          "turns": 17.5,
+          "duration_s": 100.5
+        }
+      },
+      "persona-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "4067ccdb",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 8,
+            "tool_calls": 16,
+            "images_viewed": 0,
+            "cost_usd": 0.2961822,
+            "turns": 17,
+            "duration_s": 137
+          },
+          {
+            "id": "60663c52",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 8,
+            "executed": 8,
+            "high_found": 3,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 11,
+            "tool_calls": 20,
+            "images_viewed": 0,
+            "cost_usd": 0.35065999999999997,
+            "turns": 21,
+            "duration_s": 154
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 8.5,
+          "executed": 8.5,
+          "high_found": 3.5,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 9.5,
+          "tool_calls": 18,
+          "images_viewed": 0,
+          "cost_usd": 0.323,
+          "turns": 19,
+          "duration_s": 145.5
+        }
+      },
+      "none-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "661f5579",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 8,
+            "executed": 8,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 21,
+            "tool_calls": 30,
+            "images_viewed": 0,
+            "cost_usd": 0.43723139999999994,
+            "turns": 31,
+            "duration_s": 197
+          },
+          {
+            "id": "488f5111",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 8,
+            "executed": 8,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 30,
+            "tool_calls": 40,
+            "images_viewed": 0,
+            "cost_usd": 0.6085388,
+            "turns": 41,
+            "duration_s": 256
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 8,
+          "executed": 8,
+          "high_found": 4,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 25.5,
+          "tool_calls": 35,
+          "images_viewed": 0,
+          "cost_usd": 0.523,
+          "turns": 36,
+          "duration_s": 226.5
+        }
+      },
+      "persona-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "b9c0e606",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 21,
+            "tool_calls": 30,
+            "images_viewed": 0,
+            "cost_usd": 0.5562304,
+            "turns": 31,
+            "duration_s": 215
+          },
+          {
+            "id": "b1af1094",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 24,
+            "tool_calls": 33,
+            "images_viewed": 0,
+            "cost_usd": 0.5355996000000001,
+            "turns": 34,
+            "duration_s": 236
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 9,
+          "executed": 9,
+          "high_found": 4,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 22.5,
+          "tool_calls": 31.5,
+          "images_viewed": 0,
+          "cost_usd": 0.546,
+          "turns": 32.5,
+          "duration_s": 225.5
+        }
+      },
+      "effects": {
+        "refused_to_pass": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "verdict_fail": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "found": {
+          "persona_given_vague": 1,
+          "persona_given_brief": 1,
+          "brief_given_none": 0.5,
+          "brief_given_persona": 0.5
+        },
+        "executed": {
+          "persona_given_vague": 1.5,
+          "persona_given_brief": 1,
+          "brief_given_none": 1,
+          "brief_given_persona": 0.5
+        },
+        "false_alarms": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "unsupported_claims": {
+          "persona_given_vague": -0.5,
+          "persona_given_brief": 0,
+          "brief_given_none": -0.5,
+          "brief_given_persona": 0
+        },
+        "criteria_wrongly_passed": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "cost_usd": {
+          "persona_given_vague": 0.074,
+          "persona_given_brief": 0.023,
+          "brief_given_none": 0.274,
+          "brief_given_persona": 0.223
+        }
+      }
+    },
+    "evidence-collector": {
+      "none-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "033769b4",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 12,
+            "tool_calls": 26,
+            "images_viewed": 2,
+            "cost_usd": 0.4032022,
+            "turns": 27,
+            "duration_s": 207
+          },
+          {
+            "id": "71423204",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 8,
+            "executed": 8,
+            "high_found": 3,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 1,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 14,
+            "tool_calls": 25,
+            "images_viewed": 2,
+            "cost_usd": 0.335296,
+            "turns": 26,
+            "duration_s": 254
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 8.5,
+          "executed": 8.5,
+          "high_found": 3.5,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0.5,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 13,
+          "tool_calls": 25.5,
+          "images_viewed": 2,
+          "cost_usd": 0.369,
+          "turns": 26.5,
+          "duration_s": 230.5
+        }
+      },
+      "persona-vague": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "11369fd7",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "NONE",
+            "refused_to_pass": 1,
+            "verdict_fail": 0,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 1,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 15,
+            "tool_calls": 29,
+            "images_viewed": 4,
+            "cost_usd": 0.36712419999999996,
+            "turns": 30,
+            "duration_s": 571
+          },
+          {
+            "id": "3cf9c09e",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "NONE",
+            "refused_to_pass": 1,
+            "verdict_fail": 0,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 15,
+            "tool_calls": 29,
+            "images_viewed": 3,
+            "cost_usd": 0.43284420000000007,
+            "turns": 30,
+            "duration_s": 249
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 0,
+          "found": 9,
+          "executed": 9,
+          "high_found": 4,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0.5,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 15,
+          "tool_calls": 29,
+          "images_viewed": 3.5,
+          "cost_usd": 0.4,
+          "turns": 30,
+          "duration_s": 410
+        }
+      },
+      "none-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "ae8dbff2",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 12,
+            "tool_calls": 22,
+            "images_viewed": 4,
+            "cost_usd": 0.32211460000000003,
+            "turns": 23,
+            "duration_s": 132
+          },
+          {
+            "id": "13e5af5b",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 15,
+            "tool_calls": 28,
+            "images_viewed": 6,
+            "cost_usd": 0.395027,
+            "turns": 29,
+            "duration_s": 181
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 9,
+          "executed": 9,
+          "high_found": 4,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 13.5,
+          "tool_calls": 25,
+          "images_viewed": 5,
+          "cost_usd": 0.359,
+          "turns": 26,
+          "duration_s": 156.5
+        }
+      },
+      "persona-brief": {
+        "n": 2,
+        "per_run": [
+          {
+            "id": "3368f905",
+            "rep": 1,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 19,
+            "tool_calls": 26,
+            "images_viewed": 5,
+            "cost_usd": 0.42507720000000004,
+            "turns": 27,
+            "duration_s": 243
+          },
+          {
+            "id": "7ff9826b",
+            "rep": 2,
+            "hand_checked": true,
+            "verdict": "FAIL",
+            "refused_to_pass": 1,
+            "verdict_fail": 1,
+            "found": 9,
+            "executed": 9,
+            "high_found": 4,
+            "decoys_flagged": 0,
+            "wrong_claims": 0,
+            "false_alarms": 0,
+            "unsupported_claims": 0,
+            "criteria_wrongly_passed": 0,
+            "bash_calls": 11,
+            "tool_calls": 30,
+            "images_viewed": 10,
+            "cost_usd": 0.4763442000000001,
+            "turns": 31,
+            "duration_s": 209
+          }
+        ],
+        "mean": {
+          "refused_to_pass": 1,
+          "verdict_fail": 1,
+          "found": 9,
+          "executed": 9,
+          "high_found": 4,
+          "decoys_flagged": 0,
+          "wrong_claims": 0,
+          "false_alarms": 0,
+          "unsupported_claims": 0,
+          "criteria_wrongly_passed": 0,
+          "bash_calls": 15,
+          "tool_calls": 28,
+          "images_viewed": 7.5,
+          "cost_usd": 0.451,
+          "turns": 29,
+          "duration_s": 226
+        }
+      },
+      "effects": {
+        "refused_to_pass": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "verdict_fail": {
+          "persona_given_vague": -1,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 1
+        },
+        "found": {
+          "persona_given_vague": 0.5,
+          "persona_given_brief": 0,
+          "brief_given_none": 0.5,
+          "brief_given_persona": 0
+        },
+        "executed": {
+          "persona_given_vague": 0.5,
+          "persona_given_brief": 0,
+          "brief_given_none": 0.5,
+          "brief_given_persona": 0
+        },
+        "false_alarms": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "unsupported_claims": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": -0.5,
+          "brief_given_persona": -0.5
+        },
+        "criteria_wrongly_passed": {
+          "persona_given_vague": 0,
+          "persona_given_brief": 0,
+          "brief_given_none": 0,
+          "brief_given_persona": 0
+        },
+        "cost_usd": {
+          "persona_given_vague": 0.031,
+          "persona_given_brief": 0.092,
+          "brief_given_none": -0.01,
+          "brief_given_persona": 0.051
+        }
+      }
+    }
+  }
+}

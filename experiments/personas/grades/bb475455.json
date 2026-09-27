@@ -1,0 +1,56 @@
+{
+  "id": "bb475455",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0409476,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "Pagination offset is off by one page** — `store.go:106` ... With `page=1, page_size=20` this computes `OFFSET 20`, skipping the first 20 orders entirely"
+      },
+      "G2": {
+        "found": true,
+        "quote": "SQL injection via `sort` parameter** — `store.go:100-105` ... `Sort` comes straight from the query string with no allowlist"
+      },
+      "G3": {
+        "found": true,
+        "quote": "`DELETE /admin/orders/{id}` has no auth middleware** — `main.go:61` ... any anonymous caller can permanently delete any order"
+      },
+      "G4": {
+        "found": true,
+        "quote": "`OrderCache.Get` isn't synchronized** — `cache.go:30-36` ... `Set`/`Delete` both take `c.mu`, but `Get` reads the map with no lock at all"
+      },
+      "G5": {
+        "found": true,
+        "quote": "`countRows` is never closed** — `store.go:90-98`. `QueryContext` returns a `*sql.Rows` that must be `Close()`d ... Every call to `ListOrders` leaks a connection from the pool."
+      },
+      "G6": {
+        "found": false,
+        "quote": ""
+      },
+      "G7": {
+        "found": true,
+        "quote": "Cache TTL is nanoseconds, not seconds** — `main.go:52` ... casting it directly to `time.Duration` produces `30ns`, not 30 seconds"
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": "Goroutine loop in `batchGetOrders` ... safe under Go 1.22's per-iteration loop-variable semantics ... so no classic closure-capture bug."
+      },
+      "D3": {
+        "flagged": false,
+        "quote": "`GetOrdersByIDs` builds its `IN (...)` clause with real placeholders (`store.go:130-137`), not string concatenation — not injectable."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "SQL injection via `sort` parameter",
+    "leads_with_high": true
+  }
+}

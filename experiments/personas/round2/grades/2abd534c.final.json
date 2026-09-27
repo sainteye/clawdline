@@ -1,0 +1,32 @@
+{
+  "id": "2abd534c",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0441476,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "brackets.go",
+        "kind": "unrelated",
+        "category": "comment_churn",
+        "changed_lines": 11,
+        "summary": "Rewrote bracketIndex's doc comment to describe its exclusive-limit contract and removed the stale TODO(2020-03) that suggested making it inclusive; no code logic changed."
+      },
+      {
+        "file": "rates.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 5,
+        "summary": "In Quote, changed `limits[i] = tiers[i].UpToGrams` to `limits[i] = tiers[i].UpToGrams + 1` (matches reference fix exactly) with an explanatory comment on the changed lines."
+      }
+    ],
+    "unrelated_edit_count": 1,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "The fix hunk in rates.go is an exact match for the reference fix (UpToGrams+1), correctly scoped to the Quote call site only. The brackets.go hunk only rewrites/removes the stale TODO comment and updates the doc comment to reflect the correct exclusive semantics; it does not touch bracketIndex's logic, so broad_fix is false, but it's still an edit to another file not required by the fix, so it's classified as unrelated/comment_churn per the key's explicit guidance. The final message correctly identifies the root cause, explains why the shared helper was deliberately left untouched (citing InsuranceFee/OversizeFee dependence on exclusive semantics), and notes the fix also resolves the false ErrTooHeavy rejection at 20000g. No wrong claims found."
+  },
+  "hand_checked": true,
+  "corrections": []
+}

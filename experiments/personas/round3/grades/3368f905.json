@@ -1,0 +1,84 @@
+{
+  "id": "3368f905",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1507876,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "### 3. Verdict: **FAIL — needs work** ... Not ready to merge.",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "Actual: scrollWidth 420 > clientWidth 375; Checkout button's right edge at x=399 (24px past the viewport).",
+        "executed": true,
+        "evidence": "node /tmp/evidence/layout.mjs → 'width=375: cart flex-direction=column scrollWidth=420 clientWidth=375 horizontalOverflow=true checkoutBox={\"x\":41,...,\"width\":358,...}' (tool log [18])"
+      },
+      "E2": {
+        "found": true,
+        "quote": "768px breakpoint excludes 768px itself — cart.css media query is min-width: 769px. ... Actual: stacked (column) layout; measured flexDirection: column.",
+        "executed": true,
+        "evidence": "node /tmp/evidence/layout.mjs → 'width=768: cart flex-direction=column scrollWidth=768 clientWidth=768 horizontalOverflow=false' (tool log [18])"
+      },
+      "E3": {
+        "found": true,
+        "quote": "Quantity can exceed 10 or drop to 0/negative ... Actual: qty becomes 11 before the button disables",
+        "executed": true,
+        "evidence": "node /tmp/evidence/stepper.mjs → 'click 9: qty=10 inc.disabled=false' then 'click 10: qty=11 inc.disabled=true' (tool log [10])"
+      },
+      "E4": {
+        "found": true,
+        "quote": "Clicking `.dec` once at qty=1 (`dec.disabled=false`) drops qty to **0**.",
+        "executed": true,
+        "evidence": "node /tmp/evidence/stepper2.mjs → 'before click 1: qty=1 dec.disabled=false' then 'after click 1: qty=0 dec.disabled=true' (tool log [11])"
+      },
+      "E5": {
+        "found": true,
+        "quote": "Discount doesn't follow later quantity changes ... Actual: discount stays at the original cents amount (log above: subtotal rose to $1182.00, discount frozen at −$105.30 instead of −$118.20).",
+        "executed": true,
+        "evidence": "node /tmp/evidence/promo.mjs → 'Subtotal: $1182.00' / 'Discount text: −$105.30 (expected 10% of new subtotal = $118.20 if it follows)' (tool log [12])"
+      },
+      "E6": {
+        "found": true,
+        "quote": "Stale \"Code not recognised\" message isn't cleared by a valid code ... Actual: message stays visible even though the discount applied correctly.",
+        "executed": true,
+        "evidence": "node /tmp/evidence/promo2.mjs → 'After SAVE10 -> text: \"Code not recognised\" hidden attr: null' / 'Is the error paragraph visible on screen? true' (tool log [13])"
+      },
+      "E7": {
+        "found": true,
+        "quote": "No thousands separator in money values ... Actual: $1053.00, everywhere an amount ≥ $1,000 is shown.",
+        "executed": true,
+        "evidence": "node /tmp/evidence/check.mjs → 'Initial subtotal text === $1053.00' (tool log [9])"
+      },
+      "E8": {
+        "found": true,
+        "quote": "Empty-cart state doesn't hide the summary/Checkout ... Actual: summary card and enabled Checkout button remain fully visible with $0.00 totals.",
+        "executed": true,
+        "evidence": "node /tmp/evidence/remove.mjs → '#summary computed display: block' / 'Checkout link visible (per computed style, ignoring class): true' plus grep no matches for is-hidden and Read of empty-state.png (tool log [15],[16],[17])"
+      },
+      "E9": {
+        "found": true,
+        "quote": "Quantity changes are never persisted ... Actual: `localStorage['cart:v1']` stays `null` after a qty change; reload reverts to the default quantity.",
+        "executed": true,
+        "evidence": "node /tmp/evidence/persist2.mjs → 'localStorage[\"cart:v1\"] right after clicking + on line 2 (qty now 2): null'; node /tmp/evidence/persist.mjs → reload shows 'MN-27 qty= 1' instead of 3 (tool log [22],[23])"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

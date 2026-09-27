@@ -1,0 +1,333 @@
+diff --git a/blog/index.html b/blog/index.html
+index 6170605..2067d2c 100644
+--- a/blog/index.html
++++ b/blog/index.html
+@@ -14,7 +14,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>
+diff --git a/blog/tyre-pressure.html b/blog/tyre-pressure.html
+index 4d4cc8b..2919f07 100644
+--- a/blog/tyre-pressure.html
++++ b/blog/tyre-pressure.html
+@@ -3,9 +3,9 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+-  <title>Blog | Werkbank Cycles</title>
+-  <meta name="description" content="News, tips and workshop stories from Werkbank Cycles in Berlin.">
+-  <link rel="canonical" href="http://werkbankcycles.example/blog/tyre-pressure.html">
++  <title>How to choose tyre pressure for city riding – Werkbank Cycles</title>
++  <meta name="description" content="Starting tyre pressures by width for city and cargo bikes, plus how to fine-tune by feel on cobbles and corners.">
++  <link rel="canonical" href="https://werkbankcycles.example/blog/tyre-pressure.html">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+ </head>
+@@ -14,7 +14,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>
+diff --git a/blog/winter-chain-care.html b/blog/winter-chain-care.html
+index 5633552..f50d702 100644
+--- a/blog/winter-chain-care.html
++++ b/blog/winter-chain-care.html
+@@ -3,8 +3,8 @@
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+-  <title>Blog | Werkbank Cycles</title>
+-  <meta name="description" content="News, tips and workshop stories from Werkbank Cycles in Berlin.">
++  <title>Winter chain care for the salt season – Werkbank Cycles</title>
++  <meta name="description" content="How to clean, lube and measure wear on your bike chain through winter, so road salt doesn't wreck your drivetrain.">
+   <link rel="canonical" href="https://werkbankcycles.example/blog/winter-chain-care.html">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+@@ -14,7 +14,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>
+@@ -38,7 +38,7 @@
+       <h2>Measure wear once a month</h2>
+       <p>A chain checker costs a few euros. When it shows 0.5 % wear on an 11- or 12-speed chain, or 0.75 % on a chain with fewer gears, change the chain before it damages the cassette.</p>
+ 
+-      <p>If you would rather leave it to us, the chain is checked and cleaned in every service – see our <a href="/repairs.html">repair prices</a>.</p>
++      <p>If you would rather leave it to us, the chain is checked and cleaned in every service – see our <a href="/services.html">repair prices</a>.</p>
+     </article>
+   </main>
+   <footer class="site-footer">
+diff --git a/contact.html b/contact.html
+index 801fd7a..f8a1f25 100644
+--- a/contact.html
++++ b/contact.html
+@@ -7,7 +7,7 @@
+   <meta name="description" content="Find Werkbank Cycles at Speichenweg 12, 10999 Berlin. Open Tuesday to Saturday. Call us or send a repair request online.">
+   <link rel="canonical" href="https://werkbankcycles.example/contact.html">
+   <link rel="alternate" hreflang="en" href="https://werkbankcycles.example/contact.html">
+-  <link rel="alternate" hreflang="ge" href="https://werkbankcycles.example/de/kontakt.html">
++  <link rel="alternate" hreflang="de" href="https://werkbankcycles.example/de/kontakt.html">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+ </head>
+@@ -16,7 +16,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/kontakt.html" hreflang="de" lang="de">Deutsch</a>
+diff --git a/de/index.html b/de/index.html
+index 6d6f8ac..68e3252 100644
+--- a/de/index.html
++++ b/de/index.html
+@@ -5,19 +5,41 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <title>Werkbank Cycles – Fahrradwerkstatt in Berlin-Kreuzberg</title>
+   <meta name="description" content="Unabhängige Fahrradwerkstatt in Berlin-Kreuzberg: Inspektion, Tubeless-Umrüstung und Bremsen. Die meisten Reparaturen sind in zwei Werktagen fertig.">
+-  <link rel="canonical" href="https://werkbankcycles.example/">
++  <link rel="canonical" href="https://werkbankcycles.example/de/">
+   <link rel="alternate" hreflang="de" href="https://werkbankcycles.example/de/">
+   <link rel="alternate" hreflang="en" href="https://werkbankcycles.example/">
+   <link rel="alternate" hreflang="x-default" href="https://werkbankcycles.example/">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
++  <script type="application/ld+json">
++  {
++    "@context": "https://schema.org",
++    "@type": "BicycleStore",
++    "name": "Werkbank Cycles",
++    "image": "https://werkbankcycles.example/images/logo.svg",
++    "url": "https://werkbankcycles.example/",
++    "telephone": "+49 30 5550 1234",
++    "email": "hello@werkbankcycles.example",
++    "address": {
++      "@type": "PostalAddress",
++      "streetAddress": "Speichenweg 12",
++      "postalCode": "10999",
++      "addressLocality": "Berlin",
++      "addressCountry": "DE"
++    },
++    "openingHoursSpecification": [
++      { "@type": "OpeningHoursSpecification", "dayOfWeek": ["Tuesday", "Wednesday", "Thursday", "Friday"], "opens": "10:00", "closes": "18:30" },
++      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "10:00", "closes": "14:00" }
++    ]
++  }
++  </script>
+ </head>
+ <body>
+   <header class="site-header">
+     <a class="brand" href="/de/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/de/leistungen.html">Leistungen</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/" hreflang="en">Blog (Englisch)</a>
+       <a href="/de/kontakt.html">Kontakt</a>
+       <a href="/" hreflang="en" lang="en">English</a>
+diff --git a/de/kontakt.html b/de/kontakt.html
+index 052b605..304f4c1 100644
+--- a/de/kontakt.html
++++ b/de/kontakt.html
+@@ -6,7 +6,7 @@
+   <title>Kontakt und Öffnungszeiten – Werkbank Cycles, Berlin-Kreuzberg</title>
+   <meta name="description" content="Werkbank Cycles, Speichenweg 12, 10999 Berlin. Geöffnet Dienstag bis Samstag. Rufen Sie an oder schicken Sie uns eine Reparaturanfrage.">
+   <link rel="canonical" href="https://werkbankcycles.example/de/kontakt.html">
+-  <link rel="alternate" hreflang="ge" href="https://werkbankcycles.example/de/kontakt.html">
++  <link rel="alternate" hreflang="de" href="https://werkbankcycles.example/de/kontakt.html">
+   <link rel="alternate" hreflang="en" href="https://werkbankcycles.example/contact.html">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+@@ -16,7 +16,7 @@
+     <a class="brand" href="/de/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/de/leistungen.html">Leistungen</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/" hreflang="en">Blog (Englisch)</a>
+       <a href="/de/kontakt.html">Kontakt</a>
+       <a href="/contact.html" hreflang="en" lang="en">English</a>
+diff --git a/de/leistungen.html b/de/leistungen.html
+index 720a5e7..5ff57d8 100644
+--- a/de/leistungen.html
++++ b/de/leistungen.html
+@@ -7,6 +7,7 @@
+   <meta name="description" content="Preise unserer Fahrradwerkstatt in Berlin-Kreuzberg: kleine Inspektion 59 €, große Inspektion 119 €, Tubeless-Umrüstung 25 € pro Laufrad.">
+   <link rel="canonical" href="https://werkbankcycles.example/de/leistungen.html">
+   <link rel="alternate" hreflang="de" href="https://werkbankcycles.example/de/leistungen.html">
++  <link rel="alternate" hreflang="en" href="https://werkbankcycles.example/services.html">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+ </head>
+@@ -15,7 +16,7 @@
+     <a class="brand" href="/de/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/de/leistungen.html">Leistungen</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/" hreflang="en">Blog (Englisch)</a>
+       <a href="/de/kontakt.html">Kontakt</a>
+       <a href="/services.html" hreflang="en" lang="en">English</a>
+diff --git a/index.html b/index.html
+index d717996..27575b8 100644
+--- a/index.html
++++ b/index.html
+@@ -11,13 +11,35 @@
+   <link rel="alternate" hreflang="x-default" href="https://werkbankcycles.example/">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
++  <script type="application/ld+json">
++  {
++    "@context": "https://schema.org",
++    "@type": "BicycleStore",
++    "name": "Werkbank Cycles",
++    "image": "https://werkbankcycles.example/images/logo.svg",
++    "url": "https://werkbankcycles.example/",
++    "telephone": "+49 30 5550 1234",
++    "email": "hello@werkbankcycles.example",
++    "address": {
++      "@type": "PostalAddress",
++      "streetAddress": "Speichenweg 12",
++      "postalCode": "10999",
++      "addressLocality": "Berlin",
++      "addressCountry": "DE"
++    },
++    "openingHoursSpecification": [
++      { "@type": "OpeningHoursSpecification", "dayOfWeek": ["Tuesday", "Wednesday", "Thursday", "Friday"], "opens": "10:00", "closes": "18:30" },
++      { "@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "10:00", "closes": "14:00" }
++    ]
++  }
++  </script>
+ </head>
+ <body>
+   <header class="site-header">
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>
+diff --git a/robots.txt b/robots.txt
+index e0f6c1a..0c3d20a 100644
+--- a/robots.txt
++++ b/robots.txt
+@@ -1,7 +1,5 @@
+ # Werkbank Cycles
+-# Keep the unfinished blog out of search while we write the first posts.
+ User-agent: *
+-Disallow: /blog/
+ Allow: /
+ 
+ Sitemap: https://werkbankcycles.example/sitemap.xml
+diff --git a/services.html b/services.html
+index d65e089..de21a7c 100644
+--- a/services.html
++++ b/services.html
+@@ -5,7 +5,6 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <title>Bike servicing and repair prices – Werkbank Cycles Berlin</title>
+   <meta name="description" content="Prices for bike servicing in Berlin-Kreuzberg: basic service €59, full service €119, tubeless setup €25 per wheel, hydraulic brake bleed €35.">
+-  <meta name="robots" content="noindex, nofollow">
+   <link rel="canonical" href="https://werkbankcycles.example/services.html">
+   <link rel="alternate" hreflang="en" href="https://werkbankcycles.example/services.html">
+   <link rel="alternate" hreflang="de" href="https://werkbankcycles.example/de/leistungen.html">
+@@ -17,7 +16,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/leistungen.html" hreflang="de" lang="de">Deutsch</a>
+diff --git a/shop/index.html b/shop/index.html
+index 5ec0495..d169227 100644
+--- a/shop/index.html
++++ b/shop/index.html
+@@ -14,7 +14,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>
+diff --git a/shop/tubeless-kit.html b/shop/tubeless-kit.html
+index ee76c88..d1a5bbd 100644
+--- a/shop/tubeless-kit.html
++++ b/shop/tubeless-kit.html
+@@ -5,17 +5,16 @@
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <title>Tubeless conversion kit (tape, valves, sealant) – Werkbank Cycles</title>
+   <meta name="description" content="Tubeless conversion kit with rim tape, two valves and 120 ml sealant, for one pair of wheels. €39.00, pick up at our Berlin-Kreuzberg workshop.">
+-  <link rel="canonical" href="https://werkbankcycles.example/shop/">
++  <link rel="canonical" href="https://werkbankcycles.example/shop/tubeless-kit.html">
+   <link rel="stylesheet" href="/css/site.css">
+   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+-  <link rel="canonical" href="https://werkbankcycles.example/shop/tubeless-kit.html">
+ </head>
+ <body>
+   <header class="site-header">
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>
+@@ -34,7 +33,7 @@
+     </ul>
+     <p>Enough for one pair of wheels. Your rims and tyres must be tubeless-ready.</p>
+     <h2>Rather not do it yourself?</h2>
+-    <p>We fit tubeless setups in the workshop. See the tubeless setup price on our <a href="/repairs.html">repairs and prices page</a>.</p>
++    <p>We fit tubeless setups in the workshop. See the tubeless setup price on our <a href="/services.html">repairs and prices page</a>.</p>
+     <p><a href="/shop/">Back to the shop</a></p>
+   </main>
+   <footer class="site-footer">
+diff --git a/sitemap.xml b/sitemap.xml
+index 2eaacc1..7e3ccb9 100644
+--- a/sitemap.xml
++++ b/sitemap.xml
+@@ -1,10 +1,8 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+   <url><loc>https://werkbankcycles.example/</loc></url>
+-  <url><loc>https://werkbankcycles.example/repairs.html</loc></url>
+   <url><loc>https://werkbankcycles.example/services.html</loc></url>
+   <url><loc>https://werkbankcycles.example/contact.html</loc></url>
+-  <url><loc>https://werkbankcycles.example/thanks.html</loc></url>
+   <url><loc>https://werkbankcycles.example/shop/</loc></url>
+   <url><loc>https://werkbankcycles.example/shop/tubeless-kit.html</loc></url>
+   <url><loc>https://werkbankcycles.example/blog/</loc></url>
+diff --git a/thanks.html b/thanks.html
+index 89444c6..89fd024 100644
+--- a/thanks.html
++++ b/thanks.html
+@@ -14,7 +14,7 @@
+     <a class="brand" href="/"><img src="/images/logo.svg" alt="" width="28" height="28"> Werkbank Cycles</a>
+     <nav>
+       <a href="/services.html">Services</a>
+-      <span class="nav-link" onclick="location.href='/shop/'">Shop</span>
++      <a href="/shop/">Shop</a>
+       <a href="/blog/">Blog</a>
+       <a href="/contact.html">Contact</a>
+       <a href="/de/" hreflang="de" lang="de">Deutsch</a>

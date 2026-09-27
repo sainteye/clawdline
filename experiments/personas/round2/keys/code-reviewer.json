@@ -1,0 +1,128 @@
+{
+  "fixture": "round2/fixtures/code-reviewer",
+  "note": "Round 2 wallet service PR (transfers, payouts, daily limit, async webhook). Line numbers refer to the post-change files in the fixture directory. 'high' = blocker-class (security hole, money lost or created, unbounded resource growth); 'medium' = wrong behaviour or bounded resource leak; 'low' = degraded behaviour. The default database driver is sqlite, where a failed statement does not abort the transaction. Several items span two files; credit requires the mechanism in 'description', not only the file or area.",
+  "high_ids": [
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5"
+  ],
+  "defects": [
+    {
+      "id": "G1",
+      "file": "main.go",
+      "lines": "70 (with auth.go 47-66 requireOwner, transfer.go 73-85 getTransfer)",
+      "severity": "high",
+      "description": "Broken access control on the new GET /transfers/{id}: it is wrapped in owned()/requireOwner, which treats {id} as an ACCOUNT id and only checks that the caller owns account #id; getTransfer then returns transfer #id with no check that the caller is a party to it. Any user who owns account N can read transfer N (other users' account ids, amount, memo), and real parties get 404. Credit requires naming that requireOwner checks the account with the same number, not the transfer, or equivalently that getTransfer has no ownership check on the transfer."
+    },
+    {
+      "id": "G2",
+      "file": "store.go",
+      "lines": "196-202, 216-231",
+      "severity": "high",
+      "description": "Half-committed transfer: CreateTransfer's deferred closure commits when the outer `err` is nil, but the debit, credit and ledger-entry failures are checked with `if err := ...` / `if _, err := ...`, which shadow err. When any of those steps fails (e.g. the credit UPDATE errors or affects 0 rows, or an entry INSERT fails), the function returns an error but the deferred func sees err == nil and COMMITS: the transfer row and debit are persisted without the credit and/or without ledger entries (money disappears or balances diverge from the ledger) while the client gets 500. Credit requires naming that the shadowed err makes the deferred func commit instead of roll back on these failures."
+    },
+    {
+      "id": "G3",
+      "file": "transfer.go",
+      "lines": "transfer.go 46-49 and handler.go 150-153 (with store.go 250-264 adjustBalance, used by CreateTransfer 216 and Withdraw 174; balance loaded in auth.go 54/64)",
+      "severity": "high",
+      "description": "TOCTOU overdraft: createTransfer (transfer.go 46) and createPayout (handler.go 150) check acct.BalanceCents, which was read by requireOwner at the start of the request outside any transaction, and the debit in CreateTransfer/Withdraw goes through adjustBalance, an unconditional `balance_cents = balance_cents + ?` with no `AND balance_cents >= ?` guard, re-check inside the transaction, or row lock. Concurrent (racing) transfers or payouts from the same account all pass the check and drive the balance negative. Credit requires naming the stale check-then-unconditional-update race on the balance (for either transfers or payouts)."
+    },
+    {
+      "id": "G4",
+      "file": "payouts.go",
+      "lines": "71-92",
+      "severity": "high",
+      "description": "Failed payout reported as success: inside the retry loop `resp, err := c.post(...)` declares a new err that shadows the outer one (from json.Marshal, nil at that point). When every attempt fails with a retryable error (network error, 429, 5xx) the loop ends and `return PayoutResult{}, err` returns the OUTER nil error. createPayout (handler.go 166-186) then responds 202 with an empty provider_id and never reverses the Withdraw: the user's money is debited but never paid out. Credit requires naming the shadowed err making Send return nil after exhausted retries (or equivalently that exhausted retries return no error)."
+    },
+    {
+      "id": "G5",
+      "file": "notify.go",
+      "lines": "notify.go 40-42 (channel made by goResult, transfer.go 115-119; wait helper handler.go 200-209 waitOrTimeout; called via handler.go 190-194 on every deposit, transfer and payout)",
+      "severity": "high",
+      "description": "Goroutine leak: NotifyWithin gets its result channel from goResult (transfer.go), which makes an UNBUFFERED channel and a goroutine that sends f()'s result on it, then passes it to waitOrTimeout (handler.go). When the wait (300ms default) expires first, waitOrTimeout returns and nobody ever receives, so the goroutine blocks forever on `ch <- f()` after Notify returns (up to the 5s webhook timeout later). Every notification to a slow webhook leaks one goroutine (and its event) permanently; memory grows without bound. Fix: make(chan error, 1). Credit requires naming the blocked send on the unbuffered channel after the timeout."
+    },
+    {
+      "id": "G6",
+      "file": "payouts.go",
+      "lines": "81-90",
+      "severity": "medium",
+      "description": "Response body leak on the retry/cancel path: for a retryable answer (429/5xx) Send keeps resp (to read Retry-After) and only closes resp.Body after the backoff wait; if ctx is cancelled during that wait (client disconnect, deadline), the `case <-ctx.Done(): return` branch returns without closing the body, so the connection is never returned to the pool (held until the client timeout tears it down). Payouts cancelled mid-retry during a provider incident each leak a connection. Credit requires naming the unclosed body on the ctx.Done (cancellation) branch between attempts."
+    },
+    {
+      "id": "G7",
+      "file": "store.go",
+      "lines": "18-27 lookupError, used at 87-92 (GetAccount) and 240-245 (GetTransfer); consumer: handler.go 250-262 writeStoreError; auth.go 54-57; transfer.go 37-41",
+      "severity": "medium",
+      "description": "Error mapping broken: GetAccount (and GetTransfer) now return a *lookupError wrapping ErrNotFound, but lookupError has no Unwrap (or Is) method, so errors.Is(err, ErrNotFound) in writeStoreError no longer matches. A missing account (GET /accounts/{unknown}, any owned route, a transfer to an unknown to_account_id) or missing transfer returns 500 and logs an error instead of 404; it also defeats the 'same answer as a missing account' anti-probing intent (missing = 500, someone else's = 404). Credit requires naming the missing Unwrap/lost error chain causing 404 -> 500."
+    },
+    {
+      "id": "G8",
+      "file": "transfer.go",
+      "lines": "98 (unit defined only in config.go 25-28, default 47; passed through main.go 40)",
+      "severity": "medium",
+      "description": "Unit mismatch: DailyTransferLimit is documented (config.go field comment) and defaulted in whole currency units (1000 = 1,000.00), passed unchanged into ServerOptions.DailyLimit, and compared in checkDailyLimit against amounts in cents (`sent+amount > s.opts.DailyLimit`, where amount is req.AmountCents and SentSince sums amount_cents). The effective limit is 100x too small (10.00 by default), so almost every transfer is rejected with 422. Credit requires naming units vs cents (x100) mismatch."
+    },
+    {
+      "id": "G9",
+      "file": "config.go",
+      "lines": "98-101 (used at transfer.go 93)",
+      "severity": "medium",
+      "description": "Day-boundary/timezone bug: startOfBusinessDay (config.go) takes the calendar date of now in UTC (`now.UTC().Date()`) and builds midnight of that date in the business location. For America/New_York (default), from 20:00 (EDT)/19:00 (EST) local until midnight the UTC date is already tomorrow, so the window starts in the future, SentSince returns 0 and the daily limit is bypassed every evening; for zones east of UTC the window starts a day early (e.g. Tokyo before 09:00) and counts yesterday's transfers. The tests in money_test.go only use times where local and UTC dates agree. Should use now.In(loc).Date(). Credit requires naming the UTC date being used for a local-midnight boundary."
+    },
+    {
+      "id": "G10",
+      "file": "transfer.go",
+      "lines": "70 (helper handler.go 238-242; the only route for a transfer is main.go 70 GET /transfers/{id})",
+      "severity": "low",
+      "description": "Wrong Location header: createTransfer builds Location with r.URL.JoinPath(id), i.e. relative to the request path /accounts/{id}/transfers, giving /accounts/1/transfers/42. No such route exists (transfers are served at /transfers/{id}), so the 201's Location points to a 404. Credit requires naming that the Location URL is wrong/unrouted (built from the request path instead of /transfers/{id})."
+    },
+    {
+      "id": "G11",
+      "file": "notify.go",
+      "lines": "50 (currency table money.go 17-24; Currency set on events at handler.go 126/181, transfer.go 67-68)",
+      "severity": "low",
+      "description": "Webhook amount formatting assumes 2 decimals: the new Event.Summary is built with float64(ev.AmountCents)/100 and %.2f for every currency, although the currency table (money.go) includes JPY (0 decimals) and KWD (3 decimals) and FormatAmount handles them correctly. A 500 JPY transfer is announced as \"5.00 JPY\" and 1.250 KWD as \"12.50 KWD\". Credit requires naming the hard-coded 2-decimal (/100) formatting being wrong for currencies with a different exponent."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "D1",
+      "file": "money.go",
+      "lines": "14-27 (read at 32)",
+      "description": "The package-level `currencies` map is read by concurrent handlers without a lock, but it is written only inside init(), which completes before main() starts and before any goroutine exists (init happens-before main). After that it is read-only, and concurrent reads of a map are safe. Verified race-free under -race with 64 concurrent readers. Flagging it as a data race or asking for a mutex/sync.Map is a false alarm."
+    },
+    {
+      "id": "D2",
+      "file": "store.go",
+      "lines": "102-111 (with 114-126)",
+      "description": "ListEntries no longer has `defer rows.Close()` after QueryContext, but it hands rows straight to scanEntries, whose first statement is `defer rows.Close()`, on every path (including scan errors). The QueryContext error path returns a nil rows that needs no close. Verified with a driver-level open-rows counter: 0 open after repeated calls. Flagging a rows/connection leak here is a false alarm."
+    },
+    {
+      "id": "D3",
+      "file": "payouts.go",
+      "lines": "62 (range check in handler.go 14 and 142-145)",
+      "description": "`int32(p.AmountCents)` looks like a lossy conversion, but Send is only called from createPayout, which rejects amount_cents <= 0 or > maxPayoutCents (25,000,000) before anything else; 25,000,000 < math.MaxInt32 (2,147,483,647), so the conversion is exact. Verified: the maximum payout reaches the provider unchanged and 2^32+100 is rejected with 400. Flagging it as truncation/overflow is a false alarm (suggesting a defensive check inside Send is fine as a neutral nit only if not presented as a bug)."
+    }
+  ],
+  "acceptable_other_findings": [
+    "CreateTransfer's deferred `err = tx.Commit()` assigns to a local, not a named result, so a Commit failure is reported as success (real; same closure as G2 - credit G2 only if the shadowed-err commit-on-failure is named).",
+    "The daily-limit check is also check-then-act: concurrent transfers can each pass checkDailyLimit (real; part of the G3 family - credit G3 only if the balance overdraft race is named).",
+    "adjustBalance returns ErrNotFound when 0 rows are affected, so an insufficient balance can never be reported from the store layer (consequence of the G3 design; credit G3 only if the race is named).",
+    "Payout flow is not atomic: Withdraw commits, then the provider is called, then a compensating Credit runs; a crash in between, or a cancelled request context (client disconnect), leaves the debit without payout or reversal. Reversal uses r.Context(), which may already be cancelled.",
+    "A payout timeout/network error after the provider actually accepted the payout causes a reversal while the money was paid out (ambiguous outcome; should query the provider by idempotency key).",
+    "Server WriteTimeout is 15s while a payout can take up to 3 x 10s plus backoff, so the response can be cut off.",
+    "Two sequential NotifyWithin calls per transfer add up to 2 x NotifyWait latency; notifications use context.Background() and have no shutdown path; failed/timed-out notifications are only logged, never retried.",
+    "Transfer memo has no length limit; transfer request accepts any currency pair only after an extra lookup; destination lookup reveals whether an account id exists.",
+    "FormatAmount prints raw minor units for currencies missing from the table; JPY and other exponents are hard-coded.",
+    "Tests are thin: no handler/store tests; TestStartOfBusinessDay only uses times where the UTC and local dates agree (credit G9 only if the UTC-date mechanism is named).",
+    "Pre-existing: decodeJSON passes a nil ResponseWriter to http.MaxBytesReader; the deposit endpoint lets an owner credit arbitrary amounts to their own account; unsalted SHA-256 token hashing; listEntries/payout responses use map[string]any.",
+    "Style nits: naming (writeErr vs writeStoreError), error messages, 422 vs 409 choices, logging of provider error bodies.",
+    "Backoff `c.backoff<<(attempt-1)` is unbounded if maxAttempts were raised (hard-coded to 3 today); empty WALLET_PAYOUT_API_KEY default sends 'Bearer '; time.After in the backoff select is not stopped on cancellation (minor, not the G6 body leak).",
+    "Response bodies of retryable answers are held open during the backoff wait (connection tied up while sleeping) - real but minor; credit G6 only if the missing close on the ctx.Done branch is named.",
+    "Event.Summary uses float64 arithmetic (precision for very large amounts) and is overwritten in Notify rather than built by the caller (minor; credit G11 only if the fixed 2-decimal scale vs JPY/KWD is named).",
+    "GetTransfer also returns the Unwrap-less lookupError, so a missing transfer is 500 too (part of G7)."
+  ]
+}

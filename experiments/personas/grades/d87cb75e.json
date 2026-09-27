@@ -1,0 +1,21 @@
+{
+  "id": "d87cb75e",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.012927600000000001,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "money.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 7,
+        "summary": "Extract sign before dividing, negate cents, prefix sign onto the formatted string in FormatCents."
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "notes": "Single hunk in money.go matches the reference fix exactly: sign extraction, negation, and prefixing. No test additions were made despite the bug being about failing test cases (go test output shows pre-existing tests passing, but no new negative-case tests were added). The output's final message correctly describes the fix and explicitly notes it left round_cents_legacy and fmt_percent alone as out of scope, which is accurate and not a wrong claim."
+  }
+}

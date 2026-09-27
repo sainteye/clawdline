@@ -1,0 +1,1 @@
+A parcel that weighs exactly 2 kg is being quoted at the 5 kg price instead of the 2 kg price — can you fix it?

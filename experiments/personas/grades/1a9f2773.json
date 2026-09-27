@@ -1,0 +1,60 @@
+{
+  "id": "1a9f2773",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0377416,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "signup.html:2 — <html> has no lang=\"en\"."
+      },
+      "A2": {
+        "found": true,
+        "quote": "signup.html:21 (email) and :24 (phone) have no <label>, only placeholder. Placeholder text disappears once typing starts and isn't a reliable accessible name for screen readers."
+      },
+      "A3": {
+        "found": true,
+        "quote": "styles.css:8 — .help { color: #b3b3b3 } on white is roughly 2.3:1 contrast, well under the 4.5:1 AA minimum"
+      },
+      "A4": {
+        "found": true,
+        "quote": "signup.html:42 — the submit control is a <div onclick=\"submitForm()\">, not a <button>. It's not focusable, can't be activated with Enter/Space, and isn't announced as a button by screen readers."
+      },
+      "A5": {
+        "found": true,
+        "quote": "styles.css:7 — input:focus, textarea:focus { outline: none; } with nothing to replace it. Keyboard users can't see which field is focused."
+      },
+      "A6": {
+        "found": true,
+        "quote": "signup.html:22 — #email-error is toggled via hidden, but it's not wired to the input with aria-describedby, there's no aria-invalid on the field, and the region isn't aria-live, so a screen reader user who submits a bad email gets red text they can't see and no announcement."
+      },
+      "A7": {
+        "found": true,
+        "quote": "signup.html:12 — <img src=\"images/steps-1-of-3.png\"> conveys real information (\"step 1 of 3\") but has no alt attribute at all, so it'll fall back to announcing the filename."
+      },
+      "A8": {
+        "found": true,
+        "quote": "signup.html:16,26 — heading jumps from <h1> straight to <h4>, skipping levels; should be <h2>."
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": "Add real <label>s (visually-hidden if you don't want them shown, like you already did for notes)."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "signup.html:42 — the submit control is a <div onclick=\"submitForm()\">, not a <button>.",
+    "leads_with_high": true
+  }
+}

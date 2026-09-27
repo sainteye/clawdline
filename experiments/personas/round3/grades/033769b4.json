@@ -1,0 +1,89 @@
+{
+  "id": "033769b4",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.17765760000000003,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "Not ready to merge — 8 acceptance-criteria failures found ... I'd send this back rather than merge.",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "`.summary` has an unconditional `min-width: 400px`, so at 375px the page horizontally scrolls (scrollWidth 420 vs viewport 375), violating \"nothing scrolls horizontally.\"",
+        "executed": true,
+        "evidence": "node scripts/_check_layout.mjs → 'width=375: scrollWidth=420 clientWidth=375 horizontalOverflow=true cartFlexDirection=column'"
+      },
+      "E2": {
+        "found": true,
+        "quote": "Breakpoint is `min-width: 769px`, so at exactly 768px (which the ticket names as the threshold) the layout is still stacked, not two-column.",
+        "executed": true,
+        "evidence": "node scripts/_check_layout.mjs → 'width=768: scrollWidth=768 clientWidth=768 horizontalOverflow=false cartFlexDirection=column'"
+      },
+      "E3": {
+        "found": true,
+        "quote": "so qty can go to ... 11 (12 clicks of +) before the button finally disables — one step too late in both directions.",
+        "executed": true,
+        "evidence": "node scripts/_check_tmp.mjs → 'qty after 12 clicks of inc: 11' / 'inc disabled now? true'"
+      },
+      "E4": {
+        "found": true,
+        "quote": "so qty can go to **0** (click − once at qty=1) ... before the button finally disables — one step too late in both directions.",
+        "executed": true,
+        "evidence": "node scripts/_check_tmp.mjs → 'dec disabled at qty=1? false' / 'qty after clicking dec at 1: 0'"
+      },
+      "E5": {
+        "found": true,
+        "quote": "Discount is stored as a frozen cents amount at apply-time and never recalculated, so it does **not** \"follow later quantity changes\" as required — confirmed: applied SAVE10 ($105.30), then incremented qty, discount stayed at $105.30 while subtotal moved to $1,182.00.",
+        "executed": true,
+        "evidence": "node scripts/_check_tmp.mjs → 'discount after SAVE10: −$105.30' ... 'discount after qty+1 (should change if it follows): −$105.30' ... 'subtotal after qty+1: $1182.00'"
+      },
+      "E6": {
+        "found": true,
+        "quote": "\"Code not recognised\" is never cleared when a subsequent valid code is applied — the error message stays on screen after successfully applying SAVE10.",
+        "executed": true,
+        "evidence": "node scripts/_check_tmp.mjs → 'error after good code: Code not recognised hidden= false'"
+      },
+      "E7": {
+        "found": true,
+        "quote": "`formatMoney` has no thousands separator. Default cart subtotal renders `$1053.00` instead of `$1,053.00`.",
+        "executed": true,
+        "evidence": "node scripts/_check_tmp.mjs → 'subtotal text (default cart, should be $1,053.00): $1053.00'"
+      },
+      "E8": {
+        "found": true,
+        "quote": "`app.js` toggles a class `is-hidden` on `#summary`, but that class doesn't exist in `cart.css`. Emptying the cart shows \"Your cart is empty\" *alongside* a fully visible Order summary and Checkout button",
+        "executed": true,
+        "evidence": "node scripts/_check_final2.mjs → 'summary computed display: block' (after removing all 3 lines); plus Read of /tmp/cart-empty.png screenshot at step [25]"
+      },
+      "E9": {
+        "found": true,
+        "quote": "`save()` is only called from the Remove handler, not from the inc/dec handlers, so quantity changes are lost on reload (confirmed: qty 1→2, reload, back to 1). Only removals persist.",
+        "executed": true,
+        "evidence": "node scripts/_check_final2.mjs → 'qty before reload: 2 qty after reload: 1'"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": [
+      {
+        "claim": "Emptying the cart shows \"Your cart is empty\" alongside a fully visible Order summary and Checkout button (screenshot: subtotal/total still show $0.00, Checkout still clickable)",
+        "why": "The tool log never clicks or tests the Checkout link; a static screenshot (step [25]) can show the link is visible but cannot demonstrate that it is clickable, so this part of the claim is not demonstrated by anything in the log."
+      }
+    ]
+  }
+}

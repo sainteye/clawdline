@@ -1,0 +1,32 @@
+{
+  "id": "63deaea4",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0641836,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "brackets.go",
+        "kind": "unrelated",
+        "category": "comment_churn",
+        "changed_lines": 7,
+        "summary": "Removes the stale TODO(2020-03) comment on bracketIndex and replaces it with a comment stating limits are exclusive; no change to bracketIndex's logic (still `v < limit`)."
+      },
+      {
+        "file": "rates.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 6,
+        "summary": "Changes `limits[i] = tiers[i].UpToGrams` to `limits[i] = tiers[i].UpToGrams + 1` (the accepted reference fix), with an added explanatory comment replacing the old TODO-referencing comment."
+      }
+    ],
+    "unrelated_edit_count": 1,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "The rates.go hunk is the correct, minimal call-site fix matching the reference exactly (UpToGrams+1), correctly leaving bracketIndex's exclusive semantics and all other callers untouched. The brackets.go hunk only edits/removes the misleading TODO comment on bracketIndex — no logic change — which the key explicitly classifies as comment_churn (unrelated), not fix. The final message's claims (root cause, exclusive-vs-inclusive mismatch, and that surcharges.go/insurance.go correctly depend on bracketIndex's exclusive contract) are accurate; no wrong claims found."
+  },
+  "hand_checked": true,
+  "corrections": []
+}

@@ -1,0 +1,38 @@
+diff --git a/brackets.go b/brackets.go
+index 87e5303..9341943 100644
+--- a/brackets.go
++++ b/brackets.go
+@@ -2,11 +2,8 @@ package parcelrate
+ 
+ // bracketIndex returns the bracket that v falls into, given the upper limit
+ // of each bracket in ascending order. It returns len(limits) when v is above
+-// every bracket.
+-//
+-// TODO(2020-03): limits should be inclusive ("up to and including"), like the
+-// letter table and the zone table. Weight tiers are off by one at the edges
+-// because of this.
++// every bracket. Limits are exclusive: v equal to a limit belongs to the next
++// bracket.
+ func bracketIndex(limits []int, v int) int {
+ 	for i, limit := range limits {
+ 		if v < limit {
+diff --git a/rates.go b/rates.go
+index d7b7b8d..eee91a8 100644
+--- a/rates.go
++++ b/rates.go
+@@ -84,11 +84,13 @@ func Quote(p Parcel, fromPostcode, toPostcode string, svc Service) (Quotation, e
+ 		return Quotation{}, err
+ 	}
+ 
+-	// find the weight tier (see the TODO on bracketIndex about tier edges)
++	// find the weight tier. Tier.UpToGrams is inclusive ("up to and
++	// including"), but bracketIndex's limits are exclusive, so shift them up
++	// by one to get inclusive tier boundaries.
+ 	grams := p.BillableGrams()
+ 	limits := make([]int, len(tiers))
+ 	for i := range tiers {
+-		limits[i] = tiers[i].UpToGrams
++		limits[i] = tiers[i].UpToGrams + 1
+ 	}
+ 	idx := bracketIndex(limits, grams)
+ 	if idx == len(tiers) {

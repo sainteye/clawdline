@@ -1,0 +1,173 @@
+{
+  "seed": "persona-exp-2026-r2",
+  "runs": [
+    {
+      "id": "2abd534c",
+      "order": 1,
+      "role": "minimal-change",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "74fb45fa",
+      "order": 2,
+      "role": "accessibility",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "333b5a71",
+      "order": 3,
+      "role": "accessibility",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "c34a6f11",
+      "order": 4,
+      "role": "accessibility",
+      "arm": "right",
+      "rep": 2
+    },
+    {
+      "id": "3a8142a3",
+      "order": 5,
+      "role": "code-reviewer",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "03ae394d",
+      "order": 6,
+      "role": "seo",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "b7aa9331",
+      "order": 7,
+      "role": "code-reviewer",
+      "arm": "wrong",
+      "rep": 2
+    },
+    {
+      "id": "33cec208",
+      "order": 8,
+      "role": "code-reviewer",
+      "arm": "right",
+      "rep": 2
+    },
+    {
+      "id": "b73af629",
+      "order": 9,
+      "role": "seo",
+      "arm": "wrong",
+      "rep": 1
+    },
+    {
+      "id": "04223d67",
+      "order": 10,
+      "role": "seo",
+      "arm": "right",
+      "rep": 2
+    },
+    {
+      "id": "10a4bbae",
+      "order": 11,
+      "role": "minimal-change",
+      "arm": "right",
+      "rep": 2
+    },
+    {
+      "id": "a71d6573",
+      "order": 12,
+      "role": "code-reviewer",
+      "arm": "wrong",
+      "rep": 1
+    },
+    {
+      "id": "79cf4d61",
+      "order": 13,
+      "role": "minimal-change",
+      "arm": "wrong",
+      "rep": 1
+    },
+    {
+      "id": "1767a93f",
+      "order": 14,
+      "role": "code-reviewer",
+      "arm": "right",
+      "rep": 1
+    },
+    {
+      "id": "e31186e8",
+      "order": 15,
+      "role": "seo",
+      "arm": "right",
+      "rep": 1
+    },
+    {
+      "id": "9ace3bf7",
+      "order": 16,
+      "role": "seo",
+      "arm": "wrong",
+      "rep": 2
+    },
+    {
+      "id": "6b3c79dc",
+      "order": 17,
+      "role": "seo",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "6bab1d1c",
+      "order": 18,
+      "role": "code-reviewer",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "3a0892c1",
+      "order": 19,
+      "role": "accessibility",
+      "arm": "right",
+      "rep": 1
+    },
+    {
+      "id": "a9859c59",
+      "order": 20,
+      "role": "minimal-change",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "1e27f5fa",
+      "order": 21,
+      "role": "minimal-change",
+      "arm": "right",
+      "rep": 1
+    },
+    {
+      "id": "63deaea4",
+      "order": 22,
+      "role": "minimal-change",
+      "arm": "wrong",
+      "rep": 2
+    },
+    {
+      "id": "28560a43",
+      "order": 23,
+      "role": "accessibility",
+      "arm": "wrong",
+      "rep": 1
+    },
+    {
+      "id": "6439913a",
+      "order": 24,
+      "role": "accessibility",
+      "arm": "wrong",
+      "rep": 2
+    }
+  ]
+}

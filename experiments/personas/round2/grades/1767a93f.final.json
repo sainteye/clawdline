@@ -1,0 +1,74 @@
+{
+  "id": "1767a93f",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0974336,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "requireOwner treats {id} as an account ID (auth.go:54, s.store.GetAccount(ctx, id)) and checks that account's OwnerID. Here {id} is a transfer ID... a user can view transfer #N merely by owning account #N — regardless of whether they're the sender or recipient — and getTransfer itself never checks t.FromAccountID/t.ToAccountID against the caller."
+      },
+      "G2": {
+        "found": true,
+        "quote": "each := inside the if declares a new, block-scoped err that shadows the outer one. If any of those four calls fails after the transfer row insert succeeds, the handler returns an error to the caller, but the outer err the defer checks is still nil, so defer calls tx.Commit() anyway."
+      },
+      "G3": {
+        "found": true,
+        "quote": "adjustBalance does an unconditional UPDATE accounts SET balance_cents = balance_cents + ? WHERE id = ? with no balance_cents >= ... guard, and the only sufficient-funds checks... are against an account snapshot loaded once in requireOwner, not re-checked inside the debiting transaction. Two concurrent transfers/payouts from the same account each read the same stale balance, both pass their own check, and both debit."
+      },
+      "G4": {
+        "found": true,
+        "quote": "resp, err := c.post(ctx, body, p.Reference) is a new declaration scoped to the loop body... shadowing the err from body, err := json.Marshal(...) before the loop. When all attempts fail... the function falls through to return PayoutResult{}, err, where err is the outer, still-nil variable."
+      },
+      "G5": {
+        "found": false,
+        "quote": ""
+      },
+      "G6": {
+        "found": true,
+        "quote": "when ctx.Done() fires during the backoff select, the function returns immediately; the resp.Body.Close() a few lines later is never reached for that attempt."
+      },
+      "G7": {
+        "found": false,
+        "quote": ""
+      },
+      "G8": {
+        "found": true,
+        "quote": "Config.DailyTransferLimit is documented as 'whole currency units (1000 means 1,000.00)', but checkDailyLimit compares it directly against cent sums... The default DailyTransferLimit: 1000 (config.go:47), intended as a $1,000/day cap, is actually enforced as $10.00/day."
+      },
+      "G9": {
+        "found": true,
+        "quote": "This takes the UTC calendar date, not the date in loc... Fix: now.In(loc).Date()."
+      },
+      "G10": {
+        "found": true,
+        "quote": "writeCreated(w, r.URL.JoinPath(strconv.FormatInt(t.ID, 10)).Path, t) builds /accounts/{id}/transfers/{transferID}, but the only route that serves a transfer is GET /transfers/{id} (main.go:70). The header points at a path with no matching route."
+      },
+      "G11": {
+        "found": false,
+        "quote": ""
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": "currently safe since maxPayoutCents (25,000,000) fits, but there's no assertion tying the two together if the limit is raised later"
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Store.CreateTransfer can commit a partially-applied transfer (store.go:191-233) — the deferred commit/rollback closure is fooled by shadowed err in the balance-update and ledger-insert error checks, causing tx.Commit() to run even when a step failed.",
+    "leads_with_high": true
+  },
+  "hand_checked": true,
+  "corrections": []
+}

@@ -1,0 +1,117 @@
+{
+  "seed": "persona-exp-2026",
+  "runs": [
+    {
+      "id": "d87cb75e",
+      "order": 1,
+      "role": "minimal-change",
+      "arm": "persona",
+      "rep": 2
+    },
+    {
+      "id": "714310e8",
+      "order": 2,
+      "role": "minimal-change",
+      "arm": "persona",
+      "rep": 1
+    },
+    {
+      "id": "1a9f2773",
+      "order": 3,
+      "role": "accessibility",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "e487add9",
+      "order": 4,
+      "role": "accessibility",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "03ddb9e9",
+      "order": 5,
+      "role": "minimal-change",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "4e893106",
+      "order": 6,
+      "role": "seo",
+      "arm": "persona",
+      "rep": 1
+    },
+    {
+      "id": "3c709e87",
+      "order": 7,
+      "role": "minimal-change",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "4de4c437",
+      "order": 8,
+      "role": "code-reviewer",
+      "arm": "persona",
+      "rep": 1
+    },
+    {
+      "id": "b57668a5",
+      "order": 9,
+      "role": "accessibility",
+      "arm": "persona",
+      "rep": 1
+    },
+    {
+      "id": "6711ce1b",
+      "order": 10,
+      "role": "seo",
+      "arm": "persona",
+      "rep": 2
+    },
+    {
+      "id": "fd9ece61",
+      "order": 11,
+      "role": "code-reviewer",
+      "arm": "none",
+      "rep": 1
+    },
+    {
+      "id": "7d2fd285",
+      "order": 12,
+      "role": "accessibility",
+      "arm": "persona",
+      "rep": 2
+    },
+    {
+      "id": "bb475455",
+      "order": 13,
+      "role": "code-reviewer",
+      "arm": "persona",
+      "rep": 2
+    },
+    {
+      "id": "13edbec0",
+      "order": 14,
+      "role": "code-reviewer",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "e447f9bc",
+      "order": 15,
+      "role": "seo",
+      "arm": "none",
+      "rep": 2
+    },
+    {
+      "id": "08346c33",
+      "order": 16,
+      "role": "seo",
+      "arm": "none",
+      "rep": 1
+    }
+  ]
+}

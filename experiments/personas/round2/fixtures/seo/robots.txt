@@ -1,0 +1,7 @@
+# Werkbank Cycles
+# Keep the unfinished blog out of search while we write the first posts.
+User-agent: *
+Disallow: /blog/
+Allow: /
+
+Sitemap: https://werkbankcycles.example/sitemap.xml

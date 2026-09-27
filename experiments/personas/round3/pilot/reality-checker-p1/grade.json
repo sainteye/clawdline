@@ -1,0 +1,89 @@
+{
+  "id": "reality-checker-p1",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.18955960000000002,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "This isn't ready to merge — the PATCH and DELETE bugs are core CRUD correctness issues, and the migration bugs will corrupt real data on first run.",
+    "defects": {
+      "D1": {
+        "found": true,
+        "quote": "PATCH on an unknown id returns 500, not 404 (store.go:132): Store.Update builds the not-found error with fmt.Errorf(\"... %v\", ErrNotFound) — %v instead of %w — so it doesn't wrap ErrNotFound, and errors.Is in handlers.go:161 never matches.",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:76: BUG: PATCH unknown id got 500, want 404' / '--- FAIL: TestVerify_PatchUnknownID (0.00s)'"
+      },
+      "D2": {
+        "found": true,
+        "quote": "It unconditionally overwrites due and tags on every PATCH, even when those fields are absent from the body ... Result: PATCH {\"done\":true} on a task that had a due date and tags silently wipes both to empty.",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:42: BUG: due wiped out by patch that didn't mention it, got \"0001-01-01\"' and 'verify_test.go:45: BUG: tags wiped out by patch that didn't mention them, got []'"
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migration drops created_at (migrate.go:42): &Task{ID: o.ID, Title: o.Title, Done: o.Done} never sets CreatedAt: o.Created, so every migrated task loses its original creation timestamp — contradicts \"every task keeps its ... creation time.\"",
+        "executed": false,
+        "evidence": ""
+      },
+      "D4": {
+        "found": true,
+        "quote": "Migration doesn't normalize tags (migrate.go:44): it does a raw strings.Split(o.Labels, \",\") without calling normalizeTags, so labels like \"Health, personal\" become tags [\"Health\", \" personal\"] instead of [\"health\", \"personal\"]",
+        "executed": false,
+        "evidence": ""
+      },
+      "D5": {
+        "found": true,
+        "quote": "a task due exactly today is also treated as overdue. The spec explicitly requires ... overdue means due before today, not on-or-before.",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:109: BUG: task due today treated as overdue: [{ID:t0001 Title:due today Done:false Due:2026-03-10 00:00:00 +0000 UTC ...}]'"
+      },
+      "D6": {
+        "found": true,
+        "quote": "a task with no due date (zero-value Date, which is always \"before\" today) is treated as overdue",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:97: BUG: task with no due date treated as overdue: [{ID:t0001 Title:no due date Done:false Due:0001-01-01 00:00:00 +0000 UTC ...}]'"
+      },
+      "D7": {
+        "found": true,
+        "quote": "normalizeTags (trim/lowercase/max-5) is never called in PATCH — tags sent via PATCH go through unnormalized ([\"Work\",\" errands \"] stays as-is instead of becoming work,errands).",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:67: BUG: patch tags not normalized, got [Work  errands ]'"
+      },
+      "D8": {
+        "found": true,
+        "quote": "DELETE on an unknown id returns 204, not 404 ... deleting a nonexistent key from a Go map is a no-op, not an error, so Store.Delete always succeeds and the handler always returns 204.",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:85: BUG: DELETE unknown id got 204, want 404'"
+      },
+      "D9": {
+        "found": true,
+        "quote": "The JSON decode error is discarded (json.NewDecoder(r.Body).Decode(&req) — no err check), so a malformed body (not json) returns 200 instead of the required 400.",
+        "executed": true,
+        "evidence": "go test -run TestVerify -v ./... → 'verify_test.go:55: BUG: invalid PATCH body got 200, want 400'"
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": [
+      {
+        "claim": "I wrote and ran targeted tests against a scratch copy of the code (not committed) to confirm each issue below — all reproduced.",
+        "why": "The visible test-run output ([19]) only shows named failing tests for PATCH-preserve, PATCH-invalid-body, PATCH-tag-normalization, PATCH-unknown-id, DELETE-unknown-id, and the two overdue edge cases; it is cut off after one more test begins ('=== RUN   T…[453 more chars]') with no visible test name or output tied to created_at or migrated-tag normalization, so the log does not show execution demonstrating the two migration claims (D3, D4) that the report nonetheless presents as reproduced by the same test run."
+      }
+    ]
+  }
+}

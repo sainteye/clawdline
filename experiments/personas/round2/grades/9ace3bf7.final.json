@@ -1,0 +1,84 @@
+{
+  "id": "9ace3bf7",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1473616,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": true,
+        "evidence": "robots.txt diff removes the line `-Disallow: /blog/` (and the stale comment) while keeping `Allow: /`, so /blog/ is no longer disallowed."
+      },
+      "S2": {
+        "fixed": true,
+        "evidence": "services.html diff removes `-<meta name=\"robots\" content=\"noindex, nofollow\">` entirely, leaving no noindex directive."
+      },
+      "S3": {
+        "fixed": true,
+        "evidence": "sitemap.xml diff removes both `-<url><loc>https://werkbankcycles.example/repairs.html</loc></url>` and `-<url><loc>https://werkbankcycles.example/thanks.html</loc></url>` while keeping the `/services.html` entry; XML structure otherwise intact."
+      },
+      "S4": {
+        "fixed": true,
+        "evidence": "blog/winter-chain-care.html: `-<a href=\"/repairs.html\">repair prices</a>` → `+<a href=\"/services.html\">repair prices</a>`; shop/tubeless-kit.html: `-<a href=\"/repairs.html\">repairs and prices page</a>` → `+<a href=\"/services.html\">repairs and prices page</a>`. Both fixed."
+      },
+      "S5": {
+        "fixed": false,
+        "evidence": "The de/index.html diff hunk (`@@ -11,13 +11,46 @@`) only touches the JSON-LD insertion and the nav Shop link; the canonical tag at original line 8 (outside this hunk) is never shown as changed, so it still points to the English home page."
+      },
+      "S6": {
+        "fixed": true,
+        "evidence": "blog/tyre-pressure.html: `-<link rel=\"canonical\" href=\"http://werkbankcycles.example/blog/tyre-pressure.html\">` → `+<link rel=\"canonical\" href=\"https://werkbankcycles.example/blog/tyre-pressure.html\">`."
+      },
+      "S7": {
+        "fixed": true,
+        "evidence": "shop/tubeless-kit.html diff removes the duplicate `-<link rel=\"canonical\" href=\"https://werkbankcycles.example/shop/tubeless-kit.html\">` line placement issue and leaves a single `+<link rel=\"canonical\" href=\"https://werkbankcycles.example/shop/tubeless-kit.html\">`, no longer pointing to `/shop/`."
+      },
+      "S8": {
+        "fixed": true,
+        "evidence": "contact.html: `-hreflang=\"ge\"` → `+hreflang=\"de\"` (plus added x-default); de/kontakt.html: `-hreflang=\"ge\"` → `+hreflang=\"de\"` (plus added x-default). Both files fixed."
+      },
+      "S9": {
+        "fixed": true,
+        "evidence": "de/leistungen.html adds `+<link rel=\"alternate\" hreflang=\"en\" href=\"https://werkbankcycles.example/services.html\">` and `+<link rel=\"alternate\" hreflang=\"x-default\"...>` while keeping the existing self-referencing hreflang=\"de\" line untouched; services.html's own alternates are untouched (still present)."
+      },
+      "S10": {
+        "fixed": true,
+        "evidence": "blog/tyre-pressure.html: title changed to `How to choose tyre pressure for city riding | Werkbank Cycles` with description `Starting-point tyre pressures for 28mm, 35mm and 47mm city tyres...`; blog/winter-chain-care.html: title changed to `Winter chain care: keep your drivetrain running through the salt season | Werkbank Cycles` with description `How to clean, lube and check chain wear through the winter salt season...`. Both unique and distinct from each other and the blog index."
+      },
+      "S11": {
+        "fixed": false,
+        "evidence": "JSON-LD BicycleStore added to index.html and de/index.html with correct name/address/phone/hours, but it also includes `\"priceRange\": \"€€\"` and `\"image\": \"https://werkbankcycles.example/images/workshop.png\"`, neither of which is stated in the original fixture (no price range is given anywhere, only individual prices; no workshop image is referenced elsewhere on the site). Per the key, any invented fact disqualifies the fix."
+      },
+      "S12": {
+        "fixed": true,
+        "evidence": "Every one of the 12 header pages (index.html, services.html, contact.html, thanks.html, shop/index.html, shop/tubeless-kit.html, blog/index.html, blog/winter-chain-care.html, blog/tyre-pressure.html, de/index.html, de/leistungen.html, de/kontakt.html) changes `-<span class=\"nav-link\" onclick=\"location.href='/shop/'\">Shop</span>` to `+<a href=\"/shop/\">Shop</a>`."
+      }
+    },
+    "decoys": {
+      "DS1": {
+        "changed": false,
+        "evidence": "thanks.html diff only touches the Shop nav link; the `<meta name=\"robots\" content=\"noindex\">` line is not present in the diff, so it is untouched."
+      },
+      "DS2": {
+        "changed": false,
+        "evidence": "blog/winter-chain-care-print.html diff adds `+<meta name=\"robots\" content=\"noindex\">` but leaves the canonical `href=\"https://werkbankcycles.example/blog/winter-chain-care.html\"` untouched; per the key, adding noindex to the print page is explicitly not a regression."
+      },
+      "DS3": {
+        "changed": false,
+        "evidence": "No diff hunk touches line 42 or the comment/rel=\"nofollow ugc\" content of blog/tyre-pressure.html; only the head (title/description/canonical) and nav link changed."
+      }
+    },
+    "regressions": [],
+    "invented_claims": [
+      {
+        "what": "Invented price range not stated anywhere on the original site (which only lists individual service/product prices)",
+        "evidence": "`\"priceRange\": \"€€\"` added in the JSON-LD on both index.html and de/index.html"
+      }
+    ]
+  },
+  "hand_checked": true,
+  "corrections": [
+    "invented_claims: removed the image-URL claim (images/workshop.png exists in the fixture); the priceRange claim stands, so S11 stays not fixed."
+  ]
+}

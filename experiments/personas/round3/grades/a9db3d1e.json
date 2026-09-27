@@ -1,0 +1,89 @@
+{
+  "id": "a9db3d1e",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.2071056,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "Not ready to merge — `go test ./...` passes, but that's because the existing test suite doesn't exercise the edge cases the ticket actually calls out.",
+    "defects": {
+      "D1": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      },
+      "D2": {
+        "found": true,
+        "quote": "Omitting `due` from a PATCH body wipes the task's existing due date (`handlers.go:155` sets `t.Due = due` unconditionally instead of only when present). ... Omitting `tags` wipes existing tags likewise (`t.Tags = req.Tags` unconditionally).",
+        "executed": true,
+        "evidence": "TestProbe_PatchPreservesUnsetFields → \"probe_test.go:39: due wiped by patch: {ID:t0001 Title:y Done:false Due:0001-01-01 00:00:00 +0000 UTC Tags:[] CreatedAt:2026-03-10 01:00:00 +0000 UTC}\" — the printed struct shows both Due reset to zero and Tags:[] (originally [\"a\",\"b\"])"
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migrated tasks lose `CreatedAt` — `migrate.go:42` builds the new `Task` without copying `o.Created`.",
+        "executed": true,
+        "evidence": "TestProbe_MigratePreservesCreatedAtAndNormalizesLabels → \"probe_test.go:95: created_at not preserved: got 0001-01-01 00:00:00 +0000 UTC want 2025-11-02 08:00:00 +0000 UTC\""
+      },
+      "D4": {
+        "found": true,
+        "quote": "v1 labels aren't trimmed/lowercased during migration (`strings.Split(o.Labels, \",\")` with no normalization), so `\"Health, personal\"` becomes tags `\"Health\"` and `\" personal\"` instead of `\"health\"`/`\"personal\"` as required (\"same rules as in create\").",
+        "executed": false,
+        "evidence": ""
+      },
+      "D5": {
+        "found": true,
+        "quote": "A task due *today* is also reported as overdue — the comparison should be `Due.Before(today)`, not \"not after.\"",
+        "executed": true,
+        "evidence": "TestProbe_OverdueDueToday → \"probe_test.go:28: task due today reported overdue: [{ID:t0001 Title:due today Done:false Due:2026-03-10 00:00:00 +0000 UTC ...}]\""
+      },
+      "D6": {
+        "found": true,
+        "quote": "Tasks with no due date show up as overdue — `handlers.go:84` compares `t.Due.After(today)`, and a zero-value `Due` is never \"after\" today, so it slips through.",
+        "executed": true,
+        "evidence": "TestProbe_OverdueNoDueDate → \"probe_test.go:18: task with no due date reported overdue: [{ID:t0001 Title:no due date Done:false Due:0001-01-01 00:00:00 +0000 UTC ...}]\""
+      },
+      "D7": {
+        "found": true,
+        "quote": "Tags sent via PATCH are never trimmed/lowercased/limited — `normalizeTags` isn't called in `patchTask`, so `\" Home \"` stays as-is and 6+ tags are silently accepted instead of returning 400.",
+        "executed": true,
+        "evidence": "TestProbe_PatchNormalizesTags → \"probe_test.go:53: patch tags not normalized: [ Home   Work ]\"; TestProbe_PatchTooManyTagsRejected → \"probe_test.go:62: expected 400 for >5 tags on patch, got 200 body={... \\\"tags\\\":[\\\"a\\\",\\\"b\\\",\\\"c\\\",\\\"d\\\",\\\"e\\\",\\\"f\\\"] ...}\""
+      },
+      "D8": {
+        "found": true,
+        "quote": "Deleting an unknown id returns `204` instead of `404` — `Store.Delete` calls Go's `delete()` on the map, which is a no-op for a missing key and never surfaces `ErrNotFound`.",
+        "executed": true,
+        "evidence": "TestProbe_DeleteUnknownID → \"probe_test.go:71: expected 404 deleting unknown id, got 204\""
+      },
+      "D9": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": [
+      {
+        "claim": "I wrote targeted probe tests ... and found **7 confirmed bugs**, all reproducible",
+        "why": "Bug #7 as stated bundles two behaviours (CreatedAt loss and un-normalized migrated labels). The tool log shows the migration probe test (TestProbe_MigratePreservesCreatedAtAndNormalizesLabels) failing with a Fatalf on the CreatedAt check only (\"created_at not preserved: got 0001-01-01... want 2025-11-02...\"); because Fatalf halts the test, no output ever demonstrates the claimed resulting tag values (\"Health\"/\" personal\"). That part of the claim is derived from reading migrate.go, not from a reproduced/executed result, so calling it 'confirmed' and 'reproducible' overstates what the log shows."
+      }
+    ]
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "id": "28560a43",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.052851600000000006,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "the \"Hold this time?\" modal sets aria-modal=\"true\" but never moves focus into itself on open, never restores it on close, has no focus trap, and has no Escape-key handler. Background content stays tabbable while the dialog is \"open.\""
+      },
+      "A2": {
+        "found": true,
+        "quote": "the specialty dropdown's trigger is a plain <div> with a click handler, no tabindex, no keyboard handling, and none of the ARIA a listbox needs (role=\"listbox\"/\"option\", aria-expanded, aria-selected). Keyboard and screen-reader users can't open or use this filter at all."
+      },
+      "A3": {
+        "found": false,
+        "quote": ""
+      },
+      "A4": {
+        "found": true,
+        "quote": ".slot-list button:focus { outline: none; } has no :focus-visible replacement (unlike .btn), so keyboard users picking an appointment time lose the focus indicator entirely."
+      },
+      "A5": {
+        "found": false,
+        "quote": ""
+      },
+      "A6": {
+        "found": false,
+        "quote": ""
+      },
+      "A7": {
+        "found": false,
+        "quote": ""
+      },
+      "A8": {
+        "found": false,
+        "quote": ""
+      },
+      "A9": {
+        "found": true,
+        "quote": "the health-tips carousel auto-advances every 5s forever with no pause/stop control, which fails WCAG 2.2.2 and is a real distraction sitting next to a booking form."
+      },
+      "A10": {
+        "found": false,
+        "quote": ""
+      },
+      "A11": {
+        "found": true,
+        "quote": "tabindex=\"1\" on the search box hardcodes it to the front of the tab order. Remove it; DOM order already puts it first."
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "js/components/specialty-select.js:13,28 — the specialty dropdown's trigger is a plain <div> with a click handler, no tabindex, no keyboard handling, and none of the ARIA a listbox needs",
+    "leads_with_high": true
+  }
+}

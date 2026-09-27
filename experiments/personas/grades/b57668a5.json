@@ -1,0 +1,60 @@
+{
+  "id": "b57668a5",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.056623599999999996,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": false,
+        "quote": ""
+      },
+      "A2": {
+        "found": true,
+        "quote": "Email and phone fields have no label, only a placeholder ... `signup.html:21` and `signup.html:24` — `placeholder=\"Email address\"` / `placeholder=\"Phone (optional)\"` with no `<label>`"
+      },
+      "A3": {
+        "found": true,
+        "quote": "Low-contrast helper text ... `.help { color: #b3b3b3; }` on white background is ≈2.1:1 contrast, well under the 4.5:1 minimum."
+      },
+      "A4": {
+        "found": true,
+        "quote": "Submit control is not keyboard operable — blocks the entire flow ... A `div` is not in the tab order and has no button role, so keyboard users can't reach it and screen readers announce it as plain text, not a button."
+      },
+      "A5": {
+        "found": true,
+        "quote": "No visible focus indicator anywhere in the form ... `input:focus, textarea:focus { outline: none; }` with no replacement style"
+      },
+      "A6": {
+        "found": true,
+        "quote": "Validation error isn't announced to screen readers ... `#email-error` toggles `hidden` off on failure but has no `aria-live` region and isn't wired to the input via `aria-describedby`"
+      },
+      "A7": {
+        "found": true,
+        "quote": "Progress image has no alt text ... has no `alt` attribute at all"
+      },
+      "A8": {
+        "found": true,
+        "quote": "Heading level skips from h1 to h4 ... `<h4>Your details</h4>` / `<h4>Session</h4>` directly under an `<h1>`"
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": "Not a strict SC failure (a label is programmatically associated), but worth a visible label for sighted users too."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "A4 (submit control not keyboard operable, div with onclick)",
+    "leads_with_high": true
+  }
+}

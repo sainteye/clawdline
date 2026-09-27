@@ -1,0 +1,84 @@
+{
+  "id": "b9c0e606",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.21313559999999998,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "**Verdict: FAIL — needs work.** Six defects found across PATCH, DELETE, the overdue filter, and migration.",
+    "defects": {
+      "D1": {
+        "found": true,
+        "quote": "PATCH on an unknown id returns 500, not 404. ... Repro: `curl -i -X PATCH /tasks/t9999 -d '{\"done\":true}'` → `500 {\"error\":\"could not save\"}`. Cause: `store.go` `Store.Update` builds the not-found error with `fmt.Errorf(\"update %s: %v\", id, ErrNotFound)` (`%v`, not `%w`)",
+        "executed": true,
+        "evidence": "curl -s -i -X PATCH http://127.0.0.1:8181/tasks/t9999 -d '{\"done\":true}' → HTTP/1.1 500 Internal Server Error ... {\"error\":\"could not save\"}"
+      },
+      "D2": {
+        "found": true,
+        "quote": "PATCH silently wipes `due` and `tags` when they're omitted from the body. ... Actual: `{\"due\":\"\",\"tags\":null,\"done\":true}` — due and tags erased.",
+        "executed": true,
+        "evidence": "curl -s -X PATCH http://127.0.0.1:8181/tasks/t0002 -d '{\"done\":true}' → {\"id\":\"t0002\",\"title\":\"Call plumber\",\"done\":true,\"due\":\"\",\"tags\":null,...}"
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migration drops `created_at`. ... after migration, task shows `\"created_at\":\"0001-01-01T00:00:00Z\"`.",
+        "executed": true,
+        "evidence": "cat /tmp/claude/qa142-migrate/tasks.json → \"created_at\": \"0001-01-01T00:00:00Z\""
+      },
+      "D4": {
+        "found": true,
+        "quote": "Migrated tags (from v1 `labels`) aren't normalized. ... migrated tags are `[\"Home\", \" Garden \"]` (untrimmed, not lowercased).",
+        "executed": true,
+        "evidence": "cat /tmp/claude/qa142-migrate/tasks.json → \"tags\": [\"Home\", \" Garden \"]"
+      },
+      "D5": {
+        "found": true,
+        "quote": "Actual: \"due yesterday\", **\"due today\"**, and **tasks with no due date** all returned; \"due tomorrow\" correctly excluded",
+        "executed": true,
+        "evidence": "curl -s \"http://127.0.0.1:8181/tasks?overdue=true\" → includes {\"id\":\"t0007\",\"title\":\"due today\",...}"
+      },
+      "D6": {
+        "found": true,
+        "quote": "and **tasks with no due date** all returned",
+        "executed": true,
+        "evidence": "curl -s \"http://127.0.0.1:8181/tasks?overdue=true\" → includes {\"id\":\"t0009\",\"title\":\"no due date\",...}"
+      },
+      "D7": {
+        "found": true,
+        "quote": "PATCH tags bypass all normalization rules. ... stored as `[\"Work\",\" Urgent \"]` verbatim (not trimmed/lowercased). ... (6 tags) → `200 OK`, all 6 saved, instead of `400`.",
+        "executed": true,
+        "evidence": "curl -s -X PATCH http://127.0.0.1:8181/tasks/t0004 -d '{\"tags\":[\"Work\",\" Urgent \"]}' → {\"tags\":[\"Work\",\" Urgent \"]}; curl -s -i -X PATCH .../t0004 -d '{\"tags\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\"]}' → HTTP/1.1 200 OK"
+      },
+      "D8": {
+        "found": true,
+        "quote": "DELETE on an unknown id returns 204, not 404. ... `curl -i -X DELETE /tasks/t9999` (no such task) → `204 No Content`.",
+        "executed": true,
+        "evidence": "curl -s -i -X DELETE http://127.0.0.1:8181/tasks/t9999 → HTTP/1.1 204 No Content"
+      },
+      "D9": {
+        "found": true,
+        "quote": "PATCH with an invalid/garbage JSON body returns 200 instead of 400. ... `curl -i -X PATCH /tasks/t0004 -d 'not json'` → `200 OK` (task unchanged/nulled, no error).",
+        "executed": true,
+        "evidence": "curl -s -i -X PATCH http://127.0.0.1:8181/tasks/t0004 -d 'not json' → HTTP/1.1 200 OK ... \"tags\":null"
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": "Backup file and idempotency (verified by md5 hash unchanged across two runs) are correct"
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

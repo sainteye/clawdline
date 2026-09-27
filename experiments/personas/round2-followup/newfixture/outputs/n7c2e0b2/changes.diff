@@ -1,0 +1,46 @@
+diff --git a/booking.go b/booking.go
+index be104b3..802260b 100644
+--- a/booking.go
++++ b/booking.go
+@@ -55,9 +55,11 @@ func (c *Calendar) Book(room, owner string, when Interval) (Booking, error) {
+ 	if err := c.checkCleaning(r.ID, when); err != nil {
+ 		return Booking{}, err
+ 	}
+-	// Two bookings conflict when they overlap (see overlaps).
++	// Two bookings conflict when they overlap. Bookings are half-open, so
++	// back-to-back meetings (one ending exactly when the other starts) do
++	// not conflict (see overlapsHalfOpen).
+ 	for _, b := range c.bookings {
+-		if b.Room == r.ID && overlaps(b.When, when) {
++		if b.Room == r.ID && overlapsHalfOpen(b.When, when) {
+ 			return Booking{}, fmt.Errorf("%w: %s by %s", ErrConflict, formatSpan(b.When), b.Owner)
+ 		}
+ 	}
+diff --git a/interval.go b/interval.go
+index 8d2b9f4..2ec6d8e 100644
+--- a/interval.go
++++ b/interval.go
+@@ -9,14 +9,19 @@ type Interval struct {
+ }
+ 
+ // overlaps reports whether a and b share any instant, including their end
+-// points: [9:00, 10:00] and [10:00, 11:00] overlap at 10:00.
+-//
+-// TODO(2021-06): this should be half-open like everywhere else. Back-to-back
+-// meetings are rejected because of this.
++// points: [9:00, 10:00] and [10:00, 11:00] overlap at 10:00. This is used for
++// maintenance and cleaning windows, which are closed intervals (FAC-12).
+ func overlaps(a, b Interval) bool {
+ 	return !a.End.Before(b.Start) && !b.End.Before(a.Start)
+ }
+ 
++// overlapsHalfOpen reports whether a and b share any instant, treating both
++// as half-open [Start, End): back-to-back bookings like [9:00, 10:00) and
++// [10:00, 11:00) do not overlap.
++func overlapsHalfOpen(a, b Interval) bool {
++	return a.Start.Before(b.End) && b.Start.Before(a.End)
++}
++
+ // minutes returns the length of i in whole minutes.
+ func minutes(i Interval) int {
+ 	return int(i.End.Sub(i.Start) / time.Minute)

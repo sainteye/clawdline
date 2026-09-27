@@ -1,0 +1,74 @@
+{
+  "id": "6439913a",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0710856,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "js/components/confirm-dialog.js never moves focus into the dialog on open, never traps Tab inside it, and has no Escape-to-close handler."
+      },
+      "A2": {
+        "found": true,
+        "quote": "builds the dropdown trigger as a `<div class=\"select-trigger\">` with only a `click` handler — no `tabindex`, `role=\"button\"`, `aria-expanded`/`aria-haspopup`, or keyboard handling, and the option list items aren't real controls either. A keyboard-only user can't open or use this filter at all."
+      },
+      "A3": {
+        "found": false,
+        "quote": ""
+      },
+      "A4": {
+        "found": true,
+        "quote": "`.slot-list button:focus { outline: none; }` with no accompanying `:focus-visible` rule (unlike `.btn`, which correctly swaps to a box-shadow at lines 66-79). Keyboard users tabbing through appointment times get no visual indication of where they are"
+      },
+      "A5": {
+        "found": true,
+        "quote": "each clinician's `<span class=\"availability--{level}\">` has no text/`aria-label`. The shared legend explains the colors once, but nothing ties a specific dot back to \"many/few/none\" for assistive tech or colorblind users scanning the list."
+      },
+      "A6": {
+        "found": false,
+        "quote": ""
+      },
+      "A7": {
+        "found": false,
+        "quote": ""
+      },
+      "A8": {
+        "found": true,
+        "quote": "`clinicians.js`, `slots.js`, and `checkout.js` don't — and `document.title` never changes between views ... Screen-reader users get no cue that navigating to `#/checkout` etc. actually changed the page."
+      },
+      "A9": {
+        "found": true,
+        "quote": "advances every 5s indefinitely with no pause/stop control and no `prefers-reduced-motion` check (transition is unconditional in `css/app.css:196`)."
+      },
+      "A10": {
+        "found": true,
+        "quote": "defaults to 2000ms, used for messages like \"Someone just took that time. Please pick another.\" ... That's genuinely easy to miss, and there's no way to dismiss/re-read it."
+      },
+      "A11": {
+        "found": false,
+        "quote": ""
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Slot dates can render as the wrong day (UTC-vs-local date parsing bug).",
+    "leads_with_high": false
+  },
+  "hand_checked": true,
+  "corrections": []
+}

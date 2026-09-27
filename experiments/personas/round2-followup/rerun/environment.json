@@ -1,0 +1,26 @@
+{
+  "date": "2026-09-27T07:44:59.786Z",
+  "claude_cli": "2.1.283 (Claude Code)",
+  "model": "claude-sonnet-5",
+  "go": "go version go1.27.1 darwin/arm64",
+  "node": "v24.1.0",
+  "platform": "darwin 24.6.0 arm64",
+  "persona_dir": "personas (snapshot in this directory)",
+  "wrong_persona": {
+    "code-reviewer": "technical-writer",
+    "minimal-change": "architect",
+    "seo": "social-media",
+    "accessibility": "brand-guardian"
+  },
+  "persona_sha256": {
+    "code-reviewer": "faf9b81e627b3556424389368e6215b6b5c7964ea2acbec9a8b677204a6c8435",
+    "technical-writer": "80e14ada983f7cfbfaa0a2754d6f683e16cd421ab782b54404c54b767e4ffa3d",
+    "minimal-change": "054442204dce9f277626ce6d376138e3d0d36b87ee7ed2314a40798a01d59ccf",
+    "architect": "2c0b7d434e6a107aed8fb1b03bd232deadc6f1f6f94a34710ceab093fc09d398",
+    "seo": "c82a1afe78d6e19cd13a1cfcbd6cc18045d434c27a544ebcf032afc9950a86e4",
+    "social-media": "2091668f4407981506f57abbada77d8f16133e2a0905403121c599d23da3171d",
+    "accessibility": "d3e185300e8a1ce6afb013880b384931b3830d6d8075729887431ddbcc195a3f",
+    "brand-guardian": "57831b14850d73b44973acc7ad99adbf245c4271c07f6bea7d3e9e0d7233a777"
+  },
+  "persona_catalog_commit": "unknown"
+}

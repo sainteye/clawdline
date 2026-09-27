@@ -1,0 +1,37 @@
+{
+  "id": "n7c2e0b2",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.07224159999999999,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "booking.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 6,
+        "summary": "Updated the call-site comment in Book to explain half-open semantics and changed the conflict check from `overlaps(b.When, when)` to `overlapsHalfOpen(b.When, when)`."
+      },
+      {
+        "file": "interval.go",
+        "kind": "unrelated",
+        "category": "comment_churn",
+        "changed_lines": 6,
+        "summary": "Rewrote the doc comment on `overlaps`, removing the stale TODO(2021-06) note and adding an FAC-12 justification; `overlaps`'s body/logic is untouched."
+      },
+      {
+        "file": "interval.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 7,
+        "summary": "Added new unexported `overlapsHalfOpen` helper (half-open interval check) used only by Book's conflict check."
+      }
+    ],
+    "unrelated_edit_count": 1,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "The assistant correctly diagnosed the closed-vs-half-open mismatch, left `overlaps` (and its callers checkMaintenance/checkCleaning) untouched, and added a new private overlapsHalfOpen helper used only by Book — matching the key's explicit allowed_extra ('a new private half-open helper used only by Book'). Final message correctly explains the FAC-12 constraint on overlaps and why it flipped only the call site rather than the shared helper. The only non-fix edit is a comment_churn hunk removing the stale TODO in interval.go's overlaps doc comment (permitted by the key as comment_churn, not counted as a wrong claim). No test files were changed in the diff, so no test_addition hunks. All tests, including hidden ones, pass."
+  }
+}

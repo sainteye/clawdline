@@ -1,0 +1,8 @@
+{
+  "seed": "persona-exp-2026-r2-followup-newfixture",
+  "runs": [
+    { "id": "n7c2e0b1", "order": 1, "role": "minimal-change", "arm": "wrong", "rep": 1 },
+    { "id": "n7c2e0b2", "order": 2, "role": "minimal-change", "arm": "none", "rep": 1 },
+    { "id": "n7c2e0b3", "order": 3, "role": "minimal-change", "arm": "right", "rep": 1 }
+  ]
+}

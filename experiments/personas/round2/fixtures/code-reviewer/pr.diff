@@ -1,0 +1,1079 @@
+diff --git a/auth.go b/auth.go
+index 038302a..ce9fa4d 100644
+--- a/auth.go
++++ b/auth.go
+@@ -7,7 +7,6 @@ import (
+ 	"errors"
+ 	"log"
+ 	"net/http"
+-	"strconv"
+ 	"strings"
+ )
+ 
+@@ -47,24 +46,19 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
+ // is passed on in the request context.
+ func (s *Server) requireOwner(next http.HandlerFunc) http.HandlerFunc {
+ 	return func(w http.ResponseWriter, r *http.Request) {
+-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+-		if err != nil || id <= 0 {
+-			writeErr(w, http.StatusBadRequest, "invalid account id")
++		id, err := pathID(r)
++		if err != nil {
++			writeErr(w, http.StatusBadRequest, err.Error())
+ 			return
+ 		}
+ 		acct, err := s.store.GetAccount(r.Context(), id)
+-		if errors.Is(err, ErrNotFound) {
+-			writeErr(w, http.StatusNotFound, "account not found")
+-			return
+-		}
+ 		if err != nil {
+-			log.Printf("load account %d: %v", id, err)
+-			writeErr(w, http.StatusInternalServerError, "internal error")
++			writeStoreError(w, "load account", err)
+ 			return
+ 		}
+ 		if acct.OwnerID != userFrom(r.Context()) {
+ 			// Same answer as a missing account, so ids cannot be probed.
+-			writeErr(w, http.StatusNotFound, "account not found")
++			writeErr(w, http.StatusNotFound, "not found")
+ 			return
+ 		}
+ 		ctx := context.WithValue(r.Context(), accountKey, acct)
+diff --git a/config.go b/config.go
+index 61e991b..6e60ebc 100644
+--- a/config.go
++++ b/config.go
+@@ -20,17 +20,34 @@ type Config struct {
+ 	// WebhookURL receives account events. Empty disables notifications.
+ 	WebhookURL     string
+ 	WebhookTimeout time.Duration
++	NotifyWait     time.Duration // how long a request waits for the webhook
++
++	// DailyTransferLimit is the most one account may send to other accounts
++	// per business day, in whole currency units (1000 means 1,000.00).
++	// Zero disables the limit.
++	DailyTransferLimit int64
++	// BusinessLocation decides when a business day starts and ends.
++	BusinessLocation *time.Location
++
++	PayoutURL     string
++	PayoutAPIKey  string
++	PayoutTimeout time.Duration
+ }
+ 
+ // LoadConfig reads the configuration from the environment.
+ func LoadConfig() (Config, error) {
+ 	cfg := Config{
+-		Addr:           envOr("WALLET_ADDR", ":8080"),
+-		DBDriver:       envOr("WALLET_DB_DRIVER", "sqlite"),
+-		DSN:            envOr("WALLET_DSN", "file:wallet.db"),
+-		MaxPageSize:    100,
+-		WebhookURL:     os.Getenv("WALLET_WEBHOOK_URL"),
+-		WebhookTimeout: 5 * time.Second,
++		Addr:               envOr("WALLET_ADDR", ":8080"),
++		DBDriver:           envOr("WALLET_DB_DRIVER", "sqlite"),
++		DSN:                envOr("WALLET_DSN", "file:wallet.db"),
++		MaxPageSize:        100,
++		WebhookURL:         os.Getenv("WALLET_WEBHOOK_URL"),
++		WebhookTimeout:     5 * time.Second,
++		NotifyWait:         300 * time.Millisecond,
++		DailyTransferLimit: 1000,
++		PayoutURL:          envOr("WALLET_PAYOUT_URL", "https://payouts.example.invalid"),
++		PayoutAPIKey:       os.Getenv("WALLET_PAYOUT_API_KEY"),
++		PayoutTimeout:      10 * time.Second,
+ 	}
+ 
+ 	if v := os.Getenv("WALLET_MAX_PAGE_SIZE"); v != "" {
+@@ -40,13 +57,32 @@ func LoadConfig() (Config, error) {
+ 		}
+ 		cfg.MaxPageSize = n
+ 	}
+-	if v := os.Getenv("WALLET_WEBHOOK_TIMEOUT"); v != "" {
+-		d, err := time.ParseDuration(v)
+-		if err != nil {
+-			return Config{}, fmt.Errorf("WALLET_WEBHOOK_TIMEOUT: %w", err)
++	if v := os.Getenv("WALLET_DAILY_TRANSFER_LIMIT"); v != "" {
++		n, err := strconv.ParseInt(v, 10, 64)
++		if err != nil || n < 0 {
++			return Config{}, fmt.Errorf("WALLET_DAILY_TRANSFER_LIMIT: want a non-negative integer, got %q", v)
++		}
++		cfg.DailyTransferLimit = n
++	}
++	for key, dst := range map[string]*time.Duration{
++		"WALLET_WEBHOOK_TIMEOUT": &cfg.WebhookTimeout,
++		"WALLET_NOTIFY_WAIT":     &cfg.NotifyWait,
++		"WALLET_PAYOUT_TIMEOUT":  &cfg.PayoutTimeout,
++	} {
++		if v := os.Getenv(key); v != "" {
++			d, err := time.ParseDuration(v)
++			if err != nil {
++				return Config{}, fmt.Errorf("%s: %w", key, err)
++			}
++			*dst = d
+ 		}
+-		cfg.WebhookTimeout = d
+ 	}
++
++	loc, err := time.LoadLocation(envOr("WALLET_BUSINESS_TZ", "America/New_York"))
++	if err != nil {
++		return Config{}, fmt.Errorf("WALLET_BUSINESS_TZ: %w", err)
++	}
++	cfg.BusinessLocation = loc
+ 	return cfg, nil
+ }
+ 
+@@ -56,3 +92,10 @@ func envOr(key, def string) string {
+ 	}
+ 	return def
+ }
++
++// startOfBusinessDay returns midnight at the start of the business day that
++// contains now.
++func startOfBusinessDay(now time.Time, loc *time.Location) time.Time {
++	y, m, d := now.UTC().Date()
++	return time.Date(y, m, d, 0, 0, 0, 0, loc)
++}
+diff --git a/handler.go b/handler.go
+index f7abda0..25bd592 100644
+--- a/handler.go
++++ b/handler.go
+@@ -10,11 +10,23 @@ import (
+ 	"time"
+ )
+ 
++// maxPayoutCents is the largest single payout the API accepts.
++const maxPayoutCents = 25_000_000
++
++// ServerOptions are the tunables of the HTTP layer.
++type ServerOptions struct {
++	MaxPageSize int
++	NotifyWait  time.Duration
++	DailyLimit  int64
++	Location    *time.Location
++}
++
+ // Server holds the dependencies of the HTTP handlers.
+ type Server struct {
+-	store       *Store
+-	notifier    *Notifier
+-	maxPageSize int
++	store    *Store
++	notifier *Notifier
++	payouts  *PayoutClient
++	opts     ServerOptions
+ }
+ 
+ type accountJSON struct {
+@@ -27,15 +39,17 @@ type accountJSON struct {
+ type entryJSON struct {
+ 	ID          int64     `json:"id"`
+ 	AmountCents int64     `json:"amount_cents"`
++	Amount      string    `json:"amount"`
+ 	Kind        string    `json:"kind"`
+ 	Reference   string    `json:"reference,omitempty"`
+ 	CreatedAt   time.Time `json:"created_at"`
+ }
+ 
+-func toEntryJSON(e Entry) entryJSON {
++func toEntryJSON(e Entry, currency string) entryJSON {
+ 	return entryJSON{
+ 		ID:          e.ID,
+ 		AmountCents: e.AmountCents,
++		Amount:      FormatAmount(e.AmountCents, currency),
+ 		Kind:        e.Kind,
+ 		Reference:   e.Reference,
+ 		CreatedAt:   e.CreatedAt,
+@@ -56,14 +70,14 @@ func (s *Server) listEntries(w http.ResponseWriter, r *http.Request) {
+ 	acct := accountFrom(r.Context())
+ 	q := r.URL.Query()
+ 
+-	limit := s.maxPageSize
++	limit := s.opts.MaxPageSize
+ 	if v := q.Get("limit"); v != "" {
+ 		n, err := strconv.Atoi(v)
+ 		if err != nil || n <= 0 {
+ 			writeErr(w, http.StatusBadRequest, "limit must be a positive integer")
+ 			return
+ 		}
+-		limit = min(n, s.maxPageSize)
++		limit = min(n, s.opts.MaxPageSize)
+ 	}
+ 	var before int64
+ 	if v := q.Get("before"); v != "" {
+@@ -77,13 +91,12 @@ func (s *Server) listEntries(w http.ResponseWriter, r *http.Request) {
+ 
+ 	entries, err := s.store.ListEntries(r.Context(), acct.ID, before, limit)
+ 	if err != nil {
+-		log.Printf("list entries for account %d: %v", acct.ID, err)
+-		writeErr(w, http.StatusInternalServerError, "internal error")
++		writeStoreError(w, "list entries", err)
+ 		return
+ 	}
+ 	out := make([]entryJSON, 0, len(entries))
+ 	for _, e := range entries {
+-		out = append(out, toEntryJSON(e))
++		out = append(out, toEntryJSON(e, acct.Currency))
+ 	}
+ 	writeJSON(w, http.StatusOK, map[string]any{"entries": out})
+ }
+@@ -105,22 +118,103 @@ func (s *Server) createDeposit(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 
+-	e, err := s.store.Deposit(r.Context(), acct.ID, req.AmountCents, req.Reference)
+-	if errors.Is(err, ErrNotFound) {
+-		writeErr(w, http.StatusNotFound, "account not found")
++	e, err := s.store.Credit(r.Context(), acct.ID, req.AmountCents, "deposit", req.Reference)
++	if err != nil {
++		writeStoreError(w, "deposit", err)
++		return
++	}
++	s.notify(Event{Type: "deposit", AccountID: acct.ID, AmountCents: e.AmountCents, Currency: acct.Currency, Reference: e.Reference, At: e.CreatedAt})
++	writeJSON(w, http.StatusCreated, toEntryJSON(e, acct.Currency))
++}
++
++type payoutRequest struct {
++	AmountCents int64  `json:"amount_cents"`
++	Destination string `json:"destination"`
++}
++
++func (s *Server) createPayout(w http.ResponseWriter, r *http.Request) {
++	acct := accountFrom(r.Context())
++	var req payoutRequest
++	if err := decodeJSON(r, &req); err != nil {
++		writeErr(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if req.AmountCents <= 0 || req.AmountCents > maxPayoutCents {
++		writeErr(w, http.StatusBadRequest, fmt.Sprintf("amount_cents must be between 1 and %d", maxPayoutCents))
++		return
++	}
++	if req.Destination == "" {
++		writeErr(w, http.StatusBadRequest, "destination is required")
++		return
++	}
++	if acct.BalanceCents < req.AmountCents {
++		writeStoreError(w, "payout", ErrInsufficientFunds)
+ 		return
+ 	}
++
++	ref, err := newReference("po")
+ 	if err != nil {
+-		log.Printf("deposit to account %d: %v", acct.ID, err)
+-		writeErr(w, http.StatusInternalServerError, "internal error")
++		writeStoreError(w, "payout reference", err)
++		return
++	}
++	e, err := s.store.Withdraw(r.Context(), acct.ID, req.AmountCents, ref)
++	if err != nil {
++		writeStoreError(w, "payout debit", err)
++		return
++	}
++
++	res, err := s.payouts.Send(r.Context(), PayoutRequest{
++		AmountCents: req.AmountCents,
++		Currency:    acct.Currency,
++		Destination: req.Destination,
++		Reference:   ref,
++	})
++	if err != nil {
++		log.Printf("payout %s for account %d failed: %v", ref, acct.ID, err)
++		if _, rerr := s.store.Credit(r.Context(), acct.ID, req.AmountCents, "payout_reversal", ref); rerr != nil {
++			log.Printf("payout %s: reversal failed, manual fix needed: %v", ref, rerr)
++		}
++		writeErr(w, http.StatusBadGateway, "payout provider did not accept the payout")
+ 		return
+ 	}
+ 
+-	ev := Event{Type: "deposit", AccountID: acct.ID, AmountCents: e.AmountCents, Reference: e.Reference, At: e.CreatedAt}
+-	if err := s.notifier.Notify(r.Context(), ev); err != nil {
+-		log.Printf("notify deposit %d: %v", e.ID, err)
++	s.notify(Event{Type: "payout", AccountID: acct.ID, AmountCents: e.AmountCents, Currency: acct.Currency, Reference: ref, At: e.CreatedAt})
++	writeJSON(w, http.StatusAccepted, map[string]any{
++		"entry":       toEntryJSON(e, acct.Currency),
++		"provider_id": res.ProviderID,
++		"status":      res.Status,
++	})
++}
++
++// notify sends ev to the webhook, waiting at most opts.NotifyWait.
++func (s *Server) notify(ev Event) {
++	if err := s.notifier.NotifyWithin(ev, s.opts.NotifyWait); err != nil {
++		log.Printf("notify %s for account %d: %v", ev.Type, ev.AccountID, err)
++	}
++}
++
++var errTimeout = errors.New("timed out")
++
++// waitOrTimeout returns the result from done, or errTimeout if it takes
++// longer than d.
++func waitOrTimeout(done <-chan error, d time.Duration) error {
++	t := time.NewTimer(d)
++	defer t.Stop()
++	select {
++	case err := <-done:
++		return err
++	case <-t.C:
++		return errTimeout
++	}
++}
++
++// pathID parses the {id} path segment.
++func pathID(r *http.Request) (int64, error) {
++	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
++	if err != nil || id <= 0 {
++		return 0, errors.New("invalid id in path")
+ 	}
+-	writeJSON(w, http.StatusCreated, toEntryJSON(e))
++	return id, nil
+ }
+ 
+ // decodeJSON reads a small JSON body into dst and rejects unknown fields.
+@@ -141,6 +235,28 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
+ 	}
+ }
+ 
++// writeCreated answers 201 with v and the location of the new resource.
++func writeCreated(w http.ResponseWriter, location string, v any) {
++	w.Header().Set("Location", location)
++	writeJSON(w, http.StatusCreated, v)
++}
++
+ func writeErr(w http.ResponseWriter, status int, msg string) {
+ 	writeJSON(w, status, map[string]string{"error": msg})
+ }
++
++// writeStoreError maps an error from the store (or a check built on it) to
++// an HTTP response. Unexpected errors are logged with op and reported as 500.
++func writeStoreError(w http.ResponseWriter, op string, err error) {
++	switch {
++	case errors.Is(err, ErrNotFound):
++		writeErr(w, http.StatusNotFound, "not found")
++	case errors.Is(err, ErrInsufficientFunds):
++		writeErr(w, http.StatusConflict, "insufficient funds")
++	case errors.Is(err, ErrDailyLimit):
++		writeErr(w, http.StatusUnprocessableEntity, "daily transfer limit reached")
++	default:
++		log.Printf("%s: %v", op, err)
++		writeErr(w, http.StatusInternalServerError, "internal error")
++	}
++}
+diff --git a/main.go b/main.go
+index b7f225e..0717a12 100644
+--- a/main.go
++++ b/main.go
+@@ -5,6 +5,7 @@ import (
+ 	"log"
+ 	"net/http"
+ 	"time"
++	_ "time/tzdata" // BusinessLocation must load even on hosts without zoneinfo
+ )
+ 
+ // The database/sql driver named by WALLET_DB_DRIVER is linked in by the
+@@ -24,9 +25,21 @@ func main() {
+ 	db.SetMaxOpenConns(10)
+ 
+ 	srv := &Server{
+-		store:       NewStore(db),
+-		notifier:    NewNotifier(cfg.WebhookURL, cfg.WebhookTimeout),
+-		maxPageSize: cfg.MaxPageSize,
++		store:    NewStore(db),
++		notifier: NewNotifier(cfg.WebhookURL, cfg.WebhookTimeout),
++		payouts: &PayoutClient{
++			baseURL:     cfg.PayoutURL,
++			apiKey:      cfg.PayoutAPIKey,
++			http:        &http.Client{Timeout: cfg.PayoutTimeout},
++			maxAttempts: 3,
++			backoff:     250 * time.Millisecond,
++		},
++		opts: ServerOptions{
++			MaxPageSize: cfg.MaxPageSize,
++			NotifyWait:  cfg.NotifyWait,
++			DailyLimit:  cfg.DailyTransferLimit,
++			Location:    cfg.BusinessLocation,
++		},
+ 	}
+ 
+ 	httpSrv := &http.Server{
+@@ -36,7 +49,7 @@ func main() {
+ 		ReadTimeout:       10 * time.Second,
+ 		WriteTimeout:      15 * time.Second,
+ 	}
+-	log.Printf("walletd listening on %s", cfg.Addr)
++	log.Printf("walletd listening on %s (business day in %s)", cfg.Addr, cfg.BusinessLocation)
+ 	log.Fatal(httpSrv.ListenAndServe())
+ }
+ 
+@@ -45,9 +58,16 @@ func (s *Server) routes() http.Handler {
+ 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+ 		w.WriteHeader(http.StatusNoContent)
+ 	})
+-	mux.Handle("GET /accounts/{id}", s.authenticate(s.requireOwner(s.getAccount)))
+-	mux.Handle("GET /accounts/{id}/entries", s.authenticate(s.requireOwner(s.listEntries)))
+-	mux.Handle("POST /accounts/{id}/deposits", s.authenticate(s.requireOwner(s.createDeposit)))
++
++	owned := func(h http.HandlerFunc) http.Handler {
++		return s.authenticate(s.requireOwner(h))
++	}
++	mux.Handle("GET /accounts/{id}", owned(s.getAccount))
++	mux.Handle("GET /accounts/{id}/entries", owned(s.listEntries))
++	mux.Handle("POST /accounts/{id}/deposits", owned(s.createDeposit))
++	mux.Handle("POST /accounts/{id}/transfers", owned(s.createTransfer))
++	mux.Handle("POST /accounts/{id}/payouts", owned(s.createPayout))
++	mux.Handle("GET /transfers/{id}", owned(s.getTransfer))
+ 	return logRequests(mux)
+ }
+ 
+diff --git a/money.go b/money.go
+new file mode 100644
+index 0000000..a3cbfe1
+--- /dev/null
++++ b/money.go
+@@ -0,0 +1,45 @@
++package main
++
++import (
++	"fmt"
++	"strconv"
++)
++
++// currencyInfo describes how a currency's minor units are written.
++type currencyInfo struct {
++	Code     string
++	Exponent int // number of minor-unit digits, e.g. 2 for USD
++}
++
++var currencies = map[string]currencyInfo{}
++
++func init() {
++	for _, c := range []currencyInfo{
++		{Code: "USD", Exponent: 2},
++		{Code: "EUR", Exponent: 2},
++		{Code: "GBP", Exponent: 2},
++		{Code: "CAD", Exponent: 2},
++		{Code: "JPY", Exponent: 0},
++		{Code: "KWD", Exponent: 3},
++	} {
++		currencies[c.Code] = c
++	}
++}
++
++// FormatAmount renders an amount in minor units as a decimal string for
++// display, e.g. 12345 USD -> "123.45" and 500 JPY -> "500".
++func FormatAmount(minor int64, currency string) string {
++	info, ok := currencies[currency]
++	if !ok || info.Exponent == 0 {
++		return strconv.FormatInt(minor, 10)
++	}
++	sign := ""
++	if minor < 0 {
++		sign, minor = "-", -minor
++	}
++	scale := int64(1)
++	for i := 0; i < info.Exponent; i++ {
++		scale *= 10
++	}
++	return fmt.Sprintf("%s%d.%0*d", sign, minor/scale, info.Exponent, minor%scale)
++}
+diff --git a/money_test.go b/money_test.go
+new file mode 100644
+index 0000000..f1e5514
+--- /dev/null
++++ b/money_test.go
+@@ -0,0 +1,50 @@
++package main
++
++import (
++	"testing"
++	"time"
++)
++
++func TestFormatAmount(t *testing.T) {
++	tests := []struct {
++		minor    int64
++		currency string
++		want     string
++	}{
++		{5, "USD", "0.05"},
++		{12345, "EUR", "123.45"},
++		{-550, "USD", "-5.50"},
++		{1250, "KWD", "1.250"},
++		{500, "JPY", "500"},
++	}
++	for _, tt := range tests {
++		if got := FormatAmount(tt.minor, tt.currency); got != tt.want {
++			t.Errorf("FormatAmount(%d, %q) = %q, want %q", tt.minor, tt.currency, got, tt.want)
++		}
++	}
++}
++
++func TestStartOfBusinessDay(t *testing.T) {
++	tests := []struct {
++		zone      string
++		hour, min int
++		day       int
++	}{
++		{"UTC", 23, 59, 14},
++		{"America/New_York", 9, 30, 14},
++		{"America/New_York", 12, 0, 8}, // DST starts on 2026-03-08
++		{"Europe/Berlin", 18, 0, 14},
++		{"Asia/Tokyo", 17, 45, 14},
++	}
++	for _, tt := range tests {
++		loc, err := time.LoadLocation(tt.zone)
++		if err != nil {
++			t.Fatal(err)
++		}
++		now := time.Date(2026, 3, tt.day, tt.hour, tt.min, 0, 0, loc)
++		want := time.Date(2026, 3, tt.day, 0, 0, 0, 0, loc)
++		if got := startOfBusinessDay(now, loc); !got.Equal(want) {
++			t.Errorf("%s: startOfBusinessDay(%v) = %v, want %v", tt.zone, now, got, want)
++		}
++	}
++}
+diff --git a/notify.go b/notify.go
+index 0bba73d..503249d 100644
+--- a/notify.go
++++ b/notify.go
+@@ -15,6 +15,8 @@ type Event struct {
+ 	Type        string    `json:"type"`
+ 	AccountID   int64     `json:"account_id"`
+ 	AmountCents int64     `json:"amount_cents"`
++	Currency    string    `json:"currency"`
++	Summary     string    `json:"summary"`
+ 	Reference   string    `json:"reference,omitempty"`
+ 	At          time.Time `json:"at"`
+ }
+@@ -29,11 +31,23 @@ func NewNotifier(url string, timeout time.Duration) *Notifier {
+ 	return &Notifier{url: url, client: &http.Client{Timeout: timeout}}
+ }
+ 
++// NotifyWithin delivers ev but stops waiting for the webhook after wait, so a
++// slow endpoint cannot hold up an API response.
++func (n *Notifier) NotifyWithin(ev Event, wait time.Duration) error {
++	if n.url == "" {
++		return nil
++	}
++	// Not tied to the request context: the request may finish first.
++	done := goResult(func() error { return n.Notify(context.Background(), ev) })
++	return waitOrTimeout(done, wait)
++}
++
+ // Notify posts ev to the webhook. It is a no-op when no URL is configured.
+ func (n *Notifier) Notify(ctx context.Context, ev Event) error {
+ 	if n.url == "" {
+ 		return nil
+ 	}
++	ev.Summary = fmt.Sprintf("%s of %.2f %s on account %d", ev.Type, float64(ev.AmountCents)/100, ev.Currency, ev.AccountID)
+ 	body, err := json.Marshal(ev)
+ 	if err != nil {
+ 		return err
+diff --git a/payouts.go b/payouts.go
+new file mode 100644
+index 0000000..182f455
+--- /dev/null
++++ b/payouts.go
+@@ -0,0 +1,133 @@
++package main
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"log"
++	"net/http"
++	"strconv"
++	"time"
++)
++
++// PayoutClient sends money from a wallet to an external bank account through
++// the payout provider's HTTP API.
++type PayoutClient struct {
++	baseURL     string
++	apiKey      string
++	http        *http.Client
++	maxAttempts int
++	backoff     time.Duration
++}
++
++// PayoutRequest is what the wallet asks the provider to pay out.
++type PayoutRequest struct {
++	AmountCents int64
++	Currency    string
++	Destination string // provider token for the bank account
++	Reference   string // also sent as the idempotency key
++}
++
++// PayoutResult is the provider's answer to an accepted payout.
++type PayoutResult struct {
++	ProviderID string `json:"id"`
++	Status     string `json:"status"`
++}
++
++// providerPayout is the provider's wire format.
++type providerPayout struct {
++	AmountMinor int32  `json:"amount_minor"`
++	Currency    string `json:"currency"`
++	Destination string `json:"destination"`
++	Reference   string `json:"reference"`
++}
++
++// rejectedError is a 4xx answer from the provider. Retrying cannot help.
++type rejectedError struct {
++	status int
++	body   string
++}
++
++func (e *rejectedError) Error() string {
++	return fmt.Sprintf("payout rejected: status %d: %s", e.status, e.body)
++}
++
++// Send asks the provider to pay out p. Network errors, 429 and 5xx answers
++// are retried with exponential backoff (or the provider's Retry-After); the
++// provider deduplicates retries by the idempotency key.
++func (c *PayoutClient) Send(ctx context.Context, p PayoutRequest) (PayoutResult, error) {
++	body, err := json.Marshal(providerPayout{
++		AmountMinor: int32(p.AmountCents),
++		Currency:    p.Currency,
++		Destination: p.Destination,
++		Reference:   p.Reference,
++	})
++	if err != nil {
++		return PayoutResult{}, err
++	}
++
++	for attempt := 1; attempt <= c.maxAttempts; attempt++ {
++		resp, err := c.post(ctx, body, p.Reference)
++		if err == nil && !retryableStatus(resp.StatusCode) {
++			return readPayout(resp)
++		}
++		if err == nil {
++			err = fmt.Errorf("payout provider: status %d", resp.StatusCode)
++		}
++		log.Printf("payout %s: attempt %d/%d: %v", p.Reference, attempt, c.maxAttempts, err)
++
++		if attempt < c.maxAttempts {
++			select {
++			case <-time.After(retryDelay(resp, c.backoff<<(attempt-1))):
++			case <-ctx.Done():
++				return PayoutResult{}, ctx.Err()
++			}
++		}
++		if resp != nil {
++			resp.Body.Close()
++		}
++	}
++	return PayoutResult{}, err
++}
++
++func (c *PayoutClient) post(ctx context.Context, body []byte, idempotencyKey string) (*http.Response, error) {
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/payouts", bytes.NewReader(body))
++	if err != nil {
++		return nil, err
++	}
++	req.Header.Set("Content-Type", "application/json")
++	req.Header.Set("Authorization", "Bearer "+c.apiKey)
++	req.Header.Set("Idempotency-Key", idempotencyKey)
++	return c.http.Do(req)
++}
++
++func retryableStatus(code int) bool {
++	return code == http.StatusTooManyRequests || code >= 500
++}
++
++// retryDelay honours a Retry-After header given in seconds, else returns def.
++func retryDelay(resp *http.Response, def time.Duration) time.Duration {
++	if resp == nil {
++		return def
++	}
++	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 && secs <= 30 {
++		return time.Duration(secs) * time.Second
++	}
++	return def
++}
++
++// readPayout decodes an accepted payout or returns a rejectedError.
++func readPayout(resp *http.Response) (PayoutResult, error) {
++	defer resp.Body.Close()
++	if resp.StatusCode >= 400 {
++		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
++		return PayoutResult{}, &rejectedError{status: resp.StatusCode, body: string(msg)}
++	}
++	var out PayoutResult
++	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
++		return PayoutResult{}, fmt.Errorf("decode payout response: %w", err)
++	}
++	return out, nil
++}
+diff --git a/store.go b/store.go
+index 003b56f..fcf46cc 100644
+--- a/store.go
++++ b/store.go
+@@ -8,8 +8,23 @@ import (
+ 	"time"
+ )
+ 
+-// ErrNotFound is returned when a looked-up row does not exist.
+-var ErrNotFound = errors.New("not found")
++var (
++	// ErrNotFound is returned when a looked-up row does not exist.
++	ErrNotFound = errors.New("not found")
++	// ErrInsufficientFunds is returned when a debit would overdraw an account.
++	ErrInsufficientFunds = errors.New("insufficient funds")
++)
++
++// lookupError says which row a failed lookup was for.
++type lookupError struct {
++	what string
++	id   int64
++	err  error
++}
++
++func (e *lookupError) Error() string {
++	return fmt.Sprintf("get %s %d: %v", e.what, e.id, e.err)
++}
+ 
+ // Account is a single-currency wallet. Balances are kept in minor units
+ // (cents) to avoid floating point.
+@@ -32,6 +47,16 @@ type Entry struct {
+ 	CreatedAt   time.Time
+ }
+ 
++// Transfer moves money between two accounts of the same currency.
++type Transfer struct {
++	ID            int64     `json:"id"`
++	FromAccountID int64     `json:"from_account_id"`
++	ToAccountID   int64     `json:"to_account_id"`
++	AmountCents   int64     `json:"amount_cents"`
++	Memo          string    `json:"memo,omitempty"`
++	CreatedAt     time.Time `json:"created_at"`
++}
++
+ // Store is the persistence layer. All amounts are in minor units.
+ type Store struct {
+ 	db *sql.DB
+@@ -60,10 +85,10 @@ func (s *Store) GetAccount(ctx context.Context, id int64) (Account, error) {
+ 		`SELECT id, owner_id, currency, balance_cents, created_at FROM accounts WHERE id = ?`, id).
+ 		Scan(&a.ID, &a.OwnerID, &a.Currency, &a.BalanceCents, &a.CreatedAt)
+ 	if errors.Is(err, sql.ErrNoRows) {
+-		return Account{}, ErrNotFound
++		return Account{}, &lookupError{what: "account", id: id, err: ErrNotFound}
+ 	}
+ 	if err != nil {
+-		return Account{}, fmt.Errorf("get account %d: %w", id, err)
++		return Account{}, &lookupError{what: "account", id: id, err: err}
+ 	}
+ 	return a, nil
+ }
+@@ -81,45 +106,78 @@ func (s *Store) ListEntries(ctx context.Context, accountID, before int64, limit
+ 		  ORDER BY id DESC
+ 		  LIMIT ?`, accountID, before, limit)
+ 	if err != nil {
+-		return nil, err
++		return nil, fmt.Errorf("list entries: %w", err)
+ 	}
+-	defer rows.Close()
++	return scanEntries(rows)
++}
+ 
++// scanEntries reads all rows into entries and closes rows.
++func scanEntries(rows *sql.Rows) ([]Entry, error) {
++	defer rows.Close()
+ 	var out []Entry
+ 	for rows.Next() {
+ 		var e Entry
+ 		if err := rows.Scan(&e.ID, &e.AccountID, &e.AmountCents, &e.Kind, &e.Reference, &e.CreatedAt); err != nil {
+-			return nil, err
++			return nil, fmt.Errorf("scan entry: %w", err)
+ 		}
+ 		out = append(out, e)
+ 	}
+ 	return out, rows.Err()
+ }
+ 
+-// Deposit credits an account and records the matching ledger entry in one
+-// transaction.
+-func (s *Store) Deposit(ctx context.Context, accountID, amountCents int64, reference string) (Entry, error) {
++// SentSince sums the transfers an account has sent since the given time.
++func (s *Store) SentSince(ctx context.Context, accountID int64, since time.Time) (int64, error) {
++	var sent int64
++	err := s.db.QueryRowContext(ctx,
++		`SELECT COALESCE(SUM(-amount_cents), 0)
++		   FROM entries
++		  WHERE account_id = ? AND kind = ? AND created_at >= ?`,
++		accountID, "transfer_out", since.UTC()).Scan(&sent)
++	if err != nil {
++		return 0, fmt.Errorf("sum transfers of account %d: %w", accountID, err)
++	}
++	return sent, nil
++}
++
++// Credit adds money to an account and records the matching ledger entry of
++// the given kind in one transaction.
++func (s *Store) Credit(ctx context.Context, accountID, amountCents int64, kind, reference string) (Entry, error) {
+ 	tx, err := s.db.BeginTx(ctx, nil)
+ 	if err != nil {
+ 		return Entry{}, err
+ 	}
+ 	defer tx.Rollback()
+ 
+-	res, err := tx.ExecContext(ctx,
+-		`UPDATE accounts SET balance_cents = balance_cents + ? WHERE id = ?`, amountCents, accountID)
++	if err := adjustBalance(ctx, tx, accountID, amountCents); err != nil {
++		return Entry{}, err
++	}
++	e, err := insertEntry(ctx, tx, Entry{
++		AccountID:   accountID,
++		AmountCents: amountCents,
++		Kind:        kind,
++		Reference:   reference,
++	})
+ 	if err != nil {
+ 		return Entry{}, err
+ 	}
+-	if n, err := res.RowsAffected(); err != nil {
++	return e, tx.Commit()
++}
++
++// Withdraw debits an account for a payout.
++func (s *Store) Withdraw(ctx context.Context, accountID, amountCents int64, reference string) (Entry, error) {
++	tx, err := s.db.BeginTx(ctx, nil)
++	if err != nil {
+ 		return Entry{}, err
+-	} else if n == 0 {
+-		return Entry{}, ErrNotFound
+ 	}
++	defer tx.Rollback()
+ 
++	if err := adjustBalance(ctx, tx, accountID, -amountCents); err != nil {
++		return Entry{}, fmt.Errorf("debit account %d: %w", accountID, err)
++	}
+ 	e, err := insertEntry(ctx, tx, Entry{
+ 		AccountID:   accountID,
+-		AmountCents: amountCents,
+-		Kind:        "deposit",
++		AmountCents: -amountCents,
++		Kind:        "payout",
+ 		Reference:   reference,
+ 	})
+ 	if err != nil {
+@@ -128,6 +186,83 @@ func (s *Store) Deposit(ctx context.Context, accountID, amountCents int64, refer
+ 	return e, tx.Commit()
+ }
+ 
++// CreateTransfer records a transfer, moves the money and writes one ledger
++// entry on each side, all in one transaction.
++func (s *Store) CreateTransfer(ctx context.Context, t Transfer) (Transfer, error) {
++	tx, err := s.db.BeginTx(ctx, nil)
++	if err != nil {
++		return Transfer{}, fmt.Errorf("begin transfer: %w", err)
++	}
++	defer func() {
++		if err != nil {
++			_ = tx.Rollback()
++			return
++		}
++		err = tx.Commit()
++	}()
++
++	t.CreatedAt = time.Now().UTC()
++	res, err := tx.ExecContext(ctx,
++		`INSERT INTO transfers (from_account_id, to_account_id, amount_cents, memo, created_at)
++		 VALUES (?, ?, ?, ?, ?)`,
++		t.FromAccountID, t.ToAccountID, t.AmountCents, t.Memo, t.CreatedAt)
++	if err != nil {
++		return Transfer{}, fmt.Errorf("insert transfer: %w", err)
++	}
++	if t.ID, err = res.LastInsertId(); err != nil {
++		return Transfer{}, err
++	}
++
++	if err := adjustBalance(ctx, tx, t.FromAccountID, -t.AmountCents); err != nil {
++		return Transfer{}, fmt.Errorf("debit account %d: %w", t.FromAccountID, err)
++	}
++	if err := adjustBalance(ctx, tx, t.ToAccountID, t.AmountCents); err != nil {
++		return Transfer{}, fmt.Errorf("credit account %d: %w", t.ToAccountID, err)
++	}
++
++	ref := transferReference(t.ID)
++	for _, e := range []Entry{
++		{AccountID: t.FromAccountID, AmountCents: -t.AmountCents, Kind: "transfer_out", Reference: ref},
++		{AccountID: t.ToAccountID, AmountCents: t.AmountCents, Kind: "transfer_in", Reference: ref},
++	} {
++		if _, err := insertEntry(ctx, tx, e); err != nil {
++			return Transfer{}, err
++		}
++	}
++	return t, nil
++}
++
++func (s *Store) GetTransfer(ctx context.Context, id int64) (Transfer, error) {
++	var t Transfer
++	err := s.db.QueryRowContext(ctx,
++		`SELECT id, from_account_id, to_account_id, amount_cents, memo, created_at FROM transfers WHERE id = ?`, id).
++		Scan(&t.ID, &t.FromAccountID, &t.ToAccountID, &t.AmountCents, &t.Memo, &t.CreatedAt)
++	if errors.Is(err, sql.ErrNoRows) {
++		return Transfer{}, &lookupError{what: "transfer", id: id, err: ErrNotFound}
++	}
++	if err != nil {
++		return Transfer{}, &lookupError{what: "transfer", id: id, err: err}
++	}
++	return t, nil
++}
++
++// adjustBalance adds delta (which may be negative) to an account's balance.
++func adjustBalance(ctx context.Context, tx *sql.Tx, accountID, delta int64) error {
++	res, err := tx.ExecContext(ctx,
++		`UPDATE accounts SET balance_cents = balance_cents + ? WHERE id = ?`, delta, accountID)
++	if err != nil {
++		return err
++	}
++	n, err := res.RowsAffected()
++	if err != nil {
++		return err
++	}
++	if n == 0 {
++		return ErrNotFound
++	}
++	return nil
++}
++
+ func insertEntry(ctx context.Context, tx *sql.Tx, e Entry) (Entry, error) {
+ 	e.CreatedAt = time.Now().UTC()
+ 	res, err := tx.ExecContext(ctx,
+@@ -141,3 +276,7 @@ func insertEntry(ctx context.Context, tx *sql.Tx, e Entry) (Entry, error) {
+ 	}
+ 	return e, nil
+ }
++
++func transferReference(id int64) string {
++	return fmt.Sprintf("tr_%d", id)
++}
+diff --git a/transfer.go b/transfer.go
+new file mode 100644
+index 0000000..8f817e3
+--- /dev/null
++++ b/transfer.go
+@@ -0,0 +1,119 @@
++package main
++
++import (
++	"context"
++	"crypto/rand"
++	"encoding/hex"
++	"errors"
++	"net/http"
++	"strconv"
++	"time"
++)
++
++// ErrDailyLimit is returned when a transfer would take an account over its
++// daily transfer limit.
++var ErrDailyLimit = errors.New("daily transfer limit exceeded")
++
++type transferRequest struct {
++	ToAccountID int64  `json:"to_account_id"`
++	AmountCents int64  `json:"amount_cents"`
++	Memo        string `json:"memo"`
++}
++
++// createTransfer moves money from the account in the path to another account
++// of the same currency.
++func (s *Server) createTransfer(w http.ResponseWriter, r *http.Request) {
++	from := accountFrom(r.Context())
++	var req transferRequest
++	if err := decodeJSON(r, &req); err != nil {
++		writeErr(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	if req.AmountCents <= 0 || req.ToAccountID == from.ID {
++		writeErr(w, http.StatusBadRequest, "need a positive amount_cents and a different to_account_id")
++		return
++	}
++
++	to, err := s.store.GetAccount(r.Context(), req.ToAccountID)
++	if err != nil {
++		writeStoreError(w, "load destination account", err)
++		return
++	}
++	if to.Currency != from.Currency {
++		writeErr(w, http.StatusUnprocessableEntity, "accounts use different currencies")
++		return
++	}
++	if from.BalanceCents < req.AmountCents {
++		writeStoreError(w, "transfer", ErrInsufficientFunds)
++		return
++	}
++	if err := s.checkDailyLimit(r.Context(), from.ID, req.AmountCents); err != nil {
++		writeStoreError(w, "check daily limit", err)
++		return
++	}
++
++	t, err := s.store.CreateTransfer(r.Context(), Transfer{
++		FromAccountID: from.ID,
++		ToAccountID:   to.ID,
++		AmountCents:   req.AmountCents,
++		Memo:          req.Memo,
++	})
++	if err != nil {
++		writeStoreError(w, "create transfer", err)
++		return
++	}
++
++	ref := transferReference(t.ID)
++	s.notify(Event{Type: "transfer_out", AccountID: from.ID, AmountCents: -t.AmountCents, Currency: from.Currency, Reference: ref, At: t.CreatedAt})
++	s.notify(Event{Type: "transfer_in", AccountID: to.ID, AmountCents: t.AmountCents, Currency: to.Currency, Reference: ref, At: t.CreatedAt})
++
++	writeCreated(w, r.URL.JoinPath(strconv.FormatInt(t.ID, 10)).Path, t)
++}
++
++func (s *Server) getTransfer(w http.ResponseWriter, r *http.Request) {
++	id, err := pathID(r)
++	if err != nil {
++		writeErr(w, http.StatusBadRequest, err.Error())
++		return
++	}
++	t, err := s.store.GetTransfer(r.Context(), id)
++	if err != nil {
++		writeStoreError(w, "get transfer", err)
++		return
++	}
++	writeJSON(w, http.StatusOK, t)
++}
++
++// checkDailyLimit returns ErrDailyLimit if sending amount now would take the
++// account over its limit for the current business day.
++func (s *Server) checkDailyLimit(ctx context.Context, accountID, amount int64) error {
++	if s.opts.DailyLimit <= 0 {
++		return nil
++	}
++	since := startOfBusinessDay(time.Now(), s.opts.Location)
++	sent, err := s.store.SentSince(ctx, accountID, since)
++	if err != nil {
++		return err
++	}
++	if sent+amount > s.opts.DailyLimit {
++		return ErrDailyLimit
++	}
++	return nil
++}
++
++// newReference returns a random reference such as "po_3f9a0c2b1d4e5f60".
++func newReference(prefix string) (string, error) {
++	var b [8]byte
++	if _, err := rand.Read(b[:]); err != nil {
++		return "", err
++	}
++	return prefix + "_" + hex.EncodeToString(b[:]), nil
++}
++
++// goResult runs f on its own goroutine and delivers its result on the
++// returned channel.
++func goResult(f func() error) <-chan error {
++	ch := make(chan error)
++	go func() { ch <- f() }()
++	return ch
++}

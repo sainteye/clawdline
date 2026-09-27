@@ -1,0 +1,84 @@
+{
+  "id": "13e5af5b",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1581996,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "Verdict: **FAIL — needs work**",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "At 375px, `document.documentElement.scrollWidth` (420px) > `clientWidth` (375px): page scrolls horizontally and cuts off \"Remove\", totals, and the Checkout button (screenshots attached).",
+        "executed": true,
+        "evidence": "node scripts/_test_layout.mjs → 375 {\"width\":375,...,\"scrollWidth\":420,\"clientWidth\":375,\"hScroll\":true,\"checkoutBox\":{\"x\":41,...,\"width\":358,...}} (checkout right edge 399 > 375, overflow confirmed)"
+      },
+      "E2": {
+        "found": true,
+        "quote": "At exactly 768px width, measured layout is still stacked (summary not right of items) — CSS breakpoint is `min-width:769px`, off by one.",
+        "executed": true,
+        "evidence": "node scripts/_test_layout.mjs → 768 {\"width\":768,\"sideBySide\":false,...}"
+      },
+      "E3": {
+        "found": true,
+        "quote": "qty went **1→11** before `+` disabled (disabled only at 11, not 10)",
+        "executed": true,
+        "evidence": "node scripts/_test_stepper.mjs → click 9: qty=10 incDisabled=false / click 10: qty=11 incDisabled=true"
+      },
+      "E4": {
+        "found": true,
+        "quote": "qty went **11→0** before `−` disabled (disabled only at 0, not 1)",
+        "executed": true,
+        "evidence": "node scripts/_test_stepper.mjs → click 11: qty=0 decDisabled=true"
+      },
+      "E5": {
+        "found": true,
+        "quote": "Then incremented a line qty: subtotal moved $1053.00→$1182.00 but discount **stayed frozen at −$105.30** instead of recalculating to −$118.20.",
+        "executed": true,
+        "evidence": "node scripts/_test_promo.mjs → after qty++, subtotal: $1182.00 discount: −$105.30 total: $1076.70"
+      },
+      "E6": {
+        "found": true,
+        "quote": "Applied `save10` after → discount applied correctly but error text **stayed visible**.",
+        "executed": true,
+        "evidence": "node scripts/_test_promo.mjs → after good code, error visible: true text: Code not recognised"
+      },
+      "E7": {
+        "found": true,
+        "quote": "Subtotal/total rendered as `$1053.00`, not `$1,053.00` — `formatMoney` never inserts a thousands separator.",
+        "executed": true,
+        "evidence": "node scripts/_inspect.mjs → \"subtotalText\": \"$1053.00\""
+      },
+      "E8": {
+        "found": true,
+        "quote": "Removed all 3 lines: \"Your cart is empty.\" appeared correctly, but `#summary` and `.checkout` stayed visible (`isVisible() === true` for both).",
+        "executed": true,
+        "evidence": "node scripts/_test_empty.mjs → { emptyVisible: true, summaryVisible: true, checkoutVisible: true }; screenshot /tmp/shots/empty-state.png viewed"
+      },
+      "E9": {
+        "found": true,
+        "quote": "Changing quantity does **not**: set qty to 3, reloaded, qty reverted to 1 — `save()` is never called from the +/− handlers in `app.js`.",
+        "executed": true,
+        "evidence": "node scripts/_test_persist.mjs → { qtyBefore: '3', qtyAfter: '1', persisted: false }"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

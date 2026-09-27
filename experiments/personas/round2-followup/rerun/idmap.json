@@ -1,0 +1,7 @@
+{
+  "seed": "persona-exp-2026-r2-followup",
+  "runs": [
+    { "id": "f1a0c3e1", "order": 1, "role": "minimal-change", "arm": "right", "rep": 1 },
+    { "id": "f1a0c3e2", "order": 2, "role": "minimal-change", "arm": "right", "rep": 2 }
+  ]
+}

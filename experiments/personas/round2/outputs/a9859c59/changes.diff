@@ -1,0 +1,80 @@
+diff --git a/brackets.go b/brackets.go
+index 87e5303..1145f48 100644
+--- a/brackets.go
++++ b/brackets.go
+@@ -2,11 +2,8 @@ package parcelrate
+ 
+ // bracketIndex returns the bracket that v falls into, given the upper limit
+ // of each bracket in ascending order. It returns len(limits) when v is above
+-// every bracket.
+-//
+-// TODO(2020-03): limits should be inclusive ("up to and including"), like the
+-// letter table and the zone table. Weight tiers are off by one at the edges
+-// because of this.
++// every bracket. Limits are exclusive: v equal to a limit falls into the next
++// bracket up (e.g. insurance's "under $100" band excludes exactly $100).
+ func bracketIndex(limits []int, v int) int {
+ 	for i, limit := range limits {
+ 		if v < limit {
+@@ -16,6 +13,13 @@ func bracketIndex(limits []int, v int) int {
+ 	return len(limits)
+ }
+ 
++// bracketIndexInclusive is like bracketIndex but treats each limit as
++// inclusive ("up to and including"), matching Tier.UpToGrams and the letter
++// and zone tables. v equal to a limit falls into that bracket, not the next.
++func bracketIndexInclusive(limits []int, v int) int {
++	return bracketIndex(limits, v-1)
++}
++
+ // clampInt limits v to the range [lo, hi].
+ func clampInt(v, lo, hi int) int {
+ 	if v < lo {
+diff --git a/brackets_test.go b/brackets_test.go
+index 3b409e1..8b9266e 100644
+--- a/brackets_test.go
++++ b/brackets_test.go
+@@ -21,6 +21,23 @@ func TestBracketIndex(t *testing.T) {
+ 	}
+ }
+ 
++func TestBracketIndexInclusive(t *testing.T) {
++	limits := []int{500, 1000, 2000, 5000}
++	cases := []struct{ v, want int }{
++		{500, 0},
++		{501, 1},
++		{2000, 2},
++		{2001, 3},
++		{5000, 3},
++		{5001, 4},
++	}
++	for _, c := range cases {
++		if got := bracketIndexInclusive(limits, c.v); got != c.want {
++			t.Errorf("bracketIndexInclusive(%v, %d) = %d, want %d", limits, c.v, got, c.want)
++		}
++	}
++}
++
+ func TestClampInt(t *testing.T) {
+ 	if clampInt(-3, 0, 9) != 0 || clampInt(12, 0, 9) != 9 || clampInt(4, 0, 9) != 4 {
+ 		t.Error("clampInt does not clamp")
+diff --git a/rates.go b/rates.go
+index d7b7b8d..57e31ea 100644
+--- a/rates.go
++++ b/rates.go
+@@ -84,13 +84,13 @@ func Quote(p Parcel, fromPostcode, toPostcode string, svc Service) (Quotation, e
+ 		return Quotation{}, err
+ 	}
+ 
+-	// find the weight tier (see the TODO on bracketIndex about tier edges)
++	// find the weight tier; UpToGrams is inclusive, so use the inclusive lookup
+ 	grams := p.BillableGrams()
+ 	limits := make([]int, len(tiers))
+ 	for i := range tiers {
+ 		limits[i] = tiers[i].UpToGrams
+ 	}
+-	idx := bracketIndex(limits, grams)
++	idx := bracketIndexInclusive(limits, grams)
+ 	if idx == len(tiers) {
+ 		return Quotation{}, fmt.Errorf("%w: %d g billable, %s limit is %d g",
+ 			ErrTooHeavy, grams, svc, tiers[len(tiers)-1].UpToGrams)

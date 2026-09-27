@@ -1,0 +1,84 @@
+{
+  "id": "60663c52",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1567676,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "This isn't ready to merge.",
+    "defects": {
+      "D1": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      },
+      "D2": {
+        "found": true,
+        "quote": "PATCH `{\"done\":true}` on a task with a due date/tags | **FAIL** — due reset to `0001-01-01`, tags wiped to `[]`",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:17: due wiped by unrelated patch: got \\\"0001-01-01\\\", want 2026-03-12\" and \"verify_ticket142_test.go:20: tags wiped by unrelated patch: got [], want [home]\""
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migrate v1 task, check `created_at` | **FAIL** — always zero; `o.Created` is never copied (`migrate.go:42`)",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:104: created_at lost during migration: {ID:t0001 ... CreatedAt:0001-01-01 00:00:00 +0000 UTC}\""
+      },
+      "D4": {
+        "found": true,
+        "quote": "Migrate `\"labels\":\"Health, Personal\"` | **FAIL** — stored as `[\"Health\",\" Personal\"]`, not trimmed/lowercased",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:124: tags not normalized by migration: [Health  Personal]\""
+      },
+      "D5": {
+        "found": true,
+        "quote": "Task due exactly today, `?overdue=true` | **FAIL** — included as overdue (uses \"not after\" instead of \"strictly before\")",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:84: task due today reported overdue: [{... Due:2026-03-10 00:00:00 +0000 UTC ...}]\""
+      },
+      "D6": {
+        "found": true,
+        "quote": "Task with no due date, `?overdue=true` | **FAIL** — included as overdue",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:73: task with no due date reported overdue: [{... Due:0001-01-01 00:00:00 +0000 UTC ...}]\""
+      },
+      "D7": {
+        "found": true,
+        "quote": "PATCH `{\"tags\":[\"Home\",\" errands \"]}` | **FAIL** — stored as `[\"Home\",\" errands \"]` verbatim ... PATCH with 6 tags | **FAIL** — returns 200",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:34: tags not normalized: [Home  errands ]\" and \"verify_ticket142_test.go:44: got 200, want 400\""
+      },
+      "D8": {
+        "found": true,
+        "quote": "DELETE unknown id | **FAIL** — returns 204 (`Store.Delete` never checks existence, `store.go:141-146`)",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:63: got 204, want 404\""
+      },
+      "D9": {
+        "found": true,
+        "quote": "PATCH with malformed JSON | **FAIL** — returns 200 (decode error is silently discarded in `handlers.go:145`)",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"verify_ticket142_test.go:54: got 200, want 400\""
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

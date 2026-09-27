@@ -1,0 +1,74 @@
+{
+  "id": "c34a6f11",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0913236,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "sets el.hidden = false but never moves focus into the dialog, never traps it, and has no Escape handler"
+      },
+      "A2": {
+        "found": true,
+        "quote": "No tabindex, no role, no aria-expanded, no aria-haspopup, no keydown handling. A keyboard-only user cannot even focus the trigger — Tab skips straight over it — and a screen reader has nothing to announce"
+      },
+      "A3": {
+        "found": true,
+        "quote": "the 5-minute hold in checkout.js has no warning before expiry and no way to extend it"
+      },
+      "A4": {
+        "found": true,
+        "quote": "app.css:154-156 sets .slot-list button:focus { outline: none; } with no :focus-visible replacement"
+      },
+      "A5": {
+        "found": true,
+        "quote": "Availability indicator on clinician cards is color-only with no text alternative ... Screen readers get nothing (no name at all)"
+      },
+      "A6": {
+        "found": true,
+        "quote": "the input has no aria-invalid=\"true\" and no aria-describedby pointing at the error text, so a screen reader landing on the field via .focus() won't necessarily read why it's invalid"
+      },
+      "A7": {
+        "found": false,
+        "quote": ""
+      },
+      "A8": {
+        "found": true,
+        "quote": "main.js:40-65 swaps #view's contents on every hash change but never calls .focus() on anything ... focus silently drops to <body> and they have to re-explore the page from scratch at every step"
+      },
+      "A9": {
+        "found": true,
+        "quote": "Health-tips carousel auto-advances forever with no way to stop it ... Fix: add a visible pause/stop control (and ideally respect prefers-reduced-motion)"
+      },
+      "A10": {
+        "found": true,
+        "quote": "toasts auto-dismiss after 2s with no close/replay affordance ... If a user looks away for two seconds they lose the only explanation for why their selection was cleared"
+      },
+      "A11": {
+        "found": true,
+        "quote": "tabindex=\"1\" on the search input is a positive-tabindex anti-pattern that reorders the tab sequence independent of visual/DOM order"
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": "Confirmation page (confirmation.js:13,29) correctly moves focus to a tabindex=\"-1\" heading — this is the pattern the other three views should copy."
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": "the buttons in slots.js:26-43 carry no .btn class, so they never get the :focus-visible ring defined at app.css:70-72 either"
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "A8 (route/view changes never move focus to the new view)",
+    "leads_with_high": false
+  },
+  "hand_checked": true,
+  "corrections": []
+}

@@ -1,0 +1,84 @@
+{
+  "id": "3cf9c09e",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1518456,
+  "attempt": 1,
+  "grade": {
+    "verdict": "NONE",
+    "verdict_quote": "That's the full evidence set — six distinct discrepancies from the acceptance criteria, each reproducible with the commands/scripts above. I'll leave the merge decision to you.",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "At 375px viewport: document.documentElement.scrollWidth=420 vs clientWidth=375 → horizontal overflow present. .checkout bounding box {x:41, width:358} → right edge at 399px, 24px past the 375px viewport edge.",
+        "executed": true,
+        "evidence": "node scripts/_ev_layout.mjs → '375px viewport: documentElement.scrollWidth=420, clientWidth=375, horizontal-overflow=true' and '.checkout bounding box: { x: 41, y: 649, width: 358, height: 42 }'"
+      },
+      "E2": {
+        "found": true,
+        "quote": "Computed flex-direction of .cart: 767px→column, 768px→column, 769px→row... so exactly 768px (which the ticket says should be two-column) is still stacked.",
+        "executed": true,
+        "evidence": "node scripts/_ev_layout.mjs → 'width=768px -> .cart flex-direction = column'"
+      },
+      "E3": {
+        "found": true,
+        "quote": "`+` clicked repeatedly: qty went 1→2→…→10→**11**, only then did the button disable.",
+        "executed": true,
+        "evidence": "node scripts/_ev_stepper2.mjs → 'click 9: qty now = 10' / 'click 10: qty now = 11' / 'click 11: + already disabled, stopping'"
+      },
+      "E4": {
+        "found": true,
+        "quote": "`−` clicked from qty=1: qty went to **0**, only then did the button disable.",
+        "executed": true,
+        "evidence": "node scripts/_ev_stepper3.mjs → 'click 1: qty now = 0' / 'click 2: - already disabled, stopping'"
+      },
+      "E5": {
+        "found": true,
+        "quote": "Incrementing a line's qty afterward: subtotal moved to $1182.00 but discount stayed frozen at \"−$105.30\" (should be −$118.20)... Cause: only the computed cents amount is stored (`state.discount`), not the rate, so it isn't recalculated on `render()`",
+        "executed": true,
+        "evidence": "node scripts/_ev_promo.mjs → '--- after incrementing qty on line 1 ---\\nsubtotal: $1182.00\\ndiscount: −$105.30\\ntotal: $1076.70'"
+      },
+      "E6": {
+        "found": true,
+        "quote": "\"Code not recognised\" is still shown (`error hidden: false`)",
+        "executed": true,
+        "evidence": "node scripts/_ev_promo.mjs → 'after valid code, error hidden: false'"
+      },
+      "E7": {
+        "found": true,
+        "quote": "Observed rendered values: `$1053.00` and `$1182.00` (no comma).",
+        "executed": true,
+        "evidence": "node scripts/_ev_promo.mjs → 'subtotal: $1053.00'"
+      },
+      "E8": {
+        "found": true,
+        "quote": "`cart.css` defines no `.is-hidden` rule (grep returned no matches), so the summary panel and Checkout button remain rendered and visible. Confirmed: `checkout link visible: true`.",
+        "executed": true,
+        "evidence": "node scripts/_ev_remove.mjs → 'checkout link visible: true'"
+      },
+      "E9": {
+        "found": true,
+        "quote": "Changing quantity: does **not** persist. After two `+` clicks (qty 1→3), `localStorage.getItem('cart:v1')` is still `null` before any reload. After `page.reload()`, qty reverts to `1`.",
+        "executed": true,
+        "evidence": "node scripts/_ev_persist.mjs → 'localStorage cart:v1 (pre-reload): null' and 'qty after reload: 1'"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

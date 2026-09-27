@@ -1,0 +1,49 @@
+diff --git a/posts/seasoning-cast-iron.html b/posts/seasoning-cast-iron.html
+index 9ca0316..0feeeff 100644
+--- a/posts/seasoning-cast-iron.html
++++ b/posts/seasoning-cast-iron.html
+@@ -1,16 +1,18 @@
+ <!doctype html>
+-<html>
++<html lang="en">
+ <head>
+   <meta charset="utf-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+-  <title>Iron &amp; Ember</title>
++  <title>How to Season a Cast Iron Skillet in the Oven | Iron &amp; Ember</title>
++  <meta name="description" content="A tested, three-round method for seasoning a cast iron skillet in a home oven, with oil amounts, temperature and timing, and what to do if it turns sticky.">
++  <link rel="canonical" href="https://ironandember.example/posts/seasoning-cast-iron.html">
+   <link rel="stylesheet" href="/css/site.css">
+ </head>
+ <body>
+   <header><a href="/"><img src="/images/logo.png" alt="" width="32" height="32"> Iron &amp; Ember</a> · <a href="/about.html">About</a></header>
+   <main>
+     <article>
+-      <div class="post-title">How I season a cast iron skillet in the oven</div>
++      <h1 class="post-title">How I season a cast iron skillet in the oven</h1>
+       <p class="meta">By Maya Lindqvist · Published March 14, 2026</p>
+ 
+       <p>I bought my 12-inch skillet at a yard sale for $8. It had rust spots on the bottom and a sticky, uneven layer on the cooking surface. These are the steps I used to strip it back and build up a new seasoning in my home oven, over one afternoon.</p>
+@@ -25,11 +27,11 @@
+ 
+       <h2>Step 1: Oil it thinly</h2>
+       <p>With the pan still warm, rub a teaspoon of oil over every surface, including the handle and the bottom. Then wipe it all off again as if you had made a mistake. What stays behind is enough; a thick coat turns sticky.</p>
+-      <img src="/images/skillet-oiled.png" width="64" height="48">
++      <img src="/images/skillet-oiled.png" alt="Cast iron skillet rubbed with a thin, even coat of oil" width="64" height="48">
+ 
+       <h2>Step 2: Bake it upside down</h2>
+       <p>Put the skillet upside down on the middle rack, with a sheet of foil on the rack below to catch drips. Bake for one hour at 450°F (230°C), then turn the oven off and let the pan cool inside it.</p>
+-      <img src="/images/skillet-oven.png" width="64" height="48">
++      <img src="/images/skillet-oven.png" alt="Cast iron skillet baking upside down on the oven's middle rack" width="64" height="48">
+ 
+       <h2>Step 3: Repeat</h2>
+       <p>I did three rounds. After the third, the surface was an even, dull black, and a fried egg slid around with a little butter. Your pan may need more or fewer rounds.</p>
+@@ -37,7 +39,7 @@
+       <h2>What went wrong the first time</h2>
+       <p>On my first try I left too much oil on the pan and got brown, tacky spots. Scrubbing those off and starting again with a thinner coat fixed it.</p>
+ 
+-      <p>Once your pan is seasoned, put it to work: <a href="/posts/cast-iron-cornbread.html">click here</a>.</p>
++      <p>Once your pan is seasoned, put it to work: try <a href="/posts/cast-iron-cornbread.html">skillet cornbread with brown butter</a>.</p>
+     </article>
+   </main>
+   <footer>© 2026 Iron &amp; Ember</footer>

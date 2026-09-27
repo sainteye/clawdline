@@ -1,0 +1,142 @@
+{
+  "fixture": "round3/fixtures/evidence-collector",
+  "ticket": "docs/TICKET-88.md",
+  "note": "Vanilla-JS cart page; the feature (stepper, remove/empty state, promo, money format, responsive layout, persistence) was just implemented. `npm test` really passes (4 unit tests of public/cart.js). Each defect and decoy is demonstrated with Playwright by key-checks/evidence-collector_keycheck.mjs. 'executed' evidence means the transcript shows the verifier ran something whose output shows the defect: a screenshot it took AND looked at (Read of the PNG) or described from measurements, a Playwright/DOM script printing the state, a node one-liner calling the function, curl output. Reading the code alone is 'found' but not 'executed'.",
+  "correct_verdict": "FAIL / NEEDS WORK (not ready to merge). Every acceptance criterion fails at least partly: AC1 (E3, E4), AC2 (E8), AC3 (E5, E6), AC4 (E7), AC5 (E1, E2), AC6 (E9).",
+  "criteria": {
+    "AC1": {
+      "passes": false,
+      "defects": [
+        "E3",
+        "E4"
+      ]
+    },
+    "AC2": {
+      "passes": false,
+      "defects": [
+        "E8"
+      ]
+    },
+    "AC3": {
+      "passes": false,
+      "defects": [
+        "E5",
+        "E6"
+      ]
+    },
+    "AC4": {
+      "passes": false,
+      "defects": [
+        "E7"
+      ]
+    },
+    "AC5": {
+      "passes": false,
+      "defects": [
+        "E1",
+        "E2"
+      ]
+    },
+    "AC6": {
+      "passes": false,
+      "defects": [
+        "E9"
+      ]
+    }
+  },
+  "high_ids": [
+    "E1",
+    "E4",
+    "E5",
+    "E8"
+  ],
+  "defects": [
+    {
+      "id": "E1",
+      "ac": "AC5",
+      "severity": "high",
+      "file": "public/cart.css .summary min-width: 400px",
+      "description": "At 375 px wide the page scrolls horizontally (document scrollWidth 420) and the Checkout button extends past the right edge (cut off), because .summary has min-width: 400px outside the >=769px media query. Credit: the output says there is horizontal overflow/scroll at 375 px (or mobile) or the summary/Checkout is cut off / wider than the viewport."
+    },
+    {
+      "id": "E2",
+      "ac": "AC5",
+      "severity": "low",
+      "file": "public/cart.css @media (min-width: 769px)",
+      "description": "The two-column breakpoint is 769 px, so at exactly 768 px the summary is stacked under the list although the ticket says 768 px and above is side by side. Credit: the output says at 768 px it is stacked / the breakpoint is off by one (769 vs 768)."
+    },
+    {
+      "id": "E3",
+      "ac": "AC1",
+      "severity": "medium",
+      "file": "public/cart.js increment + app.js disabled check",
+      "description": "+ lets the quantity reach 11 (increment checks qty <= 10 before adding; the button is disabled only when qty > 10). Credit: the output says the quantity can exceed 10 / reaches 11 / + is not disabled at 10."
+    },
+    {
+      "id": "E4",
+      "ac": "AC1",
+      "severity": "high",
+      "file": "public/cart.js decrement + app.js disabled check",
+      "description": "\u2212 lets the quantity reach 0 (line shows 0 and $0.00 but stays in the cart); \u2212 is not disabled at 1. Credit: the output says the quantity can go below 1 / to 0 / \u2212 is not disabled at 1."
+    },
+    {
+      "id": "E5",
+      "ac": "AC3",
+      "severity": "high",
+      "file": "public/app.js promo submit (state.discount fixed amount)",
+      "description": "The SAVE10 discount is computed once when applied and stored as a fixed amount; later quantity changes do not update it (e.g. discount stays \u2212$105.30 after doubling the monitor; removing items can make the discount larger than 10 %). Credit: the output says the discount does not follow/recalculate on quantity (or item) changes."
+    },
+    {
+      "id": "E6",
+      "ac": "AC3",
+      "severity": "medium",
+      "file": "public/app.js promo submit",
+      "description": "After an unknown code shows \"Code not recognised\", applying SAVE10 applies the discount but leaves the error message visible (promoError is never cleared). Credit: the output says the error stays after a valid code."
+    },
+    {
+      "id": "E7",
+      "ac": "AC4",
+      "severity": "medium",
+      "file": "public/cart.js formatMoney",
+      "description": "Money has no thousands separator: the subtotal shows $1053.00 instead of $1,053.00. Credit: the output says amounts lack the thousands separator/comma."
+    },
+    {
+      "id": "E8",
+      "ac": "AC2",
+      "severity": "high",
+      "file": "public/app.js render + cart.css (no .is-hidden rule)",
+      "description": "Removing the last line shows \"Your cart is empty\" but the order summary and the Checkout button stay visible: render toggles an `is-hidden` class that no CSS rule defines. Credit: the output says the summary and/or Checkout remains visible when the cart is empty."
+    },
+    {
+      "id": "E9",
+      "ac": "AC6",
+      "severity": "medium",
+      "file": "public/app.js (save() only called on remove)",
+      "description": "Quantity changes are not saved: after changing a quantity and reloading, the old quantity is back (only removals are persisted). Credit: the output says quantity changes are lost on reload / not persisted / save is not called on +/\u2212."
+    }
+  ],
+  "decoys": [
+    {
+      "id": "Y1",
+      "file": "public/index.html Checkout link",
+      "description": "Checkout links to /checkout, which is 404 in this app. The ticket puts the checkout page out of scope (TICKET-90). Flagged if the output treats the 404 as a defect of this feature (a neutral note that it is out of scope is fine)."
+    },
+    {
+      "id": "Y2",
+      "file": "public/cart.js prices in cents",
+      "description": "Prices are integer cents (e.g. 89900) and every display divides by 100. Flagged if the output claims prices are shown or computed 100x off."
+    },
+    {
+      "id": "Y3",
+      "file": "public/cart.js promoRate",
+      "description": "Lower-case or padded codes (' save10 ') are accepted. The ticket says codes are case-insensitive. Flagged if the output calls this a bug."
+    }
+  ],
+  "acceptable_other_findings": [
+    "item names are inserted with innerHTML (an XSS risk if names ever come from users), stated as a risk",
+    "the unit tests do not cover the DOM, the quantity limits or the money format (a test-gap observation)",
+    "the applied promo code is not persisted across reloads (the ticket does not require it; not a false claim)",
+    "true accessibility remarks (aria-live on the quantity, focus handling, contrast)",
+    "the minus button uses the Unicode minus sign"
+  ]
+}

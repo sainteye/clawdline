@@ -1,0 +1,409 @@
+diff --git a/cache.go b/cache.go
+new file mode 100644
+index 0000000..3c42a57
+--- /dev/null
++++ b/cache.go
+@@ -0,0 +1,42 @@
++package main
++
++import (
++	"sync"
++	"time"
++)
++
++type cacheEntry struct {
++	order   Order
++	expires time.Time
++}
++
++// OrderCache keeps recently read orders in memory to take load off the database.
++type OrderCache struct {
++	mu      sync.Mutex
++	ttl     time.Duration
++	entries map[int64]cacheEntry
++}
++
++func NewOrderCache(ttl time.Duration) *OrderCache {
++	return &OrderCache{ttl: ttl, entries: make(map[int64]cacheEntry)}
++}
++
++func (c *OrderCache) Get(id int64) (Order, bool) {
++	e, ok := c.entries[id]
++	if !ok || time.Now().After(e.expires) {
++		return Order{}, false
++	}
++	return e.order, true
++}
++
++func (c *OrderCache) Set(o Order) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	c.entries[o.ID] = cacheEntry{order: o, expires: time.Now().Add(c.ttl)}
++}
++
++func (c *OrderCache) Delete(id int64) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	delete(c.entries, id)
++}
+diff --git a/handler.go b/handler.go
+index 024c19b..ad0faa5 100644
+--- a/handler.go
++++ b/handler.go
+@@ -6,12 +6,19 @@ import (
+ 	"log"
+ 	"net/http"
+ 	"strconv"
++	"sync"
+ )
+ 
+ type Handler struct {
+ 	store *Store
++	cache *OrderCache
+ }
+ 
++const (
++	maxBatchIDs = 100
++	batchChunk  = 20
++)
++
+ func writeJSON(w http.ResponseWriter, status int, v any) {
+ 	w.Header().Set("Content-Type", "application/json")
+ 	w.WriteHeader(status)
+@@ -31,6 +38,10 @@ func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
+ 		http.Error(w, "bad id", http.StatusBadRequest)
+ 		return
+ 	}
++	if o, ok := h.cache.Get(id); ok && o.UserID == userID(r) {
++		writeJSON(w, http.StatusOK, o)
++		return
++	}
+ 	o, err := h.store.GetOrder(r.Context(), id)
+ 	if errors.Is(err, ErrNotFound) || (err == nil && o.UserID != userID(r)) {
+ 		http.Error(w, "not found", http.StatusNotFound)
+@@ -41,6 +52,7 @@ func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
+ 		http.Error(w, "internal error", http.StatusInternalServerError)
+ 		return
+ 	}
++	h.cache.Set(*o)
+ 	writeJSON(w, http.StatusOK, o)
+ }
+ 
+@@ -75,5 +87,113 @@ func (h *Handler) refundOrder(w http.ResponseWriter, r *http.Request) {
+ 		http.Error(w, "internal error", http.StatusInternalServerError)
+ 		return
+ 	}
++	h.cache.Delete(id)
++	w.WriteHeader(http.StatusNoContent)
++}
++
++func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {
++	q := r.URL.Query()
++	page := atoiDefault(q.Get("page"), 1)
++	size := atoiDefault(q.Get("page_size"), 20)
++	if page < 1 {
++		page = 1
++	}
++	if size < 1 || size > 100 {
++		size = 20
++	}
++	orders, total, err := h.store.ListOrders(r.Context(), ListParams{
++		UserID:   userID(r),
++		Status:   q.Get("status"),
++		Sort:     q.Get("sort"),
++		Page:     page,
++		PageSize: size,
++	})
++	if errors.Is(err, ErrInvalidStatus) {
++		http.Error(w, "invalid status", http.StatusBadRequest)
++		return
++	}
++	if err != nil {
++		log.Printf("list orders: %v", err)
++		http.Error(w, "internal error", http.StatusInternalServerError)
++		return
++	}
++	writeJSON(w, http.StatusOK, map[string]any{
++		"orders":    orders,
++		"total":     total,
++		"page":      page,
++		"page_size": size,
++	})
++}
++
++// batchGetOrders returns the caller's orders among the requested ids, serving what it can
++// from the cache and loading the rest from the database in parallel chunks.
++func (h *Handler) batchGetOrders(w http.ResponseWriter, r *http.Request) {
++	var in struct {
++		IDs []int64 `json:"ids"`
++	}
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || len(in.IDs) == 0 || len(in.IDs) > maxBatchIDs {
++		http.Error(w, "bad request", http.StatusBadRequest)
++		return
++	}
++
++	var found []Order
++	var misses []int64
++	for _, id := range in.IDs {
++		if o, ok := h.cache.Get(id); ok {
++			found = append(found, o)
++		} else {
++			misses = append(misses, id)
++		}
++	}
++
++	var chunks [][]int64
++	for start := 0; start < len(misses); start += batchChunk {
++		chunks = append(chunks, misses[start:min(start+batchChunk, len(misses))])
++	}
++	results := make([][]Order, len(chunks))
++	errs := make([]error, len(chunks))
++	var wg sync.WaitGroup
++	for i, chunk := range chunks {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			results[i], errs[i] = h.store.GetOrdersByIDs(r.Context(), chunk)
++		}()
++	}
++	wg.Wait()
++	for _, err := range errs {
++		if err != nil {
++			log.Printf("batch get orders: %v", err)
++			http.Error(w, "internal error", http.StatusInternalServerError)
++			return
++		}
++	}
++	for _, rs := range results {
++		for _, o := range rs {
++			h.cache.Set(o)
++			found = append(found, o)
++		}
++	}
++
++	uid := userID(r)
++	out := make([]Order, 0, len(found))
++	for _, o := range found {
++		if o.UserID == uid {
++			out = append(out, o)
++		}
++	}
++	writeJSON(w, http.StatusOK, map[string]any{"orders": out})
++}
++
++func (h *Handler) deleteOrder(w http.ResponseWriter, r *http.Request) {
++	id, ok := pathID(r)
++	if !ok {
++		http.Error(w, "bad id", http.StatusBadRequest)
++		return
++	}
++	if err := h.store.DeleteOrder(r.Context(), id); err != nil && !errors.Is(err, ErrNotFound) {
++		log.Printf("delete order %d: %v", id, err)
++	}
++	h.cache.Delete(id)
+ 	w.WriteHeader(http.StatusNoContent)
+ }
+diff --git a/main.go b/main.go
+index d674ee1..66745e1 100644
+--- a/main.go
++++ b/main.go
+@@ -5,20 +5,23 @@ import (
+ 	"log"
+ 	"net/http"
+ 	"os"
++	"strconv"
+ 	"time"
+ )
+ 
+ type Config struct {
+-	Addr       string
+-	DSN        string
+-	AdminToken string
++	Addr            string
++	DSN             string
++	AdminToken      string
++	CacheTTLSeconds int
+ }
+ 
+ func loadConfig() Config {
+ 	return Config{
+-		Addr:       getenv("ADDR", ":8080"),
+-		DSN:        os.Getenv("DATABASE_URL"),
+-		AdminToken: os.Getenv("ADMIN_TOKEN"),
++		Addr:            getenv("ADDR", ":8080"),
++		DSN:             os.Getenv("DATABASE_URL"),
++		AdminToken:      os.Getenv("ADMIN_TOKEN"),
++		CacheTTLSeconds: atoiDefault(os.Getenv("CACHE_TTL_SECONDS"), 30),
+ 	}
+ }
+ 
+@@ -29,6 +32,14 @@ func getenv(k, def string) string {
+ 	return def
+ }
+ 
++func atoiDefault(s string, def int) int {
++	n, err := strconv.Atoi(s)
++	if err != nil {
++		return def
++	}
++	return n
++}
++
+ func main() {
+ 	cfg := loadConfig()
+ 	db, err := sql.Open("postgres", cfg.DSN)
+@@ -38,12 +49,16 @@ func main() {
+ 	defer db.Close()
+ 
+ 	store := NewStore(db)
+-	h := &Handler{store: store}
++	cache := NewOrderCache(time.Duration(cfg.CacheTTLSeconds))
++	h := &Handler{store: store, cache: cache}
+ 
+ 	mux := http.NewServeMux()
++	mux.HandleFunc("GET /orders", requireUser(h.listOrders))
+ 	mux.HandleFunc("GET /orders/{id}", requireUser(h.getOrder))
+ 	mux.HandleFunc("POST /orders", requireUser(h.createOrder))
++	mux.HandleFunc("POST /orders/batch", requireUser(h.batchGetOrders))
+ 	mux.HandleFunc("POST /admin/orders/{id}/refund", requireAdmin(cfg.AdminToken, h.refundOrder))
++	mux.HandleFunc("DELETE /admin/orders/{id}", h.deleteOrder)
+ 
+ 	srv := &http.Server{
+ 		Addr:         cfg.Addr,
+diff --git a/store.go b/store.go
+index e857e50..88bbe8d 100644
+--- a/store.go
++++ b/store.go
+@@ -4,10 +4,15 @@ import (
+ 	"context"
+ 	"database/sql"
+ 	"errors"
++	"fmt"
++	"strings"
+ 	"time"
+ )
+ 
+-var ErrNotFound = errors.New("not found")
++var (
++	ErrNotFound      = errors.New("not found")
++	ErrInvalidStatus = errors.New("invalid status")
++)
+ 
+ type Order struct {
+ 	ID          int64     `json:"id"`
+@@ -58,3 +63,115 @@ func (s *Store) Refund(ctx context.Context, id int64) error {
+ 	}
+ 	return nil
+ }
++
++type ListParams struct {
++	UserID   string
++	Status   string
++	Sort     string
++	Page     int // 1-based
++	PageSize int
++}
++
++var allowedStatus = map[string]bool{"pending": true, "paid": true, "refunded": true, "cancelled": true}
++
++// ListOrders returns one page of a user's orders and the total number of matching orders.
++func (s *Store) ListOrders(ctx context.Context, p ListParams) ([]Order, int, error) {
++	where := ` WHERE user_id = $1`
++	args := []any{p.UserID}
++	if p.Status != "" {
++		if !allowedStatus[p.Status] {
++			return nil, 0, ErrInvalidStatus
++		}
++		args = append(args, p.Status)
++		where += fmt.Sprintf(" AND status = $%d", len(args))
++	}
++
++	var total int
++	countRows, err := s.db.QueryContext(ctx, `SELECT count(*) FROM orders`+where, args...)
++	if err != nil {
++		return nil, 0, err
++	}
++	if countRows.Next() {
++		if err := countRows.Scan(&total); err != nil {
++			return nil, 0, err
++		}
++	}
++
++	q := `SELECT id, user_id, status, amount_cents, created_at FROM orders` + where
++	if p.Sort != "" {
++		q += " ORDER BY " + p.Sort
++	} else {
++		q += " ORDER BY created_at DESC"
++	}
++	args = append(args, p.PageSize, p.Page*p.PageSize)
++	q += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)-1, len(args))
++
++	rows, err := s.db.QueryContext(ctx, q, args...)
++	if err != nil {
++		return nil, 0, err
++	}
++	defer rows.Close()
++	out := make([]Order, 0, p.PageSize)
++	for rows.Next() {
++		var o Order
++		if err := rows.Scan(&o.ID, &o.UserID, &o.Status, &o.AmountCents, &o.CreatedAt); err != nil {
++			return nil, 0, err
++		}
++		out = append(out, o)
++	}
++	return out, total, rows.Err()
++}
++
++// GetOrdersByIDs loads several orders in one query. Missing ids are skipped.
++func (s *Store) GetOrdersByIDs(ctx context.Context, ids []int64) ([]Order, error) {
++	if len(ids) == 0 {
++		return nil, nil
++	}
++	placeholders := make([]string, len(ids))
++	args := make([]any, len(ids))
++	for i, id := range ids {
++		placeholders[i] = fmt.Sprintf("$%d", i+1)
++		args[i] = id
++	}
++	q := `SELECT id, user_id, status, amount_cents, created_at FROM orders WHERE id IN (` +
++		strings.Join(placeholders, ", ") + `)`
++	rows, err := s.db.QueryContext(ctx, q, args...)
++	if err != nil {
++		return nil, err
++	}
++	defer rows.Close()
++	var out []Order
++	for rows.Next() {
++		var o Order
++		if err := rows.Scan(&o.ID, &o.UserID, &o.Status, &o.AmountCents, &o.CreatedAt); err != nil {
++			return nil, err
++		}
++		out = append(out, o)
++	}
++	return out, rows.Err()
++}
++
++// DeleteOrder removes an order and its line items.
++func (s *Store) DeleteOrder(ctx context.Context, id int64) error {
++	tx, err := s.db.BeginTx(ctx, nil)
++	if err != nil {
++		return err
++	}
++	defer tx.Rollback()
++
++	if _, err := tx.ExecContext(ctx, `DELETE FROM order_items WHERE order_id = $1`, id); err != nil {
++		return err
++	}
++	res, err := tx.ExecContext(ctx, `DELETE FROM orders WHERE id = $1`, id)
++	if err != nil {
++		return err
++	}
++	n, err := res.RowsAffected()
++	if err != nil {
++		return err
++	}
++	if n == 0 {
++		return ErrNotFound
++	}
++	return tx.Commit()
++}

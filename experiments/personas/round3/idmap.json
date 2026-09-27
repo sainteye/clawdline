@@ -1,0 +1,117 @@
+{
+  "seed": "persona-exp-2026-r3",
+  "runs": [
+    {
+      "id": "033769b4",
+      "order": 1,
+      "role": "evidence-collector",
+      "arm": "none-vague",
+      "rep": 1
+    },
+    {
+      "id": "b9c0e606",
+      "order": 2,
+      "role": "reality-checker",
+      "arm": "persona-brief",
+      "rep": 1
+    },
+    {
+      "id": "7ff9826b",
+      "order": 3,
+      "role": "evidence-collector",
+      "arm": "persona-brief",
+      "rep": 2
+    },
+    {
+      "id": "4a2faad9",
+      "order": 4,
+      "role": "reality-checker",
+      "arm": "none-vague",
+      "rep": 2
+    },
+    {
+      "id": "488f5111",
+      "order": 5,
+      "role": "reality-checker",
+      "arm": "none-brief",
+      "rep": 2
+    },
+    {
+      "id": "b1af1094",
+      "order": 6,
+      "role": "reality-checker",
+      "arm": "persona-brief",
+      "rep": 2
+    },
+    {
+      "id": "ae8dbff2",
+      "order": 7,
+      "role": "evidence-collector",
+      "arm": "none-brief",
+      "rep": 1
+    },
+    {
+      "id": "a9db3d1e",
+      "order": 8,
+      "role": "reality-checker",
+      "arm": "none-vague",
+      "rep": 1
+    },
+    {
+      "id": "4067ccdb",
+      "order": 9,
+      "role": "reality-checker",
+      "arm": "persona-vague",
+      "rep": 1
+    },
+    {
+      "id": "71423204",
+      "order": 10,
+      "role": "evidence-collector",
+      "arm": "none-vague",
+      "rep": 2
+    },
+    {
+      "id": "60663c52",
+      "order": 11,
+      "role": "reality-checker",
+      "arm": "persona-vague",
+      "rep": 2
+    },
+    {
+      "id": "11369fd7",
+      "order": 12,
+      "role": "evidence-collector",
+      "arm": "persona-vague",
+      "rep": 1
+    },
+    {
+      "id": "661f5579",
+      "order": 13,
+      "role": "reality-checker",
+      "arm": "none-brief",
+      "rep": 1
+    },
+    {
+      "id": "3368f905",
+      "order": 14,
+      "role": "evidence-collector",
+      "arm": "persona-brief",
+      "rep": 1
+    },
+    {
+      "id": "13e5af5b",
+      "order": 15,
+      "role": "evidence-collector",
+      "arm": "none-brief",
+      "rep": 2
+    },
+    {
+      "id": "3cf9c09e",
+      "order": 16,
+      "role": "evidence-collector",
+      "arm": "persona-vague",
+      "rep": 2
+    }
+  ]
+}

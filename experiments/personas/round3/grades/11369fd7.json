@@ -1,0 +1,89 @@
+{
+  "id": "11369fd7",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.15727960000000002,
+  "attempt": 1,
+  "grade": {
+    "verdict": "NONE",
+    "verdict_quote": "I'm not rendering a pass/fail call — that's yours to make — but for reference, here's what the evidence lines up against each acceptance criterion: stepper bounds (violated), remove/empty state (violated — summary never hides), promo code (violated — error doesn't clear, discount doesn't follow qty), money format (violated — no thousands separator), layout (violated at both 768px and 375px), persistence (violated for quantity changes).",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "the page is 420px wide inside a 375px viewport (visible as a white strip cut off the top-right of the header bar), i.e. horizontal scrolling is present. This traces to `.summary { min-width: 400px; }` in `cart.css`",
+        "executed": true,
+        "evidence": "node scripts/_check5.mjs → 'WIDTH 375: flex-direction=column, scrollWidth=420, clientWidth=375, horizontalOverflow=true'; screenshot layout-375.png was Read at [28]"
+      },
+      "E2": {
+        "found": true,
+        "quote": "at exactly 768px the summary is still stacked below the item list (`cart.css` media query is `min-width: 769px`, one pixel off from the ticket's \"768 px and above\")",
+        "executed": true,
+        "evidence": "node scripts/_check5.mjs → 'WIDTH 768: flex-direction=column, scrollWidth=768, clientWidth=768, horizontalOverflow=false'; screenshot layout-768.png was Read at [27]"
+      },
+      "E3": {
+        "found": true,
+        "quote": "Repeating `+` 9 times on the qty-2 line produced `qty=11, inc disabled=true`.",
+        "executed": true,
+        "evidence": "node scripts/_check1.mjs → 'TEST1a: after clicking + repeatedly, qty= 11 inc disabled= true'"
+      },
+      "E4": {
+        "found": true,
+        "quote": "clicked `.dec` once on the line starting at qty 1 ... after dec click 1: qty= 0  dec disabled: true",
+        "executed": true,
+        "evidence": "node scripts/_check1b.mjs → 'after dec click 1: qty= 0 dec disabled: true'; screenshot qty-zero.png Read at [26]"
+      },
+      "E5": {
+        "found": true,
+        "quote": "The discount amount is frozen at the value computed when the code was submitted; it does not rescale with the new subtotal.",
+        "executed": true,
+        "evidence": "node scripts/_check3.mjs → 'TEST-PROMO-QTY: discount before qty change= −$105.30 total before= $947.70' / 'discount after qty change= −$105.30 total after= $1846.70'"
+      },
+      "E6": {
+        "found": true,
+        "quote": "after valid code, error still visible= true discount= −$105.30",
+        "executed": true,
+        "evidence": "node scripts/_check3.mjs → 'TEST-PROMO: after valid code, error still visible= true discount= −$105.30'"
+      },
+      "E7": {
+        "found": true,
+        "quote": "No comma is inserted (`formatMoney` in `public/cart.js` is `'$' + (cents/100).toFixed(2)`); this reproduces on the very first page load with no interaction needed.",
+        "executed": true,
+        "evidence": "node scripts/_check3.mjs → 'TEST-MONEY: subtotal text = \"$1053.00\"  total text = \"$1053.00\"'"
+      },
+      "E8": {
+        "found": true,
+        "quote": "the Order summary card (Subtotal $0.00, Checkout button) is still fully rendered beside it. `app.js` toggles a CSS class `is-hidden` on `#summary`, but `public/cart.css` contains no `.is-hidden` rule",
+        "executed": true,
+        "evidence": "node scripts/_check6.mjs → 'summary has is-hidden class= true  summary still visible= true  computed display= block'; screenshot empty-state.png Read at [25]"
+      },
+      "E9": {
+        "found": true,
+        "quote": "`localStorage` is untouched by quantity changes — in `public/app.js`, the `.inc`/`.dec` click handlers call `render()` but never `save()` (only the `remove` handler does), so quantity edits are lost on reload.",
+        "executed": true,
+        "evidence": "node scripts/_check4.mjs → 'qty before reload = 3' / 'qty after reload = 1' / 'localStorage cart:v1 = null'"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": [
+      {
+        "claim": "Screenshot `promo-error-after-valid.png` shows the red \"Code not recognised\" text still under the field even though SAVE10 was just accepted and the discount row shows −$105.30.",
+        "why": "The tool log never shows a Read of promo-error-after-valid.png (only qty-zero.png, empty-state.png, layout-768.png and layout-375.png were viewed at [25]-[28]), so the visual description of that screenshot's contents was not actually confirmed by viewing it, even though the underlying numeric facts were separately established via console output."
+      }
+    ]
+  }
+}

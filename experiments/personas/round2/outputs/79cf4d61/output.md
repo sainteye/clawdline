@@ -1,0 +1,3 @@
+All tests pass, including `TestQuoteTierBoundary`, which now confirms a 2000 g (2 kg) parcel is quoted at the 2000 g tier price (790¢) rather than falling through to the 5000 g tier (1250¢).
+
+**Root cause:** `bracketIndex` (brackets.go) uses a strict `v < limit` comparison, so a weight exactly equal to a tier's boundary doesn't match that tier. It falls through to the next one — the 5 kg price. `insurance.go` and `surcharges.go` intentionally rely on that exclusive behavior for their own "under $X" bands, so I fixed only the weight-tier lookup in `rates.go`, replacing it with an inclusive (`grams <= t.UpToGrams`) loop matching the documented "up to and including" tier semantics — the same pattern `letters.go` already uses.

@@ -1,0 +1,27 @@
+QA verification before merge (Dev↔QA loop).
+
+Task: TICKET-88 — Editable cart page (docs/TICKET-88.md)
+Developer: the frontend developer (a separate session)
+Attempt: 1 of 3
+Developer's summary: "TICKET-88 (docs/TICKET-88.md) is done: quantity steppers, remove with an empty state, the SAVE10 promo code, the responsive two-column layout and localStorage persistence. `npm test` passes and I checked it in Chrome on my laptop — looks good. Ready to merge."
+Application: `npm start` serves it at http://127.0.0.1:4173/ (see README.md).
+
+Validation checklist:
+1. Acceptance criteria met (verbatim from the ticket):
+   1. Quantity stepper. Each line has − and + buttons. The quantity stays between 1 and 10: − is disabled at 1 and + is disabled at 10. The line total and the order totals update immediately.
+   2. Remove and empty state. "Remove" deletes a line. Removing the last line shows "Your cart is empty" and hides the whole order summary, including the Checkout button.
+   3. Promo code. `SAVE10` (case-insensitive) takes 10 % off the subtotal, and the discount follows later quantity changes. An unknown code shows "Code not recognised" under the field; applying a valid code removes that message.
+   4. Money format. Every amount is shown in US dollars with a thousands separator and two decimals, e.g. `$1,234.50`.
+   5. Layout. At widths of 768 px and above, the summary sits to the right of the item list; below 768 px it is stacked under the list. At 375 px nothing scrolls horizontally and the Checkout button is fully visible.
+   6. Persistence. After a reload the cart shows the same items and quantities.
+2. Visual verification: screenshots at desktop (1280 wide), tablet (768 wide) and mobile (375 wide). A headless browser is available: `playwright-core` is installed and `node scripts/shot.mjs <url> <width> <out.png>` takes a full-page screenshot; look at every screenshot you take.
+3. Interaction verification: exercise each interaction in the criteria in the browser (steppers, remove, promo codes, reload).
+
+How to verify:
+- Evidence over claims: verify every criterion in the running page, not by reading the code alone. For each criterion record the exact command or script you ran and what it showed (output, measured values, or the screenshot and what is visible in it). Do not rely on the developer's summary.
+- Stay inside this directory; nothing beyond localhost.
+
+Deliverable:
+1. A table: criterion → PASS or FAIL → evidence → notes.
+2. Every issue you found, with steps to reproduce, expected vs. actual, and the screenshot or output that shows it.
+3. Verdict: PASS (ready to merge) or FAIL (needs work), with the reasons.

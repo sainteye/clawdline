@@ -1,0 +1,1 @@
+All tests pass, including the existing negative-amount cases in `money_test.go` that were presumably already failing before. The fix: negate `cents` and prepend the sign once up front, instead of letting Go's truncating division/modulo apply the sign to both the dollar and cent parts separately.

@@ -1,0 +1,72 @@
+{
+  "id": "3a0892c1",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1004196,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "Confirm-hold dialog: no focus moved in, no trap, no Escape, no focus restore — 2.1.2/2.4.3 (A), 4.1.2 (A)... sets el.hidden = false but never calls .focus() on anything inside the dialog; ... there's no keydown handler for Escape anywhere in the file; and settle() ... never returns focus to the slot button that opened it"
+      },
+      "A2": {
+        "found": true,
+        "quote": "Specialty filter is completely unusable by keyboard ... Divs aren't in the tab order, there's no role, aria-expanded, aria-activedescendant, or keydown handling, and the visible \"Specialty\" text (:12) is a bare <span>, not a <label for>"
+      },
+      "A3": {
+        "found": true,
+        "quote": "Five-minute hold expires with no warning and can silently discard entered data ... there's no mechanism to extend the hold and no warning issued at any threshold (e.g. 60s/10s remaining) before navigate() yanks the user back"
+      },
+      "A4": {
+        "found": true,
+        "quote": "Time-slot buttons have no visible focus indicator ... css/app.css:154-156 sets .slot-list button:focus { outline: none; } with no accompanying :focus-visible rule anywhere in the file"
+      },
+      "A5": {
+        "found": true,
+        "quote": "Per-clinician availability indicator is color-only ... renders <span class=\"availability availability--${level}\"></span> with no text content and no aria-label"
+      },
+      "A6": {
+        "found": true,
+        "quote": "Form errors aren't associated with their fields ... adds .invalid and an error <p> but never gives that <p> an id, and never sets aria-describedby/aria-invalid on the <input>"
+      },
+      "A7": {
+        "found": true,
+        "quote": "Server-side booking failure is silent to screen readers ... gets status.textContent = err.message on submit failure ... but has no aria-live/role=\"alert\""
+      },
+      "A8": {
+        "found": true,
+        "quote": "Route changes never move focus or update the title ... render() swaps the whole view on every hash change but never focuses anything in the new view ... document.title is never touched anywhere"
+      },
+      "A9": {
+        "found": true,
+        "quote": "Health-tips carousel auto-advances forever with no pause control ... starts a 5000ms setInterval that runs for the life of the session ... with zero pause/stop/hide affordance"
+      },
+      "A10": {
+        "found": true,
+        "quote": "Toasts auto-dismiss in 2s while carrying essential info ... removes the toast after DEFAULT_DURATION_MS = 2000 ... No way to pause or re-read it."
+      },
+      "A11": {
+        "found": true,
+        "quote": "Positive tabindex=\"1\" breaks natural tab order ... tabindex=\"1\" on the search input forces it ahead of everything else in tab order regardless of visual position"
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": "Decorative SVG chevron correctly hidden (aria-hidden=\"true\" focusable=\"false\", index.html:61)."
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": "Confirmation page's tabindex=\"-1\" + .focus() pattern (confirmation.js:13,29) is exactly right — just needs replicating elsewhere."
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": ".btn:focus-visible ring plus a forced-colors fallback (css/app.css:70-79) is a genuinely solid, modern pattern — just needs extending to slot buttons."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Specialty filter is completely unusable by keyboard (A2)",
+    "leads_with_high": true
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "id": "33cec208",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1995796,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "GET /transfers/{id} is authorized against the wrong resource ... requireOwner (auth.go:47-67) ... does id, _ := pathID(r); acct, _ := s.store.GetAccount(ctx, id) and checks acct.OwnerID. But for this route {id} is a transfer id, not an account id ... getTransfer never checks that the caller is a party to the transfer ... if a transfer id happens to equal an account id the caller does own, requireOwner passes and getTransfer returns that transfer's full detail ... regardless of who was actually involved."
+      },
+      "G2": {
+        "found": false,
+        "quote": "Since err is a plain local, assigning to it inside the deferred closure never reaches the already-fixed return values -- if tx.Commit() fails, the function still returns (t, nil)."
+      },
+      "G3": {
+        "found": true,
+        "quote": "adjustBalance (store.go:250-264) does UPDATE accounts SET balance_cents = balance_cents + ? WHERE id = ? with no balance_cents >= -delta guard. ... Two concurrent transfers/payouts from the same account can both pass the pre-check and both debit, overdrawing the balance."
+      },
+      "G4": {
+        "found": false,
+        "quote": ""
+      },
+      "G5": {
+        "found": true,
+        "quote": "NotifyWithin leaks a goroutine on every webhook call slower than NotifyWait. ... sends on an unbuffered channel: ch := make(chan error); go func() { ch <- f() }(); return ch. waitOrTimeout ... never reads done again ... leaves its goroutine permanently blocked trying to send to a channel nobody is reading, forever."
+      },
+      "G6": {
+        "found": true,
+        "quote": "PayoutClient.Send leaks a response body when the context is canceled during backoff. ... the case <-ctx.Done(): return PayoutResult{}, ctx.Err() branch (line 85) returns without closing resp.Body, leaking the connection."
+      },
+      "G7": {
+        "found": true,
+        "quote": "lookupError (store.go:18-27) has no Unwrap() method, so errors.Is(err, ErrNotFound) (handler.go:252) is always false for errors from GetAccount/GetTransfer, turning every \"not found\" into a 500 in requireOwner ..., createTransfer's destination lookup ..., and getTransfer ..."
+      },
+      "G8": {
+        "found": true,
+        "quote": "DailyTransferLimit is documented in whole currency units but compared against cents -- the shipped default enforces $10/day, not $1,000/day."
+      },
+      "G9": {
+        "found": true,
+        "quote": "startOfBusinessDay uses the UTC calendar date, not the business location's -- silently disables the daily limit for hours every day in the shipped default timezone."
+      },
+      "G10": {
+        "found": true,
+        "quote": "The Location header for a created transfer points at a route that doesn't exist. transfer.go:70: r.URL.JoinPath(...) builds /accounts/{id}/transfers/{transferID}, but the only registered GET is /transfers/{id} (main.go:70)."
+      },
+      "G11": {
+        "found": true,
+        "quote": "Webhook Summary hardcodes a /100 divisor regardless of currency exponent. notify.go:50: float64(ev.AmountCents)/100 is wrong for JPY (exponent 0) and KWD (exponent 3)."
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": "providerPayout.AmountMinor truncates into int32 (payouts.go:41,61-66) with no bounds check inside PayoutClient itself -- currently safe only because the sole caller enforces maxPayoutCents, so this is fragile if Send ever gets another caller."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "CreateTransfer silently drops commit failures — client can be told \"success\" when nothing was saved (unnamed return values mean the deferred err = tx.Commit() never reaches the caller).",
+    "leads_with_high": false
+  },
+  "hand_checked": true,
+  "corrections": [
+    "leads_with_high true -> false: the first issue raised (a commit error dropped because the function uses unnamed returns) is a real defect but not a planted high-severity key item (G1-G5)."
+  ]
+}

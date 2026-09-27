@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign up – Riverside Community Workshop</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <h1>Register for the Riverside Community Workshop</h1>
+    <img src="images/steps-1-of-3.png" width="240" height="24">
+    <p class="intro">Saturday, 10:00–16:00 at the Riverside Library hall. Places are limited to 40.</p>
+
+    <form id="signup" novalidate>
+      <h4>Your details</h4>
+
+      <label for="name">Full name</label>
+      <input id="name" name="name" type="text" autocomplete="name" required>
+
+      <input id="email" name="email" type="email" placeholder="Email address" autocomplete="email" required>
+      <span id="email-error" class="error" hidden>Please enter a valid email address.</span>
+
+      <input id="phone" name="phone" type="tel" placeholder="Phone (optional)" autocomplete="tel">
+
+      <h4>Session</h4>
+      <fieldset>
+        <legend>Which session will you attend?</legend>
+        <label><input type="radio" name="session" value="morning" checked> Morning (10:00–12:30)</label>
+        <label><input type="radio" name="session" value="afternoon"> Afternoon (13:30–16:00)</label>
+      </fieldset>
+
+      <img src="images/divider.png" alt="" width="400" height="4">
+
+      <label class="terms"><input type="checkbox" name="terms" id="terms" required> I agree to the workshop rules</label>
+
+      <label for="notes" class="visually-hidden">Anything we should know?</label>
+      <textarea id="notes" name="notes" placeholder="Anything we should know? (access needs, dietary requirements)"></textarea>
+
+      <p class="help">Fields without "optional" are required.</p>
+
+      <div class="button" id="submit" onclick="submitForm()">Register</div>
+    </form>
+  </main>
+  <script src="signup.js"></script>
+</body>
+</html>

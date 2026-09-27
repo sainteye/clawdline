@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your cart · Deskline</title>
+  <link rel="stylesheet" href="/cart.css">
+</head>
+<body>
+  <header class="top"><a href="/" class="brand">Deskline</a></header>
+  <main class="cart">
+    <section class="items" aria-labelledby="cart-h">
+      <h1 id="cart-h">Your cart</h1>
+      <ul id="lines" class="lines"></ul>
+      <p id="empty" class="empty" hidden>Your cart is empty.</p>
+    </section>
+    <aside id="summary" class="summary" aria-labelledby="summary-h">
+      <h2 id="summary-h">Order summary</h2>
+      <dl class="totals">
+        <div><dt>Subtotal</dt><dd id="subtotal"></dd></div>
+        <div id="discount-row" hidden><dt>Promo (SAVE10)</dt><dd id="discount"></dd></div>
+        <div class="grand"><dt>Total</dt><dd id="total"></dd></div>
+      </dl>
+      <form id="promo-form" class="promo" novalidate>
+        <label for="promo">Promo code</label>
+        <div class="promo-row">
+          <input id="promo" name="promo" autocomplete="off" spellcheck="false">
+          <button type="submit">Apply</button>
+        </div>
+        <p id="promo-error" class="error" role="alert" hidden></p>
+      </form>
+      <a class="checkout" href="/checkout">Checkout</a>
+    </aside>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

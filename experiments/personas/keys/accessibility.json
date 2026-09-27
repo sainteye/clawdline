@@ -1,0 +1,24 @@
+{
+  "fixture": "fixtures/accessibility",
+  "problems": [
+    {"id": "A1", "file": "signup.html", "lines": "2", "severity": "medium", "description": "<html> has no lang attribute (WCAG 3.1.1)."},
+    {"id": "A2", "file": "signup.html", "lines": "21, 24", "severity": "high", "description": "Email and phone inputs have only a placeholder, no <label> or accessible name (WCAG 1.3.1 / 3.3.2 / 4.1.2). Credit if the email input (or both) is named."},
+    {"id": "A3", "file": "styles.css", "lines": "8", "severity": "medium", "description": "Help text colour #b3b3b3 on white is about 2.1:1, below the 4.5:1 minimum (WCAG 1.4.3)."},
+    {"id": "A4", "file": "signup.html", "lines": "42", "severity": "high", "description": "Submit is a <div onclick>: not focusable, no role, no Enter/Space handling, so keyboard and screen-reader users cannot register (WCAG 2.1.1 / 4.1.2). Should be <button type=\"submit\">."},
+    {"id": "A5", "file": "styles.css", "lines": "7", "severity": "high", "description": "input:focus/textarea:focus { outline: none } with no replacement focus style (WCAG 2.4.7)."},
+    {"id": "A6", "file": "signup.html + signup.js", "lines": "html 22; js 7-8", "severity": "medium", "description": "Email error is shown by un-hiding a span that is not linked to the input (no aria-describedby / aria-invalid) and not in a live region, so it is not announced (WCAG 3.3.1 / 4.1.3). Credit if the output says the error is not associated with the field or not announced."},
+    {"id": "A7", "file": "signup.html", "lines": "12", "severity": "medium", "description": "The progress image 'step 1 of 3' has no alt attribute; it conveys information (WCAG 1.1.1)."},
+    {"id": "A8", "file": "signup.html", "lines": "16, 26", "severity": "low", "description": "Heading levels skip from h1 to h4 (WCAG 1.3.1 best practice)."}
+  ],
+  "decoys": [
+    {"id": "DA1", "file": "signup.html", "lines": "33", "description": "divider.png with alt=\"\" is correct: it is decorative. Flagging it as missing/empty alt is a false alarm."},
+    {"id": "DA2", "file": "signup.html", "lines": "35", "description": "The terms checkbox is wrapped in its <label>, which gives it an accessible name without for/id. Flagging it as unlabelled is a false alarm."},
+    {"id": "DA3", "file": "signup.html + styles.css", "lines": "html 37; css 11-14", "description": "The notes textarea has a real <label for=\"notes\"> hidden with a standard visually-hidden class; it has an accessible name. Flagging it as unlabelled or saying the label is inaccessible is a false alarm (suggesting a visible label instead of relying on the placeholder is fine, not a false alarm)."}
+  ],
+  "acceptable_other_findings": [
+    "No feedback is shown when the terms checkbox is unchecked (real, not planted).",
+    "Error indicated partly by red border colour (fine to mention; text also exists).",
+    "Required fields not marked with required indicator / aria-required (reasonable).",
+    "Placeholder used as instructions, autocomplete suggestions, fieldset/legend comments, page title/landmark remarks."
+  ]
+}

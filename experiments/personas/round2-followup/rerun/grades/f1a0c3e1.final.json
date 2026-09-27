@@ -1,0 +1,25 @@
+{
+  "id": "f1a0c3e1",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0528136,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "rates.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 14,
+        "summary": "Replaced the bracketIndex(limits, grams) call with an inline inclusive-limit loop ('if grams <= t.UpToGrams { idx = i; break }') plus an updated comment explaining why Quote can't reuse bracketIndex's exclusive semantics \u2014 the explicitly accepted equivalent form of the reference fix."
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "Single hunk in rates.go implements the key's accepted equivalent fix (inline inclusive loop replacing the bracketIndex call), matching allowed_extra exactly. bracketIndex, InsuranceFee, OversizeFee, and the tier tables are untouched, so broad_fix is false and no unrelated edits exist. Final message correctly diagnoses the exclusive/inclusive mismatch ('bracketIndex ... uses strict <', 'Tier.UpToGrams is documented as inclusive'), correctly notes OversizeFee and InsuranceFee rely on the exclusive semantics and were deliberately left alone, and correctly identifies TestQuoteTierBoundary as the pre-existing failing/now-passing test. No wrong claims. with-hidden exit 0, so failing_tests is empty."
+  },
+  "hand_checked": true,
+  "corrections": []
+}

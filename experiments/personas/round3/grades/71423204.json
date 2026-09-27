@@ -1,0 +1,89 @@
+{
+  "id": "71423204",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.24104160000000002,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "Not ready to merge — I found 7 real bugs, several violating explicit acceptance criteria",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "Measured on a real page: scrollWidth 420 vs clientWidth 375 — it does scroll horizontally, contradicting the spec.",
+        "executed": true,
+        "evidence": "node -e '...document.documentElement.scrollWidth...' → output {\"scrollWidth\": 420, \"clientWidth\": 375, \"summaryRect\": {...\"width\": 400...}}"
+      },
+      "E2": {
+        "found": true,
+        "quote": "CSS media query is min-width: 769px, but the spec says two-column \"at 768px and above.\" Screenshotted at exactly 768px — layout is still single-column/stacked.",
+        "executed": true,
+        "evidence": "node scripts/shot.mjs http://127.0.0.1:4173/ 768 /tmp/cart-768.png 900 → 'wrote /tmp/cart-768.png (768x900)', then Read /tmp/cart-768.png → [image viewed], followed by assistant note 'at exactly 768px the layout is still single-column'"
+      },
+      "E3": {
+        "found": true,
+        "quote": "clicking `+` 10 times from qty=1 reaches **11**",
+        "executed": true,
+        "evidence": "node -e loop of 11 .inc clicks → 'page.click: Timeout... element is not enabled' (fails only on the 11th attempt, after 10 succeed); combined with node -e check 'initial qty: 1 inc disabled: false' confirming the starting state, showing the button only disables after the 10th click pushes qty to 11"
+      },
+      "E4": {
+        "found": true,
+        "quote": "clicking `−` once from qty=1 drops to **0** (line total becomes $0.00, item just sits there, never removed)",
+        "executed": true,
+        "evidence": "node -e single .dec click → 'qty after 1 click of - (from qty=1): 0 dec disabled: true'"
+      },
+      "E5": {
+        "found": true,
+        "quote": "`state.discount` is stored as a one-time computed cents value on submit, not recalculated in `render()`. Verified: apply SAVE10 → −$105.30, then increase monitor qty → discount stays frozen at −$105.30 instead of recalculating off the new subtotal",
+        "executed": true,
+        "evidence": "node -e promo+increment script → 'discount after applying SAVE10: −$105.30' then 'discount after qty change: −$105.30 total: $1846.70'"
+      },
+      "E6": {
+        "found": true,
+        "quote": "Verified: enter a bad code (error shows) → then enter `SAVE10` → the \"Code not recognised\" message is still on screen",
+        "executed": true,
+        "evidence": "node -e bad-code-then-SAVE10 script → 'after bad code: Code not recognised|hidden=false' then 'after valid code: Code not recognised|hidden=false'"
+      },
+      "E7": {
+        "found": true,
+        "quote": "The default cart's subtotal renders as `$1053.00`, not the required `$1,053.00`.",
+        "executed": true,
+        "evidence": "Read /tmp/cart-375.png and /tmp/cart-768.png (images viewed) → assistant note 'the $1053.00 subtotal is missing the required thousands separator ($1,053.00)'"
+      },
+      "E8": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      },
+      "E9": {
+        "found": true,
+        "quote": "`save()` (`public/app.js:19`) is only called from the Remove handler, never from the `+`/`−` handlers. I verified live: bump a quantity, reload → it reverts to the original value. Only deletions survive a reload.",
+        "executed": true,
+        "evidence": "node -e increment-then-reload script → 'qty before reload: 3 qty after reload: 1'"
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": [
+      {
+        "claim": "clicking − once from qty=1 drops to 0 (line total becomes $0.00, item just sits there, never removed)",
+        "why": "The tool log's decrement test ([20]) only printed the qty text and the button's disabled state ('qty after 1 click of - (from qty=1): 0 dec disabled: true'); it never checked the line-total text or the list length/DOM presence of the item, so the parenthetical details about the $0.00 line total and the item persisting in the list were not actually demonstrated."
+      }
+    ]
+  }
+}

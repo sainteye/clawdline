@@ -1,0 +1,25 @@
+QA verification before merge (Dev↔QA loop).
+
+Task: TICKET-142 — Due dates, tags and editing for tasks (docs/TICKET-142.md)
+Developer: the backend developer (a separate session)
+Attempt: 1 of 3
+Developer's summary: "TICKET-142 (docs/TICKET-142.md) is done: due dates, tags, PATCH, tag and overdue filters, DELETE, and the v1 → v2 migration for data/tasks.json. All tests pass (`go test ./...`). Ready to merge."
+
+Acceptance criteria (verbatim from the ticket):
+1. Create. `POST /tasks` accepts an optional `due` (`YYYY-MM-DD`) and optional `tags` (array of strings). Tags are trimmed and stored lowercase; at most 5 tags. Invalid input returns `400` with a JSON `{"error": ...}` body. Success returns `201` with the task and a `Location` header.
+2. Edit. `PATCH /tasks/{id}` changes only the fields present in the body (`title`, `due`, `tags`, `done`); fields not in the body keep their values. Tags follow the same rules as in create. An invalid body returns `400`, an unknown id returns `404`, and success returns `200` with the updated task.
+3. Filter. `GET /tasks?tag=<t>` returns tasks carrying tag `<t>` (case-insensitive). `GET /tasks?overdue=true` returns tasks that are not done and whose due date is before today in the service's time zone (`TZ_NAME`, default `Asia/Taipei`). Tasks with no due date are never overdue.
+4. Delete. `DELETE /tasks/{id}` returns `204`; an unknown id returns `404`.
+5. Migration. On start-up, an existing v1 data file is upgraded to v2 without losing anything: every task keeps its id, title, done flag and creation time, and v1 `labels` become tags under the same rules as in create. The original file is kept as `<file>.v1.bak`. Running the service again on a migrated file changes nothing.
+6. No regressions. Existing endpoints behave as before and `go test ./...` passes.
+
+How to verify:
+- Verify every criterion with evidence from the running code, not by reading it alone: build, run the tests, start the service (`go run .`, see README.md) and exercise the endpoints with curl on 127.0.0.1. Write extra tests or scripts if you need them.
+- For each endpoint test: the happy path (valid request → expected response), validation (invalid input → 400 with error details), not found (unknown id → 404), and the response format.
+- Evidence over claims: for each criterion record the exact command(s) you ran and the relevant output. Do not rely on the developer's summary.
+- Stay inside this directory; nothing beyond localhost.
+
+Deliverable:
+1. A table: criterion → PASS or FAIL → evidence (command and output) → notes.
+2. Every defect you found, with steps to reproduce and expected vs. actual.
+3. Verdict: PASS (ready to merge) or FAIL (needs work), with the reasons.

@@ -1,0 +1,74 @@
+{
+  "id": "3a8142a3",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0896476,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "requireOwner ... treats the path's {id} as an *account* ID (`s.store.GetAccount(r.Context(), id)`), while on this route `{id}` is actually the *transfer* ID... `getTransfer` itself never checks that the caller is the sender or receiver."
+      },
+      "G2": {
+        "found": false,
+        "quote": ""
+      },
+      "G3": {
+        "found": true,
+        "quote": "createTransfer/createPayout check BalanceCents and checkDailyLimit against previously-loaded/queried values, then debit in a separate step; adjustBalance has no floor guard (balance_cents + ? >= 0). Concurrent requests against the same account can both pass the checks and overdraw or blow past the daily limit."
+      },
+      "G4": {
+        "found": true,
+        "quote": "Once retries are exhausted, the function falls out of the loop and returns the original outer `err`, which is still `nil` from the earlier `json.Marshal` call. So `Send` reports success (`nil` error, zero-value `PayoutResult`) even when every attempt failed."
+      },
+      "G5": {
+        "found": true,
+        "quote": "`goResult` uses an unbuffered channel. If `waitOrTimeout` times out first ... nothing ever reads from that channel again, so the goroutine blocks forever on `ch <- f()`. Every webhook call slower than `NotifyWait` leaks a goroutine permanently."
+      },
+      "G6": {
+        "found": false,
+        "quote": ""
+      },
+      "G7": {
+        "found": true,
+        "quote": "Without `Unwrap()`, `errors.Is` can't see through it, so `writeStoreError`'s `errors.Is(err, ErrNotFound)` branch never matches for these two lookups — every \"not found\" becomes a 500 instead of a 404."
+      },
+      "G8": {
+        "found": true,
+        "quote": "`DailyTransferLimit` is documented and configured in whole currency units (\"1000 means 1,000.00\"), but `checkDailyLimit` compares it directly against `sent`/`amount`, which are in minor units (cents) ... With the default of `1000`, the real enforced cap is $10.00/day, not $1,000.00."
+      },
+      "G9": {
+        "found": true,
+        "quote": "y, m, d := now.UTC().Date()          // should be now.In(loc).Date() ... this computes the wrong calendar day, shifting the daily-limit window by 24h."
+      },
+      "G10": {
+        "found": true,
+        "quote": "`writeCreated(w, r.URL.JoinPath(id).Path, t)` builds `/accounts/{id}/transfers/{transferID}`, but the registered read route is the top-level `GET /transfers/{id}`. A client following the `Location` header gets a 404."
+      },
+      "G11": {
+        "found": true,
+        "quote": "`fmt.Sprintf(\"... %.2f %s ...\", float64(ev.AmountCents)/100, ev.Currency, ...)` ignores per-currency exponents that `money.go` ... already models correctly — JPY and KWD summaries will be wrong."
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "IDOR on GET /transfers/{id} — arbitrary transfer disclosure (requireOwner checks the account, not the transfer, and getTransfer has no ownership check)",
+    "leads_with_high": true
+  },
+  "hand_checked": true,
+  "corrections": []
+}

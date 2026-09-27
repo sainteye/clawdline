@@ -1,0 +1,33 @@
+{
+  "fixture": "fixtures/code-reviewer",
+  "note": "Line numbers refer to the post-change files in the fixture directory. 'high' = blocker-class (security hole, crash, resource exhaustion); 'medium' = wrong behaviour; 'low' = degraded behaviour.",
+  "defects": [
+    {"id": "G1", "file": "store.go", "lines": "106", "severity": "medium",
+     "description": "Off-by-one pagination: Page is 1-based (handler defaults to 1) but OFFSET is Page*PageSize, so page 1 skips the first PageSize rows; must be (Page-1)*PageSize."},
+    {"id": "G2", "file": "store.go", "lines": "101-102 (source: handler.go listOrders Sort: q.Get(\"sort\"))", "severity": "high",
+     "description": "SQL injection: the user-supplied `sort` query parameter is concatenated into ORDER BY without a whitelist."},
+    {"id": "G3", "file": "main.go", "lines": "61", "severity": "high",
+     "description": "Missing authorization: DELETE /admin/orders/{id} is registered without requireAdmin (the refund admin route has it), so anyone can delete any order."},
+    {"id": "G4", "file": "cache.go", "lines": "24-30", "severity": "high",
+     "description": "Data race: OrderCache.Get reads the map without taking c.mu while Set/Delete write it under the lock; concurrent requests can crash with 'concurrent map read and map write'."},
+    {"id": "G5", "file": "store.go", "lines": "90-99", "severity": "high",
+     "description": "Resource leak: countRows from QueryContext is never closed (only one Next() call, no Close/defer), so each ListOrders call holds a DB connection until the pool is exhausted. Should use QueryRowContext or defer countRows.Close()."},
+    {"id": "G6", "file": "handler.go", "lines": "194-198", "severity": "medium",
+     "description": "Error swallowed: deleteOrder logs a non-NotFound DeleteOrder error and still returns 204 No Content, reporting success for a failed delete."},
+    {"id": "G7", "file": "main.go", "lines": "52", "severity": "low",
+     "description": "Wrong units: time.Duration(cfg.CacheTTLSeconds) is nanoseconds (30ns), not seconds; needs * time.Second, so the cache effectively never hits."}
+  ],
+  "decoys": [
+    {"id": "D1", "file": "store.go", "lines": "160", "description": "defer tx.Rollback() followed by tx.Commit() is correct and idiomatic: Rollback after a successful Commit is a no-op (returns ErrTxDone, ignored). Flagging it as a bug is a false alarm."},
+    {"id": "D2", "file": "handler.go", "lines": "154-162", "description": "The goroutines in batchGetOrders capture loop variables i and chunk; go.mod says go 1.22 so each iteration has its own variables, and each goroutine writes a distinct index of pre-sized results/errs slices after which wg.Wait() orders the reads. This is race-free. Flagging loop-variable capture or a race on results/errs is a false alarm (a race on the cache map is G4, not this)."},
+    {"id": "D3", "file": "store.go", "lines": "86, 107, 131-137", "description": "fmt.Sprintf/strings.Join are used only to build numbered placeholders ($1, $2, ...); the values themselves are bound as query args. This is not SQL injection. Flagging these lines as injection is a false alarm (the ORDER BY concatenation is G2)."}
+  ],
+  "acceptable_other_findings": [
+    "OrderCache never evicts expired entries, so the map grows without bound (real, not planted).",
+    "batchGetOrders returns duplicates when the same id is requested twice (real, minor).",
+    "countRows.Err() is not checked (part of G5 area; credit G5 only if the missing Close/leak is named).",
+    "Very large page values can overflow Page*PageSize (minor).",
+    "The cache is served for other users' orders only after an ownership check; a note that cache hits for another user fall through to the DB is fine.",
+    "Style nits: map[string]any responses, naming, missing tests for new code, cache TTL default, trusting X-User-ID header (pre-existing, documented)."
+  ]
+}

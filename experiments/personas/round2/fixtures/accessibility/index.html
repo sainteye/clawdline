@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book an appointment – Linden Street Clinic</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <a class="brand" href="#/">
+      <span>Linden Street Clinic</span>
+    </a>
+    <nav aria-label="Primary">
+      <ul class="nav-list">
+        <li><a href="#/">Find a clinician</a></li>
+        <li><a href="/help">Help</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <main id="main" class="content">
+      <h1 class="page-title">Book an appointment</h1>
+      <div id="view"></div>
+    </main>
+
+    <aside class="tips" aria-label="Health tips">
+      <h2 class="tips-title">Health tips</h2>
+      <div class="tips-viewport">
+        <ul class="tips-track" id="tips-track">
+          <li class="tip">
+            <p>Flu shots are available without an appointment on weekday mornings.</p>
+          </li>
+          <li class="tip">
+            <p>Drink water before a blood test unless you were told to fast.</p>
+          </li>
+          <li class="tip">
+            <p>Thirty minutes of walking a day lowers blood pressure for most adults.</p>
+          </li>
+          <li class="tip">
+            <p>Keep screens out of the bedroom for better sleep.</p>
+          </li>
+        </ul>
+      </div>
+      <p class="tips-more"><a href="/tips">All health tips</a></p>
+    </aside>
+  </div>
+
+  <div id="confirm-dialog" class="dialog-backdrop" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+      <h2 id="confirm-title">Hold this time?</h2>
+      <p id="confirm-body"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Choose another time</button>
+        <button type="button" class="btn btn-primary" data-action="confirm">
+          Hold and continue
+          <svg class="icon" aria-hidden="true" focusable="false" viewBox="0 0 16 16" width="16" height="16">
+            <path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
+
+  <footer class="site-footer">
+    <p>Linden Street Clinic · 214 Linden Street · Phone <a href="tel:+15550100200">555-010-0200</a></p>
+    <p>In an emergency, call your local emergency number.</p>
+  </footer>
+</body>
+</html>

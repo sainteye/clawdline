@@ -1,0 +1,21 @@
+{
+  "id": "03ddb9e9",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0137616,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "money.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 6,
+        "summary": "Adds sign extraction (if cents < 0 { sign = \"-\"; cents = -cents }) and prefixes sign before \"$\" in FormatCents, matching the reference fix exactly."
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "notes": "Only money.go was changed, exactly 6 changed lines matching the reference fix's sign/prefix approach. No test additions were made (money_test.go untouched, despite the output's claim that pre-existing negative test cases existed), no unrelated edits, no touching of decoys (TODO comment, round_cents_legacy, fmt_percent, invoice.go typo) or of groupThousands. The output's final message correctly diagnoses the root cause (Go's % keeping sign of dividend) and accurately describes the fix, though it inaccurately implies the negative-case tests were 'pre-existing' when no diff to money_test.go was shown."
+  }
+}

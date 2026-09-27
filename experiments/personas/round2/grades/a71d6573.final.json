@@ -1,0 +1,74 @@
+{
+  "id": "a71d6573",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0984096,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": true,
+        "quote": "`requireOwner` unconditionally does `id := pathID(r)` then `s.store.GetAccount(ctx, id)` and checks `acct.OwnerID == caller`... for this route it's a *transfer* ID... There's no check anywhere that the caller is actually the `FromAccountID` or `ToAccountID` owner of the transfer."
+      },
+      "G2": {
+        "found": true,
+        "quote": "`if err := ...; err != nil` inside the `if` declares a **new**, block-scoped `err` — it never touches the outer `err` the deferred closure inspects... the outer `err` is still `nil`... so the `defer` calls `tx.Commit()` anyway."
+      },
+      "G3": {
+        "found": true,
+        "quote": "Balance/limit checks race with the actual debit... then debit in a separate DB call with no `WHERE balance_cents >= ?` guard in `adjustBalance`. Two concurrent requests on the same account can both pass the check and overdraw it."
+      },
+      "G4": {
+        "found": false,
+        "quote": ""
+      },
+      "G5": {
+        "found": true,
+        "quote": "If `waitOrTimeout` times out first (a slow webhook), nothing ever reads from `ch` again, so the background goroutine blocks forever on `ch <- f()`."
+      },
+      "G6": {
+        "found": false,
+        "quote": ""
+      },
+      "G7": {
+        "found": true,
+        "quote": "`lookupError` doesn't implement `Unwrap()`, so `errors.Is(err, ErrNotFound)` silently stops working... Every \"not found\" case now falls into the `default` branch → logged as an error and returned as 500."
+      },
+      "G8": {
+        "found": true,
+        "quote": "`sent` and `amount` are minor units (cents), but the config comment says the limit is in whole units. The default `1000` is documented as \"$1,000.00/day\" but is actually enforced as 1000 *cents* = $10/day."
+      },
+      "G9": {
+        "found": true,
+        "quote": "`startOfBusinessDay` takes the calendar date from UTC, not from the target location... This should be `now.In(loc).Date()`."
+      },
+      "G10": {
+        "found": true,
+        "quote": "Wrong `Location` header on `createTransfer`. It builds `r.URL.JoinPath(id)` off `/accounts/{id}/transfers`, giving `/accounts/{id}/transfers/{transferID}`, but the actual registered read route is the top-level `/transfers/{id}`."
+      },
+      "G11": {
+        "found": true,
+        "quote": "Webhook `Summary` hardcodes 2-decimal formatting, mis-rendering JPY/KWD... `FormatAmount`... already handles per-currency exponents correctly — this should call it instead. As written, a 500-yen deposit summarizes as \"5.00 JPY\"."
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "CreateTransfer's commit/rollback decision is defeated by variable shadowing — a transfer can commit without moving any money.",
+    "leads_with_high": true
+  },
+  "hand_checked": true,
+  "corrections": []
+}

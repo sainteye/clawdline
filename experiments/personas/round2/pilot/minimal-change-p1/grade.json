@@ -1,0 +1,23 @@
+{
+  "id": "minimal-change-p1",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0262836,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "rates.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 5,
+        "summary": "Changed `limits[i] = tiers[i].UpToGrams` to `limits[i] = tiers[i].UpToGrams + 1` and expanded the comment explaining the inclusive/exclusive conversion, exactly matching the reference fix."
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "Single hunk in rates.go matches the reference fix precisely (UpToGrams + 1 at the call site, comment on changed lines). bracketIndex and other callers untouched. Visible and hidden tests both pass (exit 0)."
+  }
+}

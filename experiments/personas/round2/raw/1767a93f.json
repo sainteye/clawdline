@@ -1,0 +1,76 @@
+{
+  "id": "1767a93f",
+  "attempts": [
+    {
+      "attempt": 1,
+      "ok": true,
+      "exit": 0,
+      "subtype": "success",
+      "stderr": ""
+    }
+  ],
+  "wall_ms": 455571,
+  "meta": {
+    "duration_ms": 454398,
+    "num_turns": 20,
+    "total_cost_usd": 0.7691558000000001,
+    "usage": {
+      "input_tokens": 22,
+      "cache_creation_input_tokens": 52923,
+      "cache_read_input_tokens": 640249,
+      "output_tokens": 42937,
+      "output_tokens_details": {
+        "thinking_tokens": 37475
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 52923,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 32767,
+          "cache_read_input_tokens": 75744,
+          "cache_creation_input_tokens": 274,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 274
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard"
+    },
+    "modelUsage": {
+      "claude-sonnet-5": {
+        "inputTokens": 22,
+        "outputTokens": 42937,
+        "cacheReadInputTokens": 640249,
+        "cacheCreationInputTokens": 52923,
+        "webSearchRequests": 0,
+        "costUSD": 0.7691558000000001,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 37475,
+        "canonicalModel": "claude-sonnet-5",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "subtype": "success",
+    "is_error": false,
+    "permission_denials": [
+      "Bash",
+      "Bash",
+      "Bash",
+      "Bash",
+      "Bash"
+    ]
+  }
+}

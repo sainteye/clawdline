@@ -1,0 +1,84 @@
+{
+  "id": "4067ccdb",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1756356,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "**Verdict: Failed.** ... This shouldn't merge as-is.",
+    "defects": {
+      "D1": {
+        "found": true,
+        "quote": "AC2: unknown id → 404 | `PATCH /tasks/t0099` | **Fail** — returns `500 {\"error\":\"could not save\"}`",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:66: got 500, want 404: {\\\"error\\\":\\\"could not save\\\"}\" (TestVerify_PatchUnknownID)"
+      },
+      "D2": {
+        "found": true,
+        "quote": "AC2: PATCH changes only fields present in body ... **Fail** — due and tags wiped to zero/null",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:17: due was cleared by unrelated patch: {... Due:0001-01-01 ... Tags:[]}\" and \"zz_verify_test.go:27: tags were cleared by unrelated patch: {...}\""
+      },
+      "D3": {
+        "found": true,
+        "quote": "AC5: migration keeps creation time ... **Fail** — lost (zero value)",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:115: created_at not preserved: got 0001-01-01 00:00:00 +0000 UTC want 2025-11-02 08:00:00 +0000 UTC\"; also real-data run → \"t0001: creation time lost\" (and t0002,3,5,6,8)"
+      },
+      "D4": {
+        "found": true,
+        "quote": "AC5: v1 labels normalized like create ... **Fail** — literal `[\"Health\",\" personal\"]`, and 6 tags kept uncapped",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:133: labels not normalized: [Health  personal]\"; real-data run → \"t0001: tag \\\"Health\\\" not normalized\", \"t0001: tag \\\" personal\\\" not normalized\""
+      },
+      "D5": {
+        "found": true,
+        "quote": "AC3: due date == today is not overdue ... **Fail** — included",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:77: task due today wrongly marked overdue: [{ID:t0001 Title:due today ... Due:2026-03-10 00:00:00 +0000 UTC ...}]\""
+      },
+      "D6": {
+        "found": true,
+        "quote": "AC3: no due date is never overdue ... **Fail** — included",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:87: task with no due date wrongly marked overdue: [{ID:t0001 Title:no due date ...}]\""
+      },
+      "D7": {
+        "found": true,
+        "quote": "AC2: PATCH tags follow create's normalization rules ... **Fail** — stored as `[\"Home\",\" Work \"]`, not normalized; 6 tags accepted with `200` instead of `400`",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:38: tags not normalized on patch: {... Tags:[Home  Work ] ...} (code=200)\" and \"zz_verify_test.go:47: got 200, want 400: {...\\\"tags\\\":[\\\"a\\\",\\\"b\\\",\\\"c\\\",\\\"d\\\",\\\"e\\\",\\\"f\\\"]}\""
+      },
+      "D8": {
+        "found": true,
+        "quote": "AC4: DELETE unknown id → 404 | `DELETE /tasks/t0099` | **Fail** — returns `204`",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:96: got 204, want 404:\""
+      },
+      "D9": {
+        "found": true,
+        "quote": "AC2: invalid body → 400 | `PATCH` with `not json` body | **Fail** — returns `200`",
+        "executed": true,
+        "evidence": "go test ./... -run TestVerify -v → \"zz_verify_test.go:57: got 200, want 400: {\\\"id\\\":\\\"t0001\\\",...}\""
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

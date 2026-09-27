@@ -1,0 +1,84 @@
+{
+  "id": "b1af1094",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1900176,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "## Verdict: **FAIL — needs work**",
+    "defects": {
+      "D1": {
+        "found": true,
+        "quote": "PATCH on unknown id returns 500, not 404 ... Actual: `500 {\"error\":\"could not save\"}` ... `errors.Is(err, ErrNotFound)` in the handler returns false and falls into the 500 branch.",
+        "executed": true,
+        "evidence": "curl -s -w \"\\nHTTP %{http_code}\\n\" -X PATCH http://127.0.0.1:8099/tasks/t9999 -d '{\"title\":\"x\"}' → {\"error\":\"could not save\"} / HTTP 500 (log [21])"
+      },
+      "D2": {
+        "found": true,
+        "quote": "PATCH silently wipes `due` and `tags` when they're absent from the body ... Actual: `{\"due\":\"\",\"tags\":null,...}` — both destroyed",
+        "executed": true,
+        "evidence": "curl -s -w ... -X PATCH http://127.0.0.1:8099/tasks/t0003 -d '{\"title\":\"Renamed task\"}' → {\"id\":\"t0003\",...,\"due\":\"\",\"tags\":null,...} / HTTP 200 (log [20])"
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migration drops `CreatedAt` ... Actual: every migrated task has `\"created_at\":\"0001-01-01T00:00:00Z\"`",
+        "executed": true,
+        "evidence": "cat \"$TMPDIR/qa-migrate/tasks.json\" (post-migration) → \"created_at\": \"0001-01-01T00:00:00Z\" for every task (log [26])"
+      },
+      "D4": {
+        "found": true,
+        "quote": "Migration doesn't normalize tags from v1 `labels` ... Actual: resulting tags are `[\"Health\",\" personal\"]`, `[\"home\",\" Errands\"]`, `[\"work\",\" planning\"]` — untrimmed, uncased",
+        "executed": true,
+        "evidence": "cat \"$TMPDIR/qa-migrate/tasks.json\" (post-migration) → tags: [\"Health\",\" personal\"], etc. (log [26])"
+      },
+      "D5": {
+        "found": true,
+        "quote": "Actual: past-due task, ... and **the due-today task** all appear ... a due date equal to today is also never `After` today, so it's kept — should require strictly `Before` today.",
+        "executed": true,
+        "evidence": "curl -s \"http://127.0.0.1:8099/tasks?overdue=true\" → includes t0006 (due \"2026-09-27\", today) (log [23])"
+      },
+      "D6": {
+        "found": true,
+        "quote": "Actual: ... **the no-due-date task**, ... all appear ... A zero `Date{}` (no due date, year 0001) is never `After` today, so it's never excluded — violates \"tasks with no due date are never overdue.\"",
+        "executed": true,
+        "evidence": "curl -s \"http://127.0.0.1:8099/tasks?overdue=true\" → includes t0004 and t0008 (due \"\") (log [23])"
+      },
+      "D7": {
+        "found": true,
+        "quote": "PATCH doesn't validate/normalize tags at all ... 6 tags) → `200`, saved with 6 tags (spec: max 5, should be `400`) ... saved as `[\" Foo \",\"BAR\"]` verbatim (spec: trim + lowercase)",
+        "executed": true,
+        "evidence": "curl PATCH .../t0004 -d '{\"tags\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\"]}' → HTTP 200 with 6 tags saved; curl PATCH -d '{\"tags\":[\" Foo \",\"BAR\"]}' → HTTP 200 with tags:[\" Foo \",\"BAR\"] (log [21])"
+      },
+      "D8": {
+        "found": true,
+        "quote": "DELETE on unknown id returns 204, not 404 ... Actual: `204 No Content`",
+        "executed": true,
+        "evidence": "curl -s -w \"\\nHTTP %{http_code}\\n\" -X DELETE http://127.0.0.1:8099/tasks/t9999 → (empty body) / HTTP 204 (log [19])"
+      },
+      "D9": {
+        "found": true,
+        "quote": "PATCH with invalid JSON body returns 200, not 400 ... decode error is discarded: `json.NewDecoder(r.Body).Decode(&req)` return value ignored",
+        "executed": true,
+        "evidence": "curl PATCH .../t0003 -d 'not json' → task JSON returned / HTTP 200 (log [21])"
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": "Idempotency itself (`Migrate` run twice → second run is a no-op, verified with `diff`) does hold, but it's a no-op on top of already-wrong data."
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

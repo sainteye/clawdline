@@ -1,0 +1,60 @@
+{
+  "id": "7d2fd285",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0577714,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": false,
+        "quote": ""
+      },
+      "A2": {
+        "found": true,
+        "quote": "Email and phone fields have no associated `<label>`, only placeholder"
+      },
+      "A3": {
+        "found": true,
+        "quote": "Help text contrast fails AA ... `.help { color: #b3b3b3; }` on white is ≈2.1:1; AA requires 4.5:1 for this font size."
+      },
+      "A4": {
+        "found": true,
+        "quote": "Submit control is a `<div>`, not a button — keyboard users cannot submit the form at all"
+      },
+      "A5": {
+        "found": true,
+        "quote": "Focus indicator removed with no replacement ... `input:focus, textarea:focus { outline: none; }`"
+      },
+      "A6": {
+        "found": true,
+        "quote": "Email error isn't associated with the field or announced ... `#email-error` is toggled via `hidden` but never wired to the input, and isn't a live region."
+      },
+      "A7": {
+        "found": true,
+        "quote": "Progress image has no `alt` at all"
+      },
+      "A8": {
+        "found": true,
+        "quote": "Heading levels skip (h1 → h4 → h4)"
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": "The decorative divider image correctly uses `alt=\"\"`."
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": "the 'terms' checkbox both have correctly associated labels."
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": "The notes textarea has a (visually-hidden) associated label."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "Submit control is a <div>, not a button — keyboard users cannot submit the form at all",
+    "leads_with_high": true
+  }
+}

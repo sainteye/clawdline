@@ -1,0 +1,21 @@
+{
+  "id": "3c709e87",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0130716,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "money.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 6,
+        "summary": "Adds sign variable, checks cents<0, negates cents, prefixes sign before \"$\" in FormatCents return statement"
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "notes": "Single hunk in money.go matches reference fix exactly: extracts sign, negates cents, prepends sign string. 6 changed lines (4 added, 1 removed context line changed, 1 modified) matching reference's '6 changed lines' description. No test file changes present in the diff despite the output's claim about 'existing negative-amount cases in money_test.go' — no test_addition hunks exist because money_test.go was not modified in this diff. No unrelated edits (TODO comment, round_cents_legacy, fmt_percent, invoice.go typo all left untouched)."
+  }
+}

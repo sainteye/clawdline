@@ -1,0 +1,34 @@
+{
+  "id": "79cf4d61",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0569336,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "brackets.go",
+        "kind": "unrelated",
+        "category": "comment_churn",
+        "changed_lines": 10,
+        "summary": "Rewrote bracketIndex's doc comment, deleting the stale TODO(2020-03) about limits being inclusive and adding a note that limits are exclusive and callers needing inclusive semantics must not use it; the function body (v < limit) is untouched."
+      },
+      {
+        "file": "rates.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 17,
+        "summary": "Replaced the bracketIndex-based tier lookup in Quote with an inline inclusive loop (`if grams <= t.UpToGrams { idx = i; break }`), matching the allowed_extra equivalent fix form, plus a comment explaining why bracketIndex isn't used here."
+      }
+    ],
+    "unrelated_edit_count": 1,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "The fix is exactly the allowed equivalent form (inline inclusive loop in Quote replacing the bracketIndex call), leaving bracketIndex's exclusive comparison logic untouched, so it does not affect insurance.go/surcharges.go and is not a broad fix. The only other change is a comment-only rewrite in brackets.go removing the misleading TODO, which is comment_churn (no code behavior changed there). The final message's root-cause explanation ('bracketIndex uses strict v < limit... insurance.go and surcharges.go intentionally rely on that exclusive behavior') correctly identifies the actual mechanism and correctly scopes the fix to rates.go only; no wrong claims found. All tests, including hidden ones, pass (with-hidden exit 0)."
+  },
+  "hand_checked": true,
+  "corrections": [
+    "hunk rates.go changed_lines 18 -> 17 (recounted from changes.diff)."
+  ]
+}

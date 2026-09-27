@@ -1,0 +1,23 @@
+{
+  "id": "f1a0c3e2",
+  "task": "minimal-change",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0508196,
+  "attempt": 1,
+  "grade": {
+    "hunks": [
+      {
+        "file": "rates.go",
+        "kind": "fix",
+        "category": null,
+        "changed_lines": 13,
+        "summary": "Replaced the bracketIndex call with an inline `grams <= t.UpToGrams` loop in Quote so tier lookup treats UpToGrams as inclusive, without touching bracketIndex or any other caller/table."
+      }
+    ],
+    "unrelated_edit_count": 0,
+    "fix_matches_reference": true,
+    "broad_fix": false,
+    "failing_tests": [],
+    "notes": "Single hunk in rates.go matches the reference fix's explicitly accepted equivalent form ('an inline grams <= tiers[i].UpToGrams loop in Quote replacing the bracketIndex call'). bracketIndex, its other callers, and all tables are untouched, matching the answer key's guidance to avoid the tempting broad fixes. Final message correctly attributes the bug to bracketIndex's exclusive limits vs. UpToGrams's inclusive semantics, correctly notes InsuranceFee/OversizeFee rely on the exclusive behavior, and makes no false claims about the code. No test files were added/changed and no unrelated edits were made. with-hidden exit 0, so failing_tests is empty."
+  }
+}

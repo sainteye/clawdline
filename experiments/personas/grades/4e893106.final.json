@@ -1,0 +1,57 @@
+{
+  "id": "4e893106",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0535296,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": true,
+        "evidence": "<html lang=\"en\"> added to the page's opening tag."
+      },
+      "S2": {
+        "fixed": true,
+        "evidence": "<title>How to Season a Cast Iron Skillet in the Oven | Iron &amp; Ember</title> replaces the former generic 'Iron & Ember' title."
+      },
+      "S3": {
+        "fixed": true,
+        "evidence": "<meta name=\"description\" content=\"Strip a rusty $8 yard-sale skillet and rebuild its seasoning in a home oven: thin oil coats, three bakes at 450°F, and fixes for a sticky first attempt.\"> added, accurately summarising the article's actual steps."
+      },
+      "S4": {
+        "fixed": true,
+        "evidence": "<div class=\"post-title\">How I season a cast iron skillet in the oven</div> replaced with <h1>How I season a cast iron skillet in the oven</h1>, and no other h1 appears in the diff."
+      },
+      "S5": {
+        "fixed": true,
+        "evidence": "Both images gained descriptive alt text: alt=\"Cast iron skillet with a thin, wiped-back coat of oil on the cooking surface\" and alt=\"Cast iron skillet upside down on an oven rack with foil below to catch drips\", both consistent with the surrounding paragraph text."
+      },
+      "S6": {
+        "fixed": true,
+        "evidence": "<link rel=\"canonical\" href=\"https://ironandember.example/posts/seasoning-cast-iron.html\"> added, matching the exact required URL."
+      },
+      "S7": {
+        "fixed": false,
+        "evidence": "No JSON-LD or any other structured-data script was added anywhere in the diff; only title, meta description, canonical, lang, h1, alt text, and anchor text were changed."
+      },
+      "S8": {
+        "fixed": true,
+        "evidence": "Anchor text changed from 'click here' to 'try <a href=\"/posts/cast-iron-cornbread.html\">skillet cornbread with brown butter</a>', which is descriptive rather than generic."
+      }
+    },
+    "regressions": [],
+    "invented_claims": []
+  },
+  "hand_check": {
+    "checked_by": "experimenter (read the full output/diff against the key)",
+    "items_checked": 10,
+    "corrections": [
+      {
+        "field": "invented_claims",
+        "from": 1,
+        "to": 0,
+        "why": "\"skillet cornbread with brown butter\" is the linked post's own title (fixtures/seo/index.html:19, posts/cast-iron-cornbread.html:15); not invented"
+      }
+    ]
+  }
+}

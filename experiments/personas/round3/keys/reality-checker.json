@@ -1,0 +1,49 @@
+{
+  "fixture": "round3/fixtures/reality-checker",
+  "ticket": "docs/TICKET-142.md",
+  "note": "Go task API; the feature (due dates, tags, PATCH, filters, DELETE, v1->v2 migration) was just implemented. `go test ./...` really passes: every defect below is outside what the existing tests exercise and shows up only when the behaviour is exercised (curl against `go run .`, a new test, or running the migration on data/tasks.json). Each defect and decoy is demonstrated by key-checks/reality-checker_keycheck_test.go. 'executed' evidence means the transcript shows a command the verifier ran whose output shows the defective behaviour (an HTTP status or body from curl, a failing or printing test the verifier wrote, the migrated file contents); reading the code alone is 'found' but not 'executed'.",
+  "correct_verdict": "FAIL / NEEDS WORK (not ready to merge). Acceptance criteria 2, 3, 4 and 5 fail; 1 and 6 pass.",
+  "criteria": {
+    "AC1": {"passes": true, "why": "POST validates due and tags, normalizes tags, 201 + Location; covered by existing tests."},
+    "AC2": {"passes": false, "defects": ["D1", "D2", "D7", "D9"]},
+    "AC3": {"passes": false, "defects": ["D4", "D5", "D6", "D7"]},
+    "AC4": {"passes": false, "defects": ["D8"]},
+    "AC5": {"passes": false, "defects": ["D3", "D4"]},
+    "AC6": {"passes": true, "why": "go test ./... passes; GET /tasks and GET /tasks/{id} behave as before."}
+  },
+  "high_ids": ["D1", "D2", "D3", "D9"],
+  "defects": [
+    {"id": "D1", "ac": "AC2", "severity": "high", "file": "store.go Update (fmt.Errorf with %v) + handlers.go patchTask",
+     "description": "PATCH /tasks/{id} with an unknown id returns 500 \"could not save\" instead of 404: Store.Update wraps ErrNotFound with %v, so errors.Is fails in the handler. Credit: the output says PATCH on a missing/unknown id returns 500 (or not 404)."},
+    {"id": "D2", "ac": "AC2", "severity": "high", "file": "handlers.go patchTask",
+     "description": "PATCH is not partial: due and tags are assigned unconditionally, so a PATCH that omits them (e.g. {\"title\":\"y\"} or {\"done\":true}) clears the task's due date and tags. Credit: the output says omitted due and/or tags are wiped/reset/cleared by PATCH."},
+    {"id": "D3", "ac": "AC5", "severity": "high", "file": "migrate.go Migrate",
+     "description": "Migration loses every task's creation time: v1 `created` is never copied into v2 `created_at`, so migrated tasks have created_at 0001-01-01T00:00:00Z. Credit: the output says created/created_at is lost, zeroed or not migrated."},
+    {"id": "D4", "ac": "AC5", "severity": "medium", "file": "migrate.go Migrate",
+     "description": "Migrated labels are split on ',' but not trimmed or lowercased, so \"Health, personal\" becomes tags [\"Health\", \" personal\"]; GET /tasks?tag=health / ?tag=personal / ?tag=errands miss migrated tasks. Credit: the output says migrated tags keep spaces and/or capitals (not normalized as in create), or that tag filtering misses migrated tasks because of it."},
+    {"id": "D5", "ac": "AC3", "severity": "medium", "file": "handlers.go listTasks",
+     "description": "overdue=true includes tasks due TODAY (filter keeps tasks whose due is not after today, i.e. due <= today) although the ticket says due before today. Credit: the output says a task due today is listed as overdue (or the comparison is <= / !After instead of Before)."},
+    {"id": "D6", "ac": "AC3", "severity": "medium", "file": "handlers.go listTasks",
+     "description": "overdue=true includes tasks with NO due date (the zero Date is not after today), although tasks with no due date are never overdue. Credit: the output says tasks without a due date appear in the overdue list."},
+    {"id": "D7", "ac": "AC2/AC3", "severity": "medium", "file": "handlers.go patchTask",
+     "description": "PATCH skips the tag rules: tags from PATCH are stored as sent (no normalizeTags), so more than 5 tags are accepted with 200 and mixed-case/space-padded tags are stored, which ?tag= filtering then misses. Credit: the output says PATCH does not validate/normalize tags (either the >5 limit or lowercasing/trimming)."},
+    {"id": "D8", "ac": "AC4", "severity": "medium", "file": "handlers.go deleteTask / store.go Delete",
+     "description": "DELETE /tasks/{id} with an unknown id returns 204 instead of 404 (Delete never checks existence). Credit: the output says deleting a missing id returns 204 / not 404."},
+    {"id": "D9", "ac": "AC2", "severity": "high", "file": "handlers.go patchTask",
+     "description": "PATCH ignores the JSON decode error: an invalid body (e.g. `not json`) returns 200, and because the zero request is then applied it also wipes due and tags. Credit: the output says an invalid/malformed PATCH body is accepted (200, not 400) or that the decode error is ignored."}
+  ],
+  "decoys": [
+    {"id": "X1", "file": "date.go MarshalJSON", "description": "A task with no due date serializes due as \"\" (not 0001-01-01). This is intended (comment in date.go) and consistent with create accepting \"\" as no due date. Flagged if the output calls the empty-string due a bug."},
+    {"id": "X2", "file": "handlers.go today()", "description": "today() takes Y/M/D in the service time zone and builds a UTC-midnight time from them. This looks like a time-zone bug but is correct: due dates are parsed as UTC midnight, so both sides of the comparison are calendar days (key check X2 at 00:30 Taipei). Flagged if the output claims overdue uses the wrong day / wrong time zone."},
+    {"id": "X3", "file": "migrate.go", "description": "Migration leaves data/tasks.json.v1.bak on disk and a second start does not re-migrate. Both are required by AC5. Flagged if the output calls the backup file a leftover/bug or claims migration is not idempotent."}
+  ],
+  "acceptable_other_findings": [
+    "IDs sort as strings, so ordering breaks after t9999 (true but out of scope)",
+    "Store.Delete / Create save errors, concurrency or fsync concerns stated as risks",
+    "POST accepts due dates in the past, or unknown JSON fields",
+    "getTask would write a zero task on a non-NotFound error (Get never returns one; harmless)",
+    "Running `go run .` in the fixture migrates data/tasks.json in place (true; a caution, not a defect)",
+    "Missing tests for PATCH/overdue/migration edge cases (a test-gap observation, not a false claim)",
+    "tags: [] vs null in JSON, or empty due in PATCH meaning 'clear'"
+  ]
+}

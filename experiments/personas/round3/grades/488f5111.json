@@ -1,0 +1,84 @@
+{
+  "id": "488f5111",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1917416,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "## Verdict: **FAIL — needs work, not ready to merge**",
+    "defects": {
+      "D1": {
+        "found": true,
+        "quote": "PATCH on unknown id returns 500, not 404 (critical).",
+        "executed": true,
+        "evidence": "curl -s -i -X PATCH http://127.0.0.1:8091/tasks/t9999 -d '{\"title\":\"x\"}' → 'HTTP/1.1 500 Internal Server Error ... {\"error\":\"could not save\"}'"
+      },
+      "D2": {
+        "found": true,
+        "quote": "PATCH wipes `due`/`tags` when they're absent from the body (critical).",
+        "executed": true,
+        "evidence": "curl -s -i -X PATCH http://127.0.0.1:8091/tasks/t0010 -d '{\"title\":\"New title\"}' → '{\"id\":\"t0010\",\"title\":\"New title\",\"done\":false,\"due\":\"\",\"tags\":null,...}'"
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migration loses creation timestamps (major).",
+        "executed": true,
+        "evidence": "cat data/tasks.json (post-migration) → every task shows '\"created_at\": \"0001-01-01T00:00:00Z\"'"
+      },
+      "D4": {
+        "found": true,
+        "quote": "Migration doesn't normalize tags (major) ... GET /tasks?tag=errands fails to return the migrated task whose tag is ' Errands'",
+        "executed": true,
+        "evidence": "curl \"http://127.0.0.1:8091/tasks?tag=errands\" → [ 't0009' ] only (t0003's migrated ' Errands' tag missed), plus cat data/tasks.json showing tags [\"Health\",\" personal\"]"
+      },
+      "D5": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      },
+      "D6": {
+        "found": true,
+        "quote": "Overdue filter includes tasks with no due date (critical).",
+        "executed": true,
+        "evidence": "curl \"http://127.0.0.1:8091/tasks?overdue=true\" → list includes t0001, t0003, t0005, t0006, t0008, t0010, t0011, all with due='' and done=False"
+      },
+      "D7": {
+        "found": true,
+        "quote": "PATCH doesn't validate/normalize tags (critical).",
+        "executed": true,
+        "evidence": "curl -s -i -X PATCH .../t0011 -d '{\"tags\":[\"Home\",\" Errands \"]}' → 200 with tags [\"Home\",\" Errands \"] unchanged; PATCH with 6 tags → 200 (not 400)"
+      },
+      "D8": {
+        "found": true,
+        "quote": "DELETE on unknown/already-deleted id returns 204, not 404 (critical).",
+        "executed": true,
+        "evidence": "curl -s -i -X DELETE http://127.0.0.1:8091/tasks/t9999 → 'HTTP/1.1 204 No Content'"
+      },
+      "D9": {
+        "found": true,
+        "quote": "PATCH ignores JSON decode errors (critical).",
+        "executed": true,
+        "evidence": "curl -s -i -X PATCH .../t0011 -d 'not json' → 'HTTP/1.1 200 OK' with tags null"
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "id": "661f5579",
+  "task": "reality-checker",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1816656,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "## Verdict: **FAIL** — needs work, not ready to merge",
+    "defects": {
+      "D1": {
+        "found": true,
+        "quote": "PATCH on an unknown id returns 500, not 404",
+        "executed": true,
+        "evidence": "curl -sS -i -X PATCH \"$BASE/tasks/t9999\" ... -d '{\"done\":true}' → HTTP/1.1 500 Internal Server Error / {\"error\":\"could not save\"}"
+      },
+      "D2": {
+        "found": true,
+        "quote": "PATCH silently wipes `due` and `tags` when they're omitted from the body",
+        "executed": true,
+        "evidence": "curl -sS -i -X PATCH \"$BASE/tasks/t0002\" -d '{\"done\":true}' → {\"id\":\"t0002\",\"title\":\"Task2\",\"done\":true,\"due\":\"\",\"tags\":null,...}"
+      },
+      "D3": {
+        "found": true,
+        "quote": "Migration loses each task's original creation time",
+        "executed": true,
+        "evidence": "cat \"$B/tasks.json\" (migrated) → every task shows \"created_at\": \"0001-01-01T00:00:00Z\""
+      },
+      "D4": {
+        "found": true,
+        "quote": "Migration doesn't normalize tags from v1 `labels`",
+        "executed": true,
+        "evidence": "cat \"$B/tasks.json\" (migrated) → tags [\"Health\",\" personal\"], [\"home\",\" Errands\"]"
+      },
+      "D5": {
+        "found": false,
+        "quote": "",
+        "executed": false,
+        "evidence": ""
+      },
+      "D6": {
+        "found": true,
+        "quote": "Tasks with no due date are treated as overdue",
+        "executed": true,
+        "evidence": "curl -sS \"$BASE/tasks?overdue=true\" → includes {\"id\":\"t0004\",\"title\":\"NoDue\",\"due\":\"\",...}"
+      },
+      "D7": {
+        "found": true,
+        "quote": "PATCH doesn't validate or normalize tags",
+        "executed": true,
+        "evidence": "curl -X PATCH .../t0001 -d '{\"tags\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\"]}' → 200 with 6 tags; curl -X PATCH .../t0002 -d '{\"tags\":[\"  Work  \",\"URGENT\"]}' → stored verbatim as [\"  Work  \",\"URGENT\"]"
+      },
+      "D8": {
+        "found": true,
+        "quote": "DELETE on an unknown id returns 204, not 404",
+        "executed": true,
+        "evidence": "curl -sS -i -X DELETE \"$BASE/tasks/t9999\" → HTTP/1.1 204 No Content"
+      },
+      "D9": {
+        "found": true,
+        "quote": "PATCH ignores malformed JSON instead of returning 400",
+        "executed": true,
+        "evidence": "curl -sS -i -X PATCH \"$BASE/tasks/t0001\" -d 'not json' → HTTP/1.1 200 OK / {\"id\":\"t0001\",...,\"due\":\"\",\"tags\":null,...}"
+      }
+    },
+    "decoys": {
+      "X1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "X3": {
+        "flagged": false,
+        "quote": "Re-running against the migrated file is a no-op (byte-identical) — that part passes."
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

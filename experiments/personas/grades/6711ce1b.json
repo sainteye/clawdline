@@ -1,0 +1,50 @@
+{
+  "id": "6711ce1b",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.060997600000000006,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": true,
+        "evidence": "`<html>` → `<html lang=\"en\">`"
+      },
+      "S2": {
+        "fixed": true,
+        "evidence": "`<title>Iron &amp; Ember</title>` → `<title>How to Season a Cast Iron Skillet in the Oven | Iron &amp; Ember</title>`"
+      },
+      "S3": {
+        "fixed": true,
+        "evidence": "`<meta name=\"description\" content=\"Notes on seasoning a rusty cast iron skillet in a home oven: three thin coats of oil, an hour at 450°F, and what to fix if it turns sticky.\">` added, accurately reflects the article content."
+      },
+      "S4": {
+        "fixed": true,
+        "evidence": "`<div class=\"post-title\">How I season a cast iron skillet in the oven</div>` → `<h1>How I season a cast iron skillet in the oven</h1>`, the only heading of that level on the page."
+      },
+      "S5": {
+        "fixed": true,
+        "evidence": "`<img src=\"/images/skillet-oiled.png\" alt=\"Cast iron skillet with a thin, wiped-back coat of oil on the cooking surface\" ...>` and `<img src=\"/images/skillet-oven.png\" alt=\"Cast iron skillet turned upside down on the oven rack for baking\" ...>` — both images now have descriptive alt text consistent with the surrounding steps."
+      },
+      "S6": {
+        "fixed": true,
+        "evidence": "`<link rel=\"canonical\" href=\"https://ironandember.example/posts/seasoning-cast-iron.html\">` added, matching the exact page URL."
+      },
+      "S7": {
+        "fixed": false,
+        "evidence": "No JSON-LD or any structured data block was added anywhere in the diff; the article still has zero structured data."
+      },
+      "S8": {
+        "fixed": true,
+        "evidence": "`<a href=\"/posts/cast-iron-cornbread.html\">click here</a>` → `<a href=\"/posts/cast-iron-cornbread.html\">skillet cornbread with brown butter</a>`, descriptive anchor text."
+      }
+    },
+    "regressions": [
+      {
+        "what": "Removed the shared `.post-title` rule from the site-wide stylesheet `css/site.css` (used across the whole static site), based only on inspecting the one target article; if any other post still uses `<div class=\"post-title\">` for its heading, that page's title styling breaks with no verification shown in the diff that this was checked.",
+        "evidence": "css/site.css diff: `-.post-title { font-size: 2rem; font-weight: bold; margin: 1rem 0 0.25rem; }` removed entirely from the shared stylesheet, while only one HTML page was edited in this diff."
+      }
+    ],
+    "invented_claims": []
+  }
+}

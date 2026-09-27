@@ -1,0 +1,84 @@
+{
+  "id": "ae8dbff2",
+  "task": "evidence-collector",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.1583116,
+  "attempt": 1,
+  "grade": {
+    "verdict": "FAIL",
+    "verdict_quote": "**Verdict: FAIL — needs work.** 7 of the 8 checklist items fail.",
+    "defects": {
+      "E1": {
+        "found": true,
+        "quote": "Horizontal overflow at 375px; Checkout button not fully visible. ... Actual: page requires horizontal scroll; Checkout button's right edge (x≈399) is off-screen.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"Horizontal overflow px at 375 viewport (should be 0): 45\" and \"Checkout button box at 375 viewport: { x: 41, y: 649, width: 358, height: 42 } | viewport width 375, fully within? false\" (also file command showed mobile-375.png is 420x800)"
+      },
+      "E2": {
+        "found": true,
+        "quote": "768px viewport shows the stacked (mobile) layout, not two-column. ... CSS media query is `@media (min-width: 769px)`, excluding exactly 768px.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"At 768px: items box: ... summary box: ...\" and \"Summary to the right of items? (summary.x >= items.x + items.width): false\""
+      },
+      "E3": {
+        "found": true,
+        "quote": "clicking `+` 9× from qty=1 reaches 10, but `inc.isDisabled()` is `false` at qty=10; one more click pushes qty to **11**.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"qty after 9 clicks (expect 10): 10 | inc.disabled at qty=10 (should be true): false\" then \"qty after 1 more click at qty=10 (should stay 10): 11\""
+      },
+      "E4": {
+        "found": true,
+        "quote": "Same for −: from qty=1, click once more — qty becomes 0.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"After 5 clicks on - (qty starts at 1), qty = 0 dec disabled? true\" and \"dec.disabled at qty=1 (should be true): false\""
+      },
+      "E5": {
+        "found": true,
+        "quote": "After qty+1 post-promo, subtotal became `$1182.00` but discount stayed `−$105.30` (should recompute to `$118.20`) — discount does not follow quantity changes.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"After qty+1 with promo applied -> Subtotal: $1182.00 Discount: −$105.30 Total: $1076.70\""
+      },
+      "E6": {
+        "found": true,
+        "quote": "submit an unknown code (error shows), then submit `save10` — error text stays visible.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"Valid code (lowercase) error hidden now? false\""
+      },
+      "E7": {
+        "found": true,
+        "quote": "default cart subtotal shown as `$1053.00`, not `$1,053.00`. `formatMoney` (`public/cart.js:13-15`) uses `.toFixed(2)` with no separator.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"Subtotal text: $1053.00\""
+      },
+      "E8": {
+        "found": true,
+        "quote": "after removing all lines, \"Your cart is empty.\" shows correctly, but the Order summary panel and **Checkout button remain fully visible**.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"Checkout visible after empty? true\"; also Read of /tmp/qa-shots/empty-cart.png"
+      },
+      "E9": {
+        "found": true,
+        "quote": "incremented qty 1→3, reloaded, qty reverted to **1**. `app.js` only calls `save()` in the `.remove` handler, never in `.inc`/`.dec` handlers, so quantity edits are never persisted.",
+        "executed": true,
+        "evidence": "node scripts/qa-interact.mjs → \"Persistence: qty before reload = 3  qty after reload = 1\""
+      }
+    },
+    "decoys": {
+      "Y1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "Y3": {
+        "flagged": false,
+        "quote": ""
+      }
+    },
+    "criteria_wrongly_passed": [],
+    "wrong_claims": [],
+    "unsupported_claims": []
+  }
+}

@@ -1,0 +1,8 @@
+visible exit 0
+with-hidden exit 0
+
+## go test ./... (visible tests only)
+ok  	example.com/parcelrate	0.112s
+
+## go test ./... (with held-out tests)
+ok  	example.com/parcelrate	0.222s

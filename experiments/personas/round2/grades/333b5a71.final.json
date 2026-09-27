@@ -1,0 +1,74 @@
+{
+  "id": "333b5a71",
+  "task": "accessibility",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0554176,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "A1": {
+        "found": true,
+        "quote": "Confirm-hold dialog doesn't manage focus/trap.\" confirm-dialog.js unhides the modal (aria-modal=\"true\") but never moves focus into it and has no Escape-to-cancel or focus trap — Tab can escape behind the backdrop."
+      },
+      "A2": {
+        "found": true,
+        "quote": "The specialty dropdown is unusable by keyboard.\" js/components/specialty-select.js builds the trigger as a plain <div class=\"select-trigger\"> with only a click listener — no tabindex, no role, no keydown handling. A keyboard-only user can't open it at all."
+      },
+      "A3": {
+        "found": false,
+        "quote": ""
+      },
+      "A4": {
+        "found": true,
+        "quote": "No visible focus indicator on time-slot buttons.\" css/app.css:154-156 sets .slot-list button:focus { outline: none; } with no :focus-visible replacement (unlike .btn, which does this correctly)."
+      },
+      "A5": {
+        "found": false,
+        "quote": ""
+      },
+      "A6": {
+        "found": true,
+        "quote": "Form errors aren't exposed to assistive tech.\" js/views/checkout.js (showErrors) adds visual .invalid styling and a <p class=\"field-error\">, but never sets aria-invalid on the input or aria-describedby pointing at the error message."
+      },
+      "A7": {
+        "found": false,
+        "quote": ""
+      },
+      "A8": {
+        "found": true,
+        "quote": "No focus management on route change.\" Only confirmation.js moves focus to its heading. clinicians.js, slots.js, and checkout.js don't move focus or update document.title on navigation, so SPA route changes are silent/invisible to screen reader and keyboard users beyond the scroll-to-top."
+      },
+      "A9": {
+        "found": true,
+        "quote": "Auto-advancing carousel has no pause control.\" tips-carousel.js rotates every 5s forever with no way to stop/pause it — fails WCAG 2.2.2."
+      },
+      "A10": {
+        "found": true,
+        "quote": "Toast is the only feedback for \"someone just took that time\" (slots.js:124) and disappears after 2s — easy to miss. Consider a longer duration or putting the message in the page instead of only a toast."
+      },
+      "A11": {
+        "found": true,
+        "quote": "Tab order is broken on the main page.\" js/views/clinicians.js:38 sets tabindex=\"1\" on the search input. Any positive tabindex jumps to the front of the tab sequence, ahead of your own \"Skip to main content\" link and the header nav."
+      }
+    },
+    "decoys": {
+      "DA1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "DA3": {
+        "flagged": false,
+        "quote": "unlike .btn, which does this correctly"
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "The specialty dropdown is unusable by keyboard (A2)",
+    "leads_with_high": true
+  },
+  "hand_checked": true,
+  "corrections": []
+}

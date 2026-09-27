@@ -1,0 +1,72 @@
+{
+  "id": "b7aa9331",
+  "task": "code-reviewer",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.08906159999999999,
+  "attempt": 1,
+  "grade": {
+    "defects": {
+      "G1": {
+        "found": false,
+        "quote": ""
+      },
+      "G2": {
+        "found": true,
+        "quote": "Every `if err := ...; err != nil` here is `if`-scoped, so it shadows the function-level `err` the defer inspects. If the credit to the destination fails after the debit from the source already succeeded, the outer `err` is still `nil` when the defer runs — it commits instead of rolling back, leaving the source debited with no matching credit or ledger entries."
+      },
+      "G3": {
+        "found": true,
+        "quote": "createPayout (handler.go:150) and createTransfer (transfer.go:46) check acct.BalanceCents loaded earlier in the request, but adjustBalance (store.go:250-264) blindly applies the delta with no floor check. Two concurrent requests can each pass the check and both apply, overdrawing the account"
+      },
+      "G4": {
+        "found": true,
+        "quote": "`resp, err := c.post(ctx, body, p.Reference)` ... shadows the outer err ... Send returns (PayoutResult{}, nil) — a fake success with empty ProviderID/Status."
+      },
+      "G5": {
+        "found": true,
+        "quote": "goResult uses an unbuffered channel; waitOrTimeout (handler.go:200-209) abandons it once the timer fires... leaves the spawned goroutine blocked forever on ch <- f() with no receiver."
+      },
+      "G6": {
+        "found": true,
+        "quote": "when ctx.Done() fires during the retry backoff, the function returns without closing resp.Body, leaking the connection."
+      },
+      "G7": {
+        "found": true,
+        "quote": "lookupError has no Unwrap()`, so errors.Is(err, ErrNotFound) in writeStoreError (handler.go:252) can't see through it. Every \"account/transfer not found\" from GetAccount/GetTransfer now falls into the default branch — logged as unexpected and returned as 500 instead of 404."
+      },
+      "G8": {
+        "found": false,
+        "quote": ""
+      },
+      "G9": {
+        "found": true,
+        "quote": "startOfBusinessDay uses the wrong timezone for the date... y, m, d := now.UTC().Date()   // should be now.In(loc).Date() ... this returns a timestamp *after* now ... sent is always 0 — the daily limit is effectively disabled for that window every day."
+      },
+      "G10": {
+        "found": false,
+        "quote": ""
+      },
+      "G11": {
+        "found": false,
+        "quote": ""
+      }
+    },
+    "decoys": {
+      "D1": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D2": {
+        "flagged": false,
+        "quote": ""
+      },
+      "D3": {
+        "flagged": false,
+        "quote": "Safe today only because maxPayoutCents (25M) is under math.MaxInt32; fragile if that cap ever changes."
+      }
+    },
+    "wrong_claims": [],
+    "first_issue": "payouts.go:71-93 — shadowed err swallows exhausted-retry failures (Send returns PayoutResult{}, nil after exhausted retries, reported as a fake success)",
+    "leads_with_high": true
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "id": "seo-p1",
+  "task": "seo",
+  "grader_model": "claude-sonnet-5",
+  "grader_cost_usd": 0.0961596,
+  "attempt": 1,
+  "grade": {
+    "problems": {
+      "S1": {
+        "fixed": true,
+        "evidence": "robots.txt diff removes the comment line and 'Disallow: /blog/', leaving 'User-agent: *' / 'Allow: /' with no disallow of /blog/, /css/, or /images/."
+      },
+      "S2": {
+        "fixed": true,
+        "evidence": "services.html diff removes the line '<meta name=\"robots\" content=\"noindex, nofollow\">' entirely, with no replacement noindex directive."
+      },
+      "S3": {
+        "fixed": false,
+        "evidence": "sitemap.xml diff only removes '<url><loc>https://werkbankcycles.example/repairs.html</loc></url>'; the line '<url><loc>https://werkbankcycles.example/thanks.html</loc></url>' is untouched and remains in the sitemap, so only one of the two required removals was made."
+      },
+      "S4": {
+        "fixed": true,
+        "evidence": "blog/winter-chain-care.html: '<a href=\"/services.html\">repair prices</a>' (was /repairs.html); shop/tubeless-kit.html: '<a href=\"/services.html\">repairs and prices page</a>' (was /repairs.html). Both links now point to the existing /services.html page."
+      },
+      "S5": {
+        "fixed": false,
+        "evidence": "The diff for de/index.html contains only the nav 'Shop' link change (span onclick -> a href); the canonical tag on line 8 is not touched by the diff, so it still points to the English home page as described in the key."
+      },
+      "S6": {
+        "fixed": true,
+        "evidence": "blog/tyre-pressure.html diff: '-<link rel=\"canonical\" href=\"http://werkbankcycles.example/blog/tyre-pressure.html\">' / '+<link rel=\"canonical\" href=\"https://werkbankcycles.example/blog/tyre-pressure.html\">'."
+      },
+      "S7": {
+        "fixed": true,
+        "evidence": "shop/tubeless-kit.html diff changes the first canonical to '/shop/tubeless-kit.html' and deletes the second duplicate canonical line entirely, leaving exactly one canonical pointing to the product page."
+      },
+      "S8": {
+        "fixed": true,
+        "evidence": "contact.html: '-hreflang=\"ge\"' -> '+hreflang=\"de\"'; de/kontakt.html: '-hreflang=\"ge\"' -> '+hreflang=\"de\"'. Both files fixed."
+      },
+      "S9": {
+        "fixed": true,
+        "evidence": "de/leistungen.html diff adds '<link rel=\"alternate\" hreflang=\"en\" href=\"https://werkbankcycles.example/services.html\">' while keeping the existing self-referencing hreflang=\"de\" line, and services.html's own en/de alternates remain unchanged (untouched by its diff)."
+      },
+      "S10": {
+        "fixed": false,
+        "evidence": "No hunks in the diff touch the <title> or <meta name=\"description\"> lines of blog/tyre-pressure.html or blog/winter-chain-care.html; both retain the generic 'Blog | Werkbank Cycles' title and shared description."
+      },
+      "S11": {
+        "fixed": false,
+        "evidence": "No diff hunk in any file (index.html, contact.html, de/index.html, de/kontakt.html) adds JSON-LD or any structured data."
+      },
+      "S12": {
+        "fixed": true,
+        "evidence": "Every one of the 12 header pages (blog/index.html, blog/tyre-pressure.html, blog/winter-chain-care.html, contact.html, de/index.html, de/kontakt.html, de/leistungen.html, index.html, services.html, shop/index.html, shop/tubeless-kit.html, thanks.html) changes '<span class=\"nav-link\" onclick=\"location.href=\\'/shop/\\'\">Shop</span>' to '<a href=\"/shop/\">Shop</a>'."
+      }
+    },
+    "decoys": {
+      "DS1": {
+        "changed": false,
+        "evidence": "thanks.html diff only shows the nav 'Shop' link change; the noindex meta tag line is not present in the diff, meaning it is unchanged."
+      },
+      "DS2": {
+        "changed": false,
+        "evidence": "blog/winter-chain-care-print.html does not appear anywhere in the diff."
+      },
+      "DS3": {
+        "changed": false,
+        "evidence": "blog/tyre-pressure.html's diff only touches the canonical URL and the nav Shop link; no hunk touches the comment link or its rel attribute."
+      }
+    },
+    "regressions": [],
+    "invented_claims": []
+  }
+}

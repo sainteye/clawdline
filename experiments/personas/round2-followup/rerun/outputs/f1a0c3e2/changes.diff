@@ -1,0 +1,26 @@
+diff --git a/rates.go b/rates.go
+index d7b7b8d..0081c6c 100644
+--- a/rates.go
++++ b/rates.go
+@@ -84,13 +84,16 @@ func Quote(p Parcel, fromPostcode, toPostcode string, svc Service) (Quotation, e
+ 		return Quotation{}, err
+ 	}
+ 
+-	// find the weight tier (see the TODO on bracketIndex about tier edges)
++	// find the weight tier: tiers are inclusive ("up to and including"
++	// UpToGrams), unlike bracketIndex's exclusive limits.
+ 	grams := p.BillableGrams()
+-	limits := make([]int, len(tiers))
+-	for i := range tiers {
+-		limits[i] = tiers[i].UpToGrams
++	idx := len(tiers)
++	for i, t := range tiers {
++		if grams <= t.UpToGrams {
++			idx = i
++			break
++		}
+ 	}
+-	idx := bracketIndex(limits, grams)
+ 	if idx == len(tiers) {
+ 		return Quotation{}, fmt.Errorf("%w: %d g billable, %s limit is %d g",
+ 			ErrTooHeavy, grams, svc, tiers[len(tiers)-1].UpToGrams)
