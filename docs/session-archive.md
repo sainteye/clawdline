@@ -88,5 +88,22 @@ The bounds — 500 archived conversations and 20 per restore — are registered 
 - **A dropped row is not announced.** Past 500 the oldest row goes and the diagnostics count says
   so; its transcript is still on disk and resumable from the place's past list while it is on it.
 - **A transcript deleted since the archive cannot be restored** (`conversation_not_found`).
-- **The console's Archive action and sidebar section are a separate change.** Until it lands, the
-  three relay words sit in the console's `DEFERRED` list.
+- **Over Clawdline Cloud a blocked archive loses its reasons.** The copied `cloud-failure.js` drops
+  `reasons` from `close_blocked`, as it does for a close (the F6 todo in
+  `cloud/relay-writer.test.ts`): the sheet still comes back to be forced, without the list.
+
+## The console
+
+- **The swipe.** A row that names its conversation (`sessionId`) swipes open to two 88px buttons,
+  封存 left of 關閉 (`session/swipe.ts` `actionWidth`, `session/swipe-archive.css`); a row without
+  one keeps the 126px close alone and draws no 封存. Neither button acts: each opens the
+  confirmation.
+- **The confirmation** is the close's sheet with the kind `archive` (`overlays/action-confirm.ts`):
+  the same work reminder, the same `close_blocked` reopen and forced second decision, sent to
+  `POST /v1/sessions/{id}/archive`. It waits for the archive's own answer rather than the row
+  leaving the list, because `archive_not_recorded` arrives after the close.
+- **The Archive page** (`pages/archive.tsx`, drawer row 封存) lists `GET /v1/sessions/archived`
+  with each entry's mark, title in the row's tint, folder, assistant, persona and when it was
+  archived, and restores one conversation per press. An entry leaves only when it opened.
+- The three relay words are carried (`cloud/carry.ts`), wired in `cloud/relay-writer.ts`.
+- `session/archive.e2e.ts` drives the whole path on a 390px phone.
