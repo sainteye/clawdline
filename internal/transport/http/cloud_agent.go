@@ -28,13 +28,13 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/sainteye/clawdline/internal/adapters/limits"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -102,20 +102,23 @@ func (s *Server) cloudPairingAgentRoute(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	home, err := os.UserHomeDir()
-	if info, statErr := os.Stat(home); err != nil || statErr != nil || !info.IsDir() {
-		writeAuthRefusal(w, http.StatusConflict, "no_home",
-			"This machine has no home directory for the assistant to start in.")
+	checked, _ := pairing.CheckOffer(offer)
+	projectDir, err := orchestrator.PairingAgentDir(s.cfg.Dir)
+	if err != nil {
+		log.Printf("cloud: could not make the folder a pairing hand-off starts in: %v", err)
+		writeAuthRefusal(w, http.StatusInternalServerError, "no_folder",
+			"This machine could not make the folder the assistant starts in.")
 		return
 	}
 	run := orchestrator.PairingAgentRun{
 		TaskID:      orchestrator.NewUUID(),
 		Assistant:   pairAgentAssistant(),
-		ProjectDir:  home,
+		ProjectDir:  projectDir,
 		MachineID:   machineID,
 		MachineName: name,
 		Offer:       offer,
 	}
+	trust, trustReason := pairAgentTrust(run.Assistant, projectDir)
 	dispatch := s.pairAgent
 	if dispatch == nil {
 		if s.broker == nil {
@@ -134,7 +137,87 @@ func (s *Server) cloudPairingAgentRoute(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	log.Printf("cloud: handed the pairing with %s to %s task %s", machineID, run.Assistant, out.Record.ID)
-	writeJSON(w, map[string]any{"mode": "agent", "task_id": out.Record.ID})
+	answer := map[string]any{"mode": "agent", "task_id": out.Record.ID, "trust": trust, "expires_at": checked.ExpiresAt}
+	if trustReason != "" {
+		answer["trust_reason"] = trustReason
+	}
+	writeJSON(w, answer)
+}
+
+// Whether the assistant's first screen will be a composer.
+const (
+	// pairAgentTrustRecorded: Claude Code has the folder as trusted, now or
+	// from before.
+	pairAgentTrustRecorded = "recorded"
+	// pairAgentTrustNotRecorded: it could not be written, so the new tab may
+	// be asking; the card says so.
+	pairAgentTrustNotRecorded = "not_recorded"
+	// pairAgentTrustPerLaunch: Codex, answered on its command line for this
+	// one run (orchestrator trustArgs), with nothing written.
+	pairAgentTrustPerLaunch = "per_launch"
+)
+
+// pairAgentTrust records the hand-off's own folder as one Claude Code trusts.
+//
+// The person pressed Start in the native sheet that names the machine and the
+// command, which is the answer to the question Claude Code would otherwise ask
+// in a tab nobody is looking at. It is the folder PairingAgentDir made — never
+// the home directory, never a project, never a worktree. A failure does not
+// stop the hand-off; it is said, with why.
+func pairAgentTrust(assistant, dir string) (string, string) {
+	if assistant != projects.AssistantClaude {
+		return pairAgentTrustPerLaunch, ""
+	}
+	config, err := projects.ClaudeConfigPath()
+	if err == nil {
+		_, err = projects.TrustClaudeProject(config, dir)
+	}
+	if err != nil {
+		log.Printf("cloud: the pairing hand-off's folder was not recorded as trusted by Claude Code: %v", err)
+		return pairAgentTrustNotRecorded, err.Error()
+	}
+	return pairAgentTrustRecorded, ""
+}
+
+// `GET /v1/cloud/pairing/agent/<task_id>` — where a hand-off is, for the card.
+//
+// The shell polls this after a hand-off and passes each change to the Cloud
+// page, so the card can say the AI is starting, working, done, or why it
+// stopped. This machine's own token only, like the POST; it answers tasks of
+// kind cloud-pairing and nothing else, so it is not a way to read other work;
+// and it answers the state and the task's own sentence, never the brief.
+func (s *Server) cloudPairingAgentTaskRoute(w http.ResponseWriter, r *http.Request) {
+	if !requireLocal(w, r) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request", "A pairing hand-off is read with GET.")
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/v1/cloud/pairing/agent/")
+	if !orchestrator.IsTaskID(id) {
+		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No pairing hand-off has that id.")
+		return
+	}
+	read := s.pairAgentTask
+	if read == nil {
+		if s.broker == nil {
+			writeAuthRefusal(w, http.StatusServiceUnavailable, "broker_unavailable",
+				"This daemon has no assistant tasks to read.")
+			return
+		}
+		read = func(ctx context.Context, id string) (orchestrator.Record, error) {
+			rec, _, err := s.broker.Record(ctx, id)
+			return rec, err
+		}
+	}
+	rec, err := read(r.Context(), id)
+	if err != nil || rec.Kind != orchestrator.PairingAgentKind {
+		// Another kind of task reads as no task at all.
+		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No pairing hand-off has that id.")
+		return
+	}
+	writeJSON(w, orchestrator.PairingAgentProgressOf(rec))
 }
 
 // pairAgentMachineName is a machine's name reduced to what may sit in a brief:

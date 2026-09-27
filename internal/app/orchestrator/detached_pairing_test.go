@@ -1,8 +1,14 @@
 package orchestrator
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 )
 
 const testPairingOffer = "eyJ2ZXJzaW9uIjoxfQ"
@@ -72,5 +78,75 @@ func TestAPairingHandOffTitleSurvivesAnAwkwardName(t *testing.T) {
 	}
 	if got := PairingAgentTitle(strings.Repeat("a", 80)); len([]rune(got)) > 60 {
 		t.Fatalf("title is %d characters", len([]rune(got)))
+	}
+}
+
+// The assistant starts in a folder of the daemon's own, private, and the same
+// one every time — not the home directory.
+func TestAPairingHandOffStartsInItsOwnPrivateFolder(t *testing.T) {
+	state := t.TempDir()
+	dir, err := PairingAgentDir(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != filepath.Join(state, PairingAgentDirName) {
+		t.Fatalf("the folder is %q", dir)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	again, err := PairingAgentDir(state)
+	if err != nil || again != dir {
+		t.Fatalf("a second hand-off got %q, %v", again, err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
+		t.Fatalf("the folder is %v, want 0700", info.Mode().Perm())
+	}
+	blocked := t.TempDir()
+	if err := os.WriteFile(filepath.Join(blocked, PairingAgentDirName), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PairingAgentDir(blocked); err == nil {
+		t.Fatal("a file where the folder goes was taken for the folder")
+	}
+}
+
+// The card's words for a hand-off, from the record — and never the offer, even
+// when the assistant repeated it.
+func TestAPairingHandOffProgressIsAWordAndNeverTheOffer(t *testing.T) {
+	brief := PairingAgentInstructions("mac_x", "x", testPairingOffer)
+	at := time.Now()
+	cases := []struct {
+		name string
+		r    Record
+		want PairingAgentProgress
+	}{
+		{"queued", Record{State: StateQueued}, PairingAgentProgress{State: PairingAgentStarting}},
+		{"briefed, not signed", Record{State: StateBriefed}, PairingAgentProgress{State: PairingAgentStarting}},
+		{"a dialog", Record{State: StateSpawning, AwaitingDialogSince: at}, PairingAgentProgress{State: PairingAgentDialog}},
+		{"signed", Record{State: StateBriefed, AcceptedAt: at}, PairingAgentProgress{State: PairingAgentWorking}},
+		{"done", Record{State: StateSuccess, Instructions: brief,
+			Result: &taskdir.Result{Summary: "ran clawdline cloud pair -offer '" + testPairingOffer + "'; browser AB"}},
+			PairingAgentProgress{State: PairingAgentDone, Summary: "ran clawdline cloud pair -offer '…'; browser AB"}},
+		{"failed", Record{State: StateFailure, Instructions: brief, Result: &taskdir.Result{Summary: "ssh: no route"}},
+			PairingAgentProgress{State: PairingAgentFailed, FailedReason: "ssh: no route"}},
+		{"timed out", Record{State: StateTimeout, Verdict: "no result in 15 minutes"},
+			PairingAgentProgress{State: PairingAgentFailed, FailedReason: "no result in 15 minutes"}},
+		{"tab never opened", Record{State: StateSpawnFailed, SpawnError: "no terminal"},
+			PairingAgentProgress{State: PairingAgentFailed, FailedReason: "no terminal"}},
+		{"cancelled", Record{State: StateCancelled}, PairingAgentProgress{State: PairingAgentFailed, FailedReason: "cancelled"}},
+	}
+	for _, c := range cases {
+		got := PairingAgentProgressOf(c.r)
+		if got != c.want {
+			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
+		}
+		if strings.Contains(got.Summary+got.FailedReason, testPairingOffer) {
+			t.Errorf("%s: the offer reached the card", c.name)
+		}
 	}
 }

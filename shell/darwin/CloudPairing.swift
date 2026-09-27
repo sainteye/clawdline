@@ -193,6 +193,8 @@ final class CloudSelfPairing {
 private struct DaemonPairAgent: Decodable {
     let mode: String?
     let taskID: String?
+    let trust: String?
+    let expiresAt: Double?
     let error: Refusal?
 
     struct Refusal: Decodable {
@@ -201,9 +203,25 @@ private struct DaemonPairAgent: Decodable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case mode, error
+        case mode, error, trust
         case taskID = "task_id"
+        case expiresAt = "expires_at"
     }
+}
+
+/// What `GET /v1/cloud/pairing/agent/<task_id>` answers: a word for where the
+/// hand-off is and, once it ended, the task's own sentence. Never the offer.
+private struct DaemonPairAgentProgress: Decodable, Equatable {
+    let state: String
+    let summary: String?
+    let failedReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case state, summary
+        case failedReason = "failed_reason"
+    }
+
+    var ended: Bool { state == "done" || state == "failed" }
 }
 
 /// The Cloud tab's way of asking this Mac to carry a pairing offer to another
@@ -270,19 +288,75 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
                 refuse("cancelled")
                 return
             }
+            let view = message.webView
             Task { @MainActor in
                 defer { self?.asking = false }
-                let reply = await Self.handOff(offer: offer, machineID: machineID, machineName: shownName)
+                let (reply, expiresAt) = await Self.handOff(offer: offer, machineID: machineID, machineName: shownName)
                 replyHandler(reply, nil)
+                if let taskID = reply["task_id"] as? String, !taskID.isEmpty, let view {
+                    self?.follow(taskID: taskID, until: expiresAt, in: view)
+                }
             }
         }
     }
 
-    /// The daemon's route, with this Mac's own token.
-    private static func handOff(offer: String, machineID: String, machineName: String) async -> [String: Any] {
+    /// The one hand-off being followed; a new one replaces it.
+    private var following: Task<Void, Never>?
+
+    /// Follows a hand-off's task and tells the Cloud page each time it moves,
+    /// so the card can show the AI starting, working, done, or why it
+    /// stopped, instead of one sentence for the minute or two it takes.
+    ///
+    /// Every ~3 s until the task ends or the offer runs out. Each change is
+    /// dispatched on the page's `window` as a `clawdline-pair-agent` event —
+    /// only while the view is still on Cloud's origin; a view that went
+    /// elsewhere is not told, and the following stops.
+    private func follow(taskID: String, until expiresAt: Date?, in view: WKWebView) {
+        following?.cancel()
+        // Past the offer, the card has already said it ran out; a task with
+        // no expiry is followed for its own timeout and a little more.
+        let deadline = (expiresAt ?? Date().addingTimeInterval(16 * 60)).addingTimeInterval(5)
+        following = Task { @MainActor [weak view] in
+            var last: DaemonPairAgentProgress?
+            while !Task.isCancelled, Date() < deadline {
+                if let now = await Self.progress(taskID: taskID), now != last {
+                    last = now
+                    guard let view, let here = view.url, isCloud(here) else { return }
+                    Self.tell(view, taskID: taskID, now)
+                    if now.ended { return }
+                }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    private static func progress(taskID: String) async -> DaemonPairAgentProgress? {
+        guard let token = LocalToken.read() else { return nil }
+        var request = URLRequest(url: home.appendingPathComponent("v1/cloud/pairing/agent/\(taskID)"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONDecoder().decode(DaemonPairAgentProgress.self, from: data)
+    }
+
+    private static func tell(_ view: WKWebView, taskID: String, _ now: DaemonPairAgentProgress) {
+        var detail: [String: Any] = ["task_id": taskID, "state": now.state]
+        if let summary = now.summary { detail["summary"] = summary }
+        if let reason = now.failedReason { detail["failed_reason"] = reason }
+        guard let data = try? JSONSerialization.data(withJSONObject: detail),
+              let json = String(data: data, encoding: .utf8) else { return }
+        view.evaluateJavaScript(
+            "window.dispatchEvent(new CustomEvent('clawdline-pair-agent', {detail: \(json)})); true",
+            completionHandler: nil)
+    }
+
+    /// The daemon's route, with this Mac's own token, and when the offer runs
+    /// out, for following the task it started.
+    private static func handOff(offer: String, machineID: String, machineName: String) async -> ([String: Any], Date?) {
         guard let token = LocalToken.read() else {
             shellLog("cloud: no local token yet; cannot hand the pairing to this Mac")
-            return ["ok": false, "error": "no_token"]
+            return (["ok": false, "error": "no_token"], nil)
         }
         var request = URLRequest(url: home.appendingPathComponent("v1/cloud/pairing/agent"))
         request.httpMethod = "POST"
@@ -292,7 +366,7 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
         guard let payload = try? JSONSerialization.data(withJSONObject: [
             "offer": offer, "machine_id": machineID, "machine_name": machineName,
         ]) else {
-            return ["ok": false, "error": "bad_request"]
+            return (["ok": false, "error": "bad_request"], nil)
         }
         request.httpBody = payload
         do {
@@ -303,13 +377,14 @@ final class CloudPairAgent: NSObject, WKScriptMessageHandlerWithReply {
                 // A refusal is words about the request, never the offer.
                 let code = said?.error?.code ?? "http_\(status)"
                 shellLog("cloud: this Mac refused the pairing hand-off with \(machineID): HTTP \(status) \(code)")
-                return ["ok": false, "error": said?.error?.message ?? code]
+                return (["ok": false, "error": said?.error?.message ?? code], nil)
             }
-            shellLog("cloud: handed the pairing with \(machineID) to this Mac (\(mode) \(said?.taskID ?? ""))")
-            return ["ok": true, "mode": mode, "task_id": said?.taskID ?? ""]
+            shellLog("cloud: handed the pairing with \(machineID) to this Mac (\(mode) \(said?.taskID ?? "") trust \(said?.trust ?? "-"))")
+            let expires = said?.expiresAt.flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0 / 1000) : nil }
+            return (["ok": true, "mode": mode, "task_id": said?.taskID ?? "", "trust": said?.trust ?? ""], expires)
         } catch {
             shellLog("cloud: could not reach this Mac to hand the pairing over — \(error.localizedDescription)")
-            return ["ok": false, "error": "unreachable"]
+            return (["ok": false, "error": "unreachable"], nil)
         }
     }
 

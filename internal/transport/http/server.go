@@ -139,6 +139,9 @@ type Server struct {
 	// the broker's own DispatchPairingAgent. Tests replace it so that they read
 	// the brief without opening a terminal.
 	pairAgent func(context.Context, orchestrator.PairingAgentRun) (orchestrator.Dispatched, error)
+	// pairAgentTask is the record-reading seam behind
+	// /v1/cloud/pairing/agent/<task_id>: nil reads the broker's own record.
+	pairAgentTask func(context.Context, string) (orchestrator.Record, error)
 }
 
 // servedBy names which implementation answered. It is how a reader tells this
@@ -304,6 +307,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/cloud/pairing", s.cloudPairingRoute)
 	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
 	mux.HandleFunc("/v1/cloud/pairing/agent", s.cloudPairingAgentRoute)
+	mux.HandleFunc("/v1/cloud/pairing/agent/", s.cloudPairingAgentTaskRoute)
 	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
 	mux.HandleFunc("/v1/cloud/keys/rotate", s.cloudRotateRoute)
 	// The account-free way in from outside: what this daemon's cloudflared is
