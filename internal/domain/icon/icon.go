@@ -182,8 +182,11 @@ type Registry struct {
 	overrides    map[string]Grid
 	mu           sync.Mutex
 	path         string
-	stamp        string
-	projects     map[string]entry
+	// home is this account's home directory. A row there names that
+	// directory alone, never its descendants; see covers.
+	home     string
+	stamp    string
+	projects map[string]entry
 }
 
 func NewRegistry() *Registry {
@@ -191,7 +194,7 @@ func NewRegistry() *Registry {
 	if err != nil {
 		return &Registry{}
 	}
-	return &Registry{path: home + "/.claude/project-icons.json"}
+	return &Registry{path: home + "/.claude/project-icons.json", home: home}
 }
 
 func (r *Registry) load() map[string]entry {
@@ -266,7 +269,7 @@ func (r *Registry) legacyFor(cwd string) Grid {
 	best := ""
 	var bestRow entry
 	for path, row := range r.load() {
-		if cwd == path || strings.HasPrefix(cwd, path+"/") {
+		if covers(path, cwd, r.home) {
 			if len(path) > len(best) {
 				best, bestRow = path, row
 			}
@@ -325,6 +328,10 @@ func (r *Registry) MatchSpelled(cwd string, spell func(string) string) (path, la
 	if here == "" {
 		return "", "", false
 	}
+	home := ""
+	if r.home != "" {
+		home = spell(r.home)
+	}
 	best, bestRaw := "", ""
 	var bestRow entry
 	for raw, row := range r.load() {
@@ -332,7 +339,7 @@ func (r *Registry) MatchSpelled(cwd string, spell func(string) string) (path, la
 		if candidate == "" {
 			continue
 		}
-		if here != candidate && !strings.HasPrefix(here, candidate+"/") {
+		if !covers(candidate, here, home) {
 			continue
 		}
 		if len(candidate) < len(best) {
@@ -347,6 +354,23 @@ func (r *Registry) MatchSpelled(cwd string, spell func(string) string) (path, la
 		return "", "", false
 	}
 	return best, bestRow.Label, true
+}
+
+// covers is whether the registry row at `row` speaks for the directory `here`:
+// the row's own directory and everything under it — except a row at the home
+// directory, which speaks for the home directory alone. Such a row is what
+// running the icon skill from $HOME leaves behind, and inheriting it would call
+// every unregistered project on the machine "home" and draw them all alike; the
+// places list already refuses the home directory as a place. All three paths
+// are in one spelling.
+func covers(row, here, home string) bool {
+	if here == row {
+		return true
+	}
+	if row == home {
+		return false
+	}
+	return strings.HasPrefix(here, row+"/")
 }
 
 func fromEntry(e entry) (Grid, bool) {

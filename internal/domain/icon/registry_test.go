@@ -3,6 +3,7 @@ package icon
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -104,5 +105,58 @@ func TestMatchLeavesAnUnnamedRowUnnamed(t *testing.T) {
 	}
 	if got := r.Label("/w/shop"); got != "" {
 		t.Errorf("Label answered %q", got)
+	}
+}
+
+// A row at the home directory names the home directory and nothing under it.
+// Someone who ran the icon skill from $HOME registered it, and every project
+// under it without a row of its own was then drawn and called "home" — the
+// places list already refuses the home directory as a place. A row deeper than
+// it still names its own subdirectories.
+func TestAHomeRowNamesOnlyTheHomeDirectory(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	r := registryAt(t, `{"projects":{
+		"`+home+`":{"label":"home","hue":11},
+		"`+home+`/projects/clawdline":{"label":"clawdline"}
+	}}`)
+	r.home = home
+	if got := r.Label(filepath.Join(home, "projects", "dualjs")); got != "" {
+		t.Errorf("a project under home is called %q", got)
+	}
+	if path, _, ok := r.Match(filepath.Join(home, "work")); ok {
+		t.Errorf("a directory under home matched the row %q", path)
+	}
+	if got := r.Label(filepath.Join(home, "projects", "clawdline", "web")); got != "clawdline" {
+		t.Errorf("a registered project's subdirectory is called %q", got)
+	}
+	if got := r.Label(home); got != "home" {
+		t.Errorf("the home directory itself is called %q", got)
+	}
+	homeMark := r.For(home)
+	under := filepath.Join(home, "projects", "dualjs")
+	if got := r.For(under); reflect.DeepEqual(got, homeMark) {
+		t.Error("a project under home is drawn with the home row's mark")
+	} else if !reflect.DeepEqual(got, creatureFromSeed(StableHash(under))) {
+		t.Error("a project under home is not drawn from its own path")
+	}
+
+	// The same through a symbolic link to home, in both spellings.
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(home, link); err != nil {
+		t.Skipf("this platform would not make a symbolic link: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "projects", "dualjs"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	spell := func(p string) string {
+		if out, err := filepath.EvalSymlinks(filepath.Clean(p)); err == nil {
+			return out
+		}
+		return filepath.Clean(p)
+	}
+	r.home = link
+	if path, _, ok := r.MatchSpelled(filepath.Join(link, "projects", "dualjs"), spell); ok {
+		t.Errorf("a directory under a linked home matched the row %q", path)
 	}
 }
