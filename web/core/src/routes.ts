@@ -16,6 +16,9 @@ export const routes = {
   coordinator: "/v1/next/coordinator",
   strings: "/v1/strings",
   transcript: "/v1/transcript",
+  // Archived Sessions (docs/session-archive.md): the list and the restore.
+  archived: "/v1/sessions/archived",
+  restoreArchived: "/v1/sessions/archived/restore",
 } as const
 
 /**
@@ -30,6 +33,7 @@ export const sessionRoutes = {
   send: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/send`,
   interrupt: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/interrupt`,
   close: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/close`,
+  archive: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/archive`,
   title: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/title`,
   smartTitle: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/smart-title`,
   agent: (id: string, agent: string) =>
