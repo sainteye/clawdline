@@ -594,8 +594,9 @@ echo "Clean up the release notes before the next release." | \
   in order, or — when you give none — two or more top-level Markdown list rows of the description.
   Nothing is typed into your terminal; you asked for it. Work the steps in order, complete each
   one when it is verified (`clawdline item steps <item id>`, `clawdline item step-done <item id>
-  <step id>`; `clawdline item step-add` adds one the work turns out to need), and advance the phases with `clawdline item phase` as for any assigned item (below). An Epic, Refactor or Plan is created
-  unassigned, in Planning, and takes no steps (`planning_has_no_steps`).
+  <step id>`; `clawdline item step-add` adds one the work turns out to need), and advance the phases with `clawdline item phase` as for any assigned item (below). An Epic arrives
+  assigned the same way, and then follows the Epic procedure (below) before it may be implemented.
+  A Refactor or Plan is created unassigned, in Planning, and takes no steps (`planning_has_no_steps`).
 - The person sees the card marked "Created by the Session from your message at HH:MM", with their
   words quoted.
 - Refusals, each writing nothing: `run_unknown` (no run named, or none issued), `run_expired`
@@ -631,7 +632,7 @@ clawdline item claim <item id>
   `session_not_found`, `child_session` (as for `item add`); `work_not_found`; `project_mismatch`
   (the item is in a Project you do not work in); `item_assigned` (it already has a Session, or one
   is being opened for it — only the person moves an item between Sessions); `item_terminal` (done or
-  cancelled); `planning_not_assignable` (an Epic, Refactor or Plan stays in Planning);
+  cancelled); `planning_not_assignable` (a Refactor or Plan stays in Planning; an Epic can be claimed);
   `version_conflict` (it changed; run the command again); `run_claims_exhausted` (one message backs
   at most five claims).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
@@ -861,6 +862,49 @@ Board item and opens directly from the Session's Recently Done row.
 
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
+
+### Epic: plan, then review
+
+An Epic is assignable like a Feature or Issue and moves through the same phases, but it is large, so
+the daemon makes a second reader check its plan before code is written: **an Epic cannot go from
+`assigned` to `implementing` until it has a `plan` document and a `plan_review` document written
+after the latest plan.** When you own an Epic:
+
+1. Plan it carefully and write the plan onto the item:
+   ```
+   clawdline item doc <item id> --role plan --title "Plan" --body-file plan.md
+   ```
+2. Dispatch a read-only child whose brief is to review that plan critically — what is missing,
+   wrong or risky:
+   ```
+   clawdline dispatch --kind plan_review --work-id <item id> --claims "" …
+   ```
+3. When it finishes with success, record its review, written for the person — what it found and
+   what the plan changed in response:
+   ```
+   clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
+   ```
+   If the review found real problems, revise the plan (a new `plan` document) and have that one
+   reviewed again: a plan written after the last review needs a fresh review.
+4. Break the work into steps with `clawdline item step-add <item id> …`.
+5. Only then `clawdline item phase <item id> implementing`.
+
+`clawdline item doc` reads the item for its version and last document position, prints its
+Idempotency-Key (`--key` retries the same write) and prints the item. The body comes from
+`--body-file` or stdin. It is `POST /v1/work/v2/agent/items/<id>/documents` with
+`{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`; the roles
+are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and `plan_review`.
+
+- `plan` and `plan_review` belong to an Epic only (`document_role_not_applicable`).
+- A `plan_review`'s `reference` is the task id of the Clawdline child that reviewed the plan. The
+  daemon accepts it only when that task exists (`plan_review_task_unknown`), was dispatched by the
+  item's owning Session (`plan_review_task_not_owned`), is on this item's line if it names one
+  (`plan_review_task_other_item`), has kind `plan_review` (`plan_review_task_wrong_kind`), finished
+  with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
+  (`plan_review_task_stale`). A review with no plan before it is refused `epic_plan_required`.
+- `clawdline item phase <item id> implementing` on an Epic is refused `epic_plan_required` (no
+  plan yet) or `epic_plan_review_required` (no review newer than the latest plan), `409` like the
+  other transition refusals.
 
 ## 11. Coordination
 

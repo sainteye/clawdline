@@ -3,6 +3,12 @@
 > **這一頁描述目前已落地的 v1。2026-09-22 已核准、但尚未實作的替代設計在
 > [`work-system-v2.md`](work-system-v2.md)，其上線驗收契約在
 > [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md)。完成切換以前，現有程式行為仍以本頁為準。**
+>
+> **v2 Board: an Epic is assignable behind a plan-and-review gate (2026-09-27).** Refactor and Plan
+> stay in Planning. An Epic enters `implementing` only after its owner writes a `plan` document and
+> records a child's `plan_review` of the latest plan, because an Epic is large and a second reader
+> checks the plan before code is written. The lifecycle, commands and refusal codes are in
+> [`work-system-v2.md` §6.4](work-system-v2.md).
 
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon

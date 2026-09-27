@@ -90,12 +90,13 @@ The closed kind vocabulary is:
 | --- | --- | --- | --- |
 | `feature` | Unassigned | yes | A user-visible capability or coherent product change |
 | `issue` | Unassigned | yes | A defect or bounded problem to correct |
-| `epic` | Planning | no | A container or direction that may later yield executable items |
+| `epic` | Unassigned | yes, behind a plan-and-review gate (§6.4) | A large body of work its owner plans, has reviewed, and then executes in steps |
 | `refactor` | Planning | no | A planned structural improvement, not yet execution work |
 | `plan` | Planning | no | A saved plan or investigation direction |
 
-Planning items are retained and editable but do not acquire an owner or enter the execution
-lifecycle in v2.0. Later work may create linked Feature/Issue items; it must not silently mutate a
+Planning items (Refactor and Plan) are retained and editable but do not acquire an owner or enter
+the execution lifecycle in v2.0. Epic was a planning kind until 2026-09-27; it became executable
+then, and Epics already in a store simply appear in Unassigned — nothing was migrated. Later work may create linked Feature/Issue items; it must not silently mutate a
 planning item into executable work.
 
 The local `issue` kind is not a GitHub Issue and does not call GitHub. Any future external link is
@@ -133,8 +134,9 @@ The current owner is the one active assignment. A failed attempt is history, not
 
 ### 5.2 Documents
 
-An item may have ordered document references with a closed role such as `spec`, `design`, `test`,
-`deploy`, or `other`. A document may carry Markdown content or a repository-relative path/URL with
+An item may have ordered document references with a closed role: `spec`, `design`, `test`,
+`deploy`, `completion_report`, `other`, and — on an Epic only (`document_role_not_applicable`
+elsewhere) — `plan` and `plan_review`, the record §6.4's gate reads. A document may carry Markdown content or a repository-relative path/URL with
 a summary. The system does not copy an entire repository document merely to show that it exists.
 
 ### 5.3 Steps
@@ -282,6 +284,34 @@ When the policy is `agent_decides`, skipping deployment requires an Agent-author
 `not_applicable` decision with a concrete reason. `done` is refused if neither deploy evidence nor
 that decision exists. A person may change the policy; the Agent may not.
 
+### 6.4 An Epic is planned and reviewed before it is implemented
+
+An Epic is large, so a second reader checks its plan before any code is written: an Epic cannot go
+`assigned → implementing` until it holds a `plan` document and a `plan_review` document written
+after the latest `plan`. The owner writes the plan (`clawdline item doc <id> --role plan`),
+dispatches a read-only child with `--kind plan_review --work-id <id>`, and records that child's
+review as a `plan_review` whose `reference` is the child's task id and whose body is the review's
+substance for the person — what it found and what the plan changed in response. A plan rewritten
+after a review needs a fresh review. Then the owner breaks the Epic into steps and moves it to
+`implementing`. Feature and Issue are unaffected.
+
+The phase route refuses the transition with `409 epic_plan_required` (no plan) or
+`409 epic_plan_review_required` (no review newer than the latest plan). The document route accepts
+a `plan_review` only when its task is a real review of this plan, read from the broker's task
+record in the same transaction as the item's owner: the task exists
+(`plan_review_task_unknown`), was dispatched by the item's owning Session
+(`plan_review_task_not_owned`), is on this item's line when it names one
+(`plan_review_task_other_item`), has kind `plan_review` (`plan_review_task_wrong_kind`), finished
+with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
+(`plan_review_task_stale`), each a `422`; a review with no plan is `epic_plan_required`. A dispatch
+may name a v2 Board item as its `work_id`: the broker accepts one in the dispatch's Project that is
+not terminal, and leaves the item's phase to its owner.
+
+Documents are ordered for the gate by their creation second and then by insertion, so a plan and a
+review written in the same second keep the order they were written in. The briefs an Epic's owner
+receives — typed into an existing Session, or a new Session's Root Assignment acceptance — spell the
+procedure out, and `clawdline item add|claim` prints it when the item is an Epic.
+
 ## 7. Authority
 
 | Operation | Person/device | Owning Agent | Other Agent | Broker/rule |
@@ -342,17 +372,17 @@ run named), is within the one-day relay window (`run_expired`), and was said to 
 (`run_other_session`); the conversation is a live, non-child Session (`session_not_found`,
 `child_session`); the Project is in the catalog (`project_not_found`); an executable item is in the
 Project the Session works in (`project_mismatch`); the usual title and description rules; at most
-128 explicit steps (`too_many_steps`), none on a planning kind (`planning_has_no_steps`); and one
+128 explicit steps (`too_many_steps`), none on a planning kind, Refactor or Plan (`planning_has_no_steps`); and one
 run backs at most five created items, open or closed (`run_items_exhausted`, capacity row
 `run.created_items`).
 
 One transaction writes the item with `created_by = user_via_session:<run>` and an `item.created`
-event carrying `via_run` and `session_id`. For Feature and Issue it also writes an active
+event carrying `via_run` and `session_id`. For Feature, Issue and Epic it also writes an active
 `existing_session` assignment to that Session, moves the item to `assigned`, and writes its steps:
 the explicit `steps` in order, or — when there are none — the description's two or more top-level
 list rows exactly as a person's assignment seeds them. Explicit steps replace that seeding, so no
-step is written twice. Nothing is typed into the Session's terminal: it asked. Epic, Refactor and
-Plan are created unassigned in Planning, as a person's would be.
+step is written twice. Nothing is typed into the Session's terminal: it asked. Refactor and Plan
+are created unassigned in Planning, as a person's would be.
 
 The run now keeps an excerpt of the message (280 characters, whitespace folded, cut on a character
 boundary with an ellipsis; runs issued earlier have none), and the item keeps its provenance in
@@ -381,7 +411,7 @@ There is no field naming a Session or terminal: the item goes to the Session the
 and only to it. The run and Session are checked exactly as §7.1 checks them (`run_unknown`,
 `run_expired`, `run_other_session`, `session_not_found`, `child_session`), then the item: it exists
 (`work_not_found`), is in the Project the Session works in (`project_mismatch`, the person's
-`existing_session` check), is not a planning kind (`planning_not_assignable`) or finished
+`existing_session` check), is not a planning kind, Refactor or Plan (`planning_not_assignable`) or finished
 (`item_terminal`), has not changed (`version_conflict`), and has no Session and none being opened
 for it (`item_assigned` — a person may move an item between Sessions, a Session may only take one
 nobody holds). One run backs at most five claims, active or released (`run_claims_exhausted`,

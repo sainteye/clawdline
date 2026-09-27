@@ -19,9 +19,10 @@ import (
 // for this Session under that message's run, when the message told it to.
 // `steps` lists an item's steps with their
 // ids, `step-add` breaks an item this Session owns into further steps,
-// `step-done` completes one after it is verified, and `phase` moves an
-// item this Session owns to its next execution phase with that phase's
-// evidence (docs/work-system-v2.md §6).
+// `step-done` completes one after it is verified, `doc` adds a document to
+// an item this Session owns — an Epic's plan and the review of it are two —
+// and `phase` moves an item this Session owns to its next execution phase
+// with that phase's evidence (docs/work-system-v2.md §6).
 //
 // A person's TODO list said together with a Board item is that item's steps:
 // pass them with --step. They are not this Session's own to-dos, which
@@ -38,6 +39,13 @@ type itemFlags struct {
 	project, kind, title, description, deploy, run string
 	steps                                          []string
 	phase                                          phaseEvidence
+	doc                                            docFlags
+}
+
+// docFlags is what `item doc` was told: the document's role, title,
+// reference and body.
+type docFlags struct {
+	role, title, reference, body string
 }
 
 // phaseEvidence is what `item phase` carries to the daemon besides the next
@@ -63,6 +71,9 @@ func itemCommand(args []string) {
 	stepsFile := fs.String("steps-file", "", "a file holding the steps, one per non-empty line")
 	deploy := fs.String("deploy", "", "required, not_required or agent_decides (default agent_decides)")
 	run := fs.String("run", "", "the run of the person's message (default: this conversation's latest run)")
+	role := fs.String("role", "", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other")
+	reference := fs.String("reference", "", "for doc: a path in the Project, a URL, or for plan_review the review task's id")
+	bodyFile := fs.String("body-file", "", "for doc: a file holding the document's body; - or absent reads stdin")
 	var steps stringList
 	fs.Var(&steps, "step", "one step of the item, in order; repeat it for each step")
 	var ev phaseEvidence
@@ -143,6 +154,21 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.phase = ev
+	case "doc":
+		if len(positional) != 1 {
+			fmt.Fprintf(os.Stderr, "clawdline item doc: takes one item id, got %d arguments\n", len(positional))
+			itemUsage()
+		}
+		rest = positional
+		f.doc = docFlags{role: *role, title: *title, reference: *reference}
+		// Like add's description: a terminal on stdin is not waited on.
+		if st, statErr := os.Stdin.Stat(); *bodyFile != "" || (statErr == nil && st.Mode()&os.ModeCharDevice == 0) {
+			body, err := readTextFrom(*bodyFile, os.Stdin, "document body")
+			if err != nil {
+				fail(err)
+			}
+			f.doc.body = body
+		}
 	default:
 		itemUsage()
 	}
@@ -183,6 +209,8 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item doc --role <role> --title <t> [--reference r] [--body-file f | stdin]")
+	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id]]")
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
@@ -191,6 +219,8 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
 	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
+	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns; an Epic needs a plan, and a plan_review")
+	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
 	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence")
 	os.Exit(2)
 }
@@ -230,6 +260,12 @@ type itemWire struct {
 		Done     bool   `json:"done"`
 		Position int64  `json:"position"`
 	} `json:"steps"`
+	Documents []struct {
+		ID       string `json:"id"`
+		Role     string `json:"role"`
+		Title    string `json:"title"`
+		Position int64  `json:"position"`
+	} `json:"documents"`
 }
 
 func itemOf(a answer) (itemWire, bool) {
@@ -257,6 +293,9 @@ func printItem(w io.Writer, it itemWire) {
 			mark = "x"
 		}
 		fmt.Fprintf(w, "  [%s] %s  %s\n", mark, s.ID, s.Title)
+	}
+	for _, d := range it.Documents {
+		fmt.Fprintf(w, "  doc %s  %s  %s\n", d.ID, d.Role, d.Title)
 	}
 }
 
@@ -387,6 +426,31 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["landing"] = l
 		}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/phase"
+	case "doc":
+		itemID, d := strings.TrimSpace(args[0]), f.doc
+		if strings.TrimSpace(d.role) == "" || strings.TrimSpace(d.title) == "" {
+			fmt.Fprintf(stderr, "clawdline %s: --role and --title are both required. Nothing was added.\n", name)
+			return 2
+		}
+		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
+		if err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+			return 1
+		}
+		it, ok := itemOf(a)
+		if !a.ok() || !ok {
+			return report(stdout, stderr, name, a)
+		}
+		// After every document already there, as step-add places steps.
+		position := int64(0)
+		for j, doc := range it.Documents {
+			if j == 0 || doc.Position >= position {
+				position = doc.Position + 1
+			}
+		}
+		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "role": d.role,
+			"title": d.title, "body": d.body, "reference": d.reference, "position": position}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/documents"
 	default:
 		fmt.Fprintf(stderr, "clawdline item: no such action %q\n", op)
 		return 2
@@ -408,6 +472,12 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		return report(stdout, stderr, name, a)
 	}
 	printItem(stdout, it)
+	if (op == "add" || op == "claim") && it.Kind == "epic" {
+		fmt.Fprintf(stdout, "This is an Epic: write its plan with `clawdline item doc %s --role plan --title Plan`, "+
+			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s`), record the review with "+
+			"`--role plan_review --reference <task id>`, then move it to implementing. `clawdline guide epic` says how.\n",
+			it.ID, it.ID)
+	}
 	return 0
 }
 

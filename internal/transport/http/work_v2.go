@@ -182,19 +182,43 @@ func workV2StepsInstruction(id string) string {
 		"change takes no steps."
 }
 
+// workV2EpicInstruction is the procedure an Epic's owner follows before it
+// may enter implementing (work.EpicPlanGate): an Epic is large, so its plan is
+// written onto the item and a child reviews it before code is written. The
+// daemon refuses `phase implementing` until both are recorded.
+func workV2EpicInstruction(id string) string {
+	return "This is an Epic: before any code, (1) plan it carefully and write the plan onto the item with " +
+		"`clawdline item doc " + id + " --role plan --title \"Plan\" --body-file <file>`; (2) dispatch a read-only child " +
+		"to review the plan critically with `clawdline dispatch --kind plan_review --work-id " + id + " --claims \"\"`; " +
+		"(3) record its review with `clawdline item doc " + id + " --role plan_review --title \"Plan review\" " +
+		"--reference <task id> --body-file <file>` — what it found and what the plan changed — and if it found real " +
+		"problems, revise the plan (a new plan document) and have that reviewed again; (4) break the work into steps with " +
+		"`clawdline item step-add " + id + "`; (5) only then `clawdline item phase " + id + " implementing`, which the " +
+		"daemon refuses until a review newer than the latest plan is recorded. `clawdline guide epic` has the whole procedure."
+}
+
+// workV2KindSteps is the steps instruction for the item's kind: an Epic
+// always has steps, so it gets the Epic procedure instead.
+func workV2KindSteps(id string, kind work.Kind) string {
+	if kind == work.KindEpic {
+		return workV2EpicInstruction(id)
+	}
+	return workV2StepsInstruction(id)
+}
+
 // workV2AssignmentBrief is what an existing Session is sent when it is
 // assigned an item.
-func workV2AssignmentBrief(id, title string) string {
+func workV2AssignmentBrief(id, title string, kind work.Kind) string {
 	return fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it; do not create Board items. %s %s %s", id, title,
-		workV2StepsInstruction(id), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+		workV2KindSteps(id, kind), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
 }
 
 // workV2ReassignmentBrief is what an existing Session is sent when the person
 // moves an item to it from another Session: the item is mid-flight, so it is
 // told to continue from what is recorded rather than start over.
-func workV2ReassignmentBrief(id, title string, phase work.Phase) string {
+func workV2ReassignmentBrief(id, title string, kind work.Kind, phase work.Phase) string {
 	return fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s", id, title,
-		workV2TakeoverNote(phase), workV2StepsInstruction(id), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+		workV2TakeoverNote(phase), workV2KindSteps(id, kind), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
 }
 
 // workV2TakeoverNote says what a Session taking an item over from another one
@@ -242,9 +266,9 @@ func (s *Server) tellReleasedOwner(ctx context.Context, previous work.Assignment
 
 // workV2RootAssignmentAcceptance is the acceptance of the Root Assignment a
 // new Session is opened with for an item.
-func workV2RootAssignmentAcceptance(id string) string {
+func workV2RootAssignmentAcceptance(id string, kind work.Kind) string {
 	return "Implement, verify, merge, and deploy according to the item's deployment policy. " +
-		workV2StepsInstruction(id) + " " + workV2PhaseInstruction(id) + " " + workV2CompletionReportInstruction
+		workV2KindSteps(id, kind) + " " + workV2PhaseInstruction(id) + " " + workV2CompletionReportInstruction
 }
 
 const workV2CompletionReportInstruction = "When substantial investigation was needed to find a non-obvious cause, add a user-readable completion_report before done; a straightforward fix does not require one."
@@ -1058,9 +1082,9 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := workV2AssignmentBrief(id, item.Item.Title)
+		brief := workV2AssignmentBrief(id, item.Item.Title, item.Item.Kind)
 		if previous.ID != "" {
-			brief = workV2ReassignmentBrief(id, item.Item.Title, assigned.Item.Phase)
+			brief = workV2ReassignmentBrief(id, item.Item.Title, item.Item.Kind, assigned.Item.Phase)
 			s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
 		}
 		if _, sendErr := s.actions().SendIfIdle(ctx, sess.ID, brief); sendErr != nil {
@@ -1119,7 +1143,7 @@ func (s *Server) assignWorkV2(ctx context.Context, id, actor string, expected in
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: scope, Constraints: "Own only this Board item. Do not create Board items.",
 			RelevantReferences: "Board item: " + item.Item.ID,
-			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID)}})
+			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID, item.Item.Kind)}})
 	failure, resolvedTerminal, resolvedSession := "", "", ""
 	if openErr != nil {
 		failure = openErr.Error()

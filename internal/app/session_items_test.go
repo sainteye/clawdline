@@ -125,7 +125,7 @@ func TestExplicitStepsWinOverTheDescriptionList(t *testing.T) {
 func TestAPlanningItemFromASessionStaysUnassignedInPlanning(t *testing.T) {
 	w := newWorkV2Test(t)
 	run := sessionItemRun(t, w, "conv-a")
-	v, err := w.CreateFromSession(context.Background(), newSessionItem(run, work.KindEpic, "- a\n- b"), nil)
+	v, err := w.CreateFromSession(context.Background(), newSessionItem(run, work.KindRefactor, "- a\n- b"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

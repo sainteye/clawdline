@@ -46,9 +46,10 @@ Negative controls:
 
 ### WS2-C02 — Planning kinds stay in Planning
 
-Given a person creates Epic, Refactor, and Plan rows, each appears in Planning with its Project icon
+Given a person creates Refactor and Plan rows, each appears in Planning with its Project icon
 and is refused by both existing-Session and new-Session assignment routes. No execution phase or
-assignment is made.
+assignment is made. (Amended 2026-09-27: an Epic is executable and appears in Unassigned; before it
+enters `implementing` it needs a `plan` and a newer `plan_review` — work-system-v2 §6.4.)
 
 ### WS2-C03 — Every card carries the Project presentation
 

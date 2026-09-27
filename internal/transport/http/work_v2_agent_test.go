@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // Both briefs an owner receives — typed into an existing Session, and the
@@ -24,8 +25,8 @@ func TestEveryOwnerBriefSaysWhenToBreakTheItemIntoSteps(t *testing.T) {
 	}
 	for name, brief := range map[string]string{
 		"existing Session":  sent[0],
-		"Root Assignment":   workV2RootAssignmentAcceptance(v.Item.ID),
-		"brief as composed": workV2AssignmentBrief(v.Item.ID, v.Item.Title),
+		"Root Assignment":   workV2RootAssignmentAcceptance(v.Item.ID, v.Item.Kind),
+		"brief as composed": workV2AssignmentBrief(v.Item.ID, v.Item.Title, v.Item.Kind),
 	} {
 		for _, want := range []string{"clawdline item step-add " + v.Item.ID, "clawdline item step-done",
 			"multi-stage", "takes no steps", "clawdline item phase " + v.Item.ID + " implementing"} {
@@ -33,5 +34,28 @@ func TestEveryOwnerBriefSaysWhenToBreakTheItemIntoSteps(t *testing.T) {
 				t.Errorf("%s brief lacks %q:\n%s", name, want, brief)
 			}
 		}
+	}
+}
+
+// Every brief an Epic's owner receives spells out the Epic procedure — write
+// the plan, have a child review it, record the review, break it into steps,
+// then implement — and a Feature's does not.
+func TestAnEpicsOwnerBriefSaysPlanReviewStepsThenImplement(t *testing.T) {
+	const id = "0e0e0e0e-0000-4000-8000-000000000001"
+	for name, brief := range map[string]string{
+		"Root Assignment": workV2RootAssignmentAcceptance(id, work.KindEpic),
+		"assignment":      workV2AssignmentBrief(id, "Big", work.KindEpic),
+		"reassignment":    workV2ReassignmentBrief(id, "Big", work.KindEpic, work.PhaseAssigned),
+	} {
+		for _, want := range []string{"clawdline item doc " + id + " --role plan ",
+			"clawdline dispatch --kind plan_review --work-id " + id, "--role plan_review", "--reference <task id>",
+			"clawdline item step-add " + id, "clawdline item phase " + id + " implementing", "clawdline guide epic"} {
+			if !strings.Contains(brief, want) {
+				t.Errorf("%s brief lacks %q:\n%s", name, want, brief)
+			}
+		}
+	}
+	if strings.Contains(workV2AssignmentBrief(id, "Small", work.KindFeature), "plan_review") {
+		t.Error("a Feature's brief asks for a plan review")
 	}
 }

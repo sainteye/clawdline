@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -529,7 +530,7 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			return store.ErrConflict
 		}
 		if prev.Planning() {
-			return work.RefuseV2("planning_not_assignable", "Epic, Refactor, and Plan stay in Planning.")
+			return work.RefuseV2("planning_not_assignable", "Refactor and Plan stay in Planning.")
 		}
 		if prev.Phase.Terminal() {
 			return work.RefuseV2("item_terminal", "Reopen terminal work before assigning it.")
@@ -792,6 +793,15 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if err := work.AgentTransition(prev, c.Next, strings.TrimSpace(c.Verification) != "", hasLanding,
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
 			return err
+		}
+		if prev.Kind == work.KindEpic {
+			plans, err := tx.PlanDocuments(id)
+			if err != nil {
+				return err
+			}
+			if err := work.EpicPlanGate(prev, c.Next, plans); err != nil {
+				return err
+			}
 		}
 		if c.Next == work.PhaseDone {
 			steps, err := tx.Steps(id)
@@ -1113,10 +1123,16 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 				return work.RefuseV2("document_reference_outside_project", "A repository document reference must stay inside the Project.")
 			}
 		}
-		switch c.Role {
-		case "spec", "design", "test", "deploy", "completion_report", "other":
-		default:
+		if !work.DocumentRoleValid(c.Role) {
 			return work.RefuseV2("invalid_document_role", "That document role is not supported.")
+		}
+		if err := work.DocumentRoleApplies(prev, c.Role); err != nil {
+			return err
+		}
+		if c.Role == work.DocumentPlanReview {
+			if err := checkPlanReviewTask(tx, prev, c.Reference); err != nil {
+				return err
+			}
 		}
 		now := w.now()
 		doc := work.DocumentV2{ID: newWorkID(), WorkID: id, Role: c.Role, Title: c.Title, Body: c.Body,
@@ -1139,6 +1155,62 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 		return nil
 	})
 	return out, mapWorkV2Error(err)
+}
+
+// checkPlanReviewTask accepts a plan_review only when its reference is a
+// Clawdline child that really reviewed this Epic's latest plan: a task of
+// kind plan_review, dispatched by the item's owner Session, finished with
+// success, on this item's line if it names one, and dispatched no earlier
+// than the latest plan was written. The task is read inside the same
+// transaction as the owner it is compared with.
+func checkPlanReviewTask(tx *store.WorkV2Tx, item work.ItemV2, taskID string) error {
+	plans, err := tx.PlanDocuments(item.ID)
+	if err != nil {
+		return err
+	}
+	var latestPlan time.Time
+	for _, d := range plans {
+		if d.Role == work.DocumentPlan {
+			latestPlan = d.CreatedAt
+		}
+	}
+	if latestPlan.IsZero() {
+		return work.RefuseV2("epic_plan_required", "Write the plan document first; a review reviews a plan.")
+	}
+	unknown := workV2Error(http.StatusUnprocessableEntity, "plan_review_task_unknown",
+		"reference must be the task id of the plan_review child you dispatched; no readable task has that id.")
+	if !orchestrator.IsTaskID(taskID) {
+		return unknown
+	}
+	row, err := tx.BrokerTask(taskID)
+	if errors.Is(err, store.ErrNoTask) {
+		return unknown
+	}
+	if err != nil {
+		return err
+	}
+	r, err := orchestrator.Decode(row.Record)
+	if err != nil {
+		return unknown
+	}
+	switch {
+	case r.Root == nil || r.Root.SessionID != item.OwnerSession:
+		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_not_owned",
+			"That task was not dispatched by this item's owning Session; dispatch the review yourself.")
+	case r.WorkID != "" && r.WorkID != item.ID:
+		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_other_item",
+			"That task is on another item's line; dispatch the review with --work-id "+item.ID+".")
+	case r.Kind != work.DocumentPlanReview:
+		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_wrong_kind",
+			"That task is not a plan review; dispatch one with --kind plan_review.")
+	case r.State != orchestrator.StateSuccess:
+		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_unfinished",
+			"That review has not finished with success; wait for its result, or dispatch another.")
+	case r.CreatedAt.Unix() < latestPlan.Unix():
+		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_stale",
+			"That review was dispatched before the latest plan was written; have the current plan reviewed.")
+	}
+	return nil
 }
 
 type AddStepV2 struct {

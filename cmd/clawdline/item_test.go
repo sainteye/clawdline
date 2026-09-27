@@ -375,3 +375,49 @@ func TestItemClaimUsesTheNamedRunOrClaimsNothing(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, errs.String())
 	}
 }
+
+// `item doc` reads the item for its version and last document position, then
+// posts the document after it, under a key it prints first; it needs a role
+// and a title before it asks anything.
+func TestItemDocPostsADocumentAfterTheLastOne(t *testing.T) {
+	const withDocs = `{"ok":true,"item":{"id":"item-1","title":"Big","kind":"epic","phase":"assigned",
+ "owner_session":"` + thinConversation + `","version":5,"steps":[],"documents":[
+ {"id":"d1","role":"plan","title":"Plan","position":0},{"id":"d2","role":"spec","title":"Spec","position":3}]}}`
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			return 200, withDocs
+		}
+		return 201, withDocs
+	})
+	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "doc", itemFlags{doc: docFlags{role: "plan_review", title: "Plan review",
+		reference: "7e000000-0000-4000-8000-000000000001", body: "It holds."}}, []string{"item-1"}, "", "", env)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[1].Method != "POST" || seen[1].EscapedPath != "/v1/work/v2/agent/items/item-1/documents" ||
+		!strings.Contains(errs.String(), "Idempotency-Key: "+seen[1].Key) {
+		t.Fatalf("requests %+v, stderr %q", seen, errs.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(seen[1].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["expected_version"] != 5.0 || body["session_id"] != thinConversation || body["role"] != "plan_review" ||
+		body["title"] != "Plan review" || body["reference"] != "7e000000-0000-4000-8000-000000000001" ||
+		body["body"] != "It holds." || body["position"] != 4.0 {
+		t.Fatalf("body %v", body)
+	}
+	if !strings.Contains(out.String(), "doc d1  plan  Plan") {
+		t.Fatalf("printed %q", out.String())
+	}
+
+	s2, b2 := newStandIn(t, func(r *http.Request) (int, string) { return 200, withDocs })
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b2, "doc", itemFlags{doc: docFlags{title: "No role"}}, []string{"item-1"}, "", "", env); code != 2 ||
+		len(s2.requests()) != 0 {
+		t.Fatalf("no role: exit %d, %d requests", code, len(s2.requests()))
+	}
+}

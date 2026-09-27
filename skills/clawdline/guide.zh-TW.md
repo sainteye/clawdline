@@ -545,8 +545,9 @@ echo "下次 release 前把 release notes 整理好。" | \
 - Feature 或 Issue 建好時**已經指派給你**，phase 是 `assigned`，並帶著 steps：依序是那些 `--step`，
   沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。不會有任何字打進你的 terminal——是你自己
   要的。照順序做，每一步確認完成後就勾掉（`clawdline item steps <item id>`、`clawdline item step-done
-  <item id> <step id>`；做下去發現還少一步，就用 `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic、Refactor、Plan 會以未指派狀態建在
-  規劃區，不帶 steps（`planning_has_no_steps`）。
+  <item id> <step id>`；做下去發現還少一步，就用 `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic 也一樣建好就指派給你，
+  但進 implementing 之前要先走完 Epic 流程（見下文）。Refactor、Plan 會以未指派狀態建在規劃區，
+  不帶 steps（`planning_has_no_steps`）。
 - 使用者會看到卡片上寫著「Session 依你 HH:MM 的訊息建立」，並引用他的原話。
 - 拒絕，每一種都什麼都不寫：`run_unknown`（沒指名 run，或沒有這個 run）、`run_expired`（超過一天）、
   `run_other_session`（那是傳給別的 Session 的訊息）、`session_not_found`、`child_session`（child 用
@@ -575,7 +576,7 @@ clawdline item claim <item id>
 - 拒絕，每一種都什麼都不寫：`run_unknown`、`run_expired`、`run_other_session`、`session_not_found`、
   `child_session`（同 `item add`）；`work_not_found`；`project_mismatch`（項目在你沒在工作的 Project）；
   `item_assigned`（已經有 Session，或正在為它開一個——只有使用者能把項目從一個 Session 移到另一個）；
-  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Epic、Refactor、Plan 留在規劃區）；
+  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Refactor、Plan 留在規劃區；Epic 可以認領）；
   `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 
@@ -774,6 +775,45 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
 
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
+
+### Epic：先寫計畫，再審查
+
+Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic 規模大，所以 daemon 要求寫程式之前先
+有第二個人看過計畫：**Epic 要從 `assigned` 進到 `implementing`，必須先有一份 `plan` 文件，以及一份
+寫在最新 plan 之後的 `plan_review` 文件。**你擁有一個 Epic 時：
+
+1. 仔細規劃，把計畫寫到項目上：
+   ```
+   clawdline item doc <item id> --role plan --title "Plan" --body-file plan.md
+   ```
+2. 派一個唯讀 child，brief 是嚴格審查這份計畫——缺了什麼、哪裡錯、哪裡有風險：
+   ```
+   clawdline dispatch --kind plan_review --work-id <item id> --claims "" …
+   ```
+3. 它以 success 結束後，記下它的審查，寫給使用者看——它發現了什麼、計畫因此改了什麼：
+   ```
+   clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
+   ```
+   審查找到真正的問題，就修改計畫（寫一份新的 `plan` 文件），再審一次：寫在最後一次審查之後的計畫，
+   需要新的審查。
+4. 用 `clawdline item step-add <item id> …` 把工作拆成 steps。
+5. 這些都做完，才 `clawdline item phase <item id> implementing`。
+
+`clawdline item doc` 會先讀項目的版本和最後一份文件的位置，送出前印出 Idempotency-Key（`--key`
+重試同一筆寫入），做完印出項目。內容來自 `--body-file` 或 stdin。它就是
+`POST /v1/work/v2/agent/items/<id>/documents`，body 是
+`{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`；role 有
+`spec`、`design`、`test`、`deploy`、`completion_report`、`other`、`plan`、`plan_review`。
+
+- `plan` 和 `plan_review` 只能用在 Epic（`document_role_not_applicable`）。
+- `plan_review` 的 `reference` 是審查這份計畫的 Clawdline child 的 task id。daemon 只在這些條件都成立
+  時接受：task 存在（`plan_review_task_unknown`）、是項目的 owner Session 派的
+  （`plan_review_task_not_owned`）、有綁 line 的話就是這個項目（`plan_review_task_other_item`）、kind 是
+  `plan_review`（`plan_review_task_wrong_kind`）、以 `success` 結束（`plan_review_task_unfinished`）、
+  派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
+  `epic_plan_required` 拒絕。
+- Epic 執行 `clawdline item phase <item id> implementing` 時，還沒有 plan 會被 `epic_plan_required`
+  拒絕，沒有比最新 plan 更新的審查會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
 
 ## 11. 協調
 

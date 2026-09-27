@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Both guides cut into the same fifteen parts, and the parts put back
+// Both guides cut into the same sixteen parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts
 // must not lose a sentence that printing it whole carried.
 func TestThePartsAreTheWholeGuide(t *testing.T) {

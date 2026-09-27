@@ -429,3 +429,35 @@ func TestEveryGuideExplainsClaimingABoardItemFromThePersonsMessage(t *testing.T)
 		}
 	}
 }
+
+// An Epic is assignable behind a plan-and-review gate: every guide names the
+// commands that write the plan and record the child's review of it, and every
+// refusal the gate and the review check answer with.
+func TestEveryGuideExplainsTheEpicPlanGate(t *testing.T) {
+	wants := []string{
+		"clawdline item doc <item id> --role plan",
+		"clawdline dispatch --kind plan_review --work-id <item id>",
+		"--role plan_review",
+		"--reference <task id>",
+		"POST /v1/work/v2/agent/items/<id>/documents",
+		"epic_plan_required", "epic_plan_review_required", "document_role_not_applicable",
+		"plan_review_task_unknown", "plan_review_task_not_owned", "plan_review_task_other_item",
+		"plan_review_task_wrong_kind", "plan_review_task_unfinished", "plan_review_task_stale",
+	}
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("guide %s does not explain the Epic plan gate with %q", topic, want)
+			}
+		}
+		for _, stale := range []string{"An Epic, Refactor or Plan", "Epic、Refactor、Plan", "Epic、Refactor 和 Plan"} {
+			if bytes.Contains(guide, []byte(stale)) {
+				t.Errorf("guide %s still says %q: an Epic is no longer a Planning kind", topic, stale)
+			}
+		}
+	}
+}

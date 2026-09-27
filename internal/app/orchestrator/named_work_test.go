@@ -137,3 +137,53 @@ func TestADispatchThatNamesAWorkItemCommitsToIt(t *testing.T) {
 		t.Fatal("a dispatch naming no item made a work item")
 	}
 }
+
+// A dispatch may name a Board (v2) item: an Epic's owner dispatches the review
+// of its plan with --work-id <item>. It is admitted onto that line when the
+// item is in the dispatch's Project and open, refused by name otherwise, and
+// the v1 board is not written for it.
+func TestADispatchMayNameABoardItem(t *testing.T) {
+	b, ctx, clock := newTodoBroker(t)
+	project := t.TempDir()
+	put := func(id, path string, phase work.Phase) {
+		t.Helper()
+		now := clock.now()
+		it := work.ItemV2{ID: id, ProjectID: "p", ProjectPath: path, Kind: work.KindEpic, Title: "Epic",
+			Description: "Large.", Phase: phase, DeploymentPolicy: work.DeployAgentDecides, CreatedBy: "local",
+			CreatedAt: now, UpdatedAt: now, Cycle: 1, Version: 1}
+		if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error { return tx.CreateItem(it, "local", "{}") }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open, elsewhere, closed := "0b0a0000-0000-4000-8000-0000000002a1", "0b0a0000-0000-4000-8000-0000000002a2",
+		"0b0a0000-0000-4000-8000-0000000002a3"
+	put(open, project, work.PhaseAssigned)
+	put(elsewhere, t.TempDir(), work.PhaseAssigned)
+	put(closed, project, work.PhaseCancelled)
+	for _, c := range []struct{ name, task, workID, code string }{
+		{"another project's item", "d15a0000-0000-4000-8000-000000000201", elsewhere, work.RefusedWorkOtherProject},
+		{"a closed item", "d15a0000-0000-4000-8000-000000000202", closed, work.RefusedWorkClosed},
+	} {
+		writeBrief(t, b, c.task, project, map[string]any{"work_id": c.workID, "kind": "plan_review"})
+		if _, err := b.Dispatch(ctx, DispatchRequest{TaskID: c.task, Secret: w1Secret}); refusalCode(err) != c.code {
+			t.Fatalf("%s answered %v", c.name, err)
+		}
+	}
+	id := "d15a0000-0000-4000-8000-000000000210"
+	writeBrief(t, b, id, project, map[string]any{"work_id": open, "kind": "plan_review"})
+	out, err := b.Dispatch(ctx, DispatchRequest{TaskID: id, Secret: w1Secret})
+	if err != nil {
+		t.Fatalf("a dispatch naming a Board item: %v", err)
+	}
+	if out.Record.WorkID != open || out.Record.WorkFrom != work.WorkNamed || out.Record.Kind != "plan_review" {
+		t.Fatalf("the task: %s/%s kind %s", out.Record.WorkID, out.Record.WorkFrom, out.Record.Kind)
+	}
+	for _, w := range out.Warnings {
+		if w.Code == "work_not_placed" {
+			t.Fatalf("a Board item was treated as a missing v1 item: %v", w)
+		}
+	}
+	if _, err := b.Store.WorkItem(ctx, open); err == nil {
+		t.Fatal("the dispatch wrote a v1 item for a Board item")
+	}
+}

@@ -29,7 +29,10 @@ func (k Kind) Valid() bool {
 	return false
 }
 
-func (k Kind) Executable() bool { return k == KindFeature || k == KindIssue }
+// Executable kinds are assigned to a Session and move through the execution
+// phases. An Epic is executable too, behind a plan-and-review gate
+// (EpicPlanGate); Refactor and Plan stay in Planning.
+func (k Kind) Executable() bool { return k == KindFeature || k == KindIssue || k == KindEpic }
 
 type Phase string
 
@@ -297,6 +300,64 @@ func ValidateNewV2(i ItemV2) error {
 	}
 	if !i.Kind.Executable() && i.Phase != PhaseCreated {
 		return RefuseV2("invalid_initial_phase", "Planning work does not enter execution.")
+	}
+	return nil
+}
+
+// Document roles. Plan and plan_review belong to an Epic only: they are the
+// record its gate reads, and on any other kind they would be a ceremony
+// nothing checks.
+const (
+	DocumentPlan       = "plan"
+	DocumentPlanReview = "plan_review"
+)
+
+// DocumentRoleValid says whether role is a document role at all, before it
+// is asked whether it fits the item's kind.
+func DocumentRoleValid(role string) bool {
+	switch role {
+	case "spec", "design", "test", "deploy", "completion_report", "other", DocumentPlan, DocumentPlanReview:
+		return true
+	}
+	return false
+}
+
+// DocumentRoleApplies refuses a plan or plan_review on anything but an Epic.
+func DocumentRoleApplies(i ItemV2, role string) error {
+	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic {
+		return RefuseV2("document_role_not_applicable",
+			"Plan and plan_review documents belong to an Epic; use spec or design for this item.")
+	}
+	return nil
+}
+
+// EpicPlanGate is the rule an Epic crosses before it enters implementing: an
+// Epic is large, so its plan is written onto the item and a second reader, a
+// child review, checks it before code is written. plans is every plan and
+// plan_review document on the item, oldest first; a plan written after the
+// last review needs a review of its own. Other kinds and other transitions
+// pass untouched.
+func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
+	if i.Kind != KindEpic || i.Phase != PhaseAssigned || next != PhaseImplementing {
+		return nil
+	}
+	lastPlan, lastReview := -1, -1
+	for n, d := range plans {
+		switch d.Role {
+		case DocumentPlan:
+			lastPlan = n
+		case DocumentPlanReview:
+			lastReview = n
+		}
+	}
+	switch {
+	case lastPlan < 0:
+		return RefuseV2("epic_plan_required",
+			"Write the Epic's plan onto the item first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
+	case lastReview < lastPlan:
+		return RefuseV2("epic_plan_review_required",
+			"Have a child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
+				"`), then record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
 	}
 	return nil
 }

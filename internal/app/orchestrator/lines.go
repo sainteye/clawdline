@@ -176,6 +176,14 @@ func (b *Broker) checkNamedWork(ctx context.Context, r Record) error {
 	found := true
 	switch {
 	case errors.Is(err, store.ErrNoWork):
+		// A Board (v2) item is a line too: an Epic's owner dispatches the
+		// review of its plan with --work-id <item> (work-system.md).
+		if v2, v2err := b.Store.WorkV2Item(ctx, r.WorkID); v2err == nil {
+			return nameableV2(v2, r)
+		} else if !errors.Is(v2err, store.ErrNoWorkV2) {
+			return refuse(http.StatusServiceUnavailable, "store_unavailable",
+				"The board could not be read, so the work item this dispatch names could not be checked; nothing was started.")
+		}
 		found = false
 	case err != nil:
 		return refuse(http.StatusServiceUnavailable, "store_unavailable",
@@ -205,6 +213,11 @@ func (b *Broker) commitNamedWork(ctx context.Context, r Record) error {
 	f := TaskFactsOf(r)
 	return b.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
 		it, err := tx.Item(r.WorkID)
+		if errors.Is(err, store.ErrNoWork) {
+			// A Board (v2) item: its owner and phase are the Session's to
+			// move, and the task is found on it by its work_id.
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -217,4 +230,20 @@ func (b *Broker) commitNamedWork(ctx context.Context, r Record) error {
 		now := b.now()
 		return tx.Put(it, c.Apply(it, now), store.MoveOf(it.ID, c, now))
 	})
+}
+
+// nameableV2 is Nameable for a Board (v2) item: in this dispatch's Project and
+// not closed.
+func nameableV2(it work.ItemV2, r Record) error {
+	switch {
+	case it.ProjectPath != r.ProjectDir:
+		return refuseWith(http.StatusUnprocessableEntity, work.RefusedWorkOtherProject,
+			"That Board item belongs to "+it.ProjectPath+", and this dispatch is in "+r.ProjectDir+
+				". An item follows the work of one project.", map[string]any{"work_id": r.WorkID})
+	case it.Phase.Terminal():
+		return refuseWith(http.StatusUnprocessableEntity, work.RefusedWorkClosed,
+			"That Board item is already "+string(it.Phase)+". Name an open item, or leave work_id out.",
+			map[string]any{"work_id": r.WorkID})
+	}
+	return nil
 }

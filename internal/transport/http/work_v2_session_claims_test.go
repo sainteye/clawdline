@@ -161,7 +161,7 @@ func TestThePersonsAssignRouteStillRefusesASession(t *testing.T) {
 func TestASessionsClaimIsRefusedByNameAndWritesNothing(t *testing.T) {
 	s, p, project := sessionItemServer(t)
 	item := personItem(t, s, project, "feature", "person-item")
-	epic := personItem(t, s, project, "epic", "person-epic")
+	refactor := personItem(t, s, project, "refactor", "person-refactor")
 	cancelled := personItem(t, s, project, "issue", "person-cancelled")
 	if _, err := s.workV2().Cancel(context.Background(), cancelled.ID, cancelled.Version, "person", "not needed", nil); err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestASessionsClaimIsRefusedByNameAndWritesNothing(t *testing.T) {
 		{"no live Session", item.ID, claimBody("10000000-0000-4000-8000-000000000999", mine, item.Version),
 			http.StatusNotFound, "session_not_found"},
 		{"another Project", elsewhere.ID, claimBody(me, mine, 1), http.StatusConflict, "project_mismatch"},
-		{"planning kind", epic.ID, claimBody(me, mine, epic.Version), http.StatusConflict, "planning_not_assignable"},
+		{"planning kind", refactor.ID, claimBody(me, mine, refactor.Version), http.StatusConflict, "planning_not_assignable"},
 		{"terminal item", cancelled.ID, claimBody(me, mine, cancelled.Version), http.StatusConflict, "item_terminal"},
 		{"stale version", item.ID, claimBody(me, mine, item.Version+7), http.StatusConflict, "version_conflict"},
 		{"no such item", "20000000-0000-4000-8000-0000000000ff", claimBody(me, mine, 1), http.StatusNotFound, "work_not_found"},
@@ -217,7 +217,7 @@ func TestASessionsClaimIsRefusedByNameAndWritesNothing(t *testing.T) {
 	if rec := claim(s, item.ID, claimBody(me, mine, item.Version), ""); rec.Code == http.StatusOK {
 		t.Fatalf("no key: %d %s", rec.Code, rec.Body)
 	}
-	for _, id := range []string{item.ID, epic.ID, cancelled.ID} {
+	for _, id := range []string{item.ID, refactor.ID, cancelled.ID} {
 		if got := readItem(t, s, id); got.OwnerSession != nil || len(got.Assignments) != 0 {
 			t.Fatalf("a refusal assigned %s: %+v", id, got)
 		}
@@ -281,5 +281,45 @@ func TestOneMessageBacksAtMostFiveClaims(t *testing.T) {
 	next := issueTestRun(t, s, p, "and this one")
 	if rec := claim(s, sixth.ID, claimBody(p.s.ConversationID, next, sixth.Version), "claim-7"); rec.Code != http.StatusOK {
 		t.Fatalf("next message: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// An Epic is claimed like a Feature, and then its owner cannot start
+// implementing it until a reviewed plan is on the item.
+func TestASessionClaimsAnEpicAndMustPlanItBeforeImplementing(t *testing.T) {
+	s, p, project := sessionItemServer(t)
+	epic := personItem(t, s, project, "epic", "person-epic")
+	if epic.Area != "unassigned" {
+		t.Fatalf("a new Epic is in %q", epic.Area)
+	}
+	run := issueTestRun(t, s, p, "Please take the Epic")
+	if rec := claim(s, epic.ID, claimBody(p.s.ConversationID, run, epic.Version), "claim-epic"); rec.Code != http.StatusOK {
+		t.Fatalf("claim: %d %s", rec.Code, rec.Body)
+	}
+	got := readItem(t, s, epic.ID)
+	if got.Phase != "assigned" || got.OwnerSession == nil || *got.OwnerSession != p.s.ConversationID {
+		t.Fatalf("claimed Epic: %+v", got)
+	}
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items/"+epic.ID+"/phase",
+		fmt.Sprintf(`{"expected_version":%d,"session_id":"%s","next":"implementing"}`, got.Version, p.s.ConversationID),
+		"epic-implementing"))
+	if rec.Code != http.StatusConflict || codeOf(t, rec) != "epic_plan_required" {
+		t.Fatalf("implementing an unplanned Epic: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items/"+epic.ID+"/documents",
+		fmt.Sprintf(`{"expected_version":%d,"session_id":"%s","role":"plan","title":"Plan","body":"Do it in three steps."}`,
+			got.Version, p.s.ConversationID), "epic-plan"))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("plan: %d %s", rec.Code, rec.Body)
+	}
+	got = itemAnswer(t, rec)
+	rec = httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items/"+epic.ID+"/documents",
+		fmt.Sprintf(`{"expected_version":%d,"session_id":"%s","role":"plan_review","title":"Review","body":"Fine.","reference":"%s"}`,
+			got.Version, p.s.ConversationID, "7e000000-0000-4000-8000-000000000999"), "epic-review"))
+	if rec.Code != http.StatusUnprocessableEntity || codeOf(t, rec) != "plan_review_task_unknown" {
+		t.Fatalf("review naming no task: %d %s", rec.Code, rec.Body)
 	}
 }

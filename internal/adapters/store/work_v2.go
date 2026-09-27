@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS work_v2_assignment_session ON work_v2_assignments(ses
 CREATE TABLE IF NOT EXISTS work_v2_documents (
   id         TEXT PRIMARY KEY,
   work_id    TEXT NOT NULL REFERENCES work_v2_items(id) ON DELETE CASCADE,
-  role       TEXT NOT NULL CHECK (role IN ('spec','design','test','deploy','completion_report','other')),
+  role       TEXT NOT NULL CHECK (role IN ('spec','design','test','deploy','completion_report','other','plan','plan_review')),
   title      TEXT NOT NULL,
   body       TEXT NOT NULL DEFAULT '',
   reference  TEXT NOT NULL DEFAULT '',
@@ -229,13 +229,16 @@ func openWorkV2(db *sql.DB) error {
 	return addReferenceImageHashColumns(db)
 }
 
-// migrateWorkV2DocumentRoles widens the CHECK on an existing document table.
-// SQLite cannot alter a CHECK in place, so keep every row while rebuilding the
-// table. The schema call recreates the index after its old copy is dropped.
+// migrateWorkV2DocumentRoles widens the CHECK on an existing document table:
+// completion_report was added first, plan and plan_review (an Epic's gate)
+// after it. SQLite cannot alter a CHECK in place, so keep every row while
+// rebuilding the table. The schema call recreates the index after its old
+// copy is dropped. A table whose CHECK already names plan_review is current,
+// which makes a second open a no-op.
 func migrateWorkV2DocumentRoles(db *sql.DB) error {
 	var ddl string
 	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='work_v2_documents'`).Scan(&ddl)
-	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "completion_report")) {
+	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "'plan_review'")) {
 		return nil
 	}
 	if err != nil {
@@ -247,13 +250,14 @@ func migrateWorkV2DocumentRoles(db *sql.DB) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	steps := []string{
-		`ALTER TABLE work_v2_documents RENAME TO work_v2_documents_before_completion_reports`,
+		`DROP TABLE IF EXISTS work_v2_documents_before_role_change`,
+		`ALTER TABLE work_v2_documents RENAME TO work_v2_documents_before_role_change`,
 		`DROP INDEX IF EXISTS work_v2_documents_item`,
 		workV2Schema,
 		`INSERT INTO work_v2_documents (id,work_id,role,title,body,reference,position,version,created_at,updated_at)
 		 SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
-		 FROM work_v2_documents_before_completion_reports`,
-		`DROP TABLE work_v2_documents_before_completion_reports`,
+		 FROM work_v2_documents_before_role_change ORDER BY rowid`,
+		`DROP TABLE work_v2_documents_before_role_change`,
 	}
 	for _, step := range steps {
 		if _, err := tx.Exec(step); err != nil {
@@ -385,10 +389,10 @@ func (t *WorkV2Tx) count(where string, args ...any) (int64, error) {
 }
 
 func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
-	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue')`
+	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic')`
 	limit, full := int64(WorkV2OpenLimit), ErrWorkV2Full
 	if i.Planning() {
-		where, limit, full = `kind IN ('epic','refactor','plan') AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
+		where, limit, full = `kind IN ('refactor','plan') AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
 	}
 	if n, err := t.count(where); err != nil {
 		return err
@@ -782,6 +786,35 @@ func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 		t.wrote++
 	}
 	return err
+}
+
+// PlanDocuments is every plan and plan_review document on one item, oldest
+// first, with only its role and time: what an Epic's gate reads. Seconds tie,
+// so insertion order breaks the tie.
+func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT role, created_at FROM work_v2_documents
+    WHERE work_id=? AND role IN ('plan','plan_review') ORDER BY created_at, rowid`, workID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []work.DocumentV2{}
+	for rows.Next() {
+		var d work.DocumentV2
+		var created int64
+		if err := rows.Scan(&d.Role, &created); err != nil {
+			return nil, err
+		}
+		d.WorkID, d.CreatedAt = workID, time.Unix(created, 0)
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// BrokerTask reads one broker task inside a work transaction: the store has
+// one connection, so a read beside the transaction would wait on it forever.
+func (t *WorkV2Tx) BrokerTask(id string) (BrokerRow, error) {
+	return scanBroker(t.tx.QueryRowContext(t.ctx, `SELECT `+brokerColumns+` FROM broker_tasks WHERE id = ?`, id))
 }
 
 func (s *Store) WorkV2Documents(ctx context.Context, workID string) ([]work.DocumentV2, error) {
@@ -1405,7 +1438,7 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
 	out := map[string]int64{}
 	queries := map[string]string{
 		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('epic','refactor','plan') AND closed_at IS NULL`,
+		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('refactor','plan') AND closed_at IS NULL`,
 		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
 		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
 		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (

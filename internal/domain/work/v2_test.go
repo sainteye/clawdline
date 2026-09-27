@@ -8,7 +8,8 @@ func TestV2KindsAndAreas(t *testing.T) {
 			t.Fatalf("%s is not valid", k)
 		}
 	}
-	if !KindFeature.Executable() || !KindIssue.Executable() || KindPlan.Executable() {
+	if !KindFeature.Executable() || !KindIssue.Executable() || !KindEpic.Executable() ||
+		KindRefactor.Executable() || KindPlan.Executable() {
 		t.Fatal("the executable boundary changed")
 	}
 	cases := []struct {
@@ -16,6 +17,9 @@ func TestV2KindsAndAreas(t *testing.T) {
 		want string
 	}{
 		{ItemV2{Kind: KindPlan, Phase: PhaseCreated}, "planning"},
+		{ItemV2{Kind: KindRefactor, Phase: PhaseCreated}, "planning"},
+		{ItemV2{Kind: KindEpic, Phase: PhaseCreated}, "unassigned"},
+		{ItemV2{Kind: KindEpic, Phase: PhaseImplementing, OwnerSession: "session-a"}, "implementing"},
 		{ItemV2{Kind: KindFeature, Phase: PhaseImplementing}, "unassigned"},
 		{ItemV2{Kind: KindFeature, Phase: PhaseVerifying, OwnerSession: "session-a"}, "verifying"},
 		{ItemV2{Kind: KindFeature, Phase: PhaseDone}, "recently_done"},
@@ -87,5 +91,67 @@ func TestAnUnassignedOrTerminalItemRejectsAgentProgress(t *testing.T) {
 	i.OwnerSession, i.Phase = "session-a", PhaseDone
 	if AgentTransition(i, PhaseImplementing, false, false, false, false) == nil {
 		t.Fatal("terminal work advanced")
+	}
+}
+
+// The Epic gate reads the plan documents in the order they were written: a
+// plan, then a review after the latest plan. Only an Epic's step from
+// assigned to implementing is gated.
+func TestEpicPlanGate(t *testing.T) {
+	epic := ItemV2{ID: "e", Kind: KindEpic, Phase: PhaseAssigned, OwnerSession: "s"}
+	docs := func(roles ...string) []DocumentV2 {
+		out := []DocumentV2{}
+		for _, r := range roles {
+			out = append(out, DocumentV2{Role: r})
+		}
+		return out
+	}
+	cases := []struct {
+		name  string
+		item  ItemV2
+		next  Phase
+		plans []DocumentV2
+		want  string
+	}{
+		{"nothing", epic, PhaseImplementing, docs(), "epic_plan_required"},
+		{"a review alone", epic, PhaseImplementing, docs(DocumentPlanReview), "epic_plan_required"},
+		{"a plan alone", epic, PhaseImplementing, docs(DocumentPlan), "epic_plan_review_required"},
+		{"a review before the plan", epic, PhaseImplementing, docs(DocumentPlanReview, DocumentPlan), "epic_plan_review_required"},
+		{"a rewritten plan", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan), "epic_plan_review_required"},
+		{"a reviewed plan", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview), ""},
+		{"a re-reviewed plan", epic, PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview), ""},
+		{"a Feature", ItemV2{Kind: KindFeature, Phase: PhaseAssigned}, PhaseImplementing, docs(), ""},
+		{"back from verifying", ItemV2{Kind: KindEpic, Phase: PhaseVerifying}, PhaseImplementing, docs(), ""},
+	}
+	for _, c := range cases {
+		err := EpicPlanGate(c.item, c.next, c.plans)
+		got := ""
+		if r, ok := AsRefusalV2(err); ok {
+			got = r.Code
+		} else if err != nil {
+			t.Fatalf("%s: untyped %v", c.name, err)
+		}
+		if got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestPlanRolesApplyToAnEpicOnly(t *testing.T) {
+	for _, role := range []string{DocumentPlan, DocumentPlanReview} {
+		if !DocumentRoleValid(role) {
+			t.Fatalf("%s is not a role", role)
+		}
+		if DocumentRoleApplies(ItemV2{Kind: KindEpic}, role) != nil {
+			t.Fatalf("%s refused on an Epic", role)
+		}
+		for _, k := range []Kind{KindFeature, KindIssue, KindRefactor, KindPlan} {
+			if r, ok := AsRefusalV2(DocumentRoleApplies(ItemV2{Kind: k}, role)); !ok || r.Code != "document_role_not_applicable" {
+				t.Fatalf("%s on a %s: %v", role, k, r)
+			}
+		}
+	}
+	if DocumentRoleApplies(ItemV2{Kind: KindFeature}, "completion_report") != nil || DocumentRoleValid("wish") {
+		t.Fatal("the other roles changed")
 	}
 }
