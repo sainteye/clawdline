@@ -587,3 +587,35 @@
     /* Below 16px iOS zooms the page when a text field is tapped. */
     .work-new-modal .work-input, .work-new-modal textarea { font-size: 16px; }
 }
+
+/* An Epic is large work that is planned and reviewed before it is built, so
+   its card reads as bigger than its neighbours: the whole lane's width, a
+   frame in its own colour, a heavier title. Its colour is the peer lavender,
+   kept apart from the accent that marks what the person must act on. */
+:root { --work-epic: var(--peer); --work-epic-in: var(--peer-in); --work-epic-ed: var(--peer-ed); }
+.work-cards > .work-epic-card { grid-column: 1 / -1; }
+.work-epic-card {
+    border-color: var(--work-epic-ed); box-shadow: inset 3px 0 0 var(--work-epic);
+    background: color-mix(in srgb, var(--work-epic) 4%, var(--card));
+}
+.work-epic-card h3 { font-size: 18px; font-weight: 700; letter-spacing: .005em; }
+.work-epic-label { color: var(--work-epic); }
+.work-epic-label b {
+    display: inline-block; padding: 1px 7px; border: 1px solid var(--work-epic-ed); border-radius: 999px;
+    background: var(--work-epic-in); font-weight: 700; letter-spacing: .06em;
+}
+.work-epic-gate {
+    display: grid; gap: 6px; padding: 9px 11px; border: 1px dashed var(--work-epic-ed); border-radius: 10px;
+    background: var(--work-epic-in);
+}
+.work-epic-gate[data-ready] { border-style: solid; border-color: color-mix(in srgb, var(--ok) 42%, var(--line)); }
+.work-epic-gate ul { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; }
+.work-epic-gate li { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); font: 600 11px/1.4 var(--mono); }
+.work-epic-gate li > .work-icon { width: 12px; height: 12px; color: var(--faint); }
+.work-epic-gate li[data-state="done"], .work-epic-gate li[data-state="done"] > .work-icon { color: var(--ok); }
+.work-epic-gate p { margin: 0; color: var(--dim); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.work-assignment > .work-epic-assign-note { flex-basis: 100%; margin: 0; color: var(--work-epic); font-size: 12px; line-height: 1.5; }
+.work-completion-report:is([data-role="plan"], [data-role="plan_review"]) {
+    border-color: color-mix(in srgb, var(--work-epic) 38%, var(--line)); background: color-mix(in srgb, var(--work-epic) 7%, var(--card));
+}
+.work-completion-report:is([data-role="plan"], [data-role="plan_review"]) > summary { color: var(--work-epic); }

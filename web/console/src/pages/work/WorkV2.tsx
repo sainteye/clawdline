@@ -10,7 +10,8 @@ import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
-import { WorkCompletionReports } from "./WorkCompletionReport.js"
+import { WorkCompletionReports, WorkEpicPlanDocuments } from "./WorkCompletionReport.js"
+import { EPIC_GATE_HINT, epicGate, epicGateShown, isEpic } from "./epic-gate.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
 import { useReferenceImage } from "./useReferenceImage.js"
@@ -60,7 +61,7 @@ const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging",
 const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: string }> = {
   feature: { icon: "✦", label: "Feature", description: "加入一項使用者可以感受到的新能力" },
   issue: { icon: "!", label: "Issue", description: "修正錯誤、異常或不符合預期的行為" },
-  epic: { icon: "◆", label: "Epic", description: "先放在規劃區的大型工作主題" },
+  epic: { icon: "◆", label: "Epic", description: "可指派的大型工作；Session 要先寫計劃書、經 Child Session review，才開始實作" },
   refactor: { icon: "↻", label: "Refactor", description: "先放在規劃區的內部結構改善" },
   plan: { icon: "≡", label: "Plan", description: "先放在規劃區的研究或實作計畫" },
 }
@@ -288,7 +289,9 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
   const owner = item.owner_session ? sessions.find((session) => session.sessionId === item.owner_session) : undefined
   const assignable = item.area !== "planning" && !item.closed_at && !item.owner_session
   const reassignable = item.area !== "planning" && !item.closed_at && !!item.owner_session
-  return <article className="work-card work-v2-card" data-work-id={item.id} data-phase={item.phase}>
+  const epic = isEpic(item)
+  return <article className={epic ? "work-card work-v2-card work-epic-card" : "work-card work-v2-card"} data-work-id={item.id}
+    data-phase={item.phase} data-kind={item.kind}>
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></div>
       <div className="work-card-controls" aria-label="項目操作">
@@ -316,17 +319,21 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
       <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>取消</button>
       {failure && <p className="work-note" role="alert">標記完成失敗：{failure}</p>}
     </div>}
-    <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>
+    {epic
+      ? <span className="work-state work-epic-label"><b>EPIC · 大型項目</b> · {phaseName(item.phase)}</span>
+      : <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>}
     <h3>{item.title}</h3>
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
     <p>{item.description}</p>
+    {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
     </section>}
     {/* Choosing who does the work is what an unassigned card is for, so the
         picker sits under what the work is, above its progress and pictures. */}
     {(assignable || (reassignable && reassigning)) && <div className="work-assignment">
+      {epic && <p className="work-epic-assign-note">指派後，Session 會先寫計劃書並請 Child Session review，通過後才開始實作。</p>}
       {reassignable && <p className="work-reassign-note">改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session
         會被告知從哪裡接手；原本的 Session 會收到停止通知。</p>}
       <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
@@ -346,6 +353,7 @@ function WorkCard({ item, sessions, busy, failure, clearFailure, run, focusAssig
       {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>取消</button>}
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
+    <WorkEpicPlanDocuments item={item} />
     <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />
     <WorkCompletionReports item={item} />
@@ -419,6 +427,18 @@ function ClaimedViaNote({ item }: { item: WorkV2Item }) {
     <summary title={excerpt}>{line}</summary>
     <blockquote aria-label={workWord("createdViaQuote")}>{excerpt}</blockquote>
   </details>
+}
+
+/** Where an Epic stands against the plan gate before it may start implementing. */
+function EpicGateChecklist({ item }: { item: WorkV2Item }) {
+  const gate = epicGate(item.documents)
+  return <section className="work-epic-gate" aria-label="Epic 實作前檢查" data-ready={gate.ready ? "" : undefined}>
+    <ul>
+      <li data-state={gate.plan ? "done" : "open"}><WorkIcon name={gate.plan ? "check" : "circle"} />計劃書</li>
+      <li data-state={gate.review ? "done" : "open"}><WorkIcon name={gate.review ? "check" : "circle"} />Child Review</li>
+    </ul>
+    {!gate.ready && <p>{EPIC_GATE_HINT}</p>}
+  </section>
 }
 
 interface SessionWorkReading {
