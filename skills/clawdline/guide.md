@@ -980,7 +980,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   it work the way that role works, for the whole conversation. It is only for a new Session
   (`--assign-new`, `--new`, `dispatch`); an existing Session keeps the one it opened with. None by
   default. A persona never overrides `CLAUDE.md`/`AGENTS.md`, the brief, `CHILD.md` or this
-  protocol. `GET /v1/personas` lists them; the sixteen ids (`teams` on each lists every team a persona is in, and one may be in several):
+  protocol. `GET /v1/personas` lists them; the ids (`teams` on each lists every team a persona is in, and one may be in several):
   - `architect` — planning an Epic;
   - `backend` — a daemon, API or store feature;
   - `frontend` — a console or phone-layout feature;
@@ -992,6 +992,15 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - marketing, for a blog, site or docs repository: `seo` (pages and metadata), `content-writer`
     (articles drafted in files), `ai-search` (pages AI answer engines can cite), `social-media`,
     `instagram`, `email` (newsletters), `growth` (measured experiments) and `pr` (announcements).
+  - product, quality and operations: `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`,
+    `trend-researcher`, `ux-researcher`; `test-automation`, `accessibility`, `performance`,
+    `api-tester`, `evidence-collector` (gathers proof, not the verdict); `sre`, `devops`,
+    `incident-commander`, `finops` and `secrets`.
+  - design and business: `ui-designer` (screens in the project's design system), `ux-architect` (flows
+    and layout structure), `brand-guardian` (brand consistency), `ui-finish-gate` (the visual check
+    before shipping), `image-prompt` (image-generation prompts), `pricing`, `customer-success`,
+    `support` (drafted replies), `analytics` (answers from real data), `devrel` (samples that run)
+    and `privacy` (personal-data checks; not legal advice).
 - **You remain responsible for the Epic.** Follow every child to done (`clawdline item steps <child
   id>` reads one), integrate their work, and move the Epic to done only when every child is done or
   cancelled: `clawdline item phase <epic id> done` is refused `epic_children_open`, naming how many

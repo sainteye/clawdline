@@ -1,7 +1,6 @@
 package persona
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -12,15 +11,18 @@ func TestTheCatalogLoads(t *testing.T) {
 	if loadErr != nil {
 		t.Fatalf("the catalog does not load: %v", loadErr)
 	}
+	// Other teams add personas beside these; the ones every list starts
+	// with stay first and in this order, and every catalog file is loaded.
 	want := []string{"architect", "backend", "frontend", "minimal-change",
 		"code-reviewer", "reality-checker", "security", "technical-writer",
 		"seo", "content-writer", "ai-search", "social-media",
 		"instagram", "email", "growth", "pr"}
-	if got := strings.Join(IDs(), ","); got != strings.Join(want, ",") {
-		t.Fatalf("catalog order %s, want %s", got, strings.Join(want, ","))
+	// Other teams append after these; the first sixteen keep their order.
+	if got := strings.Join(IDs()[:len(want)], ","); got != strings.Join(want, ",") {
+		t.Fatalf("catalog order %s, want %s first", strings.Join(IDs(), ","), strings.Join(want, ","))
 	}
-	if len(All()) != 16 {
-		t.Fatalf("%d personas, want 16", len(All()))
+	if n := catalogFiles(t); len(All()) != n {
+		t.Fatalf("%d personas, but catalog/ holds %d files", len(All()), n)
 	}
 	perTeam := map[string]int{}
 	seen := map[string]bool{}
@@ -67,9 +69,11 @@ func TestTheCatalogLoads(t *testing.T) {
 			}
 		}
 	}
-	wantTeams := map[string]int{"engineering": 8, "marketing": 9, "quality": 2, "operations": 1, "design": 1}
-	if fmt.Sprint(perTeam) != fmt.Sprint(wantTeams) {
-		t.Errorf("personas per team %v, want %v", perTeam, wantTeams)
+	// At least these many per team: other teams' personas may join one.
+	for team, least := range map[string]int{"engineering": 8, "marketing": 9, "quality": 2, "operations": 1, "design": 1} {
+		if perTeam[team] < least {
+			t.Errorf("personas per team %v, want at least %d in %s", perTeam, least, team)
+		}
 	}
 	if technicalWriter, _ := Known("technical-writer"); strings.Join(technicalWriter.Teams, ",") != "engineering,marketing" {
 		t.Errorf("technical-writer is in %v, want engineering then marketing", technicalWriter.Teams)
@@ -80,6 +84,22 @@ func TestTheCatalogLoads(t *testing.T) {
 	if !strings.Contains(License(), "MIT License") || !strings.Contains(License(), "AgentLand Contributors") {
 		t.Error("the upstream licence is not the MIT text it was copied as")
 	}
+}
+
+// catalogFiles counts the persona files under catalog/.
+func catalogFiles(t *testing.T) int {
+	t.Helper()
+	entries, err := files.ReadDir("catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".md") {
+			n++
+		}
+	}
+	return n
 }
 
 // The preamble names what it never overrides, and is ASCII: it is the one

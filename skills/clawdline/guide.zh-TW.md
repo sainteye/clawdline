@@ -877,7 +877,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
   那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的
   角色。預設沒有。角色絕不凌駕 `CLAUDE.md`／`AGENTS.md`、brief、`CHILD.md` 或這份協定。
-  `GET /v1/personas` 列出全部；十六個 id（每筆的 `teams` 列出它所屬的每個團隊，同一個角色可以在好幾個團隊）：
+  `GET /v1/personas` 列出全部；這些 id（每筆的 `teams` 列出它所屬的每個團隊，同一個角色可以在好幾個團隊）：
   - `architect`——規劃 Epic；
   - `backend`——daemon、API 或 store 的 Feature；
   - `frontend`——console 或手機版面的 Feature；
@@ -889,6 +889,13 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - 行銷團隊，用在部落格、網站或文件 repository：`seo`（頁面與 metadata）、`content-writer`（在檔案裡寫文章）、
     `ai-search`（讓 AI 搜尋引用的頁面）、`social-media`、`instagram`、`email`（電子報）、`growth`（可量測的
     實驗）與 `pr`（對外公告）。
+  - 產品、品質與維運團隊：`product-manager`、`sprint-prioritizer`、`feedback-synthesizer`、`trend-researcher`、
+    `ux-researcher`；`test-automation`、`accessibility`、`performance`、`api-tester`、`evidence-collector`
+    （蒐集證據，不下結論）；`sre`、`devops`、`incident-commander`、`finops` 與 `secrets`。
+  - 設計與商業營運團隊：`ui-designer`（照專案設計系統做畫面）、`ux-architect`（流程與版面結構）、
+    `brand-guardian`（品牌一致性）、`ui-finish-gate`（上線前的畫面把關）、`image-prompt`（生圖提示詞）、
+    `pricing`、`customer-success`、`support`（回覆草稿）、`analytics`（用真實資料回答）、`devrel`（跑得起來的
+    範例）與 `privacy`（個資檢查；不是法律意見）。
 - **Epic 仍然由你負責。** 追每個子項目到完成（`clawdline item steps <child id>` 可以讀一個），整合它們的
   成果，所有子項目都完成或取消後才把 Epic 移到 done：在那之前 `clawdline item phase <epic id> done` 會被
   `epic_children_open` 拒絕，並寫明還有幾個沒結束。除了 Epic 的子項目，不要建立任何其他看板項目。

@@ -28,7 +28,7 @@ func TestThePersonaCatalogIsListedWithoutItsTexts(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Personas) != len(persona.IDs()) || len(got.Personas) != 16 || got.License != "MIT" {
+	if len(got.Personas) != len(persona.IDs()) || len(got.Personas) < 16 || got.License != "MIT" {
 		t.Fatalf("%d personas, licence %q", len(got.Personas), got.License)
 	}
 	for i, p := range got.Personas {
