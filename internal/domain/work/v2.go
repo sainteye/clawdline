@@ -121,16 +121,25 @@ type ItemV2 struct {
 	// (work-system-v2 §2, amended 2026-09-25); nil for an item a person
 	// created as themselves.
 	CreatedVia *CreatedViaV2
+	// ParentID is the Epic this item was broken out of by the Epic's owner
+	// Session (EpicChildParent); empty for every other item. It never changes
+	// after creation.
+	ParentID string
 }
 
 // CreatedViaV2 is the provenance of an item a Session created because a
 // person told it to through Clawdline: the run of that message, when it was
 // said, and a bounded excerpt of what was said.
+//
+// An item an Epic's owner Session broke out of its Epic carries no run: its
+// authority is the person's assignment of the Epic, so it names the Epic
+// instead and Run stays empty.
 type CreatedViaV2 struct {
 	Run     string `json:"run"`
 	Session string `json:"session_id"`
 	At      int64  `json:"at"`
 	Excerpt string `json:"excerpt,omitempty"`
+	Epic    string `json:"epic_id,omitempty"`
 }
 
 type AssignmentV2 struct {
@@ -360,6 +369,63 @@ func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
 				"`), then record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
 	}
 	return nil
+}
+
+// ActorEpicOwner is the prefix of the actor an Epic's owner Session writes
+// under when it creates or assigns the Epic's child items:
+// `epic_owner:<session id>`. It is a Session, not a person, and the record
+// says so.
+const ActorEpicOwner = "epic_owner:"
+
+// EpicOwnerActor is the actor for the owner Session of an Epic.
+func EpicOwnerActor(session string) string { return ActorEpicOwner + session }
+
+// EpicChildLimit is how many child items one Epic may hold, open or closed:
+// an Epic broken into more pieces than this is two Epics, and a Session
+// looping on the create route is stopped here.
+const EpicChildLimit = 32
+
+// EpicChildParent is the rule an Epic's owner Session passes before it breaks
+// the Epic into a child item or (re)assigns one: the parent is an Epic, still
+// open, owned by that Session, and past its plan gate, so the children come
+// out of a reviewed plan. The person's assignment of the Epic is the
+// authority; no per-message run is needed.
+func EpicChildParent(epic ItemV2, session string) error {
+	switch {
+	case epic.Kind != KindEpic:
+		return RefuseV2("parent_not_epic", "Only an Epic's owner may create or assign child items, and this item is not an Epic.")
+	case epic.Phase.Terminal():
+		return RefuseV2("item_terminal", "That Epic is finished; a person must reopen it before it takes children.")
+	case session == "" || epic.OwnerSession != session:
+		return RefuseV2("not_epic_owner", "Only the Session the person assigned this Epic to may create or assign its child items.")
+	case epic.Phase == PhaseCreated || epic.Phase == PhaseAssigning || epic.Phase == PhaseAssigned:
+		return RefuseV2("epic_not_planned",
+			"Break an Epic into child items only after its plan is reviewed and it has entered implementing "+
+				"(`clawdline guide epic`).")
+	}
+	return nil
+}
+
+// EpicChildKind admits only Feature and Issue as an Epic's children: an Epic
+// inside an Epic, or a Planning kind, is not a piece another Session can own
+// and finish.
+func EpicChildKind(k Kind) error {
+	if k != KindFeature && k != KindIssue {
+		return RefuseV2("child_kind_not_allowed", "An Epic's child item is a feature or an issue.")
+	}
+	return nil
+}
+
+// EpicDoneGate refuses an Epic's move to done while any of its child items is
+// still open: the Epic's owner follows its children to done and integrates
+// them, and an Epic closed over open children would say the whole is finished
+// when it is not.
+func EpicDoneGate(i ItemV2, next Phase, openChildren int64) error {
+	if i.Kind != KindEpic || next != PhaseDone || openChildren == 0 {
+		return nil
+	}
+	return RefuseV2("epic_children_open", fmt.Sprintf(
+		"%d child item(s) of this Epic are still open; follow them to done or cancelled before closing the Epic.", openChildren))
 }
 
 // AgentTransition validates only the Agent-owned execution graph. Assignment,

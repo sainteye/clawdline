@@ -22,7 +22,11 @@ import (
 // `step-done` completes one after it is verified, `doc` adds a document to
 // an item this Session owns — an Epic's plan and the review of it are two —
 // and `phase` moves an item this Session owns to its next execution phase
-// with that phase's evidence (docs/work-system-v2.md §6).
+// with that phase's evidence (docs/work-system-v2.md §6). `child` is the
+// Epic owner's exception to "only on the person's word": the Session the
+// person assigned an Epic to breaks it, after its reviewed plan, into Feature
+// and Issue items and may assign each to a Session; `assign` hands such a
+// child to a Session afterwards (docs/work-system-v2.md §6.5).
 //
 // A person's TODO list said together with a Board item is that item's steps:
 // pass them with --step. They are not this Session's own to-dos, which
@@ -40,6 +44,32 @@ type itemFlags struct {
 	steps                                          []string
 	phase                                          phaseEvidence
 	doc                                            docFlags
+	assign                                         assignFlags
+}
+
+// assignFlags is who `item child` or `item assign` hands the item to: an
+// existing Session by terminal id, or a new Session Clawdline opens.
+type assignFlags struct {
+	terminal, assistant, model string
+	open                       bool
+}
+
+// request is the daemon's assign object, or nil when no Session was named.
+func (a assignFlags) request() map[string]any {
+	switch {
+	case a.terminal != "":
+		return map[string]any{"mode": "existing_session", "terminal_id": a.terminal}
+	case a.open:
+		out := map[string]any{"mode": "new_session"}
+		if a.assistant != "" {
+			out["assistant"] = a.assistant
+		}
+		if a.model != "" {
+			out["model"] = a.model
+		}
+		return out
+	}
+	return nil
 }
 
 // docFlags is what `item doc` was told: the document's role, title,
@@ -74,6 +104,13 @@ func itemCommand(args []string) {
 	role := fs.String("role", "", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other")
 	reference := fs.String("reference", "", "for doc: a path in the Project, a URL, or for plan_review the review task's id")
 	bodyFile := fs.String("body-file", "", "for doc: a file holding the document's body; - or absent reads stdin")
+	var assign assignFlags
+	fs.StringVar(&assign.terminal, "assign-terminal", "", "for child: assign it to the existing Session in this terminal")
+	fs.BoolVar(&assign.open, "assign-new", false, "for child: assign it to a new Session Clawdline opens")
+	fs.StringVar(&assign.terminal, "terminal", "", "for assign: the existing Session's terminal id")
+	fs.BoolVar(&assign.open, "new", false, "for assign: a new Session Clawdline opens")
+	fs.StringVar(&assign.assistant, "assistant", "", "with a new Session: claude or codex (default codex)")
+	fs.StringVar(&assign.model, "model", "", "with a new Session: the model (default the assistant's)")
 	var steps stringList
 	fs.Var(&steps, "step", "one step of the item, in order; repeat it for each step")
 	var ev phaseEvidence
@@ -92,11 +129,18 @@ func itemCommand(args []string) {
 	var f itemFlags
 	var rest []string
 	switch op {
-	case "add":
-		if len(positional) != 0 {
+	case "add", "child":
+		if op == "add" && len(positional) != 0 {
 			itemUsage()
 		}
-		f = itemFlags{project: *project, kind: *kind, title: *title, deploy: *deploy, run: *run, steps: steps}
+		if op == "child" {
+			if len(positional) != 1 {
+				fmt.Fprintf(os.Stderr, "clawdline item child: takes one Epic id, got %d arguments\n", len(positional))
+				itemUsage()
+			}
+			rest = positional
+		}
+		f = itemFlags{project: *project, kind: *kind, title: *title, deploy: *deploy, run: *run, steps: steps, assign: assign}
 		// A terminal on stdin is nobody piping a description: it is not read,
 		// so the command never waits on a keyboard, and the daemon's
 		// description_required says what is missing.
@@ -126,6 +170,13 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.run = *run
+	case "assign":
+		if len(positional) != 1 {
+			fmt.Fprintf(os.Stderr, "clawdline item assign: takes one item id, got %d arguments\n", len(positional))
+			itemUsage()
+		}
+		rest = positional
+		f.assign = assign
 	case "steps":
 		if len(positional) != 1 {
 			fmt.Fprintf(os.Stderr, "clawdline item steps: takes one item id, got %d arguments\n", len(positional))
@@ -206,6 +257,12 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f]")
+	fmt.Fprintln(os.Stderr, "                          [--description-file f | stdin] [--deploy policy]")
+	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m]]")
+	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <epic id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m])")
+	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <child item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
@@ -218,6 +275,9 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
 	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
 	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
+	fmt.Fprintln(os.Stderr, "  child breaks an Epic this Session owns, after its reviewed plan (implementing or later), into a")
+	fmt.Fprintln(os.Stderr, "  feature or issue item, assigned to the Session in that terminal, to a new one, or to nobody yet;")
+	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`);")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
 	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns; an Epic needs a plan, and a plan_review")
 	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
@@ -362,6 +422,48 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["steps"] = steps
 		}
 		path = "/v1/work/v2/agent/items"
+	case "child":
+		epicID := strings.TrimSpace(args[0])
+		if strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
+			fmt.Fprintf(stderr, "clawdline %s: --kind and --title are both required. Nothing was created.\n", name)
+			return 2
+		}
+		if f.assign.terminal != "" && f.assign.open {
+			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
+			return 2
+		}
+		it, code := readItem(stdout, stderr, b, name, epicID)
+		if code != 0 {
+			return code
+		}
+		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "kind": f.kind,
+			"title": f.title, "description": f.description}
+		if steps := trimmedSteps(f.steps); len(steps) > 0 {
+			body["steps"] = steps
+		}
+		if f.deploy != "" {
+			body["deployment_policy"] = f.deploy
+		}
+		if a := f.assign.request(); a != nil {
+			body["assign"] = a
+		}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(epicID) + "/children"
+	case "assign":
+		itemID := strings.TrimSpace(args[0])
+		a := f.assign.request()
+		if a == nil || (f.assign.terminal != "" && f.assign.open) {
+			fmt.Fprintf(stderr, "clawdline %s: name one Session: --terminal <terminal id> or --new. Nothing was changed.\n", name)
+			return 2
+		}
+		it, code := readItem(stdout, stderr, b, name, itemID)
+		if code != 0 {
+			return code
+		}
+		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
+		for k, v := range a {
+			body[k] = v
+		}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/assign"
 	case "claim":
 		itemID := strings.TrimSpace(args[0])
 		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
@@ -472,6 +574,20 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		return report(stdout, stderr, name, a)
 	}
 	printItem(stdout, it)
+	if op == "child" {
+		var got struct {
+			AssignmentError *struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"assignment_error"`
+		}
+		if json.Unmarshal(a.Body, &got) == nil && got.AssignmentError != nil {
+			fmt.Fprintf(stderr, "clawdline %s: the item was created but not assigned: %s: %s\n"+
+				"Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n",
+				name, got.AssignmentError.Code, got.AssignmentError.Message, it.ID)
+			return 1
+		}
+	}
 	if (op == "add" || op == "claim") && it.Kind == "epic" {
 		fmt.Fprintf(stdout, "This is an Epic: write its plan with `clawdline item doc %s --role plan --title Plan`, "+
 			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s`), record the review with "+
@@ -479,6 +595,31 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			it.ID, it.ID)
 	}
 	return 0
+}
+
+// readItem reads one item for its version before a write.
+func readItem(stdout, stderr io.Writer, b *broker, name, id string) (itemWire, int) {
+	a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(id), nil, nil, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+		return itemWire{}, 1
+	}
+	it, ok := itemOf(a)
+	if !a.ok() || !ok {
+		return itemWire{}, report(stdout, stderr, name, a)
+	}
+	return it, 0
+}
+
+// trimmedSteps drops empty step titles and trims the rest.
+func trimmedSteps(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // wordRun is the run a write on the person's word goes under: the one --run
