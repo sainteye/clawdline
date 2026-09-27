@@ -124,6 +124,14 @@ export interface CloudEvent {
  */
 export interface CloudReadClient {
   readonly ready?: boolean
+  /**
+   * `keepConnected`'s hook on every client it made (`cloud-boot.js`,
+   * `attach`): asked `"demand"`, it answers whether a connection is live or on
+   * its way — `true`; `"hidden"` when one comes as soon as the page is shown;
+   * `false` when none will. A retired client keeps it, which is what lets a
+   * read asked through one wake the loop instead of failing at once.
+   */
+  lifecycle?(reason: string): boolean | "hidden"
   /** machine → the last inventory marker it published; present once one arrived. */
   readonly sessionInventoryByMachine?: Map<string, unknown>
   events(listener: (event: CloudEvent) => void): () => void
@@ -271,6 +279,22 @@ export const TRANSCRIPT_MAX_REUSE_MS = 30_000
 export const TRANSCRIPT_EXPECT_MS = 45_000
 
 /**
+ * How long a machine read waits for this page's own Cloud connection when it
+ * is asked while that connection is renewing or paused and `keepConnected`
+ * says one is on its way. A tab hidden past the grace has its client retired
+ * (`cloud-boot.js`, `tryQuiesce`) and a new one is made when it is shown; a
+ * press in that second used to fail at once as `offline`.
+ */
+export const RECONNECT_WAIT_MS = 10_000
+
+/**
+ * The same wait while the page is still hidden: the copied client's own
+ * `HIDDEN_DEMAND_WAIT_MS`, for a notification tap that asks before `focus()`
+ * shows the page.
+ */
+export const HIDDEN_RECONNECT_WAIT_MS = 5_000
+
+/**
  * Failures that mean nobody answered, rather than that somebody said no. They
  * reject the `fetch` the way a network failure does, so `ClawdlineClient`
  * reports a `TransportError`, which the console already draws as "away" and
@@ -327,6 +351,8 @@ export interface RelayReaderOptions {
    * says the route and `drift` says it does not know.
    */
   carry?: CarryTable
+  /** `RECONNECT_WAIT_MS` and `HIDDEN_RECONNECT_WAIT_MS`, both, for a test. */
+  reconnectWaitMs?: number
 }
 
 interface HeldTranscript {
@@ -379,6 +405,8 @@ export class RelayReader {
   private readonly rows: SeamRow[] = []
   private readonly options: RelayReaderOptions
   private writer: WriteSeam | null = null
+  /** Machine reads waiting for a connected client (`connectedFor`). */
+  private readonly awaitingClient = new Set<() => void>()
   /** Whether this page has already said what it and the machine disagree about (`drift`). */
   private saidDrift = false
   /** The one machine this reads. */
@@ -409,6 +437,7 @@ export class RelayReader {
       if (client.ready !== false) stream.handlers.onOpen?.()
       this.queueFrame(stream)
     }
+    if (client.ready !== false) for (const wake of [...this.awaitingClient]) wake()
   }
 
   /**
@@ -1134,7 +1163,16 @@ export class RelayReader {
     body: Record<string, unknown>,
     machine: string = this.machine,
   ): Promise<Response> {
-    const client = this.connected()
+    const client = await this.connectedFor(signal)
+    if (!client) {
+      if (signal?.aborted) throw new NotConnected()
+      // Not `offline`: that is `jsonFetch`'s word for a network that failed,
+      // and it put "is it still running on the machine?" under a machine that
+      // was online. What is down is this page's own line, which is renewing
+      // or paused while the page is hidden, and the machine was not asked.
+      return this.refuse(method, path, 503, "cloud_reconnecting",
+        "This page's Cloud connection is renewing or paused; the machine was not asked.")
+    }
     if (typeof client._machineRequest !== "function") {
       // A copied client older than the generic. Named rather than thrown:
       // this is the page refusing itself, and it says which word it is about.
@@ -1213,6 +1251,37 @@ export class RelayReader {
     const entry: HeldTranscript = { answer: null, at: 0, rowKey: "", line: "", inflight: null, stale: false, expectUntil: 0, expectFrom: null }
     this.transcripts.set(session, entry)
     return entry
+  }
+
+  /**
+   * The connected client, or — while the attached one is retired or not yet
+   * ready — the next one `keepConnected` attaches, if it says one is coming
+   * and it arrives within the wait. Null when none does.
+   */
+  private async connectedFor(signal: AbortSignal | null | undefined): Promise<CloudReadClient | null> {
+    const current = this.client
+    if (current && current.ready !== false) return current
+    let coming: boolean | "hidden" = false
+    try {
+      coming = current?.lifecycle?.("demand") ?? false
+    } catch {
+      coming = false
+    }
+    if (coming !== true && coming !== "hidden") return null
+    const bound = this.options.reconnectWaitMs ?? (coming === true ? RECONNECT_WAIT_MS : HIDDEN_RECONNECT_WAIT_MS)
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer)
+        this.awaitingClient.delete(done)
+        signal?.removeEventListener("abort", done)
+        resolve()
+      }
+      const timer = setTimeout(done, bound)
+      this.awaitingClient.add(done)
+      signal?.addEventListener("abort", done)
+    })
+    const next = this.client
+    return next && next.ready !== false && !signal?.aborted ? next : null
   }
 
   private connected(): CloudReadClient {
