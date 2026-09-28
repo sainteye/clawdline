@@ -218,6 +218,17 @@
         "overrides": { "type": "integer", "minimum": 0 }
       }
     },
+    "WorkGateAuthorizationSummary": {
+      "description": "The current non-sensitive authority that permits the exact candidate tuple to merge. Its absence means there is no live authorization.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "kind", "reason"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["pass", "ai_override", "person_override", "technical_ai_override", "technical_person_override"] },
+        "reason": { "type": "string" },
+        "created_at": { "type": "integer" }
+      }
+    },
     "WorkGateCompactRead": {
       "description": "The bounded gate projection carried by Board list items: aggregates and latest state, never evidence history.",
       "type": "object",
@@ -229,6 +240,7 @@
         "verify_gate": { "type": "boolean" },
         "latest_round": { "$ref": "#/$defs/WorkGateRoundSummary" },
         "escalation": { "$ref": "#/$defs/WorkGateEscalation" },
+        "current_authorization": { "$ref": "#/$defs/WorkGateAuthorizationSummary" },
         "metrics": { "$ref": "#/$defs/WorkGateMetrics" }
       }
     },

@@ -103,6 +103,7 @@ type Brief struct {
 	Instructions   string   `json:"instructions"`
 	Deliverables   []string `json:"deliverables,omitempty"`
 	TimeoutMinutes int      `json:"timeout_minutes"`
+	Persona        string   `json:"persona,omitempty"`
 	CreatedAt      string   `json:"created_at"`
 	Root           *RootRef `json:"root,omitempty"`
 	// WorkID is the work item the dispatch named, kept in the file so a

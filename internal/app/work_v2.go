@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -79,6 +81,8 @@ type WorkV2View struct {
 	Images      []work.ImageV2
 	Steps       []work.StepV2
 	Events      []work.EventV2
+	Gate        *contract.WorkGateDetailRead
+	GateCompact *contract.WorkGateCompactRead
 	// Claim is the person's message the owning Session claimed the item on,
 	// read for a page of items that carries no assignments; a view that
 	// carries them answers it from its active assignment instead.
@@ -129,6 +133,13 @@ func mapWorkV2Error(err error) error {
 		return workV2Error(http.StatusInsufficientStorage, "steps_full", "This item holds as many subtasks as it keeps.")
 	case errors.Is(err, store.ErrWorkV2ProposalsFull):
 		return workV2Error(http.StatusTooManyRequests, "proposals_full", "The proposal inbox is full; no proposal was dropped.")
+	case errors.Is(err, store.ErrWorkGateRoundsFull):
+		return workV2Error(http.StatusInsufficientStorage, "verification_rounds_full",
+			"Verification round detail is full; export eligible closed evidence and confirm its manifest before purging it.")
+	case errors.Is(err, store.ErrWorkGateActive):
+		return workV2Error(http.StatusConflict, "verification_round_active", "This item already has a queued or running verification round.")
+	case errors.Is(err, store.ErrWorkGateEscalated):
+		return workV2Error(http.StatusConflict, "verification_escalated", "Resolve the current verification escalation before starting another round.")
 	case errors.Is(err, store.ErrBusy):
 		return workV2Error(http.StatusServiceUnavailable, "store_busy", "The store is busy; nothing was changed.")
 	}
@@ -195,15 +206,25 @@ func (w *WorkSystemV2) InvalidateVerificationAuthorization(tx *store.WorkV2Tx, p
 	return nil
 }
 
-func (w *WorkSystemV2) authorizeVerification(tx *store.WorkV2Tx, item work.ItemV2) error {
+func (w *WorkSystemV2) authorizeVerification(tx *store.WorkV2Tx, item work.ItemV2) (store.WorkGateAuthorization, error) {
 	if !item.VerifyGate {
-		return nil
+		return store.WorkGateAuthorization{}, nil
 	}
 	if w.VerificationAuthorizer == nil {
-		return work.RefuseV2("verification_authorization_required",
-			"This cycle requires an independent PASS for its current acceptance criteria before merging.")
+		a, err := tx.WorkGateAuthorization(item)
+		if err == nil {
+			return a, nil
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return store.WorkGateAuthorization{}, work.RefuseV2("verification_authorization_required",
+				"This cycle requires an independent PASS or reasoned override for its exact candidate and acceptance criteria before merging.")
+		}
+		return store.WorkGateAuthorization{}, err
 	}
-	return w.VerificationAuthorizer(tx, item)
+	if err := w.VerificationAuthorizer(tx, item); err != nil {
+		return store.WorkGateAuthorization{}, err
+	}
+	return tx.WorkGateAuthorization(item)
 }
 
 // PreviewAssignment returns the gate facts a presently unsnapshotted item
@@ -312,7 +333,12 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
-	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events}, nil
+	gate, err := w.Store.WorkGateDetail(ctx, i)
+	if err != nil {
+		return WorkV2View{}, mapWorkV2Error(err)
+	}
+	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events,
+		Gate: &gate}, nil
 }
 
 func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims bool) ([]WorkV2View, error) {
@@ -324,12 +350,19 @@ func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, inclu
 	if err != nil {
 		return nil, mapWorkV2Error(err)
 	}
+	gates, err := w.Store.WorkGateCompactDetails(ctx, items)
+	if err != nil {
+		return nil, mapWorkV2Error(err)
+	}
 	out := make([]WorkV2View, 0, len(items))
 	for _, item := range items {
 		view := WorkV2View{Item: item, Documents: relations.Documents[item.ID], Images: relations.Images[item.ID],
 			Steps: relations.Steps[item.ID]}
 		if includeClaims {
 			view.Claim = relations.Claims[item.ID]
+		}
+		if compact, ok := gates[item.ID]; ok {
+			view.GateCompact = &compact
 		}
 		out = append(out, view)
 	}
@@ -708,6 +741,9 @@ type AssignWorkV2 struct {
 	// GatePreview is the mode already composed into a new Root Assignment.
 	// Direct callers leave it nil and this application reads settings itself.
 	GatePreview *WorkV2GateSettings
+	// CycleBaseCommit is read before the transaction from the item's Project
+	// repository. It is stored only if this assignment captures verify=true.
+	CycleBaseCommit string
 }
 
 func descriptionStepTitles(description string) []string {
@@ -835,6 +871,9 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 				return err
 			}
 			a.GatePreviewed, a.PlanningGate, a.VerifyGate = true, preview.PlanningGate, preview.VerifyGate
+			if preview.VerifyGate {
+				a.CycleBaseCommit = c.CycleBaseCommit
+			}
 		}
 		if !pending && strings.TrimSpace(a.SessionID) == "" {
 			return work.RefuseV2("session_required", "An active assignment needs a Session conversation id.")
@@ -880,6 +919,9 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			if err := captureWorkV2Gates(&next, gates, now); err != nil {
 				return err
 			}
+			if next.VerifyGate && next.CycleBaseCommit == "" {
+				next.CycleBaseCommit = c.CycleBaseCommit
+			}
 		}
 		next.UpdatedAt = now
 		fields := map[string]any{"assignment_id": a.ID, "mode": a.Mode, "pending": pending,
@@ -906,12 +948,13 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 }
 
 type FinishAssignmentV2 struct {
-	AssignmentID   string
-	SessionID      string
-	TerminalID     string
-	RootAssignment string
-	Failure        string
-	Actor          string
+	AssignmentID    string
+	SessionID       string
+	TerminalID      string
+	RootAssignment  string
+	Failure         string
+	Actor           string
+	CycleBaseCommit string
 }
 
 func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c FinishAssignmentV2) (WorkV2View, error) {
@@ -976,6 +1019,12 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 			}
 			if err := captureWorkV2Gates(&next, gates, now); err != nil {
 				return err
+			}
+			if next.VerifyGate && next.CycleBaseCommit == "" {
+				next.CycleBaseCommit = pending.CycleBaseCommit
+				if next.CycleBaseCommit == "" {
+					next.CycleBaseCommit = c.CycleBaseCommit
+				}
 			}
 		}
 		seeded := []work.StepV2{}
@@ -1108,6 +1157,12 @@ type AdvanceWorkV2 struct {
 	NoDeploymentReason string
 	Actor              string
 	Effects            []store.Effect
+	// Candidate is required only for implementing -> verifying on a cycle
+	// whose verify snapshot is on. The HTTP adapter constructs it from a
+	// registered, exact, tracked-clean same-Project worktree.
+	Candidate *contract.WorkGateCandidateReceipt
+	RoundID   string
+	AttemptID string
 }
 
 // VerifiedLandingV2 is a Git reading made by the HTTP adapter, never the
@@ -1160,11 +1215,23 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 			}
 		}
 		hasVerification := strings.TrimSpace(c.Verification) != ""
+		var authorization store.WorkGateAuthorization
 		if prev.Phase == work.PhaseVerifying && c.Next == work.PhaseMerging && prev.VerifyGate {
-			if err := w.authorizeVerification(tx, prev); err != nil {
+			authorization, err = w.authorizeVerification(tx, prev)
+			if err != nil {
 				return err
 			}
 			hasVerification = true
+		}
+		if prev.Phase == work.PhaseMerging && c.Next == work.PhaseDeploying && prev.VerifyGate {
+			authorization, err = w.authorizeVerification(tx, prev)
+			if err != nil {
+				return err
+			}
+			if c.Landing == nil || c.Landing.Commit != authorization.CandidateCommit {
+				return work.RefuseV2("verified_candidate_mismatch",
+					"The landing commit must be the exact candidate authorized by the current PASS or override.")
+			}
 		}
 		if err := work.AgentTransition(prev, c.Next, hasVerification, hasLanding,
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
@@ -1186,6 +1253,46 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 				if err := work.EpicDoneGate(prev, c.Next, open); err != nil {
 					return err
 				}
+			}
+		}
+		if prev.Phase == work.PhaseImplementing && c.Next == work.PhaseVerifying && prev.VerifyGate {
+			if prev.Kind == work.KindEpic {
+				_, open, err := tx.Children(id)
+				if err != nil {
+					return err
+				}
+				if open != 0 {
+					return work.RefuseV2("epic_children_open",
+						fmt.Sprintf("Finish or cancel every Epic child before its final Reality Checker round; %d remain open.", open))
+				}
+			}
+			active, err := tx.ActiveAssignment(id)
+			if err != nil {
+				return err
+			}
+			candidate := c.Candidate
+			if candidate == nil || c.RoundID == "" || c.AttemptID == "" || active.ID == "" ||
+				candidate.AssignmentID != active.ID || candidate.OwnerSessionID != prev.OwnerSession ||
+				candidate.Cycle != prev.Cycle || candidate.CriteriaVersion != prev.AcceptanceVersion ||
+				candidate.CriteriaDigest != prev.AcceptanceDigest || candidate.Commit == "" || candidate.Tree == "" {
+				return work.RefuseV2("verification_candidate_required",
+					"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest.")
+			}
+			persona, err := tx.WorkGateCheckerPersona(prev)
+			if err != nil {
+				return err
+			}
+			now := w.now()
+			round := contract.WorkGateRound{ID: c.RoundID, ItemID: id, Cycle: prev.Cycle,
+				Acceptance: contract.WorkGateAcceptance{Criteria: prev.AcceptanceCriteria,
+					Version: prev.AcceptanceVersion, Digest: prev.AcceptanceDigest},
+				Candidate: *candidate, CheckerPersona: persona, State: contract.WorkGateRoundStateQueued,
+				CreatedAt: now.Unix(), UpdatedAt: now.Unix(), Attempts: []contract.WorkGateAttempt{{
+					ID: c.AttemptID, RoundID: c.RoundID, Attempt: 0, State: contract.WorkGateAttemptStateQueued,
+					CreatedAt: now.Unix(), UpdatedAt: now.Unix(),
+				}}}
+			if err := tx.CreateWorkGateRound(round, prev.CycleBaseCommit); err != nil {
+				return err
 			}
 		}
 		if c.Next == work.PhaseDone {
@@ -1370,6 +1477,7 @@ func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, ac
 		next.Phase, next.Condition, next.UserAction, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, "", ""
 		next.ClosedAt, next.UpdatedAt, next.Cycle = time.Time{}, w.now(), prev.Cycle+1
 		next.GateSnapshotCycle, next.GateSnapshotAt, next.PlanningGate, next.VerifyGate = 0, time.Time{}, false, false
+		next.CycleBaseCommit = ""
 		if err := tx.PutItem(prev, next, "item.reopened", actor, payload(map[string]int64{"cycle": next.Cycle})); err != nil {
 			return err
 		}

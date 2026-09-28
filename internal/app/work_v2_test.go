@@ -86,7 +86,7 @@ func TestTheCompletingAgentCanRetractAMistakenCompletion(t *testing.T) {
 	v := createWorkV2Test(t, w, work.KindIssue)
 	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
 		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Assistant: "codex",
-		Model: "default", Actor: "local"}, false, nil)
+		Model: "default", Actor: "local", CycleBaseCommit: strings.Repeat("0", 40)}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,9 +100,11 @@ func TestTheCompletingAgentCanRetractAMistakenCompletion(t *testing.T) {
 		}
 	}
 	advance(work.PhaseImplementing, "", nil, "")
-	advance(work.PhaseVerifying, "", nil, "")
+	var due store.WorkGateDue
+	owned, due = enterVerificationForTest(t, w, owned)
+	owned = passVerificationForTest(t, w, due)
 	advance(work.PhaseMerging, "tests passed", nil, "")
-	advance(work.PhaseDeploying, "", &VerifiedLandingV2{Commit: strings.Repeat("a", 40), Target: "main",
+	advance(work.PhaseDeploying, "", &VerifiedLandingV2{Commit: due.Round.Candidate.Commit, Target: "main",
 		TargetCommit: strings.Repeat("b", 40), Remote: "origin", RemoteCommit: strings.Repeat("c", 40)}, "")
 	advance(work.PhaseDone, "", nil, "production deployment receipt")
 

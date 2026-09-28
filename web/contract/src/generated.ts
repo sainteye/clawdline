@@ -8162,6 +8162,16 @@ export type WorkGateAttemptState =
 export const WorkGateAttemptStateValues: readonly WorkGateAttemptState[] = ["queued", "dispatching", "running", "succeeded", "failed", "timed_out", "stale"] as const
 
 /**
+ * The current non-sensitive authority that permits the exact candidate tuple to
+ * merge. Its absence means there is no live authorization.
+ */
+export interface WorkGateAuthorizationSummary {
+  created_at: number
+  kind: string
+  reason: string
+}
+
+/**
  * The maker's immutable receipt for the exact same-Project commit an independent
  * checker sees. Untracked files are counted but are not part of the candidate.
  */
@@ -8215,6 +8225,7 @@ export const WorkGateClaimStateValues: readonly WorkGateClaimState[] = ["passed"
  * state, never evidence history.
  */
 export interface WorkGateCompactRead {
+  current_authorization?: WorkGateAuthorizationSummary
   escalation?: WorkGateEscalation
   gate_snapshot_cycle: number
   latest_round?: WorkGateRoundSummary
