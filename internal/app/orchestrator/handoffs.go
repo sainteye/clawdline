@@ -77,6 +77,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	// the directory before it draws anything, and a session nobody can type
 	// into is a hand-over nobody receives (trustArgs).
 	args = append(args, trustArgs(launch.Assistant, cwd)...)
+	args = append(args, updateCheckArgs(launch.Assistant)...)
 	// Claude Code has no such flag, so the answer is recorded where Claude
 	// Code keeps it — for the project folder a session was asked for, never a
 	// child's disposable checkout (projects.TrustClaudeProject). A folder that
@@ -536,6 +537,9 @@ const (
 	AssignmentTerminalOpened = "terminal_opened"
 	AssignmentBriefed        = "briefed"
 	AssignmentFailed         = "failed"
+	// AssignmentAwaitingDialog is a Feature Root whose first screen was a
+	// dialog, left in its tab for a person to answer (root_dialog.go).
+	AssignmentAwaitingDialog = "awaiting_dialog"
 )
 
 // ScopeRootAssignments is the receipt scope of the route (D03).
@@ -586,6 +590,9 @@ type RootAssignment struct {
 	BriefAttemptedAt int64  `json:"brief_attempted_at,omitempty"`
 	BriefedAt        int64  `json:"briefed_at,omitempty"`
 	Failure          string `json:"failure,omitempty"`
+	// AwaitingDialogSince is when the briefing stopped on a dialog, zero when
+	// it never did (root_dialog.go).
+	AwaitingDialogSince int64 `json:"awaiting_dialog_since,omitempty"`
 }
 
 // The assignment's limits, the Swift app's (Orchestrator.swift:3398-3466).
@@ -775,22 +782,50 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 	a, _ = b.updateAssignment(ctx, id, "root_assignment.terminal_opened", func(x *RootAssignment) {
 		x.State, x.Executor = AssignmentTerminalOpened, &opened
 	})
-	typed := b.typeOnce(ctx, opened.TerminalID, req.Assistant, AssignmentLine(id, a.BriefPath), func() error {
-		_, err := b.updateAssignment(ctx, id, "root_assignment.briefing", func(x *RootAssignment) {
-			x.BriefAttemptedAt = b.now().Unix()
-		})
-		return err
-	})
-	if typed != nil {
-		a, _ = b.updateAssignment(ctx, id, "root_assignment.failed", func(x *RootAssignment) {
-			x.State, x.Failure = AssignmentFailed, "brief_failed: "+typed.Error()
-		})
-		return a, false, nil
+	if err := b.waitComposerOrDialog(ctx, opened.TerminalID, req.Assistant, composerWait); err != nil {
+		if errors.Is(err, errShowingDialog) {
+			a, _ = b.updateAssignment(ctx, id, "root_assignment.awaiting_dialog", func(x *RootAssignment) {
+				x.State, x.AwaitingDialogSince = AssignmentAwaitingDialog, b.now().Unix()
+			})
+			return a, false, nil
+		}
+		return b.failAssignment(ctx, id, "brief_failed: "+err.Error()), false, nil
 	}
-	a, _ = b.updateAssignment(ctx, id, "root_assignment.briefed", func(x *RootAssignment) {
+	if briefed, err := b.briefAssignment(ctx, a); err != nil {
+		a = b.failAssignment(ctx, id, "brief_failed: "+err.Error())
+	} else {
+		a = briefed
+	}
+	return a, false, nil
+}
+
+// briefAssignment records the attempt, then types the line — the attempt is
+// durable before the keystroke, so it is never made twice. On an error nothing
+// is recorded but the attempt: the caller decides whether it failed, telling
+// nothing-typed from maybe-typed.
+func (b *Broker) briefAssignment(ctx context.Context, a RootAssignment) (RootAssignment, error) {
+	if a.Executor == nil {
+		return a, errors.New("the Root Assignment names no terminal to brief")
+	}
+	if _, err := b.updateAssignment(ctx, a.ID, "root_assignment.briefing", func(x *RootAssignment) {
+		x.BriefAttemptedAt = b.now().Unix()
+	}); err != nil {
+		return a, err
+	}
+	if err := b.typeLine(ctx, a.Executor.TerminalID, AssignmentLine(a.ID, a.BriefPath)); err != nil {
+		return a, err
+	}
+	out, _ := b.updateAssignment(ctx, a.ID, "root_assignment.briefed", func(x *RootAssignment) {
 		x.State, x.BriefedAt = AssignmentBriefed, b.now().Unix()
 	})
-	return a, false, nil
+	return out, nil
+}
+
+func (b *Broker) failAssignment(ctx context.Context, id, failure string) RootAssignment {
+	out, _ := b.updateAssignment(ctx, id, "root_assignment.failed", func(x *RootAssignment) {
+		x.State, x.Failure = AssignmentFailed, failure
+	})
+	return out
 }
 
 // RootAssignments is the newest first.

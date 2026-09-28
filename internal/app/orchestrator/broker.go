@@ -86,6 +86,11 @@ type Broker struct {
 	// screen is a composer and not the workspace-trust dialog nothing may
 	// answer (openSession). Nil records nothing, which only a test wants.
 	TrustClaudeProject func(dir string) error
+	// RootAssignmentSettled is told when a Feature Root left at a dialog
+	// (root_dialog.go) was briefed after all, or failed while it waited, so
+	// whoever asked for it — a Board item's new Session — can settle its own
+	// side. Nil tells nobody.
+	RootAssignmentSettled func(ctx context.Context, a RootAssignment)
 	// ClaudeSetsLanguage is whether the person's own Claude Code settings
 	// already name a response language. When they do not, a Claude session
 	// this broker opens is given DisplayLanguage (ClaudeLanguage). Nil gives

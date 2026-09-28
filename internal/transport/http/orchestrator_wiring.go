@@ -171,6 +171,12 @@ func newBroker(s *Server) *orchestrator.Broker {
 			_, err = projects.TrustClaudeProject(config, dir)
 			return err
 		},
+		// A Board item's new Session that stopped on a dialog is finished
+		// once the person answered it or closed its tab. Off the beat: the
+		// finish waits up to two seconds for the Session's conversation id.
+		RootAssignmentSettled: func(ctx context.Context, _ orchestrator.RootAssignment) {
+			go s.settleAwaitedAssignments(context.WithoutCancel(ctx))
+		},
 		// A Claude session this broker opens answers in Clawdline's language
 		// unless the person chose one in Claude Code (projects.ClaudeLanguage).
 		ClaudeSetsLanguage: claudeSetsLanguage,
@@ -361,6 +367,8 @@ func (s *Server) StartBroker(ctx context.Context) {
 			tick = d
 		}
 	}
+	// A Board assignment whose Root was settled while no daemon listened.
+	go s.settleAwaitedAssignments(ctx)
 	go s.broker.Run(ctx, tick, func(p orchestrator.Pulse) {
 		s.beat.Store(&p)
 	})

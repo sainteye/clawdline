@@ -65,6 +65,10 @@ type Pulse struct {
 	// Landed is how many pending landings this pass recorded as landed because
 	// their delivery branch had been merged into the target (landing_detect.go).
 	Landed int
+	// RootDialogs is how many Feature Roots left at a dialog this pass
+	// settled: briefed once the person answered it, or failed because the tab
+	// was left or closed (root_dialog.go).
+	RootDialogs int
 	// StoreErr is why the pass could not read the store, when it could not.
 	// A pass that read nothing because it could not read is not a pass that
 	// found nothing, and the two must not look alike from outside.
@@ -173,6 +177,9 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	}
 	// After the reading is recorded, so an owner's presence is this pass's.
 	p.Todos = b.tendTodos(ctx)
+	// Feature Roots left at a dialog, briefed once somebody answered it
+	// (root_dialog.go).
+	p.RootDialogs = b.tendRootDialogs(ctx, rd)
 	p.Notices = b.PumpNotices(ctx)
 	// Finished children's tabs whose linger is over (linger.go), and — off
 	// the beat, when one is due — the reclamation sweep (reclaim.go).

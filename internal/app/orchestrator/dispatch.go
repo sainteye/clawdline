@@ -713,6 +713,7 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 	args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	args = append(args, permissionArgs(r)...)
 	args = append(args, trustArgs(r.Assistant, cwd)...)
+	args = append(args, updateCheckArgs(r.Assistant)...)
 	// The window was decided for this record at spawn; a Codex record never
 	// has one, and the assistant is checked here again because this line is
 	// the gate between a record and what a machine executes.
@@ -779,6 +780,31 @@ func trustArgs(assistant, cwd string) []string {
 	}
 	table := fmt.Sprintf("projects={%q={trust_level=%q}}", cwd, "trusted")
 	return []string{"-c", projects.ShellQuoted(table)}
+}
+
+// updateCheckArgs keeps Codex from asking, on its first screen, whether to
+// update itself.
+//
+// Measured on 2026-09-27: codex-cli 0.154.0 found 0.157.1 published and opened
+// with
+//
+//	✨ Update available! 0.154.0 -> 0.157.1
+//	› 1. Update now (runs `sh -c 'curl -fsSL … | CODEX_NON_INTERACTIVE=1 sh'`)
+//	  2. Skip
+//	  3. Skip until next version
+//
+// before it drew a composer. Two Board items assigned to a new Codex Session
+// that morning both ended "the child is showing a dialog", and every Claude
+// assignment beside them was briefed. A session opened to do somebody's work
+// is not the place to decide whether to reinstall the CLI; the person still
+// sees the offer in any Codex they open themselves. Like trustArgs, `-c`
+// holds for this one run and writes nothing; the same launch with it drew the
+// composer straight away.
+func updateCheckArgs(assistant string) []string {
+	if assistant != "codex" {
+		return nil
+	}
+	return []string{"-c", "check_for_update_on_startup=false"}
 }
 
 // brief types the one line that carries the secret.
