@@ -1,8 +1,31 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 import { RefusalError, TransportError } from "@clawdline/core/refusal"
+import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { OneRead, readFailureReason, TODO_REFRESH_MS, todoHeaderState, watchTodoRefresh, type RefreshEnvironment } from "./todo-refresh.ts"
+// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
+import { sessionTodosReady } from "./readiness.ts"
+
+function row(extra: Partial<SessionRow>): SessionRow {
+  return {
+    id: "%0",
+    backend: "tmux",
+    state: "unknown",
+    work_state: "unknown",
+    evidence: "process",
+    isClaude: false,
+    closeability: {} as SessionRow["closeability"],
+    ...extra,
+  }
+}
+
+test("a new Session waits for its first conversation before reading to-dos", () => {
+  assert.equal(sessionTodosReady(row({ identity: "no_record", sessionId: "" })), false)
+  assert.equal(sessionTodosReady(row({ sessionId: "conversation-1" })), true)
+  assert.equal(sessionTodosReady(row({ activity: { known: false, unknown_reason: "unreadable" }, sessionId: "" })), true,
+    "an actual identity failure keeps the terminal-compatible read path")
+})
 
 test("the header says loading only while there is no answer at all", () => {
   assert.equal(todoHeaderState(false, false), "loading")

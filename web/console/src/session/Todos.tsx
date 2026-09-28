@@ -18,6 +18,7 @@ import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
+import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
 import { SessionUsage } from "../pages/work/TokenBill.js"
 import "../pages/work/work.css"
@@ -40,9 +41,10 @@ export function Todos({ row }: { row: SessionRow | null }) {
   const reader = useRef<OneRead | null>(null)
   const rowID = row?.id ?? ""
   const rowSessionID = row?.sessionId ?? ""
+  const readReady = sessionTodosReady(row)
 
   const load = useCallback(async () => {
-    if (!rowID) return
+    if (!rowID || !readReady) return
     const mine = ++ticket.current
     setReading(true)
     try {
@@ -55,7 +57,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
     } finally {
       if (mine === ticket.current) setReading(false)
     }
-  }, [rowID, rowSessionID])
+  }, [rowID, rowSessionID, readReady])
 
   useEffect(() => {
     // Fleet refreshes replace SessionRow objects even when this is still the
@@ -64,7 +66,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
     ticket.current += 1
     setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setFailure("")
     setReadFailure(null); setReading(false)
-    if (!rowID) return
+    if (!readReady) return
     // One read in flight per Session; the page asks again every fifteen
     // seconds while it is visible, and at once when it comes back, so rows a
     // Session writes appear without reopening it.
@@ -109,14 +111,15 @@ export function Todos({ row }: { row: SessionRow | null }) {
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
-          {page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
+          {!readReady ? <span id="session-todos-count">{nextWord("sessionNotStartedShort")}</span>
+            : page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
             : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
-          {readFailure && <ReadFailure state={todoHeaderState(page !== null, true)} reason={readFailure.reason}
+          {readReady && readFailure && <ReadFailure state={todoHeaderState(page !== null, true)} reason={readFailure.reason}
             retrying={reading} onRetry={() => { void refresh(true) }} />}
         </summary>
         <div className="session-todos-body">
           {row.sessionId && <SessionUsage conversation={row.sessionId} />}
-          {readFailure && <p className="work-note" role="alert">{readFailure.words}</p>}
+          {readReady && readFailure && <p className="work-note" role="alert">{readFailure.words}</p>}
           {failure && <p className="work-note" role="alert">{failure}</p>}
           {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
             <p>這個 Session 尚未關閉的負責項目</p>
