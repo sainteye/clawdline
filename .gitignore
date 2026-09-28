@@ -15,9 +15,10 @@
 
 # The console's build output and its dependencies. The source and the lockfile
 # are the record; 235 kB of hashed bundle regenerated on every build is not.
-# No trailing slash on node_modules: in a worktree it is a symlink to the main
-# checkout's, `node_modules/` matches only a directory, and the link was once
-# committed carrying the absolute path of the machine it was made on.
+# No trailing slash on node_modules: a linked worktree can hold a generated
+# directory whose external packages point at the primary checkout. The
+# directory itself must stay local so workspace packages resolve this branch.
+# A whole-tree link was once committed with the machine's absolute path.
 node_modules
 web/*/dist/
 .serena/

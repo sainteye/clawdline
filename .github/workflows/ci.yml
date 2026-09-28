@@ -91,6 +91,10 @@ jobs:
       - name: Check machine-neutral screen text
         run: tools/check-machine-words.sh
 
+      - name: Test linked-worktree dependency preparation
+        working-directory: web
+        run: npm run test:deps
+
       - name: Type-check the console
         working-directory: web
         run: npm run check

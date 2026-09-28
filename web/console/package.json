@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../../tools/ensure-web-deps.mjs",
     "dev": "vite",
+    "prebuild": "node ../../tools/ensure-web-deps.mjs",
     "build": "vite build",
+    "prepreview": "node ../../tools/ensure-web-deps.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
