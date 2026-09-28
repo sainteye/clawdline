@@ -330,11 +330,18 @@ planning on and verification off; migrated Features and Issues keep both off. Te
 not retroactively gated. The four modes are independent: both on, planning only, verification only,
 or both off. Planning off explicitly bypasses Epic planning.
 
-Acceptance is one bounded Markdown field with version and SHA-256 digest. The person may create or
-edit it; an Epic owner may set it for a child or revise it through a reasoned third-FAIL decision.
-The maker cannot edit it. An authorized edit before merging stales the current round and every old
+Acceptance is one bounded Markdown field with version and SHA-256 digest. A person may create or
+edit it, but the Board does not ask them to supply it. Assignment captures the gates even when
+acceptance is empty. The owning Agent then writes the first criteria with
+`clawdline item acceptance <id> --body-file <file>` before a planning-on Epic or Feature starts
+implementation, or before verify-on work enters verification. An Epic owner may also set it for
+a child or revise it through a reasoned third-FAIL decision. After the first nonempty criteria,
+the maker cannot revise it; later ordinary revisions belong to the person. An authorized edit before merging stales the current round and every old
 PASS/override, returning a verifying item to implementing. Merging, deploying, and done lock it.
 The checker receives its exact text, version, digest, cycle, and immutable candidate receipt.
+The Board's planning-and-verification panel appears only for an Epic after criteria have been
+written. Person create/edit forms omit the criteria field; a non-Epic's pending verification
+escalation remains a separate actionable decision rather than an empty gate panel.
 
 With verification on, the maker's `clawdline item phase <id> verifying` sends its registered
 same-Project worktree, branch, and full committed HEAD. The daemon requires a clean tracked tree
@@ -478,7 +485,7 @@ coordination to the new owner, whose `session_id` then passes the check.
 | Reopen terminal work | yes | own just-completed `done` only, never a person's completion | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
 | Edit title/description | yes | yes | no | no |
-| Edit acceptance Markdown | yes before merging | only an Epic owner through a reasoned escalation decision for its child; the maker cannot edit its own acceptance | no | no |
+| Edit acceptance Markdown | yes before merging | may fill empty criteria once while assigned or implementing; an Epic owner may revise a child's criteria through a reasoned escalation decision | no | no |
 | Decide a verification escalation | yes when routed to the person | designated live parent Epic owner through the Agent route only | no | no |
 | Export and purge eligible verification detail | yes, in that order with matching digest and version | no | no | no |
 | Add/edit documents and steps | yes | yes | no | no |

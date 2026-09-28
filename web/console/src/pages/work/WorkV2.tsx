@@ -14,11 +14,11 @@ import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
-import { WorkGateDetail, WorkGateLine } from "./WorkGate.js"
+import { WorkGateAttention, WorkGateDetail, WorkGateLine } from "./WorkGate.js"
 import { gateSnapshotText } from "./gate-status.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
-import { EPIC_GATE_HINT, epicGate, epicGateShown, isEpic } from "./epic-gate.js"
+import { EPIC_GATE_HINT, epicGate, epicGateDetailShown, epicGateShown, isEpic } from "./epic-gate.js"
 import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, shortWorkID } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
@@ -550,13 +550,13 @@ function CompactWorkCard({ item, decisions, onOpen }: {
   onOpen: () => void
 }) {
   const epic = isEpic(item)
+  const gateShown = epicGateDetailShown(item)
   const attention = decisions.length > 0 || !!item.user_action
   const gateDescriptionID = `work-card-${item.id}-gate`
   const gateSnapshotDescriptionID = `work-card-${item.id}-gate-snapshot`
   const attentionDescriptionID = `work-card-${item.id}-attention`
-  const describedBy = attention
-    ? `${gateSnapshotDescriptionID} ${gateDescriptionID} ${attentionDescriptionID}`
-    : `${gateSnapshotDescriptionID} ${gateDescriptionID}`
+  const describedBy = [gateShown && gateSnapshotDescriptionID, gateShown && gateDescriptionID,
+    attention && attentionDescriptionID].filter(Boolean).join(" ") || undefined
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
     data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"
@@ -567,8 +567,8 @@ function CompactWorkCard({ item, decisions, onOpen }: {
       </span>
       <span className="work-card-summary-title">{item.title}</span>
       <span className="work-card-summary-description">{item.description}</span>
-      <WorkGateLine item={item} id={gateDescriptionID} />
-      <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span>
+      {gateShown && <><WorkGateLine item={item} id={gateDescriptionID} />
+        <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
         {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
@@ -729,9 +729,12 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
     <p>{item.description}</p>
-    <WorkGateDetail item={item} loading={detailLoading} error={detailError}
+    {epicGateDetailShown(item) && <WorkGateDetail item={item} loading={detailLoading} error={detailError}
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
-      run={run} retry={retryDetail} />
+      run={run} retry={retryDetail} />}
+    {!epic && <WorkGateAttention item={item}
+      sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
+      run={run} />}
     <WorkItemDecisions decisions={decisions} busy={!!busy} run={run} />
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {epic && <EpicChildren item={item} sessions={sessions} />}
@@ -826,8 +829,8 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
         aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<WorkIcon name="open" /></a>
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
     </div>
-    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description, acceptance) => {
-      void run(`edit-${item.id}`, () => editWorkV2(item, title, description, acceptance)).then((ok) => { if (ok) setEditing(false) })
+    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
+      void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
     }} />}
     {deleting && <DeleteWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setDeleting(false)} onDelete={() => {
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
@@ -1064,41 +1067,24 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
   busy: boolean
   failure: string
   onClose: () => void
-  onSave: (title: string, description: string, acceptance?: string) => void
+  onSave: (title: string, description: string) => void
 }) {
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.description)
-  const [acceptance, setAcceptance] = useState(item.acceptance_criteria)
-  const acceptanceLocked = ["merging", "deploying", "done"].includes(item.phase)
   const ready = !!title.trim() && !!description.trim()
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-edit-modal" role="dialog" aria-modal="true" aria-labelledby={`work-edit-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim(), acceptanceLocked ? undefined : acceptance) }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
       <VoiceTextarea label="描述" value={description} maxLength={65536} onValue={setDescription} />
-      <AcceptanceEditor value={acceptance} onChange={setAcceptance} locked={acceptanceLocked} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
     </form>
   </div>
-}
-
-function AcceptanceEditor({ value, onChange, locked = false }: {
-  value: string
-  onChange: (value: string) => void
-  locked?: boolean
-}) {
-  return <details className="work-acceptance-editor">
-    <summary>驗收條件 <span>{locked ? "已鎖定" : value.trim() ? "已設定 · 進階設定" : "進階設定 · 可稍後補上"}</span></summary>
-    <label>驗收條件（Markdown）<textarea className="work-input" value={value} maxLength={65536} disabled={locked}
-      placeholder="寫下完成時要看到的結果" onChange={(event) => onChange(event.target.value)} /></label>
-    {locked ? <p className="work-note">項目已進入 Merge 或後續階段，驗收條件不可再修改。</p>
-      : <p className="work-note">啟用規劃或驗證檢查的工作，指派前需要填寫驗收條件。</p>}
-  </details>
 }
 
 function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
@@ -1285,7 +1271,6 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   const [kind, setKind] = useState<WorkV2Kind>(initialDraft.kind || "feature")
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
-  const [acceptance, setAcceptance] = useState("")
   const [images, setImages] = useState<File[]>([])
   const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
@@ -1297,7 +1282,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
-    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), acceptance_criteria: acceptance, deployment_policy: "agent_decides" as const }
+    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), acceptance_criteria: "", deployment_policy: "agent_decides" as const }
     const decision = workV2CreateDecision(body, createDecision.current)
     createDecision.current = decision
     onCreate(body, images, decision.key)
@@ -1313,7 +1298,6 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
     <VoiceTextarea label="描述" value={description} onValue={setDescription} />
-    <AcceptanceEditor value={acceptance} onChange={setAcceptance} />
     <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>

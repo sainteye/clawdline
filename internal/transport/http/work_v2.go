@@ -410,11 +410,19 @@ func workV2AcceptanceBrief(item work.ItemV2) string {
 	return "Acceptance criteria:\n" + item.AcceptanceCriteria + "\n\n"
 }
 
+func workV2AgentAcceptanceInstruction(item work.ItemV2) string {
+	if strings.TrimSpace(item.AcceptanceCriteria) != "" || !item.GateNeedsAcceptance() {
+		return ""
+	}
+	return "The person does not need to fill acceptance criteria. Write observable Markdown criteria " +
+		"from the item goal with `clawdline item acceptance " + item.ID + " --body-file <file>` before crossing its gate. "
+}
+
 // workV2AssignmentBrief is what an existing Session is sent when it is
 // assigned an item.
 func workV2AssignmentBriefForItem(item work.ItemV2) string {
 	return workV2AcceptanceBrief(item) + fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it. %s %s %s %s %s", item.ID, item.Title,
-		workV2CreateRule(item.ID, item.Kind), workV2GateModeInstruction(item), workV2KindSteps(item),
+		workV2CreateRule(item.ID, item.Kind), workV2GateModeInstruction(item)+" "+workV2AgentAcceptanceInstruction(item), workV2KindSteps(item),
 		workV2PhaseInstruction(item.ID), workV2CompletionReportInstruction)
 }
 
@@ -423,7 +431,7 @@ func workV2AssignmentBriefForItem(item work.ItemV2) string {
 // told to continue from what is recorded rather than start over.
 func workV2ReassignmentBriefForItem(item work.ItemV2) string {
 	return workV2AcceptanceBrief(item) + fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s %s %s", item.ID, item.Title,
-		workV2TakeoverNote(item.Phase), workV2CreateRule(item.ID, item.Kind), workV2GateModeInstruction(item),
+		workV2TakeoverNote(item.Phase), workV2CreateRule(item.ID, item.Kind), workV2GateModeInstruction(item)+" "+workV2AgentAcceptanceInstruction(item),
 		workV2KindSteps(item), workV2PhaseInstruction(item.ID),
 		workV2CompletionReportInstruction)
 }
@@ -475,7 +483,7 @@ func (s *Server) tellReleasedOwner(ctx context.Context, previous work.Assignment
 // new Session is opened with for an item.
 func workV2RootAssignmentAcceptanceForItem(item work.ItemV2) string {
 	process := "Implement, verify, merge, and deploy according to the item's deployment policy. " +
-		workV2GateModeInstruction(item) + " " + workV2KindSteps(item) + " " +
+		workV2GateModeInstruction(item) + " " + workV2AgentAcceptanceInstruction(item) + workV2KindSteps(item) + " " +
 		workV2PhaseInstruction(item.ID) + " " + workV2CompletionReportInstruction
 	if item.AcceptanceCriteria == "" {
 		return process

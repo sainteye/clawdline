@@ -496,7 +496,10 @@ for a partial result, and a same-confirmation retry converges without touching r
   person reopen recaptures on new assignment. Planning off permits Epic directly, Feature on needs
   one independent review, Epic on keeps its two-review ceiling, and Issue is exempt.
 - Exact acceptance Markdown survives person create/edit, proposal acceptance, Epic child creation,
-  local reads and Cloud reads. Maker edits fail. A change before merging stales a queued or passed
+  local reads and Cloud reads. Assignment with empty criteria succeeds; the owning Agent may fill
+  them once before the captured gate, while later maker revisions fail. The Board shows planning
+  and verification detail only on an Epic with nonempty acceptance, and its person forms do not
+  ask for acceptance. A change before merging stales a queued or passed
   round and every override; merging/deploying/done reject acceptance edits.
 - A clean same-Project candidate creates one read-only detached checker round. PASS requires evidence
   on every reported claim and the exact candidate/criteria tuple. FAIL returns findings and resets

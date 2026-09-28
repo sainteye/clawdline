@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { WorkV2Document } from "./api.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { epicGate, epicGateShown, epicPlanDocuments, isEpic } from "./epic-gate.ts"
+import { epicGate, epicGateDetailShown, epicGateShown, epicPlanDocuments, isEpic } from "./epic-gate.ts"
 
 function document(id: string, role: WorkV2Document["role"], created_at: number): WorkV2Document {
   return { id, role, created_at, title: id, body: id, reference: "", position: 0, version: 1 }
@@ -48,6 +48,14 @@ test("the checklist shows only when this Epic captured planning on", () => {
   assert.equal(epicGateShown({ kind: "feature", phase: "assigned", closed_at: null, gate_snapshot_cycle: 1, planning_gate: true }), false)
   assert.equal(isEpic({ kind: "epic" }), true)
   assert.equal(isEpic({ kind: "refactor" }), false)
+})
+
+test("the gate detail appears only for an Epic with written acceptance", () => {
+  assert.equal(epicGateDetailShown({ kind: "issue", acceptance_criteria: "- Done" }), false)
+  assert.equal(epicGateDetailShown({ kind: "feature", acceptance_criteria: "- Done" }), false)
+  assert.equal(epicGateDetailShown({ kind: "epic", acceptance_criteria: "" }), false)
+  assert.equal(epicGateDetailShown({ kind: "epic", acceptance_criteria: "  " }), false)
+  assert.equal(epicGateDetailShown({ kind: "epic", acceptance_criteria: "- Done" }), true)
 })
 
 test("each plan is followed by the reviews written for it, newest plan first", () => {
