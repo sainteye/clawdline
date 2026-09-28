@@ -208,6 +208,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/places/p1/resume/claude/abc", "resume"],
     ["POST", "/v1/voice", "voice"],
     ["GET", "/v1/places", "places"],
+    ["GET", "/v1/settings/default-models", "default-models"],
+    ["POST", "/v1/settings/default-models", "default-models-update"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
     ["POST", "/v1/sessions/s1/interrupt", "interrupt"],
@@ -1418,6 +1420,30 @@ test("the capacity block crosses as its machine word, with no field of its own",
   const bad = await reader.fetch("/v1/capacity")
   assert.equal(bad.status, 405)
   assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "bad_request")
+})
+
+test("a phone reads and changes only the two default models", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+
+  assert.deepEqual(writeRoute("GET", "/v1/settings/default-models"), {
+    op: "default-models", word: "default-models",
+  })
+  const read = await reader.fetch("/v1/settings/default-models")
+  assert.equal(read.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "default-models", {}, "read"])
+
+  const write = await reader.fetch("/v1/settings/default-models", post({ codex_default_model: "gpt-6" }))
+  assert.equal(write.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "default-models-update", {
+    changes: { codex_default_model: "gpt-6" },
+  }, "action"])
+
+  for (const path of ["/v1/settings/default-models/extra", "/v1/settings/default-models?all=1"]) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 501, path)
+  }
+  assert.equal(writeRoute("POST", "/v1/settings"), null)
 })
 
 test("the sessions a reboot took away cross as the machine's three words, under the press's key", async () => {

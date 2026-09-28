@@ -96,6 +96,8 @@ press **開始** (start).
 Claude Code. Leave either field empty to let that assistant choose. The setting applies only when
 Clawdline opens a new session without another model choice; a model chosen for one session still
 wins, and resuming an existing conversation does not change its model.
+The same two fields appear in Clawdline Cloud on a phone. The phone can read them through its paired
+machine; saving a change also requires **Settings → Remote → Allow Cloud commands** on that machine.
 The same setting is available without a browser as
 `clawdline setting set codex_default_model gpt-6-sol` (or
 `claude_default_model claude-opus-5-5`); use `default` as the value to hand the choice back to the

@@ -750,6 +750,14 @@ the paired-device actor marker means the machine applies the same send permissio
 consent as a browser on the machine. The item text is read by the local route after consent, never
 placed in the Cloud command envelope.
 
+Also as of 2026-09-28, the hosted Settings page carries the two machine-wide model defaults through
+two narrow words: the read-only `default-models` routes to `GET /v1/settings/default-models`, and
+`default-models-update` carries `{changes}` to that route's POST under the viewer request id and
+paired-device actor. Both the Cloud decoder and the local route accept only
+`codex_default_model` and `claude_default_model`; the full `/v1/settings` snapshot never crosses the
+relay. Reading needs only the paired line. Saving is a command, so it also needs the machine's
+Cloud-command switch and the paired device's Send capability.
+
 As of 2026-09-26 the token bill crosses too, as three read words: `usage.session`, `usage.task` and
 `usage.item`, each `{type, session, request, id}` on the machine reply channel and routed to
 `GET /v1/usage/{sessions,tasks,items}/<id>`. The id is refused before the route when the route

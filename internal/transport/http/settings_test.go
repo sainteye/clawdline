@@ -35,6 +35,49 @@ func settingsCall(t *testing.T, s *Server, method, contentType, body string) (*h
 	return rec, snap, refusal
 }
 
+func defaultModelsCall(t *testing.T, s *Server, method, contentType, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, "/v1/settings/default-models", strings.NewReader(body))
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	rec := httptest.NewRecorder()
+	s.defaultModelsRoute(rec, req)
+	return rec
+}
+
+func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "clawdline-next")
+	s := &Server{cfg: config.Config{Dir: dir}}
+
+	rec := defaultModelsCall(t, s, http.MethodPost, "application/json",
+		`{"codex_default_model":"gpt-6","claude_default_model":"claude-sonnet-4-5"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("write: %d %s", rec.Code, rec.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
+		t.Fatalf("narrow answer: %#v", got)
+	}
+
+	rec = defaultModelsCall(t, s, http.MethodPost, "application/json", `{"remote":true}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"bad_request"`) {
+		t.Fatalf("unrelated key: %d %s", rec.Code, rec.Body)
+	}
+	rec = defaultModelsCall(t, s, http.MethodPost, "application/json", `{"codex_default_model":"GPT 6"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"invalid_default_model"`) {
+		t.Fatalf("invalid model: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = defaultModelsCall(t, s, http.MethodGet, "", "")
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "remote") || strings.Contains(rec.Body.String(), "hotkey") {
+		t.Fatalf("read disclosed another setting: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // The route reads the file as it is, writes only what it was sent, and refuses
 // the write a page elsewhere could make without asking.
 func TestSettingsRoute(t *testing.T) {
