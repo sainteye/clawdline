@@ -43,6 +43,8 @@ and whether a git origin can identify the same project on another machine. The d
 being misreported as missing configuration. A non-GitHub remote is marked not applicable and is
 not counted as unfinished GitHub-workflow setup.
 
+The gear beside a project's **工作樹** button opens the same check for that project alone.
+
 This check is local and read-only. It runs no repository command, probes no port, reaches no
 network and starts or deploys nothing. An older daemon that does not send the evidence is shown as
 unknown rather than guessed. Loading, empty and unreadable answers each remain visible and offer

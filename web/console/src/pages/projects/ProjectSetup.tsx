@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react"
+import { createPortal } from "react-dom"
 import type { Icon } from "@clawdline/contract"
 import { failureSentence } from "../../legacy/bridge.js"
 import { Command } from "../../session/Command.js"
@@ -60,7 +61,9 @@ function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place
  * press from that audit enters the ordinary command draft, where the person
  * still reviews assistant, model and instructions before any Session exists.
  */
-export function ProjectSetup({ shown }: { shown: boolean }) {
+export type ProjectSetupHandle = { open(path: string, trigger: HTMLButtonElement): void }
+
+export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<ProjectSetupHandle> }) {
   const [places, setPlaces] = useState<ProjectPlace[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -68,6 +71,8 @@ export function ProjectSetup({ shown }: { shown: boolean }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const restoreTrigger = useRef(true)
   const pendingSelection = useRef<ProjectPlace | null>(null)
+  const scopedTrigger = useRef<HTMLButtonElement | null>(null)
+  const [projectPath, setProjectPath] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -93,10 +98,21 @@ export function ProjectSetup({ shown }: { shown: boolean }) {
     void load()
   }, [shown, load])
 
+  useImperativeHandle(ref, () => ({
+    open(path, button) {
+      scopedTrigger.current = button
+      setProjectPath(path)
+      void load()
+      dialog.current?.showModal()
+      dialog.current?.focus({ preventScroll: true })
+    },
+  }), [load])
+
   const complete = places.filter(place => {
     const progress = projectSetupProgress(place)
     return progress && progress.complete === progress.total
   }).length
+  const visiblePlaces = projectPath ? places.filter(place => place.path === projectPath) : places
 
   const select = (place: ProjectPlace) => {
     pendingSelection.current = place
@@ -112,7 +128,7 @@ export function ProjectSetup({ shown }: { shown: boolean }) {
         ? `${complete}/${places.length} 個專案配置完整`
         : "目前沒有可檢查的專案"
 
-  return <section className="project-setup" hidden={!shown} aria-labelledby="project-setup-launcher-title">
+  return <><section className="project-setup" hidden={!shown} aria-labelledby="project-setup-launcher-title">
     <div className="project-setup-launcher-copy">
       <p className="project-setup-eyebrow">專案能力健檢</p>
       <h2 id="project-setup-launcher-title">專案設定狀況</h2>
@@ -128,7 +144,8 @@ export function ProjectSetup({ shown }: { shown: boolean }) {
         dialog.current?.focus({ preventScroll: true })
       }}
     >查看健檢</button>
-    <dialog
+  </section>
+    {createPortal(<dialog
       className="project-setup-dialog"
       ref={dialog}
       tabIndex={-1}
@@ -136,35 +153,41 @@ export function ProjectSetup({ shown }: { shown: boolean }) {
       onClose={() => {
         const place = pendingSelection.current
         pendingSelection.current = null
+        setProjectPath(null)
         if (place) {
           restoreTrigger.current = true
+          scopedTrigger.current = null
           void Command.reviewProjectSetup(place.id, projectSetupInstructions(place))
           return
         }
-        if (restoreTrigger.current) trigger.current?.focus({ preventScroll: true })
+        const opener = scopedTrigger.current
+        const liveOpener = opener?.isConnected ? opener : Array.from(document.querySelectorAll<HTMLButtonElement>(".project-row-settings"))
+          .find(button => button.dataset.placeId === opener?.dataset.placeId)
+        if (restoreTrigger.current) (liveOpener || trigger.current)?.focus({ preventScroll: true })
+        scopedTrigger.current = null
         restoreTrigger.current = true
       }}
     >
       <div className="project-setup-dialog-heading">
         <div>
           <p className="project-setup-eyebrow">專案能力健檢</p>
-          <h2 id="project-setup-title">還差什麼，一眼看懂</h2>
+          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || "專案"} · 設定` : "還差什麼，一眼看懂"}</h2>
         </div>
         <button className="project-setup-close" type="button" aria-label="關閉專案能力健檢" onClick={() => dialog.current?.close()}>關閉</button>
       </div>
       <div className="project-setup-dialog-body">
         <div className="project-setup-heading">
           <p>只讀取這台機器已有的設定與狀態收據；不會連外、啟動服務或部署。缺少的項目可以先交給 AI 檢查，再由你審閱工作內容。</p>
-          {!loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
+          {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
         </div>
         {loading && <p className="project-setup-loading" role="status">讀取專案配置中…</p>}
-        {!loading && !error && places.length > 0 && <ol className="project-readiness-list">
-          {places.map(place => <ProjectReadiness key={place.id} place={place} select={select} />)}
+        {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
+          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} />)}
         </ol>}
-        {!loading && !error && places.length === 0 && <p className="project-setup-empty" role="status">這台機器還沒有可檢查的專案。先在該目錄開過一次 assistant，或用 <code>clawdline project add</code> 登記。</p>}
+        {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? "目前讀不到這個專案的設定，請重新讀取。" : <>這台機器還沒有可檢查的專案。先在該目錄開過一次 assistant，或用 <code>clawdline project add</code> 登記。</>}</p>}
         {error && <p role="alert">{error}</p>}
         <button className="project-setup-refresh" type="button" disabled={loading} onClick={() => void load()}>重新讀取</button>
       </div>
-    </dialog>
-  </section>
+    </dialog>, document.body)}
+  </>
 }

@@ -34,6 +34,28 @@
 .project-tools .project-sync,
 .project-tools .project-icon-copy { margin: 8px 0 0; background: rgba(14, 14, 17, .34); }
 
+.project-row-wrap.has-settings .project-row { padding-right: 98px; }
+.project-row-wrap.has-settings .project-row-worktrees { right: 54px; }
+.project-row-settings {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0;
+  transform: translateY(-50%);
+  background: rgba(22, 22, 26, .84);
+  color: var(--dim);
+  font-size: 20px;
+  line-height: 1;
+}
+.project-row-settings:hover { border-color: var(--accent-ed); color: var(--ink); background: var(--card-hi); }
+
 .projects-activity-help {
   display: flex;
   align-items: baseline;

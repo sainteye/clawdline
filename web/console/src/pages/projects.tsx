@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom"
 import { ProjectTools } from "./projects/ProjectTools.js"
+import type { ProjectSetupHandle } from "./projects/ProjectSetup.js"
 import { activityUnknownScope, projectListWords, replaceSuffix } from "./projects/project-list.js"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
@@ -44,6 +45,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   const [iconHost, setIconHost] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => { setIconHost(document.getElementById("project-icon-copy-host")) }, [])
   const page = useRef<BoundProjects | null>(null)
+  const setup = useRef<ProjectSetupHandle>(null)
   const was = useRef(false)
   const painted = useRef(false)
 
@@ -123,12 +125,34 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         const next = replaceSuffix(value, words.boardBefore, words.boardAfter)
         if (next !== value) line.textContent = next
       }
+      for (const worktrees of rows.querySelectorAll<HTMLButtonElement>(".project-row-worktrees")) {
+        const wrapper = worktrees.closest<HTMLElement>(".project-row-wrap")
+        const project = wrapper?.querySelector<HTMLButtonElement>(".project-row[data-place-id]")
+        if (!wrapper || !project || wrapper.querySelector(".project-row-settings")) continue
+        const gear = document.createElement("button")
+        gear.type = "button"
+        gear.className = "project-row-settings"
+        gear.dataset.placeId = project.dataset.placeId
+        gear.title = "專案設定"
+        gear.setAttribute("aria-label", `專案設定：${wrapper.querySelector(".project-row-name")?.textContent || "專案"}`)
+        gear.setAttribute("aria-haspopup", "dialog")
+        gear.textContent = "⚙"
+        wrapper.classList.add("has-settings")
+        wrapper.appendChild(gear)
+      }
       help.hidden = scope === "none"
     }
+    const onSettings = (ev: Event) => {
+      const gear = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row-settings[data-place-id]")
+      if (!gear || !rows.contains(gear)) return
+      const project = page.current?.state.places?.find(place => place.id === gear.dataset.placeId)
+      if (project?.path) setup.current?.open(project.path, gear)
+    }
+    rows.addEventListener("click", onSettings)
     const observer = new MutationObserver(decorate)
     observer.observe(rows, { childList: true, subtree: true })
     decorate()
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); rows.removeEventListener("click", onSettings) }
   }, [])
 
   useLayoutEffect(() => {
@@ -192,7 +216,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       dangerouslySetInnerHTML={{ __html: sectionMarkup }}
     />
     {iconHost && createPortal(<>
-      <ProjectTools shown={shown} changed={() => { void page.current?.enter() }} />
+      <ProjectTools shown={shown} changed={() => { void page.current?.enter() }} setupRef={setup} />
     </>, iconHost)}
     </>
   )
