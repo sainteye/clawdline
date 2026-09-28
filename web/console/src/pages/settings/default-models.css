@@ -9,8 +9,12 @@
   font-size: 12px;
 }
 
+.page-settings .settings-model-select {
+  width: 100%;
+}
+
 @media (max-width: 899px) {
-  .page-settings .settings-model-field input {
+  .page-settings .settings-model-field select {
     font-size: 16px;
   }
 }
