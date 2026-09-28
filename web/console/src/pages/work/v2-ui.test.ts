@@ -5,10 +5,21 @@ import test from "node:test"
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
+const tokens = readFileSync(new URL("../../legacy/tokens.css", import.meta.url), "utf8")
 const sessions = readFileSync(new URL("../../Sessions.tsx", import.meta.url), "utf8")
 const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
 const app = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8")
 const boardSettings = readFileSync(new URL("../settings/BoardBlock.tsx", import.meta.url), "utf8")
+
+function hexContrast(a: string, b: string) {
+  const luminance = (hex: string) => [1, 3, 5].reduce((sum, start, index) => {
+    const channel = Number.parseInt(hex.slice(start, start + 2), 16) / 255
+    const linear = channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+    return sum + linear * [0.2126, 0.7152, 0.0722][index]
+  }, 0)
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (light + 0.05) / (dark + 0.05)
+}
 
 test("the Project picker draws each Project mark in its trigger and menu", () => {
   assert.match(source, /function ProjectPicker/)
@@ -158,8 +169,19 @@ test("gate status, loading, and read errors stay readable in cards and detail", 
   assert.match(gate, /loading && <p role="status">正在讀取驗證證據…<\/p>/)
   assert.match(gate, /error && <p role="alert">驗證詳情讀取失敗：\{error\}/)
   assert.match(gate, /type="button" onClick=\{retry\}>重試<\/button>/)
+  const current = gate.indexOf('<p className="work-gate-current">')
+  const readState = gate.indexOf('{loading && <p role="status">')
+  const acceptance = gate.indexOf('<div className="work-gate-acceptance">')
+  assert.ok(current < readState && readState < acceptance, "read state follows the current result and precedes long evidence")
   assert.match(styles, /\.work-gate-line \{[^}]*overflow-wrap: anywhere;/)
   assert.match(styles, /\.work-gate-detail \{[^}]*overflow-wrap: anywhere;/)
+  assert.match(styles, /\.work-gate-acceptance small \{[^}]*color: var\(--dim\);/)
+  assert.match(styles, /\.work-gate-metrics dt \{[^}]*color: var\(--dim\);[^}]*font-size: 12px;/)
+  assert.match(tokens, /--dim:\s+#9a978f;/)
+  assert.match(tokens, /--bg:\s+#0e0e11;/)
+  assert.match(tokens, /--card:\s+#16161a;/)
+  assert.ok(hexContrast("#9a978f", "#0e0e11") >= 4.5)
+  assert.ok(hexContrast("#9a978f", "#16161a") >= 4.5)
 })
 
 test("closed Board cards retain and open Agent completion reports", () => {

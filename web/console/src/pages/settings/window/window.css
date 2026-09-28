@@ -32,6 +32,7 @@
   --sw-label: rgba(255, 255, 255, 0.92); /* Metric.label */
   --sw-soft: rgba(255, 255, 255, 0.62); /* Metric.soft */
   --sw-faint: rgba(255, 255, 255, 0.44); /* Metric.faint */
+  --sw-tab-muted: rgba(255, 255, 255, 0.5);
   --sw-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   position: fixed;
@@ -90,7 +91,7 @@
   padding: 2px 0 9px;
   margin: 0;
   font: 500 12.5px/1 inherit;
-  color: var(--sw-faint);
+  color: var(--sw-tab-muted);
   cursor: pointer;
   position: relative;
 }
@@ -112,7 +113,7 @@
   background: var(--sw-accent);
 }
 .sw-tab:focus-visible {
-  outline: 1px solid rgba(217, 119, 87, 0.55);
+  outline: 2px solid var(--sw-accent);
   outline-offset: 3px;
   border-radius: 2px;
 }

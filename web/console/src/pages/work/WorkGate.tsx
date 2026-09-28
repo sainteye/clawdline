@@ -142,6 +142,9 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
   return <section className="work-gate-detail" aria-label="規劃與獨立驗證">
     <h4>規劃與獨立驗證</h4>
     <p className="work-gate-current"><WorkGateLine item={item} /></p>
+    {loading && <p role="status">正在讀取驗證證據…</p>}
+    {error && <p role="alert">驗證詳情讀取失敗：{error} <button className="chip" type="button" onClick={retry}>重試</button></p>}
+    {!loading && !error && !detail && <p>尚未載入驗證詳情。<button className="chip" type="button" onClick={retry}>讀取詳情</button></p>}
     <p>本輪擷取：{item.gate_snapshot_cycle ? `第 ${item.gate_snapshot_cycle} 輪 · ${gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}` : "尚未成功指派；將在第一次成功指派時擷取當時設定"}。後續修改全域設定不會改動本輪。</p>
     <div className="work-gate-acceptance"><strong>驗收條件（Markdown）</strong>
       {item.acceptance_criteria ? <div dangerouslySetInnerHTML={markdown(item.acceptance_criteria)} /> : <p>尚未設定驗收條件；開啟 gate 的工作指派前必須補上。</p>}
@@ -158,9 +161,6 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
       {compact.escalation.state === "waiting_user" ? <GateDecision item={item} escalation={compact.escalation} sessions={sessions} run={run} />
         : <p>目前由上層 Epic owner Session 決定；若該 Session 離線滿 15 分鐘，會改由你決定。可從 Epic 的子項清單追蹤負責 Session；此處沒有代替 Agent 行使的操作。</p>}
     </section>}
-    {loading && <p role="status">正在讀取驗證證據…</p>}
-    {error && <p role="alert">驗證詳情讀取失敗：{error} <button className="chip" type="button" onClick={retry}>重試</button></p>}
-    {!loading && !error && !detail && <p>尚未載入驗證詳情。<button className="chip" type="button" onClick={retry}>讀取詳情</button></p>}
     {detail && <>
       <h5>最近驗證證據</h5>
       {!detail.recent_rounds.length && <p>目前沒有可顯示的驗證輪次。</p>}
