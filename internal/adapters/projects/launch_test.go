@@ -199,3 +199,12 @@ func TestLaunchRefusesAReasoningEffortItCannotType(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyCodexIsToldToSkipItsUpdateCheck(t *testing.T) {
+	if got := UpdateCheckArgs(AssistantClaude); got != nil {
+		t.Fatalf("Claude Code was given %v", got)
+	}
+	if got := strings.Join(UpdateCheckArgs(AssistantCodex), " "); got != "-c check_for_update_on_startup=false" {
+		t.Fatalf("Codex was given %q", got)
+	}
+}

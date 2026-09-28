@@ -99,6 +99,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		}
 		return Started{}, err
 	}
+	launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
 	if !placeIsDirectory(place.Path) {
 		return Started{}, notFound("No place named that")
 	}
