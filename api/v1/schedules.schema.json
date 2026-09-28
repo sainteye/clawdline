@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "schedules.schema.json",
   "title": "Schedules",
-  "description": "The Swift app's schedule routes, field for field (its docs/schedules.md and RemoteServer.swift): GET and POST /v1/orchestrator/schedules, GET, PATCH and DELETE /v1/orchestrator/schedules/:id, POST /v1/orchestrator/schedules/:id/run. The stored schedule is the Swift app's schedule file; see ScheduleFile. The generator has no union type, so `days` is typed only in its array spelling — the routes also accept and return the string `daily` there.",
+  "description": "The schedule routes: GET and POST /v1/orchestrator/schedules, GET, PATCH and DELETE /v1/orchestrator/schedules/:id, POST /v1/orchestrator/schedules/:id/run. The stored schedule is backward-compatible with the retired Swift app's file, with an optional time_zone extension. The generator has no union type, so `days` is typed only in its array spelling — the routes also accept and return the string `daily` there.",
   "$defs": {
     "ScheduleLastRun": {
       "type": "object",
@@ -32,6 +32,7 @@
         "project_dir": { "type": "string" },
         "state": { "description": "`invalid` on a row that could not be parsed; absent otherwise.", "type": "string" },
         "title": { "type": "string" },
+        "time_zone": { "description": "The IANA zone whose wall clock when.at names. Absent on legacy schedules, which use the machine zone.", "type": "string" },
         "trigger_only": { "description": "Present and true for a schedule with no time (`when.trigger_only`): the clock never fires it, and it runs only by hand or by webhook. It never has next_fire.", "type": "boolean" }
       }
     },
@@ -93,6 +94,7 @@
         "runs_may_be_truncated": { "type": "boolean" },
         "task": { "$ref": "#/$defs/ScheduleTask" },
         "title": { "type": "string" },
+        "time_zone": { "description": "The IANA zone whose wall clock when.at names. Absent on legacy schedules, which use the machine zone.", "type": "string" },
         "trigger_only": { "type": "boolean" },
         "webhook_binding_availability": { "type": "string" },
         "webhook_hook_id": { "type": "string" },
@@ -149,6 +151,7 @@
         "template": { "$ref": "#/$defs/ScheduleTemplate" },
         "session_id": { "description": "The conversation the person's message was sent to. Required with via for a session-authorized repeating write.", "type": "string" },
         "timeout_minutes": { "type": "integer" },
+        "time_zone": { "description": "The IANA zone whose wall clock at names. New console schedules use the browser's zone.", "type": "string" },
         "title": { "type": "string" },
         "trigger_only": { "description": "True for a schedule with no time: send it without at, days and on. A save may turn a timed repeating schedule into one and back; a schedule that runs once stays once.", "type": "boolean" },
         "via": { "$ref": "#/$defs/ScheduleUserAuthorization" }
@@ -184,6 +187,7 @@
         "enabled": { "type": "boolean" },
         "id": { "type": "string" },
         "next_fire": { "type": "integer" },
+        "time_zone": { "description": "The IANA zone whose wall clock the schedule uses.", "type": "string" },
         "title": { "type": "string" }
       }
     },

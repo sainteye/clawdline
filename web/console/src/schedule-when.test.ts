@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 // @ts-expect-error -- a `.ts` path for node's type-stripping test runner.
-import { isTriggerOnly, scheduleNextLine, scheduleWhenFields } from "./schedule-when.ts"
+import { isTriggerOnly, scheduleNextLine, scheduleTimeZone, scheduleWhenFields } from "./schedule-when.ts"
 // @ts-expect-error -- a `.ts` path for node's type-stripping test runner.
 import { recordBody } from "./cloud/schedule-move.ts"
 
@@ -25,6 +25,12 @@ test("a trigger-only body sends trigger_only and none of at, days and on", () =>
   assert.deepEqual(fields, { trigger_only: true })
   assert.equal("at" in fields || "days" in fields || "on" in fields, false)
   assert.deepEqual(scheduleWhenFields(false, "09:00", "daily"), { at: "09:00", days: "daily" })
+})
+
+test("a schedule keeps its named zone and a legacy one takes the browser zone", () => {
+  assert.equal(scheduleTimeZone("Asia/Taipei", "America/New_York"), "Asia/Taipei")
+  assert.equal(scheduleTimeZone(undefined, "Asia/Taipei"), "Asia/Taipei")
+  assert.equal(scheduleTimeZone(undefined, undefined), undefined)
 })
 
 test("a list row and a detail record both read as trigger-only", () => {

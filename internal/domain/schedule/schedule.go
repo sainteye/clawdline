@@ -2,11 +2,11 @@
 // the file a person writes, the grammar of its `when`, and the arithmetic that
 // decides what the minute timer should do about one occurrence.
 //
-// The file is the Swift app's, field for field (`docs/schedules.md` in that
-// repository, `Orchestrator.schedule(from:)` and `Sources/Schedules.swift`),
-// so a schedule written for one app reads the same in the other and the
-// migration is a copy rather than a translation. Every refusal carries the
-// Swift parser's own sentence.
+// The file is backward-compatible with the Swift app's (`docs/schedules.md`
+// in that repository, `Orchestrator.schedule(from:)` and
+// `Sources/Schedules.swift`), plus the optional time_zone used by this daemon.
+// A legacy schedule still migrates by copy rather than translation. Existing
+// refusals carry the Swift parser's own sentence.
 //
 // One rule is this daemon's and not the Swift app's, and it is the one
 // `docs/plan.md` §3.2 exists for: **an occurrence from before this daemon first
@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	_ "time/tzdata"
 	"unicode/utf8"
 )
 
@@ -120,9 +121,11 @@ func (w When) Object() map[string]any {
 
 // Schedule is one parsed file.
 type Schedule struct {
-	ID    string
-	Title string
-	When  When
+	ID       string
+	Title    string
+	When     When
+	TimeZone string
+	location *time.Location
 	// Task is the template exactly as the file has it. A task is materialised
 	// from it when an occurrence is dispatched, never before, so a save that
 	// lands while a run is working changes the next run and not this one.
@@ -135,6 +138,16 @@ type Schedule struct {
 	CreatedAt     time.Time
 	WhenChangedAt time.Time
 	FiredAt       time.Time
+}
+
+// ClockLocation is the wall clock this schedule names. Files written before
+// time_zone was added keep using the machine clock so an upgrade does not
+// silently move an existing occurrence.
+func (s Schedule) ClockLocation(machine *time.Location) *time.Location {
+	if s.location != nil {
+		return s.location
+	}
+	return machine
 }
 
 // TaskString reads one string field of the template.
@@ -196,7 +209,7 @@ func boolean(raw any) (bool, bool) {
 var allowedFields = map[string]bool{
 	"clawdline_schedule": true, "schedule_id": true, "title": true, "when": true, "task": true,
 	"enabled": true, "close_tab": true, "catch_up_hours": true, "notify_on_failure": true,
-	"created_at": true, "when_changed_at": true, "fired_at": true,
+	"created_at": true, "when_changed_at": true, "fired_at": true, "time_zone": true,
 }
 
 var allowedTaskFields = map[string]bool{
@@ -240,6 +253,18 @@ func Parse(obj map[string]any, id string, isDirectory func(string) bool) (Schedu
 	if err != nil {
 		return Schedule{}, err
 	}
+	var zoneName string
+	var location *time.Location
+	if raw, present := obj["time_zone"]; present {
+		zoneName, _ = raw.(string)
+		if zoneName == "" {
+			return Schedule{}, bad("time_zone must be a non-empty IANA time zone name")
+		}
+		location, err = time.LoadLocation(zoneName)
+		if err != nil {
+			return Schedule{}, bad("time_zone must be a known IANA time zone name")
+		}
+	}
 	task, ok := obj["task"].(map[string]any)
 	if !ok {
 		return Schedule{}, bad("task must be an object")
@@ -251,7 +276,7 @@ func Parse(obj map[string]any, id string, isDirectory func(string) bool) (Schedu
 	if !ok {
 		return Schedule{}, bad("enabled must be a boolean")
 	}
-	out := Schedule{ID: sid, Title: title, When: when, Task: task, Enabled: enabled,
+	out := Schedule{ID: sid, Title: title, When: when, TimeZone: zoneName, location: location, Task: task, Enabled: enabled,
 		CloseTab: CloseOnSuccess, CatchUpHours: DefaultCatchUpHours, NotifyOnFailure: true}
 	if raw, present := obj["close_tab"]; present {
 		name, _ := raw.(string)

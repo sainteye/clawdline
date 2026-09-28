@@ -4210,25 +4210,29 @@ type ScheduleList struct {
 // the retained runs the list leaves out. `webhook_binding_availability` is
 // `active` (with `webhook_hook_id`), `unbound`, or `binding_store_unavailable`.
 type ScheduleRecord struct {
-	CatchUpHours               int64            `json:"catch_up_hours"`
-	CloseTab                   string           `json:"close_tab"`
-	Enabled                    bool             `json:"enabled"`
-	File                       string           `json:"file"`
-	FiredAt                    int64            `json:"fired_at,omitempty"`
-	ID                         string           `json:"id"`
-	LastMissedAt               int64            `json:"last_missed_at,omitempty"`
-	LastRun                    *ScheduleLastRun `json:"last_run,omitempty"`
-	NextFire                   int64            `json:"next_fire,omitempty"`
-	NotifyOnFailure            bool             `json:"notify_on_failure"`
-	Once                       bool             `json:"once,omitempty"`
-	Runs                       []ScheduleRun    `json:"runs"`
-	RunsMayBeTruncated         bool             `json:"runs_may_be_truncated,omitempty"`
-	Task                       ScheduleTask     `json:"task"`
-	Title                      string           `json:"title"`
-	TriggerOnly                bool             `json:"trigger_only,omitempty"`
-	WebhookBindingAvailability string           `json:"webhook_binding_availability"`
-	WebhookHookID              string           `json:"webhook_hook_id,omitempty"`
-	When                       ScheduleWhen     `json:"when"`
+	CatchUpHours       int64            `json:"catch_up_hours"`
+	CloseTab           string           `json:"close_tab"`
+	Enabled            bool             `json:"enabled"`
+	File               string           `json:"file"`
+	FiredAt            int64            `json:"fired_at,omitempty"`
+	ID                 string           `json:"id"`
+	LastMissedAt       int64            `json:"last_missed_at,omitempty"`
+	LastRun            *ScheduleLastRun `json:"last_run,omitempty"`
+	NextFire           int64            `json:"next_fire,omitempty"`
+	NotifyOnFailure    bool             `json:"notify_on_failure"`
+	Once               bool             `json:"once,omitempty"`
+	Runs               []ScheduleRun    `json:"runs"`
+	RunsMayBeTruncated bool             `json:"runs_may_be_truncated,omitempty"`
+	Task               ScheduleTask     `json:"task"`
+
+	// The IANA zone whose wall clock when.at names. Absent on legacy schedules, which
+	// use the machine zone.
+	TimeZone                   string       `json:"time_zone,omitempty"`
+	Title                      string       `json:"title"`
+	TriggerOnly                bool         `json:"trigger_only,omitempty"`
+	WebhookBindingAvailability string       `json:"webhook_binding_availability"`
+	WebhookHookID              string       `json:"webhook_hook_id,omitempty"`
+	When                       ScheduleWhen `json:"when"`
 }
 
 // The body POST /v1/orchestrator/schedules and PATCH
@@ -4268,10 +4272,14 @@ type ScheduleRequest struct {
 
 	// The conversation the person's message was sent to. Required with via for a
 	// session-authorized repeating write.
-	SessionID      string            `json:"session_id,omitempty"`
-	Template       *ScheduleTemplate `json:"template,omitempty"`
-	TimeoutMinutes int64             `json:"timeout_minutes,omitempty"`
-	Title          string            `json:"title"`
+	SessionID string            `json:"session_id,omitempty"`
+	Template  *ScheduleTemplate `json:"template,omitempty"`
+
+	// The IANA zone whose wall clock at names. New console schedules use the browser's
+	// zone.
+	TimeZone       string `json:"time_zone,omitempty"`
+	TimeoutMinutes int64  `json:"timeout_minutes,omitempty"`
+	Title          string `json:"title"`
 
 	// True for a schedule with no time: send it without at, days and on. A save may
 	// turn a timed repeating schedule into one and back; a schedule that runs once
@@ -4311,7 +4319,11 @@ type ScheduleRow struct {
 
 	// `invalid` on a row that could not be parsed; absent otherwise.
 	State string `json:"state,omitempty"`
-	Title string `json:"title,omitempty"`
+
+	// The IANA zone whose wall clock when.at names. Absent on legacy schedules, which
+	// use the machine zone.
+	TimeZone string `json:"time_zone,omitempty"`
+	Title    string `json:"title,omitempty"`
 
 	// Present and true for a schedule with no time (`when.trigger_only`): the clock
 	// never fires it, and it runs only by hand or by webhook. It never has next_fire.
@@ -4345,6 +4357,9 @@ type ScheduleSummary struct {
 	Enabled  bool   `json:"enabled"`
 	ID       string `json:"id"`
 	NextFire int64  `json:"next_fire,omitempty"`
+
+	// The IANA zone whose wall clock the schedule uses.
+	TimeZone string `json:"time_zone,omitempty"`
 	Title    string `json:"title"`
 }
 

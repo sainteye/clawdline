@@ -133,15 +133,22 @@ test("a refused disable writes nothing else, and a refused delete leaves the sou
 })
 
 test("the disable carries every stored field and leaves the model alone", () => {
-  assert.deepEqual(recordBody(record, "cloud.src", false), {
+  const zoned = { ...record, time_zone: "Asia/Taipei" }
+  assert.deepEqual(recordBody(zoned, "cloud.src", false), {
     title: "Nightly", at: "09:00", days: "daily", place_id: "cloud.src", assistant: "claude",
     instructions: "run it", enabled: false, close_tab: "always", catch_up_hours: 2,
-    notify_on_failure: false, timeout_minutes: 45,
+    notify_on_failure: false, timeout_minutes: 45, time_zone: "Asia/Taipei",
   })
   // A one-time schedule's date goes with the copy; the form has no control for it.
   const once = { ...record, when: { at: "09:00", on: "2026-10-01" } }
   assert.deepEqual(targetBody({ title: "x", days: "daily", place_id: "old" }, once, targetPlaces[1]),
     { title: "x", place_id: "cloud.dst", on: "2026-10-01" })
+})
+
+test("a move carries the schedule's wall-clock zone to the target", () => {
+  const zoned = { ...record, time_zone: "Asia/Taipei" }
+  const copy = targetBody({ title: "Nightly", time_zone: zoned.time_zone }, zoned, targetPlaces[1])
+  assert.equal(copy.time_zone, "Asia/Taipei")
 })
 
 test("the copy carries the settings the form does not show, and sends no template when there are none", () => {
@@ -189,8 +196,9 @@ test("the project directory in the first message becomes the target's, as a whol
   assert.equal(copy.instructions, "你在 /home/bob/tool。")
 })
 
-test("a target older than template or the permission field is told apart from any other refusal", () => {
+test("a target older than a carried schedule field is told apart from any other refusal", () => {
   assert.equal(refusedByOlderTarget(new Error("unknown field: permission_mode")), true)
+  assert.equal(refusedByOlderTarget(new Error("unknown field: time_zone")), true)
   assert.equal(refusedByOlderTarget(new Error("unknown field: permission_mode, template")), true)
   assert.equal(refusedByOlderTarget(new Error("task.permission_mode must be one of: ask, edits, full")), false)
   assert.equal(refusedByOlderTarget(Object.assign(new Error("unknown field: template"), { code: "bad_request" })), true)

@@ -104,7 +104,7 @@ func (b *ScheduleBook) Beat(ctx context.Context) Pulse {
 		if !s.Enabled {
 			continue
 		}
-		fire := s.When.LatestFire(now, b.loc())
+		fire := s.When.LatestFire(now, b.scheduleLoc(s))
 		if fire.IsZero() {
 			continue
 		}
