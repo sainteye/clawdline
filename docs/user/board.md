@@ -62,7 +62,8 @@ be created without an open item owned by that session.
 ## Session to-dos
 
 Open a session and use the **Session 待辦** (session to-dos) fold: it lists the Board items that session owns, the
-ones it recently finished, and direct to-dos. Press **+** to add one.
+ones it recently finished, and direct to-dos. Press **+** to add one. Press an empty checkbox to
+complete a direct to-do, or its checked checkbox to restore it as unfinished.
 
 A session adds its own to-dos only when you ask it to, with:
 

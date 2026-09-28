@@ -1762,6 +1762,42 @@ func (w *WorkSystemV2) CompleteDirectTodo(ctx context.Context, id, session, acto
 	return out, mapWorkV2Error(err)
 }
 
+func (w *WorkSystemV2) ReopenDirectTodo(ctx context.Context, id, session string, file TodoV2Filer) (work.DirectTodoV2, error) {
+	var out work.DirectTodoV2
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.DirectTodo(id)
+		if err != nil {
+			return err
+		}
+		if prev.SessionID != session {
+			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
+		}
+		if prev.CompletedAt.IsZero() {
+			out = prev
+			if file != nil {
+				if k, ans, ok := file(out); ok {
+					return tx.CompleteReceipt(k, ans)
+				}
+			}
+			return nil
+		}
+		next := prev
+		next.CompletedAt, next.CompletedBy = time.Time{}, ""
+		if err := tx.PutDirectTodo(prev, next); err != nil {
+			return err
+		}
+		next.Version++
+		out = next
+		if file != nil {
+			if k, ans, ok := file(out); ok {
+				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
 func (w *WorkSystemV2) DeleteDirectTodo(ctx context.Context, id, session string, file func() (store.ReceiptKey, store.ReceiptAnswer, bool)) error {
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		deleted, err := tx.DeleteDirectTodo(id, session)

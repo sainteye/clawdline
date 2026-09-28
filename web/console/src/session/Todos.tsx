@@ -215,7 +215,7 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
   </article>
 }
 
-function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onAction: (action: "send" | "complete" | "delete") => void }) {
+function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2; conversation?: string; busy: boolean; onAction: (action: "send" | "complete" | "reopen" | "delete") => void }) {
   const completed = !!todo.completed_at
   const own = addedBySession(todo, conversation)
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
@@ -231,7 +231,8 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
       : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
   return <article className={`session-direct-todo${completed ? " completed" : ""}`} data-author={own ? "session" : "person"}>
     {completed
-      ? <button className="session-todo-check completed" type="button" disabled aria-label="已完成"><WorkIcon name="boxChecked" /></button>
+      ? <button className="session-todo-check completed" type="button" disabled={busy} aria-label="恢復為未完成"
+        onClick={() => onAction("reopen")}><WorkIcon name="boxChecked" /></button>
       : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}><WorkIcon name="box" /></button>}
     <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} {own
       && <span className="session-todo-author" aria-label={workWord("todoAddedBySessionLabel")}

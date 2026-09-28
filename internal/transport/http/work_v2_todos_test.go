@@ -62,6 +62,42 @@ func TestPersonTodoReadRetainsACompletedDirectTodo(t *testing.T) {
 	}
 }
 
+func TestPersonCanReopenACompletedDirectTodo(t *testing.T) {
+	s, p, id := directTodoServer(t)
+	if _, err := s.workV2().MarkDirectTodoSent(context.Background(), id, p.s.ConversationID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.workV2().DirectTodos(context.Background(), p.s.ConversationID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.workV2().CompleteDirectTodo(context.Background(), id, p.s.ConversationID,
+		p.s.ConversationID, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodPost,
+		"/v1/work/v2/session-todos/pane-4/"+id+"/reopen", `{}`, "todo-reopen"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reopen: %d %s", rec.Code, rec.Body)
+	}
+	var answer struct {
+		Todo directTodoV2Wire `json:"todo"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Todo.ID != id || answer.Todo.CompletedAt != nil || answer.Todo.CompletedBy != "" ||
+		answer.Todo.SentAt == nil || answer.Todo.ReadAt == nil {
+		t.Fatalf("reopened todo: %+v", answer.Todo)
+	}
+	again := httptest.NewRecorder()
+	s.workV2Route(again, personWorkV2Request(http.MethodPost,
+		"/v1/work/v2/session-todos/pane-4/"+id+"/reopen", `{}`, "todo-reopen-again"))
+	if again.Code != http.StatusOK {
+		t.Fatalf("reopen an open todo: %d %s", again.Code, again.Body)
+	}
+}
+
 // A Session row carried across a temporarily unreadable terminal inventory still
 // has its durable conversation id. Reading work keyed by that id must not ask
 // the terminal layer to prove that the tab is visible right now.

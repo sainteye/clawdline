@@ -342,9 +342,10 @@ sent, and read remain distinguishable without color.
 ### WS2-T04 — Completion authority is narrow
 
 The owning Agent and a person can check a row complete. The Agent cannot edit text, Send, Delete,
-or reopen it. Completion is idempotent and retains sent/read timestamps. The person projection
-retains the completed row in a recent group with a green check, while the open count and Agent read
-exclude it. Explicit Delete remains available after confirmation.
+or reopen it. A person can press the completed checkbox to clear its completion receipt and return
+the row to the unfinished list without clearing sent/read timestamps. Completion and reopening are
+idempotent. The person projection retains the completed row in a recent group with a green check,
+while the open count and Agent read exclude it. Explicit Delete remains available after confirmation.
 
 ### WS2-T05 — Delete is person-only and removes content
 

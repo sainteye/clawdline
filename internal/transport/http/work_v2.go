@@ -1637,6 +1637,12 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 				answer = directTodoAnswer(td, nil)
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 			})
+	case "reopen":
+		_, err = s.workV2().ReopenDirectTodo(r.Context(), id, conversation,
+			func(td work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+				answer = directTodoAnswer(td, nil)
+				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+			})
 	case "delete":
 		answer, _ = json.Marshal(map[string]any{"ok": true, "deleted": id})
 		err = s.workV2().DeleteDirectTodo(r.Context(), id, conversation, func() (store.ReceiptKey, store.ReceiptAnswer, bool) {
