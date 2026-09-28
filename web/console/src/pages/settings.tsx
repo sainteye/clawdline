@@ -16,6 +16,14 @@ import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
 import { nextWord } from "../next-strings.js"
+import {
+  DEFAULT_FONT_SCALE,
+  FONT_SCALE_STEPS,
+  applyFontScale,
+  readFontScale,
+  rememberFontScale,
+  stepFontScale,
+} from "../font-scale.js"
 
 /**
  * The settings page, `section#settings` in `index.html` and `input/settings.js`.
@@ -82,6 +90,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
   const [entered, setEntered] = useState(false)
   const [icons, setIcons] = useState(settingsAssistantIcons)
   const [newest, setNewest] = useState(settingsNewestFirst)
+  const [fontScale, setFontScale] = useState(readFontScale)
   const [version, setVersion] = useState("")
   const closeRef = useRef<HTMLButtonElement>(null)
   // `Push.redraw()` from `Settings.enter`: the notifications block is drawn
@@ -190,6 +199,19 @@ function SettingsPage({ shown }: { shown: boolean }) {
     if (tx) tx.scrollTop = 0
   }
 
+  const chooseFontScale = (percent: number) => {
+    applyFontScale(percent)
+    setFontScale({ percent, storageAvailable: rememberFontScale(percent) })
+  }
+
+  const adjustFontScale = (direction: -1 | 1) => {
+    setFontScale((current) => {
+      const percent = stepFontScale(current.percent, direction)
+      applyFontScale(percent)
+      return { percent, storageAvailable: rememberFontScale(percent) }
+    })
+  }
+
   return (
     <section
       className="page page-settings"
@@ -244,6 +266,52 @@ function SettingsPage({ shown }: { shown: boolean }) {
             aria-live="polite"
           >
             {push.said}
+          </p>
+        </div>
+
+        <div className="block" id="settings-font-scale">
+          <b id="settings-font-scale-title">{nextWord("fontScaleTitle")}</b>
+          <p className="say" id="settings-font-scale-say">
+            {nextWord("fontScaleHint")}
+          </p>
+          <div className="row font-scale-row" role="group" aria-labelledby="settings-font-scale-title">
+            <button
+              className="chip font-scale-button"
+              id="settings-font-scale-smaller"
+              type="button"
+              aria-label={nextWord("fontScaleSmaller")}
+              title={nextWord("fontScaleSmaller")}
+              disabled={fontScale.percent === FONT_SCALE_STEPS[0]}
+              onClick={() => adjustFontScale(-1)}
+            >
+              −
+            </button>
+            <output className="font-scale-value" aria-live="polite" aria-atomic="true">
+              {fontScale.percent}%
+            </output>
+            <button
+              className="chip font-scale-button"
+              id="settings-font-scale-larger"
+              type="button"
+              aria-label={nextWord("fontScaleLarger")}
+              title={nextWord("fontScaleLarger")}
+              disabled={fontScale.percent === FONT_SCALE_STEPS[FONT_SCALE_STEPS.length - 1]}
+              onClick={() => adjustFontScale(1)}
+            >
+              +
+            </button>
+            <button
+              className="chip font-scale-reset"
+              id="settings-font-scale-reset"
+              type="button"
+              disabled={fontScale.percent === DEFAULT_FONT_SCALE}
+              onClick={() => chooseFontScale(DEFAULT_FONT_SCALE)}
+            >
+              {nextWord("fontScaleReset")}
+            </button>
+          </div>
+          <p className="said" role="status" aria-live="polite">
+            {fontScale.storageAvailable ? "" : nextWord("fontScaleNotRemembered")}
           </p>
         </div>
 

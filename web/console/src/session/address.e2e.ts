@@ -16,7 +16,7 @@ import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -474,6 +474,18 @@ class Tab {
     return result.value
   }
 
+  async press(key: string, code = key): Promise<void> {
+    const virtual = key === "Tab" ? 9 : key === "Enter" ? 13 : 0
+    const event = { key, code, windowsVirtualKeyCode: virtual, nativeVirtualKeyCode: virtual }
+    await this.b.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...event }, this.session)
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", ...event }, this.session)
+  }
+
+  async screenshot(path: string): Promise<void> {
+    const { data } = await this.b.send("Page.captureScreenshot", { format: "png", fromSurface: true }, this.session)
+    writeFileSync(path, Buffer.from(data, "base64"))
+  }
+
   seen(): Promise<Seen> {
     return this.run(PROBE)
   }
@@ -579,6 +591,126 @@ test("desk: opening a session writes it into the address, and a reload comes bac
     await tab.until("the reload opens the same session", (s) => s.rows === ROWS.length && s.open === TTY)
     assert.equal((await tab.seen()).hash, FRAGMENT[TTY])
   }))
+
+test("phone: Settings changes, remembers and restores the browser's text size", async () => {
+  const evidence = process.env.CLAWDLINE_FONT_SCREENSHOT_DIR || ""
+  if (evidence) mkdirSync(evidence, { recursive: true })
+
+  await inTab(PHONE, async (tab) => {
+    await tab.go("/#page=settings")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const page = document.getElementById("settings")
+        const value = document.querySelector(".font-scale-value")
+        if (page && !page.hidden && value?.textContent === "100%") return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the text-size setting did not appear"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    const initial = await tab.run(`(() => {
+      const title = document.getElementById("settings-font-scale-title")
+      const smaller = document.getElementById("settings-font-scale-smaller")
+      const larger = document.getElementById("settings-font-scale-larger")
+      const reset = document.getElementById("settings-font-scale-reset")
+      const box = (element) => element.getBoundingClientRect()
+      return {
+        titleHeight: box(title).height,
+        adjust: getComputedStyle(document.body).webkitTextSizeAdjust,
+        controls: [smaller, larger, reset].map((element) => ({ width: box(element).width, height: box(element).height })),
+        scrollsSideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      }
+    })()`)
+    assert.equal(initial.adjust, "100%")
+    assert.equal(initial.scrollsSideways, false)
+    for (const control of initial.controls) {
+      assert.ok(control.width >= 44, `a text-size control is only ${control.width}px wide`)
+      assert.ok(control.height >= 44, `a text-size control is only ${control.height}px tall`)
+    }
+
+    await tab.run(`document.getElementById("settings-font-scale-smaller").focus()`)
+    await tab.press("Tab")
+    assert.equal(await tab.run(`document.activeElement?.id`), "settings-font-scale-larger")
+    await tab.run(`document.activeElement?.click()`)
+    assert.equal(await tab.run(`document.querySelector(".font-scale-value")?.textContent`), "110%")
+    await tab.press("Tab")
+    assert.equal(await tab.run(`document.activeElement?.id`), "settings-font-scale-reset")
+
+    await tab.run(`(() => {
+      const plus = document.getElementById("settings-font-scale-larger")
+      for (let percent = 120; percent <= 150; percent += 10) plus.click()
+    })()`)
+    const largest = await tab.run(`(() => {
+      const page = document.getElementById("settings")
+      const title = document.getElementById("settings-font-scale-title")
+      const plus = document.getElementById("settings-font-scale-larger")
+      const row = document.querySelector(".font-scale-row")
+      const rowBox = row.getBoundingClientRect()
+      return {
+        value: document.querySelector(".font-scale-value")?.textContent,
+        stored: localStorage.getItem("clawdline.font-scale"),
+        adjust: getComputedStyle(document.body).webkitTextSizeAdjust,
+        titleHeight: title.getBoundingClientRect().height,
+        plusDisabled: plus.disabled,
+        pageScrollsSideways: page.scrollWidth > page.clientWidth,
+        documentScrollsSideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        rowInsideViewport: rowBox.left >= 0 && rowBox.right <= innerWidth,
+      }
+    })()`)
+    assert.deepEqual(largest, {
+      value: "150%",
+      stored: "150",
+      adjust: "150%",
+      titleHeight: largest.titleHeight,
+      plusDisabled: true,
+      pageScrollsSideways: false,
+      documentScrollsSideways: false,
+      rowInsideViewport: true,
+    })
+    assert.ok(largest.titleHeight > initial.titleHeight, "150% makes the setting's words visibly taller")
+    if (evidence) await tab.screenshot(join(evidence, "phone-390-text-150.png"))
+
+    await tab.reload()
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const value = document.querySelector(".font-scale-value")?.textContent
+        if (value === "150%") return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the remembered text size did not return: " + value))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(await tab.run(`getComputedStyle(document.body).webkitTextSizeAdjust`), "150%")
+    await tab.run(`document.getElementById("settings-font-scale-reset").click()`)
+  })
+
+  await inTab(DESK, async (tab) => {
+    await tab.go("/#page=settings")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const value = document.querySelector(".font-scale-value")?.textContent
+        if (value === "100%") return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the desktop setting did not appear: " + value))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    const layout = await tab.run(`(() => ({
+      scrollsSideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      background: getComputedStyle(document.body).backgroundColor,
+      focused: document.activeElement?.id,
+      fontScaleHidden: getComputedStyle(document.getElementById("settings-font-scale")).display === "none",
+    }))()`)
+    assert.equal(layout.scrollsSideways, false)
+    assert.equal(layout.background, "rgb(14, 14, 17)")
+    assert.equal(layout.focused, "settings-close")
+    assert.equal(layout.fontScaleHidden, true, "the mobile-only setting does not promise an effect on a desk")
+    if (evidence) await tab.screenshot(join(evidence, "desktop-1280-text-100.png"))
+  })
+})
 
 test("desk: smart naming explains the one model turn before it spends it, then saves the answer", () =>
   inTab(DESK, async (tab) => {
