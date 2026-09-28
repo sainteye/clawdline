@@ -125,6 +125,29 @@ func TestGateEvidenceRejectsDeclaredSizeAndHashDisagreements(t *testing.T) {
 	}
 }
 
+func TestExportedGateSubmissionsPurgeIdempotently(t *testing.T) {
+	r := Root{Dir: filepath.Join(t.TempDir(), "tasks")}
+	id := "a7999999-9999-4999-8999-999999999999"
+	body := []byte("evidence")
+	meta := contract.WorkGateEvidenceSubmission{ArtifactID: "focused-log", MediaType: "text/plain",
+		ByteCount: int64(len(body)), Sha256: gateDigest(body)}
+	if _, err := r.StoreGateEvidence(id, "key", meta, bytes.NewReader(body), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PurgeGateSubmissions(id); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PurgeGateSubmissions(id); err != nil {
+		t.Fatalf("idempotent purge: %v", err)
+	}
+	if _, err := os.Stat(r.gatePath(id)); !os.IsNotExist(err) {
+		t.Fatalf("gate submission still exists: %v", err)
+	}
+	if err := r.PurgeGateSubmissions("../outside"); err == nil {
+		t.Fatal("unsafe gate purge id was accepted")
+	}
+}
+
 func gateErrorCode(err error) string {
 	var gateErr *GateStorageError
 	if errors.As(err, &gateErr) {

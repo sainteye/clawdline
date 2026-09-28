@@ -189,6 +189,9 @@ func serve() {
 	// The broker's beat: collect what children wrote, run the two clocks, and
 	// keep telling a root its child finished until somebody acknowledges it.
 	srv.StartBroker(context.Background())
+	// Verification rounds depend on the broker's durable task ledger and are
+	// therefore supervised only after the broker beat is running.
+	srv.StartWorkGateCoordinator(context.Background())
 	// The capacity register's beat: every bounded thing measured on the same
 	// tick, and health red when evidence has nowhere left to go.
 	srv.StartCapacity(context.Background())

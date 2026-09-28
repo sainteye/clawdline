@@ -52,6 +52,10 @@ type DispatchRequest struct {
 	// whoever started it polls. It carries the inventory receipt like any
 	// caller's dispatch, because a caller did read an inventory.
 	Detached bool
+	// InternalGate is set only by DispatchGate. The coordinator has no
+	// inventory page to race against, but it still passes through every other
+	// admission, capacity, durability, isolation, and root-liveness check.
+	InternalGate bool
 }
 
 // ScheduleOrigin is the schedule a scheduled dispatch belongs to.
@@ -147,7 +151,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	// refusal has to carry the inventory for *this task's* repository and the
 	// brief is where that repository is named.
 	switch {
-	case req.Respawn == nil && req.Schedule == nil:
+	case req.Respawn == nil && req.Schedule == nil && !req.InternalGate:
 		if err := b.checkGeneration(ctx, record.ProjectDir, req); err != nil {
 			return Dispatched{}, err
 		}

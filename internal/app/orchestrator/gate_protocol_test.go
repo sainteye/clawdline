@@ -129,6 +129,27 @@ func gateResultBody(t *testing.T, r Record, artifact string) []byte {
 	return body
 }
 
+func TestGateDispatchReplayRefusesADifferentImmutableIdentity(t *testing.T) {
+	b, _ := newTestBroker(t)
+	repo := gitRepo(t)
+	gate, _, _ := gateFixture(t, repo)
+	id := "a7666666-6666-4666-8666-666666666666"
+	brief := Record{Protocol: Protocol, ID: id, Kind: TaskKindVerificationGate, Assistant: "codex",
+		PermissionMode: "ask", Claims: []string{}, Isolation: IsolationWorktree, ProjectDir: repo,
+		Title: "check", Instructions: "verify", TimeoutMinutes: 30, Persona: "reality-checker",
+		WorkID: "a7777777-7777-4777-8777-777777777777", CreatedAt: time.Now(), Gate: gate}.Brief()
+	if _, err := b.Tasks.Write(brief, ""); err != nil {
+		t.Fatal(err)
+	}
+	changed := *gate
+	changed.Candidate.Commit = strings.Repeat("f", 40)
+	_, err := b.DispatchGate(context.Background(), GateDispatch{TaskID: id, WorkID: brief.WorkID,
+		Persona: brief.Persona, Gate: changed})
+	if refusalCode(err) != "gate_replay_mismatch" {
+		t.Fatalf("different replay identity = %v", err)
+	}
+}
+
 func TestGateResultRecoversAfterPersistenceAndIgnoresOrdinaryResult(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	repo := gitRepo(t)

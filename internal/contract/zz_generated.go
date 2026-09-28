@@ -6814,6 +6814,14 @@ const (
 // WorkGateAttemptStateValues is every value the contract allows, in contract order.
 var WorkGateAttemptStateValues = []WorkGateAttemptState{WorkGateAttemptStateQueued, WorkGateAttemptStateDispatching, WorkGateAttemptStateRunning, WorkGateAttemptStateSucceeded, WorkGateAttemptStateFailed, WorkGateAttemptStateTimedOut, WorkGateAttemptStateStale}
 
+// The current non-sensitive authority that permits the exact candidate tuple to
+// merge. Its absence means there is no live authorization.
+type WorkGateAuthorizationSummary struct {
+	CreatedAt int64  `json:"created_at"`
+	Kind      string `json:"kind"`
+	Reason    string `json:"reason"`
+}
+
 // The maker's immutable receipt for the exact same-Project commit an
 // independent checker sees. Untracked files are counted but are not part of the
 // candidate.
@@ -6862,12 +6870,13 @@ var WorkGateClaimStateValues = []WorkGateClaimState{WorkGateClaimStatePassed, Wo
 // The bounded gate projection carried by Board list items: aggregates and
 // latest state, never evidence history.
 type WorkGateCompactRead struct {
-	Escalation        *WorkGateEscalation   `json:"escalation,omitempty"`
-	GateSnapshotCycle int64                 `json:"gate_snapshot_cycle"`
-	LatestRound       *WorkGateRoundSummary `json:"latest_round,omitempty"`
-	Metrics           WorkGateMetrics       `json:"metrics"`
-	PlanningGate      bool                  `json:"planning_gate"`
-	VerifyGate        bool                  `json:"verify_gate"`
+	CurrentAuthorization *WorkGateAuthorizationSummary `json:"current_authorization,omitempty"`
+	Escalation           *WorkGateEscalation           `json:"escalation,omitempty"`
+	GateSnapshotCycle    int64                         `json:"gate_snapshot_cycle"`
+	LatestRound          *WorkGateRoundSummary         `json:"latest_round,omitempty"`
+	Metrics              WorkGateMetrics               `json:"metrics"`
+	PlanningGate         bool                          `json:"planning_gate"`
+	VerifyGate           bool                          `json:"verify_gate"`
 }
 
 // The immutable gate settings captured by the first successful assignment of an

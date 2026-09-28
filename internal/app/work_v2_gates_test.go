@@ -3,11 +3,104 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func enterVerificationForTest(t *testing.T, w *WorkSystemV2, owned WorkV2View) (WorkV2View, store.WorkGateDue) {
+	t.Helper()
+	full, err := w.Item(context.Background(), owned.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var active work.AssignmentV2
+	for _, assignment := range full.Assignments {
+		if assignment.State == "active" {
+			active = assignment
+			break
+		}
+	}
+	roundID := gateDeterministicID(owned.Item.ID + fmt.Sprintf(":round:%d", owned.Item.Version))
+	attemptID := gateDeterministicID(roundID + ":attempt:0")
+	candidate := contract.WorkGateCandidateReceipt{Repository: owned.Item.ProjectPath, Worktree: owned.Item.ProjectPath,
+		Branch: "feature", Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40),
+		AssignmentID: active.ID, OwnerSessionID: active.SessionID, Cycle: owned.Item.Cycle,
+		CriteriaVersion: owned.Item.AcceptanceVersion, CriteriaDigest: owned.Item.AcceptanceDigest,
+		CreatedAt: w.now().Unix()}
+	verifying, err := w.Advance(context.Background(), owned.Item.ID, AdvanceWorkV2{ExpectedVersion: owned.Item.Version,
+		SessionID: active.SessionID, Next: work.PhaseVerifying, Actor: active.SessionID, Candidate: &candidate,
+		RoundID: roundID, AttemptID: attemptID}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round, err := w.Store.WorkGateRound(context.Background(), roundID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round.Attempts[0].TaskID = attemptID
+	return verifying, store.WorkGateDue{Round: round, Attempt: round.Attempts[0], BaseCommit: owned.Item.CycleBaseCommit}
+}
+
+func passVerificationForTest(t *testing.T, w *WorkSystemV2, due store.WorkGateDue) WorkV2View {
+	t.Helper()
+	result := contract.WorkGateResult{RoundID: due.Round.ID, TaskID: due.Attempt.TaskID,
+		CandidateCommit: due.Round.Candidate.Commit, CandidateTree: due.Round.Candidate.Tree,
+		CriteriaVersion: due.Round.Acceptance.Version, CriteriaDigest: due.Round.Acceptance.Digest,
+		Verdict: contract.WorkGateVerdictPASS, Summary: "The frozen candidate passed.", Claims: []contract.WorkGateClaim{{
+			Criterion: due.Round.Acceptance.Criteria, State: contract.WorkGateClaimStatePassed,
+			Evidence: []string{"focused checks passed"}, EvidenceArtifacts: []string{},
+		}}}
+	c := WorkGateCoordinator{Store: w.Store, Now: func() time.Time { return w.now() }}
+	if err := c.applyResult(context.Background(), due, result); err != nil {
+		t.Fatal(err)
+	}
+	view, err := w.Item(context.Background(), due.Round.ItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return view
+}
+
+func TestGateReadsExposeCompactCardsFullDetailAndOnlyLiveAuthorization(t *testing.T) {
+	w, verifying, due := gateCoordinatorFixture(t)
+	passed := passVerificationForTest(t, w, due)
+	if passed.Gate == nil || passed.Gate.Compact.CurrentAuthorization == nil ||
+		passed.Gate.Compact.CurrentAuthorization.Kind != "pass" || len(passed.Gate.RecentRounds) != 1 {
+		t.Fatalf("detail authorization = %+v", passed.Gate)
+	}
+	page, err := w.ListPage(context.Background(), "", "open", "", "")
+	if err != nil || len(page.Rows) != 1 {
+		t.Fatalf("list page = %+v err=%v", page, err)
+	}
+	card := page.Rows[0]
+	if card.Gate != nil || card.GateCompact == nil || card.GateCompact.LatestRound == nil ||
+		card.GateCompact.CurrentAuthorization == nil || card.GateCompact.CurrentAuthorization.Kind != "pass" {
+		t.Fatalf("compact card leaked or omitted gate state: %+v", card)
+	}
+	revised := "A revised observable outcome must pass its own frozen verification."
+	edited, err := w.Edit(context.Background(), verifying.Item.ID, EditWorkV2{ExpectedVersion: passed.Item.Version,
+		AcceptanceCriteria: &revised, Actor: "person", Person: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := w.Item(context.Background(), edited.Item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Gate == nil || detail.Gate.Compact.CurrentAuthorization != nil {
+		t.Fatalf("invalidated authorization remained public: %+v", detail.Gate)
+	}
+	page, err = w.ListPage(context.Background(), "", "open", "", "")
+	if err != nil || page.Rows[0].GateCompact.CurrentAuthorization != nil {
+		t.Fatalf("invalidated compact authorization = %+v err=%v", page.Rows[0].GateCompact, err)
+	}
+}
 
 func workErrorCode(t *testing.T, err error) string {
 	t.Helper()
@@ -101,6 +194,7 @@ func TestVerifyOnRejectsFreeFormEvidenceUntilTheCoordinatorAuthorizesTheTuple(t 
 	created := createWorkV2Test(t, w, work.KindIssue)
 	assigned, err := w.Assign(context.Background(), created.Item.ID, AssignWorkV2{
 		ExpectedVersion: created.Item.Version, Mode: "existing_session", SessionID: "session-a", Actor: "person",
+		CycleBaseCommit: strings.Repeat("0", 40),
 	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -111,12 +205,7 @@ func TestVerifyOnRejectsFreeFormEvidenceUntilTheCoordinatorAuthorizesTheTuple(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifying, err := w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
-		ExpectedVersion: implementing.Item.Version, SessionID: "session-a", Next: work.PhaseVerifying, Actor: "session-a",
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	verifying, due := enterVerificationForTest(t, w, implementing)
 	_, err = w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
 		ExpectedVersion: verifying.Item.Version, SessionID: "session-a", Next: work.PhaseMerging,
 		Verification: "I ran the tests", Actor: "session-a",
@@ -124,21 +213,15 @@ func TestVerifyOnRejectsFreeFormEvidenceUntilTheCoordinatorAuthorizesTheTuple(t 
 	if got := workErrorCode(t, err); got != "verification_authorization_required" {
 		t.Fatalf("free-form verification error = %s", got)
 	}
-	authorized := 0
-	w.VerificationAuthorizer = func(_ *store.WorkV2Tx, item work.ItemV2) error {
-		authorized++
-		if item.ID != verifying.Item.ID || item.Cycle != verifying.Item.Cycle ||
-			item.AcceptanceVersion != verifying.Item.AcceptanceVersion ||
-			item.AcceptanceDigest != verifying.Item.AcceptanceDigest {
-			t.Fatalf("authorization tuple = %+v", item)
-		}
-		return nil
+	verifying = passVerificationForTest(t, w, due)
+	if verifying.Item.OwnerSession != "session-a" {
+		t.Fatalf("PASS changed owner: %+v", verifying.Item)
 	}
 	merged, err := w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
 		ExpectedVersion: verifying.Item.Version, SessionID: "session-a", Next: work.PhaseMerging, Actor: "session-a",
 	}, nil)
-	if err != nil || merged.Item.Phase != work.PhaseMerging || authorized != 1 {
-		t.Fatalf("authorized merge = %+v calls=%d err=%v", merged.Item, authorized, err)
+	if err != nil || merged.Item.Phase != work.PhaseMerging {
+		t.Fatalf("authorized merge = %+v err=%v", merged.Item, err)
 	}
 }
 

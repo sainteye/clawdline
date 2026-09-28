@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -386,4 +387,37 @@ func (s *Server) StartBroker(ctx context.Context) {
 	go s.broker.Run(ctx, tick, func(p orchestrator.Pulse) {
 		s.beat.Store(&p)
 	})
+}
+
+// StartWorkGateCoordinator starts after StartBroker so every durable checker
+// intent has a running broker to reconcile with. One pass is bounded by the
+// contract; errors delay only the next tick and never discard a due row.
+func (s *Server) StartWorkGateCoordinator(ctx context.Context) {
+	coordinator := &app.WorkGateCoordinator{Store: s.store, Broker: s.broker,
+		SendFeedback: func(ctx context.Context, conversation, body string) error {
+			_, err := s.actions().SendIfIdle(ctx, conversation, body)
+			return err
+		},
+		OwnerLive: func(ctx context.Context, conversation string) bool {
+			_, err := s.actions().Find(ctx, conversation)
+			return err == nil
+		},
+		NotifyUser: func(ctx context.Context, title, body string) error {
+			_, err := s.broker.MachineNotify(ctx, title, body, "")
+			return err
+		}}
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			if _, err := coordinator.Pass(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("verification coordinator: %v", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 }

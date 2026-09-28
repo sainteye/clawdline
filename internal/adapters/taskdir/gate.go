@@ -47,6 +47,16 @@ func (r Root) gatePath(id string) string {
 	return filepath.Join(filepath.Dir(r.Dir), "gate-submissions", id)
 }
 
+// PurgeGateSubmissions removes only one validated task's exported gate
+// evidence/result directory. Missing is success, making durable cleanup rows
+// safe to replay after a crash.
+func (r Root) PurgeGateSubmissions(id string) error {
+	if !isTaskID(id) {
+		return gateStorageError("invalid_gate_task")
+	}
+	return os.RemoveAll(r.gatePath(id))
+}
+
 // StoreGateEvidence streams one artifact into a private staging directory,
 // fsyncs its bytes and receipt, and atomically publishes the pair. The
 // artifact id is its immutable name; an exact keyed replay returns the first

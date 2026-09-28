@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -87,6 +88,7 @@ type workV2ItemWire struct {
 	GateSnapshotAt    *int64                 `json:"gate_snapshot_at"`
 	PlanningGate      bool                   `json:"planning_gate"`
 	VerifyGate        bool                   `json:"verify_gate"`
+	Verification      any                    `json:"verification,omitempty"`
 	Version           int64                  `json:"version"`
 	Assignments       []workV2AssignmentWire `json:"assignments,omitempty"`
 	Documents         []workV2DocumentWire   `json:"documents,omitempty"`
@@ -180,6 +182,109 @@ type workV2LandingRequest struct {
 	// Project names another catalog Project whose repository holds the
 	// commit, when the work landed outside the item's own Project.
 	Project string `json:"project"`
+}
+
+type workV2CandidateRequest struct {
+	Worktree string `json:"worktree"`
+	Branch   string `json:"branch"`
+	Commit   string `json:"commit"`
+}
+
+func deterministicWorkGateID(seed string) string {
+	sum := sha256.Sum256([]byte(seed))
+	// UUID v5/variant bits keep the id inside the broker's existing closed
+	// task-id grammar while the digest keeps replay deterministic.
+	sum[6] = (sum[6] & 0x0f) | 0x50
+	sum[8] = (sum[8] & 0x3f) | 0x80
+	h := hex.EncodeToString(sum[:16])
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
+func verifyWorkV2Candidate(ctx context.Context, g *gitadapter.Git, item app.WorkV2View, sessionID string,
+	req *workV2CandidateRequest, now time.Time) (*contract.WorkGateCandidateReceipt, error) {
+	if req == nil || strings.TrimSpace(req.Worktree) == "" || strings.TrimSpace(req.Branch) == "" ||
+		strings.TrimSpace(req.Commit) == "" {
+		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "verification_candidate_required",
+			Message: "Entering verification requires this Session's worktree, branch, and exact HEAD commit."}
+	}
+	i := item.Item
+	if i.CycleBaseCommit == "" {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_cycle_base_unknown",
+			Message: "This verify-on assignment has no captured Project HEAD; reassign it before verification."}
+	}
+	worktree, err := filepath.Abs(strings.TrimSpace(req.Worktree))
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "verification_worktree_invalid", Message: err.Error()}
+	}
+	repository, err := g.Toplevel(ctx, worktree)
+	if err != nil || filepath.Clean(repository) != filepath.Clean(i.ProjectPath) {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_project_mismatch",
+			Message: "The candidate must be a registered worktree of the item's own Project repository."}
+	}
+	entries, err := g.Worktrees(ctx, i.ProjectPath)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_worktrees_unreadable",
+			Message: "The Project's registered worktrees could not be read."}
+	}
+	var entry *gitadapter.WorktreeEntry
+	for n := range entries {
+		if filepath.Clean(entries[n].Path) == filepath.Clean(worktree) {
+			entry = &entries[n]
+			break
+		}
+	}
+	branch := strings.TrimPrefix(strings.TrimSpace(req.Branch), "refs/heads/")
+	if entry == nil || entry.Detached || entry.Branch != "refs/heads/"+branch {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_worktree_unregistered",
+			Message: "The candidate path must be a registered, branch-attached worktree matching the submitted branch."}
+	}
+	commit, err := g.ResolveCommit(ctx, worktree, strings.TrimSpace(req.Commit))
+	if err != nil || entry.Head != commit {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_head_moved",
+			Message: "The registered worktree branch HEAD no longer equals the requested candidate commit."}
+	}
+	head, err := g.ResolveCommit(ctx, worktree, "HEAD")
+	if err != nil || head != commit {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_head_moved",
+			Message: "The worktree HEAD no longer equals the requested candidate commit."}
+	}
+	status, err := g.Changes(ctx, worktree)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_status_unreadable",
+			Message: "The candidate worktree status could not be read."}
+	}
+	untracked := int64(0)
+	for _, file := range status.Files {
+		if file.Kind == gitadapter.KindUntracked {
+			untracked++
+			continue
+		}
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_tracked_dirty",
+			Message: "Commit every tracked candidate change before requesting independent verification."}
+	}
+	strict, err := g.IsAncestor(ctx, i.ProjectPath, i.CycleBaseCommit, commit)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_ancestry_unreadable",
+			Message: "The candidate's ancestry from the captured cycle base could not be proved."}
+	}
+	if !strict || commit == i.CycleBaseCommit {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_candidate_not_descendant",
+			Message: "The candidate must be a strict descendant of this cycle's captured base commit."}
+	}
+	tree, err := g.Tree(ctx, i.ProjectPath, commit)
+	if err != nil {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "verification_tree_unreadable",
+			Message: "The candidate's Git tree could not be resolved."}
+	}
+	active := workV2ActiveOwner(item)
+	if active.ID == "" || active.SessionID != sessionID {
+		return nil, &app.WorkError{Status: http.StatusConflict, Code: "not_item_owner",
+			Message: "Only the active owning assignment may register a verification candidate."}
+	}
+	return &contract.WorkGateCandidateReceipt{Repository: filepath.Clean(i.ProjectPath), Worktree: filepath.Clean(worktree),
+		Branch: branch, Commit: commit, Tree: tree, AssignmentID: active.ID, OwnerSessionID: sessionID,
+		Cycle: i.Cycle, CriteriaVersion: i.AcceptanceVersion, CriteriaDigest: i.AcceptanceDigest,
+		UntrackedFiles: untracked, CreatedAt: now.Unix()}, nil
 }
 
 type workV2GitReader interface {
@@ -508,6 +613,11 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, GateSnapshotCycle: i.GateSnapshotCycle,
 		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
 		Version: i.Version, ParentID: i.ParentID}
+	if v.Gate != nil {
+		out.Verification = v.Gate
+	} else if v.GateCompact != nil {
+		out.Verification = v.GateCompact
+	}
 	if via := i.CreatedVia; via != nil && strings.HasPrefix(i.CreatedBy, work.ActorViaSession) {
 		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
 	} else if via != nil && via.Epic != "" && strings.HasPrefix(i.CreatedBy, work.ActorEpicOwner) {
@@ -598,7 +708,13 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 			writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "An item is read with GET and edited with PATCH.")
 		}
 	case len(parts) == 3 && parts[0] == "items" && workID(parts[1]):
-		if parts[2] == "images" {
+		if parts[2] == "gate-export" {
+			s.workV2GateExport(w, r, parts[1])
+		} else if parts[2] == "gate-purge" {
+			s.workV2GatePurge(w, r, parts[1])
+		} else if parts[2] == "gate-decision" {
+			s.workV2GateDecision(w, r, parts[1], true)
+		} else if parts[2] == "images" {
 			s.workV2AddImage(w, r, parts[1])
 		} else if parts[2] == "persona-suggestion" {
 			s.workV2PersonaSuggestion(w, r, parts[1])
@@ -620,6 +736,113 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such work-system v2 route.")
 	}
+}
+
+func (s *Server) workV2GateExport(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Verification detail is exported with GET.")
+		return
+	}
+	if _, ok := requirePersonWorkV2(w, r); !ok {
+		return
+	}
+	export, err := s.store.ExportWorkGateDetails(r.Context(), id)
+	if err != nil {
+		s.writeWorkV2Error(w, workV2GateStoreError(err))
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "manifest": map[string]any{"item_id": export.ItemID,
+		"item_version": export.ItemVersion, "sha256": export.SHA256, "byte_count": export.ByteCount,
+		"round_count": export.RoundCount}, "document": json.RawMessage(export.Document)})
+}
+
+func (s *Server) workV2GatePurge(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Exported verification detail is purged with POST.")
+		return
+	}
+	actor, ok := requirePersonWorkV2(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ExpectedVersion int64  `json:"expected_version"`
+		SHA256          string `json:"sha256"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, actor, raw)
+	if !ok {
+		return
+	}
+	purged, err := s.store.PurgeWorkGateDetails(r.Context(), id, body.ExpectedVersion, body.SHA256,
+		time.Now().UTC().Truncate(time.Second))
+	if err != nil {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, workV2GateStoreError(err))
+		return
+	}
+	answer, _ := json.Marshal(map[string]any{"ok": true, "purged_rounds": purged, "sha256": body.SHA256})
+	if err := s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}); err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
+}
+
+func workV2GateStoreError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return &app.WorkError{Status: http.StatusConflict, Code: "version_or_manifest_conflict",
+			Message: "The item or eligible verification export changed; export it again before purging."}
+	case errors.Is(err, store.ErrNoWorkV2):
+		return &app.WorkError{Status: http.StatusNotFound, Code: "item_not_found", Message: "No such work item."}
+	default:
+		return err
+	}
+}
+
+func (s *Server) workV2GateDecision(w http.ResponseWriter, r *http.Request, id string, person bool) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "A verification decision is made with POST.")
+		return
+	}
+	actor := ""
+	if person {
+		var ok bool
+		actor, ok = requirePersonWorkV2(w, r)
+		if !ok {
+			return
+		}
+	}
+	var body contract.WorkGateDecisionRequest
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	if !person {
+		actor = body.SessionID
+	}
+	k, ok := s.beginWorkV2Write(w, r, actor, raw)
+	if !ok {
+		return
+	}
+	view, err := s.workV2().DecideWorkGate(r.Context(), id, body, person)
+	if err != nil {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	answer := workV2Answer(s.workV2ItemProjector(r.Context())(view))
+	if err := s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}); err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
 }
 
 // referenceImageFileRefusal names a reference image whose row is there and
@@ -1311,6 +1534,18 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		if !sessionInProject(sess, item.Item) {
 			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "project_mismatch", Message: "The chosen Session is not working in this item's Project."}
 		}
+		briefItem, err := s.workV2().PreviewAssignment(ctx, item.Item)
+		if err != nil {
+			return app.WorkV2View{}, err
+		}
+		cycleBase := briefItem.CycleBaseCommit
+		if briefItem.VerifyGate && cycleBase == "" {
+			cycleBase, err = gitadapter.New().ResolveCommit(ctx, item.Item.ProjectPath, "HEAD")
+			if err != nil {
+				return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "verification_repository_unreadable",
+					Message: "The item's Project repository HEAD could not be captured before assignment."}
+			}
+		}
 		previous := workV2ActiveOwner(item)
 		if previous.SessionID == sess.ConversationID {
 			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "assignment_unchanged",
@@ -1318,7 +1553,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		}
 		assigned, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 			SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant), Actor: actor,
-			EpicOwner: epicOwner}, false, nil)
+			EpicOwner: epicOwner, CycleBaseCommit: cycleBase}, false, nil)
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
@@ -1379,6 +1614,14 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	if err != nil {
 		return app.WorkV2View{}, err
 	}
+	cycleBase := briefItem.CycleBaseCommit
+	if briefItem.VerifyGate && cycleBase == "" {
+		cycleBase, err = gitadapter.New().ResolveCommit(ctx, item.Item.ProjectPath, "HEAD")
+		if err != nil {
+			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "verification_repository_unreadable",
+				Message: "The item's Project repository HEAD could not be captured before assignment."}
+		}
+	}
 	scope := item.Item.Description
 	if previous.ID != "" {
 		scope = workV2TakeoverNote(item.Item.Phase) + "\n\n" + scope
@@ -1393,7 +1636,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner,
 		Persona: personaID, GatePreview: &app.WorkV2GateSettings{
 			Planning: briefItem.PlanningGate, Verify: briefItem.VerifyGate,
-		}}, true, nil)
+		}, CycleBaseCommit: cycleBase}, true, nil)
 	if err != nil {
 		return app.WorkV2View{}, err
 	}
@@ -1581,6 +1824,10 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		}
 		items, itemTruncated, err := s.workV2().List(r.Context(), "", conversation, "open", "")
 		if err != nil {
+			s.writeWorkV2Error(w, err)
+			return
+		}
+		if err := s.store.ObserveWorkGateFeedback(r.Context(), conversation, time.Now().UTC().Truncate(time.Second)); err != nil {
 			s.writeWorkV2Error(w, err)
 			return
 		}
@@ -1795,6 +2042,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		s.agentCreateItem(w, r)
 		return
 	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "gate-decision" {
+		s.workV2GateDecision(w, r, parts[1], false)
+		return
+	}
 	if len(parts) == 1 && parts[0] == "proposals" && r.Method == http.MethodPost {
 		var body struct {
 			ProjectID           string `json:"project_id"`
@@ -1888,13 +2139,14 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "phase" && r.Method == http.MethodPost {
 		var body struct {
-			ExpectedVersion    int64                 `json:"expected_version"`
-			SessionID          string                `json:"session_id"`
-			Next               string                `json:"next"`
-			Verification       string                `json:"verification"`
-			Landing            *workV2LandingRequest `json:"landing"`
-			Deployment         string                `json:"deployment"`
-			NoDeploymentReason string                `json:"no_deployment_reason"`
+			ExpectedVersion    int64                   `json:"expected_version"`
+			SessionID          string                  `json:"session_id"`
+			Next               string                  `json:"next"`
+			Verification       string                  `json:"verification"`
+			Candidate          *workV2CandidateRequest `json:"candidate"`
+			Landing            *workV2LandingRequest   `json:"landing"`
+			Deployment         string                  `json:"deployment"`
+			NoDeploymentReason string                  `json:"no_deployment_reason"`
 		}
 		raw, ok := readWorkV2Body(w, r, &body)
 		if !ok {
@@ -1910,6 +2162,19 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 			s.writeWorkV2Error(w, err)
 			return
+		}
+		var candidate *contract.WorkGateCandidateReceipt
+		roundID, attemptID := "", ""
+		if item.Item.Phase == work.PhaseImplementing && work.Phase(body.Next) == work.PhaseVerifying && item.Item.VerifyGate {
+			candidate, err = verifyWorkV2Candidate(r.Context(), gitadapter.New(), item, body.SessionID,
+				body.Candidate, time.Now().Truncate(time.Second))
+			if err != nil {
+				_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+				s.writeWorkV2Error(w, err)
+				return
+			}
+			roundID = newWorkV2UUID()
+			attemptID = deterministicWorkGateID(roundID + ":attempt:0")
 		}
 		repo := item.Item.ProjectPath
 		if body.Landing != nil && strings.TrimSpace(body.Landing.Project) != "" {
@@ -1936,7 +2201,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
 			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason,
-			Actor: body.SessionID, Effects: effects},
+			Actor: body.SessionID, Effects: effects, Candidate: candidate, RoundID: roundID, AttemptID: attemptID},
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(s.workV2ItemOf(catalog, v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

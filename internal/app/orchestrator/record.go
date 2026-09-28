@@ -578,6 +578,7 @@ func (r Record) Brief() taskdir.Brief {
 		Instructions:   r.Instructions,
 		Deliverables:   r.Deliverables,
 		TimeoutMinutes: r.TimeoutMinutes,
+		Persona:        r.Persona,
 		CreatedAt:      r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		WorkID:         r.WorkID,
 	}

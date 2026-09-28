@@ -131,7 +131,11 @@ type ItemV2 struct {
 	GateSnapshotAt    time.Time
 	PlanningGate      bool
 	VerifyGate        bool
-	Version           int64
+	// CycleBaseCommit is the full Project repository HEAD captured before the
+	// first successful verify-on assignment of this cycle. Candidate admission
+	// requires a strict descendant of it.
+	CycleBaseCommit string
+	Version         int64
 	// CreatedVia is the person's message a Session created this item on
 	// (work-system-v2 §2, amended 2026-09-25); nil for an item a person
 	// created as themselves.
@@ -224,6 +228,9 @@ type AssignmentV2 struct {
 	GatePreviewed bool
 	PlanningGate  bool
 	VerifyGate    bool
+	// CycleBaseCommit is previewed outside the store transaction and becomes
+	// authoritative only when this pending assignment is activated.
+	CycleBaseCommit string
 }
 
 type DocumentV2 struct {

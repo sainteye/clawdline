@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
@@ -569,6 +570,25 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			return report(stdout, stderr, name, a)
 		}
 		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "next": next}
+		if next == "verifying" && it.VerifyGate {
+			cwd, err := os.Getwd()
+			if err != nil {
+				fmt.Fprintf(stderr, "clawdline %s: candidate worktree: %v\n", name, err)
+				return 1
+			}
+			gitRead := func(args ...string) (string, error) {
+				cmd := exec.Command("git", append([]string{"-C", cwd}, args...)...)
+				out, err := cmd.Output()
+				return strings.TrimSpace(string(out)), err
+			}
+			branch, branchErr := gitRead("symbolic-ref", "--short", "HEAD")
+			commit, commitErr := gitRead("rev-parse", "--verify", "HEAD^{commit}")
+			if branchErr != nil || commitErr != nil || branch == "" || commit == "" {
+				fmt.Fprintf(stderr, "clawdline %s: verification needs a branch-attached Git worktree with a readable HEAD. Nothing was changed.\n", name)
+				return 1
+			}
+			body["candidate"] = map[string]string{"worktree": cwd, "branch": branch, "commit": commit}
+		}
 		for k, v := range map[string]string{"verification": ev.verification, "deployment": ev.deployment,
 			"no_deployment_reason": ev.noDeployment} {
 			if strings.TrimSpace(v) != "" {
