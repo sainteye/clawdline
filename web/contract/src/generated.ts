@@ -3971,6 +3971,35 @@ export interface PersonaNames {
   "zh-Hant": string
 }
 
+export type PersonaSuggestionOutcome =
+    "recommend"
+  | "ambiguous"
+
+export const PersonaSuggestionOutcomeValues: readonly PersonaSuggestionOutcome[] = ["recommend", "ambiguous"] as const
+
+export interface PersonaSuggestionReply {
+  ok: boolean
+  outcome: PersonaSuggestionOutcome
+
+  /**
+   * An exact id from GET /v1/personas for recommend; empty for ambiguous.
+   */
+  persona_id: string
+
+  /**
+   * The AI provider whose explicit Board-content consent covered this turn.
+   */
+  provider: string
+}
+
+export interface PersonaSuggestionRequest {
+  /**
+   * The item version whose title and description the person chose to send for
+   * classification.
+   */
+  expected_version: number
+}
+
 /**
  * A refusal from the start, resume and history routes: not_found, forbidden,
  * bad_request, invalid_launch, terminal_closed, terminal_unsupported,

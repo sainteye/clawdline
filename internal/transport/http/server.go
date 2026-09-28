@@ -132,7 +132,10 @@ type Server struct {
 	// nameSession is the paid model seam behind /v1/sessions/{id}/smart-title.
 	// firstSessionRequest is the record-reading seam before it. Tests replace
 	// both, so verification never consumes an assistant account's quota.
-	nameSession         func(context.Context, string, string) (string, error)
+	nameSession func(context.Context, string, string) (string, error)
+	// suggestPersona is the paid model seam behind the explicit Board button.
+	// Tests replace it, so verification never consumes an assistant account.
+	suggestPersona      func(context.Context, planner.PersonaRequest, string) (planner.PersonaSuggestion, error)
 	firstSessionRequest func(session.Session) (string, error)
 	sessionTailRead     func(session.Session) (transcript.Page, error)
 	intentContext       func(context.Context) ([]planner.Place, []string)
