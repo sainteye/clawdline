@@ -359,6 +359,32 @@ and item version. Purge preserves active/latest protected detail, fixed-size agg
 audit event. Cloud carries these same person routes; the parent-Epic Agent decision remains on its
 machine-authenticated Agent route. An export version or digest conflict requires a fresh export.
 
+### 6.4b Conditional UX and product review for an Epic
+
+An Epic plan classifies whether its proposed or implemented result changes a human-facing
+interface, user journey, or product policy. A backend-only Epic records why it has no such impact
+and stops there. This keeps a second design ceremony out of work where it cannot improve the
+outcome.
+
+When any of those person-facing effects exist, the Epic owner must, before merging, dispatch at
+least one independent read-only specialist against the integrated candidate. Layout, interaction,
+and end-to-end product flow use the UX Architect by default:
+
+```
+clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect …
+```
+
+The brief requires desktop and smallest-supported-mobile evidence, keyboard and screen-reader
+behavior, dead ends, product fit, severity, and a concrete recommendation. When evidence is
+unavailable the reviewer must **mark unverified and say why**, never infer a pass. `product-manager`
+may replace `ux-architect` when policy and scope rather than layout is the dominant risk;
+`ui-finish-gate` is an additional pre-ship visual pass when the finish itself is material. Every
+blocking finding is resolved before merging. The Epic's verification evidence or completion report
+records the review task id, verdict, and disposition of its findings.
+
+This is a conditional owner process rule, not another daemon authorization token. It does not
+replace the plan review, the verification checker's PASS, or the Epic's final end-to-end check.
+
 ### 6.5 An Epic's owner breaks it into child items and hands them out
 
 *(Added 2026-09-27 by the owner: "the Session that holds an Epic has the power to create Feature and

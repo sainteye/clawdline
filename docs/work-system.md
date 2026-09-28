@@ -20,6 +20,14 @@
 > children, each recorded with its parent and its creator — and the owner stays responsible: the
 > Epic cannot be moved to `done` while a child is open. Details and refusal codes are in
 > [`work-system-v2.md` §6.5](work-system-v2.md).
+>
+> **A person-facing Epic gets an independent UX/product review (2026-09-28).** Its plan classifies
+> whether the result changes a visible interface, user journey, or product policy. If it does, the
+> Epic owner dispatches a read-only `ux-architect` (or the specialist matching the dominant risk)
+> against the integrated candidate before merging, resolves blocking findings, and records the
+> verdict and disposition. A backend-only Epic records why this is not applicable. This specialist
+> pass complements rather than replaces plan review and checker PASS; details are in
+> [`work-system-v2.md` §6.4b](work-system-v2.md).
 
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon

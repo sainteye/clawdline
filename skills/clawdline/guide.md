@@ -1093,6 +1093,23 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     before shipping), `image-prompt` (image-generation prompts), `pricing`, `customer-success`,
     `support` (drafted replies), `analytics` (answers from real data), `devrel` (samples that run)
     and `privacy` (personal-data checks; not legal advice).
+- **Add an independent UX/product review when the Epic changes a person-facing experience.** In the
+  plan, classify whether the Epic changes a human-facing interface, user journey, or product policy.
+  If it does, before merging dispatch at least one read-only specialist child, using `ux-architect`
+  by default for layout, interaction and end-to-end product flow:
+
+  ```
+  clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect …
+  ```
+
+  Its brief names the integrated candidate and asks for desktop and smallest-supported-mobile
+  evidence, keyboard and screen-reader behavior, dead ends, product fit, severity and a concrete
+  recommendation. It must **mark unverified and say why** where evidence is unavailable. Use
+  `product-manager` instead when policy and scope, not layout, is the dominant risk; add
+  `ui-finish-gate` when a separate pre-ship visual pass is material. Resolve every blocking finding
+  and record the task id, verdict and disposition in the Epic's verification evidence or completion
+  report. If there is no person-facing impact, say why in the plan and do not add review ceremony.
+  This review never substitutes for the verification gate's checker PASS.
 - **You remain responsible for the Epic after each child is merged.** Immediately reread that
   child's item and `clawdline item steps <child id>`; check that every step is complete. A merge
   does not close the child, and `merging` is not a resting state. The child's owning Session must

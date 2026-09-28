@@ -971,6 +971,19 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     `brand-guardian`（品牌一致性）、`ui-finish-gate`（上線前的畫面把關）、`image-prompt`（生圖提示詞）、
     `pricing`、`customer-success`、`support`（回覆草稿）、`analytics`（用真實資料回答）、`devrel`（跑得起來的
     範例）與 `privacy`（個資檢查；不是法律意見）。
+- **Epic 會改變人看得到的體驗時，必須增加獨立 UX／產品審查。** 計畫要先判斷是否改到人看得到的介面、
+  使用者旅程或產品政策。若有，進到 `merging` 前至少派一個唯讀專家 child；版面、互動與端到端產品流程預設用
+  `ux-architect`：
+
+  ```
+  clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect …
+  ```
+
+  brief 要指名整合後的 candidate，要求桌面與最小支援手機寬度、鍵盤與螢幕閱讀器、流程死路、產品合理性、
+  嚴重度及具體修正建議的證據；無法取得證據時必須 **mark unverified and say why**。主要風險是政策與範圍而非
+  版面時可改派 `product-manager`；另外需要獨立上線前視覺把關時再加 `ui-finish-gate`。所有阻擋 finding 都要
+  處理，並把 task id、verdict 與處置寫進 Epic 的驗證證據或結案報告。若完全沒有面向人的影響，就在計畫寫明
+  原因，不要增加審查儀式。這份專家審查不能取代 verification gate 的 checker PASS。
 - **每個子項目合併後，Epic 仍由你負責追到結案。** 立即重讀該子項目與 `clawdline item steps <child id>`，
   確認所有步驟已完成；不能停在 `merging`。由子項目的負責 Session 以已同時在本機目標分支與
   `origin/main` 的確切 commit 附上 landing receipt，再依 deployment policy 附部署證據或不需部署理由，

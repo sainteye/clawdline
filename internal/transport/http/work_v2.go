@@ -327,7 +327,13 @@ func workV2EpicInstruction(id string) string {
 		"--reference <task id> --body-file <file>` — what it found and what the plan changed — and if it found real " +
 		"problems, revise the plan (a new plan document) and have that reviewed again, at most twice in all; (4) break the work into steps with " +
 		"`clawdline item step-add " + id + "`; (5) only then `clawdline item phase " + id + " implementing`, which the " +
-		"daemon refuses until a review newer than the latest plan, or a second review, is recorded. `clawdline guide epic` has the whole procedure."
+		"daemon refuses until a review newer than the latest plan, or a second review, is recorded. During planning, decide whether " +
+		"the Epic changes a human-facing interface, user journey, or product policy. If it does, before merging dispatch an independent " +
+		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect`; " +
+		"brief it to inspect the integrated desktop and mobile experience, accessibility, workflow, and product fit, require evidence for " +
+		"each finding and tell it to mark unverified and say why when evidence is unavailable, then resolve every blocking finding. If the " +
+		"Epic has no such impact, record why in the plan instead of adding review ceremony. This specialist review complements rather than " +
+		"replaces the verification gate. `clawdline guide epic` has the whole procedure."
 }
 
 // workV2EpicChildrenInstruction is the exception an Epic's owner holds to

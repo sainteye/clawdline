@@ -74,6 +74,16 @@ follow up or use authorized reassignment. It ACKs a broker completion notice whe
 classifies the worktree before pruning landed-identical or task-temporary residue, preserving
 unlanded, mixed, and unknown bytes. The parent Epic stays open until both children are terminal.
 
+When the Epic changes a human-facing interface, user journey, or product policy, Session A records
+that classification in its plan and, before merging, dispatches at least one independent read-only
+specialist with
+`clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect` against
+the integrated candidate. The brief covers desktop and smallest-supported-mobile behavior,
+keyboard and screen-reader use, dead ends, and product fit; it tells the reviewer to **mark unverified and say why**
+when evidence is unavailable. Every blocking finding is resolved, and the
+Epic evidence or completion report names the task id, verdict, and disposition. A backend-only
+Epic instead records why no person-facing review applies. This review cannot replace checker PASS.
+
 ### WS2-C03 — Every card carries the Project presentation
 
 Given two Projects with different icon grids and equal item titles, all-Projects and Project-scoped

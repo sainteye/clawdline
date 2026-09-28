@@ -60,6 +60,28 @@ func TestAnEpicsOwnerBriefSaysPlanReviewStepsThenImplement(t *testing.T) {
 	}
 }
 
+// An Epic that changes a person-facing interface, journey, or product policy
+// needs an independent UX/product review before merging. The owner brief must
+// make that conditional mandatory rather than adding ceremony to backend-only
+// work, and the reviewer must report gaps as unverified instead of inventing
+// a pass.
+func TestAnEpicsOwnerBriefRequiresApplicableUXProductReview(t *testing.T) {
+	const id = "0e0e0e0e-0000-4000-8000-000000000003"
+	for name, brief := range map[string]string{
+		"Root Assignment": workV2RootAssignmentAcceptance(id, work.KindEpic),
+		"assignment":      workV2AssignmentBrief(id, "Big", work.KindEpic),
+		"reassignment":    workV2ReassignmentBrief(id, "Big", work.KindEpic, work.PhaseAssigned),
+	} {
+		for _, want := range []string{"human-facing interface", "product policy", "before merging",
+			"clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect",
+			"mark unverified and say why"} {
+			if !strings.Contains(brief, want) {
+				t.Errorf("%s brief lacks %q:\n%s", name, want, brief)
+			}
+		}
+	}
+}
+
 func TestRootAssignmentAcceptanceStartsWithTheExactGovernedCriteria(t *testing.T) {
 	criteria := "- first byte stays first\n- trailing newline stays\n"
 	item := work.ItemV2{ID: "0e0e0e0e-0000-4000-8000-000000000002", Kind: work.KindFeature,

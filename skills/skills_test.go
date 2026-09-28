@@ -530,6 +530,41 @@ func TestEpicGuidesKeepThePostMergeChildLifecycle(t *testing.T) {
 	}
 }
 
+// A person-facing Epic gets an independent UX/product review before merge;
+// backend-only Epics do not acquire the ceremony. Both guides and the durable
+// work-system contract keep this conditional obligation together.
+func TestEpicGuidesRequireApplicableUXProductReview(t *testing.T) {
+	for _, language := range []string{"en", "zh-TW"} {
+		epic, err := Section(language, "epic")
+		if err != nil {
+			t.Fatal(err)
+		}
+		wants := []string{"--kind review", "--claims \"\"", "--persona ux-architect",
+			"mark unverified and say why"}
+		if language == "en" {
+			wants = append(wants, "before merging")
+		} else {
+			wants = append(wants, "進到 `merging` 前")
+		}
+		for _, want := range wants {
+			if !bytes.Contains(epic, []byte(want)) {
+				t.Errorf("%s Epic guide omits applicable UX/product review obligation %q", language, want)
+			}
+		}
+	}
+	for _, path := range []string{"../docs/work-system-v2.md", "../docs/work-system-v2-acceptance.md"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"--persona ux-architect", "before merging", "mark unverified and say why"} {
+			if !bytes.Contains(body, []byte(want)) {
+				t.Errorf("%s omits applicable UX/product review obligation %q", path, want)
+			}
+		}
+	}
+}
+
 // A session may open a new Session as a built-in persona on three paths.
 // Every guide names the flags, the body field, both refusals, the catalog
 // route and every id the catalog has, and that none is given by default; the
