@@ -93,6 +93,15 @@ The daemon has no settings switch for launch-at-login yet. The tracked bootstrap
 `systemd --user` unit and enables linger once; the `launch_at_login` capability names that exact
 path instead of claiming the daemon can toggle it itself.
 
+### Give agents a local MongoDB replica set
+
+Some Cloud and integration tests need a real replica set rather than a standalone process. The
+measured Ubuntu setup, its kernel compatibility gate, loopback-only configuration, restart and
+transaction checks, and the disk cleanup/expansion decision are in
+[MongoDB for Linux agent tests](linux-mongodb.md). The resulting connection string is
+`mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true`; it is for agents running on that
+host and is not a network-exposed database.
+
 ## 2. What works, measured
 
 | Item | What was run | Result |
