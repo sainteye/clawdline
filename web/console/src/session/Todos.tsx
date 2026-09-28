@@ -69,11 +69,13 @@ export function Todos({ row }: { row: SessionRow | null }) {
     if (!readReady) return
     // One read in flight per Session; the page asks again every fifteen
     // seconds while it is visible, and at once when it comes back, so rows a
-    // Session writes appear without reopening it.
+    // Session writes appear without reopening it. A scheduled ask is fresh:
+    // when its tick meets the old read's fifteen-second deadline, queue one
+    // newer read instead of joining the promise that is about to abort.
     const one = new OneRead(load)
     reader.current = one
     void one.ask()
-    const stop = watchTodoRefresh(() => { void one.ask() })
+    const stop = watchTodoRefresh(() => { void one.ask(true) })
     return () => {
       stop()
       if (reader.current === one) reader.current = null
