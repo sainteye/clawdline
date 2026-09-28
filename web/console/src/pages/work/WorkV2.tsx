@@ -7,7 +7,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, suggestedPersona, switchTeam } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, suggestedPersonaForItem, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
@@ -540,12 +540,16 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
   // The role a new Session is opened as. Until the person picks one, the
-  // item's kind suggests it (epic → architect, issue → minimal-change); a kind
-  // no single persona suggests starts with none. "" is none, chosen.
+  // item's words suggest a role when they distinguish one; otherwise the
+  // unique kind default remains (epic → architect, issue → minimal-change).
+  // "" is none, explicitly chosen by the person.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState<string | null>(null)
   const [team, setTeam] = useState(rememberedTeam)
-  const persona = personaById(personas, personaChoice ?? suggestedPersona(personas, item.kind)?.id)
+  const personaSuggestion = suggestedPersonaForItem(personas, item)
+  const persona = personaById(personas, personaChoice ?? personaSuggestion?.persona.id)
+  const personaSuggestionID = `work-persona-suggestion-${item.id}`
+  const personaSuggestionOverridden = personaChoice !== null && personaChoice !== personaSuggestion?.persona.id
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
@@ -627,8 +631,15 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
       </div>
+      {personaSuggestion && <p className="work-persona-suggestion" id={personaSuggestionID}>
+        <strong>建議角色：{personaName(personaSuggestion.persona)}</strong>
+        <span>{personaSuggestion.source === "content"
+          ? `符合「${personaSuggestion.signals.join("」、「")}」`
+          : "依項目類型判斷"}{personaSuggestionOverridden ? " · 目前已改選" : ""}</span>
+      </p>}
       {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
-        team={team} disabled={!!busy} press="radio" onPick={(id) => setPersonaChoice(id)}
+        team={team} disabled={!!busy} press="radio" describedBy={personaSuggestion ? personaSuggestionID : undefined}
+        onPick={(id) => setPersonaChoice(id)}
         onTeam={(next) => {
           const switched = switchTeam(personas, persona?.id, next)
           setTeam(next)

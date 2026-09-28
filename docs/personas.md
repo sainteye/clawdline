@@ -105,8 +105,9 @@ says it is not legal advice. None is suggested for a Board kind.
 | `devrel` | Developer Advocate | 開發者推廣 | business, marketing | [`specialized-developer-advocate.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/specialized-developer-advocate.md) |
 | `privacy` | Privacy & Compliance Officer | 隱私法遵官 | business, operations | [`data-privacy-officer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/data-privacy-officer.md) and `support-legal-compliance-checker.md` |
 
-`suggested_kinds` tells a picker which personas to show first for a Board item's kind. It only
-orders the choices: no kind gives a persona to anything.
+`suggested_kinds` tells a picker which persona is the safe fallback for a Board item's kind when
+exactly one catalog entry names it. It only suggests a choice: no kind gives a persona to
+anything.
 
 Every persona has a pixel bot. It is eight columns by seven rows, in the same `Icon` shape a
 project's mark uses (`common.schema.json`), and it is defined in `icons.go`.
@@ -312,11 +313,20 @@ showed before this feature, never a sheet that breaks after a press.
 - **Restoring after a reboot.** Each row on the restore sheet shows the role it was launched with
   (`RestorableSession.persona`). Restoring relaunches it with that role; the restore request has
   no field to change it, so the sheet shows it rather than offering chips.
-- **Board.** A new-Session assignment shows the role chips beside the assistant chips. The item's
-  kind picks the default when exactly one persona suggests that kind (epic → architect, issue →
-  minimal-change); feature, which two suggest, starts with none. The button names the role, and
-  `persona` goes into the assign body only when one is chosen. The existing-Session picker and an
-  Epic's children list show the owner's bot when its session row has a persona.
+- **Board.** A new-Session assignment shows the role chips beside the assistant chips. The console
+  matches distinctive English and Traditional Chinese words in the item's title and description
+  against the closed role catalog (`PERSONA_SIGNALS` in `web/console/src/personas.ts`). This is an
+  immediate local calculation: it sends no item content to another service. A unique highest
+  content match is preselected and a line above the chips names both the suggested role and up to
+  three matching words. An exact tie is not broken by catalog order. When content has no unique
+  answer, the item's kind remains the fallback only when exactly one persona suggests it (epic →
+  architect, issue → minimal-change); feature, which two suggest, starts with none. The person may
+  choose another role or **No role**; the explanation remains visible and says the choice was
+  changed. The role radiogroup points to the explanation with `aria-describedby`, and both the
+  explanation and the horizontal chip row wrap or scroll within the card at phone width. The
+  button names the effective choice, and `persona` goes into the assign body only when one is
+  chosen. An unreadable or older catalog still draws no role UI. The existing-Session picker and
+  an Epic's children list show the owner's bot when its session row has a persona.
 
 On Clawdline Cloud the same bundle reaches the machine through the encrypted relay
 (`internal/app/cloudops`, `web/console/src/cloud`):
