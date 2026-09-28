@@ -571,6 +571,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/settings/default-models",
 		body2: `{"codex_default_model":"gpt-6"}`,
 	}, {
+		word:    "work-gate-settings",
+		body:    map[string]any{"type": "work-gate-settings", "session": machine, "request": "req-gates"},
+		session: machine, name: "read:req-gates",
+		method: "GET", path: "/v1/settings/work-gates",
+	}, {
+		word: "work-gate-settings-update",
+		body: map[string]any{"type": "work-gate-settings-update", "session": machine, "request": "req-gates-write",
+			"changes": map[string]any{"planning_gate": true, "verify_gate": true}},
+		session: machine, name: "action:req-gates-write",
+		method: "POST", path: "/v1/settings/work-gates",
+		body2: `{"planning_gate":true,"verify_gate":true}`,
+	}, {
 		// The dashboard behind the session counts: machine-wide and
 		// parameterless, as the local route is.
 		word:    "machine-usage",
@@ -1521,7 +1533,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board-command", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "machine-usage", "personas",
+		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
@@ -2272,6 +2284,45 @@ func TestDefaultModelsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 		r := &router{}
 		bad := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 			"type": "default-models-update", "session": MachineReplySession, "request": "req-bad", "changes": changes,
+		}))
+		if bad.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("took changes %#v: %+v, asked %+v", changes, bad, r.seen)
+		}
+	}
+}
+
+func TestWorkGateSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "work-gate-settings", "session": MachineReplySession, "request": "req-read"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/settings/work-gates" {
+		t.Fatalf("read answered %+v, asked %+v", answer, r.seen)
+	}
+
+	r = &router{}
+	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "work-gate-settings-update", "session": MachineReplySession, "request": "req-write",
+		"changes": map[string]any{"planning_gate": false, "verify_gate": true},
+	}))
+	if answer.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("write answered %+v, asked %+v", answer, r.seen)
+	}
+	got := r.last()
+	if got.Method != "POST" || got.Path != "/v1/settings/work-gates" ||
+		string(got.Body) != `{"planning_gate":false,"verify_gate":true}` ||
+		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-write" {
+		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
+	}
+
+	for _, changes := range []any{
+		map[string]any{"remote": true},
+		map[string]any{"planning_gate": "on"},
+		map[string]any{"planning_gate": true, "verify_gate": false, "remote": nil},
+		[]any{true},
+	} {
+		r := &router{}
+		bad := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "work-gate-settings-update", "session": MachineReplySession, "request": "req-bad", "changes": changes,
 		}))
 		if bad.Code != "malformed_command" || len(r.seen) != 0 {
 			t.Fatalf("took changes %#v: %+v, asked %+v", changes, bad, r.seen)

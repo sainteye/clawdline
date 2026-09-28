@@ -60,6 +60,8 @@ export const CARRIED = {
   capacity: "GET /v1/capacity",
   "default-models": "GET /v1/settings/default-models",
   "default-models-update": "POST /v1/settings/default-models",
+  "work-gate-settings": "GET /v1/settings/work-gates",
+  "work-gate-settings-update": "POST /v1/settings/work-gates",
   // The dashboard behind the session counts (`machine/`): this machine's CPU
   // and memory and each session's share, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",

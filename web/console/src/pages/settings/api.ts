@@ -1,4 +1,9 @@
-import type { SettingsRequest, SettingsSnapshot } from "@clawdline/contract"
+import type {
+  SettingsRequest,
+  SettingsSnapshot,
+  WorkGateSettingsRequest,
+  WorkGateSettingsSnapshot,
+} from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
 
@@ -120,6 +125,44 @@ export function writeDefaultModels(change: Partial<DefaultModelValues>): Promise
   return callDefaultModels({
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
+  })
+}
+
+async function callWorkGates(init: RequestInit): Promise<WorkGateSettingsSnapshot> {
+  const path = "/v1/settings/work-gates"
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  let res: Response
+  try {
+    res = await fetch(client.url(path), { ...init, signal: controller.signal })
+  } catch (cause) {
+    throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
+  } finally {
+    clearTimeout(timer)
+  }
+  const text = await res.text()
+  let parsed: unknown
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch (cause) {
+    throw new TransportError(`${path} answered with something that is not JSON`, cause)
+  }
+  if (!res.ok) {
+    if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+    throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
+  }
+  return parsed as WorkGateSettingsSnapshot
+}
+
+export function readWorkGateSettings(): Promise<WorkGateSettingsSnapshot> {
+  return callWorkGates({ method: "GET" })
+}
+
+export function writeWorkGateSettings(change: Partial<WorkGateSettingsRequest>): Promise<WorkGateSettingsSnapshot> {
+  return callWorkGates({
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(change),
   })
 }

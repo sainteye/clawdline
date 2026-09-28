@@ -16,6 +16,7 @@ import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
 import { DefaultModelsBlock } from "./settings/DefaultModelsBlock.js"
+import { GateSettingsBlock } from "./settings/GateSettingsBlock.js"
 import { nextWord } from "../next-strings.js"
 import {
   DEFAULT_FONT_SCALE,
@@ -375,6 +376,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
         </div>
 
         <BoardBlock shown={shown} goToPage={goToPage} />
+        <GateSettingsBlock shown={shown} />
         <div className="block" id="settings-timeline">
           <b id="settings-timeline-title">{timelineWords("Enable Project Timeline", "啟用專案時間軸")}</b>
           <p className="say" id="settings-timeline-say">

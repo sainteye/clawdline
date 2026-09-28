@@ -38,7 +38,9 @@ Claude or Codex and press **開新 … Session** to open a new one. **前往 Ses
 
 From then on the session moves the item itself, and each move needs evidence:
 
-In **設定 → 派工作給別的 session**, planning is on by default and independent verification is off.
+In the console's **設定 → 規劃與驗證 gate** block, planning is on by default and independent
+verification is off. The macOS app also shows the same pair in **Clawdline Next → 設定⋯ →
+派工作給別的 session**.
 The two values are captured on the item's first successful assignment in each cycle; changing the
 switches later affects future cycles. With planning on, Feature and Epic need a plan and independent
 plan review before implementation; Issue is exempt. Planning off also lets an Epic skip forced

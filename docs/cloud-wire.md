@@ -760,6 +760,14 @@ picker, so the hosted page offers choices instead of accepting arbitrary text. R
 the paired line. Saving is a command, so it also needs the machine's
 Cloud-command switch and the paired device's Send capability.
 
+As of 2026-09-29, that page also carries the two future-assignment gate defaults through two
+narrow words: `work-gate-settings` reads `GET /v1/settings/work-gates`, and
+`work-gate-settings-update` carries `{changes}` to its POST. The Cloud decoder and local route
+accept only `planning_gate` and `verify_gate`, both boolean or null; neither the full settings
+snapshot nor another settings key crosses. Reading needs the paired line. Saving additionally
+needs the machine's Cloud-command switch and the paired device's Send capability. The screen says
+that a successful assignment captures the pair, so changing it never looks retroactive.
+
 Also as of 2026-09-28, `board-command` carries the Settings page's Board mode command as
 `{command}` to `POST /v1/board`; the AI-consent form remains accepted for older clients but is no
 longer shown or required. The command's own `requestId` is both the Cloud

@@ -171,6 +171,72 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// workGateSettingsRoute is the narrow settings surface carried to every
+// console. It deliberately exposes only the two defaults a future successful
+// Board assignment captures, never the hotkey, remote host, shell, or another
+// machine setting.
+func (s *Server) workGateSettingsRoute(w http.ResponseWriter, r *http.Request) {
+	f := s.settingsFile()
+	read := func() (contract.WorkGateSettingsSnapshot, error) {
+		v, err := f.Read()
+		if err != nil {
+			return contract.WorkGateSettingsSnapshot{}, err
+		}
+		gates := v.WorkGates()
+		return contract.WorkGateSettingsSnapshot{PlanningGate: gates.Planning, VerifyGate: gates.Verify}, nil
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		answer, err := read()
+		if err != nil {
+			writeSettingsFailure(w, f, err)
+			return
+		}
+		writeJSON(w, answer)
+	case http.MethodPost:
+		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
+				"a work gate settings write is application/json")
+			return
+		}
+		var body map[string]json.RawMessage
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, settingsRequestBodyLimit))
+		if err := dec.Decode(&body); err != nil || body == nil {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a work gate settings change")
+			return
+		}
+		for name := range body {
+			if name != "planning_gate" && name != "verify_gate" {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "not a work gate setting key: "+name)
+				return
+			}
+		}
+		changes, refusal := settingsChanges(body)
+		if refusal != nil {
+			writeRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
+			return
+		}
+		var err error
+		if len(changes) == 0 {
+			_, err = f.Read()
+		} else {
+			_, err = f.Set(changes)
+		}
+		if err != nil {
+			writeSettingsFailure(w, f, err)
+			return
+		}
+		answer, err := read()
+		if err != nil {
+			writeSettingsFailure(w, f, err)
+			return
+		}
+		writeJSON(w, answer)
+	default:
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
+	}
+}
+
 type defaultModelsAnswer struct {
 	Codex  *string                         `json:"codex_default_model"`
 	Claude *string                         `json:"claude_default_model"`
