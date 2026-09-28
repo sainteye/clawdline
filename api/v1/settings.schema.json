@@ -45,6 +45,16 @@
           "nullable": true,
           "type": "string"
         },
+        "codex_default_model": {
+          "description": "The model used for a new Codex session when that launch does not name one. Empty leaves the choice to Codex.",
+          "nullable": true,
+          "type": "string"
+        },
+        "claude_default_model": {
+          "description": "The model used for a new Claude Code session when that launch does not name one. Empty leaves the choice to Claude Code.",
+          "nullable": true,
+          "type": "string"
+        },
         "reopen_on_return": {
           "description": "Whether the bar comes back with the terminal.",
           "nullable": true,
@@ -246,6 +256,16 @@
         },
         "terminal": {
           "description": "`auto`, `iterm` or `tmux`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "codex_default_model": {
+          "description": "Empty, or a Codex model name used when a new Session does not name one.",
+          "nullable": true,
+          "type": "string"
+        },
+        "claude_default_model": {
+          "description": "Empty, or a Claude Code model name used when a new Session does not name one.",
           "nullable": true,
           "type": "string"
         },

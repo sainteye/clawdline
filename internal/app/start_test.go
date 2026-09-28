@@ -60,3 +60,45 @@ func TestACodexStartedFromTheConsoleSkipsItsUpdateCheck(t *testing.T) {
 		t.Fatalf("claude start: %s", term.command)
 	}
 }
+
+func TestANewSessionUsesTheMachinesDefaultModel(t *testing.T) {
+	place := projects.Place{Path: t.TempDir()}
+	term := &personaTerminal{}
+	conversation := "0f1e2d3c-0000-4000-8000-000000000004"
+	s := Starter{
+		Terminal: func() projects.TerminalChoice { return projects.TerminalTmux },
+		Launcher: term,
+		Past: func(context.Context, projects.Place, string) []projects.Past {
+			return []projects.Past{{ID: conversation}}
+		},
+		DefaultModel: func(assistant string) string {
+			if assistant == "codex" {
+				return "gpt-6-sol"
+			}
+			return "claude-opus-5-5"
+		},
+	}
+	ctx := context.Background()
+
+	started, err := s.Start(ctx, place, "codex", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Model != "gpt-6-sol" || !strings.Contains(term.command, " codex --model gpt-6-sol ") {
+		t.Fatalf("codex default: %+v / %s", started, term.command)
+	}
+	started, err = s.Start(ctx, place, "codex", "gpt-5.6-luna", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Model != "gpt-5.6-luna" || !strings.Contains(term.command, "--model gpt-5.6-luna") || strings.Contains(term.command, "gpt-6-sol") {
+		t.Fatalf("explicit override: %+v / %s", started, term.command)
+	}
+	started, err = s.Resume(ctx, place, conversation, "codex", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Model != "" || strings.Contains(term.command, "--model") {
+		t.Fatalf("resume changed model: %+v / %s", started, term.command)
+	}
+}

@@ -16,6 +16,8 @@ export const DEFAULTS = {
   language: "auto",
   mascot: "clawd",
   terminal: "auto",
+  codex_default_model: "",
+  claude_default_model: "",
   reopen_on_return: true,
   follow_target: true,
   codex_auto_name: false,

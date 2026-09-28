@@ -32,6 +32,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 )
 
 // FileName is the settings file inside this app's directory.
@@ -453,6 +455,10 @@ var Settables = []Settable{
 		Because: "a pack name: letters, digits, dot, dash or underscore"},
 	{Name: "terminal", Kind: "string", Choices: []string{"auto", "iterm", "tmux"},
 		Refusal: "invalid_terminal", Because: "auto, iterm or tmux"},
+	{Name: "codex_default_model", Kind: "string", Check: ValidDefaultModel,
+		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
+	{Name: "claude_default_model", Kind: "string", Check: ValidDefaultModel,
+		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
 	{Name: "reopen_on_return", Kind: "bool"},
 	{Name: "planning_gate", Kind: "bool"},
 	{Name: "verify_gate", Kind: "bool"},
@@ -505,6 +511,38 @@ var Settables = []Settable{
 	{Name: "claude_auto_compact_window", Kind: "int", Min: 50_000, Max: 1_000_000, Zero: true,
 		Refusal: "invalid_auto_compact_window",
 		Because: "0 for none, or a whole number of tokens from 50000 to 1000000"},
+}
+
+// ValidDefaultModel is the launch policy's model-name gate, plus empty for
+// "let the provider choose". A value admitted here is safe to hand to a
+// launch later without a second, divergent definition of a model name.
+func ValidDefaultModel(name string) bool {
+	if name == "" {
+		return true
+	}
+	_, ok := projects.ModelName(name)
+	return ok
+}
+
+// DefaultModel reads the model a new Clawdline-opened session should use for
+// assistant. Missing, malformed and unknown-assistant values all mean the
+// provider's own default. Callers still give an explicit per-session model
+// precedence over this value.
+func DefaultModel(values Values, assistant string) string {
+	key := ""
+	switch assistant {
+	case projects.AssistantCodex:
+		key = "codex_default_model"
+	case projects.AssistantClaude:
+		key = "claude_default_model"
+	default:
+		return ""
+	}
+	model, ok := values.String(key)
+	if !ok || !ValidDefaultModel(model) {
+		return ""
+	}
+	return model
 }
 
 // SettableByName finds one key, or false for a name this file does not set.

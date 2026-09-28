@@ -6054,9 +6054,19 @@ export interface SettingsRequest {
   claude_auto_compact_window: number | null
 
   /**
+   * Empty, or a Claude Code model name used when a new Session does not name one.
+   */
+  claude_default_model: string | null
+
+  /**
    * Whether a new session is named by an assistant.
    */
   codex_auto_name: boolean | null
+
+  /**
+   * Empty, or a Codex model name used when a new Session does not name one.
+   */
+  codex_default_model: string | null
 
   /**
    * Whether the terminal selects the tab the bar points at.
@@ -6251,10 +6261,22 @@ export interface SettingsSnapshot {
   claude_auto_compact_window: number | null
 
   /**
+   * The model used for a new Claude Code session when that launch does not name
+   * one. Empty leaves the choice to Claude Code.
+   */
+  claude_default_model: string | null
+
+  /**
    * Whether a new session is named by an assistant. The Swift app's spelling, kept
    * so a line copied between the two files means the same thing.
    */
   codex_auto_name: boolean | null
+
+  /**
+   * The model used for a new Codex session when that launch does not name one.
+   * Empty leaves the choice to Codex.
+   */
+  codex_default_model: string | null
 
   /**
    * False before anything has been written. Every key then has the shell's default.

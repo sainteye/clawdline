@@ -70,6 +70,8 @@ func TestSettingsRoute(t *testing.T) {
 		`{"status_dir":"/tmp"}`:             "bad_request",
 		`{"language":"kl"}`:                 "invalid_language",
 		`{"terminal":"ghostty"}`:            "invalid_terminal",
+		`{"codex_default_model":"GPT 6"}`:   "invalid_default_model",
+		`{"claude_default_model":"-opus"}`:  "invalid_default_model",
 		`{"output_size":40}`:                "invalid_output_size",
 		`{"orchestrator_max_children":2.5}`: "invalid_orchestrator_max_children",
 		`{"notch":"yes"}`:                   "invalid_notch",
