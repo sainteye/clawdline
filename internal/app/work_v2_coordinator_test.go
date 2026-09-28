@@ -313,6 +313,24 @@ func TestGateCoordinatorKeepsLoopbackFailureUnknown(t *testing.T) {
 	}
 }
 
+func TestNeedsWorkBreaksConsecutiveFailSeries(t *testing.T) {
+	w, view, due := gateCoordinatorFixture(t)
+	if err := w.Store.WriteWorkV2(context.Background(), func(tx *store.WorkV2Tx) error {
+		_, err := tx.IncrementWorkGateFail(view.Item, 1)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	due.Attempt.TaskID = due.Attempt.ID
+	if err := (&WorkGateCoordinator{Store: w.Store, Now: w.Now}).applyResult(context.Background(), due,
+		gateResult(due, contract.WorkGateVerdictNEEDSWORK)); err != nil {
+		t.Fatal(err)
+	}
+	if got := gateFailCount(t, w, view.Item.ID); got != 0 {
+		t.Fatalf("NEEDS_WORK left %d consecutive FAILs; want 0", got)
+	}
+}
+
 func TestGateCoordinatorStalesALateResultAfterCriteriaChange(t *testing.T) {
 	w, verifying, due := gateCoordinatorFixture(t)
 	criteria := "The replacement acceptance is observable."

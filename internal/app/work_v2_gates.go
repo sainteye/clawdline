@@ -517,6 +517,9 @@ func (c *WorkGateCoordinator) applyResult(ctx context.Context, due store.WorkGat
 		case contract.WorkGateVerdictNEEDSWORK:
 			next.Condition = work.ConditionEvidenceUnknown
 			next.UserAction = ""
+			if err := tx.ResetWorkGateFailures(item); err != nil {
+				return err
+			}
 		case contract.WorkGateVerdictFAIL:
 			failed := int64(0)
 			for _, claim := range result.Claims {
