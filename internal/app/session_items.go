@@ -46,12 +46,13 @@ type NewSessionItemV2 struct {
 	// executable item is assigned to the Session only in that Project.
 	SessionProject string
 
-	ProjectID        string
-	ProjectPath      string
-	Kind             work.Kind
-	Title            string
-	Description      string
-	DeploymentPolicy work.DeploymentPolicy
+	ProjectID          string
+	ProjectPath        string
+	Kind               work.Kind
+	Title              string
+	Description        string
+	AcceptanceCriteria string
+	DeploymentPolicy   work.DeploymentPolicy
 	// Steps are the item's steps as the person listed them. Given, they are
 	// the steps and the description is not read for more; absent, an
 	// executable item's steps are seeded from its description's list, as a
@@ -73,6 +74,9 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 	if err := validateWorkV2Text(n.Title, n.Description); err != nil {
 		return WorkV2View{}, err
 	}
+	if err := validateWorkV2Acceptance(n.AcceptanceCriteria); err != nil {
+		return WorkV2View{}, err
+	}
 	steps, err := explicitSteps(n.Steps)
 	if err != nil {
 		return WorkV2View{}, err
@@ -84,6 +88,7 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 		DeploymentPolicy: n.DeploymentPolicy, CreatedBy: actor, CreatedAt: now, UpdatedAt: now,
 		Cycle: 1, Version: 1,
 		CreatedVia: &work.CreatedViaV2{Run: n.Run.ID, Session: n.SessionID, At: n.Run.At.Unix(), Excerpt: n.Run.Excerpt}}
+	work.SetAcceptance(&i, n.AcceptanceCriteria)
 	if err := work.ValidateNewV2(i); err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
@@ -95,6 +100,16 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 	if !i.Planning() && n.SessionProject != i.ProjectPath {
 		return WorkV2View{}, workV2Error(http.StatusConflict, "project_mismatch",
 			"This Session is not working in that Project, so the item could not be assigned to it; nothing was created.")
+	}
+	var gates WorkV2GateSettings
+	if !i.Planning() {
+		gates, err = w.currentGateSettings(ctx)
+		if err != nil {
+			return WorkV2View{}, err
+		}
+		if err := captureWorkV2Gates(&i, gates, now); err != nil {
+			return WorkV2View{}, mapWorkV2Error(err)
+		}
 	}
 	var out WorkV2View
 	err = w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {

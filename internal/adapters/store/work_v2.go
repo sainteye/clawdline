@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   kind              TEXT NOT NULL CHECK (kind IN ('feature','issue','epic','refactor','plan')),
   title             TEXT NOT NULL,
   description       TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL DEFAULT '',
+  acceptance_version INTEGER NOT NULL DEFAULT 1,
+  acceptance_digest TEXT NOT NULL DEFAULT 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   phase             TEXT NOT NULL CHECK (phase IN ('created','assigning','assigned','implementing','verifying','merging','deploying','done','cancelled')),
   condition         TEXT NOT NULL DEFAULT '' CHECK (condition IN ('','blocked','waiting_user','owner_required','owner_offline','evidence_unknown','assignment_failed','assigned_unnotified')),
   user_action       TEXT NOT NULL DEFAULT '',
@@ -30,6 +33,10 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   updated_at        INTEGER NOT NULL,
   closed_at         INTEGER,
   cycle             INTEGER NOT NULL DEFAULT 1,
+  gate_snapshot_cycle INTEGER NOT NULL DEFAULT 0,
+  gate_snapshot_at  INTEGER NOT NULL DEFAULT 0,
+  planning_gate     INTEGER NOT NULL DEFAULT 0 CHECK (planning_gate IN (0,1)),
+  verify_gate       INTEGER NOT NULL DEFAULT 0 CHECK (verify_gate IN (0,1)),
   version           INTEGER NOT NULL DEFAULT 1,
   created_via       TEXT NOT NULL DEFAULT '',
   parent_id         TEXT NOT NULL DEFAULT ''
@@ -53,7 +60,10 @@ CREATE TABLE IF NOT EXISTS work_v2_assignments (
   updated_at         INTEGER NOT NULL,
   released_at        INTEGER,
   claimed_via        TEXT NOT NULL DEFAULT '',
-  persona            TEXT NOT NULL DEFAULT ''
+  persona            TEXT NOT NULL DEFAULT '',
+  gate_previewed     INTEGER NOT NULL DEFAULT 0 CHECK (gate_previewed IN (0,1)),
+  planning_gate      INTEGER NOT NULL DEFAULT 0 CHECK (planning_gate IN (0,1)),
+  verify_gate        INTEGER NOT NULL DEFAULT 0 CHECK (verify_gate IN (0,1))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS work_v2_one_active_assignment ON work_v2_assignments(work_id)
   WHERE state = 'active';
@@ -202,6 +212,41 @@ func openWorkV2(db *sql.DB) error {
 			return err
 		}
 	}
+	// Acceptance and per-cycle gates were added together. Older items have no
+	// acceptance text, so their version starts at one with SHA-256(empty).
+	// Only already-owned, non-terminal work receives a compatibility snapshot:
+	// Epics retain their old plan gate and every other kind retains the old
+	// ungated behaviour. Pending, unassigned and terminal rows stay unsnapped.
+	columns := []struct {
+		name, ddl string
+	}{
+		{"acceptance_criteria", `ALTER TABLE work_v2_items ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`},
+		{"acceptance_version", `ALTER TABLE work_v2_items ADD COLUMN acceptance_version INTEGER NOT NULL DEFAULT 1`},
+		{"acceptance_digest", `ALTER TABLE work_v2_items ADD COLUMN acceptance_digest TEXT NOT NULL DEFAULT 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'`},
+		{"gate_snapshot_cycle", `ALTER TABLE work_v2_items ADD COLUMN gate_snapshot_cycle INTEGER NOT NULL DEFAULT 0`},
+		{"gate_snapshot_at", `ALTER TABLE work_v2_items ADD COLUMN gate_snapshot_at INTEGER NOT NULL DEFAULT 0`},
+		{"planning_gate", `ALTER TABLE work_v2_items ADD COLUMN planning_gate INTEGER NOT NULL DEFAULT 0 CHECK (planning_gate IN (0,1))`},
+		{"verify_gate", `ALTER TABLE work_v2_items ADD COLUMN verify_gate INTEGER NOT NULL DEFAULT 0 CHECK (verify_gate IN (0,1))`},
+	}
+	for _, column := range columns {
+		if has, err = hasColumn(db, "work_v2_items", column.name); err != nil {
+			return err
+		} else if !has {
+			if _, err = db.Exec(column.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err = db.Exec(`UPDATE work_v2_items
+		SET gate_snapshot_cycle=cycle,
+		    gate_snapshot_at=COALESCE((SELECT a.created_at FROM work_v2_assignments a
+		      WHERE a.work_id=work_v2_items.id AND a.state='active' ORDER BY a.rowid DESC LIMIT 1), updated_at),
+		    planning_gate=CASE WHEN kind='epic' THEN 1 ELSE 0 END,
+		    verify_gate=0
+		WHERE gate_snapshot_cycle=0 AND owner_session<>''
+		  AND phase IN ('assigned','implementing','verifying','merging','deploying')`); err != nil {
+		return err
+	}
 	// created_via is the person's message a Session created the item on
 	// (work-system-v2 §2, amended 2026-09-25). Items written before it have
 	// none, which reads as "created by a person or by nobody's message".
@@ -229,6 +274,19 @@ func openWorkV2(db *sql.DB) error {
 	} else if !has {
 		if _, err = db.Exec(`ALTER TABLE work_v2_assignments ADD COLUMN persona TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
+		}
+	}
+	for _, column := range []struct{ name, ddl string }{
+		{"gate_previewed", `ALTER TABLE work_v2_assignments ADD COLUMN gate_previewed INTEGER NOT NULL DEFAULT 0 CHECK (gate_previewed IN (0,1))`},
+		{"planning_gate", `ALTER TABLE work_v2_assignments ADD COLUMN planning_gate INTEGER NOT NULL DEFAULT 0 CHECK (planning_gate IN (0,1))`},
+		{"verify_gate", `ALTER TABLE work_v2_assignments ADD COLUMN verify_gate INTEGER NOT NULL DEFAULT 0 CHECK (verify_gate IN (0,1))`},
+	} {
+		if has, err = hasColumn(db, "work_v2_assignments", column.name); err != nil {
+			return err
+		} else if !has {
+			if _, err = db.Exec(column.ddl); err != nil {
+				return err
+			}
 		}
 	}
 	// parent_id is the Epic an item was broken out of by the Epic's owner
@@ -325,6 +383,15 @@ func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
 	return nil
 }
 
+// InvalidateWorkV2VerificationAuthorization is the store-side seam for the
+// verification coordinator's rounds and PASS/override authorization. This
+// core owns no round table yet, so there is nothing durable to stale here;
+// the later coordinator slice implements the body without changing the app
+// transitions that already call it inside their item transaction.
+func (t *WorkV2Tx) InvalidateWorkV2VerificationAuthorization(prev, next work.ItemV2, reason string) error {
+	return nil
+}
+
 // AddEffect records an external effect in the same transaction as the work
 // change that owes it. The caller runs the returned id only after this write
 // commits; a daemon that stops first leaves the durable row to recovery.
@@ -337,20 +404,25 @@ func (t *WorkV2Tx) AddEffect(e Effect) (int64, error) {
 	return id, nil
 }
 
-const workV2Columns = `id, project_id, project_path, kind, title, description, phase, condition, user_action,
-  deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via, parent_id`
+const workV2Columns = `id, project_id, project_path, kind, title, description,
+  acceptance_criteria, acceptance_version, acceptance_digest, phase, condition, user_action,
+  deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle,
+  gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate, version, created_via, parent_id`
 
-const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description, i.phase, i.condition, i.user_action,
-  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle, i.version, i.created_via, i.parent_id`
+const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description,
+  i.acceptance_criteria, i.acceptance_version, i.acceptance_digest, i.phase, i.condition, i.user_action,
+  i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle,
+  i.gate_snapshot_cycle, i.gate_snapshot_at, i.planning_gate, i.verify_gate, i.version, i.created_via, i.parent_id`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var i work.ItemV2
-	var created, updated int64
+	var created, updated, gateAt int64
 	var closed sql.NullInt64
 	var via string
-	err := sc.Scan(&i.ID, &i.ProjectID, &i.ProjectPath, &i.Kind, &i.Title, &i.Description, &i.Phase,
+	err := sc.Scan(&i.ID, &i.ProjectID, &i.ProjectPath, &i.Kind, &i.Title, &i.Description,
+		&i.AcceptanceCriteria, &i.AcceptanceVersion, &i.AcceptanceDigest, &i.Phase,
 		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
-		&i.Cycle, &i.Version, &via, &i.ParentID)
+		&i.Cycle, &i.GateSnapshotCycle, &gateAt, &i.PlanningGate, &i.VerifyGate, &i.Version, &via, &i.ParentID)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
 	}
@@ -358,6 +430,9 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 		return work.ItemV2{}, err
 	}
 	i.CreatedAt, i.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+	if gateAt > 0 {
+		i.GateSnapshotAt = time.Unix(gateAt, 0)
+	}
 	if closed.Valid {
 		i.ClosedAt = time.Unix(closed.Int64, 0)
 	}
@@ -378,6 +453,13 @@ func createdViaColumn(v *work.CreatedViaV2) string {
 	}
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+func gateSnapshotUnix(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
 }
 
 func (t *WorkV2Tx) Item(id string) (work.ItemV2, error) {
@@ -416,6 +498,9 @@ func (t *WorkV2Tx) count(where string, args ...any) (int64, error) {
 }
 
 func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
+	if i.AcceptanceVersion == 0 || i.AcceptanceDigest == "" {
+		work.SetAcceptance(&i, i.AcceptanceCriteria)
+	}
 	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic')`
 	limit, full := int64(WorkV2OpenLimit), ErrWorkV2Full
 	if i.Planning() {
@@ -427,11 +512,15 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 		return full
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_items
-      (id, project_id, project_path, kind, title, description, phase, condition, user_action,
-       deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle, version, created_via, parent_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.Phase, i.Condition,
-		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle, i.Version,
+	      (id, project_id, project_path, kind, title, description, acceptance_criteria, acceptance_version,
+	       acceptance_digest, phase, condition, user_action, deployment_policy, owner_session, created_by,
+	       created_at, updated_at, closed_at, cycle, gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate,
+	       version, created_via, parent_id)
+	      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.AcceptanceCriteria,
+		i.AcceptanceVersion, i.AcceptanceDigest, i.Phase, i.Condition,
+		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle,
+		i.GateSnapshotCycle, gateSnapshotUnix(i.GateSnapshotAt), i.PlanningGate, i.VerifyGate, i.Version,
 		createdViaColumn(i.CreatedVia), i.ParentID)
 	if err != nil {
 		return err
@@ -461,11 +550,11 @@ func (t *WorkV2Tx) ItemsCreatedBy(actor string) (int64, error) {
 // a person or a Session changes it, an identical create is a new decision.
 func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, error) {
 	found, err := scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items
-      WHERE project_id=? AND project_path=? AND kind=? AND title=? AND description=?
+      WHERE project_id=? AND project_path=? AND kind=? AND title=? AND description=? AND acceptance_criteria=?
         AND deployment_policy=? AND phase='created' AND owner_session='' AND closed_at IS NULL AND created_via=''
         AND cycle=1 AND version=1
       ORDER BY created_at, id LIMIT 1`,
-		i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.DeploymentPolicy))
+		i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.AcceptanceCriteria, i.DeploymentPolicy))
 	if errors.Is(err, ErrNoWorkV2) {
 		return work.ItemV2{}, false, nil
 	}
@@ -474,11 +563,13 @@ func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, err
 
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
-      description=?, phase=?, condition=?, user_action=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?,
-      cycle=?, version=version+1 WHERE id=? AND version=?`,
-		next.ProjectID, next.ProjectPath, next.Kind, next.Title, next.Description, next.Phase, next.Condition,
+	      description=?, acceptance_criteria=?, acceptance_version=?, acceptance_digest=?, phase=?, condition=?, user_action=?,
+	      deployment_policy=?, owner_session=?, updated_at=?, closed_at=?, cycle=?, gate_snapshot_cycle=?, gate_snapshot_at=?, planning_gate=?,
+	      verify_gate=?, version=version+1 WHERE id=? AND version=?`,
+		next.ProjectID, next.ProjectPath, next.Kind, next.Title, next.Description, next.AcceptanceCriteria,
+		next.AcceptanceVersion, next.AcceptanceDigest, next.Phase, next.Condition,
 		next.UserAction, next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
-		prev.ID, prev.Version)
+		next.GateSnapshotCycle, gateSnapshotUnix(next.GateSnapshotAt), next.PlanningGate, next.VerifyGate, prev.ID, prev.Version)
 	if err != nil {
 		return err
 	}
@@ -624,7 +715,8 @@ func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {
 	var released sql.NullInt64
 	var via string
 	err := sc.Scan(&a.ID, &a.WorkID, &a.Mode, &a.SessionID, &a.TerminalID, &a.Assistant, &a.Model,
-		&a.State, &a.HumanActor, &a.RootAssignment, &a.Failure, &created, &updated, &released, &via, &a.Persona)
+		&a.State, &a.HumanActor, &a.RootAssignment, &a.Failure, &created, &updated, &released, &via, &a.Persona,
+		&a.GatePreviewed, &a.PlanningGate, &a.VerifyGate)
 	if err != nil {
 		return a, err
 	}
@@ -643,7 +735,8 @@ func scanAssignmentV2(sc scanner) (work.AssignmentV2, error) {
 }
 
 const assignmentV2Columns = `id, work_id, mode, session_id, terminal_id, assistant, model, state,
-  human_actor, root_assignment_id, failure, created_at, updated_at, released_at, claimed_via, persona`
+  human_actor, root_assignment_id, failure, created_at, updated_at, released_at, claimed_via, persona,
+  gate_previewed, planning_gate, verify_gate`
 
 // AssignmentsClaimedBy counts every assignment, active or released, a Session
 // claimed on actor's word — how many items one person's message has already
@@ -708,11 +801,12 @@ func (t *WorkV2Tx) CreateAssignment(a work.AssignmentV2) error {
 	}
 	_, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_assignments
       (id, work_id, mode, session_id, terminal_id, assistant, model, state, human_actor,
-       root_assignment_id, failure, created_at, updated_at, released_at, claimed_via, persona)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       root_assignment_id, failure, created_at, updated_at, released_at, claimed_via, persona,
+       gate_previewed, planning_gate, verify_gate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.WorkID, a.Mode, a.SessionID, a.TerminalID, a.Assistant, a.Model, a.State, a.HumanActor,
 		a.RootAssignment, a.Failure, a.CreatedAt.Unix(), a.UpdatedAt.Unix(), zeroOrUnix(a.ReleasedAt),
-		createdViaColumn(a.ClaimedVia), a.Persona)
+		createdViaColumn(a.ClaimedVia), a.Persona, a.GatePreviewed, a.PlanningGate, a.VerifyGate)
 	if err == nil {
 		t.wrote++
 	}
@@ -721,9 +815,10 @@ func (t *WorkV2Tx) CreateAssignment(a work.AssignmentV2) error {
 
 func (t *WorkV2Tx) UpdateAssignment(a work.AssignmentV2) error {
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_assignments SET session_id=?, terminal_id=?, assistant=?,
-      model=?, state=?, root_assignment_id=?, failure=?, updated_at=?, released_at=? WHERE id=?`,
+      model=?, state=?, root_assignment_id=?, failure=?, updated_at=?, released_at=?, gate_previewed=?,
+      planning_gate=?, verify_gate=? WHERE id=?`,
 		a.SessionID, a.TerminalID, a.Assistant, a.Model, a.State, a.RootAssignment, a.Failure,
-		a.UpdatedAt.Unix(), zeroOrUnix(a.ReleasedAt), a.ID)
+		a.UpdatedAt.Unix(), zeroOrUnix(a.ReleasedAt), a.GatePreviewed, a.PlanningGate, a.VerifyGate, a.ID)
 	if err != nil {
 		return err
 	}
@@ -734,6 +829,17 @@ func (t *WorkV2Tx) UpdateAssignment(a work.AssignmentV2) error {
 	}
 	t.wrote++
 	return nil
+}
+
+// WorkV2Assignment reads one durable assignment by id. Activation uses it to
+// retain the gate preview that was shown to a Root Assignment before a dialog
+// or daemon restart.
+func (s *Store) WorkV2Assignment(ctx context.Context, id string) (work.AssignmentV2, error) {
+	if err := reading(); err != nil {
+		return work.AssignmentV2{}, err
+	}
+	return scanAssignmentV2(s.db.QueryRowContext(ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE id=?`, id))
 }
 
 func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.AssignmentV2, error) {

@@ -1,6 +1,9 @@
 package work
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestV2KindsAndAreas(t *testing.T) {
 	for _, k := range []Kind{KindFeature, KindIssue, KindEpic, KindRefactor, KindPlan} {
@@ -138,7 +141,7 @@ func TestEpicPlanGate(t *testing.T) {
 	}
 }
 
-func TestPlanRolesApplyToAnEpicOnly(t *testing.T) {
+func TestPlanRolesApplyToAFeatureOrEpic(t *testing.T) {
 	for _, role := range []string{DocumentPlan, DocumentPlanReview} {
 		if !DocumentRoleValid(role) {
 			t.Fatalf("%s is not a role", role)
@@ -146,7 +149,10 @@ func TestPlanRolesApplyToAnEpicOnly(t *testing.T) {
 		if DocumentRoleApplies(ItemV2{Kind: KindEpic}, role) != nil {
 			t.Fatalf("%s refused on an Epic", role)
 		}
-		for _, k := range []Kind{KindFeature, KindIssue, KindRefactor, KindPlan} {
+		if DocumentRoleApplies(ItemV2{Kind: KindFeature}, role) != nil {
+			t.Fatalf("%s refused on a Feature", role)
+		}
+		for _, k := range []Kind{KindIssue, KindRefactor, KindPlan} {
 			if r, ok := AsRefusalV2(DocumentRoleApplies(ItemV2{Kind: k}, role)); !ok || r.Code != "document_role_not_applicable" {
 				t.Fatalf("%s on a %s: %v", role, k, r)
 			}
@@ -154,5 +160,72 @@ func TestPlanRolesApplyToAnEpicOnly(t *testing.T) {
 	}
 	if DocumentRoleApplies(ItemV2{Kind: KindFeature}, "completion_report") != nil || DocumentRoleValid("wish") {
 		t.Fatal("the other roles changed")
+	}
+}
+
+func TestAcceptanceUsesExactBytesAndMonotonicVersions(t *testing.T) {
+	var item ItemV2
+	if !SetAcceptance(&item, "- observable\n") || item.AcceptanceVersion != 1 ||
+		item.AcceptanceDigest != AcceptanceDigest("- observable\n") {
+		t.Fatalf("initial acceptance = %+v", item)
+	}
+	if SetAcceptance(&item, "- observable\n") || item.AcceptanceVersion != 1 {
+		t.Fatalf("identical bytes changed acceptance = %+v", item)
+	}
+	if !SetAcceptance(&item, "- observable") || item.AcceptanceVersion != 2 ||
+		item.AcceptanceDigest == AcceptanceDigest("- observable\n") {
+		t.Fatalf("exact-byte change = %+v", item)
+	}
+}
+
+func TestPlanningGateUsesTheCapturedModeAndKind(t *testing.T) {
+	docs := func(roles ...string) []DocumentV2 {
+		out := make([]DocumentV2, 0, len(roles))
+		for _, role := range roles {
+			out = append(out, DocumentV2{Role: role})
+		}
+		return out
+	}
+	item := func(kind Kind, planning bool) ItemV2 {
+		return ItemV2{ID: "w", Kind: kind, Phase: PhaseAssigned, Cycle: 3, GateSnapshotCycle: 3,
+			GateSnapshotAt: time.Unix(1, 0), PlanningGate: planning, AcceptanceCriteria: "It works."}
+	}
+	code := func(err error) string {
+		if err == nil {
+			return ""
+		}
+		if refusal, ok := AsRefusalV2(err); ok {
+			return refusal.Code
+		}
+		t.Fatalf("untyped refusal: %v", err)
+		return ""
+	}
+	for _, kind := range []Kind{KindFeature, KindEpic} {
+		if got := code(PlanningGate(item(kind, false), PhaseImplementing, nil)); got != "" {
+			t.Errorf("planning-off %s = %s", kind, got)
+		}
+	}
+	if got := code(PlanningGate(item(KindIssue, true), PhaseImplementing, nil)); got != "" {
+		t.Fatalf("Issue was gated: %s", got)
+	}
+	feature := item(KindFeature, true)
+	if got := code(PlanningGate(feature, PhaseImplementing, nil)); got != "feature_plan_required" {
+		t.Fatalf("Feature without plan = %s", got)
+	}
+	if got := code(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan))); got != "feature_plan_review_required" {
+		t.Fatalf("Feature without review = %s", got)
+	}
+	if got := code(PlanningGate(feature, PhaseImplementing,
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "" {
+		t.Fatalf("Feature exceeded its one-review ceiling: %s", got)
+	}
+	epic := item(KindEpic, true)
+	if got := code(PlanningGate(epic, PhaseImplementing,
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "epic_plan_review_required" {
+		t.Fatalf("Epic accepted one stale review: %s", got)
+	}
+	if got := code(PlanningGate(epic, PhaseImplementing,
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "" {
+		t.Fatalf("Epic exceeded its two-review ceiling: %s", got)
 	}
 }

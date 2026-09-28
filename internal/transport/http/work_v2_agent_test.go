@@ -59,3 +59,19 @@ func TestAnEpicsOwnerBriefSaysPlanReviewStepsThenImplement(t *testing.T) {
 		t.Error("a Feature's brief asks for a plan review")
 	}
 }
+
+func TestRootAssignmentAcceptanceStartsWithTheExactGovernedCriteria(t *testing.T) {
+	criteria := "- first byte stays first\n- trailing newline stays\n"
+	item := work.ItemV2{ID: "0e0e0e0e-0000-4000-8000-000000000002", Kind: work.KindFeature,
+		Phase: work.PhaseAssigned, Cycle: 1, GateSnapshotCycle: 1, PlanningGate: true,
+		AcceptanceCriteria: criteria}
+	got := workV2RootAssignmentAcceptanceForItem(item)
+	if !strings.HasPrefix(got, criteria+"\n") {
+		t.Fatalf("Root ACCEPTANCE did not begin with exact criteria:\n%q", got)
+	}
+	for _, want := range []string{"planning_gate=true", "verify_gate=false", "plan_review", "clawdline item phase " + item.ID} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Root ACCEPTANCE lacks %q:\n%s", want, got)
+		}
+	}
+}

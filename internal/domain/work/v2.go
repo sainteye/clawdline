@@ -1,6 +1,8 @@
 package work
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -100,23 +102,36 @@ func (p DeploymentPolicy) Valid() bool {
 // item. ProjectPath is a historical snapshot; presentation is joined from the
 // current Project catalog on reads.
 type ItemV2 struct {
-	ID               string
-	ProjectID        string
-	ProjectPath      string
-	Kind             Kind
-	Title            string
-	Description      string
-	Phase            Phase
-	Condition        Condition
-	UserAction       string
-	DeploymentPolicy DeploymentPolicy
-	OwnerSession     string
-	CreatedBy        string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	ClosedAt         time.Time
-	Cycle            int64
-	Version          int64
+	ID          string
+	ProjectID   string
+	ProjectPath string
+	Kind        Kind
+	Title       string
+	Description string
+	// AcceptanceCriteria is the person's exact bounded Markdown contract for
+	// this item. AcceptanceVersion changes only when those bytes change, and
+	// AcceptanceDigest is the SHA-256 of those exact bytes.
+	AcceptanceCriteria string
+	AcceptanceVersion  int64
+	AcceptanceDigest   string
+	Phase              Phase
+	Condition          Condition
+	UserAction         string
+	DeploymentPolicy   DeploymentPolicy
+	OwnerSession       string
+	CreatedBy          string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ClosedAt           time.Time
+	Cycle              int64
+	// GateSnapshotCycle is zero until the first successful assignment of this
+	// cycle. When it equals Cycle, PlanningGate and VerifyGate are immutable
+	// for that cycle, including across reassignment.
+	GateSnapshotCycle int64
+	GateSnapshotAt    time.Time
+	PlanningGate      bool
+	VerifyGate        bool
+	Version           int64
 	// CreatedVia is the person's message a Session created this item on
 	// (work-system-v2 §2, amended 2026-09-25); nil for an item a person
 	// created as themselves.
@@ -125,6 +140,43 @@ type ItemV2 struct {
 	// Session (EpicChildParent); empty for every other item. It never changes
 	// after creation.
 	ParentID string
+}
+
+// AcceptanceDigest returns the lowercase SHA-256 of the exact Markdown bytes
+// stored on an item. It deliberately does no whitespace normalization: a
+// checker and the item must name the same contract, byte for byte.
+func AcceptanceDigest(criteria string) string {
+	sum := sha256.Sum256([]byte(criteria))
+	return hex.EncodeToString(sum[:])
+}
+
+// SetAcceptance initializes or changes an item's governed acceptance state.
+// It returns true only when the exact stored bytes changed.
+func SetAcceptance(i *ItemV2, criteria string) bool {
+	if i.AcceptanceVersion > 0 && i.AcceptanceCriteria == criteria {
+		return false
+	}
+	i.AcceptanceCriteria = criteria
+	if i.AcceptanceVersion == 0 {
+		i.AcceptanceVersion = 1
+	} else {
+		i.AcceptanceVersion++
+	}
+	i.AcceptanceDigest = AcceptanceDigest(criteria)
+	return true
+}
+
+// HasGateSnapshot says the item's current execution cycle has captured the
+// two global switches. The bools alone cannot say this because false is a
+// legitimate captured value.
+func (i ItemV2) HasGateSnapshot() bool {
+	return i.Cycle > 0 && i.GateSnapshotCycle == i.Cycle
+}
+
+// GateNeedsAcceptance says whether this item's captured gates require an
+// acceptance contract. Planning exempts Issues; verification does not.
+func (i ItemV2) GateNeedsAcceptance() bool {
+	return i.VerifyGate || i.PlanningGate && (i.Kind == KindFeature || i.Kind == KindEpic)
 }
 
 // CreatedViaV2 is the provenance of an item a Session created because a
@@ -165,6 +217,13 @@ type AssignmentV2 struct {
 	// assignment (docs/personas.md); empty for none and for every
 	// existing-session assignment.
 	Persona string
+	// GatePreviewed records the global mode read before a new Session was
+	// opened. The item does not gain its snapshot until this assignment becomes
+	// active, but a dialog or restart must not make it capture a different mode
+	// from the Root Assignment it was shown.
+	GatePreviewed bool
+	PlanningGate  bool
+	VerifyGate    bool
 }
 
 type DocumentV2 struct {
@@ -317,9 +376,8 @@ func ValidateNewV2(i ItemV2) error {
 	return nil
 }
 
-// Document roles. Plan and plan_review belong to an Epic only: they are the
-// record its gate reads, and on any other kind they would be a ceremony
-// nothing checks.
+// Document roles. Plan and plan_review belong to a Feature or Epic: they are
+// the record the kind-aware planning gate reads.
 const (
 	DocumentPlan       = "plan"
 	DocumentPlanReview = "plan_review"
@@ -335,24 +393,35 @@ func DocumentRoleValid(role string) bool {
 	return false
 }
 
-// DocumentRoleApplies refuses a plan or plan_review on anything but an Epic.
+// DocumentRoleApplies refuses a plan or plan_review on anything but a Feature
+// or Epic.
 func DocumentRoleApplies(i ItemV2, role string) error {
-	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic {
+	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic && i.Kind != KindFeature {
 		return RefuseV2("document_role_not_applicable",
-			"Plan and plan_review documents belong to an Epic; use spec or design for this item.")
+			"Plan and plan_review documents belong to a Feature or Epic; use spec or design for this item.")
 	}
 	return nil
 }
 
-// EpicPlanGate is the rule an Epic crosses before it enters implementing: an
-// Epic is large, so its plan is written onto the item and a second reader, a
-// child review, checks it before code is written. plans is every plan and
-// plan_review document on the item, oldest first; a plan written after the
-// last review needs a review of its own, until EpicPlanReviewRounds reviews
-// have been recorded. Other kinds and other transitions pass untouched.
-func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
-	if i.Kind != KindEpic || i.Phase != PhaseAssigned || next != PhaseImplementing {
+// PlanningGate is the rule a Feature or Epic crosses before implementing.
+// It reads only the current cycle snapshot, never the later global setting.
+// A Feature requires one independent review and an Epic retains its existing
+// two-review ceiling. Issues and planning-off cycles are exempt.
+func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
+	if i.Phase != PhaseAssigned || next != PhaseImplementing || i.Kind == KindIssue {
 		return nil
+	}
+	if i.Kind != KindEpic && i.Kind != KindFeature {
+		return nil
+	}
+	if !i.HasGateSnapshot() {
+		return RefuseV2("gate_snapshot_required", "This assignment has no gate snapshot; reassign it before implementation.")
+	}
+	if !i.PlanningGate {
+		return nil
+	}
+	if strings.TrimSpace(i.AcceptanceCriteria) == "" {
+		return RefuseV2("acceptance_required", "Write acceptance criteria before this item enters implementation.")
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0
 	for n, d := range plans {
@@ -364,16 +433,39 @@ func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
 			reviews++
 		}
 	}
+	rounds := 1
+	prefix := "feature"
+	if i.Kind == KindEpic {
+		rounds, prefix = EpicPlanReviewRounds, "epic"
+	}
 	switch {
 	case lastPlan < 0:
-		return RefuseV2("epic_plan_required",
-			"Write the Epic's plan onto the item first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
-	case lastReview < lastPlan && reviews < EpicPlanReviewRounds:
-		return RefuseV2("epic_plan_review_required",
-			"Have a child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
+		return RefuseV2(prefix+"_plan_required",
+			"Write the item's plan first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
+	case lastReview < lastPlan && reviews < rounds:
+		return RefuseV2(prefix+"_plan_review_required",
+			"Have an independent child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
 				"`), then record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
 	}
 	return nil
+}
+
+// EpicPlanGate remains as a source-compatible name for callers outside the
+// runtime path. New enforcement calls PlanningGate so Features are included.
+func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
+	if i.Kind != KindEpic {
+		return nil
+	}
+	if !i.HasGateSnapshot() {
+		if i.Cycle == 0 {
+			i.Cycle = 1
+		}
+		i.GateSnapshotCycle, i.PlanningGate = i.Cycle, true
+		if strings.TrimSpace(i.AcceptanceCriteria) == "" {
+			i.AcceptanceCriteria = "legacy Epic acceptance"
+		}
+	}
+	return PlanningGate(i, next, plans)
 }
 
 // EpicPlanReviewRounds is how many plan reviews the gate asks of an Epic at

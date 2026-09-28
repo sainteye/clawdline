@@ -78,7 +78,8 @@ func TestTheEpicOwnersAssignmentCarriesAPersona(t *testing.T) {
 	child := func(key string, version int64, assign map[string]any) *httptest.ResponseRecorder {
 		return agentPost(t, s, children, key, map[string]any{"expected_version": version,
 			"session_id": epicOwnerConversation, "kind": "feature", "title": "Part " + key, "description": "Build it.",
-			"assign": assign})
+			"acceptance_criteria": "The part is complete.",
+			"assign":              assign})
 	}
 	countChildren := func() int {
 		items, _, err := s.store.WorkV2Items(context.Background(), "", "", "all", "", 100)

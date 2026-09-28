@@ -39,9 +39,26 @@ const (
 type WorkSystemV2 struct {
 	Store *store.Store
 	Now   func() time.Time
+	// GateSettings reads the two global defaults for the first successful
+	// assignment in a cycle. It is never consulted by later transitions.
+	GateSettings func(context.Context) (WorkV2GateSettings, error)
+	// VerificationInvalidator is the transaction-local seam the coordinator
+	// slice uses to stale rounds and PASS/override authorization. This core
+	// calls it for every acceptance change and completion retraction even when
+	// no round store has been installed yet.
+	VerificationInvalidator func(*store.WorkV2Tx, work.ItemV2, work.ItemV2, string) error
 }
 
-func NewWorkSystemV2(st *store.Store) *WorkSystemV2 { return &WorkSystemV2{Store: st, Now: time.Now} }
+type WorkV2GateSettings struct {
+	Planning bool
+	Verify   bool
+}
+
+func NewWorkSystemV2(st *store.Store) *WorkSystemV2 {
+	return &WorkSystemV2{Store: st, Now: time.Now, GateSettings: func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Planning: true, Verify: false}, nil
+	}}
+}
 
 func (w *WorkSystemV2) now() time.Time {
 	if w.Now != nil {
@@ -114,13 +131,81 @@ func mapWorkV2Error(err error) error {
 }
 
 type NewWorkV2 struct {
-	ProjectID        string
-	ProjectPath      string
-	Kind             work.Kind
-	Title            string
-	Description      string
-	DeploymentPolicy work.DeploymentPolicy
-	Actor            string
+	ProjectID          string
+	ProjectPath        string
+	Kind               work.Kind
+	Title              string
+	Description        string
+	AcceptanceCriteria string
+	DeploymentPolicy   work.DeploymentPolicy
+	Actor              string
+}
+
+func validateWorkV2Acceptance(criteria string) error {
+	switch {
+	case len(criteria) > workV2DescriptionLimit:
+		return workV2Error(http.StatusRequestEntityTooLarge, "acceptance_too_large", "Acceptance criteria are at most 64 KiB.")
+	case !utf8.ValidString(criteria):
+		return workV2Error(http.StatusBadRequest, "invalid_acceptance", "Acceptance criteria must be valid UTF-8 Markdown.")
+	}
+	return nil
+}
+
+func (w *WorkSystemV2) currentGateSettings(ctx context.Context) (WorkV2GateSettings, error) {
+	if w.GateSettings == nil {
+		return WorkV2GateSettings{Planning: true}, nil
+	}
+	g, err := w.GateSettings(ctx)
+	if err != nil {
+		return WorkV2GateSettings{}, workV2Error(http.StatusServiceUnavailable, "settings_unavailable",
+			"The planning and verification settings could not be read; nothing was assigned.")
+	}
+	return g, nil
+}
+
+func captureWorkV2Gates(i *work.ItemV2, g WorkV2GateSettings, at time.Time) error {
+	if !i.HasGateSnapshot() {
+		i.GateSnapshotCycle, i.PlanningGate, i.VerifyGate = i.Cycle, g.Planning, g.Verify
+		i.GateSnapshotAt = at
+	}
+	if i.GateNeedsAcceptance() && strings.TrimSpace(i.AcceptanceCriteria) == "" {
+		return work.RefuseV2("acceptance_required",
+			"Acceptance criteria are required before this item can be assigned with its captured gates.")
+	}
+	return nil
+}
+
+// InvalidateVerificationAuthorization is the application-side hook every
+// acceptance change or completion retraction crosses in the item's own
+// transaction. The store seam is always called; the optional coordinator
+// callback lets a later slice add its aggregate work without weakening this
+// core's atomicity.
+func (w *WorkSystemV2) InvalidateVerificationAuthorization(tx *store.WorkV2Tx, prev, next work.ItemV2, reason string) error {
+	if err := tx.InvalidateWorkV2VerificationAuthorization(prev, next, reason); err != nil {
+		return err
+	}
+	if w.VerificationInvalidator != nil {
+		return w.VerificationInvalidator(tx, prev, next, reason)
+	}
+	return nil
+}
+
+// PreviewAssignment returns the gate facts a presently unsnapshotted item
+// would capture. The new-Session transport uses it to compose the Root
+// Assignment and to refuse missing criteria before opening any external tab;
+// the successful FinishAssignment remains the only durable write.
+func (w *WorkSystemV2) PreviewAssignment(ctx context.Context, item work.ItemV2) (work.ItemV2, error) {
+	if item.HasGateSnapshot() {
+		return item, nil
+	}
+	gates, err := w.currentGateSettings(ctx)
+	if err != nil {
+		return work.ItemV2{}, err
+	}
+	if err := captureWorkV2Gates(&item, gates, w.now()); err != nil {
+		return work.ItemV2{}, mapWorkV2Error(err)
+	}
+	return item, nil
 }
 
 func validateWorkV2Text(title, description string) error {
@@ -147,11 +232,15 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 	if err := validateWorkV2Text(n.Title, n.Description); err != nil {
 		return WorkV2View{}, err
 	}
+	if err := validateWorkV2Acceptance(n.AcceptanceCriteria); err != nil {
+		return WorkV2View{}, err
+	}
 	now := w.now()
 	i := work.ItemV2{ID: newWorkID(), ProjectID: n.ProjectID, ProjectPath: n.ProjectPath, Kind: n.Kind,
 		Title: n.Title, Description: n.Description, Phase: work.PhaseCreated,
 		DeploymentPolicy: n.DeploymentPolicy, CreatedBy: n.Actor, CreatedAt: now, UpdatedAt: now,
 		Cycle: 1, Version: 1}
+	work.SetAcceptance(&i, n.AcceptanceCriteria)
 	if err := work.ValidateNewV2(i); err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
@@ -422,14 +511,15 @@ func (w *WorkSystemV2) DeleteImage(ctx context.Context, id, imageID string, expe
 }
 
 type EditWorkV2 struct {
-	ExpectedVersion int64
-	Title           *string
-	Description     *string
-	Condition       *work.Condition
-	UserAction      *string
-	Actor           string
-	OwnerSession    string
-	Person          bool
+	ExpectedVersion    int64
+	Title              *string
+	Description        *string
+	AcceptanceCriteria *string
+	Condition          *work.Condition
+	UserAction         *string
+	Actor              string
+	OwnerSession       string
+	Person             bool
 }
 
 func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file WorkV2Filer) (WorkV2View, error) {
@@ -451,6 +541,24 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 		}
 		if c.Description != nil {
 			next.Description = strings.TrimSpace(*c.Description)
+		}
+		acceptanceChanged := false
+		if c.AcceptanceCriteria != nil {
+			if !c.Person {
+				return work.RefuseV2("acceptance_not_agent_editable", "The maker Session may not change its own acceptance criteria.")
+			}
+			switch prev.Phase {
+			case work.PhaseMerging, work.PhaseDeploying, work.PhaseDone:
+				return work.RefuseV2("acceptance_locked", "Acceptance criteria are locked once work enters merging.")
+			}
+			if err := validateWorkV2Acceptance(*c.AcceptanceCriteria); err != nil {
+				return err
+			}
+			acceptanceChanged = work.SetAcceptance(&next, *c.AcceptanceCriteria)
+			if acceptanceChanged && prev.Phase == work.PhaseVerifying {
+				next.Phase = work.PhaseImplementing
+				next.Condition, next.UserAction = "", ""
+			}
 		}
 		if err := validateWorkV2Text(next.Title, next.Description); err != nil {
 			return err
@@ -485,8 +593,16 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			}
 		}
 		next.UpdatedAt = w.now()
+		if acceptanceChanged {
+			if err := w.InvalidateVerificationAuthorization(tx, prev, next, "acceptance_changed"); err != nil {
+				return err
+			}
+		}
 		if err := tx.PutItem(prev, next, "item.edited", c.Actor, payload(map[string]any{"title": c.Title != nil,
-			"description": c.Description != nil, "condition": c.Condition, "user_action": c.UserAction != nil})); err != nil {
+			"description": c.Description != nil, "acceptance": acceptanceChanged,
+			"acceptance_version": next.AcceptanceVersion, "acceptance_digest": next.AcceptanceDigest,
+			"verification_authorization_invalidated": acceptanceChanged,
+			"condition":                              c.Condition, "user_action": c.UserAction != nil})); err != nil {
 			return err
 		}
 		next.Version++
@@ -573,6 +689,9 @@ type AssignWorkV2 struct {
 	// Persona is the built-in persona a new Session is opened as; empty for
 	// none. The transport checks it against the catalog before this is built.
 	Persona string
+	// GatePreview is the mode already composed into a new Root Assignment.
+	// Direct callers leave it nil and this application reads settings itself.
+	GatePreview *WorkV2GateSettings
 }
 
 func descriptionStepTitles(description string) []string {
@@ -634,8 +753,23 @@ func seedDescriptionSteps(tx *store.WorkV2Tx, item work.ItemV2, session string, 
 }
 
 func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pending bool, file WorkV2Filer) (WorkV2View, error) {
+	var gates WorkV2GateSettings
+	probe, err := w.Store.WorkV2Item(ctx, id)
+	if err != nil {
+		return WorkV2View{}, mapWorkV2Error(err)
+	}
+	if !probe.HasGateSnapshot() {
+		if pending && c.GatePreview != nil {
+			gates = *c.GatePreview
+		} else {
+			gates, err = w.currentGateSettings(ctx)
+			if err != nil {
+				return WorkV2View{}, err
+			}
+		}
+	}
 	var out WorkV2View
-	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+	err = w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		prev, err := tx.Item(id)
 		if err != nil {
 			return err
@@ -679,6 +813,13 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		a := work.AssignmentV2{ID: c.AssignmentID, WorkID: id, Mode: c.Mode, SessionID: c.SessionID,
 			TerminalID: c.TerminalID, Assistant: c.Assistant, Model: c.Model, State: state,
 			HumanActor: c.Actor, CreatedAt: now, UpdatedAt: now, ClaimedVia: c.Claim, Persona: c.Persona}
+		if pending && !prev.HasGateSnapshot() {
+			preview := prev
+			if err := captureWorkV2Gates(&preview, gates, now); err != nil {
+				return err
+			}
+			a.GatePreviewed, a.PlanningGate, a.VerifyGate = true, preview.PlanningGate, preview.VerifyGate
+		}
 		if !pending && strings.TrimSpace(a.SessionID) == "" {
 			return work.RefuseV2("session_required", "An active assignment needs a Session conversation id.")
 		}
@@ -720,6 +861,9 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
 			}
+			if err := captureWorkV2Gates(&next, gates, now); err != nil {
+				return err
+			}
 		}
 		next.UpdatedAt = now
 		fields := map[string]any{"assignment_id": a.ID, "mode": a.Mode, "pending": pending,
@@ -755,6 +899,24 @@ type FinishAssignmentV2 struct {
 }
 
 func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c FinishAssignmentV2) (WorkV2View, error) {
+	var gates WorkV2GateSettings
+	if c.Failure == "" {
+		probe, err := w.Store.WorkV2Item(ctx, workID)
+		if err != nil {
+			return WorkV2View{}, mapWorkV2Error(err)
+		}
+		if !probe.HasGateSnapshot() {
+			pending, assignmentErr := w.Store.WorkV2Assignment(ctx, c.AssignmentID)
+			if assignmentErr == nil && pending.GatePreviewed {
+				gates = WorkV2GateSettings{Planning: pending.PlanningGate, Verify: pending.VerifyGate}
+			} else {
+				gates, err = w.currentGateSettings(ctx)
+				if err != nil {
+					return WorkV2View{}, err
+				}
+			}
+		}
+	}
 	var out WorkV2View
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		prev, err := tx.Item(workID)
@@ -795,6 +957,9 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 			next.OwnerSession, next.Condition, next.UserAction = c.SessionID, "", ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
+			}
+			if err := captureWorkV2Gates(&next, gates, now); err != nil {
+				return err
 			}
 		}
 		seeded := []work.StepV2{}
@@ -982,15 +1147,15 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
 			return err
 		}
-		if prev.Kind == work.KindEpic {
+		if prev.Kind == work.KindEpic || prev.Kind == work.KindFeature {
 			plans, err := tx.PlanDocuments(id)
 			if err != nil {
 				return err
 			}
-			if err := work.EpicPlanGate(prev, c.Next, plans); err != nil {
+			if err := work.PlanningGate(prev, c.Next, plans); err != nil {
 				return err
 			}
-			if c.Next == work.PhaseDone {
+			if prev.Kind == work.KindEpic && c.Next == work.PhaseDone {
 				_, open, err := tx.Children(id)
 				if err != nil {
 					return err
@@ -1181,6 +1346,7 @@ func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, ac
 		next := prev
 		next.Phase, next.Condition, next.UserAction, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, "", ""
 		next.ClosedAt, next.UpdatedAt, next.Cycle = time.Time{}, w.now(), prev.Cycle+1
+		next.GateSnapshotCycle, next.GateSnapshotAt, next.PlanningGate, next.VerifyGate = 0, time.Time{}, false, false
 		if err := tx.PutItem(prev, next, "item.reopened", actor, payload(map[string]int64{"cycle": next.Cycle})); err != nil {
 			return err
 		}
@@ -1266,9 +1432,19 @@ func (w *WorkSystemV2) ReopenIncomplete(ctx context.Context, id string, c AgentR
 		next.Phase, next.Condition, next.UserAction = work.PhaseImplementing, "", ""
 		next.OwnerSession, next.ClosedAt, next.UpdatedAt = c.SessionID, time.Time{}, now
 		next.Cycle = prev.Cycle + 1
+		// A completion correction is the same responsibility resumed immediately:
+		// keep its gate mode, but bind it to the new cycle and make any earlier
+		// verification authorization unusable.
+		next.GateSnapshotCycle = next.Cycle
+		next.GateSnapshotAt = now
+		if err := w.InvalidateVerificationAuthorization(tx, prev, next, "completion_retracted"); err != nil {
+			return err
+		}
 		if err := tx.PutItem(prev, next, "item.completion_retracted", c.SessionID, payload(map[string]any{
 			"assignment_id": assignment.ID, "previous_assignment_id": completed.ID,
-			"cycle": next.Cycle, "reason": c.Reason,
+			"cycle": next.Cycle, "reason": c.Reason, "gate_snapshot_cycle": next.GateSnapshotCycle,
+			"planning_gate": next.PlanningGate, "verify_gate": next.VerifyGate,
+			"verification_authorization_invalidated": true,
 		})); err != nil {
 			return err
 		}
@@ -1355,7 +1531,7 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 }
 
 // checkPlanReviewTask accepts a plan_review only when its reference is a
-// Clawdline child that really reviewed this Epic's latest plan: a task of
+// Clawdline child that really reviewed this Feature or Epic's latest plan: a task of
 // kind plan_review, dispatched by the item's owner Session, finished with
 // success, on this item's line if it names one, and dispatched no earlier
 // than the latest plan was written. The task is read inside the same
@@ -1372,7 +1548,7 @@ func checkPlanReviewTask(tx *store.WorkV2Tx, item work.ItemV2, taskID string) er
 		}
 	}
 	if latestPlan.IsZero() {
-		return work.RefuseV2("epic_plan_required", "Write the plan document first; a review reviews a plan.")
+		return work.RefuseV2(string(item.Kind)+"_plan_required", "Write the plan document first; a review reviews a plan.")
 	}
 	unknown := workV2Error(http.StatusUnprocessableEntity, "plan_review_task_unknown",
 		"reference must be the task id of the plan_review child you dispatched; no readable task has that id.")
@@ -1850,16 +2026,18 @@ func (w *WorkSystemV2) DeleteDirectTodo(ctx context.Context, id, session string,
 
 func (w *WorkSystemV2) Propose(ctx context.Context, p work.ProposalV2) (work.ProposalV2, error) {
 	p.ID, p.Title, p.Description, p.Reason = newWorkID(), strings.TrimSpace(p.Title), strings.TrimSpace(p.Description), strings.TrimSpace(p.Reason)
-	p.SuggestedAcceptance = strings.TrimSpace(p.SuggestedAcceptance)
 	p.ProjectID, p.ProjectPath, p.SessionID = strings.TrimSpace(p.ProjectID), strings.TrimSpace(p.ProjectPath), strings.TrimSpace(p.SessionID)
-	if !p.Kind.Valid() || p.ProjectID == "" || p.ProjectPath == "" || p.SessionID == "" || p.Title == "" || p.Description == "" || p.Reason == "" || p.SuggestedAcceptance == "" {
+	if !p.Kind.Valid() || p.ProjectID == "" || p.ProjectPath == "" || p.SessionID == "" || p.Title == "" || p.Description == "" || p.Reason == "" || strings.TrimSpace(p.SuggestedAcceptance) == "" {
 		return p, workV2Error(http.StatusUnprocessableEntity, "invalid_proposal", "A proposal needs Project, kind, title, description, reason, suggested acceptance, and Session; explain the work for a person in plain language.")
 	}
 	if err := validateWorkV2Text(p.Title, p.Description); err != nil {
 		return p, err
 	}
-	if len(p.Reason) > directTodoTextLimit || len(p.SuggestedAcceptance) > workV2DescriptionLimit {
-		return p, workV2Error(http.StatusRequestEntityTooLarge, "proposal_too_large", "Proposal reason is at most 8 KiB and suggested acceptance at most 64 KiB.")
+	if len(p.Reason) > directTodoTextLimit {
+		return p, workV2Error(http.StatusRequestEntityTooLarge, "proposal_too_large", "Proposal reason is at most 8 KiB.")
+	}
+	if err := validateWorkV2Acceptance(p.SuggestedAcceptance); err != nil {
+		return p, err
 	}
 	if p.SourceWorkID == "" && p.SourceTodoID == "" {
 		return p, workV2Error(http.StatusUnprocessableEntity, "proposal_source_required", "A proposal must name the item or direct to-do that revealed it.")
@@ -1922,18 +2100,18 @@ func (w *WorkSystemV2) ResolveProposal(ctx context.Context, id, actor string, c 
 			p.Description = strings.TrimSpace(c.Description)
 		}
 		if c.SuggestedAcceptance != "" {
-			p.SuggestedAcceptance = strings.TrimSpace(c.SuggestedAcceptance)
+			p.SuggestedAcceptance = c.SuggestedAcceptance
 		}
 		if err := validateWorkV2Text(p.Title, p.Description); err != nil {
 			return err
 		}
-		description := p.Description
-		if p.SuggestedAcceptance != "" {
-			description += "\n\nAcceptance:\n" + p.SuggestedAcceptance
+		if err := validateWorkV2Acceptance(p.SuggestedAcceptance); err != nil {
+			return err
 		}
 		i := work.ItemV2{ID: newWorkID(), ProjectID: p.ProjectID, ProjectPath: p.ProjectPath, Kind: p.Kind, Title: p.Title,
-			Description: description, Phase: work.PhaseCreated, DeploymentPolicy: work.DeployAgentDecides,
+			Description: p.Description, Phase: work.PhaseCreated, DeploymentPolicy: work.DeployAgentDecides,
 			CreatedBy: actor, CreatedAt: now, UpdatedAt: now, Cycle: 1, Version: 1}
+		work.SetAcceptance(&i, p.SuggestedAcceptance)
 		if err := work.ValidateNewV2(i); err != nil {
 			return err
 		}

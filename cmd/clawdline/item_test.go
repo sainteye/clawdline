@@ -13,7 +13,9 @@ import (
 const itemRun = "0f0f0f0f-0000-4000-8000-000000000001"
 
 const createdItem = `{"ok":true,"item":{"id":"item-1","title":"Ship it","kind":"feature","phase":"assigned",
- "owner_session":"` + thinConversation + `","version":2,"steps":[
+ "owner_session":"` + thinConversation + `","version":2,"acceptance_criteria":"The release is visible.",
+ "acceptance_version":1,"acceptance_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "gate_snapshot_cycle":1,"planning_gate":true,"verify_gate":false,"steps":[
  {"id":"s1","title":"draft","done":false},{"id":"s2","title":"check","done":false},{"id":"s3","title":"publish","done":false}]}}`
 
 // `item add` reads this conversation's latest run, then posts the item with
@@ -29,7 +31,8 @@ func TestItemAddPostsThreeStepsInOrderUnderTheLatestRun(t *testing.T) {
 	})
 	var out, errs bytes.Buffer
 	code := sessionItem(&out, &errs, b, "add", itemFlags{project: "p1", kind: "feature", title: "Ship it",
-		description: "The person asked.", steps: []string{"draft", " ", "check", "publish"}}, nil, "", "",
+		description: "The person asked.", acceptance: "The release is visible.",
+		steps: []string{"draft", " ", "check", "publish"}}, nil, "", "",
 		envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation}))
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs.String())
@@ -52,19 +55,21 @@ func TestItemAddPostsThreeStepsInOrderUnderTheLatestRun(t *testing.T) {
 		}
 	}
 	var body struct {
-		SessionID string            `json:"session_id"`
-		Via       map[string]string `json:"via"`
-		ProjectID string            `json:"project_id"`
-		Kind      string            `json:"kind"`
-		Steps     []string          `json:"steps"`
+		SessionID          string            `json:"session_id"`
+		Via                map[string]string `json:"via"`
+		ProjectID          string            `json:"project_id"`
+		Kind               string            `json:"kind"`
+		AcceptanceCriteria string            `json:"acceptance_criteria"`
+		Steps              []string          `json:"steps"`
 	}
 	if err := json.Unmarshal(r.Body, &body); err != nil || body.SessionID != thinConversation ||
 		body.Via["run"] != itemRun || body.ProjectID != "p1" || body.Kind != "feature" ||
-		strings.Join(body.Steps, "|") != "draft|check|publish" {
+		body.AcceptanceCriteria != "The release is visible." || strings.Join(body.Steps, "|") != "draft|check|publish" {
 		t.Fatalf("body = %s", r.Body)
 	}
 	for _, want := range []string{"item-1  Ship it  [feature, assigned, assigned to " + thinConversation + "]",
-		"[ ] s1  draft", "[ ] s2  check", "[ ] s3  publish"} {
+		"acceptance v1 sha256:aaaaaaaa", "The release is visible.",
+		"gates cycle 1: planning=true verification=false", "[ ] s1  draft", "[ ] s2  check", "[ ] s3  publish"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("stdout lacks %q:\n%s", want, out.String())
 		}
@@ -438,7 +443,8 @@ func TestItemChildPostsTheChildUnderTheEpicsVersion(t *testing.T) {
 	})
 	var out, errs bytes.Buffer
 	code := sessionItem(&out, &errs, b, "child", itemFlags{kind: "feature", title: "Part", description: "Build it.",
-		steps: []string{"one", " ", "two"}, assign: assignFlags{terminal: "%9"}}, []string{"epic-1"}, thinConversation, "", envOf(nil))
+		acceptance: "The part works.", steps: []string{"one", " ", "two"}, assign: assignFlags{terminal: "%9"}},
+		[]string{"epic-1"}, thinConversation, "", envOf(nil))
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
@@ -452,15 +458,17 @@ func TestItemChildPostsTheChildUnderTheEpicsVersion(t *testing.T) {
 		t.Fatalf("create = %+v, stderr %q", r, errs.String())
 	}
 	var body struct {
-		ExpectedVersion int64             `json:"expected_version"`
-		SessionID       string            `json:"session_id"`
-		Kind            string            `json:"kind"`
-		Steps           []string          `json:"steps"`
-		Assign          map[string]string `json:"assign"`
-		Via             any               `json:"via"`
+		ExpectedVersion    int64             `json:"expected_version"`
+		SessionID          string            `json:"session_id"`
+		Kind               string            `json:"kind"`
+		AcceptanceCriteria string            `json:"acceptance_criteria"`
+		Steps              []string          `json:"steps"`
+		Assign             map[string]string `json:"assign"`
+		Via                any               `json:"via"`
 	}
 	if err := json.Unmarshal(r.Body, &body); err != nil || body.ExpectedVersion != 7 || body.SessionID != thinConversation ||
-		body.Kind != "feature" || strings.Join(body.Steps, "|") != "one|two" || body.Via != nil ||
+		body.Kind != "feature" || body.AcceptanceCriteria != "The part works." ||
+		strings.Join(body.Steps, "|") != "one|two" || body.Via != nil ||
 		body.Assign["mode"] != "existing_session" || body.Assign["terminal_id"] != "%9" {
 		t.Fatalf("body = %s", r.Body)
 	}

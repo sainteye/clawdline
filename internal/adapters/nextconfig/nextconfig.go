@@ -52,6 +52,25 @@ type Values struct {
 	Raw map[string]json.RawMessage
 }
 
+// WorkGates are the global defaults captured by the first successful Work v2
+// assignment in a cycle. An absent or wrong-shaped hand-written key keeps the
+// product default: planning on, independent verification off.
+type WorkGates struct {
+	Planning bool
+	Verify   bool
+}
+
+func (v Values) WorkGates() WorkGates {
+	out := WorkGates{Planning: true, Verify: false}
+	if value, ok := v.Bool("planning_gate"); ok {
+		out.Planning = value
+	}
+	if value, ok := v.Bool("verify_gate"); ok {
+		out.Verify = value
+	}
+	return out
+}
+
 // String returns a key's value when it is a JSON string, and whether it was.
 func (v Values) String(key string) (string, bool) {
 	raw, ok := v.Raw[key]
@@ -435,6 +454,8 @@ var Settables = []Settable{
 	{Name: "terminal", Kind: "string", Choices: []string{"auto", "iterm", "tmux"},
 		Refusal: "invalid_terminal", Because: "auto, iterm or tmux"},
 	{Name: "reopen_on_return", Kind: "bool"},
+	{Name: "planning_gate", Kind: "bool"},
+	{Name: "verify_gate", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
 	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex", "auto"},

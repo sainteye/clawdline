@@ -27,7 +27,8 @@ func epicChildrenServer(t *testing.T, phase work.Phase) (*Server, *pane, app.Wor
 	s, p, feature := workV2AssignmentServer(t, session.StateIdle)
 	ctx := context.Background()
 	epic, err := s.workV2().Create(ctx, app.NewWorkV2{ProjectID: "project-1", ProjectPath: feature.Item.ProjectPath,
-		Kind: work.KindEpic, Title: "Big rework", Description: "All of it.", Actor: "local"}, nil)
+		Kind: work.KindEpic, Title: "Big rework", Description: "All of it.",
+		AcceptanceCriteria: "Every part of the rework is complete.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,8 @@ type epicChildAnswer struct {
 func TestTheEpicsOwnerCreatesAChildAssignedToAnotherSession(t *testing.T) {
 	s, p, epic := epicChildrenServer(t, work.PhaseImplementing)
 	body := map[string]any{"expected_version": epic.Item.Version, "session_id": epicOwnerConversation,
-		"kind": "feature", "title": "The storage part", "description": "Store it.", "steps": []string{"schema", "reads"},
+		"kind": "feature", "title": "The storage part", "description": "Store it.",
+		"acceptance_criteria": "The data survives a restart.", "steps": []string{"schema", "reads"},
 		"assign": map[string]any{"mode": "existing_session", "terminal_id": p.s.ID}}
 	path := "/v1/work/v2/agent/items/" + epic.Item.ID + "/children"
 	rec := agentPost(t, s, path, "epic-child-1", body)
@@ -101,7 +103,9 @@ func TestTheEpicsOwnerCreatesAChildAssignedToAnotherSession(t *testing.T) {
 	if !got.Assigned || got.AssignmentError != nil || it.ParentID != epic.Item.ID || it.OwnerSession == nil ||
 		*it.OwnerSession != p.s.ConversationID || it.Phase != "assigned" || len(it.Steps) != 2 ||
 		it.CreatedBy != work.EpicOwnerActor(epicOwnerConversation) || it.CreatedVia == nil ||
-		it.CreatedVia.EpicID != epic.Item.ID || it.CreatedVia.Run != "" {
+		it.CreatedVia.EpicID != epic.Item.ID || it.CreatedVia.Run != "" ||
+		it.AcceptanceCriteria != "The data survives a restart." || it.AcceptanceVersion != 1 ||
+		it.AcceptanceDigest != work.AcceptanceDigest("The data survives a restart.") {
 		t.Fatalf("child answer: %s", rec.Body)
 	}
 	if !strings.Contains(rec.Body.String(), `"parent_id":"`+epic.Item.ID+`"`) {
@@ -147,7 +151,8 @@ func TestAnEpicChildWhoseAssignmentFailsStaysAndSaysSo(t *testing.T) {
 	fresh, _ := s.workV2().Item(context.Background(), epic.Item.ID)
 	failed := agentPost(t, s, path, "epic-child-new", map[string]any{"expected_version": fresh.Item.Version,
 		"session_id": epicOwnerConversation, "kind": "feature", "title": "Another part", "description": "Build it.",
-		"assign": map[string]any{"mode": "new_session", "assistant": "claude"}})
+		"acceptance_criteria": "The part is built.",
+		"assign":              map[string]any{"mode": "new_session", "assistant": "claude"}})
 	got = epicChildAnswer{}
 	if failed.Code != http.StatusCreated || json.Unmarshal(failed.Body.Bytes(), &got) != nil || got.Assigned ||
 		got.AssignmentError == nil || got.AssignmentError.Code != "assignment_failed" || got.Item.OwnerSession != nil ||
@@ -196,7 +201,8 @@ func TestTheChildrenRouteRefusesByName(t *testing.T) {
 		t.Errorf("before the plan gate: %d %s", rec.Code, rec.Body)
 	}
 	feature, err := s.workV2().Create(context.Background(), app.NewWorkV2{ProjectID: "project-1",
-		ProjectPath: epic.Item.ProjectPath, Kind: work.KindFeature, Title: "Loose", Description: "Not an Epic.", Actor: "local"}, nil)
+		ProjectPath: epic.Item.ProjectPath, Kind: work.KindFeature, Title: "Loose", Description: "Not an Epic.",
+		AcceptanceCriteria: "The loose feature is complete.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +249,8 @@ func TestTheEpicsOwnerAssignsAnExistingChild(t *testing.T) {
 		t.Fatalf("the owner: %d %s", rec.Code, rec.Body)
 	}
 	feature, err := s.workV2().Create(context.Background(), app.NewWorkV2{ProjectID: "project-1",
-		ProjectPath: epic.Item.ProjectPath, Kind: work.KindFeature, Title: "Loose", Description: "Nobody's child.", Actor: "local"}, nil)
+		ProjectPath: epic.Item.ProjectPath, Kind: work.KindFeature, Title: "Loose", Description: "Nobody's child.",
+		AcceptanceCriteria: "The loose feature is complete.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

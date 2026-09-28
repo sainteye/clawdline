@@ -52,7 +52,8 @@ func sessionItemServer(t *testing.T) (*Server, *pane, string) {
 func sessionItemBody(t *testing.T, session, run, project, kind string, steps ...string) string {
 	t.Helper()
 	body := map[string]any{"session_id": session, "via": map[string]string{"run": run}, "project_id": project,
-		"kind": kind, "title": "Tidy the release notes", "description": "The person asked for this.\n- draft\n- review"}
+		"kind": kind, "title": "Tidy the release notes", "description": "The person asked for this.\n- draft\n- review",
+		"acceptance_criteria": "The release notes are ready to publish."}
 	if len(steps) > 0 {
 		body["steps"] = steps
 	}
@@ -89,7 +90,10 @@ func TestASessionCreatesAnItemOnThePersonsMessageAndThePersonSeesTheirWords(t *t
 	it := created.Item
 	if it.Phase != "assigned" || it.OwnerSession == nil || *it.OwnerSession != p.s.ConversationID ||
 		it.CreatedBy != work.ActorViaSession+run || len(it.Assignments) != 1 ||
-		it.Assignments[0].State != "active" || it.Assignments[0].TerminalID != p.s.ID {
+		it.Assignments[0].State != "active" || it.Assignments[0].TerminalID != p.s.ID ||
+		it.AcceptanceCriteria != "The release notes are ready to publish." || it.AcceptanceVersion != 1 ||
+		it.AcceptanceDigest != work.AcceptanceDigest("The release notes are ready to publish.") ||
+		it.GateSnapshotCycle != 1 || !it.PlanningGate || it.VerifyGate {
 		t.Fatalf("item: %s", rec.Body)
 	}
 	var titles []string

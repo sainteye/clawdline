@@ -71,6 +71,17 @@ func TestDirectSessionLandingClosesAndRemainsInRecentHistory(t *testing.T) {
 
 func TestTheCompletingAgentCanRetractAMistakenCompletion(t *testing.T) {
 	w := newWorkV2Test(t)
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Planning: true, Verify: true}, nil
+	}
+	invalidated := 0
+	w.VerificationInvalidator = func(_ *store.WorkV2Tx, _, _ work.ItemV2, reason string) error {
+		if reason != "completion_retracted" {
+			t.Fatalf("invalidation reason = %q", reason)
+		}
+		invalidated++
+		return nil
+	}
 	v := createWorkV2Test(t, w, work.KindIssue)
 	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
 		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Assistant: "codex",
@@ -117,7 +128,8 @@ func TestTheCompletingAgentCanRetractAMistakenCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if reopened.Item.Phase != work.PhaseImplementing || reopened.Item.OwnerSession != "session-a" ||
-		reopened.Item.Cycle != 2 || !reopened.Item.ClosedAt.IsZero() {
+		reopened.Item.Cycle != 2 || !reopened.Item.ClosedAt.IsZero() || !reopened.Item.HasGateSnapshot() ||
+		reopened.Item.GateSnapshotCycle != 2 || !reopened.Item.PlanningGate || !reopened.Item.VerifyGate || invalidated != 1 {
 		t.Fatalf("reopened item = %+v", reopened.Item)
 	}
 	full, err := w.Item(context.Background(), v.Item.ID)
@@ -176,13 +188,17 @@ func newWorkV2Test(t *testing.T) *WorkSystemV2 {
 	t.Cleanup(func() { _ = st.Close() })
 	w := NewWorkSystemV2(st)
 	w.Now = func() time.Time { return time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC) }
+	// Most pre-gate lifecycle tests isolate their own contract. Tests of the
+	// planning/snapshot matrix set GateSettings explicitly.
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) { return WorkV2GateSettings{}, nil }
 	return w
 }
 
 func createWorkV2Test(t *testing.T, w *WorkSystemV2, kind work.Kind) WorkV2View {
 	t.Helper()
 	v, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: kind,
-		Title: "Owned work", Description: "A complete description", Actor: "local"}, nil)
+		Title: "Owned work", Description: "A complete description",
+		AcceptanceCriteria: "The described outcome is observable and the focused checks pass.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +268,7 @@ func TestAssignmentSeedsDescriptionStepsAndDoneWaitsForTheirReceipts(t *testing.
 	w := newWorkV2Test(t)
 	v, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindFeature,
 		Title: "Ship the grouped change", Description: "Context for the owner.\n\n1. Fix the create spacing\n2. Keep the Session menu visible\n3. Guard completion with the generated TODOs",
-		Actor: "local"}, nil)
+		AcceptanceCriteria: "All three listed changes are present.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +348,8 @@ func TestAssignmentDoesNotInventStepsForOneBulletOrDuplicateExistingSteps(t *tes
 func TestNewSessionSeedsDescriptionStepsOnlyWhenTheAssignmentActivates(t *testing.T) {
 	w := newWorkV2Test(t)
 	v, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindFeature,
-		Title: "Open a Root", Description: "1. Implement the change\n2. Verify the behavior", Actor: "local"}, nil)
+		Title: "Open a Root", Description: "1. Implement the change\n2. Verify the behavior",
+		AcceptanceCriteria: "The change is implemented and its behavior is verified.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,9 +431,15 @@ func TestPlanningNeverBecomesExecutableAndProposalNeedsOwnedEvidence(t *testing.
 	}
 	p, err := w.Propose(context.Background(), work.ProposalV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
 		Title: "Follow-up", Description: "A newly discovered concern", Reason: "Found while implementing",
-		SuggestedAcceptance: "The person can see the corrected result.", SessionID: "session-a", SourceWorkID: assigned.Item.ID})
+		SuggestedAcceptance: "  The person can see the corrected result.\n", SessionID: "session-a", SourceWorkID: assigned.Item.ID})
 	if err != nil || p.State != "pending" {
 		t.Fatalf("proposal: %+v %v", p, err)
+	}
+	accepted, err := w.ResolveProposal(context.Background(), p.ID, "person", ProposalDecisionV2{Decision: "accept"}, nil)
+	if err != nil || accepted.Item.AcceptanceCriteria != p.SuggestedAcceptance ||
+		accepted.Item.AcceptanceVersion != 1 || accepted.Item.AcceptanceDigest != work.AcceptanceDigest(p.SuggestedAcceptance) ||
+		strings.Contains(accepted.Item.Description, "Acceptance:") {
+		t.Fatalf("accepted proposal = %+v %v", accepted.Item, err)
 	}
 	_, err = w.Propose(context.Background(), work.ProposalV2{ProjectID: "p", ProjectPath: "/p", Kind: work.KindIssue,
 		Title: "Foreign", Description: "Not this owner's evidence", Reason: "No authority",

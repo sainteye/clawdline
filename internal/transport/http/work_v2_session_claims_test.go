@@ -21,7 +21,8 @@ func personItem(t *testing.T, s *Server, project, kind, key string) workV2ItemWi
 	t.Helper()
 	rec := httptest.NewRecorder()
 	s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/items",
-		`{"project_id":"`+project+`","kind":"`+kind+`","title":"Tidy the notes","description":"Tidy them."}`, key))
+		`{"project_id":"`+project+`","kind":"`+kind+`","title":"Tidy the notes","description":"Tidy them.",`+
+			`"acceptance_criteria":"The notes are tidy."}`, key))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("person item: %d %s", rec.Code, rec.Body)
 	}

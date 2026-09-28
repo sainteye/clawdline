@@ -28,12 +28,13 @@ import (
 type NewEpicChildV2 struct {
 	EpicID string
 	// ExpectedVersion is the Epic's version the owner read.
-	ExpectedVersion  int64
-	SessionID        string
-	Kind             work.Kind
-	Title            string
-	Description      string
-	DeploymentPolicy work.DeploymentPolicy
+	ExpectedVersion    int64
+	SessionID          string
+	Kind               work.Kind
+	Title              string
+	Description        string
+	AcceptanceCriteria string
+	DeploymentPolicy   work.DeploymentPolicy
 	// Steps are the child's steps as the owner listed them. Absent, they are
 	// seeded from the description's list when the child is assigned, as a
 	// person's item's are.
@@ -53,6 +54,9 @@ func (w *WorkSystemV2) CreateEpicChild(ctx context.Context, n NewEpicChildV2) (W
 		return WorkV2View{}, workV2Error(http.StatusUnprocessableEntity, "child_kind_not_allowed", err.(work.RefusalV2).Message)
 	}
 	if err := validateWorkV2Text(n.Title, n.Description); err != nil {
+		return WorkV2View{}, err
+	}
+	if err := validateWorkV2Acceptance(n.AcceptanceCriteria); err != nil {
 		return WorkV2View{}, err
 	}
 	steps, err := explicitSteps(n.Steps)
@@ -85,6 +89,7 @@ func (w *WorkSystemV2) CreateEpicChild(ctx context.Context, n NewEpicChildV2) (W
 			DeploymentPolicy: n.DeploymentPolicy, CreatedBy: actor, CreatedAt: now, UpdatedAt: now,
 			Cycle: 1, Version: 1, ParentID: epic.ID,
 			CreatedVia: &work.CreatedViaV2{Session: n.SessionID, At: now.Unix(), Epic: epic.ID}}
+		work.SetAcceptance(&i, n.AcceptanceCriteria)
 		if err := work.ValidateNewV2(i); err != nil {
 			return err
 		}

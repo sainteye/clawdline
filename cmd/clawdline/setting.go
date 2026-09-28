@@ -22,6 +22,27 @@ import (
 // daemon.
 
 // settingKeys is each key this command takes, and how its value is written.
+func parseSettingBool(s string) (any, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "on", "true":
+		return true, true
+	case "off", "false":
+		return false, true
+	}
+	return nil, false
+}
+
+func showSettingBool(raw json.RawMessage) string {
+	var value bool
+	if json.Unmarshal(raw, &value) != nil {
+		return "unknown"
+	}
+	if value {
+		return "on"
+	}
+	return "off"
+}
+
 var settingKeys = map[string]struct {
 	// parse turns what was typed into the JSON value the route takes.
 	parse func(string) (any, bool)
@@ -48,6 +69,8 @@ var settingKeys = map[string]struct {
 		},
 		takes: "a number of tokens from 50000 to 1000000, or off",
 	},
+	"planning_gate": {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"verify_gate":   {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 }
 
 func settingCommand(args []string) {
