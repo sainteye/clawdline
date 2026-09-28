@@ -169,6 +169,11 @@ function typing(el: Element | null): el is HTMLElement {
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable)
 }
 
+/** A control owns Enter, Space and arrow keys before the Session-list shortcuts do. */
+function interactive(el: Element | null): boolean {
+  return !!el?.closest("button, a[href], input, textarea, select, summary, [contenteditable=true], [role=button], [role=radio], [role=option], [role=tab], [role=switch]")
+}
+
 /** A row's node, as `rowNodes` holds it there. */
 function rowNode(id: string): HTMLElement | null {
   for (const node of document.querySelectorAll<HTMLElement>("#rows > li.row")) {
@@ -605,7 +610,10 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         return
       }
       if (pageRef.current !== "sessions") {
-        if (document.querySelector("dialog[open]")) return
+        // Native dialogs and React's modal sheets own their Escape first. A
+        // Board detail used to close and navigate back to Sessions on the same
+        // key because only native <dialog> elements were recognized here.
+        if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return
         go("sessions")
         return
       }
@@ -628,7 +636,7 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
       return
     }
 
-    if (typing(document.activeElement)) return
+    if (typing(document.activeElement) || interactive(document.activeElement)) return
     if (meta || ev.altKey) return
     // A sheet is over the page, so `j` is not "move down the list behind it",
     // and the drawer is one more thing that is over it (keys.js). Settings is

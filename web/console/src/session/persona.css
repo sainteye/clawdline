@@ -49,7 +49,7 @@
 /* The role chips. One line that scrolls sideways on a narrow screen, so nine
  * choices never push the button that uses them off the card. */
 .persona-row,
-.work-new-persona {
+.work-new-session.work-new-persona {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -66,13 +66,17 @@
   display: none;
 }
 
-.work-new-persona {
+.work-new-session.work-new-persona {
   flex: 1 1 100%;
   align-self: auto;
-  padding: 0;
+  /* The Board gives every button a 3px focus ring with a 4px offset. Keep
+   * that ring inside this sideways scroller instead of clipping its left edge. */
+  padding: 7px;
+  margin: -7px;
   border: 0;
   border-radius: 0;
   gap: 4px;
+  scroll-padding-inline: 7px;
 }
 
 .work-new-persona .chip,
@@ -84,7 +88,7 @@
   white-space: nowrap;
 }
 
-.work-new-persona .chip {
+.work-new-session.work-new-persona .chip {
   padding: 2px 9px;
   border-color: var(--line);
 }

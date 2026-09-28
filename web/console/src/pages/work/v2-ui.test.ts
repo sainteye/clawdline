@@ -7,6 +7,7 @@ const workSteps = readFileSync(new URL("./WorkSteps.tsx", import.meta.url), "utf
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
 const sessions = readFileSync(new URL("../../Sessions.tsx", import.meta.url), "utf8")
 const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
+const app = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8")
 
 test("the Project picker draws each Project mark in its trigger and menu", () => {
   assert.match(source, /function ProjectPicker/)
@@ -71,6 +72,24 @@ test("assigned Board items show their generated TODO receipts", () => {
 
 test("closed Board cards show their completion time instead of another update time", () => {
   assert.match(source, /item\.closed_at \? `完成 \$\{when\(item\.closed_at\)\}` : `更新 \$\{when\(item\.updated_at\)\}`/)
+})
+
+test("Board lanes keep items folded until their accessible summary opens the shared detail modal", () => {
+  assert.match(source, /function CompactWorkCard/)
+  assert.match(source, /<CompactWorkCard key=\{item\.id\}/)
+  assert.match(source, /className="work-card-summary"/)
+  assert.match(source, /aria-label=\{`查看「\$\{item\.title\}」的完整內容`\}/)
+  assert.match(source, /setOpenedItem\(item\)/)
+  assert.match(source, /<CreatedWorkModal item=\{openedItem\} created=\{false\}/)
+  assert.match(styles, /\.work-card-summary-description \{[^}]*-webkit-line-clamp:\s*2/)
+})
+
+test("the Board detail modal owns focus while open and returns it to its summary", () => {
+  assert.match(source, /function useModalFocus/)
+  assert.match(source, /previous\.current\?\.isConnected[\s\S]*previous\.current\.focus\(\{ preventScroll: true \}\)/)
+  assert.match(source, /event\.key !== "Tab"/)
+  assert.match(source, /initialFocus\.current\?\.focus/)
+  assert.match(app, /\[role="dialog"\]\[aria-modal="true"\]/)
 })
 
 test("the Board can filter lifecycle state and search titles and descriptions", () => {
@@ -140,9 +159,10 @@ test("assigned work can remind its current Session from the Board card", () => {
   assert.match(source, /!!item\.owner_session && !item\.closed_at/)
 })
 
-test("Board cards show the same lifecycle milestones as their owning Session", () => {
+test("started Board cards show the same lifecycle milestones as their owning Session", () => {
   const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
   assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
+  assert.match(milestones, /if \(!workMilestonesShown\(phase\)\) return null/)
   assert.match(milestones, /className="work-milestones"/)
   assert.match(milestones, /aria-label="項目進度"/)
   assert.match(styles, /\.work-milestones li\[data-state="done"\]/)

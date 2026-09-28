@@ -38,6 +38,13 @@ import "./legacy/user-messages.css"
 import "./legacy/snippets.css"
 
 import "./shell.css"
+import "./font-scale.css"
+
+import { restoreFontScale } from "./font-scale.js"
+
+// The body remains hidden behind `html.booting` until its words arrive, so a
+// remembered size is in place before the first visible layout.
+restoreFontScale()
 
 const host = document.getElementById("root")
 if (!host) throw new Error("no #root in the document")

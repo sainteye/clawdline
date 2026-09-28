@@ -771,6 +771,11 @@ class Tab {
     await this.b.event(this.session, "Page.loadEventFired", mark)
   }
 
+  async desktop(): Promise<void> {
+    await this.b.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, mobile: false, deviceScaleFactor: 1 }, this.session)
+    await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: false }, this.session)
+  }
+
   async run(expression: string): Promise<any> {
     const { result, exceptionDetails } = await this.b.send(
       "Runtime.evaluate",
@@ -941,7 +946,9 @@ test("the Board assignment picker explains a Session before assignment", () =>
       const deadline = Date.now() + 8000
       let opened = false
       const read = () => {
-        const trigger = document.querySelector('[data-work-id="assignment-fixture"] .work-session-trigger')
+        const summary = document.querySelector('#work [data-work-id="assignment-fixture"] .work-card-summary')
+        if (summary && !document.querySelector('.work-item-detail-modal')) summary.click()
+        const trigger = document.querySelector('.work-item-detail-modal [data-work-id="assignment-fixture"] .work-session-trigger')
         if (trigger && !opened) {
           opened = true
           trigger.click()
@@ -957,16 +964,15 @@ test("the Board assignment picker explains a Session before assignment", () =>
             if (text.includes('Repair the previous release')) {
               // Opened again with a Session chosen, the menu still hangs from
               // the button, not from under the chosen Session's detail.
-              const card = document.querySelector('[data-work-id="assignment-fixture"]')
+              const card = document.querySelector('.work-item-detail-modal [data-work-id="assignment-fixture"]')
               const again = card.querySelector('.work-session-trigger')
               again.click()
               return setTimeout(() => {
                 const button = again.getBoundingClientRect()
                 const list = card.querySelector('.work-session-menu')?.getBoundingClientRect()
-                const picker = card.querySelector('.work-session-picker').getBoundingClientRect()
-                const progress = card.querySelector('.work-milestones').getBoundingClientRect()
+                const progress = card.querySelector('.work-milestones')
                 resolve({ menu, detail: text, gap: list ? list.top - button.bottom : null,
-                  pickerAboveProgress: picker.top < progress.top })
+                  progressBeforeStart: !!progress })
               }, 50)
             }
             if (Date.now() >= deadline) return reject(new Error('the selected Session detail did not arrive: ' + text))
@@ -988,81 +994,149 @@ test("the Board assignment picker explains a Session before assignment", () =>
     assert.match(shown.detail, /Repair the previous release/)
     assert.ok(shown.gap !== null && Math.abs(shown.gap - 6) <= 1,
       `the reopened menu was ${shown.gap}px below its button, not 6`)
-    assert.ok(shown.pickerAboveProgress, "the Session picker sat below the item's progress")
+    assert.equal(shown.progressBeforeStart, false, "an unstarted item showed implementation progress")
+    const startedProgress = await tab.run(`new Promise((resolve, reject) => {
+      document.querySelector('.work-item-detail-modal .work-modal-close')?.click()
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const summary = document.querySelector('#work [data-work-id="header-fixture"] .work-card-summary')
+        if (summary && !document.querySelector('.work-item-detail-modal')) summary.click()
+        const progress = document.querySelector('.work-item-detail-modal [data-work-id="header-fixture"] .work-milestones')
+        if (progress) return resolve(true)
+        if (Date.now() >= deadline) return reject(new Error('the implementing item progress did not arrive'))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(startedProgress, true, "an implementing item lost its progress")
     await tab.shot("board-session-assignment")
   }))
 
-test("Board action icons are geometrically centered on a phone", () =>
+test("a compact Board summary and its modal close icon are geometrically centered on a phone", () =>
   inTab(async (tab) => {
     await tab.go("/#page=work")
     const board = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const read = () => {
-        const controls = [...document.querySelectorAll('[data-work-id="assignment-fixture"] .work-card-controls button')]
-        if (controls.length !== 2) {
-          if (Date.now() >= deadline) return reject(new Error('the Board action controls did not arrive'))
+        const summary = document.querySelector('#work [data-work-id="assignment-fixture"] .work-card-summary')
+        const openLabel = summary?.querySelector('.work-card-open')
+        const openIcon = summary?.querySelector('.work-card-open .work-icon')
+        const openLabelBox = openLabel?.getBoundingClientRect()
+        const openBox = openIcon?.getBoundingClientRect()
+        if (!openLabelBox || !openBox) {
+          if (Date.now() >= deadline) return reject(new Error('the compact Board summary did not arrive'))
           return setTimeout(read, 25)
         }
-        const inline = controls.map((button) => {
-          const icon = button.querySelector('.work-icon')
-          const buttonBox = button.getBoundingClientRect()
-          const iconBox = icon?.getBoundingClientRect()
-          return { tag: icon?.tagName || '', dy: Math.abs((buttonBox.top + buttonBox.height / 2) - ((iconBox?.top || 0) + (iconBox?.height || 0) / 2)) }
-        })
-        controls[0].click()
+        summary.click()
         setTimeout(() => {
-          const button = document.querySelector('.work-edit-modal .work-modal-close')
+          const button = document.querySelector('.work-item-detail-modal .work-modal-close')
           const icon = button?.querySelector('.work-icon')
           const buttonBox = button?.getBoundingClientRect()
           const iconBox = icon?.getBoundingClientRect()
-          if (!buttonBox || !iconBox) return reject(new Error('the edit close control did not arrive'))
-          resolve({ inline, close: { tag: icon?.tagName || '',
+          if (!buttonBox || !iconBox) return reject(new Error('the detail close control did not arrive'))
+          resolve({ open: { tag: openIcon?.tagName || '',
+              dy: Math.abs((openLabelBox.top + openLabelBox.height / 2) - (openBox.top + openBox.height / 2)) },
+            close: { tag: icon?.tagName || '',
             dx: Math.abs((buttonBox.left + buttonBox.width / 2) - (iconBox.left + iconBox.width / 2)),
             dy: Math.abs((buttonBox.top + buttonBox.height / 2) - (iconBox.top + iconBox.height / 2)) } })
         }, 50)
       }
       read()
     })`)
-    for (const icon of board.inline) {
-      assert.equal(icon.tag, "svg")
-      assert.ok(icon.dy <= 0.5, `Board action icon was ${icon.dy}px off its vertical center`)
-    }
+    assert.equal(board.open.tag, "svg")
+    assert.ok(board.open.dy <= 0.5, `Board open icon was ${board.open.dy}px off its vertical center`)
     assert.equal(board.close.tag, "svg")
     assert.ok(board.close.dx <= 0.5 && board.close.dy <= 0.5,
       `Board close icon was off center by ${JSON.stringify(board.close)}`)
     await tab.shot("board-icons-centered")
   }))
 
-test("a Board card's actions stay inside the card beside a long Project name on a phone", () =>
+test("a folded Board card stays inside the phone beside a long Project name", () =>
   inTab(async (tab) => {
     await tab.go("/#page=work")
     const header = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 8000
       const read = () => {
-        const card = document.querySelector('[data-work-id="header-fixture"]')
-        const controls = [...(card?.querySelectorAll('.work-card-controls button') || [])]
-        if (controls.length !== 3) {
-          if (Date.now() >= deadline) return reject(new Error('the three Board actions did not arrive'))
+        const card = document.querySelector('#work [data-work-id="header-fixture"]')
+        const summary = card?.querySelector('.work-card-summary')
+        const description = card?.querySelector('.work-card-summary-description')
+        if (!card || !summary || !description) {
+          if (Date.now() >= deadline) return reject(new Error('the folded Board card did not arrive'))
           return setTimeout(read, 25)
         }
-        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom } }
-        const cut = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
-        const inner = card.getBoundingClientRect()
-        const style = getComputedStyle(card)
-        const edge = inner.right - parseFloat(style.borderRightWidth)
-        const name = box(card.querySelector('.work-v2-project > span'))
         resolve({
           width: document.documentElement.clientWidth,
-          past: controls.map(box).filter((b) => b.right > edge + 0.5).length,
-          over: controls.map(box).filter((b) => cut(b, name)).length,
+          past: Math.max(0, card.scrollWidth - card.clientWidth),
+          clamp: getComputedStyle(description).webkitLineClamp,
+          inlineActions: card.querySelectorAll('.work-card-controls').length,
         })
       }
       read()
     })`)
     assert.equal(header.width, 390)
-    assert.equal(header.past, 0, "a Board action ran past the card's edge")
-    assert.equal(header.over, 0, "a Board action was drawn over the Project name")
+    assert.equal(header.past, 0, "the folded Board card ran past its edge")
+    assert.equal(header.clamp, "2")
+    assert.equal(header.inlineActions, 0, "full item actions were still expanded on the Board")
     await tab.shot("board-card-header")
+  }))
+
+test("a Board summary opens the detail with focus and Escape returns to that summary", () =>
+  inTab(async (tab) => {
+    await tab.go("/#page=work")
+    const focus = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const open = () => {
+        const summary = document.querySelector('#work [data-work-id="header-fixture"] .work-card-summary')
+        if (!summary) {
+          if (Date.now() >= deadline) return reject(new Error('the Board summary did not arrive'))
+          return setTimeout(open, 25)
+        }
+        summary.focus()
+        summary.click()
+        setTimeout(() => {
+          const modal = document.querySelector('.work-item-detail-modal')
+          const close = modal?.querySelector('.work-modal-close')
+          const openedOnClose = document.activeElement === close
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+          setTimeout(() => resolve({ openedOnClose, closed: !document.querySelector('.work-item-detail-modal'), returned: document.activeElement === summary,
+            activeTag: document.activeElement?.tagName || '', activeClass: document.activeElement?.className || '', summaryConnected: summary.isConnected }), 25)
+        }, 50)
+      }
+      open()
+    })`)
+    assert.deepEqual(focus, { openedOnClose: true, closed: true, returned: true,
+      activeTag: "BUTTON", activeClass: "work-card-summary", summaryConnected: true })
+  }))
+
+test("a desktop Board keeps two-column summaries and a bounded detail modal", () =>
+  inTab(async (tab) => {
+    await tab.desktop()
+    await tab.go("/#page=work")
+    const layout = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 8000
+      const read = () => {
+        const cards = document.querySelector('.work-cards')
+        const summary = document.querySelector('#work [data-work-id="assignment-fixture"] .work-card-summary')
+        if (!cards || !summary) {
+          if (Date.now() >= deadline) return reject(new Error('the desktop Board did not arrive'))
+          return setTimeout(read, 25)
+        }
+        const columns = getComputedStyle(cards).gridTemplateColumns.split(' ').filter(Boolean).length
+        summary.click()
+        setTimeout(() => {
+          const panel = document.querySelector('.work-item-detail-panel')
+          const box = panel?.getBoundingClientRect()
+          if (!box) return reject(new Error('the desktop detail modal did not arrive'))
+          resolve({ columns, width: Math.round(box.width), viewport: window.innerWidth,
+            centered: Math.abs((box.left + box.width / 2) - window.innerWidth / 2) <= 1 })
+        }, 50)
+      }
+      read()
+    })`)
+    assert.equal(layout.columns, 2)
+    assert.ok(layout.width <= 720 && layout.width < layout.viewport)
+    assert.equal(layout.centered, true)
+    await tab.shot("board-desktop-detail")
   }))
 
 test("the Session todo add icon is geometrically centered on a phone", () =>
