@@ -58,7 +58,7 @@ const ownWords = {
     settingsCodexDefaultModel: "Codex default model",
     settingsClaudeDefaultModel: "Claude Code default model",
     settingsDefaultModelHint:
-      "Used for the next new session Clawdline opens. Leave empty to let the assistant choose; a model chosen for one session still wins.",
+      "Used only when Clawdline opens a new session without another model choice. A child agent or one session may still choose its own model.",
     settingsProviderDefault: "Assistant default",
   },
   "zh-Hant": {
@@ -97,7 +97,7 @@ const ownWords = {
     settingsCodexDefaultModel: "Codex 預設模型",
     settingsClaudeDefaultModel: "Claude Code 預設模型",
     settingsDefaultModelHint:
-      "Clawdline 下一次開新 session 時套用；留空就交給助理決定。單一 session 另外指定的模型仍然優先。",
+      "只在 Clawdline 開新 session、而且沒有另外指定模型時套用；child agent 或單一 session 另外指定的模型仍然優先。",
     settingsProviderDefault: "由助理決定",
   },
 } as const

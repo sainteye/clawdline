@@ -2,7 +2,30 @@ import type { SettingsRequest, SettingsSnapshot } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
 
-export type DefaultModelsSnapshot = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model">
+export type DefaultModelAssistant = "codex" | "claude"
+export type DefaultModelOption = { value: string; label: string }
+type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model">
+export type DefaultModelsSnapshot = DefaultModelValues & {
+  models: Record<DefaultModelAssistant, DefaultModelOption[]>
+}
+
+/** Options for one picker, retaining a hand-edited legacy value instead of silently changing it. */
+export function defaultModelOptions(
+  snapshot: DefaultModelsSnapshot | null,
+  assistant: DefaultModelAssistant,
+  current: string,
+  providerDefault: string,
+): DefaultModelOption[] {
+  const available = Array.isArray(snapshot?.models?.[assistant]) ? snapshot.models[assistant] : []
+  const options: DefaultModelOption[] = [{ value: "", label: providerDefault }]
+  if (current && !available.some((option) => option.value === current)) options.push({ value: current, label: current })
+  for (const option of available) {
+    if (option?.value && !options.some((row) => row.value === option.value)) {
+      options.push({ value: option.value, label: option.label || option.value })
+    }
+  }
+  return options
+}
 
 /**
  * `/v1/settings`, this app's own config.json.
@@ -93,7 +116,7 @@ export function readDefaultModels(): Promise<DefaultModelsSnapshot> {
   return callDefaultModels({ method: "GET" })
 }
 
-export function writeDefaultModels(change: Partial<DefaultModelsSnapshot>): Promise<DefaultModelsSnapshot> {
+export function writeDefaultModels(change: Partial<DefaultModelValues>): Promise<DefaultModelsSnapshot> {
   return callDefaultModels({
     method: "POST",
     headers: { "Content-Type": "application/json" },

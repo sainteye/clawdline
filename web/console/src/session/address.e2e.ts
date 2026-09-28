@@ -89,11 +89,20 @@ let intentRequests = 0
 let placeRequests = 0
 let smartTitleRequests = 0
 let machineSettings: Record<string, unknown> = {
-  exists: true,
-  path: "/tmp/config.json",
   codex_default_model: "",
   claude_default_model: "",
+  models: {
+    codex: [
+      { value: "gpt-6-sol", label: "GPT-6 Sol" },
+      { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+    ],
+    claude: [
+      { value: "opus", label: "Opus 5" },
+      { value: "sonnet", label: "Sonnet 5" },
+    ],
+  },
 }
+let refuseDefaultModelWrite = false
 let smartTitleRequestKey = ""
 let smartTitleRefusal = ""
 let namingAssistant = "claude"
@@ -193,6 +202,10 @@ function daemon(): Server {
     if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, machineSettings)
     if (path === "/v1/settings/default-models" && req.method === "POST") {
       void requestJSON(req).then((change) => {
+        if (refuseDefaultModelWrite) {
+          refuseDefaultModelWrite = false
+          return json(res, 503, { error: "settings_unavailable", detail: "The settings file is unavailable." })
+        }
         const model = Object.values(change)[0]
         if (typeof model !== "string" || (model !== "" && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(model))) {
           return json(res, 400, { error: "invalid_default_model", detail: "That is not a model name." })
@@ -760,14 +773,22 @@ test("phone: Settings changes, remembers and restores the browser's text size", 
   })
 })
 
-test("Settings saves machine-wide model defaults, fits a phone, and restores a refused value", async () => {
+test("Settings selects provider model defaults, fits a phone, and restores a refused choice", async () => {
   const evidence = process.env.CLAWDLINE_DEFAULT_MODEL_SCREENSHOT_DIR || ""
   if (evidence) mkdirSync(evidence, { recursive: true })
   machineSettings = {
-    exists: true,
-    path: "/tmp/config.json",
     codex_default_model: "",
     claude_default_model: "",
+    models: {
+      codex: [
+        { value: "gpt-6-sol", label: "GPT-6 Sol" },
+        { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+      ],
+      claude: [
+        { value: "opus", label: "Opus 5" },
+        { value: "sonnet", label: "Sonnet 5" },
+      ],
+    },
   }
 
   await inTab(PHONE, async (tab) => {
@@ -775,8 +796,8 @@ test("Settings saves machine-wide model defaults, fits a phone, and restores a r
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const read = () => {
-        const input = document.getElementById("settings-codex-default-model")
-        if (input && !input.disabled) return resolve(true)
+        const select = document.getElementById("settings-codex-default-model")
+        if (select && !select.disabled) return resolve(true)
         if (Date.now() > deadline) return reject(new Error("the default-model setting did not appear"))
         setTimeout(read, 25)
       }
@@ -788,28 +809,33 @@ test("Settings saves machine-wide model defaults, fits a phone, and restores a r
       const claude = document.getElementById("settings-claude-default-model")
       return {
         scrollsSideways: block.scrollWidth > block.clientWidth || document.documentElement.scrollWidth > innerWidth,
-        inputs: [codex, claude].map((input) => ({
-          width: input.getBoundingClientRect().width,
-          fontSize: getComputedStyle(input).fontSize,
-          label: document.querySelector('label[for="' + input.id + '"]')?.textContent,
+        fields: [codex, claude].map((select) => ({
+          tag: select.tagName,
+          width: select.getBoundingClientRect().width,
+          fontSize: getComputedStyle(select).fontSize,
+          label: document.querySelector('label[for="' + select.id + '"]')?.textContent,
+          options: [...select.options].map((option) => [option.value, option.textContent]),
         })),
       }
     })()`)
     assert.equal(phone.scrollsSideways, false)
-    assert.equal(phone.inputs.length, 2)
-    for (const input of phone.inputs) {
-      assert.ok(input.width <= PHONE.width, `a model field is ${input.width}px wide`)
-      assert.equal(input.fontSize, "16px")
-      assert.ok(input.label, "every model field has a visible label")
+    assert.equal(phone.fields.length, 2)
+    for (const field of phone.fields) {
+      assert.equal(field.tag, "SELECT")
+      assert.ok(field.width <= PHONE.width, `a model field is ${field.width}px wide`)
+      assert.equal(field.fontSize, "16px")
+      assert.ok(field.label, "every model field has a visible label")
     }
+    assert.deepEqual(phone.fields[0].options, [
+      ["", "由助理決定"],
+      ["gpt-6-sol", "GPT-6 Sol"],
+      ["gpt-5.6-sol", "GPT-5.6 Sol"],
+    ])
 
     await tab.run(`(() => {
-      const input = document.getElementById("settings-codex-default-model")
-      input.focus()
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set
-      setter.call(input, "gpt-6-sol")
-      input.dispatchEvent(new Event("input", { bubbles: true }))
-      input.blur()
+      const select = document.getElementById("settings-codex-default-model")
+      select.value = "gpt-6-sol"
+      select.dispatchEvent(new Event("change", { bubbles: true }))
     })()`)
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
@@ -823,21 +849,19 @@ test("Settings saves machine-wide model defaults, fits a phone, and restores a r
     })`)
     assert.equal(machineSettings.codex_default_model, "gpt-6-sol")
 
+    refuseDefaultModelWrite = true
     await tab.run(`(() => {
-      const input = document.getElementById("settings-codex-default-model")
-      input.focus()
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set
-      setter.call(input, "GPT 6")
-      input.dispatchEvent(new Event("input", { bubbles: true }))
-      input.blur()
+      const select = document.getElementById("settings-codex-default-model")
+      select.value = "gpt-5.6-sol"
+      select.dispatchEvent(new Event("change", { bubbles: true }))
     })()`)
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const read = () => {
-        const input = document.getElementById("settings-codex-default-model")
+        const select = document.getElementById("settings-codex-default-model")
         const said = document.querySelector("#settings-default-models .said")?.textContent || ""
-        if (input.value === "gpt-6-sol" && said.includes("模型名稱須為 1–64 個")) return resolve(true)
-        if (Date.now() > deadline) return reject(new Error("the refused value was not restored: " + input.value + " / " + said))
+        if (select.value === "gpt-6-sol" && said.includes("失敗")) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the refused value was not restored: " + select.value + " / " + said))
         setTimeout(read, 25)
       }
       read()
@@ -850,8 +874,8 @@ test("Settings saves machine-wide model defaults, fits a phone, and restores a r
     await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const read = () => {
-        const input = document.getElementById("settings-codex-default-model")
-        if (input && !input.disabled) return resolve(true)
+        const select = document.getElementById("settings-codex-default-model")
+        if (select && !select.disabled) return resolve(true)
         if (Date.now() > deadline) return reject(new Error("the desktop default-model setting did not appear"))
         setTimeout(read, 25)
       }
