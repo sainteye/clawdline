@@ -3406,6 +3406,33 @@ type PersonaNames struct {
 	ZhHant string `json:"zh-Hant"`
 }
 
+type PersonaSuggestionOutcome string
+
+const (
+	PersonaSuggestionOutcomeRecommend PersonaSuggestionOutcome = "recommend"
+	PersonaSuggestionOutcomeAmbiguous PersonaSuggestionOutcome = "ambiguous"
+)
+
+// PersonaSuggestionOutcomeValues is every value the contract allows, in contract order.
+var PersonaSuggestionOutcomeValues = []PersonaSuggestionOutcome{PersonaSuggestionOutcomeRecommend, PersonaSuggestionOutcomeAmbiguous}
+
+type PersonaSuggestionReply struct {
+	OK      bool                     `json:"ok"`
+	Outcome PersonaSuggestionOutcome `json:"outcome"`
+
+	// An exact id from GET /v1/personas for recommend; empty for ambiguous.
+	PersonaID string `json:"persona_id"`
+
+	// The AI provider whose explicit Board-content consent covered this turn.
+	Provider string `json:"provider"`
+}
+
+type PersonaSuggestionRequest struct {
+	// The item version whose title and description the person chose to send for
+	// classification.
+	ExpectedVersion int64 `json:"expected_version"`
+}
+
 // A refusal from the start, resume and history routes: not_found, forbidden,
 // bad_request, invalid_launch, terminal_closed, terminal_unsupported,
 // terminal_io_failed, iterm_attention_required, capability_unavailable,

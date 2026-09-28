@@ -3,6 +3,7 @@ package projects
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,31 @@ func ClaudeLanguage(tag string) string {
 		return claudeSimplifiedChinese
 	}
 	return claudeLanguages[primary]
+}
+
+// CodexBoardLanguage is a locale spelling safe to put in the Board-language
+// developer instruction of a Codex session, or "" when tag says no language.
+func CodexBoardLanguage(tag string) string {
+	t := strings.TrimSpace(tag)
+	if i := strings.IndexAny(t, ".@"); i >= 0 {
+		t = t[:i]
+	}
+	t = strings.ReplaceAll(t, "_", "-")
+	if t == "" || len(t) > 35 || strings.EqualFold(t, "auto") || strings.EqualFold(t, "c") ||
+		strings.EqualFold(t, "posix") {
+		return ""
+	}
+	for i, r := range t {
+		letter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
+		if i == 0 && !letter || !letter && !(r >= '0' && r <= '9') && r != '-' {
+			return ""
+		}
+	}
+	return t
+}
+
+func codexBoardLanguageInstruction(tag string) string {
+	return fmt.Sprintf("Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.", tag)
 }
 
 // knownClaudeLanguage is whether name is one ClaudeLanguage answers.

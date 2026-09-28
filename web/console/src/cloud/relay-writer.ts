@@ -279,6 +279,7 @@ export type WriteRoute =
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
   | { op: "work-v2-edit"; word: Carried<"work.v2.edit">; id: string }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-persona-suggestion"; word: Carried<"work.v2.persona-suggestion">; id: string }
   | { op: "work-v2-remind"; word: Carried<"work.v2.remind">; id: string }
   | { op: "work-v2-cancel"; word: Carried<"work.v2.cancel">; id: string }
   | { op: "work-v2-complete"; word: Carried<"work.v2.complete">; id: string }
@@ -504,6 +505,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
+    }
+    if (b === "items" && c && d === "persona-suggestion" && segments.length === 5) {
+      return { op: "work-v2-persona-suggestion", word: "work.v2.persona-suggestion", id: c }
     }
     if (b === "items" && c && d === "remind" && segments.length === 5) {
       return { op: "work-v2-remind", word: "work.v2.remind", id: c }
@@ -1277,6 +1281,9 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-assign": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-persona-suggestion": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-remind": {

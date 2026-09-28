@@ -33,9 +33,8 @@ type Starter struct {
 	// disk for a place (projects.Recorded). Only ResumeRecorded asks it; nil
 	// admits nothing beyond Past.
 	Recorded func(place projects.Place, assistant, id string) bool
-	// Language is Claude Code's response language for a session started with
-	// assistant (projects.ClaudeLanguage), or "" to leave it as Claude Code
-	// starts. Nil is "", which only a test wants.
+	// Language is the launch-time language instruction for assistant, or "" to
+	// leave it as the assistant starts. Nil is "", which only a test wants.
 	Language func(assistant string) string
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.

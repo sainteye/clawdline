@@ -600,6 +600,8 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 3 && parts[0] == "items" && workID(parts[1]):
 		if parts[2] == "images" {
 			s.workV2AddImage(w, r, parts[1])
+		} else if parts[2] == "persona-suggestion" {
+			s.workV2PersonaSuggestion(w, r, parts[1])
 		} else {
 			s.workV2PersonAction(w, r, parts[1], parts[2])
 		}

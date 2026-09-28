@@ -256,7 +256,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 			if s.broker == nil {
 				return ""
 			}
-			return s.broker.ClaudeLanguage(assistant)
+			return s.broker.SessionLanguage(assistant)
 		},
 	}
 }
