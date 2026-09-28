@@ -258,6 +258,13 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return s.broker.SessionLanguage(assistant)
 		},
+		DefaultModel: func(assistant string) string {
+			values, err := nextconfig.Open(s.cfg.Dir).Read()
+			if err != nil {
+				return ""
+			}
+			return nextconfig.DefaultModel(values, assistant)
+		},
 	}
 }
 
@@ -366,7 +373,7 @@ func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistan
 	log.Printf("audit place.start place=%s cwd=%q assistant=%s persona=%s ok=1 id=%s",
 		place.ID, place.Path, assistant, persona, made.ID)
 	writeJSON(w, contract.PlaceStarted{OK: true, ID: made.ID, Backend: contract.Backend(made.Backend),
-		Assistant: assistant, Model: model, Persona: persona, Place: place.ID, CWD: place.Path, Attach: made.Attach,
+		Assistant: assistant, Model: made.Model, Persona: persona, Place: place.ID, CWD: place.Path, Attach: made.Attach,
 		At: time.Now().Unix()})
 }
 

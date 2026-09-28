@@ -65,6 +65,53 @@ func TestSettingGetsAndSetsTheCompactionWindow(t *testing.T) {
 	}
 }
 
+func TestSettingGetsAndSetsDefaultModels(t *testing.T) {
+	stored := map[string]any{}
+	var posted []map[string]any
+	call := func(method string, body any) (int, []byte, error) {
+		if method == http.MethodPost {
+			change := body.(map[string]any)
+			posted = append(posted, change)
+			for key, value := range change {
+				stored[key] = value
+			}
+		}
+		data, _ := json.Marshal(stored)
+		return http.StatusOK, data, nil
+	}
+	run := func(args ...string) (int, string, string) {
+		var out, errs bytes.Buffer
+		code := runSetting(&out, &errs, args, call)
+		return code, out.String(), errs.String()
+	}
+
+	if code, out, _ := run("get", "codex_default_model"); code != 0 || out != "codex_default_model: Codex default\n" {
+		t.Fatalf("unset: %d %q", code, out)
+	}
+	if code, out, _ := run("set", "codex_default_model", "gpt-6-sol"); code != 0 || out != "codex_default_model: gpt-6-sol\n" {
+		t.Fatalf("codex: %d %q", code, out)
+	}
+	if got := posted[len(posted)-1]["codex_default_model"]; got != "gpt-6-sol" {
+		t.Fatalf("codex posted %#v", got)
+	}
+	if code, out, _ := run("set", "claude_default_model", "claude-opus-5-5"); code != 0 || out != "claude_default_model: claude-opus-5-5\n" {
+		t.Fatalf("claude: %d %q", code, out)
+	}
+	if code, out, _ := run("set", "codex_default_model", "default"); code != 0 || out != "codex_default_model: Codex default\n" {
+		t.Fatalf("clear: %d %q", code, out)
+	}
+	if got := posted[len(posted)-1]["codex_default_model"]; got != "" {
+		t.Fatalf("clear posted %#v", got)
+	}
+	before := len(posted)
+	if code, _, errs := run("set", "codex_default_model", "GPT 6"); code != 2 || !strings.Contains(errs, "model name") {
+		t.Fatalf("invalid: %d %q", code, errs)
+	}
+	if len(posted) != before {
+		t.Fatal("invalid model reached the daemon")
+	}
+}
+
 // The usage words for a session's window: none said as none, and nothing
 // said for a session Clawdline did not launch.
 func TestUsageSaysTheWindowInWords(t *testing.T) {

@@ -157,6 +157,9 @@ type Broker struct {
 	// this broker opens is started with, 0 for none (compact.go). Nil is the
 	// setting's default, none.
 	AutoCompactWindow func() int64
+	// DefaultModel is the machine setting used when a new child, Root
+	// Assignment or handoff did not name a model. Nil leaves provider default.
+	DefaultModel func(assistant string) string
 	// ReclaimAuto lets the beat start a reclamation sweep every six hours
 	// (reclaim.go); ReclaimGrace is how long after a task ends its checkout
 	// and directory are left alone — zero is the default of twenty-four
