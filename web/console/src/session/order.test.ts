@@ -59,6 +59,13 @@ test("the title still decides between rows that moved at the same moment", () =>
   assert.deepEqual(order(rows, { z: 500, m: 500, a: 500 }), ["a", "m", "z"])
 })
 
+test("working sessions keep their positions as their activity times change", () => {
+  const rows = [row("z", "working", "Zulu"), row("m", "working", "Mike"), row("a", "working", "Alpha")]
+  assert.deepEqual(order(rows, { z: 300, m: 200, a: 100 }), ["a", "m", "z"])
+  assert.deepEqual(order(rows, { z: 100, m: 300, a: 200 }), ["a", "m", "z"])
+  assert.deepEqual(order(rows, { z: 200, a: 300 }), ["a", "m", "z"])
+})
+
 test("a time that could not be read is not a very old time: the row goes above, not below", () => {
   const rows = [row("n1", "idle", "Bravo"), row("seen", "idle", "Zulu"), row("n2", "idle", "Alpha")]
   // `seen` moved; the other two are rows the daemon could not read. They keep
