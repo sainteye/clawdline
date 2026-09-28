@@ -93,8 +93,10 @@ task; Clawdline drafts the project, assistant, model and first message, and noth
 press **開始** (start).
 
 **設定** (Settings) → **新 session 的預設模型** offers the models available to Codex and Claude Code
-as separate machine-wide pickers. Choose **由助理決定** to leave that assistant in charge. The setting applies only when
-Clawdline opens a new session without another model choice; a model chosen for one session still
+as separate machine-wide pickers. The Claude Code choices follow that machine's installed `/model`
+catalog and account cache, including its versioned legacy choices, instead of a Clawdline-owned list.
+Choose **由助理決定** to leave that assistant in charge. The setting applies only when Clawdline
+opens a new session without another model choice; a model chosen for one session still
 wins, a child agent may explicitly choose any admitted model for its own task, and resuming an
 existing conversation does not change its model.
 The same two fields appear in Clawdline Cloud on a phone. The phone can read them through its paired

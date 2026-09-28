@@ -49,6 +49,7 @@ func defaultModelsCall(t *testing.T, s *Server, method, contentType, body string
 func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +57,20 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 		{"slug":"gpt-6-sol","display_name":"GPT-6 Sol","visibility":"list"},
 		{"slug":"gpt-hidden","display_name":"Hidden","visibility":"hide"}
 	]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{
+		"clientDataCacheSlots":{"opus":{"model":"claude-opus-5-5"}},
+		"additionalModelOptionsCache":[{"value":"claude-fable-5-1[1m]"}]
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	claudeBin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(claudeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeBin, "claude"), []byte(
+		"claude-opus-5-5 claude-fable-5-1 claude-fable-5 claude-opus-5"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(t.TempDir(), "clawdline-next")
@@ -75,7 +90,10 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	}
 	models, ok := got["models"].(map[string]any)
 	if !ok || len(models) != 2 || !strings.Contains(rec.Body.String(), `"value":"gpt-6-sol","label":"GPT-6 Sol"`) ||
-		strings.Contains(rec.Body.String(), "gpt-hidden") || !strings.Contains(rec.Body.String(), `"value":"opus"`) {
+		strings.Contains(rec.Body.String(), "gpt-hidden") ||
+		!strings.Contains(rec.Body.String(), `"value":"opus","label":"Opus 5.5"`) ||
+		!strings.Contains(rec.Body.String(), `"value":"fable","label":"Fable 5.1"`) ||
+		!strings.Contains(rec.Body.String(), `"value":"claude-fable-5","label":"Fable 5"`) {
 		t.Fatalf("provider model choices: %s", rec.Body)
 	}
 

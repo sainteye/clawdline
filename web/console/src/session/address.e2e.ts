@@ -97,8 +97,16 @@ let machineSettings: Record<string, unknown> = {
       { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
     ],
     claude: [
-      { value: "opus", label: "Opus 5" },
+      { value: "opus", label: "Opus 5.5" },
+      { value: "fable", label: "Fable 5.1" },
       { value: "sonnet", label: "Sonnet 5" },
+      { value: "haiku", label: "Haiku 4.5" },
+      { value: "claude-fable-5", label: "Fable 5" },
+      { value: "opus5", label: "Opus 5" },
+      { value: "opus48", label: "Opus 4.8" },
+      { value: "opus47", label: "Opus 4.7" },
+      { value: "opus46", label: "Opus 4.6" },
+      { value: "opus45", label: "Opus 4.5" },
     ],
   },
 }
@@ -785,8 +793,16 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
         { value: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
       ],
       claude: [
-        { value: "opus", label: "Opus 5" },
+        { value: "opus", label: "Opus 5.5" },
+        { value: "fable", label: "Fable 5.1" },
         { value: "sonnet", label: "Sonnet 5" },
+        { value: "haiku", label: "Haiku 4.5" },
+        { value: "claude-fable-5", label: "Fable 5" },
+        { value: "opus5", label: "Opus 5" },
+        { value: "opus48", label: "Opus 4.8" },
+        { value: "opus47", label: "Opus 4.7" },
+        { value: "opus46", label: "Opus 4.6" },
+        { value: "opus45", label: "Opus 4.5" },
       ],
     },
   }
@@ -830,6 +846,19 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
       ["", "由助理決定"],
       ["gpt-6-sol", "GPT-6 Sol"],
       ["gpt-5.6-sol", "GPT-5.6 Sol"],
+    ])
+    assert.deepEqual(phone.fields[1].options, [
+      ["", "由助理決定"],
+      ["opus", "Opus 5.5"],
+      ["fable", "Fable 5.1"],
+      ["sonnet", "Sonnet 5"],
+      ["haiku", "Haiku 4.5"],
+      ["claude-fable-5", "Fable 5"],
+      ["opus5", "Opus 5"],
+      ["opus48", "Opus 4.8"],
+      ["opus47", "Opus 4.7"],
+      ["opus46", "Opus 4.6"],
+      ["opus45", "Opus 4.5"],
     ])
 
     await tab.run(`(() => {
