@@ -325,10 +325,11 @@ test("opening Epic reassignment brings the picker into view", () => {
   assert.match(source, /autoFocus=\{focusAssignment \|\| \(epic && reassigning\)\}/)
 })
 
-test("an Epic card is drawn as large work: its own frame, label, and the lane's width", () => {
+test("an Epic keeps its frame and label without spanning both desktop columns", () => {
   assert.match(source, /const cardClass = epic \? "work-card work-v2-card work-epic-card"/)
   assert.match(source, /EPIC · 大型項目/)
-  assert.match(styles, /\.work-cards > \.work-epic-card \{ grid-column: 1 \/ -1; \}/)
+  assert.match(styles, /\.work-cards \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.doesNotMatch(styles, /\.work-cards > \.work-epic-card \{[^}]*grid-column:/)
   assert.match(styles, /--work-epic: var\(--peer\)/)
   assert.doesNotMatch(source, /kind === "epic"/)
 })

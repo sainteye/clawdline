@@ -736,11 +736,10 @@
 }
 
 /* An Epic is large work that is planned and reviewed before it is built, so
-   its card reads as bigger than its neighbours: the whole lane's width, a
-   frame in its own colour, a heavier title. Its colour is the peer lavender,
-   kept apart from the accent that marks what the person must act on. */
+   its card has a frame in its own colour and a heavier title. It occupies one
+   grid cell like other items, keeping the desktop Board in two columns. Its
+   colour is the peer lavender, apart from the action accent. */
 :root { --work-epic: var(--peer); --work-epic-in: var(--peer-in); --work-epic-ed: var(--peer-ed); }
-.work-cards > .work-epic-card { grid-column: 1 / -1; }
 .work-epic-card {
     border-color: var(--work-epic-ed); box-shadow: inset 3px 0 0 var(--work-epic);
     background: color-mix(in srgb, var(--work-epic) 4%, var(--card));
