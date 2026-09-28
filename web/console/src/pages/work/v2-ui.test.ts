@@ -265,6 +265,12 @@ test("an assigned card can be moved to another or a new Session", () => {
   assert.match(source, /assignmentCandidates\(sessions, item\)/)
 })
 
+test("opening Epic reassignment brings the picker into view", () => {
+  // An Epic can be much taller than the viewport: its gate and children sit
+  // between the toolbar button and the newly mounted assignment picker.
+  assert.match(source, /autoFocus=\{focusAssignment \|\| \(epic && reassigning\)\}/)
+})
+
 test("an Epic card is drawn as large work: its own frame, label, and the lane's width", () => {
   assert.match(source, /epic \? "work-card work-v2-card work-epic-card" : "work-card work-v2-card"/)
   assert.match(source, /EPIC · 大型項目/)

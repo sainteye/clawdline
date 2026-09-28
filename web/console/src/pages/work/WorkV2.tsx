@@ -606,7 +606,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       {epic && <p className="work-epic-assign-note">指派後，Session 會先寫計劃書並請 Child Session review，通過後才開始實作。</p>}
       {reassignable && <p className="work-reassign-note">改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session
         會被告知從哪裡接手；原本的 Session 會收到停止通知。</p>}
-      <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment} />
+      <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
       <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => assign(() => assignWorkV2(item, terminal))}>指派</button>
       <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
         {/* The product mark alone: the button beside it already spells out the
