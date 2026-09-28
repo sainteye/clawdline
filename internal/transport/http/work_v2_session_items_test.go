@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -136,6 +138,83 @@ func TestASessionCreatesAnItemOnThePersonsMessageAndThePersonSeesTheirWords(t *t
 	s.workV2Route(list, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open", nil))
 	if list.Code != http.StatusOK || strings.Count(list.Body.String(), `"created_via":{"run":"`+run+`"`) != 1 {
 		t.Fatalf("list: %d %s", list.Code, list.Body)
+	}
+}
+
+// Completing the idempotency receipt is part of the item transaction. The
+// response projector therefore must not consult the terminal inventory: an
+// unavailable terminal would otherwise hold the store's only connection and
+// stop unrelated conversation and Board reads.
+func TestCreatingAnItemDoesNotReadTerminalInventoryInsideTheStoreTransaction(t *testing.T) {
+	s, _, project := sessionItemServer(t)
+	base := s.inventory.Read(context.Background())
+	entered, release := make(chan struct{}), make(chan struct{})
+	calls := 0
+	s.readings = app.NewInventoryReading(func(ctx context.Context) session.Inventory {
+		calls++
+		if calls > 1 {
+			select {
+			case <-entered:
+			default:
+				close(entered)
+			}
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+		return base
+	}, time.Nanosecond)
+
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/items",
+			`{"project_id":"`+project+`","kind":"issue","title":"Do not block","description":"Keep reads moving."}`,
+			"inventory-outside-transaction"))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create: %d %s", rec.Code, rec.Body)
+		}
+		return
+	case <-entered:
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, _, readErr := s.store.WorkV2Items(ctx, "", "", "open", "", 1)
+	close(release)
+	<-done
+	if readErr != nil {
+		t.Fatalf("an inventory read inside the item transaction blocked an unrelated store read: %v", readErr)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestABoardPageReadsTheProjectCatalogOnce(t *testing.T) {
+	s, _, project := sessionItemServer(t)
+	personItem(t, s, project, "issue", "catalog-once-1")
+	personItem(t, s, project, "feature", "catalog-once-2")
+	base := s.inventory.Read(context.Background())
+	var scans atomic.Int32
+	s.readings = app.NewInventoryReading(func(context.Context) session.Inventory {
+		scans.Add(1)
+		return base
+	}, time.Nanosecond)
+
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open&q=Tidy", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+	if got := scans.Load(); got != 1 {
+		t.Fatalf("one Board page scanned the terminal-backed Project catalog %d times, want 1", got)
 	}
 }
 

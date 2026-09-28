@@ -988,9 +988,9 @@ func Register() []Entry {
 		{
 			// The last complete per-terminal-source inventory kept across a
 			// failed scan (internal/app/inventory_reading.go). At this age it
-			// expires: two minutes spans twelve complete iTerm2 list timeouts and
-			// matches the held-screen backoff ceiling, while anything older would
-			// be a claim about the present rather than a named prior observation.
+			// expires: two minutes is also the iTerm2 listing and held-screen
+			// backoff ceiling, while anything older would be a claim about the
+			// present rather than a named prior observation.
 			Name: CacheSessionInventory, Class: Cache, Unit: Seconds,
 			Limit: 120, AtLimit: Expire,
 			Told:      []Channel{Diagnostics},

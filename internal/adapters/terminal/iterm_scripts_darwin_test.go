@@ -71,6 +71,49 @@ const answer = argv === null
 process.stdout.write(JSON.stringify({ answer: JSON.parse(answer), writes: writes, selects: selects }));
 `
 
+func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
+	clock := time.Unix(1_700_000_000, 0)
+	calls := 0
+	it := NewITerm()
+	it.now = func() time.Time { return clock }
+	it.SetInventoryBackoff(time.Second, 4*time.Second)
+	it.list = func(context.Context) ([]byte, error) {
+		calls++
+		if calls < 3 {
+			return nil, errors.New("bridge unavailable")
+		}
+		return []byte(`{"running":false,"sessions":[]}`), nil
+	}
+
+	first, err := it.Inventory(context.Background())
+	if err != nil || first.Complete || calls != 1 || !strings.Contains(strings.Join(first.Notes, " "), "apple event failed") {
+		t.Fatalf("first failure: calls=%d inventory=%+v err=%v", calls, first, err)
+	}
+	inside, err := it.Inventory(context.Background())
+	if err != nil || inside.Complete || calls != 1 || len(inside.Gaps) != 1 ||
+		!strings.Contains(strings.Join(inside.Notes, " "), "listing is degraded") {
+		t.Fatalf("inside backoff: calls=%d inventory=%+v err=%v", calls, inside, err)
+	}
+
+	clock = clock.Add(time.Second)
+	second, err := it.Inventory(context.Background())
+	if err != nil || second.Complete || calls != 2 {
+		t.Fatalf("second failure: calls=%d inventory=%+v err=%v", calls, second, err)
+	}
+	clock = clock.Add(time.Second)
+	if _, err := it.Inventory(context.Background()); err != nil || calls != 2 {
+		t.Fatalf("doubling backoff retried early: calls=%d err=%v", calls, err)
+	}
+	clock = clock.Add(time.Second)
+	recovered, err := it.Inventory(context.Background())
+	if err != nil || !recovered.Complete || calls != 3 {
+		t.Fatalf("recovery: calls=%d inventory=%+v err=%v", calls, recovered, err)
+	}
+	if _, err := it.Inventory(context.Background()); err != nil || calls != 4 {
+		t.Fatalf("success did not clear backoff: calls=%d err=%v", calls, err)
+	}
+}
+
 type modelRun struct {
 	Answer map[string]any `json:"answer"`
 	Writes []struct {

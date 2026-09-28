@@ -210,6 +210,27 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events}, nil
 }
 
+func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims bool) ([]WorkV2View, error) {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	relations, err := w.Store.WorkV2Relations(ctx, ids)
+	if err != nil {
+		return nil, mapWorkV2Error(err)
+	}
+	out := make([]WorkV2View, 0, len(items))
+	for _, item := range items {
+		view := WorkV2View{Item: item, Documents: relations.Documents[item.ID], Images: relations.Images[item.ID],
+			Steps: relations.Steps[item.ID]}
+		if includeClaims {
+			view.Claim = relations.Claims[item.ID]
+		}
+		out = append(out, view)
+	}
+	return out, nil
+}
+
 func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search string) ([]WorkV2View, bool, error) {
 	if status != "open" && status != "done" && status != "all" {
 		return nil, false, workV2Error(http.StatusBadRequest, "invalid_status", "Status is open, done or all.")
@@ -218,25 +239,9 @@ func (w *WorkSystemV2) List(ctx context.Context, project, owner, status, search 
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
-	out := make([]WorkV2View, 0, len(items))
-	for _, i := range items {
-		documents, documentErr := w.Store.WorkV2Documents(ctx, i.ID)
-		if documentErr != nil {
-			return nil, false, mapWorkV2Error(documentErr)
-		}
-		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
-		if imageErr != nil {
-			return nil, false, mapWorkV2Error(imageErr)
-		}
-		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
-		if stepErr != nil {
-			return nil, false, mapWorkV2Error(stepErr)
-		}
-		claim, claimErr := w.Store.WorkV2ActiveClaim(ctx, i.ID)
-		if claimErr != nil {
-			return nil, false, mapWorkV2Error(claimErr)
-		}
-		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps, Claim: claim})
+	out, err := w.pageViews(ctx, items, true)
+	if err != nil {
+		return nil, false, err
 	}
 	return out, truncated, nil
 }
@@ -287,26 +292,11 @@ func (w *WorkSystemV2) ListPage(ctx context.Context, project, status, search, ra
 	if err != nil {
 		return WorkV2ListPage{}, mapWorkV2Error(err)
 	}
-	page := WorkV2ListPage{Rows: make([]WorkV2View, 0, len(items))}
-	for _, i := range items {
-		documents, documentErr := w.Store.WorkV2Documents(ctx, i.ID)
-		if documentErr != nil {
-			return WorkV2ListPage{}, mapWorkV2Error(documentErr)
-		}
-		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
-		if imageErr != nil {
-			return WorkV2ListPage{}, mapWorkV2Error(imageErr)
-		}
-		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
-		if stepErr != nil {
-			return WorkV2ListPage{}, mapWorkV2Error(stepErr)
-		}
-		claim, claimErr := w.Store.WorkV2ActiveClaim(ctx, i.ID)
-		if claimErr != nil {
-			return WorkV2ListPage{}, mapWorkV2Error(claimErr)
-		}
-		page.Rows = append(page.Rows, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps, Claim: claim})
+	rows, err := w.pageViews(ctx, items, true)
+	if err != nil {
+		return WorkV2ListPage{}, err
 	}
+	page := WorkV2ListPage{Rows: rows}
 	if truncated && len(items) > 0 {
 		page.Next = encodeWorkV2ListCursor(items[len(items)-1])
 	}
@@ -318,21 +308,9 @@ func (w *WorkSystemV2) RecentlyCompleted(ctx context.Context, session string) ([
 	if err != nil {
 		return nil, false, mapWorkV2Error(err)
 	}
-	out := make([]WorkV2View, 0, len(items))
-	for _, i := range items {
-		documents, documentErr := w.Store.WorkV2Documents(ctx, i.ID)
-		if documentErr != nil {
-			return nil, false, mapWorkV2Error(documentErr)
-		}
-		images, imageErr := w.Store.WorkV2Images(ctx, i.ID)
-		if imageErr != nil {
-			return nil, false, mapWorkV2Error(imageErr)
-		}
-		steps, stepErr := w.Store.WorkV2Steps(ctx, i.ID)
-		if stepErr != nil {
-			return nil, false, mapWorkV2Error(stepErr)
-		}
-		out = append(out, WorkV2View{Item: i, Documents: documents, Images: images, Steps: steps})
+	out, err := w.pageViews(ctx, items, false)
+	if err != nil {
+		return nil, false, err
 	}
 	return out, truncated, nil
 }

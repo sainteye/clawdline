@@ -287,6 +287,16 @@ func (r *Registry) legacyFor(cwd string) Grid {
 	return grid
 }
 
+// Generated returns the stable mark for a path without consulting a registry
+// or mirror. It is the pure fallback used when a stored Project is no longer
+// present in the current catalog.
+func Generated(cwd string) Grid {
+	if cwd == "" {
+		return Grid{Cells: [][]*string{}}
+	}
+	return creatureFromSeed(StableHash(cwd))
+}
+
 func (r *Registry) legacyResolve(cwd string) (Grid, Source) {
 	if cwd == "" {
 		return Grid{Cells: [][]*string{}}, SourceGenerated
@@ -307,7 +317,7 @@ func (r *Registry) legacyResolve(cwd string) (Grid, Source) {
 	}
 	// No registry, or a project it has never seen. The path still decides the
 	// colour, so it is at least stable from one launch to the next.
-	return creatureFromSeed(StableHash(cwd)), SourceGenerated
+	return Generated(cwd), SourceGenerated
 }
 
 // Label returns the name the registry gives a directory, if it gives one.

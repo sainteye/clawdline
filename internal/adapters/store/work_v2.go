@@ -786,6 +786,133 @@ func (s *Store) WorkV2ActiveClaim(ctx context.Context, workID string) (*work.Cre
 	return a.ClaimedVia, err
 }
 
+// WorkV2Relations reads the four bounded relation sets shown on a page of
+// Board cards. Each table is read once for the whole page; callers do not
+// multiply store round trips by the number of cards.
+type WorkV2Relations struct {
+	Documents map[string][]work.DocumentV2
+	Images    map[string][]work.ImageV2
+	Steps     map[string][]work.StepV2
+	Claims    map[string]*work.CreatedViaV2
+}
+
+func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Relations, error) {
+	out := WorkV2Relations{
+		Documents: map[string][]work.DocumentV2{}, Images: map[string][]work.ImageV2{},
+		Steps: map[string][]work.StepV2{}, Claims: map[string]*work.CreatedViaV2{},
+	}
+	if err := reading(); err != nil {
+		return out, err
+	}
+	if len(workIDs) == 0 {
+		return out, nil
+	}
+	list, err := json.Marshal(workIDs)
+	if err != nil {
+		return out, err
+	}
+	ids := string(list)
+
+	documents, err := s.db.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+    FROM work_v2_documents WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
+	if err != nil {
+		return out, err
+	}
+	for documents.Next() {
+		var d work.DocumentV2
+		var created, updated int64
+		if err := documents.Scan(&d.ID, &d.WorkID, &d.Role, &d.Title, &d.Body, &d.Reference, &d.Position,
+			&d.Version, &created, &updated); err != nil {
+			documents.Close()
+			return out, err
+		}
+		d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+		out.Documents[d.WorkID] = append(out.Documents[d.WorkID], d)
+	}
+	if err := documents.Err(); err != nil {
+		documents.Close()
+		return out, err
+	}
+	if err := documents.Close(); err != nil {
+		return out, err
+	}
+
+	images, err := s.db.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
+    FROM work_v2_images WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
+	if err != nil {
+		return out, err
+	}
+	for images.Next() {
+		i, err := scanWorkV2Image(images)
+		if err != nil {
+			images.Close()
+			return out, err
+		}
+		out.Images[i.WorkID] = append(out.Images[i.WorkID], i)
+	}
+	if err := images.Err(); err != nil {
+		images.Close()
+		return out, err
+	}
+	if err := images.Close(); err != nil {
+		return out, err
+	}
+
+	steps, err := s.db.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+    FROM work_v2_steps WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
+	if err != nil {
+		return out, err
+	}
+	for steps.Next() {
+		var st work.StepV2
+		var done bool
+		var created int64
+		var completed sql.NullInt64
+		if err := steps.Scan(&st.ID, &st.WorkID, &st.Title, &done, &st.Position, &st.CreatedBy,
+			&st.CompletedBy, &created, &completed, &st.Version); err != nil {
+			steps.Close()
+			return out, err
+		}
+		st.Done, st.CreatedAt = done, time.Unix(created, 0)
+		if completed.Valid {
+			st.CompletedAt = time.Unix(completed.Int64, 0)
+		}
+		out.Steps[st.WorkID] = append(out.Steps[st.WorkID], st)
+	}
+	if err := steps.Err(); err != nil {
+		steps.Close()
+		return out, err
+	}
+	if err := steps.Close(); err != nil {
+		return out, err
+	}
+
+	claims, err := s.db.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE work_id IN (SELECT value FROM json_each(?))
+      AND state='active' AND claimed_via <> '' ORDER BY work_id,created_at,id`, ids)
+	if err != nil {
+		return out, err
+	}
+	for claims.Next() {
+		a, err := scanAssignmentV2(claims)
+		if err != nil {
+			claims.Close()
+			return out, err
+		}
+		if _, exists := out.Claims[a.WorkID]; !exists {
+			out.Claims[a.WorkID] = a.ClaimedVia
+		}
+	}
+	if err := claims.Err(); err != nil {
+		claims.Close()
+		return out, err
+	}
+	if err := claims.Close(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 // WorkV2RootAssignmentsForSessions answers, for each of one assistant's
 // conversations, the Root Assignment that opened it from a Board item, in one
 // read. Existing-session assignments do not rename a conversation, and failed
