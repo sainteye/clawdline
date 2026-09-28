@@ -17,13 +17,17 @@ const COMPLETED: Record<WorkV2Phase, number> = {
 }
 
 const CURRENT: Partial<Record<WorkV2Phase, number>> = {
-  created: 0,
-  assigning: 0,
-  assigned: 0,
   implementing: 0,
   verifying: 1,
   merging: 2,
   deploying: 3,
+}
+
+const STARTED = new Set<WorkV2Phase>(["implementing", "verifying", "merging", "deploying", "done"])
+
+/** Progress begins with implementation; assignment is preparation, not work underway. */
+export function workMilestonesShown(phase: WorkV2Phase): boolean {
+  return STARTED.has(phase)
 }
 
 /** One lifecycle reading shared by Board cards and their owning Session. */

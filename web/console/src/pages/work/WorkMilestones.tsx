@@ -1,8 +1,9 @@
 import type { WorkV2Phase } from "./api.js"
-import { WORK_MILESTONES, workMilestoneStates } from "./work-milestones.js"
+import { WORK_MILESTONES, workMilestonesShown, workMilestoneStates } from "./work-milestones.js"
 import { WorkIcon } from "./WorkIcon.js"
 
 export function WorkMilestones({ phase }: { phase: WorkV2Phase }) {
+  if (!workMilestonesShown(phase)) return null
   const states = workMilestoneStates(phase)
   return <ol className="work-milestones" aria-label="項目進度">
     {WORK_MILESTONES.map((label, index) => {
