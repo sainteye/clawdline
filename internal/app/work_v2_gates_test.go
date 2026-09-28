@@ -157,7 +157,7 @@ func TestFirstSuccessfulAssignmentCapturesEveryGateModeOnce(t *testing.T) {
 	}
 }
 
-func TestARefusedAssignmentWritesNoGateSnapshot(t *testing.T) {
+func TestAnAgentFillsAcceptanceAfterAssignmentBeforeTheGate(t *testing.T) {
 	for _, kind := range []work.Kind{work.KindFeature, work.KindEpic} {
 		t.Run(string(kind), func(t *testing.T) {
 			w := newWorkV2Test(t)
@@ -165,24 +165,58 @@ func TestARefusedAssignmentWritesNoGateSnapshot(t *testing.T) {
 				return WorkV2GateSettings{Planning: true}, nil
 			}
 			created, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p",
-				Kind: kind, Title: "Needs acceptance", Description: "Cannot be assigned yet.", Actor: "local"}, nil)
+				Kind: kind, Title: "Needs acceptance", Description: "The Agent will write it.", Actor: "local"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = w.Assign(context.Background(), created.Item.ID, AssignWorkV2{ExpectedVersion: created.Item.Version,
+			assigned, err := w.Assign(context.Background(), created.Item.ID, AssignWorkV2{ExpectedVersion: created.Item.Version,
 				Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
-			if got := workErrorCode(t, err); got != "acceptance_required" {
-				t.Fatalf("error = %s", got)
+			if err != nil || !assigned.Item.HasGateSnapshot() || assigned.Item.AcceptanceCriteria != "" {
+				t.Fatalf("assigned without acceptance = %+v, %v", assigned.Item, err)
 			}
-			after, err := w.Item(context.Background(), created.Item.ID)
+			criteria := "- The described result is observable."
+			after, err := w.Edit(context.Background(), created.Item.ID, EditWorkV2{ExpectedVersion: assigned.Item.Version,
+				AcceptanceCriteria: &criteria, Actor: "session-a", OwnerSession: "session-a"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if after.Item.HasGateSnapshot() || after.Item.GateSnapshotCycle != 0 || len(after.Assignments) != 0 ||
-				after.Item.Version != created.Item.Version {
-				t.Fatalf("refused assignment wrote: %+v assignments=%+v", after.Item, after.Assignments)
+			if after.Item.AcceptanceCriteria != criteria || after.Item.AcceptanceDigest != work.AcceptanceDigest(criteria) {
+				t.Fatalf("Agent acceptance = %+v", after.Item)
+			}
+			second := "- Changed after the first version."
+			_, err = w.Edit(context.Background(), created.Item.ID, EditWorkV2{ExpectedVersion: after.Item.Version,
+				AcceptanceCriteria: &second, Actor: "session-a", OwnerSession: "session-a"}, nil)
+			if got := workErrorCode(t, err); got != "acceptance_not_agent_editable" {
+				t.Fatalf("second Agent edit = %s", got)
 			}
 		})
+	}
+}
+
+func TestVerificationWaitsForAgentAcceptanceOnAnIssue(t *testing.T) {
+	w := newWorkV2Test(t)
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Verify: true}, nil
+	}
+	created, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p",
+		Kind: work.KindIssue, Title: "Check the change", Description: "The Agent supplies acceptance.", Actor: "person"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := w.Assign(context.Background(), created.Item.ID, AssignWorkV2{ExpectedVersion: created.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", Actor: "person", CycleBaseCommit: strings.Repeat("0", 40)}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	implementing, err := w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
+		ExpectedVersion: assigned.Item.Version, SessionID: "session-a", Next: work.PhaseImplementing, Actor: "session-a"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
+		ExpectedVersion: implementing.Item.Version, SessionID: "session-a", Next: work.PhaseVerifying, Actor: "session-a"}, nil)
+	if got := workErrorCode(t, err); got != "acceptance_required" {
+		t.Fatalf("verification without acceptance = %s", got)
 	}
 }
 

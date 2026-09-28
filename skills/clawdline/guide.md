@@ -875,10 +875,11 @@ acceptance criteria, a plan, and independent plan review before implementing (Fe
 Epic: at most two). An Issue never has a planning gate. Planning off bypasses forced Epic planning
 too. Both on means planning then independent verification; planning only retains ordinary merge
 verification; verification only skips planning but still checks the exact candidate; both off uses
-the ordinary lifecycle. Put exact Markdown acceptance on person create/edit or use
-`--acceptance-file` when `clawdline item add|child` supports that authority. A maker may not edit
-acceptance. Changing it before merging invalidates old PASS and overrides; once merging starts it
-is locked.
+the ordinary lifecycle. The person need not fill acceptance on the Board. If a gated item arrives
+without it, write observable criteria with `clawdline item acceptance <item id> --body-file <file>`
+after assignment and before the gated transition. The owning Session may fill an empty contract
+once; subsequent revisions belong to the person (or an Epic owner's reasoned escalation decision).
+Changing it before merging invalidates old PASS and overrides; once merging starts it is locked.
 
 With captured verification on, run `clawdline item phase <id> verifying` from a clean registered
 worktree at its committed candidate: the CLI sends the current branch and full HEAD, and the daemon

@@ -20,6 +20,11 @@ export function isEpic(item: Pick<WorkV2Item, "kind">): boolean {
   return item.kind === "epic"
 }
 
+/** The Board does not show an empty gate panel or ask a person to supply its contract. */
+export function epicGateDetailShown(item: Pick<WorkV2Item, "kind" | "acceptance_criteria">): boolean {
+  return isEpic(item) && !!item.acceptance_criteria.trim()
+}
+
 export function epicGate(documents: WorkV2Document[] | undefined): EpicGate {
   const plan = documentsNewestFirst(documents, (document) => document.role === "plan")[0]
   const review = !!plan && documentsNewestFirst(documents, (document) => document.role === "plan_review").some((r) => r.created_at >= plan.created_at)

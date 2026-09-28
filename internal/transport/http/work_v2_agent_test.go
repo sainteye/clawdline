@@ -97,3 +97,17 @@ func TestRootAssignmentAcceptanceStartsWithTheExactGovernedCriteria(t *testing.T
 		}
 	}
 }
+
+func TestEmptyGatedAcceptanceAsksTheAssignedAgentToWriteIt(t *testing.T) {
+	item := work.ItemV2{ID: "0e0e0e0e-0000-4000-8000-000000000003", Kind: work.KindEpic,
+		Phase: work.PhaseAssigned, Cycle: 1, GateSnapshotCycle: 1, PlanningGate: true}
+	for name, brief := range map[string]string{
+		"existing Session": workV2AssignmentBriefForItem(item),
+		"new Root":         workV2RootAssignmentAcceptanceForItem(item),
+	} {
+		if !strings.Contains(brief, "clawdline item acceptance "+item.ID) ||
+			!strings.Contains(brief, "The person does not need to fill acceptance criteria") {
+			t.Errorf("%s omitted Agent acceptance instruction: %s", name, brief)
+		}
+	}
+}

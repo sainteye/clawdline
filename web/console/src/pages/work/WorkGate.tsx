@@ -4,6 +4,7 @@ import type { WorkGateCompactRead, WorkGateDetailRead, WorkGateEscalation, WorkG
 import { decideWorkGate, exportWorkGate, purgeWorkGate, readWorkV2Item, type GateExport, type WorkV2Item } from "./api.js"
 import { failureWords, when } from "./shared.js"
 import { AUTHORITY, gateSnapshotText, gateStatus, roundStatus } from "./gate-status.js"
+import { epicGateDetailShown } from "./epic-gate.js"
 
 function compactOf(item: WorkV2Item): WorkGateCompactRead | undefined {
   const verification = item.verification
@@ -129,6 +130,33 @@ function GateRecovery({ item, run }: { item: WorkV2Item; run: (key: string, task
   </details>
 }
 
+function GateEscalation({ item, escalation, sessions, run }: {
+  item: WorkV2Item
+  escalation: WorkGateEscalation
+  sessions: { id: string; label: string }[]
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+}) {
+  return <section className="work-gate-escalation" aria-label="驗證需要處理">
+    <h5>{escalation.kind === "third_fail" ? "連續第三次 FAIL" : "技術驗證無法完成"}</h5>
+    <p>{escalation.reason}</p>
+    {escalation.state === "waiting_user" ? <GateDecision item={item} escalation={escalation} sessions={sessions} run={run} />
+      : <p>目前由上層 Epic owner Session 決定；若該 Session 離線滿 15 分鐘，會改由你決定。可從 Epic 的子項清單追蹤負責 Session；此處沒有代替 Agent 行使的操作。</p>}
+  </section>
+}
+
+/** Keep a required person decision visible without showing the full gate panel on a non-Epic. */
+export function WorkGateAttention({ item, sessions, run }: {
+  item: WorkV2Item
+  sessions: { id: string; label: string }[]
+  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+}) {
+  if (item.kind === "epic") return null
+  const escalation = compactOf(item)?.escalation
+  if (!escalation || escalation.state === "resolved") return null
+  return <><GateEscalation item={item} escalation={escalation} sessions={sessions} run={run} />
+    {escalation.kind === "technical_verification" && <GateRecovery item={item} run={run} />}</>
+}
+
 export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
   item: WorkV2Item
   loading: boolean
@@ -139,6 +167,7 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
 }) {
   const compact = compactOf(item)
   const detail: WorkGateDetailRead | undefined = item.verification && "compact" in item.verification ? item.verification : undefined
+  if (!epicGateDetailShown(item)) return null
   return <section className="work-gate-detail" aria-label="規劃與獨立驗證">
     <h4>規劃與獨立驗證</h4>
     <p className="work-gate-current"><WorkGateLine item={item} /></p>
@@ -147,7 +176,7 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
     {!loading && !error && !detail && <p>尚未載入驗證詳情。<button className="chip" type="button" onClick={retry}>讀取詳情</button></p>}
     <p>本輪擷取：{item.gate_snapshot_cycle ? `第 ${item.gate_snapshot_cycle} 輪 · ${gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}` : "尚未成功指派；將在第一次成功指派時擷取當時設定"}。後續修改全域設定不會改動本輪。</p>
     <div className="work-gate-acceptance"><strong>驗收條件（Markdown）</strong>
-      {item.acceptance_criteria ? <div dangerouslySetInnerHTML={markdown(item.acceptance_criteria)} /> : <p>尚未設定驗收條件；開啟 gate 的工作指派前必須補上。</p>}
+      <div dangerouslySetInnerHTML={markdown(item.acceptance_criteria)} />
       <small>版本 {item.acceptance_version} · SHA-256 {item.acceptance_digest}</small>
     </div>
     {compact && <dl className="work-gate-metrics">
@@ -155,12 +184,8 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
       <div><dt>發現問題</dt><dd>{compact.metrics.findings}</dd></div><div><dt>覆核通過</dt><dd>{compact.metrics.overrides}</dd></div>
     </dl>}
     {compact?.current_authorization && <p className="work-gate-authority"><strong>{AUTHORITY[compact.current_authorization.kind] ?? "未知授權種類"}</strong>：{compact.current_authorization.reason}</p>}
-    {compact?.escalation && compact.escalation.state !== "resolved" && <section className="work-gate-escalation">
-      <h5>{compact.escalation.kind === "third_fail" ? "連續第三次 FAIL" : "技術驗證無法完成"}</h5>
-      <p>{compact.escalation.reason}</p>
-      {compact.escalation.state === "waiting_user" ? <GateDecision item={item} escalation={compact.escalation} sessions={sessions} run={run} />
-        : <p>目前由上層 Epic owner Session 決定；若該 Session 離線滿 15 分鐘，會改由你決定。可從 Epic 的子項清單追蹤負責 Session；此處沒有代替 Agent 行使的操作。</p>}
-    </section>}
+    {compact?.escalation && compact.escalation.state !== "resolved" && <GateEscalation item={item}
+      escalation={compact.escalation} sessions={sessions} run={run} />}
     {detail && <>
       <h5>最近驗證證據</h5>
       {!detail.recent_rounds.length && <p>目前沒有可顯示的驗證輪次。</p>}

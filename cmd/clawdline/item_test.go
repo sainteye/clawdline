@@ -427,6 +427,24 @@ func TestItemDocPostsADocumentAfterTheLastOne(t *testing.T) {
 	}
 }
 
+func TestItemAcceptancePatchesTheOwnedItemWithItsCurrentVersion(t *testing.T) {
+	const item = `{"ok":true,"item":{"id":"epic-1","title":"Epic","kind":"epic","phase":"assigned","version":3,"steps":[]}}`
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, item })
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "acceptance", itemFlags{acceptance: "- The result can be checked."},
+		[]string{"epic-1"}, thinConversation, "", envOf(nil))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[1].Method != http.MethodPatch ||
+		seen[1].EscapedPath != "/v1/work/v2/agent/items/epic-1/edit" ||
+		!strings.Contains(string(seen[1].Body), `"expected_version":3`) ||
+		!strings.Contains(string(seen[1].Body), `"acceptance_criteria":"- The result can be checked."`) {
+		t.Fatalf("requests %+v", seen)
+	}
+}
+
 const epicItem = `{"ok":true,"item":{"id":"epic-1","title":"Big","kind":"epic","phase":"implementing",
  "owner_session":"` + thinConversation + `","version":7}}`
 
