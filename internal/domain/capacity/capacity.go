@@ -276,6 +276,9 @@ const (
 	// request, the newest later requests that fit, and the latest reply.
 	NamingContextBytes = "naming.context_bytes"
 	NamingTailEntries  = "naming.tail_entries"
+	// What one explicitly requested Board-role classification turn reads: the
+	// item kind, title and description plus the closed persona catalog.
+	PersonaSuggestionContextBytes = "personas.suggestion_context_bytes"
 	// A release keeps the previous selector until the restarted daemon and
 	// its console prove the new commit. At this deadline it rolls back.
 	DeployHealthSeconds = "deploy.health_seconds"
@@ -1352,6 +1355,16 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/persona.MaxPersonaBytes"},
+		},
+		{
+			// One explicitly requested Board-role classification reads the
+			// closed catalog and as much of the item's title and description as
+			// fits beside it. The rest of a long description is not sent.
+			Name: PersonaSuggestionContextBytes, Class: Observation, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.personaSuggestionContextLimit"},
 		},
 	}
 }

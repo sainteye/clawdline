@@ -1150,6 +1150,13 @@ func init() {
 					Body: p.document, Header: asDevice()}
 			}},
 
+		op{name: "work.v2.persona-suggestion",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/persona-suggestion",
+					Body: p.document, Header: asDevice()}
+			}},
+
 		op{name: "work.v2.remind",
 			decode: decodeWorkV2NamedDocument("id", "item"),
 			route: func(p plan) LocalRequest {

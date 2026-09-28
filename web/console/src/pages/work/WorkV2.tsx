@@ -7,7 +7,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, suggestedPersonaForItem, switchTeam } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, suggestedPersonaForItem, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
@@ -47,6 +47,7 @@ import {
   readWorkV2Proposals,
   remindWorkV2,
   resolveWorkV2Proposal,
+  suggestPersonaWorkV2,
   type Decision,
   type ProjectPlace,
   type WorkV2Item,
@@ -578,6 +579,45 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const persona = personaById(personas, personaChoice ?? personaSuggestion?.persona.id)
   const personaSuggestionID = `work-persona-suggestion-${item.id}`
   const personaSuggestionOverridden = personaChoice !== null && personaChoice !== personaSuggestion?.persona.id
+  const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
+  const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
+  const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
+  const itemVersion = useRef(item.version)
+  itemVersion.current = item.version
+  const aiPersona = aiSuggestion?.outcome === "recommend" ? personaById(personas, aiSuggestion.persona_id) : null
+  const aiSuggestionID = `work-persona-ai-${item.id}`
+  const aiSuggestionOverridden = !!aiPersona && personaChoice !== null && personaChoice !== aiPersona.id
+  useEffect(() => {
+    setAISuggestion(null)
+    setAISuggestionFailure("")
+    setAISuggestionBusy(false)
+  }, [item.version])
+  const askAIForPersona = async () => {
+    if (aiSuggestionBusy) return
+    const askedVersion = item.version
+    setAISuggestionBusy(true)
+    setAISuggestionFailure("")
+    try {
+      const answer = await suggestPersonaWorkV2(item)
+      if (itemVersion.current !== askedVersion) return
+      if (answer.outcome === "recommend") {
+        const picked = personaById(personas, answer.persona_id)
+        if (!picked) {
+          setAISuggestionFailure("AI 回傳的角色不在目前清單中，因此沒有變更選擇。")
+          return
+        }
+        const nextTeam = shownTeam(personas, picked.id, team)
+        setPersonaChoice(picked.id)
+        setTeam(nextTeam)
+        rememberTeam(nextTeam)
+      }
+      setAISuggestion(answer)
+    } catch (error) {
+      if (itemVersion.current === askedVersion) setAISuggestionFailure(personaAIError(error))
+    } finally {
+      if (itemVersion.current === askedVersion) setAISuggestionBusy(false)
+    }
+  }
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
@@ -681,7 +721,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
         {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
-          role="radio" aria-checked={choice === assistant} disabled={!!busy}
+          role="radio" aria-checked={choice === assistant} disabled={!!busy || aiSuggestionBusy}
           aria-label={assistantName(choice)} title={assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
@@ -692,8 +732,25 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
           ? `符合「${personaSuggestion.signals.join("」、「")}」`
           : "依項目類型判斷"}{personaSuggestionOverridden ? " · 目前已改選" : ""}</span>
       </p>}
+      {personas.length > 0 && <section className="work-persona-ai" aria-labelledby={`${aiSuggestionID}-title`}>
+        <div>
+          <strong id={`${aiSuggestionID}-title`}>讓 AI 判斷角色</strong>
+          <span id={`${aiSuggestionID}-disclosure`}>只有按下按鈕才會把項目類型、標題與說明送給 OpenAI / Codex；每次按一下使用一個 AI 回合。</span>
+        </div>
+        <button className="chip" type="button" disabled={!!busy || aiSuggestionBusy}
+          aria-busy={aiSuggestionBusy} aria-describedby={`${aiSuggestionID}-disclosure`}
+          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? "AI 判斷中…" : aiSuggestion ? "重新用 AI 判斷" : "用 AI 判斷"}</button>
+        {aiSuggestion?.outcome === "recommend" && aiPersona && <p id={aiSuggestionID} role="status">
+          <strong>AI 建議：{personaName(aiPersona)}</strong>
+          <span>{aiSuggestionOverridden ? "目前已改選其他角色" : "已預先選取，仍可手動改選"}</span>
+        </p>}
+        {aiSuggestion?.outcome === "ambiguous" && <p id={aiSuggestionID} role="status">
+          <strong>AI 無法可靠判斷</strong><span>保留目前的角色選擇，請手動決定。</span>
+        </p>}
+        {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
+      </section>}
       {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
-        team={team} disabled={!!busy} press="radio" describedBy={personaSuggestion ? personaSuggestionID : undefined}
+        team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : personaSuggestion ? personaSuggestionID : undefined}
         onPick={(id) => setPersonaChoice(id)}
         onTeam={(next) => {
           const switched = switchTeam(personas, persona?.id, next)
@@ -701,7 +758,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
           rememberTeam(next)
           setPersonaChoice(switched.chosen)
         }} />}
-      <button className="chip" type="button" disabled={!!busy} aria-busy={busy === item.id}
+      <button className="chip" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id}
         onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
         {persona
           ? nextWord(busy === item.id ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
@@ -753,6 +810,20 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
     }} />}
   </article>
+}
+
+function personaAIError(error: unknown): string {
+  if (error instanceof RefusalError) {
+    switch (error.code) {
+      case "ai_consent_required": return "請先到「設定 → 看板」允許 AI 讀取摘要；這次沒有送出項目內容。"
+      case "no_persona_suggester": return "這台機器沒有可用的 Codex，因此沒有變更角色。"
+      case "persona_suggester_out_of_quota": return "Codex 目前沒有可用額度，因此沒有變更角色。"
+      case "persona_suggestion_failed": return "AI 沒有回傳可用的角色，因此保留目前選擇。"
+      case "busy": return "這台機器正在處理其他 AI 工作，請稍後再按一次。"
+      case "version_conflict": return "項目內容已更新；請確認最新內容後再用 AI 判斷。"
+    }
+  }
+  return failureWords(error)
 }
 
 /**

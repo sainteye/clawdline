@@ -199,6 +199,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/items/w1/cancel"],
     ["POST", "/v1/work/v2/items/w1/complete"],
     ["POST", "/v1/work/v2/items/w1/assign"],
+    ["POST", "/v1/work/v2/items/w1/persona-suggestion"],
     ["POST", "/v1/work/v2/items/w1/remind"],
     ["GET", "/v1/work/v2/images/img1"],
     ["GET", "/v1/usage/sessions/c1"],
@@ -262,7 +263,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("archive-session" in CARRIED)
   assert.ok("archived-sessions" in CARRIED)
   assert.ok("restore-archived" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 92)
+  assert.equal(Object.keys(CARRIED).length, 93)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

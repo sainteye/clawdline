@@ -119,6 +119,8 @@ const PERSONAS = PERSONA_NAMES.map(([id, en, zh]) => ({
 }))
 let createdWork: Record<string, unknown> | null = null
 let createdWorkBody: Record<string, unknown> | null = null
+let personaSuggestionRequests = 0
+let personaSuggestionKey = ""
 const PROJECT_ICON = {
   accent: "#D97757",
   cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]],
@@ -271,6 +273,17 @@ function daemon(): Server {
           images: [],
         }
         json(res, 201, { item: createdWork })
+      }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
+      return
+    }
+    if (/^\/v1\/work\/v2\/items\/[^/]+\/persona-suggestion$/.test(path) && req.method === "POST") {
+      personaSuggestionRequests++
+      personaSuggestionKey = String(req.headers["idempotency-key"] ?? "")
+      void requestJSON(req).then((body) => {
+        if (body.expected_version !== createdWork?.version) {
+          return json(res, 409, { error: "version_conflict", detail: "fixture item changed" })
+        }
+        json(res, 200, { ok: true, outcome: "recommend", persona_id: "backend", provider: "codex" })
       }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
       return
     }
@@ -1205,6 +1218,8 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
 test("phone: a spoken Board item is prefilled but not created until confirmation", () =>
   inTab(PHONE, async (tab) => {
     createdWork = null
+    personaSuggestionRequests = 0
+    personaSuggestionKey = ""
     createdWorkBody = null
     // The command already read the Project row used by the planner. Make the
     // Board page's immediately following refresh fail, as a slow/offline Cloud
@@ -1445,6 +1460,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       sessionsPage: true,
       boardPage: false,
     })
+    assert.equal(personaSuggestionRequests, 0, "opening and rendering the item must not call AI")
     await tab.shot("smart-role-phone-light")
     await tab.view(PHONE, "dark")
     await tab.shot("smart-role-phone-dark")
@@ -1473,11 +1489,11 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     // picker through the assistant choices to the first native role button;
     // choosing it overrides the suggestion and the launch button agrees.
     const keyboard: string[] = []
-    for (let index = 0; index < 3; index++) {
+    for (let index = 0; index < 4; index++) {
       await tab.press("Tab")
       keyboard.push(await tab.run(`document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim()`))
     }
-    assert.deepEqual(keyboard, ["Codex", "Claude Code", "不指定"], "keyboard order")
+    assert.deepEqual(keyboard, ["Codex", "Claude Code", "用 AI 判斷", "不指定"], "keyboard order")
     assert.deepEqual(await tab.run(`(() => {
       const role = document.querySelector(".work-created-modal .work-new-persona .chip")
       return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
@@ -1498,4 +1514,44 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       suggestion: "建議角色：前端工程師符合「react」 · 目前已改選",
       actions: ["指派", "開新 Codex Session"],
     })
+
+    // The local suggestion remains the default until this explicit press.
+    // One press sends one receipted request, changes the preselection to the
+    // catalog id AI returned, and still permits a manual override afterward.
+    await tab.run(`document.querySelector(".work-created-modal .work-persona-ai button").click()`)
+    const ai = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const card = document.querySelector(".work-created-modal .work-v2-card")
+        const status = card?.querySelector(".work-persona-ai [role=status]")
+        if (status) {
+          const roles = card.querySelector(".work-new-persona")
+          return resolve({
+            status: status.textContent,
+            chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
+            action: [...card.querySelectorAll(".work-assignment > button")].at(-1)?.textContent,
+            disclosure: card.querySelector(".work-persona-ai > div > span")?.textContent,
+          })
+        }
+        if (Date.now() >= deadline) return reject(new Error("AI role suggestion did not arrive"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.deepEqual(ai, {
+      status: "AI 建議：後端工程師已預先選取，仍可手動改選",
+      chosenRole: "後端工程師",
+      action: "開新 Codex Session（後端工程師）",
+      disclosure: "只有按下按鈕才會把項目類型、標題與說明送給 OpenAI / Codex；每次按一下使用一個 AI 回合。",
+    })
+    assert.equal(personaSuggestionRequests, 1)
+    assert.match(personaSuggestionKey, /^web-[0-9a-f]{32}$/)
+    await tab.run(`document.querySelector(".work-created-modal .work-new-persona .chip").click()`)
+    assert.deepEqual(await tab.run(`(() => {
+      const card = document.querySelector(".work-created-modal .work-v2-card")
+      return {
+        chosenRole: card.querySelector('.work-new-persona [aria-checked="true"] span')?.textContent,
+        aiStatus: card.querySelector(".work-persona-ai [role=status]")?.textContent,
+      }
+    })()`), { chosenRole: "不指定", aiStatus: "AI 建議：後端工程師目前已改選其他角色" })
   }))
