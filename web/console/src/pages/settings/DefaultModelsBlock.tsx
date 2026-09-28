@@ -1,32 +1,26 @@
 import { useCallback, useEffect, useState } from "react"
-import type { SettingsSnapshot } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { nextWord } from "../../next-strings.js"
-import { followsRelay } from "../../client.js"
-import { readSettings, writeSettings } from "./api.js"
+import { readDefaultModels, writeDefaultModels, type DefaultModelsSnapshot } from "./api.js"
 import "./default-models.css"
 
 type ModelKey = "codex_default_model" | "claude_default_model"
 
-function modelOf(snapshot: SettingsSnapshot | null, key: ModelKey): string {
+function modelOf(snapshot: DefaultModelsSnapshot | null, key: ModelKey): string {
   if (!snapshot) return ""
   return String(snapshot[key] ?? "")
 }
 
 /** Machine-wide defaults for sessions Clawdline opens, on every console. */
 export function DefaultModelsBlock({ shown }: { shown: boolean }) {
-  // /v1/settings is a machine-local authority and is not a Cloud-carried
-  // route. The native window and a console served by that machine show this
-  // block; a hosted console must not offer inputs it cannot save.
-  const relayed = followsRelay()
-  const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null)
+  const [snapshot, setSnapshot] = useState<DefaultModelsSnapshot | null>(null)
   const [codex, setCodex] = useState("")
   const [claude, setClaude] = useState("")
   const [busy, setBusy] = useState<ModelKey | "read" | null>(null)
   const [said, setSaid] = useState("")
 
-  const accept = useCallback((answer: SettingsSnapshot) => {
+  const accept = useCallback((answer: DefaultModelsSnapshot) => {
     setSnapshot(answer)
     setCodex(modelOf(answer, "codex_default_model"))
     setClaude(modelOf(answer, "claude_default_model"))
@@ -35,7 +29,7 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
   const read = useCallback(() => {
     setBusy("read")
     setSaid("")
-    void readSettings().then(
+    void readDefaultModels().then(
       (answer) => {
         accept(answer)
         setBusy(null)
@@ -48,8 +42,8 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
   }, [accept])
 
   useEffect(() => {
-    if (shown && !relayed) read()
-  }, [shown, relayed, read])
+    if (shown) read()
+  }, [shown, read])
 
   const commit = (key: ModelKey, value: string) => {
     const next = value.trim()
@@ -59,7 +53,7 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
     else setClaude(next)
     setBusy(key)
     setSaid("")
-    void writeSettings({ [key]: next }).then(
+    void writeDefaultModels({ [key]: next }).then(
       (answer) => {
         accept(answer)
         setBusy(null)
@@ -77,7 +71,6 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
   }
 
   const disabled = !snapshot || busy !== null
-  if (relayed) return null
   return (
     <div className="block" id="settings-default-models" aria-busy={busy !== null}>
       <b id="settings-default-models-title">{nextWord("defaultModelsTitle")}</b>

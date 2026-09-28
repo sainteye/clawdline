@@ -2,6 +2,8 @@ import type { SettingsRequest, SettingsSnapshot } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
 
+export type DefaultModelsSnapshot = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model">
+
 /**
  * `/v1/settings`, this app's own config.json.
  *
@@ -58,5 +60,43 @@ export function writeSettings(change: Partial<SettingsRequest>): Promise<Setting
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  })
+}
+
+async function callDefaultModels(init: RequestInit): Promise<DefaultModelsSnapshot> {
+  const path = "/v1/settings/default-models"
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  let res: Response
+  try {
+    res = await fetch(client.url(path), { ...init, signal: controller.signal })
+  } catch (cause) {
+    throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
+  } finally {
+    clearTimeout(timer)
+  }
+  const text = await res.text()
+  let parsed: unknown
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch (cause) {
+    throw new TransportError(`${path} answered with something that is not JSON`, cause)
+  }
+  if (!res.ok) {
+    if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
+    throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
+  }
+  return parsed as DefaultModelsSnapshot
+}
+
+export function readDefaultModels(): Promise<DefaultModelsSnapshot> {
+  return callDefaultModels({ method: "GET" })
+}
+
+export function writeDefaultModels(change: Partial<DefaultModelsSnapshot>): Promise<DefaultModelsSnapshot> {
+  return callDefaultModels({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(change),
   })
 }

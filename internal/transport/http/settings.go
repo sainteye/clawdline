@@ -22,6 +22,11 @@ import (
 // its own gets a file of its own.
 var settingsFiles sync.Map // dir -> *nextconfig.File
 
+// settingsRequestBodyLimit bounds both the full local settings write and the
+// two-key route carried to Cloud. The latter has the same bound before and
+// after transport (internal/app/cloudops.defaultModelsCloudBodyLimit).
+const settingsRequestBodyLimit = 64 << 10
+
 // settingsFile is this daemon's own config.json. The Swift app's directory is
 // refused by every name it may go by: the one swiftstore reads, and the fixed
 // one that app always uses whatever this process's environment says.
@@ -67,7 +72,7 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body map[string]json.RawMessage
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, settingsRequestBodyLimit))
 		if err := dec.Decode(&body); err != nil || body == nil {
 			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a settings change")
 			return
@@ -107,6 +112,72 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
 	}
+}
+
+// defaultModelsRoute is the narrow settings surface carried to a paired Cloud
+// console. It deliberately does not reuse settingsRoute's GET response: a
+// phone choosing the defaults for new Sessions has no reason to receive the
+// hotkey, remote hostname, shell or any other machine setting.
+func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
+	f := s.settingsFile()
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		v, err := f.Read()
+		if err != nil {
+			writeSettingsFailure(w, f, err)
+			return
+		}
+		writeJSON(w, defaultModelsSnapshot(f, v))
+	case http.MethodPost:
+		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
+				"a default model write is application/json")
+			return
+		}
+		var body map[string]json.RawMessage
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, settingsRequestBodyLimit))
+		if err := dec.Decode(&body); err != nil || body == nil {
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a default model change")
+			return
+		}
+		for name := range body {
+			if name != "codex_default_model" && name != "claude_default_model" {
+				writeRefusal(w, http.StatusBadRequest, "bad_request", "not a default model key: "+name)
+				return
+			}
+		}
+		changes, refusal := settingsChanges(body)
+		if refusal != nil {
+			writeRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
+			return
+		}
+		var (
+			v   nextconfig.Values
+			err error
+		)
+		if len(changes) == 0 {
+			v, err = f.Read()
+		} else {
+			v, err = f.Set(changes)
+		}
+		if err != nil {
+			writeSettingsFailure(w, f, err)
+			return
+		}
+		writeJSON(w, defaultModelsSnapshot(f, v))
+	default:
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
+	}
+}
+
+type defaultModelsAnswer struct {
+	Codex  *string `json:"codex_default_model"`
+	Claude *string `json:"claude_default_model"`
+}
+
+func defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModelsAnswer {
+	snapshot := settingsSnapshot(f, v)
+	return defaultModelsAnswer{Codex: snapshot.CodexDefaultModel, Claude: snapshot.ClaudeDefaultModel}
 }
 
 type settingsRefusal struct{ code, message string }

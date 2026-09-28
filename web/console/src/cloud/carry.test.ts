@@ -207,6 +207,8 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
     ["GET", "/v1/capacity"],
+    ["GET", "/v1/settings/default-models"],
+    ["POST", "/v1/settings/default-models"],
     ["GET", "/v1/machine/usage"],
     ["GET", "/v1/verifications"],
     ["GET", "/v1/verifications/v1"],
@@ -241,7 +243,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   // 64, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
-  // compaction comparison, the seven verification words, the Settings page's capacity read, the three words that
+  // compaction comparison, the seven verification words, the Settings page's capacity read and two default-model words, the three words that
   // offer back the sessions a reboot took away, the live screen, and the machine dashboard's read. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
@@ -250,6 +252,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
   assert.ok("capacity" in CARRIED)
+  assert.ok("default-models" in CARRIED)
+  assert.ok("default-models-update" in CARRIED)
   assert.ok("machine-usage" in CARRIED)
   assert.ok("verification.delete" in CARRIED)
   assert.ok("restore-sessions" in CARRIED)
@@ -263,7 +267,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("archive-session" in CARRIED)
   assert.ok("archived-sessions" in CARRIED)
   assert.ok("restore-archived" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 93)
+  assert.equal(Object.keys(CARRIED).length, 95)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -663,4 +667,13 @@ test("the capacity block's read is carried, so the block a capacity push names o
   assert.deepEqual(asked, [["GET", "/v1/capacity"]], "the block's read is no longer spelled where this test looks")
   assert.equal(writeRoute("GET", "/v1/capacity")?.word, "capacity")
   assert.ok("capacity" in CARRIED)
+})
+
+test("the default-model block stays visible on Cloud and asks only its narrow route", () => {
+  const block = readFileSync(resolve(console_, "src/pages/settings/DefaultModelsBlock.tsx"), "utf8")
+  const api = readFileSync(resolve(console_, "src/pages/settings/api.ts"), "utf8")
+  assert.doesNotMatch(block, /followsRelay|return null/, "a hosted Settings page must not hide the model controls")
+  assert.match(api, /const path = "\/v1\/settings\/default-models"/)
+  assert.equal(writeRoute("GET", "/v1/settings/default-models")?.word, "default-models")
+  assert.equal(writeRoute("POST", "/v1/settings/default-models")?.word, "default-models-update")
 })
