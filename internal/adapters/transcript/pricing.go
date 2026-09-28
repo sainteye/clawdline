@@ -75,11 +75,12 @@ type Model struct {
 	Command string
 }
 
-// ClaudeModels are the models Claude Code answers `/model` with by alias. There
-// is no file to read these from, so this is the Swift app's table as it is.
+// ClaudeModels are the four moving aliases Claude Code accepts. They are kept
+// here for transcript parsing; the settings picker uses claudeModels so its
+// versioned rows follow the installed Claude Code catalog.
 var ClaudeModels = []Model{
-	{ID: "claude-fable-5", Name: "Fable 5", Command: "fable"},
-	{ID: "claude-opus-5", Name: "Opus 5", Command: "opus"},
+	{ID: "claude-fable-5-1", Name: "Fable 5.1", Command: "fable"},
+	{ID: "claude-opus-5-5", Name: "Opus 5.5", Command: "opus"},
 	{ID: "claude-sonnet-5", Name: "Sonnet 5", Command: "sonnet"},
 	{ID: "claude-haiku-4-5", Name: "Haiku 4.5", Command: "haiku"},
 }
@@ -122,7 +123,7 @@ func CodexModels(home string) []Model {
 func Models(home, assistant string) []Model {
 	switch assistant {
 	case "claude":
-		return ClaudeModels
+		return claudeModels(home, claudeExecutable(home))
 	case "codex":
 		return CodexModels(home)
 	}
