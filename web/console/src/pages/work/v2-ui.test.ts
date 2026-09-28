@@ -129,9 +129,10 @@ test("assigned work can remind its current Session from the Board card", () => {
   assert.match(source, /!!item\.owner_session && !item\.closed_at/)
 })
 
-test("Board cards show the same lifecycle milestones as their owning Session", () => {
+test("started Board cards show the same lifecycle milestones as their owning Session", () => {
   const milestones = readFileSync(new URL("./WorkMilestones.tsx", import.meta.url), "utf8")
   assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
+  assert.match(milestones, /if \(!workMilestonesShown\(phase\)\) return null/)
   assert.match(milestones, /className="work-milestones"/)
   assert.match(milestones, /aria-label="項目進度"/)
   assert.match(styles, /\.work-milestones li\[data-state="done"\]/)

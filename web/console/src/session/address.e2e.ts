@@ -16,12 +16,13 @@ import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const dist = resolve(dirname(fileURLToPath(import.meta.url)), "../../dist")
+const shots = process.env.CLAWDLINE_SHOTS || ""
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 // Pane ids of three digits are spelled in pieces: tools/check-private.sh reads
@@ -474,8 +475,21 @@ class Tab {
     return result.value
   }
 
+  /** One real keyboard press through Chrome, including its native focus order. */
+  async key(key: string): Promise<void> {
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyDown", key }, this.session)
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", key }, this.session)
+  }
+
   seen(): Promise<Seen> {
     return this.run(PROBE)
+  }
+
+  /** An optional browser picture for layout evidence. */
+  async shot(name: string): Promise<void> {
+    if (!shots) return
+    const { data } = await this.b.send("Page.captureScreenshot", { format: "png" }, this.session)
+    writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
   }
 
   /** Until the page shows what `ok` wants, or a timeout that says what it showed instead. */
@@ -1202,8 +1216,9 @@ test("phone: a new Board item opens without the keyboard and in readable type", 
     await tab.run(`document.querySelector('.work-new-modal [aria-label="關閉"]').click()`)
   }))
 
-test("phone: the Board shortcut keeps a new item open for assignment", () =>
-  inTab(PHONE, async (tab) => {
+test("phone and desktop: the Board shortcut keeps a new item open for assignment", async () => {
+  for (const [label, size] of [["phone", PHONE], ["desktop", DESK]] as const) {
+    await inTab(size, async (tab) => {
     createdWork = null
     await tab.go("/")
     await tab.until("the list arrives", (s) => s.rows === ROWS.length)
@@ -1236,14 +1251,16 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       const read = () => {
         const modal = document.querySelector(".work-created-modal")
         const card = modal?.querySelector(".work-v2-card")
-        if (card) return resolve({
+        const roles = card?.querySelector(".work-new-persona")
+        if (card && roles?.querySelectorAll(".chip").length === ${PERSONAS.length + 1}) return resolve({
           fits: (() => {
-            // Every edge the person sees stays inside the phone's width: the
+            // Every edge the person sees stays inside the viewport: the
             // panel, and each control of the assignment row inside the panel.
             // The role chips scroll sideways within their own row, so the row
             // is measured, not the chips it has scrolled out of view.
             const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
-            const roles = card.querySelector(".work-new-persona")
+            const firstRole = roles?.firstElementChild?.getBoundingClientRect()
+            const roleRow = roles?.getBoundingClientRect()
             const outside = [...card.querySelectorAll(".work-assignment > button, .work-assignment > .work-new-session")]
               .map((el) => el.getBoundingClientRect())
               .filter((box) => box.left < panel.left - 0.5 || box.right > panel.right + 0.5)
@@ -1253,12 +1270,14 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
               controlsOutsidePanel: outside.length,
               personaChips: roles.querySelectorAll(".chip").length,
               rolesScrollSideways: roles.scrollWidth > roles.clientWidth,
+              roleEdgeRoom: firstRole && roleRow ? Math.round(firstRole.left - roleRow.left) : 0,
             }
           })(),
           title: card.querySelector("h3")?.textContent,
           picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
           actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
           focus: document.activeElement?.getAttribute("aria-label"),
+          progressBeforeStart: !!card.querySelector(".work-milestones"),
           sessionsPage: !document.getElementById("app").hidden,
           boardPage: !document.getElementById("work").hidden,
         })
@@ -1268,12 +1287,23 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       read()
     })`)
     assert.deepEqual(card, {
-      fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1, rolesScrollSideways: true },
+      fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1,
+        rolesScrollSideways: true, roleEdgeRoom: 7 },
       title: "Shortcut-created work",
       picker: "選擇既有 Session",
       actions: ["指派", "開新 Codex Session"],
       focus: "指派既有 Session",
+      progressBeforeStart: false,
       sessionsPage: true,
       boardPage: false,
     })
-  }))
+    const keyboard: string[] = []
+    for (let index = 0; index < 3; index++) {
+      await tab.key("Tab")
+      keyboard.push(await tab.run(`document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim()`))
+    }
+    assert.deepEqual(keyboard, ["Codex", "Claude Code", "不指定"], `${label} keyboard order`)
+    await tab.shot(`board-assignment-roles-${label}`)
+    })
+  }
+})

@@ -963,10 +963,10 @@ test("the Board assignment picker explains a Session before assignment", () =>
               return setTimeout(() => {
                 const button = again.getBoundingClientRect()
                 const list = card.querySelector('.work-session-menu')?.getBoundingClientRect()
-                const picker = card.querySelector('.work-session-picker').getBoundingClientRect()
-                const progress = card.querySelector('.work-milestones').getBoundingClientRect()
+                const progress = card.querySelector('.work-milestones')
+                const startedProgress = document.querySelector('[data-work-id="header-fixture"] .work-milestones')
                 resolve({ menu, detail: text, gap: list ? list.top - button.bottom : null,
-                  pickerAboveProgress: picker.top < progress.top })
+                  progressBeforeStart: !!progress, startedProgress: !!startedProgress })
               }, 50)
             }
             if (Date.now() >= deadline) return reject(new Error('the selected Session detail did not arrive: ' + text))
@@ -988,7 +988,8 @@ test("the Board assignment picker explains a Session before assignment", () =>
     assert.match(shown.detail, /Repair the previous release/)
     assert.ok(shown.gap !== null && Math.abs(shown.gap - 6) <= 1,
       `the reopened menu was ${shown.gap}px below its button, not 6`)
-    assert.ok(shown.pickerAboveProgress, "the Session picker sat below the item's progress")
+    assert.equal(shown.progressBeforeStart, false, "an unstarted item showed implementation progress")
+    assert.equal(shown.startedProgress, true, "an implementing item lost its progress")
     await tab.shot("board-session-assignment")
   }))
 
