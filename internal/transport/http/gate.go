@@ -297,7 +297,7 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 				writeAuthRefusal(w, status, code, msg)
 				return
 			}
-			if !jsonOrNothing(r) {
+			if !gateEvidenceBody(r) && !jsonOrNothing(r) {
 				writeAuthRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
 					"A change is sent as application/json.")
 				return
@@ -395,11 +395,21 @@ func taskSecretRoute(method, p string) bool {
 	case http.MethodPost:
 		return strings.HasSuffix(p, "/complete") || strings.HasSuffix(p, "/notify") ||
 			strings.HasSuffix(p, "/landing") || strings.HasSuffix(p, "/progress") ||
-			strings.HasSuffix(p, "/accepted") || strings.HasSuffix(p, "/verification-note")
+			strings.HasSuffix(p, "/accepted") || strings.HasSuffix(p, "/verification-note") ||
+			strings.HasSuffix(p, "/gate-evidence") || strings.HasSuffix(p, "/gate-result")
 	case http.MethodGet:
 		return strings.HasSuffix(p, "/inflight")
 	}
 	return false
+}
+
+// gateEvidenceBody is the one changing body that is intentionally not JSON:
+// its exact bytes are the evidence artifact and its Content-Type is persisted
+// in the receipt. The custom task-secret and metadata headers force a browser
+// preflight; the handler authenticates that secret before storing any bytes.
+func gateEvidenceBody(r *http.Request) bool {
+	return r.Method == http.MethodPost && strings.HasPrefix(routePath(r), "/v1/orchestrator/tasks/") &&
+		strings.HasSuffix(routePath(r), "/gate-evidence")
 }
 
 // writePolicy is the capability each changing route needs, for the routes

@@ -84,6 +84,10 @@ type draft struct {
 	AutoCompactWindow json.RawMessage `json:"auto_compact_window"`
 	// Persona is raw for the same reason ReasoningEffort is.
 	Persona json.RawMessage `json:"persona"`
+	// VerificationGate is present only on a broker-created immutable checker
+	// task. It is decoded with a closed schema after the ordinary brief fields
+	// have been admitted.
+	VerificationGate json.RawMessage `json:"verification_gate"`
 }
 
 // admitPersona reads `persona`: a built-in persona id, or nothing. A name
@@ -332,6 +336,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if kind == "" {
 		kind = "custom"
 	}
+	gate, err := admitGateOrigin(d.VerificationGate, kind, d.Assistant, isolation, claims)
+	if err != nil {
+		return Record{}, err
+	}
 	title := strings.TrimSpace(d.Title)
 	if reason := work.OutcomeTitleRefusal(title); reason != "" {
 		return bad("title: " + reason)
@@ -357,6 +365,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		AutoCompactRequested: compact,
 		WorkID:               workID,
 		Graph:                graph,
+		Gate:                 gate,
 		State:                StateQueued,
 	}, nil
 }

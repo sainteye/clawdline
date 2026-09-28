@@ -44,6 +44,10 @@ CREATE INDEX IF NOT EXISTS broker_tasks_project ON broker_tasks(repository, crea
 CREATE INDEX IF NOT EXISTS broker_tasks_state ON broker_tasks(state);
 CREATE INDEX IF NOT EXISTS broker_tasks_landing ON broker_tasks(json_extract(record, '$.landing.state'))
   WHERE json_valid(record);
+CREATE TABLE IF NOT EXISTS broker_gate_respawns (
+  family_id TEXT PRIMARY KEY,
+  task_id   TEXT NOT NULL UNIQUE
+);
 CREATE TABLE IF NOT EXISTS broker_notes (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT    NOT NULL,
@@ -81,6 +85,10 @@ type BrokerRow struct {
 	// or decodes it. Nil on a row read without it (the beat's, the list's);
 	// on a write, each field present is stored and an empty one removed.
 	Texts map[string]string
+	// GateRespawnFamily is set only while creating a verification-gate
+	// descendant. Its separate unique ledger makes the one-descendant rule
+	// survive concurrent requests and daemon restarts.
+	GateRespawnFamily string
 }
 
 // ErrNoTask is "this store has never heard of that id". It is distinct from a
@@ -92,6 +100,10 @@ var ErrNoTask = errors.New("no such task")
 // dispatch that could not read the row it collided with must not be able to
 // write over it (docs/design-decisions.md D05 ②).
 var ErrTaskExists = errors.New("a task with that id is already stored")
+
+// ErrGateRespawnExists is a verification-gate family whose one persistent
+// descendant has already been admitted.
+var ErrGateRespawnExists = errors.New("a verification gate already has a respawn descendant")
 
 // openBroker creates the broker's tables. Called from Open, once.
 func openBroker(db *sql.DB) error {
@@ -224,6 +236,20 @@ func (s *Store) CreateBrokerTaskTx(ctx context.Context, row BrokerRow, events []
 			return 0, nil
 		}
 		changed := int64(1)
+		if row.GateRespawnFamily != "" {
+			res, err := tx.ExecContext(ctx,
+				`INSERT INTO broker_gate_respawns (family_id, task_id) VALUES (?, ?) ON CONFLICT DO NOTHING`,
+				row.GateRespawnFamily, row.ID)
+			if err != nil {
+				return 0, err
+			}
+			if n, err := res.RowsAffected(); err != nil {
+				return 0, err
+			} else if n == 0 {
+				return 0, ErrGateRespawnExists
+			}
+			changed++
+		}
 		if row.Texts != nil {
 			n, err := writeTexts(ctx, tx, row.ID, row.Texts)
 			if err != nil {

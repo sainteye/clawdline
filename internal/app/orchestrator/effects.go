@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -393,6 +394,7 @@ type worktreeEffect struct {
 	Path       string `json:"path"`
 	Branch     string `json:"branch"`
 	Base       string `json:"base"`
+	Detached   bool   `json:"detached,omitempty"`
 }
 
 // runWorktree makes the checkout, or finds it already made — the branch at
@@ -411,12 +413,32 @@ func runWorktree(ctx context.Context, b *Broker, e store.Effect) effectResult {
 		return out
 	}
 	if dirExists(w.Path) {
+		if w.Detached {
+			if entries, err := b.Git.Worktrees(ctx, w.Repository); err == nil {
+				for _, entry := range entries {
+					if filepath.Clean(entry.Path) == filepath.Clean(w.Path) && entry.Detached && entry.Head == w.Base {
+						return effectResult{state: store.EffectDone, outcome: "already there",
+							events: []store.Event{{Kind: "task.worktree.added", Subject: e.Subject, Payload: payload(map[string]any{"already": true})}}}
+					}
+				}
+			}
+			return effectResult{state: store.EffectFailed, outcome: "the detached checkout path is taken by something else",
+				events: []store.Event{{Kind: "task.worktree.failed", Subject: e.Subject, Payload: payload(nil)}}}
+		}
 		if exists, known := b.Git.BranchExists(ctx, w.Repository, w.Branch); known && exists {
 			return effectResult{state: store.EffectDone, outcome: "already there",
 				events: []store.Event{{Kind: "task.worktree.added", Subject: e.Subject, Payload: payload(map[string]any{"already": true})}}}
 		}
 		return effectResult{state: store.EffectFailed, outcome: "the checkout path is taken by something else",
 			events: []store.Event{{Kind: "task.worktree.failed", Subject: e.Subject, Payload: payload(nil)}}}
+	}
+	if w.Detached {
+		if err := b.Git.AddDetachedWorktree(ctx, w.Repository, w.Path, w.Base); err != nil {
+			return effectResult{state: store.EffectFailed, outcome: err.Error(),
+				events: []store.Event{{Kind: "task.worktree.failed", Subject: e.Subject, Payload: payload(map[string]any{"error": err.Error()})}}}
+		}
+		return effectResult{state: store.EffectDone, outcome: "added",
+			events: []store.Event{{Kind: "task.worktree.added", Subject: e.Subject, Payload: payload(nil)}}}
 	}
 	if err := b.Git.AddWorktree(ctx, w.Repository, w.Path, w.Branch, w.Base); err != nil {
 		return effectResult{state: store.EffectFailed, outcome: err.Error(),

@@ -2,6 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 const (
@@ -71,6 +77,87 @@ func brokerAt(t *testing.T, status int, body string, seen *asked) int {
 	u, _ := url.Parse(srv.URL)
 	port, _ := strconv.Atoi(u.Port())
 	return port
+}
+
+func testServerPort(t *testing.T, handler http.Handler) int {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	port, _ := strconv.Atoi(u.Port())
+	return port
+}
+
+func TestTaskGateEvidenceStreamsExactBytesAndRequiresDurableReceipt(t *testing.T) {
+	dir := acceptTestDir(t)
+	body := []byte("focused test output\n")
+	file := filepath.Join(t.TempDir(), "focused.log")
+	if err := os.WriteFile(file, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(body)
+	hexDigest := hex.EncodeToString(digest[:])
+	port := testServerPort(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/orchestrator/tasks/"+taskTestID+"/gate-evidence" ||
+			r.Header.Get("X-Clawdline-Task-Secret") != taskTestSecret ||
+			r.Header.Get("X-Clawdline-Artifact-ID") != "focused-log" || r.Header.Get("Content-Type") != "text/plain" ||
+			r.Header.Get("X-Clawdline-Content-SHA256") != hexDigest || r.Header.Get("X-Clawdline-Byte-Count") != strconv.Itoa(len(body)) ||
+			!bytes.Equal(got, body) || !strings.HasPrefix(r.Header.Get("Idempotency-Key"), "gate-evidence-") {
+			t.Errorf("bad gate evidence request: %s %s headers=%v body=%q", r.Method, r.URL.Path, r.Header, got)
+		}
+		_ = json.NewEncoder(w).Encode(contract.WorkGateEvidenceReceipt{
+			AcceptedAt: 42, ArtifactID: "focused-log", ByteCount: int64(len(body)), MediaType: "text/plain", Sha256: hexDigest, TaskID: taskTestID,
+		})
+	}))
+	var out, errs bytes.Buffer
+	if code := submitGateEvidence(&out, &errs, dir, file, "focused-log", "text/plain", taskTestSecret, port, http.DefaultClient); code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out.String(), errs.String())
+	}
+	if !strings.Contains(out.String(), "gate evidence focused-log accepted") || strings.Contains(out.String()+errs.String(), taskTestSecret) {
+		t.Fatalf("said: %s %s", out.String(), errs.String())
+	}
+}
+
+func TestTaskGateResultSendsExactClosedVerdictAndFailsClosedOffline(t *testing.T) {
+	dir := acceptTestDir(t)
+	body := []byte(`{"round_id":"a7111111-1111-4111-8111-111111111111","task_id":"` + taskTestID + `","candidate_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","candidate_tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","criteria_version":1,"criteria_digest":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","verdict":"PASS","claims":[{"criterion":"focused check","state":"passed","evidence":["passed"],"evidence_artifacts":[],"reason":""}],"summary":"verified"}`)
+	file := filepath.Join(t.TempDir(), "verdict.json")
+	if err := os.WriteFile(file, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(body)
+	hexDigest := hex.EncodeToString(digest[:])
+	port := testServerPort(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ := io.ReadAll(r.Body)
+		if r.Header.Get("X-Clawdline-Task-Secret") != taskTestSecret || r.Header.Get("Content-Type") != "application/json" ||
+			!bytes.Equal(got, body) || !strings.HasPrefix(r.Header.Get("Idempotency-Key"), "gate-result-") {
+			t.Errorf("bad gate result request: headers=%v body=%q", r.Header, got)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(contract.WorkGateResultReceipt{
+			AcceptedAt: 42, TaskID: taskTestID, ByteCount: int64(len(body)), Sha256: hexDigest, Verdict: contract.WorkGateVerdictPASS,
+		})
+	}))
+	var out, errs bytes.Buffer
+	if code := submitGateResult(&out, &errs, dir, file, taskTestSecret, port, http.DefaultClient); code != 0 {
+		t.Fatalf("exit %d: %s %s", code, out.String(), errs.String())
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	offlinePort := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+	out.Reset()
+	errs.Reset()
+	if code := submitGateResult(&out, &errs, dir, file, taskTestSecret, offlinePort, http.DefaultClient); code != 1 {
+		t.Fatalf("offline exit %d: %s %s", code, out.String(), errs.String())
+	}
+	if !strings.Contains(errs.String(), "Nothing local counts") && !strings.Contains(errs.String(), "cannot finish this gate") {
+		t.Fatalf("offline result did not fail closed: %s", errs.String())
+	}
 }
 
 // The command publishes the result and asks the broker to collect it, with

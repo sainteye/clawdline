@@ -26,6 +26,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // Protocol is the version written into every task.json and read back out of
@@ -134,6 +135,24 @@ type Worktree struct {
 	Branch     string `json:"branch"`
 	Base       string `json:"base"`
 	Head       string `json:"head,omitempty"`
+	Detached   bool   `json:"detached,omitempty"`
+}
+
+const TaskKindVerificationGate = "verification_gate"
+
+// GateOrigin is the immutable authority a verification checker was admitted
+// against. A respawn preserves the round, candidate, criteria and base while
+// the broker advances only its attempt and records the persistent family id.
+type GateOrigin struct {
+	Origin     string                            `json:"origin"`
+	RoundID    string                            `json:"round_id"`
+	Attempt    int                               `json:"attempt"`
+	BaseCommit string                            `json:"base_commit"`
+	Acceptance contract.WorkGateAcceptance       `json:"acceptance"`
+	Candidate  contract.WorkGateCandidateReceipt `json:"candidate"`
+	// FamilyID is set only on a respawned record. The store uses it to admit
+	// one descendant persistently even when two respawn requests race.
+	FamilyID string `json:"family_id,omitempty"`
 }
 
 // RootRef is the session this task was dispatched by.
@@ -389,6 +408,10 @@ type Record struct {
 	// Graph is the task graph this task is a node of, `current_node` naming
 	// which (graphs.go). Nil for a task that is no graph's.
 	Graph *Graph `json:"graph,omitempty"`
+	// Gate is present only on verification_gate tasks and freezes the exact
+	// round, candidate, acceptance digest and base the checker is allowed to
+	// speak for.
+	Gate *GateOrigin `json:"verification_gate,omitempty"`
 
 	// LeaseScope is `shared` or `worktree`, fixed at dispatch. Empty on a
 	// record written before it existed; Scope reads those.
@@ -557,6 +580,9 @@ func (r Record) Brief() taskdir.Brief {
 		TimeoutMinutes: r.TimeoutMinutes,
 		CreatedAt:      r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		WorkID:         r.WorkID,
+	}
+	if r.Gate != nil {
+		b.VerificationGate, _ = json.Marshal(r.Gate)
 	}
 	// Kept in the file for a respawn, which copies it: a retried half of a
 	// comparison has to run with the same window.

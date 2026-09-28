@@ -178,6 +178,10 @@ type Broker struct {
 	// the strongest evidence that the loop stopped.
 	mu         sync.Mutex
 	dispatches []time.Time
+	// gateMu serializes one daemon's filesystem admissions so two uploads
+	// cannot both count the same last artifact slot. Durability and respawn
+	// concurrency are enforced separately on disk and in SQLite.
+	gateMu sync.Mutex
 	// decoded is every record this broker has decoded, by id and version, so
 	// a list that is asked for every two seconds decodes only the rows that
 	// changed since it last looked (G33). It is replaced wholesale by each
@@ -189,6 +193,9 @@ type Broker struct {
 	// CLAWDLINE_NEXT_OUTBOX_FAULT, so "the process died after the commit and
 	// before the effect" can be made to happen on the real daemon.
 	EffectFault func(point string, e store.Effect)
+	// GateFault is the failure-injection seam between durable checker bytes
+	// and their response/settlement. Production leaves it nil.
+	GateFault func(point string) error
 	// spawning holds the plaintext secret between admitting a task and typing
 	// it into the child. It is in memory only and is dropped the moment the
 	// briefing is typed: the hash on disk is what authenticates the child
@@ -516,17 +523,22 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string, effect
 	payload, _ := json.Marshal(map[string]any{"state": r.State, "task": r.ID})
 	record, texts := r.stored()
 	at := b.now()
+	gateFamily := ""
+	if r.Gate != nil && r.RespawnOf != "" {
+		gateFamily = r.Gate.FamilyID
+	}
 	ids, err := b.Store.CreateBrokerTaskTx(ctx, store.BrokerRow{
-		ID:         r.ID,
-		Project:    r.ProjectDir,
-		Repository: r.Repository,
-		Assistant:  r.Assistant,
-		State:      string(r.State),
-		CreatedAt:  r.CreatedAt,
-		UpdatedAt:  b.now(),
-		SecretHash: secretHash,
-		Record:     record,
-		Texts:      texts,
+		ID:                r.ID,
+		Project:           r.ProjectDir,
+		Repository:        r.Repository,
+		Assistant:         r.Assistant,
+		State:             string(r.State),
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         b.now(),
+		SecretHash:        secretHash,
+		Record:            record,
+		Texts:             texts,
+		GateRespawnFamily: gateFamily,
 	}, []store.Event{{Kind: "task.queued", Subject: r.ID, Payload: payload}}, effects,
 		// Its root's to-do is made with it: a task nobody is reminded of is
 		// the one that finishes into silence (todos.go).
@@ -535,6 +547,10 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string, effect
 		return nil, refuseWith(http.StatusConflict, "task_exists",
 			"A task with this id was stored while this dispatch was being admitted; nothing was written over it.",
 			map[string]any{"task": r.ID})
+	}
+	if errors.Is(err, store.ErrGateRespawnExists) {
+		return nil, refuse(http.StatusConflict, "gate_respawn_exhausted",
+			"This verification gate family already has its one allowed respawn descendant.")
 	}
 	if err != nil {
 		return nil, storeError(err)

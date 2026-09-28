@@ -54,6 +54,14 @@ func (g *Git) AddWorktree(ctx context.Context, repo, path, branch, base string) 
 	return err
 }
 
+// AddDetachedWorktree creates a checkout pinned to an exact commit and no
+// movable branch. Verification checkers use it so repository HEAD movement
+// after admission cannot change what they inspect.
+func (g *Git) AddDetachedWorktree(ctx context.Context, repo, path, commit string) error {
+	_, err := g.run(ctx, repo, "worktree", "add", "--detach", path, commit)
+	return err
+}
+
 // RemoveWorktree takes a checkout away, leaving the branch.
 func (g *Git) RemoveWorktree(ctx context.Context, repo, path string) error {
 	_, err := g.run(ctx, repo, "worktree", "remove", "--force", path)
