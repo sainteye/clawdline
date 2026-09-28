@@ -453,6 +453,22 @@ export function SettingsWindow() {
           <Row label={W.settingsFollow} hint={W.settingsFollowHint}>
             <Switch label={W.settingsFollow} on={!!now("follow_target")} onChange={flip("follow_target")} />
           </Row>
+          <Row label={W.settingsCodexDefaultModel} hint={W.settingsDefaultModelHint}>
+            <MemoField
+              label={W.settingsCodexDefaultModel}
+              value={String(now("codex_default_model"))}
+              example={W.settingsProviderDefault}
+              onCommit={(value) => void change({ codex_default_model: value })}
+            />
+          </Row>
+          <Row label={W.settingsClaudeDefaultModel} hint={W.settingsDefaultModelHint}>
+            <MemoField
+              label={W.settingsClaudeDefaultModel}
+              value={String(now("claude_default_model"))}
+              example={W.settingsProviderDefault}
+              onCommit={(value) => void change({ claude_default_model: value })}
+            />
+          </Row>
           <Row label={W.settingsCodexAutoName} hint={W.settingsCodexAutoNameHint}>
             <PopUp
               label={W.settingsCodexAutoName}

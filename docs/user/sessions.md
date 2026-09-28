@@ -92,6 +92,15 @@ You can also press the microphone in the header (**說要開什麼**, say what t
 task; Clawdline drafts the project, assistant, model and first message, and nothing starts until you
 press **開始** (start).
 
+**設定** (Settings) → **新 session 的預設模型** sets separate machine-wide defaults for Codex and
+Claude Code. Leave either field empty to let that assistant choose. The setting applies only when
+Clawdline opens a new session without another model choice; a model chosen for one session still
+wins, and resuming an existing conversation does not change its model.
+The same setting is available without a browser as
+`clawdline setting set codex_default_model gpt-6-sol` (or
+`claude_default_model claude-opus-5-5`); use `default` as the value to hand the choice back to the
+assistant.
+
 ## Stop the current turn
 
 **⋯** → **停止目前的工作（Esc）** sends Esc to the session's terminal. The session stops the turn it

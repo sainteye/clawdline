@@ -15,6 +15,7 @@ import { legacyState } from "../legacy/overlay-bridge.js"
 import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
+import { DefaultModelsBlock } from "./settings/DefaultModelsBlock.js"
 import { nextWord } from "../next-strings.js"
 import {
   DEFAULT_FONT_SCALE,
@@ -224,6 +225,8 @@ function SettingsPage({ shown }: { shown: boolean }) {
         <h2 id="settings-title">{T.webSettings}</h2>
 
         <ShellBlocks shown={shown} />
+
+        <DefaultModelsBlock shown={shown} />
 
         <div className="block">
           <b id="settings-notify-title">{T.webSettingsNotify}</b>

@@ -140,10 +140,10 @@ type LaunchRequest struct {
 	// assistant: a brief that asked for it and got a session without it would
 	// have been answered yes to something that did not happen.
 	ReasoningEffort string
-	// Language is Claude Code's `language` setting (claude_language.go), empty
-	// to leave the session as Claude Code starts it. It is one of the names
-	// ClaudeLanguage answers and nothing else, and a Claude setting: Codex is
-	// refused one as Claude is refused a reasoning effort.
+	// Language is Claude Code's `language` setting, or the BCP 47 tag used in
+	// Codex's Board-item instruction. Empty leaves the assistant as it starts.
+	// Each is admitted from its own closed language mapper in
+	// claude_language.go.
 	Language string
 	// Persona is a built-in persona id (internal/domain/persona), empty for
 	// none. It is a closed list like the model and the language, and a name
@@ -182,9 +182,13 @@ var ErrUnknownPersona = errors.New("the persona is not one this machine knows")
 //     ~/.codex/config.toml for this session (docs/personas.md).
 func PersonaArgs(assistant string, p persona.Persona, path string) []string {
 	if assistant == AssistantCodex {
-		return []string{"-c", ShellQuoted("developer_instructions=" + TOMLString(persona.CodexInstruction(p, path)))}
+		return codexDeveloperArgs(persona.CodexInstruction(p, path))
 	}
 	return []string{"--append-system-prompt-file", ShellQuoted(path)}
+}
+
+func codexDeveloperArgs(instructions ...string) []string {
+	return []string{"-c", ShellQuoted("developer_instructions=" + TOMLString(strings.Join(instructions, "\n\n")))}
 }
 
 // TOMLString is value as a TOML basic string: quoted, with the backslash, the
@@ -251,16 +255,15 @@ func Admit(req LaunchRequest) (Launch, error) {
 		}
 	}
 	if req.Language != "" {
-		if req.Assistant != AssistantClaude {
-			return Launch{}, errors.Join(ErrInvalidLaunch,
-				errors.New("a response language is a Claude Code setting and this is not Claude Code"))
-		}
-		if !knownClaudeLanguage(req.Language) {
+		known := req.Assistant == AssistantClaude && knownClaudeLanguage(req.Language) ||
+			req.Assistant == AssistantCodex && CodexBoardLanguage(req.Language) == req.Language
+		if !known {
 			return Launch{}, errors.Join(ErrInvalidLaunch,
 				errors.New("the response language is not one this machine starts"))
 		}
 	}
 	var personaArgs []string
+	var codexInstructions []string
 	if req.Persona != "" {
 		p, ok := persona.Known(req.Persona)
 		if !ok {
@@ -270,7 +273,18 @@ func Admit(req LaunchRequest) (Launch, error) {
 			return Launch{}, errors.Join(ErrInvalidLaunch,
 				errors.New("the persona directory is not a safe absolute path"))
 		}
-		personaArgs = PersonaArgs(req.Assistant, p, filepath.Join(req.PersonaDir, persona.FileName(p.ID)))
+		path := filepath.Join(req.PersonaDir, persona.FileName(p.ID))
+		if req.Assistant == AssistantCodex {
+			codexInstructions = append(codexInstructions, persona.CodexInstruction(p, path))
+		} else {
+			personaArgs = PersonaArgs(req.Assistant, p, path)
+		}
+	}
+	if req.Assistant == AssistantCodex && req.Language != "" {
+		codexInstructions = append(codexInstructions, codexBoardLanguageInstruction(req.Language))
+	}
+	if len(codexInstructions) > 0 {
+		personaArgs = codexDeveloperArgs(codexInstructions...)
 	}
 	var args []string
 	// `resume` first: its value is optional to the CLI, so anything but the id
@@ -291,7 +305,7 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if req.ReasoningEffort != "" {
 		args = append(args, "--config", "model_reasoning_effort="+req.ReasoningEffort)
 	}
-	if req.Language != "" {
+	if req.Language != "" && req.Assistant == AssistantClaude {
 		args = append(args, claudeLanguageArgs(req.Language)...)
 	}
 	args = append(args, personaArgs...)

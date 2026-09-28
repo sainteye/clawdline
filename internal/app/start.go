@@ -33,10 +33,13 @@ type Starter struct {
 	// disk for a place (projects.Recorded). Only ResumeRecorded asks it; nil
 	// admits nothing beyond Past.
 	Recorded func(place projects.Place, assistant, id string) bool
-	// Language is Claude Code's response language for a session started with
-	// assistant (projects.ClaudeLanguage), or "" to leave it as Claude Code
-	// starts. Nil is "", which only a test wants.
+	// Language is the launch-time language instruction for assistant, or "" to
+	// leave it as the assistant starts. Nil is "", which only a test wants.
 	Language func(assistant string) string
+	// DefaultModel is the machine setting for a new session of assistant.
+	// It is consulted only when a new launch did not name a model; resumes and
+	// explicit per-session choices keep their own model. Nil is provider default.
+	DefaultModel func(assistant string) string
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.
 	PersonaDir string
@@ -48,6 +51,9 @@ type Started struct {
 	ID      string
 	Backend string
 	Attach  string
+	// Model is the explicit or machine-default model handed to the provider,
+	// empty when the provider was left to choose.
+	Model string
 }
 
 // StartRefusal is StartPoints.Outcome.refused: an HTTP status, the code a page
@@ -84,6 +90,9 @@ func (s Starter) Place(ctx context.Context, id string) (projects.Place, bool) {
 // Start is StartPoints.start(_:assistant:model:…resume:), with the persona
 // the session is launched as ("" for none).
 func (s Starter) Start(ctx context.Context, place projects.Place, assistant, model, resume, persona string) (Started, error) {
+	if model == "" && resume == "" && s.DefaultModel != nil {
+		model = s.DefaultModel(assistant)
+	}
 	language := ""
 	if s.Language != nil {
 		language = s.Language(assistant)
@@ -116,19 +125,19 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		if err != nil {
 			return Started{}, openRefusal(err, "iTerm2")
 		}
-		return Started{ID: id, Backend: "iterm"}, nil
+		return Started{ID: id, Backend: "iterm", Model: model}, nil
 	case projects.PlanTmux:
 		id, err := s.Launcher.NewTmuxWindow(ctx, place.Path, launch.ShellCommand())
 		if err != nil {
 			return Started{}, openRefusal(err, "")
 		}
-		return Started{ID: id, Backend: "tmux"}, nil
+		return Started{ID: id, Backend: "tmux", Model: model}, nil
 	case projects.PlanTmuxDetached:
 		id, err := s.Launcher.NewTmuxSession(ctx, place.Path, projects.TmuxStartedSessionName, launch.ShellCommand())
 		if err != nil {
 			return Started{}, openRefusal(err, "")
 		}
-		return Started{ID: id, Backend: "tmux", Attach: projects.TmuxAttachCommand()}, nil
+		return Started{ID: id, Backend: "tmux", Attach: projects.TmuxAttachCommand(), Model: model}, nil
 	case projects.PlanNotRunning:
 		return Started{}, unavailableTerminal(choice, runtime.GOOS)
 	default:

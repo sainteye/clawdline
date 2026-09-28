@@ -92,9 +92,9 @@ type Broker struct {
 	// side. Nil tells nobody.
 	RootAssignmentSettled func(ctx context.Context, a RootAssignment)
 	// ClaudeSetsLanguage is whether the person's own Claude Code settings
-	// already name a response language. When they do not, a Claude session
-	// this broker opens is given DisplayLanguage (ClaudeLanguage). Nil gives
-	// none, which only a test wants.
+	// already name a response language. When they do not, a Claude session this
+	// broker opens is given DisplayLanguage. Nil gives none, which only a test
+	// wants. Codex uses DisplayLanguage for its Board-item instruction instead.
 	ClaudeSetsLanguage func() bool
 	// TerminalCapabilities is what this machine's terminals can do —
 	// read_screen and send_keys — asked before a dispatch is admitted
@@ -157,6 +157,9 @@ type Broker struct {
 	// this broker opens is started with, 0 for none (compact.go). Nil is the
 	// setting's default, none.
 	AutoCompactWindow func() int64
+	// DefaultModel is the machine setting used when a new child, Root
+	// Assignment or handoff did not name a model. Nil leaves provider default.
+	DefaultModel func(assistant string) string
 	// ReclaimAuto lets the beat start a reclamation sweep every six hours
 	// (reclaim.go); ReclaimGrace is how long after a task ends its checkout
 	// and directory are left alone — zero is the default of twenty-four

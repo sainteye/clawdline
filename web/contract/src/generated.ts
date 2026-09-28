@@ -3977,6 +3977,35 @@ export interface PersonaNames {
   "zh-Hant": string
 }
 
+export type PersonaSuggestionOutcome =
+    "recommend"
+  | "ambiguous"
+
+export const PersonaSuggestionOutcomeValues: readonly PersonaSuggestionOutcome[] = ["recommend", "ambiguous"] as const
+
+export interface PersonaSuggestionReply {
+  ok: boolean
+  outcome: PersonaSuggestionOutcome
+
+  /**
+   * An exact id from GET /v1/personas for recommend; empty for ambiguous.
+   */
+  persona_id: string
+
+  /**
+   * The AI provider whose explicit Board-content consent covered this turn.
+   */
+  provider: string
+}
+
+export interface PersonaSuggestionRequest {
+  /**
+   * The item version whose title and description the person chose to send for
+   * classification.
+   */
+  expected_version: number
+}
+
 /**
  * A refusal from the start, resume and history routes: not_found, forbidden,
  * bad_request, invalid_launch, terminal_closed, terminal_unsupported,
@@ -6031,9 +6060,19 @@ export interface SettingsRequest {
   claude_auto_compact_window: number | null
 
   /**
+   * Empty, or a Claude Code model name used when a new Session does not name one.
+   */
+  claude_default_model: string | null
+
+  /**
    * Whether a new session is named by an assistant.
    */
   codex_auto_name: boolean | null
+
+  /**
+   * Empty, or a Codex model name used when a new Session does not name one.
+   */
+  codex_default_model: string | null
 
   /**
    * Whether the terminal selects the tab the bar points at.
@@ -6240,10 +6279,22 @@ export interface SettingsSnapshot {
   claude_auto_compact_window: number | null
 
   /**
+   * The model used for a new Claude Code session when that launch does not name
+   * one. Empty leaves the choice to Claude Code.
+   */
+  claude_default_model: string | null
+
+  /**
    * Whether a new session is named by an assistant. The Swift app's spelling, kept
    * so a line copied between the two files means the same thing.
    */
   codex_auto_name: boolean | null
+
+  /**
+   * The model used for a new Codex session when that launch does not name one.
+   * Empty leaves the choice to Codex.
+   */
+  codex_default_model: string | null
 
   /**
    * False before anything has been written. Every key then has the shell's default.

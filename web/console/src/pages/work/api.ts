@@ -1,5 +1,5 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
-import type { SessionsSnapshot, UsageItem, UsageSession } from "@clawdline/contract"
+import type { PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
 /**
@@ -479,6 +479,12 @@ export const assignNewWorkV2 = (item: WorkV2Item, assistant: "codex" | "claude",
     assistant,
     model: "default",
     ...(persona ? { persona } : {}),
+  })
+
+/** One explicit press; reading or rendering an item never calls this route. */
+export const suggestPersonaWorkV2 = (item: WorkV2Item) =>
+  decide<PersonaSuggestionReply>(`/v1/work/v2/items/${item.id}/persona-suggestion`, {
+    expected_version: item.version,
   })
 
 export const remindWorkV2 = (item: WorkV2Item) =>

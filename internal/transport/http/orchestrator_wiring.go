@@ -216,9 +216,23 @@ func newBroker(s *Server) *orchestrator.Broker {
 		ChildLinger: func() time.Duration { return brokerChildLinger(s) },
 		// Read at every launch, so a change restarts nothing (compact.go).
 		AutoCompactWindow: func() int64 { return brokerAutoCompactWindow(s) },
-		ReclaimAuto:       os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
-		ReclaimGrace:      reclaimGrace(),
+		// The same live-read rule as terminal and compaction: the next launch
+		// sees a saved default without restarting the daemon.
+		DefaultModel: func(assistant string) string { return brokerDefaultModel(s, assistant) },
+		ReclaimAuto:  os.Getenv("CLAWDLINE_NEXT_RECLAIM") != "off",
+		ReclaimGrace: reclaimGrace(),
 	}
+}
+
+// brokerDefaultModel reads one assistant's machine-wide launch default. A
+// broken or hand-edited invalid value is provider default, never a failed
+// launch; the settings route refuses such a value before it reaches the file.
+func brokerDefaultModel(s *Server, assistant string) string {
+	values, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		return ""
+	}
+	return nextconfig.DefaultModel(values, assistant)
 }
 
 // claudeSetsLanguage is whether the person's Claude Code settings file names a

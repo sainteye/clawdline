@@ -727,10 +727,10 @@ Go 版目前有對應本機功能的約 7 種（`docs/remote.md`）。**這一�
 出來的，2026-09-20 量到詞彙 37 個字、接上 28 個、其餘回具名的拒絕（8 個 `unknown_command`、
 `dispatch` 回 `cloud_dispatch_unpinned`），`Divergences()` 5 筆。
 
-As of 2026-09-23, the hosted Work v2 console carries seventeen explicit words. The read words are
+As of 2026-09-23, the hosted Work v2 console carries explicit words. The read words are
 `work.v2.item`, `work.v2.items`, `work.v2.search`, `work.v2.proposals`,
 `work.v2.session-todos`, and the binary `work.v2.image`; the person-only mutation words are
-`work.v2.create`, `work.v2.edit`, `work.v2.assign`, `work.v2.remind`, `work.v2.cancel`,
+`work.v2.create`, `work.v2.edit`, `work.v2.assign`, `work.v2.persona-suggestion`, `work.v2.remind`, `work.v2.cancel`,
 `work.v2.image-create`, `work.v2.image-delete`, `work.v2.proposal-resolve`,
 `work.v2.todo-create`, `work.v2.todo-image-create`, and `work.v2.todo-action`. Each mutation is
 routed with the paired-device actor marker and the viewer's
@@ -742,6 +742,13 @@ As of 2026-09-26 an eighteenth, `work.v2.complete`, carries the person's manual 
 way `work.v2.cancel` does: `{type, session, request, id, item}` routed to
 `POST /v1/work/v2/items/<id>/complete` with the paired-device marker, `item` being
 `{expected_version, note?}`.
+
+As of 2026-09-28, `work.v2.persona-suggestion` carries the explicit AI role-classification press as
+`{type, session, request, id, item:{expected_version}}` to
+`POST /v1/work/v2/items/<id>/persona-suggestion`. The request id remains its Idempotency-Key, and
+the paired-device actor marker means the machine applies the same send permission and Board AI
+consent as a browser on the machine. The item text is read by the local route after consent, never
+placed in the Cloud command envelope.
 
 As of 2026-09-26 the token bill crosses too, as three read words: `usage.session`, `usage.task` and
 `usage.item`, each `{type, session, request, id}` on the machine reply channel and routed to

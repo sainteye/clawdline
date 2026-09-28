@@ -185,6 +185,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: int64(largest), Note: "the largest persona's injected text"}
 		},
+		capacity.PersonaSuggestionContextBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-turn Board role-classification input; released with the turn"}
+		},
 		"icons.saved": func() capacity.Reading {
 			if s.icons == nil {
 				return capacity.Reading{Known: true, Note: "no icon registry attached"}

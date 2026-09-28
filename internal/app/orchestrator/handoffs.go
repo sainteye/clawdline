@@ -64,8 +64,11 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if b.Launcher == nil {
 		return openedSession{}, errors.New("this daemon cannot open a terminal")
 	}
+	if model == "" && b.DefaultModel != nil {
+		model = b.DefaultModel(assistant)
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model,
-		Language: b.ClaudeLanguage(assistant), Persona: persona, PersonaDir: b.PersonaDir()})
+		Language: b.SessionLanguage(assistant), Persona: persona, PersonaDir: b.PersonaDir()})
 	if err != nil {
 		return openedSession{}, err
 	}

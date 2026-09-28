@@ -194,6 +194,36 @@ func TestAdmitCarriesAPersona(t *testing.T) {
 	}
 }
 
+func TestCodexBoardLanguageAndPersonaShareOneDeveloperInstruction(t *testing.T) {
+	dir := "/personas"
+	architect, _ := persona.Known("architect")
+	l, err := Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex, Language: "zh-TW",
+		Persona: architect.ID, PersonaDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := shellWords(t, l.ShellCommand())
+	if count := strings.Count(strings.Join(words, "\n"), "developer_instructions="); count != 1 {
+		t.Fatalf("got %d developer instructions in %q", count, words)
+	}
+	i := index(words, "-c")
+	value, ok := strings.CutPrefix(words[i+1], "developer_instructions=")
+	if !ok {
+		t.Fatalf("Codex config is %q", words[i+1])
+	}
+	got, err := tomlBasic(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := persona.CodexInstruction(architect, filepath.Join(dir, "architect.md")); !strings.HasPrefix(got, want+"\n\n") {
+		t.Fatalf("persona is absent from %q", got)
+	}
+	if !strings.HasSuffix(got,
+		`Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag "zh-TW".`) {
+		t.Fatalf("Board language is absent from %q", got)
+	}
+}
+
 func TestAdmitRefusesAPersonaItCannotCarry(t *testing.T) {
 	for name, req := range map[string]LaunchRequest{
 		"unknown":      {ProjectRoot: "/p", Assistant: AssistantClaude, Persona: "wizard", PersonaDir: "/d"},

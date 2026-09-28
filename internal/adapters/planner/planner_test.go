@@ -204,6 +204,72 @@ func TestNamerUsesOnlyTheChosenAssistantAndNoTools(t *testing.T) {
 	}
 }
 
+func TestPersonaSuggesterUsesOneChosenAssistantWithoutTools(t *testing.T) {
+	request := PersonaRequest{Kind: "feature", Title: "改善手機版導覽", Description: "支援鍵盤操作",
+		Candidates: []PersonaCandidate{{ID: "frontend", Name: "Frontend Engineer", Summary: "Builds interfaces."},
+			{ID: "backend", Name: "Backend Engineer", Summary: "Builds services."}}}
+	for _, assistant := range []string{"claude", "codex"} {
+		t.Run(assistant, func(t *testing.T) {
+			runs := 0
+			p := Planner{Home: t.TempDir(), LookPath: func(name string) (string, error) { return "/fake/" + name, nil },
+				Run: func(_ context.Context, executable string, args []string, stdin, _ string, _ []string) ([]byte, error) {
+					runs++
+					if executable != "/fake/"+assistant {
+						t.Fatalf("used %q, want %q", executable, assistant)
+					}
+					joined := strings.Join(args, " ")
+					if assistant == "claude" {
+						if !hasEmptyTools(args) || !strings.Contains(joined, "--json-schema") || !strings.Contains(stdin, "改善手機版導覽") {
+							t.Fatalf("claude run = %q stdin=%q", joined, stdin)
+						}
+						return []byte(`{"structured_output":{"outcome":"recommend","persona_id":"frontend"}}`), nil
+					}
+					if !strings.Contains(joined, "agents.enabled=false") || !strings.Contains(joined, "web_search=\"disabled\"") ||
+						!strings.Contains(stdin, "<input_json>") || !strings.Contains(stdin, "改善手機版導覽") {
+						t.Fatalf("codex run = %q stdin=%q", joined, stdin)
+					}
+					for i := 0; i+1 < len(args); i++ {
+						if args[i] == "-o" {
+							if err := os.WriteFile(args[i+1], []byte(`{"outcome":"recommend","persona_id":"frontend"}`), 0o600); err != nil {
+								t.Fatal(err)
+							}
+							return nil, nil
+						}
+					}
+					t.Fatal("codex run had no output path")
+					return nil, nil
+				},
+			}
+			got, err := p.SuggestPersona(context.Background(), request, assistant)
+			if err != nil || got.Outcome != "recommend" || got.PersonaID != "frontend" || runs != 1 {
+				t.Fatalf("suggestion=%+v runs=%d err=%v", got, runs, err)
+			}
+		})
+	}
+}
+
+func TestPersonaSuggesterRejectsAnswersOutsideTheClosedCatalog(t *testing.T) {
+	request := PersonaRequest{Candidates: []PersonaCandidate{{ID: "frontend"}}}
+	for _, answer := range []string{
+		`{"outcome":"recommend","persona_id":"wizard"}`,
+		`{"outcome":"ambiguous","persona_id":"frontend"}`,
+		`{"outcome":"maybe","persona_id":"frontend"}`,
+	} {
+		p := Planner{Home: t.TempDir(), LookPath: func(string) (string, error) { return "/fake/codex", nil },
+			Run: func(_ context.Context, _ string, args []string, _, _ string, _ []string) ([]byte, error) {
+				for i := 0; i+1 < len(args); i++ {
+					if args[i] == "-o" {
+						return nil, os.WriteFile(args[i+1], []byte(answer), 0o600)
+					}
+				}
+				return nil, errors.New("no output path")
+			}}
+		if got, err := p.SuggestPersona(context.Background(), request, "codex"); err == nil {
+			t.Errorf("answer %s returned %+v", answer, got)
+		}
+	}
+}
+
 // A CLI whose account has no usage left says so and exits non-zero: Codex
 // only on stderr, Claude in its JSON result on stdout. Either is
 // ErrOutOfQuota, so the person is told to wait or switch assistants rather

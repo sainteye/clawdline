@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "persona-suggestions.schema.json",
+  "title": "One explicitly requested Board-role classification",
+  "description": "POST /v1/work/v2/items/{id}/persona-suggestion. One tool-less model turn chooses a persona from the machine's closed catalog or says the item is ambiguous. Opening or rendering a Board item never calls it.",
+  "$defs": {
+    "PersonaSuggestionOutcome": {
+      "type": "string",
+      "enum": ["recommend", "ambiguous"]
+    },
+    "PersonaSuggestionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_version"],
+      "properties": {
+        "expected_version": { "description": "The item version whose title and description the person chose to send for classification.", "type": "integer" }
+      }
+    },
+    "PersonaSuggestionReply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "outcome", "persona_id", "provider"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "outcome": { "$ref": "#/$defs/PersonaSuggestionOutcome" },
+        "persona_id": { "description": "An exact id from GET /v1/personas for recommend; empty for ambiguous.", "type": "string" },
+        "provider": { "description": "The AI provider whose explicit Board-content consent covered this turn.", "type": "string" }
+      }
+    }
+  }
+}

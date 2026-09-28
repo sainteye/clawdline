@@ -38,13 +38,19 @@ func displayLanguage(setting string, machine []whisper.Answer, catalog string) s
 	return "zh-Hant"
 }
 
-// ClaudeLanguage is the response language a session opened with assistant is
-// launched with (projects.ClaudeLanguage): DisplayLanguage, for Claude, unless
-// the person chose one in Claude Code's own settings. Read at every launch, so
-// changing either restarts nothing.
-func (b *Broker) ClaudeLanguage(assistant string) string {
-	if assistant != projects.AssistantClaude || b.ClaudeSetsLanguage == nil || b.ClaudeSetsLanguage() {
-		return ""
+// SessionLanguage is the language instruction a session opened with assistant
+// is launched with. Claude gets its response language unless the person chose
+// one in Claude Code's own settings; Codex gets the locale for the narrower
+// Board-item instruction. Read at every launch, so changing it restarts nothing.
+func (b *Broker) SessionLanguage(assistant string) string {
+	switch assistant {
+	case projects.AssistantClaude:
+		if b.ClaudeSetsLanguage == nil || b.ClaudeSetsLanguage() {
+			return ""
+		}
+		return projects.ClaudeLanguage(b.DisplayLanguage())
+	case projects.AssistantCodex:
+		return projects.CodexBoardLanguage(b.DisplayLanguage())
 	}
-	return projects.ClaudeLanguage(b.DisplayLanguage())
+	return ""
 }
