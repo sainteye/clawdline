@@ -893,6 +893,26 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/board", Query: query}
 			}},
 
+		op{name: "board-command",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "command") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				command, commandOK := b["command"].(map[string]any)
+				commandRequest, requestOK := requestName(command["requestId"])
+				document, documentOK := b.object("command", defaultModelsCloudBodyLimit)
+				if !ok || p.request == "" || !commandOK || !requestOK || commandRequest != p.request || !documentOK {
+					return plan{}, false
+				}
+				p.document = document
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/board",
+					Body: p.document, Header: asDevice()}
+			}},
+
 		// MARK: the work system, and what a person is looking at while it runs
 		//
 		// Five words, not one word with an `area` parameter, and the reason is
@@ -2457,8 +2477,9 @@ const scheduleMaximumBytes = 256 << 10
 // the route on the other side will read.
 const snippetMaximumBytes = 64 << 10
 
-// defaultModelsCloudBodyLimit matches the HTTP route's JSON body ceiling. It
-// bounds the one small object before the bridge copies it into a local request.
+// defaultModelsCloudBodyLimit matches the HTTP routes' 64 KiB JSON body
+// ceiling. It bounds the small Settings objects before the bridge copies them
+// into local requests: the two default-model changes and one Board command.
 const defaultModelsCloudBodyLimit = 64 << 10
 
 // pushBodyMaximumBytes is what one subscription weighs on the wire, matching

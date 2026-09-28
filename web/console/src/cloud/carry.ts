@@ -54,6 +54,7 @@ export const CARRIED = {
   agent: "GET /v1/sessions/{id}/agents/{agent}?limit=",
   answer: "POST /v1/sessions/{id}/key",
   board: "GET /v1/board?project=&item=",
+  "board-command": "POST /v1/board",
   // The capacity block on Settings (`pages/settings/CapacityBlock.tsx`), which
   // every capacity push names: a machine read with no parameter.
   capacity: "GET /v1/capacity",
@@ -318,11 +319,11 @@ export function uncarriedWordOf(method: string, path: string): string {
     return ""
   }
   const [head, a, b] = segments
-  // `/v1/snippets*`, `board`, `board.items` and `timeline` were all here until
+  // `/v1/snippets*`, `board`, `board-command`, `board.items` and `timeline` were all here until
   // this console began asking for them. What is carried is parsed once — by
   // the reader's own case and by `writeRoute` — and a second spelling of it
-  // here would be a second thing to keep right. A POST to `/v1/board` is an
-  // item write, which this daemon refuses by name at the route, so it is not a
+  // here would be a second thing to keep right. The Settings page's POST to
+  // `/v1/board` is parsed by `writeRoute` as `board-command`, so it is not a
   // word this table has to name either.
   if (head === "diagnostics" && a === "report") return "diagnostics.report"
   // The schedule list, single read and writes are carried, so they are parsed

@@ -235,6 +235,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/board",
 		query: map[string]string{"project": "clawdline-go"},
 	}, {
+		word: "board-command",
+		body: map[string]any{"type": "board-command", "session": machine, "request": "req-board-write",
+			"command": map[string]any{"operation": "set_ai_consent", "provider": "codex", "enabled": true,
+				"policy": "board-reading-v1", "expectedRevision": 4, "requestId": "req-board-write"}},
+		session: machine, name: "action:req-board-write",
+		method: "POST", path: "/v1/board",
+		body2: `{"enabled":true,"expectedRevision":4,"operation":"set_ai_consent","policy":"board-reading-v1","provider":"codex","requestId":"req-board-write"}`,
+	}, {
 		// The same path as board; the query shape is the whole difference, and
 		// the Swift app sends all four parameters every time.
 		word: "board.items",
@@ -1494,7 +1502,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
-		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
+		"board", "board-command", "board.items", "timeline", "projects", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "machine-usage", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
@@ -2244,6 +2252,38 @@ func TestDefaultModelsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 		}))
 		if bad.Code != "malformed_command" || len(r.seen) != 0 {
 			t.Fatalf("took changes %#v: %+v, asked %+v", changes, bad, r.seen)
+		}
+	}
+}
+
+func TestBoardSettingsCommandCrossesAsThePairedDevice(t *testing.T) {
+	command := map[string]any{
+		"operation": "set_ai_consent", "provider": "codex", "enabled": true,
+		"policy": "board-reading-v1", "expectedRevision": 4, "requestId": "board-setting-1",
+	}
+	r := &router{}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "board-command", "session": MachineReplySession, "request": "board-setting-1",
+		"command": command,
+	}))
+	if answer.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("write answered %+v, asked %+v", answer, r.seen)
+	}
+	got := r.last()
+	if got.Method != "POST" || got.Path != "/v1/board" ||
+		string(got.Body) != `{"enabled":true,"expectedRevision":4,"operation":"set_ai_consent","policy":"board-reading-v1","provider":"codex","requestId":"board-setting-1"}` ||
+		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "board-setting-1" {
+		t.Fatalf("write crossed incorrectly: %+v body=%s", got, got.Body)
+	}
+
+	for _, receipt := range []string{"", "another-request"} {
+		r := &router{}
+		answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "board-command", "session": MachineReplySession, "request": receipt,
+			"command": command,
+		}))
+		if answer.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("request %q answered %+v, asked %+v", receipt, answer, r.seen)
 		}
 	}
 }

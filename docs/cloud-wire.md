@@ -758,6 +758,12 @@ paired-device actor. Both the Cloud decoder and the local route accept only
 relay. Reading needs only the paired line. Saving is a command, so it also needs the machine's
 Cloud-command switch and the paired device's Send capability.
 
+Also as of 2026-09-28, `board-command` carries the Settings page's existing Board mode and AI
+consent commands as `{command}` to `POST /v1/board`. The command's own `requestId` is both the Cloud
+request id and the local route's Idempotency-Key, so retrying an uncertain save cannot apply it
+twice. It crosses as the paired device, preserving the local route's Send and Admin checks; item
+writes remain separate Work v2 commands.
+
 As of 2026-09-26 the token bill crosses too, as three read words: `usage.session`, `usage.task` and
 `usage.item`, each `{type, session, request, id}` on the machine reply channel and routed to
 `GET /v1/usage/{sessions,tasks,items}/<id>`. The id is refused before the route when the route

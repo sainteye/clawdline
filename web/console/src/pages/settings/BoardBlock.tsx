@@ -164,17 +164,17 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
       <p className="say" id="settings-board-status" role="status">
         {status}
       </p>
-      <b id="settings-board-ai-title">{words("AI reading summaries", "AI 閱讀摘要")}</b>
+      <b id="settings-board-ai-title">{words("AI Agent role suggestions", "AI 建議 Agent 角色")}</b>
       <p className="say" id="settings-board-ai-say">
         {board
           ? words(
-              "Separate opt-in. Send stored Board titles, descriptions and documented outcomes to ",
-              "獨立同意設定。將已儲存的看板標題、描述與成果文字送至 ",
+              'Used only by “Let AI choose a role” when assigning a Board item. Only after you press that button are the item type, title and description sent to ',
+              '只用於指派看板項目時的「讓 AI 判斷角色」。按下該按鈕後，才會將該項目的類型、標題與描述送至 ',
             ) +
             providerName +
             words(
-              " to summarize in your Clawdline language. Uses the configured naming model and its quota. No transcript, credential-file or attachment reading. Original text stays available; Board OFF stops generation.",
-              "，以 Clawdline 設定語言整理；使用已設定的命名模型與其額度。不讀取完整對話、憑證檔或附件；原文保留，關閉看板即停止生成。",
+              ". Each press uses one AI turn. No transcript, credential file or attachment is read.",
+              "；每次使用一個 AI 回合。不讀取完整對話、憑證檔或附件。",
             )
           : ""}
       </p>
