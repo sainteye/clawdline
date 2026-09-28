@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
@@ -209,12 +209,13 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     setCreateDraft(draft)
     setCreating(true)
   }), [])
-  useEffect(() => onOpenWorkItem((item) => {
+  const openItem = useCallback((item: WorkV2Item) => {
     setFailure("")
     setOpenedItem(item)
     void readWorkV2Item(item.id).then((answer) => setOpenedItem((current) => current?.id === item.id ? answer.item : current))
       .catch((error: unknown) => setFailure(failureWords(error)))
-  }), [])
+  }, [])
+  useEffect(() => onOpenWorkItem(openItem), [openItem])
 
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
@@ -275,18 +276,15 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
-      <BoardRegion title="規劃區" items={planning} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
-      <BoardRegion title="待指派" items={unassigned} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
+      <BoardRegion title="規劃區" items={planning} decisions={decisions} onOpen={openItem} />
+      <BoardRegion title="待指派" items={unassigned} decisions={decisions} onOpen={openItem} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
-        items={visibleItems.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} decisions={decisions} busy={busy}
-        failure={failure} clearFailure={() => setFailure("")} run={run} />)}
-      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} decisions={decisions} busy={busy}
-        failure={failure} clearFailure={() => setFailure("")} run={run} />}
-      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} sessions={sessions} decisions={decisions} busy={busy}
-        failure={failure} clearFailure={() => setFailure("")} run={run} />}
+        items={visibleItems.filter((item) => item.area === phase && !item.closed_at)} decisions={decisions} onOpen={openItem} />)}
+      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} decisions={decisions} onOpen={openItem} />}
+      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} decisions={decisions} onOpen={openItem} />}
       {done.length > 0 && status !== "done" && !search && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
-        <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
-          decisions={decisionsForWorkItem(decisions, item.id)} failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
+        <div className="work-cards">{done.map((item) => <CompactWorkCard key={item.id} item={item}
+          decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />)}</div>
       </details>}
       {loaded && !failure && visibleItems.length === 0 && <p className="work-empty work-filter-empty" role="status">
         {!showPlans && hiddenPlans > 0
@@ -509,21 +507,48 @@ function WorkItemDecisions({ decisions, busy, run }: {
   </section>
 }
 
-function BoardRegion({ title, items, sessions, decisions, busy, failure, clearFailure, run }: {
+function BoardRegion({ title, items, decisions, onOpen }: {
   title: string
   items: WorkV2Item[]
-  sessions: SessionRow[]
   decisions: Decision[]
-  busy: string
-  failure: string
-  clearFailure: () => void
-  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  onOpen: (item: WorkV2Item) => void
 }) {
   if (!items.length) return null
   return <section className="work-section"><div className="work-section-head"><h2>{title}</h2><span className="work-count">{items.length}</span></div>
-    <div className="work-cards">{items.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
-      decisions={decisionsForWorkItem(decisions, item.id)} failure={failure} clearFailure={clearFailure} run={run} />)}</div>
+    <div className="work-cards">{items.map((item) => <CompactWorkCard key={item.id} item={item}
+      decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => onOpen(item)} />)}</div>
   </section>
+}
+
+/**
+ * The Board is an index: enough context to choose an item, never the whole
+ * item's working surface. The one button avoids nested controls and gives a
+ * keyboard and screen-reader user the same route into the shared detail modal.
+ */
+function CompactWorkCard({ item, decisions, onOpen }: {
+  item: WorkV2Item
+  decisions: Decision[]
+  onOpen: () => void
+}) {
+  const epic = isEpic(item)
+  const attention = decisions.length > 0 || !!item.user_action
+  return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
+    data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
+    <button className="work-card-summary" type="button" aria-haspopup="dialog"
+      aria-label={`查看「${item.title}」的完整內容`} onClick={onOpen}>
+      <span className="work-card-summary-top">
+        <span className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></span>
+        <span className={epic ? "work-state work-epic-label" : "work-state"}>{epic ? "EPIC · " : `${item.kind} · `}{phaseName(item.phase)}</span>
+      </span>
+      <span className="work-card-summary-title">{item.title}</span>
+      <span className="work-card-summary-description">{item.description}</span>
+      <span className="work-card-summary-foot">
+        <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
+        {attention && <span className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
+        <span className="work-card-open">查看完整內容 <WorkIcon name="open" /></span>
+      </span>
+    </button>
+  </article>
 }
 
 function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, focusAssignment = false, reportsExpanded = false }: {
@@ -599,7 +624,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     {epic
       ? <span className="work-state work-epic-label"><b>EPIC · 大型項目</b> · {phaseName(item.phase)}</span>
       : <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>}
-    <h3>{item.title}</h3>
+    <h3 id={`work-card-title-${item.id}`}>{item.title}</h3>
     <EpicParentLine item={item} />
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
@@ -874,16 +899,19 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
   onClose: () => void
 }) {
+  const modal = useRef<HTMLDivElement>(null)
+  const initialFocus = useRef<HTMLButtonElement>(null)
   useModalDismiss(!!busy, onClose)
+  useModalFocus(modal, initialFocus)
   // Opened from a Session too, so it lives beside the app root, never inside
   // the fixed Session pane: a phone then keeps one scroll surface.
-  return createPortal(<div className={created ? "session-todo-modal work-created-modal" : "session-todo-modal work-created-modal work-item-detail-modal"}
-    role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id}`}
+  return createPortal(<div ref={modal} tabIndex={-1} className={created ? "session-todo-modal work-created-modal" : "session-todo-modal work-created-modal work-item-detail-modal"}
+    role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id} work-card-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
       <div className="work-modal-head"><div><p className="board-eyebrow">{created ? "WORK ITEM CREATED" : "BOARD ITEM"}</p>
         <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
+        <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment={created} reportsExpanded={!created} />
     </div>
@@ -938,10 +966,55 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
 
 function useModalDismiss(busy: boolean, onClose: () => void) {
   useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) onClose() }
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || busy) return
+      event.preventDefault()
+      onClose()
+    }
     document.addEventListener("keydown", close)
     return () => document.removeEventListener("keydown", close)
   }, [busy, onClose])
+}
+
+/** Keep the keyboard in the modal and put it back on the summary that opened it. */
+function useModalFocus(container: RefObject<HTMLDivElement | null>, initialFocus: RefObject<HTMLElement | null>) {
+  // StrictMode runs an effect's setup/cleanup/setup sequence once in
+  // development. Keep the opener across that rehearsal and cancel its false
+  // restoration when the second setup starts.
+  const previous = useRef<HTMLElement | null>(null)
+  const restoreTimer = useRef<number | null>(null)
+  if (!previous.current && document.activeElement instanceof HTMLElement) previous.current = document.activeElement
+  useEffect(() => {
+    if (restoreTimer.current !== null) window.clearTimeout(restoreTimer.current)
+    initialFocus.current?.focus({ preventScroll: true })
+    const keepFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !container.current) return
+      const controls = [...container.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )].filter((node) => node.getClientRects().length > 0)
+      if (!controls.length) {
+        event.preventDefault()
+        container.current.focus({ preventScroll: true })
+        return
+      }
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !container.current.contains(document.activeElement))) {
+        event.preventDefault(); last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || !container.current.contains(document.activeElement))) {
+        event.preventDefault(); first.focus()
+      }
+    }
+    document.addEventListener("keydown", keepFocus)
+    return () => {
+      document.removeEventListener("keydown", keepFocus)
+      // React removes the portal after effect cleanup. Restore on the next
+      // task so the disappearing close button cannot hand focus back to body.
+      restoreTimer.current = window.setTimeout(() => {
+        if (previous.current?.isConnected) previous.current.focus({ preventScroll: true })
+      }, 0)
+    }
+  }, [container, initialFocus])
 }
 
 function WorkReferenceImage({ item, image, busy, run }: {

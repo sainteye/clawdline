@@ -605,7 +605,10 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         return
       }
       if (pageRef.current !== "sessions") {
-        if (document.querySelector("dialog[open]")) return
+        // Native dialogs and React's modal sheets own their Escape first. A
+        // Board detail used to close and navigate back to Sessions on the same
+        // key because only native <dialog> elements were recognized here.
+        if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return
         go("sessions")
         return
       }
