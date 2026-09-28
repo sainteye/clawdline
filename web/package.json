@@ -4,9 +4,14 @@
   "version": "0.0.0",
   "workspaces": ["contract", "core", "console"],
   "scripts": {
+    "deps": "node ../tools/ensure-web-deps.mjs",
+    "predev": "npm run deps --silent",
     "dev": "npm run dev --workspace @clawdline/console",
+    "prebuild": "npm run deps --silent",
     "build": "npm run build --workspace @clawdline/console",
-    "check": "tsc --noEmit -p console"
+    "precheck": "npm run deps --silent",
+    "check": "tsc --noEmit -p console",
+    "test:deps": "node --test ../tools/ensure-web-deps.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

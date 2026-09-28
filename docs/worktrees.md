@@ -66,6 +66,23 @@ unlanded commit, or Git refuses removal, the wrapper prints the retained path. T
 status is preserved. This creation-time pairing is preferred to asking a later sweep to guess who
 owned an anonymous scratch checkout.
 
+## Web dependencies in a linked worktree
+
+`npm run check`, `npm run build`, `npm run dev`, and the console workspace's build, dev, and preview
+commands run `tools/ensure-web-deps.mjs` before their real command. There is no manual worktree setup.
+`(cd web && npm run deps)` runs the same preparation explicitly.
+
+When the primary checkout has a valid install for the same `package-lock.json`, the preparer makes a
+real `web/node_modules` directory in the linked checkout. Its external package entries point to the
+primary checkout, while every npm workspace entry points to the current checkout. Linking the whole
+`node_modules` directory is deliberately unsafe: npm's relative workspace links would then resolve
+`@clawdline/core`, `@clawdline/contract`, and `@clawdline/console` from another branch.
+
+If the lockfiles differ, or the primary install is absent or invalid, the preparer runs
+`npm ci --ignore-scripts` in a staging directory and atomically publishes an isolated dependency
+tree. Repeating the command keeps the ready tree. A changed lockfile replaces only a tree carrying
+the preparer's marker; a physical install created directly by a person or npm is left alone.
+
 ## Recovery
 
 For `uncommitted`, first snapshot the complete non-ignored tree and prove that the saved patch or
