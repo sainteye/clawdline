@@ -15,6 +15,7 @@ import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkGateDetail, WorkGateLine } from "./WorkGate.js"
+import { gateSnapshotText } from "./gate-status.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
 import { EPIC_GATE_HINT, epicGate, epicGateShown, isEpic } from "./epic-gate.js"
@@ -550,20 +551,24 @@ function CompactWorkCard({ item, decisions, onOpen }: {
 }) {
   const epic = isEpic(item)
   const attention = decisions.length > 0 || !!item.user_action
+  const gateDescriptionID = `work-card-${item.id}-gate`
+  const attentionDescriptionID = `work-card-${item.id}-attention`
+  const describedBy = attention ? `${gateDescriptionID} ${attentionDescriptionID}` : gateDescriptionID
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
     data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"
-      aria-label={`查看「${item.title}」的完整內容`} onClick={onOpen}>
+      aria-label={`查看「${item.title}」的完整內容，${phaseName(item.phase)}`} aria-describedby={describedBy} onClick={onOpen}>
       <span className="work-card-summary-top">
         <span className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></span>
         <span className={epic ? "work-state work-epic-label" : "work-state"}>{epic ? "EPIC · " : `${item.kind} · `}{phaseName(item.phase)}</span>
       </span>
       <span className="work-card-summary-title">{item.title}</span>
       <span className="work-card-summary-description">{item.description}</span>
-      <WorkGateLine item={item} />
+      <WorkGateLine item={item} id={gateDescriptionID} />
+      <span className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span>
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
-        {attention && <span className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
+        {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
         <span className="work-card-open">查看完整內容 <WorkIcon name="open" /></span>
       </span>
     </button>

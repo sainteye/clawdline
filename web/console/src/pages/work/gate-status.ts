@@ -8,6 +8,12 @@ export const AUTHORITY: Record<string, string> = {
   technical_person_override: "你決定技術覆核通過 · 未取得 checker PASS",
 }
 
+/** Names both immutable switch values so a compact card never hides which gate was captured. */
+export function gateSnapshotText(cycle: number, planning: boolean, verification: boolean): string {
+  if (cycle === 0) return "成功指派後擷取"
+  return `規劃${planning ? "開" : "關"} · 獨立驗證${verification ? "開" : "關"}`
+}
+
 export function gateStatus(gate?: WorkGateCompactRead): string {
   if (!gate || gate.gate_snapshot_cycle === 0) return "Gate 設定尚未擷取"
   const authority = gate.current_authorization
@@ -29,6 +35,6 @@ export function roundStatus(round: WorkGateRoundSummary): string {
   if (round.state !== "complete") return ({ queued: "驗證待派送", dispatching: "驗證派送中", running: "獨立驗證中" } as Record<string, string>)[round.state] ?? "驗證狀態未知"
   if (round.verdict === "PASS") return "獨立驗證 PASS"
   if (round.verdict === "FAIL") return "獨立驗證 FAIL · 需要修正"
-  if (round.verdict === "NEEDS_WORK") return "NEEDS_WORK · 有項目無法驗證"
+  if (round.verdict === "NEEDS_WORK") return "NEEDS_WORK · 負責 Session 須補證或重新送驗"
   return "驗證結果未知 · 未通過"
 }

@@ -3,16 +3,16 @@ import * as L from "../../legacy/bridge.js"
 import type { WorkGateCompactRead, WorkGateDetailRead, WorkGateEscalation, WorkGateDecisionAction } from "@clawdline/contract"
 import { decideWorkGate, exportWorkGate, purgeWorkGate, readWorkV2Item, type GateExport, type WorkV2Item } from "./api.js"
 import { failureWords, when } from "./shared.js"
-import { AUTHORITY, gateStatus, roundStatus } from "./gate-status.js"
+import { AUTHORITY, gateSnapshotText, gateStatus, roundStatus } from "./gate-status.js"
 
 function compactOf(item: WorkV2Item): WorkGateCompactRead | undefined {
   const verification = item.verification
   return verification && "compact" in verification ? verification.compact : verification
 }
 
-export function WorkGateLine({ item }: { item: WorkV2Item }) {
+export function WorkGateLine({ item, id }: { item: WorkV2Item; id?: string }) {
   const gate = compactOf(item)
-  return <span className="work-gate-line" data-gate-state={gate?.latest_round?.state ?? "none"}>
+  return <span id={id} className="work-gate-line" data-gate-state={gate?.latest_round?.state ?? "none"}>
     {gate ? gateStatus(gate) : item.gate_snapshot_cycle > 0 ? "驗證摘要無法讀取 · 請查看詳情" : gateStatus()}
   </span>
 }
@@ -142,7 +142,7 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
   return <section className="work-gate-detail" aria-label="規劃與獨立驗證">
     <h4>規劃與獨立驗證</h4>
     <p className="work-gate-current"><WorkGateLine item={item} /></p>
-    <p>本輪擷取：{item.gate_snapshot_cycle ? `第 ${item.gate_snapshot_cycle} 輪 · 規劃 ${item.planning_gate ? "開" : "關"} · 獨立驗證 ${item.verify_gate ? "開" : "關"}` : "尚未成功指派；將在第一次成功指派時擷取當時設定"}。後續修改全域設定不會改動本輪。</p>
+    <p>本輪擷取：{item.gate_snapshot_cycle ? `第 ${item.gate_snapshot_cycle} 輪 · ${gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}` : "尚未成功指派；將在第一次成功指派時擷取當時設定"}。後續修改全域設定不會改動本輪。</p>
     <div className="work-gate-acceptance"><strong>驗收條件（Markdown）</strong>
       {item.acceptance_criteria ? <div dangerouslySetInnerHTML={markdown(item.acceptance_criteria)} /> : <p>尚未設定驗收條件；開啟 gate 的工作指派前必須補上。</p>}
       <small>版本 {item.acceptance_version} · SHA-256 {item.acceptance_digest}</small>
@@ -156,7 +156,7 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
       <h5>{compact.escalation.kind === "third_fail" ? "連續第三次 FAIL" : "技術驗證無法完成"}</h5>
       <p>{compact.escalation.reason}</p>
       {compact.escalation.state === "waiting_user" ? <GateDecision item={item} escalation={compact.escalation} sessions={sessions} run={run} />
-        : <p>目前由 Epic owner Session 決定；此處沒有代替 Agent 行使的操作。</p>}
+        : <p>目前由上層 Epic owner Session 決定；若該 Session 離線滿 15 分鐘，會改由你決定。可從 Epic 的子項清單追蹤負責 Session；此處沒有代替 Agent 行使的操作。</p>}
     </section>}
     {loading && <p role="status">正在讀取驗證證據…</p>}
     {error && <p role="alert">驗證詳情讀取失敗：{error} <button className="chip" type="button" onClick={retry}>重試</button></p>}

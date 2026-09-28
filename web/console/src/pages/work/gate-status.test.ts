@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { WorkGateCompactRead, WorkGateRoundSummary } from "@clawdline/contract"
 // @ts-expect-error -- a .ts path for Node's type-stripping test runner.
-import { gateStatus, roundStatus } from "./gate-status.ts"
+import { gateSnapshotText, gateStatus, roundStatus } from "./gate-status.ts"
 
 const round = (state: WorkGateRoundSummary["state"], verdict?: WorkGateRoundSummary["verdict"]): WorkGateRoundSummary => ({
   id: "r", state, verdict, candidate_commit: "c", criteria_digest: "d", created_at: 1,
@@ -18,9 +18,17 @@ test("unknown evidence, stale and technical failure never read as PASS", () => {
   for (const state of ["queued", "dispatching", "running", "stale", "technical_failure"] as const) {
     assert.doesNotMatch(roundStatus(round(state, "PASS")), /^(獨立驗證 PASS)$/)
   }
-  assert.match(roundStatus(round("complete")), /未知/)
-  assert.match(roundStatus(round("complete", "NEEDS_WORK")), /無法驗證/)
+	assert.match(roundStatus(round("complete")), /未知/)
+	assert.match(roundStatus(round("complete", "NEEDS_WORK")), /負責 Session 須補證或重新送驗/)
   assert.equal(roundStatus(round("complete", "PASS")), "獨立驗證 PASS")
   assert.match(gateStatus(gate(round("complete", "PASS"))), /尚無有效合併授權/)
   assert.match(gateStatus({ ...gate(round("complete", "PASS")), current_authorization: { kind: "technical_person_override", reason: "repair", created_at: 2 } }), /未取得 checker PASS/)
+})
+
+test("a compact card always distinguishes all captured gate combinations", () => {
+	assert.equal(gateSnapshotText(0, false, false), "成功指派後擷取")
+	assert.equal(gateSnapshotText(1, true, true), "規劃開 · 獨立驗證開")
+	assert.equal(gateSnapshotText(1, true, false), "規劃開 · 獨立驗證關")
+	assert.equal(gateSnapshotText(1, false, true), "規劃關 · 獨立驗證開")
+	assert.equal(gateSnapshotText(1, false, false), "規劃關 · 獨立驗證關")
 })

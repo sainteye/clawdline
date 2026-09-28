@@ -35,7 +35,7 @@ import { Block, Chip, Head, MemoField, Mono, Note, PopUp, Row, Slider, Switch, T
 import { PairingQr, expiredFailure } from "./PairingQr.js"
 import { settingsFailureSentence } from "./failure.js"
 import { COMPACT_MAX, COMPACT_MIN, compactWindowText, compactWindowValue } from "./compact.js"
-import { gateModeText } from "./gate-mode.js"
+import { gateModeOptions, gateModeText } from "./gate-mode.js"
 
 /**
  * The native "Clawdline 設定" window, as a web page.
@@ -1066,6 +1066,7 @@ export function SettingsWindow() {
     const planning = !!now("planning_gate")
     const verification = !!now("verify_gate")
     const gateMode = gateModeText(planning, verification)
+    const gateModes = gateModeOptions(planning, verification)
     return (
       <>
         <div className="sw-column">
@@ -1083,6 +1084,13 @@ export function SettingsWindow() {
             <Switch label="獨立驗證 gate" on={verification} onChange={flip("verify_gate")} />
           </Row>
           <p className="sw-gate-mode" role="status">{gateMode}</p>
+          <section className="sw-gate-overview" aria-label="四種 gate 模式">
+            <h3>四種模式</h3>
+            <ul>{gateModes.map((mode) => <li key={mode.id} aria-current={mode.current ? "true" : undefined}>
+              <span><strong>{mode.label}</strong>{mode.default && <small>預設</small>}{mode.current && <small>目前</small>}</span>
+              <p>{mode.description}</p>
+            </li>)}</ul>
+          </section>
           <Row label={W.settingsOrchestratorMax} hint={W.settingsOrchestratorMaxHint}>
             <PopUp
               label={W.settingsOrchestratorMax}
