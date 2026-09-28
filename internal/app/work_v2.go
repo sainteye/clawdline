@@ -184,10 +184,6 @@ func captureWorkV2Gates(i *work.ItemV2, g WorkV2GateSettings, at time.Time) erro
 		i.GateSnapshotCycle, i.PlanningGate, i.VerifyGate = i.Cycle, g.Planning, g.Verify
 		i.GateSnapshotAt = at
 	}
-	if i.GateNeedsAcceptance() && strings.TrimSpace(i.AcceptanceCriteria) == "" {
-		return work.RefuseV2("acceptance_required",
-			"Acceptance criteria are required before this item can be assigned with its captured gates.")
-	}
 	return nil
 }
 
@@ -593,8 +589,10 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 		}
 		acceptanceChanged := false
 		if c.AcceptanceCriteria != nil {
-			if !c.Person {
-				return work.RefuseV2("acceptance_not_agent_editable", "The maker Session may not change its own acceptance criteria.")
+			if !c.Person && (strings.TrimSpace(prev.AcceptanceCriteria) != "" ||
+				(prev.Phase != work.PhaseAssigned && prev.Phase != work.PhaseImplementing)) {
+				return work.RefuseV2("acceptance_not_agent_editable",
+					"The owning Session may write missing acceptance criteria once, before verification; later revisions belong to the person.")
 			}
 			switch prev.Phase {
 			case work.PhaseMerging, work.PhaseDeploying, work.PhaseDone:
@@ -1236,6 +1234,9 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if err := work.AgentTransition(prev, c.Next, hasVerification, hasLanding,
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
 			return err
+		}
+		if c.Next == work.PhaseVerifying && prev.GateNeedsAcceptance() && strings.TrimSpace(prev.AcceptanceCriteria) == "" {
+			return work.RefuseV2("acceptance_required", "Write acceptance criteria before verification begins.")
 		}
 		if prev.Kind == work.KindEpic || prev.Kind == work.KindFeature {
 			plans, err := tx.PlanDocuments(id)

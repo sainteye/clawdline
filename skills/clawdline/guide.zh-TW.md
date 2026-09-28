@@ -778,9 +778,10 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 指派時固定兩個值；同輪改派或之後改全域設定都不影響本輪。規劃 gate 開啟的 Epic 與 Feature 在進入實作前
 須有驗收條件、計劃及獨立審查（Feature 一次，Epic 最多兩次）；Issue 不受規劃 gate 約束。規劃關閉時，
 Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規劃沿用一般 Merge 驗證；只開驗證會跳過規劃，
-但仍檢查固定候選提交；兩者皆關走一般流程。由使用者建立／編輯時寫入精確的 Markdown 驗收條件，
-或在有此權限的 `clawdline item add|child` 使用 `--acceptance-file`。實作者不能修改驗收條件。
-進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
+但仍檢查固定候選提交；兩者皆關走一般流程。使用者不必在看板填寫驗收條件。受 gate 約束的項目若尚無
+驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
+寫入可觀察的 Markdown 條件。負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
+owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
 
 本輪驗證 gate 開啟時，先在已 commit、乾淨且登記過的 worktree 執行
 `clawdline item phase <id> verifying`；CLI 送出目前 branch 與完整 HEAD，daemon 核對 Project、

@@ -108,8 +108,9 @@ type ItemV2 struct {
 	Kind        Kind
 	Title       string
 	Description string
-	// AcceptanceCriteria is the person's exact bounded Markdown contract for
-	// this item. AcceptanceVersion changes only when those bytes change, and
+	// AcceptanceCriteria is the exact bounded Markdown contract for this item.
+	// The owning Session may fill an empty contract once before verification;
+	// later revisions belong to the person. AcceptanceVersion changes only when those bytes change, and
 	// AcceptanceDigest is the SHA-256 of those exact bytes.
 	AcceptanceCriteria string
 	AcceptanceVersion  int64
