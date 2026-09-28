@@ -4931,6 +4931,12 @@ export interface ScheduleRecord {
   runs: ScheduleRun[]
   runs_may_be_truncated?: boolean
   task: ScheduleTask
+
+  /**
+   * The IANA zone whose wall clock when.at names. Absent on legacy schedules, which
+   * use the machine zone.
+   */
+  time_zone?: string
   title: string
   trigger_only?: boolean
   webhook_binding_availability: string
@@ -4984,6 +4990,12 @@ export interface ScheduleRequest {
    */
   session_id?: string
   template?: ScheduleTemplate
+
+  /**
+   * The IANA zone whose wall clock at names. New console schedules use the
+   * browser's zone.
+   */
+  time_zone?: string
   timeout_minutes?: number
   title: string
 
@@ -5039,6 +5051,12 @@ export interface ScheduleRow {
    * `invalid` on a row that could not be parsed; absent otherwise.
    */
   state?: string
+
+  /**
+   * The IANA zone whose wall clock when.at names. Absent on legacy schedules, which
+   * use the machine zone.
+   */
+  time_zone?: string
   title?: string
 
   /**
@@ -5079,6 +5097,11 @@ export interface ScheduleSummary {
   enabled: boolean
   id: string
   next_fire?: number
+
+  /**
+   * The IANA zone whose wall clock the schedule uses.
+   */
+  time_zone?: string
   title: string
 }
 

@@ -133,6 +133,10 @@ func (b *ScheduleBook) loc() *time.Location {
 	return time.Local
 }
 
+func (b *ScheduleBook) scheduleLoc(s schedule.Schedule) *time.Location {
+	return s.ClockLocation(b.loc())
+}
+
 func (b *ScheduleBook) dispatchEnabled() bool {
 	return b.DispatchEnabled == nil || b.DispatchEnabled()
 }
@@ -317,7 +321,10 @@ func (b *ScheduleBook) List(ctx context.Context) ([]map[string]any, error) {
 // summary is the three fields every answer about one schedule starts with.
 func (b *ScheduleBook) summary(s schedule.Schedule, now time.Time) map[string]any {
 	row := map[string]any{"id": s.ID, "title": s.Title, "enabled": s.Enabled}
-	if next := s.When.NextFire(now, b.loc()); !next.IsZero() {
+	if s.TimeZone != "" {
+		row["time_zone"] = s.TimeZone
+	}
+	if next := s.When.NextFire(now, b.scheduleLoc(s)); !next.IsZero() {
 		row["next_fire"] = next.Unix()
 	}
 	return row
@@ -346,6 +353,9 @@ func (b *ScheduleBook) Detail(ctx context.Context, id string) (map[string]any, b
 	out["catch_up_hours"] = s.CatchUpHours
 	out["notify_on_failure"] = s.NotifyOnFailure
 	out["when"] = s.When.Object()
+	if s.TimeZone != "" {
+		out["time_zone"] = s.TimeZone
+	}
 	if s.When.Once() {
 		out["once"] = true
 	}
@@ -422,7 +432,7 @@ var formFields = map[string]bool{
 	"title": true, "at": true, "days": true, "on": true, "place_id": true, "assistant": true,
 	"instructions": true, "enabled": true, "close_tab": true, "catch_up_hours": true,
 	"notify_on_failure": true, "timeout_minutes": true, "model": true, "permission_mode": true,
-	"trigger_only": true,
+	"trigger_only": true, "time_zone": true,
 }
 
 // templateFields are the task-template keys a create may carry in `template`:
@@ -584,6 +594,9 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 		"when":               when,
 		"task":               tmpl,
 		"enabled":            enabled,
+	}
+	if zone, named := body["time_zone"]; named {
+		obj["time_zone"] = zone
 	}
 	if !createdAt.IsZero() {
 		obj["created_at"] = createdAt.Unix()
@@ -789,6 +802,12 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 		return refusedSchedule(404, "not_found", "No schedule named that")
 	}
 	carried, _ := existing.obj["task"].(map[string]any)
+	// A client from before time_zone does not know how to echo it. Keep the
+	// stored zone on such a save instead of moving the schedule to the machine
+	// clock. A client that intentionally changes it names the new zone.
+	if _, named := body["time_zone"]; !named && existing.s.TimeZone != "" {
+		body["time_zone"] = existing.s.TimeZone
+	}
 	obj, made, refusal := b.build(ctx, body, id, existing.s.CreatedAt, carried)
 	if refusal != nil {
 		return *refusal
@@ -796,7 +815,7 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 	if refusal := permissionRefusal(authority, obj, carried); refusal != nil {
 		return *refusal
 	}
-	moves := !made.When.Same(existing.s.When)
+	moves := !made.When.Same(existing.s.When) || made.TimeZone != existing.s.TimeZone
 	if made.When.Once() != existing.s.When.Once() {
 		if existing.s.When.On != nil {
 			return refusedSchedule(400, "bad_request", "This schedule runs once, on "+existing.s.When.On.String()+
@@ -927,7 +946,7 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 	// it if this process dies half way. A validation press before the scheduled
 	// time consumes nothing, and so does not spend a one-shot. A refused run
 	// hands the occurrence back, as the Swift app records it only on success.
-	consumed := h.s.When.LatestFire(b.now(), b.loc())
+	consumed := h.s.When.LatestFire(b.now(), b.scheduleLoc(h.s))
 	claimed := false
 	if !consumed.IsZero() {
 		claimed, _ = b.Store.ClaimScheduleFire(ctx, id, consumed)
@@ -1122,7 +1141,7 @@ func (b *ScheduleBook) markFired(ctx context.Context, id string, fired time.Time
 	// stamping it would spend a run that has not happened.
 	current, err := schedule.Parse(obj, id, b.isDirectory)
 	if err != nil || !current.When.Once() || current.Stale(fired) ||
-		!current.When.LatestFire(fired, b.loc()).Equal(fired) {
+		!current.When.LatestFire(fired, b.scheduleLoc(current)).Equal(fired) {
 		b.audit("orchestrator.schedule.spent", map[string]string{"schedule": id, "ok": "0", "why": "retimed"})
 		return
 	}
@@ -1200,7 +1219,7 @@ func (b *ScheduleBook) Import(ctx context.Context, files []ImportFile) ([]map[st
 		}
 		handled := time.Time{}
 		if parsed != nil {
-			handled = parsed.When.LatestFire(now, b.loc())
+			handled = parsed.When.LatestFire(now, b.scheduleLoc(*parsed))
 		}
 		err := b.Store.CreateScheduleFile(ctx, id, file.Body, now, handled)
 		switch {
@@ -1219,7 +1238,7 @@ func (b *ScheduleBook) Import(ctx context.Context, files []ImportFile) ([]map[st
 			row["state"] = "imported"
 		}
 		if parsed != nil {
-			if next := parsed.When.NextFire(now, b.loc()); !next.IsZero() {
+			if next := parsed.When.NextFire(now, b.scheduleLoc(*parsed)); !next.IsZero() {
 				row["next_fire"] = next.Unix()
 			}
 		}
