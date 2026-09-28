@@ -2,7 +2,8 @@
  * The session list's order.
  *
  * `legacy/js/view/derive.js` `ordered()`, restated with one rule added: inside
- * one state, the session that moved most recently comes first. Everything
+ * one state, the session that moved most recently comes first, except working
+ * sessions, whose movement does not change their position. Everything
  * else is the original's, rule for rule — Clawdfather first, then waiting,
  * working, idle and unknown (`RANK`), then the title, then the id; the filter
  * over label, folder, tty and backend; the order held while a pointer is over
@@ -67,16 +68,17 @@ function movedBand(row: SessionRow): number {
 }
 
 /**
- * Clawdfather → state → unknown-before-known → most recent movement → title → id.
+ * Clawdfather → state → (outside working: unknown-before-known → most recent
+ * movement) → title → id.
  *
  * The time is compared only between rows in the same state, so a session that
  * moved a second ago never climbs over one that is waiting for somebody. The
- * title is still what separates two rows that moved together — every working
- * session, which is moving right now — so those keep the steady order they
- * had before.
+ * Working sessions keep their order by title and id while their transcripts
+ * grow. Their activity timestamps otherwise make several running sessions
+ * repeatedly trade places, even though none needs attention yet.
  *
- * **A row with no readable time goes to the top of its state, not the
- * bottom.** Of the two ways to be wrong about a row nobody could read, only
+ * **Outside working, a row with no readable time goes to the top of its state,
+ * not the bottom.** Of the two ways to be wrong about a row nobody could read, only
  * "it has been quiet for a week" hides the row somebody has to act on, and the
  * commonest reason for it — a session that has written no record yet — is a
  * tab somebody opened a moment ago and is looking for. Those rows keep their
@@ -85,11 +87,12 @@ function movedBand(row: SessionRow): number {
 export function compareSessions(a: SessionRow, b: SessionRow): number {
   const at = movedAt(a)
   const bt = movedAt(b)
+  const bothWorking = a.state === "working" && b.state === "working"
   return (
     coordinatorFirst(a, b) ||
     rankOf(a) - rankOf(b) ||
-    movedBand(a) - movedBand(b) ||
-    (at === null || bt === null ? 0 : bt - at) ||
+    (bothWorking ? 0 : movedBand(a) - movedBand(b)) ||
+    (bothWorking || at === null || bt === null ? 0 : bt - at) ||
     (a.label || "").localeCompare(b.label || "") ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   )
