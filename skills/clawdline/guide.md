@@ -854,6 +854,37 @@ putting one on another condition is refused by name. When the wait ends, set `co
 empty string on the same route; the daemon clears `user_action` with it so the Board cannot retain
 a stale request.
 
+**Captured planning and verification gates.** `planning_gate` defaults on and `verify_gate` off;
+`clawdline setting get|set planning_gate|verify_gate` accepts `on/off` or `true/false`. The first
+successful assignment in an execution cycle freezes both values. Reassignment and later global
+setting changes do not change that cycle. An Epic or Feature with captured planning on needs
+acceptance criteria, a plan, and independent plan review before implementing (Feature: one review;
+Epic: at most two). An Issue never has a planning gate. Planning off bypasses forced Epic planning
+too. Both on means planning then independent verification; planning only retains ordinary merge
+verification; verification only skips planning but still checks the exact candidate; both off uses
+the ordinary lifecycle. Put exact Markdown acceptance on person create/edit or use
+`--acceptance-file` when `clawdline item add|child` supports that authority. A maker may not edit
+acceptance. Changing it before merging invalidates old PASS and overrides; once merging starts it
+is locked.
+
+With captured verification on, run `clawdline item phase <id> verifying` from a clean registered
+worktree at its committed candidate: the CLI sends the current branch and full HEAD, and the daemon
+checks Project, cycle base, tree and acceptance digest. A detached read-only Codex checker uses
+`code-reviewer` for Issue, `reality-checker` for Epic, and `evidence-collector` for a Feature with
+reference pictures or a design document (otherwise `reality-checker`). Its typed verdict is
+`PASS`, `FAIL`, or `NEEDS_WORK`; unverified claims say why and never authorize merging. A missing
+or malformed result is a technical failure, with one bounded retry and then escalation. An Epic's
+final end-to-end round waits until all children are terminal. `verifying → merging` needs a live
+PASS for the exact candidate/criteria or an explicitly reasoned override; a verification sentence
+alone cannot grant it. Three consecutive FAILs escalate to the live parent Epic owner, then to the
+person if that owner is unavailable; a technical failure escalates separately. Only the designated
+parent owner uses `POST /v1/work/v2/agent/items/<id>/gate-decision`; a person uses
+`POST /v1/work/v2/items/<id>/gate-decision`. Never use the person route as an Agent. The Board names
+AI, person, and technical overrides separately, never as checker PASS. At retained-detail capacity,
+the person first downloads `GET /v1/work/v2/items/<id>/gate-export`, verifies the manifest digest,
+then confirms `POST /v1/work/v2/items/<id>/gate-purge` with that digest and item version. Purge
+removes only eligible closed detail; aggregates, newest facts and audit remain.
+
 **Advancing the phase.** The owning Session moves its item through the execution phases itself;
 nobody else does, and a turn receipt or a cleared condition does not. The phase is not a field of
 `…/edit` (`phase_not_editable`). Run each transition when the work it names has actually happened:
@@ -953,12 +984,12 @@ Board item and opens directly from the Session's Recently Done row.
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 
-### Epic: plan, then review
+### Epic and Feature: plan, then review when captured on
 
-An Epic is assignable like a Feature or Issue and moves through the same phases, but it is large, so
-the daemon makes a second reader check its plan before code is written: **an Epic cannot go from
-`assigned` to `implementing` until it has a `plan` document and a `plan_review` document written
-after the latest plan.** When you own an Epic:
+An Epic or Feature whose cycle captured planning on needs a `plan` document and a `plan_review`
+document after the latest plan before `assigned → implementing`. An Epic allows at most two required
+reviews; a Feature allows one. An Issue is exempt, and planning off bypasses this check even for
+Epic. When you own an item with planning on:
 
 1. Plan it carefully and write the plan onto the item:
    ```
@@ -986,16 +1017,17 @@ Idempotency-Key (`--key` retries the same write) and prints the item. The body c
 `{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`; the roles
 are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and `plan_review`.
 
-- `plan` and `plan_review` belong to an Epic only (`document_role_not_applicable`).
+- `plan` and `plan_review` belong to an Epic or Feature (`document_role_not_applicable` for other kinds).
 - A `plan_review`'s `reference` is the task id of the Clawdline child that reviewed the plan. The
   daemon accepts it only when that task exists (`plan_review_task_unknown`), was dispatched by the
   item's owning Session (`plan_review_task_not_owned`), is on this item's line if it names one
   (`plan_review_task_other_item`), has kind `plan_review` (`plan_review_task_wrong_kind`), finished
   with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
   (`plan_review_task_stale`). A review with no plan before it is refused `epic_plan_required`.
-- `clawdline item phase <item id> implementing` on an Epic is refused `epic_plan_required` (no
-  plan yet) or `epic_plan_review_required` (no review newer than the latest plan, while fewer than
-  two reviews are recorded), `409` like the other transition refusals.
+- `clawdline item phase <item id> implementing` on a planning-on Epic or Feature is refused when
+  the plan or independent review evidence is missing (`epic_plan_required` or
+  `epic_plan_review_required` for Epic; the `feature_` equivalents for Feature). The Epic keeps the
+  two-review ceiling; Feature requires one. A planning-off Epic may enter implementing directly.
 
 **Break the Epic into child items, and hand them out.** This is the one exception to "a session
 creates a Board item only when the person's message tells it to" and to "only the person assigns
@@ -1061,10 +1093,18 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     before shipping), `image-prompt` (image-generation prompts), `pricing`, `customer-success`,
     `support` (drafted replies), `analytics` (answers from real data), `devrel` (samples that run)
     and `privacy` (personal-data checks; not legal advice).
-- **You remain responsible for the Epic.** Follow every child to done (`clawdline item steps <child
-  id>` reads one), integrate their work, and move the Epic to done only when every child is done or
-  cancelled: `clawdline item phase <epic id> done` is refused `epic_children_open`, naming how many
-  are open, until then. Create no Board item other than the Epic's children.
+- **You remain responsible for the Epic after each child is merged.** Immediately reread that
+  child's item and `clawdline item steps <child id>`; check that every step is complete. A merge
+  does not close the child, and `merging` is not a resting state. The child's owning Session must
+  complete any remaining steps, record a landing receipt for the exact commit already reachable
+  from the local target and `origin/main`, then advance `deploying` → `done` with deployment evidence
+  or a no-deployment reason matching its deployment policy. If you own the child, do those actions
+  yourself. If another Session owns it, follow up with that owner or use the authorized child
+  reassignment path; do not impersonate its owner (`not_item_owner`). ACK the broker completion
+  notice where one exists, then classify worktree residue and remove only proven landed-identical
+  or task-temporary material. Keep unlanded, mixed, or unknown bytes for the next owner. Do not
+  declare the parent Epic done until every child is `done` or `cancelled`: `epic_children_open`
+  names how many remain. Create no Board item other than the Epic's children.
 
 ## 11. Coordination
 

@@ -14,6 +14,7 @@ import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
+import { WorkGateDetail, WorkGateLine } from "./WorkGate.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
 import { EPIC_GATE_HINT, epicGate, epicGateShown, isEpic } from "./epic-gate.js"
@@ -79,7 +80,7 @@ const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging",
 const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: string }> = {
   feature: { icon: "✦", label: "Feature", description: "加入一項使用者可以感受到的新能力" },
   issue: { icon: "!", label: "Issue", description: "修正錯誤、異常或不符合預期的行為" },
-  epic: { icon: "◆", label: "Epic", description: "可指派的大型工作；Session 要先寫計劃書、經 Child Session review，才開始實作" },
+  epic: { icon: "◆", label: "Epic", description: "可指派的大型工作；指派時若啟用規劃 gate，Session 要先寫計劃書並經 Child Session review" },
   refactor: { icon: "↻", label: "Refactor", description: "先放在規劃區的內部結構改善" },
   plan: { icon: "≡", label: "Plan", description: "先放在規劃區的研究或實作計畫" },
 }
@@ -106,6 +107,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [createDraft, setCreateDraft] = useState<NewWorkItemDraft>({})
   const [createdItem, setCreatedItem] = useState<WorkV2Item | null>(null)
   const [openedItem, setOpenedItem] = useState<WorkV2Item | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState("")
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
   const loadGeneration = useRef(0)
@@ -151,7 +154,11 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       loadedView.current = requestedView
       setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setDecisions(questions.rows); setFailure("")
       setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
-      setOpenedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
+      setOpenedItem((current) => {
+        if (!current) return null
+        const listed = work.rows.find((item) => item.id === current.id)
+        return listed && listed.version !== current.version ? listed : current
+      })
     } catch (e) {
       if (generation === loadGeneration.current) { setLoaded(true); setLoading(false); setFailure(failureWords(e)) }
     } finally {
@@ -213,12 +220,17 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     setCreateDraft(draft)
     setCreating(true)
   }), [])
+  const refreshDetail = useCallback((id: string) => {
+    setDetailLoading(true); setDetailError("")
+    void readWorkV2Item(id).then((answer) => setOpenedItem((current) => current?.id === id ? answer.item : current))
+      .catch((error: unknown) => setDetailError(failureWords(error)))
+      .finally(() => setDetailLoading(false))
+  }, [])
   const openItem = useCallback((item: WorkV2Item) => {
     setFailure("")
     setOpenedItem(item)
-    void readWorkV2Item(item.id).then((answer) => setOpenedItem((current) => current?.id === item.id ? answer.item : current))
-      .catch((error: unknown) => setFailure(failureWords(error)))
-  }, [])
+    refreshDetail(item.id)
+  }, [refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
 
   const run = async (key: string, task: () => Promise<unknown>) => {
@@ -326,8 +338,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       })
     }} />}
     {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} decisions={decisionsForWorkItem(decisions, createdItem.id)} busy={busy} failure={failure}
+      detailLoading={false} detailError="" retryDetail={() => void readWorkV2Item(createdItem.id).then((answer) => setCreatedItem(answer.item)).catch((error: unknown) => setFailure(failureWords(error)))}
       clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
     {openedItem && <CreatedWorkModal item={openedItem} created={false} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} busy={busy} failure={failure}
+      detailLoading={detailLoading} detailError={detailError} retryDetail={() => refreshDetail(openedItem.id)}
       clearFailure={() => setFailure("")} run={run} onClose={() => setOpenedItem(null)} />}
   </EpicFamilyContext.Provider>
 }
@@ -546,6 +560,7 @@ function CompactWorkCard({ item, decisions, onOpen }: {
       </span>
       <span className="work-card-summary-title">{item.title}</span>
       <span className="work-card-summary-description">{item.description}</span>
+      <WorkGateLine item={item} />
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
         {attention && <span className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
@@ -555,7 +570,7 @@ function CompactWorkCard({ item, decisions, onOpen }: {
   </article>
 }
 
-function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, focusAssignment = false, reportsExpanded = false }: {
+function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   decisions: Decision[]
@@ -563,6 +578,9 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   failure: string
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  detailLoading: boolean
+  detailError: string
+  retryDetail: () => void
   focusAssignment?: boolean
   reportsExpanded?: boolean
 }) {
@@ -703,6 +721,9 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
     <p>{item.description}</p>
+    <WorkGateDetail item={item} loading={detailLoading} error={detailError}
+      sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
+      run={run} retry={retryDetail} />
     <WorkItemDecisions decisions={decisions} busy={!!busy} run={run} />
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {epic && <EpicChildren item={item} sessions={sessions} />}
@@ -712,7 +733,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     {/* Choosing who does the work is what an unassigned card is for, so the
         picker sits under what the work is, above its progress and pictures. */}
     {(assignable || (reassignable && reassigning)) && <div className="work-assignment">
-      {epic && <p className="work-epic-assign-note">指派後，Session 會先寫計劃書並請 Child Session review，通過後才開始實作。</p>}
+      {epic && <p className="work-epic-assign-note">若指派時規劃 gate 開啟，Session 須先寫計劃書並請 Child Session review，通過後才開始實作；關閉時可略過。</p>}
       {reassignable && <p className="work-reassign-note">改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session
         會被告知從哪裡接手；原本的 Session 會收到停止通知。</p>}
       <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
@@ -803,8 +824,8 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
         aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<WorkIcon name="open" /></a>
         : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
     </div>
-    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
-      void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
+    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description, acceptance) => {
+      void run(`edit-${item.id}`, () => editWorkV2(item, title, description, acceptance)).then((ok) => { if (ok) setEditing(false) })
     }} />}
     {deleting && <DeleteWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setDeleting(false)} onDelete={() => {
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
@@ -1002,7 +1023,7 @@ function SessionWorkList({ title, empty, rows }: {
   </li>)}</ul> : <small>{empty}</small>}</div>
 }
 
-function CreatedWorkModal({ item, created = true, sessions, decisions, busy, failure, clearFailure, run, onClose }: {
+function CreatedWorkModal({ item, created = true, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, onClose }: {
   item: WorkV2Item
   created?: boolean
   sessions: SessionRow[]
@@ -1011,6 +1032,9 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
   failure: string
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  detailLoading: boolean
+  detailError: string
+  retryDetail: () => void
   onClose: () => void
 }) {
   const modal = useRef<HTMLDivElement>(null)
@@ -1027,7 +1051,8 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
         <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
         <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} focusAssignment={created} reportsExpanded={!created} />
+      <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run}
+        detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} />
     </div>
   </div>, document.body)
 }
@@ -1037,19 +1062,24 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
   busy: boolean
   failure: string
   onClose: () => void
-  onSave: (title: string, description: string) => void
+  onSave: (title: string, description: string, acceptance?: string) => void
 }) {
   const [title, setTitle] = useState(item.title)
   const [description, setDescription] = useState(item.description)
+  const [acceptance, setAcceptance] = useState(item.acceptance_criteria)
+  const acceptanceLocked = ["merging", "deploying", "done"].includes(item.phase)
   const ready = !!title.trim() && !!description.trim()
   useModalDismiss(busy, onClose)
   return <div className="session-todo-modal work-edit-modal" role="dialog" aria-modal="true" aria-labelledby={`work-edit-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
-    <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim(), acceptanceLocked ? undefined : acceptance) }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
       <VoiceTextarea label="描述" value={description} maxLength={65536} onValue={setDescription} />
+      <label>驗收條件（Markdown）<textarea className="work-input" value={acceptance} maxLength={65536} disabled={acceptanceLocked}
+        onChange={(event) => setAcceptance(event.target.value)} /></label>
+      {acceptanceLocked && <p className="work-note">項目已進入 Merge 或後續階段，驗收條件不可再修改。</p>}
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
@@ -1241,6 +1271,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   const [kind, setKind] = useState<WorkV2Kind>(initialDraft.kind || "feature")
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
+  const [acceptance, setAcceptance] = useState("")
   const [images, setImages] = useState<File[]>([])
   const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
@@ -1252,7 +1283,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
-    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const }
+    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), acceptance_criteria: acceptance, deployment_policy: "agent_decides" as const }
     const decision = workV2CreateDecision(body, createDecision.current)
     createDecision.current = decision
     onCreate(body, images, decision.key)
@@ -1268,6 +1299,8 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
     <VoiceTextarea label="描述" value={description} onValue={setDescription} />
+    <label>驗收條件（Markdown）<textarea className="work-input" value={acceptance} maxLength={65536}
+      placeholder="寫下完成時要看到的結果；啟用 gate 的項目必須在指派前填寫" onChange={(event) => setAcceptance(event.target.value)} /></label>
     <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>

@@ -501,6 +501,35 @@ func TestEveryGuideExplainsAnEpicsChildItems(t *testing.T) {
 	}
 }
 
+// A merged child still needs its own owner's steps, landing, deployment,
+// completion and broker cleanup; neither guide may end the Epic at merge.
+func TestEpicGuidesKeepThePostMergeChildLifecycle(t *testing.T) {
+	for _, language := range []string{"en", "zh-TW"} {
+		epic, err := Section(language, "epic")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"clawdline item steps <child id>", "merging", "origin/main",
+			"landing receipt", "deploying", "done", "not_item_owner", "ACK",
+			"landed-identical", "epic_children_open"} {
+			if !bytes.Contains(epic, []byte(want)) {
+				t.Errorf("%s Epic guide omits post-merge obligation %q", language, want)
+			}
+		}
+	}
+	for _, path := range []string{"../docs/work-system-v2.md", "../docs/work-system-v2-acceptance.md"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"origin/main", "not_item_owner", "ACK", "landed-identical"} {
+			if !bytes.Contains(body, []byte(want)) {
+				t.Errorf("%s omits post-merge obligation %q", path, want)
+			}
+		}
+	}
+}
+
 // A session may open a new Session as a built-in persona on three paths.
 // Every guide names the flags, the body field, both refusals, the catalog
 // route and every id the catalog has, and that none is given by default; the

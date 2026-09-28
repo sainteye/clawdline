@@ -583,6 +583,11 @@ export class RelayReader {
         return await this.machineRead(init?.signal, method, path, "work.v2.session-todos", { terminal: workTerminal })
       }
       const workItem = workV2ItemID(path)
+      const gateExport = workV2ItemActionID(path, "gate-export")
+      if (gateExport) {
+        this.only(url, path)
+        return await this.machineRead(init?.signal, method, path, "work.v2.gate-export", { id: gateExport })
+      }
       if (workItem) {
         this.only(url, path)
         return await this.machineRead(init?.signal, method, path, "work.v2.item", { id: workItem })
@@ -1503,6 +1508,12 @@ function workV2ItemID(path: string): string {
   } catch {
     return ""
   }
+}
+
+function workV2ItemActionID(path: string, action: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 7 || parts[1] !== "v1" || parts[2] !== "work" || parts[3] !== "v2" || parts[4] !== "items" || parts[6] !== action) return ""
+  try { return decodeURIComponent(parts[5]) } catch { return "" }
 }
 
 function json(status: number, body: unknown): Response {

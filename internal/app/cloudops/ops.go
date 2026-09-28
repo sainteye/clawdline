@@ -1027,6 +1027,22 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items/" + segment(p.id)}
 			}},
+		op{name: "work.v2.gate-export", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				id, valid := b.nonEmpty("id")
+				if !ok || !valid || len(id) > 256 {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/items/" + segment(p.id) + "/gate-export", Header: asDevice()}
+			}},
 
 		op{name: "work.v2.items", read: true,
 			decode: func(b body) (plan, bool) {
@@ -1160,6 +1176,18 @@ func init() {
 			decode: decodeWorkV2NamedDocument("id", "item"),
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "PATCH", Path: "/v1/work/v2/items/" + segment(p.id),
+					Body: p.document, Header: asDevice()}
+			}},
+		op{name: "work.v2.gate-decision",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/gate-decision",
+					Body: p.document, Header: asDevice()}
+			}},
+		op{name: "work.v2.gate-purge",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/gate-purge",
 					Body: p.document, Header: asDevice()}
 			}},
 

@@ -277,6 +277,29 @@ Sizes, from the same record on both sides (this change's own task, 3,072 bytes o
 | Completion notice, plain success | 910 (body 337) | 825 (body 252) |
 | Completion notice, empty branch and two leftovers | 1,753 (body 1,134) | 1,100 (body 513) |
 
+## Independent work-gate checks (2026-09-28)
+
+A verification-on Board cycle freezes acceptance criteria and a same-Project candidate commit
+before the broker queues an internal `verification_gate` task. The broker admits a detached checkout
+at that exact commit and tree, with read-only source and task root; only daemon-owned scratch paths
+are writable. The checker returns optional bounded evidence over the task-secret-authenticated
+`gate-evidence` endpoint and one typed `gate-result`. The daemon persists exact result bytes before
+answering `202`; collection validates them again before settling the task. Ordinary `task finish`,
+direct `result.json`, a moved HEAD, a changed tree or status, and a missing read-only capability
+cannot impersonate a PASS. An unavailable loopback has no writable-file fallback.
+
+The coordinator creates durable queued rounds before dispatch, applies bounded backoff for 429,
+allows one exact-origin broker respawn after spawn failure and one deterministic technical retry,
+and reconciles after restart. A FAIL returns the maker to implementation with the finding; an
+unverified `NEEDS_WORK` cannot open Merge. Three consecutive FAILs or exhausted technical attempts
+create separate escalation kinds. A live parent Epic owner decides through the machine-authenticated
+Agent route; an absent/offline owner falls back to the person, with a 900-second promotion grace
+when an owner disappears later. Feedback delivery and notification are recorded separately from
+authorization: accepted, executed, delivered, observed, and acknowledged are not interchangeable.
+An override is reasoned, candidate-bound authority, never a checker PASS. The final Epic round
+requires every child terminal and uses Reality Checker. See `docs/work-system-v2.md` §6.4a for the
+Board projection and export/purge recovery.
+
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。

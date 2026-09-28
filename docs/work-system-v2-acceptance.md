@@ -49,11 +49,12 @@ Negative controls:
 Given a person creates Refactor and Plan rows, each appears in Planning with its Project icon
 and is refused by both existing-Session and new-Session assignment routes. No execution phase or
 assignment is made. (Amended 2026-09-27: an Epic is executable and appears in Unassigned; before it
-enters `implementing` it needs a `plan` and a newer `plan_review` — work-system-v2 §6.4.)
+enters `implementing` it needs a `plan` and a newer `plan_review` only when its captured planning
+gate is on — work-system-v2 §6.4.)
 
 ### WS2-C02E — An Epic's owner breaks it into child items
 
-Given an Epic assigned to Session A and moved to `implementing` after its reviewed plan, Session A
+Given an Epic assigned to Session A and moved to `implementing` after its captured planning guard, Session A
 creates a Feature under it assigned to Session B's terminal and an Issue left unassigned. Both
 appear with `parent_id` = the Epic, in the Epic's Project, marked as created by the Epic's owner;
 Session B receives the brief naming the Epic; the Issue waits in Unassigned. Session A's
@@ -64,6 +65,14 @@ Negative controls: Session B creating a child (`not_epic_owner`); a child of a F
 `refactor` child (`child_kind_not_allowed`); the thirty-third child (`epic_children_full`); Session
 A assigning an item that is no Epic's child (`not_epic_child`). None writes anything. A failed
 new-Session assignment leaves the child unassigned and the answer names `assignment_error`.
+
+After either child's work is merged, Session A rereads the child and its steps. The child's own
+Session completes any unfinished steps, proves the exact landing commit on the local target and
+`origin/main`, then moves `merging → deploying → done` with deployment evidence or a policy-valid
+no-deployment reason. Session A cannot sign Session B's steps or phase (`not_item_owner`); it must
+follow up or use authorized reassignment. It ACKs a broker completion notice when one exists and
+classifies the worktree before pruning landed-identical or task-temporary residue, preserving
+unlanded, mixed, and unknown bytes. The parent Epic stays open until both children are terminal.
 
 ### WS2-C03 — Every card carries the Project presentation
 
@@ -458,6 +467,35 @@ person-created v2 item then works normally.
 Inject failure before the transaction, during database deletion, before legacy-file deletion, and
 after database commit. The operation reports which boundary committed, never claims full success
 for a partial result, and a same-confirmation retry converges without touching retained data.
+
+## Gate extension: planning, independent verification, and recovery
+
+- All four setting pairs are exercised. Planning defaults on, verification off, and only the first
+  successful assignment snapshots them. Reassignment and a later global change preserve the pair;
+  person reopen recaptures on new assignment. Planning off permits Epic directly, Feature on needs
+  one independent review, Epic on keeps its two-review ceiling, and Issue is exempt.
+- Exact acceptance Markdown survives person create/edit, proposal acceptance, Epic child creation,
+  local reads and Cloud reads. Maker edits fail. A change before merging stales a queued or passed
+  round and every override; merging/deploying/done reject acceptance edits.
+- A clean same-Project candidate creates one read-only detached checker round. PASS requires evidence
+  on every reported claim and the exact candidate/criteria tuple. FAIL returns findings and resets
+  the maker to implementation. NEEDS_WORK carries unverified reasons and cannot merge. Missing,
+  malformed, stale, or contradictory results are technical failures, never PASS. An Epic waits for
+  every child to be terminal before its final Reality Checker round.
+- One technical retry, three consecutive FAILs, live parent-owner decision, absent/offline owner
+  fallback, and the 900-second promotion are exercised with restart and delivery failure injection.
+  Direction, acceptance revision, reassignment, repair-retry, override and cancel preserve authority;
+  person-only and Agent-only routes reject each other's credentials. AI, person, and technical
+  overrides are visibly distinct from PASS.
+- Board lists remain bounded and contain no claim/evidence arrays; single-item reads show at most
+  ten recent rounds, aggregates and reasons. At detail capacity the person exports eligible closed
+  rounds, verifies exact UTF-8 byte count and SHA-256, confirms the saved file, and purges with the
+  manifest digest and item version. A changed manifest/version refuses purge; protected recent or
+  active detail and all-time aggregates survive. Cloud and local person actions return identical
+  facts and typed refusals; unsupported Cloud words fail the carry/drift guards.
+- At 390px and desktop width, in light and dark themes, loading, empty, error, stale, override and
+  evidence-unknown states remain distinguishable. Keyboard focus reaches every control and the
+  modal returns focus on close.
 
 ## 13. Release gate
 

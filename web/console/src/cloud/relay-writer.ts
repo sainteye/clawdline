@@ -281,6 +281,8 @@ export type WriteRoute =
   | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
   | { op: "work-v2-edit"; word: Carried<"work.v2.edit">; id: string }
+  | { op: "work-v2-gate-decision"; word: Carried<"work.v2.gate-decision">; id: string }
+  | { op: "work-v2-gate-purge"; word: Carried<"work.v2.gate-purge">; id: string }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
   | { op: "work-v2-persona-suggestion"; word: Carried<"work.v2.persona-suggestion">; id: string }
   | { op: "work-v2-remind"; word: Carried<"work.v2.remind">; id: string }
@@ -515,6 +517,8 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "project-sync" && a === "mirror" && segments.length === 2) return { op: "project-mirror-apply", word: "project-mirror-apply" }
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
+    if (b === "items" && c && d === "gate-decision" && segments.length === 5) return { op: "work-v2-gate-decision", word: "work.v2.gate-decision", id: c }
+    if (b === "items" && c && d === "gate-purge" && segments.length === 5) return { op: "work-v2-gate-purge", word: "work.v2.gate-purge", id: c }
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
     }
@@ -1309,6 +1313,10 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, { item: { ...item, project_id: place.id } }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-edit": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-gate-decision":
+      case "work-v2-gate-purge": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-assign": {

@@ -35,15 +35,17 @@ test("a plan rewritten after its review needs a new review", () => {
   assert.deepEqual(epicGate([...documents, document("review-2", "plan_review", 250)]), { plan: true, review: true, ready: true })
 })
 
-test("the checklist shows on an open Epic until it moves past assigned", () => {
+test("the checklist shows only when this Epic captured planning on", () => {
   for (const phase of ["created", "assigning", "assigned"] as const) {
-    assert.equal(epicGateShown({ kind: "epic", phase, closed_at: null }), true, phase)
+    assert.equal(epicGateShown({ kind: "epic", phase, closed_at: null, gate_snapshot_cycle: 1, planning_gate: true }), true, phase)
   }
   for (const phase of ["implementing", "verifying", "merging", "deploying", "done"] as const) {
-    assert.equal(epicGateShown({ kind: "epic", phase, closed_at: null }), false, phase)
+    assert.equal(epicGateShown({ kind: "epic", phase, closed_at: null, gate_snapshot_cycle: 1, planning_gate: true }), false, phase)
   }
-  assert.equal(epicGateShown({ kind: "epic", phase: "assigned", closed_at: 1 }), false)
-  assert.equal(epicGateShown({ kind: "feature", phase: "assigned", closed_at: null }), false)
+  assert.equal(epicGateShown({ kind: "epic", phase: "assigned", closed_at: null, gate_snapshot_cycle: 0, planning_gate: true }), false)
+  assert.equal(epicGateShown({ kind: "epic", phase: "assigned", closed_at: null, gate_snapshot_cycle: 1, planning_gate: false }), false)
+  assert.equal(epicGateShown({ kind: "epic", phase: "assigned", closed_at: 1, gate_snapshot_cycle: 1, planning_gate: true }), false)
+  assert.equal(epicGateShown({ kind: "feature", phase: "assigned", closed_at: null, gate_snapshot_cycle: 1, planning_gate: true }), false)
   assert.equal(isEpic({ kind: "epic" }), true)
   assert.equal(isEpic({ kind: "refactor" }), false)
 })

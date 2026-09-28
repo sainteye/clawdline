@@ -242,7 +242,7 @@ test("reference pictures use fetch-backed object URLs so Cloud can render their 
 test("every Board card exposes edit and guarded delete flows", () => {
   assert.match(source, /function EditWorkModal/)
   assert.match(source, /編輯看板項目/)
-  assert.match(source, /editWorkV2\(item, title, description\)/)
+  assert.match(source, /editWorkV2\(item, title, description, acceptance\)/)
   assert.match(source, /function DeleteWorkModal/)
   assert.match(source, /刪除看板項目？/)
   assert.match(source, /deleteWorkV2\(item\)/)
