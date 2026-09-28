@@ -47,6 +47,7 @@ export interface MovePlace {
 export interface MoveRecord {
   id: string
   title?: string
+  time_zone?: string
   enabled?: boolean
   when?: { at?: string; days?: string | string[]; on?: string; trigger_only?: boolean }
   task?: Record<string, unknown> & {
@@ -227,6 +228,7 @@ export function recordBody(record: MoveRecord, place: string, enabled: boolean):
     instructions: task.instructions || "",
     enabled,
   }
+  if (record.time_zone) body.time_zone = record.time_zone
   // A schedule with no time sends none of at, days and on (`ScheduleRequest`).
   if (when.trigger_only) {
     body.trigger_only = true
@@ -288,7 +290,8 @@ export function retargetInstructions(text: string, from: string, to: string): st
  * it is, and an empty one — nothing to take off a schedule being made — is left
  * out. The source's hidden template fields go in `template` — only when there
  * are any. Either key is sent only when it says something, so a schedule
- * without them still moves to a machine too old to read it. The project
+ * without them still moves to a machine too old to read it. The named time
+ * zone is a form field and travels with the form. The project
  * directory named in the instructions becomes the target's.
  */
 export function targetBody(form: Record<string, unknown>, record: MoveRecord, place: MovePlace): Record<string, unknown> {
@@ -314,7 +317,7 @@ export function targetBody(form: Record<string, unknown>, record: MoveRecord, pl
  */
 export function refusedByOlderTarget(error: unknown): boolean {
   const message = error && typeof error === "object" ? (error as { message?: unknown }).message : undefined
-  return typeof message === "string" && /unknown field:[^.]*\b(template|permission_mode)\b/.test(message)
+  return typeof message === "string" && /unknown field:[^.]*\b(template|permission_mode|time_zone)\b/.test(message)
 }
 
 /** The three writes, each to the machine it names. `create` routes by the body's place. */

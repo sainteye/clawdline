@@ -80,6 +80,8 @@ export interface ScheduleLastRun {
 export interface ScheduleListRow {
   id?: string
   title?: string
+  /** IANA zone whose wall clock `when.at` names; absent on legacy schedules. */
+  time_zone?: string
   enabled?: boolean
   next_fire?: number
   once?: boolean
@@ -126,6 +128,8 @@ export interface ScheduleRun {
 export interface ScheduleRecord {
   id: string
   title?: string
+  /** IANA zone whose wall clock `when.at` names; absent on legacy schedules. */
+  time_zone?: string
   enabled?: boolean
   file?: string
   /** `{ trigger_only: true }` alone for a schedule with no time. */
@@ -158,13 +162,15 @@ export interface ScheduleRecord {
 /** What create and save answer. */
 export interface ScheduleWriteAnswer {
   ok?: boolean
-  schedule?: { id: string; title?: string; enabled?: boolean; next_fire?: number }
+  schedule?: { id: string; title?: string; enabled?: boolean; next_fire?: number; time_zone?: string }
   dispatch_enabled?: boolean
 }
 
 /** The body create and save send: `input/schedule.js`'s `payload`, field for field, and `trigger_only`, which it never had. */
 export interface ScheduleBody {
   title: string
+  /** IANA zone whose wall clock `at` names. */
+  time_zone?: string
   /** `at` and `days`, or `trigger_only` alone: never both (`schedule-when.ts`). */
   at?: string
   days?: string | string[]

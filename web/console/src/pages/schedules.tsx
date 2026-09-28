@@ -4,7 +4,7 @@ import { nextWord, type NextWord } from "../next-strings.js"
 import { toast } from "../overlays/index.js"
 import { readAnswer, readFailure, readReady, type ReadState } from "../read-state.js"
 import { invalidScheduleErrorHTML } from "../schedule-errors.js"
-import { isTriggerOnly, scheduleNextLine, scheduleWhenFields } from "../schedule-when.js"
+import { isTriggerOnly, scheduleNextLine, scheduleTimeZone, scheduleWhenFields } from "../schedule-when.js"
 import { historyRecordFor, shouldOpenHistory } from "../schedule-history-open.js"
 import "../schedule-errors.css"
 import {
@@ -1215,6 +1215,7 @@ const Schedule = (() => {
 
     const payload: ScheduleBody = {
       title: el<HTMLInputElement>("schedule-title").value.trim(),
+      time_zone: scheduleTimeZone(editRecord?.time_zone, Intl.DateTimeFormat().resolvedOptions().timeZone),
       // A time and its days, or `trigger_only` with neither.
       ...scheduleWhenFields(triggerOnly, el<HTMLInputElement>("schedule-at").value, days),
       place_id: chosenPlace,

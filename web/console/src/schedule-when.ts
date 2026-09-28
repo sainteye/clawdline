@@ -31,6 +31,15 @@ export function scheduleWhenFields(
   return triggerOnly ? { trigger_only: true } : { at, days }
 }
 
+/**
+ * The wall clock a create or save means. Existing named zones stay attached
+ * when a schedule is edited from elsewhere; a legacy record with no zone is
+ * upgraded to the browser's IANA zone on its next save.
+ */
+export function scheduleTimeZone(stored: string | undefined, browser: string | undefined): string | undefined {
+  return stored || browser || undefined
+}
+
 /** The list row's words for when it runs next. */
 export interface NextLineWords {
   /** "Next" — followed by the relative time. */

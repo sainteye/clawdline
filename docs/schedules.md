@@ -7,10 +7,19 @@
 
 ## 模型：就是舊版的檔案
 
-先前 Go 版的排程是 `every 1h`／`at 09:00` 的間隔模型，舊 app 沒有這種東西。現在整個換成舊版的檔案格式，
-欄位一個不改：`clawdline_schedule`、`schedule_id`、`title`、`when {at, days|on}`（or `{trigger_only: true}`, below）、`task {…}`、`enabled`、
-`close_tab`、`catch_up_hours`、`notify_on_failure`、`created_at`、`when_changed_at`、`fired_at`。
-解析器（`internal/domain/schedule`）的每一句拒絕都是舊版 parser 的原句，所以舊檔搬過來是**複製**，不是翻譯。
+The Go scheduler now uses the retired app's file format, with one backward-compatible extension:
+`clawdline_schedule`, `schedule_id`, `title`, `when {at, days|on}` (or `{trigger_only: true}`, below),
+`task {…}`, `enabled`, `close_tab`, `catch_up_hours`, `notify_on_failure`, `created_at`,
+`when_changed_at`, `fired_at`, and the optional `time_zone`. A file copied from the retired app still
+parses without translation.
+
+`time_zone` is an IANA name such as `Asia/Taipei` and says which wall clock `when.at` names. The
+console records the browser's zone when it creates a schedule, and moving a schedule between machines
+carries that zone with it. A Linux host running in UTC therefore does not change what “09:00” means.
+A legacy schedule with no field still uses the daemon's `time.Local`, so an upgrade does not silently
+retime existing work; an older client saving a schedule that already has a zone cannot erase it. An
+unknown name is a `400 bad_request`. The Go binary embeds the IANA database, so execution does not
+depend on the target Linux or Windows installation carrying zoneinfo.
 
 **存在哪裡**：新 daemon 自己的 `clawdline.sqlite3`（`CLAWDLINE_NEXT_DIR` 底下），表 `schedule_files`，
 一列一個檔、`body` 逐位元組就是那個檔。**不寫 `~/.config/clawdline`**。檔案本身說不出的三件事放在旁邊：
@@ -59,7 +68,8 @@ only the list, not Session-starting routes such as `/v1/places/:id/start`.
 
 ## 時鐘：一分鐘一跳，只問最近那一次
 
-每一跳對每個啟用中的排程，只看**最近一次**應該發生的時間（`LatestFire`），依序問：
+On each tick, each enabled schedule considers only the **latest** occurrence (`LatestFire`) in its
+`time_zone`, or in the machine zone for a legacy file. It then asks, in order:
 
 1. `fired_at` 有值 → 已用掉（只跑一次的排程）。
 2. 比 `created_at` 早 → 那時還沒有這個排程。
