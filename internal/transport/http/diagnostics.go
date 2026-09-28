@@ -481,6 +481,53 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkRequestBodyBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
+		// Contract-first gate rows. This slice intentionally has no gate
+		// store, broker origin or coordinator yet, so every producer is a
+		// known zero rather than an unknown reading or a claimed runtime.
+		// The implementation slices replace these notes with their live
+		// store/counter readings as each producer is introduced.
+		capacity.WorkGateRoundDetailsPerItem: func() capacity.Reading {
+			return workGateContractReading("no gate round store is wired")
+		},
+		capacity.WorkGateRoundDetailsPerStore: func() capacity.Reading {
+			return workGateContractReading("no gate round store is wired")
+		},
+		capacity.WorkGateTasksPerRound: func() capacity.Reading {
+			return workGateContractReading("no gate-task broker origin is wired")
+		},
+		capacity.WorkGateClaimsPerRound: func() capacity.Reading {
+			return workGateContractReading("per-result guard; no gate result route is wired")
+		},
+		capacity.WorkGateEvidenceStringsPerClaim: func() capacity.Reading {
+			return workGateContractReading("per-result guard; no gate result route is wired")
+		},
+		capacity.WorkGateEvidenceStringBytes: func() capacity.Reading {
+			return workGateContractReading("per-result guard; no gate result route is wired")
+		},
+		capacity.WorkGateResultBytes: func() capacity.Reading {
+			return workGateContractReading("per-request guard; no gate result route is wired")
+		},
+		capacity.WorkGateEvidenceArtifactsPerTask: func() capacity.Reading {
+			return workGateContractReading("per-task guard; no gate evidence route is wired")
+		},
+		capacity.WorkGateEvidenceArtifactBytes: func() capacity.Reading {
+			return workGateContractReading("per-request guard; no gate evidence route is wired")
+		},
+		capacity.WorkGateEvidenceTotalBytesPerTask: func() capacity.Reading {
+			return workGateContractReading("per-task guard; no gate evidence route is wired")
+		},
+		capacity.WorkGateRecentRoundsPerItemRead: func() capacity.Reading {
+			return workGateContractReading("per-answer window; no gate item projection is wired")
+		},
+		capacity.WorkGateDueRowsPerPass: func() capacity.Reading {
+			return workGateContractReading("per-pass window; no gate coordinator is wired")
+		},
+		capacity.WorkGateRetryBackoffSeconds: func() capacity.Reading {
+			return workGateContractReading("per-retry ceiling; no gate coordinator is wired")
+		},
+		capacity.WorkGateOwnerOfflineGraceSeconds: func() capacity.Reading {
+			return workGateContractReading("per-escalation ceiling; no gate coordinator is wired")
+		},
 		capacity.IntentRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
@@ -658,6 +705,10 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(n)}
 		},
 	}
+}
+
+func workGateContractReading(note string) capacity.Reading {
+	return capacity.Reading{Known: true, Note: "contract foundation: " + note}
 }
 
 func (s *Server) workV2CapacityReading(name string) capacity.Reading {

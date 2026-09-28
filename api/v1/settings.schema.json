@@ -180,6 +180,18 @@
           "nullable": true,
           "type": "boolean"
         },
+        "planning_gate": {
+          "description": "Whether a newly assigned execution cycle captures the planning gate. Absent means true; a later setting change never rewrites an in-flight cycle's snapshot.",
+          "nullable": true,
+          "type": "boolean",
+          "default": true
+        },
+        "verify_gate": {
+          "description": "Whether a newly assigned execution cycle captures independent verification. Absent means false; a later setting change never rewrites an in-flight cycle's snapshot.",
+          "nullable": true,
+          "type": "boolean",
+          "default": false
+        },
         "orchestrator_enabled": {
           "description": "Whether one session may hand work to another.",
           "nullable": true,
@@ -381,6 +393,16 @@
         },
         "orchestrator_agent_notify": {
           "description": "Whether an agent may push a sentence of its own.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "planning_gate": {
+          "description": "Whether future execution cycles capture the planning gate. Null leaves the stored setting unchanged; absence in the settings file defaults to true.",
+          "nullable": true,
+          "type": "boolean"
+        },
+        "verify_gate": {
+          "description": "Whether future execution cycles capture independent verification. Null leaves the stored setting unchanged; absence in the settings file defaults to false.",
           "nullable": true,
           "type": "boolean"
         },

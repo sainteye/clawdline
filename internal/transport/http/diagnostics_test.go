@@ -68,6 +68,31 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 	}
 }
 
+func TestWorkGateContractRowsAreExplicitKnownZeroes(t *testing.T) {
+	measures := capacityServer(t).capacityMeasures()
+	for _, name := range []string{
+		capacity.WorkGateRoundDetailsPerItem,
+		capacity.WorkGateRoundDetailsPerStore,
+		capacity.WorkGateTasksPerRound,
+		capacity.WorkGateClaimsPerRound,
+		capacity.WorkGateEvidenceStringsPerClaim,
+		capacity.WorkGateEvidenceStringBytes,
+		capacity.WorkGateResultBytes,
+		capacity.WorkGateEvidenceArtifactsPerTask,
+		capacity.WorkGateEvidenceArtifactBytes,
+		capacity.WorkGateEvidenceTotalBytesPerTask,
+		capacity.WorkGateRecentRoundsPerItemRead,
+		capacity.WorkGateDueRowsPerPass,
+		capacity.WorkGateRetryBackoffSeconds,
+		capacity.WorkGateOwnerOfflineGraceSeconds,
+	} {
+		reading := measures[name]()
+		if !reading.Known || reading.Used != 0 || !strings.Contains(reading.Note, "contract foundation") {
+			t.Errorf("%s reading = %+v", name, reading)
+		}
+	}
+}
+
 // fakeBeat installs a beat over rows the test chooses, measured by readings the
 // test chooses, and runs one pass of it.
 func fakeBeat(t *testing.T, s *Server, rows map[string]capacity.Reading, limits map[string]int64) *capacityBeat {

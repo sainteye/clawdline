@@ -1245,6 +1245,10 @@ type BrokerResult struct {
 	Artifacts  []string `json:"artifacts,omitempty"`
 	FinishedAt string   `json:"finished_at,omitempty"`
 
+	// The closed verification-gate result. It is absent for every ordinary task kind
+	// and required by collection for a verification_gate task.
+	GateVerdict *WorkGateResult `json:"gate_verdict,omitempty"`
+
 	// What this delivery says it did not do. Absent when the child named none, which
 	// is an ordinary complete delivery: nothing ever required the field.
 	Leftovers    []BrokerLeftover    `json:"leftovers,omitempty"`
@@ -5138,6 +5142,10 @@ type SettingsRequest struct {
 	// 8 to 28.
 	OutputSize *float64 `json:"output_size"`
 
+	// Whether future execution cycles capture the planning gate. Null leaves the
+	// stored setting unchanged; absence in the settings file defaults to true.
+	PlanningGate *bool `json:"planning_gate"`
+
 	// Notify when a session reports a delivery.
 	PushOnDelivery *bool `json:"push_on_delivery"`
 
@@ -5170,6 +5178,10 @@ type SettingsRequest struct {
 
 	// `auto`, `iterm` or `tmux`.
 	Terminal *string `json:"terminal"`
+
+	// Whether future execution cycles capture independent verification. Null leaves
+	// the stored setting unchanged; absence in the settings file defaults to false.
+	VerifyGate *bool `json:"verify_gate"`
 
 	// `auto`, `apple` or `whisper`.
 	VoiceEngine *string `json:"voice_engine"`
@@ -5276,6 +5288,10 @@ type SettingsSnapshot struct {
 	// Where the file is, whether or not it exists.
 	Path string `json:"path"`
 
+	// Whether a newly assigned execution cycle captures the planning gate. Absent
+	// means true; a later setting change never rewrites an in-flight cycle's snapshot.
+	PlanningGate *bool `json:"planning_gate"`
+
 	// Notify when a session reports a delivery.
 	PushOnDelivery *bool `json:"push_on_delivery"`
 
@@ -5310,6 +5326,11 @@ type SettingsSnapshot struct {
 	// Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as
 	// scope_app.
 	Terminal *string `json:"terminal"`
+
+	// Whether a newly assigned execution cycle captures independent verification.
+	// Absent means false; a later setting change never rewrites an in-flight cycle's
+	// snapshot.
+	VerifyGate *bool `json:"verify_gate"`
 
 	// `auto`, `apple` or `whisper`.
 	VoiceEngine *string `json:"voice_engine"`
@@ -6706,6 +6727,323 @@ type WorkDisposition struct {
 	TaskID       string `json:"taskId,omitempty"`
 	Title        string `json:"title"`
 }
+
+// The exact acceptance text and identity captured by an item or verification
+// round. The digest is lowercase SHA-256 hex of the exact stored criteria
+// bytes.
+type WorkGateAcceptance struct {
+	// Bounded at admission by the existing work.item_description_bytes policy.
+	Criteria string `json:"criteria"`
+	Digest   string `json:"digest"`
+	Version  int64  `json:"version"`
+}
+
+// One of at most two broker task records for a round. Attempt zero may be a
+// broker respawn only after spawn_failed; other technical retries use
+// deterministic attempt one.
+type WorkGateAttempt struct {
+	Attempt     int64  `json:"attempt"`
+	CreatedAt   int64  `json:"created_at"`
+	FailureCode string `json:"failure_code,omitempty"`
+	FinishedAt  int64  `json:"finished_at,omitempty"`
+	ID          string `json:"id"`
+
+	// Unix seconds; absent when no retry is due.
+	NextRetryAt int64                `json:"next_retry_at,omitempty"`
+	RespawnOf   string               `json:"respawn_of,omitempty"`
+	RoundID     string               `json:"round_id"`
+	State       WorkGateAttemptState `json:"state"`
+	TaskID      string               `json:"task_id,omitempty"`
+	UpdatedAt   int64                `json:"updated_at"`
+}
+
+// The lifecycle of one bounded broker attempt inside a round.
+type WorkGateAttemptState string
+
+const (
+	WorkGateAttemptStateQueued      WorkGateAttemptState = "queued"
+	WorkGateAttemptStateDispatching WorkGateAttemptState = "dispatching"
+	WorkGateAttemptStateRunning     WorkGateAttemptState = "running"
+	WorkGateAttemptStateSucceeded   WorkGateAttemptState = "succeeded"
+	WorkGateAttemptStateFailed      WorkGateAttemptState = "failed"
+	WorkGateAttemptStateTimedOut    WorkGateAttemptState = "timed_out"
+	WorkGateAttemptStateStale       WorkGateAttemptState = "stale"
+)
+
+// WorkGateAttemptStateValues is every value the contract allows, in contract order.
+var WorkGateAttemptStateValues = []WorkGateAttemptState{WorkGateAttemptStateQueued, WorkGateAttemptStateDispatching, WorkGateAttemptStateRunning, WorkGateAttemptStateSucceeded, WorkGateAttemptStateFailed, WorkGateAttemptStateTimedOut, WorkGateAttemptStateStale}
+
+// The maker's immutable receipt for the exact same-Project commit an
+// independent checker sees. Untracked files are counted but are not part of the
+// candidate.
+type WorkGateCandidateReceipt struct {
+	AssignmentID string `json:"assignment_id"`
+	Branch       string `json:"branch"`
+	Commit       string `json:"commit"`
+
+	// Unix seconds.
+	CreatedAt       int64  `json:"created_at"`
+	CriteriaDigest  string `json:"criteria_digest"`
+	CriteriaVersion int64  `json:"criteria_version"`
+	Cycle           int64  `json:"cycle"`
+
+	// The active maker's conversation id.
+	OwnerSessionID string `json:"owner_session_id"`
+	Repository     string `json:"repository"`
+	Tree           string `json:"tree"`
+	UntrackedFiles int64  `json:"untracked_files"`
+	Worktree       string `json:"worktree"`
+}
+
+// One bounded checker claim, quoting the acceptance criterion it evaluated.
+// Passed and failed claims carry evidence; an unverified claim carries a
+// reason.
+type WorkGateClaim struct {
+	Criterion         string             `json:"criterion"`
+	Evidence          []string           `json:"evidence"`
+	EvidenceArtifacts []string           `json:"evidence_artifacts"`
+	Reason            string             `json:"reason"`
+	State             WorkGateClaimState `json:"state"`
+}
+
+// The checker's result for one acceptance claim.
+type WorkGateClaimState string
+
+const (
+	WorkGateClaimStatePassed     WorkGateClaimState = "passed"
+	WorkGateClaimStateFailed     WorkGateClaimState = "failed"
+	WorkGateClaimStateUnverified WorkGateClaimState = "unverified"
+)
+
+// WorkGateClaimStateValues is every value the contract allows, in contract order.
+var WorkGateClaimStateValues = []WorkGateClaimState{WorkGateClaimStatePassed, WorkGateClaimStateFailed, WorkGateClaimStateUnverified}
+
+// The bounded gate projection carried by Board list items: aggregates and
+// latest state, never evidence history.
+type WorkGateCompactRead struct {
+	Escalation        *WorkGateEscalation   `json:"escalation,omitempty"`
+	GateSnapshotCycle int64                 `json:"gate_snapshot_cycle"`
+	LatestRound       *WorkGateRoundSummary `json:"latest_round,omitempty"`
+	Metrics           WorkGateMetrics       `json:"metrics"`
+	PlanningGate      bool                  `json:"planning_gate"`
+	VerifyGate        bool                  `json:"verify_gate"`
+}
+
+// The immutable gate settings captured by the first successful assignment of an
+// execution cycle.
+type WorkGateCycleSnapshot struct {
+	// Unix seconds.
+	CapturedAt int64 `json:"captured_at"`
+	Cycle      int64 `json:"cycle"`
+
+	// The full same-Project Git commit captured for a verify-on cycle.
+	CycleBaseCommit string `json:"cycle_base_commit,omitempty"`
+	PlanningGate    bool   `json:"planning_gate"`
+	VerifyGate      bool   `json:"verify_gate"`
+}
+
+// A closed set of escalation decisions. Only override authorizes the frozen
+// candidate without a checker PASS.
+type WorkGateDecisionAction string
+
+const (
+	WorkGateDecisionActionDirection        WorkGateDecisionAction = "direction"
+	WorkGateDecisionActionReviseAcceptance WorkGateDecisionAction = "revise_acceptance"
+	WorkGateDecisionActionReassign         WorkGateDecisionAction = "reassign"
+	WorkGateDecisionActionRetry            WorkGateDecisionAction = "retry"
+	WorkGateDecisionActionOverride         WorkGateDecisionAction = "override"
+	WorkGateDecisionActionCancel           WorkGateDecisionAction = "cancel"
+)
+
+// WorkGateDecisionActionValues is every value the contract allows, in contract order.
+var WorkGateDecisionActionValues = []WorkGateDecisionAction{WorkGateDecisionActionDirection, WorkGateDecisionActionReviseAcceptance, WorkGateDecisionActionReassign, WorkGateDecisionActionRetry, WorkGateDecisionActionOverride, WorkGateDecisionActionCancel}
+
+// A versioned parent-owner decision for a gate escalation. Person routes
+// authenticate the person separately and omit session_id; an agent route
+// requires the caller's conversation id.
+type WorkGateDecisionRequest struct {
+	AcceptanceCriteria string                    `json:"acceptance_criteria,omitempty"`
+	Action             WorkGateDecisionAction    `json:"action"`
+	Candidate          *WorkGateCandidateReceipt `json:"candidate,omitempty"`
+	Direction          string                    `json:"direction,omitempty"`
+	ExpectedVersion    int64                     `json:"expected_version"`
+	Reason             string                    `json:"reason"`
+
+	// The deciding parent owner's conversation id on an agent route.
+	SessionID string `json:"session_id,omitempty"`
+
+	// The replacement owner's conversation id for a reasoned reassignment.
+	TargetSessionID string `json:"target_session_id,omitempty"`
+}
+
+// The single-item gate projection. recent_rounds is newest-first and bounded;
+// aggregates/latest remain authoritative when older eligible detail was purged.
+type WorkGateDetailRead struct {
+	Acceptance            WorkGateAcceptance        `json:"acceptance"`
+	Candidate             *WorkGateCandidateReceipt `json:"candidate,omitempty"`
+	Compact               WorkGateCompactRead       `json:"compact"`
+	CycleSnapshot         *WorkGateCycleSnapshot    `json:"cycle_snapshot,omitempty"`
+	RecentRounds          []WorkGateRound           `json:"recent_rounds"`
+	RecentRoundsTruncated bool                      `json:"recent_rounds_truncated"`
+}
+
+// A durable third-FAIL or technical-verification decision request. Delivery
+// state is evidence only and never grants authority.
+type WorkGateEscalation struct {
+	Candidate           *WorkGateCandidateReceipt `json:"candidate,omitempty"`
+	ConsecutiveFailures int64                     `json:"consecutive_failures"`
+	CreatedAt           int64                     `json:"created_at"`
+	ID                  string                    `json:"id"`
+	ItemID              string                    `json:"item_id"`
+	Kind                WorkGateEscalationKind    `json:"kind"`
+	PromotedAt          int64                     `json:"promoted_at,omitempty"`
+	Reason              string                    `json:"reason"`
+	Resolution          WorkGateDecisionAction    `json:"resolution,omitempty"`
+	ResolvedAt          int64                     `json:"resolved_at,omitempty"`
+	RoundID             string                    `json:"round_id,omitempty"`
+	State               WorkGateEscalationState   `json:"state"`
+	UpdatedAt           int64                     `json:"updated_at"`
+	WaitingSince        int64                     `json:"waiting_since,omitempty"`
+}
+
+// Why gate authority has moved away from the maker.
+type WorkGateEscalationKind string
+
+const (
+	WorkGateEscalationKindThirdFail             WorkGateEscalationKind = "third_fail"
+	WorkGateEscalationKindTechnicalVerification WorkGateEscalationKind = "technical_verification"
+)
+
+// WorkGateEscalationKindValues is every value the contract allows, in contract order.
+var WorkGateEscalationKindValues = []WorkGateEscalationKind{WorkGateEscalationKindThirdFail, WorkGateEscalationKindTechnicalVerification}
+
+// Who currently owns the durable decision, or that it was resolved.
+type WorkGateEscalationState string
+
+const (
+	WorkGateEscalationStateWaitingParentOwner WorkGateEscalationState = "waiting_parent_owner"
+	WorkGateEscalationStateWaitingUser        WorkGateEscalationState = "waiting_user"
+	WorkGateEscalationStateResolved           WorkGateEscalationState = "resolved"
+)
+
+// WorkGateEscalationStateValues is every value the contract allows, in contract order.
+var WorkGateEscalationStateValues = []WorkGateEscalationState{WorkGateEscalationStateWaitingParentOwner, WorkGateEscalationStateWaitingUser, WorkGateEscalationStateResolved}
+
+// The immutable answer to an accepted gate-evidence upload. An exact idempotent
+// replay returns the original receipt.
+type WorkGateEvidenceReceipt struct {
+	AcceptedAt int64  `json:"accepted_at"`
+	ArtifactID string `json:"artifact_id"`
+	ByteCount  int64  `json:"byte_count"`
+	MediaType  string `json:"media_type"`
+	Replayed   bool   `json:"replayed"`
+	Sha256     string `json:"sha256"`
+	TaskID     string `json:"task_id"`
+}
+
+// Metadata authenticated alongside one streamed checker artifact. The declared
+// digest and size are checked before the daemon persists bytes.
+type WorkGateEvidenceSubmission struct {
+	ArtifactID string `json:"artifact_id"`
+	ByteCount  int64  `json:"byte_count"`
+	MediaType  string `json:"media_type"`
+	Sha256     string `json:"sha256"`
+}
+
+// Fixed-size all-time counters retained after eligible round detail is exported
+// and purged.
+type WorkGateMetrics struct {
+	Fails     int64 `json:"fails"`
+	Findings  int64 `json:"findings"`
+	Overrides int64 `json:"overrides"`
+	Rounds    int64 `json:"rounds"`
+}
+
+// The exact typed result submitted by a verification_gate task. Candidate and
+// criteria identity must match the admitted task and durable round.
+type WorkGateResult struct {
+	CandidateCommit string          `json:"candidate_commit"`
+	CandidateTree   string          `json:"candidate_tree"`
+	Claims          []WorkGateClaim `json:"claims"`
+	CriteriaDigest  string          `json:"criteria_digest"`
+	CriteriaVersion int64           `json:"criteria_version"`
+	RoundID         string          `json:"round_id"`
+	Summary         string          `json:"summary"`
+	TaskID          string          `json:"task_id"`
+	Verdict         WorkGateVerdict `json:"verdict"`
+}
+
+// The immutable 202 receipt for exact gate-result bytes. A replay is true only
+// for the original idempotency key and digest.
+type WorkGateResultReceipt struct {
+	AcceptedAt int64           `json:"accepted_at"`
+	ByteCount  int64           `json:"byte_count"`
+	Replayed   bool            `json:"replayed"`
+	Sha256     string          `json:"sha256"`
+	TaskID     string          `json:"task_id"`
+	Verdict    WorkGateVerdict `json:"verdict"`
+}
+
+// One durable verification round with its frozen acceptance and candidate.
+// Detail reads retain at most the registered recent history; aggregate counters
+// survive eligible detail purge.
+type WorkGateRound struct {
+	Acceptance     WorkGateAcceptance       `json:"acceptance"`
+	Attempts       []WorkGateAttempt        `json:"attempts"`
+	Candidate      WorkGateCandidateReceipt `json:"candidate"`
+	CheckerPersona string                   `json:"checker_persona"`
+	CreatedAt      int64                    `json:"created_at"`
+	Cycle          int64                    `json:"cycle"`
+	FinishedAt     int64                    `json:"finished_at,omitempty"`
+	ID             string                   `json:"id"`
+	ItemID         string                   `json:"item_id"`
+	Result         *WorkGateResult          `json:"result,omitempty"`
+	StaleReason    string                   `json:"stale_reason,omitempty"`
+	State          WorkGateRoundState       `json:"state"`
+	UpdatedAt      int64                    `json:"updated_at"`
+}
+
+// The durable lifecycle of one verification round. A complete round's result
+// carries the verdict; stale and technical_failure never authorize merging.
+type WorkGateRoundState string
+
+const (
+	WorkGateRoundStateQueued           WorkGateRoundState = "queued"
+	WorkGateRoundStateDispatching      WorkGateRoundState = "dispatching"
+	WorkGateRoundStateRunning          WorkGateRoundState = "running"
+	WorkGateRoundStateComplete         WorkGateRoundState = "complete"
+	WorkGateRoundStateStale            WorkGateRoundState = "stale"
+	WorkGateRoundStateTechnicalFailure WorkGateRoundState = "technical_failure"
+)
+
+// WorkGateRoundStateValues is every value the contract allows, in contract order.
+var WorkGateRoundStateValues = []WorkGateRoundState{WorkGateRoundStateQueued, WorkGateRoundStateDispatching, WorkGateRoundStateRunning, WorkGateRoundStateComplete, WorkGateRoundStateStale, WorkGateRoundStateTechnicalFailure}
+
+// The bounded gate facts safe for a list response; it deliberately omits claims
+// and evidence.
+type WorkGateRoundSummary struct {
+	CandidateCommit string             `json:"candidate_commit"`
+	CreatedAt       int64              `json:"created_at"`
+	CriteriaDigest  string             `json:"criteria_digest"`
+	FinishedAt      int64              `json:"finished_at,omitempty"`
+	ID              string             `json:"id"`
+	State           WorkGateRoundState `json:"state"`
+	Verdict         WorkGateVerdict    `json:"verdict,omitempty"`
+}
+
+// The only verdicts an independent checker may submit. NEEDS_WORK means at
+// least one acceptance claim could not be verified and never authorizes
+// merging.
+type WorkGateVerdict string
+
+const (
+	WorkGateVerdictPASS      WorkGateVerdict = "PASS"
+	WorkGateVerdictFAIL      WorkGateVerdict = "FAIL"
+	WorkGateVerdictNEEDSWORK WorkGateVerdict = "NEEDS_WORK"
+)
+
+// WorkGateVerdictValues is every value the contract allows, in contract order.
+var WorkGateVerdictValues = []WorkGateVerdict{WorkGateVerdictPASS, WorkGateVerdictFAIL, WorkGateVerdictNEEDSWORK}
 
 // Something this session declared it is owed, beside whatever its work state
 // is.

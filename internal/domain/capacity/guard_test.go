@@ -224,7 +224,7 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 	names := map[string]bool{}
 	deviating := []string{}
 	for _, e := range Register() {
-		if !namePattern.MatchString(e.Name) || names[e.Name] {
+		if (!namePattern.MatchString(e.Name) && !gateNamePattern.MatchString(e.Name)) || names[e.Name] {
 			t.Errorf("%q: a row needs a unique area.thing name", e.Name)
 		}
 		names[e.Name] = true
