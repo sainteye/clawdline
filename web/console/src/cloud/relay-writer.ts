@@ -287,7 +287,7 @@ export type WriteRoute =
   | { op: "work-v2-proposal-resolve"; word: Carried<"work.v2.proposal-resolve">; id: string; decision: "accept" | "reject" }
   | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
   | { op: "work-v2-todo-image-create"; word: Carried<"work.v2.todo-image-create">; terminal: string; id: string }
-  | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "delete" }
+  | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "reopen" | "delete" }
   // Manual `title` is not a Cloud word at all — not here and not in the Swift
   // app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
@@ -528,7 +528,7 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b === "session-todos" && c && todoID && action === "images" && segments.length === 6) {
       return { op: "work-v2-todo-image-create", word: "work.v2.todo-image-create", terminal: c, id: todoID }
     }
-    if (b === "session-todos" && c && todoID && (action === "send" || action === "complete" || action === "delete") && segments.length === 6) {
+    if (b === "session-todos" && c && todoID && (action === "send" || action === "complete" || action === "reopen" || action === "delete") && segments.length === 6) {
       return { op: "work-v2-todo-action", word: "work.v2.todo-action", terminal: c, id: todoID, action }
     }
     return null

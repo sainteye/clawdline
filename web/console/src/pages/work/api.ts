@@ -547,7 +547,7 @@ export const addDirectTodoV2Image = (terminalID: string, todoID: string, expecte
   { expected_version: expectedVersion, title: picture.name, data_url: picture.url, position },
 )
 
-export const directTodoActionV2 = (terminalID: string, todoID: string, action: "send" | "complete" | "delete") =>
+export const directTodoActionV2 = (terminalID: string, todoID: string, action: "send" | "complete" | "reopen" | "delete") =>
   mutate<{ todo?: DirectTodoV2; deleted?: string }>(
     `/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}/${todoID}/${action}`,
     {},

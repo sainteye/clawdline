@@ -112,6 +112,7 @@ test("direct todos explain receipts, allow a read row to be sent again, and reta
   assert.match(source, /已同步到 Session，尚未完成/)
   assert.match(source, /最近完成的直接待辦/)
   assert.match(source, /session-todo-check completed/)
+  assert.match(source, /aria-label="恢復為未完成"[\s\S]*?onClick=\{\(\) => onAction\("reopen"\)\}/)
   assert.match(styles, /\.session-direct-todo\.completed/)
   assert.match(styles, /var\(--ok\)/)
 })

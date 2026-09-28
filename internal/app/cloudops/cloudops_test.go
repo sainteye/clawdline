@@ -879,6 +879,20 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 	}
 }
 
+func TestWorkV2TodoActionCarriesReopen(t *testing.T) {
+	r := &router{}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "work.v2.todo-action", "session": MachineReplySession, "request": "req-work-v2-todo-reopen",
+		"terminal": pane, "id": "td1", "action": "reopen", "item": map[string]any{},
+	}))
+	if answer.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("reopen answer: %+v; routes: %+v", answer, r.seen)
+	}
+	if got := r.last(); got.Method != "POST" || got.Path != "/v1/work/v2/session-todos/%2519/td1/reopen" || string(got.Body) != `{}` {
+		t.Fatalf("reopen route: %+v", got)
+	}
+}
+
 // TestAMovedHookBindCarriesItsRevision: a moved hook is bound on the target
 // at the revision the move answered, so `hook_revision` reaches the local route
 // as the integer it was; a body without it is the plain bind, unchanged.

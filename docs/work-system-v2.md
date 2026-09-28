@@ -642,6 +642,10 @@ three independent receipts:
 - `read_at`: the Session read its to-do API after that delivery (`✓✓`, which supersedes the single mark);
 - `completed_at`: the person or Session checked it complete.
 
+The person's checkbox is reversible: pressing a completed row clears its completion receipt and
+returns it to the unfinished list. Its send and read receipts remain intact because reopening the
+work does not undo its earlier delivery.
+
 A Session may read an unsent row, in which case it moves directly from no mark to `✓✓`. This is a
 queue-synchronization receipt, not a claim that implementation started: a turn-boundary poll can
 observe the row while the Session is still finishing earlier work. If the row remains open, the
