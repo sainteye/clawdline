@@ -63,11 +63,16 @@ test("assignment choices show Session activity, unfinished work, and selected de
   assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
 })
 
-test("the Board AI consent says it is for choosing an Agent role during assignment", () => {
-  assert.match(boardSettings, /AI 建議 Agent 角色/)
-  assert.match(boardSettings, /指派看板項目/)
-  assert.match(boardSettings, /讓 AI 判斷角色/)
-  assert.doesNotMatch(boardSettings, /AI 閱讀摘要/)
+test("AI role suggestions need no separate Settings consent", () => {
+  assert.doesNotMatch(boardSettings, /settings-board-ai/)
+  assert.doesNotMatch(boardSettings, /set_ai_consent/)
+})
+
+test("the assignment picker shows one compact AI suggestion action", () => {
+  assert.match(source, /aiSuggestionBusy \? "AI 建議中…" : "AI 建議"/)
+  assert.doesNotMatch(source, /讓 AI 判斷角色/)
+  assert.doesNotMatch(source, /只有按下按鈕才會把項目類型/)
+  assert.doesNotMatch(styles, /\.work-persona-ai\s*\{/)
 })
 
 test("assigned Board items show their generated TODO receipts", () => {
@@ -320,10 +325,11 @@ test("opening Epic reassignment brings the picker into view", () => {
   assert.match(source, /autoFocus=\{focusAssignment \|\| \(epic && reassigning\)\}/)
 })
 
-test("an Epic card is drawn as large work: its own frame, label, and the lane's width", () => {
+test("an Epic keeps its frame and label without spanning both desktop columns", () => {
   assert.match(source, /const cardClass = epic \? "work-card work-v2-card work-epic-card"/)
   assert.match(source, /EPIC · 大型項目/)
-  assert.match(styles, /\.work-cards > \.work-epic-card \{ grid-column: 1 \/ -1; \}/)
+  assert.match(styles, /\.work-cards \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.doesNotMatch(styles, /\.work-cards > \.work-epic-card \{[^}]*grid-column:/)
   assert.match(styles, /--work-epic: var\(--peer\)/)
   assert.doesNotMatch(source, /kind === "epic"/)
 })

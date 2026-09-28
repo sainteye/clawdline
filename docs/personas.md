@@ -339,11 +339,12 @@ showed before this feature, never a sheet that breaks after a press.
   chosen. An unreadable or older catalog still draws no role UI. The existing-Session picker and
   an Epic's children list show the owner's bot when its session row has a persona.
 
-  A separate **Use AI to decide** button is additive to that local behavior. Opening, rendering or
-  scrolling an item sends nothing and keeps the existing keyword/kind result. The button says
-  before the press that one turn will send only the item's kind, title and description to the
-  Board's consented provider (currently Codex). Its POST carries the item version and an
-  Idempotency-Key; a dropped response is replayed rather than classified twice. The daemon gives
+  A separate compact **AI suggestion** button is additive to that local behavior. Opening,
+  rendering or scrolling an item sends nothing and keeps the existing keyword/kind result. The
+  explicit press requests one turn with only the item's kind, title and description through the
+  configured provider (currently Codex); it needs no separate Settings consent. Its POST carries
+  the item version and an Idempotency-Key; a dropped response is replayed rather than classified
+  twice. The daemon gives
   one tool-less turn the closed list of persona ids, English names and summaries — never persona
   prompt bodies, conversations, attachments, Project files or credentials. A returned id is
   accepted only when it is in that catalog. `ambiguous`, malformed, unknown-id, timeout, quota and

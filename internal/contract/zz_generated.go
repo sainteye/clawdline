@@ -3427,7 +3427,7 @@ type PersonaSuggestionReply struct {
 	// An exact id from GET /v1/personas for recommend; empty for ambiguous.
 	PersonaID string `json:"persona_id"`
 
-	// The AI provider whose explicit Board-content consent covered this turn.
+	// The configured AI provider used for this explicitly requested turn.
 	Provider string `json:"provider"`
 }
 

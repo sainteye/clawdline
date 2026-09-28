@@ -182,7 +182,11 @@
 .work-card-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 14px; }
 .work-card-summary-top, .work-card-summary-foot { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .work-card-summary-top .work-v2-project { flex: 1 1 9em; }
-.work-card-summary-title { font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.work-card-summary-title {
+    display: -webkit-box; overflow: hidden;
+    font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere;
+    -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .work-card-summary-description {
     display: -webkit-box; overflow: hidden; color: var(--dim); font-size: 13px; line-height: 1.55;
     white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
@@ -265,18 +269,8 @@
 }
 .work-persona-suggestion strong { color: var(--text); }
 .work-persona-suggestion span { min-width: 0; overflow-wrap: anywhere; }
-.work-persona-ai {
-    display: grid; flex: 1 1 100%; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 10px; align-items: center;
-    padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 10px;
-    background: color-mix(in srgb, var(--accent) 5%, transparent);
-}
-.work-persona-ai > div { display: grid; min-width: 0; gap: 2px; }
-.work-persona-ai > div > strong { color: var(--text); font-size: 12px; }
-.work-persona-ai > div > span { color: var(--dim); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
-.work-persona-ai > button { justify-self: end; white-space: nowrap; }
-.work-persona-ai > p { display: flex; grid-column: 1 / -1; flex-wrap: wrap; gap: 2px 8px; margin: 0; color: var(--dim); font-size: 11.5px; }
-.work-persona-ai > p strong { color: var(--text); }
-.work-persona-ai > .work-note { color: var(--danger); }
+.work-persona-ai-result { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 2px 8px; margin: 0; color: var(--dim); font-size: 11.5px; }
+.work-persona-ai-result strong { color: var(--text); }
 /* As tall as the chips beside it, whatever height the engine gives a line of
    11.5px text (23px in WebKit, 26px in Chromium, measured): the group stretches
    to the row and its own minimum stays below either. The marks are sized to
@@ -768,15 +762,13 @@
     /* Below 16px iOS zooms the page when a text field is tapped. */
     .work-new-modal .work-input, .work-new-modal textarea { font-size: 16px; }
     .work-plan-kind-list { grid-template-columns: minmax(0, 1fr); }
-    .work-persona-ai { grid-template-columns: minmax(0, 1fr); }
-    .work-persona-ai > button { justify-self: stretch; min-height: 34px; }
 }
 
-/* An Epic is large work, so its card reads as bigger than its neighbours: the whole lane's width, a
-   frame in its own colour, a heavier title. Its colour is the peer lavender,
-   kept apart from the accent that marks what the person must act on. */
+/* An Epic is large work that is planned and reviewed before it is built, so
+   its card has a frame in its own colour and a heavier title. It occupies one
+   grid cell like other items, keeping the desktop Board in two columns. Its
+   colour is the peer lavender, apart from the action accent. */
 :root { --work-epic: var(--peer); --work-epic-in: var(--peer-in); --work-epic-ed: var(--peer-ed); }
-.work-cards > .work-epic-card { grid-column: 1 / -1; }
 .work-epic-card {
     border-color: var(--work-epic-ed); box-shadow: inset 3px 0 0 var(--work-epic);
     background: color-mix(in srgb, var(--work-epic) 4%, var(--card));

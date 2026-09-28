@@ -24,7 +24,7 @@
         "ok": { "type": "boolean" },
         "outcome": { "$ref": "#/$defs/PersonaSuggestionOutcome" },
         "persona_id": { "description": "An exact id from GET /v1/personas for recommend; empty for ambiguous.", "type": "string" },
-        "provider": { "description": "The AI provider whose explicit Board-content consent covered this turn.", "type": "string" }
+        "provider": { "description": "The configured AI provider used for this explicitly requested turn.", "type": "string" }
       }
     }
   }

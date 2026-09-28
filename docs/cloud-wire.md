@@ -746,9 +746,9 @@ way `work.v2.cancel` does: `{type, session, request, id, item}` routed to
 As of 2026-09-28, `work.v2.persona-suggestion` carries the explicit AI role-classification press as
 `{type, session, request, id, item:{expected_version}}` to
 `POST /v1/work/v2/items/<id>/persona-suggestion`. The request id remains its Idempotency-Key, and
-the paired-device actor marker means the machine applies the same send permission and Board AI
-consent as a browser on the machine. The item text is read by the local route after consent, never
-placed in the Cloud command envelope.
+the paired-device actor marker means the machine applies the same send permission as a browser on
+the machine. The explicit press needs no separate Board AI consent. The item text is read by the
+local route, never placed in the Cloud command envelope.
 
 Also as of 2026-09-28, the hosted Settings page carries the two machine-wide model defaults through
 two narrow words: the read-only `default-models` routes to `GET /v1/settings/default-models`, and
@@ -760,8 +760,9 @@ picker, so the hosted page offers choices instead of accepting arbitrary text. R
 the paired line. Saving is a command, so it also needs the machine's
 Cloud-command switch and the paired device's Send capability.
 
-Also as of 2026-09-28, `board-command` carries the Settings page's existing Board mode and AI
-consent commands as `{command}` to `POST /v1/board`. The command's own `requestId` is both the Cloud
+Also as of 2026-09-28, `board-command` carries the Settings page's Board mode command as
+`{command}` to `POST /v1/board`; the AI-consent form remains accepted for older clients but is no
+longer shown or required. The command's own `requestId` is both the Cloud
 request id and the local route's Idempotency-Key, so retrying an uncertain save cannot apply it
 twice. It crosses as the paired device, preserving the local route's Send and Admin checks; item
 writes remain separate Work v2 commands.

@@ -16,13 +16,13 @@ import {
  * whoever read it — this page on arrival (`Settings.enter` →
  * `BoardControls.refresh`), the Board page on each of its reads — which is
  * `board-bridge.ts`'s `boardMode`. Until one has arrived the block is as the
- * markup has it: English, and both toggles "Loading…" and off.
+ * markup has it: English, and its toggle "Loading…" and off.
  *
- * The two toggles are `bind`'s two listeners, rule for rule: one command at a
- * time; the same command, same request id, is sent again after a failure that
+ * The toggle follows `bind`'s listener rule for rule: one command at a time;
+ * the same command, same request id, is sent again after a failure that
  * may have followed a successful write; a failure that cannot have is dropped
- * and, for the mode toggle, the board read again. Both need `viewer.canManage`,
- * so a device that may only read sees them disabled, as there.
+ * and the board read again. It needs `viewer.canManage`, so a device that may
+ * only read sees it disabled, as there.
  */
 function words(en: string, zh: string): string {
   return /^zh/i.test(document.documentElement.lang || navigator.language || "") ? zh : en
@@ -62,9 +62,6 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
   }, [shown])
 
   const canManage = board?.viewer?.canManage === true
-  const provider = board?.viewer?.narrativeProvider
-  const providerName = provider === "codex" ? "OpenAI / Codex" : provider === "claude" ? "Anthropic / Claude" : ""
-  const aiAllowed = !!provider && board?.narrativeConsent === provider
 
   const pressMode = () => {
     const latest = boardMode()
@@ -96,37 +93,6 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         setStatus(
           L.failureSentence(error, words("Save failed", "儲存失敗")) + words(" · Press again to retry.", " · 再按一次重試。"),
         )
-      })
-      .finally(() => setBusy(false))
-  }
-
-  const pressAI = () => {
-    const latest = boardMode()
-    if (!latest || latest.viewer?.canManage !== true || savingRef.current) return
-    const who = latest.viewer?.narrativeProvider
-    if (who !== "codex" && who !== "claude") return
-    const command: Command = pending.current || {
-      operation: "set_ai_consent",
-      provider: who,
-      enabled: latest.narrativeConsent !== who,
-      policy: "board-reading-v1",
-      expectedRevision: latest.revision,
-      requestId: crypto.randomUUID(),
-    }
-    if (command.operation !== "set_ai_consent") return
-    pending.current = command
-    setBusy(true)
-    boardCommand(command)
-      .then((result) => {
-        pending.current = null
-        operationError.current = false
-        applyBoardMode(result.board)
-        setStatus(words("Saved", "已儲存"))
-      })
-      .catch((error: Failure) => {
-        operationError.current = true
-        if (error.code && error.retryable !== true && !RETRYABLE.test(error.code)) pending.current = null
-        setStatus(L.failureSentence(error, words("Save failed", "儲存失敗")))
       })
       .finally(() => setBusy(false))
   }
@@ -164,34 +130,6 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
       <p className="say" id="settings-board-status" role="status">
         {status}
       </p>
-      <b id="settings-board-ai-title">{words("AI Agent role suggestions", "AI 建議 Agent 角色")}</b>
-      <p className="say" id="settings-board-ai-say">
-        {board
-          ? words(
-              'Used only by “Let AI choose a role” when assigning a Board item. Only after you press that button are the item type, title and description sent to ',
-              '只用於指派看板項目時的「讓 AI 判斷角色」。按下該按鈕後，才會將該項目的類型、標題與描述送至 ',
-            ) +
-            providerName +
-            words(
-              ". Each press uses one AI turn. No transcript, credential file or attachment is read.",
-              "；每次使用一個 AI 回合。不讀取完整對話、憑證檔或附件。",
-            )
-          : ""}
-      </p>
-      <button
-        className="chip"
-        id="settings-board-ai-toggle"
-        type="button"
-        aria-pressed={board ? (String(aiAllowed) as "true" | "false") : "false"}
-        disabled={!board || saving || !canManage || !providerName}
-        onClick={pressAI}
-      >
-        {board
-          ? aiAllowed
-            ? words("Stop AI sharing", "停止 AI 外送整理")
-            : words("Allow sharing with ", "同意送至 ") + providerName
-          : ""}
-      </button>
     </div>
   )
 }
