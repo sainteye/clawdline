@@ -93,6 +93,17 @@ test("Plan items require an explicit accessible switch before the Board shows th
   assert.match(styles, /\.work-plan-toggle/)
 })
 
+test("Plan cards are visually distinct and offer a guarded executable conversion", () => {
+  assert.match(source, /work-plan-card/)
+  assert.match(source, /PLAN · 未排入執行/)
+  assert.match(source, />轉成可執行項目<\/button>/)
+  assert.match(source, /<fieldset className="work-plan-kind-field"><legend>轉換後的項目類型<\/legend>/)
+  assert.match(source, /type="radio" name=\{`plan-conversion-/)
+  assert.match(source, /convertWorkV2\(item, conversionKind\)/)
+  assert.match(styles, /\.work-plan-card/)
+  assert.match(styles, /\.work-plan-convert/)
+})
+
 test("the Board distinguishes initial loading, paging, empty, stale, and error states", () => {
   assert.match(source, /loading \? <BoardSkeleton \/>/)
   assert.match(source, /role="status" aria-label=\{L\.strings\.webLoading\}/)
@@ -282,7 +293,7 @@ test("opening Epic reassignment brings the picker into view", () => {
 })
 
 test("an Epic card is drawn as large work: its own frame, label, and the lane's width", () => {
-  assert.match(source, /epic \? "work-card work-v2-card work-epic-card" : "work-card work-v2-card"/)
+  assert.match(source, /const cardClass = epic \? "work-card work-v2-card work-epic-card"/)
   assert.match(source, /EPIC · 大型項目/)
   assert.match(styles, /\.work-cards > \.work-epic-card \{ grid-column: 1 \/ -1; \}/)
   assert.match(styles, /--work-epic: var\(--peer\)/)

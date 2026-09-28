@@ -523,6 +523,59 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 	return out, mapWorkV2Error(err)
 }
 
+type ConvertPlanV2 struct {
+	ExpectedVersion int64
+	Kind            work.Kind
+	Actor           string
+}
+
+// ConvertPlan turns future work into a piece that can be assigned. It is a
+// one-way, person-owned decision: changing any other kind in place would
+// rewrite what an active Session accepted, while a Plan has never entered the
+// execution lifecycle. The item's identity, content, attachments and history
+// stay intact so the decision remains traceable.
+func (w *WorkSystemV2) ConvertPlan(ctx context.Context, id string, c ConvertPlanV2, file WorkV2Filer) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if prev.Version != c.ExpectedVersion {
+			return store.ErrConflict
+		}
+		if prev.Phase.Terminal() {
+			return work.RefuseV2("item_terminal", "A completed or cancelled Plan cannot be converted.")
+		}
+		if prev.Kind != work.KindPlan {
+			return work.RefuseV2("not_plan", "Only a Plan can be converted into executable work.")
+		}
+		if !c.Kind.Executable() {
+			return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, or issue.")
+		}
+		if prev.Phase != work.PhaseCreated || prev.OwnerSession != "" {
+			return work.RefuseV2("plan_not_convertible", "Only an unassigned Plan that has not entered execution can be converted.")
+		}
+		next := prev
+		next.Kind = c.Kind
+		next.UpdatedAt = w.now()
+		if err := tx.PutItem(prev, next, "item.converted", c.Actor, payload(map[string]string{
+			"from": string(prev.Kind), "to": string(next.Kind),
+		})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next}
+		if file != nil {
+			if k, a, ok := file(out); ok {
+				return tx.CompleteReceipt(k, a)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
 type AssignWorkV2 struct {
 	ExpectedVersion int64
 	Mode            string
