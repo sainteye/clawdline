@@ -153,7 +153,11 @@
 .work-card-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 14px; }
 .work-card-summary-top, .work-card-summary-foot { display: flex; min-width: 0; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .work-card-summary-top .work-v2-project { flex: 1 1 9em; }
-.work-card-summary-title { font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.work-card-summary-title {
+    display: -webkit-box; overflow: hidden;
+    font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere;
+    -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .work-card-summary-description {
     display: -webkit-box; overflow: hidden; color: var(--dim); font-size: 13px; line-height: 1.55;
     white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
