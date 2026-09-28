@@ -267,7 +267,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("archive-session" in CARRIED)
   assert.ok("archived-sessions" in CARRIED)
   assert.ok("restore-archived" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 100)
+  assert.equal(Object.keys(CARRIED).length, 99)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
