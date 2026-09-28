@@ -7081,6 +7081,21 @@ type WorkGateRoundSummary struct {
 	Verdict         WorkGateVerdict    `json:"verdict,omitempty"`
 }
 
+// A narrow change to the gate defaults. A missing or null key leaves that value
+// unchanged.
+type WorkGateSettingsRequest struct {
+	PlanningGate *bool `json:"planning_gate"`
+	VerifyGate   *bool `json:"verify_gate"`
+}
+
+// The two machine-wide gate values shown by every console. These are defaults
+// for future successful assignments; an in-flight cycle keeps its captured
+// pair.
+type WorkGateSettingsSnapshot struct {
+	PlanningGate bool `json:"planning_gate"`
+	VerifyGate   bool `json:"verify_gate"`
+}
+
 // The only verdicts an independent checker may submit. NEEDS_WORK means at
 // least one acceptance claim could not be verified and never authorizes
 // merging.

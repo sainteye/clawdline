@@ -244,6 +244,8 @@ export type WriteRoute =
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
+  | { op: "work-gate-settings"; word: Carried<"work-gate-settings"> }
+  | { op: "work-gate-settings-update"; word: Carried<"work-gate-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
   // The sessions a reboot took away: one machine read and two machine
@@ -421,6 +423,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "settings" && a === "default-models" && segments.length === 2) {
       return { op: "default-models", word: "default-models" }
     }
+    if (head === "settings" && a === "work-gates" && segments.length === 2) {
+      return { op: "work-gate-settings", word: "work-gate-settings" }
+    }
     if (head === "sessions" && a === "restorable" && segments.length === 2) {
       return { op: "restorable", word: "restorable-sessions" }
     }
@@ -501,6 +506,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (method !== "POST") return null
   if (head === "settings" && a === "default-models" && segments.length === 2) {
     return { op: "default-models-update", word: "default-models-update" }
+  }
+  if (head === "settings" && a === "work-gates" && segments.length === 2) {
+    return { op: "work-gate-settings-update", word: "work-gate-settings-update" }
   }
   if (head === "board" && segments.length === 1) {
     return { op: "board-command", word: "board-command" }
@@ -704,6 +712,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "worktree-refresh":
     case "default-models":
     case "default-models-update":
+    case "work-gate-settings":
+    case "work-gate-settings-update":
     case "board-command":
     case "project-icon-copy":
     case "project-mirror-apply":
@@ -1018,6 +1028,7 @@ export class RelayWriter {
       }
       case "capacity":
       case "default-models":
+      case "work-gate-settings":
       case "machine-usage": {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
@@ -1277,6 +1288,12 @@ export class RelayWriter {
         )
       }
       case "default-models-update": {
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
+        }
+        return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-gate-settings-update": {
         for (const [key] of url.searchParams) {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }

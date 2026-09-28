@@ -46,6 +46,44 @@ func defaultModelsCall(t *testing.T, s *Server, method, contentType, body string
 	return rec
 }
 
+func workGateSettingsCall(t *testing.T, s *Server, method, contentType, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, "/v1/settings/work-gates", strings.NewReader(body))
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	rec := httptest.NewRecorder()
+	s.workGateSettingsRoute(rec, req)
+	return rec
+}
+
+func TestWorkGateSettingsRouteNeverCarriesOtherSettings(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "clawdline-next")
+	s := &Server{cfg: config.Config{Dir: dir}}
+
+	rec := workGateSettingsCall(t, s, http.MethodGet, "", "")
+	if rec.Code != http.StatusOK || rec.Body.String() != "{\"planning_gate\":true,\"verify_gate\":false}\n" {
+		t.Fatalf("defaults: %d %s", rec.Code, rec.Body)
+	}
+	rec = workGateSettingsCall(t, s, http.MethodPost, "application/json",
+		`{"planning_gate":false,"verify_gate":true}`)
+	if rec.Code != http.StatusOK || rec.Body.String() != "{\"planning_gate\":false,\"verify_gate\":true}\n" {
+		t.Fatalf("write: %d %s", rec.Code, rec.Body)
+	}
+	rec = workGateSettingsCall(t, s, http.MethodPost, "application/json", `{"remote":true}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"bad_request"`) {
+		t.Fatalf("unrelated key: %d %s", rec.Code, rec.Body)
+	}
+	rec = workGateSettingsCall(t, s, http.MethodPost, "application/json", `{"planning_gate":"on"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"invalid_planning_gate"`) {
+		t.Fatalf("wrong shape: %d %s", rec.Code, rec.Body)
+	}
+	rec = workGateSettingsCall(t, s, http.MethodPost, "text/plain", `{"planning_gate":true}`)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("plain text: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -8459,6 +8459,24 @@ export interface WorkGateRoundSummary {
 }
 
 /**
+ * A narrow change to the gate defaults. A missing or null key leaves that value
+ * unchanged.
+ */
+export interface WorkGateSettingsRequest {
+  planning_gate: boolean | null
+  verify_gate: boolean | null
+}
+
+/**
+ * The two machine-wide gate values shown by every console. These are defaults for
+ * future successful assignments; an in-flight cycle keeps its captured pair.
+ */
+export interface WorkGateSettingsSnapshot {
+  planning_gate: boolean
+  verify_gate: boolean
+}
+
+/**
  * The only verdicts an independent checker may submit. NEEDS_WORK means at least
  * one acceptance claim could not be verified and never authorizes merging.
  */

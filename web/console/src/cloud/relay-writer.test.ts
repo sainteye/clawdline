@@ -210,6 +210,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/places", "places"],
     ["GET", "/v1/settings/default-models", "default-models"],
     ["POST", "/v1/settings/default-models", "default-models-update"],
+    ["GET", "/v1/settings/work-gates", "work-gate-settings"],
+    ["POST", "/v1/settings/work-gates", "work-gate-settings-update"],
     ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
@@ -1447,6 +1449,30 @@ test("a phone reads and changes only the two default models", async () => {
   }, "action"])
 
   for (const path of ["/v1/settings/default-models/extra", "/v1/settings/default-models?all=1"]) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 501, path)
+  }
+  assert.equal(writeRoute("POST", "/v1/settings"), null)
+})
+
+test("a phone reads and changes only the two work gates", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+
+  assert.deepEqual(writeRoute("GET", "/v1/settings/work-gates"), {
+    op: "work-gate-settings", word: "work-gate-settings",
+  })
+  const read = await reader.fetch("/v1/settings/work-gates")
+  assert.equal(read.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work-gate-settings", {}, "read"])
+
+  const write = await reader.fetch("/v1/settings/work-gates", post({ planning_gate: true, verify_gate: true }))
+  assert.equal(write.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work-gate-settings-update", {
+    changes: { planning_gate: true, verify_gate: true },
+  }, "action"])
+
+  for (const path of ["/v1/settings/work-gates/extra", "/v1/settings/work-gates?all=1"]) {
     const res = await reader.fetch(path)
     assert.equal(res.status, 501, path)
   }

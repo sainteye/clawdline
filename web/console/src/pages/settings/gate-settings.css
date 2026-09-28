@@ -1,0 +1,38 @@
+.settings-gate-row {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 20px;
+}
+
+.settings-gate-row .say {
+  margin: 5px 0 0;
+}
+
+.settings-gate-mode {
+  background: color-mix(in srgb, var(--accent, #c87962) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #c87962) 34%, transparent);
+  border-radius: 12px;
+  display: grid;
+  gap: 5px;
+  margin-top: 20px;
+  padding: 14px 16px;
+}
+
+.settings-gate-mode span {
+  color: var(--muted, #9d9995);
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .settings-gate-row {
+    align-items: start;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-gate-row .chip {
+    justify-self: start;
+    min-height: 44px;
+  }
+}

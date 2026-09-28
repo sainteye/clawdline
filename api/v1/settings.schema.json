@@ -457,6 +457,37 @@
           "type": "integer"
         }
       }
+    },
+    "WorkGateSettingsSnapshot": {
+      "description": "The two machine-wide gate values shown by every console. These are defaults for future successful assignments; an in-flight cycle keeps its captured pair.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planning_gate", "verify_gate"],
+      "properties": {
+        "planning_gate": {
+          "type": "boolean",
+          "default": true
+        },
+        "verify_gate": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "WorkGateSettingsRequest": {
+      "description": "A narrow change to the gate defaults. A missing or null key leaves that value unchanged.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planning_gate": {
+          "nullable": true,
+          "type": "boolean"
+        },
+        "verify_gate": {
+          "nullable": true,
+          "type": "boolean"
+        }
+      }
     }
   }
 }
