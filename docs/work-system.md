@@ -26,7 +26,9 @@
 > Epic owner dispatches a read-only `ux-architect` (or the specialist matching the dominant risk)
 > against the integrated candidate before merging, resolves blocking findings, and records the
 > verdict and disposition. A backend-only Epic records why this is not applicable. This specialist
-> pass complements rather than replaces plan review and checker PASS; details are in
+> pass normally happens once for the integrated outcome. The owner checks small corrections without
+> redispatch; a material change outside the reviewed UX, policy, brand or security boundary gets
+> one focused specialist review. It complements rather than replaces plan review and checker PASS; details are in
 > [`work-system-v2.md` §6.4b](work-system-v2.md).
 
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，

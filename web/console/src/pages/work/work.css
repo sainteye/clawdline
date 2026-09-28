@@ -29,6 +29,16 @@
 .work-gate-acceptance { margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
 .work-gate-acceptance > div { color: var(--ink); overflow-wrap: anywhere; }
 .work-gate-acceptance small { display: block; margin-top: 8px; color: var(--dim); overflow-wrap: anywhere; }
+.work-acceptance-editor { margin: 4px 0; border: 1px solid var(--line); border-radius: 9px; }
+.work-acceptance-editor > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 10px 12px; color: var(--ink); list-style: none; }
+.work-acceptance-editor > summary::-webkit-details-marker { display: none; }
+.work-acceptance-editor > summary::before { content: "›"; color: var(--dim); }
+.work-acceptance-editor[open] > summary::before { transform: rotate(90deg); }
+.work-acceptance-editor > summary span { color: var(--dim); font-size: 12px; }
+.work-acceptance-editor > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.work-acceptance-editor > label { display: grid; gap: 5px; margin: 0 12px; }
+.work-acceptance-editor textarea { min-height: 100px; }
+.work-acceptance-editor > .work-note { margin: 8px 12px 12px; }
 .work-gate-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
 .work-gate-metrics > div { min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .work-gate-metrics dt { color: var(--dim); font-size: 12px; }
