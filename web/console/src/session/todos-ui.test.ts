@@ -47,7 +47,7 @@ test("a failed read is shown in the header, not as loading, and tapping it retri
 
 test("an open Session page refreshes its to-dos through one read at a time", () => {
   assert.match(source, /const one = new OneRead\(load\)/)
-  assert.match(source, /const stop = watchTodoRefresh\(\(\) => \{ void one\.ask\(\) \}\)/)
+  assert.match(source, /const stop = watchTodoRefresh\(\(\) => \{ void one\.ask\(true\) \}\)/)
   assert.match(source, /return \(\) => \{\s*stop\(\)/)
   // An action's own re-read postdates the action.
   assert.match(source, /try \{ await task\(\); await refresh\(true\); return true \}/)
