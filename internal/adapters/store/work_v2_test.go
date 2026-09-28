@@ -41,6 +41,88 @@ func TestOpeningAnOlderWorkStoreAddsTheRequestedUserAction(t *testing.T) {
 	}
 }
 
+func TestOpeningAnOlderWorkStoreSnapshotsOnlyInflightAssignments(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE work_v2_items (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, project_path TEXT NOT NULL, kind TEXT NOT NULL,
+  title TEXT NOT NULL, description TEXT NOT NULL, phase TEXT NOT NULL, condition TEXT NOT NULL DEFAULT '',
+  user_action TEXT NOT NULL DEFAULT '', deployment_policy TEXT NOT NULL, owner_session TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER,
+  cycle INTEGER NOT NULL DEFAULT 1, version INTEGER NOT NULL DEFAULT 1);
+INSERT INTO work_v2_items
+  (id,project_id,project_path,kind,title,description,phase,condition,user_action,deployment_policy,
+   owner_session,created_by,created_at,updated_at,closed_at,cycle,version)
+VALUES
+  ('epic-assigned','p','/p','epic','e','  legacy criteria' || char(10),'assigned','','','agent_decides','s','local',1,11,NULL,2,1),
+  ('feature-progress','p','/p','feature','f','f','implementing','','','agent_decides','s','local',2,12,NULL,3,1),
+  ('issue-verifying','p','/p','issue','i','i','verifying','','','agent_decides','s','local',3,13,NULL,4,1),
+  ('epic-created','p','/p','epic','c','c','created','','','agent_decides','','local',4,14,NULL,1,1),
+  ('epic-done','p','/p','epic','d','d','done','','','agent_decides','s','local',5,15,15,1,1)`)
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	wants := map[string]struct {
+		cycle         int64
+		planning      bool
+		verify        bool
+		snapshotAtSec int64
+	}{
+		"epic-assigned":    {2, true, false, 11},
+		"feature-progress": {3, false, false, 12},
+		"issue-verifying":  {4, false, false, 13},
+		"epic-created":     {0, false, false, 0},
+		"epic-done":        {0, false, false, 0},
+	}
+	for id, want := range wants {
+		got, err := s.WorkV2Item(context.Background(), id)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		at := int64(0)
+		if !got.GateSnapshotAt.IsZero() {
+			at = got.GateSnapshotAt.Unix()
+		}
+		if got.GateSnapshotCycle != want.cycle || got.PlanningGate != want.planning ||
+			got.VerifyGate != want.verify || at != want.snapshotAtSec {
+			t.Errorf("%s snapshot = cycle %d at %d planning=%v verify=%v", id,
+				got.GateSnapshotCycle, at, got.PlanningGate, got.VerifyGate)
+		}
+		wantAcceptance := ""
+		if id == "epic-assigned" {
+			wantAcceptance = "  legacy criteria\n"
+		}
+		if got.AcceptanceVersion != 1 || got.AcceptanceCriteria != wantAcceptance ||
+			got.AcceptanceDigest != work.AcceptanceDigest(wantAcceptance) {
+			t.Errorf("%s migrated acceptance = %q v%d %s", id, got.AcceptanceCriteria,
+				got.AcceptanceVersion, got.AcceptanceDigest)
+		}
+		if id == "epic-assigned" {
+			plans := []work.DocumentV2{
+				{Role: work.DocumentPlan},
+				{Role: work.DocumentPlanReview},
+				{Role: work.DocumentPlan},
+				{Role: work.DocumentPlanReview},
+			}
+			if err := work.PlanningGate(got, work.PhaseImplementing, plans); err != nil {
+				t.Errorf("migrated Epic did not preserve its reviewed-plan crossing: %v", err)
+			}
+		}
+	}
+}
+
 // A store from before Sessions could create items gains the provenance
 // column, and its items read as created by a person.
 func TestOpeningAnOlderWorkStoreAddsCreatedViaWithoutLosingItems(t *testing.T) {

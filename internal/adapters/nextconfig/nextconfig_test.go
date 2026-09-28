@@ -148,6 +148,34 @@ func TestNoFileReadsAsDefaults(t *testing.T) {
 	}
 }
 
+func TestWorkGateDefaultsAndStoredBooleans(t *testing.T) {
+	f := Open(t.TempDir())
+	v, err := f.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gates := v.WorkGates(); !gates.Planning || gates.Verify {
+		t.Fatalf("defaults = %+v", gates)
+	}
+	v, err = f.Set(map[string]any{"planning_gate": false, "verify_gate": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gates := v.WorkGates(); gates.Planning || !gates.Verify {
+		t.Fatalf("stored gates = %+v", gates)
+	}
+	if err := os.WriteFile(f.Path(), []byte(`{"planning_gate":"yes","verify_gate":3}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, err = f.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gates := v.WorkGates(); !gates.Planning || gates.Verify {
+		t.Fatalf("wrong-shaped gates did not use defaults: %+v", gates)
+	}
+}
+
 // The Swift app's directory is never written, by its own spelling, from
 // inside it, or through a link that leads there.
 func TestTheSwiftAppsDirectoryIsNeverWritten(t *testing.T) {

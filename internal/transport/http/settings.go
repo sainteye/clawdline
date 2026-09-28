@@ -217,9 +217,17 @@ var settingsSnapshotKeys = func() map[string]bool {
 // to `Settables` is carried here the moment the types are regenerated. A value
 // whose JSON is the wrong shape for its field is left out, which is what the
 // schema's null means — the file says something this app does not read.
-func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) contract.SettingsSnapshot {
-	out := contract.SettingsSnapshot{Exists: v.Exists, Path: f.Path()}
-	value := reflect.ValueOf(&out).Elem()
+type settingsSnapshotWire struct {
+	contract.SettingsSnapshot
+	PlanningGate bool `json:"planning_gate"`
+	VerifyGate   bool `json:"verify_gate"`
+}
+
+func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotWire {
+	gates := v.WorkGates()
+	out := settingsSnapshotWire{SettingsSnapshot: contract.SettingsSnapshot{Exists: v.Exists, Path: f.Path()},
+		PlanningGate: gates.Planning, VerifyGate: gates.Verify}
+	value := reflect.ValueOf(&out.SettingsSnapshot).Elem()
 	fields := value.Type()
 	for i := 0; i < fields.NumField(); i++ {
 		name := strings.Split(fields.Field(i).Tag.Get("json"), ",")[0]

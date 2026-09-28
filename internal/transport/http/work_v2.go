@@ -36,6 +36,14 @@ func (s *Server) workV2() *app.WorkSystemV2 {
 		return v.(*app.WorkSystemV2)
 	}
 	v := app.NewWorkSystemV2(s.store)
+	v.GateSettings = func(context.Context) (app.WorkV2GateSettings, error) {
+		values, err := s.settingsFile().Read()
+		if err != nil {
+			return app.WorkV2GateSettings{}, err
+		}
+		gates := values.WorkGates()
+		return app.WorkV2GateSettings{Planning: gates.Planning, Verify: gates.Verify}, nil
+	}
 	got, _ := workV2ByServer.LoadOrStore(s, v)
 	return got.(*app.WorkSystemV2)
 }
@@ -49,35 +57,42 @@ type workV2ProjectWire struct {
 }
 
 type workV2ItemWire struct {
-	ID               string                `json:"id"`
-	Project          workV2ProjectWire     `json:"project"`
-	Kind             string                `json:"kind"`
-	Title            string                `json:"title"`
-	Description      string                `json:"description"`
-	Phase            string                `json:"phase"`
-	Condition        *string               `json:"condition"`
-	UserAction       string                `json:"user_action"`
-	Area             string                `json:"area"`
-	DeploymentPolicy string                `json:"deployment_policy"`
-	OwnerSession     *string               `json:"owner_session"`
-	CreatedBy        string                `json:"created_by"`
-	CreatedVia       *workV2CreatedViaWire `json:"created_via,omitempty"`
+	ID                 string                `json:"id"`
+	Project            workV2ProjectWire     `json:"project"`
+	Kind               string                `json:"kind"`
+	Title              string                `json:"title"`
+	Description        string                `json:"description"`
+	AcceptanceCriteria string                `json:"acceptance_criteria"`
+	AcceptanceVersion  int64                 `json:"acceptance_version"`
+	AcceptanceDigest   string                `json:"acceptance_digest"`
+	Phase              string                `json:"phase"`
+	Condition          *string               `json:"condition"`
+	UserAction         string                `json:"user_action"`
+	Area               string                `json:"area"`
+	DeploymentPolicy   string                `json:"deployment_policy"`
+	OwnerSession       *string               `json:"owner_session"`
+	CreatedBy          string                `json:"created_by"`
+	CreatedVia         *workV2CreatedViaWire `json:"created_via,omitempty"`
 	// ParentID is the Epic this item was broken out of by the Epic's owner
 	// Session; absent for every other item.
 	ParentID string `json:"parent_id,omitempty"`
 	// ClaimedVia is the person's message the owning Session claimed the item
 	// on; absent when the person assigned it, or nobody holds it.
-	ClaimedVia  *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
-	CreatedAt   int64                  `json:"created_at"`
-	UpdatedAt   int64                  `json:"updated_at"`
-	ClosedAt    *int64                 `json:"closed_at"`
-	Cycle       int64                  `json:"cycle"`
-	Version     int64                  `json:"version"`
-	Assignments []workV2AssignmentWire `json:"assignments,omitempty"`
-	Documents   []workV2DocumentWire   `json:"documents,omitempty"`
-	Images      []workV2ImageWire      `json:"images,omitempty"`
-	Steps       []workV2StepWire       `json:"steps,omitempty"`
-	Events      []workV2EventWire      `json:"events,omitempty"`
+	ClaimedVia        *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
+	CreatedAt         int64                  `json:"created_at"`
+	UpdatedAt         int64                  `json:"updated_at"`
+	ClosedAt          *int64                 `json:"closed_at"`
+	Cycle             int64                  `json:"cycle"`
+	GateSnapshotCycle int64                  `json:"gate_snapshot_cycle"`
+	GateSnapshotAt    *int64                 `json:"gate_snapshot_at"`
+	PlanningGate      bool                   `json:"planning_gate"`
+	VerifyGate        bool                   `json:"verify_gate"`
+	Version           int64                  `json:"version"`
+	Assignments       []workV2AssignmentWire `json:"assignments,omitempty"`
+	Documents         []workV2DocumentWire   `json:"documents,omitempty"`
+	Images            []workV2ImageWire      `json:"images,omitempty"`
+	Steps             []workV2StepWire       `json:"steps,omitempty"`
+	Events            []workV2EventWire      `json:"events,omitempty"`
 }
 
 // workV2CreatedViaWire is the person's message a Session created an item on:
@@ -249,28 +264,56 @@ func workV2ParentNote(parent work.ItemV2) string {
 		"so keep its phase and steps current.", parent.ID, parent.Title)
 }
 
-// workV2KindSteps is the steps instruction for the item's kind: an Epic
-// always has steps, so it gets the Epic procedure instead.
-func workV2KindSteps(id string, kind work.Kind) string {
-	if kind == work.KindEpic {
-		return workV2EpicInstruction(id)
+func workV2FeatureInstruction(id string) string {
+	return "This Feature's captured planning gate is on: before code, write its plan with `clawdline item doc " + id +
+		" --role plan --title \"Plan\"`, have one independent `plan_review` child review it, record that review, then move it to implementing."
+}
+
+// workV2KindSteps is the planning/steps instruction captured for this cycle.
+func workV2KindSteps(item work.ItemV2) string {
+	if item.Kind == work.KindEpic && item.PlanningGate {
+		return workV2EpicInstruction(item.ID)
 	}
-	return workV2StepsInstruction(id)
+	if item.Kind == work.KindFeature && item.PlanningGate {
+		return workV2FeatureInstruction(item.ID) + " " + workV2StepsInstruction(item.ID)
+	}
+	if (item.Kind == work.KindEpic || item.Kind == work.KindFeature) && item.HasGateSnapshot() && !item.PlanningGate {
+		return "This cycle captured planning_gate off, so no planning document or independent review is forced before implementing. " +
+			workV2StepsInstruction(item.ID)
+	}
+	return workV2StepsInstruction(item.ID)
+}
+
+func workV2GateModeInstruction(item work.ItemV2) string {
+	if !item.HasGateSnapshot() {
+		return "The gate mode is captured only when assignment succeeds."
+	}
+	return fmt.Sprintf("This cycle captured planning_gate=%t and verify_gate=%t; later global setting changes do not alter it.",
+		item.PlanningGate, item.VerifyGate)
+}
+
+func workV2AcceptanceBrief(item work.ItemV2) string {
+	if item.AcceptanceCriteria == "" {
+		return ""
+	}
+	return "Acceptance criteria:\n" + item.AcceptanceCriteria + "\n\n"
 }
 
 // workV2AssignmentBrief is what an existing Session is sent when it is
 // assigned an item.
-func workV2AssignmentBrief(id, title string, kind work.Kind) string {
-	return fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it. %s %s %s %s", id, title,
-		workV2CreateRule(id, kind), workV2KindSteps(id, kind), workV2PhaseInstruction(id), workV2CompletionReportInstruction)
+func workV2AssignmentBriefForItem(item work.ItemV2) string {
+	return workV2AcceptanceBrief(item) + fmt.Sprintf("Clawdline assigned you Board item %s: %s. Read its description and reference images, then own it through implementation, verification, Merge, and deployment. Use the work-system v2 Agent API to update it. %s %s %s %s %s", item.ID, item.Title,
+		workV2CreateRule(item.ID, item.Kind), workV2GateModeInstruction(item), workV2KindSteps(item),
+		workV2PhaseInstruction(item.ID), workV2CompletionReportInstruction)
 }
 
 // workV2ReassignmentBrief is what an existing Session is sent when the person
 // moves an item to it from another Session: the item is mid-flight, so it is
 // told to continue from what is recorded rather than start over.
-func workV2ReassignmentBrief(id, title string, kind work.Kind, phase work.Phase) string {
-	return fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s %s", id, title,
-		workV2TakeoverNote(phase), workV2CreateRule(id, kind), workV2KindSteps(id, kind), workV2PhaseInstruction(id),
+func workV2ReassignmentBriefForItem(item work.ItemV2) string {
+	return workV2AcceptanceBrief(item) + fmt.Sprintf("Clawdline reassigned Board item %s: %s to you. %s %s %s %s %s %s", item.ID, item.Title,
+		workV2TakeoverNote(item.Phase), workV2CreateRule(item.ID, item.Kind), workV2GateModeInstruction(item),
+		workV2KindSteps(item), workV2PhaseInstruction(item.ID),
 		workV2CompletionReportInstruction)
 }
 
@@ -319,9 +362,34 @@ func (s *Server) tellReleasedOwner(ctx context.Context, previous work.Assignment
 
 // workV2RootAssignmentAcceptance is the acceptance of the Root Assignment a
 // new Session is opened with for an item.
+func workV2RootAssignmentAcceptanceForItem(item work.ItemV2) string {
+	process := "Implement, verify, merge, and deploy according to the item's deployment policy. " +
+		workV2GateModeInstruction(item) + " " + workV2KindSteps(item) + " " +
+		workV2PhaseInstruction(item.ID) + " " + workV2CompletionReportInstruction
+	if item.AcceptanceCriteria == "" {
+		return process
+	}
+	return item.AcceptanceCriteria + "\n\n" + process
+}
+
+// Compatibility composers preserve the pre-snapshot helper surface used by
+// focused instruction tests. Runtime assignment paths use the item-aware
+// forms above so acceptance and the captured mode are exact.
+func legacyWorkV2BriefItem(id, title string, kind work.Kind, phase work.Phase) work.ItemV2 {
+	return work.ItemV2{ID: id, Title: title, Kind: kind, Phase: phase, Cycle: 1, GateSnapshotCycle: 1,
+		PlanningGate: kind == work.KindEpic}
+}
+
+func workV2AssignmentBrief(id, title string, kind work.Kind) string {
+	return workV2AssignmentBriefForItem(legacyWorkV2BriefItem(id, title, kind, work.PhaseAssigned))
+}
+
+func workV2ReassignmentBrief(id, title string, kind work.Kind, phase work.Phase) string {
+	return workV2ReassignmentBriefForItem(legacyWorkV2BriefItem(id, title, kind, phase))
+}
+
 func workV2RootAssignmentAcceptance(id string, kind work.Kind) string {
-	return "Implement, verify, merge, and deploy according to the item's deployment policy. " +
-		workV2KindSteps(id, kind) + " " + workV2PhaseInstruction(id) + " " + workV2CompletionReportInstruction
+	return workV2RootAssignmentAcceptanceForItem(legacyWorkV2BriefItem(id, "", kind, work.PhaseAssigned))
 }
 
 const workV2CompletionReportInstruction = "When substantial investigation was needed to find a non-obvious cause, add a user-readable completion_report before done; a straightforward fix does not require one."
@@ -433,10 +501,13 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 			Icon: wireIcon(icon.Generated(i.ProjectPath))}
 	}
 	out := workV2ItemWire{ID: i.ID, Project: p, Kind: string(i.Kind), Title: i.Title, Description: i.Description,
+		AcceptanceCriteria: i.AcceptanceCriteria, AcceptanceVersion: i.AcceptanceVersion, AcceptanceDigest: i.AcceptanceDigest,
 		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, Area: i.Area(),
 		DeploymentPolicy: string(i.DeploymentPolicy), OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
-		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, Version: i.Version, ParentID: i.ParentID}
+		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, GateSnapshotCycle: i.GateSnapshotCycle,
+		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
+		Version: i.Version, ParentID: i.ParentID}
 	if via := i.CreatedVia; via != nil && strings.HasPrefix(i.CreatedBy, work.ActorViaSession) {
 		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
 	} else if via != nil && via.Epic != "" && strings.HasPrefix(i.CreatedBy, work.ActorEpicOwner) {
@@ -938,11 +1009,12 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ProjectID        string `json:"project_id"`
-		Kind             string `json:"kind"`
-		Title            string `json:"title"`
-		Description      string `json:"description"`
-		DeploymentPolicy string `json:"deployment_policy"`
+		ProjectID          string `json:"project_id"`
+		Kind               string `json:"kind"`
+		Title              string `json:"title"`
+		Description        string `json:"description"`
+		AcceptanceCriteria string `json:"acceptance_criteria"`
+		DeploymentPolicy   string `json:"deployment_policy"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -960,7 +1032,8 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 	}
 	var answer []byte
 	v, err := s.workV2().Create(r.Context(), app.NewWorkV2{ProjectID: p.ID, ProjectPath: p.Path, Kind: work.Kind(body.Kind),
-		Title: body.Title, Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Actor: actor},
+		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
+		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Actor: actor},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
@@ -989,12 +1062,13 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		return
 	}
 	var body struct {
-		ExpectedVersion int64   `json:"expected_version"`
-		Title           *string `json:"title"`
-		Description     *string `json:"description"`
-		Condition       *string `json:"condition"`
-		UserAction      *string `json:"user_action"`
-		SessionID       string  `json:"session_id"`
+		ExpectedVersion    int64   `json:"expected_version"`
+		Title              *string `json:"title"`
+		Description        *string `json:"description"`
+		AcceptanceCriteria *string `json:"acceptance_criteria"`
+		Condition          *string `json:"condition"`
+		UserAction         *string `json:"user_action"`
+		SessionID          string  `json:"session_id"`
 		// Phase is read only to refuse it by name: a Session that reaches
 		// for the edit route to close its item is told where the phase moves.
 		Phase json.RawMessage `json:"phase"`
@@ -1027,7 +1101,8 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	}
 	var answer []byte
 	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
-		Title: body.Title, Description: body.Description, Condition: condition, UserAction: body.UserAction, Actor: actor,
+		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
+		Condition: condition, UserAction: body.UserAction, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 		answer = workV2Answer(itemOf(v))
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -1251,9 +1326,9 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		// Session's assigned-item projection immediately. Typing is only a
 		// courtesy when a fresh reading still says idle. Working, waiting and
 		// unknown rows pull their to-do list after their present turn.
-		brief := workV2AssignmentBrief(id, item.Item.Title, item.Item.Kind)
+		brief := workV2AssignmentBriefForItem(assigned.Item)
 		if previous.ID != "" {
-			brief = workV2ReassignmentBrief(id, item.Item.Title, item.Item.Kind, assigned.Item.Phase)
+			brief = workV2ReassignmentBriefForItem(assigned.Item)
 			s.tellReleasedOwner(ctx, previous, id, item.Item.Title)
 		}
 		if parent, ok := s.workV2ParentOf(ctx, item.Item); ok {
@@ -1300,6 +1375,10 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		return app.WorkV2View{}, err
 	}
 	previous := workV2ActiveOwner(item)
+	briefItem, err := s.workV2().PreviewAssignment(ctx, item.Item)
+	if err != nil {
+		return app.WorkV2View{}, err
+	}
 	scope := item.Item.Description
 	if previous.ID != "" {
 		scope = workV2TakeoverNote(item.Item.Phase) + "\n\n" + scope
@@ -1312,7 +1391,9 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner,
-		Persona: personaID}, true, nil)
+		Persona: personaID, GatePreview: &app.WorkV2GateSettings{
+			Planning: briefItem.PlanningGate, Verify: briefItem.VerifyGate,
+		}}, true, nil)
 	if err != nil {
 		return app.WorkV2View{}, err
 	}
@@ -1321,7 +1402,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
 			RelevantReferences: references,
-			Acceptance:         workV2RootAssignmentAcceptance(item.Item.ID, item.Item.Kind)}})
+			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem)}})
 	// Its first screen was a question only the person may answer: the
 	// assignment stays pending and the item asks them to answer it, and the
 	// broker's beat finishes it either way (settleAwaitedAssignments).
@@ -2144,12 +2225,13 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		Via       struct {
 			Run string `json:"run"`
 		} `json:"via"`
-		ProjectID        string   `json:"project_id"`
-		Kind             string   `json:"kind"`
-		Title            string   `json:"title"`
-		Description      string   `json:"description"`
-		DeploymentPolicy string   `json:"deployment_policy"`
-		Steps            []string `json:"steps"`
+		ProjectID          string   `json:"project_id"`
+		Kind               string   `json:"kind"`
+		Title              string   `json:"title"`
+		Description        string   `json:"description"`
+		AcceptanceCriteria string   `json:"acceptance_criteria"`
+		DeploymentPolicy   string   `json:"deployment_policy"`
+		Steps              []string `json:"steps"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -2180,7 +2262,8 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	_, err = s.workV2().CreateFromSession(r.Context(), app.NewSessionItemV2{Run: *run, SessionID: sess.ConversationID,
 		TerminalID: sess.ID, Assistant: string(sess.Assistant), SessionProject: sessionProject,
 		ProjectID: project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
-		Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps},
+		Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
+		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
@@ -2331,14 +2414,15 @@ func (a workV2EpicAssignRequest) check() error {
 // The receipt is filed only once both are known, so a replay answers the same.
 func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, epicID string) {
 	var body struct {
-		ExpectedVersion  int64                    `json:"expected_version"`
-		SessionID        string                   `json:"session_id"`
-		Kind             string                   `json:"kind"`
-		Title            string                   `json:"title"`
-		Description      string                   `json:"description"`
-		DeploymentPolicy string                   `json:"deployment_policy"`
-		Steps            []string                 `json:"steps"`
-		Assign           *workV2EpicAssignRequest `json:"assign"`
+		ExpectedVersion    int64                    `json:"expected_version"`
+		SessionID          string                   `json:"session_id"`
+		Kind               string                   `json:"kind"`
+		Title              string                   `json:"title"`
+		Description        string                   `json:"description"`
+		AcceptanceCriteria string                   `json:"acceptance_criteria"`
+		DeploymentPolicy   string                   `json:"deployment_policy"`
+		Steps              []string                 `json:"steps"`
+		Assign             *workV2EpicAssignRequest `json:"assign"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -2360,7 +2444,8 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 	}
 	created, err := s.workV2().CreateEpicChild(r.Context(), app.NewEpicChildV2{EpicID: epicID,
 		ExpectedVersion: body.ExpectedVersion, SessionID: body.SessionID, Kind: work.Kind(body.Kind), Title: body.Title,
-		Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps})
+		Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
+		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps})
 	if err != nil {
 		refuse(err)
 		return

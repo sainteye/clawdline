@@ -96,9 +96,9 @@ func TestAnEpicFromASessionArrivesAssignedWithItsSteps(t *testing.T) {
 	refusedAsWork(t, err, "planning_has_no_steps")
 }
 
-// plan and plan_review belong to an Epic; on a Feature they are refused,
-// and the other roles stay where they were.
-func TestPlanDocumentsBelongToAnEpicOnly(t *testing.T) {
+// plan and plan_review belong to Features and Epics; the other roles stay
+// where they were.
+func TestPlanDocumentsBelongToAFeatureOrEpic(t *testing.T) {
 	w, _ := newEpicTest(t)
 	feature := createWorkV2Test(t, w, work.KindFeature)
 	owned, err := w.Assign(context.Background(), feature.Item.ID, AssignWorkV2{ExpectedVersion: feature.Item.Version,
@@ -106,8 +106,8 @@ func TestPlanDocumentsBelongToAnEpicOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, role := range []string{work.DocumentPlan, work.DocumentPlanReview} {
-		refusedAsWork(t, addDoc(w, &owned, role, ""), "document_role_not_applicable")
+	if err := addDoc(w, &owned, work.DocumentPlan, ""); err != nil {
+		t.Fatalf("plan on a Feature: %v", err)
 	}
 	if err := addDoc(w, &owned, "completion_report", ""); err != nil {
 		t.Fatalf("completion_report on a Feature: %v", err)
@@ -188,10 +188,13 @@ func TestAPlanReviewMustBeARealChildReview(t *testing.T) {
 }
 
 // An Epic enters implementing only once a plan has a review written after
-// it; a plan rewritten after the review needs another. A Feature needs
-// neither.
+// it; a plan rewritten after the review needs another. A Feature has the same
+// rule with a one-review ceiling.
 func TestAnEpicEntersImplementingOnlyAfterAReviewedPlan(t *testing.T) {
 	w, clock := newEpicTest(t)
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Planning: true}, nil
+	}
 	epic := assignedEpic(t, w)
 	refusedAsWork(t, advanceTo(w, &epic, work.PhaseImplementing), "epic_plan_required")
 	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
@@ -235,7 +238,16 @@ func TestAnEpicEntersImplementingOnlyAfterAReviewedPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	refusedAsWork(t, advanceTo(w, &owned, work.PhaseImplementing), "feature_plan_required")
+	if err := addDoc(w, &owned, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	featureReview := reviewTask("7e000000-0000-4000-8000-000000000303", owned.Item.ID, clock.at)
+	putTask(t, w.Store, featureReview)
+	if err := addDoc(w, &owned, work.DocumentPlanReview, featureReview.ID); err != nil {
+		t.Fatal(err)
+	}
 	if err := advanceTo(w, &owned, work.PhaseImplementing); err != nil {
-		t.Fatalf("a Feature needs no plan: %v", err)
+		t.Fatalf("a reviewed Feature: %v", err)
 	}
 }

@@ -113,6 +113,27 @@ func TestSettingsRoute(t *testing.T) {
 	}
 }
 
+func TestSettingsRouteCarriesWorkGateDefaultsAndUpdates(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "clawdline-next")
+	s := &Server{cfg: config.Config{Dir: dir}}
+	rec, _, _ := settingsCall(t, s, http.MethodGet, "", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"planning_gate":true`) ||
+		!strings.Contains(rec.Body.String(), `"verify_gate":false`) {
+		t.Fatalf("default gates: %d %s", rec.Code, rec.Body)
+	}
+	rec, _, refusal := settingsCall(t, s, http.MethodPost, "application/json",
+		`{"planning_gate":false,"verify_gate":true}`)
+	if rec.Code != http.StatusOK || refusal.Error != "" ||
+		!strings.Contains(rec.Body.String(), `"planning_gate":false`) ||
+		!strings.Contains(rec.Body.String(), `"verify_gate":true`) {
+		t.Fatalf("updated gates: %d %s", rec.Code, rec.Body)
+	}
+	rec, _, refusal = settingsCall(t, s, http.MethodPost, "application/json", `{"planning_gate":"off"}`)
+	if rec.Code != http.StatusBadRequest || refusal.Error != "invalid_planning_gate" {
+		t.Fatalf("wrong-shaped gate: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // Every row of the native settings window, through the one route it writes.
 //
 // The window is a web page and its rows are data (web/console/src/pages/settings/window);

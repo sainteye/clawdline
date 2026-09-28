@@ -155,8 +155,14 @@ func workV2AssignmentServer(t *testing.T, state session.State) (*Server, *pane, 
 		CWD: cwd, ConversationID: "10000000-0000-4000-8000-000000000004", State: state}}
 	s := paneServer(t, p)
 	s.icons = icon.NewRegistry()
+	// This helper predates the planning gate and exercises assignment mechanics.
+	// Gate-specific tests opt in with a WorkSystemV2 of their own.
+	s.workV2().GateSettings = func(context.Context) (app.WorkV2GateSettings, error) {
+		return app.WorkV2GateSettings{}, nil
+	}
 	v, err := s.workV2().Create(context.Background(), app.NewWorkV2{ProjectID: "project-1", ProjectPath: project,
-		Kind: work.KindFeature, Title: "Queued assignment", Description: "Wait for the current turn to finish.", Actor: "local"}, nil)
+		Kind: work.KindFeature, Title: "Queued assignment", Description: "Wait for the current turn to finish.",
+		AcceptanceCriteria: "The assignment reaches its intended Session.", Actor: "local"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

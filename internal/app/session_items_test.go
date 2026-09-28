@@ -27,7 +27,7 @@ func sessionItemRun(t *testing.T, w *WorkSystemV2, conversation string) work.Run
 func newSessionItem(run work.Run, kind work.Kind, description string, steps ...string) NewSessionItemV2 {
 	return NewSessionItemV2{Run: run, SessionID: "conv-a", TerminalID: "terminal-a", Assistant: "claude",
 		SessionProject: "/p", ProjectID: "p", ProjectPath: "/p", Kind: kind, Title: "From the message",
-		Description: description, Steps: steps}
+		Description: description, AcceptanceCriteria: "The requested result is observable.", Steps: steps}
 }
 
 func refusedAsWork(t *testing.T, err error, code string) {

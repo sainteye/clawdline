@@ -42,11 +42,11 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 
 // itemFlags is what `item add` was told.
 type itemFlags struct {
-	project, kind, title, description, deploy, run string
-	steps                                          []string
-	phase                                          phaseEvidence
-	doc                                            docFlags
-	assign                                         assignFlags
+	project, kind, title, description, acceptance, deploy, run string
+	steps                                                      []string
+	phase                                                      phaseEvidence
+	doc                                                        docFlags
+	assign                                                     assignFlags
 }
 
 // assignFlags is who `item child` or `item assign` hands the item to: an
@@ -122,6 +122,7 @@ func itemCommand(args []string) {
 	kind := fs.String("kind", "", "feature, issue, epic, refactor or plan")
 	title := fs.String("title", "", "the item's title")
 	descriptionFile := fs.String("description-file", "", "a file holding the description; - or absent reads stdin")
+	acceptanceFile := fs.String("acceptance-file", "", "a file holding the acceptance criteria Markdown")
 	stepsFile := fs.String("steps-file", "", "a file holding the steps, one per non-empty line")
 	deploy := fs.String("deploy", "", "required, not_required or agent_decides (default agent_decides)")
 	run := fs.String("run", "", "the run of the person's message (default: this conversation's latest run)")
@@ -187,6 +188,13 @@ func itemCommand(args []string) {
 				fail(err)
 			}
 			f.steps = append(f.steps, lines...)
+		}
+		if *acceptanceFile != "" {
+			acceptance, err := readTextFrom(*acceptanceFile, os.Stdin, "acceptance criteria")
+			if err != nil {
+				fail(err)
+			}
+			f.acceptance = acceptance
 		}
 	case "claim":
 		if len(positional) != 1 {
@@ -279,10 +287,10 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func itemUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>")
-	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin]")
+	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f]")
+	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f] [--acceptance-file f]")
 	fmt.Fprintln(os.Stderr, "                          [--description-file f | stdin] [--deploy policy]")
 	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <epic id>")
@@ -334,13 +342,19 @@ func readTextFrom(name string, r io.Reader, what string) (string, error) {
 
 // itemWire is the part of the daemon's item answer this command prints.
 type itemWire struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	Kind         string  `json:"kind"`
-	Phase        string  `json:"phase"`
-	OwnerSession *string `json:"owner_session"`
-	Version      int64   `json:"version"`
-	Steps        []struct {
+	ID                 string  `json:"id"`
+	Title              string  `json:"title"`
+	Kind               string  `json:"kind"`
+	Phase              string  `json:"phase"`
+	OwnerSession       *string `json:"owner_session"`
+	Version            int64   `json:"version"`
+	AcceptanceCriteria string  `json:"acceptance_criteria"`
+	AcceptanceVersion  int64   `json:"acceptance_version"`
+	AcceptanceDigest   string  `json:"acceptance_digest"`
+	GateSnapshotCycle  int64   `json:"gate_snapshot_cycle"`
+	PlanningGate       bool    `json:"planning_gate"`
+	VerifyGate         bool    `json:"verify_gate"`
+	Steps              []struct {
 		ID       string `json:"id"`
 		Title    string `json:"title"`
 		Done     bool   `json:"done"`
@@ -370,6 +384,12 @@ func printItem(w io.Writer, it itemWire) {
 		owner = "assigned to " + *it.OwnerSession
 	}
 	fmt.Fprintf(w, "%s  %s  [%s, %s, %s]\n", it.ID, it.Title, it.Kind, it.Phase, owner)
+	if it.AcceptanceCriteria != "" {
+		fmt.Fprintf(w, "  acceptance v%d sha256:%s\n%s\n", it.AcceptanceVersion, it.AcceptanceDigest, it.AcceptanceCriteria)
+	}
+	if it.GateSnapshotCycle > 0 {
+		fmt.Fprintf(w, "  gates cycle %d: planning=%t verification=%t\n", it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
+	}
 	if len(it.Steps) == 0 {
 		fmt.Fprintln(w, "  (no steps)")
 	}
@@ -440,7 +460,8 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			}
 		}
 		body = map[string]any{"session_id": conversation, "via": map[string]string{"run": run},
-			"project_id": f.project, "kind": f.kind, "title": f.title, "description": f.description}
+			"project_id": f.project, "kind": f.kind, "title": f.title, "description": f.description,
+			"acceptance_criteria": f.acceptance}
 		if f.deploy != "" {
 			body["deployment_policy"] = f.deploy
 		}
@@ -467,7 +488,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			return code
 		}
 		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "kind": f.kind,
-			"title": f.title, "description": f.description}
+			"title": f.title, "description": f.description, "acceptance_criteria": f.acceptance}
 		if steps := trimmedSteps(f.steps); len(steps) > 0 {
 			body["steps"] = steps
 		}

@@ -65,6 +65,44 @@ func TestSettingGetsAndSetsTheCompactionWindow(t *testing.T) {
 	}
 }
 
+func TestSettingGetsAndSetsBothWorkGates(t *testing.T) {
+	stored := map[string]any{"planning_gate": true, "verify_gate": false}
+	call := func(method string, body any) (int, []byte, error) {
+		if method == http.MethodPost {
+			for key, value := range body.(map[string]any) {
+				stored[key] = value
+			}
+		}
+		data, _ := json.Marshal(stored)
+		return http.StatusOK, data, nil
+	}
+	run := func(args ...string) (int, string, string) {
+		var out, errs bytes.Buffer
+		code := runSetting(&out, &errs, args, call)
+		return code, out.String(), errs.String()
+	}
+	if code, out, _ := run("get", "planning_gate"); code != 0 || out != "planning_gate: on\n" {
+		t.Fatalf("planning get = %d %q", code, out)
+	}
+	for _, c := range []struct {
+		key, typed, shown string
+		want              bool
+	}{
+		{"planning_gate", "off", "off", false},
+		{"planning_gate", "true", "on", true},
+		{"verify_gate", "on", "on", true},
+		{"verify_gate", "false", "off", false},
+	} {
+		code, out, errs := run("set", c.key, c.typed)
+		if code != 0 || errs != "" || out != c.key+": "+c.shown+"\n" || stored[c.key] != c.want {
+			t.Errorf("%s=%s: code=%d out=%q err=%q stored=%v", c.key, c.typed, code, out, errs, stored[c.key])
+		}
+	}
+	if code, _, _ := run("set", "verify_gate", "yes"); code != 2 {
+		t.Fatalf("invalid bool exit = %d", code)
+	}
+}
+
 func TestSettingGetsAndSetsDefaultModels(t *testing.T) {
 	stored := map[string]any{}
 	var posted []map[string]any
