@@ -1351,7 +1351,7 @@ test("phone: a new Board item opens without the keyboard and in readable type", 
     await tab.run(`document.querySelector('.work-new-modal [aria-label="關閉"]').click()`)
   }))
 
-test("phone: the Board shortcut keeps a new item open for assignment", () =>
+test("phone and desktop: the Board shortcut keeps a new item open for assignment", () =>
   inTab(PHONE, async (tab) => {
     createdWork = null
     await tab.go("/")
@@ -1389,17 +1389,19 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
           const roles = card.querySelector(".work-new-persona")
           // RoleRow fills its native buttons in an effect after the card's
           // first paint. Measure only once that accessible row is complete.
-          if (!roles?.querySelector(".chip:not(:disabled)")) {
+          if (roles?.querySelectorAll(".chip").length !== ${PERSONAS.length + 1}) {
             if (Date.now() >= deadline) return reject(new Error("the created Board item's roles did not load"))
             return setTimeout(read, 25)
           }
           return resolve({
             fits: (() => {
-            // Every edge the person sees stays inside the phone's width: the
+            // Every edge the person sees stays inside the viewport: the
             // panel, and each control of the assignment row inside the panel.
             // The role chips scroll sideways within their own row, so the row
             // is measured, not the chips it has scrolled out of view.
             const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
+            const firstRole = roles?.firstElementChild?.getBoundingClientRect()
+            const roleRow = roles?.getBoundingClientRect()
             const outside = [...card.querySelectorAll(".work-assignment > button, .work-assignment > .work-new-session")]
               .map((el) => el.getBoundingClientRect())
               .filter((box) => box.left < panel.left - 0.5 || box.right > panel.right + 0.5)
@@ -1409,6 +1411,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
               controlsOutsidePanel: outside.length,
               personaChips: roles.querySelectorAll(".chip").length,
               rolesScrollSideways: roles.scrollWidth > roles.clientWidth,
+              roleEdgeRoom: firstRole && roleRow ? Math.round(firstRole.left - roleRow.left) : 0,
             }
             })(),
             title: card.querySelector("h3")?.textContent,
@@ -1418,6 +1421,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
             picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
             actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
             focus: document.activeElement?.getAttribute("aria-label"),
+            progressBeforeStart: !!card.querySelector(".work-milestones"),
             sessionsPage: !document.getElementById("app").hidden,
             boardPage: !document.getElementById("work").hidden,
           })
@@ -1428,7 +1432,8 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       read()
     })`)
     assert.deepEqual(card, {
-      fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1, rolesScrollSideways: true },
+      fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1,
+        rolesScrollSideways: true, roleEdgeRoom: 7 },
       title: "React console shortcut",
       suggestion: "建議角色：前端工程師符合「react」",
       suggestionDescribesRoles: true,
@@ -1436,6 +1441,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       picker: "選擇既有 Session",
       actions: ["指派", "開新 Codex Session（前端工程師）"],
       focus: "指派既有 Session",
+      progressBeforeStart: false,
       sessionsPage: true,
       boardPage: false,
     })
@@ -1447,22 +1453,33 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       const modal = document.querySelector(".work-created-modal")
       const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
       const suggestion = modal.querySelector(".work-persona-suggestion").getBoundingClientRect()
+      const roles = modal.querySelector(".work-new-persona")
+      const roleRow = roles.getBoundingClientRect()
+      const firstRole = roles.firstElementChild.getBoundingClientRect()
       return {
         panelInView: panel.left >= 0 && panel.right <= innerWidth,
         modalScrollsSideways: modal.scrollWidth > modal.clientWidth,
         suggestionInPanel: suggestion.left >= panel.left && suggestion.right <= panel.right,
+        roleEdgeRoom: Math.round(firstRole.left - roleRow.left),
+        progressBeforeStart: !!modal.querySelector(".work-milestones"),
       }
-    })()`), { panelInView: true, modalScrollsSideways: false, suggestionInPanel: true })
+    })()`), { panelInView: true, modalScrollsSideways: false, suggestionInPanel: true,
+      roleEdgeRoom: 7, progressBeforeStart: false })
     await tab.shot("smart-role-desktop-dark")
     await tab.view(DESK, "light")
     await tab.shot("smart-role-desktop-light")
 
-    // The recommendation is only a default. Keyboard users can reach the
-    // first native button and explicitly choose no role; the explanation says
-    // that the suggested choice was overridden and the launch button agrees.
+    // The recommendation is only a default. Keyboard users move from the
+    // picker through the assistant choices to the first native role button;
+    // choosing it overrides the suggestion and the launch button agrees.
+    const keyboard: string[] = []
+    for (let index = 0; index < 3; index++) {
+      await tab.press("Tab")
+      keyboard.push(await tab.run(`document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim()`))
+    }
+    assert.deepEqual(keyboard, ["Codex", "Claude Code", "不指定"], "keyboard order")
     assert.deepEqual(await tab.run(`(() => {
       const role = document.querySelector(".work-created-modal .work-new-persona .chip")
-      role.focus()
       return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
     })()`), { active: true, disabled: false, text: "不指定" })
     await tab.run(`document.activeElement.click()`)
