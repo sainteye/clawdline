@@ -152,6 +152,16 @@ test("the Board distinguishes initial loading, paging, empty, stale, and error s
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.work-skeleton-line::after \{ animation: none; \}/)
 })
 
+test("gate status, loading, and read errors stay readable in cards and detail", () => {
+  const gate = readFileSync(new URL("./WorkGate.tsx", import.meta.url), "utf8")
+  assert.match(gate, /className="work-gate-line"/)
+  assert.match(gate, /loading && <p role="status">正在讀取驗證證據…<\/p>/)
+  assert.match(gate, /error && <p role="alert">驗證詳情讀取失敗：\{error\}/)
+  assert.match(gate, /type="button" onClick=\{retry\}>重試<\/button>/)
+  assert.match(styles, /\.work-gate-line \{[^}]*overflow-wrap: anywhere;/)
+  assert.match(styles, /\.work-gate-detail \{[^}]*overflow-wrap: anywhere;/)
+})
+
 test("closed Board cards retain and open Agent completion reports", () => {
   const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
   const reportOrder = readFileSync(new URL("./completion-report-order.js", import.meta.url), "utf8")

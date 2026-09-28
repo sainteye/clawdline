@@ -27,6 +27,19 @@ test("unknown evidence, stale and technical failure never read as PASS", () => {
   assert.match(gateStatus({ ...gate(round("complete", "PASS")), current_authorization: { kind: "technical_person_override", reason: "repair", created_at: 2 } }), /未取得 checker PASS/)
 })
 
+test("every live verification state has a complete compact-card instruction", () => {
+	const expected = new Map<WorkGateRoundSummary["state"], RegExp>([
+		["queued", /待派送/],
+		["dispatching", /派送中/],
+		["running", /驗證中/],
+		["stale", /不能當作 PASS/],
+		["technical_failure", /Epic owner 修復後重試.*由你決定/],
+	])
+	for (const [state, words] of expected) assert.match(gateStatus(gate(round(state))), words, state)
+	assert.match(gateStatus(gate(round("complete", "FAIL"))), /負責 Session 修正後提交新候選/)
+	assert.match(gateStatus(gate(round("complete", "NEEDS_WORK"))), /負責 Session 須補證或重新送驗/)
+})
+
 test("a compact card always distinguishes all captured gate combinations", () => {
 	assert.equal(gateSnapshotText(0, false, false), "成功指派後擷取")
 	assert.equal(gateSnapshotText(1, true, true), "規劃開 · 獨立驗證開")

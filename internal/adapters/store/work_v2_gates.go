@@ -712,7 +712,8 @@ func (s *Store) WorkGateCompactDetails(ctx context.Context, items []work.ItemV2)
 	}
 
 	rounds, err := s.db.QueryContext(ctx, `SELECT r.id,r.item_id,r.state,json_extract(r.candidate,'$.commit'),
-      r.criteria_digest,r.created_at,COALESCE(r.finished_at,0),COALESCE(json_extract(r.result,'$.verdict'),'')
+      r.criteria_digest,r.created_at,COALESCE(r.finished_at,0),
+      CASE WHEN json_valid(r.result) THEN COALESCE(json_extract(r.result,'$.verdict'),'') ELSE '' END
     FROM work_v2_gate_rounds r WHERE r.item_id IN (SELECT value FROM json_each(?))
       AND r.id=(SELECT newer.id FROM work_v2_gate_rounds newer WHERE newer.item_id=r.item_id
         ORDER BY newer.created_at DESC,newer.id DESC LIMIT 1)`, list)
