@@ -130,6 +130,106 @@ export function suggestedPersona(list: readonly Persona[] | null, kind: string):
   return matches.length === 1 ? matches[0] : null
 }
 
+export interface PersonaSuggestion {
+  persona: Persona
+  /** The item words that explain a content suggestion, in matching priority. */
+  signals: string[]
+  source: "content" | "kind"
+}
+
+/**
+ * Distinctive, user-facing words for the closed persona catalog. These are not
+ * a classifier hidden on a service: the Board can explain every match from
+ * the item text, works offline, and sends no work content away from the
+ * machine. Broad words such as "feature", "fix" and "data" are deliberately
+ * absent because they would turn a weak overlap into a confident-looking
+ * guess.
+ */
+const PERSONA_SIGNALS: Readonly<Record<string, readonly string[]>> = {
+  accessibility: ["wcag", "screen reader", "螢幕報讀器", "無障礙", "a11y"],
+  "ai-search": ["ai search", "answer engine", "llm visibility", "ai 搜尋", "答案引擎", "結構化資料"],
+  analytics: ["analytics", "funnel", "dashboard", "數據分析", "資料分析", "轉換率", "指標"],
+  "api-tester": ["api test", "api contract", "postman", "契約測試", "端點測試"],
+  architect: ["epic", "system architecture", "架構規劃", "系統架構", "技術選型"],
+  backend: ["backend", "daemon", "api", "endpoint", "database", "migration", "後端", "端點", "資料庫", "遷移"],
+  "brand-guardian": ["brand", "logo", "typography", "品牌", "標誌", "字體", "視覺識別"],
+  "code-reviewer": ["code review", "review diff", "pull request review", "程式碼審查", "審查 diff"],
+  "content-writer": ["article", "blog post", "content draft", "文章", "部落格", "內容草稿"],
+  "customer-success": ["customer success", "onboarding", "renewal", "客戶成功", "客戶導入", "續約"],
+  devops: ["ci/cd", "pipeline", "build automation", "deploy automation", "devops", "建置自動化", "部署自動化"],
+  devrel: ["quickstart", "developer tutorial", "sample app", "changelog", "快速入門", "開發者教學", "更新紀錄"],
+  email: ["newsletter", "email campaign", "email sequence", "電子報", "系列信", "退訂"],
+  "evidence-collector": ["evidence", "screenshot proof", "驗收證據", "蒐集證據", "截圖證明"],
+  "feedback-synthesizer": ["feedback synthesis", "feedback themes", "回饋整理", "意見彙整", "訪談整理"],
+  finops: ["finops", "cloud cost", "cost allocation", "雲端成本", "成本歸屬", "帳單優化"],
+  frontend: ["frontend", "react", "web console", "responsive", "phone width", "前端", "網頁主控台", "響應式", "手機版"],
+  growth: ["growth experiment", "activation", "retention", "成長實驗", "啟用率", "留存率"],
+  "image-prompt": ["image prompt", "image generation", "midjourney", "圖像提示", "圖片生成", "生圖"],
+  "incident-commander": ["active incident", "incident commander", "outage", "事故指揮", "服務中斷", "重大事故"],
+  instagram: ["instagram", "ig post", "carousel post", "ig 貼文", "輪播貼文"],
+  "minimal-change": ["minimal change", "smallest fix", "最小改動", "最小修正"],
+  performance: ["benchmark", "latency", "throughput", "load test", "效能量測", "延遲", "吞吐量", "負載測試"],
+  pr: ["press release", "media list", "public announcement", "新聞稿", "媒體名單", "對外公告"],
+  pricing: ["pricing", "packaging", "price plan", "定價", "價格方案", "方案組合"],
+  privacy: ["privacy", "personal data", "consent", "retention policy", "隱私", "個人資料", "同意管理", "保存期限"],
+  "product-manager": ["product requirement", "acceptance criteria", "scope alignment", "產品需求", "驗收條件", "範圍管理"],
+  "reality-checker": ["verify claim", "reality check", "實際驗證", "查證說法", "尚未證實"],
+  secrets: ["secret rotation", "credential", "api key", "密鑰", "憑證輪替", "金鑰外洩"],
+  security: ["security", "authentication", "authorization", "threat model", "資安", "驗證授權", "威脅模型", "信任邊界"],
+  seo: ["seo", "search engine", "schema.org", "搜尋引擎", "搜尋排名", "結構化標記"],
+  "social-media": ["social media", "posting calendar", "社群媒體", "發文行事曆", "社群貼文"],
+  "sprint-prioritizer": ["sprint planning", "backlog priority", "sprint 排序", "待辦排序", "優先順序"],
+  sre: ["sre", "slo", "error budget", "reliability", "可靠性", "錯誤預算", "服務水準"],
+  support: ["support reply", "help article", "customer ticket", "客服回覆", "說明文章", "客訴"],
+  "technical-writer": ["documentation", "technical writing", "reference guide", "技術文件", "操作指南", "參考文件"],
+  "test-automation": ["test automation", "e2e test", "flaky test", "自動化測試", "端對端測試", "不穩定測試"],
+  "trend-researcher": ["trend research", "market trend", "technology trend", "趨勢研究", "市場趨勢", "技術趨勢"],
+  "ui-designer": ["ui design", "design token", "visual design", "ui 設計", "設計 token", "視覺設計"],
+  "ui-finish-gate": ["ui polish", "visual qa", "pixel perfect", "ui 上線把關", "畫面驗收", "像素級"],
+  "ux-architect": ["ux flow", "information architecture", "wireframe", "user journey", "操作流程", "資訊架構", "使用者歷程", "看板流程"],
+  "ux-researcher": ["ux research", "usability research", "user interview", "ux 研究", "可用性研究", "使用者訪談"],
+}
+
+function normalizedWords(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase()
+}
+
+function hasSignal(text: string, value: string): boolean {
+  const signal = normalizedWords(value)
+  const asciiWord = (character: string) => /[a-z0-9]/.test(character)
+  for (let at = text.indexOf(signal); at >= 0; at = text.indexOf(signal, at + 1)) {
+    const left = !asciiWord(signal[0] ?? "") || at === 0 || !asciiWord(text[at - 1] ?? "")
+    const end = at + signal.length
+    const right = !asciiWord(signal.at(-1) ?? "") || end === text.length || !asciiWord(text[end] ?? "")
+    if (left && right) return true
+  }
+  return false
+}
+
+/**
+ * Suggest a role from the item's own words, falling back to the old kind-only
+ * rule when content has no distinctive signal. An exact score tie is
+ * deliberately no content answer: ambiguity stays visible instead of being
+ * resolved by catalog order.
+ */
+export function suggestedPersonaForItem(
+  list: readonly Persona[] | null,
+  item: { kind: string; title: string; description: string },
+): PersonaSuggestion | null {
+  const text = normalizedWords(`${item.title}\n${item.description}`)
+  const scored = (list ?? []).map((persona) => {
+    const signals = (PERSONA_SIGNALS[persona.id] ?? []).filter((signal) => hasSignal(text, signal))
+    const score = signals.reduce((total, signal) => total + 10 + normalizedWords(signal).length, 0)
+    return { persona, signals, score }
+  }).filter((row) => row.score > 0).sort((a, b) => b.score - a.score)
+
+  if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score)) {
+    return { persona: scored[0].persona, signals: scored[0].signals.slice(0, 3), source: "content" }
+  }
+  const byKind = suggestedPersona(list, item.kind)
+  return byKind ? { persona: byKind, signals: [], source: "kind" } : null
+}
+
 const REMEMBERED = "clawdline.start.persona"
 
 /** The start sheet's last choice in this browser; "" for none. */

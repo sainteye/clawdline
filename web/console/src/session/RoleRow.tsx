@@ -78,6 +78,7 @@ export function drawRoleRow(row: HTMLElement, c: RoleRowChoice): void {
   const chip = (id: string, words: string, title: string) => {
     const button = document.createElement("button")
     button.type = "button"
+    button.dataset.personaId = id
     button.className = "chip" + (id ? " persona-chip" : "") + (id === chosen ? " on" : "")
     button.disabled = c.disabled
     if (c.press === "radio") {
@@ -105,13 +106,33 @@ export function drawRoleRow(row: HTMLElement, c: RoleRowChoice): void {
 }
 
 /** The role row as a React element, for the Board. */
-export function RoleRow(props: RoleRowChoice & { className: string }) {
+export function RoleRow(props: RoleRowChoice & { className: string; describedBy?: string }) {
   const ref = useRef<HTMLDivElement>(null)
+  const callbacks = useRef({ onPick: props.onPick, onTeam: props.onTeam })
+  callbacks.current = { onPick: props.onPick, onTeam: props.onTeam }
   useEffect(() => {
     if (!ref.current) return
-    const scrolled = ref.current.scrollLeft
-    drawRoleRow(ref.current, props)
-    ref.current.scrollLeft = scrolled
-  })
-  return <div className={props.className} ref={ref} role="radiogroup" aria-label={nextWord("personaPicker")} />
+    const row = ref.current
+    const active = document.activeElement instanceof HTMLButtonElement && row.contains(document.activeElement)
+      ? document.activeElement.dataset.personaId ?? null
+      : null
+    const scrolled = row.scrollLeft
+    drawRoleRow(row, {
+      personas: props.personas,
+      chosen: props.chosen,
+      team: props.team,
+      disabled: props.disabled,
+      press: props.press,
+      onPick: (id) => callbacks.current.onPick(id),
+      onTeam: (team) => callbacks.current.onTeam(team),
+    })
+    if (active !== null) {
+      const replacement = Array.from(row.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.dataset.personaId === active)
+      replacement?.focus({ preventScroll: true })
+    }
+    row.scrollLeft = scrolled
+  }, [props.personas, props.chosen, props.team, props.disabled, props.press])
+  return <div className={props.className} ref={ref} role="radiogroup" aria-label={nextWord("personaPicker")}
+    aria-describedby={props.describedBy} />
 }

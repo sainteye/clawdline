@@ -16,12 +16,13 @@ import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
 import { spawn, type ChildProcess } from "node:child_process"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, extname, join, normalize, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const dist = resolve(dirname(fileURLToPath(import.meta.url)), "../../dist")
+const shots = process.env.CLAWDLINE_SHOTS || ""
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 // Pane ids of three digits are spelled in pieces: tools/check-private.sh reads
@@ -96,7 +97,8 @@ let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
 // The machine's persona catalog, as many roles as the daemon compiles in and
 // with its longest names: the assignment row lays every one of them out on a
-// phone. No suggested kinds, so the new-Session button keeps its plain words.
+// phone. No suggested kinds, so only the created item's words can recommend a
+// role in the assignment test below.
 const PERSONA_NAMES: [string, string, string][] = [
   ["architect", "Architect", "架構師"],
   ["backend", "Backend Engineer", "後端工程師"],
@@ -502,6 +504,21 @@ class Tab {
       row.click()
     })()`)
   }
+
+  async view(size: { width: number; height: number; mobile: boolean }, scheme: "light" | "dark"): Promise<void> {
+    await this.b.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 1 }, this.session)
+    await this.b.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-color-scheme", value: scheme }],
+    }, this.session)
+  }
+
+  async shot(name: string): Promise<void> {
+    if (!shots) return
+    await new Promise((r) => setTimeout(r, 150))
+    const { data } = await this.b.send("Page.captureScreenshot", { format: "png" }, this.session)
+    writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
+  }
+
 }
 
 // ---- the run
@@ -1225,7 +1242,7 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
     await tab.run(`(() => {
       const title = document.querySelector(".work-new-modal input.work-input")
       const description = document.querySelector(".work-new-modal textarea")
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(title, "Shortcut-created work")
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(title, "React console shortcut")
       title.dispatchEvent(new Event("input", { bubbles: true }))
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(description, "Keep this item open so it can be assigned.")
       description.dispatchEvent(new Event("input", { bubbles: true }))
@@ -1236,14 +1253,21 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
       const read = () => {
         const modal = document.querySelector(".work-created-modal")
         const card = modal?.querySelector(".work-v2-card")
-        if (card) return resolve({
-          fits: (() => {
+        if (card) {
+          const roles = card.querySelector(".work-new-persona")
+          // RoleRow fills its native buttons in an effect after the card's
+          // first paint. Measure only once that accessible row is complete.
+          if (!roles?.querySelector(".chip:not(:disabled)")) {
+            if (Date.now() >= deadline) return reject(new Error("the created Board item's roles did not load"))
+            return setTimeout(read, 25)
+          }
+          return resolve({
+            fits: (() => {
             // Every edge the person sees stays inside the phone's width: the
             // panel, and each control of the assignment row inside the panel.
             // The role chips scroll sideways within their own row, so the row
             // is measured, not the chips it has scrolled out of view.
             const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
-            const roles = card.querySelector(".work-new-persona")
             const outside = [...card.querySelectorAll(".work-assignment > button, .work-assignment > .work-new-session")]
               .map((el) => el.getBoundingClientRect())
               .filter((box) => box.left < panel.left - 0.5 || box.right > panel.right + 0.5)
@@ -1254,14 +1278,18 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
               personaChips: roles.querySelectorAll(".chip").length,
               rolesScrollSideways: roles.scrollWidth > roles.clientWidth,
             }
-          })(),
-          title: card.querySelector("h3")?.textContent,
-          picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
-          actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
-          focus: document.activeElement?.getAttribute("aria-label"),
-          sessionsPage: !document.getElementById("app").hidden,
-          boardPage: !document.getElementById("work").hidden,
-        })
+            })(),
+            title: card.querySelector("h3")?.textContent,
+            suggestion: card.querySelector(".work-persona-suggestion")?.textContent,
+            suggestionDescribesRoles: roles.getAttribute("aria-describedby") === card.querySelector(".work-persona-suggestion")?.id,
+            chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
+            picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
+            actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
+            focus: document.activeElement?.getAttribute("aria-label"),
+            sessionsPage: !document.getElementById("app").hidden,
+            boardPage: !document.getElementById("work").hidden,
+          })
+        }
         if (Date.now() >= deadline) return reject(new Error("the created Board item did not stay open"))
         setTimeout(read, 25)
       }
@@ -1269,11 +1297,56 @@ test("phone: the Board shortcut keeps a new item open for assignment", () =>
     })`)
     assert.deepEqual(card, {
       fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1, rolesScrollSideways: true },
-      title: "Shortcut-created work",
+      title: "React console shortcut",
+      suggestion: "建議角色：前端工程師符合「react」",
+      suggestionDescribesRoles: true,
+      chosenRole: "前端工程師",
       picker: "選擇既有 Session",
-      actions: ["指派", "開新 Codex Session"],
+      actions: ["指派", "開新 Codex Session（前端工程師）"],
       focus: "指派既有 Session",
       sessionsPage: true,
       boardPage: false,
+    })
+    await tab.shot("smart-role-phone-light")
+    await tab.view(PHONE, "dark")
+    await tab.shot("smart-role-phone-dark")
+    await tab.view(DESK, "dark")
+    assert.deepEqual(await tab.run(`(() => {
+      const modal = document.querySelector(".work-created-modal")
+      const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
+      const suggestion = modal.querySelector(".work-persona-suggestion").getBoundingClientRect()
+      return {
+        panelInView: panel.left >= 0 && panel.right <= innerWidth,
+        modalScrollsSideways: modal.scrollWidth > modal.clientWidth,
+        suggestionInPanel: suggestion.left >= panel.left && suggestion.right <= panel.right,
+      }
+    })()`), { panelInView: true, modalScrollsSideways: false, suggestionInPanel: true })
+    await tab.shot("smart-role-desktop-dark")
+    await tab.view(DESK, "light")
+    await tab.shot("smart-role-desktop-light")
+
+    // The recommendation is only a default. Keyboard users can reach the
+    // first native button and explicitly choose no role; the explanation says
+    // that the suggested choice was overridden and the launch button agrees.
+    assert.deepEqual(await tab.run(`(() => {
+      const role = document.querySelector(".work-created-modal .work-new-persona .chip")
+      role.focus()
+      return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
+    })()`), { active: true, disabled: false, text: "不指定" })
+    await tab.run(`document.activeElement.click()`)
+    assert.deepEqual(await tab.run(`(() => {
+      const card = document.querySelector(".work-created-modal .work-v2-card")
+      const roles = card.querySelector(".work-new-persona")
+      return {
+        focused: document.activeElement?.textContent,
+        chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
+        suggestion: card.querySelector(".work-persona-suggestion")?.textContent,
+        actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
+      }
+    })()`), {
+      focused: "不指定",
+      chosenRole: "不指定",
+      suggestion: "建議角色：前端工程師符合「react」 · 目前已改選",
+      actions: ["指派", "開新 Codex Session"],
     })
   }))

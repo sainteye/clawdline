@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Persona } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { headPersona, personaById, personasOfTeam, personaTeams, rowPersonaLine, shownTeam, suggestedPersona, switchTeam, teamsOffered, withTeams } from "./personas.ts"
+import { headPersona, personaById, personasOfTeam, personaTeams, rowPersonaLine, shownTeam, suggestedPersona, suggestedPersonaForItem, switchTeam, teamsOffered, withTeams } from "./personas.ts"
 
 const icon = { accent: "#000000", cells: [["#000000"]] }
 const persona = (id: string, kinds: string[], teams = ["engineering"]): Persona => ({
@@ -31,6 +31,50 @@ test("a kind two personas suggest, or none does, is left for the person to choos
   assert.equal(suggestedPersona(catalog, "feature"), null)
   assert.equal(suggestedPersona(catalog, "plan"), null)
   assert.equal(suggestedPersona(null, "epic"), null)
+})
+
+test("a Board item's words choose between roles that suggest the same kind", () => {
+  const frontend = suggestedPersonaForItem(catalog, {
+    kind: "feature",
+    title: "Make the React console work at phone width",
+    description: "Keep the keyboard flow and loading state accessible.",
+  })
+  assert.equal(frontend?.persona.id, "frontend")
+  assert.equal(frontend?.source, "content")
+  assert.ok(frontend?.signals.includes("react"))
+
+  const backend = suggestedPersonaForItem(catalog, {
+    kind: "feature",
+    title: "Add an API endpoint",
+    description: "Store the result with a safe database migration.",
+  })
+  assert.equal(backend?.persona.id, "backend")
+  assert.equal(backend?.source, "content")
+  assert.ok(backend?.signals.includes("api"))
+})
+
+test("content can suggest a specialist that does not name the Board kind", () => {
+  const specialist = persona("accessibility", [])
+  const suggestion = suggestedPersonaForItem([...catalog, specialist], {
+    kind: "feature",
+    title: "稽核 WCAG 與螢幕報讀器",
+    description: "確認鍵盤操作順序。",
+  })
+  assert.equal(suggestion?.persona.id, "accessibility")
+  assert.equal(suggestion?.source, "content")
+  assert.deepEqual(suggestion?.signals.slice(0, 2), ["wcag", "螢幕報讀器"])
+})
+
+test("weak or tied content is not guessed, while a unique kind remains a safe fallback", () => {
+  assert.equal(suggestedPersonaForItem(catalog, { kind: "feature", title: "改善系統", description: "" }), null)
+  assert.equal(suggestedPersonaForItem(catalog, { kind: "feature", title: "Capital planning", description: "" }), null,
+    "api inside an unrelated English word is not a signal")
+  assert.deepEqual(suggestedPersonaForItem(catalog, { kind: "issue", title: "修正問題", description: "" }), {
+    persona: catalog[3],
+    source: "kind",
+    signals: [],
+  })
+  assert.equal(suggestedPersonaForItem(null, { kind: "issue", title: "修正問題", description: "" }), null)
 })
 
 test("an id the catalog does not name is no persona", () => {
