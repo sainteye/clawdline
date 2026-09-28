@@ -118,5 +118,10 @@ func readRolloutHead(path string) (RolloutMeta, bool) {
 	}, true
 }
 
+// ReadRolloutHead exposes the one bounded rollout-head read to another local
+// adapter. The transcript adapter uses the same evidence when Codex's managed
+// app-server, rather than the foreground TUI, owns the writer descriptor.
+func ReadRolloutHead(path string) (RolloutMeta, bool) { return readRolloutHead(path) }
+
 // headLimit bounds the first line this will read before giving up on it.
 const headLimit = 1 << 20

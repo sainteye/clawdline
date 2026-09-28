@@ -3285,28 +3285,30 @@ export interface Icon {
  * `sessionId` is absent — which kind of nothing stands in the way. `command_line`
  * is a resumed session, whose id is on its own command line; `open_file` is the
  * transcript the process holds open, which the kernel names rather than a
- * correlation between two clocks; `registry` is the assistant's own live record,
- * which only Claude Code writes. The three that carry no id are deliberately not
- * one word: `no_record` is a session that has written nothing to match yet —
- * Codex writes its rollout at the first message and not at startup, so a session
- * nobody has typed into is this, and names itself as soon as somebody does;
- * `unreadable` is this machine failing to read the table of open files, which is
- * its own fault to fix; `ambiguous` is transcripts belonging to more than one
- * conversation open on the same process, where naming the session at all would be a
- * guess — it is the conversations that are counted and not the files, because a
- * Codex session running sub-agents holds one transcript per thread open and every
- * one of them names the same conversation at its head. Absent on a row no identity
- * source was asked about.
+ * correlation between two clocks; `live_title` is Codex's managed app-server writer
+ * record and rollout agreeing with the exact title Codex put on this terminal;
+ * `registry` is the assistant's own live record, which only Claude Code writes. The
+ * three that carry no id are deliberately not one word: `no_record` is a session
+ * that has written nothing to match yet — Codex writes its rollout at the first
+ * message and not at startup, so a session nobody has typed into is this, and names
+ * itself as soon as somebody does; `unreadable` is this machine failing to read the
+ * table of open files, which is its own fault to fix; `ambiguous` is transcripts
+ * belonging to more than one conversation open on the same process, where naming
+ * the session at all would be a guess — it is the conversations that are counted
+ * and not the files, because a Codex session running sub-agents holds one
+ * transcript per thread open and every one of them names the same conversation at
+ * its head. Absent on a row no identity source was asked about.
  */
 export type IdentityBinding =
     "command_line"
   | "open_file"
+  | "live_title"
   | "registry"
   | "no_record"
   | "unreadable"
   | "ambiguous"
 
-export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "registry", "no_record", "unreadable", "ambiguous"] as const
+export const IdentityBindingValues: readonly IdentityBinding[] = ["command_line", "open_file", "live_title", "registry", "no_record", "unreadable", "ambiguous"] as const
 
 /**
  * Why a reference has no picture behind it: `expired` when the store held it and no

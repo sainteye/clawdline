@@ -26,6 +26,11 @@ const (
 	// open. The kernel says which file that is, so it is proof rather than a
 	// correlation between two clocks.
 	BindingOpenFile Binding = "open_file"
+	// BindingLiveTitle: Codex's active writer record and rollout agree with
+	// the exact title Codex put on this terminal. This is the managed
+	// app-server path, where the foreground TUI no longer holds its rollout
+	// open itself.
+	BindingLiveTitle Binding = "live_title"
 	// BindingRegistry: the assistant's own live record names it. Claude Code
 	// writes one per pid; Codex writes none.
 	BindingRegistry Binding = "registry"
@@ -49,11 +54,11 @@ const (
 	BindingAmbiguous Binding = "ambiguous"
 )
 
-// Bound says whether the binding produced a conversation id. The three that do
+// Bound says whether the binding produced a conversation id. The four that do
 // not are deliberately not one value: see Binding.
 func (b Binding) Bound() bool {
 	switch b {
-	case BindingCommandLine, BindingOpenFile, BindingRegistry:
+	case BindingCommandLine, BindingOpenFile, BindingLiveTitle, BindingRegistry:
 		return true
 	}
 	return false

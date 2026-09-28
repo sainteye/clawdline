@@ -112,20 +112,22 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 // this Mac on 2026-09-20: 15 s, 54 s and 88 s between a thread being created
 // and its rollout appearing, and three threads that day never got one at all.
 //
-// What does exist from the first message on is the open descriptor: the
-// process holds its own rollout open, and that file says which conversation it
-// belongs to. So the window this cannot close is startup to first message, and
-// within that window the answer is `no_record` rather than silence — which is
-// the whole difference between a session that will name itself shortly and one
-// this machine is failing to read.
+// What exists from the first message on in direct mode is the open descriptor:
+// the process holds its own rollout open, and that file says which conversation
+// it belongs to. Managed app-server versions may put that descriptor on the
+// shared daemon instead; transcript.Host validates their live writer record,
+// rollout, name, cwd and exact iTerm title after this scan. Before the first
+// message the answer is `no_record` rather than silence — which is the whole
+// difference between a session that will name itself shortly and one this
+// machine is failing to read.
 //
 // The pid asked about is the terminal's foreground process, which for Codex is
 // the platform binary and not the npm wrapper that started it: a wrapper run as
 // `node .../bin/codex` is not classified as an assistant at all, because
 // classify reads the executable and that one is `node`. Measured on this Mac on
-// 2026-09-20 across four Codex sessions, the wrapper held no rollout open in
-// any of them and the binary held every one — so asking the wrong one of the
-// two would have turned every session into a false `no_record`.
+// 2026-09-20 across four direct Codex sessions, the wrapper held no rollout
+// open in any of them and the binary held every one — so asking the wrong one
+// of the two would have turned every session into a false `no_record`.
 //
 // The same read also asks the process for its cwd. Once a rollout exists its
 // own head remains the stronger answer; before the first message there is no
