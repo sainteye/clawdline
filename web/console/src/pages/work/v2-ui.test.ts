@@ -8,6 +8,7 @@ const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
 const sessions = readFileSync(new URL("../../Sessions.tsx", import.meta.url), "utf8")
 const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
 const app = readFileSync(new URL("../../App.tsx", import.meta.url), "utf8")
+const boardSettings = readFileSync(new URL("../settings/BoardBlock.tsx", import.meta.url), "utf8")
 
 test("the Project picker draws each Project mark in its trigger and menu", () => {
   assert.match(source, /function ProjectPicker/)
@@ -60,6 +61,13 @@ test("assignment choices show Session activity, unfinished work, and selected de
   assert.match(source, /readSessionWorkV2\(session\.id\)/)
   assert.match(styles, /\.work-session-detail/)
   assert.doesNotMatch(source, /<select className="work-input"[^>]*aria-label="指派既有 Session"/)
+})
+
+test("the Board AI consent says it is for choosing an Agent role during assignment", () => {
+  assert.match(boardSettings, /AI 建議 Agent 角色/)
+  assert.match(boardSettings, /指派看板項目/)
+  assert.match(boardSettings, /讓 AI 判斷角色/)
+  assert.doesNotMatch(boardSettings, /AI 閱讀摘要/)
 })
 
 test("assigned Board items show their generated TODO receipts", () => {

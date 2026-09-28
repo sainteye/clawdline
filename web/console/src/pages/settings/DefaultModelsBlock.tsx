@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState } from "react"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { nextWord } from "../../next-strings.js"
-import { readDefaultModels, writeDefaultModels, type DefaultModelsSnapshot } from "./api.js"
+import {
+  defaultModelOptions,
+  readDefaultModels,
+  writeDefaultModels,
+  type DefaultModelAssistant,
+  type DefaultModelsSnapshot,
+} from "./api.js"
 import "./default-models.css"
 
 type ModelKey = "codex_default_model" | "claude_default_model"
@@ -15,15 +21,11 @@ function modelOf(snapshot: DefaultModelsSnapshot | null, key: ModelKey): string 
 /** Machine-wide defaults for sessions Clawdline opens, on every console. */
 export function DefaultModelsBlock({ shown }: { shown: boolean }) {
   const [snapshot, setSnapshot] = useState<DefaultModelsSnapshot | null>(null)
-  const [codex, setCodex] = useState("")
-  const [claude, setClaude] = useState("")
   const [busy, setBusy] = useState<ModelKey | "read" | null>(null)
   const [said, setSaid] = useState("")
 
   const accept = useCallback((answer: DefaultModelsSnapshot) => {
     setSnapshot(answer)
-    setCodex(modelOf(answer, "codex_default_model"))
-    setClaude(modelOf(answer, "claude_default_model"))
   }, [])
 
   const read = useCallback(() => {
@@ -49,8 +51,6 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
     const next = value.trim()
     const before = modelOf(snapshot, key)
     if (next === before || busy) return
-    if (key === "codex_default_model") setCodex(next)
-    else setClaude(next)
     setBusy(key)
     setSaid("")
     void writeDefaultModels({ [key]: next }).then(
@@ -60,8 +60,6 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
         setSaid(nextWord("defaultModelsSaved"))
       },
       (error: unknown) => {
-        if (key === "codex_default_model") setCodex(before)
-        else setClaude(before)
         setBusy(null)
         setSaid(error instanceof RefusalError && error.code === "invalid_default_model"
           ? nextWord("defaultModelInvalid")
@@ -71,44 +69,31 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
   }
 
   const disabled = !snapshot || busy !== null
+  const picker = (assistant: DefaultModelAssistant, key: ModelKey, label: string) => {
+    const value = modelOf(snapshot, key)
+    return (
+      <div className="settings-model-field">
+        <label htmlFor={`settings-${assistant}-default-model`}>{label}</label>
+        <select
+          className="find settings-model-select"
+          id={`settings-${assistant}-default-model`}
+          value={value}
+          disabled={disabled}
+          onChange={(event) => commit(key, event.currentTarget.value)}
+        >
+          {defaultModelOptions(snapshot, assistant, value, nextWord("defaultModelPlaceholder")).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </div>
+    )
+  }
   return (
     <div className="block" id="settings-default-models" aria-busy={busy !== null}>
       <b id="settings-default-models-title">{nextWord("defaultModelsTitle")}</b>
       <p className="say">{nextWord("defaultModelsHint")}</p>
-      <div className="settings-model-field">
-        <label htmlFor="settings-codex-default-model">{nextWord("defaultCodexModel")}</label>
-        <input
-          className="find"
-          id="settings-codex-default-model"
-          value={codex}
-          placeholder={nextWord("defaultModelPlaceholder")}
-          disabled={disabled}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(event) => setCodex(event.currentTarget.value)}
-          onBlur={(event) => commit("codex_default_model", event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur()
-          }}
-        />
-      </div>
-      <div className="settings-model-field">
-        <label htmlFor="settings-claude-default-model">{nextWord("defaultClaudeModel")}</label>
-        <input
-          className="find"
-          id="settings-claude-default-model"
-          value={claude}
-          placeholder={nextWord("defaultModelPlaceholder")}
-          disabled={disabled}
-          spellCheck={false}
-          autoComplete="off"
-          onChange={(event) => setClaude(event.currentTarget.value)}
-          onBlur={(event) => commit("claude_default_model", event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur()
-          }}
-        />
-      </div>
+      {picker("codex", "codex_default_model", nextWord("defaultCodexModel"))}
+      {picker("claude", "claude_default_model", nextWord("defaultClaudeModel"))}
       {snapshot ? null : (
         <button className="chip" type="button" disabled={busy === "read"} onClick={read}>
           {nextWord("defaultModelsRetry")}

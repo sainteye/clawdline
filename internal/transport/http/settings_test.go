@@ -47,6 +47,17 @@ func defaultModelsCall(t *testing.T, s *Server, method, contentType, body string
 }
 
 func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".codex", "models_cache.json"), []byte(`{"models":[
+		{"slug":"gpt-6-sol","display_name":"GPT-6 Sol","visibility":"list"},
+		{"slug":"gpt-hidden","display_name":"Hidden","visibility":"hide"}
+	]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	dir := filepath.Join(t.TempDir(), "clawdline-next")
 	s := &Server{cfg: config.Config{Dir: dir}}
 
@@ -59,8 +70,13 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
+	if len(got) != 3 || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
 		t.Fatalf("narrow answer: %#v", got)
+	}
+	models, ok := got["models"].(map[string]any)
+	if !ok || len(models) != 2 || !strings.Contains(rec.Body.String(), `"value":"gpt-6-sol","label":"GPT-6 Sol"`) ||
+		strings.Contains(rec.Body.String(), "gpt-hidden") || !strings.Contains(rec.Body.String(), `"value":"opus"`) {
+		t.Fatalf("provider model choices: %s", rec.Body)
 	}
 
 	rec = defaultModelsCall(t, s, http.MethodPost, "application/json", `{"remote":true}`)

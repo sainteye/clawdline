@@ -210,6 +210,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["GET", "/v1/places", "places"],
     ["GET", "/v1/settings/default-models", "default-models"],
     ["POST", "/v1/settings/default-models", "default-models-update"],
+    ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
     ["POST", "/v1/sessions/s1/interrupt", "interrupt"],
@@ -1444,6 +1445,29 @@ test("a phone reads and changes only the two default models", async () => {
     assert.equal(res.status, 501, path)
   }
   assert.equal(writeRoute("POST", "/v1/settings"), null)
+})
+
+test("a phone can save the Board AI consent under the command's own receipt", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const command = {
+    operation: "set_ai_consent",
+    provider: "codex",
+    enabled: true,
+    policy: "board-reading-v1",
+    expectedRevision: 4,
+    requestId: "board-setting-1",
+  }
+
+  const write = await reader.fetch("/v1/board", post(command))
+  assert.equal(write.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "board-setting-1", "mac-a", "board-command", {
+    command,
+  }, "action"])
+
+  const missing = await reader.fetch("/v1/board", post({ ...command, requestId: "" }))
+  assert.equal(missing.status, 400)
+  assert.equal(client.calls.length, 0)
 })
 
 test("the sessions a reboot took away cross as the machine's three words, under the press's key", async () => {

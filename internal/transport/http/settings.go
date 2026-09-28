@@ -14,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/contract"
 )
 
@@ -171,13 +172,28 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 type defaultModelsAnswer struct {
-	Codex  *string `json:"codex_default_model"`
-	Claude *string `json:"claude_default_model"`
+	Codex  *string                         `json:"codex_default_model"`
+	Claude *string                         `json:"claude_default_model"`
+	Models map[string][]defaultModelOption `json:"models"`
+}
+
+type defaultModelOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
 }
 
 func defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModelsAnswer {
 	snapshot := settingsSnapshot(f, v)
-	return defaultModelsAnswer{Codex: snapshot.CodexDefaultModel, Claude: snapshot.ClaudeDefaultModel}
+	home, _ := os.UserHomeDir()
+	models := map[string][]defaultModelOption{"codex": {}, "claude": {}}
+	for _, assistant := range []string{"codex", "claude"} {
+		for _, model := range transcript.Models(home, assistant) {
+			models[assistant] = append(models[assistant], defaultModelOption{Value: model.Command, Label: model.Name})
+		}
+	}
+	return defaultModelsAnswer{
+		Codex: snapshot.CodexDefaultModel, Claude: snapshot.ClaudeDefaultModel, Models: models,
+	}
 }
 
 type settingsRefusal struct{ code, message string }

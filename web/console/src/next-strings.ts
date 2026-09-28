@@ -119,7 +119,7 @@ const words = {
     fontScaleNotRemembered: "The text size changed, but this browser could not save it. Reopening will use the default.",
     defaultModelsTitle: "Default models for new sessions",
     defaultModelsHint:
-      "Used when Clawdline opens a new session without another model choice. Leave a field empty to let that assistant choose.",
+      "Used only when Clawdline opens a new session without another model choice. A child agent may still choose its own model.",
     defaultCodexModel: "Codex default model",
     defaultClaudeModel: "Claude Code default model",
     defaultModelPlaceholder: "Assistant default",
@@ -658,7 +658,7 @@ const words = {
     fontScaleNotRemembered: "文字大小已調整，但這個瀏覽器沒有保存；重新開啟後會回到預設。",
     defaultModelsTitle: "新 session 的預設模型",
     defaultModelsHint:
-      "Clawdline 開新 session、而且沒有另外指定模型時套用。欄位留空就交給該助理決定。",
+      "只在 Clawdline 開新 session、而且沒有另外指定模型時套用；child agent 仍可另外指定自己的模型。",
     defaultCodexModel: "Codex 預設模型",
     defaultClaudeModel: "Claude Code 預設模型",
     defaultModelPlaceholder: "由助理決定",

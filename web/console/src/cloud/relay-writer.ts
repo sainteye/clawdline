@@ -244,6 +244,7 @@ export type WriteRoute =
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
+  | { op: "board-command"; word: Carried<"board-command"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
   // The sessions a reboot took away: one machine read and two machine
   // commands, none of them a session's — the rows are conversations the
@@ -499,6 +500,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "settings" && a === "default-models" && segments.length === 2) {
     return { op: "default-models-update", word: "default-models-update" }
   }
+  if (head === "board" && segments.length === 1) {
+    return { op: "board-command", word: "board-command" }
+  }
   if (head === "verifications") {
     if (segments.length === 1) return { op: "verification-write", word: "verification.create", id: "" }
     if (a && b === "notes" && segments.length === 3) return { op: "verification-write", word: "verification.note", id: a }
@@ -696,6 +700,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "worktree-refresh":
     case "default-models":
     case "default-models-update":
+    case "board-command":
     case "project-icon-copy":
     case "project-mirror-apply":
     case "project-mirror-detach":
@@ -1272,6 +1277,15 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "board-command": {
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
+        }
+        const command = await bodyOf(init)
+        const request = typeof command.requestId === "string" ? command.requestId : ""
+        if (!request) throw failure("bad_request", "a Board command needs a requestId", 400)
+        return this.machineWorkV2(client, route.word, { command }, request)
       }
       case "project-icon-copy": {
         if (typeof client._place !== "function") throw failure("cloud_not_carried", route.word, 501)

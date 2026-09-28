@@ -755,8 +755,16 @@ two narrow words: the read-only `default-models` routes to `GET /v1/settings/def
 `default-models-update` carries `{changes}` to that route's POST under the viewer request id and
 paired-device actor. Both the Cloud decoder and the local route accept only
 `codex_default_model` and `claude_default_model`; the full `/v1/settings` snapshot never crosses the
-relay. Reading needs only the paired line. Saving is a command, so it also needs the machine's
+relay. The read answer also includes the same provider model catalog the daemon uses for its model
+picker, so the hosted page offers choices instead of accepting arbitrary text. Reading needs only
+the paired line. Saving is a command, so it also needs the machine's
 Cloud-command switch and the paired device's Send capability.
+
+Also as of 2026-09-28, `board-command` carries the Settings page's existing Board mode and AI
+consent commands as `{command}` to `POST /v1/board`. The command's own `requestId` is both the Cloud
+request id and the local route's Idempotency-Key, so retrying an uncertain save cannot apply it
+twice. It crosses as the paired device, preserving the local route's Send and Admin checks; item
+writes remain separate Work v2 commands.
 
 As of 2026-09-26 the token bill crosses too, as three read words: `usage.session`, `usage.task` and
 `usage.item`, each `{type, session, request, id}` on the machine reply channel and routed to
