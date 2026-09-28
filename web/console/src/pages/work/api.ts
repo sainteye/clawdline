@@ -1,5 +1,5 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
-import type { PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession } from "@clawdline/contract"
+import type { PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession, WorkGateCompactRead, WorkGateDetailRead, WorkGateDecisionAction } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
 /**
@@ -338,6 +338,14 @@ export interface WorkV2Item {
   kind: WorkV2Kind
   title: string
   description: string
+  acceptance_criteria: string
+  acceptance_version: number
+  acceptance_digest: string
+  gate_snapshot_cycle: number
+  gate_snapshot_at: number | null
+  planning_gate: boolean
+  verify_gate: boolean
+  verification?: WorkGateCompactRead | WorkGateDetailRead
   phase: WorkV2Phase
   condition: string | null
   user_action: string
@@ -458,6 +466,7 @@ export type CreateWorkV2Body = {
   kind: WorkV2Kind
   title: string
   description: string
+  acceptance_criteria: string
   deployment_policy: "required" | "not_required" | "agent_decides"
 }
 
@@ -492,12 +501,33 @@ export const remindWorkV2 = (item: WorkV2Item) =>
     expected_version: item.version,
   })
 
-export const editWorkV2 = (item: WorkV2Item, title: string, description: string) =>
+export const editWorkV2 = (item: WorkV2Item, title: string, description: string, acceptance?: string) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, {
     expected_version: item.version,
     title,
     description,
+    ...(acceptance === undefined ? {} : { acceptance_criteria: acceptance }),
   }, "PATCH")
+
+export interface GateExport {
+  ok: boolean
+  manifest: { item_id: string; item_version: number; sha256: string; byte_count: number; round_count: number }
+  /** Exact UTF-8 export bytes, including the trailing newline, for manifest verification. */
+  document: string
+}
+
+/** Person-only gate actions. Parent-Epic decisions deliberately have no UI route here. */
+export const decideWorkGate = (item: WorkV2Item, action: WorkGateDecisionAction, reason: string,
+  extra: { direction?: string; acceptance_criteria?: string; target_session_id?: string } = {}) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/gate-decision`, {
+    expected_version: item.version, action, reason, ...extra,
+  })
+export const exportWorkGate = (itemID: string) =>
+  call<GateExport>(`/v1/work/v2/items/${itemID}/gate-export`)
+export const purgeWorkGate = (itemID: string, expectedVersion: number, sha256: string) =>
+  mutate<{ ok: boolean; purged_rounds: number; sha256: string }>(`/v1/work/v2/items/${itemID}/gate-purge`, {
+    expected_version: expectedVersion, sha256,
+  })
 
 export const convertWorkV2 = (item: WorkV2Item, kind: WorkV2ExecutableKind) =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/convert`, {

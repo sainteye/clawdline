@@ -46,6 +46,8 @@ export const DEFAULTS = {
   push_on_deploy: false,
   orchestrator_agent_notify: true,
   orchestrator_enabled: true,
+  planning_gate: true,
+  verify_gate: false,
   orchestrator_max_children: 5,
   orchestrator_permission: "full",
   orchestrator_notify_root: true,

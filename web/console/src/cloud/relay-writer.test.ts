@@ -268,6 +268,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
   assert.equal(writeRoute("GET", "/v1/work/v2/images/img-1")?.word, "work.v2.image")
   assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/images")?.word, "work.v2.image-create")
   assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/persona-suggestion")?.word, "work.v2.persona-suggestion")
+  assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/gate-decision")?.word, "work.v2.gate-decision")
+  assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/gate-purge")?.word, "work.v2.gate-purge")
   assert.equal(writeRoute("DELETE", "/v1/work/v2/items/w1/images/img-1")?.word, "work.v2.image-delete")
   assert.equal(writeRoute("POST", "/v1/work/v2/session-todos/%251/t1/images")?.word, "work.v2.todo-image-create")
 })
@@ -643,8 +645,12 @@ test("Work v2 person actions keep their exact route subject and body across Clou
   const client = new FakeClient()
   const { reader } = seam(client)
   const cases: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
-    ["/v1/work/v2/items", { project_id: "cloud-p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" },
-      "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides" } }],
+    ["/v1/work/v2/items", { project_id: "cloud-p1", kind: "feature", title: "A", description: "B", acceptance_criteria: "- Done", deployment_policy: "agent_decides" },
+      "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", acceptance_criteria: "- Done", deployment_policy: "agent_decides" } }],
+    ["/v1/work/v2/items/w1/gate-decision", { expected_version: 7, action: "override", reason: "Evidence reviewed" },
+      "work.v2.gate-decision", { id: "w1", item: { expected_version: 7, action: "override", reason: "Evidence reviewed" } }],
+    ["/v1/work/v2/items/w1/gate-purge", { expected_version: 7, sha256: "abc" },
+      "work.v2.gate-purge", { id: "w1", item: { expected_version: 7, sha256: "abc" } }],
     ["/v1/work/v2/items/w1/assign", { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" },
       "work.v2.assign", { id: "w1", item: { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" } }],
     ["/v1/work/v2/items/w1/persona-suggestion", { expected_version: 1 },
@@ -673,11 +679,11 @@ test("Work v2 person actions keep their exact route subject and body across Clou
     { id: "w1", image: "img1", item: { expected_version: 3 } }, "action"])
 
   const edited = await reader.fetch("/v1/work/v2/items/w1", {
-    ...post({ expected_version: 4, title: "Edited", description: "Changed" }), method: "PATCH",
+    ...post({ expected_version: 4, title: "Edited", description: "Changed", acceptance_criteria: "# Changed" }), method: "PATCH",
   })
   assert.equal(edited.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.edit", {
-    id: "w1", item: { expected_version: 4, title: "Edited", description: "Changed" },
+    id: "w1", item: { expected_version: 4, title: "Edited", description: "Changed", acceptance_criteria: "# Changed" },
   }, "action"])
 
   const cancelled = await reader.fetch("/v1/work/v2/items/w1/cancel", post({

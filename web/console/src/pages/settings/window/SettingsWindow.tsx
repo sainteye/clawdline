@@ -35,6 +35,7 @@ import { Block, Chip, Head, MemoField, Mono, Note, PopUp, Row, Slider, Switch, T
 import { PairingQr, expiredFailure } from "./PairingQr.js"
 import { settingsFailureSentence } from "./failure.js"
 import { COMPACT_MAX, COMPACT_MIN, compactWindowText, compactWindowValue } from "./compact.js"
+import { gateModeText } from "./gate-mode.js"
 
 /**
  * The native "Clawdline 設定" window, as a web page.
@@ -1062,6 +1063,9 @@ export function SettingsWindow() {
 
   function orchestratorPane() {
     const linger = Number(now("orchestrator_child_linger"))
+    const planning = !!now("planning_gate")
+    const verification = !!now("verify_gate")
+    const gateMode = gateModeText(planning, verification)
     return (
       <>
         <div className="sw-column">
@@ -1072,6 +1076,13 @@ export function SettingsWindow() {
               onChange={flip("orchestrator_enabled")}
             />
           </Row>
+          <Row label="規劃 gate" hint="預設開啟。只在項目本輪第一次成功指派時擷取；之後改設定不會改動進行中的工作。">
+            <Switch label="規劃 gate" on={planning} onChange={flip("planning_gate")} />
+          </Row>
+          <Row label="獨立驗證 gate" hint="預設關閉。開啟後，新指派的工作要以固定 Git 候選提交接受獨立檢查；無法驗證不算通過。">
+            <Switch label="獨立驗證 gate" on={verification} onChange={flip("verify_gate")} />
+          </Row>
+          <p className="sw-gate-mode" role="status">{gateMode}</p>
           <Row label={W.settingsOrchestratorMax} hint={W.settingsOrchestratorMaxHint}>
             <PopUp
               label={W.settingsOrchestratorMax}

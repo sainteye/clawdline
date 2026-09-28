@@ -63,9 +63,18 @@ The product, quality and operations teams, adapted the same way: upstream emoji,
 metrics and vendor-specific pipelines were dropped, and each works inside the repository and the
 Epic flow — plans, steps, evidence and reports in the project's own language. None is suggested
 for a Board kind. `evidence-collector` captures the proof (screenshots, logs, measurements, and how
-each was produced) and rules PASS or FAIL on each claim, defaulting to FAIL; `reality-checker`
+each was produced) and rules each claim from evidence; an uncapturable claim is unverified with a
+reason, never PASS. `reality-checker`
 judges the whole change end to end. Their bots are drawn in
 `icons_product_quality_operations.go`, one colour family per team.
+
+For the optional independent verification gate, a detached read-only Codex checker uses
+`code-reviewer` for Issue and `reality-checker` for the final Epic end-to-end round. Feature uses
+`evidence-collector` when it has a reference image or design document, otherwise `reality-checker`.
+The selected persona shapes the check, while the gate brief requires the same closed result from
+all three: `PASS`, `FAIL`, or `NEEDS_WORK`, per-claim evidence, and a reason for every unverified
+claim. No persona text is changed for this gate. A missing result or unavailable checker is a
+technical failure, not an inferred PASS. The maker's persona does not grant checker authority.
 
 | id | Name | 中文 | Teams | Adapted from |
 | --- | --- | --- | --- | --- |

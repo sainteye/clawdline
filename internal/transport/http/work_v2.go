@@ -753,7 +753,7 @@ func (s *Server) workV2GateExport(w http.ResponseWriter, r *http.Request, id str
 	}
 	writeJSON(w, map[string]any{"ok": true, "manifest": map[string]any{"item_id": export.ItemID,
 		"item_version": export.ItemVersion, "sha256": export.SHA256, "byte_count": export.ByteCount,
-		"round_count": export.RoundCount}, "document": json.RawMessage(export.Document)})
+		"round_count": export.RoundCount}, "document": string(export.Document)})
 }
 
 func (s *Server) workV2GatePurge(w http.ResponseWriter, r *http.Request, id string) {

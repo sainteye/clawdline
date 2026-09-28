@@ -24,8 +24,8 @@ below are given as they appear, with their meaning in parentheses.
 1. Open **看板** and press **＋ 建立項目** (create item).
 2. In **建立看板項目**, choose the Project and the kind (**類型**):
    - **Feature** and **Issue** go to **待指派** (unassigned) and can be assigned to a session.
-   - **Epic**, **Refactor** and **Plan** stay in **規劃區** (planning) and are not assigned.
-3. Give it a title (**標題**) and a description (**描述**). You can dictate the description and add
+   - **Epic** is assignable like Feature and Issue; **Refactor** and **Plan** stay in **規劃區** (planning).
+3. Give it a title (**標題**), description (**描述**) and **驗收條件（Markdown）**. You can dictate the description and add
    up to six reference pictures. If the description has two or more top-level list items, they
    become the item's steps when it is assigned.
 4. Press **建立**.
@@ -37,6 +37,17 @@ Claude or Codex and press **開新 … Session** to open a new one. **前往 Ses
 **提醒 Session** reminds it of the item.
 
 From then on the session moves the item itself, and each move needs evidence:
+
+In **設定 → 派工作給別的 session**, planning is on by default and independent verification is off.
+The two values are captured on the item's first successful assignment in each cycle; changing the
+switches later affects future cycles. With planning on, Feature and Epic need a plan and independent
+plan review before implementation; Issue is exempt. Planning off also lets an Epic skip forced
+planning. With independent verification on, the card shows the latest result, and detail shows
+bounded evidence or why a claim could not be verified. `NEEDS_WORK`, stale evidence, and technical
+failure never count as PASS. Escalations show whose decision it is; only a **waiting for you**
+decision exposes person controls. AI, person, and technical overrides are labeled as overrides.
+When evidence detail fills, use **驗證詳情容量與匯出** to download and verify the exact export, confirm
+that it is saved, then clear eligible old detail. The latest state and lifetime counts remain.
 
 | Phase | On the card | The agent must show |
 | --- | --- | --- |

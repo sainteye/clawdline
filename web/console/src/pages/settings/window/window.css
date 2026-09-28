@@ -747,3 +747,4 @@
     grid-template-columns: 1fr;
   }
 }
+.sw-gate-mode { margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--dim); line-height: 1.55; overflow-wrap: anywhere; }

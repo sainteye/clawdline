@@ -142,7 +142,7 @@ The current owner is the one active assignment. A failed attempt is history, not
 ### 5.2 Documents
 
 An item may have ordered document references with a closed role: `spec`, `design`, `test`,
-`deploy`, `completion_report`, `other`, and — on an Epic only (`document_role_not_applicable`
+`deploy`, `completion_report`, `other`, and — on an Epic or Feature (`document_role_not_applicable`
 elsewhere) — `plan` and `plan_review`, the record §6.4's gate reads. A document may carry Markdown content or a repository-relative path/URL with
 a summary. The system does not copy an entire repository document merely to show that it exists.
 
@@ -214,9 +214,9 @@ Session assignment normally moves from `created` to `assigned` in one transactio
 | `created` | person, by creation | valid Project, executable kind, title and description |
 | `assigning` | person | durable new-Session assignment intent recorded before terminal I/O |
 | `assigned` | assignment service | exactly one resolved owner; opening/briefing outcome recorded |
-| `implementing` | owning Agent | owner identity matches; item is not terminal |
-| `verifying` | owning Agent | verification plan or references recorded |
-| `merging` | owning Agent | successful verification evidence recorded |
+| `implementing` | owning Agent | owner identity matches; captured planning gate, when on, has plan and independent review |
+| `verifying` | owning Agent | when captured verification is on, a clean committed same-Project candidate is frozen and a checker round is queued |
+| `merging` | owning Agent | when captured verification is on, a live PASS or reasoned exact-candidate override; otherwise ordinary verification evidence |
 | `deploying` | owning Agent | broker landing, or a direct-Session receipt whose exact commit is contained by both the Project's local target and its remote-tracking target |
 | `done` | owning Agent | deployment evidence is valid, or deployment is explicitly not required; every item step is complete |
 | `cancelled` | person | cancellation reason; assignment released |
@@ -291,21 +291,20 @@ When the policy is `agent_decides`, skipping deployment requires an Agent-author
 `not_applicable` decision with a concrete reason. `done` is refused if neither deploy evidence nor
 that decision exists. A person may change the policy; the Agent may not.
 
-### 6.4 An Epic is planned and reviewed before it is implemented
+### 6.4 Captured planning for Epic and Feature
 
-An Epic is large, so a second reader checks its plan before any code is written: an Epic cannot go
-`assigned → implementing` until it holds a `plan` document and a `plan_review` document written
-after the latest `plan`. The owner writes the plan (`clawdline item doc <id> --role plan`),
+The planning setting defaults on, but the first successful assignment of an execution cycle
+captures it with the verification setting. A captured planning-on Epic or Feature cannot go
+`assigned → implementing` until it holds acceptance criteria, a `plan` document, and a
+`plan_review` document written after the latest `plan`. The owner writes the plan (`clawdline item doc <id> --role plan`),
 dispatches a read-only child with `--kind plan_review --work-id <id>`, and records that child's
 review as a `plan_review` whose `reference` is the child's task id and whose body is the review's
 substance for the person — what it found and what the plan changed in response. A plan rewritten
-after a review needs a fresh review, up to two reviews: a plan rewritten after the second goes on
-without a third. Then the owner breaks the Epic into steps and moves it to
-`implementing`. Feature and Issue are unaffected.
+after a review needs a fresh review, up to two required reviews for Epic or one for Feature: a
+plan rewritten after the ceiling goes on without another forced review. Issue is always exempt.
+Planning off bypasses the forced plan and review even for Epic.
 
-The phase route refuses the transition with `409 epic_plan_required` (no plan) or
-`409 epic_plan_review_required` (no review newer than the latest plan, while fewer than two are
-recorded). The document route accepts
+The phase route refuses a planning-on transition when the plan or review is absent. The document route accepts
 a `plan_review` only when its task is a real review of this plan, read from the broker's task
 record in the same transaction as the item's owner: the task exists
 (`plan_review_task_unknown`), was dispatched by the item's owning Session
@@ -317,15 +316,54 @@ may name a v2 Board item as its `work_id`: the broker accepts one in the dispatc
 not terminal, and leaves the item's phase to its owner.
 
 Documents are ordered for the gate by their creation second and then by insertion, so a plan and a
-review written in the same second keep the order they were written in. The briefs an Epic's owner
-receives — typed into an existing Session, or a new Session's Root Assignment acceptance — spell the
-procedure out, and `clawdline item add|claim` prints it when the item is an Epic.
+review written in the same second keep the order they were written in. Owner briefs and Root
+Assignments include the exact acceptance and captured mode; the global switch cannot rewrite a
+live cycle.
+
+### 6.4a Independent verification, escalation, and recovery
+
+`verify_gate` defaults off. A successful first assignment captures both gate values; a failed
+new-Session open captures neither. Reassignment preserves the pair. Person reopen clears the old
+snapshot for a new assignment; retraction by the just-completing owner copies the pair into its
+correction cycle but invalidates the old verification authorization. Migrated in-flight Epics keep
+planning on and verification off; migrated Features and Issues keep both off. Terminal history is
+not retroactively gated. The four modes are independent: both on, planning only, verification only,
+or both off. Planning off explicitly bypasses Epic planning.
+
+Acceptance is one bounded Markdown field with version and SHA-256 digest. The person may create or
+edit it; an Epic owner may set it for a child or revise it through a reasoned third-FAIL decision.
+The maker cannot edit it. An authorized edit before merging stales the current round and every old
+PASS/override, returning a verifying item to implementing. Merging, deploying, and done lock it.
+The checker receives its exact text, version, digest, cycle, and immutable candidate receipt.
+
+With verification on, the maker's `clawdline item phase <id> verifying` sends its registered
+same-Project worktree, branch, and full committed HEAD. The daemon requires a clean tracked tree
+and a strict descendant of the cycle base, then durably queues a detached read-only Codex checker.
+Issue uses Code Reviewer; Epic final end-to-end verification uses Reality Checker only after all
+children are terminal; Feature uses Evidence Collector when it has a reference image or design
+document, otherwise Reality Checker. A result has `PASS`, `FAIL`, or `NEEDS_WORK` with bounded
+per-claim evidence; an unverified claim explains why and is never PASS. Missing, malformed, stale,
+or mismatched results cannot authorize merging. Technical failure gets one bounded retry before
+escalation. Repeated FAIL returns to implementing and the third consecutive FAIL escalates; a live
+parent Epic owner decides first, otherwise the person. Technical escalation is separate. Direction,
+acceptance revision, reassignment, repair-retry (technical only), reasoned override, and cancellation
+are closed actions; only override grants exact-candidate authority without checker PASS. The Board
+labels AI/person and technical overrides explicitly.
+
+The Board list carries only the latest round, escalation, authorization, and four fixed-size
+aggregates (rounds, FAILs, findings, overrides). Single-item reads add at most ten recent rounds
+and their bounded evidence. Capacity refusal does not evict evidence. The person can export eligible
+closed detail with `GET /v1/work/v2/items/<id>/gate-export`, save the exact UTF-8 document and
+verify its manifest digest, then confirm `POST /v1/work/v2/items/<id>/gate-purge` with that digest
+and item version. Purge preserves active/latest protected detail, fixed-size aggregates, and the
+audit event. Cloud carries these same person routes; the parent-Epic Agent decision remains on its
+machine-authenticated Agent route. An export version or digest conflict requires a fresh export.
 
 ### 6.5 An Epic's owner breaks it into child items and hands them out
 
 *(Added 2026-09-27 by the owner: "the Session that holds an Epic has the power to create Feature and
-Issue items and assign them to other Sessions".)* An Epic is large and its owner plans it; the
-reviewed plan (§6.4) often says that parts of it are separate pieces of work better done by other
+Issue items and assign them to other Sessions".)* An Epic is large and its owner coordinates it; a
+plan when the captured gate requires one (§6.4) often says that parts are better done by other
 Sessions. Until this change the owner could not act on that: a Session created an item only on a
 person's message (§7.1), the item was always assigned to the creating Session, only a person
 assigned items to Sessions, and a Root opened for an item was told "Do not create Board items". So
@@ -336,8 +374,9 @@ and only it:
   Issue under the Epic, and `POST /v1/work/v2/agent/items/<child id>/assign` (`clawdline item
   assign`) (re)assigns an open child. Both need the Idempotency-Key and the machine credential, and
   the caller's `session_id` must be the Epic's active owner (`not_epic_owner`).
-- The parent is an Epic (`parent_not_epic`), not terminal (`item_terminal`), and past its plan gate —
-  phase `implementing` or later — so the children come out of a reviewed plan (`epic_not_planned`).
+- The parent is an Epic (`parent_not_epic`), not terminal (`item_terminal`), and in phase
+  `implementing` or later (`epic_not_planned`). If its captured planning gate is on, the plan
+  and review guard was passed; if off, the Epic intentionally bypassed it.
 - A child is a `feature` or an `issue` (`child_kind_not_allowed`): an Epic inside an Epic, or a
   Planning kind, is not a piece another Session can own and finish.
 - One Epic holds at most 32 children, open or closed (`epic_children_full`, capacity row
@@ -365,6 +404,17 @@ and only it:
   cancelled. A person's completion by hand (§2 invariant 2) is not gated: the person may close the
   whole regardless.
 
+After integrating each child, the Epic owner immediately rereads the child and its steps. The
+child's owning Session completes remaining steps and moves it beyond `merging`: it provides the
+exact landing commit already on the local target and `origin/main`, advances to `deploying`, then
+records deployment evidence or a no-deployment reason permitted by that child's policy and moves
+to `done`. An Epic owner who also owns the child can perform these writes; otherwise the owner
+follows up with or reassigns the child owner through the authorized path. `not_item_owner`
+prevents signing another Session's steps or phase. The Epic owner ACKs any broker completion
+notice, inspects the landing receipt and worktree inventory, and prunes only proven landed-identical
+or task-temporary residue; unlanded, mixed, and unknown material stays preserved with a named next
+owner. The parent Epic remains open until all children are `done` or `cancelled`.
+
 The Epic's owner is told all of this where it is told the Epic procedure: the Root Assignment's
 Constraints and acceptance and the assignment and reassignment briefs name `clawdline item child`
 and `clawdline item assign`, the address book the terminal ids come from, and the responsibility
@@ -383,6 +433,9 @@ coordination to the new owner, whose `session_id` then passes the check.
 | Reopen terminal work | yes | own just-completed `done` only, never a person's completion | no | no |
 | Change Project/kind/deployment policy | yes | no | no | no |
 | Edit title/description | yes | yes | no | no |
+| Edit acceptance Markdown | yes before merging | only an Epic owner through a reasoned escalation decision for its child; the maker cannot edit its own acceptance | no | no |
+| Decide a verification escalation | yes when routed to the person | designated live parent Epic owner through the Agent route only | no | no |
+| Export and purge eligible verification detail | yes, in that order with matching digest and version | no | no | no |
 | Add/edit documents and steps | yes | yes | no | no |
 | Add/delete reference images | yes | no | no | no |
 | Advance/rewind execution phase | no | yes | no | validates only |

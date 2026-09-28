@@ -2,10 +2,9 @@ import type { WorkV2Document, WorkV2Item } from "./api.js"
 import { documentsNewestFirst } from "./completion-report-order.js"
 
 /**
- * An Epic may not start implementing until its owning Session has written a
- * plan and a Child Session has reviewed that plan: a `plan_review` written at
- * or after the latest `plan`. The daemon enforces this; the Board only says
- * where an Epic stands so nobody presses on an Epic that is not ready.
+ * When an Epic captures planning on assignment, its owner writes a plan and
+ * a Child Session reviews it before implementation. The daemon enforces the
+ * captured mode; this checklist only shows that Epic's current state.
  */
 export interface EpicGate {
   /** A `plan` document exists. */
@@ -15,7 +14,7 @@ export interface EpicGate {
   ready: boolean
 }
 
-export const EPIC_GATE_HINT = "Epic 要先寫計劃書、經 Child Session review，才能開始實作"
+export const EPIC_GATE_HINT = "本輪已啟用規劃 gate：Epic 要先寫計劃書、經 Child Session review，才能開始實作"
 
 export function isEpic(item: Pick<WorkV2Item, "kind">): boolean {
   return item.kind === "epic"
@@ -29,9 +28,9 @@ export function epicGate(documents: WorkV2Document[] | undefined): EpicGate {
 
 const BEFORE_IMPLEMENTING = new Set<WorkV2Item["phase"]>(["created", "assigning", "assigned"])
 
-/** The checklist is shown on an open Epic that has not yet moved past `assigned`. */
-export function epicGateShown(item: Pick<WorkV2Item, "kind" | "phase" | "closed_at">): boolean {
-  return isEpic(item) && !item.closed_at && BEFORE_IMPLEMENTING.has(item.phase)
+/** Show the checklist only after this Epic has captured an enabled planning gate. */
+export function epicGateShown(item: Pick<WorkV2Item, "kind" | "phase" | "closed_at" | "gate_snapshot_cycle" | "planning_gate">): boolean {
+  return isEpic(item) && item.gate_snapshot_cycle > 0 && item.planning_gate && !item.closed_at && BEFORE_IMPLEMENTING.has(item.phase)
 }
 
 /**

@@ -764,6 +764,30 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 `user_action` 最多 8 KiB，而且只屬於 `waiting_user`；缺少具體動作或在其他 condition 寫入都會被具名拒絕。
 不再等待時，用同一路由把 `condition` 設成空字串，daemon 會一起清掉 `user_action`，避免看板留下過期要求。
 
+**本輪擷取的規劃與驗證 gate。** `planning_gate` 預設開、`verify_gate` 預設關；
+`clawdline setting get|set planning_gate|verify_gate` 接受 `on/off` 或 `true/false`。每輪第一次成功
+指派時固定兩個值；同輪改派或之後改全域設定都不影響本輪。規劃 gate 開啟的 Epic 與 Feature 在進入實作前
+須有驗收條件、計劃及獨立審查（Feature 一次，Epic 最多兩次）；Issue 不受規劃 gate 約束。規劃關閉時，
+Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規劃沿用一般 Merge 驗證；只開驗證會跳過規劃，
+但仍檢查固定候選提交；兩者皆關走一般流程。由使用者建立／編輯時寫入精確的 Markdown 驗收條件，
+或在有此權限的 `clawdline item add|child` 使用 `--acceptance-file`。實作者不能修改驗收條件。
+進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
+
+本輪驗證 gate 開啟時，先在已 commit、乾淨且登記過的 worktree 執行
+`clawdline item phase <id> verifying`；CLI 送出目前 branch 與完整 HEAD，daemon 核對 Project、
+本輪起點、Git tree 及驗收 digest。獨立唯讀 Codex checker 對 Issue 使用 `code-reviewer`、對 Epic
+使用 `reality-checker`；有參考圖片或設計文件的 Feature 使用 `evidence-collector`，其他 Feature
+使用 `reality-checker`。具型別的結論只有 `PASS`、`FAIL`、`NEEDS_WORK`；無法驗證的主張須說明原因，
+不能授權 Merge。缺少或格式錯誤的結果是技術失敗，僅有一次有界重試，之後升級處理。Epic 的最後端到端
+驗證要等所有子項目結束。`verifying → merging` 須有對應候選提交及驗收的有效 PASS，或記錄原因的明確
+覆核；一段自行撰寫的驗證敘述沒有授權力。連續三次 FAIL 先交給仍在線的上層 Epic owner，該 owner
+不可用時交給使用者；技術失敗另行升級。只有指定的上層 owner 使用
+`POST /v1/work/v2/agent/items/<id>/gate-decision`；使用者使用
+`POST /v1/work/v2/items/<id>/gate-decision`，Agent 不可代用使用者路由。看板分別標出 AI、使用者和
+技術覆核，絕不當作 checker PASS。詳情容量額滿時，使用者先下載
+`GET /v1/work/v2/items/<id>/gate-export` 並核對 manifest digest，再以該 digest 和項目版本確認
+`POST /v1/work/v2/items/<id>/gate-purge`。只清除符合條件的已結束詳情；總計、最新事實及稽核仍保留。
+
 **推進 phase。** 負責項目的 Session 自己把項目推過執行階段；別人不會替你推，turn receipt 或清掉
 condition 也不會。phase 不是 `…/edit` 的欄位（`phase_not_editable`）。每一步所說的事真的發生了，
 才執行那一步：
@@ -851,11 +875,11 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
 
-### Epic：先寫計畫，再審查
+### Epic 與 Feature：本輪規劃開啟時先寫計畫、再審查
 
-Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic 規模大，所以 daemon 要求寫程式之前先
-有第二個人看過計畫：**Epic 要從 `assigned` 進到 `implementing`，必須先有一份 `plan` 文件，以及一份
-寫在最新 plan 之後的 `plan_review` 文件。**你擁有一個 Epic 時：
+本輪擷取規劃 gate 為開的 Epic 或 Feature，在 `assigned → implementing` 前須有 `plan` 文件，以及
+寫在最新 plan 之後的 `plan_review` 文件。Epic 最多要求兩次審查，Feature 要求一次；Issue 不受此 gate
+約束，規劃關閉的 Epic 也跳過。擁有規劃 gate 開啟的項目時：
 
 1. 仔細規劃，把計畫寫到項目上：
    ```
@@ -880,15 +904,17 @@ Epic 跟 Feature、Issue 一樣可以指派，也走同樣的 phase；但 Epic �
 `{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`；role 有
 `spec`、`design`、`test`、`deploy`、`completion_report`、`other`、`plan`、`plan_review`。
 
-- `plan` 和 `plan_review` 只能用在 Epic（`document_role_not_applicable`）。
+- `plan` 和 `plan_review` 只用在 Epic 或 Feature（其他種類回 `document_role_not_applicable`）。
 - `plan_review` 的 `reference` 是審查這份計畫的 Clawdline child 的 task id。daemon 只在這些條件都成立
   時接受：task 存在（`plan_review_task_unknown`）、是項目的 owner Session 派的
   （`plan_review_task_not_owned`）、有綁 line 的話就是這個項目（`plan_review_task_other_item`）、kind 是
   `plan_review`（`plan_review_task_wrong_kind`）、以 `success` 結束（`plan_review_task_unfinished`）、
   派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
   `epic_plan_required` 拒絕。
-- Epic 執行 `clawdline item phase <item id> implementing` 時，還沒有 plan 會被 `epic_plan_required`
-  拒絕，審查還不到兩次、又沒有比最新 plan 更新的審查，會被 `epic_plan_review_required` 拒絕，跟其他 phase 拒絕一樣是 `409`。
+- 本輪規劃 gate 開啟的 Epic 或 Feature 在缺少計劃或獨立審查時，不能以
+  `clawdline item phase <item id> implementing` 進入實作（Epic 回 `epic_plan_required` 或
+  `epic_plan_review_required`；Feature 對應 `feature_` 開頭的拒絕碼）。Epic 保留最多兩次審查的上限；Feature
+  需要一次。規劃關閉的 Epic 可以直接進入實作。
 
 **把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入
@@ -945,9 +971,14 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     `brand-guardian`（品牌一致性）、`ui-finish-gate`（上線前的畫面把關）、`image-prompt`（生圖提示詞）、
     `pricing`、`customer-success`、`support`（回覆草稿）、`analytics`（用真實資料回答）、`devrel`（跑得起來的
     範例）與 `privacy`（個資檢查；不是法律意見）。
-- **Epic 仍然由你負責。** 追每個子項目到完成（`clawdline item steps <child id>` 可以讀一個），整合它們的
-  成果，所有子項目都完成或取消後才把 Epic 移到 done：在那之前 `clawdline item phase <epic id> done` 會被
-  `epic_children_open` 拒絕，並寫明還有幾個沒結束。除了 Epic 的子項目，不要建立任何其他看板項目。
+- **每個子項目合併後，Epic 仍由你負責追到結案。** 立即重讀該子項目與 `clawdline item steps <child id>`，
+  確認所有步驟已完成；不能停在 `merging`。由子項目的負責 Session 以已同時在本機目標分支與
+  `origin/main` 的確切 commit 附上 landing receipt，再依 deployment policy 附部署證據或不需部署理由，
+  依序推進 `deploying` → `done`。若子項目由你持有，就自己完成；若由其他 Session 持有，就立即追辦或依
+  授權改派，不能冒用其身分（`not_item_owner`）。有 broker completion 通知時接著 ACK，分類 worktree
+  殘留，只清除已證明與 landing 相同（landed-identical）或屬於本任務的暫存內容；未 landing、混合或未知的內容保留並指明
+  下一位負責者。所有子項目都 `done` 或 `cancelled` 後才可宣告上層 Epic 完成；否則
+  `epic_children_open` 會寫明還有幾個未結束。除了 Epic 的子項目，不要建立其他看板項目。
 
 ## 11. 協調
 
