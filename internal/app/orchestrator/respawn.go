@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // Retrying a tab that never opened, without making the root write the task
@@ -61,11 +62,17 @@ func (b *Broker) Respawn(ctx context.Context, id, supplied string) (Respawned, e
 		return Respawned{}, err
 	}
 	original, descendants := respawnFamily(all, id)
-	if descendants >= RespawnLimit {
-		return Respawned{}, refuseWith(http.StatusConflict, "respawn_exhausted",
+	limit := RespawnLimit
+	code := "respawn_exhausted"
+	if origin.Gate != nil || origin.Kind == TaskKindVerificationGate {
+		limit = contract.WorkGateTasksPerRoundLimit - 1
+		code = "gate_respawn_exhausted"
+	}
+	if descendants >= limit {
+		return Respawned{}, refuseWith(http.StatusConflict, code,
 			fmt.Sprintf("Task %s has already been respawned %d times; the limit is %d. "+
-				"Dispatch a new task, or find out why the tab will not open.", original, descendants, RespawnLimit),
-			map[string]any{"original_task": original, "respawns": descendants, "limit": RespawnLimit})
+				"Dispatch a new task, or find out why the tab will not open.", original, descendants, limit),
+			map[string]any{"original_task": original, "respawns": descendants, "limit": limit})
 	}
 	if supplied != "" && !IsTaskSecret(supplied) {
 		return Respawned{}, refuse(http.StatusUnprocessableEntity, "bad_task",
@@ -92,7 +99,7 @@ func (b *Broker) Respawn(ctx context.Context, id, supplied string) (Respawned, e
 	}
 	out, err := b.Dispatch(ctx, DispatchRequest{
 		TaskID: fresh, Secret: secret,
-		Respawn:  &RespawnOrigin{TaskID: id, Generation: origin.RespawnGeneration + 1},
+		Respawn:  &RespawnOrigin{TaskID: id, Generation: origin.RespawnGeneration + 1, Original: original},
 		Schedule: scheduleOf(origin),
 	})
 	if err != nil {

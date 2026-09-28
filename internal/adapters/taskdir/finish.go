@@ -214,6 +214,12 @@ func ValidateResult(task, result map[string]any) string {
 	if s := result["status"]; s != "success" && s != "failure" {
 		return "status must be success or failure"
 	}
+	if task["kind"] == "verification_gate" {
+		return "a verification_gate must use clawdline task gate-result; ordinary result.json cannot finish it"
+	}
+	if _, present := result["gate_verdict"]; present {
+		return "gate_verdict is broker-authored and is not valid in an ordinary result.json"
+	}
 	if row, present := result["verification"]; present {
 		if reason := validateVerification(row); reason != "" {
 			return reason

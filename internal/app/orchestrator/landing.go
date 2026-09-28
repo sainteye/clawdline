@@ -77,7 +77,7 @@ func (b *Broker) deliveryHead(ctx context.Context, w *Worktree) branchHead {
 // isolated task, since a terminal one is not settled again.
 func (b *Broker) settlement(ctx context.Context, id string) (branchHead, LandingSettlement) {
 	r, _, err := b.Record(ctx, id)
-	if err != nil || r.Worktree == nil || r.State.Terminal() {
+	if err != nil || r.Worktree == nil || r.Worktree.Detached || r.State.Terminal() {
 		return branchHead{}, ""
 	}
 	return b.deliveryHead(ctx, r.Worktree), b.branchSettlement(ctx, r.Worktree)

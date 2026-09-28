@@ -149,6 +149,12 @@ func TestGateChangeChecks(t *testing.T) {
 		{"a header token and a form body",
 			call{path: "/v1/board", body: "a=b", headers: map[string]string{
 				"Authorization": "Bearer " + f.send, "Content-Type": "application/x-www-form-urlencoded"}}, 415},
+		{"gate evidence keeps its exact non-JSON media type",
+			call{path: "/v1/orchestrator/tasks/t1/gate-evidence", body: "log bytes", headers: map[string]string{
+				"X-Clawdline-Task-Secret": "task-secret", "Content-Type": "text/plain"}}, 200},
+		{"gate evidence from another origin is still refused",
+			call{path: "/v1/orchestrator/tasks/t1/gate-evidence", body: "log bytes", headers: map[string]string{
+				"Origin": "http://127.0.0.1:9999", "X-Clawdline-Task-Secret": "task-secret", "Content-Type": "text/plain"}}, 403},
 		{"a header token and no body",
 			call{path: "/v1/board", headers: map[string]string{"Authorization": "Bearer " + f.send}}, 200},
 		{"a read-only device is refused for the capability before the body type",

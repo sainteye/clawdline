@@ -333,6 +333,9 @@ func (b *Broker) collectResult(ctx context.Context, r Record) bool {
 // validated one the child never renamed. It is the one place a result enters
 // the record — the beat and `/complete` both come here (D15).
 func (b *Broker) collect(ctx context.Context, r Record) (bool, error) {
+	if r.Gate != nil || r.Kind == TaskKindVerificationGate {
+		return b.collectGate(ctx, r)
+	}
 	result, _, err := b.Tasks.ReadResult(r.ID)
 	if errors.Is(err, taskdir.ErrNoResult) {
 		// A validated result its child never renamed is published here, and
@@ -372,7 +375,7 @@ func (b *Broker) collect(ctx context.Context, r Record) (bool, error) {
 // this task's directory, and settling on it would close a task whose child is
 // still working.
 func (b *Broker) authentic(ctx context.Context, r Record, result taskdir.Result) bool {
-	if result.Protocol != Protocol || result.TaskID != r.ID {
+	if result.Protocol != Protocol || result.TaskID != r.ID || result.GateVerdict != nil {
 		return false
 	}
 	switch result.Status {

@@ -596,6 +596,28 @@ func (b *Broker) reclaimCheckout(ctx context.Context, rd reading, r Record, now 
 	if err != nil {
 		return kept(r, ReclaimWorktree, path, WhyUnreadable, map[string]any{"snapshot": err.Error()})
 	}
+	if w.Detached {
+		evidence := map[string]any{
+			"owner": owner, "repository": w.Repository, "base": w.Base,
+			"head": snap.Head, "head_tree": snap.HeadTree, "tree": snap.Tree, "dirty": snap.Dirty(),
+			"listed_branch": entry.Branch, "detached": entry.Detached,
+		}
+		if r.Gate == nil || !entry.Detached || snap.Head != w.Base || snap.HeadTree != r.Gate.Candidate.Tree || snap.Dirty() {
+			return kept(r, ReclaimWorktree, path, WhyChanged, evidence)
+		}
+		bytes, _ := dirBytes(path)
+		decision := ReclaimDecision{Task: r.ID, Subject: ReclaimWorktree, Path: path, Bytes: bytes,
+			Evidence: evidence, Reason: WhyEmpty}
+		if dryRun {
+			decision.Outcome = ReclaimWouldRemove
+			return decision
+		}
+		if err := makeTreeOwnerWritable(path); err != nil {
+			evidence["permissions"] = err.Error()
+			return kept(r, ReclaimWorktree, path, WhyRemoveFailed, evidence)
+		}
+		return b.removeCheckout(ctx, r, snap, decision)
+	}
 	tip, tipErr := b.Git.RefCommit(ctx, w.Repository, "refs/heads/"+w.Branch)
 	evidence := map[string]any{
 		"owner": owner, "repository": w.Repository, "branch": w.Branch, "base": w.Base,

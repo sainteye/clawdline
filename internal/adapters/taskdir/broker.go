@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -115,6 +116,10 @@ type Brief struct {
 	// launched with — a number, or null for none — kept for a respawn, which
 	// copies this file. Absent when the dispatch left it to the setting.
 	AutoCompactWindow json.RawMessage `json:"auto_compact_window,omitempty"`
+	// VerificationGate is the broker-internal frozen checker origin. It is
+	// raw here so taskdir remains only the file exchange; orchestrator owns
+	// its semantic validation.
+	VerificationGate json.RawMessage `json:"verification_gate,omitempty"`
 }
 
 // RootRef is who the task is working for. `poll_only` is carried even when
@@ -144,6 +149,10 @@ type Result struct {
 	Artifacts []string        `json:"artifacts,omitempty"`
 	Review    json.RawMessage `json:"review,omitempty"`
 	Verify    *Verification   `json:"verification,omitempty"`
+	// GateVerdict is filled only by the broker after it independently reads a
+	// durable verification-gate submission. Ordinary result.json files cannot
+	// author it.
+	GateVerdict *contract.WorkGateResult `json:"gate_verdict,omitempty"`
 	// Leftovers is the child's own account of what it did not do, in the
 	// shape a machine reads (work.Leftover). It is optional and always was:
 	// a child that writes none has delivered, and the field is absent rather

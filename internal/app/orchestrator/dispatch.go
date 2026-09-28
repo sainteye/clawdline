@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +67,7 @@ type ScheduleOrigin struct {
 type RespawnOrigin struct {
 	TaskID     string
 	Generation int
+	Original   string
 }
 
 // Warning is a non-blocking thing the dispatcher should know. It is not a
@@ -152,6 +154,10 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	case req.Respawn != nil:
 		record.RespawnOf = req.Respawn.TaskID
 		record.RespawnGeneration = req.Respawn.Generation
+		if record.Gate != nil {
+			record.Gate.FamilyID = req.Respawn.Original
+			record.Gate.Attempt = req.Respawn.Generation
+		}
 	}
 	// The line of work it is on, decided from what the dispatch carries
 	// (lines.go in the domain), so its root's to-do is made on that line in
@@ -289,13 +295,21 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	cwd := record.ProjectDir
 	var effects []store.Effect
 	if record.Isolation == IsolationWorktree {
-		w, more, err := b.planWorktree(ctx, record)
+		var (
+			w    *Worktree
+			more []Warning
+		)
+		if record.Gate != nil {
+			w, more, err = b.planGateWorktree(ctx, record)
+		} else {
+			w, more, err = b.planWorktree(ctx, record)
+		}
 		if err != nil {
 			return Dispatched{}, err
 		}
 		// Made after the task is recorded, never before (G14): the checkout is
 		// an effect the task's creation owes, recorded with it as intent.
-		payload, _ := json.Marshal(worktreeEffect{Repository: w.Repository, Path: w.Path, Branch: w.Branch, Base: w.Base})
+		payload, _ := json.Marshal(worktreeEffect{Repository: w.Repository, Path: w.Path, Branch: w.Branch, Base: w.Base, Detached: w.Detached})
 		effects = append(effects, store.Effect{Kind: EffectWorktree, Subject: record.ID, Payload: payload})
 		warnings = append(warnings, more...)
 		record.Worktree = w
@@ -313,7 +327,11 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 					"isolated worktree; they are kept as its declared_writes, the set its branch lands.",
 			})
 		}
-		rel, relErr := filepath.Rel(w.Repository, record.ProjectDir)
+		source := w.Repository
+		if record.Gate != nil {
+			source = record.Gate.Candidate.Worktree
+		}
+		rel, relErr := filepath.Rel(source, record.ProjectDir)
 		if relErr != nil || strings.HasPrefix(rel, "..") {
 			rel = "."
 		}
@@ -381,6 +399,13 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		// there is worse than one that never started.
 		settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed, "Could not write CHILD.md: "+err.Error(), nil)
 		return Dispatched{Record: settled, Warnings: warnings}, nil
+	}
+	if record.Gate != nil {
+		if err := b.prepareGateReadonly(record); err != nil {
+			settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed,
+				"Could not make the verification checker read-only: "+err.Error(), nil)
+			return Dispatched{Record: settled, Warnings: warnings}, nil
+		}
 	}
 
 	spawned := b.spawn(ctx, record, cwd, req.Secret, opening)
@@ -552,6 +577,45 @@ func (b *Broker) planWorktree(ctx context.Context, r Record) (*Worktree, []Warni
 	return &Worktree{Repository: repo, Path: path, Branch: branch, Base: base, Head: base}, warnings, nil
 }
 
+// planGateWorktree pins a checker to its admitted candidate, never repository
+// HEAD, and creates no branch that could later move.
+func (b *Broker) planGateWorktree(ctx context.Context, r Record) (*Worktree, []Warning, error) {
+	bad := func(code, message string) (*Worktree, []Warning, error) {
+		return nil, nil, refuse(http.StatusConflict, code, message)
+	}
+	if r.Gate == nil {
+		return bad("gate_origin_missing", "The verification checker has no immutable origin.")
+	}
+	candidate := r.Gate.Candidate
+	repo, err := b.Git.Toplevel(ctx, r.ProjectDir)
+	if err != nil || filepath.Clean(repo) != filepath.Clean(candidate.Repository) {
+		return bad("gate_repository_mismatch", "The checker project does not resolve to its frozen candidate repository.")
+	}
+	if sourceRepo, err := b.Git.Toplevel(ctx, candidate.Worktree); err != nil || filepath.Clean(sourceRepo) != filepath.Clean(repo) {
+		return bad("gate_source_unreadable", "The frozen candidate source checkout is not readable in its repository.")
+	}
+	commit, err := b.Git.ResolveCommit(ctx, repo, candidate.Commit)
+	if err != nil || commit != candidate.Commit {
+		return bad("gate_candidate_unresolved", "The frozen candidate commit is not the exact commit in this repository.")
+	}
+	tree, err := b.Git.Tree(ctx, repo, commit)
+	if err != nil || tree != candidate.Tree {
+		return bad("gate_candidate_tree_mismatch", "The frozen candidate commit does not have the recorded tree.")
+	}
+	base, err := b.Git.ResolveCommit(ctx, repo, r.Gate.BaseCommit)
+	if err != nil || base != r.Gate.BaseCommit {
+		return bad("gate_base_unresolved", "The frozen gate base is not an exact commit in this repository.")
+	}
+	path := b.worktreePath(repo, r.ID)
+	if dirExists(path) {
+		return nil, nil, refuse(http.StatusUnprocessableEntity, "bad_task", "task_id cannot name a worktree path.")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, nil, err
+	}
+	return &Worktree{Repository: repo, Path: path, Base: candidate.Commit, Head: candidate.Commit, Detached: true}, nil, nil
+}
+
 func shortCommit(v string) string {
 	if len(v) > 7 {
 		return v[:7]
@@ -717,7 +781,9 @@ func ChildSessionName(taskID string) string {
 // shellCommand is the one line the child's shell runs.
 func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 	args := append([]string{}, l.Arguments...)
-	args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
+	if r.Gate == nil {
+		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
+	}
 	args = append(args, permissionArgs(r)...)
 	args = append(args, trustArgs(r.Assistant, cwd)...)
 	args = append(args, projects.UpdateCheckArgs(r.Assistant)...)
@@ -728,12 +794,32 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 	if l.Assistant == projects.AssistantClaude {
 		set = autoCompactEnv(r.AutoCompactWindow)
 	}
+	if r.Gate != nil {
+		root := filepath.Join(r.Dir, "work")
+		q := func(name, value string) string { return name + "=" + projects.ShellQuoted(value) }
+		set = append(set,
+			q("CLAWDLINE_GATE_BUILD_DIR", filepath.Join(root, "build")),
+			q("CLAWDLINE_GATE_CACHE_DIR", filepath.Join(root, "cache")),
+			q("CLAWDLINE_GATE_TMP_DIR", filepath.Join(root, "tmp")),
+			q("TMPDIR", filepath.Join(root, "tmp")),
+			q("GOCACHE", filepath.Join(root, "cache")),
+			q("GOMODCACHE", filepath.Join(root, "cache", "go-mod")),
+			q("XDG_CACHE_HOME", filepath.Join(root, "cache")),
+			q("npm_config_cache", filepath.Join(root, "cache", "npm")),
+			q("CARGO_TARGET_DIR", filepath.Join(root, "build")))
+	}
 	return envPrefix(l.Assistant, set) + strings.Join(append([]string{l.Assistant}, args...), " ")
 }
 
 // permissionArgs is the ceiling the dispatcher asked for, spelled the way each
 // CLI spells it.
 func permissionArgs(r Record) []string {
+	if r.Gate != nil {
+		if r.Assistant == "codex" {
+			return gatePermissionArgs(r)
+		}
+		return nil
+	}
 	switch r.Assistant {
 	case "claude":
 		switch r.PermissionMode {
@@ -751,6 +837,36 @@ func permissionArgs(r Record) []string {
 		}
 	}
 	return nil
+}
+
+// gatePermissionArgs gives the checker a closed capability set. Codex's
+// legacy read-only sandbox cannot be extended with --add-dir: writable roots
+// only extend workspace-write. A custom permission profile instead starts at
+// root read access and names only the three broker-owned scratch directories
+// as writable. --strict-config makes an unsupported or malformed profile stop
+// the launch instead of silently falling back to broader ambient settings.
+func gatePermissionArgs(r Record) []string {
+	root := filepath.Join(r.Dir, "work")
+	entries := []string{strconv.Quote(":root") + "=" + strconv.Quote("read")}
+	for _, name := range []string{"build", "cache", "tmp"} {
+		path := filepath.Join(root, name)
+		entries = append(entries, strconv.Quote(path)+"="+strconv.Quote("write"))
+	}
+	profile := "clawdline-gate"
+	config := []string{
+		"default_permissions=" + strconv.Quote(profile),
+		"permissions." + profile + ".filesystem={" + strings.Join(entries, ",") + "}",
+		// The child needs only the loopback receipt routes. The proxy is part
+		// of the boundary: network.enabled without it would allow every host.
+		"features.network_proxy=true",
+		"permissions." + profile + ".network.enabled=true",
+		"permissions." + profile + `.network.domains={"127.0.0.1"="allow","localhost"="allow"}`,
+	}
+	args := []string{"--strict-config"}
+	for _, value := range config {
+		args = append(args, "--config", projects.ShellQuoted(value))
+	}
+	return append(args, "--ask-for-approval", "never")
 }
 
 // trustArgs says, for this one run only, that the directory the child is
@@ -995,7 +1111,7 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 		// the root's to say, the first time it records this landing, and
 		// until then every reader treats the target as not decided — never as
 		// whatever the repository's HEAD happens to be.
-		if r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
+		if r.Gate == nil && r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
 			r.Landing = &Landing{
 				State:      LandingPending,
 				Note:       settlementNote(settlement),

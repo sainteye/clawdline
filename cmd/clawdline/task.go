@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -55,6 +58,12 @@ func taskCommand(args []string) {
 		case "show":
 			showCommand(args[1:])
 			return
+		case "gate-evidence":
+			gateEvidenceCommand(args[1:])
+			return
+		case "gate-result":
+			gateResultCommand(args[1:])
+			return
 		}
 	}
 	if len(args) == 0 || args[0] != "finish" {
@@ -96,7 +105,179 @@ func taskUsage() {
 	fmt.Fprintln(os.Stderr, "  acknowledges a child's completion notice, so the daemon stops typing it into this session")
 	fmt.Fprintln(os.Stderr, "       clawdline task show [--port n] [--json] <task id>")
 	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout")
+	fmt.Fprintln(os.Stderr, "       clawdline task gate-evidence --artifact id --media-type type [--port n] <task dir> <file>")
+	fmt.Fprintln(os.Stderr, "  streams one bounded verification artifact with the secret from "+orchestrator.AcceptSecretEnv)
+	fmt.Fprintln(os.Stderr, "       clawdline task gate-result [--port n] <task dir> <json file>")
+	fmt.Fprintln(os.Stderr, "  submits the closed verification verdict with the secret from "+orchestrator.AcceptSecretEnv)
 	os.Exit(2)
+}
+
+func gateEvidenceCommand(args []string) {
+	fs := flag.NewFlagSet("task gate-evidence", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	port := fs.Int("port", 0, "")
+	artifact := fs.String("artifact", "", "")
+	mediaType := fs.String("media-type", "", "")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 2 || strings.TrimSpace(*artifact) == "" || strings.TrimSpace(*mediaType) == "" {
+		taskUsage()
+	}
+	secret, err := acceptSecret(os.Getenv, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline task gate-evidence:", err)
+		os.Exit(2)
+	}
+	if *port == 0 {
+		if *port, err = daemonPort(); err != nil {
+			fail(err)
+		}
+	}
+	os.Exit(submitGateEvidence(os.Stdout, os.Stderr, fs.Arg(0), fs.Arg(1), *artifact, *mediaType, secret, *port, http.DefaultClient))
+}
+
+func submitGateEvidence(stdout, stderr io.Writer, dir, path, artifact, mediaType, secret string, port int, client *http.Client) int {
+	id, err := taskIDIn(dir)
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-evidence:", err)
+		return 1
+	}
+	source, err := os.Open(path)
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-evidence:", err)
+		return 1
+	}
+	defer source.Close()
+	digest := sha256.New()
+	byteCount, err := io.Copy(digest, io.LimitReader(source, contract.WorkGateEvidenceArtifactBytesLimit+1))
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-evidence:", err)
+		return 1
+	}
+	if byteCount > contract.WorkGateEvidenceArtifactBytesLimit {
+		fmt.Fprintf(stderr, "clawdline task gate-evidence: artifact is more than %d bytes\n", contract.WorkGateEvidenceArtifactBytesLimit)
+		return 1
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-evidence: artifact cannot be streamed:", err)
+		return 1
+	}
+	hexDigest := hex.EncodeToString(digest.Sum(nil))
+	keyDigest := sha256.Sum256([]byte(id + "\x00" + artifact + "\x00" + hexDigest))
+	key := "gate-evidence-" + hex.EncodeToString(keyDigest[:16])
+	endpoint := "http://127.0.0.1:" + strconv.Itoa(port) + "/v1/orchestrator/tasks/" + id + "/gate-evidence"
+	req, err := http.NewRequest(http.MethodPost, endpoint, source)
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-evidence:", err)
+		return 1
+	}
+	req.Header.Set(orchestrator.HeaderTaskSecret, secret)
+	req.Header.Set("Idempotency-Key", key)
+	req.Header.Set("X-Clawdline-Artifact-ID", artifact)
+	req.Header.Set("X-Clawdline-Content-SHA256", hexDigest)
+	req.Header.Set("X-Clawdline-Byte-Count", strconv.FormatInt(byteCount, 10))
+	req.Header.Set("Content-Type", mediaType)
+	req.ContentLength = byteCount
+	if client == nil {
+		client = http.DefaultClient
+	}
+	short := *client
+	short.Timeout = brokerTimeout
+	res, err := short.Do(req)
+	if err != nil {
+		fmt.Fprintf(stderr, "clawdline task gate-evidence: the broker did not acknowledge durable evidence (%v). Nothing local counts as gate evidence; restore loopback and rerun this same command.\n", err)
+		return 1
+	}
+	defer res.Body.Close()
+	answer, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		fmt.Fprintf(stderr, "clawdline task gate-evidence: refused, %s: %s\n", res.Status, strings.TrimSpace(string(answer)))
+		return 1
+	}
+	var receipt contract.WorkGateEvidenceReceipt
+	if json.Unmarshal(answer, &receipt) != nil || receipt.AcceptedAt <= 0 || receipt.TaskID != id || receipt.ArtifactID != artifact ||
+		receipt.ByteCount != byteCount || receipt.MediaType != mediaType || receipt.Sha256 != hexDigest {
+		fmt.Fprintln(stderr, "clawdline task gate-evidence: the broker returned no matching durable receipt")
+		return 1
+	}
+	fmt.Fprintf(stdout, "gate evidence %s accepted (%d bytes, sha256 %s, replayed=%t)\n", receipt.ArtifactID, receipt.ByteCount, receipt.Sha256, receipt.Replayed)
+	return 0
+}
+
+func gateResultCommand(args []string) {
+	fs := flag.NewFlagSet("task gate-result", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	port := fs.Int("port", 0, "")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 2 {
+		taskUsage()
+	}
+	secret, err := acceptSecret(os.Getenv, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline task gate-result:", err)
+		os.Exit(2)
+	}
+	if *port == 0 {
+		if *port, err = daemonPort(); err != nil {
+			fail(err)
+		}
+	}
+	os.Exit(submitGateResult(os.Stdout, os.Stderr, fs.Arg(0), fs.Arg(1), secret, *port, http.DefaultClient))
+}
+
+func submitGateResult(stdout, stderr io.Writer, dir, path, secret string, port int, client *http.Client) int {
+	id, err := taskIDIn(dir)
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-result:", err)
+		return 1
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-result:", err)
+		return 1
+	}
+	result, err := contract.DecodeWorkGateResult(body)
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-result: invalid closed gate result:", err)
+		return 1
+	}
+	if result.TaskID != id {
+		fmt.Fprintln(stderr, "clawdline task gate-result: result task_id does not match the task directory")
+		return 1
+	}
+	digest := sha256.Sum256(body)
+	hexDigest := hex.EncodeToString(digest[:])
+	key := "gate-result-" + hexDigest[:32]
+	endpoint := "http://127.0.0.1:" + strconv.Itoa(port) + "/v1/orchestrator/tasks/" + id + "/gate-result"
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task gate-result:", err)
+		return 1
+	}
+	req.Header.Set(orchestrator.HeaderTaskSecret, secret)
+	req.Header.Set("Idempotency-Key", key)
+	req.Header.Set("Content-Type", "application/json")
+	if client == nil {
+		client = http.DefaultClient
+	}
+	short := *client
+	short.Timeout = brokerTimeout
+	res, err := short.Do(req)
+	if err != nil {
+		fmt.Fprintf(stderr, "clawdline task gate-result: the broker did not acknowledge a durable verdict (%v). A result file in the checker task directory cannot finish this gate; restore loopback and rerun this same command.\n", err)
+		return 1
+	}
+	defer res.Body.Close()
+	answer, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
+	if res.StatusCode != http.StatusAccepted {
+		fmt.Fprintf(stderr, "clawdline task gate-result: refused, %s: %s\n", res.Status, strings.TrimSpace(string(answer)))
+		return 1
+	}
+	var receipt contract.WorkGateResultReceipt
+	if json.Unmarshal(answer, &receipt) != nil || receipt.AcceptedAt <= 0 || receipt.TaskID != id || receipt.ByteCount != int64(len(body)) ||
+		receipt.Sha256 != hexDigest || receipt.Verdict != result.Verdict {
+		fmt.Fprintln(stderr, "clawdline task gate-result: the broker returned no matching durable receipt")
+		return 1
+	}
+	fmt.Fprintf(stdout, "gate verdict %s accepted (sha256 %s, replayed=%t)\n", receipt.Verdict, receipt.Sha256, receipt.Replayed)
+	return 0
 }
 
 // `clawdline task ack <task id> <notice id>`: the root's side of a finished

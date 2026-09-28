@@ -8,6 +8,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -39,6 +40,11 @@ func (b *Broker) acceptCommand(dir string, port int) string {
 const AcceptSecretEnv = "CLAWDLINE_TASK_SECRET"
 
 func (b *Broker) taskCommand(verb, dir string, port int) string {
+	exe := b.taskExecutable()
+	return fmt.Sprintf("%s task %s --port %d %s", projects.ShellQuoted(exe), verb, port, projects.ShellQuoted(dir))
+}
+
+func (b *Broker) taskExecutable() string {
 	exe := b.Executable
 	if exe == "" {
 		if self, err := os.Executable(); err == nil {
@@ -51,7 +57,7 @@ func (b *Broker) taskCommand(verb, dir string, port int) string {
 	if exe == "" {
 		exe = "clawdline"
 	}
-	return fmt.Sprintf("%s task %s --port %d %s", projects.ShellQuoted(exe), verb, port, projects.ShellQuoted(dir))
+	return exe
 }
 
 // FirstLine is what is typed into the child's composer.
@@ -133,6 +139,10 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("%s", b.acceptCommand(dir, port))
 	w("```")
 	w("")
+	if r.Gate != nil {
+		b.writeGateCheckerBrief(w, r, cwd, dir, port)
+		return s.String()
+	}
 	w("## Rules")
 	w("")
 	w("- Work inside %s. Put non-repository artifacts in %s/artifacts/.", cwd, dir)
@@ -291,6 +301,86 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("that builds JSON gets refused by command screening on its own shape, and that refusal is a")
 	w("prompt with no \"always allow\" on a tab nobody is watching.")
 	return s.String()
+}
+
+func (b *Broker) writeGateCheckerBrief(w func(string, ...any), r Record, cwd, dir string, port int) {
+	g := r.Gate
+	scratch := b.gateScratch(r.ID)
+	w("## Immutable verification checker")
+	w("")
+	w("You are an independent, read-only checker. The checkout and this task root are non-writable.")
+	w("Only these daemon-created scratch directories are writable:")
+	w("")
+	w("- build: `%s` (`$CLAWDLINE_GATE_BUILD_DIR`)", scratch.Build)
+	w("- cache: `%s` (`$CLAWDLINE_GATE_CACHE_DIR`)", scratch.Cache)
+	w("- temporary files: `%s` (`$CLAWDLINE_GATE_TMP_DIR` and `$TMPDIR`)", scratch.Temp)
+	w("")
+	w("Do not edit, commit, switch, reset, stash or create repository files. Do not write `result.json`;")
+	w("ordinary completion files cannot satisfy a verification gate. If loopback is unavailable, no local")
+	w("fallback counts: say the gate is unverified and why, restore loopback, and rerun the same command.")
+	w("")
+	w("## Frozen candidate")
+	w("")
+	w("- round: `%s`, attempt: `%d`", g.RoundID, g.Attempt)
+	w("- repository: `%s`", g.Candidate.Repository)
+	w("- source receipt checkout: `%s`", g.Candidate.Worktree)
+	w("- checker checkout: `%s`", cwd)
+	w("- candidate commit: `%s`", g.Candidate.Commit)
+	w("- candidate tree: `%s`", g.Candidate.Tree)
+	w("- cycle base commit: `%s`", g.BaseCommit)
+	w("- assignment: `%s`; maker: `%s`; cycle: `%d`", g.Candidate.AssignmentID, g.Candidate.OwnerSessionID, g.Candidate.Cycle)
+	w("- criteria version: `%d`; SHA-256: `%s`", g.Acceptance.Version, g.Acceptance.Digest)
+	w("")
+	w("HEAD movement elsewhere has no authority here. Check only the detached commit and tree above.")
+	w("")
+	w("## Acceptance and required checks")
+	w("")
+	fence := strings.Repeat("`", max(3, longestRun(g.Acceptance.Criteria, '`')+1))
+	w("%stext", fence)
+	w("%s", strings.TrimRight(g.Acceptance.Criteria, "\n"))
+	w("%s", fence)
+	w("")
+	w("Evaluate every acceptance claim against the frozen candidate. Run the material checks the claim")
+	w("requires and attach bounded evidence. A claim is `passed`, `failed`, or `unverified`; when a check")
+	w("cannot run, mark it `unverified` and say why. Never turn missing evidence into a pass.")
+	w("")
+	w("## Upload evidence")
+	w("")
+	w("Put an artifact under one of the writable scratch directories, then run:")
+	w("")
+	w("```bash")
+	w("%s=<TASK_SECRET> %s task gate-evidence --port %d --artifact <stable-id> --media-type <media/type> %s <file>",
+		AcceptSecretEnv, projects.ShellQuoted(b.taskExecutable()), port, projects.ShellQuoted(dir))
+	w("```")
+	w("")
+	w("At most %d artifacts, %d bytes each and %d bytes total are accepted. Keep each returned artifact id;")
+	w("name it in the claim's `evidence_artifacts`. The command derives a stable idempotency key, so rerunning")
+	w("the exact command after response loss returns the original durable receipt; changed bytes are refused.",
+		contract.WorkGateEvidenceArtifactsPerTaskLimit, contract.WorkGateEvidenceArtifactBytesLimit,
+		contract.WorkGateEvidenceTotalBytesPerTaskLimit)
+	w("")
+	w("## Submit one closed verdict")
+	w("")
+	w("Write the JSON below under `$CLAWDLINE_GATE_TMP_DIR`, filling every claim. Use `PASS` only when every")
+	w("claim passed, `FAIL` when at least one failed, and `NEEDS_WORK` when at least one is unverified.")
+	w("")
+	w("```json")
+	w(`{"round_id":%q,"task_id":%q,"candidate_commit":%q,"candidate_tree":%q,`, g.RoundID, r.ID, g.Candidate.Commit, g.Candidate.Tree)
+	w(` "criteria_version":%d,"criteria_digest":%q,"verdict":"PASS|FAIL|NEEDS_WORK",`, g.Acceptance.Version, g.Acceptance.Digest)
+	w(` "claims":[{"criterion":"<exact criterion>","state":"passed|failed|unverified",`)
+	w(` "evidence":["<short exact observation>"],"evidence_artifacts":["<uploaded id>"],"reason":"<required for failed/unverified>"}],`)
+	w(` "summary":"<closed verdict summary>"}`)
+	w("```")
+	w("")
+	w("Then run:")
+	w("")
+	w("```bash")
+	w("%s=<TASK_SECRET> %s task gate-result --port %d %s <json-file>",
+		AcceptSecretEnv, projects.ShellQuoted(b.taskExecutable()), port, projects.ShellQuoted(dir))
+	w("```")
+	w("")
+	w("The daemon validates the exact result bytes, frozen identity, referenced durable artifacts, and the")
+	w("checkout's unchanged commit/tree before settling. The command succeeds only on a matching durable receipt.")
 }
 
 // writeTask is the task itself, as admission validated it: what task.json

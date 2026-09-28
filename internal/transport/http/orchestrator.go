@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,11 +71,53 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerNotify(w, r, id)
 	case action == "verification-note" && r.Method == http.MethodPost:
 		s.verificationTaskNote(w, r, id)
+	case action == "gate-evidence" && r.Method == http.MethodPost:
+		s.brokerGateEvidence(w, r, id)
+	case action == "gate-result" && r.Method == http.MethodPost:
+		s.brokerGateResult(w, r, id)
 	case action == "respawn" && r.Method == http.MethodPost:
 		s.brokerRespawn(w, r, id)
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a task action")
 	}
+}
+
+func (s *Server) brokerGateEvidence(w http.ResponseWriter, r *http.Request, id string) {
+	byteCount, err := strconv.ParseInt(strings.TrimSpace(r.Header.Get("X-Clawdline-Byte-Count")), 10, 64)
+	if err != nil {
+		writeBrokerError(w, orchestrator.Refusal{Status: http.StatusUnprocessableEntity, Code: "invalid_gate_evidence_size", Message: "X-Clawdline-Byte-Count must be a non-negative integer."})
+		return
+	}
+	meta := contract.WorkGateEvidenceSubmission{
+		ArtifactID: strings.TrimSpace(r.Header.Get("X-Clawdline-Artifact-ID")),
+		MediaType:  strings.TrimSpace(r.Header.Get("Content-Type")),
+		Sha256:     strings.TrimSpace(r.Header.Get("X-Clawdline-Content-SHA256")),
+		ByteCount:  byteCount,
+	}
+	receipt, err := s.broker.SubmitGateEvidence(r.Context(), id, taskSecret(r),
+		strings.TrimSpace(r.Header.Get("Idempotency-Key")), meta, r.Body)
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	writeJSON(w, receipt)
+}
+
+func (s *Server) brokerGateResult(w http.ResponseWriter, r *http.Request, id string) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(contract.WorkGateResultBytesLimit)+1))
+	if err != nil {
+		writeRefusal(w, http.StatusBadRequest, "invalid_gate_result", "The gate result body could not be read.")
+		return
+	}
+	receipt, err := s.broker.SubmitGateResult(r.Context(), id, taskSecret(r),
+		strings.TrimSpace(r.Header.Get("Idempotency-Key")), body)
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	writeJSON(w, receipt)
 }
 
 // taskSecret is the credential a child presents. Header only on the two routes
@@ -1003,11 +1047,12 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 	}
 	if r.Result != nil {
 		row.Result = &contract.BrokerResult{
-			Status:     r.Result.Status,
-			Summary:    r.Result.Summary,
-			Symbols:    r.Result.Symbols,
-			Artifacts:  r.Result.Artifacts,
-			FinishedAt: r.Result.FinishedAt,
+			Status:      r.Result.Status,
+			Summary:     r.Result.Summary,
+			Symbols:     r.Result.Symbols,
+			Artifacts:   r.Result.Artifacts,
+			FinishedAt:  r.Result.FinishedAt,
+			GateVerdict: r.Result.GateVerdict,
 		}
 		if v := r.Result.Verify; v != nil {
 			row.Result.Verification = &contract.BrokerVerification{
