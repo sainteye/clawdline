@@ -77,7 +77,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	// the directory before it draws anything, and a session nobody can type
 	// into is a hand-over nobody receives (trustArgs).
 	args = append(args, trustArgs(launch.Assistant, cwd)...)
-	args = append(args, updateCheckArgs(launch.Assistant)...)
+	args = append(args, projects.UpdateCheckArgs(launch.Assistant)...)
 	// Claude Code has no such flag, so the answer is recorded where Claude
 	// Code keeps it — for the project folder a session was asked for, never a
 	// child's disposable checkout (projects.TrustClaudeProject). A folder that

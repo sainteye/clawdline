@@ -131,12 +131,3 @@ func TestARootLeftAtADialogFailsWhenItsTabIsClosed(t *testing.T) {
 		t.Fatal("something was typed")
 	}
 }
-
-func TestOnlyCodexIsToldToSkipItsUpdateCheck(t *testing.T) {
-	if got := updateCheckArgs("claude"); got != nil {
-		t.Fatalf("Claude Code was given %v", got)
-	}
-	if got := strings.Join(updateCheckArgs("codex"), " "); got != "-c check_for_update_on_startup=false" {
-		t.Fatalf("Codex was given %q", got)
-	}
-}

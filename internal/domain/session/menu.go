@@ -630,27 +630,57 @@ func codexMenu(tail []tailLine, lines []string) (Menu, bool) {
 	if !ok || !head.caret {
 		return Menu{}, false
 	}
+	// The block is the rows and the lines a long row wrapped onto, read from
+	// its first row down.
 	first := caret
-	options := []MenuOption{{Number: head.number, Label: head.label, Selected: true}}
 	for i := caret - 1; i >= 0; i-- {
-		row, ok := menuRow(tail[i].element)
-		if !ok {
+		if _, ok := menuRow(tail[i].element); ok {
+			first = i
+		} else if !wrappedRow(tail[i].element, head.column) {
 			break
 		}
-		first = i
-		options = append([]MenuOption{{Number: row.number, Label: row.label}}, options...)
 	}
-	for i := caret + 1; i < len(tail); i++ {
-		row, ok := menuRow(tail[i].element)
-		if !ok {
+	var options []MenuOption
+	for i := first; i < len(tail); i++ {
+		if row, ok := menuRow(tail[i].element); ok {
+			options = append(options, MenuOption{Number: row.number, Label: row.label, Selected: i == caret})
+			continue
+		}
+		if !wrappedRow(tail[i].element, head.column) {
 			break
 		}
-		options = append(options, MenuOption{Number: row.number, Label: row.label})
+		last := &options[len(options)-1]
+		last.Label += " " + trimSpaces(tail[i].element)
 	}
 	if len(options) < 2 || !askedOver(lines, tail[first].offset) {
 		return Menu{}, false
 	}
 	return Menu{Options: options, Selected: firstSelected(options), Numbered: true}, true
+}
+
+// wrappedRow is a line an option's words went on to because the row was wider
+// than the pane: no caret, no number, and indented at least as far as the
+// labels start. Codex 0.154.0's update picker drew
+//
+//	› 1. Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh |
+//	     CODEX_NON_INTERACTIVE=1 sh'`)
+//	  2. Skip
+//
+// on an 80-column tmux pane (2026-09-28), and without this the second line
+// ended the rows at one, which is not a picker: the session read as not yet
+// started, and every line sent to it was pasted into the picker.
+func wrappedRow(raw string, column int) bool {
+	if trimSpaces(raw) == "" || hasCaret(raw) {
+		return false
+	}
+	indent := 0
+	for _, c := range raw {
+		if c != ' ' {
+			break
+		}
+		indent++
+	}
+	return column > 0 && indent >= column
 }
 
 func hasCaret(raw string) bool {
