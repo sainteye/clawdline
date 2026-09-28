@@ -268,6 +268,29 @@ func TestCodexPickerIsStillRead(t *testing.T) {
 	}
 }
 
+// Codex's update picker on an 80-column pane wraps its first row, the one
+// that spells out the install command, onto a second line indented under the
+// label (2026-09-28, codex-cli 0.154.0). The wrapped line is part of that row,
+// not the end of the rows: read as the end, the picker had one option, was not
+// a picker, and the session read as not yet started while everything sent to
+// it went into the picker.
+func TestACodexPickerWithAWrappedRowIsStillRead(t *testing.T) {
+	m, ok := ReadMenu(fixture(t, "menu-codex-update.txt"), AssistantCodex, false)
+	if !ok {
+		t.Fatal("no menu on a screen with Codex's update picker on it")
+	}
+	// The "|" that ended the first line goes with the right-hand wall a
+	// label is trimmed of (trimTrailingWall).
+	want := "Update now (runs `sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh " +
+		"CODEX_NON_INTERACTIVE=1 sh'`)|Skip|Skip until next version"
+	if got := labels(m); got != want {
+		t.Fatalf("labels %q", got)
+	}
+	if m.Selected == nil || *m.Selected != 1 || !m.Numbered {
+		t.Fatalf("menu %+v", m)
+	}
+}
+
 // A picker taller than its pane is drawn with its top cut off: on an 80×24
 // tmux pane — what a session started on a Linux machine with nobody attached
 // gets — the tab bar and the rule above the question are gone, and the screen

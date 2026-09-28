@@ -298,6 +298,37 @@ func Admit(req LaunchRequest) (Launch, error) {
 	return Launch{ProjectRoot: req.ProjectRoot, Assistant: req.Assistant, Arguments: args}, nil
 }
 
+// UpdateCheckArgs keeps Codex from asking, on its first screen, whether to
+// update itself.
+//
+// Measured on 2026-09-27: codex-cli 0.154.0 found 0.157.1 published and opened
+// with
+//
+//	✨ Update available! 0.154.0 -> 0.157.1
+//	› 1. Update now (runs `sh -c 'curl -fsSL … | CODEX_NON_INTERACTIVE=1 sh'`)
+//	  2. Skip
+//	  3. Skip until next version
+//
+// before it drew a composer. Two Board items assigned to a new Codex Session
+// that morning both ended "the child is showing a dialog", and every Claude
+// assignment beside them was briefed. A session opened to do somebody's work
+// is not the place to decide whether to reinstall the CLI; the person still
+// sees the offer in any Codex they start in a terminal themselves. Like the
+// broker's trustArgs, `-c` holds for this one run and writes nothing; the
+// same launch with it drew the composer straight away.
+//
+// A session started from the console needs it as much: on 2026-09-28 one
+// opened on the same menu, read as not yet started, and a line sent to it
+// from the console was pasted into the menu and came back send_unsubmitted.
+// Every Codex launch this daemon types carries it (Starter.Start and the
+// broker's shellCommand and openSession).
+func UpdateCheckArgs(assistant string) []string {
+	if assistant != AssistantCodex {
+		return nil
+	}
+	return []string{"-c", "check_for_update_on_startup=false"}
+}
+
 // ShellCommand is ProviderLaunchPlan.shellCommand: `env -u …` first, so the
 // program runs as its own process with nothing in front of it in `ps`.
 func (l Launch) ShellCommand() string {
