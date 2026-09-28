@@ -5087,8 +5087,14 @@ type SettingsRequest struct {
 	// 0 for none, or 50000 to 1000000 tokens.
 	ClaudeAutoCompactWindow *int64 `json:"claude_auto_compact_window"`
 
+	// Empty, or a Claude Code model name used when a new Session does not name one.
+	ClaudeDefaultModel *string `json:"claude_default_model"`
+
 	// Whether a new session is named by an assistant.
 	CodexAutoName *bool `json:"codex_auto_name"`
+
+	// Empty, or a Codex model name used when a new Session does not name one.
+	CodexDefaultModel *string `json:"codex_default_model"`
 
 	// Whether the terminal selects the tab the bar points at.
 	FollowTarget *bool `json:"follow_target"`
@@ -5208,9 +5214,17 @@ type SettingsSnapshot struct {
 	// given to Codex, or to a session the person opened.
 	ClaudeAutoCompactWindow *int64 `json:"claude_auto_compact_window"`
 
+	// The model used for a new Claude Code session when that launch does not name one.
+	// Empty leaves the choice to Claude Code.
+	ClaudeDefaultModel *string `json:"claude_default_model"`
+
 	// Whether a new session is named by an assistant. The Swift app's spelling, kept
 	// so a line copied between the two files means the same thing.
 	CodexAutoName *bool `json:"codex_auto_name"`
+
+	// The model used for a new Codex session when that launch does not name one. Empty
+	// leaves the choice to Codex.
+	CodexDefaultModel *string `json:"codex_default_model"`
 
 	// False before anything has been written. Every key then has the shell's default.
 	Exists bool `json:"exists"`

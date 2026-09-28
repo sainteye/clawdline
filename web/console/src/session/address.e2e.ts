@@ -88,6 +88,12 @@ let generation = 0
 let intentRequests = 0
 let placeRequests = 0
 let smartTitleRequests = 0
+let machineSettings: Record<string, unknown> = {
+  exists: true,
+  path: "/tmp/config.json",
+  codex_default_model: "",
+  claude_default_model: "",
+}
 let smartTitleRequestKey = ""
 let smartTitleRefusal = ""
 let namingAssistant = "claude"
@@ -182,6 +188,18 @@ function daemon(): Server {
     const path = url.pathname
     requestedPaths.push(`${req.method} ${path}`)
     if (path === "/v1/sessions") return json(res, 200, snapshot())
+    if (path === "/v1/settings" && req.method === "GET") return json(res, 200, machineSettings)
+    if (path === "/v1/settings" && req.method === "POST") {
+      void requestJSON(req).then((change) => {
+        const model = Object.values(change)[0]
+        if (typeof model !== "string" || (model !== "" && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(model))) {
+          return json(res, 400, { error: "invalid_default_model", detail: "That is not a model name." })
+        }
+        machineSettings = { ...machineSettings, ...change }
+        return json(res, 200, machineSettings)
+      }, () => json(res, 400, { error: "bad_request", detail: "That is not JSON." }))
+      return
+    }
     const info = /^\/v1\/sessions\/([^/]+)\/info$/.exec(path)
     if (info && req.method === "GET") {
       const id = decodeURIComponent(info[1])
@@ -726,6 +744,113 @@ test("phone: Settings changes, remembers and restores the browser's text size", 
     assert.equal(layout.focused, "settings-close")
     assert.equal(layout.fontScaleHidden, true, "the mobile-only setting does not promise an effect on a desk")
     if (evidence) await tab.screenshot(join(evidence, "desktop-1280-text-100.png"))
+  })
+})
+
+test("Settings saves machine-wide model defaults, fits a phone, and restores a refused value", async () => {
+  const evidence = process.env.CLAWDLINE_DEFAULT_MODEL_SCREENSHOT_DIR || ""
+  if (evidence) mkdirSync(evidence, { recursive: true })
+  machineSettings = {
+    exists: true,
+    path: "/tmp/config.json",
+    codex_default_model: "",
+    claude_default_model: "",
+  }
+
+  await inTab(PHONE, async (tab) => {
+    await tab.go("/#page=settings")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const input = document.getElementById("settings-codex-default-model")
+        if (input && !input.disabled) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the default-model setting did not appear"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    const phone = await tab.run(`(() => {
+      const block = document.getElementById("settings-default-models")
+      const codex = document.getElementById("settings-codex-default-model")
+      const claude = document.getElementById("settings-claude-default-model")
+      return {
+        scrollsSideways: block.scrollWidth > block.clientWidth || document.documentElement.scrollWidth > innerWidth,
+        inputs: [codex, claude].map((input) => ({
+          width: input.getBoundingClientRect().width,
+          fontSize: getComputedStyle(input).fontSize,
+          label: document.querySelector('label[for="' + input.id + '"]')?.textContent,
+        })),
+      }
+    })()`)
+    assert.equal(phone.scrollsSideways, false)
+    assert.equal(phone.inputs.length, 2)
+    for (const input of phone.inputs) {
+      assert.ok(input.width <= PHONE.width, `a model field is ${input.width}px wide`)
+      assert.equal(input.fontSize, "16px")
+      assert.ok(input.label, "every model field has a visible label")
+    }
+
+    await tab.run(`(() => {
+      const input = document.getElementById("settings-codex-default-model")
+      input.focus()
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set
+      setter.call(input, "gpt-6-sol")
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      input.blur()
+    })()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const said = document.querySelector("#settings-default-models .said")?.textContent || ""
+        if (said.includes("已儲存")) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the saved state did not arrive: " + said))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.equal(machineSettings.codex_default_model, "gpt-6-sol")
+
+    await tab.run(`(() => {
+      const input = document.getElementById("settings-codex-default-model")
+      input.focus()
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set
+      setter.call(input, "GPT 6")
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      input.blur()
+    })()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const input = document.getElementById("settings-codex-default-model")
+        const said = document.querySelector("#settings-default-models .said")?.textContent || ""
+        if (input.value === "gpt-6-sol" && said.includes("模型名稱須為 1–64 個")) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the refused value was not restored: " + input.value + " / " + said))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    if (evidence) await tab.screenshot(join(evidence, "phone-default-models.png"))
+  })
+
+  await inTab(DESK, async (tab) => {
+    await tab.go("/#page=settings")
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        const input = document.getElementById("settings-codex-default-model")
+        if (input && !input.disabled) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("the desktop default-model setting did not appear"))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    const desk = await tab.run(`(() => ({
+      value: document.getElementById("settings-codex-default-model").value,
+      focused: document.activeElement?.id,
+      scrollsSideways: document.documentElement.scrollWidth > innerWidth,
+    }))()`)
+    assert.deepEqual(desk, { value: "gpt-6-sol", focused: "settings-close", scrollsSideways: false })
+    if (evidence) await tab.screenshot(join(evidence, "desktop-default-models.png"))
   })
 })
 

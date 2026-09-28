@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/contract"
 )
 
@@ -17,9 +18,8 @@ import (
 // from a terminal, through the same route and the same checks the console's
 // settings page writes with (/v1/settings). It is for the settings a person
 // may want to change while an experiment runs and from somewhere with no
-// browser — today only `claude_auto_compact_window` — and names them rather
-// than taking any key, so a typo is a refusal here and not a question for the
-// daemon.
+// browser, and names them rather than taking any key, so a typo is a refusal
+// here and not a question for the daemon.
 
 // settingKeys is each key this command takes, and how its value is written.
 var settingKeys = map[string]struct {
@@ -30,6 +30,8 @@ var settingKeys = map[string]struct {
 	// takes is what a value may be, for the usage line and a refusal.
 	takes string
 }{
+	"codex_default_model":  modelSetting("Codex"),
+	"claude_default_model": modelSetting("Claude Code"),
 	"claude_auto_compact_window": {
 		parse: func(s string) (any, bool) {
 			switch strings.ToLower(strings.TrimSpace(s)) {
@@ -48,6 +50,35 @@ var settingKeys = map[string]struct {
 		},
 		takes: "a number of tokens from 50000 to 1000000, or off",
 	},
+}
+
+func modelSetting(assistant string) struct {
+	parse func(string) (any, bool)
+	show  func(json.RawMessage) string
+	takes string
+} {
+	return struct {
+		parse func(string) (any, bool)
+		show  func(json.RawMessage) string
+		takes string
+	}{
+		parse: func(raw string) (any, bool) {
+			model := strings.TrimSpace(raw)
+			switch strings.ToLower(model) {
+			case "default", "off", "none":
+				model = ""
+			}
+			return model, nextconfig.ValidDefaultModel(model)
+		},
+		show: func(raw json.RawMessage) string {
+			var model *string
+			if json.Unmarshal(raw, &model) != nil || model == nil || *model == "" {
+				return assistant + " default"
+			}
+			return *model
+		},
+		takes: "a model name, or default",
+	}
 }
 
 func settingCommand(args []string) {

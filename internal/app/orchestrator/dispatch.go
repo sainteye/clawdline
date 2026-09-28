@@ -400,6 +400,10 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		r.Unbriefed = spawned.Unbriefed
 		r.AwaitingDialogSince = spawned.AwaitingDialogSince
 		r.AutoCompactWindow = spawned.AutoCompactWindow
+		// A blank brief may have resolved through the machine-wide default at
+		// launch. Keep the actual model with the task so the record explains the
+		// command that was opened rather than continuing to say "unspecified".
+		r.Model = spawned.Model
 		if r.State == StateQueued {
 			r.State = spawned.State
 		}
@@ -564,6 +568,9 @@ func shortCommit(v string) string {
 // the task rather than about the request.
 func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened func()) Record {
 	defer opened()
+	if r.Model == "" && b.DefaultModel != nil {
+		r.Model = b.DefaultModel(r.Assistant)
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,

@@ -205,3 +205,34 @@ func TestHotkeysAreWhatTheShellCanRegister(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultModelsUseTheLaunchPolicyName(t *testing.T) {
+	for _, name := range []string{"", "gpt-6-sol", "claude-opus-5-5", "sonnet"} {
+		if !ValidDefaultModel(name) {
+			t.Errorf("%q refused", name)
+		}
+	}
+	for _, name := range []string{"-gpt-6-sol", "GPT-6-SOL", "gpt 6", "opus;rm"} {
+		if ValidDefaultModel(name) {
+			t.Errorf("%q accepted", name)
+		}
+	}
+
+	values := Values{Raw: map[string]json.RawMessage{
+		"codex_default_model":  json.RawMessage(`"gpt-6-sol"`),
+		"claude_default_model": json.RawMessage(`"claude-opus-5-5"`),
+	}}
+	if got := DefaultModel(values, "codex"); got != "gpt-6-sol" {
+		t.Fatalf("codex = %q", got)
+	}
+	if got := DefaultModel(values, "claude"); got != "claude-opus-5-5" {
+		t.Fatalf("claude = %q", got)
+	}
+	values.Raw["codex_default_model"] = json.RawMessage(`"NOT A MODEL"`)
+	if got := DefaultModel(values, "codex"); got != "" {
+		t.Fatalf("invalid hand edit = %q", got)
+	}
+	if got := DefaultModel(values, "other"); got != "" {
+		t.Fatalf("unknown assistant = %q", got)
+	}
+}
