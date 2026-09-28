@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { SettingsSnapshot, TunnelStatus, VoiceLanguage } from "@clawdline/contract"
-import { readSettings, writeSettings } from "../api.js"
+import {
+  defaultModelOptions,
+  readDefaultModels,
+  readSettings,
+  writeSettings,
+  type DefaultModelsSnapshot,
+} from "../api.js"
 import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyTrouble, seconds, voiceLanguageSaid } from "./copy.js"
 import {
   beginCloudPairing,
@@ -70,6 +76,7 @@ type Draft = Partial<Record<SettingKey, string | number | boolean>>
 
 export function SettingsWindow() {
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null)
+  const [defaultModels, setDefaultModels] = useState<DefaultModelsSnapshot | null>(null)
   const [shell, setShell] = useState<ShellState | null>(null)
   const [draft, setDraft] = useState<Draft>({})
   const [tab, setTab] = useState(0)
@@ -110,6 +117,7 @@ export function SettingsWindow() {
         setSnapshot(answer)
         setDraft({})
         setSaid("")
+        void readDefaultModels().then(setDefaultModels, (error: unknown) => setSaid(settingsFailureSentence(error)))
       },
       (error: unknown) => setSaid(settingsFailureSentence(error)),
     )
@@ -454,19 +462,31 @@ export function SettingsWindow() {
             <Switch label={W.settingsFollow} on={!!now("follow_target")} onChange={flip("follow_target")} />
           </Row>
           <Row label={W.settingsCodexDefaultModel} hint={W.settingsDefaultModelHint}>
-            <MemoField
+            <PopUp
               label={W.settingsCodexDefaultModel}
               value={String(now("codex_default_model"))}
-              example={W.settingsProviderDefault}
-              onCommit={(value) => void change({ codex_default_model: value })}
+              options={defaultModelOptions(
+                defaultModels,
+                "codex",
+                String(now("codex_default_model")),
+                W.settingsProviderDefault,
+              )}
+              disabled={!defaultModels}
+              onPick={(value) => void change({ codex_default_model: value })}
             />
           </Row>
           <Row label={W.settingsClaudeDefaultModel} hint={W.settingsDefaultModelHint}>
-            <MemoField
+            <PopUp
               label={W.settingsClaudeDefaultModel}
               value={String(now("claude_default_model"))}
-              example={W.settingsProviderDefault}
-              onCommit={(value) => void change({ claude_default_model: value })}
+              options={defaultModelOptions(
+                defaultModels,
+                "claude",
+                String(now("claude_default_model")),
+                W.settingsProviderDefault,
+              )}
+              disabled={!defaultModels}
+              onPick={(value) => void change({ claude_default_model: value })}
             />
           </Row>
           <Row label={W.settingsCodexAutoName} hint={W.settingsCodexAutoNameHint}>
