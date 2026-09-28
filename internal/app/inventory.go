@@ -198,11 +198,18 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 	if !s.IsAssistant() {
 		return s
 	}
+	// The terminal title is never a name by itself. It is still useful as a
+	// join key for an identity source that can validate it against a provider's
+	// live record (Codex's managed app-server path), so offer the raw reading to
+	// the source before clearing it from the row we publish.
+	terminalLabel := s.Label
 	s.Label = ""
 	if in.Identity == nil {
 		return s
 	}
-	id, ok := in.Identity.ForSession(ctx, s)
+	probe := s
+	probe.Label = terminalLabel
+	id, ok := in.Identity.ForSession(ctx, probe)
 	// How the row was named — or which kind of nothing kept it nameless — is
 	// an answer whether or not there was an identity behind it, so it is taken
 	// before `ok` is looked at. An empty one leaves what the scan already

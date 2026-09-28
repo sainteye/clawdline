@@ -14,9 +14,14 @@ type Host struct {
 
 	claude    map[int]ClaudeRegistry
 	codex     map[string]string
-	titles    *Titles
-	shells    *Shells
-	movements *Movements
+	codexLive map[string]codexLiveIdentity
+	// codexRollouts remembers paths only while their writer locks are live.
+	// An ended thread leaves on the next refresh, so this cannot accumulate
+	// historical conversations behind the session list.
+	codexRollouts map[string]string
+	titles        *Titles
+	shells        *Shells
+	movements     *Movements
 }
 
 func NewHost() *Host {
@@ -36,6 +41,7 @@ func (h *Host) Movements() *Movements { return h.movements }
 func (h *Host) Refresh() {
 	h.claude = ClaudeRegistryByPID(h.Home)
 	h.codex = CodexNames(h.Home)
+	h.refreshCodexLive()
 }
 
 // ForSession names a session the way the Swift app's session list does — see
@@ -76,22 +82,28 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		}, true
 
 	case session.AssistantCodex:
-		// Codex keeps no live registry beside Claude Code's, so nothing here
-		// can be asked about a pid. The id comes from the scan — the command
-		// line of a resumed session, or the rollout the process holds open —
-		// and which of those it was, or which kind of nothing took its place,
-		// is already on the row (internal/adapters/process.bindCodex). This
-		// adds no answer of its own, and in particular never guesses one from
-		// the working directory: two Codex sessions in one checkout is the
-		// ordinary case here, and they would both answer to the same name.
+		// Direct Codex sessions are named by the scan: either the command line
+		// of a resumed session or the rollout the foreground process holds
+		// open. A managed app-server holds that rollout instead of the TUI, so
+		// an otherwise-unbound iTerm row gets a second, provider-owned path:
+		// live writer lock, rollout head, name index, cwd and exact terminal
+		// title must all agree. Neither path guesses from cwd alone; two Codex
+		// sessions in one checkout is the ordinary case here.
+		binding := s.Binding
 		if s.ConversationID == "" {
-			return ports.Identity{}, false
+			live, ok := h.codexLiveFor(s)
+			if !ok {
+				return ports.Identity{}, false
+			}
+			s.ConversationID = live.ID
+			binding = session.BindingLiveTitle
 		}
 		rungs := session.LabelRungs{Thread: h.codex[s.ConversationID]}
 		return ports.Identity{
 			ConversationID: s.ConversationID,
 			Label:          session.PreferredLabel(rungs),
 			Rungs:          rungs,
+			Binding:        binding,
 		}, true
 	}
 	return ports.Identity{}, false
