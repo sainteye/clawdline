@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,22 @@ func TestClaudeLanguageNamesOnlyWhatItKnows(t *testing.T) {
 	for tag, want := range cases {
 		if got := ClaudeLanguage(tag); got != want {
 			t.Errorf("ClaudeLanguage(%q) = %q, want %q", tag, got, want)
+		}
+	}
+}
+
+func TestCodexBoardLanguageNormalizesOnlyLanguageTags(t *testing.T) {
+	cases := map[string]string{
+		"zh_TW.UTF-8":    "zh-TW",
+		"en-US":          "en-US",
+		"auto":           "",
+		"C":              "",
+		"not a language": "",
+		"":               "",
+	}
+	for tag, want := range cases {
+		if got := CodexBoardLanguage(tag); got != want {
+			t.Errorf("CodexBoardLanguage(%q) = %q, want %q", tag, got, want)
 		}
 	}
 }
@@ -71,10 +88,19 @@ func TestLaunchCarriesTheResponseLanguage(t *testing.T) {
 		t.Fatalf("ShellCommand() = %q, want it to end %q", got, want)
 	}
 
+	codex, err := Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex, Language: "zh-TW"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := codex.ShellCommand(); !strings.Contains(got,
+		`developer_instructions="Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag \"zh-TW\"."`) {
+		t.Fatalf("Codex language instruction is absent from %q", got)
+	}
+
 	for _, req := range []LaunchRequest{
-		{ProjectRoot: "/p", Assistant: AssistantCodex, Language: claudeTraditionalChinese},
 		{ProjectRoot: "/p", Assistant: AssistantClaude, Language: `x"}' ; rm -rf ~ ; '`},
 		{ProjectRoot: "/p", Assistant: AssistantClaude, Language: "english"},
+		{ProjectRoot: "/p", Assistant: AssistantCodex, Language: "not a language"},
 	} {
 		if _, err := Admit(req); !errors.Is(err, ErrInvalidLaunch) {
 			t.Errorf("Admit(%q, %q) = %v, want invalid_launch", req.Assistant, req.Language, err)

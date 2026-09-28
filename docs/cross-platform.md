@@ -408,7 +408,10 @@ a handoff's receiver — is now given the same answer as above (Clawdline's `lan
 `--settings '{"language":"…"}'`, spelled from a closed list (`internal/adapters/projects/claude_language.go`); English and
 anything off the list pass nothing. When the person's own Claude Code settings file (`~/.claude/settings.json`, or under
 `CLAUDE_CONFIG_DIR`) already names a `language`, nothing is passed: flag settings outrank that file, and a choice made there
-is theirs. Codex is not given one. A session the person opened outside Clawdline is never this daemon's to change.
+is theirs. Codex has no response-language setting, so its narrower `developer_instructions` tells it to write the Board item
+titles, descriptions and steps it authors in Clawdline's language; ordinary conversation is unchanged. That instruction is
+combined with a selected persona rather than replacing it. A session the person opened outside Clawdline is never this
+daemon's to change.
 
 **Summary-table correction**: none.
 

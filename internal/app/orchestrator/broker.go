@@ -92,9 +92,9 @@ type Broker struct {
 	// side. Nil tells nobody.
 	RootAssignmentSettled func(ctx context.Context, a RootAssignment)
 	// ClaudeSetsLanguage is whether the person's own Claude Code settings
-	// already name a response language. When they do not, a Claude session
-	// this broker opens is given DisplayLanguage (ClaudeLanguage). Nil gives
-	// none, which only a test wants.
+	// already name a response language. When they do not, a Claude session this
+	// broker opens is given DisplayLanguage. Nil gives none, which only a test
+	// wants. Codex uses DisplayLanguage for its Board-item instruction instead.
 	ClaudeSetsLanguage func() bool
 	// TerminalCapabilities is what this machine's terminals can do —
 	// read_screen and send_keys — asked before a dispatch is admitted
