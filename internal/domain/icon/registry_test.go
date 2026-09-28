@@ -45,8 +45,12 @@ func TestResolveNamesConfiguredAndGeneratedSources(t *testing.T) {
 	if _, source := r.Resolve("/w/shop/src"); source != SourceRegistry {
 		t.Errorf("registered source = %q", source)
 	}
-	if _, source := r.Resolve("/w/other"); source != SourceGenerated {
+	generated, source := r.Resolve("/w/other")
+	if source != SourceGenerated {
 		t.Errorf("fallback source = %q", source)
+	}
+	if pure := Generated("/w/other"); !reflect.DeepEqual(generated, pure) {
+		t.Errorf("pure generated fallback = %+v, registry fallback = %+v", pure, generated)
 	}
 	r.overrides = map[string]Grid{"/w/other": creature(1, 0, 2)}
 	if _, source := r.Resolve("/w/other/src"); source != SourceOverride {

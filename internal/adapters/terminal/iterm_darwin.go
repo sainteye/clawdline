@@ -31,9 +31,32 @@ type ITerm struct {
 	// field so a test can hand over a machine of its own — including one where
 	// the process table cannot be read at all, which must seal nothing.
 	ptys func(context.Context) (itermPTYs, bool)
+	list func(context.Context) ([]byte, error)
+	now  func() time.Time
+
+	listingMu       sync.Mutex
+	listingFailures int
+	listingQuiet    time.Time
+	backoffFirst    time.Duration
+	backoffMax      time.Duration
 }
 
-func NewITerm() *ITerm { return &ITerm{ptys: systemITermPTYs} }
+func NewITerm() *ITerm {
+	return &ITerm{ptys: systemITermPTYs, list: runITermList, now: time.Now}
+}
+
+// SetInventoryBackoff configures how long repeated failed list Apple Events
+// are left alone. The composition root supplies already registered bounds;
+// without that wiring the adapter preserves its old retry-every-call behavior.
+func (i *ITerm) SetInventoryBackoff(first, maximum time.Duration) {
+	i.listingMu.Lock()
+	defer i.listingMu.Unlock()
+	if first <= 0 || maximum < first {
+		i.backoffFirst, i.backoffMax = 0, 0
+		return
+	}
+	i.backoffFirst, i.backoffMax = first, maximum
+}
 
 func (i *ITerm) Name() string { return "iterm" }
 
@@ -121,19 +144,29 @@ type itermRow struct {
 }
 
 func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
+	now := i.now()
 	inv := session.Inventory{
-		ObservedAt: time.Now(),
+		ObservedAt: now,
 		Provenance: "iterm",
 		Complete:   true,
+	}
+	i.listingMu.Lock()
+	quiet, failures := i.listingQuiet, i.listingFailures
+	i.listingMu.Unlock()
+	if !quiet.IsZero() && now.Before(quiet) {
+		inv.Complete = false
+		inv.Notes = append(inv.Notes, fmt.Sprintf(
+			"iTerm2 listing is degraded after %d failed Apple Event(s); retry after %s",
+			failures, quiet.Format(time.RFC3339)))
+		inv.Gaps = append(inv.Gaps, session.Gap{Source: "iterm", Scope: "listing",
+			Detail: "iTerm2 listing is in failure backoff"})
+		return inv, nil
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
-	cmd.Stdin = strings.NewReader(itermList)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
-	out, err := cmd.Output()
+	out, err := i.list(ctx)
 	if err != nil {
 		// A stopped iTerm2 is an observed absence and would be an authoritative
 		// empty answer. A failed Apple Event is not: it says nothing about what
@@ -141,6 +174,7 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 		// would let a broken bridge quietly delete every iTerm row.
 		inv.Complete = false
 		inv.Notes = append(inv.Notes, "iTerm2 apple event failed: "+err.Error())
+		i.failedListing(now)
 		return inv, nil
 	}
 
@@ -153,8 +187,10 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	if err := json.Unmarshal(out, &answer); err != nil {
 		inv.Complete = false
 		inv.Notes = append(inv.Notes, "iTerm2 answer was unreadable: "+err.Error())
+		i.failedListing(now)
 		return inv, nil
 	}
+	i.succeededListing()
 	if !answer.Running {
 		inv.Notes = append(inv.Notes, "iTerm2 is not running")
 		return inv, nil
@@ -202,6 +238,38 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 		inv = sealITermGaps(ctx, inv, i.ptys)
 	}
 	return inv, nil
+}
+
+func runITermList(ctx context.Context) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
+	cmd.Stdin = strings.NewReader(itermList)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	return cmd.Output()
+}
+
+func (i *ITerm) failedListing(now time.Time) {
+	i.listingMu.Lock()
+	defer i.listingMu.Unlock()
+	if i.backoffFirst <= 0 {
+		return
+	}
+	i.listingFailures++
+	wait := i.backoffFirst
+	for n := 1; n < i.listingFailures && wait < i.backoffMax; n++ {
+		wait *= 2
+		if wait >= i.backoffMax {
+			wait = i.backoffMax
+			break
+		}
+	}
+	i.listingQuiet = now.Add(wait)
+}
+
+func (i *ITerm) succeededListing() {
+	i.listingMu.Lock()
+	i.listingFailures = 0
+	i.listingQuiet = time.Time{}
+	i.listingMu.Unlock()
 }
 
 // itermGap is one window the walk could not read, as the script names it.

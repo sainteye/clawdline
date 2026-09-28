@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -387,30 +388,49 @@ func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.
 	return landing, nil
 }
 
-func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
+type workV2ProjectCatalog map[string]workV2ProjectWire
+
+// workV2Projects takes the live Project reading once. Callers prepare this
+// snapshot before opening a work transaction, then response projection is a
+// pure mapping over the committed view and this immutable catalog.
+func (s *Server) workV2Projects(ctx context.Context) workV2ProjectCatalog {
+	out := workV2ProjectCatalog{}
 	for _, p := range s.projectReaders().places.List(s.liveDirectories(ctx), 40) {
-		if p.ID != id {
-			continue
-		}
 		canonical, ok := projects.CanonicalProjectKey(p.Path)
 		if !ok {
-			return workV2ProjectWire{}, false
+			continue
 		}
 		label := p.Label
 		if label == "" {
 			label = filepath.Base(canonical)
 		}
-		return workV2ProjectWire{ID: p.ID, Label: label, Path: canonical, Icon: wireIcon(s.icons.For(canonical)), Available: true}, true
+		mark := icon.Generated(canonical)
+		if s.icons != nil {
+			mark = s.icons.For(canonical)
+		}
+		out[p.ID] = workV2ProjectWire{ID: p.ID, Label: label, Path: canonical,
+			Icon: wireIcon(mark), Available: true}
 	}
-	return workV2ProjectWire{}, false
+	return out
 }
 
-func (s *Server) workV2ItemOf(ctx context.Context, v app.WorkV2View) workV2ItemWire {
+func (s *Server) workV2Project(ctx context.Context, id string) (workV2ProjectWire, bool) {
+	p, ok := s.workV2Projects(ctx)[id]
+	return p, ok
+}
+
+func (s *Server) workV2ItemProjector(ctx context.Context) func(app.WorkV2View) workV2ItemWire {
+	catalog := s.workV2Projects(ctx)
+	return func(v app.WorkV2View) workV2ItemWire { return s.workV2ItemOf(catalog, v) }
+}
+
+func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) workV2ItemWire {
 	i := v.Item
-	p, ok := s.workV2Project(ctx, i.ProjectID)
+	p, ok := catalog[i.ProjectID]
 	if !ok {
 		label := filepath.Base(i.ProjectPath)
-		p = workV2ProjectWire{ID: i.ProjectID, Label: label, Path: i.ProjectPath, Icon: wireIcon(s.icons.For(i.ProjectPath))}
+		p = workV2ProjectWire{ID: i.ProjectID, Label: label, Path: i.ProjectPath,
+			Icon: wireIcon(icon.Generated(i.ProjectPath))}
 	}
 	out := workV2ItemWire{ID: i.ID, Project: p, Kind: string(i.Kind), Title: i.Title, Description: i.Description,
 		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, Area: i.Area(),
@@ -640,10 +660,11 @@ func (s *Server) workV2ResolveProposal(w http.ResponseWriter, r *http.Request, i
 	if !ok {
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
 	v, err := s.workV2().ResolveProposal(r.Context(), id, actor, app.ProposalDecisionV2{Decision: decision,
 		Title: body.Title, Description: body.Description, SuggestedAcceptance: body.SuggestedAcceptance}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+		answer = workV2Answer(itemOf(v))
 		if decision == "reject" {
 			answer, _ = json.Marshal(map[string]any{"ok": true, "rejected": id})
 		}
@@ -695,8 +716,12 @@ func (s *Server) workV2List(w http.ResponseWriter, r *http.Request) {
 		Truncated bool             `json:"truncated"`
 	}{OK: true, Rows: []workV2ItemWire{}, Counts: map[string]int{}, Next: optionalString(page.Next),
 		PageSize: app.WorkV2ListPageLimit, Truncated: page.Next != ""}
+	var itemOf func(app.WorkV2View) workV2ItemWire
+	if len(page.Rows) > 0 {
+		itemOf = s.workV2ItemProjector(r.Context())
+	}
 	for _, row := range page.Rows {
-		wire := s.workV2ItemOf(r.Context(), row)
+		wire := itemOf(row)
 		out.Rows = append(out.Rows, wire)
 		out.Counts[wire.Area]++
 	}
@@ -715,8 +740,12 @@ func (s *Server) workV2ListProjection(w http.ResponseWriter, r *http.Request, q 
 		Counts    map[string]int   `json:"counts"`
 		Truncated bool             `json:"truncated"`
 	}{OK: true, Rows: []workV2ItemWire{}, Counts: map[string]int{}, Truncated: truncated}
+	var itemOf func(app.WorkV2View) workV2ItemWire
+	if len(rows) > 0 {
+		itemOf = s.workV2ItemProjector(r.Context())
+	}
 	for _, row := range rows {
-		wire := s.workV2ItemOf(r.Context(), row)
+		wire := itemOf(row)
 		out.Rows = append(out.Rows, wire)
 		out.Counts[wire.Area]++
 	}
@@ -729,7 +758,7 @@ func (s *Server) workV2Item(w http.ResponseWriter, r *http.Request, id string) {
 		s.writeWorkV2Error(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "item": s.workV2ItemOf(r.Context(), v)})
+	writeJSON(w, map[string]any{"ok": true, "item": s.workV2ItemProjector(r.Context())(v)})
 }
 
 const (
@@ -804,11 +833,12 @@ func (s *Server) workV2AddImage(w http.ResponseWriter, r *http.Request, id strin
 	if !ok {
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
 	_, err = s.workV2().AddImage(r.Context(), id, app.AddImageV2{ExpectedVersion: body.ExpectedVersion,
 		Title: body.Title, Data: normalized.Data, MediaType: normalized.MediaType, Width: normalized.Width, Height: normalized.Height,
 		Position: body.Position, Actor: actor}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+		answer = workV2Answer(itemOf(v))
 		return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 	})
 	if err != nil {
@@ -841,10 +871,11 @@ func (s *Server) workV2DeleteImage(w http.ResponseWriter, r *http.Request, id, i
 	if !ok {
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
 	_, err := s.workV2().DeleteImage(r.Context(), id, imageID, body.ExpectedVersion, actor,
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(itemOf(v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 		})
 	if err != nil {
@@ -915,7 +946,8 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, ok := s.workV2Project(r.Context(), body.ProjectID)
+	catalog := s.workV2Projects(r.Context())
+	p, ok := catalog[body.ProjectID]
 	if !ok {
 		writeRefusal(w, http.StatusUnprocessableEntity, "project_not_found", "Choose a Project from the current Project catalog.")
 		return
@@ -928,7 +960,7 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 	v, err := s.workV2().Create(r.Context(), app.NewWorkV2{ProjectID: p.ID, ProjectPath: p.Path, Kind: work.Kind(body.Kind),
 		Title: body.Title, Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Actor: actor},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 		})
 	if err != nil {
@@ -985,6 +1017,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	if !ok {
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var condition *work.Condition
 	if body.Condition != nil {
 		v := work.Condition(*body.Condition)
@@ -994,7 +1027,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
 		Title: body.Title, Description: body.Description, Condition: condition, UserAction: body.UserAction, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+		answer = workV2Answer(itemOf(v))
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 	})
 	if err != nil {
@@ -1043,9 +1076,10 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	if !ok {
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
 	file := func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-		answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+		answer = workV2Answer(itemOf(v))
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 	}
 	var out app.WorkV2View
@@ -1057,7 +1091,7 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	case "remind":
 		out, err = s.remindWorkV2(r.Context(), id, body.ExpectedVersion)
 		if err == nil {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), out))
+			answer = workV2Answer(itemOf(out))
 			err = s.store.CompleteReceipt(r.Context(), k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer})
 		}
 	case "unassign":
@@ -1318,7 +1352,7 @@ func (s *Server) fileWorkV2Answer(ctx context.Context, view app.WorkV2View, file
 		return nil
 	}
 	if len(a.Body) == 0 {
-		a = store.ReceiptAnswer{Status: http.StatusOK, Body: workV2Answer(s.workV2ItemOf(ctx, view))}
+		a = store.ReceiptAnswer{Status: http.StatusOK, Body: workV2Answer(s.workV2ItemProjector(ctx)(view))}
 	}
 	return s.store.CompleteReceipt(ctx, k, a)
 }
@@ -1481,13 +1515,17 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 			}
 			todos = append(todos, directTodoWire(td, images))
 		}
+		itemOf := func(v app.WorkV2View) workV2ItemWire { return s.workV2ItemOf(nil, v) }
+		if len(items)+len(recent) > 0 {
+			itemOf = s.workV2ItemProjector(r.Context())
+		}
 		assigned := make([]workV2ItemWire, 0, len(items))
 		for _, item := range items {
-			assigned = append(assigned, s.workV2ItemOf(r.Context(), item))
+			assigned = append(assigned, itemOf(item))
 		}
 		completed := make([]workV2ItemWire, 0, len(recent))
 		for _, item := range recent {
-			completed = append(completed, s.workV2ItemOf(r.Context(), item))
+			completed = append(completed, itemOf(item))
 		}
 		writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
 			"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
@@ -1748,11 +1786,12 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		if !ok {
 			return
 		}
+		itemOf := s.workV2ItemProjector(r.Context())
 		var answer []byte
 		_, err := s.workV2().ReopenIncomplete(r.Context(), parts[1], app.AgentReopenWorkV2{
 			ExpectedVersion: body.ExpectedVersion, SessionID: body.SessionID, Reason: body.Reason,
 		}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(itemOf(v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 		})
 		if err != nil {
@@ -1782,6 +1821,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		if !ok {
 			return
 		}
+		catalog := s.workV2Projects(r.Context())
 		item, err := s.workV2().Item(r.Context(), parts[1])
 		if err != nil {
 			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
@@ -1790,7 +1830,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		repo := item.Item.ProjectPath
 		if body.Landing != nil && strings.TrimSpace(body.Landing.Project) != "" {
-			other, ok := s.workV2Project(r.Context(), strings.TrimSpace(body.Landing.Project))
+			other, ok := catalog[strings.TrimSpace(body.Landing.Project)]
 			if !ok {
 				_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 				writeRefusal(w, http.StatusUnprocessableEntity, "landing_project_not_found",
@@ -1815,7 +1855,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason,
 			Actor: body.SessionID, Effects: effects},
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-				answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+				answer = workV2Answer(s.workV2ItemOf(catalog, v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 			})
 		if err != nil {
@@ -1847,9 +1887,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		if !ok {
 			return
 		}
+		itemOf := s.workV2ItemProjector(r.Context())
 		var answer []byte
 		file := func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(itemOf(v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 		}
 		var err error
@@ -1885,10 +1926,11 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		if !ok {
 			return
 		}
+		itemOf := s.workV2ItemProjector(r.Context())
 		var answer []byte
 		_, err := s.workV2().CompleteStep(r.Context(), parts[1], parts[3], body.SessionID, body.ExpectedVersion,
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-				answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+				answer = workV2Answer(itemOf(v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 			})
 		if err != nil {
@@ -1922,18 +1964,22 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 				s.writeWorkV2Error(w, err)
 				return
 			}
-			assigned := make([]workV2ItemWire, 0, len(items))
-			for _, item := range items {
-				assigned = append(assigned, s.workV2ItemOf(r.Context(), item))
-			}
 			recent, recentTruncated, err := s.workV2().RecentlyCompleted(r.Context(), sessionID)
 			if err != nil {
 				s.writeWorkV2Error(w, err)
 				return
 			}
+			itemOf := func(v app.WorkV2View) workV2ItemWire { return s.workV2ItemOf(nil, v) }
+			if len(items)+len(recent) > 0 {
+				itemOf = s.workV2ItemProjector(r.Context())
+			}
+			assigned := make([]workV2ItemWire, 0, len(items))
+			for _, item := range items {
+				assigned = append(assigned, itemOf(item))
+			}
 			completed := make([]workV2ItemWire, 0, len(recent))
 			for _, item := range recent {
-				completed = append(completed, s.workV2ItemOf(r.Context(), item))
+				completed = append(completed, itemOf(item))
 			}
 			answer := map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
 				"direct_todos": out, "truncated": truncated || itemTruncated || recentTruncated}
@@ -2120,7 +2166,8 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		refuse(err)
 		return
 	}
-	project, ok := s.workV2Project(r.Context(), body.ProjectID)
+	catalog := s.workV2Projects(r.Context())
+	project, ok := catalog[body.ProjectID]
 	if !ok {
 		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "project_not_found",
 			Message: "Choose a Project from the current Project catalog."})
@@ -2133,7 +2180,7 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		ProjectID: project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
 		Description: body.Description, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 		})
 	if err != nil {
@@ -2230,11 +2277,12 @@ func (s *Server) agentClaimItem(w http.ResponseWriter, r *http.Request, id strin
 			Message: "This Session is not working in that item's Project; nothing was claimed."})
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
 	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: body.ExpectedVersion,
 		SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant)},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(itemOf(v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 		})
 	if err != nil {
@@ -2334,7 +2382,7 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 	if fresh, err := s.workV2().Item(r.Context(), created.Item.ID); err == nil {
 		view = fresh
 	}
-	answer["item"] = s.workV2ItemOf(r.Context(), view)
+	answer["item"] = s.workV2ItemProjector(r.Context())(view)
 	b, _ := json.Marshal(answer)
 	if err := s.store.CompleteReceipt(context.WithoutCancel(r.Context()), k,
 		store.ReceiptAnswer{Status: http.StatusCreated, Body: b}); err != nil {
@@ -2374,11 +2422,12 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 		refuse(err)
 		return
 	}
+	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
 	_, err := s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
 		body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona,
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(s.workV2ItemOf(r.Context(), v))
+			answer = workV2Answer(itemOf(v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 		})
 	if err != nil {
