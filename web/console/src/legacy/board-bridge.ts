@@ -1,7 +1,7 @@
 // The remaining compatibility seams for the retired Project Board.
 //
 // The page itself is gone. Two consumers remain deliberately separate from
-// it: Settings still reads and writes the board-level enabled/consent settings,
+// it: Settings still reads and writes the board-level enabled setting,
 // and the byte-for-byte Projects view still calls `openBoard` for catalog rows
 // that carry an old board Project id. The latter is redirected to the Projects
 // page's own repository detail; it never opens or reads an old card.
@@ -32,7 +32,7 @@ function board(): Promise<Record<string, unknown>> {
   return jsonFetch("/v1/board")
 }
 
-/** The two board-level settings commands retained by Settings. */
+/** The board-level settings command retained by Settings. */
 export function boardCommand(body: unknown): Promise<Record<string, unknown>> {
   return jsonFetch("/v1/board", post(body))
 }

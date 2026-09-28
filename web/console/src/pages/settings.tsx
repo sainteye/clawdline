@@ -41,7 +41,7 @@ import {
  * - **Assistant icons** and **Transcript** are this browser's own, as there.
  * - **Project Board**: `BoardBlock` (settings/BoardBlock.tsx) is
  *   `BoardControls`: drawn from the last board answer that says whether the
- *   board is on, and its two toggles send `set_enabled` and `set_ai_consent`.
+ *   board is on, and its toggle sends `set_enabled`.
  * - **Capacity**: `CapacityBlock` (settings/CapacityBlock.tsx), this app's own
  *   block and not the original's: the register's rows and the dead letters from
  *   `/v1/capacity`. Every capacity push names it, so it reads through Clawdline
