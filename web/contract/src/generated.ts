@@ -1426,6 +1426,12 @@ export interface BrokerResult {
   finished_at?: string
 
   /**
+   * The closed verification-gate result. It is absent for every ordinary task kind
+   * and required by collection for a verification_gate task.
+   */
+  gate_verdict?: WorkGateResult
+
+  /**
    * What this delivery says it did not do. Absent when the child named none, which
    * is an ordinary complete delivery: nothing ever required the field.
    */
@@ -6110,6 +6116,12 @@ export interface SettingsRequest {
   output_size: number | null
 
   /**
+   * Whether future execution cycles capture the planning gate. Null leaves the
+   * stored setting unchanged; absence in the settings file defaults to true.
+   */
+  planning_gate: boolean | null
+
+  /**
    * Notify when a session reports a delivery.
    */
   push_on_delivery: boolean | null
@@ -6163,6 +6175,12 @@ export interface SettingsRequest {
    * `auto`, `iterm` or `tmux`.
    */
   terminal: string | null
+
+  /**
+   * Whether future execution cycles capture independent verification. Null leaves
+   * the stored setting unchanged; absence in the settings file defaults to false.
+   */
+  verify_gate: boolean | null
 
   /**
    * `auto`, `apple` or `whisper`.
@@ -6330,6 +6348,13 @@ export interface SettingsSnapshot {
   path: string
 
   /**
+   * Whether a newly assigned execution cycle captures the planning gate. Absent
+   * means true; a later setting change never rewrites an in-flight cycle's
+   * snapshot.
+   */
+  planning_gate: boolean | null
+
+  /**
    * Notify when a session reports a delivery.
    */
   push_on_delivery: boolean | null
@@ -6385,6 +6410,13 @@ export interface SettingsSnapshot {
    * scope_app.
    */
   terminal: string | null
+
+  /**
+   * Whether a newly assigned execution cycle captures independent verification.
+   * Absent means false; a later setting change never rewrites an in-flight cycle's
+   * snapshot.
+   */
+  verify_gate: boolean | null
 
   /**
    * `auto`, `apple` or `whisper`.
@@ -8027,6 +8059,353 @@ export interface WorkDisposition {
   taskId?: string
   title: string
 }
+
+/**
+ * The exact acceptance text and identity captured by an item or verification round.
+ * The digest is lowercase SHA-256 hex of the exact stored criteria bytes.
+ */
+export interface WorkGateAcceptance {
+  /**
+   * Bounded at admission by the existing work.item_description_bytes policy.
+   */
+  criteria: string
+  digest: string
+  version: number
+}
+
+/**
+ * One of at most two broker task records for a round. Attempt zero may be a broker
+ * respawn only after spawn_failed; other technical retries use deterministic
+ * attempt one.
+ */
+export interface WorkGateAttempt {
+  attempt: number
+  created_at: number
+  failure_code?: string
+  finished_at?: number
+  id: string
+
+  /**
+   * Unix seconds; absent when no retry is due.
+   */
+  next_retry_at?: number
+  respawn_of?: string
+  round_id: string
+  state: WorkGateAttemptState
+  task_id?: string
+  updated_at: number
+}
+
+/**
+ * The lifecycle of one bounded broker attempt inside a round.
+ */
+export type WorkGateAttemptState =
+    "queued"
+  | "dispatching"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "timed_out"
+  | "stale"
+
+export const WorkGateAttemptStateValues: readonly WorkGateAttemptState[] = ["queued", "dispatching", "running", "succeeded", "failed", "timed_out", "stale"] as const
+
+/**
+ * The maker's immutable receipt for the exact same-Project commit an independent
+ * checker sees. Untracked files are counted but are not part of the candidate.
+ */
+export interface WorkGateCandidateReceipt {
+  assignment_id: string
+  branch: string
+  commit: string
+
+  /**
+   * Unix seconds.
+   */
+  created_at: number
+  criteria_digest: string
+  criteria_version: number
+  cycle: number
+
+  /**
+   * The active maker's conversation id.
+   */
+  owner_session_id: string
+  repository: string
+  tree: string
+  untracked_files: number
+  worktree: string
+}
+
+/**
+ * One bounded checker claim, quoting the acceptance criterion it evaluated. Passed
+ * and failed claims carry evidence; an unverified claim carries a reason.
+ */
+export interface WorkGateClaim {
+  criterion: string
+  evidence: string[]
+  evidence_artifacts: string[]
+  reason: string
+  state: WorkGateClaimState
+}
+
+/**
+ * The checker's result for one acceptance claim.
+ */
+export type WorkGateClaimState =
+    "passed"
+  | "failed"
+  | "unverified"
+
+export const WorkGateClaimStateValues: readonly WorkGateClaimState[] = ["passed", "failed", "unverified"] as const
+
+/**
+ * The bounded gate projection carried by Board list items: aggregates and latest
+ * state, never evidence history.
+ */
+export interface WorkGateCompactRead {
+  escalation?: WorkGateEscalation
+  gate_snapshot_cycle: number
+  latest_round?: WorkGateRoundSummary
+  metrics: WorkGateMetrics
+  planning_gate: boolean
+  verify_gate: boolean
+}
+
+/**
+ * The immutable gate settings captured by the first successful assignment of an
+ * execution cycle.
+ */
+export interface WorkGateCycleSnapshot {
+  /**
+   * Unix seconds.
+   */
+  captured_at: number
+  cycle: number
+
+  /**
+   * The full same-Project Git commit captured for a verify-on cycle.
+   */
+  cycle_base_commit?: string
+  planning_gate: boolean
+  verify_gate: boolean
+}
+
+/**
+ * A closed set of escalation decisions. Only override authorizes the frozen
+ * candidate without a checker PASS.
+ */
+export type WorkGateDecisionAction =
+    "direction"
+  | "revise_acceptance"
+  | "reassign"
+  | "retry"
+  | "override"
+  | "cancel"
+
+export const WorkGateDecisionActionValues: readonly WorkGateDecisionAction[] = ["direction", "revise_acceptance", "reassign", "retry", "override", "cancel"] as const
+
+/**
+ * A versioned parent-owner decision for a gate escalation. Person routes
+ * authenticate the person separately and omit session_id; an agent route requires
+ * the caller's conversation id.
+ */
+export interface WorkGateDecisionRequest {
+  acceptance_criteria?: string
+  action: WorkGateDecisionAction
+  candidate?: WorkGateCandidateReceipt
+  direction?: string
+  expected_version: number
+  reason: string
+
+  /**
+   * The deciding parent owner's conversation id on an agent route.
+   */
+  session_id?: string
+
+  /**
+   * The replacement owner's conversation id for a reasoned reassignment.
+   */
+  target_session_id?: string
+}
+
+/**
+ * The single-item gate projection. recent_rounds is newest-first and bounded;
+ * aggregates/latest remain authoritative when older eligible detail was purged.
+ */
+export interface WorkGateDetailRead {
+  acceptance: WorkGateAcceptance
+  candidate?: WorkGateCandidateReceipt
+  compact: WorkGateCompactRead
+  cycle_snapshot?: WorkGateCycleSnapshot
+  recent_rounds: WorkGateRound[]
+  recent_rounds_truncated: boolean
+}
+
+/**
+ * A durable third-FAIL or technical-verification decision request. Delivery state
+ * is evidence only and never grants authority.
+ */
+export interface WorkGateEscalation {
+  candidate?: WorkGateCandidateReceipt
+  consecutive_failures: number
+  created_at: number
+  id: string
+  item_id: string
+  kind: WorkGateEscalationKind
+  promoted_at?: number
+  reason: string
+  resolution?: WorkGateDecisionAction
+  resolved_at?: number
+  round_id?: string
+  state: WorkGateEscalationState
+  updated_at: number
+  waiting_since?: number
+}
+
+/**
+ * Why gate authority has moved away from the maker.
+ */
+export type WorkGateEscalationKind =
+    "third_fail"
+  | "technical_verification"
+
+export const WorkGateEscalationKindValues: readonly WorkGateEscalationKind[] = ["third_fail", "technical_verification"] as const
+
+/**
+ * Who currently owns the durable decision, or that it was resolved.
+ */
+export type WorkGateEscalationState =
+    "waiting_parent_owner"
+  | "waiting_user"
+  | "resolved"
+
+export const WorkGateEscalationStateValues: readonly WorkGateEscalationState[] = ["waiting_parent_owner", "waiting_user", "resolved"] as const
+
+/**
+ * The immutable answer to an accepted gate-evidence upload. An exact idempotent
+ * replay returns the original receipt.
+ */
+export interface WorkGateEvidenceReceipt {
+  accepted_at: number
+  artifact_id: string
+  byte_count: number
+  media_type: string
+  replayed: boolean
+  sha256: string
+  task_id: string
+}
+
+/**
+ * Metadata authenticated alongside one streamed checker artifact. The declared
+ * digest and size are checked before the daemon persists bytes.
+ */
+export interface WorkGateEvidenceSubmission {
+  artifact_id: string
+  byte_count: number
+  media_type: string
+  sha256: string
+}
+
+/**
+ * Fixed-size all-time counters retained after eligible round detail is exported and
+ * purged.
+ */
+export interface WorkGateMetrics {
+  fails: number
+  findings: number
+  overrides: number
+  rounds: number
+}
+
+/**
+ * The exact typed result submitted by a verification_gate task. Candidate and
+ * criteria identity must match the admitted task and durable round.
+ */
+export interface WorkGateResult {
+  candidate_commit: string
+  candidate_tree: string
+  claims: WorkGateClaim[]
+  criteria_digest: string
+  criteria_version: number
+  round_id: string
+  summary: string
+  task_id: string
+  verdict: WorkGateVerdict
+}
+
+/**
+ * The immutable 202 receipt for exact gate-result bytes. A replay is true only for
+ * the original idempotency key and digest.
+ */
+export interface WorkGateResultReceipt {
+  accepted_at: number
+  byte_count: number
+  replayed: boolean
+  sha256: string
+  task_id: string
+  verdict: WorkGateVerdict
+}
+
+/**
+ * One durable verification round with its frozen acceptance and candidate. Detail
+ * reads retain at most the registered recent history; aggregate counters survive
+ * eligible detail purge.
+ */
+export interface WorkGateRound {
+  acceptance: WorkGateAcceptance
+  attempts: WorkGateAttempt[]
+  candidate: WorkGateCandidateReceipt
+  checker_persona: string
+  created_at: number
+  cycle: number
+  finished_at?: number
+  id: string
+  item_id: string
+  result?: WorkGateResult
+  stale_reason?: string
+  state: WorkGateRoundState
+  updated_at: number
+}
+
+/**
+ * The durable lifecycle of one verification round. A complete round's result
+ * carries the verdict; stale and technical_failure never authorize merging.
+ */
+export type WorkGateRoundState =
+    "queued"
+  | "dispatching"
+  | "running"
+  | "complete"
+  | "stale"
+  | "technical_failure"
+
+export const WorkGateRoundStateValues: readonly WorkGateRoundState[] = ["queued", "dispatching", "running", "complete", "stale", "technical_failure"] as const
+
+/**
+ * The bounded gate facts safe for a list response; it deliberately omits claims and
+ * evidence.
+ */
+export interface WorkGateRoundSummary {
+  candidate_commit: string
+  created_at: number
+  criteria_digest: string
+  finished_at?: number
+  id: string
+  state: WorkGateRoundState
+  verdict?: WorkGateVerdict
+}
+
+/**
+ * The only verdicts an independent checker may submit. NEEDS_WORK means at least
+ * one acceptance claim could not be verified and never authorizes merging.
+ */
+export type WorkGateVerdict =
+    "PASS"
+  | "FAIL"
+  | "NEEDS_WORK"
+
+export const WorkGateVerdictValues: readonly WorkGateVerdict[] = ["PASS", "FAIL", "NEEDS_WORK"] as const
 
 /**
  * Something this session declared it is owed, beside whatever its work state is.

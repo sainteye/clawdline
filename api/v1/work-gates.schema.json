@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-gates.schema.json",
+  "title": "Planning and independent verification gates for Work v2",
+  "description": "Shared wire contracts for the planning/verification gate. These types describe durable facts and bounded submissions; state transitions, persistence and coordination are implemented separately.",
+  "$defs": {
+    "WorkGateVerdict": {
+      "description": "The only verdicts an independent checker may submit. NEEDS_WORK means at least one acceptance claim could not be verified and never authorizes merging.",
+      "type": "string",
+      "enum": ["PASS", "FAIL", "NEEDS_WORK"]
+    },
+    "WorkGateClaimState": {
+      "description": "The checker's result for one acceptance claim.",
+      "type": "string",
+      "enum": ["passed", "failed", "unverified"]
+    },
+    "WorkGateRoundState": {
+      "description": "The durable lifecycle of one verification round. A complete round's result carries the verdict; stale and technical_failure never authorize merging.",
+      "type": "string",
+      "enum": ["queued", "dispatching", "running", "complete", "stale", "technical_failure"]
+    },
+    "WorkGateAttemptState": {
+      "description": "The lifecycle of one bounded broker attempt inside a round.",
+      "type": "string",
+      "enum": ["queued", "dispatching", "running", "succeeded", "failed", "timed_out", "stale"]
+    },
+    "WorkGateEscalationKind": {
+      "description": "Why gate authority has moved away from the maker.",
+      "type": "string",
+      "enum": ["third_fail", "technical_verification"]
+    },
+    "WorkGateEscalationState": {
+      "description": "Who currently owns the durable decision, or that it was resolved.",
+      "type": "string",
+      "enum": ["waiting_parent_owner", "waiting_user", "resolved"]
+    },
+    "WorkGateDecisionAction": {
+      "description": "A closed set of escalation decisions. Only override authorizes the frozen candidate without a checker PASS.",
+      "type": "string",
+      "enum": ["direction", "revise_acceptance", "reassign", "retry", "override", "cancel"]
+    },
+    "WorkGateAcceptance": {
+      "description": "The exact acceptance text and identity captured by an item or verification round. The digest is lowercase SHA-256 hex of the exact stored criteria bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criteria", "digest", "version"],
+      "properties": {
+        "criteria": { "description": "Bounded at admission by the existing work.item_description_bytes policy.", "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "WorkGateCycleSnapshot": {
+      "description": "The immutable gate settings captured by the first successful assignment of an execution cycle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["captured_at", "cycle", "planning_gate", "verify_gate"],
+      "properties": {
+        "cycle": { "type": "integer", "minimum": 1 },
+        "planning_gate": { "type": "boolean" },
+        "verify_gate": { "type": "boolean" },
+        "cycle_base_commit": { "description": "The full same-Project Git commit captured for a verify-on cycle.", "type": "string" },
+        "captured_at": { "description": "Unix seconds.", "type": "integer" }
+      }
+    },
+    "WorkGateCandidateReceipt": {
+      "description": "The maker's immutable receipt for the exact same-Project commit an independent checker sees. Untracked files are counted but are not part of the candidate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assignment_id", "branch", "commit", "created_at", "criteria_digest", "criteria_version", "cycle", "owner_session_id", "repository", "tree", "untracked_files", "worktree"],
+      "properties": {
+        "repository": { "type": "string" },
+        "worktree": { "type": "string" },
+        "branch": { "type": "string" },
+        "commit": { "type": "string" },
+        "tree": { "type": "string" },
+        "assignment_id": { "type": "string" },
+        "owner_session_id": { "description": "The active maker's conversation id.", "type": "string" },
+        "cycle": { "type": "integer", "minimum": 1 },
+        "criteria_version": { "type": "integer", "minimum": 1 },
+        "criteria_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "untracked_files": { "type": "integer", "minimum": 0 },
+        "created_at": { "description": "Unix seconds.", "type": "integer" }
+      }
+    },
+    "WorkGateClaim": {
+      "description": "One bounded checker claim, quoting the acceptance criterion it evaluated. Passed and failed claims carry evidence; an unverified claim carries a reason.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "evidence", "evidence_artifacts", "reason", "state"],
+      "properties": {
+        "criterion": { "type": "string" },
+        "state": { "$ref": "#/$defs/WorkGateClaimState" },
+        "evidence": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 500 } },
+        "evidence_artifacts": { "type": "array", "maxItems": 8, "items": { "type": "string" } },
+        "reason": { "type": "string" }
+      }
+    },
+    "WorkGateResult": {
+      "description": "The exact typed result submitted by a verification_gate task. Candidate and criteria identity must match the admitted task and durable round.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_commit", "candidate_tree", "claims", "criteria_digest", "criteria_version", "round_id", "summary", "task_id", "verdict"],
+      "properties": {
+        "round_id": { "type": "string" },
+        "task_id": { "type": "string" },
+        "candidate_commit": { "type": "string" },
+        "candidate_tree": { "type": "string" },
+        "criteria_version": { "type": "integer", "minimum": 1 },
+        "criteria_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "verdict": { "$ref": "#/$defs/WorkGateVerdict" },
+        "claims": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/WorkGateClaim" } },
+        "summary": { "type": "string" }
+      }
+    },
+    "WorkGateAttempt": {
+      "description": "One of at most two broker task records for a round. Attempt zero may be a broker respawn only after spawn_failed; other technical retries use deterministic attempt one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "created_at", "id", "round_id", "state", "updated_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "round_id": { "type": "string" },
+        "attempt": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "task_id": { "type": "string" },
+        "respawn_of": { "type": "string" },
+        "state": { "$ref": "#/$defs/WorkGateAttemptState" },
+        "failure_code": { "type": "string" },
+        "next_retry_at": { "description": "Unix seconds; absent when no retry is due.", "type": "integer" },
+        "created_at": { "type": "integer" },
+        "updated_at": { "type": "integer" },
+        "finished_at": { "type": "integer" }
+      }
+    },
+    "WorkGateRound": {
+      "description": "One durable verification round with its frozen acceptance and candidate. Detail reads retain at most the registered recent history; aggregate counters survive eligible detail purge.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acceptance", "attempts", "candidate", "checker_persona", "created_at", "cycle", "id", "item_id", "state", "updated_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "item_id": { "type": "string" },
+        "cycle": { "type": "integer", "minimum": 1 },
+        "state": { "$ref": "#/$defs/WorkGateRoundState" },
+        "checker_persona": { "type": "string" },
+        "acceptance": { "$ref": "#/$defs/WorkGateAcceptance" },
+        "candidate": { "$ref": "#/$defs/WorkGateCandidateReceipt" },
+        "attempts": { "type": "array", "maxItems": 2, "items": { "$ref": "#/$defs/WorkGateAttempt" } },
+        "result": { "$ref": "#/$defs/WorkGateResult" },
+        "stale_reason": { "type": "string" },
+        "created_at": { "type": "integer" },
+        "updated_at": { "type": "integer" },
+        "finished_at": { "type": "integer" }
+      }
+    },
+    "WorkGateRoundSummary": {
+      "description": "The bounded gate facts safe for a list response; it deliberately omits claims and evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_commit", "created_at", "criteria_digest", "id", "state"],
+      "properties": {
+        "id": { "type": "string" },
+        "state": { "$ref": "#/$defs/WorkGateRoundState" },
+        "verdict": { "$ref": "#/$defs/WorkGateVerdict" },
+        "candidate_commit": { "type": "string" },
+        "criteria_digest": { "type": "string" },
+        "created_at": { "type": "integer" },
+        "finished_at": { "type": "integer" }
+      }
+    },
+    "WorkGateEscalation": {
+      "description": "A durable third-FAIL or technical-verification decision request. Delivery state is evidence only and never grants authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consecutive_failures", "created_at", "id", "item_id", "kind", "reason", "state", "updated_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "item_id": { "type": "string" },
+        "round_id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/WorkGateEscalationKind" },
+        "state": { "$ref": "#/$defs/WorkGateEscalationState" },
+        "consecutive_failures": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string" },
+        "waiting_since": { "type": "integer" },
+        "promoted_at": { "type": "integer" },
+        "resolved_at": { "type": "integer" },
+        "resolution": { "$ref": "#/$defs/WorkGateDecisionAction" },
+        "candidate": { "$ref": "#/$defs/WorkGateCandidateReceipt" },
+        "created_at": { "type": "integer" },
+        "updated_at": { "type": "integer" }
+      }
+    },
+    "WorkGateDecisionRequest": {
+      "description": "A versioned parent-owner decision for a gate escalation. Person routes authenticate the person separately and omit session_id; an agent route requires the caller's conversation id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "expected_version", "reason"],
+      "properties": {
+        "expected_version": { "type": "integer", "minimum": 1 },
+        "session_id": { "description": "The deciding parent owner's conversation id on an agent route.", "type": "string" },
+        "action": { "$ref": "#/$defs/WorkGateDecisionAction" },
+        "reason": { "type": "string" },
+        "direction": { "type": "string" },
+        "acceptance_criteria": { "type": "string" },
+        "target_session_id": { "description": "The replacement owner's conversation id for a reasoned reassignment.", "type": "string" },
+        "candidate": { "$ref": "#/$defs/WorkGateCandidateReceipt" }
+      }
+    },
+    "WorkGateMetrics": {
+      "description": "Fixed-size all-time counters retained after eligible round detail is exported and purged.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fails", "findings", "overrides", "rounds"],
+      "properties": {
+        "rounds": { "type": "integer", "minimum": 0 },
+        "fails": { "type": "integer", "minimum": 0 },
+        "findings": { "type": "integer", "minimum": 0 },
+        "overrides": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "WorkGateCompactRead": {
+      "description": "The bounded gate projection carried by Board list items: aggregates and latest state, never evidence history.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate_snapshot_cycle", "metrics", "planning_gate", "verify_gate"],
+      "properties": {
+        "gate_snapshot_cycle": { "type": "integer", "minimum": 0 },
+        "planning_gate": { "type": "boolean" },
+        "verify_gate": { "type": "boolean" },
+        "latest_round": { "$ref": "#/$defs/WorkGateRoundSummary" },
+        "escalation": { "$ref": "#/$defs/WorkGateEscalation" },
+        "metrics": { "$ref": "#/$defs/WorkGateMetrics" }
+      }
+    },
+    "WorkGateDetailRead": {
+      "description": "The single-item gate projection. recent_rounds is newest-first and bounded; aggregates/latest remain authoritative when older eligible detail was purged.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acceptance", "compact", "recent_rounds", "recent_rounds_truncated"],
+      "properties": {
+        "acceptance": { "$ref": "#/$defs/WorkGateAcceptance" },
+        "cycle_snapshot": { "$ref": "#/$defs/WorkGateCycleSnapshot" },
+        "candidate": { "$ref": "#/$defs/WorkGateCandidateReceipt" },
+        "compact": { "$ref": "#/$defs/WorkGateCompactRead" },
+        "recent_rounds": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/WorkGateRound" } },
+        "recent_rounds_truncated": { "type": "boolean" }
+      }
+    },
+    "WorkGateEvidenceSubmission": {
+      "description": "Metadata authenticated alongside one streamed checker artifact. The declared digest and size are checked before the daemon persists bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "byte_count", "media_type", "sha256"],
+      "properties": {
+        "artifact_id": { "type": "string" },
+        "media_type": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "byte_count": { "type": "integer", "minimum": 0, "maximum": 2097152 }
+      }
+    },
+    "WorkGateEvidenceReceipt": {
+      "description": "The immutable answer to an accepted gate-evidence upload. An exact idempotent replay returns the original receipt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted_at", "artifact_id", "byte_count", "media_type", "replayed", "sha256", "task_id"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "artifact_id": { "type": "string" },
+        "media_type": { "type": "string" },
+        "sha256": { "type": "string" },
+        "byte_count": { "type": "integer" },
+        "accepted_at": { "type": "integer" },
+        "replayed": { "type": "boolean" }
+      }
+    },
+    "WorkGateResultReceipt": {
+      "description": "The immutable 202 receipt for exact gate-result bytes. A replay is true only for the original idempotency key and digest.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted_at", "byte_count", "replayed", "sha256", "task_id", "verdict"],
+      "properties": {
+        "task_id": { "type": "string" },
+        "sha256": { "type": "string" },
+        "byte_count": { "type": "integer" },
+        "verdict": { "$ref": "#/$defs/WorkGateVerdict" },
+        "accepted_at": { "type": "integer" },
+        "replayed": { "type": "boolean" }
+      }
+    }
+  }
+}

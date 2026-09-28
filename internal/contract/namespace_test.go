@@ -69,7 +69,10 @@ var sessionFields = map[string]string{
 	"usage#UsageItemOwner.session": conversation,
 	// A note's author when a session writes it: the calling conversation
 	// (`clawdline verify note` reads it from conversationEnv).
-	"verifications#VerificationNoteCreate.session": conversation,
+	"verifications#VerificationNoteCreate.session":         conversation,
+	"work-gates#WorkGateCandidateReceipt.owner_session_id": conversation,
+	"work-gates#WorkGateDecisionRequest.session_id":        conversation,
+	"work-gates#WorkGateDecisionRequest.target_session_id": conversation,
 	// W6: a handoff's sender, resolved like a dispatch's root.
 	"handover#BrokerHandoff.from_session":        conversation,
 	"handover#BrokerHandoffRequest.from_session": conversation,

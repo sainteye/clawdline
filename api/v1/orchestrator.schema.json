@@ -184,6 +184,7 @@
         "artifacts": { "type": "array", "items": { "type": "string" } },
         "finished_at": { "type": "string" },
         "verification": { "$ref": "#/$defs/BrokerVerification" },
+        "gate_verdict": { "description": "The closed verification-gate result. It is absent for every ordinary task kind and required by collection for a verification_gate task.", "$ref": "work-gates.schema.json#/$defs/WorkGateResult" },
         "leftovers": { "description": "What this delivery says it did not do. Absent when the child named none, which is an ordinary complete delivery: nothing ever required the field.", "type": "array", "items": { "$ref": "#/$defs/BrokerLeftover" } }
       }
     },
