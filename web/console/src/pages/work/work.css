@@ -454,11 +454,17 @@
     border-color: color-mix(in srgb, var(--accent) 48%, transparent); background: var(--accent-in); color: var(--accent);
 }
 .work-completion-reports { display: grid; gap: 8px; }
+.work-document-group-heading {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; margin: 4px 1px 0;
+    color: var(--dim); font: 700 11px/1.4 var(--mono); letter-spacing: .03em;
+}
+.work-document-group-heading span { min-width: 0; overflow-wrap: anywhere; }
+.work-document-group-heading small { flex: none; color: var(--faint); font: 10px/1 var(--mono); }
 .work-completion-report { border: 1px solid color-mix(in srgb, var(--ok) 38%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--ok) 7%, var(--card)); }
 .work-completion-report > summary { display: flex; align-items: center; gap: 7px; padding: 10px 12px; color: var(--ok); list-style: none; cursor: pointer; }
 .work-completion-report > summary::-webkit-details-marker { display: none; }
 .work-completion-report-title { display: grid; gap: 3px; min-width: 0; }
-.work-completion-report-title strong { color: var(--ink); font-size: 12px; }
+.work-completion-report-title strong { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
 .work-completion-report-title time { color: var(--faint); font: 10px/1.2 var(--mono); }
 .work-completion-report > summary small { margin-left: auto; color: var(--faint); font: 10px/1 var(--mono); }
 .work-completion-report-authority, .work-completion-report-reference { margin: 0; padding: 0 12px 10px; color: var(--faint); font: 10px/1.55 var(--mono); overflow-wrap: anywhere; }

@@ -15,7 +15,7 @@ import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkSteps } from "./WorkSteps.js"
-import { WorkCompletionReports, WorkEpicPlanDocuments } from "./WorkCompletionReport.js"
+import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
 import { EPIC_GATE_HINT, epicGate, epicGateShown, isEpic } from "./epic-gate.js"
 import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, shortWorkID } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
@@ -644,8 +644,10 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
     <WorkEpicPlanDocuments item={item} />
+    <WorkItemDocuments item={item} placement="before_steps" />
     <WorkSteps steps={item.steps} />
     <WorkMilestones phase={item.phase} />
+    <WorkItemDocuments item={item} placement="after_steps" />
     <WorkCompletionReports item={item} expanded={reportsExpanded} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
       {item.images.map((image) => <WorkReferenceImage key={image.id} item={item} image={image} busy={busy} run={run} />)}
