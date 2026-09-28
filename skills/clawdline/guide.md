@@ -314,6 +314,19 @@ included — so the task the child reads is the one that was validated, and it d
 | `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
 | `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
 
+**Match the worker surface and launch mode to every tool the child must use before dispatching it.**
+The brief names the required tools and the root proves that the chosen surface supplies them. A
+Codex CLI child does not gain the ChatGPT desktop app's built-in `@Browser` merely from a permission
+flag. For a UI, accessibility or responsive-layout review, route the work to a surface that really
+has Browser/Computer Use, or name an acceptance-equivalent local browser harness such as
+Playwright/Chrome CDP and prove it is installed. When that surface may request app, origin or GUI
+access, dispatch with `--permission-mode ask`: Codex `full` means a non-interactive shell launch
+(`--ask-for-approval never`), not every tool, and Auto-review cannot review a request that is never
+created. At task start the child exercises each required tool, not just checks a command name. If
+one is unavailable, it reports the exact gap immediately and the root restores access or
+redispatches. It does not finish a tool-dependent acceptance check as unverified because the root
+chose an incompatible worker.
+
 **`root.session_id` is your conversation id, never a terminal id.** Claude Code exports it as
 `CLAUDE_CODE_SESSION_ID`; Codex as `CODEX_THREAD_ID`. It is how the daemon groups the child under
 you and tells you when it finishes. To check it names this tab:
@@ -1099,7 +1112,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   by default for layout, interaction and end-to-end product flow:
 
   ```
-  clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect …
+  clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect --permission-mode ask …
   ```
 
   Its brief names the integrated candidate and asks for desktop and smallest-supported-mobile

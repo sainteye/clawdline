@@ -677,7 +677,8 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		}
 	}
 	r.AutoCompactWindow = b.autoCompactFor(r.Assistant, r.AutoCompactRequested)
-	line := "cd " + projects.ShellQuoted(cwd) + " && " + shellCommand(launch, r, b.Tasks.Dir, cwd)
+	line := "cd " + projects.ShellQuoted(cwd) + " && " +
+		shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable())
 
 	// The same decision the dispatch was admitted on (capability.go), read
 	// again: the facts may have moved since.
@@ -707,7 +708,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// equivalent of the iTerm tab above: its own place, named after the
 		// task, easy to find and easy to close.
 		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID),
-			shellCommand(launch, r, b.Tasks.Dir, cwd))
+			shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable()))
 		backend = "tmux"
 	default:
 		openErr = terminal.Failure{Message: plan.failure(runtime.GOOS)}
@@ -784,11 +785,15 @@ func ChildSessionName(taskID string) string {
 
 // shellCommand is the one line the child's shell runs.
 func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
+	return shellCommandWithExecutable(l, r, taskRoot, cwd, "")
+}
+
+func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string) string {
 	args := append([]string{}, l.Arguments...)
 	if r.Gate == nil {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
 	}
-	args = append(args, permissionArgs(r)...)
+	args = append(args, permissionArgs(r, cwd, taskExecutable)...)
 	args = append(args, trustArgs(r.Assistant, cwd)...)
 	args = append(args, projects.UpdateCheckArgs(r.Assistant)...)
 	// The window was decided for this record at spawn; a Codex record never
@@ -817,10 +822,10 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 
 // permissionArgs is the ceiling the dispatcher asked for, spelled the way each
 // CLI spells it.
-func permissionArgs(r Record) []string {
+func permissionArgs(r Record, cwd, taskExecutable string) []string {
 	if r.Gate != nil {
 		if r.Assistant == "codex" {
-			return gatePermissionArgs(r)
+			return gatePermissionArgs(r, cwd, taskExecutable)
 		}
 		return nil
 	}
@@ -846,12 +851,35 @@ func permissionArgs(r Record) []string {
 // gatePermissionArgs gives the checker a closed capability set. Codex's
 // legacy read-only sandbox cannot be extended with --add-dir: writable roots
 // only extend workspace-write. A custom permission profile instead starts at
-// root read access and names only the three broker-owned scratch directories
-// as writable. --strict-config makes an unsupported or malformed profile stop
-// the launch instead of silently falling back to broader ambient settings.
-func gatePermissionArgs(r Record) []string {
+// Codex's minimal runtime, then grants the immutable checkout, this one task,
+// its repository metadata and the exact receipt executable read access. The
+// three broker-owned scratch directories are the only writable paths.
+// --strict-config makes an unsupported or malformed profile stop the launch
+// instead of silently falling back to broader ambient settings.
+func gatePermissionArgs(r Record, cwd, taskExecutable string) []string {
 	root := filepath.Join(r.Dir, "work")
-	entries := []string{strconv.Quote(":root") + "=" + strconv.Quote("read")}
+	if taskExecutable == "" {
+		if self, err := os.Executable(); err == nil {
+			taskExecutable = self
+			if resolved, err := filepath.EvalSymlinks(self); err == nil {
+				taskExecutable = resolved
+			}
+		}
+	}
+	repositoryMetadata := ""
+	if r.Repository != "" {
+		repositoryMetadata = filepath.Join(r.Repository, ".git")
+	}
+	readRoots := []string{":minimal", cwd, r.Dir, repositoryMetadata, taskExecutable}
+	entries := make([]string, 0, len(readRoots)+3)
+	seen := map[string]bool{}
+	for _, path := range readRoots {
+		if path == "" || (path != ":minimal" && !filepath.IsAbs(path)) || seen[path] {
+			continue
+		}
+		seen[path] = true
+		entries = append(entries, strconv.Quote(path)+"="+strconv.Quote("read"))
+	}
 	for _, name := range []string{"build", "cache", "tmp"} {
 		path := filepath.Join(root, name)
 		entries = append(entries, strconv.Quote(path)+"="+strconv.Quote("write"))

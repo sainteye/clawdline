@@ -487,52 +487,50 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkRequestBodyBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
-		// Contract-first gate rows. This slice intentionally has no gate
-		// store, broker origin or coordinator yet, so every producer is a
-		// known zero rather than an unknown reading or a claimed runtime.
-		// The implementation slices replace these notes with their live
-		// store/counter readings as each producer is introduced.
 		capacity.WorkGateRoundDetailsPerItem: func() capacity.Reading {
-			return workGateContractReading("no gate round store is wired")
+			n, err := s.store.WorkGateRoundDetailsPerItemCount(context.Background())
+			return countedCapacityReading(n, err, "fullest item in the retained gate round store")
 		},
 		capacity.WorkGateRoundDetailsPerStore: func() capacity.Reading {
-			return workGateContractReading("no gate round store is wired")
+			n, err := s.store.WorkGateRoundDetailsPerStoreCount(context.Background())
+			return countedCapacityReading(n, err, "retained gate rounds")
 		},
 		capacity.WorkGateTasksPerRound: func() capacity.Reading {
-			return workGateContractReading("no gate-task broker origin is wired")
+			n, err := s.store.WorkGateTasksPerRoundCount(context.Background())
+			return countedCapacityReading(n, err, "fullest persisted gate task lineage")
 		},
 		capacity.WorkGateClaimsPerRound: func() capacity.Reading {
-			return workGateContractReading("per-result guard; no gate result route is wired")
+			return capacity.Reading{Known: true, Note: "per-result admission guard; accepted claims persist with the round; no retained buffer exists for admission"}
 		},
 		capacity.WorkGateEvidenceStringsPerClaim: func() capacity.Reading {
-			return workGateContractReading("per-result guard; no gate result route is wired")
+			return capacity.Reading{Known: true, Note: "per-claim result admission guard; accepted evidence persists with the round; no retained buffer exists for admission"}
 		},
 		capacity.WorkGateEvidenceStringBytes: func() capacity.Reading {
-			return workGateContractReading("per-result guard; no gate result route is wired")
+			return capacity.Reading{Known: true, Note: "per-evidence-string admission guard; accepted evidence persists with the round; no retained buffer exists for admission"}
 		},
 		capacity.WorkGateResultBytes: func() capacity.Reading {
-			return workGateContractReading("per-request guard; no gate result route is wired")
+			return capacity.Reading{Known: true, Note: "per-request byte guard; the accepted result persists with the round; no retained buffer exists for the request"}
 		},
 		capacity.WorkGateEvidenceArtifactsPerTask: func() capacity.Reading {
-			return workGateContractReading("per-task guard; no gate evidence route is wired")
+			return capacity.Reading{Known: true, Note: "per-task evidence admission guard; accepted artifacts persist as task evidence; no retained buffer exists for admission"}
 		},
 		capacity.WorkGateEvidenceArtifactBytes: func() capacity.Reading {
-			return workGateContractReading("per-request guard; no gate evidence route is wired")
+			return capacity.Reading{Known: true, Note: "per-request evidence byte guard; accepted artifacts persist as task evidence; no retained buffer exists for the request"}
 		},
 		capacity.WorkGateEvidenceTotalBytesPerTask: func() capacity.Reading {
-			return workGateContractReading("per-task guard; no gate evidence route is wired")
+			return capacity.Reading{Known: true, Note: "per-task evidence byte guard; accepted artifacts persist as task evidence; no retained buffer exists for admission"}
 		},
 		capacity.WorkGateRecentRoundsPerItemRead: func() capacity.Reading {
-			return workGateContractReading("per-answer window; no gate item projection is wired")
+			return capacity.Reading{Known: true, Note: "per-answer window over durable rounds; no retained buffer"}
 		},
 		capacity.WorkGateDueRowsPerPass: func() capacity.Reading {
-			return workGateContractReading("per-pass window; no gate coordinator is wired")
+			return capacity.Reading{Known: true, Note: "per-pass window over the durable queue; no retained buffer"}
 		},
 		capacity.WorkGateRetryBackoffSeconds: func() capacity.Reading {
-			return workGateContractReading("per-retry ceiling; no gate coordinator is wired")
+			return capacity.Reading{Known: true, Note: "per-retry timing ceiling; the due time persists; no retained buffer exists for timing"}
 		},
 		capacity.WorkGateOwnerOfflineGraceSeconds: func() capacity.Reading {
-			return workGateContractReading("per-escalation ceiling; no gate coordinator is wired")
+			return capacity.Reading{Known: true, Note: "per-escalation observation ceiling; escalation time persists; no retained buffer exists for observation"}
 		},
 		capacity.IntentRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
@@ -713,8 +711,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 	}
 }
 
-func workGateContractReading(note string) capacity.Reading {
-	return capacity.Reading{Known: true, Note: "contract foundation: " + note}
+func countedCapacityReading(n int64, err error, note string) capacity.Reading {
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	return capacity.Reading{Known: true, Used: n, Note: note}
 }
 
 func (s *Server) workV2CapacityReading(name string) capacity.Reading {

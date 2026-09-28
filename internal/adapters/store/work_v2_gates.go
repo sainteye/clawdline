@@ -182,6 +182,32 @@ type WorkGateExport struct {
 	Document       []byte
 }
 
+// WorkGateRoundDetailsPerItemCount is the fullest retained verification
+// history for one item. Diagnostics reports the scope the limit actually
+// refuses rather than the total population across unrelated items.
+func (s *Store) WorkGateRoundDetailsPerItemCount(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (
+      SELECT COUNT(*) n FROM work_v2_gate_rounds GROUP BY item_id)`).Scan(&n)
+	return n, err
+}
+
+// WorkGateRoundDetailsPerStoreCount is every retained verification round.
+func (s *Store) WorkGateRoundDetailsPerStoreCount(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_v2_gate_rounds`).Scan(&n)
+	return n, err
+}
+
+// WorkGateTasksPerRoundCount is the fullest persisted attempt lineage for
+// one round. The initial task and its one bounded retry are both attempts.
+func (s *Store) WorkGateTasksPerRoundCount(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (
+      SELECT COUNT(*) n FROM work_v2_gate_attempts GROUP BY round_id)`).Scan(&n)
+	return n, err
+}
+
 func openWorkV2Gates(db *sql.DB) error {
 	if _, err := db.Exec(workV2GateSchema); err != nil {
 		return err
@@ -1009,6 +1035,9 @@ func (s *Store) WorkGateDetail(ctx context.Context, item work.ItemV2) (contract.
 	if err != nil {
 		return contract.WorkGateDetailRead{}, err
 	}
+	for n := range rounds {
+		rounds[n] = publicWorkGateRound(rounds[n])
+	}
 	var metrics WorkGateMetrics
 	var authorization *WorkGateAuthorization
 	err = s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
@@ -1056,11 +1085,30 @@ func (s *Store) WorkGateDetail(ctx context.Context, item work.ItemV2) (contract.
 	row, err := scanWorkGateEscalation(s.db.QueryRowContext(ctx, `SELECT `+workGateEscalationColumns+`
     FROM work_v2_gate_escalations WHERE item_id=? AND state<>'resolved'`, item.ID))
 	if err == nil {
+		if row.Candidate != nil {
+			candidate := publicWorkGateCandidate(*row.Candidate)
+			row.Candidate = &candidate
+		}
 		detail.Compact.Escalation = &row.WorkGateEscalation
 	} else if err != sql.ErrNoRows {
 		return contract.WorkGateDetailRead{}, err
 	}
 	return detail, nil
+}
+
+// Public gate reads keep the immutable identity needed to understand a
+// verdict, but never carry this machine's repository or worktree paths. The
+// coordinator reads the stored round directly and retains both paths when it
+// creates or validates the checker checkout.
+func publicWorkGateCandidate(candidate contract.WorkGateCandidateReceipt) contract.WorkGateCandidateReceipt {
+	candidate.Repository = ""
+	candidate.Worktree = ""
+	return candidate
+}
+
+func publicWorkGateRound(round contract.WorkGateRound) contract.WorkGateRound {
+	round.Candidate = publicWorkGateCandidate(round.Candidate)
+	return round
 }
 
 func (t *WorkV2Tx) exportableWorkGateRounds(item work.ItemV2) ([]contract.WorkGateRound, error) {
@@ -1105,12 +1153,16 @@ func (t *WorkV2Tx) exportableWorkGateRounds(item work.ItemV2) ([]contract.WorkGa
 }
 
 func workGateExportDocument(item work.ItemV2, rounds []contract.WorkGateRound) WorkGateExport {
+	publicRounds := make([]contract.WorkGateRound, len(rounds))
+	for n := range rounds {
+		publicRounds[n] = publicWorkGateRound(rounds[n])
+	}
 	document, _ := json.Marshal(struct {
 		Protocol    string                   `json:"protocol"`
 		ItemID      string                   `json:"item_id"`
 		ItemVersion int64                    `json:"item_version"`
 		Rounds      []contract.WorkGateRound `json:"rounds"`
-	}{Protocol: "clawdline.work-gate-export.v1", ItemID: item.ID, ItemVersion: item.Version, Rounds: rounds})
+	}{Protocol: "clawdline.work-gate-export.v1", ItemID: item.ID, ItemVersion: item.Version, Rounds: publicRounds})
 	document = append(document, '\n')
 	sum := sha256.Sum256(document)
 	return WorkGateExport{ItemID: item.ID, ItemVersion: item.Version, SHA256: hex.EncodeToString(sum[:]),

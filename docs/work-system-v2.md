@@ -371,7 +371,7 @@ least one independent read-only specialist against the integrated candidate. Lay
 and end-to-end product flow use the UX Architect by default:
 
 ```
-clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect …
+clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect --permission-mode ask …
 ```
 
 The brief requires desktop and smallest-supported-mobile evidence, keyboard and screen-reader
@@ -381,6 +381,16 @@ may replace `ux-architect` when policy and scope rather than layout is the domin
 `ui-finish-gate` is an additional pre-ship visual pass when the finish itself is material. Every
 blocking finding is resolved before merging. The Epic's verification evidence or completion report
 records the review task id, verdict, and disposition of its findings.
+
+That visual dispatch matches both the worker surface and `permission_mode` to its tools. Codex CLI
+does not provide the ChatGPT desktop app's built-in `@Browser`, and `full` selects
+`--ask-for-approval never`; neither is blanket Browser or Computer Use access. Every dispatch lists
+the tools its acceptance needs. A UI reviewer runs on a surface that actually provides
+Browser/Computer Use, or with a named acceptance-equivalent local harness such as Playwright or
+Chrome CDP, and uses `ask` when an app, origin or GUI approval may be needed. At task start it
+exercises that tool. If it is absent or authorization cannot be obtained, the reviewer reports the
+launch defect immediately and the Epic owner restores access or redispatches. A tool-dependent
+visual gate does not finish as unverified because the root selected an incompatible worker.
 
 This is a conditional owner process rule, not another daemon authorization token. It does not
 replace the plan review, the verification checker's PASS, or the Epic's final end-to-end check.

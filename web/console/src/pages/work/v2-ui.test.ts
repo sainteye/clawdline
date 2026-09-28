@@ -93,6 +93,8 @@ test("Board lanes keep items folded until their accessible summary opens the sha
   assert.match(source, /className="work-card-summary"/)
 	assert.match(source, /aria-describedby=\{describedBy\}/)
 	assert.match(source, /id=\{gateDescriptionID\}/)
+	assert.match(source, /id=\{gateSnapshotDescriptionID\}/)
+	assert.match(source, /`\$\{gateSnapshotDescriptionID\} \$\{gateDescriptionID\}`/)
 	assert.match(source, /id=\{attentionDescriptionID\}/)
 	assert.match(source, /本輪：\{gateSnapshotText\(/)
   assert.match(source, /setOpenedItem\(item\)/)

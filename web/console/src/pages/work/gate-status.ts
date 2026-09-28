@@ -31,10 +31,10 @@ export function gateStatus(gate?: WorkGateCompactRead): string {
 
 export function roundStatus(round: WorkGateRoundSummary): string {
   if (round.state === "stale") return "驗證已過期 · 不能當作 PASS"
-  if (round.state === "technical_failure") return "驗證技術失敗 · 未通過"
+  if (round.state === "technical_failure") return "驗證技術失敗 · 上層 Epic owner 修復後重試；沒有上層時由你決定"
   if (round.state !== "complete") return ({ queued: "驗證待派送", dispatching: "驗證派送中", running: "獨立驗證中" } as Record<string, string>)[round.state] ?? "驗證狀態未知"
   if (round.verdict === "PASS") return "獨立驗證 PASS"
-  if (round.verdict === "FAIL") return "獨立驗證 FAIL · 需要修正"
+  if (round.verdict === "FAIL") return "獨立驗證 FAIL · 負責 Session 修正後提交新候選"
   if (round.verdict === "NEEDS_WORK") return "NEEDS_WORK · 負責 Session 須補證或重新送驗"
-  return "驗證結果未知 · 未通過"
+  return "驗證結果未知 · 負責 Session 檢查結果後重新送驗"
 }

@@ -20,6 +20,8 @@ test("unknown evidence, stale and technical failure never read as PASS", () => {
   }
 	assert.match(roundStatus(round("complete")), /未知/)
 	assert.match(roundStatus(round("complete", "NEEDS_WORK")), /負責 Session 須補證或重新送驗/)
+	assert.match(roundStatus(round("complete", "FAIL")), /負責 Session 修正後提交新候選/)
+	assert.match(roundStatus(round("technical_failure")), /Epic owner 修復後重試.*由你決定/)
   assert.equal(roundStatus(round("complete", "PASS")), "獨立驗證 PASS")
   assert.match(gateStatus(gate(round("complete", "PASS"))), /尚無有效合併授權/)
   assert.match(gateStatus({ ...gate(round("complete", "PASS")), current_authorization: { kind: "technical_person_override", reason: "repair", created_at: 2 } }), /未取得 checker PASS/)

@@ -283,6 +283,15 @@ claims、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `auto_compact_window` | 選填，只限 Claude：child 在 context 到多少 token（50000–1000000）時壓縮，或 `null` 表示不壓縮。不寫就跟著這台機器的 `claude_auto_compact_window`，使用者沒設就是關閉。用來比較兩次執行，不是每份 brief 都要寫：壓縮可能漏掉細節 |
 | `root` | **必填**：`{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
 
+**派工前，要讓 worker surface 與啟動模式符合 child 必須使用的每一項工具。** brief 必須列出必要工具，
+root 也必須證明選到的 surface 真的提供它們。Codex CLI child 不會因為調整 permission flag，就得到
+ChatGPT desktop app 內建的 `@Browser`。UI、無障礙或 responsive-layout review 必須派到真正有
+Browser／Computer Use 的 surface，或明確指定 Playwright／Chrome CDP 等等同驗收能力的本機 browser harness，
+並先證明它已安裝。若該 surface 可能要求 App、origin 或 GUI 權限，就用 `--permission-mode ask`：Codex
+`full` 是 non-interactive shell 啟動（`--ask-for-approval never`），不是所有工具；沒有建立 request，
+Auto-review 就無從審核。child 開始時要真的操作每項必要工具，不能只檢查 command name；缺少任何一項就
+立即回報具體缺口，由 root 補回權限或重派。不得因 root 選錯 worker，就把依賴工具的驗收標成 unverified 後結束。
+
 **`root.session_id` 是你的 conversation id，絕對不是 terminal id。** Claude Code 把它 export 成
 `CLAUDE_CODE_SESSION_ID`，Codex 則是 `CODEX_THREAD_ID`。daemon 靠它把 child 歸到你底下，並在 child
 結束時通知你。要確認它指的就是這個分頁：`GET /v1/orchestrator/whoami?conversation_id=<id>` 會回
@@ -976,7 +985,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   `ux-architect`：
 
   ```
-  clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect …
+  clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect --permission-mode ask …
   ```
 
   brief 要指名整合後的 candidate，要求桌面與最小支援手機寬度、鍵盤與螢幕閱讀器、流程死路、產品合理性、

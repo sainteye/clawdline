@@ -755,7 +755,7 @@
 .sw-gate-overview li[aria-current="true"] { border-color: rgba(217, 119, 87, 0.55); background: rgba(217, 119, 87, 0.08); color: var(--sw-label); }
 .sw-gate-overview li > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; }
 .sw-gate-overview strong { color: var(--sw-label); }
-.sw-gate-overview small { padding: 1px 5px; border-radius: 999px; background: var(--sw-chip-fill); color: var(--sw-soft); font-size: 9.5px; }
+.sw-gate-overview small { padding: 1px 5px; border-radius: 999px; background: var(--sw-chip-fill); color: var(--sw-label); font-size: 12px; }
 .sw-gate-overview p { margin: 4px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
 
 @media (max-width: 460px) {

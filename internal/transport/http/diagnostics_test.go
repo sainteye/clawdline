@@ -19,6 +19,7 @@ import (
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 func capacityServer(t *testing.T) *Server {
@@ -68,12 +69,64 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 	}
 }
 
-func TestWorkGateContractRowsAreExplicitKnownZeroes(t *testing.T) {
+func TestWorkGateCapacityReadsPersistedCardinality(t *testing.T) {
+	s := capacityServer(t)
+	at := time.Unix(1_790_600_000, 0)
+	items := []work.ItemV2{
+		{ID: "10000000-0000-4000-8000-000000000001", ProjectID: "p", ProjectPath: "/p", Kind: work.KindFeature,
+			Title: "one", Description: "one", Phase: work.PhaseVerifying, DeploymentPolicy: work.DeployAgentDecides,
+			CreatedBy: "local", CreatedAt: at, UpdatedAt: at, Cycle: 1, Version: 1},
+		{ID: "10000000-0000-4000-8000-000000000002", ProjectID: "p", ProjectPath: "/p", Kind: work.KindFeature,
+			Title: "two", Description: "two", Phase: work.PhaseVerifying, DeploymentPolicy: work.DeployAgentDecides,
+			CreatedBy: "local", CreatedAt: at, UpdatedAt: at, Cycle: 1, Version: 1},
+	}
+	if err := s.store.WriteWorkV2(context.Background(), func(tx *store.WorkV2Tx) error {
+		for _, item := range items {
+			if err := tx.CreateItem(item, "local", `{}`); err != nil {
+				return err
+			}
+		}
+		for n, item := range []work.ItemV2{items[0], items[0], items[1]} {
+			roundID := "20000000-0000-4000-8000-00000000000" + string(rune('1'+n))
+			attemptID := "30000000-0000-4000-8000-00000000000" + string(rune('1'+n))
+			round := contract.WorkGateRound{ID: roundID, ItemID: item.ID, Cycle: 1,
+				Acceptance:     contract.WorkGateAcceptance{Criteria: "prove it", Version: 1, Digest: strings.Repeat("a", 64)},
+				Candidate:      contract.WorkGateCandidateReceipt{Commit: strings.Repeat("b", 40), Tree: strings.Repeat("c", 40)},
+				CheckerPersona: "reality-checker", State: contract.WorkGateRoundStateComplete,
+				Attempts: []contract.WorkGateAttempt{{ID: attemptID, RoundID: roundID, Attempt: 0,
+					State: contract.WorkGateAttemptStateSucceeded, CreatedAt: at.Unix(), UpdatedAt: at.Unix()}},
+				CreatedAt: at.Unix() + int64(n), UpdatedAt: at.Unix() + int64(n)}
+			if err := tx.CreateWorkGateRound(round, strings.Repeat("d", 40)); err != nil {
+				return err
+			}
+			if n == 0 {
+				if err := tx.AddWorkGateAttempt(roundID, "30000000-0000-4000-8000-000000000099", "task-2", attemptID,
+					contract.WorkGateAttemptStateSucceeded, at); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	measures := s.capacityMeasures()
+	wants := map[string]int64{
+		capacity.WorkGateRoundDetailsPerItem:  2,
+		capacity.WorkGateRoundDetailsPerStore: 3,
+		capacity.WorkGateTasksPerRound:        2,
+	}
+	for name, want := range wants {
+		reading := measures[name]()
+		if !reading.Known || reading.Used != want || strings.Contains(reading.Note, "not wired") {
+			t.Errorf("%s reading = %+v; want used=%d and a live producer", name, reading, want)
+		}
+	}
+}
+
+func TestWorkGateTransientLimitsSayTheyRetainNoBuffer(t *testing.T) {
 	measures := capacityServer(t).capacityMeasures()
 	for _, name := range []string{
-		capacity.WorkGateRoundDetailsPerItem,
-		capacity.WorkGateRoundDetailsPerStore,
-		capacity.WorkGateTasksPerRound,
 		capacity.WorkGateClaimsPerRound,
 		capacity.WorkGateEvidenceStringsPerClaim,
 		capacity.WorkGateEvidenceStringBytes,
@@ -87,7 +140,8 @@ func TestWorkGateContractRowsAreExplicitKnownZeroes(t *testing.T) {
 		capacity.WorkGateOwnerOfflineGraceSeconds,
 	} {
 		reading := measures[name]()
-		if !reading.Known || reading.Used != 0 || !strings.Contains(reading.Note, "contract foundation") {
+		if !reading.Known || reading.Used != 0 || !strings.Contains(reading.Note, "no retained buffer") ||
+			strings.Contains(reading.Note, "not wired") {
 			t.Errorf("%s reading = %+v", name, reading)
 		}
 	}

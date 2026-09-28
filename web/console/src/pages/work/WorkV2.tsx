@@ -552,8 +552,11 @@ function CompactWorkCard({ item, decisions, onOpen }: {
   const epic = isEpic(item)
   const attention = decisions.length > 0 || !!item.user_action
   const gateDescriptionID = `work-card-${item.id}-gate`
+  const gateSnapshotDescriptionID = `work-card-${item.id}-gate-snapshot`
   const attentionDescriptionID = `work-card-${item.id}-attention`
-  const describedBy = attention ? `${gateDescriptionID} ${attentionDescriptionID}` : gateDescriptionID
+  const describedBy = attention
+    ? `${gateSnapshotDescriptionID} ${gateDescriptionID} ${attentionDescriptionID}`
+    : `${gateSnapshotDescriptionID} ${gateDescriptionID}`
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
     data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"
@@ -565,7 +568,7 @@ function CompactWorkCard({ item, decisions, onOpen }: {
       <span className="work-card-summary-title">{item.title}</span>
       <span className="work-card-summary-description">{item.description}</span>
       <WorkGateLine item={item} id={gateDescriptionID} />
-      <span className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span>
+      <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span>
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
         {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}

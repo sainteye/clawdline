@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -45,6 +46,7 @@ func gateBriefMap(g *GateOrigin) map[string]any {
 
 func TestGateAdmissionPinsTheCandidateAndReadOnlyLaunch(t *testing.T) {
 	b, ctx := newTestBroker(t)
+	b.Executable = filepath.Join(t.TempDir(), "bin", "clawdline")
 	repo := gitRepo(t)
 	id := "a7333333-3333-4333-8333-333333333333"
 	g, commit, _ := gateFixture(t, repo)
@@ -59,11 +61,30 @@ func TestGateAdmissionPinsTheCandidateAndReadOnlyLaunch(t *testing.T) {
 		t.Fatalf("planned checker after HEAD moved: %+v, %v", w, err)
 	}
 	r.Dir = b.Tasks.Path(id)
+	r.Repository = w.Repository
+	r.Worktree = w
 	launch, _ := projects.Admit(projects.LaunchRequest{ProjectRoot: w.Path, Assistant: "codex"})
-	line := shellCommand(launch, r, b.Tasks.Dir, w.Path)
+	line := shellCommandWithExecutable(launch, r, b.Tasks.Dir, w.Path, b.taskExecutable())
+	wantFilesystem := `permissions.clawdline-gate.filesystem={` + strings.Join([]string{
+		strconv.Quote(":minimal") + `="read"`,
+		strconv.Quote(w.Path) + `="read"`,
+		strconv.Quote(r.Dir) + `="read"`,
+		strconv.Quote(filepath.Join(repo, ".git")) + `="read"`,
+		strconv.Quote(b.taskExecutable()) + `="read"`,
+		strconv.Quote(filepath.Join(r.Dir, "work", "build")) + `="write"`,
+		strconv.Quote(filepath.Join(r.Dir, "work", "cache")) + `="write"`,
+		strconv.Quote(filepath.Join(r.Dir, "work", "tmp")) + `="write"`,
+	}, ",") + `}`
+	if !strings.Contains(line, wantFilesystem) {
+		t.Fatalf("checker filesystem profile is not the exact closed set\nwant: %s\n got: %s", wantFilesystem, line)
+	}
 	for _, want := range []string{
 		"--strict-config", `default_permissions="clawdline-gate"`,
-		`permissions.clawdline-gate.filesystem=`, `":root"="read"`,
+		`permissions.clawdline-gate.filesystem=`, `":minimal"="read"`,
+		strconv.Quote(w.Path) + `="read"`,
+		strconv.Quote(r.Dir) + `="read"`,
+		strconv.Quote(filepath.Join(repo, ".git")) + `="read"`,
+		strconv.Quote(b.taskExecutable()) + `="read"`,
 		`features.network_proxy=true`, `permissions.clawdline-gate.network.enabled=true`,
 		`permissions.clawdline-gate.network.domains=`, `"127.0.0.1"="allow"`,
 		"work/build", "work/cache", "work/tmp", "--ask-for-approval never",
@@ -72,7 +93,7 @@ func TestGateAdmissionPinsTheCandidateAndReadOnlyLaunch(t *testing.T) {
 			t.Errorf("read-only launch is missing %q: %s", want, line)
 		}
 	}
-	for _, forbidden := range []string{"--sandbox", "workspace-write", "--add-dir"} {
+	for _, forbidden := range []string{`":root"`, "--sandbox", "workspace-write", "--add-dir"} {
 		if strings.Contains(line, forbidden) {
 			t.Errorf("read-only launch contains %q: %s", forbidden, line)
 		}

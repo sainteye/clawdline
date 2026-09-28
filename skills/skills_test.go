@@ -539,7 +539,7 @@ func TestEpicGuidesRequireApplicableUXProductReview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wants := []string{"--kind review", "--claims \"\"", "--persona ux-architect",
+		wants := []string{"--kind review", "--claims \"\"", "--persona ux-architect", "--permission-mode ask",
 			"mark unverified and say why"}
 		if language == "en" {
 			wants = append(wants, "before merging")
@@ -560,6 +560,21 @@ func TestEpicGuidesRequireApplicableUXProductReview(t *testing.T) {
 		for _, want := range []string{"--persona ux-architect", "before merging", "mark unverified and say why"} {
 			if !bytes.Contains(body, []byte(want)) {
 				t.Errorf("%s omits applicable UX/product review obligation %q", path, want)
+			}
+		}
+	}
+}
+
+func TestDispatchGuidesMatchRequiredToolsToApprovalMode(t *testing.T) {
+	for _, language := range []string{"en", "zh-TW"} {
+		guide, err := Section(language, "dispatch")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"Browser", "Computer Use", "--permission-mode ask",
+			"--ask-for-approval never", "Auto-review", "Codex CLI", "Chrome CDP"} {
+			if !bytes.Contains(guide, []byte(want)) {
+				t.Errorf("%s dispatch guide omits tool authorization rule %q", language, want)
 			}
 		}
 	}

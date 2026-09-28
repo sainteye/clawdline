@@ -77,12 +77,20 @@ unlanded, mixed, and unknown bytes. The parent Epic stays open until both childr
 When the Epic changes a human-facing interface, user journey, or product policy, Session A records
 that classification in its plan and, before merging, dispatches at least one independent read-only
 specialist with
-`clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect` against
+`clawdline dispatch --kind review --work-id <epic id> --claims "" --persona ux-architect --permission-mode ask` against
 the integrated candidate. The brief covers desktop and smallest-supported-mobile behavior,
 keyboard and screen-reader use, dead ends, and product fit; it tells the reviewer to **mark unverified and say why**
 when evidence is unavailable. Every blocking finding is resolved, and the
 Epic evidence or completion report names the task id, verdict, and disposition. A backend-only
 Epic instead records why no person-facing review applies. This review cannot replace checker PASS.
+The dispatch brief lists every required tool and proves the chosen worker surface supplies it.
+Codex CLI is not treated as if it carried the ChatGPT desktop app's built-in `@Browser`; a visual
+review uses a Browser/Computer Use surface or a named, installed Playwright/Chrome CDP equivalent.
+The reviewer exercises it at task start and uses `permission_mode: ask` when authorization may be
+needed. Codex `full` is not used for that purpose because it maps to `--ask-for-approval never`,
+leaving Auto-review no request to review. A missing tool is reported immediately and the root
+restores access or redispatches instead of accepting an unverified visual gate caused by its own
+worker selection.
 
 ### WS2-C03 — Every card carries the Project presentation
 
