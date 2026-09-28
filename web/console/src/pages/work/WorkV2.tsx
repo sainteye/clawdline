@@ -68,6 +68,7 @@ import {
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
 import { claimedViaLine, createdViaLine, workWord } from "./words.js"
 import { appendWorkPage } from "./work-pages.js"
+import { visibleWorkItems } from "./plan-visibility.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
@@ -88,6 +89,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [project, setProject] = useState("")
   const [routeProject, setRouteProject] = useState(() => typeof location === "undefined" ? "" : workRouteFromHash(location.hash).project)
   const [status, setStatus] = useState<WorkV2Status>("open")
+  const [showPlans, setShowPlans] = useState(false)
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -230,9 +232,11 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       return true
     } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
-  const planning = items.filter((item) => item.area === "planning" && !item.closed_at)
-  const unassigned = items.filter((item) => item.area === "unassigned" && !item.closed_at)
-  const done = items.filter((item) => item.closed_at)
+  const visibleItems = visibleWorkItems(items, showPlans)
+  const hiddenPlans = items.length - visibleItems.length
+  const planning = visibleItems.filter((item) => item.area === "planning" && !item.closed_at)
+  const unassigned = visibleItems.filter((item) => item.area === "unassigned" && !item.closed_at)
+  const done = visibleItems.filter((item) => item.closed_at)
   const visibleProposals = proposalsForProject(proposals, project)
   const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, onBoard: new Set(items.map((item) => item.id)) }),
     [family, items])
@@ -253,9 +257,13 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、Merge 與部署。</p>
       <div className="work-filter-bar">
         <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
-        <div className="work-status-filter" role="group" aria-label="篩選項目狀態">
-          {([['open', '進行中'], ['done', '已完成'], ['all', '全部']] as [WorkV2Status, string][]).map(([value, label]) =>
-            <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
+        <div className="work-filter-controls">
+          <div className="work-status-filter" role="group" aria-label="篩選項目狀態">
+            {([['open', '進行中'], ['done', '已完成'], ['all', '全部']] as [WorkV2Status, string][]).map(([value, label]) =>
+              <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
+          </div>
+          <button className="work-plan-toggle" type="button" aria-pressed={showPlans}
+            onClick={() => setShowPlans((current) => !current)}>顯示 Plan</button>
         </div>
         <label className="work-search">
           <WorkIcon name="search" />
@@ -270,7 +278,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       <BoardRegion title="規劃區" items={planning} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       <BoardRegion title="待指派" items={unassigned} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={() => setFailure("")} run={run} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
-        items={items.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} decisions={decisions} busy={busy}
+        items={visibleItems.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} decisions={decisions} busy={busy}
         failure={failure} clearFailure={() => setFailure("")} run={run} />)}
       {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} decisions={decisions} busy={busy}
         failure={failure} clearFailure={() => setFailure("")} run={run} />}
@@ -280,8 +288,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
         <div className="work-cards">{done.map((item) => <WorkCard key={item.id} item={item} sessions={sessions} busy={busy}
           decisions={decisionsForWorkItem(decisions, item.id)} failure={failure} clearFailure={() => setFailure("")} run={run} />)}</div>
       </details>}
-      {loaded && !failure && items.length === 0 && <p className="work-empty work-filter-empty" role="status">
-        {search ? `找不到包含「${search}」的項目。` : status === "done" ? "還沒有已完成的項目。" : "這個範圍目前沒有項目。"}
+      {loaded && !failure && visibleItems.length === 0 && <p className="work-empty work-filter-empty" role="status">
+        {!showPlans && hiddenPlans > 0
+          ? search ? "符合搜尋的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。" : "這個範圍的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。"
+          : search ? `找不到包含「${search}」的項目。` : status === "done" ? "還沒有已完成的項目。" : "這個範圍目前沒有項目。"}
       </p>}
       {nextCursor && <div className="work-pagination">
         <button className="board-button work-more" type="button" disabled={paging} aria-busy={paging ? "true" : undefined}

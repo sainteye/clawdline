@@ -42,7 +42,7 @@ test("work cards add, show, open, and remove durable reference images", () => {
 })
 
 test("unassigned executable work is visible and assignable", () => {
-  assert.match(source, /const unassigned = items\.filter\(\(item\) => item\.area === "unassigned"/)
+  assert.match(source, /const unassigned = visibleItems\.filter\(\(item\) => item\.area === "unassigned"/)
   assert.match(source, /<BoardRegion title="待指派" items=\{unassigned\}/)
   assert.match(source, /const assignable = item\.area !== "planning" && !item\.closed_at && !item\.owner_session/)
   assert.doesNotMatch(source, /item\.area === "execution"/)
@@ -83,12 +83,22 @@ test("the Board can filter lifecycle state and search titles and descriptions", 
   assert.match(styles, /\.work-search/)
 })
 
+test("Plan items require an explicit accessible switch before the Board shows them", () => {
+  assert.match(source, /const \[showPlans, setShowPlans\] = useState\(false\)/)
+  assert.match(source, /visibleWorkItems\(items, showPlans\)/)
+  assert.match(source, /aria-pressed=\{showPlans\}/)
+  assert.match(source, />顯示 Plan<\/button>/)
+  assert.match(source, /items=\{visibleItems\.filter/)
+  assert.match(source, /visibleItems\.length === 0/)
+  assert.match(styles, /\.work-plan-toggle/)
+})
+
 test("the Board distinguishes initial loading, paging, empty, stale, and error states", () => {
   assert.match(source, /loading \? <BoardSkeleton \/>/)
   assert.match(source, /role="status" aria-label=\{L\.strings\.webLoading\}/)
   assert.match(source, /aria-busy=\{loading \|\| refreshing \|\| paging/)
   assert.match(source, /failure && <p className="work-note" role="alert">/)
-  assert.match(source, /loaded && !failure && items\.length === 0/)
+  assert.match(source, /loaded && !failure && visibleItems\.length === 0/)
   assert.match(source, /setFailure\(failureWords\(e\)\)/)
   assert.match(styles, /\.work-board-skeleton \{[^}]*min-height:/)
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.work-skeleton-line::after \{ animation: none; \}/)
