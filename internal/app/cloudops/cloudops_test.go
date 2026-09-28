@@ -533,6 +533,18 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-capacity",
 		method: "GET", path: "/v1/capacity",
 	}, {
+		word:    "default-models",
+		body:    map[string]any{"type": "default-models", "session": machine, "request": "req-models"},
+		session: machine, name: "read:req-models",
+		method: "GET", path: "/v1/settings/default-models",
+	}, {
+		word: "default-models-update",
+		body: map[string]any{"type": "default-models-update", "session": machine, "request": "req-models-write",
+			"changes": map[string]any{"codex_default_model": "gpt-6"}},
+		session: machine, name: "action:req-models-write",
+		method: "POST", path: "/v1/settings/default-models",
+		body2: `{"codex_default_model":"gpt-6"}`,
+	}, {
 		// The dashboard behind the session counts: machine-wide and
 		// parameterless, as the local route is.
 		word:    "machine-usage",
@@ -1483,7 +1495,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board.items", "timeline", "projects", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "capacity", "machine-usage", "personas",
+		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "machine-usage", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.assign", "work.v2.persona-suggestion", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
@@ -2194,6 +2206,45 @@ func TestTheMachineUsageReadCrossesWithNothingButItsName(t *testing.T) {
 		"type": "machine-usage", "session": MachineReplySession, "request": "req"}))
 	if answer.Status != 501 || answer.Code != "machine_usage_unsupported" {
 		t.Fatalf("answered %d/%q, wanted 501/machine_usage_unsupported", answer.Status, answer.Code)
+	}
+}
+
+func TestDefaultModelsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "default-models", "session": MachineReplySession, "request": "req-read"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/settings/default-models" {
+		t.Fatalf("read answered %+v, asked %+v", answer, r.seen)
+	}
+
+	r = &router{}
+	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "default-models-update", "session": MachineReplySession, "request": "req-write",
+		"changes": map[string]any{"claude_default_model": "claude-sonnet-4-5"},
+	}))
+	if answer.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("write answered %+v, asked %+v", answer, r.seen)
+	}
+	got := r.last()
+	if got.Method != "POST" || got.Path != "/v1/settings/default-models" ||
+		string(got.Body) != `{"claude_default_model":"claude-sonnet-4-5"}` ||
+		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "req-write" {
+		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
+	}
+
+	for _, changes := range []any{
+		map[string]any{"remote": true},
+		map[string]any{"codex_default_model": 6},
+		map[string]any{"codex_default_model": "gpt-6", "claude_default_model": "opus", "remote": nil},
+		[]any{"gpt-6"},
+	} {
+		r := &router{}
+		bad := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "default-models-update", "session": MachineReplySession, "request": "req-bad", "changes": changes,
+		}))
+		if bad.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("took changes %#v: %+v, asked %+v", changes, bad, r.seen)
+		}
 	}
 }
 

@@ -480,6 +480,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/reclaim", s.reclaimRoute)
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/settings", s.settingsRoute)
+	mux.HandleFunc("/v1/settings/default-models", s.defaultModelsRoute)
 	mux.HandleFunc("/v1/places", s.placesRoute)
 	// The input bar's server list (devstacks.go): what the projects' own
 	// `.devstack.json` files declare, and which declared ports answer.

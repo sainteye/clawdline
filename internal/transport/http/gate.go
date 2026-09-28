@@ -457,6 +457,13 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && v.Local) {
 			return http.StatusForbidden, "forbidden", "Only this machine's own token may change its settings."
 		}
+	case p == "/v1/settings/default-models":
+		// This narrow route is the Settings surface carried to a paired phone.
+		// A local console may write it, and a remote device needs Send just as
+		// every other Cloud command does. No other setting is accepted there.
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may read, and not change default models."
+		}
 	case p == "/v1/orchestrator/tasks" || strings.HasPrefix(p, "/v1/orchestrator/tasks/"):
 		// dispatch.go, and the task-secret routes.
 	case p == "/v1/orchestrator/proposals":

@@ -190,8 +190,8 @@ function daemon(): Server {
     const path = url.pathname
     requestedPaths.push(`${req.method} ${path}`)
     if (path === "/v1/sessions") return json(res, 200, snapshot())
-    if (path === "/v1/settings" && req.method === "GET") return json(res, 200, machineSettings)
-    if (path === "/v1/settings" && req.method === "POST") {
+    if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, machineSettings)
+    if (path === "/v1/settings/default-models" && req.method === "POST") {
       void requestJSON(req).then((change) => {
         const model = Object.values(change)[0]
         if (typeof model !== "string" || (model !== "" && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(model))) {

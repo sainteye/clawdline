@@ -188,6 +188,7 @@ const (
 	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
 	WorkStepsPerItem          = "work.steps_per_item"
 	SessionDirectTodos        = "session.direct_todos"
+	SettingsRequestBodyBytes  = "settings.request_body_bytes"
 	SessionTitleRequestBytes  = "session.title_request_bytes"
 	SessionTitleCharacters    = "session.title_characters"
 	SessionTitleRows          = "session.title_rows"
@@ -1361,6 +1362,17 @@ func Register() []Entry {
 			Limit: 64, AtLimit: EvictOldest,
 			Told:      []Channel{Diagnostics, Notice},
 			EvictedBy: Daemon,
+		},
+		{
+			// One settings change, whether it came from this machine's own
+			// console or the narrow two-model Cloud route. Past the bound the
+			// request is refused before it is copied into config.json.
+			Name: SettingsRequestBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.settingsRequestBodyLimit",
+				"internal/app/cloudops.defaultModelsCloudBodyLimit"},
 		},
 		{
 			// One title write. The body holds one short string; anything larger

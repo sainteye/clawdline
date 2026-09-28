@@ -218,6 +218,7 @@ func TestGateCoversEveryChange(t *testing.T) {
 		"/v1/orchestrator/tasks", "/v1/orchestrator/tasks/t1/respawn",
 		"/v1/sessions/%25x/send", "/v1/sessions/%25x/interrupt", "/v1/sessions/%25x/close",
 		"/v1/settings",
+		"/v1/settings/default-models",
 		"/v1/projects/p/worktrees/refresh",
 		"/v1/auth/pair", "/v1/auth/pair/confirm", "/v1/auth/adopt", "/v1/auth/password", "/v1/auth/logout",
 		"/v1/auth/devices/revoke-all", "/v1/auth/devices/browser", "/v1/auth/devices/password",
@@ -244,6 +245,25 @@ func TestGateCoversEveryChange(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s as json with every credential: %d %s", p, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestDefaultModelsWriteNeedsLocalOrSendAuthority(t *testing.T) {
+	path := "/v1/settings/default-models"
+	readOnly := auth.Verdict{Allowed: true, Caps: auth.NewCaps(auth.Read)}
+	if status, code, _ := writePolicy(http.MethodPost, path, false, readOnly); status != http.StatusForbidden || code != "forbidden" {
+		t.Fatalf("read-only device: %d %q", status, code)
+	}
+	for name, verdict := range map[string]auth.Verdict{
+		"paired sender": {Allowed: true, Caps: auth.NewCaps(auth.Read, auth.Send)},
+		"local console": {Allowed: true, Local: true, Caps: auth.NewCaps(auth.Read)},
+	} {
+		if status, code, message := writePolicy(http.MethodPost, path, false, verdict); status != 0 {
+			t.Fatalf("%s: %d %q %q", name, status, code, message)
+		}
+	}
+	if status, _, _ := writePolicy(http.MethodGet, path, false, readOnly); status != 0 {
+		t.Fatalf("read was treated as a write: %d", status)
 	}
 }
 

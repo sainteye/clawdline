@@ -242,6 +242,8 @@ export type WriteRoute =
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
   | { op: "capacity"; word: Carried<"capacity"> }
+  | { op: "default-models"; word: Carried<"default-models"> }
+  | { op: "default-models-update"; word: Carried<"default-models-update"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
   // The sessions a reboot took away: one machine read and two machine
   // commands, none of them a session's — the rows are conversations the
@@ -413,6 +415,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // The capacity block on Settings: the register's rows and the dead
     // letters, machine-wide, on the machine's one reply channel.
     if (head === "capacity" && segments.length === 1) return { op: "capacity", word: "capacity" }
+    if (head === "settings" && a === "default-models" && segments.length === 2) {
+      return { op: "default-models", word: "default-models" }
+    }
     if (head === "sessions" && a === "restorable" && segments.length === 2) {
       return { op: "restorable", word: "restorable-sessions" }
     }
@@ -491,6 +496,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "verification-delete", word: "verification.delete", id: a }
   }
   if (method !== "POST") return null
+  if (head === "settings" && a === "default-models" && segments.length === 2) {
+    return { op: "default-models-update", word: "default-models-update" }
+  }
   if (head === "verifications") {
     if (segments.length === 1) return { op: "verification-write", word: "verification.create", id: "" }
     if (a && b === "notes" && segments.length === 3) return { op: "verification-write", word: "verification.note", id: a }
@@ -686,6 +694,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "snippet-order":
       return "flat"
     case "worktree-refresh":
+    case "default-models":
+    case "default-models-update":
     case "project-icon-copy":
     case "project-mirror-apply":
     case "project-mirror-detach":
@@ -998,6 +1008,7 @@ export class RelayWriter {
         return client._machineRequest(this.host.machine, route.word, { id: route.id }, "read")
       }
       case "capacity":
+      case "default-models":
       case "machine-usage": {
         if (typeof client._machineRequest !== "function") {
           throw failure("cloud_not_carried", route.word, 501)
@@ -1255,6 +1266,12 @@ export class RelayWriter {
           { project: route.project },
           "action",
         )
+      }
+      case "default-models-update": {
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
+        }
+        return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "project-icon-copy": {
         if (typeof client._place !== "function") throw failure("cloud_not_carried", route.word, 501)

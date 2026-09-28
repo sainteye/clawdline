@@ -331,6 +331,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		// hundred rows.
 		capacity.SnippetsTotal: func() capacity.Reading { return s.snippetsReading(false) },
 		capacity.SnippetsScope: func() capacity.Reading { return s.snippetsReading(true) },
+		capacity.SettingsRequestBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
 		capacity.SessionTitleRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},

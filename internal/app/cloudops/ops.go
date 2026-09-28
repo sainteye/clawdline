@@ -1386,6 +1386,55 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/capacity"}
 			}},
 
+		// The two machine-wide defaults shown on Settings. This is deliberately
+		// narrower than /v1/settings: a paired phone receives and changes only
+		// these two values, never the machine's other configuration.
+		op{name: "default-models", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/settings/default-models"}
+			}},
+
+		op{name: "default-models-update",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "changes") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				raw, ok := b["changes"].(map[string]any)
+				if !ok || len(raw) > 2 {
+					return plan{}, false
+				}
+				for key, value := range raw {
+					if key != "codex_default_model" && key != "claude_default_model" {
+						return plan{}, false
+					}
+					if value != nil {
+						if _, ok := value.(string); !ok {
+							return plan{}, false
+						}
+					}
+				}
+				document, err := json.Marshal(raw)
+				if err != nil || len(document) > defaultModelsCloudBodyLimit {
+					return plan{}, false
+				}
+				p.document = document
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/settings/default-models",
+					Body: p.document, Header: asDevice()}
+			}},
+
 		// The dashboard behind the session counts: this machine's CPU and
 		// memory and each session's share. Machine-wide and parameterless, as
 		// the local route is; a read, since the route writes nothing.
@@ -2407,6 +2456,10 @@ const scheduleMaximumBytes = 256 << 10
 // This bridge does not know what a snippet looks like; it knows how much of one
 // the route on the other side will read.
 const snippetMaximumBytes = 64 << 10
+
+// defaultModelsCloudBodyLimit matches the HTTP route's JSON body ceiling. It
+// bounds the one small object before the bridge copies it into a local request.
+const defaultModelsCloudBodyLimit = 64 << 10
 
 // pushBodyMaximumBytes is what one subscription weighs on the wire, matching
 // the local route's own reader (`authBodyLimit`, the bound `/v1/push/` is
