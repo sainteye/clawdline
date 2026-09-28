@@ -382,6 +382,15 @@ may replace `ux-architect` when policy and scope rather than layout is the domin
 blocking finding is resolved before merging. The Epic's verification evidence or completion report
 records the review task id, verdict, and disposition of its findings.
 
+The owner records the scope covered by that review. One integrated review normally covers the
+Epic: a small correction to copy, spacing, tests, or a finding within the reviewed scope is
+checked and closed by the owner without dispatching the same reviewer again. Brand, security,
+and other specialists are added only for a material risk in their own area, not as a roster.
+Redispatch only if a later change materially changes the user journey, product policy, brand
+direction, security boundary, or another risk outside the recorded review scope. The owner names
+that change and requests one focused review of the new boundary, not a repeat of every earlier
+specialist. This does not relax the captured plan gate or exact-candidate verification gate.
+
 That visual dispatch matches both the worker surface and `permission_mode` to its tools. Codex CLI
 does not provide the ChatGPT desktop app's built-in `@Browser`, and `full` selects
 `--ask-for-approval never`; neither is blanket Browser or Computer Use access. Every dispatch lists

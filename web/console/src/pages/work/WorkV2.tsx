@@ -1079,14 +1079,26 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
         <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
       <VoiceTextarea label="描述" value={description} maxLength={65536} onValue={setDescription} />
-      <label>驗收條件（Markdown）<textarea className="work-input" value={acceptance} maxLength={65536} disabled={acceptanceLocked}
-        onChange={(event) => setAcceptance(event.target.value)} /></label>
-      {acceptanceLocked && <p className="work-note">項目已進入 Merge 或後續階段，驗收條件不可再修改。</p>}
+      <AcceptanceEditor value={acceptance} onChange={setAcceptance} locked={acceptanceLocked} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
         <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
     </form>
   </div>
+}
+
+function AcceptanceEditor({ value, onChange, locked = false }: {
+  value: string
+  onChange: (value: string) => void
+  locked?: boolean
+}) {
+  return <details className="work-acceptance-editor">
+    <summary>驗收條件 <span>{locked ? "已鎖定" : value.trim() ? "已設定 · 進階設定" : "進階設定 · 可稍後補上"}</span></summary>
+    <label>驗收條件（Markdown）<textarea className="work-input" value={value} maxLength={65536} disabled={locked}
+      placeholder="寫下完成時要看到的結果" onChange={(event) => onChange(event.target.value)} /></label>
+    {locked ? <p className="work-note">項目已進入 Merge 或後續階段，驗收條件不可再修改。</p>
+      : <p className="work-note">啟用規劃或驗證檢查的工作，指派前需要填寫驗收條件。</p>}
+  </details>
 }
 
 function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
@@ -1301,8 +1313,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
     <VoiceTextarea label="描述" value={description} onValue={setDescription} />
-    <label>驗收條件（Markdown）<textarea className="work-input" value={acceptance} maxLength={65536}
-      placeholder="寫下完成時要看到的結果；啟用 gate 的項目必須在指派前填寫" onChange={(event) => setAcceptance(event.target.value)} /></label>
+    <AcceptanceEditor value={acceptance} onChange={setAcceptance} />
     <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>

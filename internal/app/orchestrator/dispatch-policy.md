@@ -184,6 +184,15 @@ Seal findings before correction; disjoint fixes remain one wave. "Did the fix wo
 the single test run, not by a second reader. If the same defect class escapes that wave, stop at
 `architecture_hold` and tell the person who asked for the work; do not dispatch another patch.
 
+For an Epic, count the integrated specialist review as that review of the delivered outcome.
+Choose a UX/product, brand, security, or other specialist for the material risk actually present;
+do not send every role by default. Record the reviewed scope and findings once. Small fixes to
+copy, spacing, tests, or a finding within that scope are closed by the owner with focused checks
+and the final exact-tree verification. A new specialist pass is warranted only when a later change
+materially alters the user journey, product policy, brand direction, security boundary, or another
+risk the earlier review did not cover. Name the changed boundary and dispatch only its relevant
+specialist. The mandatory plan and verification gates still follow their captured rules.
+
 **A brief for work that deletes, overwrites or releases states what the decision may rest on**, not
 the shape somebody caught. Naming the shape invites the next patch to close that one spelling and
 leave the class standing. Measured on 2026-09-11: a review named one symlink escape, the correction

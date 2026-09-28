@@ -82,7 +82,10 @@ the integrated candidate. The brief covers desktop and smallest-supported-mobile
 keyboard and screen-reader use, dead ends, and product fit; it tells the reviewer to **mark unverified and say why**
 when evidence is unavailable. Every blocking finding is resolved, and the
 Epic evidence or completion report names the task id, verdict, and disposition. A backend-only
-Epic instead records why no person-facing review applies. This review cannot replace checker PASS.
+Epic instead records why no person-facing review applies. The review scope is recorded; small
+corrections inside it are checked by the owner without another specialist dispatch. A later
+material change outside that scope names its new UX, product, brand, or security boundary and
+receives only a focused specialist review. This review cannot replace checker PASS.
 The dispatch brief lists every required tool and proves the chosen worker surface supplies it.
 Codex CLI is not treated as if it carried the ChatGPT desktop app's built-in `@Browser`; a visual
 review uses a Browser/Computer Use surface or a named, installed Playwright/Chrome CDP equivalent.

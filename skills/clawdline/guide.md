@@ -1122,7 +1122,13 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   `ui-finish-gate` when a separate pre-ship visual pass is material. Resolve every blocking finding
   and record the task id, verdict and disposition in the Epic's verification evidence or completion
   report. If there is no person-facing impact, say why in the plan and do not add review ceremony.
-  This review never substitutes for the verification gate's checker PASS.
+  Record the scope this review covered. Normally dispatch each relevant specialist only once for
+  the integrated Epic; do not routinely send UX, brand, security, and other roles as a checklist.
+  Close small copy, spacing, test, or in-scope finding corrections yourself with focused checks.
+  Redispatch only when a later change materially alters the user journey, product policy, brand
+  direction, security boundary, or another risk outside that recorded scope; name the changed
+  boundary and request only its relevant specialist. This review never substitutes for the
+  captured plan gate or the verification gate's exact-candidate checker PASS.
 - **You remain responsible for the Epic after each child is merged.** Immediately reread that
   child's item and `clawdline item steps <child id>`; check that every step is complete. A merge
   does not close the child, and `merging` is not a resting state. The child's owning Session must

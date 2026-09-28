@@ -542,9 +542,9 @@ func TestEpicGuidesRequireApplicableUXProductReview(t *testing.T) {
 		wants := []string{"--kind review", "--claims \"\"", "--persona ux-architect", "--permission-mode ask",
 			"mark unverified and say why"}
 		if language == "en" {
-			wants = append(wants, "before merging")
+			wants = append(wants, "before merging", "small copy, spacing, test", "materially alters", "only its relevant specialist")
 		} else {
-			wants = append(wants, "進到 `merging` 前")
+			wants = append(wants, "進到 `merging` 前", "小修正", "明顯改動", "只重派對應專家")
 		}
 		for _, want := range wants {
 			if !bytes.Contains(epic, []byte(want)) {
@@ -557,7 +557,7 @@ func TestEpicGuidesRequireApplicableUXProductReview(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"--persona ux-architect", "before merging", "mark unverified and say why"} {
+		for _, want := range []string{"--persona ux-architect", "before merging", "mark unverified and say why", "small", "material"} {
 			if !bytes.Contains(body, []byte(want)) {
 				t.Errorf("%s omits applicable UX/product review obligation %q", path, want)
 			}
