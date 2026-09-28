@@ -3987,7 +3987,7 @@ export interface PersonaSuggestionReply {
   persona_id: string
 
   /**
-   * The AI provider whose explicit Board-content consent covered this turn.
+   * The configured AI provider used for this explicitly requested turn.
    */
   provider: string
 }

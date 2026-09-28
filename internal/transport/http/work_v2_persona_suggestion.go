@@ -21,7 +21,7 @@ const personaSuggestionContextLimit = 16 << 10
 
 // workV2PersonaSuggestion is POST /v1/work/v2/items/<id>/persona-suggestion.
 // Merely opening, reading or rendering an item cannot enter this path. The
-// person's Board-AI consent names the one provider whose account may be used.
+// explicit POST is the person's request to use the configured provider.
 func (s *Server) workV2PersonaSuggestion(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "An AI role suggestion is requested with POST.")
@@ -38,17 +38,6 @@ func (s *Server) workV2PersonaSuggestion(w http.ResponseWriter, r *http.Request,
 	}
 
 	provider := boardViewer(r).NarrativeProvider
-	settings, err := s.boardSettings(r.Context())
-	if err != nil {
-		writeRefusal(w, http.StatusServiceUnavailable, "board_settings_unavailable",
-			"The Board AI consent setting could not be read, so no model turn was started.")
-		return
-	}
-	if provider == "" || settings.NarrativeConsent == nil || *settings.NarrativeConsent != provider {
-		writeRefusal(w, http.StatusForbidden, "ai_consent_required",
-			"Enable AI reading summaries in Settings before sending a Board item's type, title and description to the AI provider.")
-		return
-	}
 	view, err := s.workV2().Item(r.Context(), id)
 	if err != nil {
 		s.writeWorkV2Error(w, err)
@@ -103,12 +92,12 @@ func (s *Server) runPersonaSuggestion(w http.ResponseWriter, r *http.Request, id
 	case errors.Is(err, planner.ErrNoPlanner):
 		log.Printf("audit work.persona_suggestion device=%s provider=%s ms=%d ok=0 why=no_planner", device, provider, ms)
 		writeRefusal(w, http.StatusNotImplemented, "no_persona_suggester",
-			"The AI provider selected for Board reading is not installed on this machine.")
+			"The configured AI provider is not installed on this machine.")
 		return
 	case errors.Is(err, planner.ErrOutOfQuota):
 		log.Printf("audit work.persona_suggestion device=%s provider=%s ms=%d ok=0 why=out_of_quota", device, provider, ms)
 		writeRefusal(w, http.StatusServiceUnavailable, "persona_suggester_out_of_quota",
-			"The AI provider selected for Board reading has no usage left. The current role choice was not changed.")
+			"The configured AI provider has no usage left. The current role choice was not changed.")
 		return
 	case err != nil:
 		log.Printf("audit work.persona_suggestion device=%s provider=%s ms=%d ok=0 why=failed", device, provider, ms)

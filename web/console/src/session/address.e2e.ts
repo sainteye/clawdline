@@ -825,6 +825,7 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
       const claude = document.getElementById("settings-claude-default-model")
       return {
         scrollsSideways: block.scrollWidth > block.clientWidth || document.documentElement.scrollWidth > innerWidth,
+        boardAIConsentControl: !!document.getElementById("settings-board-ai-toggle"),
         fields: [codex, claude].map((select) => ({
           tag: select.tagName,
           width: select.getBoundingClientRect().width,
@@ -835,6 +836,7 @@ test("Settings selects provider model defaults, fits a phone, and restores a ref
       }
     })()`)
     assert.equal(phone.scrollsSideways, false)
+    assert.equal(phone.boardAIConsentControl, false)
     assert.equal(phone.fields.length, 2)
     for (const field of phone.fields) {
       assert.equal(field.tag, "SELECT")
@@ -1632,7 +1634,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       suggestionDescribesRoles: true,
       chosenRole: "前端工程師",
       picker: "選擇既有 Session",
-      actions: ["指派", "開新 Codex Session（前端工程師）"],
+      actions: ["指派", "AI 建議", "開新 Codex Session（前端工程師）"],
       focus: "指派既有 Session",
       progressBeforeStart: false,
       sessionsPage: true,
@@ -1671,7 +1673,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       await tab.press("Tab")
       keyboard.push(await tab.run(`document.activeElement?.getAttribute("aria-label") || document.activeElement?.textContent?.trim()`))
     }
-    assert.deepEqual(keyboard, ["Codex", "Claude Code", "用 AI 判斷", "不指定"], "keyboard order")
+    assert.deepEqual(keyboard, ["Codex", "Claude Code", "AI 建議", "不指定"], "keyboard order")
     assert.deepEqual(await tab.run(`(() => {
       const role = document.querySelector(".work-created-modal .work-new-persona .chip")
       return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
@@ -1690,25 +1692,25 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       focused: "不指定",
       chosenRole: "不指定",
       suggestion: "建議角色：前端工程師符合「react」 · 目前已改選",
-      actions: ["指派", "開新 Codex Session"],
+      actions: ["指派", "AI 建議", "開新 Codex Session"],
     })
 
     // The local suggestion remains the default until this explicit press.
     // One press sends one receipted request, changes the preselection to the
     // catalog id AI returned, and still permits a manual override afterward.
-    await tab.run(`document.querySelector(".work-created-modal .work-persona-ai button").click()`)
+    await tab.run(`document.querySelector(".work-created-modal .work-persona-ai-button").click()`)
     const ai = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
       const read = () => {
         const card = document.querySelector(".work-created-modal .work-v2-card")
-        const status = card?.querySelector(".work-persona-ai [role=status]")
-        if (status) {
-          const roles = card.querySelector(".work-new-persona")
+        const status = card?.querySelector(".work-persona-ai-result[role=status]")
+        const roles = card?.querySelector(".work-new-persona")
+        const chosenRole = roles?.querySelector('[aria-checked="true"] span')?.textContent
+        if (status && chosenRole === "後端工程師") {
           return resolve({
             status: status.textContent,
-            chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
+            chosenRole,
             action: [...card.querySelectorAll(".work-assignment > button")].at(-1)?.textContent,
-            disclosure: card.querySelector(".work-persona-ai > div > span")?.textContent,
           })
         }
         if (Date.now() >= deadline) return reject(new Error("AI role suggestion did not arrive"))
@@ -1720,7 +1722,6 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       status: "AI 建議：後端工程師已預先選取，仍可手動改選",
       chosenRole: "後端工程師",
       action: "開新 Codex Session（後端工程師）",
-      disclosure: "只有按下按鈕才會把項目類型、標題與說明送給 OpenAI / Codex；每次按一下使用一個 AI 回合。",
     })
     assert.equal(personaSuggestionRequests, 1)
     assert.match(personaSuggestionKey, /^web-[0-9a-f]{32}$/)
@@ -1729,7 +1730,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       const card = document.querySelector(".work-created-modal .work-v2-card")
       return {
         chosenRole: card.querySelector('.work-new-persona [aria-checked="true"] span')?.textContent,
-        aiStatus: card.querySelector(".work-persona-ai [role=status]")?.textContent,
+        aiStatus: card.querySelector(".work-persona-ai-result[role=status]")?.textContent,
       }
     })()`), { chosenRole: "不指定", aiStatus: "AI 建議：後端工程師目前已改選其他角色" })
   }))

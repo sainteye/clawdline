@@ -732,23 +732,17 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
           ? `符合「${personaSuggestion.signals.join("」、「")}」`
           : "依項目類型判斷"}{personaSuggestionOverridden ? " · 目前已改選" : ""}</span>
       </p>}
-      {personas.length > 0 && <section className="work-persona-ai" aria-labelledby={`${aiSuggestionID}-title`}>
-        <div>
-          <strong id={`${aiSuggestionID}-title`}>讓 AI 判斷角色</strong>
-          <span id={`${aiSuggestionID}-disclosure`}>只有按下按鈕才會把項目類型、標題與說明送給 OpenAI / Codex；每次按一下使用一個 AI 回合。</span>
-        </div>
-        <button className="chip" type="button" disabled={!!busy || aiSuggestionBusy}
-          aria-busy={aiSuggestionBusy} aria-describedby={`${aiSuggestionID}-disclosure`}
-          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? "AI 判斷中…" : aiSuggestion ? "重新用 AI 判斷" : "用 AI 判斷"}</button>
-        {aiSuggestion?.outcome === "recommend" && aiPersona && <p id={aiSuggestionID} role="status">
-          <strong>AI 建議：{personaName(aiPersona)}</strong>
-          <span>{aiSuggestionOverridden ? "目前已改選其他角色" : "已預先選取，仍可手動改選"}</span>
-        </p>}
-        {aiSuggestion?.outcome === "ambiguous" && <p id={aiSuggestionID} role="status">
-          <strong>AI 無法可靠判斷</strong><span>保留目前的角色選擇，請手動決定。</span>
-        </p>}
-        {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
-      </section>}
+      {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
+        aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
+        onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? "AI 建議中…" : "AI 建議"}</button>}
+      {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+        <strong>AI 建議：{personaName(aiPersona)}</strong>
+        <span>{aiSuggestionOverridden ? "目前已改選其他角色" : "已預先選取，仍可手動改選"}</span>
+      </p>}
+      {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+        <strong>AI 無法可靠判斷</strong><span>保留目前的角色選擇，請手動決定。</span>
+      </p>}
+      {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
       {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
         team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : personaSuggestion ? personaSuggestionID : undefined}
         onPick={(id) => setPersonaChoice(id)}
@@ -815,7 +809,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
 function personaAIError(error: unknown): string {
   if (error instanceof RefusalError) {
     switch (error.code) {
-      case "ai_consent_required": return "請先到「設定 → 看板」允許 AI 讀取摘要；這次沒有送出項目內容。"
+      case "ai_consent_required": return "這台機器仍使用需要另行設定的舊版 AI 建議；請先更新 Clawdline。"
       case "no_persona_suggester": return "這台機器沒有可用的 Codex，因此沒有變更角色。"
       case "persona_suggester_out_of_quota": return "Codex 目前沒有可用額度，因此沒有變更角色。"
       case "persona_suggestion_failed": return "AI 沒有回傳可用的角色，因此保留目前選擇。"

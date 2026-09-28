@@ -12,21 +12,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/planner"
-	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
-
-func allowBoardAI(t *testing.T, s *Server) {
-	t.Helper()
-	provider := "codex"
-	if _, err := s.store.SeedBoardSettings(context.Background(), store.BoardSettings{
-		Revision: 1, Enabled: true, NarrativeConsent: &provider,
-	}, "test"); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func askPersona(t *testing.T, s *Server, item workV2ItemWire, key string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -37,7 +26,7 @@ func askPersona(t *testing.T, s *Server, item workV2ItemWire, key string) *httpt
 	return rec
 }
 
-func TestPersonaSuggestionRunsOnlyAfterTheExplicitConsentedPressAndReplays(t *testing.T) {
+func TestPersonaSuggestionRunsOnlyAfterTheExplicitPressAndReplays(t *testing.T) {
 	s, _, project := sessionItemServer(t)
 	item := personItem(t, s, project, "feature", "persona-suggestion-item")
 	runs := 0
@@ -56,12 +45,6 @@ func TestPersonaSuggestionRunsOnlyAfterTheExplicitConsentedPressAndReplays(t *te
 	if read.Code != http.StatusOK || runs != 0 {
 		t.Fatalf("read=%d runs=%d", read.Code, runs)
 	}
-	withoutConsent := askPersona(t, s, item, "suggest-without-consent")
-	if withoutConsent.Code != http.StatusForbidden || codeOf(t, withoutConsent) != "ai_consent_required" || runs != 0 {
-		t.Fatalf("without consent: %d %s runs=%d", withoutConsent.Code, withoutConsent.Body, runs)
-	}
-
-	allowBoardAI(t, s)
 	first := askPersona(t, s, item, "suggest-once")
 	again := askPersona(t, s, item, "suggest-once")
 	if first.Code != http.StatusOK || again.Code != http.StatusOK || runs != 1 ||
@@ -97,7 +80,6 @@ func TestPersonaSuggestionKeepsAmbiguityAndFailuresTyped(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			s, _, project := sessionItemServer(t)
 			item := personItem(t, s, project, "feature", "persona-suggestion-"+strings.ReplaceAll(c.name, " ", "-"))
-			allowBoardAI(t, s)
 			s.suggestPersona = func(context.Context, planner.PersonaRequest, string) (planner.PersonaSuggestion, error) {
 				return c.result, c.err
 			}
@@ -122,7 +104,6 @@ func TestPersonaSuggestionKeepsAmbiguityAndFailuresTyped(t *testing.T) {
 func TestPersonaSuggestionFilesAPossiblySpentFailureButNotBusy(t *testing.T) {
 	s, _, project := sessionItemServer(t)
 	item := personItem(t, s, project, "feature", "persona-suggestion-receipts")
-	allowBoardAI(t, s)
 	runs := 0
 	s.suggestPersona = func(context.Context, planner.PersonaRequest, string) (planner.PersonaSuggestion, error) {
 		runs++
