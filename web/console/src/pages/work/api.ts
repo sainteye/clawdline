@@ -320,6 +320,7 @@ async function mutate<T>(path: string, body: unknown, method = "POST"): Promise<
 }
 
 export type WorkV2Kind = "feature" | "issue" | "epic" | "refactor" | "plan"
+export type WorkV2ExecutableKind = Extract<WorkV2Kind, "feature" | "issue" | "epic">
 export type WorkV2Phase = "created" | "assigning" | "assigned" | "implementing" | "verifying" | "merging" | "deploying" | "done" | "cancelled"
 export type WorkV2Status = "open" | "done" | "all"
 
@@ -491,6 +492,12 @@ export const editWorkV2 = (item: WorkV2Item, title: string, description: string)
     title,
     description,
   }, "PATCH")
+
+export const convertWorkV2 = (item: WorkV2Item, kind: WorkV2ExecutableKind) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/convert`, {
+    expected_version: item.version,
+    kind,
+  })
 
 // The lifecycle calls this cancellation rather than erasing its audit trail.
 // To the person it is Delete: the item leaves the Board and its Session to-do

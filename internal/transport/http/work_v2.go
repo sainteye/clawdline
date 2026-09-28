@@ -1058,14 +1058,15 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		return
 	}
 	var body struct {
-		ExpectedVersion int64  `json:"expected_version"`
-		Mode            string `json:"mode"`
-		TerminalID      string `json:"terminal_id"`
-		Assistant       string `json:"assistant"`
-		Model           string `json:"model"`
-		Persona         string `json:"persona"`
-		Reason          string `json:"reason"`
-		Note            string `json:"note"`
+		ExpectedVersion int64     `json:"expected_version"`
+		Mode            string    `json:"mode"`
+		TerminalID      string    `json:"terminal_id"`
+		Assistant       string    `json:"assistant"`
+		Model           string    `json:"model"`
+		Persona         string    `json:"persona"`
+		Kind            work.Kind `json:"kind"`
+		Reason          string    `json:"reason"`
+		Note            string    `json:"note"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -1095,6 +1096,10 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		}
 	case "unassign":
 		out, err = s.workV2().Unassign(r.Context(), id, body.ExpectedVersion, actor, file)
+	case "convert":
+		out, err = s.workV2().ConvertPlan(r.Context(), id, app.ConvertPlanV2{
+			ExpectedVersion: body.ExpectedVersion, Kind: body.Kind, Actor: actor,
+		}, file)
 	case "cancel":
 		out, err = s.workV2().Cancel(r.Context(), id, body.ExpectedVersion, actor, body.Reason, file)
 	case "complete":

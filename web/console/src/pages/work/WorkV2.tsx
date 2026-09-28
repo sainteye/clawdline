@@ -33,6 +33,7 @@ import {
   assignWorkV2,
   addWorkV2Image,
   completeWorkV2,
+  convertWorkV2,
   createWorkV2,
   deleteWorkV2,
   deleteWorkV2Image,
@@ -49,6 +50,7 @@ import {
   type Decision,
   type ProjectPlace,
   type WorkV2Item,
+  type WorkV2ExecutableKind,
   type WorkV2Kind,
   type WorkV2Proposal,
   type WorkV2Page,
@@ -71,6 +73,7 @@ import { appendWorkPage } from "./work-pages.js"
 import { visibleWorkItems } from "./plan-visibility.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
+const EXECUTABLE_KINDS: WorkV2ExecutableKind[] = ["feature", "issue", "epic"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
 const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: string }> = {
   feature: { icon: "✦", label: "Feature", description: "加入一項使用者可以感受到的新能力" },
@@ -578,6 +581,8 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [converting, setConverting] = useState(false)
+  const [conversionKind, setConversionKind] = useState<WorkV2ExecutableKind>("feature")
   const [reminded, setReminded] = useState(false)
   // Moving an owned item to another Session opens the same picker an
   // unassigned card shows, without its owner among the choices.
@@ -596,7 +601,10 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const assignable = item.area !== "planning" && !item.closed_at && !item.owner_session
   const reassignable = item.area !== "planning" && !item.closed_at && !!item.owner_session
   const epic = isEpic(item)
-  return <article className={epic ? "work-card work-v2-card work-epic-card" : "work-card work-v2-card"} data-work-id={item.id}
+  const plan = item.kind === "plan"
+  const cardClass = epic ? "work-card work-v2-card work-epic-card"
+    : plan ? "work-card work-v2-card work-plan-card" : "work-card work-v2-card"
+  return <article className={cardClass} data-work-id={item.id}
     data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></div>
@@ -610,6 +618,8 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
           <WorkIcon name="reassign" /> 改派</button>}
         {!item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
+        {plan && !item.closed_at && <button type="button" disabled={!!busy} aria-expanded={converting}
+          onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>轉成可執行項目</button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
         {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
@@ -625,8 +635,28 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>取消</button>
       {failure && <p className="work-note" role="alert">標記完成失敗：{failure}</p>}
     </div>}
+    {converting && plan && !item.closed_at && <section className="work-plan-convert" aria-label="把 Plan 轉成可執行項目">
+      <div><strong>準備執行這份 Plan</strong><p>轉換後會移到「待指派」；標題、描述、圖片與歷史紀錄都會保留。</p></div>
+      <fieldset className="work-plan-kind-field"><legend>轉換後的項目類型</legend>
+        <div className="work-plan-kind-list">
+          {EXECUTABLE_KINDS.map((kind) => <label key={kind} className="work-plan-kind-option">
+            <input type="radio" name={`plan-conversion-${item.id}`} value={kind} checked={conversionKind === kind}
+              disabled={!!busy} onChange={() => setConversionKind(kind)} />
+            <span aria-hidden="true">{KIND_META[kind].icon}</span><b>{KIND_META[kind].label}</b>
+          </label>)}
+        </div>
+      </fieldset>
+      <div className="work-actions">
+        <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `convert-${item.id}`}
+          onClick={() => { void run(`convert-${item.id}`, () => convertWorkV2(item, conversionKind)).then((ok) => { if (ok) setConverting(false) }) }}>
+          {busy === `convert-${item.id}` ? "轉換中…" : `確認轉成 ${KIND_META[conversionKind].label}`}</button>
+        <button className="chip" type="button" disabled={!!busy} onClick={() => setConverting(false)}>取消</button>
+      </div>
+      {failure && <p className="work-note" role="alert">轉換失敗：{failure}</p>}
+    </section>}
     {epic
       ? <span className="work-state work-epic-label"><b>EPIC · 大型項目</b> · {phaseName(item.phase)}</span>
+      : plan ? <span className="work-state work-plan-label"><b>PLAN · 未排入執行</b></span>
       : <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>}
     <h3 id={`work-card-title-${item.id}`}>{item.title}</h3>
     <EpicParentLine item={item} />
