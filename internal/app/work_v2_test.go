@@ -82,6 +82,7 @@ func TestTheCompletingAgentCanRetractAMistakenCompletion(t *testing.T) {
 		invalidated++
 		return nil
 	}
+	w.VerificationAuthorizer = func(_ *store.WorkV2Tx, _ work.ItemV2) error { return nil }
 	v := createWorkV2Test(t, w, work.KindIssue)
 	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
 		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Assistant: "codex",

@@ -65,27 +65,80 @@ func TestFirstSuccessfulAssignmentCapturesEveryGateModeOnce(t *testing.T) {
 }
 
 func TestARefusedAssignmentWritesNoGateSnapshot(t *testing.T) {
+	for _, kind := range []work.Kind{work.KindFeature, work.KindEpic} {
+		t.Run(string(kind), func(t *testing.T) {
+			w := newWorkV2Test(t)
+			w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+				return WorkV2GateSettings{Planning: true}, nil
+			}
+			created, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p",
+				Kind: kind, Title: "Needs acceptance", Description: "Cannot be assigned yet.", Actor: "local"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = w.Assign(context.Background(), created.Item.ID, AssignWorkV2{ExpectedVersion: created.Item.Version,
+				Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
+			if got := workErrorCode(t, err); got != "acceptance_required" {
+				t.Fatalf("error = %s", got)
+			}
+			after, err := w.Item(context.Background(), created.Item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Item.HasGateSnapshot() || after.Item.GateSnapshotCycle != 0 || len(after.Assignments) != 0 ||
+				after.Item.Version != created.Item.Version {
+				t.Fatalf("refused assignment wrote: %+v assignments=%+v", after.Item, after.Assignments)
+			}
+		})
+	}
+}
+
+func TestVerifyOnRejectsFreeFormEvidenceUntilTheCoordinatorAuthorizesTheTuple(t *testing.T) {
 	w := newWorkV2Test(t)
 	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
-		return WorkV2GateSettings{Planning: true}, nil
+		return WorkV2GateSettings{Verify: true}, nil
 	}
-	created, err := w.Create(context.Background(), NewWorkV2{ProjectID: "p", ProjectPath: "/p",
-		Kind: work.KindFeature, Title: "Needs acceptance", Description: "Cannot be assigned yet.", Actor: "local"}, nil)
+	created := createWorkV2Test(t, w, work.KindIssue)
+	assigned, err := w.Assign(context.Background(), created.Item.ID, AssignWorkV2{
+		ExpectedVersion: created.Item.Version, Mode: "existing_session", SessionID: "session-a", Actor: "person",
+	}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = w.Assign(context.Background(), created.Item.ID, AssignWorkV2{ExpectedVersion: created.Item.Version,
-		Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
-	if got := workErrorCode(t, err); got != "acceptance_required" {
-		t.Fatalf("error = %s", got)
-	}
-	after, err := w.Item(context.Background(), created.Item.ID)
+	implementing, err := w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
+		ExpectedVersion: assigned.Item.Version, SessionID: "session-a", Next: work.PhaseImplementing, Actor: "session-a",
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Item.HasGateSnapshot() || after.Item.GateSnapshotCycle != 0 || len(after.Assignments) != 0 ||
-		after.Item.Version != created.Item.Version {
-		t.Fatalf("refused assignment wrote: %+v assignments=%+v", after.Item, after.Assignments)
+	verifying, err := w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
+		ExpectedVersion: implementing.Item.Version, SessionID: "session-a", Next: work.PhaseVerifying, Actor: "session-a",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
+		ExpectedVersion: verifying.Item.Version, SessionID: "session-a", Next: work.PhaseMerging,
+		Verification: "I ran the tests", Actor: "session-a",
+	}, nil)
+	if got := workErrorCode(t, err); got != "verification_authorization_required" {
+		t.Fatalf("free-form verification error = %s", got)
+	}
+	authorized := 0
+	w.VerificationAuthorizer = func(_ *store.WorkV2Tx, item work.ItemV2) error {
+		authorized++
+		if item.ID != verifying.Item.ID || item.Cycle != verifying.Item.Cycle ||
+			item.AcceptanceVersion != verifying.Item.AcceptanceVersion ||
+			item.AcceptanceDigest != verifying.Item.AcceptanceDigest {
+			t.Fatalf("authorization tuple = %+v", item)
+		}
+		return nil
+	}
+	merged, err := w.Advance(context.Background(), created.Item.ID, AdvanceWorkV2{
+		ExpectedVersion: verifying.Item.Version, SessionID: "session-a", Next: work.PhaseMerging, Actor: "session-a",
+	}, nil)
+	if err != nil || merged.Item.Phase != work.PhaseMerging || authorized != 1 {
+		t.Fatalf("authorized merge = %+v calls=%d err=%v", merged.Item, authorized, err)
 	}
 }
 

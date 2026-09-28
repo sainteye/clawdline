@@ -47,6 +47,11 @@ type WorkSystemV2 struct {
 	// calls it for every acceptance change and completion retraction even when
 	// no round store has been installed yet.
 	VerificationInvalidator func(*store.WorkV2Tx, work.ItemV2, work.ItemV2, string) error
+	// VerificationAuthorizer is the transaction-local seam that a verification
+	// coordinator supplies to match a durable PASS to this exact item cycle and
+	// acceptance tuple. Free-form Agent evidence never substitutes for it when
+	// the cycle's verification gate is on.
+	VerificationAuthorizer func(*store.WorkV2Tx, work.ItemV2) error
 }
 
 type WorkV2GateSettings struct {
@@ -188,6 +193,17 @@ func (w *WorkSystemV2) InvalidateVerificationAuthorization(tx *store.WorkV2Tx, p
 		return w.VerificationInvalidator(tx, prev, next, reason)
 	}
 	return nil
+}
+
+func (w *WorkSystemV2) authorizeVerification(tx *store.WorkV2Tx, item work.ItemV2) error {
+	if !item.VerifyGate {
+		return nil
+	}
+	if w.VerificationAuthorizer == nil {
+		return work.RefuseV2("verification_authorization_required",
+			"This cycle requires an independent PASS for its current acceptance criteria before merging.")
+	}
+	return w.VerificationAuthorizer(tx, item)
 }
 
 // PreviewAssignment returns the gate facts a presently unsnapshotted item
@@ -1143,7 +1159,14 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 				break
 			}
 		}
-		if err := work.AgentTransition(prev, c.Next, strings.TrimSpace(c.Verification) != "", hasLanding,
+		hasVerification := strings.TrimSpace(c.Verification) != ""
+		if prev.Phase == work.PhaseVerifying && c.Next == work.PhaseMerging && prev.VerifyGate {
+			if err := w.authorizeVerification(tx, prev); err != nil {
+				return err
+			}
+			hasVerification = true
+		}
+		if err := work.AgentTransition(prev, c.Next, hasVerification, hasLanding,
 			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
 			return err
 		}

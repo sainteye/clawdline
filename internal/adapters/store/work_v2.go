@@ -212,8 +212,10 @@ func openWorkV2(db *sql.DB) error {
 			return err
 		}
 	}
-	// Acceptance and per-cycle gates were added together. Older items have no
-	// acceptance text, so their version starts at one with SHA-256(empty).
+	// Acceptance and per-cycle gates were added together. Older items start at
+	// version one. An already-active Epic receives its exact person-authored
+	// description as compatibility acceptance so its formerly valid reviewed
+	// plan is not trapped by the newly introduced planning gate.
 	// Only already-owned, non-terminal work receives a compatibility snapshot:
 	// Epics retain their old plan gate and every other kind retains the old
 	// ungated behaviour. Pending, unassigned and terminal rows stay unsnapped.
@@ -237,6 +239,30 @@ func openWorkV2(db *sql.DB) error {
 			}
 		}
 	}
+	type legacyEpicAcceptance struct {
+		id, criteria string
+	}
+	var legacyEpicAcceptances []legacyEpicAcceptance
+	rows, err := db.Query(`SELECT id, description FROM work_v2_items
+		WHERE gate_snapshot_cycle=0 AND owner_session<>'' AND kind='epic'
+		  AND phase IN ('assigned','implementing','verifying','merging','deploying')`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var candidate legacyEpicAcceptance
+		if err := rows.Scan(&candidate.id, &candidate.criteria); err != nil {
+			rows.Close()
+			return err
+		}
+		legacyEpicAcceptances = append(legacyEpicAcceptances, candidate)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	if _, err = db.Exec(`UPDATE work_v2_items
 		SET gate_snapshot_cycle=cycle,
 		    gate_snapshot_at=COALESCE((SELECT a.created_at FROM work_v2_assignments a
@@ -246,6 +272,13 @@ func openWorkV2(db *sql.DB) error {
 		WHERE gate_snapshot_cycle=0 AND owner_session<>''
 		  AND phase IN ('assigned','implementing','verifying','merging','deploying')`); err != nil {
 		return err
+	}
+	for _, candidate := range legacyEpicAcceptances {
+		if _, err = db.Exec(`UPDATE work_v2_items
+			SET acceptance_criteria=?, acceptance_version=1, acceptance_digest=?
+			WHERE id=?`, candidate.criteria, work.AcceptanceDigest(candidate.criteria), candidate.id); err != nil {
+			return err
+		}
 	}
 	// created_via is the person's message a Session created the item on
 	// (work-system-v2 §2, amended 2026-09-25). Items written before it have

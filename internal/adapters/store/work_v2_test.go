@@ -57,7 +57,7 @@ INSERT INTO work_v2_items
   (id,project_id,project_path,kind,title,description,phase,condition,user_action,deployment_policy,
    owner_session,created_by,created_at,updated_at,closed_at,cycle,version)
 VALUES
-  ('epic-assigned','p','/p','epic','e','e','assigned','','','agent_decides','s','local',1,11,NULL,2,1),
+  ('epic-assigned','p','/p','epic','e','  legacy criteria' || char(10),'assigned','','','agent_decides','s','local',1,11,NULL,2,1),
   ('feature-progress','p','/p','feature','f','f','implementing','','','agent_decides','s','local',2,12,NULL,3,1),
   ('issue-verifying','p','/p','issue','i','i','verifying','','','agent_decides','s','local',3,13,NULL,4,1),
   ('epic-created','p','/p','epic','c','c','created','','','agent_decides','','local',4,14,NULL,1,1),
@@ -100,10 +100,25 @@ VALUES
 			t.Errorf("%s snapshot = cycle %d at %d planning=%v verify=%v", id,
 				got.GateSnapshotCycle, at, got.PlanningGate, got.VerifyGate)
 		}
-		if got.AcceptanceVersion != 1 || got.AcceptanceCriteria != "" ||
-			got.AcceptanceDigest != work.AcceptanceDigest("") {
+		wantAcceptance := ""
+		if id == "epic-assigned" {
+			wantAcceptance = "  legacy criteria\n"
+		}
+		if got.AcceptanceVersion != 1 || got.AcceptanceCriteria != wantAcceptance ||
+			got.AcceptanceDigest != work.AcceptanceDigest(wantAcceptance) {
 			t.Errorf("%s migrated acceptance = %q v%d %s", id, got.AcceptanceCriteria,
 				got.AcceptanceVersion, got.AcceptanceDigest)
+		}
+		if id == "epic-assigned" {
+			plans := []work.DocumentV2{
+				{Role: work.DocumentPlan},
+				{Role: work.DocumentPlanReview},
+				{Role: work.DocumentPlan},
+				{Role: work.DocumentPlanReview},
+			}
+			if err := work.PlanningGate(got, work.PhaseImplementing, plans); err != nil {
+				t.Errorf("migrated Epic did not preserve its reviewed-plan crossing: %v", err)
+			}
 		}
 	}
 }
