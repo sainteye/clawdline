@@ -9,7 +9,7 @@ const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 test("fleet refreshes do not clear and reload the same Session todos", () => {
   assert.match(source, /const rowID = row\?\.id \?\? ""/)
   assert.match(source, /const rowSessionID = row\?\.sessionId \?\? ""/)
-  assert.match(source, /const load = useCallback[\s\S]*?readSessionWorkV2\(rowID, rowSessionID\)[\s\S]*?}, \[rowID, rowSessionID\]\)/)
+  assert.match(source, /const load = useCallback[\s\S]*?readSessionWorkV2\(rowID, rowSessionID\)[\s\S]*?}, \[rowID, rowSessionID, readReady\]\)/)
   assert.doesNotMatch(source, /}, \[row\]\)/)
   assert.doesNotMatch(source, /useEffect\(\(\) => \{ if \(open\) void load\(\) \}/)
 })
@@ -20,6 +20,13 @@ test("Session todo reads use durable conversation identity when it is available"
   assert.match(source, /readSessionWorkV2\(rowID, rowSessionID\)/)
 })
 
+test("a Session with no first conversation does not report a to-do read failure", () => {
+  assert.match(source, /const readReady = sessionTodosReady\(row\)/)
+  assert.match(source, /if \(!rowID \|\| !readReady\) return/)
+  assert.match(source, /if \(!readReady\) return/)
+  assert.match(source, /!readReady \? <span id="session-todos-count">\{nextWord\("sessionNotStartedShort"\)\}<\/span>/)
+})
+
 test("opening an answered todo fold explicitly refreshes it once", () => {
   assert.match(source, /if \(next && page !== null\) void refresh\(\)/)
 })
@@ -27,12 +34,12 @@ test("opening an answered todo fold explicitly refreshes it once", () => {
 test("a failed read is shown in the header, not as loading, and tapping it retries without toggling the fold", () => {
   // Loading only while there is no page and no failure.
   assert.match(source, /: !readFailure && <span id="session-todos-count">\{L\.strings\.webLoading\}<\/span>/)
-  assert.match(source, /\{readFailure && <ReadFailure state=\{todoHeaderState\(page !== null, true\)\} reason=\{readFailure\.reason\}/)
+  assert.match(source, /\{readReady && readFailure && <ReadFailure state=\{todoHeaderState\(page !== null, true\)\} reason=\{readFailure\.reason\}/)
   assert.match(source, /retrying=\{reading\} onRetry=\{\(\) => \{ void refresh\(true\) \}\}/)
   assert.match(source, /className="session-todos-failed"[\s\S]*?title=\{tip\}[\s\S]*?onClick=\{\(ev\) => \{ ev\.preventDefault\(\); ev\.stopPropagation\(\); onRetry\(\) \}\}/)
   assert.match(source, /nextWord\("todosRetryTip", \{ reason \}\)/)
   // The failure's words stay in the fold as well, and only a success clears it.
-  assert.match(source, /\{readFailure && <p className="work-note" role="alert">\{readFailure\.words\}<\/p>\}/)
+  assert.match(source, /\{readReady && readFailure && <p className="work-note" role="alert">\{readFailure\.words\}<\/p>\}/)
   assert.match(source, /if \(mine === ticket\.current\) \{ setPage\(next\); setReadFailure\(null\) \}/)
   // A failed refresh keeps the last good page.
   assert.doesNotMatch(source, /catch \(e\) \{[^}]*setPage\(null\)/)
