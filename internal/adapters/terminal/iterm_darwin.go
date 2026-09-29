@@ -511,12 +511,25 @@ func itermSight(ctx context.Context, s session.Session) (farewellSight, error) {
 // interleave inside iTerm2 whatever sessions they were aimed at. Reading the
 // session list and a screen stay outside it: they change nothing, and a
 // twenty-second tab opening must not stall the list every page is drawn from.
-var appleEvents sync.Mutex
+var appleEvents = make(chan struct{}, 1)
 
-// effect takes appleEvents and answers its release, for `defer effect()()`.
-func effect() func() {
-	appleEvents.Lock()
-	return appleEvents.Unlock
+// effect waits only as long as the caller can still use the lane. A mutex
+// taken after the request expired used to launch an osascript already doomed
+// to be killed, adding another Apple Event to a jammed application.
+func effect(ctx context.Context) (func(), error) {
+	if ctx.Err() != nil {
+		return nil, EffectBusy{Why: "iTerm2 was busy before this action began"}
+	}
+	select {
+	case appleEvents <- struct{}{}:
+		if ctx.Err() != nil {
+			<-appleEvents
+			return nil, EffectBusy{Why: "iTerm2 was busy before this action began"}
+		}
+		return func() { <-appleEvents }, nil
+	case <-ctx.Done():
+		return nil, EffectBusy{Why: "iTerm2 was busy before this action began"}
+	}
 }
 
 // itermCall runs one effect script with its arguments — never inside the
@@ -524,9 +537,13 @@ func effect() func() {
 // `{ok, error}` answer. A script that answered "not done" is a failure, never
 // a quiet success.
 func itermCall(ctx context.Context, script string, limit time.Duration, args ...string) error {
-	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
+	release, err := effect(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", append([]string{"-l", "JavaScript", "-"}, args...)...)
 	cmd.Stdin = strings.NewReader(script)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")

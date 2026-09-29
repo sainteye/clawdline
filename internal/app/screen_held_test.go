@@ -23,6 +23,16 @@ type slowTerminal struct {
 	seen    []context.Context
 }
 
+type sourceFailTerminal struct {
+	*slowTerminal
+	sourceFailed bool
+}
+
+func (s *sourceFailTerminal) CaptureWithFailure(ctx context.Context, row session.Session) (string, bool, bool) {
+	text, ok := s.Capture(ctx, row)
+	return text, ok, !ok && s.sourceFailed
+}
+
 func (s *slowTerminal) Capture(ctx context.Context, _ session.Session) (string, bool) {
 	s.mu.Lock()
 	s.running++
@@ -185,5 +195,137 @@ func TestATerminalThatCannotBeReadIsLeftAlone(t *testing.T) {
 	}
 	if text, ok := h.Capture(context.Background(), row); !ok || text != "back" {
 		t.Fatalf("the screen that came back was not held: %q %v", text, ok)
+	}
+}
+
+// A blocked iTerm2 answers none of its tabs. Retrying a different tab on each
+// scan used to consume two Apple Event slots continuously despite per-tab
+// backoff, and those captures waited ahead of sends.
+func TestFailedITermCaptureBacksOffTheSourceNotJustTheTab(t *testing.T) {
+	var fail atomic.Bool
+	fail.Store(true)
+	host := &sourceFailTerminal{sourceFailed: true, slowTerminal: &slowTerminal{answer: func() (string, bool) {
+		if fail.Load() {
+			return "", false
+		}
+		return "back", true
+	}}}
+	h := NewHeldScreens(host)
+	h.SetLimits(1, ScreenHeldLimit)
+	now := time.Unix(2_000_000, 0)
+	h.now = func() time.Time { return now }
+	settle := func() {
+		t.Helper()
+		for i := 0; i < 200; i++ {
+			h.mu.Lock()
+			quiet := h.inflight == 0
+			h.mu.Unlock()
+			if quiet {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("capture did not finish")
+	}
+	row := func(id string, backend session.Backend) session.Session {
+		return session.Session{ID: id, Backend: backend, Assistant: session.AssistantClaude}
+	}
+	h.Capture(context.Background(), row("a", session.BackendITerm))
+	settle()
+	h.Capture(context.Background(), row("b", session.BackendITerm))
+	settle()
+	if calls, _, _ := host.stats(); calls != 1 {
+		t.Fatalf("another iTerm tab caused %d Apple Events inside source backoff", calls)
+	}
+	// An iTerm failure must not prevent tmux from being read.
+	h.Capture(context.Background(), row("%1", session.BackendTmux))
+	settle()
+	if calls, _, _ := host.stats(); calls != 2 {
+		t.Fatalf("tmux was blocked by iTerm source backoff: %d calls", calls)
+	}
+	now = now.Add(ScreenBackoffFirst)
+	h.Capture(context.Background(), row("b", session.BackendITerm))
+	settle()
+	if calls, _, _ := host.stats(); calls != 3 {
+		t.Fatalf("iTerm source was not probed after backoff: %d calls", calls)
+	}
+	// A failed probe doubles the quiet stretch; a successful one clears it.
+	now = now.Add(ScreenBackoffFirst)
+	h.Capture(context.Background(), row("c", session.BackendITerm))
+	settle()
+	if calls, _, _ := host.stats(); calls != 3 {
+		t.Fatalf("iTerm retried before doubled backoff: %d calls", calls)
+	}
+	now = now.Add(2 * ScreenBackoffFirst)
+	fail.Store(false)
+	h.Capture(context.Background(), row("c", session.BackendITerm))
+	settle()
+	h.Capture(context.Background(), row("d", session.BackendITerm))
+	settle()
+	if calls, _, _ := host.stats(); calls != 5 {
+		t.Fatalf("a successful probe did not clear source backoff: %d calls", calls)
+	}
+}
+
+func TestOneGoneITermTabDoesNotBackOffHealthyTabs(t *testing.T) {
+	host := &sourceFailTerminal{slowTerminal: &slowTerminal{answer: func() (string, bool) {
+		return "", false
+	}}}
+	h := NewHeldScreens(host)
+	h.SetLimits(1, ScreenHeldLimit)
+	settle := func() {
+		t.Helper()
+		for i := 0; i < 200; i++ {
+			h.mu.Lock()
+			quiet := h.inflight == 0
+			h.mu.Unlock()
+			if quiet {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("capture did not finish")
+	}
+	h.Capture(context.Background(), session.Session{ID: "gone", Backend: session.BackendITerm})
+	settle()
+	h.Capture(context.Background(), session.Session{ID: "healthy", Backend: session.BackendITerm})
+	settle()
+	if calls, _, _ := host.stats(); calls != 2 {
+		t.Fatalf("a missing tab blocked another iTerm tab: %d calls", calls)
+	}
+}
+
+func TestITermOutageDoesNotAmplifyAcrossTwentyTabs(t *testing.T) {
+	count := func(sourceFailed bool) int {
+		host := &sourceFailTerminal{sourceFailed: sourceFailed,
+			slowTerminal: &slowTerminal{answer: func() (string, bool) { return "", false }}}
+		h := NewHeldScreens(host)
+		h.SetLimits(1, ScreenHeldLimit)
+		start := time.Unix(2_000_000, 0)
+		for second := 0; second < 60; second++ {
+			now := start.Add(time.Duration(second) * time.Second)
+			h.now = func() time.Time { return now }
+			id := string(rune('a' + second%20))
+			h.Capture(context.Background(), session.Session{ID: id, Backend: session.BackendITerm})
+			for i := 0; i < 200; i++ {
+				h.mu.Lock()
+				quiet := h.inflight == 0
+				h.mu.Unlock()
+				if quiet {
+					break
+				}
+				if i == 199 {
+					t.Fatal("capture did not finish")
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+		calls, _, _ := host.stats()
+		return calls
+	}
+	perTab, perSource := count(false), count(true)
+	t.Logf("60 one-second requests across 20 failing tabs: per-tab=%d Apple Events, per-source=%d", perTab, perSource)
+	if perTab < 50 || perSource > 5 {
+		t.Fatalf("failure amplification remained: per-tab=%d per-source=%d", perTab, perSource)
 	}
 }

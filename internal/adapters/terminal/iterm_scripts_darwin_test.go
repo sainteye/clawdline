@@ -125,6 +125,50 @@ func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
 	}
 }
 
+func TestExpiredAppleEventWaitDoesNotEnterTheEffectsLane(t *testing.T) {
+	release, err := effect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = effect(ctx)
+	var busy EffectBusy
+	if !errors.As(err, &busy) || time.Since(started) > time.Second {
+		t.Fatalf("expired wait returned %v after %s", err, time.Since(started))
+	}
+	var unsent Unsent
+	if !errors.As(err, &unsent) {
+		t.Fatalf("the effect was not marked unsent: %v", err)
+	}
+	release()
+	// A canceled request may not acquire even a free lane and then launch an
+	// osascript after the caller has given up.
+	dead, stop := context.WithCancel(context.Background())
+	stop()
+	if _, err := effect(dead); !errors.As(err, &busy) {
+		t.Fatalf("canceled request entered the lane: %v", err)
+	}
+	release, err = effect(context.Background())
+	if err != nil {
+		t.Fatalf("the effects lane stayed occupied after refusal: %v", err)
+	}
+	release()
+}
+
+func TestOnlySourceWideCaptureFailureQuietsITerm(t *testing.T) {
+	if !captureSourceFailed(Failure{Attention: true, Message: "iTerm2 did not answer in time."}) {
+		t.Fatal("Apple Event timeout was treated as a missing tab")
+	}
+	if captureSourceFailed(Failure{Message: "That session is gone"}) {
+		t.Fatal("one missing tab was treated as a source outage")
+	}
+	if captureSourceFailed(Unsent{Why: "no session id"}) {
+		t.Fatal("an invalid target was treated as a source outage")
+	}
+}
+
 type modelRun struct {
 	Answer       map[string]any `json:"answer"`
 	BulkRequests int            `json:"bulkRequests"`
