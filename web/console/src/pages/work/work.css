@@ -3,9 +3,8 @@
    Not a copy: the Swift app has no screen for these three structures. So this
    invents no palette and no furniture of its own — every colour is a token of
    legacy/tokens.css, the page is the copied board.css's `.board-page`, the
-   buttons generally use its `.board-button` and detail.css's `.chip`. The
-   assignment confirmation is larger so it is visible after either choice.
-   Measures follow the existing controls.
+   buttons use its `.board-button` and detail.css's `.chip`, and the measures
+   follow the existing controls.
 
    What it does add is the one thing the design asks the eye to get at once
    (board-redesign §3.3): three kinds of thing that must not look alike. The
@@ -286,15 +285,8 @@
 .work-assignment-route > .work-new-session:not(.work-new-persona),
 .work-assignment-route > .work-persona-ai-button { justify-self: start; }
 .work-assignment-route > .work-note { margin: 0; }
-.work-assignment-cta {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    min-height: 42px; width: 100%; padding: 9px 12px; border: 1px solid var(--accent); border-radius: 9px;
-    background: var(--accent); color: #17110e; font-family: inherit; font-size: 13px; font-weight: 700; line-height: 1.4; text-align: center;
-}
-.work-assignment-cta:hover:not(:disabled) { filter: brightness(1.08); }
-.work-assignment-cta:disabled { opacity: .4; }
-.work-assignment-cta[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
-.work-assignment-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.work-assignment-action { justify-self: start; min-height: 36px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; }
+.work-assignment-action[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
 .work-assignment-spinner {
     flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
     border-radius: 50%; animation: work-assignment-spin 800ms linear infinite;
