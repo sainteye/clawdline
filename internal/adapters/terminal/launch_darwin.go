@@ -69,9 +69,13 @@ function run(argv) {
 // script text, so nothing in it is read as JavaScript. The id is returned as
 // iTerm2 spells it, which is how this daemon's inventory lists the tab.
 func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) {
-	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	release, err := effect(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", line)
 	cmd.Stdin = strings.NewReader(itermNewTab)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
