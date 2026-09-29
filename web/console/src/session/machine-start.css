@@ -1,20 +1,33 @@
-.sheet #start-resume .machine-start {
+.machine-clawdfather .clawdfather-crown,
+.sheet #start-machine-action .clawdfather-crown {
+  width: 15px;
+  height: 10px;
+  pointer-events: none;
+  background: #f0c75e;
+  clip-path: polygon(0 18%, 27% 52%, 43% 0, 58% 52%, 100% 18%, 86% 100%, 14% 100%);
+  transform: rotate(-30deg);
+  transform-origin: 50% 80%;
+  filter: drop-shadow(0 1px 0 rgba(80, 49, 10, 0.85));
+}
+
+.sheet #start-machine-action {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
   white-space: nowrap;
 }
+.sheet #start-machine-action[hidden] { display: none; }
 
 /* Use the crown already drawn on Clawdfather Sessions, without its row badge position. */
-.sheet #start-resume .machine-start .clawdfather-crown {
+.sheet #start-machine-action .clawdfather-crown {
   position: relative;
   top: auto;
   left: auto;
   flex: 0 0 15px;
 }
 
-.sheet #start-resume .machine-start:disabled { opacity: 0.45; cursor: default; }
+.sheet #start-machine-action:disabled { opacity: 0.45; cursor: default; }
 
 .row > .machine-registration {
   grid-column: 2 / -1;

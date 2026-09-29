@@ -18,6 +18,7 @@ import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard } from "./machine/MachineDashboard.js"
+import { Start } from "./session/Start.js"
 import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
 import { sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
@@ -844,7 +845,15 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
         <Component key={id} shown={page === id} />
       ))}
       <Overlays />
-      {machine ? <MachineDashboard sessions={fleet.snapshot?.sessions ?? []} onClose={closeMachine} /> : null}
+      {machine ? <MachineDashboard
+        sessions={fleet.snapshot?.sessions ?? []}
+        onClose={closeMachine}
+        onClawdfather={(id) => {
+          closeMachine()
+          if (id) openSession(id)
+          else Start.openMachine()
+        }}
+      /> : null}
       <NewBuild />
     </>
   )
