@@ -1,0 +1,673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "squad.schema.json",
+  "title": "AI squad catalog and settings",
+  "description": "Private GET /v1/squad/catalog, /v1/squad/settings, /v1/squad/scopes and versioned writes. GET /v1/personas remains the compatible summary.",
+  "$defs": {
+    "SquadCandidates": {
+      "type": "object",
+      "required": ["scope_id", "definition_ids"],
+      "properties": {
+        "scope_id": { "type": "string" },
+        "definition_ids": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "SquadNames": {
+      "type": "object",
+      "required": [
+        "en",
+        "zh-Hant"
+      ],
+      "properties": {
+        "en": {
+          "type": "string"
+        },
+        "zh-Hant": {
+          "type": "string"
+        }
+      }
+    },
+    "SquadReference": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "SquadSkillReference": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "enabled"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SquadDefinition": {
+      "type": "object",
+      "required": [
+        "definition_id",
+        "version",
+        "source",
+        "license",
+        "digest",
+        "name",
+        "summary",
+        "body",
+        "icon",
+        "teams",
+        "skills",
+        "builtin"
+      ],
+      "properties": {
+        "definition_id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/SquadNames"
+        },
+        "summary": {
+          "$ref": "#/$defs/SquadNames"
+        },
+        "body": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "common.schema.json#/$defs/Icon"
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadReference"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadSkillReference"
+          }
+        },
+        "builtin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SquadTeam": {
+      "type": "object",
+      "required": [
+        "team_id",
+        "version",
+        "source",
+        "license",
+        "digest",
+        "name",
+        "icon",
+        "personas",
+        "builtin"
+      ],
+      "properties": {
+        "team_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/SquadNames"
+        },
+        "icon": {
+          "$ref": "#/$defs/Icon"
+        },
+        "personas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadReference"
+          }
+        },
+        "builtin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SquadSkill": {
+      "type": "object",
+      "required": [
+        "skill_id",
+        "version",
+        "source",
+        "license",
+        "digest",
+        "name",
+        "purpose",
+        "icon",
+        "content",
+        "builtin"
+      ],
+      "properties": {
+        "skill_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/SquadNames"
+        },
+        "purpose": {
+          "$ref": "#/$defs/SquadNames"
+        },
+        "icon": {
+          "$ref": "common.schema.json#/$defs/Icon"
+        },
+        "content": {
+          "type": "string"
+        },
+        "builtin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SquadCatalog": {
+      "type": "object",
+      "required": [
+        "catalog_version",
+        "definitions",
+        "teams",
+        "skills"
+      ],
+      "properties": {
+        "catalog_version": {
+          "type": "integer"
+        },
+        "definitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadDefinition"
+          }
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadTeam"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadSkill"
+          }
+        }
+      }
+    },
+    "SquadChoice": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "enabled"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SquadFieldText": {
+      "type": "object",
+      "required": [
+        "value",
+        "source",
+        "present",
+        "version"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "default",
+            "global",
+            "project"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer"
+        }
+      }
+    },
+    "SquadFieldBool": {
+      "type": "object",
+      "required": [
+        "value",
+        "source",
+        "present",
+        "version"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "default",
+            "global",
+            "project"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer"
+        }
+      }
+    },
+    "SquadFieldSkills": {
+      "type": "object",
+      "required": [
+        "value",
+        "source",
+        "present",
+        "version"
+      ],
+      "properties": {
+        "value": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadChoice"
+          }
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "default",
+            "global",
+            "project"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer"
+        }
+      }
+    },
+    "SquadEffectivePersona": {
+      "type": "object",
+      "required": [
+        "definition_id",
+        "settings_version",
+        "handbook",
+        "global_handbook",
+        "auto_assign",
+        "skills"
+      ],
+      "properties": {
+        "definition_id": {
+          "type": "string"
+        },
+        "settings_version": {
+          "type": "integer"
+        },
+        "handbook": {
+          "$ref": "#/$defs/SquadFieldText"
+        },
+        "global_handbook": {
+          "$ref": "#/$defs/SquadFieldText"
+        },
+        "auto_assign": {
+          "$ref": "#/$defs/SquadFieldBool"
+        },
+        "skills": {
+          "$ref": "#/$defs/SquadFieldSkills"
+        }
+      }
+    },
+    "SquadEffectiveSettings": {
+      "type": "object",
+      "required": [
+        "scope_id",
+        "scope_kind",
+        "motion",
+        "motion_settings_version",
+        "personas"
+      ],
+      "properties": {
+        "place_id": {
+          "type": "string"
+        },
+        "scope_id": {
+          "type": "string"
+        },
+        "scope_kind": {
+          "type": "string",
+          "enum": [
+            "global",
+            "repo",
+            "place"
+          ]
+        },
+        "motion": {
+          "$ref": "#/$defs/SquadFieldBool"
+        },
+        "motion_settings_version": {
+          "type": "integer"
+        },
+        "personas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SquadEffectivePersona"
+          }
+        }
+      }
+    },
+    "SquadScopeInfo": {
+      "type": "object",
+      "required": ["scope_id", "kind", "label"],
+      "properties": {
+        "place_id": { "type": "string" },
+        "scope_id": { "type": "string" },
+        "kind": { "type": "string", "enum": ["repo", "place"] },
+        "label": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "SquadScopes": {
+      "type": "object",
+      "required": [
+        "scopes",
+        "scope_ids"
+      ],
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SquadScopeInfo" }
+        },
+        "scope_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "SquadInputText": {
+      "type": "object",
+      "required": ["present", "value"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "value": { "type": "string" }
+      }
+    },
+    "SquadInputBool": {
+      "type": "object",
+      "required": ["present", "value"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "value": { "type": "boolean" }
+      }
+    },
+    "SquadInputSkills": {
+      "type": "object",
+      "required": ["present", "value"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "value": { "type": "array", "items": { "$ref": "#/$defs/SquadChoice" } }
+      }
+    },
+    "SquadOverride": {
+      "type": "object",
+      "properties": {
+        "handbook": { "$ref": "#/$defs/SquadInputText" },
+        "auto_assign": { "$ref": "#/$defs/SquadInputBool" },
+        "skills": { "$ref": "#/$defs/SquadInputSkills" }
+      }
+    },
+    "SquadSaveRequest": {
+      "type": "object",
+      "required": [
+        "definition_id",
+        "expected_version",
+        "overrides"
+      ],
+      "properties": {
+        "place_id": {
+          "type": "string"
+        },
+        "scope_id": {
+          "type": "string"
+        },
+        "definition_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "overrides": {
+          "$ref": "#/$defs/SquadOverride"
+        }
+      }
+    },
+    "SquadMotionRequest": {
+      "type": "object",
+      "required": [
+        "expected_version",
+        "motion"
+      ],
+      "properties": {
+        "place_id": {
+          "type": "string"
+        },
+        "scope_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "motion": { "$ref": "#/$defs/SquadInputBool" }
+      }
+    },
+    "SquadWriteReply": {
+      "type": "object",
+      "required": [
+        "scope_id",
+        "version"
+      ],
+      "properties": {
+        "scope_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        }
+      }
+    },
+    "SquadEntityPayload": {
+      "type": "object",
+      "properties": {
+        "definition": { "$ref": "#/$defs/SquadDefinition" },
+        "team": { "$ref": "#/$defs/SquadTeam" },
+        "skill": { "$ref": "#/$defs/SquadSkill" }
+      }
+    },
+    "SquadEntityRequest": {
+      "type": "object",
+      "required": [
+        "kind",
+        "expected_version",
+        "entity"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "definition",
+            "team",
+            "skill"
+          ]
+        },
+        "expected_version": {
+          "type": "integer"
+        },
+        "entity": {
+          "$ref": "#/$defs/SquadEntityPayload"
+        }
+      }
+    },
+    "SquadEntityReply": {
+      "type": "object",
+      "required": [
+        "catalog_version",
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "catalog_version": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        }
+      }
+    },
+    "SquadSessionBinding": {
+      "type": "object",
+      "required": ["session_id", "state"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "conversation_id": { "type": "string" },
+        "state": { "type": "string", "enum": ["bound", "legacy_unsnapshotted", "identity_unavailable"] },
+        "snapshot_id": { "type": "string" },
+        "definition_id": { "type": "string" },
+        "scope_id": { "type": "string" }
+      }
+    },
+    "SquadSessionBindings": {
+      "type": "object",
+      "required": ["bindings"],
+      "properties": {
+        "bindings": { "type": "array", "items": { "$ref": "#/$defs/SquadSessionBinding" } }
+      }
+    },
+    "SquadEventHead": {
+      "type": "object",
+      "required": ["seq"],
+      "properties": { "seq": { "type": "integer" } }
+    },
+    "SquadEvent": {
+      "type": "object",
+      "required": ["seq", "receipt_id", "snapshot_id", "conversation_id", "definition_id", "scope_id", "skill_id", "skill_version", "status", "at"],
+      "properties": {
+        "seq": { "type": "integer" },
+        "receipt_id": { "type": "string" },
+        "snapshot_id": { "type": "string" },
+        "conversation_id": { "type": "string" },
+        "definition_id": { "type": "string" },
+        "scope_id": { "type": "string" },
+        "skill_id": { "type": "string" },
+        "skill_version": { "type": "string" },
+        "status": { "type": "string" },
+        "failure_code": { "type": "string" },
+        "at": { "type": "string" }
+      }
+    },
+    "SquadEvents": {
+      "type": "object",
+      "required": ["events", "next_after", "has_more"],
+      "properties": {
+        "events": { "type": "array", "items": { "$ref": "#/$defs/SquadEvent" } },
+        "next_after": { "type": "integer" },
+        "has_more": { "type": "boolean" }
+      }
+    },
+    "SquadRefusal": {
+      "type": "object",
+      "required": [
+        "error",
+        "detail"
+      ],
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "current_version": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

@@ -21,8 +21,8 @@ import "./machine-start.css"
  *
  * - **No machine row.** The transport has no `machines` read (no Cloud), so the
  *   row stays hidden, as it does on the Mac's own page.
- * - **A separate machine row.** Clawdfather starts in a daemon-owned workspace,
- *   outside the Project list. Board owners still carry Project work.
+ * - **A separate machine action.** Clawdfather starts in a daemon-owned workspace,
+ *   beside the resume switch rather than among Projects. Board owners still carry Project work.
  * - **Write is assumed until refused.** This daemon's health carries no `write`
  *   flag; a `write_disabled` refusal turns it off, as the composer does.
  * - **The arriving row is found by its terminal id.** The original matches the
@@ -313,7 +313,7 @@ function drawMachines(): void {
 function drawResume(): void {
   const row = el("start-resume")
   row.innerHTML = ""
-  row.hidden = !write || typeof api.pastSessions !== "function"
+  row.hidden = !write
   if (row.hidden) return
 
   if (at) {
@@ -336,24 +336,36 @@ function drawResume(): void {
     return
   }
 
-  const chip = document.createElement("button")
-  chip.type = "button"
-  chip.className = "chip check" + (resume && resumable() ? " on" : "")
-  chip.innerHTML =
-    '<svg class="tick" viewBox="0 0 14 14" aria-hidden="true"' +
-    ' focusable="false">' +
-    '<rect class="box" x="0.5" y="0.5" width="13" height="13" rx="3.5"></rect>' +
-    '<path class="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6"' +
-    ' stroke-linecap="round" stroke-linejoin="round"></path></svg>' +
-    '<span class="label"></span>'
-  ;(chip.querySelector(".label") as HTMLElement).textContent = T().webResumeWith
-  chip.disabled = !!pressing || !!wait || !resumable()
-  chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false")
-  chip.onclick = () => {
-    resume = !resume
-    draw()
+  if (typeof api.pastSessions === "function") {
+    const chip = document.createElement("button")
+    chip.type = "button"
+    chip.className = "chip check" + (resume && resumable() ? " on" : "")
+    chip.innerHTML =
+      '<svg class="tick" viewBox="0 0 14 14" aria-hidden="true"' +
+      ' focusable="false">' +
+      '<rect class="box" x="0.5" y="0.5" width="13" height="13" rx="3.5"></rect>' +
+      '<path class="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6"' +
+      ' stroke-linecap="round" stroke-linejoin="round"></path></svg>' +
+      '<span class="label"></span>'
+    ;(chip.querySelector(".label") as HTMLElement).textContent = T().webResumeWith
+    chip.disabled = !!pressing || !!wait || !resumable()
+    chip.setAttribute("aria-pressed", resume && resumable() ? "true" : "false")
+    chip.onclick = () => {
+      resume = !resume
+      draw()
+    }
+    row.appendChild(chip)
   }
-  row.appendChild(chip)
+
+  const machine = document.createElement("button")
+  machine.type = "button"
+  machine.className = "chip machine-start"
+  machine.innerHTML = '<span class="clawdfather-crown" aria-hidden="true"></span><span class="label"></span>'
+  ;(machine.querySelector(".label") as HTMLElement).textContent = pressing === MACHINE_PLACE
+    ? T().webStarting : nextWord("machineSessionStart")
+  machine.disabled = !!pressing || !!wait || !with_
+  machine.onclick = () => press(MACHINE_PLACE)
+  row.appendChild(machine)
 }
 
 function edge(): void {
@@ -409,30 +421,6 @@ function draw(): void {
   }
 
   list.innerHTML = ""
-  if (!resume && !find.trim()) {
-    const li = document.createElement("li")
-    const row = document.createElement("button")
-    row.type = "button"
-    row.className = "place machine-place"
-    row.dataset.id = MACHINE_PLACE
-    row.setAttribute("aria-description", `${nextWord("machineSessionDetails")}. ${nextWord("machineSessionBoundary")}`)
-    row.disabled = !!pressing || !!wait || !with_
-    if (pressing === MACHINE_PLACE) row.dataset.busy = "1"
-    row.innerHTML = '<span class="machine-mark" aria-hidden="true">♛</span><span class="name"></span><span class="where"></span>'
-    ;(row.querySelector(".name") as HTMLElement).textContent = nextWord("machineSessionStart")
-    ;(row.querySelector(".where") as HTMLElement).textContent = pressing === MACHINE_PLACE
-      ? T().webStarting : nextWord("machineSessionScope")
-    li.appendChild(row)
-    list.appendChild(li)
-    const note = document.createElement("li")
-    note.className = "machine-start-note"
-    note.textContent = nextWord("machineSessionPending")
-    list.appendChild(note)
-    const boundary = document.createElement("li")
-    boundary.className = "machine-start-note machine-boundary-note"
-    boundary.textContent = nextWord("machineSessionBoundary")
-    list.appendChild(boundary)
-  }
   matching().forEach((p) => {
     const li = document.createElement("li")
     const row = document.createElement("button")

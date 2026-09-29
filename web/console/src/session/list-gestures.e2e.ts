@@ -160,6 +160,11 @@ function rows(): Row[] {
       root_assignment: { id: "root-feature", label: "Feature Root", state: "briefed", ownership: "independent_root" },
       epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
     }),
+    row(UNKNOWN, "Second Feature Root", unknownCloseability(), 90, {
+      sessionId: "second-feature-conversation",
+      root_assignment: { id: "root-second-feature", label: "Second Feature Root", state: "briefed", ownership: "independent_root" },
+      epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
+    }),
   ]
   if (readingScenario.startsWith("status-")) {
     const extra: Row = {
@@ -1072,7 +1077,7 @@ test("closing the new Session sheet returns focus to its opener", () =>
     }
   }))
 
-test("the machine start is a separate readable action on phone and desktop", () =>
+test("the machine start sits beside resume with the yellow crown on phone and desktop", () =>
   inTab(async (tab) => {
     for (const layout of ["phone", "desktop"] as const) {
       if (layout === "desktop") await tab.desktop()
@@ -1081,7 +1086,7 @@ test("the machine start is a separate readable action on phone and desktop", () 
       await tab.run(`new Promise((resolve, reject) => {
         const started = Date.now()
         const check = () => {
-          const row = document.querySelector('#start-list .machine-place')
+          const row = document.querySelector('#start-resume .machine-start')
           if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
           if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
           setTimeout(check, 50)
@@ -1089,24 +1094,29 @@ test("the machine start is a separate readable action on phone and desktop", () 
         check()
       })`)
       const shown = await tab.run(`(() => {
-        const machine = document.querySelector('#start-list .machine-place')
+        const machine = document.querySelector('#start-resume .machine-start')
+        const resume = document.querySelector('#start-resume .chip.check')
         const project = document.querySelector('#start-list .place[data-id="project-fixture"]')
         const rect = machine?.getBoundingClientRect()
-        return { name: machine?.querySelector('.name')?.textContent, scope: machine?.querySelector('.where')?.textContent,
-          policy: machine?.getAttribute('aria-description'), visiblePolicy: document.querySelector('#start-list .machine-boundary-note')?.textContent,
-          pending: document.querySelector('#start-list .machine-start-note')?.textContent,
+        const resumeRect = resume?.getBoundingClientRect()
+        const crown = machine?.querySelector('.clawdfather-crown')
+        return { name: machine?.textContent, crown: crown ? getComputedStyle(crown).backgroundColor : '',
+          crownShape: crown ? getComputedStyle(crown).clipPath : '',
+          notes: document.querySelectorAll('#start-list .machine-start-note').length,
           enabled: !(machine instanceof HTMLButtonElement && machine.disabled),
-          separate: !!machine && !!project && machine !== project && machine.classList.contains('machine-place'),
-          width: rect?.width, viewport: window.innerWidth }
+          separate: !!machine && !!project && !project.contains(machine),
+          besideResume: !!rect && !!resumeRect && Math.abs(rect.top - resumeRect.top) < 2 && rect.left >= resumeRect.right,
+          width: rect?.width, right: rect?.right, viewport: window.innerWidth }
       })()`)
-      assert.match(shown.name, /Clawdfather/)
-      assert.match(shown.scope, /Session|機器/)
-      assert.match(shown.pending, /登記|register/)
-      assert.match(shown.policy, /explicitly|明確/)
-      assert.match(shown.visiblePolicy, /proposes|提案/)
+      assert.match(shown.name, /^(開啟|Open) Clawdfather$/)
+      assert.equal(shown.crown, "rgb(240, 199, 94)")
+      assert.notEqual(shown.crownShape, "none")
+      assert.equal(shown.notes, 0)
       assert.equal(shown.enabled, true)
       assert.equal(shown.separate, true)
+      assert.equal(shown.besideResume, true)
       assert.ok(shown.width <= shown.viewport)
+      assert.ok(shown.right <= shown.viewport)
       await tab.run(`new Promise((resolve) => setTimeout(resolve, 180))`)
       await tab.shot("machine-start-" + layout)
       await tab.press("#start-close")
@@ -1122,7 +1132,7 @@ test("the start sheet keeps Tab inside and gives focus back on phone and desktop
       await tab.run(`new Promise((resolve, reject) => {
         const started = Date.now()
         const check = () => {
-          const row = document.querySelector('#start-list .machine-place')
+          const row = document.querySelector('#start-resume .machine-start')
           if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
           if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
           setTimeout(check, 50)
@@ -1166,7 +1176,7 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
     readingScenario = "epic"
     try {
       await tab.go("/")
-      await tab.until("the Epic owner and Feature Root arrive", (s) => s.order.join() === [SAFE, BLOCKED].join())
+      await tab.until("the Epic owner and Feature Roots arrive", (s) => s.order.join() === [SAFE, BLOCKED, UNKNOWN].join())
       await tab.until("the independent Root chip is drawn", (s) => s.taskVisible)
       const shown = await tab.run(`(() => {
         const owner = document.querySelector('#rows > li.row[data-id="${SAFE}"]')
@@ -1176,12 +1186,21 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
           epic: feature?.dataset.epicParent,
           root: feature?.querySelector('.task-chip')?.textContent?.trim(),
           offset: feature?.getBoundingClientRect().left - owner?.getBoundingClientRect().left,
+          through: feature?.dataset.treeThrough,
+          trunk: feature ? getComputedStyle(feature.querySelector('.kid'), '::before').borderLeftStyle : null,
+          elbow: feature ? getComputedStyle(feature.querySelector('.kid'), '::after').borderTopStyle : null,
+          overflow: feature ? getComputedStyle(feature).overflowX : null,
         }
       })()`)
       assert.equal(shown.depth, "1")
       assert.equal(shown.epic, "epic-fixture")
       assert.ok(shown.root, JSON.stringify(shown))
       assert.ok(shown.offset >= 20, "the Feature Root is visibly indented under the Epic owner")
+      assert.equal(shown.through, "1", "the first Root's trunk reaches the next Root")
+      assert.equal(shown.trunk, "dashed")
+      assert.equal(shown.elbow, "dashed")
+      assert.equal(shown.overflow, "visible", "the connector is not clipped at the card edge")
+      await tab.shot("epic-tree")
     } finally {
       readingScenario = "normal"
     }
