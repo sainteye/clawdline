@@ -427,6 +427,33 @@ export interface SessionWorkV2 {
   truncated: boolean
 }
 
+export interface HumanInterventionV2 {
+  id: string
+  source_conversation: string
+  source_label: string
+  target_conversation: string
+  target_session: string
+  kind: "read" | "answer" | "action" | "report"
+  title: string
+  summary: string
+  action: string
+  reason: string
+  detail?: string
+  options: { label: string; draft: string }[]
+  document_url?: string
+  created_at: number
+  read_at: number | null
+  resolved_at: number | null
+  resolution?: string
+  version: number
+}
+
+export interface HumanInterventionsV2 {
+  ok: boolean
+  rows: HumanInterventionV2[]
+  pruned_resolved: number
+}
+
 export interface WorkV2Proposal {
   id: string
   project_id: string
@@ -573,6 +600,14 @@ export const readSessionWorkV2 = (terminalID: string, conversationID = "") => {
   const target = conversationID ? `conversation:${conversationID}` : terminalID
   return call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`)
 }
+export const readHumanInterventionsV2 = (conversationID: string) =>
+  call<HumanInterventionsV2>(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${conversationID}`)}`)
+export const humanInterventionActionV2 = (
+  conversationID: string, note: HumanInterventionV2, action: "read" | "resolve" | "reopen",
+) => mutate<{ note: HumanInterventionV2 }>(
+  `/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${conversationID}`)}/${note.id}/${action}`,
+  { expected_version: note.version },
+)
 export const readSessionsForWorkV2 = () => call<SessionsSnapshot>("/v1/sessions")
 /** The token ledger's bill of a Board item, and of one session (docs/token-ledger.md). */
 export const readItemUsage = (itemID: string) => call<UsageItem>(`/v1/usage/items/${encodeURIComponent(itemID)}`)

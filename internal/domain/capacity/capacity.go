@@ -188,6 +188,14 @@ const (
 	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
 	WorkStepsPerItem          = "work.steps_per_item"
 	SessionDirectTodos        = "session.direct_todos"
+	HumanInterventionsOpen    = "session.human_interventions_open"
+	HumanInterventionsTotal   = "session.human_interventions_total"
+	HumanInterventionsRecent  = "session.human_interventions_recent"
+	HumanInterventionTitle    = "session.human_intervention_title_bytes"
+	HumanInterventionText     = "session.human_intervention_text_bytes"
+	HumanInterventionDetail   = "session.human_intervention_detail_bytes"
+	HumanInterventionDocument = "session.human_intervention_document_bytes"
+	HumanInterventionDraft    = "session.human_intervention_draft_bytes"
 	SettingsRequestBodyBytes  = "settings.request_body_bytes"
 	SessionTitleRequestBytes  = "session.title_request_bytes"
 	SessionTitleCharacters    = "session.title_characters"
@@ -701,6 +709,54 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.DirectTodoV2Limit"},
+		},
+		{
+			Name: HumanInterventionsOpen, Class: Evidence, Unit: Rows,
+			Limit: 8, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/store.HumanInterventionsOpenLimit"},
+		},
+		{
+			Name: HumanInterventionsTotal, Class: Progress, Unit: Rows,
+			Limit: 2000, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/store.HumanInterventionsTotalLimit"},
+		},
+		{
+			Name: HumanInterventionsRecent, Class: Cache, Unit: Rows,
+			Limit: 5, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/store.HumanInterventionsRecentLimit"},
+		},
+		{
+			Name: HumanInterventionTitle, Class: Buffer, Unit: Bytes,
+			Limit: 120, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.humanInterventionTitleLimit"},
+		},
+		{
+			Name: HumanInterventionText, Class: Buffer, Unit: Bytes,
+			Limit: 500, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.humanInterventionTextLimit"},
+		},
+		{
+			Name: HumanInterventionDetail, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.humanInterventionDetailLimit"},
+		},
+		{
+			Name: HumanInterventionDocument, Class: Buffer, Unit: Bytes,
+			Limit: 2 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.humanInterventionDocumentLimit"},
+		},
+		{
+			Name: HumanInterventionDraft, Class: Buffer, Unit: Bytes,
+			Limit: 2 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.humanInterventionDraftLimit"},
 		},
 		{
 			Name: WorkItemTitleBytes, Class: Evidence, Unit: Bytes,
