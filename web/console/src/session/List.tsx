@@ -146,9 +146,8 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   } else if (notStarted) {
     html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + peerSaid + workSaid + shellsSaid
   } else if (work.state === "unknown" && row.state === "unknown") {
-    // The sentence already says the state could not be read; the work copy
-    // beside it said so again and, squeezed by the wrapped sentence, was
-    // drawn as a clipped column of half-characters on a phone.
+    // The label already says the state could not be read; the work copy
+    // beside it would say so again.
     html = `<span class="unread">${L.escapeHTML(nextWord("sessionStateUnrecognizedList"))}</span>` + peerSaid + retainedSaid + shellsSaid
   } else {
     html = peerSaid + workSaid + retainedSaid + shellsSaid

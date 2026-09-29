@@ -57,7 +57,7 @@ const words = {
     infoResetsInMinutes: "in {n} min",
     sessionLastActivity: "last activity {time}",
     sessionStateUnrecognizedList:
-      "Clawdline read the screen but could not identify its state. Open this session to inspect it.",
+      "State unknown",
     proposalNeedsYourDecision:
       "The system has no to-do it can reassess. Finishing work will not withdraw this proposal; answer it, or it will wait until expiry.",
     proposalNotNow: "Not now",
@@ -643,7 +643,7 @@ const words = {
     infoContextUsed: "context 裡有 {used} / {window} tokens",
     infoResetsInMinutes: "{n} 分鐘後",
     sessionLastActivity: "上次活動：{time}",
-    sessionStateUnrecognizedList: "Clawdline 已讀到畫面，但無法辨認狀態。請開啟這個 session 查看。",
+    sessionStateUnrecognizedList: "無法辨認狀態",
     sessionStateUnrecognizedDetail: "Clawdline 已讀到畫面，但無法辨認狀態。決定下一步前，請查看下方對話。",
     sessionCountNotStarted: "{n} 個還沒開始對話",
     transcriptTechnicalDetails: "技術細節",
