@@ -583,6 +583,52 @@ func TestWorkV2RootAssignmentIsFoundByConversation(t *testing.T) {
 	}
 }
 
+func TestEpicRootParentComesFromTheAssigningOwner(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	epic := v2Item("10000000-0000-4000-8000-000000000101", at)
+	epic.Kind = work.KindEpic
+	epic.OwnerSession = "new-owner"
+	child := v2Item("10000000-0000-4000-8000-000000000102", at)
+	child.ParentID = epic.ID
+	plain := v2Item("10000000-0000-4000-8000-000000000103", at)
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		for _, item := range []work.ItemV2{epic, child, plain} {
+			if err := tx.CreateItem(item, "local", `{}`); err != nil {
+				return err
+			}
+		}
+		for _, a := range []work.AssignmentV2{
+			{ID: "epic-child", WorkID: child.ID, Mode: "new_session", SessionID: "child-session", Assistant: "codex", State: "released", HumanActor: work.EpicOwnerActor("original-owner"), RootAssignment: "root-child", CreatedAt: at, UpdatedAt: at},
+			{ID: "person-child", WorkID: child.ID, Mode: "new_session", SessionID: "person-session", Assistant: "codex", State: "released", HumanActor: "local", RootAssignment: "root-person", CreatedAt: at, UpdatedAt: at},
+			{ID: "existing-child", WorkID: child.ID, Mode: "existing_session", SessionID: "existing-session", Assistant: "codex", State: "released", HumanActor: work.EpicOwnerActor("original-owner"), CreatedAt: at, UpdatedAt: at},
+			{ID: "plain-root", WorkID: plain.ID, Mode: "new_session", SessionID: "plain-session", Assistant: "codex", State: "active", HumanActor: work.EpicOwnerActor("original-owner"), RootAssignment: "root-plain", CreatedAt: at, UpdatedAt: at},
+		} {
+			if err := tx.CreateAssignment(a); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.WorkV2EpicRootParentsForSessions(ctx, "codex", []string{"child-session", "person-session", "existing-session", "plain-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got["child-session"] != (EpicRootParent{OwnerSession: "original-owner", EpicID: epic.ID}) {
+		t.Fatalf("Epic ancestry = %+v", got)
+	}
+	if other, err := s.WorkV2EpicRootParentsForSessions(ctx, "claude", []string{"child-session"}); err != nil || len(other) != 0 {
+		t.Fatalf("another assistant's ancestry = %+v, %v", other, err)
+	}
+}
+
 func TestDirectTodoReadMarksOnlyItsSessionAndDeleteRemovesText(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

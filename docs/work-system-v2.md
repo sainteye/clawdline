@@ -453,6 +453,14 @@ and only it:
   Root Assignment — with the owner check inside the assignment's transaction and the actor recorded
   as `epic_owner:<session id>`, a Session, never a person. Assigning a child to the Epic's owner
   itself is allowed. The child's owner is told which Epic it belongs to.
+
+  For a new Session opened by the Epic owner, the Session snapshot projects an `epic_parent` with
+  the Epic id and the assigning owner's conversation id from that assignment's recorded actor.
+  The console places this independent Root under the owner's row, and keeps broker children under
+  that Root. The source is the assignment made at the time, so reassigning the Epic does not move an
+  existing Root to a different parent. If the owner is absent or filtered out, the Root remains a
+  top-level visible row. This relationship is presentation ancestry: it does not grant child-task
+  credentials, transfer landing duties, or change the Root's independent closeability.
 - Creation and assignment are two writes, in that order. When the assignment fails the child
   **stays, unassigned** (a failed new-Session attempt is recorded as `assignment_failed`, as a
   person's would be), and the `201` answer carries `assigned: false` and `assignment_error: {code,

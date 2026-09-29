@@ -189,7 +189,7 @@ function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof row
  * screen; the indent is a claim about the row above, so it is drawn only when
  * that row is there.
  */
-function taskPlace(row: SessionRow): {
+function taskPlace(row: SessionRow, depth: number): {
   depth: number
   chip: { text: string; title: string; live: boolean } | null
 } {
@@ -201,7 +201,7 @@ function taskPlace(row: SessionRow): {
   const titles = () => T.webTaskTasks + ": " + roots.map((t) => t.title || t.id).join(" · ")
   if (kid) {
     return {
-      depth: L.rowDepth(row.id),
+      depth,
       chip: {
         text: T.webTaskChild + " · " + L.taskWord(kid),
         title: [kid.title || "", roots.length ? titles() : ""].filter(Boolean).join("\n"),
@@ -209,7 +209,9 @@ function taskPlace(row: SessionRow): {
       },
     }
   }
-  if (featureRoot) return { depth: 0, chip: { text: featureRoot.text, title: featureRoot.title, live: featureRoot.live } }
+  if (featureRoot) return { depth, chip: { text: featureRoot.text, title: featureRoot.title + (depth && row.epic_parent ? "\n隸屬於 Epic 負責人的工作樹" : ""), live: featureRoot.live } }
+  if (row.epic_parent && depth) return { depth, chip: { text: T.webTaskRoot + " · " + roots.length,
+    title: "隸屬於 Epic 負責人的工作樹", live: roots.some(L.taskLive) } }
   if (roots.length) {
     return { depth: 0, chip: { text: T.webTaskRoot + " · " + roots.length, title: titles(), live: roots.some(L.taskLive) } }
   }
@@ -255,12 +257,14 @@ export function sessionActivityWord(
  */
 export function Row({
   row,
+  depth,
   selected,
   open,
   swiped,
   onOpen,
 }: {
   row: SessionRow
+  depth: number
   selected: boolean
   open: boolean
   /** This row's action is uncovered (`swipe.ts`). A phone thing; nothing else sets it. */
@@ -269,7 +273,7 @@ export function Row({
 }) {
   const who = L.whoHTML(row.assistant)
   const coordinator = L.coordinatorRowModel(row)
-  const place = taskPlace(row)
+  const place = taskPlace(row, depth)
   const waiting = (row.coordination?.waitingOn ?? []).length
   const owed = (row.coordination?.waitedOnBy ?? []).length
   // `fillRow` turns the two classes on and off on the node it already has, so
@@ -323,12 +327,14 @@ export function Row({
       aria-disabled="false"
       data-coordinator={coordinator ? "1" : undefined}
       data-depth={place.chip && place.depth ? String(place.depth) : undefined}
+      data-epic-parent={row.epic_parent && depth ? row.epic_parent.epic_id : undefined}
       data-swipe-width={actionWidth(row.sessionId)}
       onClick={onPress}
     >
       <span className="kid" hidden={!place.depth} aria-hidden="true">
         └
       </span>
+      {row.epic_parent && depth ? <span className="sr-only">隸屬於 Epic 負責人的工作樹</span> : null}
       {coordinator ? (
         // `fillCoordinatorMark`: the canvas moves inside a button, with the
         // crown after it. In the original the button opens the Clawdfather

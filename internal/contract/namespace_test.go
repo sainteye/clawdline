@@ -56,14 +56,17 @@ var sessionFields = map[string]string{
 	"coordination#Wait.ownerSessionId":                   conversation,
 	"coordination#CompletionRow.root_session_id":         conversation,
 
-	"orchestrator#BrokerRoot.session_id":    conversation,
-	"projects#PlaceResumed.session":         conversation,
-	"schedules#ScheduleRequest.session_id":  conversation,
-	"sessions#SessionRow.sessionId":         conversation,
-	"sessions#SessionInfoSession.sessionId": conversation,
-	"sessions#SessionInfo.session":          object,
-	"tasks#TaskRoot.sessionId":              conversation,
-	"tasks#TaskChild.sessionId":             conversation,
+	"orchestrator#BrokerRoot.session_id":   conversation,
+	"projects#PlaceResumed.session":        conversation,
+	"schedules#ScheduleRequest.session_id": conversation,
+	"sessions#SessionRow.sessionId":        conversation,
+	// The Epic assignment actor records the owner's conversation at dispatch
+	// time, even when the child runs as an independent Root.
+	"sessions#EpicSessionParent.owner_session_id": conversation,
+	"sessions#SessionInfoSession.sessionId":       conversation,
+	"sessions#SessionInfo.session":                object,
+	"tasks#TaskRoot.sessionId":                    conversation,
+	"tasks#TaskChild.sessionId":                   conversation,
 	// The token ledger names an item's owner by the conversation its rows
 	// are keyed by (app.ForItem).
 	"usage#UsageItemOwner.session": conversation,
