@@ -7,7 +7,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, suggestedPersonaForItem, switchTeam } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
@@ -603,15 +603,12 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
-  // The role a new Session is opened as. Until the person picks one, the
-  // item's words suggest a role when they distinguish one; otherwise the
-  // unique kind default remains (epic → architect, issue → minimal-change).
-  // "" is none, explicitly chosen by the person.
+  // A new Session starts without a role. Only a manual choice or an explicit
+  // AI suggestion changes it; "" is the person's choice of no role.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState<string | null>(null)
   const [team, setTeam] = useState(rememberedTeam)
-  const personaSuggestion = suggestedPersonaForItem(personas, item)
-  const persona = personaById(personas, personaChoice ?? personaSuggestion?.persona.id)
+  const persona = personaById(personas, personaChoice)
   const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
   const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
   const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
@@ -655,7 +652,6 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [converting, setConverting] = useState(false)
-  const [moreActions, setMoreActions] = useState(false)
   const [conversionKind, setConversionKind] = useState<WorkV2ExecutableKind>("feature")
   const [reminded, setReminded] = useState(false)
   // Moving an owned item to another Session opens the same picker an
@@ -722,17 +718,13 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
         {!item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
-        {!item.closed_at && <button type="button" disabled={!!busy} aria-expanded={moreActions}
-          aria-controls={`work-more-${item.id}`} onClick={() => setMoreActions((shown) => !shown)}>更多</button>}
+        {convertible && !plan && <button type="button" disabled={!!busy} aria-expanded={converting}
+          aria-controls={`work-convert-${item.id}`}
+          onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>轉成 Plan</button>}
+        {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
+          onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
       </div>
     </div>
-    {moreActions && !item.closed_at && <div id={`work-more-${item.id}`} className="work-card-more-actions"
-      role="group" aria-label="更多項目操作">
-      {convertible && !plan && <button type="button" disabled={!!busy}
-        onClick={() => { clearFailure(); setMoreActions(false); setConverting(true) }}>轉成 Plan</button>}
-      <button className="danger" type="button" disabled={!!busy}
-        onClick={() => { clearFailure(); setMoreActions(false); setDeleting(true) }}><WorkIcon name="delete" /> 刪除項目</button>
-    </div>}
     {/* The person's override closes the item without the owning Session's
         evidence, so it asks once more, here on the card, before it does. */}
     {completing && !item.closed_at && <div className="work-actions" role="group" aria-label="確認標記完成">
@@ -780,10 +772,10 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
         <h4 id={`work-assign-existing-${item.id}`}>指派給既有 Session</h4>
         <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
-        <button className="work-assignment-cta" type="button" disabled={!terminal || !!busy} aria-busy={busy === item.id && assigningRoute === "existing"}
+        {terminal && <button className="chip on work-assignment-action" type="button" disabled={!!busy} aria-busy={busy === item.id && assigningRoute === "existing"}
           onClick={() => assign("existing", () => assignWorkV2(item, terminal))}>
           {busy === item.id && assigningRoute === "existing" && <span className="work-assignment-spinner" aria-hidden="true" />}
-          {busy === item.id && assigningRoute === "existing" ? "正在指派給所選 Session…" : "指派給所選 Session"}</button>
+          {busy === item.id && assigningRoute === "existing" ? "正在指派給所選 Session…" : "指派給所選 Session"}</button>}
       </section>
       <section className="work-assignment-route" aria-labelledby={`work-assign-new-${item.id}`}>
         <h4 id={`work-assign-new-${item.id}`}>開啟新 Session</h4>
@@ -816,7 +808,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
             rememberTeam(next)
             setPersonaChoice(switched.chosen)
           }} />}
-        <button className="work-assignment-cta" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id && assigningRoute === "new"}
+        <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id && assigningRoute === "new"}
           onClick={() => assign("new", () => assignNewWorkV2(item, assistant, persona?.id))}>
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona

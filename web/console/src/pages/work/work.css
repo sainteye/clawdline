@@ -3,9 +3,8 @@
    Not a copy: the Swift app has no screen for these three structures. So this
    invents no palette and no furniture of its own — every colour is a token of
    legacy/tokens.css, the page is the copied board.css's `.board-page`, the
-   buttons generally use its `.board-button` and detail.css's `.chip`. The
-   assignment confirmation is larger so it is visible after either choice.
-   Measures follow the existing controls.
+   buttons use its `.board-button` and detail.css's `.chip`, and the measures
+   follow the existing controls.
 
    What it does add is the one thing the design asks the eye to get at once
    (board-redesign §3.3): three kinds of thing that must not look alike. The
@@ -226,9 +225,7 @@
 .work-item-steps li > .work-icon { width: 12px; height: 12px; margin-top: 2px; color: var(--faint); }
 .work-item-steps li[data-state="done"] { color: var(--faint); }
 .work-item-steps li[data-state="done"] > .work-icon { color: var(--ok); }
-/* On a phone the three actions are wider than what is left beside the Project
-   name: the name gives way first, then the actions wrap under it, and neither
-   is drawn over the other or past the card's edge. */
+/* Actions wrap below the Project name when the card narrows. */
 .work-card-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; min-width: 0; }
 .work-card-controls { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; min-width: 0; margin-left: auto; }
 .work-card-controls button {
@@ -238,19 +235,6 @@
 .work-card-controls .work-icon { width: 13px; height: 13px; }
 .work-card-controls button:hover { background: var(--accent-in); color: var(--ink); }
 .work-card-controls button.danger:hover { color: var(--warn); }
-.work-card-more-actions {
-    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px;
-    padding: 4px 0 10px;
-}
-.work-card-more-actions button {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px;
-    background: var(--bg); color: var(--dim); font: 11px/1.3 var(--mono);
-}
-.work-card-more-actions .work-icon { width: 13px; height: 13px; }
-.work-card-more-actions button:hover { border-color: var(--accent-ed); color: var(--ink); }
-.work-card-more-actions button.danger:hover { border-color: var(--warn); color: var(--warn); }
-.work-card-more-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .work-reference-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
 .work-reference-image { position: relative; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .work-reference-image a { display: block; aspect-ratio: 4 / 3; background: #000; cursor: zoom-in; }
@@ -286,15 +270,8 @@
 .work-assignment-route > .work-new-session:not(.work-new-persona),
 .work-assignment-route > .work-persona-ai-button { justify-self: start; }
 .work-assignment-route > .work-note { margin: 0; }
-.work-assignment-cta {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    min-height: 42px; width: 100%; padding: 9px 12px; border: 1px solid var(--accent); border-radius: 9px;
-    background: var(--accent); color: #17110e; font-family: inherit; font-size: 13px; font-weight: 700; line-height: 1.4; text-align: center;
-}
-.work-assignment-cta:hover:not(:disabled) { filter: brightness(1.08); }
-.work-assignment-cta:disabled { opacity: .4; }
-.work-assignment-cta[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
-.work-assignment-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.work-assignment-action { justify-self: start; min-height: 36px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; }
+.work-assignment-action[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
 .work-assignment-spinner {
     flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
     border-radius: 50%; animation: work-assignment-spin 800ms linear infinite;
@@ -795,6 +772,8 @@
 .work-new-modal .work-modal-image-list li span { font-size: 13px; }
 
 @media (max-width: 560px) {
+    .work-card-controls { flex: 1 1 100%; justify-content: flex-start; margin-left: 0; }
+    .work-card-controls button { min-height: 30px; font-size: 12px; }
     .work-convert-cta { width: 100%; }
     .work-kind-list { grid-template-columns: minmax(0, 1fr); }
     .work-new-modal form { padding: 18px; }
