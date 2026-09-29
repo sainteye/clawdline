@@ -35,7 +35,7 @@ test("every terminal refusal code the contract lists has its own sentence in bot
       const words = inLanguage(lang, () => nextWord((TERMINAL_REFUSAL_WORDS as Record<string, Parameters<typeof nextWord>[0]>)[code]))
       assert.ok(words.trim().length > 8, `${lang} ${code} is a sentence`)
       assert.ok(!/\{\w+\}/.test(words), `${lang} ${code} leaves no hole unfilled`)
-      assert.ok(!/\bMac\b/.test(words), `${lang} ${code} does not call the machine a Mac`)
+      assert.ok(!/\bMac\b/.test(words), `${lang} ${code} names no platform for the machine`)
       assert.ok(!words.includes(code), `${lang} ${code} is words, not the code`)
       assert.equal(seen.get(words), undefined, `${lang} ${code} says something ${seen.get(words)} does not`)
       seen.set(words, code)
