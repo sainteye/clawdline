@@ -5,6 +5,8 @@ import { failureSentence } from "../../legacy/bridge.js"
 import { Command } from "../../session/Command.js"
 import { Mark } from "../../session/List.js"
 import { readProjectPlaces, type ProjectPlace } from "../work/api.js"
+import { BEFORE_PAGE_CHANGE } from "../../overlays/index.js"
+import { ProjectFiles } from "./ProjectFiles.js"
 import {
   projectSetupCapabilities,
   projectSetupInstructions,
@@ -73,6 +75,26 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const pendingSelection = useRef<ProjectPlace | null>(null)
   const scopedTrigger = useRef<HTMLButtonElement | null>(null)
   const [projectPath, setProjectPath] = useState<string | null>(null)
+  const filesState = useRef({ dirty: false, busy: false })
+  const [closeNotice, setCloseNotice] = useState("")
+  const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
+  const mayLeave = useCallback(() => {
+    if (!dialog.current?.open) return true
+    if (filesState.current.busy) { setCloseNotice("檔案正在儲存，請等操作完成後再關閉。"); return false }
+    if (filesState.current.dirty && !window.confirm("放棄尚未儲存的檔案內容？")) {
+      dialog.current?.querySelector<HTMLTextAreaElement>(".project-files-editor textarea")?.focus()
+      return false
+    }
+    setCloseNotice("")
+    return true
+  }, [])
+  const requestClose = useCallback(() => { if (mayLeave()) dialog.current?.close() }, [mayLeave])
+
+  useEffect(() => {
+    const beforePageChange = (event: Event) => { if (dialog.current?.open && !mayLeave()) event.preventDefault() }
+    document.addEventListener(BEFORE_PAGE_CHANGE, beforePageChange)
+    return () => document.removeEventListener(BEFORE_PAGE_CHANGE, beforePageChange)
+  }, [mayLeave])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -91,16 +113,17 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   useEffect(() => {
     if (!shown) {
       restoreTrigger.current = false
-      dialog.current?.close()
+      requestClose()
       return
     }
     restoreTrigger.current = true
     void load()
-  }, [shown, load])
+  }, [shown, load, requestClose])
 
   useImperativeHandle(ref, () => ({
     open(path, button) {
       scopedTrigger.current = button
+      setCloseNotice("")
       setProjectPath(path)
       void load()
       dialog.current?.showModal()
@@ -115,6 +138,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const visiblePlaces = projectPath ? places.filter(place => place.path === projectPath) : places
 
   const select = (place: ProjectPlace) => {
+    if (!mayLeave()) return
     pendingSelection.current = place
     restoreTrigger.current = false
     dialog.current?.close()
@@ -150,9 +174,12 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       ref={dialog}
       tabIndex={-1}
       aria-labelledby="project-setup-title"
+      onCancel={event => { event.preventDefault(); requestClose() }}
       onClose={() => {
         const place = pendingSelection.current
         pendingSelection.current = null
+        filesState.current = { dirty: false, busy: false }
+        setCloseNotice("")
         setProjectPath(null)
         if (place) {
           restoreTrigger.current = true
@@ -173,13 +200,15 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
           <p className="project-setup-eyebrow">專案能力健檢</p>
           <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || "專案"} · 設定` : "還差什麼，一眼看懂"}</h2>
         </div>
-        <button className="project-setup-close" type="button" aria-label="關閉專案能力健檢" onClick={() => dialog.current?.close()}>關閉</button>
+        <button className="project-setup-close" type="button" aria-label="關閉專案設定" onClick={requestClose}>關閉</button>
       </div>
       <div className="project-setup-dialog-body">
+        {closeNotice && <p role="status">{closeNotice}</p>}
         <div className="project-setup-heading">
-          <p>只讀取這台機器已有的設定與狀態收據；不會連外、啟動服務或部署。缺少的項目可以先交給 AI 檢查，再由你審閱工作內容。</p>
+          <p>檢視這台機器的專案設定與指令檔案；可在下方編輯現有的專案檔案。缺少的設定仍可先交給 AI 檢查。</p>
           {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
         </div>
+        {projectPath && visiblePlaces[0] && <ProjectFiles key={visiblePlaces[0].id} place={visiblePlaces[0]} onState={updateFilesState} />}
         {loading && <p className="project-setup-loading" role="status">讀取專案配置中…</p>}
         {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
           {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} />)}

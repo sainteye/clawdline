@@ -1,0 +1,40 @@
+.project-files { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.project-files-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.project-files-head h3 { margin: 0; font-size: 18px; }
+.project-files-head p { margin: 6px 0 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+.project-files-head button { flex: none; min-height: 40px; }
+.project-files-layout { display: grid; grid-template-columns: minmax(190px, 230px) minmax(0, 1fr); gap: 14px; margin-top: 16px; }
+.project-files-nav, .project-files-detail { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.project-files-nav { max-height: 440px; padding: 10px; overflow-y: auto; }
+.project-files-group + .project-files-group { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+.project-files-group h4 { margin: 2px 4px 8px; font-size: 13px; }
+.project-files-group > p { margin: 0 4px; color: var(--dim); font-size: 12px; }
+.project-files-row { display: grid; width: 100%; gap: 3px; margin: 3px 0; padding: 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.project-files-row:hover, .project-files-row[aria-current="true"] { border-color: var(--accent-ed); background: var(--card-hi); }
+.project-files-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.project-files-row strong { overflow-wrap: anywhere; font-size: 13px; }
+.project-files-row span { overflow-wrap: anywhere; color: var(--dim); font: 11px/1.4 var(--mono); }
+.project-files-row small { color: var(--dim); font-size: 11px; }
+.project-files-detail { min-height: 240px; padding: 14px; }
+.project-files-detail h4 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.project-files-detail h4:focus { outline: none; }
+.project-files-detail > p { margin: 8px 0 12px; color: var(--dim); font-size: 12px; line-height: 1.5; }
+.project-files-detail [role="alert"] { color: var(--bad); }
+.project-files-location code { overflow-wrap: anywhere; }
+.project-files-hint { color: var(--dim); }
+.project-files-text { box-sizing: border-box; min-height: 140px; max-height: 360px; margin: 12px 0; padding: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-files-editor { display: grid; gap: 8px; margin-top: 12px; font-size: 13px; }
+.project-files-editor textarea { box-sizing: border-box; width: 100%; min-height: 260px; max-height: 54vh; padding: 12px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: 12px/1.5 var(--mono); }
+.project-files-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.project-files-actions button { min-height: 40px; }
+.project-files > [role="status"], .project-files > [role="alert"] { margin: 12px 0 0; font-size: 12px; line-height: 1.5; }
+.project-files > [role="alert"] { color: var(--bad); }
+
+@media (max-width: 899px) {
+  .project-files-head { flex-direction: column; }
+  .project-files-head button { align-self: flex-start; min-height: 44px; }
+  .project-files-layout { grid-template-columns: minmax(0, 1fr); }
+  .project-files-nav { max-height: none; }
+  .project-files-detail { min-height: 0; }
+  .project-files-actions button { min-height: 44px; }
+}

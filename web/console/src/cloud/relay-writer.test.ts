@@ -232,6 +232,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["DELETE", "/v1/orchestrator/schedules/sch-1", "schedule-delete"],
     ["POST", "/v1/orchestrator/schedules/sch-1/run", "schedule-run"],
     ["POST", "/v1/projects/%2Frepo/worktrees/refresh", "project-worktree-lifecycle-refresh"],
+    ["PUT", "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-save"],
     // The list is a read and is answered by `relay-reader.ts`, not here, and
     // so is one schedule in full — which this machine has no route for at all.
     ["GET", "/v1/orchestrator/schedules", null],
@@ -1309,6 +1310,23 @@ test("project icon copy resolves the receiving place and carries only the mark",
   client._place = () => ({ machine: "different-machine", id: "p1", path: "/fixture" })
   const refused = await reader.fetch("/v1/projects/cloud-p1/icon", { ...post(item), method: "PUT" })
   assert.equal(refused.status, 409)
+})
+
+test("a Project file save keeps its key, Project machine and exact file id", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const path = "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  const item = { expected_version: "v1", content: "updated" }
+  const saved = await reader.fetch(path, { ...post(item), method: "PUT", headers: { "Idempotency-Key": "save-1" } })
+  assert.equal(saved.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "save-1", "mac-a", "project-file-save",
+    { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", item }, "action"])
+  const missingKey = await reader.fetch(path, { ...post(item), method: "PUT" })
+  assert.equal(missingKey.status, 400)
+  client._place = () => ({ machine: "different-machine", id: "p1", path: "/fixture" })
+  const wrongMachine = await reader.fetch(path, { ...post(item), method: "PUT", headers: { "Idempotency-Key": "save-2" } })
+  assert.equal(wrongMachine.status, 409)
+  assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/files/%2Fetc%2Fpasswd"), null)
 })
 
 test("a project settings apply and detach reach the mirror as its own words, and a read reaches the machine", async () => {
