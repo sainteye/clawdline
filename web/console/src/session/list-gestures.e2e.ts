@@ -1166,11 +1166,28 @@ test("machine registration remains visible after a fresh Session read and clears
       await tab.until("the machine Session arrives", (s) => s.order.join() === RETAINED)
       const pending = await tab.run(`document.querySelector('#rows .machine-registration')?.textContent`)
       assert.match(pending, /clawdline coordinator bind/)
+      const pendingIdentity = await tab.run(`(() => {
+        const row = document.querySelector('#rows > li.row')
+        const canvas = row?.querySelector('canvas.mark')
+        const pixel = canvas?.getContext('2d')?.getImageData((canvas?.width || 0) / 8 + 1, 0, 1, 1).data
+        return { name: row?.querySelector('.label')?.textContent, crown: !!row?.querySelector('.clawdfather-crown'),
+          width: canvas?.width, height: canvas?.height, pixel: pixel ? [...pixel] : null }
+      })()`)
+      assert.equal(pendingIdentity.name, "Clawdfather")
+      assert.equal(pendingIdentity.crown, false)
+      assert.equal(pendingIdentity.width, pendingIdentity.height * 2)
+      assert.deepEqual(pendingIdentity.pixel, [217, 119, 87, 255])
+      await tab.run(`document.querySelector('#rows > li.row')?.click()`)
+      assert.equal(await tab.run(`document.getElementById('detail-name')?.textContent`), "Clawdfather")
+      assert.match(await tab.run(`document.getElementById('detail-sub')?.textContent`), /Registration pending|待登記/)
+      assert.equal(await tab.run(`document.getElementById('detail-mark')?.width`), pendingIdentity.width * 5 / 4)
       readingScenario = "machine-bound"
       await tab.go("/")
       await tab.until("the bound machine Session arrives", (s) => s.order.join() === RETAINED)
       assert.equal(await tab.run(`document.querySelector('#rows .machine-registration') === null`), true)
       assert.equal(await tab.run(`document.querySelector('#rows .coordinator-identity') !== null`), true)
+      assert.equal(await tab.run(`document.querySelector('#rows .label')?.textContent`), "Clawdfather")
+      assert.equal(await tab.run(`document.querySelector('#rows .clawdfather-crown') !== null`), true)
     } finally {
       readingScenario = "normal"
     }

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { sessionMark, sessionName } from "../brand-mark.js"
 import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, actionWidth, archivable, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
@@ -311,7 +312,7 @@ export function Row({
     paintSwipe(node, swiped ? "open" : "", swiped ? actionWidthOf(node) : 0)
   }, [swiped, row.sessionId])
   const reveal = swipeReveal(row)
-  const name = row.label || row.tty || row.id
+  const name = sessionName(row)
   // 封存 only where there is a conversation to bring back (`swipe.ts`).
   const canArchive = archivable(row.sessionId)
   const activity = sessionActivityWord(row)
@@ -321,7 +322,8 @@ export function Row({
     if (swipes.tookThePress()) return
     onOpen(row.id)
   }
-  const mark = <Mark icon={row.icon} cellPx={4} />
+  const icon = sessionMark(row)
+  const mark = <Mark icon={icon} cellPx={4} />
   // The role this session was launched as (docs/personas.md), when the
   // machine's catalog names it: its bot and full name at the head of the third
   // line, with name and summary as its title. An id the catalog does not have
@@ -360,8 +362,8 @@ export function Row({
         mark
       )}
       {coordinator && <span className="coordinator-identity">{coordinator.badge}</span>}
-      <div className="title" style={{ color: L.accentTint(row.icon?.accent) }}>
-        <span className="label">{row.label || row.tty || row.id}</span>
+      <div className="title" style={{ color: L.accentTint(icon?.accent) }}>
+        <span className="label">{name}</span>
         <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
       </div>
       <div className="meta">

@@ -25,12 +25,16 @@ func TestCoordinatorBindRegistersOrRebindsOnlyAnOfflineRole(t *testing.T) {
 				return 200, `{"ok":true}`
 			})
 			var out, errs bytes.Buffer
-			code := bindCoordinator(&out, &errs, broker, "", envOf(map[string]string{"CODEX_THREAD_ID": thinConversation}))
+			code := bindCoordinatorWithWait(&out, &errs, broker, "", envOf(map[string]string{"CODEX_THREAD_ID": thinConversation}), func() {})
 			if (code == 0) != (tc.posts == 1) {
 				t.Fatalf("exit %d output=%q error=%q", code, out.String(), errs.String())
 			}
 			seen := stand.requests()
-			if len(seen) != 1+tc.posts || seen[0].EscapedPath != "/v1/orchestrator/coordinator" {
+			reads := 1
+			if tc.name == "unknown" {
+				reads = coordinatorBindAttemptLimit
+			}
+			if len(seen) != reads+tc.posts || seen[0].EscapedPath != "/v1/orchestrator/coordinator" {
 				t.Fatalf("requests: %+v", seen)
 			}
 			if tc.posts == 0 {
@@ -47,5 +51,52 @@ func TestCoordinatorBindRegistersOrRebindsOnlyAnOfflineRole(t *testing.T) {
 				t.Fatalf("rebind lost its guard: %#v", body)
 			}
 		})
+	}
+}
+
+func TestCoordinatorBindWaitsForProvenOfflineAndReinspectsAfterTransientPostRefusal(t *testing.T) {
+	reads, posts := 0, 0
+	stand, broker := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodGet {
+			reads++
+			if reads == 1 {
+				return 200, `{"coordinator":{"configured":true,"status":"unknown","id":"role-1","generation":3,"session":{"session_id":"old"}}}`
+			}
+			return 200, `{"coordinator":{"configured":true,"status":"offline","id":"role-1","generation":3,"session":{"session_id":"old"}}}`
+		}
+		posts++
+		if posts == 1 {
+			return 409, `{"error":{"code":"coordinator_liveness_unknown","message":"scan in progress"}}`
+		}
+		return 200, `{"ok":true}`
+	})
+	var out, errs bytes.Buffer
+	if code := bindCoordinatorWithWait(&out, &errs, broker, thinConversation, envOf(nil), func() {}); code != 0 {
+		t.Fatalf("exit %d output=%q error=%q", code, out.String(), errs.String())
+	}
+	if reads != 3 || posts != 2 {
+		t.Fatalf("reads=%d posts=%d requests=%+v", reads, posts, stand.requests())
+	}
+}
+
+func TestCoordinatorBindNeverPostsAfterUnknownTurnsOnline(t *testing.T) {
+	reads := 0
+	stand, broker := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method != http.MethodGet {
+			t.Fatal("online holder was replaced")
+		}
+		reads++
+		status := "unknown"
+		if reads == 2 {
+			status = "online"
+		}
+		return 200, `{"coordinator":{"configured":true,"status":"` + status + `","id":"role-1","generation":3,"session":{"session_id":"old"}}}`
+	})
+	var out, errs bytes.Buffer
+	if code := bindCoordinatorWithWait(&out, &errs, broker, thinConversation, envOf(nil), func() {}); code == 0 {
+		t.Fatalf("online role replaced: %q", out.String())
+	}
+	if len(stand.requests()) != 2 {
+		t.Fatalf("unexpected requests: %+v", stand.requests())
 	}
 }

@@ -29,6 +29,7 @@ import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
 import { nextWord } from "../next-strings.js"
+import { BRAND_MARK, sessionName } from "../brand-mark.js"
 import { headPersona, type HeadPersona } from "../personas.js"
 import { PersonaBot, usePersonas } from "./PersonaBot.js"
 import "./work-tree.css"
@@ -155,9 +156,9 @@ export function Detail({
     document.addEventListener(SNIPPET_PROJECT_KNOWN, look)
     return () => document.removeEventListener(SNIPPET_PROJECT_KNOWN, look)
   }, [row?.id])
-  const mark = useMemo(
-    () => markForSession(row, resolvedProject),
-    [row?.icon, row?.cwd, resolvedProject],
+  const mark = useMemo<Mark | null>(
+    () => row?.machine_scope || row?.coordinator ? BRAND_MARK : markForSession(row, resolvedProject),
+    [row?.icon, row?.cwd, row?.machine_scope, row?.coordinator, resolvedProject],
   )
   const markRef = useRef<HTMLCanvasElement>(null)
   const [drew, setDrew] = useState(false)
@@ -237,7 +238,7 @@ export function Detail({
           >
             <span className="who detail-who">
               <span className="name" id="detail-name" style={mark ? { color: L.accentTint(mark.accent) } : undefined}>
-                {row ? row.label || row.tty || row.id : listUnknown ? "" : T.webNoSessionOpen}
+                {row ? sessionName(row) : listUnknown ? "" : T.webNoSessionOpen}
               </span>
               <span className="sub" id="detail-sub">
                 {role ? <DetailPersona head={role} /> : null}
@@ -383,6 +384,7 @@ function detailSub(row: SessionRow | null): string {
   if (!row) return ""
   const T = L.strings
   const sub: string[] = [L.path(row.cwd)]
+  if (row.machine_scope && !row.coordinator) sub.push(nextWord("machineSessionPendingShort"))
   if (row.tty) sub.push(row.tty)
   if (row.state === "waiting") sub.push(T.sessionWaiting)
   else if (row.state === "working") sub.push(T.webStateWorking)

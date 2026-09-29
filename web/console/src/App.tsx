@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import type { Icon, SessionRow } from "@clawdline/contract"
+import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
 import { client } from "./client.js"
+import { BRAND_MARK } from "./brand-mark.js"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
 import { useFleet, usePoll } from "./useFleet.js"
 import { SessionsPage } from "./Sessions.js"
@@ -64,15 +65,6 @@ const PAGES: { id: Page; nav: string; icon: SidebarIconName; key?: string; text?
   { id: "plan", nav: "nav-plan", icon: "plan", key: "webPlan", ready: false },
   { id: "settings", nav: "nav-settings", icon: "settings", key: "webSettings", ready: false },
 ]
-
-// The wordmark's mark, `main.js`'s literal: the project's own creature, drawn
-// by the code the rows use, at 3px a cell. The door draws it too (door/Door.tsx).
-export const BRAND_MARK: Icon = {
-  accent: "#d97757",
-  cells: [".######.", ".#o##o#.", "########", ".##..##."].map((row) =>
-    row.split("").map((ch) => (ch === "#" ? "#d97757" : ch === "o" ? "#141416" : "#33201a")),
-  ),
-}
 
 /**
  * Pages built as their own files. Any `pages/*.tsx` exporting `page` is found
