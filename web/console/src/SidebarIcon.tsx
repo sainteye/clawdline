@@ -1,11 +1,8 @@
-export type SidebarIconName = "sessions" | "devices" | "projects" | "plan" | "settings" | "work" | "verify" | "archive" | "squad"
+export type SidebarIconName = "sessions" | "devices" | "projects" | "plan" | "settings" | "work" | "verify" | "archive" | "squad" | "transfer"
 
 /**
- * One visual language for the drawer, with a distinct object for each place:
- * terminal, devices, folder, payment card, settings gear, board, clock, a
- * checked list, and an archive box.
- * The label beside the mark remains the accessible name, so these are
- * deliberately decorative rather than eight repeated announcements.
+ * One visual language for Console navigation and suggestions. The adjacent
+ * label remains the accessible name, so these marks are decorative.
  */
 export function SidebarIcon({ name }: { name: SidebarIconName }) {
   return (
@@ -72,6 +69,9 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
           <rect x="3" y="4" width="18" height="16" rx="2.5" />
           <path d="M7 9h3v3H7zM14 9h3v3h-3zM8 16h8" />
         </>
+      )}
+      {name === "transfer" && (
+        <path d="M4 8h15m-3-3 3 3-3 3M20 16H5m3-3-3 3 3 3" />
       )}
     </svg>
   )
