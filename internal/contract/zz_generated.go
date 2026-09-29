@@ -2543,6 +2543,7 @@ type Diagnostics struct {
 	Proposals *ProposalDiagnostics `json:"proposals,omitempty"`
 	Scheduler SchedulerPulse       `json:"scheduler"`
 	ServedBy  string               `json:"served_by"`
+	Terminals *TerminalDiagnostics `json:"terminals,omitempty"`
 	Upstream  int64                `json:"upstream"`
 	Usage     *UsageDiagnostics    `json:"usage,omitempty"`
 }
@@ -3334,6 +3335,11 @@ type PairedDevice struct {
 	// absent when never.
 	LastSeen int64  `json:"last_seen,omitempty"`
 	Name     string `json:"name"`
+
+	// This device holds a terminal grant (terminals.schema.json, POST
+	// /v1/auth/devices/{id}/terminal). Absent when it does not, and for every device
+	// while the grants file cannot be read.
+	Terminal bool `json:"terminal,omitempty"`
 }
 
 // One `pairing` event on GET /v1/auth/pairings, the server-sent stream only
@@ -5978,6 +5984,351 @@ type TaskUsage struct {
 	Output     int64   `json:"output"`
 	Total      int64   `json:"total"`
 }
+
+type Terminal struct {
+	Cols    int64           `json:"cols"`
+	Control TerminalControl `json:"control"`
+
+	// Unix seconds.
+	Created int64 `json:"created"`
+
+	// The directory the shell is in now.
+	Dir string `json:"dir,omitempty"`
+
+	// `trm_<uuid>`.
+	ID        string         `json:"id"`
+	ProjectID string         `json:"project_id"`
+	Rows      int64          `json:"rows"`
+	Status    TerminalStatus `json:"status"`
+}
+
+// The stream's `beat` event, every 5 seconds: the viewer is still let in and
+// the stream is alive. A viewer that hears no beat for longer than that treats
+// the screen as possibly stale.
+type TerminalBeat struct {
+	// When the newest frame sent was read. Absent before the first.
+	LastCaptureAt float64 `json:"last_capture_at,omitempty"`
+
+	// Unix seconds with milliseconds.
+	Now float64 `json:"now"`
+}
+
+// DELETE /v1/terminals/{id}. The holder only: somebody who does not hold the
+// lease takes it over first. Every viewer is told `state: closed` naming who
+// closed it.
+type TerminalCloseRequest struct {
+	Client string `json:"client"`
+	Epoch  int64  `json:"epoch"`
+}
+
+type TerminalClosed struct {
+	OK bool `json:"ok"`
+}
+
+// A terminal's control lease: the answer to POST /v1/terminals/{id}/control and
+// the stream's `control` event. One controller at a time; a lease lasts 30
+// seconds and is renewed every 10. Leases live in memory, so a daemon that
+// restarts has none and the shells are still there.
+type TerminalControl struct {
+	// The highest input number typed under this epoch. Present only in an answer to
+	// the holder itself.
+	AppliedThrough int64 `json:"applied_through,omitempty"`
+
+	// The lease's number. Each acquire and takeover makes a larger one; an input names
+	// the epoch it was typed under and a sender numbers its inputs from 1 within it.
+	Epoch int64 `json:"epoch"`
+
+	// When the lease lapses unless renewed, Unix seconds with milliseconds. Absent
+	// when nobody holds it.
+	ExpiresAt float64 `json:"expires_at,omitempty"`
+
+	// Somebody holds the lease now.
+	Held   bool            `json:"held"`
+	Holder *TerminalHolder `json:"holder,omitempty"`
+}
+
+type TerminalControlAction string
+
+const (
+	TerminalControlActionAcquire  TerminalControlAction = "acquire"
+	TerminalControlActionRenew    TerminalControlAction = "renew"
+	TerminalControlActionRelease  TerminalControlAction = "release"
+	TerminalControlActionTakeover TerminalControlAction = "takeover"
+)
+
+// TerminalControlActionValues is every value the contract allows, in contract order.
+var TerminalControlActionValues = []TerminalControlAction{TerminalControlActionAcquire, TerminalControlActionRenew, TerminalControlActionRelease, TerminalControlActionTakeover}
+
+// POST /v1/terminals/{id}/control. `client` is a random id the browser tab
+// makes for itself; together with the device it names the holder. `acquire`
+// while somebody else holds the lease is 409 `terminal_controlled` naming them;
+// `takeover` ends their lease and they are told by a `control` event and
+// `lease_superseded` on their next input.
+type TerminalControlRequest struct {
+	Action TerminalControlAction `json:"action"`
+
+	// 1 to 64 of A-Z a-z 0-9 . _ -
+	Client string `json:"client"`
+}
+
+type TerminalCursor struct {
+	Blinking bool                `json:"blinking,omitempty"`
+	Shape    TerminalCursorShape `json:"shape,omitempty"`
+	Visible  bool                `json:"visible"`
+
+	// Column, from 0.
+	X int64 `json:"x"`
+
+	// Row, from 0.
+	Y int64 `json:"y"`
+}
+
+// DECSCUSR's shape as tmux names it. Absent from a cursor when the server does
+// not say, which is drawn as `default`.
+type TerminalCursorShape string
+
+const (
+	TerminalCursorShapeDefault   TerminalCursorShape = "default"
+	TerminalCursorShapeBlock     TerminalCursorShape = "block"
+	TerminalCursorShapeUnderline TerminalCursorShape = "underline"
+	TerminalCursorShapeBar       TerminalCursorShape = "bar"
+)
+
+// TerminalCursorShapeValues is every value the contract allows, in contract order.
+var TerminalCursorShapeValues = []TerminalCursorShape{TerminalCursorShapeDefault, TerminalCursorShapeBlock, TerminalCursorShapeUnderline, TerminalCursorShapeBar}
+
+// What /v1/diagnostics says about terminals.
+type TerminalDiagnostics struct {
+	// Why the grants file could not be read.
+	GrantsError string `json:"grants_error,omitempty"`
+
+	// The terminal grants file could be read. When false every paired device is
+	// treated as ungranted; nothing else on this machine is affected.
+	GrantsOK bool `json:"grants_ok"`
+
+	// Control leases held now.
+	Leases int64 `json:"leases"`
+
+	// Terminal streams open now, of at most 16.
+	Streams int64 `json:"streams"`
+}
+
+// One whole look at a terminal's visible screen: the `frame` event of the
+// stream. A newer frame replaces an older one and nothing is ever applied on
+// top of another, so a viewer that missed frames draws the newest and is right.
+type TerminalFrame struct {
+	// When the screen was read, Unix seconds with milliseconds.
+	At     float64        `json:"at"`
+	Cols   int64          `json:"cols"`
+	Cursor TerminalCursor `json:"cursor"`
+
+	// The pane's shell has ended.
+	Dead bool `json:"dead,omitempty"`
+
+	// The visible screen, one entry per screen row, SGR escapes kept. A line longer
+	// than the terminal is as many rows as it wrapped onto.
+	Lines []string      `json:"lines"`
+	Modes TerminalModes `json:"modes"`
+
+	// A digest of everything but `at`: two frames with the same rev draw the same
+	// screen.
+	Rev string `json:"rev"`
+
+	// The screen's height. The text is `lines`.
+	Rows int64 `json:"rows"`
+}
+
+type TerminalGrant struct {
+	DeviceID string `json:"device_id"`
+	Granted  bool   `json:"granted"`
+
+	// Unix seconds. Absent when not granted.
+	GrantedAt int64 `json:"granted_at,omitempty"`
+}
+
+// POST /v1/auth/devices/{id}/terminal. This machine's own token only, and never
+// through Clawdline Cloud. A grant lets a paired device see terminals and ask
+// for their control lease; pairing, a password sign-in and `remote_write` never
+// give one, and revoking the device removes it.
+type TerminalGrantRequest struct {
+	Grant bool `json:"grant"`
+}
+
+// GET /v1/terminals/{id}/history?lines=N: up to N lines that scrolled off the
+// top, then the visible screen. N is at most 2000; a larger ask is lowered.
+type TerminalHistory struct {
+	Lines []string `json:"lines"`
+}
+
+// Who holds a terminal's control lease, as the viewer being answered should
+// read it. The holder's client id is never sent to anybody else.
+type TerminalHolder struct {
+	// The holder is this machine's own token.
+	Local bool `json:"local"`
+
+	// The device's name: this machine's own, or the paired device's.
+	Name string `json:"name"`
+
+	// The holder is the very client (browser tab) this answer is for: the `client` it
+	// sent, or named on the stream's `?client=`.
+	SameClient bool `json:"same_client"`
+
+	// The holder is the device this answer is for.
+	SameDevice bool `json:"same_device"`
+}
+
+// POST /v1/terminals/{id}/input: raw keystrokes, base64, at most 4 KiB decoded.
+// The holder numbers its inputs 1, 2, 3 … within an epoch and resends only
+// with the same number: a number already typed answers `duplicate` and types
+// nothing; a number past the next is 409 `input_gap` with `applied_through`. A
+// tmux that did not answer leaves the lease's input state unknown, and every
+// later input is 409 `input_state_unknown` until a new acquire.
+type TerminalInputRequest struct {
+	Client string `json:"client"`
+
+	// Standard base64.
+	Data  string `json:"data"`
+	Epoch int64  `json:"epoch"`
+	Seq   int64  `json:"seq"`
+}
+
+// An input or paste that was typed, or had already been.
+type TerminalInputResult struct {
+	AppliedThrough int64 `json:"applied_through"`
+
+	// This number had been typed already; nothing was typed now.
+	Duplicate bool `json:"duplicate,omitempty"`
+}
+
+// GET /v1/terminals?project=. Every terminal on this machine's terminal server,
+// narrowed to one project when `project` names one.
+type TerminalList struct {
+	Terminals []Terminal `json:"terminals"`
+}
+
+// The modes a program set that change what a key sends or what the screen is. A
+// viewer puts its own terminal in the same modes before it draws a frame, so a
+// key pressed there means what the program expects.
+type TerminalModes struct {
+	// The alternate screen is showing.
+	Alt bool `json:"alt"`
+
+	// DECCKM: the arrow keys send `ESC O A` rather than `ESC [ A`.
+	AppCursor bool `json:"app_cursor"`
+
+	// DECKPAM.
+	AppKeypad bool              `json:"app_keypad"`
+	Mouse     TerminalMouseMode `json:"mouse"`
+
+	// DECSET 1006.
+	MouseSgr bool `json:"mouse_sgr"`
+}
+
+// Which mouse reporting the program in the terminal asked for: DECSET 1000
+// (`standard`), 1002 (`button`) or 1003 (`any`).
+type TerminalMouseMode string
+
+const (
+	TerminalMouseModeNone     TerminalMouseMode = "none"
+	TerminalMouseModeStandard TerminalMouseMode = "standard"
+	TerminalMouseModeButton   TerminalMouseMode = "button"
+	TerminalMouseModeAny      TerminalMouseMode = "any"
+)
+
+// TerminalMouseModeValues is every value the contract allows, in contract order.
+var TerminalMouseModeValues = []TerminalMouseMode{TerminalMouseModeNone, TerminalMouseModeStandard, TerminalMouseModeButton, TerminalMouseModeAny}
+
+// POST /v1/terminals. The shell starts in the project's directory at this size.
+// `terminals_full` past 8 open terminals on this machine.
+type TerminalOpenRequest struct {
+	Cols int64 `json:"cols"`
+
+	// A project id as /v1/work lists them.
+	ProjectID string `json:"project_id"`
+	Rows      int64  `json:"rows"`
+}
+
+// POST /v1/terminals/{id}/paste: text typed as one paste, bracketed when the
+// program asked for bracketed paste. At most 1 MiB. Numbered from the same
+// sequence as input.
+type TerminalPasteRequest struct {
+	Client string `json:"client"`
+	Epoch  int64  `json:"epoch"`
+	Seq    int64  `json:"seq"`
+	Text   string `json:"text"`
+}
+
+// Every refusal on a terminal route, and the stream's last `refusal` event
+// before it ends (`terminal_access_revoked`).
+type TerminalRefusal struct {
+	// With `input_gap`: resend from the number after this one.
+	AppliedThrough int64 `json:"applied_through,omitempty"`
+
+	// For a person reading a log; never parsed.
+	Detail string              `json:"detail"`
+	Error  TerminalRefusalCode `json:"error"`
+	Holder *TerminalHolder     `json:"holder,omitempty"`
+}
+
+// Every refusal a terminal route answers with (plan v3 D4). A client branches
+// on these and never on `detail`.
+type TerminalRefusalCode string
+
+const (
+	TerminalRefusalCodeTerminalForbidden         TerminalRefusalCode = "terminal_forbidden"
+	TerminalRefusalCodeNotController             TerminalRefusalCode = "not_controller"
+	TerminalRefusalCodeTerminalControlled        TerminalRefusalCode = "terminal_controlled"
+	TerminalRefusalCodeLeaseSuperseded           TerminalRefusalCode = "lease_superseded"
+	TerminalRefusalCodeLeaseExpired              TerminalRefusalCode = "lease_expired"
+	TerminalRefusalCodeInputGap                  TerminalRefusalCode = "input_gap"
+	TerminalRefusalCodeInputStateUnknown         TerminalRefusalCode = "input_state_unknown"
+	TerminalRefusalCodeInputTooLarge             TerminalRefusalCode = "input_too_large"
+	TerminalRefusalCodeTerminalBusy              TerminalRefusalCode = "terminal_busy"
+	TerminalRefusalCodeTerminalClosed            TerminalRefusalCode = "terminal_closed"
+	TerminalRefusalCodeTerminalUnreachable       TerminalRefusalCode = "terminal_unreachable"
+	TerminalRefusalCodeTerminalUnsupported       TerminalRefusalCode = "terminal_unsupported"
+	TerminalRefusalCodeTerminalsFull             TerminalRefusalCode = "terminals_full"
+	TerminalRefusalCodeTerminalViewersFull       TerminalRefusalCode = "terminal_viewers_full"
+	TerminalRefusalCodeTerminalAccessRevoked     TerminalRefusalCode = "terminal_access_revoked"
+	TerminalRefusalCodeTerminalCloudNotSupported TerminalRefusalCode = "terminal_cloud_not_supported"
+	TerminalRefusalCodeTerminalSocketPathTooLong TerminalRefusalCode = "terminal_socket_path_too_long"
+	TerminalRefusalCodeTerminalInvalid           TerminalRefusalCode = "terminal_invalid"
+)
+
+// TerminalRefusalCodeValues is every value the contract allows, in contract order.
+var TerminalRefusalCodeValues = []TerminalRefusalCode{TerminalRefusalCodeTerminalForbidden, TerminalRefusalCodeNotController, TerminalRefusalCodeTerminalControlled, TerminalRefusalCodeLeaseSuperseded, TerminalRefusalCodeLeaseExpired, TerminalRefusalCodeInputGap, TerminalRefusalCodeInputStateUnknown, TerminalRefusalCodeInputTooLarge, TerminalRefusalCodeTerminalBusy, TerminalRefusalCodeTerminalClosed, TerminalRefusalCodeTerminalUnreachable, TerminalRefusalCodeTerminalUnsupported, TerminalRefusalCodeTerminalsFull, TerminalRefusalCodeTerminalViewersFull, TerminalRefusalCodeTerminalAccessRevoked, TerminalRefusalCodeTerminalCloudNotSupported, TerminalRefusalCodeTerminalSocketPathTooLong, TerminalRefusalCodeTerminalInvalid}
+
+// POST /v1/terminals/{id}/resize. The holder only; the newest size asked for
+// wins.
+type TerminalResizeRequest struct {
+	Client string `json:"client"`
+	Cols   int64  `json:"cols"`
+	Epoch  int64  `json:"epoch"`
+	Rows   int64  `json:"rows"`
+}
+
+// The stream's `state` event. `closed_by` names who closed a closed terminal;
+// absent for a shell that ended on its own (`exited`).
+type TerminalState struct {
+	ClosedBy *TerminalHolder `json:"closed_by,omitempty"`
+	Status   TerminalStatus  `json:"status"`
+}
+
+// Where a terminal is in its life. `exited` is a shell that ended on its own;
+// `closed` is a terminal somebody closed, or one that is no longer there;
+// `unreachable` is a server that did not answer, which is never a reason to
+// call a terminal closed.
+type TerminalStatus string
+
+const (
+	TerminalStatusRunning     TerminalStatus = "running"
+	TerminalStatusExited      TerminalStatus = "exited"
+	TerminalStatusClosed      TerminalStatus = "closed"
+	TerminalStatusUnreachable TerminalStatus = "unreachable"
+)
+
+// TerminalStatusValues is every value the contract allows, in contract order.
+var TerminalStatusValues = []TerminalStatus{TerminalStatusRunning, TerminalStatusExited, TerminalStatusClosed, TerminalStatusUnreachable}
 
 // The entry bound, on the wire where a reader can see it (timeline-design A4).
 // What is dropped at the bound is the oldest, and it is a projection of records

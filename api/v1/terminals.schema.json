@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "terminals.schema.json",
+  "title": "Ordinary shells a person opens and types into on this machine",
+  "description": "The /v1/terminals routes (plan v3 §5). A terminal is an ordinary login shell on this daemon's own tmux server (internal/adapters/terminal/owned). Seeing one and typing into one are separate: every route needs this machine's own token or a paired device that holds a terminal grant (POST /v1/auth/devices/{id}/terminal), and typing, pasting, resizing and closing also need the terminal's one control lease. Nothing here is carried over Clawdline Cloud: a request that arrives through it is refused `terminal_cloud_not_supported`. Every refusal is a TerminalRefusal whose `error` is a TerminalRefusalCode.",
+  "$defs": {
+    "TerminalStatus": {
+      "description": "Where a terminal is in its life. `exited` is a shell that ended on its own; `closed` is a terminal somebody closed, or one that is no longer there; `unreachable` is a server that did not answer, which is never a reason to call a terminal closed.",
+      "type": "string",
+      "enum": ["running", "exited", "closed", "unreachable"]
+    },
+    "TerminalRefusalCode": {
+      "description": "Every refusal a terminal route answers with (plan v3 D4). A client branches on these and never on `detail`.",
+      "type": "string",
+      "enum": [
+        "terminal_forbidden",
+        "not_controller",
+        "terminal_controlled",
+        "lease_superseded",
+        "lease_expired",
+        "input_gap",
+        "input_state_unknown",
+        "input_too_large",
+        "terminal_busy",
+        "terminal_closed",
+        "terminal_unreachable",
+        "terminal_unsupported",
+        "terminals_full",
+        "terminal_viewers_full",
+        "terminal_access_revoked",
+        "terminal_cloud_not_supported",
+        "terminal_socket_path_too_long",
+        "terminal_invalid"
+      ]
+    },
+    "TerminalMouseMode": {
+      "description": "Which mouse reporting the program in the terminal asked for: DECSET 1000 (`standard`), 1002 (`button`) or 1003 (`any`).",
+      "type": "string",
+      "enum": ["none", "standard", "button", "any"]
+    },
+    "TerminalCursorShape": {
+      "description": "DECSCUSR's shape as tmux names it. Absent from a cursor when the server does not say, which is drawn as `default`.",
+      "type": "string",
+      "enum": ["default", "block", "underline", "bar"]
+    },
+    "TerminalCursor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "visible"],
+      "properties": {
+        "x": { "description": "Column, from 0.", "type": "integer" },
+        "y": { "description": "Row, from 0.", "type": "integer" },
+        "visible": { "type": "boolean" },
+        "shape": { "$ref": "#/$defs/TerminalCursorShape" },
+        "blinking": { "type": "boolean" }
+      }
+    },
+    "TerminalModes": {
+      "description": "The modes a program set that change what a key sends or what the screen is. A viewer puts its own terminal in the same modes before it draws a frame, so a key pressed there means what the program expects.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app_cursor", "app_keypad", "mouse", "mouse_sgr", "alt"],
+      "properties": {
+        "app_cursor": { "description": "DECCKM: the arrow keys send `ESC O A` rather than `ESC [ A`.", "type": "boolean" },
+        "app_keypad": { "description": "DECKPAM.", "type": "boolean" },
+        "mouse": { "$ref": "#/$defs/TerminalMouseMode" },
+        "mouse_sgr": { "description": "DECSET 1006.", "type": "boolean" },
+        "alt": { "description": "The alternate screen is showing.", "type": "boolean" }
+      }
+    },
+    "TerminalFrame": {
+      "description": "One whole look at a terminal's visible screen: the `frame` event of the stream. A newer frame replaces an older one and nothing is ever applied on top of another, so a viewer that missed frames draws the newest and is right.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rev", "at", "cols", "rows", "cursor", "modes", "lines"],
+      "properties": {
+        "rev": { "description": "A digest of everything but `at`: two frames with the same rev draw the same screen.", "type": "string" },
+        "at": { "description": "When the screen was read, Unix seconds with milliseconds.", "type": "number" },
+        "cols": { "type": "integer" },
+        "rows": { "description": "The screen's height. The text is `lines`.", "type": "integer" },
+        "cursor": { "$ref": "#/$defs/TerminalCursor" },
+        "modes": { "$ref": "#/$defs/TerminalModes" },
+        "lines": { "description": "The visible screen, one entry per screen row, SGR escapes kept. A line longer than the terminal is as many rows as it wrapped onto.", "type": "array", "items": { "type": "string" } },
+        "dead": { "description": "The pane's shell has ended.", "type": "boolean" }
+      }
+    },
+    "TerminalHolder": {
+      "description": "Who holds a terminal's control lease, as the viewer being answered should read it. The holder's client id is never sent to anybody else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "local", "same_device", "same_client"],
+      "properties": {
+        "name": { "description": "The device's name: this machine's own, or the paired device's.", "type": "string" },
+        "local": { "description": "The holder is this machine's own token.", "type": "boolean" },
+        "same_device": { "description": "The holder is the device this answer is for.", "type": "boolean" },
+        "same_client": { "description": "The holder is the very client (browser tab) this answer is for: the `client` it sent, or named on the stream's `?client=`.", "type": "boolean" }
+      }
+    },
+    "TerminalControl": {
+      "description": "A terminal's control lease: the answer to POST /v1/terminals/{id}/control and the stream's `control` event. One controller at a time; a lease lasts 30 seconds and is renewed every 10. Leases live in memory, so a daemon that restarts has none and the shells are still there.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["held", "epoch"],
+      "properties": {
+        "held": { "description": "Somebody holds the lease now.", "type": "boolean" },
+        "holder": { "$ref": "#/$defs/TerminalHolder" },
+        "epoch": { "description": "The lease's number. Each acquire and takeover makes a larger one; an input names the epoch it was typed under and a sender numbers its inputs from 1 within it.", "type": "integer" },
+        "expires_at": { "description": "When the lease lapses unless renewed, Unix seconds with milliseconds. Absent when nobody holds it.", "type": "number" },
+        "applied_through": { "description": "The highest input number typed under this epoch. Present only in an answer to the holder itself.", "type": "integer" }
+      }
+    },
+    "TerminalControlAction": {
+      "type": "string",
+      "enum": ["acquire", "renew", "release", "takeover"]
+    },
+    "TerminalControlRequest": {
+      "description": "POST /v1/terminals/{id}/control. `client` is a random id the browser tab makes for itself; together with the device it names the holder. `acquire` while somebody else holds the lease is 409 `terminal_controlled` naming them; `takeover` ends their lease and they are told by a `control` event and `lease_superseded` on their next input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "client"],
+      "properties": {
+        "action": { "$ref": "#/$defs/TerminalControlAction" },
+        "client": { "description": "1 to 64 of A-Z a-z 0-9 . _ -", "type": "string" }
+      }
+    },
+    "Terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "created", "status", "cols", "rows", "control"],
+      "properties": {
+        "id": { "description": "`trm_<uuid>`.", "type": "string" },
+        "project_id": { "type": "string" },
+        "created": { "description": "Unix seconds.", "type": "integer" },
+        "status": { "$ref": "#/$defs/TerminalStatus" },
+        "cols": { "type": "integer" },
+        "rows": { "type": "integer" },
+        "dir": { "description": "The directory the shell is in now.", "type": "string" },
+        "control": { "$ref": "#/$defs/TerminalControl" }
+      }
+    },
+    "TerminalList": {
+      "description": "GET /v1/terminals?project=. Every terminal on this machine's terminal server, narrowed to one project when `project` names one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminals"],
+      "properties": {
+        "terminals": { "type": "array", "items": { "$ref": "#/$defs/Terminal" } }
+      }
+    },
+    "TerminalOpenRequest": {
+      "description": "POST /v1/terminals. The shell starts in the project's directory at this size. `terminals_full` past 8 open terminals on this machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "cols", "rows"],
+      "properties": {
+        "project_id": { "description": "A project id as /v1/work lists them.", "type": "string" },
+        "cols": { "type": "integer" },
+        "rows": { "type": "integer" }
+      }
+    },
+    "TerminalInputRequest": {
+      "description": "POST /v1/terminals/{id}/input: raw keystrokes, base64, at most 4 KiB decoded. The holder numbers its inputs 1, 2, 3 … within an epoch and resends only with the same number: a number already typed answers `duplicate` and types nothing; a number past the next is 409 `input_gap` with `applied_through`. A tmux that did not answer leaves the lease's input state unknown, and every later input is 409 `input_state_unknown` until a new acquire.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "client", "seq", "data"],
+      "properties": {
+        "epoch": { "type": "integer" },
+        "client": { "type": "string" },
+        "seq": { "type": "integer" },
+        "data": { "description": "Standard base64.", "type": "string" }
+      }
+    },
+    "TerminalPasteRequest": {
+      "description": "POST /v1/terminals/{id}/paste: text typed as one paste, bracketed when the program asked for bracketed paste. At most 1 MiB. Numbered from the same sequence as input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "client", "seq", "text"],
+      "properties": {
+        "epoch": { "type": "integer" },
+        "client": { "type": "string" },
+        "seq": { "type": "integer" },
+        "text": { "type": "string" }
+      }
+    },
+    "TerminalInputResult": {
+      "description": "An input or paste that was typed, or had already been.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applied_through"],
+      "properties": {
+        "applied_through": { "type": "integer" },
+        "duplicate": { "description": "This number had been typed already; nothing was typed now.", "type": "boolean" }
+      }
+    },
+    "TerminalResizeRequest": {
+      "description": "POST /v1/terminals/{id}/resize. The holder only; the newest size asked for wins.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "client", "cols", "rows"],
+      "properties": {
+        "epoch": { "type": "integer" },
+        "client": { "type": "string" },
+        "cols": { "type": "integer" },
+        "rows": { "type": "integer" }
+      }
+    },
+    "TerminalCloseRequest": {
+      "description": "DELETE /v1/terminals/{id}. The holder only: somebody who does not hold the lease takes it over first. Every viewer is told `state: closed` naming who closed it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["epoch", "client"],
+      "properties": {
+        "epoch": { "type": "integer" },
+        "client": { "type": "string" }
+      }
+    },
+    "TerminalClosed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" }
+      }
+    },
+    "TerminalHistory": {
+      "description": "GET /v1/terminals/{id}/history?lines=N: up to N lines that scrolled off the top, then the visible screen. N is at most 2000; a larger ask is lowered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lines"],
+      "properties": {
+        "lines": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "TerminalState": {
+      "description": "The stream's `state` event. `closed_by` names who closed a closed terminal; absent for a shell that ended on its own (`exited`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "$ref": "#/$defs/TerminalStatus" },
+        "closed_by": { "$ref": "#/$defs/TerminalHolder" }
+      }
+    },
+    "TerminalBeat": {
+      "description": "The stream's `beat` event, every 5 seconds: the viewer is still let in and the stream is alive. A viewer that hears no beat for longer than that treats the screen as possibly stale.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["now"],
+      "properties": {
+        "now": { "description": "Unix seconds with milliseconds.", "type": "number" },
+        "last_capture_at": { "description": "When the newest frame sent was read. Absent before the first.", "type": "number" }
+      }
+    },
+    "TerminalRefusal": {
+      "description": "Every refusal on a terminal route, and the stream's last `refusal` event before it ends (`terminal_access_revoked`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "detail"],
+      "properties": {
+        "error": { "$ref": "#/$defs/TerminalRefusalCode" },
+        "detail": { "description": "For a person reading a log; never parsed.", "type": "string" },
+        "holder": { "$ref": "#/$defs/TerminalHolder" },
+        "applied_through": { "description": "With `input_gap`: resend from the number after this one.", "type": "integer" }
+      }
+    },
+    "TerminalGrantRequest": {
+      "description": "POST /v1/auth/devices/{id}/terminal. This machine's own token only, and never through Clawdline Cloud. A grant lets a paired device see terminals and ask for their control lease; pairing, a password sign-in and `remote_write` never give one, and revoking the device removes it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grant"],
+      "properties": {
+        "grant": { "type": "boolean" }
+      }
+    },
+    "TerminalGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device_id", "granted"],
+      "properties": {
+        "device_id": { "type": "string" },
+        "granted": { "type": "boolean" },
+        "granted_at": { "description": "Unix seconds. Absent when not granted.", "type": "integer" }
+      }
+    },
+    "TerminalDiagnostics": {
+      "description": "What /v1/diagnostics says about terminals.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grants_ok", "leases", "streams"],
+      "properties": {
+        "grants_ok": { "description": "The terminal grants file could be read. When false every paired device is treated as ungranted; nothing else on this machine is affected.", "type": "boolean" },
+        "grants_error": { "description": "Why the grants file could not be read.", "type": "string" },
+        "leases": { "description": "Control leases held now.", "type": "integer" },
+        "streams": { "description": "Terminal streams open now, of at most 16.", "type": "integer" }
+      }
+    }
+  }
+}

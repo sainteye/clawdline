@@ -99,7 +99,8 @@
         "created": { "description": "Unix seconds.", "type": "integer" },
         "id": { "type": "string" },
         "last_seen": { "description": "Unix seconds of the last request it made since the daemon started or last saved; absent when never.", "type": "integer" },
-        "name": { "type": "string" }
+        "name": { "type": "string" },
+        "terminal": { "description": "This device holds a terminal grant (terminals.schema.json, POST /v1/auth/devices/{id}/terminal). Absent when it does not, and for every device while the grants file cannot be read.", "type": "boolean" }
       }
     },
     "DeviceList": {

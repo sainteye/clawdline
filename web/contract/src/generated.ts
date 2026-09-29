@@ -2957,6 +2957,7 @@ export interface Diagnostics {
   proposals?: ProposalDiagnostics
   scheduler: SchedulerPulse
   served_by: string
+  terminals?: TerminalDiagnostics
   upstream: number
   usage?: UsageDiagnostics
 }
@@ -3874,6 +3875,13 @@ export interface PairedDevice {
    */
   last_seen?: number
   name: string
+
+  /**
+   * This device holds a terminal grant (terminals.schema.json, POST
+   * /v1/auth/devices/{id}/terminal). Absent when it does not, and for every device
+   * while the grants file cannot be read.
+   */
+  terminal?: boolean
 }
 
 /**
@@ -7135,6 +7143,444 @@ export interface TaskUsage {
   output: number
   total: number
 }
+
+export interface Terminal {
+  cols: number
+  control: TerminalControl
+
+  /**
+   * Unix seconds.
+   */
+  created: number
+
+  /**
+   * The directory the shell is in now.
+   */
+  dir?: string
+
+  /**
+   * `trm_<uuid>`.
+   */
+  id: string
+  project_id: string
+  rows: number
+  status: TerminalStatus
+}
+
+/**
+ * The stream's `beat` event, every 5 seconds: the viewer is still let in and the
+ * stream is alive. A viewer that hears no beat for longer than that treats the
+ * screen as possibly stale.
+ */
+export interface TerminalBeat {
+  /**
+   * When the newest frame sent was read. Absent before the first.
+   */
+  last_capture_at?: number
+
+  /**
+   * Unix seconds with milliseconds.
+   */
+  now: number
+}
+
+/**
+ * DELETE /v1/terminals/{id}. The holder only: somebody who does not hold the lease
+ * takes it over first. Every viewer is told `state: closed` naming who closed it.
+ */
+export interface TerminalCloseRequest {
+  client: string
+  epoch: number
+}
+
+export interface TerminalClosed {
+  ok: boolean
+}
+
+/**
+ * A terminal's control lease: the answer to POST /v1/terminals/{id}/control and the
+ * stream's `control` event. One controller at a time; a lease lasts 30 seconds and
+ * is renewed every 10. Leases live in memory, so a daemon that restarts has none
+ * and the shells are still there.
+ */
+export interface TerminalControl {
+  /**
+   * The highest input number typed under this epoch. Present only in an answer to
+   * the holder itself.
+   */
+  applied_through?: number
+
+  /**
+   * The lease's number. Each acquire and takeover makes a larger one; an input
+   * names the epoch it was typed under and a sender numbers its inputs from 1
+   * within it.
+   */
+  epoch: number
+
+  /**
+   * When the lease lapses unless renewed, Unix seconds with milliseconds. Absent
+   * when nobody holds it.
+   */
+  expires_at?: number
+
+  /**
+   * Somebody holds the lease now.
+   */
+  held: boolean
+  holder?: TerminalHolder
+}
+
+export type TerminalControlAction =
+    "acquire"
+  | "renew"
+  | "release"
+  | "takeover"
+
+export const TerminalControlActionValues: readonly TerminalControlAction[] = ["acquire", "renew", "release", "takeover"] as const
+
+/**
+ * POST /v1/terminals/{id}/control. `client` is a random id the browser tab makes
+ * for itself; together with the device it names the holder. `acquire` while
+ * somebody else holds the lease is 409 `terminal_controlled` naming them;
+ * `takeover` ends their lease and they are told by a `control` event and
+ * `lease_superseded` on their next input.
+ */
+export interface TerminalControlRequest {
+  action: TerminalControlAction
+
+  /**
+   * 1 to 64 of A-Z a-z 0-9 . _ -
+   */
+  client: string
+}
+
+export interface TerminalCursor {
+  blinking?: boolean
+  shape?: TerminalCursorShape
+  visible: boolean
+
+  /**
+   * Column, from 0.
+   */
+  x: number
+
+  /**
+   * Row, from 0.
+   */
+  y: number
+}
+
+/**
+ * DECSCUSR's shape as tmux names it. Absent from a cursor when the server does not
+ * say, which is drawn as `default`.
+ */
+export type TerminalCursorShape =
+    "default"
+  | "block"
+  | "underline"
+  | "bar"
+
+export const TerminalCursorShapeValues: readonly TerminalCursorShape[] = ["default", "block", "underline", "bar"] as const
+
+/**
+ * What /v1/diagnostics says about terminals.
+ */
+export interface TerminalDiagnostics {
+  /**
+   * Why the grants file could not be read.
+   */
+  grants_error?: string
+
+  /**
+   * The terminal grants file could be read. When false every paired device is
+   * treated as ungranted; nothing else on this machine is affected.
+   */
+  grants_ok: boolean
+
+  /**
+   * Control leases held now.
+   */
+  leases: number
+
+  /**
+   * Terminal streams open now, of at most 16.
+   */
+  streams: number
+}
+
+/**
+ * One whole look at a terminal's visible screen: the `frame` event of the stream. A
+ * newer frame replaces an older one and nothing is ever applied on top of another,
+ * so a viewer that missed frames draws the newest and is right.
+ */
+export interface TerminalFrame {
+  /**
+   * When the screen was read, Unix seconds with milliseconds.
+   */
+  at: number
+  cols: number
+  cursor: TerminalCursor
+
+  /**
+   * The pane's shell has ended.
+   */
+  dead?: boolean
+
+  /**
+   * The visible screen, one entry per screen row, SGR escapes kept. A line longer
+   * than the terminal is as many rows as it wrapped onto.
+   */
+  lines: string[]
+  modes: TerminalModes
+
+  /**
+   * A digest of everything but `at`: two frames with the same rev draw the same
+   * screen.
+   */
+  rev: string
+
+  /**
+   * The screen's height. The text is `lines`.
+   */
+  rows: number
+}
+
+export interface TerminalGrant {
+  device_id: string
+  granted: boolean
+
+  /**
+   * Unix seconds. Absent when not granted.
+   */
+  granted_at?: number
+}
+
+/**
+ * POST /v1/auth/devices/{id}/terminal. This machine's own token only, and never
+ * through Clawdline Cloud. A grant lets a paired device see terminals and ask for
+ * their control lease; pairing, a password sign-in and `remote_write` never give
+ * one, and revoking the device removes it.
+ */
+export interface TerminalGrantRequest {
+  grant: boolean
+}
+
+/**
+ * GET /v1/terminals/{id}/history?lines=N: up to N lines that scrolled off the top,
+ * then the visible screen. N is at most 2000; a larger ask is lowered.
+ */
+export interface TerminalHistory {
+  lines: string[]
+}
+
+/**
+ * Who holds a terminal's control lease, as the viewer being answered should read
+ * it. The holder's client id is never sent to anybody else.
+ */
+export interface TerminalHolder {
+  /**
+   * The holder is this machine's own token.
+   */
+  local: boolean
+
+  /**
+   * The device's name: this machine's own, or the paired device's.
+   */
+  name: string
+
+  /**
+   * The holder is the very client (browser tab) this answer is for: the `client` it
+   * sent, or named on the stream's `?client=`.
+   */
+  same_client: boolean
+
+  /**
+   * The holder is the device this answer is for.
+   */
+  same_device: boolean
+}
+
+/**
+ * POST /v1/terminals/{id}/input: raw keystrokes, base64, at most 4 KiB decoded. The
+ * holder numbers its inputs 1, 2, 3 … within an epoch and resends only with the
+ * same number: a number already typed answers `duplicate` and types nothing; a
+ * number past the next is 409 `input_gap` with `applied_through`. A tmux that did
+ * not answer leaves the lease's input state unknown, and every later input is 409
+ * `input_state_unknown` until a new acquire.
+ */
+export interface TerminalInputRequest {
+  client: string
+
+  /**
+   * Standard base64.
+   */
+  data: string
+  epoch: number
+  seq: number
+}
+
+/**
+ * An input or paste that was typed, or had already been.
+ */
+export interface TerminalInputResult {
+  applied_through: number
+
+  /**
+   * This number had been typed already; nothing was typed now.
+   */
+  duplicate?: boolean
+}
+
+/**
+ * GET /v1/terminals?project=. Every terminal on this machine's terminal server,
+ * narrowed to one project when `project` names one.
+ */
+export interface TerminalList {
+  terminals: Terminal[]
+}
+
+/**
+ * The modes a program set that change what a key sends or what the screen is. A
+ * viewer puts its own terminal in the same modes before it draws a frame, so a key
+ * pressed there means what the program expects.
+ */
+export interface TerminalModes {
+  /**
+   * The alternate screen is showing.
+   */
+  alt: boolean
+
+  /**
+   * DECCKM: the arrow keys send `ESC O A` rather than `ESC [ A`.
+   */
+  app_cursor: boolean
+
+  /**
+   * DECKPAM.
+   */
+  app_keypad: boolean
+  mouse: TerminalMouseMode
+
+  /**
+   * DECSET 1006.
+   */
+  mouse_sgr: boolean
+}
+
+/**
+ * Which mouse reporting the program in the terminal asked for: DECSET 1000
+ * (`standard`), 1002 (`button`) or 1003 (`any`).
+ */
+export type TerminalMouseMode =
+    "none"
+  | "standard"
+  | "button"
+  | "any"
+
+export const TerminalMouseModeValues: readonly TerminalMouseMode[] = ["none", "standard", "button", "any"] as const
+
+/**
+ * POST /v1/terminals. The shell starts in the project's directory at this size.
+ * `terminals_full` past 8 open terminals on this machine.
+ */
+export interface TerminalOpenRequest {
+  cols: number
+
+  /**
+   * A project id as /v1/work lists them.
+   */
+  project_id: string
+  rows: number
+}
+
+/**
+ * POST /v1/terminals/{id}/paste: text typed as one paste, bracketed when the
+ * program asked for bracketed paste. At most 1 MiB. Numbered from the same sequence
+ * as input.
+ */
+export interface TerminalPasteRequest {
+  client: string
+  epoch: number
+  seq: number
+  text: string
+}
+
+/**
+ * Every refusal on a terminal route, and the stream's last `refusal` event before
+ * it ends (`terminal_access_revoked`).
+ */
+export interface TerminalRefusal {
+  /**
+   * With `input_gap`: resend from the number after this one.
+   */
+  applied_through?: number
+
+  /**
+   * For a person reading a log; never parsed.
+   */
+  detail: string
+  error: TerminalRefusalCode
+  holder?: TerminalHolder
+}
+
+/**
+ * Every refusal a terminal route answers with (plan v3 D4). A client branches on
+ * these and never on `detail`.
+ */
+export type TerminalRefusalCode =
+    "terminal_forbidden"
+  | "not_controller"
+  | "terminal_controlled"
+  | "lease_superseded"
+  | "lease_expired"
+  | "input_gap"
+  | "input_state_unknown"
+  | "input_too_large"
+  | "terminal_busy"
+  | "terminal_closed"
+  | "terminal_unreachable"
+  | "terminal_unsupported"
+  | "terminals_full"
+  | "terminal_viewers_full"
+  | "terminal_access_revoked"
+  | "terminal_cloud_not_supported"
+  | "terminal_socket_path_too_long"
+  | "terminal_invalid"
+
+export const TerminalRefusalCodeValues: readonly TerminalRefusalCode[] = ["terminal_forbidden", "not_controller", "terminal_controlled", "lease_superseded", "lease_expired", "input_gap", "input_state_unknown", "input_too_large", "terminal_busy", "terminal_closed", "terminal_unreachable", "terminal_unsupported", "terminals_full", "terminal_viewers_full", "terminal_access_revoked", "terminal_cloud_not_supported", "terminal_socket_path_too_long", "terminal_invalid"] as const
+
+/**
+ * POST /v1/terminals/{id}/resize. The holder only; the newest size asked for wins.
+ */
+export interface TerminalResizeRequest {
+  client: string
+  cols: number
+  epoch: number
+  rows: number
+}
+
+/**
+ * The stream's `state` event. `closed_by` names who closed a closed terminal;
+ * absent for a shell that ended on its own (`exited`).
+ */
+export interface TerminalState {
+  closed_by?: TerminalHolder
+  status: TerminalStatus
+}
+
+/**
+ * Where a terminal is in its life. `exited` is a shell that ended on its own;
+ * `closed` is a terminal somebody closed, or one that is no longer there;
+ * `unreachable` is a server that did not answer, which is never a reason to call a
+ * terminal closed.
+ */
+export type TerminalStatus =
+    "running"
+  | "exited"
+  | "closed"
+  | "unreachable"
+
+export const TerminalStatusValues: readonly TerminalStatus[] = ["running", "exited", "closed", "unreachable"] as const
 
 /**
  * The entry bound, on the wire where a reader can see it (timeline-design A4). What
