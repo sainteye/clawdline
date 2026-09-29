@@ -17,6 +17,8 @@ import { Mark } from "./List.js"
 import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
+import { useInterventions } from "./Interventions.js"
+import type { InterventionTarget } from "./intervention-composer.js"
 import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
 import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
@@ -25,8 +27,9 @@ import "../pages/work/work.css"
 import "./todos.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
-export function Todos({ row }: { row: SessionRow | null }) {
+export function Todos({ row, onInsertDraft }: { row: SessionRow | null; onInsertDraft?: (target: InterventionTarget, text: string) => void }) {
   const [open, setOpen] = useState(false)
+  const attention = useInterventions(row, onInsertDraft, () => setOpen(false))
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState("")
   const [images, setImages] = useState<File[]>([])
@@ -107,6 +110,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
           setOpen(next)
           // The first answer is already in flight when a Session opens. Once
           // there is an answer, opening the fold is an explicit freshness ask.
+          if (next) attention.close()
           if (next && page !== null) void refresh()
         }}>
         <summary>
@@ -118,6 +122,7 @@ export function Todos({ row }: { row: SessionRow | null }) {
             : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
           {readReady && readFailure && <ReadFailure state={todoHeaderState(page !== null, true)} reason={readFailure.reason}
             retrying={reading} onRetry={() => { void refresh(true) }} />}
+          {attention.head}
         </summary>
         <div className="session-todos-body">
           {row.sessionId && <SessionUsage conversation={row.sessionId} />}
@@ -150,6 +155,8 @@ export function Todos({ row }: { row: SessionRow | null }) {
         <button className="session-todos-backdrop" type="button" tabIndex={-1} aria-label="收起 Session 待辦"
           onClick={() => setOpen(false)} />
       </details>
+      {attention.live}
+      {attention.body}
       {adding && <div className="session-todo-modal" role="dialog" aria-modal="true" aria-labelledby="session-todo-modal-title">
         <form onSubmit={(ev) => {
           ev.preventDefault(); const value = text.trim(); if (!value) return

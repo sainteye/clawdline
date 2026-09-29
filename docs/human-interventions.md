@@ -2,6 +2,8 @@
 
 A human intervention is an Agent-authored request shown above one target Session's conversation. A coordinating Root can write a note on a different Session. The note records both the source conversation and the target conversation, plus a snapshot of the source label. It is for a concrete human action that blocks or informs the next step, not a progress log or a private Agent reminder.
 
+The Console shares one collapsed header row between Session to-dos and intervention notes. The right-hand attention control shows a red dot while at least one note remains unresolved, even after the person marks it read. Opening attention reveals the notes without opening the to-do list. Resolving the last open note removes the dot; recent resolved notes remain available inside the attention panel.
+
 ## Trust and responsibility
 
 `POST /v1/work/v2/agent/human-interventions` requires the machine credential. Its `source_conversation` must resolve to a live Root; `target_session` must be a live, uniquely resolved Session row with a conversation. The source and target may differ. The machine credential identifies the machine, not the calling Session. A caller holding it can name a different live Root as the source; this route does not provide cryptographic per-Session authorship. The stored source label is provenance for the person, not proof of caller isolation.

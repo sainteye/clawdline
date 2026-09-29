@@ -23,7 +23,6 @@ import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
 import { StatusLine } from "./StatusLine.js"
 import { Todos } from "./Todos.js"
-import { Interventions } from "./Interventions.js"
 import { appendInterventionDraft, interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
@@ -279,8 +278,7 @@ export function Detail({
           if (restore) document.getElementById("bg-strip-line")?.focus({ preventScroll: true })
         }}
       />
-      <Todos row={row} />
-      <Interventions row={row} onInsertDraft={(target, text) => {
+      <Todos row={row} onInsertDraft={(target, text) => {
         if (!sameInterventionTarget(target, interventionTarget(row))) return
         if (!selectedAgent) { appendInterventionDraft(target, text); return }
         setPendingIntervention({ target, text, id: ++pendingInterventionID.current })
