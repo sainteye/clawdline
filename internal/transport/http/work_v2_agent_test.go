@@ -60,6 +60,25 @@ func TestAnEpicsOwnerBriefSaysPlanReviewStepsThenImplement(t *testing.T) {
 	}
 }
 
+func TestAnEpicsOwnerBriefDefersEndToEndUntilIntegration(t *testing.T) {
+	const id = "0e0e0e0e-0000-4000-8000-000000000004"
+	for name, brief := range map[string]string{
+		"Root Assignment": workV2RootAssignmentAcceptance(id, work.KindEpic),
+		"assignment":      workV2AssignmentBrief(id, "Big", work.KindEpic),
+		"reassignment":    workV2ReassignmentBrief(id, "Big", work.KindEpic, work.PhaseAssigned),
+	} {
+		for _, want := range []string{"focused tests", "one runnable candidate", "required accounts, data, browser and API paths",
+			"Only after that candidate works should you dispatch a real end-to-end test", "mock UI, disconnected branches or incomplete APIs",
+			"prove the chosen worker can open the target URL", "authorized browser or equivalent local automation",
+			"required test accounts, fixtures and app/origin permissions", "`--permission-mode full` alone does not grant browser access",
+			"do not repeatedly send a verifier into the same blocker"} {
+			if !strings.Contains(brief, want) {
+				t.Errorf("%s brief lacks %q:\n%s", name, want, brief)
+			}
+		}
+	}
+}
+
 // An Epic that changes a person-facing interface, journey, or product policy
 // needs an independent UX/product review before merging. The owner brief must
 // make that conditional mandatory rather than adding ceremony to backend-only

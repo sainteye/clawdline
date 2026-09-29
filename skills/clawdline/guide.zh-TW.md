@@ -601,7 +601,7 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 clawdline note create --target <terminal-id> --body-file note.json
 ```
 
-`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是要放進對話框的完整文字。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。點選選項只填入使用者的對話草稿，仍由使用者送出。只有使用者會把便條移到已處理。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
+`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是建議回覆；Console 會在按鈕與對話草稿中加上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。點選選項只填入使用者的對話草稿，仍由使用者送出。只有使用者會把便條移到已處理。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
 
 ## 10. 看板
 
@@ -810,7 +810,11 @@ owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會�
 使用 `reality-checker`；有參考圖片或設計文件的 Feature 使用 `evidence-collector`，其他 Feature
 使用 `reality-checker`。具型別的結論只有 `PASS`、`FAIL`、`NEEDS_WORK`；無法驗證的主張須說明原因，
 不能授權 Merge。缺少或格式錯誤的結果是技術失敗，僅有一次有界重試，之後升級處理。Epic 的最後端到端
-驗證要等所有子項目結束。`verifying → merging` 須有對應候選提交及驗收的有效 PASS，或記錄原因的明確
+驗證要等所有子項目結束，且受影響的元件已整合成可執行的候選版本。先由各子項目做針對性測試，Epic
+負責人做跨元件基本檢查；不要拿假資料畫面、未整合分支或未完成的 API 派出瀏覽器／多帳號端到端驗證。
+派工前要確認驗證員能用已授權的瀏覽器或等效本機工具打開目標網址，並有測試帳號、資料及來源權限；
+brief 要寫明使用途徑。`--permission-mode full` 本身不會賦予瀏覽器權限。工具預檢失敗時先解決存取問題，
+不要把另一位驗證員派進同一個阻礙。`verifying → merging` 須有對應候選提交及驗收的有效 PASS，或記錄原因的明確
 覆核；一段自行撰寫的驗證敘述沒有授權力。連續三次 FAIL 先交給仍在線的上層 Epic owner，該 owner
 不可用時交給使用者；技術失敗另行升級。只有指定的上層 owner 使用
 `POST /v1/work/v2/agent/items/<id>/gate-decision`；使用者使用
@@ -928,6 +932,12 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
    需要新的審查。審查最多兩次：第二次審查後再改的計畫，不必第三次審查就能繼續。
 4. 用 `clawdline item step-add <item id> …` 把工作拆成 steps。
 5. 這些都做完，才 `clawdline item phase <item id> implementing`。
+
+計畫須排出驗證順序：各實作子項目先做自己的針對性測試；Epic 負責人整合受影響的元件並完成最小的
+跨元件基本檢查；整合後的候選版本可正常運作，才派真正的端到端驗證與必要的獨立 UX／產品審查。
+派工前確認驗證員的瀏覽器使用途徑、目標網址、測試帳號、資料與權限。瀏覽器不可用時先排除問題或改用
+等效的本機瀏覽器測試工具，不要反覆派只會碰到同一障礙的唯讀驗證任務。穩定版本做一輪最終端到端驗證；
+小修正只重驗受影響的流程。
 
 `clawdline item doc` 會先讀項目的版本和最後一份文件的位置，送出前印出 Idempotency-Key（`--key`
 重試同一筆寫入），做完印出項目。內容來自 `--body-file` 或 stdin。它就是

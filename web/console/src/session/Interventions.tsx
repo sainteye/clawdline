@@ -147,14 +147,16 @@ function InterventionCard({ note, disabled, onAction, onInsert }: {
     <p className="human-intervention-reason">原因：{note.reason}</p>
     {note.document_url && <p><a className="human-intervention-document" href={note.document_url} target="_blank" rel="noopener noreferrer"><WorkIcon name="file" />在新分頁開啟文件</a></p>}
     {note.detail && <details className="human-intervention-more"><summary>閱讀完整內容</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
-    <div className="human-intervention-drafts" role="group" aria-label={note.options.length ? "建議回覆" : "可加入對話框的文字"}>
-      <h4>{note.options.length ? "建議回覆" : "對話草稿"}</h4>
-      {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) =>
-        <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`將「${option.label}」加入對話框草稿：${option.draft}`} onClick={() => onInsert(option.draft)}>
+    <div className="human-intervention-drafts" role="group" aria-label="建議回覆">
+      <h4>建議回覆</h4>
+      {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) => {
+        const reply = interventionReplyText(note, option.draft)
+        return <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
+          disabled={disabled} aria-label={`將建議回覆加入對話框：${reply}`} onClick={() => onInsert(reply)}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
-          <span>{option.draft}</span>
-        </button>)}
+          <span>{reply}</span>
+        </button>
+      })}
     </div>
     <div className="human-intervention-state">
       <div className="human-intervention-actions">
@@ -163,4 +165,9 @@ function InterventionCard({ note, disabled, onAction, onInsert }: {
       </div>
     </div>
   </article>
+}
+
+function interventionReplyText(note: HumanInterventionV2, draft: string): string {
+  const context = `(Clawdline 便條 ${note.id}：「${note.title}」；待回覆事項：${note.action})`
+  return `${draft.replace(/[\r\n]+$/, "")}\n\n${context}`
 }

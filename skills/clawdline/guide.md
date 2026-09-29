@@ -665,7 +665,7 @@ Create one with a JSON body file. `--target` is the live target Session's **term
 clawdline note create --target <terminal-id> --body-file note.json
 ```
 
-`kind` is `read`, `answer`, `action`, or `report`; `title`, `summary`, `action`, and `reason` are required. An `answer` can offer two to four choices, each with the exact text to put in the composer. `detail` can hold longer text. `document_url` can link to a real, readable Cloud document; verify the document route and file before posting it. A choice only fills the person's composer; the person sends it. Only the person marks the note handled. If your work is actually blocked on the answer, record the waiting-user state and send the existing attention notification once. A visible note alone sends no push and does not wake an Agent.
+`kind` is `read`, `answer`, `action`, or `report`; `title`, `summary`, `action`, and `reason` are required. An `answer` can offer two to four choices. Each `draft` is the suggested reply; the Console displays and appends a context line with the note ID, title, and action so the receiving Session knows which request the person answered. `detail` can hold longer text. `document_url` can link to a real, readable Cloud document; verify the document route and file before posting it. A choice only fills the person's composer; the person sends it. Only the person marks the note handled. If your work is actually blocked on the answer, record the waiting-user state and send the existing attention notification once. A visible note alone sends no push and does not wake an Agent.
 
 ## 10. The board
 
@@ -933,7 +933,14 @@ checks Project, cycle base, tree and acceptance digest. A detached read-only Cod
 reference pictures or a design document (otherwise `reality-checker`). Its typed verdict is
 `PASS`, `FAIL`, or `NEEDS_WORK`; unverified claims say why and never authorize merging. A missing
 or malformed result is a technical failure, with one bounded retry and then escalation. An Epic's
-final end-to-end round waits until all children are terminal. `verifying → merging` needs a live
+final end-to-end round waits until all children are terminal and the affected components are integrated
+into one runnable candidate. Focused child tests and integration smoke checks happen first; do not
+dispatch final browser or multi-account end-to-end work against mock UI, disconnected branches, or
+incomplete APIs. Before dispatch, prove the chosen worker can actually open the target URL with an
+authorized browser or equivalent local automation, and has the test accounts, fixtures, and origin
+permissions it needs. Name that route in the brief; `--permission-mode full` alone is not browser
+access. Resolve a failed tool preflight before retrying, rather than sending another verifier into
+the same blocker. `verifying → merging` needs a live
 PASS for the exact candidate/criteria or an explicitly reasoned override; a verification sentence
 alone cannot grant it. Three consecutive FAILs escalate to the live parent Epic owner, then to the
 person if that owner is unavailable; a technical failure escalates separately. Only the designated
@@ -1069,6 +1076,15 @@ Epic. When you own an item with planning on:
    the most asked: a plan revised after the second goes on without a third.
 4. Break the work into steps with `clawdline item step-add <item id> …`.
 5. Only then `clawdline item phase <item id> implementing`.
+
+Plan verification as a sequence. Each implementation child checks its own code with focused tests;
+the Epic owner integrates the affected components and runs the smallest useful cross-component smoke
+check. Only after the integrated candidate works should the owner dispatch real end-to-end verification
+and the applicable independent UX/product review. Check the verifier's browser route, target URL,
+test accounts, fixtures, and permissions before dispatch. Do not use repeated read-only verifier
+tasks to discover or work around a missing browser: fix the access or choose an equivalent local
+browser harness first. Keep one final end-to-end round for the stable candidate, and rerun only
+affected paths after a focused fix.
 
 `clawdline item doc` reads the item for its version and last document position, prints its
 Idempotency-Key (`--key` retries the same write) and prints the item. The body comes from
