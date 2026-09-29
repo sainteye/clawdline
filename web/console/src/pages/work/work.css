@@ -173,6 +173,9 @@
 }
 .work-card h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .work-v2-card > p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-card-description:not([data-expanded="true"]) { max-height: 9.6em; overflow: hidden; }
+.work-description-toggle { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--accent); font-size: 12px; }
+.work-description-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 /* The Board is an index. A compact card keeps only the facts needed to choose
    an item; its one control opens the existing full working surface in a modal. */
 .work-summary-card { gap: 0; padding: 0; overflow: hidden; }

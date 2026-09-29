@@ -98,6 +98,16 @@ test("closed Board cards show their completion time instead of another update ti
   assert.match(source, /item\.closed_at \? `完成 \$\{when\(item\.closed_at\)\}` : `更新 \$\{when\(item\.updated_at\)\}`/)
 })
 
+test("long detail descriptions start folded and can be opened without folding short ones", () => {
+  assert.match(source, /<WorkDescription key=\{item\.id\} description=\{item\.description\} id=\{item\.id\} \/>/)
+  assert.match(source, /foldDescription=\{!created\}/)
+  assert.match(source, /scrollHeight > .*lineHeight/)
+  assert.match(source, /ResizeObserver/)
+  assert.match(source, /\{long && <button className="work-description-toggle"/)
+  assert.match(source, /aria-expanded=\{expanded\}/)
+  assert.match(styles, /\.work-card-description:not\(\[data-expanded="true"\]\) \{[^}]*max-height:/)
+})
+
 test("Board lanes keep items folded until their accessible summary opens the shared detail modal", () => {
   assert.match(source, /function CompactWorkCard/)
   assert.match(source, /<CompactWorkCard key=\{item\.id\}/)
