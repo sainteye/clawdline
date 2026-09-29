@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Persona } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { headPersona, personaById, personasOfTeam, personaTeams, rowPersonaLine, shownTeam, switchTeam, teamsOffered, withTeams } from "./personas.ts"
+import { headPersona, personaById, personasOfTeam, personaTeams, rowPersonaLine, shownTeam, suggestedPersonaForKind, switchTeam, teamsOffered, withTeams } from "./personas.ts"
 
 const icon = { accent: "#000000", cells: [["#000000"]] }
 const persona = (id: string, kinds: string[], teams = ["engineering"]): Persona => ({
@@ -27,6 +27,14 @@ test("an id the catalog does not name is no persona", () => {
   assert.equal(personaById(catalog, "janitor"), null)
   assert.equal(personaById(catalog, undefined), null)
   assert.equal(personaById(null, "architect"), null)
+})
+
+test("an item kind preselects only its unique catalog role", () => {
+  assert.equal(suggestedPersonaForKind(catalog, "issue")?.id, "minimal-change")
+  assert.equal(suggestedPersonaForKind(catalog, "epic")?.id, "architect")
+  assert.equal(suggestedPersonaForKind(catalog, "feature"), null, "two matching roles do not create a guess")
+  assert.equal(suggestedPersonaForKind(catalog, "plan"), null)
+  assert.equal(suggestedPersonaForKind(null, "issue"), null)
 })
 
 test("a catalog that cannot be read is an empty one, read once", async () => {
