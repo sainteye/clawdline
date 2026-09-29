@@ -691,3 +691,22 @@ the settings route answers `invalid_auto_compact_window` and a task.json `bad_ta
 file with an out-of-range number launches with none. `maxAutoCompactWindow` is a `parameter` line on
 the capacity baseline, not a row: nothing accumulates. See [token-ledger.md](token-ledger.md),
 "Long-running sessions".
+
+### N58: offline squad package input
+
+An untrusted offline ZIP is admitted only within six registered bounds: `squadpackage.archive_bytes`
+(512 KiB of original ZIP bytes), `squadpackage.manifest_bytes` (128 KiB),
+`squadpackage.file_bytes` (64 KiB per definition or private settings file),
+`squadpackage.expanded_bytes` (4 MiB in total), `squadpackage.entries` (128 ZIP entries), and
+`squadpackage.expansion_ratio` (64 uncompressed bytes per compressed byte for any nonempty entry).
+All six are buffer rows that refuse the request before any catalog write, tell the sender with a
+typed package error, and appear in `/v1/diagnostics.capacity`; nothing is evicted. The parser
+checks declared ZIP sizes before decompression and actual bytes during the read. The
+`squadpackage.request_bytes` bound is 1 MiB for the HTTP and Cloud JSON/base64 envelope, large
+enough for the maximum encoded ZIP, and refuses a larger body before parsing. The source of each bound is in
+`internal/domain/squadpack/limits.go`.
+
+`squadpackage.preview_rows` holds at most 1,024 durable preview grants and refuses another
+preview at capacity; `squadpackage.preview_age` expires each grant after 900 seconds. Expired
+grants are pruned when a new preview is saved. A preview grant contains hashes and catalog
+metadata, never the ZIP bytes or private text. Adoption reuploads and revalidates the same ZIP.

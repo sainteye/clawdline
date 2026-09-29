@@ -238,6 +238,30 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-squad-motion-write",
 		method: "PUT", path: "/v1/squad/motion", body2: `{"expected_version":0}`,
 	}, {
+		word: "squad.packages.preview",
+		body: map[string]any{"type": "squad.packages.preview", "session": machine,
+			"request": "req-package-preview", "package": map[string]any{}},
+		session: machine, name: "read:req-package-preview",
+		method: "POST", path: "/v1/squad-packages/preview", body2: `{}`,
+	}, {
+		word: "squad.packages.adopt",
+		body: map[string]any{"type": "squad.packages.adopt", "session": machine,
+			"request": "req-package-adopt", "package": map[string]any{}},
+		session: machine, name: "action:req-package-adopt",
+		method: "POST", path: "/v1/squad-packages/adopt", body2: `{}`,
+	}, {
+		word: "squad.packages.export",
+		body: map[string]any{"type": "squad.packages.export", "session": machine,
+			"request": "req-package-export", "package": map[string]any{"private_scopes": []any{}, "confirm_private": false}},
+		session: machine, name: "read:req-package-export",
+		method: "POST", path: "/v1/squad-packages/export", body2: `{"confirm_private":false,"private_scopes":[]}`,
+	}, {
+		word: "squad.packages.export.private",
+		body: map[string]any{"type": "squad.packages.export.private", "session": machine,
+			"request": "req-package-export-private", "package": map[string]any{"private_scopes": []any{"global"}, "confirm_private": true}},
+		session: machine, name: "action:req-package-export-private",
+		method: "POST", path: "/v1/squad-packages/export", body2: `{"confirm_private":true,"private_scopes":["global"]}`,
+	}, {
 		word: "past-sessions",
 		body: map[string]any{"type": "past-sessions", "session": machine, "request": "req-past",
 			"place": "/Users/sean/code/clawdline-go", "assistant": "codex"},

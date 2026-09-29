@@ -1,0 +1,521 @@
+{
+  "format": "clawdline.squad-package",
+  "version": 1,
+  "namespace": "example.squad",
+  "source": "Clawdline example package",
+  "license": "CC0-1.0",
+  "teams": [
+    {
+      "id": "example.squad.team.alpha",
+      "version": "1.0.0",
+      "name": "Alpha",
+      "icon": {
+        "accent": "#27657B",
+        "cells": [
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ]
+        ]
+      },
+      "body": "definitions/team/alpha.md",
+      "sha256": "",
+      "personas": [
+        "example.squad.persona.writer",
+        "example.squad.persona.reviewer"
+      ]
+    },
+    {
+      "id": "example.squad.team.beta",
+      "version": "1.0.0",
+      "name": "Beta",
+      "icon": {
+        "accent": "#27657B",
+        "cells": [
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ]
+        ]
+      },
+      "body": "definitions/team/beta.md",
+      "sha256": "",
+      "personas": [
+        "example.squad.persona.reviewer",
+        "example.squad.persona.writer"
+      ]
+    }
+  ],
+  "personas": [
+    {
+      "id": "example.squad.persona.writer",
+      "version": "1.0.0",
+      "name": "Writer",
+      "icon": {
+        "accent": "#27657B",
+        "cells": [
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ]
+        ]
+      },
+      "body": "definitions/persona/writer.md",
+      "sha256": "",
+      "skills": [
+        "example.squad.skill.draft",
+        "example.squad.skill.review"
+      ]
+    },
+    {
+      "id": "example.squad.persona.reviewer",
+      "version": "1.0.0",
+      "name": "Reviewer",
+      "icon": {
+        "accent": "#27657B",
+        "cells": [
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ]
+        ]
+      },
+      "body": "definitions/persona/reviewer.md",
+      "sha256": "",
+      "skills": [
+        "example.squad.skill.review",
+        "example.squad.skill.draft"
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "id": "example.squad.skill.draft",
+      "version": "1.0.0",
+      "name": "Draft",
+      "icon": {
+        "accent": "#27657B",
+        "cells": [
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ]
+        ]
+      },
+      "body": "definitions/skill/draft.md",
+      "sha256": ""
+    },
+    {
+      "id": "example.squad.skill.review",
+      "version": "1.0.0",
+      "name": "Review",
+      "icon": {
+        "accent": "#27657B",
+        "cells": [
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            null,
+            "#27657B",
+            "#27657B",
+            null,
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "#27657B",
+            null,
+            null,
+            "#27657B",
+            null,
+            null
+          ]
+        ]
+      },
+      "body": "definitions/skill/review.md",
+      "sha256": ""
+    }
+  ]
+}

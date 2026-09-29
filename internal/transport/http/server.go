@@ -498,6 +498,7 @@ func (s *Server) Handler() http.Handler {
 	// The built-in personas a start or a dispatch may name (personas.go).
 	mux.HandleFunc("/v1/personas", s.personasRoute)
 	mux.HandleFunc("/v1/squad/", s.squadRoute)
+	mux.HandleFunc("/v1/squad-packages/", s.squadPackagesRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
 	mux.HandleFunc("/v1/projects/", s.projectsRoute)
 	// Project settings a source machine offers and a mirror applies (project_sync.go).
