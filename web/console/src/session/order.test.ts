@@ -216,7 +216,7 @@ test("missing, ambiguous, and cyclic Epic owners leave independent Roots at the 
   assert.deepEqual([...visualDepths([a, b], [], () => true).values()], [0, 0])
 })
 
-test("the dotted tree trunk continues through siblings and their descendants", () => {
+test("the tree trunk continues through siblings and their descendants", () => {
   const rows = [row("owner", "idle", "Architect"), row("first", "idle", "Feature A"),
     row("review", "idle", "Review"), row("second", "idle", "Feature B"), row("other", "idle", "Other")]
   const depths = new Map([["owner", 0], ["first", 1], ["review", 2], ["second", 1], ["other", 0]])
