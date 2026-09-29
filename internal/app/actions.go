@@ -263,7 +263,9 @@ func (a Actions) send(ctx context.Context, s session.Session, text string) (sess
 // logged, never the text, so the next such line names why Enter was held back.
 func sendRefusal(s session.Session, err error) Refusal {
 	code := "send_failed"
-	if errors.As(err, new(terminal.Unsubmitted)) {
+	if errors.As(err, new(terminal.EffectBusy)) {
+		code = "busy"
+	} else if errors.As(err, new(terminal.Unsubmitted)) {
 		code = "send_unsubmitted"
 	}
 	log.Printf("send: %s to session %s: %v", code, s.ID, err)

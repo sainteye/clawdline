@@ -45,9 +45,18 @@ function run(argv) {
 `
 
 func (i *ITerm) keyScript(ctx context.Context, args ...string) (map[string]any, error) {
-	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 	defer cancel()
+	// A screen capture observes the terminal and is already bounded by the
+	// held-screen reader. Keeping it in the effects lane let two background
+	// captures time out ahead of a person's send while iTerm2 was stalled.
+	if len(args) == 0 || args[0] != "capture" {
+		release, err := effect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+	}
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", append([]string{"-l", "JavaScript", "-"}, args...)...)
 	cmd.Stdin = strings.NewReader(itermKeyScript)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
@@ -88,15 +97,28 @@ func (i *ITerm) Keystroke(ctx context.Context, s session.Session, codes []byte) 
 // Capture is what an iTerm2 session shows now. iTerm2 exposes the visible
 // screen and no scrollback.
 func (i *ITerm) Capture(ctx context.Context, s session.Session) (string, bool) {
+	text, ok, _ := i.CaptureWithFailure(ctx, s)
+	return text, ok
+}
+
+// CaptureWithFailure reports whether iTerm2's Apple Event bridge failed, as
+// opposed to a particular tab having gone away. The held-screen reader uses
+// that distinction to back off the whole source only during an outage.
+func (i *ITerm) CaptureWithFailure(ctx context.Context, s session.Session) (string, bool, bool) {
 	if s.Backend != session.BackendITerm || s.ID == "" {
-		return "", false
+		return "", false, false
 	}
 	answer, err := i.keyScript(ctx, "capture", s.ID)
 	if err != nil {
-		return "", false
+		return "", false, captureSourceFailed(err)
 	}
 	text, ok := answer["text"].(string)
-	return text, ok
+	return text, ok, false
+}
+
+func captureSourceFailed(err error) bool {
+	var failure Failure
+	return errors.As(err, &failure) && failure.Attention
 }
 
 var (

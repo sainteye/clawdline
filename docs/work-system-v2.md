@@ -336,7 +336,16 @@ acceptance is empty. The owning Agent then writes the first criteria with
 `clawdline item acceptance <id> --body-file <file>` before a planning-on Epic or Feature starts
 implementation, or before verify-on work enters verification. An Epic owner may also set it for
 a child or revise it through a reasoned third-FAIL decision. After the first nonempty criteria,
-the maker cannot revise it; later ordinary revisions belong to the person. An authorized edit before merging stales the current round and every old
+the maker cannot revise it through the ordinary edit route. The owning live Root may relay a person's explicit Clawdline message with
+`clawdline item acceptance-revise <id> --run <run> --expected-version <item version> --body-file <file>`.
+The message excerpt must explicitly request an acceptance change; negations, questions without
+a direct request, and discussion alone do not authorize the route. It must name the item by ID
+or title when the Root owns more than one open item; with exactly one open item, its conversation
+context identifies that item unless the message names a different item ID. The run must be newer
+than the current acceptance version and within the run's one-day relay window. The
+server records the run, Session, time, and excerpt in the item event and response. The full file
+replaces the acceptance Markdown; use the same key and version to retry an uncertain write.
+The person may still edit directly. An authorized edit before merging stales the current round and every old
 PASS/override, returning a verifying item to implementing. Merging, deploying, and done lock it.
 The checker receives its exact text, version, digest, cycle, and immutable candidate receipt.
 The Board's planning-and-verification panel appears only for an Epic after criteria have been

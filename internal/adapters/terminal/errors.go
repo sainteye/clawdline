@@ -22,6 +22,15 @@ type Unsent struct{ Why string }
 
 func (u Unsent) Error() string { return u.Why }
 
+// EffectBusy means an iTerm2 effect never acquired the process-wide Apple
+// Event lane. No script was started and no bytes were typed. It unwraps to
+// Unsent so callers deciding whether a retry can duplicate a line have the
+// same evidence as for any other before-the-first-byte refusal.
+type EffectBusy struct{ Why string }
+
+func (e EffectBusy) Error() string { return e.Why }
+func (e EffectBusy) Unwrap() error { return Unsent{Why: e.Why} }
+
 // Unsubmitted is a line that was typed and never submitted: the text went into
 // the terminal, the program in it never showed the text arriving, and so no
 // Enter was pressed (submit.go). It is not Unsent — the text may be sitting in
