@@ -366,7 +366,10 @@ smoke path, proves the chosen worker can open the target URL with an authorized 
 local harness, and supplies test accounts, fixtures, and origin permissions. A missing browser is
 resolved before dispatch rather than discovered through repeated failed read-only tasks. Focused
 child and integration checks may run earlier; the final end-to-end pass does not run on mock UI,
-disconnected branches, or incomplete APIs. Feature uses Evidence Collector when it has a reference image or design
+disconnected branches, or incomplete APIs. A failed browser/tool preflight is not an end-to-end
+attempt. Plan one comprehensive round per Epic, then rerun only affected scenarios after a defect
+fix. Repeat the full round only if acceptance scope or integration boundary materially changes,
+with the reason recorded. Feature uses Evidence Collector when it has a reference image or design
 document, otherwise Reality Checker. A result has `PASS`, `FAIL`, or `NEEDS_WORK` with bounded
 per-claim evidence; an unverified claim explains why and is never PASS. Missing, malformed, stale,
 or mismatched results cannot authorize merging. Technical failure gets one bounded retry before
