@@ -274,6 +274,11 @@ function snapshot() {
       provenance: "fixture",
       source,
       notes: readingScenario === "refresh" ? ["session inventory refresh is in progress; prior rows are unverified"] : [],
+      sources: readingScenario === "refresh" ? [
+        { source: "iterm", complete: false },
+        { source: "ps", complete: false },
+        { source: "tmux", complete: false },
+      ] : [],
     },
     // The daemon's own answer moves; the page's order is the page's business.
     sessions: rows(),

@@ -46,6 +46,25 @@ test("a whole terminal-source failure says the next action instead of waiting fo
   )
 })
 
+test("an inventory still refreshing is not an iTerm failure", () => {
+  assert.equal(
+    scanFailureWords(
+      ["session inventory refresh is in progress; prior rows are unverified"],
+      [{ source: "iterm", complete: false }, { source: "ps", complete: false }, { source: "tmux", complete: false }],
+      true,
+    ),
+    null,
+  )
+  assert.match(
+    scanFailureWords(
+      ["iTerm2 apple event failed: exit status 1", "session inventory refresh is in progress; prior rows are unverified"],
+      [{ source: "iterm", complete: false }],
+      true,
+    ) ?? "",
+    /Clawdline 讀不到 iTerm2/,
+  )
+})
+
 test("the title's number is the same set as the list", () => {
   assert.equal(totalSessionWords(6, true), "6 個 session")
   assert.equal(totalSessionWords(1, false), "1 session")

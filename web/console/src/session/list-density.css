@@ -74,9 +74,7 @@
   max-width: 46%;
 }
 
-/* The unreadable-state sentence is the row's whole state line, so it takes the
- * room the badges beside it leave and wraps inside it, instead of pushing them
- * into a sliver. */
+/* The unreadable-state label takes the room the badges beside it leave. */
 .row .state > .unread {
   flex: 1 1 auto;
   min-width: 0;
