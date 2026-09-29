@@ -89,7 +89,7 @@ func packageRows(pkg squadpack.Package, changes []squadpack.Change, existing []s
 			return nil, err
 		}
 		rows = append(rows, SquadEntityRow{Kind: "skill", ID: d.ID, Version: d.Version,
-			Digest: squadpack.DefinitionDigest(d), Payload: payload})
+			Digest: value.Digest, Payload: payload})
 	}
 	for _, d := range pkg.Manifest.Personas {
 		if !selected[d.ID] {
@@ -122,7 +122,7 @@ func packageRows(pkg squadpack.Package, changes []squadpack.Change, existing []s
 			return nil, err
 		}
 		rows = append(rows, SquadEntityRow{Kind: "definition", ID: d.ID, Version: d.Version,
-			Digest: squadpack.DefinitionDigest(d), Payload: payload})
+			Digest: value.Digest, Payload: payload})
 	}
 	for _, d := range pkg.Manifest.Teams {
 		if !selected[d.ID] {
@@ -142,7 +142,7 @@ func packageRows(pkg squadpack.Package, changes []squadpack.Change, existing []s
 			return nil, err
 		}
 		rows = append(rows, SquadEntityRow{Kind: "team", ID: d.ID, Version: d.Version,
-			Digest: squadpack.DefinitionDigest(d), Payload: payload})
+			Digest: value.Digest, Payload: payload})
 	}
 	return rows, nil
 }
@@ -238,7 +238,7 @@ func (c PackageCatalog) Adopt(ctx context.Context, a squadpackages.Adoption) (sq
 		if err != nil {
 			return 0, err
 		}
-		existing, err := packageExisting(active)
+		existing, err := packageExisting(ctx, tx, active)
 		if err != nil {
 			return 0, err
 		}

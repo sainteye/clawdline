@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/squadpackages"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
 )
 
@@ -92,6 +93,48 @@ func TestPackageAdoptionIsAtomicIdempotentAndPrivateSafeAcrossRestart(t *testing
 	receipt, err := service.Adopt(ctx, input)
 	if err != nil || receipt.CatalogVersion != 1 || len(receipt.AdoptedIDs) != 3 {
 		t.Fatalf("adoption = %+v, %v", receipt, err)
+	}
+	active, err := packageActiveRows(ctx, s.db)
+	if err != nil || len(active) != 3 {
+		t.Fatalf("active rows after adoption = %d, %v", len(active), err)
+	}
+	for _, row := range active {
+		var digest, recalculated string
+		switch row.Kind {
+		case "definition":
+			var value squad.Definition
+			if err := json.Unmarshal(row.Payload, &value); err != nil {
+				t.Fatal(err)
+			}
+			digest, value.Digest = value.Digest, ""
+			recalculated = squad.Digest(value)
+		case "team":
+			var value squad.Team
+			if err := json.Unmarshal(row.Payload, &value); err != nil {
+				t.Fatal(err)
+			}
+			digest, value.Digest = value.Digest, ""
+			recalculated = squad.Digest(value)
+		case "skill":
+			var value squad.Skill
+			if err := json.Unmarshal(row.Payload, &value); err != nil {
+				t.Fatal(err)
+			}
+			digest, value.Digest = value.Digest, ""
+			recalculated = squad.Digest(value)
+		}
+		if row.Digest != digest || digest != recalculated {
+			t.Fatalf("%s %s has inconsistent catalog digest", row.Kind, row.ID)
+		}
+	}
+	again, err := service.Preview(ctx, "local", "global", archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range again.Changes {
+		if change.Action != "unchanged" {
+			t.Fatalf("adopted package is no longer unchanged: %+v", change)
+		}
 	}
 	public, err := service.Export(ctx, nil, false)
 	if err != nil {
