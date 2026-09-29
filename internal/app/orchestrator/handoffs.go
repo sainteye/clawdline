@@ -606,6 +606,9 @@ const (
 	assignmentListLimit  = 200
 )
 
+// AssignmentFieldLimit is the byte limit for each Root Assignment field.
+func AssignmentFieldLimit() int { return assignmentFieldLimit }
+
 // PersonaDir is where the daemon wrote the persona texts every launch names.
 func (b *Broker) PersonaDir() string { return personas.Dir(b.Dir) }
 

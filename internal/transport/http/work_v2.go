@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
@@ -1661,6 +1662,14 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	if parent, ok := s.workV2ParentOf(ctx, item.Item); ok {
 		scope = workV2ParentNote(parent) + "\n\n" + scope
 		references += "; parent Epic: " + parent.ID
+	}
+	if len(scope) > orchestrator.AssignmentFieldLimit() {
+		continuation := "\n\nThe description continues on Board item " + id + "; read it in full before planning."
+		cut := orchestrator.AssignmentFieldLimit() - len(continuation)
+		for !utf8.RuneStart(scope[cut]) {
+			cut--
+		}
+		scope = scope[:cut] + continuation
 	}
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
