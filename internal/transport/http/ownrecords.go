@@ -330,7 +330,7 @@ func ownHandoffs(handoffs []orchestrator.Handoff, byTerminal map[string]swiftsto
 func ownAssignments(assignments []orchestrator.RootAssignment, byTerminal map[string]swiftstore.Live) []swiftstore.RootAssignment {
 	out := make([]swiftstore.RootAssignment, 0, len(assignments))
 	for _, a := range assignments {
-		ra := swiftstore.RootAssignment{ID: a.ID, Label: a.Label, State: a.State}
+		ra := swiftstore.RootAssignment{ID: a.ID, Label: a.Label, AgentNamed: a.AgentNamed, State: a.State}
 		if a.Executor != nil && a.Executor.TerminalID != "" {
 			ra.Identity = ownOpenedIdentity(a.Executor.TerminalID, a.Assistant, a.Executor.OpenedAt, a.BriefedAt, byTerminal)
 		}

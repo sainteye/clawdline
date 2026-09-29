@@ -276,10 +276,10 @@ func (s *Server) starter(reading startReading) app.Starter {
 // past is StartPoints.past(in:assistant:limit:). A Codex index that cannot be
 // asked is an empty list, as it is in the Swift app.
 func (s *Server) past(ctx context.Context, place projects.Place, assistant string, reading startReading, limit int) []projects.Past {
-	rootTitles := map[string]string{}
+	rootTitles := map[string]swiftstore.BoardTitle{}
 	queriedRootTitle := map[string]bool{}
 	loggedRootTitleError := false
-	orchestratorTitle := func(id string) string {
+	rootTitle := func(id string) swiftstore.BoardTitle {
 		if queriedRootTitle[id] {
 			return rootTitles[id]
 		}
@@ -292,25 +292,29 @@ func (s *Server) past(ctx context.Context, place projects.Place, assistant strin
 		rootTitles[id] = titles[id]
 		return titles[id]
 	}
+	orchestratorTitle := func(id string) string { return rootTitle(id).Label }
+	agentNamed := func(id string) bool { return rootTitle(id).AgentNamed }
+	snap := s.withOwnSessionTitles(s.swift.Read(), time.Now())
+	manual := func(id, custom string) string {
+		if !snap.TitlesKnown {
+			return ""
+		}
+		return manualConversationTitle(snap.Titles, id, custom)
+	}
 	if assistant == projects.AssistantCodex {
 		rows, err := projects.CodexPast(ctx, place, reading.openCodex,
-			projects.PastTitles{Orchestrator: orchestratorTitle}, limit)
+			projects.PastTitles{Orchestrator: orchestratorTitle, AgentNamed: agentNamed, Manual: manual}, limit)
 		if err != nil {
 			log.Printf("places: codex history for %s: %v", place.ID, err)
 			return []projects.Past{}
 		}
 		return rows
 	}
-	snap := s.swift.Read()
 	titles := projects.PastTitles{
 		Recorded:     pastTitles.Read,
 		Orchestrator: orchestratorTitle,
-		Manual: func(id, custom string) string {
-			if !snap.TitlesKnown {
-				return ""
-			}
-			return manualConversationTitle(snap.Titles, id, custom)
-		},
+		AgentNamed:   agentNamed,
+		Manual:       manual,
 		Automatic: func(id string) string {
 			if !snap.TitlesKnown {
 				return ""

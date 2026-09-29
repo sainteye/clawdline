@@ -22,8 +22,8 @@ import (
 // assignment could not be read is left out and the first error is returned
 // beside what the others said.
 func (s *Server) boardTitles(ctx context.Context, projectPath, assistant string, conversations []string,
-	known []orchestrator.RootAssignment) (map[string]string, error) {
-	out := map[string]string{}
+	known []orchestrator.RootAssignment) (map[string]swiftstore.BoardTitle, error) {
+	out := map[string]swiftstore.BoardTitle{}
 	if s.store == nil || s.broker == nil || len(conversations) == 0 {
 		return out, nil
 	}
@@ -31,13 +31,13 @@ func (s *Server) boardTitles(ctx context.Context, projectPath, assistant string,
 	if err != nil {
 		return out, err
 	}
-	labels := make(map[string]string, len(known))
+	labels := make(map[string]orchestrator.RootAssignment, len(known))
 	for _, a := range known {
-		labels[a.ID] = a.Label
+		labels[a.ID] = a
 	}
 	var first error
 	for conversation, id := range ids {
-		label, ok := labels[id]
+		root, ok := labels[id]
 		if !ok {
 			a, err := s.broker.RootAssignmentByID(ctx, id)
 			if err != nil {
@@ -46,11 +46,12 @@ func (s *Server) boardTitles(ctx context.Context, projectPath, assistant string,
 				}
 				continue
 			}
-			label = a.Label
-			labels[id] = label
+			root = a
+			labels[id] = a
 		}
-		if label != "" {
-			out[conversation] = label
+		if root.Label != "" {
+			out[conversation] = swiftstore.BoardTitle{Assistant: assistant, ConversationID: conversation,
+				Label: root.Label, AgentNamed: root.AgentNamed}
 		}
 	}
 	return out, first
@@ -82,8 +83,8 @@ func (s *Server) ownBoardTitles(ctx context.Context, lives []swiftstore.Live, kn
 		if err != nil && boardTitleErrorLogged.CompareAndSwap(false, true) {
 			log.Printf("sessions: Board titles for %s: %v", assistant, err)
 		}
-		for conversation, label := range titles {
-			out = append(out, swiftstore.BoardTitle{Assistant: assistant, ConversationID: conversation, Label: label})
+		for _, title := range titles {
+			out = append(out, title)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {

@@ -106,6 +106,7 @@ export function scanFailureWords(
       ? "iTerm2 有一個視窗或分頁沒有回報 session；請打開 iTerm2，檢查沒有內容或正在等待回應的視窗。"
       : "An iTerm2 window or tab did not report its sessions. Open iTerm2 and check for a blank or unresponsive window."
   }
+  if (notes?.includes("session inventory refresh is in progress; prior rows are unverified")) return null
   const incomplete = (sources ?? []).find((source) => !source.complete)
   if (incomplete) {
     return chinese

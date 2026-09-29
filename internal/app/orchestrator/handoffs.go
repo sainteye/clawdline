@@ -604,12 +604,15 @@ type RootAssignmentRequest struct {
 // child lineage: no task, parent, secret, timeout, result or landing — the
 // role contract says so, and a reader must be able to tell by its shape.
 type RootAssignment struct {
-	ID         string         `json:"id"`
-	RequestID  string         `json:"request_id"`
-	Assistant  string         `json:"assistant"`
-	Model      string         `json:"model"`
-	ProjectDir string         `json:"project_dir"`
-	Label      string         `json:"label"`
+	ID         string `json:"id"`
+	RequestID  string `json:"request_id"`
+	Assistant  string `json:"assistant"`
+	Model      string `json:"model"`
+	ProjectDir string `json:"project_dir"`
+	Label      string `json:"label"`
+	// AgentNamed distinguishes a Root's own task name from the Board title
+	// that was used before the Root had read its assignment.
+	AgentNamed bool           `json:"agent_named,omitempty"`
 	State      string         `json:"state"`
 	Assignment Assignment     `json:"assignment"`
 	CreatedAt  int64          `json:"created_at"`
@@ -636,6 +639,9 @@ const (
 
 // AssignmentFieldLimit is the byte limit for each Root Assignment field.
 func AssignmentFieldLimit() int { return assignmentFieldLimit }
+
+// AssignmentLabelLimit is the existing byte limit for a Root's visible label.
+func AssignmentLabelLimit() int { return assignmentLabelLimit }
 
 // PersonaDir is where the daemon wrote the persona texts every launch names.
 func (b *Broker) PersonaDir() string { return personas.Dir(b.Dir) }
