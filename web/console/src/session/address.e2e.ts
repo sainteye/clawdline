@@ -1597,7 +1597,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
             const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
             const firstRole = roles?.firstElementChild?.getBoundingClientRect()
             const roleRow = roles?.getBoundingClientRect()
-            const outside = [...card.querySelectorAll(".work-assignment > button, .work-assignment > .work-new-session")]
+            const outside = [...card.querySelectorAll(".work-assignment-cta, .work-persona-ai-button, .work-assignment-route > .work-new-session")]
               .map((el) => el.getBoundingClientRect())
               .filter((box) => box.left < panel.left - 0.5 || box.right > panel.right + 0.5)
             return {
@@ -1610,11 +1610,12 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
             }
             })(),
             title: card.querySelector("h3")?.textContent,
-            suggestion: card.querySelector(".work-persona-suggestion")?.textContent,
-            suggestionDescribesRoles: roles.getAttribute("aria-describedby") === card.querySelector(".work-persona-suggestion")?.id,
+            suggestion: card.querySelector(".work-persona-suggestion")?.textContent ?? null,
+            roleDescription: roles.getAttribute("aria-describedby"),
             chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
             picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
-            actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
+            paths: [...card.querySelectorAll(".work-assignment-route h4")].map((heading) => heading.textContent),
+            actions: [...card.querySelectorAll(".work-assignment-cta")].map((button) => button.textContent),
             focus: document.activeElement?.getAttribute("aria-label"),
             progressBeforeStart: !!card.querySelector(".work-milestones"),
             sessionsPage: !document.getElementById("app").hidden,
@@ -1630,11 +1631,12 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1,
         rolesScrollSideways: true, roleEdgeRoom: 7 },
       title: "React console shortcut",
-      suggestion: "建議角色：前端工程師符合「react」",
-      suggestionDescribesRoles: true,
+      suggestion: null,
+      roleDescription: null,
       chosenRole: "前端工程師",
       picker: "選擇既有 Session",
-      actions: ["指派", "AI 建議", "開新 Codex Session（前端工程師）"],
+      paths: ["指派給既有 Session", "開啟新 Session"],
+      actions: ["指派給所選 Session", "開新 Codex Session（前端工程師）"],
       focus: "指派既有 Session",
       progressBeforeStart: false,
       sessionsPage: true,
@@ -1648,18 +1650,19 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     assert.deepEqual(await tab.run(`(() => {
       const modal = document.querySelector(".work-created-modal")
       const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
-      const suggestion = modal.querySelector(".work-persona-suggestion").getBoundingClientRect()
+      const actions = [...modal.querySelectorAll(".work-assignment-cta")].map((button) => button.getBoundingClientRect())
       const roles = modal.querySelector(".work-new-persona")
       const roleRow = roles.getBoundingClientRect()
       const firstRole = roles.firstElementChild.getBoundingClientRect()
       return {
         panelInView: panel.left >= 0 && panel.right <= innerWidth,
         modalScrollsSideways: modal.scrollWidth > modal.clientWidth,
-        suggestionInPanel: suggestion.left >= panel.left && suggestion.right <= panel.right,
+        actionsInPanel: actions.every((box) => box.left >= panel.left && box.right <= panel.right),
+        actionsTallEnough: actions.every((box) => box.height >= 42),
         roleEdgeRoom: Math.round(firstRole.left - roleRow.left),
         progressBeforeStart: !!modal.querySelector(".work-milestones"),
       }
-    })()`), { panelInView: true, modalScrollsSideways: false, suggestionInPanel: true,
+    })()`), { panelInView: true, modalScrollsSideways: false, actionsInPanel: true, actionsTallEnough: true,
       roleEdgeRoom: 7, progressBeforeStart: false })
     await tab.shot("smart-role-desktop-dark")
     await tab.view(DESK, "light")
@@ -1667,7 +1670,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
 
     // The recommendation is only a default. Keyboard users move from the
     // picker through the assistant choices to the first native role button;
-    // choosing it overrides the suggestion and the launch button agrees.
+    // choosing it overrides the default and the launch button agrees.
     const keyboard: string[] = []
     for (let index = 0; index < 4; index++) {
       await tab.press("Tab")
@@ -1685,14 +1688,14 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       return {
         focused: document.activeElement?.textContent,
         chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
-        suggestion: card.querySelector(".work-persona-suggestion")?.textContent,
-        actions: [...card.querySelectorAll(".work-assignment > button")].map((button) => button.textContent),
+        suggestion: card.querySelector(".work-persona-suggestion")?.textContent ?? null,
+        actions: [...card.querySelectorAll(".work-assignment-cta")].map((button) => button.textContent),
       }
     })()`), {
       focused: "不指定",
       chosenRole: "不指定",
-      suggestion: "建議角色：前端工程師符合「react」 · 目前已改選",
-      actions: ["指派", "AI 建議", "開新 Codex Session"],
+      suggestion: null,
+      actions: ["指派給所選 Session", "開新 Codex Session"],
     })
 
     // The local suggestion remains the default until this explicit press.
@@ -1710,7 +1713,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
           return resolve({
             status: status.textContent,
             chosenRole,
-            action: [...card.querySelectorAll(".work-assignment > button")].at(-1)?.textContent,
+            action: [...card.querySelectorAll(".work-assignment-cta")].at(-1)?.textContent,
           })
         }
         if (Date.now() >= deadline) return reject(new Error("AI role suggestion did not arrive"))
