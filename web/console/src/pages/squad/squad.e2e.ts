@@ -61,6 +61,10 @@ const json = (res: ServerResponse, status: number, body: unknown) => { res.write
 const packageRequests: { path: string; body: Record<string, unknown> }[] = []
 let refuseAdoption = false
 let boundFixture = false
+let bindingDelayMs = 0
+let bindingReads = 0
+let eventHeadReads = 0
+let eventPageReads = 0
 const eventRows: Record<string, unknown>[] = []
 function document() {
   const html = readFileSync(join(dist, "index.html"), "utf8")
@@ -93,12 +97,17 @@ function fixture(): Server {
       const place = url.searchParams.get("place_id")
       return json(res, 200, settings(place === "place-a" ? "project-a" : place === "place-b" ? "project-b" : "global"))
     }
-    if (path === "/v1/squad/events/head") return json(res, 200, { seq: eventRows.at(-1)?.seq ?? 0 })
-    if (path === "/v1/squad/session-bindings") return json(res, 200, { bindings: boundFixture ? [{
-      session_id: "terminal-1", conversation_id: "conversation-1", state: "bound", snapshot_id: "snapshot-1",
-      definition_id: definitions[0].definition_id, scope_id: "global",
-    }] : [] })
+    if (path === "/v1/squad/events/head") { eventHeadReads++; return json(res, 200, { seq: eventRows.at(-1)?.seq ?? 0 }) }
+    if (path === "/v1/squad/session-bindings") {
+      bindingReads++
+      setTimeout(() => json(res, 200, { bindings: boundFixture ? [{
+        session_id: "terminal-1", conversation_id: "conversation-1", state: "bound", snapshot_id: "snapshot-1",
+        definition_id: definitions[0].definition_id, scope_id: "global",
+      }] : [] }), bindingDelayMs)
+      return
+    }
     if (path === "/v1/squad/events") {
+      eventPageReads++
       const after = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("after") ?? 0)
       const events = eventRows.filter((row) => Number(row.seq) > after)
       return json(res, 200, { events, next_after: events.at(-1)?.seq ?? after, has_more: false })
@@ -226,10 +235,13 @@ after(async () => {
   browser?.close()
   if (processChrome && processChrome.exitCode === null && processChrome.signalCode === null) {
     const gone = new Promise((resolve) => processChrome.once("exit", resolve))
-    processChrome.kill(); await gone
+    processChrome.kill()
+    await Promise.race([gone, new Promise((resolve) => setTimeout(resolve, 3000))])
+    if (processChrome.exitCode === null && processChrome.signalCode === null) processChrome.kill("SIGKILL")
   }
   server?.closeAllConnections()
-  await new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve())
+  await Promise.race([new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve()),
+    new Promise<void>((resolve) => setTimeout(resolve, 3000))])
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 
@@ -265,6 +277,13 @@ test("42 roles, Project inheritance, desktop and mobile return are visible witho
   await tab(1440, 900, async (evaluate, shot) => {
     assert.equal(await evaluate('document.querySelectorAll("#squad .squad-persona-card").length'), 42)
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
+    await evaluate('(() => { const el = document.querySelector("#squad .squad-search input"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "no matching role"); el.dispatchEvent(new Event("input", { bubbles: true })); })()')
+    await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate('document.querySelectorAll("#squad .squad-persona-card").length'), 0)
+    assert.match(await evaluate('document.querySelector("#squad .squad-detail .squad-empty").textContent'), /選擇角色/)
+    await evaluate('document.querySelector("#squad .squad-roster .squad-empty button").click()')
+    await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate('document.querySelectorAll("#squad .squad-persona-card").length'), 42)
     await shot("squad-desktop-global")
     await evaluate('document.querySelector("#squad .squad-persona-card").click()')
     assert.match(await evaluate('document.querySelector("#squad .squad-detail").textContent'), /完整角色定義/)
@@ -354,12 +373,20 @@ test("package preview preserves explicit privacy choices and stale adoption requ
 
 test("an existing receipt and a read stay quiet while a new bound applied receipt animates once", async () => {
   boundFixture = true
+  bindingDelayMs = 0
   eventRows.length = 0
   const receipt = (seq: number, status: string) => ({ seq, receipt_id: "receipt-" + seq, snapshot_id: "snapshot-1",
     conversation_id: "conversation-1", definition_id: definitions[0].definition_id, scope_id: "global",
     skill_id: "community.skill.draft", skill_version: "v1", status, at: Date.now() })
   eventRows.push(receipt(1, "applied"))
+  const initialHeads = eventHeadReads
+  const initialPages = eventPageReads
   await tab(1440, 900, async (evaluate) => {
+    const baselineDeadline = Date.now() + 5_000
+    while (eventHeadReads <= initialHeads || eventPageReads <= initialPages) {
+      if (Date.now() > baselineDeadline) throw new Error("event baseline and first poll did not finish")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
     assert.equal(await evaluate('!!document.querySelector("#squad .squad-use")'), false, "the initial head is a baseline")
     eventRows.push(receipt(2, "read"))
     await new Promise((resolve) => setTimeout(resolve, 3500))
@@ -371,12 +398,25 @@ test("an existing receipt and a read stay quiet while a new bound applied receip
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     assert.match(await evaluate('document.querySelector("#squad .squad-use").textContent'), /角色 Session 回報使用 草稿整理/)
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+    bindingDelayMs = 700
+    const before = bindingReads
+    eventRows.push(receipt(4, "applied"))
+    const bindingDeadline = Date.now() + 5_000
+    while (bindingReads <= before) {
+      if (Date.now() > bindingDeadline) throw new Error("delayed binding read did not start")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    await evaluate('(() => { const el = document.querySelector("#squad .squad-scope select"); el.value = "project-a"; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    assert.equal(await evaluate('!!document.querySelector("#squad .squad-use")'), false, "a late global receipt cannot play after switching Project")
+    bindingDelayMs = 0
   })
   await tab(390, 844, async (evaluate) => {
     assert.equal(await evaluate('matchMedia("(prefers-reduced-motion: reduce)").matches'), true)
     await evaluate('document.querySelector("#squad .squad-persona-card").click()')
     await new Promise((resolve) => setTimeout(resolve, 150))
-    eventRows.push(receipt(4, "applied"))
+    eventRows.push(receipt(5, "applied"))
     const deadline = Date.now() + 5_000
     while (!(await evaluate('!!document.querySelector("#squad .squad-use")'))) {
       if (Date.now() > deadline) throw new Error("reduced-motion receipt status did not appear")

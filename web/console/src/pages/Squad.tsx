@@ -145,6 +145,11 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const data = reading.kind === "ready" ? reading.data : reading.previous
   dataRef.current = data ?? null
   const shownPersonas = useMemo(() => data ? visiblePersonas(data, team, search) : [], [data, team, search])
+  useEffect(() => {
+    if (!data || shownPersonas.some((row) => row.id === selected)) return
+    const next = shownPersonas[0]?.id ?? ""
+    if (next !== selected) { setSelected(next); setSkillId("") }
+  }, [data, shownPersonas, selected])
   const persona = data?.personas.find((row) => row.id === selected) ?? null
   const openSkill = persona?.skills.find((row) => row.id === skillId) ?? null
   const scopeLabel = scope ? data?.project?.name ?? "Project" : "全域"
@@ -206,8 +211,8 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
           const server = fresh.personas.find((row) => row.id === persona.id)
           if (server) setDrafts((all) => ({ ...all, [key]: { ...all[key], text, serverText: server.handbook.value, serverVersion: server.settingsVersion, conflict: true } }))
           if (currentScope.current === requestScope) setNotice({ text: "手冊已有新版本。你的文字仍在下方，請比較後再決定是否覆寫。", error: true })
-        } catch { setNotice({ text: "版本衝突且無法重讀。你的文字仍保留，請再試一次。", error: true }) }
-      } else setNotice({ text: `手冊未儲存：${errorDetail(error)}`, error: true })
+        } catch { if (currentScope.current === requestScope) setNotice({ text: "版本衝突且無法重讀。你的文字仍保留，請再試一次。", error: true }) }
+      } else if (currentScope.current === requestScope) setNotice({ text: `手冊未儲存：${errorDetail(error)}`, error: true })
     } finally { setBusy("") }
   }
 
@@ -221,7 +226,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
       await api.restoreHandbook(requestScope, personaId, persona.settingsVersion)
       setDrafts((all) => { const next = { ...all }; delete next[keyOf(requestScope, personaId)]; return next })
       if (currentScope.current === requestScope) { await load(requestScope); setNotice({ text: "已還原繼承，並已重新讀取生效值。" }) }
-    } catch (error) { setNotice({ text: `未能還原繼承：${errorDetail(error)}`, error: true }) }
+    } catch (error) { if (currentScope.current === requestScope) setNotice({ text: `未能還原繼承：${errorDetail(error)}`, error: true }) }
     finally { setBusy("") }
   }
 
@@ -234,7 +239,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
       if (kind === "motion") await api.saveMotion(requestScope, value, data.motionSettingsVersion)
       else await api.saveEnabled(requestScope, personaId, value, persona!.settingsVersion)
       if (currentScope.current === requestScope) { await load(requestScope); setNotice({ text: "設定已儲存，並已重新讀取生效值。" }) }
-    } catch (error) { setNotice({ text: `設定未儲存：${errorDetail(error)}`, error: true }) }
+    } catch (error) { if (currentScope.current === requestScope) setNotice({ text: `設定未儲存：${errorDetail(error)}`, error: true }) }
     finally { setBusy("") }
   }
 
@@ -336,9 +341,10 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
       try {
         const page = await api.events(receiptGate.current.after)
         if (!active) return
+        const sessions = page.events.length ? await api.boundSessions().catch(() => []) : dataRef.current?.sessions ?? []
+        if (!active || currentScope.current !== scope) return
         const current = dataRef.current
-        if (!current) return
-        const sessions = page.events.length ? await api.boundSessions().catch(() => []) : current.sessions
+        if (!current || current.scopeId !== (scope || "global")) return
         for (const receipt of page.events) {
           const owner = current.personas.find((row) => row.id === receipt.definitionId)
           const session = sessions.find((row) => row.conversationId === receipt.conversationId && row.snapshotId === receipt.snapshotId && row.definitionId === receipt.definitionId && row.scopeId === receipt.scopeId)
@@ -429,7 +435,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
               {packPreview.privateScopes.length > 0 && <><h4>包內私人設定（預設不採納）</h4><p>逐一選擇要採納的範圍；同機已配對讀者具有機器範圍讀取權。</p>
                 {packPreview.privateScopes.map((id) => <label className="squad-check" key={id}><input type="checkbox" checked={importPrivateScopes.includes(id)} onChange={(event) => { setImportPrivateScopes((all) => event.target.checked ? [...all, id] : all.filter((row) => row !== id)); setImportPrivateConfirm(false) }} />採納 {id} 私人設定</label>)}
                 {importPrivateScopes.length > 0 && <label className="squad-check"><input type="checkbox" checked={importPrivateConfirm} onChange={(event) => setImportPrivateConfirm(event.target.checked)} />我確認採納上述私人設定</label>}</>}
-              {packPreview.conflicts.length > 0 && <><h4>衝突</h4>{packPreview.conflicts.map((conflict) => <label className="squad-conflict-choice" key={conflict.id}>{conflict.id}：{conflict.reason}
+              {packPreview.conflicts.length > 0 && <><h4>衝突</h4>{packPreview.conflicts.map((conflict) => <label className="squad-conflict-choice" key={`${conflict.kind}:${conflict.id}`}>{conflict.kind} · {conflict.id}：{conflict.reason}
                 <select value={packChoices[conflict.id] ?? ""} onChange={(event) => setPackChoices((all) => ({ ...all, [conflict.id]: event.target.value }))}><option value="">取消此次採納</option><option value="keep">保留現有並採納其餘項目</option></select></label>)}</>}
               <button type="button" disabled={!canWrite || !!busy || importPrivateScopes.length > 0 && !importPrivateConfirm || packPreview.conflicts.some((row) => !packChoices[row.id])} onClick={() => void adoptPack()}>{busy === "adopt" ? "採納中…" : "確認採納資料包"}</button></div>}</>
             : <><p>預設只匯出可分享的定義。全域與每個 Project 的私人手冊及覆寫必須分別勾選；同機已配對讀者具有機器範圍讀取權。</p>
