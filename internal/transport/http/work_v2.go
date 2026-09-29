@@ -331,15 +331,17 @@ func workV2EpicInstruction(id string) string {
 		"problems, revise the plan (a new plan document) and have that reviewed again, at most twice in all; (4) break the work into steps with " +
 		"`clawdline item step-add " + id + "`; (5) only then `clawdline item phase " + id + " implementing`, which the " +
 		"daemon refuses until a review newer than the latest plan, or a second review, is recorded. Plan verification in order: " +
-		"each implementation child uses focused tests for its own changes; the Epic owner then lands all affected components " +
-		"work into one runnable candidate and checks the required accounts, data, browser and API paths. Only after that candidate " +
+		"each implementation child uses focused tests for its own changes; the Epic owner then integrates all affected components " +
+		"into one runnable candidate and checks the required accounts, data, browser and API paths. Only after that candidate " +
 		"works should you dispatch a real end-to-end test. Do not send an end-to-end verifier to a mock UI, disconnected " +
 		"branches or incomplete APIs; resolve setup failures with the implementation owner and rerun the affected paths before " +
 		"the final end-to-end round. Before browser-based verification, prove the chosen worker can open the target URL with " +
 		"an authorized browser or equivalent local automation, and has the required test accounts, fixtures and app/origin " +
 		"permissions. Name that browser route in the brief; `--permission-mode full` alone does not grant browser access. " +
-		"If the preflight fails, fix access or choose an equivalent harness before dispatching; do not repeatedly send a " +
-		"verifier into the same blocker. During planning, decide whether " +
+		"If the preflight fails, fix access or choose an equivalent harness before dispatching; this is not an end-to-end attempt. " +
+		"Plan one comprehensive end-to-end round per Epic, not one per child or revision. After a defect fix, rerun only the " +
+		"affected scenarios; repeat the comprehensive round only when the acceptance scope or integration boundary materially " +
+		"changes, and record why. Do not repeatedly send a verifier into the same blocker. During planning, decide whether " +
 		"the Epic changes a human-facing interface, user journey, or product policy. If it does, before merging dispatch an independent " +
 		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect`; " +
 		"brief it to inspect the integrated desktop and mobile experience, accessibility, workflow, and product fit, require evidence for " +

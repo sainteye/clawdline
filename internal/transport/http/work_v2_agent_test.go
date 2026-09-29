@@ -71,7 +71,9 @@ func TestAnEpicsOwnerBriefDefersEndToEndUntilIntegration(t *testing.T) {
 			"Only after that candidate works should you dispatch a real end-to-end test", "mock UI, disconnected branches or incomplete APIs",
 			"prove the chosen worker can open the target URL", "authorized browser or equivalent local automation",
 			"required test accounts, fixtures and app/origin permissions", "`--permission-mode full` alone does not grant browser access",
-			"do not repeatedly send a verifier into the same blocker"} {
+			"this is not an end-to-end attempt", "one comprehensive end-to-end round per Epic", "rerun only the affected scenarios",
+			"acceptance scope or integration boundary materially changes, and record why",
+			"Do not repeatedly send a verifier into the same blocker"} {
 			if !strings.Contains(brief, want) {
 				t.Errorf("%s brief lacks %q:\n%s", name, want, brief)
 			}
