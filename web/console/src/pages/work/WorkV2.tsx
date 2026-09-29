@@ -603,8 +603,6 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [team, setTeam] = useState(rememberedTeam)
   const personaSuggestion = suggestedPersonaForItem(personas, item)
   const persona = personaById(personas, personaChoice ?? personaSuggestion?.persona.id)
-  const personaSuggestionID = `work-persona-suggestion-${item.id}`
-  const personaSuggestionOverridden = personaChoice !== null && personaChoice !== personaSuggestion?.persona.id
   const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
   const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
   const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
@@ -756,9 +754,15 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       {epic && <p className="work-epic-assign-note">若指派時規劃 gate 開啟，Session 須先寫計劃書並請 Child Session review，通過後才開始實作；關閉時可略過。</p>}
       {reassignable && <p className="work-reassign-note">改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session
         會被告知從哪裡接手；原本的 Session 會收到停止通知。</p>}
-      <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
-      <button className="chip on" type="button" disabled={!terminal || !!busy} onClick={() => assign(() => assignWorkV2(item, terminal))}>指派</button>
-      <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
+      <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
+        <h4 id={`work-assign-existing-${item.id}`}>指派給既有 Session</h4>
+        <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
+        <button className="work-assignment-cta" type="button" disabled={!terminal || !!busy}
+          onClick={() => assign(() => assignWorkV2(item, terminal))}>指派給所選 Session</button>
+      </section>
+      <section className="work-assignment-route" aria-labelledby={`work-assign-new-${item.id}`}>
+        <h4 id={`work-assign-new-${item.id}`}>開啟新 Session</h4>
+        <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
         {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
@@ -766,38 +770,33 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
           aria-label={assistantName(choice)} title={assistantName(choice)}
           onClick={() => { setAssistant(choice); rememberAssistant(choice) }}
           dangerouslySetInnerHTML={{ __html: L.assistantLogoHTML(choice) }} />)}
-      </div>
-      {personaSuggestion && <p className="work-persona-suggestion" id={personaSuggestionID}>
-        <strong>建議角色：{personaName(personaSuggestion.persona)}</strong>
-        <span>{personaSuggestion.source === "content"
-          ? `符合「${personaSuggestion.signals.join("」、「")}」`
-          : "依項目類型判斷"}{personaSuggestionOverridden ? " · 目前已改選" : ""}</span>
-      </p>}
-      {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
-        aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
-        onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? "AI 建議中…" : "AI 建議"}</button>}
-      {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-        <strong>AI 建議：{personaName(aiPersona)}</strong>
-        <span>{aiSuggestionOverridden ? "目前已改選其他角色" : "已預先選取，仍可手動改選"}</span>
-      </p>}
-      {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-        <strong>AI 無法可靠判斷</strong><span>保留目前的角色選擇，請手動決定。</span>
-      </p>}
-      {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
-      {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
-        team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : personaSuggestion ? personaSuggestionID : undefined}
-        onPick={(id) => setPersonaChoice(id)}
-        onTeam={(next) => {
-          const switched = switchTeam(personas, persona?.id, next)
-          setTeam(next)
-          rememberTeam(next)
-          setPersonaChoice(switched.chosen)
-        }} />}
-      <button className="chip" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id}
-        onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
-        {persona
-          ? nextWord(busy === item.id ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
-          : busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+        </div>
+        {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
+          aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
+          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? "AI 建議中…" : "AI 建議"}</button>}
+        {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+          <strong>AI 建議：{personaName(aiPersona)}</strong>
+          <span>{aiSuggestionOverridden ? "目前已改選其他角色" : "已預先選取，仍可手動改選"}</span>
+        </p>}
+        {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
+          <strong>AI 無法可靠判斷</strong><span>保留目前的角色選擇，請手動決定。</span>
+        </p>}
+        {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
+        {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
+          team={team} disabled={!!busy || aiSuggestionBusy} press="radio" describedBy={aiSuggestion ? aiSuggestionID : undefined}
+          onPick={(id) => setPersonaChoice(id)}
+          onTeam={(next) => {
+            const switched = switchTeam(personas, persona?.id, next)
+            setTeam(next)
+            rememberTeam(next)
+            setPersonaChoice(switched.chosen)
+          }} />}
+        <button className="work-assignment-cta" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id}
+          onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
+          {persona
+            ? nextWord(busy === item.id ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
+            : busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+      </section>
       {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>取消</button>}
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
