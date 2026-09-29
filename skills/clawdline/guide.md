@@ -940,7 +940,10 @@ incomplete APIs. Before dispatch, prove the chosen worker can actually open the 
 authorized browser or equivalent local automation, and has the test accounts, fixtures, and origin
 permissions it needs. Name that route in the brief; `--permission-mode full` alone is not browser
 access. Resolve a failed tool preflight before retrying, rather than sending another verifier into
-the same blocker. `verifying → merging` needs a live
+the same blocker; a failed preflight is not an end-to-end attempt. Plan one comprehensive
+end-to-end round per Epic, not one per child or revision. After fixing a defect, rerun only
+affected scenarios. Repeat the comprehensive round only when the acceptance scope or integration
+boundary materially changes, and record why. `verifying → merging` needs a live
 PASS for the exact candidate/criteria or an explicitly reasoned override; a verification sentence
 alone cannot grant it. Three consecutive FAILs escalate to the live parent Epic owner, then to the
 person if that owner is unavailable; a technical failure escalates separately. Only the designated
@@ -1083,8 +1086,10 @@ check. Only after the integrated candidate works should the owner dispatch real 
 and the applicable independent UX/product review. Check the verifier's browser route, target URL,
 test accounts, fixtures, and permissions before dispatch. Do not use repeated read-only verifier
 tasks to discover or work around a missing browser: fix the access or choose an equivalent local
-browser harness first. Keep one final end-to-end round for the stable candidate, and rerun only
-affected paths after a focused fix.
+browser harness first. A failed preflight is not an end-to-end attempt. Plan one comprehensive
+end-to-end round per Epic for the stable candidate, not one per child or revision; after a focused
+fix, rerun only affected paths. Repeat the whole round only after a material acceptance or
+integration change, and record that reason.
 
 `clawdline item doc` reads the item for its version and last document position, prints its
 Idempotency-Key (`--key` retries the same write) and prints the item. The body comes from
