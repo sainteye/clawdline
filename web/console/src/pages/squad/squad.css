@@ -58,10 +58,15 @@
 .squad-profile span { color: var(--dim); font-size: 13px; }
 .squad-meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 18px; background: var(--card-hi); }
 .squad-meta span { padding: 5px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--dim); font-size: 11px; overflow-wrap: anywhere; }
+.squad-meta a, .squad-facts a, .squad-definition-text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.squad-meta a:focus-visible, .squad-facts a:focus-visible, .squad-definition-text a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.squad-version-explanation { flex-basis: 100%; margin: 0; color: var(--dim); font-size: 11px; }
 .squad-detail-block { min-width: 0; margin: 0 20px; padding: 21px 0; border-top: 1px solid var(--line); }
 .squad-detail-block h3 { margin: 0 0 9px; font-size: 17px; }
 .squad-detail-block > p, .squad-setting-heading p { margin: 4px 0 10px; color: var(--dim); font-size: 12px; }
 .squad-long-text { min-width: 0; color: var(--ink); font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.squad-definition-text:not([data-expanded="true"]) { max-height: 13.6em; overflow: hidden; }
+.squad-definition-toggle { margin-top: 10px; padding: 7px 11px; color: var(--accent) !important; font-size: 12px !important; }
 .squad-setting-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .squad-setting-heading > div { min-width: 0; }
 .squad-source { color: var(--dim) !important; font-size: 11px !important; }

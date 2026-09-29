@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { Icon } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import type { PageModule } from "./types.js"
@@ -50,6 +50,40 @@ function hasLocalOverride(source: "default" | "global" | "project", project: boo
   return source === (project ? "project" : "global")
 }
 
+function LinkedText({ text }: { text: string }) {
+  return <>{text.split(/(https?:\/\/[^\s<>"']+)/g).map((part, index) => {
+    const target = part.replace(/[),.;]+$/, "")
+    const suffix = part.slice(target.length)
+    let url: URL | null = null
+    try { url = new URL(target) } catch { url = null }
+    const link = url && (url.protocol === "https:" || url.protocol === "http:")
+    return <Fragment key={`${index}-${part}`}>{link
+      ? <><a href={target} target="_blank" rel="noopener noreferrer">{target}</a>{suffix}</> : part}</Fragment>
+  })}</>
+}
+
+function PersonaDefinition({ persona }: { persona: SquadPersona }) {
+  const body = useRef<HTMLDivElement>(null)
+  const [long, setLong] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  useLayoutEffect(() => {
+    const node = body.current
+    if (!node) return
+    const measure = () => setLong(node.scrollHeight > 8 * parseFloat(getComputedStyle(node).lineHeight) + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [persona.body])
+  return <>
+    <div ref={body} id={`squad-definition-${persona.id}`} className="squad-long-text squad-definition-text" data-expanded={expanded}><LinkedText text={persona.body} /></div>
+    {long && <button className="squad-definition-toggle" type="button" aria-expanded={expanded}
+      aria-controls={`squad-definition-${persona.id}`} onClick={() => setExpanded((shown) => !shown)}>
+      {expanded ? "收合角色定義" : "顯示完整角色定義"}
+    </button>}
+  </>
+}
+
 function PersonaCard({ persona, selected, animated, onPick }: { persona: SquadPersona; selected: boolean; animated: boolean; onPick: () => void }) {
   return <button type="button" className="squad-persona-card" data-selected={selected || undefined} data-use={animated || undefined}
     aria-pressed={selected} onClick={onPick}>
@@ -72,7 +106,7 @@ function SkillDetail({ skill }: { skill: SquadSkill | null }) {
   return <section className="squad-skill-detail" id="squad-skill-detail" aria-label="技能詳情">
     {skill ? <>
       <h4>{skill.name}</h4>
-      <dl className="squad-facts"><div><dt>用途</dt><dd>{skill.purpose}</dd></div><div><dt>來源</dt><dd>{skill.source}</dd></div>
+      <dl className="squad-facts"><div><dt>用途</dt><dd>{skill.purpose}</dd></div><div><dt>來源</dt><dd><LinkedText text={skill.source} /></dd></div>
         <div><dt>版本</dt><dd>{skill.version}</dd></div><div><dt>授權</dt><dd>{skill.license || "未提供"}</dd></div>
         <div><dt>狀態</dt><dd>{skill.status === "available" ? "已採納，可供此角色使用" : skill.status === "unavailable" ? "目前不可用" : "待審，尚未安裝或採納"}</dd></div></dl>
       <h5>技能內容</h5><div className="squad-long-text">{skill.body || "此技能尚無可讀內容。"}</div>
@@ -417,8 +451,9 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
         <div className="squad-detail" ref={detailPanel} aria-labelledby="squad-detail-title">{persona ? <>
           <button className="squad-back" type="button" onClick={backToRoster}>← 返回角色名冊</button>
           <div className="squad-profile"><IconCanvas icon={persona.icon} size={5} /><div><p>角色檔案 / 詳情</p><h2 id="squad-detail-title" ref={detailTitle} tabIndex={-1}>{persona.name}</h2><span>{persona.subtitle}</span></div></div>
-          <div className="squad-meta"><span>{persona.teamIds.map((id) => data.teams.find((row) => row.id === id)?.name ?? id).join(" · ") || "未分隊"}</span><span>{persona.source}</span><span>版本 {persona.version}</span></div>
-          <section className="squad-detail-block"><h3>角色定義</h3><div className="squad-long-text">{persona.body}</div></section>
+          <div className="squad-meta"><span>{persona.teamIds.map((id) => data.teams.find((row) => row.id === id)?.name ?? id).join(" · ") || "未分隊"}</span><span><LinkedText text={persona.source} /></span><span>版本 {persona.version}</span>
+            {persona.version.startsWith("sha256:") && <p className="squad-version-explanation">SHA-256 是角色定義內容的指紋；內容變動時會更新，用來辨識使用的版本。</p>}</div>
+          <section className="squad-detail-block"><h3>角色定義</h3><PersonaDefinition key={persona.id} persona={persona} /></section>
           <section className="squad-detail-block"><div className="squad-setting-heading"><div><h3>允許管理 agent 自動指派</h3><p>停用只影響管理 agent 的自動候選；你仍可手動指定此角色。</p></div>
             <label className="squad-switch"><input type="checkbox" aria-label={`允許管理 agent 自動指派：${persona.enabled.value ? "已啟用" : "已停用"}`} checked={persona.enabled.value} disabled={!canWrite || !!busy} onChange={(event) => void saveToggle("enabled", event.target.checked)} /><span>{persona.enabled.value ? "已啟用" : "已停用"}</span></label></div>
             <p className="squad-source">全域：{persona.enabled.global ? "已啟用" : "已停用"} · 生效：{persona.enabled.value ? "已啟用" : "已停用"} · 來源：{valueSource(persona.enabled.source, !!scope)}</p>
