@@ -1044,7 +1044,9 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   Root，用 `GET /v1/sessions` 的 `epic_parent.epic_id` 核對所屬 Epic、Session 身分及
   `closeability`；不要只靠標題或終端機排列猜測，也不要把 `clawdline session report` 當成關閉。
   子項目 `done` 後立即請該 Root 負責人清點自己的未完成 task、landing、通知、待辦和工作樹，依
-  `clawdline` 關閉流程完成報告與本人 attestation。只有 `closeability.state=safe`、身分與
+  `clawdline` 關閉流程完成報告。只有目前的 daemon 提供正式入口時才能建立關閉證明；已退役 Swift
+  的路由不算可用入口。若證明或受保護的關閉操作尚未實作，記錄產品阻礙與下一位負責者，並保留
+  Session。只有 `closeability.state=safe`、身分與
   工作均可核對時，才經支援的 Session 關閉操作結束它，再重讀清單確認已消失；不要用
   `clawdline close <terminal id>` 繞過判定。`blocked` 就追具名責任人完成義務，`unknown`
   （例如 `terminal_unreadable`）就保留 Session、記錄缺少的證據與下一位處理者；不可強制關閉、

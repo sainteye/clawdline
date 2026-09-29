@@ -1,5 +1,14 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 
+**Current Go daemon (2026-09-29):** `GET /v1/sessions` projects closeability from the read-only
+legacy snapshot plus Go broker records (`internal/transport/http/sessions.go`). The Go server does
+not register `POST /v1/orchestrator/sessions/:id/closure`, does not write closure attestations,
+and `POST /v1/sessions/:id/close` does not accept the version-bound proof described below
+(`internal/transport/http/orchestrator.go`, `internal/transport/http/actions.go`). Thus a
+`needs_attestation` row cannot reach `safe` through a supported Go workflow. Preserve the Session
+and record this as a product blocker; do not use a raw terminal close or the retired route. The
+design below is historical evidence and a starting point for a separately reviewed Go feature.
+
 # Session closeability and Status vNext
 
 Status: phases 1–3 shipped — the projection, the closure attestation, and the compare-and-swap on

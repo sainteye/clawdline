@@ -368,6 +368,8 @@ func workV2EpicChildrenInstruction(id string) string {
 		"also track its Session after Board completion: identify it by the Epic parent relation, ask its owner to audit " +
 		"closeability and finish its own obligations, then verify that the Session was closed or record the exact blocker " +
 		"and next owner. A Session report is not a close; never force-close an unknown or blocked Session. " +
+		"If attestation or a guarded close is not implemented in the current daemon, record that as a " +
+		"product blocker and keep the Session; do not substitute a raw terminal action. " +
 		"Create no other Board items."
 }
 

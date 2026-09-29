@@ -1213,7 +1213,10 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   Epic, identity, and `closeability`; do not infer ownership from a label or terminal position,
   and do not treat `clawdline session report` as closure. After the child reaches `done`, ask that
   Root's owner to audit its own tasks, landings, notices, to-dos, and worktree, then complete its
-  close report and attestation. Only when identity and work are verified and
+  close report. Obtain an attestation only through a route supported by the current daemon;
+  the retired Swift closure route is not such a route. If that route or a guarded close is
+  unavailable, record the product blocker and next owner, and retain the Session. Only when
+  identity and work are verified and
   `closeability.state=safe` may a supported Session close action end it; reread the inventory to
   confirm it is gone. Do not bypass the guard with `clawdline close <terminal id>`. Follow up on
   `blocked` with its named mover. For `unknown` (including `terminal_unreadable`), preserve the

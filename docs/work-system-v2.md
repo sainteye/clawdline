@@ -500,7 +500,10 @@ owner. The parent Epic remains open until all children are `done` or `cancelled`
 Closing the Board items is separate from closing the independent Root Sessions that an Epic opened
 with `--assign-new`. After a child's `done`, the Epic owner inventories those Roots through
 `GET /v1/sessions`, matching `epic_parent.epic_id` and checking the exact Session's
-`closeability`. The Root owner settles its own obligations and attests after a close audit;
+`closeability`. The Root owner settles its own obligations and reports a close audit. An
+attestation requires a supported route in the current daemon; the retired Swift route does not
+provide one. If attestation or a guarded close is unavailable, the owner records that product
+blocker and the next owner while preserving the Session;
 `clawdline session report` is only a delivered-turn receipt. A supported Session close is attempted
 only with verified identity and `closeability.state=safe`, then confirmed by a fresh inventory.
 `blocked` is followed up with its named mover; `unknown` preserves the Session and records the
