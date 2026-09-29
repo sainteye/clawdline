@@ -81,6 +81,7 @@ const ROWS = [
   row(ITERM, "Charlie in iTerm", "iterm", "10000000-0000-4000-8000-000000000003"),
   row(LEGACY, "Delta from an old link", "tmux", "10000000-0000-4000-8000-000000000004"),
 ]
+let currentClaudeModel = "claude-opus-5-5"
 
 // ---- the stand-in daemon
 
@@ -237,8 +238,12 @@ function daemon(): Server {
             namingAssistant,
             sessionId: session.sessionId,
             cwd: session.cwd,
+            model: session.id === TMUX ? currentClaudeModel : "",
           },
-          models: [],
+          models: session.id === TMUX ? [
+            { id: "claude-opus-5-5", name: "Opus 5.5", command: "opus" },
+            { id: "claude-opus-5", name: "Opus 5", command: "opus5" },
+          ] : [],
           deploy: [],
           links: [],
         },
@@ -666,6 +671,33 @@ test("desk: opening a session writes it into the address, and a reload comes bac
     await tab.until("the reload opens the same session", (s) => s.rows === ROWS.length && s.open === TTY)
     assert.equal((await tab.seen()).hash, FRAGMENT[TTY])
   }))
+
+test("desk: only the current Claude model is selected when model IDs share a prefix", async () => {
+  try {
+    for (const [model, expected] of [
+      ["claude-opus-5-5", "Opus 5.5"],
+      ["claude-opus-5-5-20250929", "Opus 5.5"],
+      ["claude-opus-5", "Opus 5"],
+    ]) {
+      currentClaudeModel = model
+      await inTab(DESK, async (tab) => {
+        await tab.go("/" + FRAGMENT[TMUX])
+        await tab.until("the Claude session opens", (s) => s.open === TMUX)
+        await tab.run(`document.getElementById("detail-info").click()`)
+        const deadline = Date.now() + 5_000
+        let selected: string[] = []
+        do {
+          selected = await tab.run(`[...document.querySelectorAll("#info .models .m[data-on]")].map((n) => n.textContent)`)
+          if (selected.length) break
+          await new Promise((r) => setTimeout(r, 50))
+        } while (Date.now() < deadline)
+        assert.deepEqual(selected, [expected], model)
+      })
+    }
+  } finally {
+    currentClaudeModel = "claude-opus-5-5"
+  }
+})
 
 test("phone: Settings changes, remembers and restores the browser's text size", async () => {
   const evidence = process.env.CLAWDLINE_FONT_SCREENSHOT_DIR || ""
