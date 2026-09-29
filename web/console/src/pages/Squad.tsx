@@ -8,7 +8,33 @@ import "./squad/squad.css"
 
 const keyOf = (scope: string, persona: string) => `${scope}\u0000${persona}\u0000handbook`
 const errorCode = (error: unknown) => typeof (error as { code?: unknown })?.code === "string" ? (error as { code: string }).code : "read_failed"
-const errorDetail = (error: unknown) => error instanceof Error ? error.message : "請重試。"
+const errorStatus = (error: unknown) => typeof (error as { status?: unknown })?.status === "number" ? (error as { status: number }).status : 0
+function errorDetail(error: unknown): string {
+  switch (errorCode(error)) {
+    case "offline": return "網路或 Clawdline 連線中斷。請確認連線，恢復後按「重試讀取」。"
+    case "timeout": return "角色小隊服務回應逾時。請確認連線，稍後按「重試讀取」。"
+    case "forbidden": case "unauthorized": return "目前的連線沒有讀取或修改權限。請重新登入或使用已配對的裝置，再重試。"
+    case "invalid_response": return "角色小隊服務回傳的資料格式無法讀取。請重新整理頁面；若持續發生，稍後再試。"
+    case "catalog_inconsistent": return "角色目錄與設定資料不一致。請重新讀取；若持續發生，稍後再試。"
+    case "version_conflict": return "設定已有新版本。請重新讀取後檢查目前內容，再決定是否儲存。"
+    case "unknown_project": return "找不到這個 Project 範圍。請重新讀取清單後再試。"
+    case "archive_too_large": return "資料包超過 512 KiB 上限。請選擇較小的 ZIP 檔。"
+    case "archive_invalid": case "manifest_invalid": case "invalid_archive": return "資料包格式無法通過驗證。請檢查 ZIP 檔後重新預覽。"
+    case "private_confirmation_required": return "請先選擇並確認要包含的私人設定範圍。"
+    default: {
+      const status = errorStatus(error)
+      return `角色小隊服務暫時無法完成請求${status ? `（HTTP ${status}）` : ""}。請稍後重試；若持續發生，重新整理頁面。`
+    }
+  }
+}
+function readErrorTitle(code: string): string {
+  switch (code) {
+    case "offline": case "timeout": return "目前無法連線至角色小隊"
+    case "forbidden": case "unauthorized": return "沒有權限讀取角色小隊"
+    case "invalid_response": return "角色小隊回應無法讀取"
+    default: return "角色小隊暫時無法讀取"
+  }
+}
 
 function IconCanvas({ icon, size = 3 }: { icon: Icon; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -372,8 +398,8 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
         </select></label></header>
       {notice && <p className="squad-notice" role="status" aria-live="polite" data-error={notice.error || undefined}>{notice.text}</p>}
       {reading.kind === "loading" && (data ? <p className="squad-notice" role="status">正在重新讀取角色小隊…</p> : <div className="squad-loading" role="status" aria-live="polite"><div className="squad-loading-rail" /><div className="squad-loading-roster" /><div className="squad-loading-detail" /><span>正在讀取角色小隊…</span></div>)}
-      {reading.kind === "error" && <div className="squad-error" role="alert"><h2>{reading.code === "forbidden" ? "沒有權限讀取角色小隊" : "無法讀取角色小隊"}</h2><p>{reading.detail}</p><button type="button" onClick={() => void load(scope)}>重試讀取</button></div>}
-      {data?.partial && <p className="squad-notice" role="status">部分資料暫時無法讀取。下列內容可能不是最新狀態，請重試讀取後再變更設定。</p>}
+      {reading.kind === "error" && <div className="squad-error" role="alert"><h2>{readErrorTitle(reading.code)}</h2><p>{reading.detail}</p><button type="button" onClick={() => void load(scope)}>重試讀取</button></div>}
+      {data?.partial && <div className="squad-notice" role="status">部分資料暫時無法讀取。下列內容可能不是最新狀態。<button type="button" onClick={() => void load(scope)}>重試讀取</button></div>}
       {data && !data.canWrite && <p className="squad-notice" role="status">此連線只有讀取權限；設定與私人資料包操作需要可寫入的配對裝置。</p>}
       {data && <div className="squad-layout" data-mobile-view={mobileView}>
         <aside className="squad-rail" aria-labelledby="squad-teams-title"><div className="squad-panel-head"><h2 id="squad-teams-title">小隊</h2><span>{data.teams.length} 組</span></div>
@@ -394,7 +420,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
           <div className="squad-meta"><span>{persona.teamIds.map((id) => data.teams.find((row) => row.id === id)?.name ?? id).join(" · ") || "未分隊"}</span><span>{persona.source}</span><span>版本 {persona.version}</span></div>
           <section className="squad-detail-block"><h3>角色定義</h3><div className="squad-long-text">{persona.body}</div></section>
           <section className="squad-detail-block"><div className="squad-setting-heading"><div><h3>允許管理 agent 自動指派</h3><p>停用只影響管理 agent 的自動候選；你仍可手動指定此角色。</p></div>
-            <label className="squad-switch"><input type="checkbox" checked={persona.enabled.value} disabled={!canWrite || !!busy} onChange={(event) => void saveToggle("enabled", event.target.checked)} /><span>{persona.enabled.value ? "已啟用" : "已停用"}</span></label></div>
+            <label className="squad-switch"><input type="checkbox" aria-label={`允許管理 agent 自動指派：${persona.enabled.value ? "已啟用" : "已停用"}`} checked={persona.enabled.value} disabled={!canWrite || !!busy} onChange={(event) => void saveToggle("enabled", event.target.checked)} /><span>{persona.enabled.value ? "已啟用" : "已停用"}</span></label></div>
             <p className="squad-source">全域：{persona.enabled.global ? "已啟用" : "已停用"} · 生效：{persona.enabled.value ? "已啟用" : "已停用"} · 來源：{valueSource(persona.enabled.source, !!scope)}</p>
             {hasLocalOverride(persona.enabled.source, !!scope) && <button className="squad-restore" type="button" disabled={!canWrite || !!busy} onClick={() => void restoreToggle("enabled")}>還原{scope ? "全域繼承" : "內建預設"}</button>}</section>
           <section className="squad-detail-block"><h3>角色手冊</h3><p>保存背景知識與固定流程；Project 採整份覆寫。</p>
@@ -416,7 +442,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
                 <p className="squad-source">生效：{openSkill.enabled.value ? "啟用" : "停用"} · 來源：{valueSource(openSkill.enabled.source, !!scope)}</p></div>}</div> : <div className="squad-empty"><h4>尚無已採納技能</h4><p>這位角色仍可使用；公開研究候選不會自動安裝。</p></div>}
             {hasLocalOverride(persona.skillsSetting.source, !!scope) && <button className="squad-restore" type="button" disabled={!canWrite || !!busy} onClick={() => void restoreSkills()}>還原技能{scope ? "全域繼承" : "內建預設"}</button>}</section>
           <section className="squad-detail-block"><div className="squad-setting-heading"><div><h3>技能使用動畫</h3><p>只在收到 Session 的新「已套用」收據時顯示；減少動態效果時改為靜態文字。</p></div>
-            <label className="squad-switch"><input type="checkbox" checked={data.motion.value} disabled={!canWrite || !!busy} onChange={(event) => void saveToggle("motion", event.target.checked)} /><span>{data.motion.value ? "開啟" : "關閉"}</span></label></div>
+            <label className="squad-switch"><input type="checkbox" aria-label={`技能使用動畫：${data.motion.value ? "開啟" : "關閉"}`} checked={data.motion.value} disabled={!canWrite || !!busy} onChange={(event) => void saveToggle("motion", event.target.checked)} /><span>{data.motion.value ? "開啟" : "關閉"}</span></label></div>
             <p className="squad-source">全域：{data.motion.global ? "開啟" : "關閉"} · 生效：{data.motion.value ? "開啟" : "關閉"} · 來源：{valueSource(data.motion.source, !!scope)}</p>
             {hasLocalOverride(data.motion.source, !!scope) && <button className="squad-restore" type="button" disabled={!canWrite || !!busy} onClick={() => void restoreToggle("motion")}>還原{scope ? "全域繼承" : "內建預設"}</button>}
             {using && using.persona === persona.id && <p className="squad-use" data-animate={data.motion.value && !motionReduced || undefined} role="status">{using.session} 回報使用 {persona.skills.find((row) => row.id === using.skill)?.name ?? "技能"}</p>}</section>
