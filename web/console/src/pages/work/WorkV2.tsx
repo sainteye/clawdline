@@ -652,7 +652,6 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [converting, setConverting] = useState(false)
-  const [moreActions, setMoreActions] = useState(false)
   const [conversionKind, setConversionKind] = useState<WorkV2ExecutableKind>("feature")
   const [reminded, setReminded] = useState(false)
   // Moving an owned item to another Session opens the same picker an
@@ -719,17 +718,13 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
         {!item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
-        {!item.closed_at && <button type="button" disabled={!!busy} aria-expanded={moreActions}
-          aria-controls={`work-more-${item.id}`} onClick={() => setMoreActions((shown) => !shown)}>更多</button>}
+        {convertible && !plan && <button type="button" disabled={!!busy} aria-expanded={converting}
+          aria-controls={`work-convert-${item.id}`}
+          onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>轉成 Plan</button>}
+        {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
+          onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
       </div>
     </div>
-    {moreActions && !item.closed_at && <div id={`work-more-${item.id}`} className="work-card-more-actions"
-      role="group" aria-label="更多項目操作">
-      {convertible && !plan && <button type="button" disabled={!!busy}
-        onClick={() => { clearFailure(); setMoreActions(false); setConverting(true) }}>轉成 Plan</button>}
-      <button className="danger" type="button" disabled={!!busy}
-        onClick={() => { clearFailure(); setMoreActions(false); setDeleting(true) }}><WorkIcon name="delete" /> 刪除項目</button>
-    </div>}
     {/* The person's override closes the item without the owning Session's
         evidence, so it asks once more, here on the card, before it does. */}
     {completing && !item.closed_at && <div className="work-actions" role="group" aria-label="確認標記完成">
