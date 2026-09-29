@@ -106,6 +106,17 @@ type HeldScreens struct {
 	slots    int
 	rows     int
 	counts   ScreenCounts
+	// One failed iTerm2 Apple Event means the application may be unable to
+	// answer any tab. Per-row backoff alone rotates through every open tab.
+	itermFailures int
+	itermQuiet    time.Time
+}
+
+// sourceScreenHost distinguishes a failed Apple Event transport from one
+// missing tab. Only the former may quiet every iTerm2 row; a closed tab must
+// not hide healthy neighbors.
+type sourceScreenHost interface {
+	CaptureWithFailure(context.Context, session.Session) (text string, ok bool, sourceFailed bool)
 }
 
 type heldScreen struct {
@@ -197,7 +208,8 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 	}
 	entry.asked = now
 	stale := entry.at.IsZero() || now.Sub(entry.at) >= heldFor(s.Backend)
-	start := stale && !entry.capturing && !now.Before(entry.quietUntil) && h.inflight < h.slots
+	sourceQuiet := s.Backend == session.BackendITerm && now.Before(h.itermQuiet)
+	start := stale && !entry.capturing && !now.Before(entry.quietUntil) && !sourceQuiet && h.inflight < h.slots
 	switch {
 	case start:
 		entry.capturing = true
@@ -206,7 +218,7 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 	case stale && entry.capturing:
 		// Somebody is already asking this terminal. Nothing to count: the
 		// refresh is on its way.
-	case stale && now.Before(entry.quietUntil):
+	case stale && (now.Before(entry.quietUntil) || sourceQuiet):
 		h.counts.Backoff++
 	case stale:
 		h.counts.Refused++
@@ -239,7 +251,13 @@ func heldFor(backend session.Backend) time.Duration {
 // refresh takes one capture, on a clock of its own.
 func (h *HeldScreens) refresh(s session.Session) {
 	ctx, cancel := context.WithTimeout(context.Background(), ScreenCaptureBudget)
-	text, ok := h.host.Capture(ctx, s)
+	var text string
+	var ok, sourceFailed bool
+	if source, hasFailure := h.host.(sourceScreenHost); hasFailure {
+		text, ok, sourceFailed = source.CaptureWithFailure(ctx, s)
+	} else {
+		text, ok = h.host.Capture(ctx, s)
+	}
 	cancel()
 
 	now := h.now()
@@ -256,6 +274,10 @@ func (h *HeldScreens) refresh(s session.Session) {
 		h.counts.Failed++
 		entry.failures++
 		entry.quietUntil = now.Add(backoffFor(entry.failures))
+		if s.Backend == session.BackendITerm && sourceFailed {
+			h.itermFailures++
+			h.itermQuiet = now.Add(backoffFor(h.itermFailures))
+		}
 		// What was held stays held: a capture that failed says nothing about
 		// whether the last one was right, and dropping it would turn one
 		// unanswered AppleScript into a row that lost its line.
@@ -263,6 +285,10 @@ func (h *HeldScreens) refresh(s session.Session) {
 	}
 	entry.failures = 0
 	entry.quietUntil = time.Time{}
+	if s.Backend == session.BackendITerm {
+		h.itermFailures = 0
+		h.itermQuiet = time.Time{}
+	}
 	entry.text = text
 	entry.readable = true
 	entry.at = now
