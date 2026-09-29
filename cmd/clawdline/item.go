@@ -209,6 +209,12 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.run = *run
+	case "name":
+		if len(positional) != 2 {
+			fmt.Fprintln(os.Stderr, "clawdline item name: takes an item id and the Session's task name")
+			itemUsage()
+		}
+		rest = positional
 	case "assign":
 		if len(positional) != 1 {
 			fmt.Fprintf(os.Stderr, "clawdline item assign: takes one item id, got %d arguments\n", len(positional))
@@ -311,6 +317,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item name [--conversation id] [--port n] <item id> <Session task name>")
 	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f] [--acceptance-file f]")
 	fmt.Fprintln(os.Stderr, "                          [--description-file f | stdin] [--deploy policy]")
 	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
@@ -333,6 +340,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
 	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
 	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
+	fmt.Fprintln(os.Stderr, "  name lets an assigned new Feature Root choose its own task name once, after reading the item;")
 	fmt.Fprintln(os.Stderr, "  child breaks an Epic this Session owns, after its reviewed plan (implementing or later), into a")
 	fmt.Fprintln(os.Stderr, "  feature or issue item, assigned to the Session in that terminal, to a new one, or to nobody yet;")
 	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`);")
@@ -461,6 +469,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			"Pass --conversation <this assistant's conversation id>. Nothing was changed.\n",
 			name, strings.Join(conversationEnv, ", "))
 		return 2
+	}
+	if op == "name" {
+		return itemName(stdout, stderr, b, args, conversation)
 	}
 	if op == "step-add" {
 		return itemStepAdd(stdout, stderr, b, args, conversation, key)
@@ -761,6 +772,37 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s`), record the review with "+
 			"`--role plan_review --reference <task id>`, then move it to implementing. `clawdline guide epic` says how.\n",
 			it.ID, it.ID)
+	}
+	return 0
+}
+
+func itemName(stdout, stderr io.Writer, b *broker, args []string, conversation string) int {
+	name := "item name"
+	itemID, title := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
+	if itemID == "" || title == "" {
+		fmt.Fprintln(stderr, "clawdline item name: an item id and a nonempty task name are required. Nothing was changed.")
+		return 2
+	}
+	a, err := b.request(http.MethodPost, "/v1/work/v2/agent/items/"+url.PathEscape(itemID)+"/session-name",
+		nil, map[string]any{"session_id": conversation, "title": title}, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+		return 1
+	}
+	if !a.ok() {
+		return report(stdout, stderr, name, a)
+	}
+	var got struct {
+		StoredTitle  string  `json:"stored_title"`
+		DisplayTitle *string `json:"display_title"`
+	}
+	if json.Unmarshal(a.Body, &got) != nil || got.StoredTitle == "" {
+		fmt.Fprintln(stderr, "clawdline item name: the daemon returned no stored Session name.")
+		return 1
+	}
+	fmt.Fprintf(stdout, "Session name: %s\n", got.StoredTitle)
+	if got.DisplayTitle != nil && *got.DisplayTitle != got.StoredTitle {
+		fmt.Fprintf(stdout, "Displayed name: %s\n", *got.DisplayTitle)
 	}
 	return 0
 }

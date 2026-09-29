@@ -506,6 +506,8 @@ type Titles struct {
 	// Automatic is a model-chosen name for a Claude conversation
 	// (Config.automaticSessionTitle), the thread rung for Claude.
 	Automatic string
+	// AgentNamedBoard marks only a Board Root the agent named after reading it.
+	AgentNamedBoard bool
 }
 
 // TitleOf answers the store's rungs for one live session. `customTitle` is the
@@ -529,22 +531,24 @@ func (s Snapshot) TitleOf(l Live, customTitle string, live []Live) Titles {
 	// rule stays strict; a conversation the Board opened, and that now runs
 	// in a tab nobody recorded, is found by the conversation behind it.
 	out.Orchestrator = s.orchestratorTitle(l.TerminalID, live)
+	board := s.boardTitle(l)
 	if out.Orchestrator == "" {
-		out.Orchestrator = s.boardTitle(l)
+		out.Orchestrator = board.Label
+		out.AgentNamedBoard = board.AgentNamed
 	}
 	return out
 }
 
 // boardTitle is the Board label of the conversation this session runs. A
 // session whose conversation is unknown is lent none.
-func (s Snapshot) boardTitle(l Live) string {
+func (s Snapshot) boardTitle(l Live) BoardTitle {
 	if l.ConversationID == "" || l.Assistant == "" {
-		return ""
+		return BoardTitle{}
 	}
-	found := ""
+	found := BoardTitle{}
 	for _, b := range s.BoardTitles {
 		if b.ConversationID == l.ConversationID && b.Assistant == l.Assistant {
-			found = b.Label
+			found = b
 		}
 	}
 	return found

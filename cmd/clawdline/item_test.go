@@ -18,6 +18,27 @@ const createdItem = `{"ok":true,"item":{"id":"item-1","title":"Ship it","kind":"
  "gate_snapshot_cycle":1,"planning_gate":true,"verify_gate":false,"steps":[
  {"id":"s1","title":"draft","done":false},{"id":"s2","title":"check","done":false},{"id":"s3","title":"publish","done":false}]}}`
 
+func TestItemNameSendsTheCurrentConversationAndReportsTheSavedName(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"stored_title":"Repair Session naming","display_title":"Person's title"}`
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "name", itemFlags{}, []string{"item-1", "Repair Session naming"},
+		thinConversation, "", envOf(nil)); code != 0 {
+		t.Fatalf("name exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 1 || seen[0].Method != http.MethodPost ||
+		seen[0].EscapedPath != "/v1/work/v2/agent/items/item-1/session-name" ||
+		!strings.Contains(string(seen[0].Body), `"session_id":"`+thinConversation+`"`) {
+		t.Fatalf("naming request: %+v", seen)
+	}
+	if !strings.Contains(out.String(), "Session name: Repair Session naming") ||
+		!strings.Contains(out.String(), "Displayed name: Person's title") {
+		t.Fatalf("naming output: %q", out.String())
+	}
+}
+
 // `item add` reads this conversation's latest run, then posts the item with
 // its steps in the order given, under a key it prints before asking; the
 // created steps are printed with their ids, and nothing is written as a

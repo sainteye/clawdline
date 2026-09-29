@@ -361,6 +361,10 @@ func rowLabel(item session.Session, titles swiftstore.Titles, project string) st
 	rungs := item.Rungs
 	rungs.Manual = titles.Manual
 	rungs.Orchestrator = titles.Orchestrator
+	if titles.AgentNamedBoard && item.CustomTitle != "" && rungs.Manual == "" {
+		rungs.Orchestrator = ""
+		rungs.Conversation = item.CustomTitle
+	}
 	if rungs.Thread == "" {
 		rungs.Thread = titles.Automatic
 	}

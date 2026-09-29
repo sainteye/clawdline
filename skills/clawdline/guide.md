@@ -748,6 +748,13 @@ use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
 (`session_cannot_create_item`). An Epic's owner assigns the Epic's own children with
 `clawdline item assign` (`clawdline guide epic`), and nothing else.
 
+**Name a new Session opened for a Board item.** After you read its objective and scope, choose a
+short name that describes your actual task and run `clawdline item name <item id> "<task name>"`.
+This changes your Session's name once, without changing the Board item's title or starting another
+model turn. The active new-Session owner alone may do it. Sending the same name again is safe; a
+different name is refused, and the person can still set a manual Session title. A Board item given
+to an existing Session leaves that Session's name alone.
+
 **Propose a Board item.** The Board's **Agent proposals** queue is fed by one route:
 
 ```

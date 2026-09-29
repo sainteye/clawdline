@@ -47,6 +47,9 @@ type PastTitles struct {
 	// conversation. It sits below a person's manual name and above everything
 	// the assistant inferred from the briefing it received.
 	Orchestrator func(conversationID string) string
+	// AgentNamed says this Board Root replaced its initial Board label with
+	// its own task name; an explicit /rename then takes precedence.
+	AgentNamed func(conversationID string) bool
 	// Automatic is the model-chosen fallback name.
 	Automatic func(conversationID string) string
 }
@@ -153,6 +156,10 @@ func displayedTitle(path, id string, fr front, titles PastTitles) string {
 	conversation := recorded
 	if strings.TrimSpace(fallback) != "" && titleIsWeak(recorded, custom, fr.said, fr.opening != "") {
 		conversation = ""
+	}
+	if custom != "" && titles.AgentNamed != nil && titles.AgentNamed(id) && manual == "" {
+		conversation = custom
+		orchestrator = ""
 	}
 	for _, candidate := range []string{manual, orchestrator, conversation, fallback, fr.opening} {
 		if c := strings.TrimSpace(candidate); c != "" {
