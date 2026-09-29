@@ -13,6 +13,8 @@ import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../over
 import sectionMarkup from "./projects/section.html?raw"
 import { nextWord, type NextWord } from "../next-strings.js"
 import { workPageHash } from "../page-route.js"
+import { hostedConsole } from "./terminal/api.js"
+import { openTerminalPage } from "./terminal/navigate.js"
 
 type ProjectTarget = RetiredBoardProject & { id?: string; label?: string; path?: string }
 type BoundProjects = ProjectsPage & {
@@ -141,6 +143,21 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         </svg>`
         wrapper.classList.add("has-settings")
         wrapper.appendChild(gear)
+        // 終端: this project's terminals. Not on the console Clawdline Cloud
+        // serves, where terminals are never carried.
+        if (hostedConsole()) continue
+        const name = wrapper.querySelector(".project-row-name")?.textContent || nextWord("terminalEntry")
+        const terminal = document.createElement("button")
+        terminal.type = "button"
+        terminal.className = "project-row-terminal"
+        terminal.dataset.placeId = project.dataset.placeId
+        terminal.title = nextWord("terminalEntry")
+        terminal.setAttribute("aria-label", nextWord("terminalEntryFor", { project: name }))
+        terminal.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/>
+        </svg>`
+        wrapper.classList.add("has-terminal")
+        wrapper.appendChild(terminal)
       }
       help.hidden = scope === "none"
     }
@@ -150,11 +167,25 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       const project = page.current?.state.places?.find(place => place.id === gear.dataset.placeId)
       if (project?.path) setup.current?.open(project.path, gear)
     }
+    const onTerminal = (ev: Event) => {
+      const button = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row-terminal[data-place-id]")
+      if (!button || !rows.contains(button)) return
+      // The row's id is this page's own; the terminal routes know a project by
+      // the work page's id, which the terminal page resolves from the folder,
+      // as a Project-page link to the work page does (page-route.ts workProjectID).
+      const project = page.current?.state.places?.find((place) => place.id === button.dataset.placeId)
+      if (project?.path) openTerminalPage(project.path)
+    }
     rows.addEventListener("click", onSettings)
+    rows.addEventListener("click", onTerminal)
     const observer = new MutationObserver(decorate)
     observer.observe(rows, { childList: true, subtree: true })
     decorate()
-    return () => { observer.disconnect(); rows.removeEventListener("click", onSettings) }
+    return () => {
+      observer.disconnect()
+      rows.removeEventListener("click", onSettings)
+      rows.removeEventListener("click", onTerminal)
+    }
   }, [])
 
   useLayoutEffect(() => {

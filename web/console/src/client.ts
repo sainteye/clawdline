@@ -1,4 +1,4 @@
-import { ClawdlineClient, nativeEventSourceTransport, type StreamTransport } from "@clawdline/core"
+import { ClawdlineClient, nativeEventSourceTransport, pollingTransport, type StreamTransport } from "@clawdline/core"
 
 /**
  * One client for the whole console.
@@ -24,7 +24,57 @@ let fleetMayWrite: (() => boolean) | null = null
  * the relay's when the page reads a machine through Clawdline Cloud.
  */
 export function fleetTransport(): StreamTransport | undefined {
-  return fleetStream ?? nativeEventSourceTransport()
+  return fleetStream ?? quietableTransport()
+}
+
+// A browser opens about six connections to one host at a time, and a stream
+// holds one for as long as it is open. A terminal on screen holds its own
+// stream (pages/terminal), so while one is shown this tab reads the session
+// list every few seconds instead of holding `/v1/events` open as well: three
+// terminal tabs and two console tabs are then five held connections, not
+// eight, and there is still one left for the keystrokes.
+let quiet = 0
+const quietChanged = new Set<() => void>()
+
+/** Read the session list instead of following its stream until the returned function is called. */
+export function quietFleetStream(): () => void {
+  quiet += 1
+  for (const fn of quietChanged) fn()
+  let done = false
+  return () => {
+    if (done) return
+    done = true
+    quiet -= 1
+    for (const fn of quietChanged) fn()
+  }
+}
+
+/** Every few seconds while quiet, the stream otherwise; the switch reopens with the same handlers. */
+const QUIET_READ_MS = 5_000
+
+function quietableTransport(): StreamTransport | undefined {
+  const stream = nativeEventSourceTransport()
+  if (!stream) return undefined
+  const reads = pollingTransport(async () => JSON.stringify(await client.sessions()), QUIET_READ_MS)
+  return {
+    open(url, handlers) {
+      let reading = quiet > 0
+      let inner = (reading ? reads : stream).open(url, handlers)
+      const change = () => {
+        if (reading === quiet > 0) return
+        reading = quiet > 0
+        inner.close()
+        inner = (reading ? reads : stream).open(url, handlers)
+      }
+      quietChanged.add(change)
+      return {
+        close() {
+          quietChanged.delete(change)
+          inner.close()
+        },
+      }
+    },
+  }
 }
 
 /**

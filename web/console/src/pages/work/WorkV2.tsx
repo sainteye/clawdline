@@ -74,6 +74,7 @@ import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decisi
 import { claimedViaLine, createdViaLine, workWord } from "./words.js"
 import { appendWorkPage } from "./work-pages.js"
 import { visibleWorkItems } from "./plan-visibility.js"
+import { TerminalEntry } from "../terminal/TerminalEntry.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const EXECUTABLE_KINDS: WorkV2ExecutableKind[] = ["feature", "issue", "epic"]
@@ -298,6 +299,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
           {searchInput && <button type="button" aria-label="清除搜尋" onClick={() => setSearchInput("")}><WorkIcon name="close" /></button>}
         </label>
       </div>
+      <TerminalEntry key={project} project={project} label={places.find((place) => place.id === project)?.label ?? ""} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}

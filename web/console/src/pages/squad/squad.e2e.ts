@@ -122,9 +122,12 @@ function fixture(): Server {
       const q = new URL(req.url ?? "/", "http://fixture").searchParams
       const provider = q.get("provider"), id = q.get("id")
       const project = { id: "project-helper", name: "Project helper", purpose: "Read the project evidence", location: "Project · .claude/skills / helper" }
-      const codex = { id: "codex-helper", name: "Codex helper", purpose: "Help with code", location: "Codex · 個人技能 / helper" }
+      const codex = { id: "codex-helper", name: "Codex helper", purpose: "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when creating a brand-new image or transforming an existing image.", location: "Codex · 個人技能 / helper" }
+      const codexSources = [codex,
+        { id: "codex-docs", name: "openai-docs", purpose: "Use for Codex models, pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge, including this coding agent.", location: "Codex · 系統技能 / openai-docs" },
+        { id: "codex-creator", name: "plugin-creator", purpose: "Create and scaffold plugin directories for Codex with a required manifest, optional plugin folders and files, and valid defaults.", location: "Codex · 系統技能 / plugin-creator" }]
       if (provider === "project" && q.get("place_id") !== "place-a") return json(res, 400, { error: "project_required" })
-      if (!id) return json(res, 200, { skills: provider === "project" ? [project] : provider === "codex" ? [codex] : [] })
+      if (!id) return json(res, 200, { skills: provider === "project" ? [project] : provider === "codex" ? codexSources : [] })
       if (id === project.id && provider === "project") return json(res, 200, { name: project.name, purpose: project.purpose,
         content: "---\nname: Project helper\ndescription: Read the project evidence\n---\n# Steps\n",
         files: q.get("folder") === "true" ? [{ path: "references/guide.txt", content_base64: Buffer.from("reference bytes").toString("base64") }] : [] })
@@ -721,6 +724,11 @@ test("a person creates a skill on mobile, disables it, and sees the saved state 
 test("mobile skill shortcut and all close paths preserve or discard an unsent draft", async () => {
   await tab(390, 844, async (evaluate, shot, { press }) => {
     await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+    const detailDeadline = Date.now() + 5_000
+    while (!(await evaluate('document.querySelector("#squad .squad-layout")?.dataset.mobileView === "detail"'))) {
+      if (Date.now() > detailDeadline) throw new Error("mobile role detail did not open")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
     await evaluate('document.querySelector("#squad .squad-skill-jump").click()')
     assert.equal(await evaluate('document.activeElement?.textContent'), "專屬技能")
     await evaluate('document.querySelector("#squad .squad-add-skill").click()')
@@ -1001,4 +1009,32 @@ test("a project skill folder retains attachments and a Codex SKILL.md can be cop
       assert.match(await evaluate('document.querySelector("#squad .squad-skill-dialog").textContent'), /完整技能資料夾.*只複製 SKILL.md 文字/)
     })
   } finally { catalog.skills.splice(oldCatalogLength); globalSkillChoices = oldChoices; projectSkillChoices = oldProjectChoices }
+})
+
+test("long Codex skill descriptions stay inside separate choices on a phone", async () => {
+  await tab(390, 844, async (evaluate, shot) => {
+    await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+    await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+    await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[2].click()')
+    await evaluate('(() => { const source = document.querySelector("#squad .squad-skill-form select"); source.value = "codex"; source.dispatchEvent(new Event("change", { bubbles: true })); })()')
+    const deadline = Date.now() + 5_000
+    while ((await evaluate('document.querySelectorAll("#squad .squad-source-option").length')) < 3) {
+      if (Date.now() > deadline) throw new Error("Codex skills did not load")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    const layout = await evaluate(`(() => {
+      const choices = [...document.querySelectorAll("#squad .squad-source-option")]
+      return { horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+        rows: choices.map((choice) => {
+          const rect = choice.getBoundingClientRect()
+          const contentBottom = Math.max(...[...choice.children].map((child) => child.getBoundingClientRect().bottom))
+          return { top: rect.top, bottom: rect.bottom, contentBottom }
+        }) }
+    })()`)
+    assert.equal(layout.horizontalOverflow, false)
+    assert.ok(layout.rows.every((row: { bottom: number, contentBottom: number }) => row.contentBottom <= row.bottom - 5), JSON.stringify(layout))
+    assert.ok(layout.rows.every((row: { bottom: number }, index: number) => index === layout.rows.length - 1 || row.bottom + 4 <= layout.rows[index + 1].top), JSON.stringify(layout))
+    await evaluate('document.querySelector("#squad .squad-source-option").scrollIntoView()')
+    await shot("squad-mobile-skill-sources")
+  })
 })

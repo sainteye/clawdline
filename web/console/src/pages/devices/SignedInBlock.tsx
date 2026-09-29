@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { PairedDevice } from "@clawdline/contract"
 import { nextWord } from "../../next-strings.js"
 import { readSignedIn, revokeDevice, signOutThisBrowser, type SignedIn } from "./signed-in.js"
+import { TerminalGrantSwitch, TerminalGrantsNote, useTerminalGrants } from "../terminal/TerminalGrant.js"
 
 function when(unix: number): string {
   return new Date(unix * 1000).toLocaleString(document.documentElement.lang || undefined)
@@ -42,6 +43,8 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
       live = false
     }
   }, [shown])
+
+  const grants = useTerminalGrants(shown && state?.kind === "list", state)
 
   if (!state) return null
 
@@ -102,6 +105,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
         <div className="devices-rows">
           <p className="device-help signed-in-self">{nextWord("signedInThisWindow")}</p>
           {state.list.devices.length === 0 && <p className="devices-empty">{nextWord("signedInNone")}</p>}
+          <TerminalGrantsNote grants={grants} />
           {state.list.devices.map((device) => (
             <article className="device-card" key={device.id} data-device={device.id}>
               <div className="device-card-heading">
@@ -117,6 +121,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
                     : nextWord("signedInNeverSeen")}
                 </span>
               </div>
+              <TerminalGrantSwitch device={device} grants={grants} onSaid={setSaid} />
               {asking === device.id ? (
                 <div className="signed-in-ask" role="group">
                   <p className="device-help">{nextWord("signedInRevokeAsk", { name: device.name, id: device.id })}</p>

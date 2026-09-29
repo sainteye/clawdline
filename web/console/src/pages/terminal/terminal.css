@@ -1,0 +1,131 @@
+/* 終端 (plan v3 §6 F3).
+
+   The page is board.css's `.board-page` and its buttons `.board-button`;
+   every colour is a token of legacy/tokens.css (the console is dark only).
+
+   One terminal fills the page: the header on top is always on screen, the
+   screen takes the rest, and on a phone (≤899px) a row of special keys sits
+   under it. Nothing is wider than the page: a viewer's screen that is wider
+   than the window scrolls inside `.terminal-scroll`, never the page. */
+
+.terminal-sr {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.terminal-wrap { width: min(880px, 100%); margin-inline: auto; min-width: 0; }
+.terminal-page h1 { margin: 0; font-size: clamp(24px, 5vw, 40px); line-height: 1.15; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.terminal-page h1:focus { outline: none; }
+.terminal-page .terminal-page-head { justify-content: space-between; gap: 14px; margin-bottom: 20px; width: 100%; }
+
+.terminal-note { margin: 10px 0 0; color: var(--dim); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.terminal-note[role="alert"] { color: var(--bad); }
+.terminal-session-note { color: var(--faint); font-size: 12px; }
+.terminal-status-line { margin: 6px 0 0; min-height: 1.6em; color: var(--dim); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.terminal-status-line:empty { min-height: 0; margin: 0; }
+
+/* the list */
+.terminal-list { min-width: 0; }
+.terminal-list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }
+.terminal-list-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; min-width: 0; }
+.terminal-open-new { color: var(--ink); border-color: var(--accent-ed); min-width: 8em; }
+.terminal-rows { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.terminal-row {
+    display: grid; gap: 4px; width: 100%; min-width: 0; padding: 12px 14px; text-align: left;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink);
+    font: inherit; cursor: pointer;
+}
+.terminal-row:hover { border-color: var(--accent-ed); }
+.terminal-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.terminal-row-name { font-weight: 600; font-size: 14px; }
+.terminal-row-dir { font-family: var(--mono); font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.terminal-row-facts { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--faint); font-size: 12px; line-height: 1.6; }
+.terminal-row-facts [data-status="running"] { color: var(--ok); }
+.terminal-row-facts [data-status="exited"], .terminal-row-facts [data-status="unreachable"] { color: var(--warn); }
+
+/* the entry on the work page's project scope */
+.terminal-entry { margin: 12px 0 0; border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 0 14px; }
+.terminal-entry > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--dim); font-size: 13px; }
+.terminal-entry[open] > summary { color: var(--ink); }
+.terminal-entry[open] { padding-bottom: 14px; }
+
+/* one terminal */
+.terminal-page[data-view="one"] { display: flex; flex-direction: column; overflow: hidden; padding: 10px clamp(10px, 2vw, 24px) max(10px, env(safe-area-inset-bottom)); }
+.terminal-page[data-view="one"][hidden] { display: none; }
+.terminal-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; gap: 8px; }
+.terminal-head { flex: none; display: grid; gap: 6px; min-width: 0; }
+.terminal-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
+.terminal-facts { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 0; min-width: 0; font-size: 12.5px; line-height: 1.6; }
+.terminal-facts > div { display: flex; gap: 6px; min-width: 0; }
+.terminal-facts dt { color: var(--faint); }
+.terminal-facts dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; min-width: 0; font-variant-numeric: tabular-nums; }
+.terminal-facts [data-tone="warn"] dd { color: var(--warn); font-weight: 600; }
+.terminal-facts [data-tone="warn"] dd::before { content: "⚠ "; }
+.terminal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.terminal-actions .board-button, .terminal-ask .board-button { min-height: 40px; padding: 6px 12px; }
+.terminal-actions .board-button[aria-busy="true"], .terminal-ask .board-button[aria-busy="true"] { cursor: progress; }
+.terminal-page .board-button:disabled { opacity: .5; cursor: not-allowed; }
+.terminal-close { margin-left: auto; }
+.terminal-badge { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--bad); color: var(--ink); font-size: 12px; }
+.terminal-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border: 1px solid var(--bad); border-radius: 10px; background: var(--card); }
+.terminal-ask p { margin: 0; flex: 1 1 16em; font-size: 13px; line-height: 1.6; color: var(--ink); }
+.terminal-danger { color: var(--ink); border-color: var(--bad); }
+.terminal-ended { margin: 0; padding: 8px 12px; border-left: 2px solid var(--warn); background: var(--card); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.terminal-view .terminal-session-note { margin: 0; }
+
+.terminal-scroll {
+    position: relative; flex: 1; min-height: 160px; min-width: 0;
+    overflow-x: auto; overflow-y: hidden;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--term-bg);
+}
+.terminal-view[data-stale] .terminal-scroll { border-color: var(--warn); }
+.terminal-view[data-holding] .terminal-scroll:focus-within { border-color: var(--accent-ed); }
+.terminal-host { height: 100%; padding: 6px; box-sizing: border-box; }
+.terminal-view:not([data-holding]) .terminal-host { width: max-content; min-width: 100%; }
+.terminal-loading { position: absolute; inset: 12px auto auto 12px; margin: 0; }
+
+.terminal-history { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.terminal-history h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.terminal-history pre {
+    flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--term-bg); color: var(--term-fg);
+    font: 12.5px/1.45 var(--mono); white-space: pre;
+}
+.terminal-history pre:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.terminal-keys { display: none; }
+
+@media (max-width: 899px) {
+    .terminal-page:not([data-view="one"]) { padding-inline: 16px; }
+    .terminal-page[data-view="one"] { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+    .terminal-keys {
+        flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
+    }
+    .terminal-keys[hidden] { display: none; }
+    .terminal-key {
+        min-height: 44px; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px;
+        background: var(--card); color: var(--ink); font: 13px var(--mono); touch-action: manipulation;
+    }
+    .terminal-key[aria-pressed="true"] { background: var(--accent-in); border-color: var(--accent); }
+    .terminal-key:disabled { opacity: .45; }
+    .terminal-key:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .terminal-close { margin-left: 0; }
+    .terminal-session-note { font-size: 11.5px; }
+}
+
+/* 終端 on a paired device's card (Devices page) */
+.terminal-grant { margin: 10px 0; }
+.terminal-grant-switch {
+    display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 12px 6px 8px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+    font: inherit; font-size: 13px; cursor: pointer; max-width: 100%; flex-wrap: wrap;
+}
+.terminal-grant-switch:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.terminal-grant-switch:disabled { cursor: progress; opacity: .7; }
+.terminal-grant-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--line); flex: none; }
+.terminal-grant-track > span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--dim); transition: transform .15s var(--ease); }
+.terminal-grant-switch[aria-checked="true"] .terminal-grant-track { background: var(--accent-ed); }
+.terminal-grant-switch[aria-checked="true"] .terminal-grant-track > span { transform: translateX(16px); background: var(--accent); }
+.terminal-grant-name { font-weight: 600; }
+.terminal-grant-state { color: var(--dim); }
+.terminal-grants-note { border-left: 2px solid var(--warn); padding-left: 10px; }

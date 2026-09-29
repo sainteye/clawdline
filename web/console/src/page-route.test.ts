@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { pageFromHash, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
+import { pageFromHash, terminalPageHash, terminalRouteFromHash, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
 
 const knows = (name: string): name is "sessions" | "devices" => name === "sessions" || name === "devices"
 
@@ -58,4 +58,12 @@ test("a Project-page path selects that Project's durable Board scope", () => {
   assert.equal(workProjectID("/workspace/b", projects), "project-b")
   assert.equal(workProjectID("project-a", projects), "project-a")
   assert.equal(workProjectID("/workspace/missing", projects), "")
+})
+
+test("a terminal address carries its project and terminal and reads back the same", () => {
+  const hash = terminalPageHash("place 1", "trm_abc")
+  assert.equal(hash, "#page=terminal&project=place%201&terminal=trm_abc")
+  assert.deepEqual(terminalRouteFromHash(hash), { project: "place 1", terminal: "trm_abc" })
+  assert.deepEqual(terminalRouteFromHash("#page=work&project=x"), { project: "", terminal: "" })
+  assert.equal(terminalPageHash("p"), "#page=terminal&project=p")
 })
