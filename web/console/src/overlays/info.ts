@@ -189,9 +189,10 @@ function canSwitch(): boolean {
   const s = session()
   return !!(s && host.writable() && s.state === "idle" && !busy)
 }
-/** By prefix, so `claude-haiku-4-5-20251001` finds `claude-haiku-4-5`. */
+/** A dated model finds its versioned row without selecting a shorter version. */
 function onModel(current: string, m: SessionModel): boolean {
-  return !!current && (current === m.id || current.indexOf(m.id) === 0)
+  return !!current && (current === m.id ||
+    (current.startsWith(m.id + "-") && /^\d{8}$/.test(current.slice(m.id.length + 1))))
 }
 
 /** The name on its own, for pasting elsewhere; drawn rather than typed. */
