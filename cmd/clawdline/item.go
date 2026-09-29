@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // `clawdline item`: a Board item a Session creates because the person told it
@@ -72,7 +73,8 @@ func (a assignFlags) personaRefusal(terminalFlag, newFlag string) string {
 	case !a.open:
 		return "--persona goes with " + newFlag + "; it names what the new Session opens as."
 	}
-	if _, ok := persona.Known(a.persona); !ok {
+	_, builtin := persona.Known(a.persona)
+	if !builtin && !squad.ValidCustomID(a.persona) {
 		return fmt.Sprintf("--persona %q is not a persona this build has; it has %s.", a.persona, strings.Join(persona.IDs(), ", "))
 	}
 	return ""

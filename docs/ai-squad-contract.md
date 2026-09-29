@@ -56,10 +56,10 @@ its conversation ID at first observation. The CLI sends that capability for
 agent dispatch, child creation, and assignment. The server derives the actor
 persona and Project from the binding; a supplied conversation ID is only an
 equality check. Missing, invalid, unbound, revoked, or cross-session actor
-capabilities fail with a typed refusal. A legacy session must complete a
-verified local terminal binding before receiving a capability; it cannot
-claim another session using the machine token. Tests must cover spoofing in
-both directions and direct HTTP requests.
+capabilities fail with a typed refusal for a snapshotted Session. A pre-feature
+Session, or a Session opened without a role, retains the legacy dispatch route;
+it has no snapshot identity and cannot claim the new management-role candidate
+list. Tests cover spoofing in both directions and direct HTTP requests.
 
 This protects the API boundary against cross-session identity claims and
 accidental misuse. Processes running as the same OS user share a trust domain:
@@ -89,15 +89,16 @@ catalog edit, Project move, or daemon restart. Pre-feature conversations are
 reported as `legacy_unsnapshotted`, with no claim of historical immutability.
 
 A bound session gets a capability for reporting only skills present and enabled
-in its snapshot. An event has snapshot, conversation/task, definition, skill
-ID/version, client event ID, status `read|applied|failed`, timestamp, and an
+in its snapshot. An event has snapshot, conversation, definition, Project
+scope ID, skill ID/version, client event ID, status `read|applied|failed`, timestamp, and an
 optional failure code. Validation and a durable receipt are one transaction.
 The same event ID and payload returns the original receipt; a different
 payload with that ID returns `event_conflict`. A monotonic sequence and `after`
 cursor let clients catch up after reconnect. `applied` means "Session reported
 use"; it cannot prove the output was caused by the skill. The UI only animates
-new receipts after its initial cursor, for the matching session and persona,
-and never on replay, `read`, `failed`, or cross-session events. Motion defaults
+new receipts after its initial cursor, for the matching session, definition,
+and Project scope, and never on replay, `read`, `failed`, or cross-session
+events. Motion defaults
 on, Project can override it, and `prefers-reduced-motion` always wins.
 
 ## Offline package and privacy boundary

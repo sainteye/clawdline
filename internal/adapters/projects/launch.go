@@ -152,6 +152,10 @@ type LaunchRequest struct {
 	// PersonaDir is the directory the daemon wrote the persona texts to
 	// (persona.Dir). It is needed exactly when Persona is set.
 	PersonaDir string
+	// SquadPromptPath is a private, immutable prompt assembled from one
+	// persisted launch snapshot. When set it replaces the mutable built-in
+	// persona file. Only daemon launch code may fill this field.
+	SquadPromptPath string
 }
 
 // Launch is ProviderLaunchPlan: the one command a new terminal is given.
@@ -264,7 +268,21 @@ func Admit(req LaunchRequest) (Launch, error) {
 	}
 	var personaArgs []string
 	var codexInstructions []string
-	if req.Persona != "" {
+	if req.SquadPromptPath != "" {
+		if !filepath.IsAbs(req.SquadPromptPath) || !usable(req.SquadPromptPath) {
+			return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the squad prompt is not a safe absolute path"))
+		}
+		if req.Assistant == AssistantCodex {
+			instruction := `Your fixed Clawdline role definition and handbook are in the file "` + req.SquadPromptPath +
+				`". Read it completely before your first answer and follow it for this session.`
+			if _, ok := persona.Known(req.Persona); ok {
+				instruction = persona.Marker + req.Persona + " - " + instruction
+			}
+			codexInstructions = append(codexInstructions, instruction)
+		} else {
+			personaArgs = []string{"--append-system-prompt-file", ShellQuoted(req.SquadPromptPath)}
+		}
+	} else if req.Persona != "" {
 		p, ok := persona.Known(req.Persona)
 		if !ok {
 			return Launch{}, errors.Join(ErrInvalidLaunch, ErrUnknownPersona)

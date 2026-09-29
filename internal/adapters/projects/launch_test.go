@@ -46,6 +46,29 @@ func TestLaunchRefusesWhatIsNotAName(t *testing.T) {
 	}
 }
 
+func TestSquadSnapshotPromptReplacesMutablePersonaFile(t *testing.T) {
+	path := "/private/state/squad/launches/abcdefghijklmnopqrstuv/personas/architect.md"
+	for _, assistant := range []string{AssistantClaude, AssistantCodex} {
+		launch, err := Admit(LaunchRequest{ProjectRoot: "/project", Assistant: assistant,
+			Persona: "architect", SquadPromptPath: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		command := launch.ShellCommand()
+		if !strings.Contains(command, path) || strings.Contains(command, "/personas/architect.md /personas/architect.md") {
+			t.Fatalf("snapshot prompt missing or duplicated: %s", command)
+		}
+	}
+	if _, err := Admit(LaunchRequest{ProjectRoot: "/project", Assistant: AssistantClaude,
+		Persona: "community.example.persona.editor", SquadPromptPath: "/private/state/squad/prompt.md"}); err != nil {
+		t.Fatalf("resolved custom persona refused: %v", err)
+	}
+	if _, err := Admit(LaunchRequest{ProjectRoot: "/project", Assistant: AssistantClaude,
+		SquadPromptPath: "relative/prompt.md"}); err == nil {
+		t.Fatal("relative snapshot prompt admitted")
+	}
+}
+
 func TestPlanTable(t *testing.T) {
 	cases := []struct {
 		choice TerminalChoice

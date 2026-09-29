@@ -32,6 +32,9 @@ type DispatchRequest struct {
 	TaskID     string
 	Secret     string
 	Generation string
+	// ActorCapability is the private credential of the Session asking for
+	// automatic work. It is never copied into the task record or brief.
+	ActorCapability string
 	// Offered is whether the caller sent `inventory_generation` at all. Absent
 	// and wrong are two different sentences in the refusal.
 	Offered bool
@@ -186,6 +189,16 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	if err := b.checkChildCapability(ctx); err != nil {
 		return Dispatched{}, err
 	}
+	if record.Persona != "" && b.ResolveSquadSnapshot != nil {
+		pending, err := b.Store.SquadPendingLaunchCount(ctx)
+		if err != nil {
+			return Dispatched{}, err
+		}
+		if pending >= store.MaxSquadRecoveryRows {
+			return Dispatched{}, refuse(http.StatusTooManyRequests, "squad_launch_capacity",
+				"Too many squad launches are awaiting Session identity on this machine.")
+		}
+	}
 	if err := b.admitDispatch(); err != nil {
 		return Dispatched{}, err
 	}
@@ -207,6 +220,9 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		return Dispatched{}, err
 	}
 	record.RootTerminalID = rootTerminal
+	if err := b.checkSquadDispatchActor(ctx, req, record, rootTerminal); err != nil {
+		return Dispatched{}, err
+	}
 
 	live, err := b.liveTasks(ctx)
 	if err != nil {
@@ -639,6 +655,10 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if r.Model == "" && b.DefaultModel != nil {
 		r.Model = b.DefaultModel(r.Assistant)
 	}
+	preflightPersona := r.Persona
+	if b.ResolveSquadSnapshot != nil && r.Persona != "" {
+		preflightPersona = ""
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
@@ -650,7 +670,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		Language:        b.SessionLanguage(r.Assistant),
 		// Admitted by name with the brief, and admitted again here for the
 		// reason the effort is.
-		Persona:    r.Persona,
+		Persona:    preflightPersona,
 		PersonaDir: b.PersonaDir(),
 	})
 	if err != nil {
@@ -658,6 +678,25 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.SpawnError = err.Error()
 		r.FinishedAt = b.now()
 		return r
+	}
+	prepared, err := b.prepareSquadLaunch(ctx, r.Persona, cwd)
+	if err != nil {
+		r.State = StateSpawnFailed
+		r.SpawnError = err.Error()
+		r.FinishedAt = b.now()
+		return r
+	}
+	if prepared.files.PromptPath != "" {
+		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: r.Assistant,
+			Model: r.Model, ReasoningEffort: r.ReasoningEffort, Language: b.SessionLanguage(r.Assistant),
+			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath})
+		if err != nil {
+			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
+			r.State = StateSpawnFailed
+			r.SpawnError = err.Error()
+			r.FinishedAt = b.now()
+			return r
+		}
 	}
 	// A schedule's run works in the project folder the person set the
 	// schedule up for, and Claude Code asks whether to trust a folder it has
@@ -677,8 +716,11 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		}
 	}
 	r.AutoCompactWindow = b.autoCompactFor(r.Assistant, r.AutoCompactRequested)
-	line := "cd " + projects.ShellQuoted(cwd) + " && " +
-		shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable())
+	command := shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable())
+	if prepared.files.PromptPath != "" {
+		command = "env " + prepared.files.PrivateEnv() + " " + command
+	}
+	line := "cd " + projects.ShellQuoted(cwd) + " && " + command
 
 	// The same decision the dispatch was admitted on (capability.go), read
 	// again: the facts may have moved since.
@@ -689,6 +731,9 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		openErr    error
 	)
 	if err := outside(); err != nil {
+		if prepared.launch.ID != "" {
+			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
+		}
 		opened()
 		r.State = StateSpawnFailed
 		r.SpawnError = err.Error()
@@ -707,8 +752,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// your keyboard is a broker that can take it. This is the tmux
 		// equivalent of the iTerm tab above: its own place, named after the
 		// task, easy to find and easy to close.
-		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID),
-			shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable()))
+		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID), command)
 		backend = "tmux"
 	default:
 		openErr = terminal.Failure{Message: plan.failure(runtime.GOOS)}
@@ -716,11 +760,15 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	// The tab is open, or will not be: the opening's turn ends here.
 	opened()
 	if openErr != nil {
+		if prepared.launch.ID != "" {
+			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
+		}
 		r.State = StateSpawnFailed
 		r.SpawnError = openErr.Error()
 		r.FinishedAt = b.now()
 		return r
 	}
+	b.recordSquadTerminal(ctx, prepared, terminalID)
 
 	r.ChildTerminalID = terminalID
 	r.ChildBackend = backend

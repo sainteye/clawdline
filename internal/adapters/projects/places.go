@@ -143,7 +143,7 @@ func isDirectory(path string) bool {
 
 // usable is StartPoints.usable.
 func usable(path string) bool {
-	if !strings.HasPrefix(path, "/") {
+	if !filepath.IsAbs(path) {
 		return false
 	}
 	for _, r := range path {

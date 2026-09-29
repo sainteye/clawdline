@@ -62,10 +62,19 @@ func outboxFault() func(point string, e store.Effect) {
 
 func newBroker(s *Server) *orchestrator.Broker {
 	return &orchestrator.Broker{
-		EffectFault: outboxFault(),
-		Store:       s.store,
-		Tasks:       taskdir.New(s.cfg.Dir),
-		Git:         git.New(),
+		EffectFault:          outboxFault(),
+		Store:                s.store,
+		SquadActorRequired:   true,
+		ResolveSquadSnapshot: s.resolveSquadSnapshot,
+		SquadAutoAssignable: func(ctx context.Context, personaID, projectPath string) (bool, error) {
+			snapshot, err := s.ResolveSquadLaunch(ctx, personaID, projectPath)
+			if err != nil {
+				return false, err
+			}
+			return snapshot.AutoAssignEnabled, nil
+		},
+		Tasks: taskdir.New(s.cfg.Dir),
+		Git:   git.New(),
 		AssistantQuotas: func(now time.Time) ([]orchestrator.AssistantQuotaSnapshot, error) {
 			rows := make([]orchestrator.AssistantQuotaSnapshot, 0, len(limits.Assistants))
 			for _, id := range limits.Assistants {

@@ -389,6 +389,9 @@ func richer(a, b session.Session) session.Session {
 	if out.Persona == "" {
 		out.Persona = b.Persona
 	}
+	if out.SquadLaunchID == "" {
+		out.SquadLaunchID = b.SquadLaunchID
+	}
 	// Codex background threads are learned from the process row's open files.
 	// A terminal row normally wins the identity merge, but it must not erase
 	// that stronger, already-scoped reading.

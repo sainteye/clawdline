@@ -116,6 +116,8 @@ func main() {
 		guideCommand(os.Args[2:])
 	case "skill":
 		skillCommand(os.Args[2:])
+	case "squad":
+		squadCommand(os.Args[2:])
 	case "interrupt":
 		terminalCommand("interrupt", os.Args[2:])
 	case "close":

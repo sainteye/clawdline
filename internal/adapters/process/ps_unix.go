@@ -35,6 +35,11 @@ func New() *PS { return &PS{Open: systemOpenFiles, Head: readRolloutHead} }
 // `claude --resume <uuid>` and `codex resume <uuid>`.
 var resumeID = regexp.MustCompile(`(?:--resume|\bresume)[= ]+([0-9a-fA-F-]{8,})`)
 
+// The launch directory name travels in the provider's prompt argument. It
+// ties an observed process to one pending intent without guessing from cwd or
+// a terminal ID that may later be reused.
+var squadLaunchID = regexp.MustCompile(`(?:/|\\)squad(?:/|\\)launches(?:/|\\)([A-Za-z0-9_-]{22})(?:/|\\)`)
+
 // Scan lists the process table once and keeps one session per terminal.
 //
 // The column set deliberately excludes `lstart`, whose rendering follows the
@@ -97,6 +102,9 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 		// The persona is read off the same command line, by the same rule:
 		// what the process was launched with is proof, not inference.
 		s.Persona = persona.FromCommandLine(command)
+		if m := squadLaunchID.FindStringSubmatch(command); len(m) == 2 {
+			s.SquadLaunchID = m[1]
+		}
 		inv.Sessions = append(inv.Sessions, s)
 	}
 	inv.Sessions = p.bindCodex(ctx, inv.Sessions)

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
@@ -233,12 +234,12 @@ type plan struct {
 	images []string
 	// conversations is a restore's or a dismissal's list; allConversations
 	// is a dismissal that named none, which means every one on offer.
-	conversations                   []string
-	allConversations                bool
-	upcoming, acceptLoss            bool
-	closeability                    string
-	rate, limit, byteWindow, offset int64
-	document                        []byte
+	conversations                          []string
+	allConversations                       bool
+	upcoming, acceptLoss                   bool
+	closeability                           string
+	rate, limit, byteWindow, offset, after int64
+	document                               []byte
 }
 
 // op is one word of the vocabulary.
@@ -934,6 +935,50 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/squad/catalog",
 					Body: p.document, Header: asDevice()}
+			}},
+
+		op{name: "squad-session-bindings", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/session-bindings", Header: asDevice()}
+			}},
+
+		op{name: "squad-event-head", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/events/head", Header: asDevice()}
+			}},
+
+		op{name: "squad-events", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "after", "limit") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				after, afterOK := b.integer("after")
+				limit, limitOK := b.integer("limit")
+				if !afterOK || after < 0 || !limitOK || limit < 1 || limit > store.MaxSquadEventPageRows {
+					return plan{}, false
+				}
+				p.after, p.limit = after, limit
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/events",
+					Query: map[string]string{"after": itoa(p.after), "limit": itoa(p.limit)}, Header: asDevice()}
 			}},
 
 		op{name: "past-sessions", read: true,

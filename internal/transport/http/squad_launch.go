@@ -13,6 +13,14 @@ var ErrSquadLaunchProject = errors.New("unknown_project")
 var ErrSquadLaunchDefinition = errors.New("unknown_definition")
 var ErrSquadLaunchSkill = errors.New("unknown_skill_version")
 
+func (s *Server) resolveSquadSnapshot(ctx context.Context, personaID, projectPath string) (json.RawMessage, error) {
+	snapshot, err := s.ResolveSquadLaunch(ctx, personaID, projectPath)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(snapshot)
+}
+
 // ResolveSquadLaunch reads the complete, versioned value for one session start.
 // Its caller owns publication and persistence of the returned snapshot. An
 // empty projectPath selects global settings; a nonempty path must resolve to

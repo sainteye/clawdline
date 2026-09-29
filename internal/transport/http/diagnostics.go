@@ -185,6 +185,35 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: int64(largest), Note: "the largest persona's injected text"}
 		},
+		capacity.SquadSnapshotBytes: func() capacity.Reading {
+			if s.store == nil {
+				return capacity.Reading{Known: true, Note: "no store attached"}
+			}
+			used, err := s.store.SquadLargestSnapshotBytes(context.Background())
+			if err != nil {
+				return capacity.Reading{Err: err.Error()}
+			}
+			return capacity.Reading{Known: true, Used: used, Note: "largest immutable squad launch document"}
+		},
+		capacity.SquadRecoveryRows: func() capacity.Reading {
+			if s.store == nil {
+				return capacity.Reading{Known: true, Note: "no store attached"}
+			}
+			used, err := s.store.SquadPendingLaunchCount(context.Background())
+			if err != nil {
+				return capacity.Reading{Err: err.Error()}
+			}
+			return capacity.Reading{Known: true, Used: used, Note: "pending immutable squad launch intents"}
+		},
+		capacity.SquadEventIDBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-event idempotency key; refused above the limit"}
+		},
+		capacity.SquadEventBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request skill event JSON body"}
+		},
+		capacity.SquadEventPageRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "cursor page; additional events remain in the store"}
+		},
 		capacity.PersonaSuggestionContextBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-turn Board role-classification input; released with the turn"}
 		},

@@ -102,18 +102,18 @@ func comparablePath(path string) string {
 // followed to its common directory.
 func CanonicalProjectKey(projectDir string) (string, bool) {
 	raw := strings.TrimSpace(projectDir)
-	if !strings.HasPrefix(raw, "/") {
+	if !filepath.IsAbs(raw) {
 		return "", false
 	}
 	cursor := standardized(raw)
 	if st, err := os.Stat(cursor); err == nil && !st.IsDir() {
 		cursor = filepath.Dir(cursor)
 	}
-	for cursor != "/" {
+	for {
 		marker := filepath.Join(cursor, ".git")
 		if st, err := os.Stat(marker); err == nil {
 			if st.IsDir() {
-				return cursor, true
+				return canonicalFilesystemPath(cursor), true
 			}
 			if data, err := os.ReadFile(marker); err == nil {
 				line, _, _ := strings.Cut(string(data), "\n")
@@ -121,29 +121,33 @@ func CanonicalProjectKey(projectDir string) (string, bool) {
 				if rawGit, ok := strings.CutPrefix(line, "gitdir:"); ok {
 					rawGit = strings.TrimSpace(rawGit)
 					gitDir := rawGit
-					if !strings.HasPrefix(rawGit, "/") {
+					if !filepath.IsAbs(rawGit) {
 						gitDir = filepath.Join(cursor, rawGit)
 					}
 					gitDir = standardized(gitDir)
 					if rel, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
 						if relative := strings.TrimSpace(string(rel)); relative != "" {
 							common := relative
-							if !strings.HasPrefix(relative, "/") {
+							if !filepath.IsAbs(relative) {
 								common = filepath.Join(gitDir, relative)
 							}
 							common = standardized(common)
 							if filepath.Base(common) == ".git" {
-								return filepath.Dir(common), true
+								return canonicalFilesystemPath(filepath.Dir(common)), true
 							}
 						}
 					}
 				}
 			}
-			return cursor, true
+			return canonicalFilesystemPath(cursor), true
 		}
-		cursor = filepath.Dir(cursor)
+		parent := filepath.Dir(cursor)
+		if parent == cursor {
+			break
+		}
+		cursor = parent
 	}
-	return standardized(raw), true
+	return canonicalFilesystemPath(raw), true
 }
 
 // Scope identifies which squad settings a place uses. A repository and each
