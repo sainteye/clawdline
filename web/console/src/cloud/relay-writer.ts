@@ -1068,17 +1068,24 @@ export class RelayWriter {
       }
       case "documents":
       case "document": {
-        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
         const named = url.searchParams.getAll("machine")
         if (named.length !== 1 || named[0] !== this.host.machine || Array.from(url.searchParams.keys()).some((key) => key !== "machine")) {
           throw failure("document_machine_mismatch", "The document link does not name this machine.", 400)
         }
         if (route.op === "documents") {
-          return client._machineRequest(this.host.machine, "documents", { session: route.session }, "read")
+          // The listing keeps its legacy `documents` answer name on the
+          // Session channel; it has no request-id answer on the machine one.
+          if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
+          return client._read({ machine: this.host.machine, session: route.session }, "documents", {}, "documents")
         }
-        const answer = await client._machineRequest(this.host.machine, "document", {
-          session: route.session, scope: route.scope, task: route.task, path: route.path,
-        }, "read") as { media_type?: unknown; byte_count?: unknown; data?: unknown }
+        // The machine answers `document` on the named Session's reply channel.
+        // A machine-scoped waiter would listen on __clawdline_machine__ and time out.
+        if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const request = this.requestID()
+        const answer = await client._read(
+          { machine: this.host.machine, session: route.session }, "document",
+          { request, scope: route.scope, task: route.task, path: route.path }, "read:" + request,
+        ) as { media_type?: unknown; byte_count?: unknown; data?: unknown }
         if ((answer.media_type !== "text/markdown; charset=utf-8" && answer.media_type !== "text/plain; charset=utf-8") ||
           typeof answer.data !== "string" || !Number.isSafeInteger(answer.byte_count) || Number(answer.byte_count) < 0) {
           throw failure("malformed_answer", "The document answer is invalid.", 502)

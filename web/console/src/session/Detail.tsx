@@ -26,6 +26,7 @@ import { Todos } from "./Todos.js"
 import { appendInterventionDraft, interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
+import { ClawdfatherSuggestions } from "./ClawdfatherSuggestions.js"
 import { conversationNotStarted } from "./readiness.js"
 import { agentName, agentStateWord } from "./WorkTree.js"
 import { nextWord } from "../next-strings.js"
@@ -48,6 +49,11 @@ import "./git-status.css"
  * asks one, so this is the one place the question is answered.
  */
 const SNIPPETS_READABLE = true
+
+function suggestionsTitle(): string {
+  return /^zh/i.test(document.documentElement.lang || navigator.language)
+    ? "Clawdfather 可以做什麼" : "Ask Clawdfather"
+}
 
 /**
  * The conversation, which is what this pane is for.
@@ -84,8 +90,10 @@ export function Detail({
   const [agentId, setAgentId] = useState<string | null>(null)
   const [pendingIntervention, setPendingIntervention] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
   const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const pendingInterventionID = useRef(0)
   useEffect(() => { setAgentId(null); setSavedComposerDraft(null) }, [row?.id])
+  useEffect(() => setSuggestionsOpen(false), [row?.id])
   const chooseAgent = (id: string | null) => {
     if (id && !agentId) {
       const target = interventionTarget(row)
@@ -167,7 +175,10 @@ export function Detail({
   }, [mark])
 
   const role = headPersona(usePersonas(), row?.persona)
-  const snippetsSays = SNIPPETS_READABLE ? T.webSnippets : row ? projectLabel(row.cwd) : ""
+  const steward = !!row && !!(row.machine_scope || row.coordinator)
+  const snippetsSays = steward
+    ? suggestionsTitle()
+    : SNIPPETS_READABLE ? T.webSnippets : row ? projectLabel(row.cwd) : ""
 
   // `renderTranscript`: with nothing open the pane is the home screen, and it
   // is blank rather than that while the list is still on its way — a pane that
@@ -197,10 +208,10 @@ export function Detail({
             className="detail-mark-go"
             id="detail-snippets"
             type="button"
-            aria-haspopup={SNIPPETS_READABLE ? "dialog" : undefined}
+            aria-haspopup={steward || SNIPPETS_READABLE ? "dialog" : undefined}
             data-mark={drew && mark ? (mark.generated ? "generated" : "registry") : "none"}
             hidden={!row}
-            disabled={!row || ending || !SNIPPETS_READABLE}
+            disabled={!row || ending || (!steward && !SNIPPETS_READABLE)}
             data-plain={SNIPPETS_READABLE ? "off" : "on"}
             title={snippetsSays}
             aria-label={snippetsSays || undefined}
@@ -210,7 +221,8 @@ export function Detail({
               // enabled and what it is called, and only says what it does.
               event.preventDefault()
               event.stopPropagation()
-              requestSnippets()
+              if (steward) setSuggestionsOpen(true)
+              else requestSnippets()
             }}
           >
             <span className="detail-identity">
@@ -255,6 +267,7 @@ export function Detail({
             triggerRef={actionsTrigger}
             onScreen={() => setScreenOpen(true)}
             onOpenGit={() => setGitOpen(true)}
+            onSuggestions={() => setSuggestionsOpen(true)}
           />
         </div>
       </div>}
@@ -302,7 +315,8 @@ export function Detail({
           one is drawn into the body from here, because the `⋯` row that opens
           it is this component's. */}
       <UserMessages row={row} />
-      <Snippets row={row} />
+      <Snippets row={steward ? null : row} />
+      {steward && suggestionsOpen ? <ClawdfatherSuggestions onClose={() => setSuggestionsOpen(false)} /> : null}
     </section>
   )
 }
@@ -442,6 +456,7 @@ function Tools({
   triggerRef,
   onScreen,
   onOpenGit,
+  onSuggestions,
 }: {
   row: SessionRow | null
   ending: boolean
@@ -449,8 +464,10 @@ function Tools({
   triggerRef: RefObject<HTMLButtonElement | null>
   onScreen: () => void
   onOpenGit: () => void
+  onSuggestions: () => void
 }) {
   const T = L.strings
+  const steward = !!row && !!(row.machine_scope || row.coordinator)
   const [open, setOpen] = useState(false)
   const [git, setGit] = useState(false)
   // `level()` first runs when the menu first opens; until then the main level
@@ -752,15 +769,16 @@ function Tools({
                 id="session-snippets"
                 type="button"
                 role="menuitem"
-                hidden={!SNIPPETS_READABLE}
-                disabled={!SNIPPETS_READABLE || !row || ending}
+                hidden={!steward && !SNIPPETS_READABLE}
+                disabled={(!steward && !SNIPPETS_READABLE) || !row || ending}
                 onClick={() => {
                   if (!row) return
                   closeMenu(false)
-                  requestSnippets()
+                  if (steward) onSuggestions()
+                  else requestSnippets()
                 }}
               >
-                {T.webSnippets}
+                {steward ? suggestionsTitle() : T.webSnippets}
               </button>
               {/* "Git", "commit" and "push" are literal in the original's index.html, not catalog strings. */}
               <button
