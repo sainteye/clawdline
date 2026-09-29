@@ -5708,16 +5708,23 @@ type SquadSessionBindings struct {
 }
 
 type SquadSkill struct {
-	Builtin bool       `json:"builtin"`
-	Content string     `json:"content"`
-	Digest  string     `json:"digest"`
-	Icon    Icon       `json:"icon"`
-	License string     `json:"license"`
-	Name    SquadNames `json:"name"`
-	Purpose SquadNames `json:"purpose"`
-	SkillID string     `json:"skill_id"`
-	Source  string     `json:"source"`
-	Version string     `json:"version"`
+	Builtin bool             `json:"builtin"`
+	Content string           `json:"content"`
+	Digest  string           `json:"digest"`
+	Files   []SquadSkillFile `json:"files,omitempty"`
+	Folder  bool             `json:"folder,omitempty"`
+	Icon    Icon             `json:"icon"`
+	License string           `json:"license"`
+	Name    SquadNames       `json:"name"`
+	Purpose SquadNames       `json:"purpose"`
+	SkillID string           `json:"skill_id"`
+	Source  string           `json:"source"`
+	Version string           `json:"version"`
+}
+
+type SquadSkillFile struct {
+	ContentBase64 string `json:"content_base64"`
+	Path          string `json:"path"`
 }
 
 type SquadSkillReference struct {

@@ -27,6 +27,8 @@ export interface SquadSkill {
   name: string
   purpose: string
   body: string
+  folder?: boolean
+  files?: { path: string; content_base64: string }[]
   source: string
   version: string
   license: string
@@ -41,6 +43,8 @@ export interface SquadCatalogSkill {
   name: string
   purpose: string
   body: string
+  folder?: boolean
+  files?: { path: string; content_base64: string }[]
   source: string
   version: string
   license: string

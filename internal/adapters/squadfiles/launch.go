@@ -2,6 +2,7 @@ package squadfiles
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 var launchIDShape = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
@@ -27,12 +29,14 @@ type snapshotText struct {
 		Text string `json:"text"`
 	} `json:"handbook"`
 	Skills []struct {
-		ID      string `json:"id"`
-		Version string `json:"version"`
-		Enabled bool   `json:"enabled"`
-		Content string `json:"content"`
-		Source  string `json:"source"`
-		Digest  string `json:"digest"`
+		ID      string            `json:"id"`
+		Version string            `json:"version"`
+		Enabled bool              `json:"enabled"`
+		Content string            `json:"content"`
+		Folder  bool              `json:"folder"`
+		Files   []squad.SkillFile `json:"files"`
+		Source  string            `json:"source"`
+		Digest  string            `json:"digest"`
 	} `json:"skills"`
 }
 
@@ -121,8 +125,32 @@ func Publish(stateDir, launchID, snapshotID, capability string, document json.Ra
 		if skill.ID == "" || skill.Version == "" {
 			return Files{}, errors.New("invalid_squad_skill_identity")
 		}
+		if !squad.ValidSkillFiles(skill.Content, skill.Files) ||
+			(len(skill.Files) > 0 && !skill.Folder) || (skill.Folder && strings.TrimSpace(skill.Content) == "") {
+			return Files{}, errors.New("invalid_squad_skill_files")
+		}
 		hash := sha256.Sum256([]byte(skill.ID + "\x00" + skill.Version))
 		name := hex.EncodeToString(hash[:]) + ".md"
+		if skill.Folder {
+			folder := filepath.Join(stage, "skills", hex.EncodeToString(hash[:]))
+			if err := os.Mkdir(folder, 0o700); err != nil {
+				return Files{}, err
+			}
+			for _, file := range skill.Files {
+				body, err := base64.StdEncoding.DecodeString(file.ContentBase64)
+				if err != nil {
+					return Files{}, err
+				}
+				filePath := filepath.Join(folder, filepath.FromSlash(file.Path))
+				if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+					return Files{}, err
+				}
+				if err := writePrivate(filePath, body); err != nil {
+					return Files{}, err
+				}
+			}
+			name = filepath.Join(hex.EncodeToString(hash[:]), "SKILL.md")
+		}
 		if err := writePrivate(filepath.Join(stage, "skills", name), []byte(skill.Content)); err != nil {
 			return Files{}, err
 		}

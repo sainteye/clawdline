@@ -2,6 +2,7 @@ package squadfiles
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -10,6 +11,45 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestPublishSkillFolderCopiesAttachmentsIntoImmutableLaunch(t *testing.T) {
+	const launchID = "abcdefghijklmnopqrstuv"
+	attachment := []byte{0, 1, 255, 10}
+	document, err := json.Marshal(map[string]any{
+		"definition_id": "clawdline.persona.architect", "scope_id": "global",
+		"definition": map[string]any{"version": "1", "body": "Role definition"},
+		"skills": []map[string]any{{"id": "example.folder", "version": "1", "enabled": true,
+			"content": "# Skill\n", "folder": true, "source": "imported:project:folder", "digest": "abc",
+			"files": []map[string]string{{"path": "references/note.bin", "content_base64": base64.StdEncoding.EncodeToString(attachment)}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(document)
+	dir := t.TempDir()
+	files, err := Publish(dir, launchID, hex.EncodeToString(sum[:]), "capability", document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(files.SnapshotPath), "skills"))
+	if err != nil || len(entries) != 1 || !entries[0].IsDir() {
+		t.Fatalf("published folders = %v, %v", entries, err)
+	}
+	root := filepath.Join(filepath.Dir(files.SnapshotPath), "skills", entries[0].Name())
+	main, err := os.ReadFile(filepath.Join(root, "SKILL.md"))
+	if err != nil || string(main) != "# Skill\n" {
+		t.Fatalf("SKILL.md = %q, %v", main, err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "references", "note.bin"))
+	if err != nil || string(got) != string(attachment) {
+		t.Fatalf("attachment = %v, %v", got, err)
+	}
+	prompt, err := os.ReadFile(files.PromptPath)
+	if err != nil || !strings.Contains(string(prompt), filepath.Join(root, "SKILL.md")) {
+		t.Fatalf("prompt = %s, %v", prompt, err)
+	}
+}
 
 func TestPublishSquadLaunchKeepsCapabilityPrivateAndSkillsOnDemand(t *testing.T) {
 	const launchID = "abcdefghijklmnopqrstuv"

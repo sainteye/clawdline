@@ -30,7 +30,9 @@ const catalog = {
   teams: [{ team_id: "clawdline.team.design", version: "v1", source: "clawdline", license: "MIT", digest: "fixture",
     name: names("設計小隊"), personas: definitions.map((row) => ({ id: row.definition_id, version: row.version })), builtin: true }],
   skills: [{ skill_id: "community.skill.draft", version: "v1", source: "community", license: "MIT", digest: "fixture",
-    name: names("草稿整理"), purpose: names("整理初稿與引用"), content: "完整技能內容。\n".repeat(40), icon, builtin: false }],
+    name: names("草稿整理"), purpose: names("整理初稿與引用"), content: "完整技能內容。\n".repeat(40), icon, builtin: false },
+  { skill_id: "clawdline.skill.accessibility", version: "v1", source: "clawdline", license: "MIT", digest: "fixture",
+    name: names("無障礙檢查"), purpose: names("檢查介面"), content: "閱讀介面並檢查。", icon, builtin: true }],
 }
 const field = <T>(value: T, source: "default" | "global" | "project" = "default", version = 0) =>
   ({ value, source, present: source !== "default", version })
@@ -807,7 +809,7 @@ test("a lost create reply and failed role write recover without another catalog 
         if (Date.now() > listDeadline) throw new Error("saved catalog skill was not offered: " + await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]")?.textContent'))
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
-      await evaluate('(() => { const el = document.querySelector("#squad .squad-skill-form select"); el.selectedIndex = 1; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-skill-form select"); el.value = [...el.options].find((option) => option.textContent.includes("可恢復技能")).value; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
       await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
       const doneDeadline = Date.now() + 5_000
       while (!(await evaluate('!document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open && document.querySelector("#squad .squad-detail")?.textContent.includes("可恢復技能")'))) {
@@ -893,4 +895,81 @@ test("a Project skill joins only that Project's role settings", async () => {
   } finally {
     catalog.skills.splice(oldCatalogLength); projectSkillChoices = oldProject
   }
+})
+
+test("a role can select and enable an existing built-in skill", async () => {
+  const oldChoices = globalSkillChoices
+  try {
+    await tab(1440, 900, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[1].click()')
+      assert.match(await evaluate('document.querySelector("#squad .squad-skill-form select").textContent'), /無障礙檢查/)
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-skill-form select"); el.value = "clawdline.skill.accessibility"; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-actions button[type=submit]").click()')
+      const deadline = Date.now() + 5_000
+      while (!(await evaluate('!document.querySelector("#squad .squad-skill-dialog").open && document.querySelector("#squad .squad-detail")?.textContent.includes("無障礙檢查")'))) {
+        if (Date.now() > deadline) throw new Error("built-in skill was not attached")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    })
+    assert.equal(globalSkillChoices.at(-1)?.id, "clawdline.skill.accessibility")
+    assert.equal(globalSkillChoices.at(-1)?.enabled, true)
+  } finally { globalSkillChoices = oldChoices }
+})
+
+test("a project skill folder retains attachments and a Codex SKILL.md can be copied alone", async () => {
+  const oldCatalogLength = catalog.skills.length
+  const oldChoices = globalSkillChoices
+  try {
+    await tab(1440, 900, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[2].click()')
+      await evaluate(`(() => { const input = document.querySelector('#squad .squad-skill-form input[type=file]'); const transfer = new DataTransfer();
+        const main = new File(['---\\nname: Project helper\\ndescription: >\\n  Read the project evidence\\n---\\n# Steps\\n'], 'SKILL.md', { type: 'text/markdown' });
+        const reference = new File(['reference bytes'], 'guide.txt');
+        Object.defineProperty(main, 'webkitRelativePath', { value: 'helper/SKILL.md' });
+        Object.defineProperty(reference, 'webkitRelativePath', { value: 'helper/references/guide.txt' });
+        transfer.items.add(main); transfer.items.add(reference); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); })()`)
+      const readDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-skill-form [role=status]")?.textContent.includes("1 個附檔")'))) {
+        if (Date.now() > readDeadline) throw new Error("folder preview did not finish")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await evaluate('document.querySelectorAll("#squad .squad-skill-form input[required]")[1].value'), "Read the project evidence")
+      await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-actions button[type=submit]").click()')
+      const savedDeadline = Date.now() + 5_000
+      while (!(await evaluate('!document.querySelector("#squad .squad-skill-dialog").open'))) {
+        if (Date.now() > savedDeadline) throw new Error("folder skill did not attach")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[2].click()')
+      await evaluate('(() => { const source = document.querySelector("#squad .squad-skill-form select"); source.value = "codex"; source.dispatchEvent(new Event("change", { bubbles: true })); document.querySelectorAll("#squad .squad-skill-form input[name=squad-import-kind]")[1].click(); })()')
+      await evaluate(`(() => { const input = document.querySelector('#squad .squad-skill-form input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File(['---\\nname: Codex helper\\ndescription: Help with code\\n---\\n# Steps\\n'], 'SKILL.md')); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); })()`)
+      while (!(await evaluate('document.querySelector("#squad .squad-skill-form [role=status]")?.textContent.includes("已讀取")'))) {
+        if (Date.now() > savedDeadline + 5_000) throw new Error("text preview did not finish")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-actions button[type=submit]").click()')
+      while (await evaluate('document.querySelector("#squad .squad-skill-dialog").open')) {
+        if (Date.now() > savedDeadline + 10_000) throw new Error("text skill did not attach")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    })
+    const imported = (catalog.skills as any[]).slice(oldCatalogLength)
+    assert.equal(imported.length, 2)
+    assert.equal(imported[0].files[0].path, "references/guide.txt")
+    assert.equal(imported[0].source, "imported:project:folder")
+    assert.equal(imported[1].files.length, 0)
+    assert.equal(imported[1].source, "imported:codex:text")
+    await tab(390, 844, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[2].click()')
+      assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
+      assert.match(await evaluate('document.querySelector("#squad .squad-skill-dialog").textContent'), /完整技能資料夾.*只複製 SKILL.md 文字/)
+    })
+  } finally { catalog.skills.splice(oldCatalogLength); globalSkillChoices = oldChoices }
 })
