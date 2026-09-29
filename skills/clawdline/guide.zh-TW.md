@@ -601,7 +601,7 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 clawdline note create --target <terminal-id> --body-file note.json
 ```
 
-`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是要放進對話框的完整文字。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。點選選項只填入使用者的對話草稿，仍由使用者送出。只有使用者會把便條移到已處理。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
+`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是建議回覆；Console 會在按鈕與對話草稿中加上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。點選選項只填入使用者的對話草稿，仍由使用者送出。只有使用者會把便條移到已處理。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
 
 ## 10. 看板
 
