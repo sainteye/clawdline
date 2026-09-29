@@ -181,7 +181,7 @@ func TestAdmitCarriesAPersona(t *testing.T) {
 			t.Fatalf("codex %q: %q", dir, words[i+1])
 		}
 		got, err := tomlBasic(value)
-		if want := persona.CodexInstruction(architect, path); err != nil || got != want {
+		if want := persona.CodexInstruction(architect, path) + "\n\n" + codexNoteInstruction; err != nil || got != want {
 			t.Errorf("codex %q: decoded %q (%v), want %q", dir, got, err, want)
 		}
 		// The resume stays ahead of it, where its optional value needs it.
@@ -218,8 +218,8 @@ func TestCodexBoardLanguageAndPersonaShareOneDeveloperInstruction(t *testing.T) 
 	if want := persona.CodexInstruction(architect, filepath.Join(dir, "architect.md")); !strings.HasPrefix(got, want+"\n\n") {
 		t.Fatalf("persona is absent from %q", got)
 	}
-	if !strings.HasSuffix(got,
-		`Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag "zh-TW".`) {
+	if !strings.Contains(got,
+		`Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag "zh-TW".`) || !strings.HasSuffix(got, codexNoteInstruction) {
 		t.Fatalf("Board language is absent from %q", got)
 	}
 }

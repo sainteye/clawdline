@@ -40,7 +40,7 @@ func TestCodexSessionCarriesTheBoardLanguage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(launcher.line(),
-		`developer_instructions="Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag \"zh-Hant\"."`) {
+		`developer_instructions="Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag \"zh-Hant\".`) {
 		t.Fatalf("the Codex launch does not carry the Board language:\n%s", launcher.line())
 	}
 }

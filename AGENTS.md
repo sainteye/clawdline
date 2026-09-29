@@ -136,6 +136,17 @@ goes before these two lines so the status pair always remains the final two line
 
 The incident behind each of these is in `docs/working-rules.md`.
 
+## Questions that need the person to choose
+
+When this Session needs the person to choose between concrete options, create one Clawdline
+`answer` Note before asking in chat. Put the question, relevant tradeoffs, and two to four
+complete suggested replies in the Note; each reply button should say exactly what the person
+can send. Then give only a short pointer in chat, continue independent work, and wait for the
+person's sent answer before taking the dependent action. A Note or a selected draft is not an
+answer or authorization. Do not make a Note for routine progress, a rhetorical question, or a
+choice the Agent can reasonably make. For the command and JSON fields, read `clawdline guide note`.
+If Note creation fails, explain the failure and ask in chat so the decision is still visible.
+
 ## The single pages
 
 | Question | Page |
