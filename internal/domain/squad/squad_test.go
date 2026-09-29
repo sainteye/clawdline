@@ -8,15 +8,40 @@ import (
 
 func TestSquadBuiltinsAndPolicy(t *testing.T) {
 	c := Builtins()
-	if len(c.Definitions) != 42 || len(c.Skills) != 0 {
+	if len(c.Definitions) != 42 || len(c.Skills) != 11 {
 		t.Fatalf("builtins: %d definitions, %d skills", len(c.Definitions), len(c.Skills))
+	}
+	wantSkill := map[string]bool{}
+	for _, spec := range builtinSkillSpecs {
+		wantSkill[spec.Persona] = true
+	}
+	skills := map[string]Skill{}
+	for _, s := range c.Skills {
+		if !s.Builtin || s.SkillID == "" || !strings.HasPrefix(s.Version, "sha256:") ||
+			len(s.Digest) != 64 || s.Source == "" || s.License == "" || s.Content == "" ||
+			s.Icon.Accent == "" || len(s.Icon.Cells) != 7 || skills[s.SkillID].SkillID != "" {
+			t.Fatalf("incomplete or duplicate skill: %+v", s)
+		}
+		skills[s.SkillID] = s
 	}
 	ids := map[string]bool{}
 	for _, d := range c.Definitions {
 		if !d.Builtin || d.ShortID == "" || d.DefinitionID != BuiltinID(d.ShortID) ||
 			!strings.HasPrefix(d.Version, "sha256:") || len(d.Digest) != 64 ||
-			d.Body == "" || d.Source == "" || d.License == "" || d.Skills == nil || len(d.Skills) != 0 {
+			d.Body == "" || d.Source == "" || d.License == "" || d.Skills == nil || len(d.Skills) > 1 ||
+			(len(d.Skills) == 1) != wantSkill[d.ShortID] {
 			t.Fatalf("incomplete builtin: %+v", d)
+		}
+		if len(d.Skills) == 1 {
+			ref := d.Skills[0]
+			if skill := skills[ref.ID]; skill.SkillID == "" || skill.Version != ref.Version || !ref.Enabled {
+				t.Fatalf("unresolved builtin skill %s: %+v", d.ShortID, ref)
+			}
+			if previous := PreSkillBuiltinVersion(d); previous.Version == d.Version || len(previous.Skills) != 0 {
+				t.Fatalf("skill adoption did not version %s", d.ShortID)
+			}
+		} else if previous := PreSkillBuiltinVersion(d); previous.Version != d.Version {
+			t.Fatalf("unaffected builtin changed version %s", d.ShortID)
 		}
 		if id, ok := ResolveID(d.ShortID); !ok || id != d.DefinitionID {
 			t.Fatalf("alias %s => %q %t", d.ShortID, id, ok)
