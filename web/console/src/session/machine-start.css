@@ -1,17 +1,20 @@
-.sheet .place.machine-place {
-  border-color: var(--line);
-  background: var(--card);
-  margin-bottom: 3px;
+.sheet #start-resume .machine-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  white-space: nowrap;
 }
 
-.sheet .machine-start-note {
-  color: var(--dim);
-  font-size: 11px;
-  line-height: 1.4;
-  padding: 0 10px 9px 50px;
+/* Use the crown already drawn on Clawdfather Sessions, without its row badge position. */
+.sheet #start-resume .machine-start .clawdfather-crown {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 0 0 15px;
 }
 
-.sheet .machine-boundary-note { padding-top: 0; }
+.sheet #start-resume .machine-start:disabled { opacity: 0.45; cursor: default; }
 
 .row > .machine-registration {
   grid-column: 2 / -1;
@@ -21,17 +24,4 @@
   margin: 3px 0 0;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.sheet .place.machine-place .machine-mark {
-  grid-row: 1 / span 2;
-  align-self: center;
-  justify-self: center;
-  color: var(--accent);
-  font-size: 22px;
-  line-height: 1;
-}
-
-.sheet .place.machine-place .where {
-  white-space: normal;
 }

@@ -1072,7 +1072,7 @@ test("closing the new Session sheet returns focus to its opener", () =>
     }
   }))
 
-test("the machine start is a separate readable action on phone and desktop", () =>
+test("the machine start sits beside resume with the yellow crown on phone and desktop", () =>
   inTab(async (tab) => {
     for (const layout of ["phone", "desktop"] as const) {
       if (layout === "desktop") await tab.desktop()
@@ -1081,7 +1081,7 @@ test("the machine start is a separate readable action on phone and desktop", () 
       await tab.run(`new Promise((resolve, reject) => {
         const started = Date.now()
         const check = () => {
-          const row = document.querySelector('#start-list .machine-place')
+          const row = document.querySelector('#start-resume .machine-start')
           if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
           if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
           setTimeout(check, 50)
@@ -1089,24 +1089,29 @@ test("the machine start is a separate readable action on phone and desktop", () 
         check()
       })`)
       const shown = await tab.run(`(() => {
-        const machine = document.querySelector('#start-list .machine-place')
+        const machine = document.querySelector('#start-resume .machine-start')
+        const resume = document.querySelector('#start-resume .chip.check')
         const project = document.querySelector('#start-list .place[data-id="project-fixture"]')
         const rect = machine?.getBoundingClientRect()
-        return { name: machine?.querySelector('.name')?.textContent, scope: machine?.querySelector('.where')?.textContent,
-          policy: machine?.getAttribute('aria-description'), visiblePolicy: document.querySelector('#start-list .machine-boundary-note')?.textContent,
-          pending: document.querySelector('#start-list .machine-start-note')?.textContent,
+        const resumeRect = resume?.getBoundingClientRect()
+        const crown = machine?.querySelector('.clawdfather-crown')
+        return { name: machine?.textContent, crown: crown ? getComputedStyle(crown).backgroundColor : '',
+          crownShape: crown ? getComputedStyle(crown).clipPath : '',
+          notes: document.querySelectorAll('#start-list .machine-start-note').length,
           enabled: !(machine instanceof HTMLButtonElement && machine.disabled),
-          separate: !!machine && !!project && machine !== project && machine.classList.contains('machine-place'),
-          width: rect?.width, viewport: window.innerWidth }
+          separate: !!machine && !!project && !project.contains(machine),
+          besideResume: !!rect && !!resumeRect && Math.abs(rect.top - resumeRect.top) < 2 && rect.left >= resumeRect.right,
+          width: rect?.width, right: rect?.right, viewport: window.innerWidth }
       })()`)
-      assert.match(shown.name, /Clawdfather/)
-      assert.match(shown.scope, /Session|機器/)
-      assert.match(shown.pending, /登記|register/)
-      assert.match(shown.policy, /explicitly|明確/)
-      assert.match(shown.visiblePolicy, /proposes|提案/)
+      assert.match(shown.name, /^(開啟|Open) Clawdfather$/)
+      assert.equal(shown.crown, "rgb(240, 199, 94)")
+      assert.notEqual(shown.crownShape, "none")
+      assert.equal(shown.notes, 0)
       assert.equal(shown.enabled, true)
       assert.equal(shown.separate, true)
+      assert.equal(shown.besideResume, true)
       assert.ok(shown.width <= shown.viewport)
+      assert.ok(shown.right <= shown.viewport)
       await tab.run(`new Promise((resolve) => setTimeout(resolve, 180))`)
       await tab.shot("machine-start-" + layout)
       await tab.press("#start-close")
@@ -1122,7 +1127,7 @@ test("the start sheet keeps Tab inside and gives focus back on phone and desktop
       await tab.run(`new Promise((resolve, reject) => {
         const started = Date.now()
         const check = () => {
-          const row = document.querySelector('#start-list .machine-place')
+          const row = document.querySelector('#start-resume .machine-start')
           if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
           if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
           setTimeout(check, 50)
