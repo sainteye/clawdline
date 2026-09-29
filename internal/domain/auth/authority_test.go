@@ -533,3 +533,49 @@ func TestNewRefusesInvalidState(t *testing.T) {
 		t.Fatalf("a sound state: %v", err)
 	}
 }
+
+// Changes wakes on every change to the devices and on NotifyChanged, never
+// blocks the writer, and stops after cancel.
+func TestChangesWakesOnEveryDeviceChange(t *testing.T) {
+	a, _ := newAuthority(t, &memStore{})
+	ch, cancel := a.Changes()
+	slow, cancelSlow := a.Changes()
+	defer cancelSlow()
+	woke := func(what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not wake a subscriber", what)
+		}
+	}
+	id, _, err := a.AddDevice("phone", NewCaps(Read), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	woke("adding a device")
+	if _, err := a.SetCapabilities(id, NewCaps(Read, Send)); err != nil {
+		t.Fatal(err)
+	}
+	woke("changing its capabilities")
+	a.NotifyChanged()
+	woke("NotifyChanged")
+	// slow never read: its pending wake-ups coalesced, and none of the
+	// writes above waited for it.
+	if err := a.Revoke(id); err != nil {
+		t.Fatal(err)
+	}
+	woke("revoking it")
+	select {
+	case <-slow:
+	default:
+		t.Fatal("a subscriber that never read has nothing pending")
+	}
+	cancel()
+	a.NotifyChanged()
+	select {
+	case <-ch:
+		t.Fatal("a cancelled subscriber was woken")
+	default:
+	}
+}

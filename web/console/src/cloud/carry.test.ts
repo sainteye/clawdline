@@ -14,7 +14,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { SessionInfo } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, DEFERRED_ASKED, NO_MACHINE_ROUTE, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
+import { ANSWERED_HERE, CARRIED, CARRY_TABLE, DEFERRED, DEFERRED_ASKED, MACHINE_ONLY, NO_MACHINE_ROUTE, machineOnly, notCarriedDetail, uncarried, uncarriedWordOf, words } from "./carry.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, type CloudIdentity, type CloudRow, type CloudSessions } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
@@ -339,6 +339,25 @@ test("a route this console does not carry is refused by the word it stands for",
   // And a route that is no Cloud word at all still says where to go.
   assert.match(notCarriedDetail("GET", "/v1/devstacks"), /is not carried over Clawdline Cloud/)
   assert.equal(uncarried("info"), "", "a carried word has no refusal sentence")
+})
+
+test("a terminal is refused over Cloud as machine-only, not as something waiting to be carried", async () => {
+  const mac = new FakeMac()
+  const reader = seam(mac)
+  for (const path of ["/v1/terminals?project=p", "/v1/terminals/trm_x", "/v1/terminals/trm_x/stream?client=c", "/v1/terminals/trm_x/history"]) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 501, path)
+    const body = (await res.json()) as { error: string; detail: string }
+    assert.equal(body.error, "cloud_not_carried", path + ": the code the screens choose their sentence by")
+    assert.equal(body.detail, MACHINE_ONLY[0].sentence, path)
+    assert.equal(uncarriedWordOf("GET", path), "", path + " stands for no Cloud word")
+  }
+  assert.equal(notCarriedDetail("POST", "/v1/terminals/trm_x/input"), MACHINE_ONLY[0].sentence)
+  assert.equal(notCarriedDetail("POST", "/v1/auth/devices/dev-1/terminal"), MACHINE_ONLY[1].sentence)
+  assert.equal(machineOnly("/v1/auth/devices/dev-1/revoke"), "", "only the grant route is a terminal route")
+  assert.equal(machineOnly("/v1/terminalsx"), "", "a prefix is a whole segment")
+  for (const word of words()) assert.ok(!/terminal/.test(word), word + ": a terminal is never a Cloud word")
+  assert.equal(mac.asked.length, 0, "nothing was asked of the machine")
 })
 
 /**

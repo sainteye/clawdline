@@ -399,6 +399,29 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.TerminalInputBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-call guard"} },
 		capacity.TerminalPasteBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-call guard"} },
 		capacity.TerminalHistoryLines: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-read bound"} },
+		// The terminal routes' own rows (terminals.go, limits N60).
+		capacity.TerminalLane: func() capacity.Reading {
+			svc := s.terminalServiceIfOpen()
+			if svc == nil {
+				return capacity.Reading{Known: true, Note: "no terminal route has been asked since the daemon started"}
+			}
+			st := svc.Lanes().Stats()
+			return capacity.Reading{Known: true, Used: int64(st.Admitted)}
+		},
+		capacity.TerminalViewers: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-terminal guard"} },
+		capacity.TerminalStreams: func() capacity.Reading {
+			_, streams := s.terminalStats()
+			return capacity.Reading{Known: true, Used: int64(streams)}
+		},
+		capacity.TerminalLeaseSeconds: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-lease clock"} },
+		capacity.TerminalGrantsBytes: func() capacity.Reading {
+			g := s.gate()
+			if g.grants == nil {
+				return capacity.Unmeasured("the device store could not be opened")
+			}
+			return g.grants.Reading()
+		},
+		capacity.TerminalBodyBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request guard"} },
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).
 		// An inventory with no held screens is a known zero, not an

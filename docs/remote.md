@@ -119,3 +119,27 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
   讀不到行程表就什麼都不做。
 - 已知沒做：真的 cloudflared 連到 Cloudflare 的那一段沒有實測（驗收只到「被正確呼叫、參數正確」與真 binary
   的 `--help` 認得這些參數）；Windows 上不收孤兒（沒有 `ps`）；`quick` 位址會寫進 daemon log 一次（同 Swift）。
+
+## 終端機：誰能看、誰能打字（2026-09-29）
+
+`/v1/terminals*` 是這台機器自己的 tmux server 上的一般 shell（契約：`api/v1/terminals.schema.json`，
+上限：`docs/limits.md` N59、N60）。放行的順序：
+
+- **Clawdline Cloud 一律拒絕**，`terminal_cloud_not_supported`。Cloud 的請求在這個行程裡用這台機器
+  自己的 token 回答（`internal/transport/cloud/local.go`），不先擋就等於把 Cloud 上的檢視者當成這台機器本身。
+  `Router.Do` 無條件標記 `viaCloud`（跟 app origin 有沒有給無關），每條 terminal 路由與 grant 路由都先問它。
+  Console 端的 `web/console/src/cloud/carry.ts` 把它們列在 `MACHINE_ONLY`：不是 Cloud 詞彙、不會「以後再帶」。
+- **本機自己的 token** 直接可以。
+- **配對過的裝置要同時**：仍在裝置清單（`Holds`），而且在 `terminal-grants.json` 裡有一筆 grant。配對、
+  密碼登入、`send`、`remote_write` 都不給 grant；看畫面也要 grant；有 grant 的裝置在拿到控制租約之前只能看。
+  Grant 由本機 token 以 `POST /v1/auth/devices/{id}/terminal {grant}` 給或收回。
+- **Grant 刻意不寫進裝置檔**：`remote.json` 嚴格解碼，多一個不認得的 capability 會讓舊版 daemon（降版、
+  從備份還原）整份裝置檔讀不進來、所有路由 503。Grant 檔在旁邊、0600、整檔原子替換；讀不懂就「誰都沒有
+  grant」，只影響 terminal，`/v1/diagnostics.terminals` 寫出原因，而且在修好前不會被覆寫。
+- **撤銷立即生效**：裝置被撤銷、登出或 grant 被收回時，`auth.Authority` 發出「裝置或 grant 變了」的通知，
+  terminal 服務重新檢查所有租約與串流：失去資格的租約作廢，串流送出 `terminal_access_revoked` 後關閉
+  （實測 9–17 ms）。每一張 frame 與每 5 秒的 beat 之前也會再檢查一次，手動改檔也最多晚一個 beat。
+- **一次一個控制者**：租約 30 秒、每 10 秒續約；別人持有時 `acquire` 回 `terminal_controlled` 並說明是誰；
+  `takeover` 換 epoch，原持有者的串流收到 `control`，下一次輸入回 `lease_superseded`。輸入在 terminal
+  自己的 lane 裡先排隊、再判斷序號、再打字：重送回 `duplicate`、跳號回 `input_gap`，tmux 沒回答就把該租約
+  標成 `input_state_unknown`，直到重新 acquire 前什麼都不再打。

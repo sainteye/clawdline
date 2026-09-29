@@ -602,8 +602,28 @@ func (p pipeHost) Pipe(ctx context.Context, paneID, command string) bool {
 	if !tmuxterm.IsPaneID(paneID) || command == "" {
 		return false
 	}
-	_, err := p.s.call(ctx, "", "pipe-pane", "-t", paneID, command)
+	_, err := p.s.call(ctx, "", "pipe-pane", "-t", paneID, pipeOrExit(command))
 	return err == nil
+}
+
+// pipeOrExit makes the signal's far end say one more thing when its pane goes
+// away: after `cat` sees the pane's end, one byte on the same descriptor.
+//
+// Without it a shell that exits on its own is silent. The signal holds a write
+// end of its own FIFO (internal/adapters/terminal signal_unix.go), so the
+// reader never sees `cat` leave, and a viewer waiting on the signal heard of
+// the exit only at its next beat — measured, not once in a second over three
+// runs (TestAShellThatExitsWakesTheChangeSignal). A pipe taken off on purpose
+// wakes the reader once more too, which costs one screen read.
+//
+// Only the one command shape the signal writes is rewritten, by its prefix,
+// so the quoting of the path stays pipeCommand's alone.
+func pipeOrExit(command string) string {
+	rest, ok := strings.CutPrefix(command, "cat > '")
+	if !ok || !strings.HasSuffix(rest, "'") {
+		return command
+	}
+	return "{ cat; printf x; } > '" + rest
 }
 
 func (p pipeHost) Unpipe(ctx context.Context, paneID string) bool {

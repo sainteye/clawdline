@@ -305,6 +305,42 @@ export const ANSWERED_HERE: readonly string[] = [
 ]
 
 /**
+ * Routes this machine answers only to itself and to devices paired with it,
+ * and refuses over Clawdline Cloud by name: a terminal, and the grant that
+ * lets a device use one.
+ *
+ * **Why a fourth list and not one of the three.** Those three are the
+ * machine's Cloud vocabulary, held to `Implemented()` and `Vocabulary()` by the
+ * Go drift guard, and a terminal has no word there on purpose: a word would be
+ * a thing the relay could be asked to carry. Nor is it `ANSWERED_HERE`, which
+ * is what this seam answers. So without this list a terminal route fell to the
+ * last sentence of `notCarriedDetail` — "do it on the machine itself" — which
+ * is true and hides the reason: it is not waiting to be carried, it never
+ * will be. The machine says the same with its own refusal,
+ * `terminal_cloud_not_supported`, for a request that reaches it anyway
+ * (`internal/transport/http/terminals.go`).
+ */
+export const MACHINE_ONLY: readonly { readonly route: RegExp; readonly sentence: string }[] = [
+  {
+    route: /^\/v1\/terminals(\/|$)/,
+    sentence: "Terminals are used on this machine's own console or a device paired with it, never through Clawdline Cloud.",
+  },
+  {
+    route: /^\/v1\/auth\/devices\/[^/]+\/terminal$/,
+    sentence: "A device is given access to this machine's terminals on the machine itself, never through Clawdline Cloud.",
+  },
+]
+
+/** The sentence for a route only the machine itself or a paired device may use, or "". */
+export function machineOnly(path: string): string {
+  const bare = path.split("?")[0]
+  for (const { route, sentence } of MACHINE_ONLY) {
+    if (route.test(bare)) return sentence
+  }
+  return ""
+}
+
+/**
  * What the seam is handed: the words this bundle asks for, and what it says
  * about a route it does not carry.
  *
@@ -381,6 +417,8 @@ export function uncarried(word: string): string {
  * screens choose their own sentence by it (`legacy/js/core/failure-text.js`).
  */
 export function notCarriedDetail(method: string, path: string, word?: string): string {
+  const only = machineOnly(path)
+  if (only) return only
   const sentence = uncarried(word || uncarriedWordOf(method, path))
   if (sentence) return sentence
   return `${method} ${path} is not carried over Clawdline Cloud: do it on the machine itself.`

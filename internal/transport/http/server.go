@@ -160,6 +160,8 @@ type Server struct {
 	squadPlaces func(context.Context) []projects.Place
 	// Root wires a per-Session capability verifier here. Nil fails closed.
 	squadActor func(*http.Request) (squad.Actor, error)
+	// term is the terminal routes' service and its seams (terminals.go).
+	term terminalState
 }
 
 // servedBy names which implementation answered. It is how a reader tells this
@@ -431,6 +433,8 @@ func (s *Server) Handler() http.Handler {
 	})
 	// What this feature has done to the machine, published (screen.go).
 	mux.HandleFunc("/v1/screens", s.screensRoute)
+	mux.HandleFunc("/v1/terminals", s.terminalsRoute)
+	mux.HandleFunc("/v1/terminals/", s.terminalRoute)
 	mux.HandleFunc("/v1/events", s.events)
 	// Two `/v1/next/` names are still the only spelling of what they serve,
 	// and the Dashboard reads both: what is owed (obligations.go, now the
@@ -624,6 +628,7 @@ func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
 		Platform:  s.platformDiagnostics(r.Context()),
 		Proposals: s.proposalDiagnostics(r.Context()),
 		Scheduler: s.schedulerPulse(),
+		Terminals: s.terminalDiagnostics(),
 		ServedBy:  servedBy,
 		Port:      int64(s.cfg.Port),
 		Upstream:  int64(s.cfg.UpstreamPort),

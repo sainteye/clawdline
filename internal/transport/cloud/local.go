@@ -80,7 +80,7 @@ func (r Router) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.Loc
 		Header: http.Header{}, Host: host, RequestURI: target,
 		Body:          io.NopCloser(bytes.NewReader(req.Body)),
 		ContentLength: int64(len(req.Body)),
-	}).WithContext(WithAppOrigin(ctx, r.AppOrigin))
+	}).WithContext(WithAppOrigin(withViaCloud(ctx), r.AppOrigin))
 	if len(req.Body) > 0 {
 		// The gate refuses a change whose body is neither JSON nor nothing,
 		// because a page elsewhere can post a form without asking and cannot
@@ -100,6 +100,31 @@ func (r Router) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.Loc
 		Body:        out.body.Bytes(),
 		ContentType: mediaType(out.header.Get("Content-Type")),
 	}, nil
+}
+
+// viaCloudKey marks a request this Router built.
+type viaCloudKey struct{}
+
+// withViaCloud marks ctx as a request that came in through the Cloud line.
+// Do marks every request, unconditionally: it is not inferred from the app
+// origin, which WithAppOrigin leaves unset when it is empty, so a router
+// without one would otherwise send requests that look like they arrived over
+// a socket.
+func withViaCloud(ctx context.Context) context.Context {
+	return context.WithValue(ctx, viaCloudKey{}, true)
+}
+
+// ViaCloud is whether this request was built by a Router: a Cloud viewer's,
+// answered in process with this machine's own credentials. A route that must
+// never be carried over Cloud — the terminals — refuses on it.
+//
+// Like the app origin it is a context value and not a header, and for the
+// same reason: net/http builds a socket request's context itself, so nothing
+// arriving over a socket can carry it, and nothing can take it off a request
+// this package built.
+func ViaCloud(ctx context.Context) bool {
+	via, _ := ctx.Value(viaCloudKey{}).(bool)
+	return via
 }
 
 // recorder is the ResponseWriter an in-process dispatch answers into. It keeps

@@ -93,7 +93,11 @@ type Authority struct {
 	passwordChecks int
 	watchers       map[int]chan PairingNotice
 	nextWatcher    int
-	cachedLocal    string
+	// changed is every subscriber to "the devices or the grants beside them
+	// changed" (Changes), each a channel of one pending wake-up.
+	changed     map[int]chan struct{}
+	nextChanged int
+	cachedLocal string
 
 	// derive is one password check at a time. The Swift server answers on one
 	// queue, so a second attempt waited for the first; handlers here run
@@ -121,6 +125,7 @@ func New(store Store, opts Options) (*Authority, error) {
 		random:   opts.Random,
 		devices:  map[string]Device{},
 		watchers: map[int]chan PairingNotice{},
+		changed:  map[int]chan struct{}{},
 		derive:   make(chan struct{}, 1),
 	}
 	if a.now == nil {
@@ -240,6 +245,7 @@ func (a *Authority) commit(devices map[string]Device, pw *Password) error {
 	}
 	a.devices = devices
 	a.password = pw
+	a.wakeChanged()
 	return nil
 }
 
@@ -755,6 +761,52 @@ func (a *Authority) Watch() (<-chan PairingNotice, func()) {
 			delete(a.watchers, id)
 			a.mu.Unlock()
 		})
+	}
+}
+
+// Changes wakes the caller whenever the devices this authority holds change —
+// one added, revoked or given other capabilities — and whenever NotifyChanged
+// says something beside them did. It says "ask again", never what changed:
+// the channel holds one pending wake-up and the rest coalesce into it, as
+// Watch hands a slow watcher only the newest pairing, so a subscriber that is
+// busy never holds up a revocation. cancel must be called.
+//
+// It exists for the long-lived things a request left behind — a terminal's
+// control lease, an open terminal stream — which the gate judged once, when
+// they began, and which must stop the moment the device behind them is gone.
+func (a *Authority) Changes() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	a.mu.Lock()
+	id := a.nextChanged
+	a.nextChanged++
+	a.changed[id] = ch
+	a.mu.Unlock()
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			a.mu.Lock()
+			delete(a.changed, id)
+			a.mu.Unlock()
+		})
+	}
+}
+
+// NotifyChanged wakes every Changes subscriber. It is for a writer of what
+// this authority does not hold itself but is judged beside it: the terminal
+// grants file (internal/adapters/devices, grants.go).
+func (a *Authority) NotifyChanged() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.wakeChanged()
+}
+
+// wakeChanged is NotifyChanged with a.mu held. It never blocks.
+func (a *Authority) wakeChanged() {
+	for _, ch := range a.changed {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
 	}
 }
 

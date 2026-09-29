@@ -597,3 +597,40 @@ func TestTheCountRowReadsTheOwnedServer(t *testing.T) {
 		t.Fatalf("two open: %+v", r)
 	}
 }
+
+// A shell that exits on its own takes its pane with it, and the change signal
+// has to say so: a viewer is told `exited` by reading the screen after a wake,
+// and without one it would wait for the next beat. Measured from the Enter to
+// the wake after which the terminal reads as gone.
+func TestAShellThatExitsWakesTheChangeSignal(t *testing.T) {
+	s := newServer(t, testDir(t))
+	term := open(t, s, 80, 24)
+	ctx := context.Background()
+	wake, stop, err := s.Changed(ctx, term.ID)
+	if err != nil || wake == nil {
+		t.Fatalf("Changed: %v", err)
+	}
+	defer stop()
+	// Once the shell reads what it is typed: a shell still starting takes
+	// the exit only when it is ready, and that wait is not the signal's.
+	keys(t, s, term.ID, "echo ready\r")
+	waitFrame(t, s, term.ID, "ready", func(f terminal.Frame) bool { return hasLine(f, "ready") })
+	time.Sleep(100 * time.Millisecond)
+	for len(wake) > 0 {
+		<-wake
+	}
+	began := time.Now()
+	keys(t, s, term.ID, "exit\r")
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case <-wake:
+			if _, err := s.Frame(ctx, term.ID); isCode(err, terminal.CodeClosed) {
+				t.Logf("the exit woke the signal %v after the Enter", time.Since(began).Round(time.Millisecond))
+				return
+			}
+		case <-deadline:
+			t.Fatal("the shell exited and the change signal stayed quiet for a second")
+		}
+	}
+}

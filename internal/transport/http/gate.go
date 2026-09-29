@@ -112,6 +112,10 @@ func notThisMachine(v auth.Verdict) auth.Verdict {
 type gate struct {
 	files *devices.Files
 	auth  *auth.Authority
+	// grants is which paired devices hold a terminal grant, in a file beside
+	// the device file and never in it (devices.GrantsFile). A grants file
+	// that cannot be read is the terminal routes' refusal alone.
+	grants *devices.Grants
 	// err is why the gate could not open. Every route behind it is then
 	// refused; an unreadable device file is never an empty one.
 	err error
@@ -190,6 +194,13 @@ func openGate(cfg config.Config) *gate {
 		return g
 	}
 	g.auth = a
+	g.grants = devices.OpenGrants(files)
+	// A grant written or taken away is announced the way a revoked device
+	// is, so an open terminal stream is swept the moment it changes.
+	g.grants.OnChange(a.NotifyChanged)
+	if err := g.grants.Err(); err != nil {
+		log.Printf("auth: the terminal grants could not be read, so no paired device may use a terminal: %v", err)
+	}
 	if _, err := files.MachineToken(); err != nil {
 		g.machineWarned.Do(func() {
 			log.Printf("auth: orchestrator token unusable, machine authentication is refused: %v", err)

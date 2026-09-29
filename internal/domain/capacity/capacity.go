@@ -344,6 +344,12 @@ const (
 	TerminalInputBytes   = "terminal.input_bytes"
 	TerminalPasteBytes   = "terminal.paste_bytes"
 	TerminalHistoryLines = "terminal.history_lines"
+	TerminalLane         = "terminal.lane"
+	TerminalViewers      = "terminal.viewers"
+	TerminalStreams      = "terminal.streams"
+	TerminalLeaseSeconds = "terminal.lease_seconds"
+	TerminalGrantsBytes  = "terminal.grants_bytes"
+	TerminalBodyBytes    = "terminal.body_bytes"
 )
 
 // Entry is one row of the register.
@@ -1809,6 +1815,57 @@ func Register() []Entry {
 			Limit: 2000, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/terminal.MaxHistoryLines"},
+		},
+		{
+			// Inputs and pastes being typed into the machine's terminals, and
+			// the ones waiting behind them (limits N60). Terminals have lanes
+			// of their own and never take one of the Agent lanes' sixteen.
+			// The next is refused terminal_busy with nothing typed; the
+			// sender retries the same number.
+			Name: TerminalLane, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/terminals.LaneLimit"},
+		},
+		{
+			// Streams one terminal serves at once. The next viewer is refused
+			// terminal_viewers_full; nobody watching is cut off for it.
+			Name: TerminalViewers, Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/terminals.MaxViewers"},
+		},
+		{
+			// Terminal streams the machine serves at once, the same way.
+			Name: TerminalStreams, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/terminals.MaxStreams"},
+		},
+		{
+			// How long a control lease lasts unrenewed. Past it the lease is
+			// lapsed: its holder's next input is lease_expired, and anybody
+			// let in may acquire it.
+			Name: TerminalLeaseSeconds, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/terminals.MaxLeaseSeconds"},
+		},
+		{
+			// The terminal grants file. A larger one is not read, and then
+			// grants nobody; a write that would make it larger is refused.
+			Name: TerminalGrantsBytes, Class: Buffer, Unit: Bytes,
+			Limit: 256 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/adapters/devices.MaxGrantsBytes"},
+		},
+		{
+			// One terminal request's body: a 1 MiB paste JSON-escaped, and
+			// the fields beside it. Larger is refused 413 before it is read.
+			Name: TerminalBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 6<<20 + 4<<10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.terminalBodyLimit"},
 		},
 	}
 }
