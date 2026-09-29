@@ -507,6 +507,26 @@ func (t *WorkV2Tx) Item(id string) (work.ItemV2, error) {
 	return scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items WHERE id = ?`, id))
 }
 
+// AcceptanceChangedAt reads the event that established the current contract,
+// rather than the item's later phase or condition update time.
+func (t *WorkV2Tx) AcceptanceChangedAt(i work.ItemV2) (time.Time, error) {
+	var at int64
+	err := t.tx.QueryRowContext(t.ctx, `SELECT at FROM work_v2_events WHERE work_id=?
+	  AND kind='item.edited' AND json_valid(payload)
+	  AND json_extract(payload, '$.acceptance')=1
+	  AND json_extract(payload, '$.acceptance_version')=?
+	  ORDER BY seq DESC LIMIT 1`, i.ID, i.AcceptanceVersion).Scan(&at)
+	if err == sql.ErrNoRows && i.AcceptanceVersion == 1 {
+		err = t.tx.QueryRowContext(t.ctx, `SELECT at FROM work_v2_events WHERE work_id=?
+		  AND kind='item.created' ORDER BY seq LIMIT 1`, i.ID).Scan(&at)
+	}
+	return time.Unix(at, 0), err
+}
+
+func (t *WorkV2Tx) ActiveOwnedItemCount(session string) (int64, error) {
+	return t.count(`owner_session=? AND phase NOT IN ('done','cancelled')`, session)
+}
+
 func (t *WorkV2Tx) Tasks(id string) ([]BrokerRow, error) {
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+brokerColumns+` FROM broker_tasks
 	  WHERE json_valid(record) AND json_extract(record, '$.work_id') = ? ORDER BY created_at,id`, id)

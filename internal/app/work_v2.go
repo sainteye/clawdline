@@ -565,6 +565,9 @@ type EditWorkV2 struct {
 	Actor              string
 	OwnerSession       string
 	Person             bool
+	// RevisionRun is a daemon-issued message from the person to the owning
+	// Root. Only the dedicated acceptance revision route sets it.
+	RevisionRun *work.Run
 }
 
 func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file WorkV2Filer) (WorkV2View, error) {
@@ -589,7 +592,7 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 		}
 		acceptanceChanged := false
 		if c.AcceptanceCriteria != nil {
-			if !c.Person && (strings.TrimSpace(prev.AcceptanceCriteria) != "" ||
+			if !c.Person && c.RevisionRun == nil && (strings.TrimSpace(prev.AcceptanceCriteria) != "" ||
 				(prev.Phase != work.PhaseAssigned && prev.Phase != work.PhaseImplementing)) {
 				return work.RefuseV2("acceptance_not_agent_editable",
 					"The owning Session may write missing acceptance criteria once, before verification; later revisions belong to the person.")
@@ -597,6 +600,31 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			switch prev.Phase {
 			case work.PhaseMerging, work.PhaseDeploying, work.PhaseDone:
 				return work.RefuseV2("acceptance_locked", "Acceptance criteria are locked once work enters merging.")
+			}
+			if c.RevisionRun != nil {
+				if c.Person || strings.TrimSpace(prev.AcceptanceCriteria) == "" {
+					return work.RefuseV2("acceptance_revision_not_applicable", "This route revises an existing acceptance contract.")
+				}
+				if err := work.RelayTo(*c.RevisionRun, prev.OwnerSession, time.Time{}); err != nil {
+					return relayRefusal(err)
+				}
+				acceptanceAt, err := tx.AcceptanceChangedAt(prev)
+				if err != nil {
+					return workV2Error(http.StatusServiceUnavailable, "acceptance_history_unavailable", "The current acceptance version's source could not be checked; nothing changed.")
+				}
+				if !c.RevisionRun.At.After(acceptanceAt) {
+					return work.RefuseV2("run_before_acceptance", "That message predates the current acceptance state; ask the person for a new instruction.")
+				}
+				owned, err := tx.ActiveOwnedItemCount(prev.OwnerSession)
+				if err != nil {
+					return err
+				}
+				if !work.AcceptanceRevisionInstruction(c.RevisionRun.Excerpt, prev.ID, prev.Title, owned == 1) {
+					return work.RefuseV2("run_not_acceptance_instruction", "That message does not explicitly identify this item's acceptance revision.")
+				}
+			}
+			if c.RevisionRun != nil && strings.TrimSpace(*c.AcceptanceCriteria) == "" {
+				return work.RefuseV2("acceptance_required", "The replacement acceptance Markdown cannot be blank.")
 			}
 			if err := validateWorkV2Acceptance(*c.AcceptanceCriteria); err != nil {
 				return err
@@ -645,11 +673,17 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 				return err
 			}
 		}
-		if err := tx.PutItem(prev, next, "item.edited", c.Actor, payload(map[string]any{"title": c.Title != nil,
+		actor := c.Actor
+		event := map[string]any{"title": c.Title != nil,
 			"description": c.Description != nil, "acceptance": acceptanceChanged,
 			"acceptance_version": next.AcceptanceVersion, "acceptance_digest": next.AcceptanceDigest,
 			"verification_authorization_invalidated": acceptanceChanged,
-			"condition":                              c.Condition, "user_action": c.UserAction != nil})); err != nil {
+			"condition":                              c.Condition, "user_action": c.UserAction != nil}
+		if c.RevisionRun != nil {
+			actor = c.RevisionRun.Actor()
+			event["acceptance_source"] = map[string]any{"run": c.RevisionRun.Evidence(), "excerpt": c.RevisionRun.Excerpt}
+		}
+		if err := tx.PutItem(prev, next, "item.edited", actor, payload(event)); err != nil {
 			return err
 		}
 		next.Version++
