@@ -805,6 +805,11 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return r
 		},
+		capacity.CoordinatorBindAttempts: func() capacity.Reading {
+			// Bind retries live only inside a separate, short-lived CLI process.
+			// The daemon retains no attempts; each CLI prints the refusal itself.
+			return capacity.Reading{Known: true, Note: "CLI-local attempts; none retained by the daemon"}
+		},
 		capacity.WaitsOpen: func() capacity.Reading {
 			n, err := s.store.OpenWaitCount(context.Background())
 			if err != nil {

@@ -173,9 +173,10 @@ const (
 	// about that cache a person is pushed (limits N16).
 	ArtifactsDropsYoung = "artifacts.drops_young"
 	// W5: the coordination plane (design-decisions §6 W5).
-	LeasesQueue        = "leases.queue"
-	CoordinatorAliases = "coordinator.aliases"
-	WaitsOpen          = "waits.open"
+	LeasesQueue             = "leases.queue"
+	CoordinatorAliases      = "coordinator.aliases"
+	CoordinatorBindAttempts = "coordinator.bind_attempts"
+	WaitsOpen               = "waits.open"
 	// T3: the board and the Backlog.
 	WorkOpen                  = "work.open"
 	WorkListPageRows          = "work.list_page_rows"
@@ -616,6 +617,15 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/coordinator.AliasLimit"},
+		},
+		{
+			// A bind retries a transient unknown inventory reading a few times,
+			// then refuses to replace the old holder until liveness is proved.
+			Name: CoordinatorBindAttempts, Class: Buffer, Unit: Rows,
+			Limit: 6, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"cmd/clawdline.coordinatorBindAttemptLimit"},
 		},
 		{
 			// File waits not yet fully released: one session's paths held,

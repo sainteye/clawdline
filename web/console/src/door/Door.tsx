@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
-import App, { BRAND_MARK } from "../App.js"
+import App from "../App.js"
+import { BRAND_MARK } from "../brand-mark.js"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { toast } from "../overlays/toast.js"
