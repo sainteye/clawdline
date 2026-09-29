@@ -23,6 +23,8 @@ import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
 import { StatusLine } from "./StatusLine.js"
 import { Todos } from "./Todos.js"
+import { Interventions } from "./Interventions.js"
+import { appendInterventionDraft, interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
 import { conversationNotStarted } from "./readiness.js"
@@ -80,7 +82,18 @@ export function Detail({
 }) {
   const T = L.strings
   const [agentId, setAgentId] = useState<string | null>(null)
-  useEffect(() => setAgentId(null), [row?.id])
+  const [pendingIntervention, setPendingIntervention] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
+  const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
+  const pendingInterventionID = useRef(0)
+  useEffect(() => { setAgentId(null); setSavedComposerDraft(null) }, [row?.id])
+  const chooseAgent = (id: string | null) => {
+    if (id && !agentId) {
+      const target = interventionTarget(row)
+      const text = document.getElementById("msg")?.innerText ?? ""
+      if (target) setSavedComposerDraft({ target, text })
+    }
+    setAgentId(id)
+  }
   const selectedAgent = row?.agents?.find((agent) => agent.id === agentId) ?? null
   // Which session is being closed, as `closingSelectionKey()` is there: the
   // header is "ending" only while the session it shows is the one going away.
@@ -173,7 +186,7 @@ export function Detail({
           agent={selectedAgent}
           assistant={row?.assistant}
           ordinal={(row?.agents ?? []).findIndex((agent) => agent.id === selectedAgent.id) + 1}
-          onBack={() => setAgentId(null)}
+          onBack={() => chooseAgent(null)}
         />
       ) : <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
         <button className="back" id="back" onClick={onBack} aria-label={T.webBackLabel} disabled={ending}>
@@ -267,18 +280,24 @@ export function Detail({
         }}
       />
       <Todos row={row} />
+      <Interventions row={row} onInsertDraft={(target, text) => {
+        if (!sameInterventionTarget(target, interventionTarget(row))) return
+        if (!selectedAgent) { appendInterventionDraft(target, text); return }
+        setPendingIntervention({ target, text, id: ++pendingInterventionID.current })
+        setAgentId(null)
+      }} />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
-          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} onAgent={setAgentId} /> : home ? <HomeHero /> : null}
+          {row ? <Transcript id={row.id} agentId={selectedAgent?.id} onAgent={chooseAgent} /> : home ? <HomeHero /> : null}
         </div>
       </div>
 
       {/* The session's background work, where Claude Code puts it: the one
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
-      {row ? <BackgroundStrip row={row} selected={agentId} onAgent={setAgentId} onShell={openShell} /> : null}
-      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} />}
+      {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
+      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} pendingIntervention={pendingIntervention} onInterventionConsumed={(id) => setPendingIntervention((current) => current?.id === id ? null : current)} />}
       {selectedAgent ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens

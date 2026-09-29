@@ -1,0 +1,27 @@
+.human-interventions { border-bottom: 1px solid var(--line); background: var(--surface, transparent); }
+.human-interventions-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 8px 14px; font: inherit; cursor: pointer; }
+.human-interventions-head > span:first-child { font-weight: 650; }
+.human-interventions-count { color: var(--muted, #777); font-size: 12px; }
+.human-interventions-body { max-height: min(42vh, 440px); overflow: auto; padding: 0 14px 10px; scrollbar-gutter: stable; border-top: 1px solid var(--line); }
+.human-interventions-empty, .human-interventions-retention { margin: 5px 0; color: var(--muted, #777); font-size: 12px; }
+.human-interventions-error { color: var(--warn, #a33); font-size: 12px; }
+.human-interventions-status { color: var(--muted, #777); font-size: 12px; }
+.human-interventions-error button { margin-left: 8px; }
+.human-intervention-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--card, transparent); font-size: 13px; overflow-wrap: anywhere; }
+.human-intervention-card:focus-visible { outline: 2px solid var(--accent, #4787db); outline-offset: 2px; }
+.human-intervention-card p { margin: 7px 0; }
+.human-intervention-title { display: flex; justify-content: space-between; gap: 8px; }
+.human-intervention-title h3 { margin: 0; font: inherit; font-weight: 650; }
+.human-intervention-title span, .human-intervention-source, .human-intervention-reason, .human-intervention-explain { color: var(--muted, #777); font-size: 12px; }
+.human-intervention-detail { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
+.human-intervention-options { display: grid; gap: 6px; margin: 9px 0; }
+.human-intervention-option { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.human-intervention-option span { flex: 1 1 120px; }
+.human-intervention-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.human-intervention-actions button, .human-intervention-option button { border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.human-intervention-actions button:focus-visible, .human-intervention-option button:focus-visible, .human-interventions-head:focus-visible { outline: 2px solid var(--accent, #4787db); outline-offset: 2px; }
+.human-intervention-actions button:disabled, .human-intervention-option button:disabled { opacity: .5; cursor: not-allowed; }
+.human-intervention-explain { margin-bottom: 0 !important; }
+.human-interventions-recent { margin-top: 8px; }
+.human-interventions-recent > summary { cursor: pointer; font-size: 12px; }
+@media (max-width: 480px) { .human-interventions-body { max-height: 38vh; padding-inline: 8px; border-bottom: 3px solid var(--line); } .human-intervention-card { padding: 9px; } .human-intervention-option span { flex-basis: 100%; } }

@@ -482,6 +482,30 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SessionDirectTodos: func() capacity.Reading {
 			return s.workV2CapacityReading("direct_todos")
 		},
+		capacity.HumanInterventionsOpen: func() capacity.Reading {
+			return s.humanInterventionCapacityReading(true)
+		},
+		capacity.HumanInterventionsTotal: func() capacity.Reading {
+			return s.humanInterventionCapacityReading(false)
+		},
+		capacity.HumanInterventionsRecent: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read recent-history window"}
+		},
+		capacity.HumanInterventionTitle: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write field guard"}
+		},
+		capacity.HumanInterventionText: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write field guard"}
+		},
+		capacity.HumanInterventionDetail: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write field guard"}
+		},
+		capacity.HumanInterventionDocument: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write field guard"}
+		},
+		capacity.HumanInterventionDraft: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-write field guard"}
+		},
 		capacity.WorkItemTitleBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-write guard; no retained buffer"}
 		},
@@ -775,6 +799,17 @@ func (s *Server) workV2CapacityReading(name string) capacity.Reading {
 		return capacity.Unmeasured(err.Error())
 	}
 	return capacity.Reading{Known: true, Used: counts[name]}
+}
+
+func (s *Server) humanInterventionCapacityReading(open bool) capacity.Reading {
+	maxOpen, total, err := s.store.HumanInterventionCapacityCounts(context.Background())
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	if open {
+		return capacity.Reading{Known: true, Used: maxOpen}
+	}
+	return capacity.Reading{Known: true, Used: total}
 }
 
 // spoolReadings are the Cloud spool's two rows. A line that is off, or was

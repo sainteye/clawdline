@@ -464,6 +464,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-v2-todos",
 		method: "GET", path: "/v1/work/v2/session-todos/%2519",
 	}, {
+		word: "work.v2.human-interventions",
+		body: map[string]any{"type": "work.v2.human-interventions", "session": machine,
+			"request": "req-human-interventions", "terminal": "conversation:10000000-0000-4000-8000-000000000002"},
+		session: machine, name: "read:req-human-interventions",
+		method: "GET", path: "/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002",
+	}, {
 		word: "work.v2.image",
 		body: map[string]any{"type": "work.v2.image", "session": machine,
 			"request": "req-work-v2-image", "id": "img1"},
@@ -566,6 +572,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body: map[string]any{"type": "work.v2.todo-action", "session": machine, "request": "req-work-v2-todo-action",
 			"terminal": pane, "id": "td1", "action": "send", "item": map[string]any{}},
 		session: machine, name: "action:req-work-v2-todo-action", method: "POST", path: "/v1/work/v2/session-todos/%2519/td1/send", body2: `{}`,
+	}, {
+		word: "work.v2.human-intervention-action",
+		body: map[string]any{"type": "work.v2.human-intervention-action", "session": machine,
+			"request": "req-human-intervention-action", "terminal": "conversation:10000000-0000-4000-8000-000000000002",
+			"id": "10000000-0000-4000-8000-000000000003", "action": "read", "item": map[string]any{"expected_version": 1}},
+		session: machine, name: "action:req-human-intervention-action", method: "POST",
+		path:  "/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000003/read",
+		body2: `{"expected_version":1}`,
 	}, {
 		word:    "project-icon-copy",
 		body:    map[string]any{"type": "project-icon-copy", "session": machine, "request": "req-icon", "id": "p1", "item": map[string]any{}},

@@ -196,6 +196,9 @@ func Open(dir string) (*Store, error) {
 	if err := openWorkV2(db); err != nil {
 		return nil, err
 	}
+	if err := openHumanInterventions(db); err != nil {
+		return nil, err
+	}
 	if err := openHandover(db); err != nil {
 		return nil, err
 	}

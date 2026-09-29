@@ -1271,6 +1271,22 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/v2/session-todos/" + segment(p.target)}
 			}},
+		op{name: "work.v2.human-interventions", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "terminal") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				conversation, valid := b.nonEmpty("terminal")
+				if !ok || !valid || len(conversation) > 256 {
+					return plan{}, false
+				}
+				p.target = conversation
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/human-interventions/" + segment(p.target)}
+			}},
 
 		// `size: "thumb"` is the picture a Board card or a to-do row draws,
 		// and the only size there is besides the whole one. A page built
@@ -1406,6 +1422,12 @@ func init() {
 			decode: decodeWorkV2TodoAction,
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/work/v2/session-todos/" + segment(p.target) + "/" +
+					segment(p.id) + "/" + segment(p.kind), Body: p.document, Header: asDevice()}
+			}},
+		op{name: "work.v2.human-intervention-action",
+			decode: decodeWorkV2HumanInterventionAction,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/human-interventions/" + segment(p.target) + "/" +
 					segment(p.id) + "/" + segment(p.kind), Body: p.document, Header: asDevice()}
 			}},
 
@@ -2880,6 +2902,23 @@ func decodeWorkV2TodoAction(b body) (plan, bool) {
 		return plan{}, false
 	}
 	p.target, p.id, p.kind, p.document = terminal, id, action, document
+	return p, true
+}
+
+func decodeWorkV2HumanInterventionAction(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "terminal", "id", "action", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	conversation, conversationOK := b.nonEmpty("terminal")
+	id, idOK := b.nonEmpty("id")
+	action, actionOK := b.nonEmpty("action")
+	document, documentOK := b.object("item", workV2CloudBodyLimit)
+	if !ok || p.request == "" || !conversationOK || len(conversation) > 256 || !idOK || len(id) > 256 ||
+		!actionOK || !documentOK || (action != "read" && action != "resolve" && action != "reopen") {
+		return plan{}, false
+	}
+	p.target, p.id, p.kind, p.document = conversation, id, action, document
 	return p, true
 }
 
