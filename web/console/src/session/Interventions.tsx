@@ -149,14 +149,12 @@ function InterventionCard({ note, disabled, onAction, onInsert }: {
     {note.detail && <details className="human-intervention-more"><summary>閱讀完整內容</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
     <div className="human-intervention-drafts" role="group" aria-label="建議回覆">
       <h4>建議回覆</h4>
-      {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) => {
-        const reply = interventionReplyText(note, option.draft)
-        return <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`將建議回覆加入對話框：${reply}`} onClick={() => onInsert(reply)}>
+      {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) =>
+        <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
+          disabled={disabled} aria-label={`將建議回覆加入對話框：${option.draft}`} onClick={() => onInsert(interventionReplyText(note, option.draft))}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
-          <span>{reply}</span>
-        </button>
-      })}
+          <span>{option.draft}</span>
+        </button>)}
     </div>
     <div className="human-intervention-state">
       <div className="human-intervention-actions">
