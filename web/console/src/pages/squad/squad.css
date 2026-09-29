@@ -96,6 +96,8 @@
 .squad-skill-form { display: grid; gap: 12px; }
 .squad-skill-form label { display: grid; gap: 5px; font-size: 13px; }
 .squad-skill-form :is(input, select, textarea) { width: 100%; min-height: 44px; padding: 9px 10px; }
+.squad-skill-form .squad-skill-mode .squad-check { display: flex; align-items: center; gap: 8px; }
+.squad-skill-form .squad-skill-mode input[type=radio] { width: auto; min-height: 0; padding: 0; }
 .squad-skill-form textarea { line-height: 1.6; resize: vertical; }
 .squad-skill-form p { margin: 0; color: var(--dim); }
 .squad-skill-dialog .squad-actions { position: sticky; bottom: -20px; z-index: 1; padding: 12px 0 0; border-top: 1px solid var(--line); background: var(--card); }

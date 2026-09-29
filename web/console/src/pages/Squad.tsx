@@ -5,6 +5,7 @@ import type { PageModule } from "./types.js"
 import { squadApi, type PackPreview, type SquadAPI } from "./squad/api.js"
 import { ReceiptGate, sourceLabel, visiblePersonas, type SquadDraft, type SquadPersona, type SquadReadState, type SquadSkill, type SquadView } from "./squad/model.js"
 import { ACTIVE_SKILL_BYTES, activeSkillBytes, makeSkill, sameSkill, skillInputError, type SkillTransaction } from "./squad/skill-create.js"
+import { importSkillFiles } from "./squad/skill-import.js"
 import "./squad/squad.css"
 
 const keyOf = (scope: string, persona: string) => `${scope}\u0000${persona}\u0000handbook`
@@ -22,6 +23,7 @@ function errorDetail(error: unknown): string {
     case "archive_too_large": return "資料包超過 512 KiB 上限。請選擇較小的 ZIP 檔。"
     case "archive_invalid": case "manifest_invalid": case "invalid_archive": return "資料包格式無法通過驗證。請檢查 ZIP 檔後重新預覽。"
     case "private_confirmation_required": return "請先選擇並確認要包含的私人設定範圍。"
+    case "skill_folder_export_unsupported": return "目錄含有完整技能資料夾；目前資料包無法包含附檔，因此未匯出。"
     default: {
       const status = errorStatus(error)
       return `角色小隊服務暫時無法完成請求${status ? `（HTTP ${status}）` : ""}。請稍後重試；若持續發生，重新整理頁面。`
@@ -45,6 +47,13 @@ function IconCanvas({ icon, size = 3 }: { icon: Icon; size?: number }) {
 
 function valueSource(source: "default" | "global" | "project", project: boolean) {
   return project && source !== "project" ? "繼承「" + sourceLabel(source) + "」" : sourceLabel(source)
+}
+
+function skillSourceName(source: string): string {
+  const imported = /^imported:(project|claude-code|codex):(folder|text)$/.exec(source)
+  if (!imported) return source
+  const provider = imported[1] === "project" ? "Project" : imported[1] === "claude-code" ? "Claude Code" : "Codex"
+  return `${provider} · ${imported[2] === "folder" ? "完整資料夾" : "SKILL.md 文字"}`
 }
 
 function hasLocalOverride(source: "default" | "global" | "project", project: boolean): boolean {
@@ -107,10 +116,11 @@ function SkillDetail({ skill }: { skill: SquadSkill | null }) {
   return <section className="squad-skill-detail" id="squad-skill-detail" aria-label="技能詳情">
     {skill ? <>
       <h4>{skill.name}</h4>
-      <dl className="squad-facts"><div><dt>用途</dt><dd>{skill.purpose}</dd></div><div><dt>來源</dt><dd><LinkedText text={skill.source} /></dd></div>
+      <dl className="squad-facts"><div><dt>用途</dt><dd>{skill.purpose}</dd></div><div><dt>來源</dt><dd><LinkedText text={skillSourceName(skill.source)} /></dd></div>
         <div><dt>版本</dt><dd>{skill.version}</dd></div><div><dt>授權</dt><dd>{skill.license || "未提供"}</dd></div>
         <div><dt>狀態</dt><dd>{skill.status === "available" ? "已採納，可供此角色使用" : skill.status === "unavailable" ? "目前不可用" : "待審，尚未安裝或採納"}</dd></div></dl>
       <h5>技能內容</h5><div className="squad-long-text">{skill.body || "此技能尚無可讀內容。"}</div>
+      {skill.folder && <><h5>資料夾附檔</h5>{skill.files?.length ? <ul>{skill.files.map((file) => <li key={file.path}>{file.path}</li>)}</ul> : <p>此資料夾只有 SKILL.md。</p>}</>}
     </> : <p>選擇一項技能以閱讀完整內容與來源。</p>}
   </section>
 }
@@ -127,7 +137,10 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const [busy, setBusy] = useState("")
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [pack, setPack] = useState<"import" | "export" | null>(null)
-  const [skillMode, setSkillMode] = useState<"create" | "attach">("create")
+  const [skillMode, setSkillMode] = useState<"create" | "attach" | "import">("create")
+  const [importKind, setImportKind] = useState<"text" | "folder">("folder")
+  const [importSource, setImportSource] = useState<"project" | "claude-code" | "codex">("project")
+  const [importAttachedFiles, setImportAttachedFiles] = useState<NonNullable<SkillTransaction["skill"]["files"]>>([])
   const [newSkillName, setNewSkillName] = useState("")
   const [newSkillPurpose, setNewSkillPurpose] = useState("")
   const [newSkillContent, setNewSkillContent] = useState("")
@@ -162,7 +175,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const skillKeepButton = useRef<HTMLButtonElement>(null)
   const skillHeading = useRef<HTMLHeadingElement>(null)
   const skillCheckbox = useRef<HTMLInputElement>(null)
-  const skillDrafts = useRef<Record<string, { name: string; purpose: string; content: string }>>({})
+  const skillDrafts = useRef<Record<string, { name: string; purpose: string; content: string; mode: "create" | "import"; kind: "text" | "folder"; source: typeof importSource; files: typeof importAttachedFiles }>>({})
   const skillTransaction = useRef<SkillTransaction | null>(null)
   const skillGlobalAtOpen = useRef("")
   const packOpener = useRef<HTMLElement | null>(null)
@@ -372,7 +385,8 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
     const draft = skillDrafts.current[`${scope}\u0000${persona.id}`]
     skillTransaction.current = null
     skillGlobalAtOpen.current = JSON.stringify(persona.skillsSetting.global)
-    setSkillMode("create"); setNewSkillName(draft?.name ?? ""); setNewSkillPurpose(draft?.purpose ?? ""); setNewSkillContent(draft?.content ?? ""); setExistingSkillId(""); setSkillError(""); setSkillCloseConfirm(false)
+    setSkillMode(draft?.mode ?? "create"); setImportKind(draft?.kind ?? "folder"); setImportSource(draft?.source ?? "project")
+    setNewSkillName(draft?.name ?? ""); setNewSkillPurpose(draft?.purpose ?? ""); setNewSkillContent(draft?.content ?? ""); setExistingSkillId(""); setSkillError(""); setSkillCloseConfirm(false); setImportAttachedFiles(draft?.files ?? [])
     skillDialog.current?.showModal()
     requestAnimationFrame(() => skillNameInput.current?.focus())
   }
@@ -386,7 +400,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   }
   const closeSkillDialog = () => {
     if (skillBusy) return
-    if (!skillTransaction.current && skillMode === "create" && (newSkillName || newSkillPurpose || newSkillContent)) {
+    if (!skillTransaction.current && skillMode !== "attach" && (newSkillName || newSkillPurpose || newSkillContent)) {
       setSkillCloseConfirm(true); return
     }
     recoverSavedSkill(); skillDialog.current?.close()
@@ -394,32 +408,48 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const closeSkillDraft = (keep: boolean) => {
     if (!persona) return
     const key = `${scope}\u0000${persona.id}`
-    if (keep) skillDrafts.current[key] = { name: newSkillName, purpose: newSkillPurpose, content: newSkillContent }
+    if (keep) skillDrafts.current[key] = { name: newSkillName, purpose: newSkillPurpose, content: newSkillContent,
+      mode: skillMode === "import" ? "import" : "create", kind: importKind, source: importSource, files: importAttachedFiles }
     else delete skillDrafts.current[key]
     setSkillCloseConfirm(false)
     skillDialog.current?.close()
+  }
+  const pickImportedSkill = async (files: FileList | null) => {
+    if (!files?.length) return
+    setSkillBusy(true); setSkillError("")
+    try {
+      const imported = await importSkillFiles(files, importKind === "folder")
+      setNewSkillName(imported.name); setNewSkillPurpose(imported.purpose)
+      setNewSkillContent(imported.content); setImportAttachedFiles(imported.files)
+    } catch (error) {
+      setImportAttachedFiles([]); setNewSkillContent("")
+      setSkillError(error instanceof Error ? error.message : "技能檔案無法讀取。")
+    } finally { setSkillBusy(false) }
   }
   const addSkill = async () => {
     if (!canWrite || !persona || !data || skillBusy) return
     const originalScope = scope
     const originalPersona = persona.id
-    let target: { id: string; version: string; body: string } | null = null
-    if (skillMode === "create") {
+    let target: { id: string; version: string; body: string; files?: { path: string; content_base64: string }[] } | null = null
+    if (skillMode !== "attach") {
       const inputError = skillInputError(newSkillName, newSkillPurpose, newSkillContent)
       if (inputError) { setSkillError(inputError); return }
       if (!skillTransaction.current) {
         skillTransaction.current = {
-          skill: makeSkill(newSkillName, newSkillPurpose, newSkillContent, persona.icon),
+          skill: { ...makeSkill(newSkillName, newSkillPurpose, newSkillContent, persona.icon),
+            ...(skillMode === "import" ? { source: `imported:${importSource}:${importKind}`, content: newSkillContent,
+              folder: importKind === "folder",
+              files: importKind === "folder" ? importAttachedFiles : [] } : {}) },
           expectedVersion: data.catalogVersion, key: crypto.randomUUID(), scopeId: originalScope, personaId: originalPersona, catalogSaved: false,
         }
         delete skillDrafts.current[`${originalScope}\u0000${originalPersona}`]
       }
       const transaction = skillTransaction.current
-      target = { id: transaction.skill.skill_id, version: transaction.skill.version, body: transaction.skill.content }
+      target = { id: transaction.skill.skill_id, version: transaction.skill.version, body: transaction.skill.content, files: transaction.skill.files }
     } else {
       const selected = data.catalogSkills.find((skill) => skill.id === existingSkillId)
       if (!selected) { setSkillError("請選擇要加入的技能；若目錄已更新，請重新讀取後再選。 "); return }
-      target = { id: selected.id, version: selected.version, body: selected.body }
+      target = { id: selected.id, version: selected.version, body: selected.body, files: selected.files }
     }
     if (activeSkillBytes(data, persona, target) > ACTIVE_SKILL_BYTES) {
       setSkillError("已啟用技能的內容合計超過安全額度；請先停用其他技能或縮短內容，以免新 Session 無法啟動。")
@@ -428,7 +458,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
     setSkillBusy(true); setSkillError("")
     try {
       const transaction = skillTransaction.current
-      if (skillMode === "create" && transaction && !transaction.catalogSaved) {
+      if (skillMode !== "attach" && transaction && !transaction.catalogSaved) {
         try {
           await api.createSkill(transaction.skill, transaction.expectedVersion, transaction.key)
           transaction.catalogSaved = true
@@ -671,29 +701,45 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
               <label className="squad-check"><input type="checkbox" checked={includeGlobal} onChange={(event) => { setIncludeGlobal(event.target.checked); setPrivateConfirm(false) }} />包含全域私人設定</label>
               {data?.projects.map((project) => <label className="squad-check" key={project.id}><input type="checkbox" checked={includeProjects.includes(project.id)} onChange={(event) => { setIncludeProjects((rows) => event.target.checked ? [...rows, project.id] : rows.filter((id) => id !== project.id)); setPrivateConfirm(false) }} />包含 {project.name} 的私人設定</label>)}
           <div className="squad-export-summary"><strong>即將下載：</strong>可分享定義（包含自寫技能全文）{includeGlobal ? "、全域私人設定" : ""}{includeProjects.map((id) => `、${data?.projects.find((project) => project.id === id)?.name ?? id} 私人設定`).join("")}</div>
+              {data?.catalogSkills.some((skill) => skill.folder) && <p role="alert">目錄含有完整技能資料夾。現有資料包格式無法保存附檔，因此暫時無法匯出。</p>}
               {(includeGlobal || includeProjects.length > 0) && <label className="squad-check"><input type="checkbox" checked={privateConfirm} onChange={(event) => setPrivateConfirm(event.target.checked)} />我確認將上述私人設定放入下載檔</label>}
-              <button type="button" disabled={!!busy || !canWrite && (includeGlobal || includeProjects.length > 0)} onClick={() => void exportPack()}>{busy === "export" ? "匯出中…" : "下載資料包"}</button></>}
+              <button type="button" disabled={!!busy || !!data?.catalogSkills.some((skill) => skill.folder) || !canWrite && (includeGlobal || includeProjects.length > 0)} onClick={() => void exportPack()}>{busy === "export" ? "匯出中…" : "下載資料包"}</button></>}
           {packError && <p className="squad-dialog-error" role="alert">{packError}</p>}</>}
       </dialog>
       <dialog ref={skillDialog} className="squad-dialog squad-skill-dialog" aria-labelledby="squad-skill-dialog-title" aria-describedby="squad-skill-disclosure" onCancel={(event) => { event.preventDefault(); if (skillCloseConfirm) setSkillCloseConfirm(false); else closeSkillDialog() }} onClose={() => { recoverSavedSkill(); skillOpener.current?.focus() }}>
         <div className="squad-dialog-head"><h2 id="squad-skill-dialog-title">為角色新增技能</h2><button type="button" aria-label="關閉新增技能對話框" disabled={skillBusy || skillCloseConfirm} onClick={closeSkillDialog}>×</button></div>
         <p>角色：{persona?.name ?? ""} · 範圍：{scopeLabel}。加入後只影響之後建立的 Session。</p>
-        <p className="squad-skill-disclosure" id="squad-skill-disclosure">技能全文存於這部機器的全域目錄，同機已配對讀者可讀，也會包含在預設可分享資料包的匯出中。所選範圍只控制此角色能否使用。</p>
+        <p className="squad-skill-disclosure" id="squad-skill-disclosure">技能全文存於這部機器的全域目錄，同機已配對讀者可讀；純文字技能會包含在預設可分享資料包中。所選範圍只控制此角色能否使用。</p>
         {skillCloseConfirm ? <div className="squad-skill-confirm" role="group" aria-label="關閉技能草稿"><h3>要保留未送出的技能草稿嗎？</h3><p>保留後，可在這位角色的同一範圍重新開啟「新增技能」繼續編輯。</p>
           <div className="squad-actions"><button ref={skillKeepButton} type="button" onClick={() => closeSkillDraft(true)}>保留草稿並關閉</button><button type="button" onClick={() => closeSkillDraft(false)}>捨棄草稿</button><button type="button" onClick={() => setSkillCloseConfirm(false)}>繼續編輯</button></div></div> :
         <form onSubmit={(event) => { event.preventDefault(); void addSkill() }}>
         <div className="squad-skill-mode" role="group" aria-label="新增技能方式">
-          <label className="squad-check"><input type="radio" name="squad-skill-mode" checked={skillMode === "create"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setSkillMode("create"); setSkillError("") }} />建立新技能</label>
+          <label className="squad-check"><input type="radio" name="squad-skill-mode" checked={skillMode === "create"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { if (skillMode === "import") { setNewSkillName(""); setNewSkillPurpose(""); setNewSkillContent(""); setImportAttachedFiles([]) } setSkillMode("create"); setSkillError("") }} />建立新技能</label>
           <label className="squad-check"><input type="radio" name="squad-skill-mode" checked={skillMode === "attach"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setSkillMode("attach"); setSkillError("") }} />加入已建立技能</label>
+          <label className="squad-check"><input type="radio" name="squad-skill-mode" checked={skillMode === "import"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setSkillMode("import"); setNewSkillName(""); setNewSkillPurpose(""); setNewSkillContent(""); setImportAttachedFiles([]); setSkillError("") }} />匯入 Project／Claude Code／Codex 技能</label>
         </div>
         {skillMode === "create" ? <div className="squad-skill-form">
           <label>技能名稱<input ref={skillNameInput} required value={newSkillName} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillName(event.target.value)} /></label>
           <label>用途摘要<input required value={newSkillPurpose} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillPurpose(event.target.value)} /></label>
           <p id="squad-skill-content-hint">建立後預設啟用，可回到技能詳情停用。內容最多 64 KiB。</p>
           <label>技能內容<textarea required rows={8} aria-describedby="squad-skill-content-hint" value={newSkillContent} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillContent(event.target.value)} /></label>
-        </div> : <div className="squad-skill-form"><label>選擇技能<select value={existingSkillId} disabled={skillBusy} onChange={(event) => { setExistingSkillId(event.target.value); setSkillError("") }}>
-          <option value="">請選擇</option>{data?.catalogSkills.filter((skill) => !persona?.skills.some((row) => row.id === skill.id)).map((skill) => <option key={skill.id} value={skill.id}>{skill.name} · 版本 {skill.version}</option>)}
-        </select></label><p>若先前建立成功但未加入角色，可在此選取。目錄升版後會加入目前顯示的版本。</p></div>}
+        </div> : skillMode === "attach" ? <div className="squad-skill-form"><label>選擇技能<select value={existingSkillId} disabled={skillBusy} onChange={(event) => { setExistingSkillId(event.target.value); setSkillError("") }}>
+          <option value="">請選擇</option>{data?.catalogSkills.filter((skill) => !persona?.skills.some((row) => row.id === skill.id)).map((skill) => <option key={skill.id} value={skill.id}>{skill.name} · {skillSourceName(skill.source)} · 版本 {skill.version}</option>)}
+        </select></label><p>可選擇內建或先前建立的技能。已加入角色的技能可在清單中啟用、停用與排序。</p></div> :
+        <div className="squad-skill-form">
+          <label>技能來源<select value={importSource} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setImportSource(event.target.value as typeof importSource)}><option value="project">Project</option><option value="claude-code">Claude Code</option><option value="codex">Codex</option></select></label>
+          <div className="squad-skill-mode" role="group" aria-label="匯入方式">
+            <label className="squad-check"><input type="radio" name="squad-import-kind" checked={importKind === "folder"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setImportKind("folder"); setNewSkillContent(""); setImportAttachedFiles([]); setSkillError("") }} />完整技能資料夾</label>
+            <label className="squad-check"><input type="radio" name="squad-import-kind" checked={importKind === "text"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setImportKind("text"); setNewSkillContent(""); setImportAttachedFiles([]); setSkillError("") }} />只複製 SKILL.md 文字</label>
+          </div>
+          <p>從你的裝置選擇現有技能。完整資料夾會保存 SKILL.md 與附檔；文字方式只保存 SKILL.md。技能及附檔合計最多 64 KiB。</p>
+          {importKind === "folder" ? <label>選擇技能資料夾<input key="folder" type="file" multiple {...{ webkitdirectory: "" }} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => void pickImportedSkill(event.target.files)} /></label>
+            : <label>選擇 SKILL.md<input key="text" type="file" accept=".md,text/markdown" disabled={skillBusy || !!skillTransaction.current} onChange={(event) => void pickImportedSkill(event.target.files)} /></label>}
+          {newSkillContent && <><label>技能名稱<input required value={newSkillName} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillName(event.target.value)} /></label>
+            <label>用途摘要<input required value={newSkillPurpose} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillPurpose(event.target.value)} /></label>
+            <p role="status">已讀取 SKILL.md{importKind === "folder" ? `，另含 ${importAttachedFiles.length} 個附檔` : ""}。請確認名稱與用途後加入。</p>
+            <details><summary>預覽 SKILL.md</summary><pre className="squad-long-text">{newSkillContent}</pre></details></>}
+        </div>}
         {skillTransaction.current?.catalogSaved && <p className="squad-skill-stage" role="status">技能已建立在目錄中，正在加入角色；重試不會重複建立。</p>}
         {skillError && <p className="squad-dialog-error" role="alert">{skillError}</p>}
         <div className="squad-actions"><button type="submit" disabled={skillBusy || !canWrite}>{skillBusy ? "處理中…" : skillTransaction.current ? skillTransaction.current.catalogSaved ? "重試加入技能" : "重試建立" : skillMode === "create" ? "建立並啟用" : "加入並啟用"}</button>

@@ -9,8 +9,25 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
 )
+
+func TestFolderSkillIsSavedButPackageExportRefusesToOmitAttachments(t *testing.T) {
+	f := newSquadFixture(t)
+	skill := squad.Skill{SkillID: "example.skill.folder", Version: "1", Source: "imported:project:folder",
+		License: "unspecified", Name: squad.Names{En: "Folder"}, Purpose: squad.Names{En: "Work"},
+		Icon: squad.Builtins().Skills[0].Icon, Content: "# Skill\n", Folder: true,
+		Files: []squad.SkillFile{{Path: "references/example.txt", ContentBase64: base64.StdEncoding.EncodeToString([]byte("example"))}}}
+	request, _ := json.Marshal(map[string]any{"kind": "skill", "expected_version": 0, "entity": map[string]any{"skill": skill}})
+	if status, body := f.ask("POST", "/v1/squad/catalog", f.sender, string(request), "folder-1"); status != 200 {
+		t.Fatalf("folder import = %d: %s", status, body)
+	}
+	if status, body := f.ask("POST", "/v1/squad-packages/export", f.reader,
+		`{"private_scopes":[],"confirm_private":false}`, ""); status != 409 || !strings.Contains(body, "skill_folder_export_unsupported") {
+		t.Fatalf("folder export = %d: %s", status, body)
+	}
+}
 
 func TestPackageRoutesKeepPreviewAndPublicExportReadableButProtectAdoptionAndPrivateExport(t *testing.T) {
 	f := newSquadFixture(t)

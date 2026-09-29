@@ -13,6 +13,8 @@ export interface WireTeam { team_id: string; name: WireNames; personas: { id: st
 export interface WireSkill {
   skill_id: string; version: string; source: string; license: string
   name: WireNames; purpose: WireNames; icon: Icon; content: string
+  folder?: boolean
+  files?: { path: string; content_base64: string }[]
 }
 export interface WireCatalog { catalog_version: number; definitions: WireDefinition[]; teams: WireTeam[]; skills: WireSkill[] }
 export interface WireEffectivePersona {
@@ -48,7 +50,7 @@ export function squadView(
       return {
         id: choice.id, name: found ? name(found.name) : choice.id,
         purpose: found ? name(found.purpose) : "目錄中找不到此技能版本。",
-        body: found?.content ?? "", source: found?.source ?? "未知", version: choice.version,
+        body: found?.content ?? "", folder: found?.folder, files: found?.files, source: found?.source ?? "未知", version: choice.version,
         license: found?.license ?? "", icon: found?.icon, status: found ? "available" : "unavailable",
         enabled: effective({ ...entry.skills, value: choice.enabled }, globalChoices.find((row) => row.id === choice.id)?.enabled ?? false),
         order: index + 1,
@@ -68,8 +70,8 @@ export function squadView(
     scopeId: current.scope_id,
     project: projects.find((row) => row.id === current.scope_id) ?? null, projects,
     teams: catalog.teams.map((team) => ({ id: team.team_id, name: name(team.name) })), personas,
-    catalogSkills: catalog.skills.filter((skill) => !skill.skill_id.startsWith("clawdline.")).map((skill) => ({
-      id: skill.skill_id, name: name(skill.name), purpose: name(skill.purpose), body: skill.content,
+    catalogSkills: catalog.skills.map((skill) => ({
+      id: skill.skill_id, name: name(skill.name), purpose: name(skill.purpose), body: skill.content, folder: skill.folder, files: skill.files,
       source: skill.source, version: skill.version, license: skill.license, icon: skill.icon,
     })), sessions,
     motion: effective(current.motion, global.motion.value),

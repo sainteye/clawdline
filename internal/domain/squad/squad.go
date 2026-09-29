@@ -75,16 +75,25 @@ type Team struct {
 }
 
 type Skill struct {
-	SkillID string `json:"skill_id"`
-	Version string `json:"version"`
-	Source  string `json:"source"`
-	License string `json:"license"`
-	Digest  string `json:"digest"`
-	Name    Names  `json:"name"`
-	Purpose Names  `json:"purpose"`
-	Icon    Icon   `json:"icon"`
-	Content string `json:"content"`
-	Builtin bool   `json:"builtin"`
+	SkillID string      `json:"skill_id"`
+	Version string      `json:"version"`
+	Source  string      `json:"source"`
+	License string      `json:"license"`
+	Digest  string      `json:"digest"`
+	Name    Names       `json:"name"`
+	Purpose Names       `json:"purpose"`
+	Icon    Icon        `json:"icon"`
+	Content string      `json:"content"`
+	Folder  bool        `json:"folder,omitempty"`
+	Files   []SkillFile `json:"files,omitempty"`
+	Builtin bool        `json:"builtin"`
+}
+
+// SkillFile is an immutable file beside SKILL.md in an imported skill folder.
+// ContentBase64 keeps binary assets exact in catalog and launch snapshots.
+type SkillFile struct {
+	Path          string `json:"path"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 type Catalog struct {
