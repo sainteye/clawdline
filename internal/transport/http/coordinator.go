@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -27,7 +32,8 @@ import (
 
 func (s *Server) coordinator() *app.Coordinator {
 	return &app.Coordinator{
-		Store: s.store,
+		Store:           s.store,
+		MachineStateDir: s.cfg.Dir,
 		Read: func(ctx context.Context) session.Inventory {
 			return s.reading(ctx)
 		},
@@ -118,6 +124,7 @@ func (s *Server) orchestratorCoordinatorRoute(w http.ResponseWriter, r *http.Req
 			return
 		}
 		c := s.coordinator()
+		c.Read = s.freshReading
 		st, created, err := c.Register(ctx, strings.TrimSpace(body.SessionID))
 		if err != nil {
 			writeCoordinatorError(w, err)
@@ -134,7 +141,9 @@ func (s *Server) orchestratorCoordinatorRoute(w http.ResponseWriter, r *http.Req
 				Message: "expected_coordinator_id and a positive expected_generation are required: read the role first."})
 			return
 		}
-		st, moved, err := s.coordinator().Rebind(ctx, body.ExpectedCoordinatorID, body.ExpectedGeneration,
+		c := s.coordinator()
+		c.Read = s.freshReading
+		st, moved, err := c.Rebind(ctx, body.ExpectedCoordinatorID, body.ExpectedGeneration,
 			strings.TrimSpace(body.SessionID))
 		if err != nil {
 			writeCoordinatorError(w, err)
@@ -167,6 +176,118 @@ func (s *Server) orchestratorCoordinatorRoute(w http.ResponseWriter, r *http.Req
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such coordinator route.")
 	}
+}
+
+// startCoordinator opens a machine Session through the same bounded,
+// receipted terminal path as an ordinary start. Its cwd is never an input or
+// a Project. The Session must be observed and registered before it wears the
+// role; opening a terminal alone is not a role receipt.
+func (s *Server) startCoordinator(w http.ResponseWriter, r *http.Request, assistant string) {
+	release, ok := admitOpening(w, r)
+	if !ok {
+		return
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	c := s.coordinator()
+	c.Read = s.freshReading
+	st, err := c.State(ctx)
+	if err != nil {
+		writeCoordinatorError(w, err)
+		return
+	}
+	if code := machineStartBlock(st, s.cfg.Dir); code != "" {
+		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusConflict, Code: code,
+			Message: "A machine Session cannot be started until the existing role and Sessions are fully accounted for."})
+		return
+	}
+	workspace := projects.MachineWorkspace(s.cfg.Dir)
+	if err := ensureMachineWorkspace(s.cfg.Dir); err != nil {
+		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusConflict, Code: "machine_workspace_invalid",
+			Message: "The machine workspace or its instructions could not be prepared; nothing was started."})
+		return
+	}
+	starter := s.starter(startReadingFrom(st.Seen.Inventory))
+	made, err := starter.Start(ctx, projects.Place{Path: workspace}, assistant, "", "", "")
+	if err != nil {
+		writeStartRefusal(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "id": made.ID, "backend": made.Backend, "assistant": assistant,
+		"model": made.Model, "cwd": filepath.Clean(workspace), "attach": made.Attach,
+		"scope": "machine", "registration": "pending", "at": time.Now().Unix()})
+}
+
+func machineStartBlock(st app.State, stateDir string) string {
+	if st.Status == store.CoordinatorCorrupt || st.Status == store.CoordinatorUnsupported {
+		return "coordinator_store_invalid"
+	}
+	if st.Record != nil && st.Liveness != coordinator.Offline {
+		if st.Liveness == coordinator.Unknown {
+			return "coordinator_liveness_unknown"
+		}
+		return "coordinator_online"
+	}
+	// A missing workspace Session in a partial inventory is not proof that it
+	// does not exist. Keep a pending, unregistered Session from duplicating.
+	if !st.Seen.Inventory.Complete {
+		return "coordinator_liveness_unknown"
+	}
+	for _, live := range st.Seen.Sessions {
+		if projects.IsMachineWorkspace(stateDir, live.CWD) {
+			return "coordinator_session_exists"
+		}
+	}
+	return ""
+}
+
+const machineInstructions = `# Clawdfather machine workspace
+
+This directory is managed by Clawdline and is outside every Project. Work here as a machine steward: inspect and report on Sessions, tasks, waits and landings with source and observation time; use Clawdline's supported setting and project import/export operations when authorized.
+
+Do not edit source code in any Project, including Clawdline. When the person requests engineering work through Clawdline, create a Board item in the target Project first, then delegate it to a Project Session with ` + "`clawdline item add --project <id> --kind feature --title <title> --assign-new`" + `. The created item's owner handles implementation, child dispatch, verification, landing and deployment. If the person has not explicitly asked for an item, file a proposal for them to accept; do not create an item or dispatch code work on your own. Never dispatch a code task directly from this machine Session or mark another owner's work complete. This directory is an organizational boundary, not an operating system sandbox.
+
+Opening this Session does not register the machine role. After your conversation ID is available, run ` + "`clawdline coordinator bind`" + ` in this Session. If the command is not on PATH, use the daemon's installed binary at ` + "`../bin/clawdline`" + ` from this workspace (` + "`../bin/clawdline.exe`" + ` on Windows). The command uses this conversation ID and rebinds an older role only if it is proven offline. Read ` + "`clawdline guide coordination`" + ` for the receipt and limits. Do not treat an unknown reading as offline.
+`
+
+func ensureMachineWorkspace(stateDir string) error {
+	workspace := projects.MachineWorkspace(stateDir)
+	if err := os.Mkdir(workspace, 0o700); err != nil && !os.IsExist(err) {
+		return err
+	}
+	info, err := os.Lstat(workspace)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !projects.IsMachineWorkspace(stateDir, workspace) {
+		return errors.New("the workspace is not a plain directory")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		return errors.New("the workspace is readable or writable by other accounts")
+	}
+	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
+		path := filepath.Join(workspace, name)
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if errors.Is(err, os.ErrExist) {
+			st, statErr := os.Lstat(path)
+			if statErr != nil || !st.Mode().IsRegular() {
+				return errors.New("a workspace instruction file is not regular")
+			}
+			if runtime.GOOS != "windows" && st.Mode().Perm()&0o022 != 0 {
+				return errors.New("a workspace instruction file is writable by other accounts")
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if _, err = file.WriteString(machineInstructions); err != nil {
+			_ = file.Close()
+			return err
+		}
+		if err = file.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // decodeClosed reads a closed JSON body: every key must be one of allowed.

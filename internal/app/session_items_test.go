@@ -86,6 +86,33 @@ func TestASessionCreatesAnAssignedItemWithStepsFromThePersonsMessage(t *testing.
 	}
 }
 
+func TestMachineStewardCreatesBoardItemBeforeDelegatingWithoutOwningProjectCode(t *testing.T) {
+	w := newWorkV2Test(t)
+	run := sessionItemRun(t, w, "conv-a")
+	n := newSessionItem(run, work.KindFeature, "Work for a Project owner", "implement", "verify")
+	n.SessionProject = "/machine-workspace"
+	n.MachineTriage = true
+	v, err := w.CreateFromSession(context.Background(), n, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Item.Phase != work.PhaseCreated || v.Item.OwnerSession != "" || len(v.Assignments) != 0 || len(v.Steps) != 2 {
+		t.Fatalf("machine item must wait for its Project owner: %+v", v)
+	}
+	if v.Item.CreatedVia == nil || v.Item.CreatedVia.Run != run.ID {
+		t.Fatalf("the person's message was lost: %+v", v.Item.CreatedVia)
+	}
+	assigned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "project-owner", TerminalID: "project-terminal",
+		Assistant: "codex", Actor: run.Actor()}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assigned.Item.OwnerSession != "project-owner" || assigned.Item.Phase != work.PhaseAssigned {
+		t.Fatalf("delegated item has no Project owner: %+v", assigned.Item)
+	}
+}
+
 // Steps the Session names are the steps, in order, and the description's list
 // is not read for more — no step is written twice, and nothing becomes a
 // Session to-do.

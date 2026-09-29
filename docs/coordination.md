@@ -1,3 +1,7 @@
+> retired-app-record (2026-09-29): Historical design proposal, written before the Board v2 owner
+> model. It is not the current product contract. See [clawdfather-role.md](clawdfather-role.md)
+> for the decision after Board v2.
+
 # Clawdfather 協調：重新設計
 
 本檔是對現行協調規則的檢視與改法。現行規則散在

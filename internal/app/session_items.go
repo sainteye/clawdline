@@ -45,6 +45,9 @@ type NewSessionItemV2 struct {
 	// SessionProject is the canonical Project the Session works in; an
 	// executable item is assigned to the Session only in that Project.
 	SessionProject string
+	// MachineTriage is set by the HTTP layer only for the live, registered
+	// machine steward. It creates an unassigned Project item for delegation.
+	MachineTriage bool
 
 	ProjectID          string
 	ProjectPath        string
@@ -97,7 +100,7 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 			"Refactor and Plan stay in Planning and carry no steps; nothing was created. "+
 				"Create a Feature, Issue or Epic for work with steps.")
 	}
-	if !i.Planning() && n.SessionProject != i.ProjectPath {
+	if !i.Planning() && !n.MachineTriage && n.SessionProject != i.ProjectPath {
 		return WorkV2View{}, workV2Error(http.StatusConflict, "project_mismatch",
 			"This Session is not working in that Project, so the item could not be assigned to it; nothing was created.")
 	}
@@ -126,7 +129,13 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 		}
 		out = WorkV2View{Item: i, Assignments: []work.AssignmentV2{}, Documents: []work.DocumentV2{},
 			Images: []work.ImageV2{}, Steps: []work.StepV2{}, Events: []work.EventV2{}}
-		if !i.Planning() {
+		if n.MachineTriage && !i.Planning() {
+			seeded, err := addSessionItemSteps(tx, i, steps, n.SessionID, now)
+			if err != nil {
+				return err
+			}
+			out.Steps = seeded
+		} else if !i.Planning() {
 			a := work.AssignmentV2{ID: newWorkID(), WorkID: i.ID, Mode: "existing_session", SessionID: n.SessionID,
 				TerminalID: n.TerminalID, Assistant: n.Assistant, State: "active", HumanActor: actor,
 				CreatedAt: now, UpdatedAt: now}

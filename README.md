@@ -32,9 +32,9 @@ Clawdline Cloud connection is only an end-to-end encrypted path to it from anoth
 - **Board and Verify.** Put work on a project's Board, assign it to a session, and let the agent
   move it through implementation, verification, merge and deployment with evidence. Keep changes
   that can only be judged later on a list of things waiting to be verified.
-- **Clawdfather and dispatch.** Sessions dispatch bounded work to child sessions, get the result
-  back, and hand a line of work to a fresh session. Clawdline records when delivered work actually
-  lands. One session can hold the machine-wide coordinator role, **Clawdfather**.
+- **Dispatch and landing.** A Board item's owning session can dispatch bounded work to children,
+  get the result back, and hand a line of work to a fresh session. Clawdline records when delivered
+  work actually lands. Clawdfather can work from a separate machine workspace to report on Sessions, settings and supported imports or exports. For code work it creates a Board item first and delegates it to a Project Session; it never edits code itself.
 - **Projects across machines.** Give a second machine the same project names, icons and untracked
   skills as the first, matched by git origin.
 
@@ -52,7 +52,7 @@ Environment with worktrees, an editor, diff review and integrations.
 
 Clawdline is not an IDE and does not replace Claude Code or Codex. It is a control plane around the
 sessions you already start, with web and phone control, brokered dispatch, landing evidence,
-schedules, webhooks and Clawdfather coordination at its core. Choose it when the hard part is no
+schedules, webhooks, Board ownership and machine stewardship at its core. Choose it when the hard part is no
 longer starting an agent, but operating several of them reliably over time.
 
 ## Install

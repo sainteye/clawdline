@@ -104,9 +104,13 @@ function run(argv) {
 `
 
 func itermReveal(ctx context.Context, args ...string) (map[string]any, error) {
-	defer effect()()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	release, err := effect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript",
 		append([]string{"-l", "JavaScript", "-"}, args...)...)
 	cmd.Stdin = strings.NewReader(itermRevealScript)

@@ -507,6 +507,26 @@ func (t *WorkV2Tx) Item(id string) (work.ItemV2, error) {
 	return scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items WHERE id = ?`, id))
 }
 
+// AcceptanceChangedAt reads the event that established the current contract,
+// rather than the item's later phase or condition update time.
+func (t *WorkV2Tx) AcceptanceChangedAt(i work.ItemV2) (time.Time, error) {
+	var at int64
+	err := t.tx.QueryRowContext(t.ctx, `SELECT at FROM work_v2_events WHERE work_id=?
+	  AND kind='item.edited' AND json_valid(payload)
+	  AND json_extract(payload, '$.acceptance')=1
+	  AND json_extract(payload, '$.acceptance_version')=?
+	  ORDER BY seq DESC LIMIT 1`, i.ID, i.AcceptanceVersion).Scan(&at)
+	if err == sql.ErrNoRows && i.AcceptanceVersion == 1 {
+		err = t.tx.QueryRowContext(t.ctx, `SELECT at FROM work_v2_events WHERE work_id=?
+		  AND kind='item.created' ORDER BY seq LIMIT 1`, i.ID).Scan(&at)
+	}
+	return time.Unix(at, 0), err
+}
+
+func (t *WorkV2Tx) ActiveOwnedItemCount(session string) (int64, error) {
+	return t.count(`owner_session=? AND phase NOT IN ('done','cancelled')`, session)
+}
+
 func (t *WorkV2Tx) Tasks(id string) ([]BrokerRow, error) {
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+brokerColumns+` FROM broker_tasks
 	  WHERE json_valid(record) AND json_extract(record, '$.work_id') = ? ORDER BY created_at,id`, id)
@@ -1116,6 +1136,54 @@ func (s *Store) WorkV2RootAssignmentsForSessions(ctx context.Context, projectPat
 		}
 		if _, seen := out[session]; !seen {
 			out[session] = rootAssignment
+		}
+	}
+	return out, rows.Err()
+}
+
+// EpicRootParent is the stable visual relationship recorded when an Epic
+// owner assigned a child item to a new, independently owned Root Session.
+// The owner's conversation is taken from the assignment actor, not the
+// Epic's current owner, which may change after this Root was opened.
+type EpicRootParent struct {
+	OwnerSession string
+	EpicID       string
+}
+
+func (s *Store) WorkV2EpicRootParentsForSessions(ctx context.Context, assistant string, sessionIDs []string) (map[string]EpicRootParent, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	out := map[string]EpicRootParent{}
+	if assistant == "" || len(sessionIDs) == 0 {
+		return out, nil
+	}
+	ids, err := json.Marshal(sessionIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT a.session_id, a.human_actor, i.parent_id
+		FROM work_v2_assignments a JOIN work_v2_items i ON i.id=a.work_id
+		JOIN work_v2_items epic ON epic.id=i.parent_id AND epic.kind='epic' AND epic.project_id=i.project_id
+		WHERE a.session_id IN (SELECT value FROM json_each(?)) AND a.assistant=?
+		  AND a.mode='new_session' AND a.root_assignment_id<>''
+		  AND a.state IN ('active','released') AND i.parent_id<>''
+		  AND substr(a.human_actor,1,?)=?
+		ORDER BY a.updated_at DESC, a.rowid DESC`, string(ids), assistant, len(work.ActorEpicOwner), work.ActorEpicOwner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sessionID, actor, epicID string
+		if err := rows.Scan(&sessionID, &actor, &epicID); err != nil {
+			return nil, err
+		}
+		owner := strings.TrimPrefix(actor, work.ActorEpicOwner)
+		if owner != "" && owner != sessionID {
+			if _, seen := out[sessionID]; !seen {
+				out[sessionID] = EpicRootParent{OwnerSession: owner, EpicID: epicID}
+			}
 		}
 	}
 	return out, rows.Err()

@@ -112,3 +112,14 @@ func TestALineTypedAndNotSubmittedIsRefusedAsSuch(t *testing.T) {
 		t.Fatalf("the terminal's own Unsubmitted was dropped from %v", err)
 	}
 }
+
+func TestAnEffectThatNeverEnteredTheAppleEventLaneIsRetryable(t *testing.T) {
+	ref := sendRefusal(session.Session{}, terminal.EffectBusy{Why: "iTerm2 was busy before this action began"})
+	if ref.Code != "busy" {
+		t.Fatalf("an effect that typed nothing was filed as %s", ref.Code)
+	}
+	var unsent terminal.Unsent
+	if !errors.As(ref, &unsent) {
+		t.Fatalf("the broker cannot prove that a retry is safe: %v", ref)
+	}
+}

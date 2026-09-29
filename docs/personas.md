@@ -10,6 +10,9 @@ The word is `persona` in code, on the wire and in every flag. `role` already nam
 coordinator role and the dispatch role contract (docs/design-guidelines.md DG-5). The console may
 call it "Role".
 
+The [skill candidate decisions](persona-skill-decisions.md) review one bounded-task candidate for
+each built-in persona. They are research records, not installed or adopted skills.
+
 ## The catalog
 
 The catalog is closed and compiled into the daemon (`internal/domain/persona`). Each persona is

@@ -40,15 +40,28 @@ type Screens struct{ hosts []ports.TerminalHost }
 func NewScreens() Screens { return Screens{hosts: Hosts()} }
 
 func (s Screens) Capture(ctx context.Context, sess session.Session) (string, bool) {
+	text, ok, _ := s.CaptureWithFailure(ctx, sess)
+	return text, ok
+}
+
+// CaptureWithFailure keeps a source-wide Apple Event outage separate from a
+// tab that was simply closed while its held screen was being refreshed.
+func (s Screens) CaptureWithFailure(ctx context.Context, sess session.Session) (string, bool, bool) {
 	for _, h := range s.hosts {
 		if h.Name() != string(sess.Backend) {
 			continue
 		}
+		if reader, ok := h.(interface {
+			CaptureWithFailure(context.Context, session.Session) (string, bool, bool)
+		}); ok {
+			return reader.CaptureWithFailure(ctx, sess)
+		}
 		if reader, ok := h.(ports.ScreenHost); ok {
-			return reader.Capture(ctx, sess)
+			text, readable := reader.Capture(ctx, sess)
+			return text, readable, false
 		}
 	}
-	return "", false
+	return "", false, false
 }
 
 var _ ports.ScreenHost = Screens{}

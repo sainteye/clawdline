@@ -196,3 +196,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The retained coordinator mark is an identity. The copied legacy stylesheet
+ * still describes a button; the React row supplies no such control. */
+.row .coordinator-mark[aria-hidden="true"] {
+  pointer-events: none;
+}
+
+.row .coordinator-mark[aria-hidden="true"]::before {
+  display: none;
+}
+
+/* Keep the legacy identity in the option's accessible name on a phone,
+ * where the visible word leaves and the decorative crown remains. */
+.row .coordinator-identity {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

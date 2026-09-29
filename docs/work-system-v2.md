@@ -336,7 +336,16 @@ acceptance is empty. The owning Agent then writes the first criteria with
 `clawdline item acceptance <id> --body-file <file>` before a planning-on Epic or Feature starts
 implementation, or before verify-on work enters verification. An Epic owner may also set it for
 a child or revise it through a reasoned third-FAIL decision. After the first nonempty criteria,
-the maker cannot revise it; later ordinary revisions belong to the person. An authorized edit before merging stales the current round and every old
+the maker cannot revise it through the ordinary edit route. The owning live Root may relay a person's explicit Clawdline message with
+`clawdline item acceptance-revise <id> --run <run> --expected-version <item version> --body-file <file>`.
+The message excerpt must explicitly request an acceptance change; negations, questions without
+a direct request, and discussion alone do not authorize the route. It must name the item by ID
+or title when the Root owns more than one open item; with exactly one open item, its conversation
+context identifies that item unless the message names a different item ID. The run must be newer
+than the current acceptance version and within the run's one-day relay window. The
+server records the run, Session, time, and excerpt in the item event and response. The full file
+replaces the acceptance Markdown; use the same key and version to retry an uncertain write.
+The person may still edit directly. An authorized edit before merging stales the current round and every old
 PASS/override, returning a verifying item to implementing. Merging, deploying, and done lock it.
 The checker receives its exact text, version, digest, cycle, and immutable candidate receipt.
 The Board's planning-and-verification panel appears only for an Epic after criteria have been
@@ -444,6 +453,14 @@ and only it:
   Root Assignment — with the owner check inside the assignment's transaction and the actor recorded
   as `epic_owner:<session id>`, a Session, never a person. Assigning a child to the Epic's owner
   itself is allowed. The child's owner is told which Epic it belongs to.
+
+  For a new Session opened by the Epic owner, the Session snapshot projects an `epic_parent` with
+  the Epic id and the assigning owner's conversation id from that assignment's recorded actor.
+  The console places this independent Root under the owner's row, and keeps broker children under
+  that Root. The source is the assignment made at the time, so reassigning the Epic does not move an
+  existing Root to a different parent. If the owner is absent or filtered out, the Root remains a
+  top-level visible row. This relationship is presentation ancestry: it does not grant child-task
+  credentials, transfer landing duties, or change the Root's independent closeability.
 - Creation and assignment are two writes, in that order. When the assignment fails the child
   **stays, unassigned** (a failed new-Session attempt is recorded as `assignment_failed`, as a
   person's would be), and the `201` answer carries `assigned: false` and `assignment_error: {code,
@@ -530,14 +547,15 @@ issued only when a person sends a Session a message through this daemon, and
 ```
 POST /v1/work/v2/agent/items     (machine auth, Idempotency-Key required)
 {"session_id": "<conversation id>", "via": {"run": "<run id>"}, "project_id": "<place id>",
- "kind": "…", "title": "…", "description": "…", "deployment_policy"?: "…", "steps"?: ["…"]}
+ "kind": "…", "title": "…", "description": "…", "deployment_policy"?: "…", "steps"?: ["…"],
+ "assign"?: {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}
 ```
 
 Each check refuses by a typed code and writes nothing: the run exists (`run_unknown`, also for no
 run named), is within the one-day relay window (`run_expired`), and was said to this Session
 (`run_other_session`); the conversation is a live, non-child Session (`session_not_found`,
 `child_session`); the Project is in the catalog (`project_not_found`); an executable item is in the
-Project the Session works in (`project_mismatch`); the usual title and description rules; at most
+Project the Session works in (`project_mismatch`, except the registered machine steward's delegation path); the usual title and description rules; at most
 128 explicit steps (`too_many_steps`), none on a planning kind, Refactor or Plan (`planning_has_no_steps`); and one
 run backs at most five created items, open or closed (`run_items_exhausted`, capacity row
 `run.created_items`).
@@ -549,6 +567,23 @@ the explicit `steps` in order, or — when there are none — the description's 
 list rows exactly as a person's assignment seeds them. Explicit steps replace that seeding, so no
 step is written twice. Nothing is typed into the Session's terminal: it asked. Refactor and Plan
 are created unassigned in Planning, as a person's would be.
+
+The registered Clawdfather is the narrow exception for executable items: it works outside every
+Project and never owns or edits Project code. On a person's explicit Clawdline message it first
+creates the target Project's item unassigned, then may delegate it to a Project Session with
+`clawdline item add --project … --assign-new` or `--assign-terminal`. The daemon requires its
+current role binding to be online and to name the exact creating Session (`coordinator_required`),
+and rejects `assign` on ordinary Session item creation (`machine_delegation_required`). The
+item and an initial receipt naming its ID commit in one transaction. Assignment then runs and
+refines the receipt. The response separates `item_created` from `assignment_state`: `assigned` only
+when a Project owner is recorded, `awaiting_user` when a new Session stopped at its first dialog,
+`failed` with `assignment_error`, or `not_requested` when no assignment was requested. An
+`awaiting_user` item needs the person to answer the new Session's first screen; an unrequested or
+failed assignment needs the person to assign it from the Board. If the process stops or receipt
+refinement fails after creation, a replay of the same Idempotency-Key returns the original item ID
+with `pending`; inspect the Board before any new assignment. It cannot create a duplicate item.
+Without an explicit message authorizing a new item,
+Clawdfather files a proposal and waits for the person to accept it.
 
 The run now keeps an excerpt of the message (280 characters, whitespace folded, cut on a character
 boundary with an ellipsis; runs issued earlier have none), and the item keeps its provenance in

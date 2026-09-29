@@ -3,6 +3,7 @@ import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { actionWidthOf, paintSwipe, Row } from "./session/List.js"
+import { visualDepths } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Command, CommandSheet } from "./session/Command.js"
@@ -92,7 +93,9 @@ export function SessionsPage({
   const open = rows.find((r) => r.id === openId) ?? null
   const T = L.strings
   const sourceFailure = scanFailureWords(scanNotes, scanSources)
-  const readingSaid = sourceFailure ?? batchReadingWords(readingSource)
+  const briefRefresh = scanNotes?.includes("session inventory refresh is in progress; prior rows are unverified") &&
+    readingSource?.freshness === "unverified" && Date.now() / 1000 - readingSource.observed_at < 30
+  const readingSaid = sourceFailure ?? (briefRefresh ? null : batchReadingWords(readingSource))
 
   // `thawOrder` redraws the list through the session UI seam once the order it
   // held is let go, and this page is that list.
@@ -134,6 +137,7 @@ export function SessionsPage({
   const skeleton = wait === "shown"
   const listUnknown = !arrived && wait !== "over"
   const drawn = skeleton ? [] : shown
+  const depths = visualDepths(drawn, tasks ?? [], L.taskShaping)
 
   // Every spinner in the list, handed to the one clock that drives them all.
   // Re-registered after each render because the rows are rebuilt: a canvas that
@@ -278,7 +282,7 @@ export function SessionsPage({
               id="start-go"
               type="button"
               title={T.webStart}
-              aria-label={T.webStartLabel}
+              aria-label={T.webStart}
               onClick={() => Start.open()}
             >
               <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
@@ -300,6 +304,7 @@ export function SessionsPage({
                 <Row
                   key={L.selectionKey(r)}
                   row={r}
+                  depth={depths.get(r.id) ?? 0}
                   selected={r.id === selected}
                   open={r.id === openId}
                   swiped={r.id === swipedId}

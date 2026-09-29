@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/limits"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -131,6 +132,26 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	}
 	matches := identityMatchCounts(items)
 	s.lastScreen.Store(&screenReading{at: time.Now(), rows: onScreen(items)})
+	// The assignment actor is the stable source of Epic ancestry. A missing
+	// Board reading leaves a Root independent instead of inventing a parent.
+	epicParents := map[string]store.EpicRootParent{}
+	if s.store != nil {
+		byAssistant := map[string][]string{}
+		for _, item := range items {
+			if item.ConversationID != "" && item.Assistant != "" {
+				byAssistant[string(item.Assistant)] = append(byAssistant[string(item.Assistant)], item.ConversationID)
+			}
+		}
+		for assistant, ids := range byAssistant {
+			parents, err := s.store.WorkV2EpicRootParentsForSessions(records, assistant, ids)
+			if err != nil {
+				continue
+			}
+			for conversation, parent := range parents {
+				epicParents[assistant+"\x00"+conversation] = parent
+			}
+		}
+	}
 
 	// This daemon's own tasks, waits, deliveries, handoffs and Feature Roots,
 	// in the Swift store's shape, so the one set of rules reads both
@@ -176,6 +197,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			generation: gen,
 			role:       role,
 			ownRole:    ownRole,
+			epicParent: epicParents[string(item.Assistant)+"\x00"+item.ConversationID],
 		}))
 	}
 
@@ -371,8 +393,9 @@ type rowInput struct {
 	generation int64
 	// role is this daemon's own machine role, and ownRole whether it holds
 	// one; see sessionsPayload.
-	role    *coordinator.Record
-	ownRole bool
+	role       *coordinator.Record
+	ownRole    bool
+	epicParent store.EpicRootParent
 }
 
 // sessionRow renders one session in the shape the console reads.
@@ -410,7 +433,8 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// longer depends on what any one browser happened to have watched.
 		Activity: wireActivity(item.Activity),
 		// Read back from the process's command line; absent for none.
-		Persona: item.Persona,
+		Persona:      item.Persona,
+		MachineScope: projects.IsMachineWorkspace(s.cfg.Dir, item.CWD),
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
 
@@ -448,6 +472,12 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	// not be: they are drawn from the records there are, the daemon's own
 	// among them.
 	row.RootAssignment = in.swift.RootAssignment(in.live)
+	if in.epicParent.OwnerSession != "" && in.epicParent.EpicID != "" {
+		row.EpicParent = &contract.EpicSessionParent{
+			OwnerSessionID: in.epicParent.OwnerSession,
+			EpicID:         in.epicParent.EpicID,
+		}
+	}
 	row.Coordination = in.swift.Coordination(item.ID, in.labelOf)
 
 	// One role, one source: this daemon's own when it holds one; otherwise

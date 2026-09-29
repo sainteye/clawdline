@@ -31,6 +31,9 @@ type Labeler func(path string) string
 // one instance is meant to live as long as the daemon.
 type Places struct {
 	Label Labeler
+	// MachineStateDir excludes the daemon's machine workspace from every
+	// source, including provider history, a live session and registration.
+	MachineStateDir string
 	// Registered reads the durable directories a person explicitly added.
 	// It is separate from Fixture: production registration is a source beside
 	// provider history, while a fixture replaces every production source.
@@ -105,7 +108,7 @@ func (p *Places) List(live []string, limit int) []Place {
 	if p.Fixture != nil {
 		var out []Place
 		for _, path := range p.Fixture {
-			if usable(path) && isDirectory(path) && len(out) < limit {
+			if !IsMachineWorkspace(p.MachineStateDir, path) && usable(path) && isDirectory(path) && len(out) < limit {
 				out = append(out, Place{ID: PlaceID(path), Path: path, Label: p.label(path), At: now})
 			}
 		}
@@ -127,7 +130,10 @@ func (p *Places) List(live []string, limit int) []Place {
 		}
 		all = append(all, Place{ID: PlaceID(cwd), Path: cwd, Label: p.label(cwd), At: now})
 	}
-	return tidy(all, limit, isDirectory, durableJudge(p.Managed))
+	durable := durableJudge(p.Managed)
+	return tidy(all, limit, isDirectory, func(path string) bool {
+		return !IsMachineWorkspace(p.MachineStateDir, path) && durable(path)
+	})
 }
 
 func isDirectory(path string) bool {

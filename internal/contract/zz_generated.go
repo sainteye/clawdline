@@ -2627,6 +2627,15 @@ type DocumentTask struct {
 	Title string `json:"title"`
 }
 
+// Presentation ancestry of an independent Root opened when an Epic owner
+// assigned a child Board item. The owner is the conversation that made that
+// assignment, even if the Epic is later reassigned. This does not transfer
+// task, landing, or close ownership.
+type EpicSessionParent struct {
+	EpicID         string `json:"epic_id"`
+	OwnerSessionID string `json:"owner_session_id"`
+}
+
 // How loud an obligation has become. Escalation changes visibility, never
 // verdict: nothing here ever declares a session dead.
 type Escalation string
@@ -4969,6 +4978,7 @@ type SessionRow struct {
 	Coordinator   *SessionCoordinator  `json:"coordinator,omitempty"`
 	CWD           string               `json:"cwd,omitempty"`
 	Disposition   *WorkDisposition     `json:"disposition,omitempty"`
+	EpicParent    *EpicSessionParent   `json:"epic_parent,omitempty"`
 	Evidence      Evidence             `json:"evidence"`
 	Icon          *Icon                `json:"icon,omitempty"`
 	ID            string               `json:"id"`
@@ -4989,9 +4999,13 @@ type SessionRow struct {
 	// menu it is instead that menu's revision (the Swift app's menuRevision), which no
 	// row draws and which changes whenever the question does. The Swift app sends it
 	// under this name and the row's height depends on it.
-	Line string       `json:"line,omitempty"`
-	Menu *SessionMenu `json:"menu,omitempty"`
-	Owed *WorkOwed    `json:"owed,omitempty"`
+	Line string `json:"line,omitempty"`
+
+	// This Session is in the daemon's machine workspace. It may still need role
+	// registration; the coordinator field is the registration receipt.
+	MachineScope bool         `json:"machine_scope,omitempty"`
+	Menu         *SessionMenu `json:"menu,omitempty"`
+	Owed         *WorkOwed    `json:"owed,omitempty"`
 
 	// The built-in persona (GET /v1/personas) this session was launched as, read back
 	// from its process command line; absent for none, and absent on a row with no

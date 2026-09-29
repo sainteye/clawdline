@@ -30,7 +30,8 @@ marked English in the tables below. The rest are written in Traditional Chinese.
 | [user/remote-access.md](user/remote-access.md) | User page | English | Another computer over SSH, a phone over your own tunnel, and Clawdline Cloud pairing and permissions |
 | [user/schedules.md](user/schedules.md) | User page | English | Scheduled tasks on the local clock, and schedule webhooks on Cloud Pro |
 | [user/board.md](user/board.md) | User page | English | The Board, session to-dos and things waiting to be verified |
-| [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The agent skill, dispatching children, landing, handoff, and the Clawdfather role |
+| [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The agent skill, dispatching children, landing, handoff, and the machine-workspace coordinator |
+| [clawdfather-role.md](clawdfather-role.md) | Decision | English | Board ownership and Clawdfather machine stewardship |
 | [user/projects.md](user/projects.md) | User page | English | Adding projects, the Projects page, and bringing project settings to another machine |
 | [user/usage.md](user/usage.md) | User page | English | Token bills by category, assistant quotas, the compaction window and capacity |
 | [user/troubleshooting.md](user/troubleshooting.md) | User page | English | From a symptom to its cause and fix |

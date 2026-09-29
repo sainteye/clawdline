@@ -240,6 +240,29 @@ func (s *Store) CompleteReceipt(ctx context.Context, k ReceiptKey, a ReceiptAnsw
 	})
 }
 
+// ReplaceReceipt refines a completed answer after a later external effect.
+// The first answer is filed with the local effect in its transaction, so a
+// failed refinement still replays the original item instead of creating one.
+func (s *Store) ReplaceReceipt(ctx context.Context, k ReceiptKey, a ReceiptAnswer) error {
+	return s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE request_receipts SET status = ?, body = ?, completed_at = ?
+			 WHERE scope = ? AND actor = ? AND key = ? AND state = 'complete' AND owner = ?`,
+			a.Status, a.Body, time.Now().Unix(), k.Scope, k.Actor, k.Key, s.owner.String())
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		if n != 1 {
+			return 0, ErrConflict
+		}
+		return n, nil
+	})
+}
+
 // ReleaseReceipt gives up a reservation this handle holds without filing an
 // answer: the request did nothing — it was refused for a reason about this
 // moment, or its caller left before it began — and a resend should be run.

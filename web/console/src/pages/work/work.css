@@ -270,10 +270,11 @@
 .work-assignment-route > .work-new-session:not(.work-new-persona),
 .work-assignment-route > .work-persona-ai-button { justify-self: start; }
 .work-assignment-route > .work-note { margin: 0; }
-.work-assignment-action { justify-self: start; min-height: 36px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; }
+.work-assignment-action { display: flex; align-items: center; gap: 8px; justify-self: start; min-height: 36px; padding: 7px 12px; font-size: 12.5px; font-weight: 600; }
 .work-assignment-action[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
 .work-assignment-spinner {
-    flex: none; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
+    display: inline-block; box-sizing: border-box; flex: none; width: 14px; height: 14px;
+    border: 2px solid currentColor; border-right-color: transparent;
     border-radius: 50%; animation: work-assignment-spin 800ms linear infinite;
 }
 @keyframes work-assignment-spin { to { transform: rotate(360deg); } }

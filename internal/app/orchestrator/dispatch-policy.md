@@ -39,15 +39,24 @@ found), dozens of small parallel jobs, anything on a path where somebody is wait
 need to talk back and forth, output a program has to parse, and work smaller than its own briefing —
 which does not vanish, it accumulates. See below.
 
-**Clawdfather** is the exception to that single-session bias: it holds the machine-wide picture and
-sends substantial diagnosis, implementation, research and review out as separate tasks whenever
-capacity allows. It also owns the small-work pool below.
+The Board item's owning Session decides whether to dispatch bounded work and keeps synthesis,
+integration, and landing. Machine Bearings can help any Session inspect work across items; a
+registered Clawdfather is not required to read them or to dispatch. A cross-item conflict goes
+back to the affected owners and, when priorities or ownership must change, to the person.
+
+The registered Clawdfather is a machine steward, not a code owner. For an engineering request
+addressed to it, it creates the relevant Project Board item on the person's Clawdline message
+first, then delegates that item to a Project Session. If no message explicitly authorizes the
+item, it files a proposal and waits for the person's decision. It never edits Project source,
+including Clawdline, never dispatches a code child directly from the machine Session, and never
+lands another owner's work. The newly assigned Project owner chooses any child dispatch and
+remains responsible for verification and landing.
 
 **A major Feature needs a visible independent owner.** The dispatch roles are a closed contract:
 
 <!-- clawdline-dispatch-role-contract:v1 -->
 
-- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child whose dispatching root
   retains synthesis, integration, and landing.
 - **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
   line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue
@@ -64,13 +73,13 @@ capacity allows. It also owns the small-work pool below.
 <!-- /clawdline-dispatch-role-contract:v1 -->
 
 Use Root Assignment only for a genuinely new independently owned Feature. Keep bounded work under
-Clawdfather as a child, and use handoff only to continue an existing line with its full state.
+its owning root as a child, and use handoff only to continue an existing line with its full state.
 
 Provider-native subagents remain useful for short, disposable, normally read-only research,
 calculation or focused review with no independent delivery. Announce them honestly and never call
 them a Clawdline dispatch. If Clawdline refuses the task or is unavailable, report the typed failure
 and wait, retry or ask; do not silently turn the Feature into invisible delegation. For every
-bounded child it dispatches, Clawdfather continues to own decomposition, any risk-triggered review,
+bounded child it dispatches, the root continues to own decomposition, any risk-triggered review,
 exact-tree integration and landing closure.
 
 ## How big one task is

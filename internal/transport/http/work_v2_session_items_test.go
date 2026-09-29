@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +15,11 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/domain/coordinator"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -142,6 +146,170 @@ func TestASessionCreatesAnItemOnThePersonsMessageAndThePersonSeesTheirWords(t *t
 	s.workV2Route(list, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open", nil))
 	if list.Code != http.StatusOK || strings.Count(list.Body.String(), `"created_via":{"run":"`+run+`"`) != 1 {
 		t.Fatalf("list: %d %s", list.Code, list.Body)
+	}
+}
+
+func TestUnregisteredMachineSessionCannotCreateProjectItem(t *testing.T) {
+	s, p, project := sessionItemServer(t)
+	s.cfg.Dir = s.broker.Dir
+	p.s.CWD = projects.MachineWorkspace(s.cfg.Dir)
+	run := issueTestRun(t, s, p, "Create a Project Board item before delegation")
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items",
+		sessionItemBody(t, p.s.ConversationID, run, project, "feature"), "machine-unregistered"))
+	if rec.Code != http.StatusForbidden || codeOf(t, rec) != "coordinator_required" {
+		t.Fatalf("unregistered machine Session created work: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func registeredMachineItemServer(t *testing.T) (*Server, *pane, *pane, string) {
+	t.Helper()
+	s, machine, project := sessionItemServer(t)
+	projectPane := &pane{s: machine.s}
+	projectPane.s.ID = "project-pane"
+	projectPane.s.ConversationID = "20000000-0000-4000-8000-000000000004"
+	s.cfg.Dir = s.broker.Dir
+	machine.s.ID = "machine-pane"
+	machine.s.CWD = projects.MachineWorkspace(s.cfg.Dir)
+	machine.s.PID = os.Getpid()
+	hosts := []ports.TerminalHost{machine, projectPane}
+	s.terminals = hosts
+	s.inventory = app.Inventory{Terminals: hosts, Screen: machine}
+	s.broker.Live = func(context.Context) []session.Session { return []session.Session{machine.s, projectPane.s} }
+	c := s.coordinator()
+	started := c.ProcessStart(machine.s.PID)
+	if started.IsZero() {
+		t.Skip("this platform did not expose the test process start")
+	}
+	role := coordinator.Record{ID: "30000000-0000-4000-8000-000000000004", Identity: coordinator.Identity{
+		ConversationID: machine.s.ConversationID, TerminalID: machine.s.ID,
+		Assistant: string(machine.s.Assistant), PID: machine.s.PID, ProcessStart: started,
+	}, CWD: machine.s.CWD, Generation: 1, RegisteredAt: time.Now()}
+	if err := s.store.CommitCoordinator(context.Background(), nil, role, nil); err != nil {
+		t.Fatal(err)
+	}
+	return s, machine, projectPane, project
+}
+
+func TestRegisteredClawdfatherCreatesItemThenDelegatesToProjectSession(t *testing.T) {
+	s, machine, projectPane, project := registeredMachineItemServer(t)
+	run := issueTestRun(t, s, machine, "Create a Board item and delegate the engineering work")
+	var body map[string]any
+	if err := json.Unmarshal([]byte(sessionItemBody(t, machine.s.ConversationID, run, project, "feature", "implement")), &body); err != nil {
+		t.Fatal(err)
+	}
+	body["assign"] = map[string]string{"mode": "existing_session", "terminal_id": projectPane.s.ID}
+	encoded, _ := json.Marshal(body)
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", string(encoded), "machine-delegate"))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create and delegate: %d %s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Assigned        bool           `json:"assigned"`
+		AssignmentState string         `json:"assignment_state"`
+		Item            workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.Assigned || got.AssignmentState != "assigned" || got.Item.OwnerSession == nil ||
+		*got.Item.OwnerSession != projectPane.s.ConversationID || got.Item.Phase != "assigned" {
+		t.Fatalf("Board item did not reach the Project owner: %v %s", err, rec.Body.String())
+	}
+	retry := httptest.NewRecorder()
+	s.workV2Route(retry, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", string(encoded), "machine-delegate"))
+	if retry.Code != http.StatusCreated || retry.Body.String() != rec.Body.String() {
+		t.Fatalf("same delegation key did not replay one item: %d %s", retry.Code, retry.Body.String())
+	}
+}
+
+func TestRegisteredClawdfatherDistinguishesUnassignedAndFailedDelegation(t *testing.T) {
+	s, machine, _, project := registeredMachineItemServer(t)
+	run := issueTestRun(t, s, machine, "Create a Board item for engineering work")
+	body := sessionItemBody(t, machine.s.ConversationID, run, project, "issue")
+	created := httptest.NewRecorder()
+	s.workV2Route(created, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", body, "machine-no-assign"))
+	if created.Code != http.StatusCreated || !strings.Contains(created.Body.String(), `"assignment_state":"not_requested"`) ||
+		strings.Contains(created.Body.String(), `"assigned":true`) {
+		t.Fatalf("unassigned: %d %s", created.Code, created.Body)
+	}
+	var initial struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	_ = json.Unmarshal(created.Body.Bytes(), &initial)
+	if initial.Item.OwnerSession != nil || initial.Item.Phase != "created" {
+		t.Fatalf("unassigned item: %s", created.Body)
+	}
+	var request map[string]any
+	_ = json.Unmarshal([]byte(body), &request)
+	request["assign"] = map[string]string{"mode": "existing_session", "terminal_id": "missing-pane"}
+	encoded, _ := json.Marshal(request)
+	failed := httptest.NewRecorder()
+	s.workV2Route(failed, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", string(encoded), "machine-failed-assign"))
+	if failed.Code != http.StatusCreated || !strings.Contains(failed.Body.String(), `"assignment_state":"failed"`) ||
+		!strings.Contains(failed.Body.String(), `"assignment_error"`) {
+		t.Fatalf("failed assignment: %d %s", failed.Code, failed.Body)
+	}
+}
+
+func TestMachineItemReceiptFailureKeepsTheCreatedItemForReplay(t *testing.T) {
+	s, machine, projectPane, project := registeredMachineItemServer(t)
+	run := issueTestRun(t, s, machine, "Create and delegate this item")
+	var request map[string]any
+	_ = json.Unmarshal([]byte(sessionItemBody(t, machine.s.ConversationID, run, project, "feature")), &request)
+	request["assign"] = map[string]string{"mode": "existing_session", "terminal_id": projectPane.s.ID}
+	encoded, _ := json.Marshal(request)
+	s.replaceMachineItemReceipt = func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error {
+		return errors.New("injected receipt update failure")
+	}
+	failed := httptest.NewRecorder()
+	s.workV2Route(failed, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", string(encoded), "machine-receipt-fault"))
+	if failed.Code != http.StatusInternalServerError || codeOf(t, failed) != "receipt_update_failed" {
+		t.Fatalf("receipt fault: %d %s", failed.Code, failed.Body)
+	}
+	replay := httptest.NewRecorder()
+	s.workV2Route(replay, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", string(encoded), "machine-receipt-fault"))
+	if replay.Code != http.StatusCreated || replay.Header().Get("Idempotent-Replayed") != "true" ||
+		!strings.Contains(replay.Body.String(), `"assignment_state":"pending"`) {
+		t.Fatalf("replay: %d %s", replay.Code, replay.Body)
+	}
+	var got struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	_ = json.Unmarshal(replay.Body.Bytes(), &got)
+	items, _, err := s.store.WorkV2Items(context.Background(), "", "", "all", "", 100)
+	if err != nil || len(items) != 1 || items[0].ID != got.Item.ID || !strings.Contains(failed.Body.String(), got.Item.ID) {
+		t.Fatalf("duplicate or lost item: %+v, %v, %s", items, err, failed.Body)
+	}
+}
+
+func TestMachineItemNewSessionDialogIsAwaitingUserNotAssigned(t *testing.T) {
+	s, machine, projectPane, project := registeredMachineItemServer(t)
+	dir := s.broker.Dir
+	s.broker = &orchestrator.Broker{Store: s.store, Tasks: taskdir.New(dir), Dir: dir,
+		Launcher: oneTmuxPane{pane: projectPane.s.ID},
+		Live:     func(context.Context) []session.Session { return []session.Session{machine.s, projectPane.s} },
+		Screen: func(_ context.Context, id string) (string, bool) {
+			return orchestratorScreen(t, "codex-update"), id == projectPane.s.ID
+		},
+		Type: func(context.Context, string, string) error { return nil },
+	}
+	run := issueTestRun(t, s, machine, "Create a Board item and delegate it to a new Session")
+	var request map[string]any
+	_ = json.Unmarshal([]byte(sessionItemBody(t, machine.s.ConversationID, run, project, "feature")), &request)
+	request["assign"] = map[string]string{"mode": "new_session", "assistant": "codex"}
+	encoded, _ := json.Marshal(request)
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", string(encoded), "machine-dialog"))
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"assignment_state":"awaiting_user"`) ||
+		!strings.Contains(rec.Body.String(), `"assigned":false`) {
+		t.Fatalf("waiting assignment: %d %s", rec.Code, rec.Body)
+	}
+	var got struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.Item.Phase != "assigning" || got.Item.OwnerSession != nil || got.Item.Condition == nil ||
+		*got.Item.Condition != string(work.ConditionWaitingUser) {
+		t.Fatalf("waiting Board item: %s", rec.Body)
 	}
 }
 

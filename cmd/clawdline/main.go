@@ -92,6 +92,8 @@ func main() {
 		notifyCommand(os.Args[2:])
 	case "session":
 		sessionCommand(os.Args[2:])
+	case "coordinator":
+		coordinatorCommand(os.Args[2:])
 	case "usage":
 		usageCommand(os.Args[2:])
 	case "heavy":
@@ -383,10 +385,11 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|usage|heavy|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|coordinator|usage|heavy|verify|setting|dispatch|todo|item|send|notify|landings|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
+	fmt.Fprintln(os.Stderr, "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role")
 	fmt.Fprintln(os.Stderr, "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default")
 	fmt.Fprintln(os.Stderr, "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory")
 	fmt.Fprintln(os.Stderr, "  setting <get|set> <key> <value>   planning_gate, verify_gate, or claude_auto_compact_window")

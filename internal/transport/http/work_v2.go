@@ -25,6 +25,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/coordinator"
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -1358,6 +1359,56 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	_, _ = w.Write(answer)
 }
 
+// agentReviseAcceptance relays one explicit, recent instruction to the live
+// owning Root. The app rechecks ownership, freshness against the current
+// contract, item version, and instruction intent inside the item transaction.
+func (s *Server) agentReviseAcceptance(w http.ResponseWriter, r *http.Request, id string) {
+	if !machineAuthed(r) {
+		writeRefusal(w, http.StatusUnauthorized, "machine_required", "Only an authenticated Session may use this route.")
+		return
+	}
+	var body struct {
+		ExpectedVersion    int64  `json:"expected_version"`
+		SessionID          string `json:"session_id"`
+		AcceptanceCriteria string `json:"acceptance_criteria"`
+		Via                struct {
+			Run string `json:"run"`
+		} `json:"via"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := s.relayRefuser(w, r, k)
+	run, sess, err := s.relaySession(r.Context(), body.Via.Run, body.SessionID,
+		"A revision needs the run of the person's explicit message to this Session.", "nothing was revised")
+	if err != nil {
+		refuse(err)
+		return
+	}
+	criteria := body.AcceptanceCriteria
+	itemOf := s.workV2ItemProjector(r.Context())
+	var answer []byte
+	_, err = s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
+		AcceptanceCriteria: &criteria, OwnerSession: sess.ConversationID, Actor: sess.ConversationID,
+		RevisionRun: run}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+		answer, _ = json.Marshal(map[string]any{"ok": true, "item": itemOf(v),
+			"acceptance_source": map[string]any{"run": run.ID, "session_id": run.Session,
+				"at": run.At.Unix(), "excerpt": run.Excerpt}})
+		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+	})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
+}
+
 func newWorkV2UUID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
@@ -2146,6 +2197,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		s.workV2Edit(w, r, parts[1], false)
 		return
 	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "acceptance-revision" && r.Method == http.MethodPost {
+		s.agentReviseAcceptance(w, r, parts[1])
+		return
+	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "reopen" && r.Method == http.MethodPost {
 		var body struct {
 			ExpectedVersion int64  `json:"expected_version"`
@@ -2530,13 +2585,14 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		Via       struct {
 			Run string `json:"run"`
 		} `json:"via"`
-		ProjectID          string   `json:"project_id"`
-		Kind               string   `json:"kind"`
-		Title              string   `json:"title"`
-		Description        string   `json:"description"`
-		AcceptanceCriteria string   `json:"acceptance_criteria"`
-		DeploymentPolicy   string   `json:"deployment_policy"`
-		Steps              []string `json:"steps"`
+		ProjectID          string                   `json:"project_id"`
+		Kind               string                   `json:"kind"`
+		Title              string                   `json:"title"`
+		Description        string                   `json:"description"`
+		AcceptanceCriteria string                   `json:"acceptance_criteria"`
+		DeploymentPolicy   string                   `json:"deployment_policy"`
+		Steps              []string                 `json:"steps"`
+		Assign             *workV2EpicAssignRequest `json:"assign"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -2555,6 +2611,28 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		refuse(err)
 		return
 	}
+	machineTriage := projects.IsMachineWorkspace(s.cfg.Dir, sess.CWD)
+	if machineTriage {
+		c := s.coordinator()
+		c.Read = s.freshReading
+		st, roleErr := c.State(r.Context())
+		if roleErr != nil || !machineMayCreateItem(st, sess) {
+			refuse(&app.WorkError{Status: http.StatusForbidden, Code: "coordinator_required",
+				Message: "Only the live, registered Clawdfather may create a Project item from the machine workspace."})
+			return
+		}
+	}
+	if body.Assign != nil {
+		if !machineTriage {
+			refuse(&app.WorkError{Status: http.StatusForbidden, Code: "machine_delegation_required",
+				Message: "Only Clawdfather may create and delegate a Project item in one request."})
+			return
+		}
+		if err := body.Assign.check(); err != nil {
+			refuse(err)
+			return
+		}
+	}
 	catalog := s.workV2Projects(r.Context())
 	project, ok := catalog[body.ProjectID]
 	if !ok {
@@ -2564,12 +2642,22 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionProject, _ := projects.CanonicalProjectKey(sess.CWD)
 	var answer []byte
-	_, err = s.workV2().CreateFromSession(r.Context(), app.NewSessionItemV2{Run: *run, SessionID: sess.ConversationID,
+	created, err := s.workV2().CreateFromSession(r.Context(), app.NewSessionItemV2{Run: *run, SessionID: sess.ConversationID,
 		TerminalID: sess.ID, Assistant: string(sess.Assistant), SessionProject: sessionProject,
-		ProjectID: project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
+		MachineTriage: machineTriage,
+		ProjectID:     project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
 		Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			if machineTriage {
+				state := "not_requested"
+				if body.Assign != nil {
+					state = "pending"
+				}
+				answer, _ = json.Marshal(map[string]any{"ok": true, "item_created": true,
+					"assigned": false, "assignment_state": state, "item": s.workV2ItemOf(catalog, v)})
+				return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
+			}
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 		})
@@ -2577,9 +2665,61 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		refuse(err)
 		return
 	}
+	if machineTriage {
+		if body.Assign == nil {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write(answer)
+			return
+		}
+		result := map[string]any{"ok": true, "item_created": true, "assigned": false,
+			"assignment_state": "not_requested"}
+		view := created
+		if a := body.Assign; a != nil {
+			assignedView, assignErr := s.assignWorkV2By(r.Context(), created.Item.ID, run.Actor(), "", created.Item.Version,
+				a.Mode, a.TerminalID, a.Assistant, a.Model, a.Persona, nil)
+			if assignErr != nil {
+				code, message := "assignment_failed", assignErr.Error()
+				var we *app.WorkError
+				if errors.As(assignErr, &we) {
+					code, message = we.Code, we.Message
+				}
+				result["assignment_error"] = map[string]string{"code": code, "message": message}
+				result["assignment_state"] = "failed"
+			} else {
+				view = assignedView
+				if assignedView.Item.OwnerSession != "" && assignedView.Item.Phase == work.PhaseAssigned {
+					result["assigned"] = true
+					result["assignment_state"] = "assigned"
+				} else {
+					result["assignment_state"] = "awaiting_user"
+				}
+			}
+		}
+		if fresh, readErr := s.workV2().Item(r.Context(), created.Item.ID); readErr == nil {
+			view = fresh
+		}
+		result["item"] = s.workV2ItemOf(catalog, view)
+		answer, _ = json.Marshal(result)
+		replace := s.replaceMachineItemReceipt
+		if replace == nil {
+			replace = s.store.ReplaceReceipt
+		}
+		if err := replace(context.WithoutCancel(r.Context()), k,
+			store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}); err != nil {
+			writeRefusal(w, http.StatusInternalServerError, "receipt_update_failed",
+				"Board item "+created.Item.ID+" was created, but its delegation receipt could not be updated. Retry the same key to recover the item ID, then inspect the Board before assigning again.")
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(answer)
+}
+
+func machineMayCreateItem(st app.State, sess session.Session) bool {
+	return st.Record != nil && st.Liveness == coordinator.Online &&
+		st.Record.ConversationID == sess.ConversationID && st.Record.TerminalID == sess.ID
 }
 
 // relayRefuser answers a relay route's refusal after releasing its receipt,

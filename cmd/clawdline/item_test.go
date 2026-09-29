@@ -91,6 +91,46 @@ func TestItemAddUsesTheNamedRunAndKey(t *testing.T) {
 	}
 }
 
+func TestItemAddCanCreateThenDelegateFromTheMachineSteward(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 201, createdItem })
+	var out, errs bytes.Buffer
+	code := sessionItem(&out, &errs, b, "add", itemFlags{project: "p1", kind: "feature", title: "Ship it",
+		description: "The person asked.", run: itemRun, assign: assignFlags{open: true, assistant: "codex"}},
+		nil, thinConversation, "item-delegate", envOf(nil))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 1 || !strings.Contains(string(seen[0].Body), `"assign":{"assistant":"codex","mode":"new_session"}`) {
+		t.Fatalf("delegation was not sent with item creation: %+v", seen)
+	}
+}
+
+func TestMachineItemAddExplainsEveryDelegationState(t *testing.T) {
+	for _, tc := range []struct {
+		name, state, errorJSON, want string
+		exit                         int
+	}{
+		{"assigned", "assigned", "", "", 0},
+		{"omitted", "not_requested", "", "person can assign it from the Board", 0},
+		{"waiting", "awaiting_user", "", "answer its first screen", 1},
+		{"pending", "pending", "", "Check the Board", 1},
+		{"failed", "failed", `,"assignment_error":{"code":"session_unavailable","message":"no pane"}`, "person can assign item", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := `{"ok":true,"assignment_state":"` + tc.state + `","assigned":` + fmt.Sprint(tc.state == "assigned") +
+				tc.errorJSON + `,"item":{"id":"item-1","title":"Part","kind":"feature","phase":"created","owner_session":null,"version":1}}`
+			_, b := newStandIn(t, func(*http.Request) (int, string) { return 201, response })
+			var out, errs bytes.Buffer
+			code := sessionItem(&out, &errs, b, "add", itemFlags{project: "p1", kind: "feature", title: "Part",
+				description: "The person asked.", run: itemRun}, nil, thinConversation, "machine-state-"+tc.name, envOf(nil))
+			if code != tc.exit || !strings.Contains(errs.String(), tc.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out.String(), errs.String())
+			}
+		})
+	}
+}
+
 // With no run for this conversation — the person typed in the terminal —
 // nothing is created and the proposal path is named.
 func TestItemAddWithoutARunCreatesNothing(t *testing.T) {
@@ -442,6 +482,25 @@ func TestItemAcceptancePatchesTheOwnedItemWithItsCurrentVersion(t *testing.T) {
 		!strings.Contains(string(seen[1].Body), `"expected_version":3`) ||
 		!strings.Contains(string(seen[1].Body), `"acceptance_criteria":"- The result can be checked."`) {
 		t.Fatalf("requests %+v", seen)
+	}
+}
+
+func TestItemAcceptanceRevisionSendsStableVersionRunAndFileBytes(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"item":{"id":"epic-1","title":"Epic","kind":"epic","phase":"implementing","version":8,"acceptance_version":3,"acceptance_digest":"digest"},"acceptance_source":{"run":"run-1","session_id":"owner","at":17,"excerpt":"revise acceptance"}}`
+	})
+	var out, errs bytes.Buffer
+	f := itemFlags{acceptance: "- Revised.\n", run: "run-1", expectedVersion: 7}
+	if code := sessionItem(&out, &errs, b, "acceptance-revise", f, []string{"epic-1"}, thinConversation, "same-key", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 1 || seen[0].Method != http.MethodPost ||
+		seen[0].EscapedPath != "/v1/work/v2/agent/items/epic-1/acceptance-revision" ||
+		!strings.Contains(string(seen[0].Body), `"expected_version":7`) ||
+		!strings.Contains(string(seen[0].Body), `"run":"run-1"`) ||
+		!strings.Contains(out.String(), "requested by run run-1") {
+		t.Fatalf("request %+v output %s", seen, out.String())
 	}
 }
 

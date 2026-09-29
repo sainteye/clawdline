@@ -45,6 +45,7 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 // itemFlags is what `item add` was told.
 type itemFlags struct {
 	project, kind, title, description, acceptance, deploy, run string
+	expectedVersion                                            int64
 	steps                                                      []string
 	phase                                                      phaseEvidence
 	doc                                                        docFlags
@@ -128,6 +129,7 @@ func itemCommand(args []string) {
 	stepsFile := fs.String("steps-file", "", "a file holding the steps, one per non-empty line")
 	deploy := fs.String("deploy", "", "required, not_required or agent_decides (default agent_decides)")
 	run := fs.String("run", "", "the run of the person's message (default: this conversation's latest run)")
+	expectedVersion := fs.Int64("expected-version", 0, "the item's version before an acceptance revision; required for replay")
 	role := fs.String("role", "", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other")
 	reference := fs.String("reference", "", "for doc: a path in the Project, a URL, or for plan_review the review task's id")
 	bodyFile := fs.String("body-file", "", "for doc or acceptance: a file holding Markdown; - or absent reads stdin")
@@ -255,9 +257,9 @@ func itemCommand(args []string) {
 			}
 			f.doc.body = body
 		}
-	case "acceptance":
+	case "acceptance", "acceptance-revise":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item acceptance: takes one item id, got %d arguments\n", len(positional))
+			fmt.Fprintf(os.Stderr, "clawdline item %s: takes one item id, got %d arguments\n", op, len(positional))
 			itemUsage()
 		}
 		rest = positional
@@ -268,6 +270,7 @@ func itemCommand(args []string) {
 			}
 			f.acceptance = body
 		}
+		f.run, f.expectedVersion = *run, *expectedVersion
 	default:
 		itemUsage()
 	}
@@ -303,6 +306,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 func itemUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>")
 	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]")
+	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f] [--acceptance-file f]")
@@ -315,12 +319,15 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item acceptance [--body-file f | stdin] [--conversation id] [--key k] [--port n] <item id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item acceptance-revise --run id --expected-version n [--body-file f | stdin]")
+	fmt.Fprintln(os.Stderr, "                            [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item doc --role <role> --title <t> [--reference r] [--body-file f | stdin]")
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id]]")
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
+	fmt.Fprintln(os.Stderr, "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;")
 	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
 	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
 	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
@@ -329,7 +336,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`);")
 	fmt.Fprintln(os.Stderr, "  --persona opens that new Session as a built-in persona (`GET /v1/personas` lists them); none by default;")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
-	fmt.Fprintln(os.Stderr, "  acceptance fills missing criteria once after assignment; later revisions belong to the person;")
+	fmt.Fprintln(os.Stderr, "  acceptance fills missing criteria once; acceptance-revise relays a person's explicit revision message;")
 	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns; an Epic needs a plan, and a plan_review")
 	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
 	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence")
@@ -464,6 +471,14 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n", name)
 			return 2
 		}
+		if f.assign.terminal != "" && f.assign.open {
+			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
+			return 2
+		}
+		if why := f.assign.personaRefusal("--assign-terminal", "--assign-new"); why != "" {
+			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was created.\n", name, why)
+			return 2
+		}
 		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
 			"Nothing was created. Without a message sent through Clawdline, file a proposal "+
 				"(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals.")
@@ -484,6 +499,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		}
 		if len(steps) > 0 {
 			body["steps"] = steps
+		}
+		if a := f.assign.request(); a != nil {
+			body["assign"] = a
 		}
 		path = "/v1/work/v2/agent/items"
 	case "child":
@@ -657,6 +675,15 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		body = map[string]any{"expected_version": it.Version, "session_id": conversation,
 			"acceptance_criteria": f.acceptance}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/edit"
+	case "acceptance-revise":
+		itemID := strings.TrimSpace(args[0])
+		if strings.TrimSpace(f.acceptance) == "" || f.run == "" || f.expectedVersion < 1 {
+			fmt.Fprintf(stderr, "clawdline %s: non-empty Markdown, --run and --expected-version are required. Nothing was changed.\n", name)
+			return 2
+		}
+		body = map[string]any{"expected_version": f.expectedVersion, "session_id": conversation,
+			"acceptance_criteria": f.acceptance, "via": map[string]string{"run": f.run}}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/acceptance-revision"
 	default:
 		fmt.Fprintf(stderr, "clawdline item: no such action %q\n", op)
 		return 2
@@ -682,18 +709,49 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		return report(stdout, stderr, name, a)
 	}
 	printItem(stdout, it)
-	if op == "child" {
+	if op == "acceptance-revise" {
+		var revision struct {
+			Source struct {
+				Run       string `json:"run"`
+				SessionID string `json:"session_id"`
+				Excerpt   string `json:"excerpt"`
+				At        int64  `json:"at"`
+			} `json:"acceptance_source"`
+		}
+		if json.Unmarshal(a.Body, &revision) == nil {
+			fmt.Fprintf(stdout, "  requested by run %s in Session %s at %d: %s\n",
+				revision.Source.Run, revision.Source.SessionID, revision.Source.At, revision.Source.Excerpt)
+		}
+	}
+	if op == "child" || op == "add" {
 		var got struct {
+			AssignmentState string `json:"assignment_state"`
 			AssignmentError *struct {
 				Code    string `json:"code"`
 				Message string `json:"message"`
 			} `json:"assignment_error"`
 		}
 		if json.Unmarshal(a.Body, &got) == nil && got.AssignmentError != nil {
-			fmt.Fprintf(stderr, "clawdline %s: the item was created but not assigned: %s: %s\n"+
-				"Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n",
-				name, got.AssignmentError.Code, got.AssignmentError.Message, it.ID)
+			fmt.Fprintf(stderr, "clawdline %s: the item was created but not assigned: %s: %s\n",
+				name, got.AssignmentError.Code, got.AssignmentError.Message)
+			if op == "child" {
+				fmt.Fprintf(stderr, "Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n", it.ID)
+			} else {
+				fmt.Fprintf(stderr, "The person can assign item %s from the Board.\n", it.ID)
+			}
 			return 1
+		}
+		if op == "add" {
+			switch got.AssignmentState {
+			case "not_requested":
+				fmt.Fprintf(stderr, "Board item %s was created but not assigned. The person can assign it from the Board.\n", it.ID)
+			case "awaiting_user":
+				fmt.Fprintf(stderr, "Board item %s is awaiting the person's first dialog in the new Project Session; no owner is assigned yet. Open that Session and answer its first screen, then check the Board.\n", it.ID)
+				return 1
+			case "pending":
+				fmt.Fprintf(stderr, "Board item %s was created; delegation outcome needs review. Check the Board before trying another assignment.\n", it.ID)
+				return 1
+			}
 		}
 	}
 	if (op == "add" || op == "claim") && it.Kind == "epic" {

@@ -1,0 +1,1857 @@
+{
+  "schema_version": 1,
+  "purpose": "Public research decisions for the built-in persona catalog; no skill is installed or adopted by this document.",
+  "reviewed_on": "2026-09-29",
+  "preview_definition": "Eligible for a person to read the pinned entry and reviewed bundled references; this is not a Console capability or permission to execute the skill.",
+  "roles": [
+    {
+      "id": "architect",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "The generic blueprint prompt can invent architecture unless every claim is checked against this repository.",
+      "candidates": [
+        {
+          "name": "architecture-blueprint-generator",
+          "fit_status": "fits_bounded_task",
+          "fits": "Documents observed codebase structure and component boundaries.",
+          "limits": "The generic blueprint prompt can invent architecture unless every claim is checked against this repository.",
+          "research_round": 1,
+          "source_repository": "https://github.com/github/awesome-copilot",
+          "source_commit": "6efe0d035a6415137153bb9b3959589191b7afbe",
+          "skill_path": "skills/architecture-blueprint-generator/SKILL.md",
+          "skill_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/architecture-blueprint-generator/SKILL.md",
+          "skill_sha256": "a6a6f7a3b7a8210a9a391f2da3f3945bf86505341fd677eb2eb62e599520f512",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/LICENSE",
+          "license_sha256": "e32449d23085399adc1222f7a17408b730550258e51627c153cb108ca9955823",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "The generic blueprint prompt can invent architecture unless every claim is checked against this repository."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "backend",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "golang-concurrency",
+          "fit_status": "fits_bounded_task",
+          "fits": "Checks goroutine lifecycle, cancellation, channel ownership, and bounded workers.",
+          "limits": "Does not cover Clawdline contracts, capacity registry, receipts, migrations, or failure injection.",
+          "research_round": 2,
+          "source_repository": "https://github.com/samber/cc-skills-golang",
+          "source_commit": "19a0626ae8565d27a7b7bdf59d8d99d94d7e284c",
+          "skill_path": "skills/golang-concurrency/SKILL.md",
+          "skill_url": "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/SKILL.md",
+          "skill_sha256": "b56255b765a50c1052c5d71cd60ddb1c2ef643ce3b447aa195ba81f31d10bd1c",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/LICENSE",
+          "license_sha256": "a6735e3815503be2fc1ae4813758cb3d0c24a5309df508309ce180cf5a4ead58",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/golang-concurrency/SKILL.md",
+                "url": "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/SKILL.md",
+                "sha256": "b56255b765a50c1052c5d71cd60ddb1c2ef643ce3b447aa195ba81f31d10bd1c",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/golang-concurrency/references/channels-and-select.md",
+                "url": "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/references/channels-and-select.md",
+                "sha256": "3435dee63817a2829b48fbfbaebe25bbb448008d4d06e0e739c2f070b78328ab",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/golang-concurrency/references/sync-primitives.md",
+                "url": "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/references/sync-primitives.md",
+                "sha256": "f54e4343942feef72b2f371e5b67156469f82fd2ea0e4f2634c957530926d6de",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/golang-concurrency/references/pipelines.md",
+                "url": "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/references/pipelines.md",
+                "sha256": "c1b3f3dc4273370c61631328de11ec19b2fa1000c22ddff50d06bca059dd5d70",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "frontend",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "frontend-component-build",
+          "fit_status": "fits_bounded_task",
+          "fits": "Builds accessible React component APIs, states, and tests.",
+          "limits": "Must follow the existing console design and verify Cloud/mobile behavior separately.",
+          "research_round": 1,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/frontend-component-build/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/SKILL.md",
+          "skill_sha256": "32c9a8c1e655649fd691f01ca33f80bf9efd0d75b9530f3f2000880bf807d34f",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/frontend-component-build/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/SKILL.md",
+                "sha256": "32c9a8c1e655649fd691f01ca33f80bf9efd0d75b9530f3f2000880bf807d34f",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/frontend-component-build/references/component-spec-template.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/references/component-spec-template.md",
+                "sha256": "eac4ca7e0f61e9bbece7138c51813f518b4d8e33a1d4283535b123bf589279cb",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/frontend-component-build/references/component-api-patterns.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/references/component-api-patterns.md",
+                "sha256": "e778bea47205bf1e3542f07d9e267097f1d2b3c7aa0e7ad7d44e13e327c95ead",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/frontend-component-build/references/accessibility-patterns.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/references/accessibility-patterns.md",
+                "sha256": "75cd55f7f18e62c7fbf2f14a7cb2d5dc6bbfb48ca307a6f7141648e0e4c962f8",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "minimal-change",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Does not enforce this project's smallest-sufficient-change boundary or release checks.",
+      "candidates": [
+        {
+          "name": "systematic-debugging",
+          "fit_status": "fits_bounded_task",
+          "fits": "Investigates a failure before choosing a correction.",
+          "limits": "Does not enforce this project's smallest-sufficient-change boundary or release checks.",
+          "research_round": 1,
+          "source_repository": "https://github.com/obra/superpowers",
+          "source_commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+          "skill_path": "skills/systematic-debugging/SKILL.md",
+          "skill_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md",
+          "skill_sha256": "808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/LICENSE",
+          "license_sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Does not enforce this project's smallest-sufficient-change boundary or release checks."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "code-reviewer",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Routes to many other Go skills and a shell script; the full dependency graph is not cleared for preview.",
+      "candidates": [
+        {
+          "name": "go-code-review",
+          "fit_status": "fits_bounded_task",
+          "fits": "Reviews Go diffs for errors, concurrency, context propagation, and tests.",
+          "limits": "Routes to many other Go skills and a shell script; the full dependency graph is not cleared for preview.",
+          "research_round": 2,
+          "source_repository": "https://github.com/cxuu/golang-skills",
+          "source_commit": "91f0c2eef559a3168f9d3c38f5f99936d472b508",
+          "skill_path": "skills/go-code-review/SKILL.md",
+          "skill_url": "https://github.com/cxuu/golang-skills/blob/91f0c2eef559a3168f9d3c38f5f99936d472b508/skills/go-code-review/SKILL.md",
+          "skill_sha256": "8db6e39ad0575acc28993f853c42f697437c2b99108d852e9d6bc6ba0f902b76",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/cxuu/golang-skills/blob/91f0c2eef559a3168f9d3c38f5f99936d472b508/LICENSE",
+          "license_sha256": "567e786a7f32a41bad604c32cb202cefe51ab11c5df5434444d6fe7d421eece2",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/go-code-review/assets/review-template.md",
+              "skills/go-code-review/references/WEB-SERVER.md",
+              "skills/go-code-review/scripts/pre-review.sh",
+              "skills/go-concurrency/SKILL.md",
+              "skills/go-context/SKILL.md",
+              "skills/go-data-structures/SKILL.md",
+              "skills/go-declarations/SKILL.md",
+              "skills/go-defensive/SKILL.md",
+              "skills/go-documentation/SKILL.md",
+              "skills/go-error-handling/SKILL.md",
+              "skills/go-functions/SKILL.md",
+              "skills/go-generics/SKILL.md",
+              "skills/go-interfaces/SKILL.md",
+              "skills/go-linting/SKILL.md",
+              "skills/go-logging/SKILL.md",
+              "skills/go-naming/SKILL.md",
+              "skills/go-packages/SKILL.md",
+              "skills/go-performance/SKILL.md",
+              "skills/go-style-core/SKILL.md",
+              "skills/go-testing/SKILL.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Routes to many other Go skills and a shell script; the full dependency graph is not cleared for preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "reality-checker",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules.",
+      "candidates": [
+        {
+          "name": "qa-skill",
+          "fit_status": "fits_bounded_task",
+          "fits": "Builds evidence-first QA verdicts for one bounded change.",
+          "limits": "Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules.",
+          "research_round": 2,
+          "source_repository": "https://github.com/Newoahil/QA-skills",
+          "source_commit": "bfc5c490b9266292b28e0be189e6f1acacb8bea5",
+          "skill_path": "qa-skill/SKILL.md",
+          "skill_url": "https://github.com/Newoahil/QA-skills/blob/bfc5c490b9266292b28e0be189e6f1acacb8bea5/qa-skill/SKILL.md",
+          "skill_sha256": "c11af44a78de99ee98fd7f57cf61376bdf0c77af293f482be493049e9e403ac2",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/Newoahil/QA-skills/blob/bfc5c490b9266292b28e0be189e6f1acacb8bea5/LICENSE",
+          "license_sha256": "60299259691dcc97941737c7c6af8b68f39c8d7f8736207292d8a7a69a564921",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "qa-skill/references/full-qa.md",
+              "qa-skill/references/qa-memory.md",
+              "qa-skill/references/using-qa.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules.",
+      "candidates": [
+        {
+          "name": "security-review",
+          "fit_status": "fits_bounded_task",
+          "fits": "Traces code data flows and common security defects.",
+          "limits": "Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules.",
+          "research_round": 1,
+          "source_repository": "https://github.com/github/awesome-copilot",
+          "source_commit": "6efe0d035a6415137153bb9b3959589191b7afbe",
+          "skill_path": "skills/security-review/SKILL.md",
+          "skill_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/security-review/SKILL.md",
+          "skill_sha256": "002392d88637b89e4cbc409a0531834970937f3b57c0b448a17e04b5ca6d356c",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/LICENSE",
+          "license_sha256": "e32449d23085399adc1222f7a17408b730550258e51627c153cb108ca9955823",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/security-review/references/language-patterns.md",
+              "skills/security-review/references/report-format.md",
+              "skills/security-review/references/secret-patterns.md",
+              "skills/security-review/references/vuln-categories.md",
+              "skills/security-review/references/vulnerable-packages.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "technical-writer",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "documentation-writer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Classifies and writes task-oriented software documentation.",
+          "limits": "Must verify claims against code and keep this repository's English documentation convention.",
+          "research_round": 1,
+          "source_repository": "https://github.com/github/awesome-copilot",
+          "source_commit": "6efe0d035a6415137153bb9b3959589191b7afbe",
+          "skill_path": "skills/documentation-writer/SKILL.md",
+          "skill_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/documentation-writer/SKILL.md",
+          "skill_sha256": "7e8244988c9f4eb63bf8c0edf160578544621eb96e5e51e2d848f1401c5de8f1",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/LICENSE",
+          "license_sha256": "e32449d23085399adc1222f7a17408b730550258e51627c153cb108ca9955823",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/documentation-writer/SKILL.md",
+                "url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/documentation-writer/SKILL.md",
+                "sha256": "7e8244988c9f4eb63bf8c0edf160578544621eb96e5e51e2d848f1401c5de8f1",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "seo",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Search behavior changes; its bundled international and writing references are not fully reviewed here.",
+      "candidates": [
+        {
+          "name": "seo-audit",
+          "fit_status": "fits_bounded_task",
+          "fits": "Audits technical and on-page search visibility.",
+          "limits": "Search behavior changes; its bundled international and writing references are not fully reviewed here.",
+          "research_round": 1,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/seo-audit/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/seo-audit/SKILL.md",
+          "skill_sha256": "9420a6c1ffcf7212766bcb618c28766ecb084631bed8045f3115d42b1230d368",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/seo-audit/references/ai-writing-detection.md",
+              "skills/seo-audit/references/international-seo.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Search behavior changes; its bundled international and writing references are not fully reviewed here."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "content-writer",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Product claims and connector assumptions require independent verification.",
+      "candidates": [
+        {
+          "name": "draft-content",
+          "fit_status": "fits_bounded_task",
+          "fits": "Drafts channel-specific content from supplied product context.",
+          "limits": "Product claims and connector assumptions require independent verification.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "marketing/skills/draft-content/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/marketing/skills/draft-content/SKILL.md",
+          "skill_sha256": "0bfe029dcc039ff71a76b0fec3c5d900fba0e447eb9dcd505ab25b14be3577fd",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "marketing/CONNECTORS.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Product claims and connector assumptions require independent verification."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai-search",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Unverified platform-effect claims and multiple references block preview until checked against current primary sources.",
+      "candidates": [
+        {
+          "name": "ai-seo",
+          "fit_status": "fits_bounded_task",
+          "fits": "Audits answer-ready content and citation surfaces.",
+          "limits": "Unverified platform-effect claims and multiple references block preview until checked against current primary sources.",
+          "research_round": 2,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/ai-seo/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ai-seo/SKILL.md",
+          "skill_sha256": "b1ecd93ebc65af886f81bc0a90645c8fd4ffdf68c5b3d4495a9e61481d954d00",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/ai-seo/references/agent-readiness.md",
+              "skills/ai-seo/references/citations-vs-recommendations.md",
+              "skills/ai-seo/references/content-patterns.md",
+              "skills/ai-seo/references/content-types.md",
+              "skills/ai-seo/references/format-volatility.md",
+              "skills/ai-seo/references/okf.md",
+              "skills/ai-seo/references/platform-ranking-factors.md",
+              "skills/ai-seo/references/youtube-ai-citations.md",
+              "tools/REGISTRY.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Unverified platform-effect claims and multiple references block preview until checked against current primary sources."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "social-media",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Scheduling and publishing are outside this role's authorization; bundled platform references remain open.",
+      "candidates": [
+        {
+          "name": "social",
+          "fit_status": "fits_bounded_task",
+          "fits": "Plans platform-specific posts and content pillars.",
+          "limits": "Scheduling and publishing are outside this role's authorization; bundled platform references remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/social/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/social/SKILL.md",
+          "skill_sha256": "8cc93d9b361622cdb640e87969747b85603bed2d268e923179f8dfb4799ec8c7",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/social/references/carousel-frameworks.md",
+              "skills/social/references/listening.md",
+              "skills/social/references/platform-limits.md",
+              "skills/social/references/platforms.md",
+              "skills/social/references/post-templates.md",
+              "skills/social/references/reverse-engineering.md",
+              "skills/social/references/short-form-video.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Scheduling and publishing are outside this role's authorization; bundled platform references remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "instagram",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Does not independently clear image rights, alt text, or the whole Instagram grid; bundled references remain open.",
+      "candidates": [
+        {
+          "name": "carousel-writer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Drafts carousel structure and mobile-readable slide copy.",
+          "limits": "Does not independently clear image rights, alt text, or the whole Instagram grid; bundled references remain open.",
+          "research_round": 2,
+          "source_repository": "https://github.com/social-media-skills/skills",
+          "source_commit": "6e30eeb2f6736bda8683b6bbaa674af3641d7945",
+          "skill_path": "skills/carousel-writer/SKILL.md",
+          "skill_url": "https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/skills/carousel-writer/SKILL.md",
+          "skill_sha256": "ec171804a021339625564f095e8cb183e5036813c20a538d4626e4f68aff343f",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/LICENSE",
+          "license_sha256": "0da5befdfbe93f4dd08098d43fcd115c8455ae4fef7672f800e761e843727c13",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/carousel-writer/references/architecture.md",
+              "skills/carousel-writer/references/examples.md",
+              "skills/carousel-writer/references/image-prompt-pack.md",
+              "skills/carousel-writer/references/platform-specs.md",
+              "skills/carousel-writer/references/slide-craft.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Does not independently clear image rights, alt text, or the whole Instagram grid; bundled references remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "email",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Sending, consent, list handling, and integration references need separate review.",
+      "candidates": [
+        {
+          "name": "emails",
+          "fit_status": "fits_bounded_task",
+          "fits": "Drafts lifecycle email sequences.",
+          "limits": "Sending, consent, list handling, and integration references need separate review.",
+          "research_round": 1,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/emails/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/emails/SKILL.md",
+          "skill_sha256": "1fbd54df4c59f48408057e7db0dfb1a53c033e6a4ca5cd1927a47c51ec28d8f1",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/emails/references/copy-guidelines.md",
+              "skills/emails/references/email-types.md",
+              "skills/emails/references/sequence-templates.md",
+              "tools/REGISTRY.md",
+              "tools/integrations/customer-io.md",
+              "tools/integrations/kit.md",
+              "tools/integrations/mailchimp.md",
+              "tools/integrations/nitrosend.md",
+              "tools/integrations/resend.md",
+              "tools/integrations/sendgrid.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Sending, consent, list handling, and integration references need separate review."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "growth",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open.",
+      "candidates": [
+        {
+          "name": "ab-testing",
+          "fit_status": "fits_bounded_task",
+          "fits": "Frames controlled experiments and sample-size questions.",
+          "limits": "Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/ab-testing/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ab-testing/SKILL.md",
+          "skill_sha256": "1fd229160f6014f3f2d7c92cc7d2f991fbf8dc9ed68aac9793c71b408a6d1144",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/ab-testing/references/sample-size-guide.md",
+              "skills/ab-testing/references/test-templates.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "pr",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Outreach requires explicit authorization; media and platform references remain open.",
+      "candidates": [
+        {
+          "name": "public-relations",
+          "fit_status": "fits_bounded_task",
+          "fits": "Develops press angles and draft pitches.",
+          "limits": "Outreach requires explicit authorization; media and platform references remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/public-relations/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/public-relations/SKILL.md",
+          "skill_sha256": "36fe43e755d951a9e05a268319e6089e7727dcd9de0a9ab6c4ec56768e4190ed",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/public-relations/references/journalist-pitching.md",
+              "skills/public-relations/references/media-outlets.md",
+              "skills/public-relations/references/newsjacking.md",
+              "skills/public-relations/references/podcast-guest-prep.md",
+              "skills/public-relations/references/press-platforms.md",
+              "skills/public-relations/references/story-angles.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Outreach requires explicit authorization; media and platform references remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "product-manager",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "write-spec",
+          "fit_status": "fits_bounded_task",
+          "fits": "Turns a problem into stories, requirements, and acceptance criteria.",
+          "limits": "Must use Clawdline Board and actual product evidence instead of assumed connected tools.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "product-management/skills/write-spec/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/write-spec/SKILL.md",
+          "skill_sha256": "ca6670913878b4ac4582727562bfced5271492a5a800d934f68c9e7bc1cd4dcc",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "product-management/skills/write-spec/SKILL.md",
+                "url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/write-spec/SKILL.md",
+                "sha256": "ca6670913878b4ac4582727562bfced5271492a5a800d934f68c9e7bc1cd4dcc",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "product-management/CONNECTORS.md",
+                "url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/CONNECTORS.md",
+                "sha256": "f52733eb0cd1b46f96cbf15bd9d8dd5215c9341d9323f42da076bcddccda2f5e",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "sprint-prioritizer",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Capacity must come from actual Board and team data; connector assumptions remain open.",
+      "candidates": [
+        {
+          "name": "sprint-planning",
+          "fit_status": "fits_bounded_task",
+          "fits": "Scopes a sprint from work and capacity information.",
+          "limits": "Capacity must come from actual Board and team data; connector assumptions remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "product-management/skills/sprint-planning/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/sprint-planning/SKILL.md",
+          "skill_sha256": "c078d3f838c783e9ab53ca1a4b4c04dcd7930a55a995731b8c020cd656cb1edd",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "product-management/CONNECTORS.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Capacity must come from actual Board and team data; connector assumptions remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "feedback-synthesizer",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Must preserve sample size and contrary evidence; connector assumptions remain open.",
+      "candidates": [
+        {
+          "name": "synthesize-research",
+          "fit_status": "fits_bounded_task",
+          "fits": "Synthesizes interview and survey evidence into themes.",
+          "limits": "Must preserve sample size and contrary evidence; connector assumptions remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "product-management/skills/synthesize-research/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/synthesize-research/SKILL.md",
+          "skill_sha256": "ae98c11102545c911a1ea5d8527be0e08a3db8e53327f2865f0db19bbb2d7e9c",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "product-management/CONNECTORS.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Must preserve sample size and contrary evidence; connector assumptions remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "trend-researcher",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "No public source found here covers the complete dated, independent cross-market trend workflow; zero preview.",
+      "candidates": [
+        {
+          "name": "competitive-brief",
+          "fit_status": "fits_bounded_task",
+          "fits": "Compares competitors in a bounded feature area.",
+          "limits": "No public source found here covers the complete dated, independent cross-market trend workflow; zero preview.",
+          "research_round": 2,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "product-management/skills/competitive-brief/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/competitive-brief/SKILL.md",
+          "skill_sha256": "720916695f99a70e723be02d0123908c9c968ce56e1ffdeeb423014587017cd2",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "product-management/CONNECTORS.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "No public source found here covers the complete dated, independent cross-market trend workflow; zero preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "ux-researcher",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "ux-research",
+          "fit_status": "fits_bounded_task",
+          "fits": "Plans interviews, recruiting, synthesis, and research handoff.",
+          "limits": "Sample sizes and participant evidence must be grounded in actual research, not template examples.",
+          "research_round": 1,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/ux-research/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/ux-research/SKILL.md",
+          "skill_sha256": "cfe62ac93bcc7b94ce22bf0c522b0cf7000d73880d5ccfb3ae69bbe43b919df5",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/ux-research/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/ux-research/SKILL.md",
+                "sha256": "cfe62ac93bcc7b94ce22bf0c522b0cf7000d73880d5ccfb3ae69bbe43b919df5",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/ux-research/references/interview-guide-template.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/ux-research/references/interview-guide-template.md",
+                "sha256": "1e5200c96ad7b02b75b7d38f2f343f24fd62cf8fa71c56462f9373b81820a207",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "test-automation",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Bundled helper code and Cloud relay coverage are not cleared for preview.",
+      "candidates": [
+        {
+          "name": "webapp-testing",
+          "fit_status": "fits_bounded_task",
+          "fits": "Runs Playwright checks against a local web app.",
+          "limits": "Bundled helper code and Cloud relay coverage are not cleared for preview.",
+          "research_round": 1,
+          "source_repository": "https://github.com/github/awesome-copilot",
+          "source_commit": "6efe0d035a6415137153bb9b3959589191b7afbe",
+          "skill_path": "skills/webapp-testing/SKILL.md",
+          "skill_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/webapp-testing/SKILL.md",
+          "skill_sha256": "c4629221463d79c84555721ae2a30a6c345dd4d16c38cf6dbe735126e2426044",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/LICENSE",
+          "license_sha256": "e32449d23085399adc1222f7a17408b730550258e51627c153cb108ca9955823",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/webapp-testing/assets/test-helper.js"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Bundled helper code and Cloud relay coverage are not cleared for preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "accessibility",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "accessibility-audit",
+          "fit_status": "fits_bounded_task",
+          "fits": "Audits keyboard, semantics, focus, and WCAG checks.",
+          "limits": "Does not replace assistive-technology user testing or establish legal compliance.",
+          "research_round": 1,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/accessibility-audit/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/accessibility-audit/SKILL.md",
+          "skill_sha256": "1c599e4a84886f67f9ab1c60ec7d95a9289b17d3a948e5d8c227bdfcb082a1e3",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/accessibility-audit/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/accessibility-audit/SKILL.md",
+                "sha256": "1c599e4a84886f67f9ab1c60ec7d95a9289b17d3a948e5d8c227bdfcb082a1e3",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/accessibility-audit/references/audit-report-template.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/accessibility-audit/references/audit-report-template.md",
+                "sha256": "0ed3d29c53a7f25ad2a72f5918181fd7f7e871d3253e3c66816baac425e09b87",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/accessibility-audit/references/wcag-quick-reference.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/accessibility-audit/references/wcag-quick-reference.md",
+                "sha256": "4d70c669894200c64c9940dbec2ddf959173d7ad8d9dcb594206ea0c18d3cd8e",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/accessibility-audit/references/aria-patterns.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/accessibility-audit/references/aria-patterns.md",
+                "sha256": "de9cb4934e62903d7d1676b4d4166a43f47e742bdcfd247ca8364c697b779b63",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "performance",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Do not stress production; its k6 and Lighthouse examples need a local workload and reference review.",
+      "candidates": [
+        {
+          "name": "performance-testing",
+          "fit_status": "fits_bounded_task",
+          "fits": "Measures backend load and frontend performance.",
+          "limits": "Do not stress production; its k6 and Lighthouse examples need a local workload and reference review.",
+          "research_round": 1,
+          "source_repository": "https://github.com/petrkindlmann/qa-skills",
+          "source_commit": "b3bb61bd268b147476252c6ed5a0440c87b97441",
+          "skill_path": "skills/performance-testing/SKILL.md",
+          "skill_url": "https://github.com/petrkindlmann/qa-skills/blob/b3bb61bd268b147476252c6ed5a0440c87b97441/skills/performance-testing/SKILL.md",
+          "skill_sha256": "0237a4494852522e38da50698f7da3a08084838502994652fcf9c06339bdf20f",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/petrkindlmann/qa-skills/blob/b3bb61bd268b147476252c6ed5a0440c87b97441/LICENSE",
+          "license_sha256": "52fd5fda33c7713213a16fdf77aa2d34718cebfce8d5dfc29acae10a06f8111b",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/performance-testing/references/recipes.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Do not stress production; its k6 and Lighthouse examples need a local workload and reference review."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "api-tester",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Examples use Playwright/JavaScript and need adaptation to Go tests and generated contracts.",
+      "candidates": [
+        {
+          "name": "api-testing",
+          "fit_status": "fits_bounded_task",
+          "fits": "Tests API status, schema, authentication, and error behavior.",
+          "limits": "Examples use Playwright/JavaScript and need adaptation to Go tests and generated contracts.",
+          "research_round": 1,
+          "source_repository": "https://github.com/petrkindlmann/qa-skills",
+          "source_commit": "b3bb61bd268b147476252c6ed5a0440c87b97441",
+          "skill_path": "skills/api-testing/SKILL.md",
+          "skill_url": "https://github.com/petrkindlmann/qa-skills/blob/b3bb61bd268b147476252c6ed5a0440c87b97441/skills/api-testing/SKILL.md",
+          "skill_sha256": "075520dac51d1ff7e3227c034a0f19b5df8554c0e27b638bdb0abb4d0973cbd3",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/petrkindlmann/qa-skills/blob/b3bb61bd268b147476252c6ed5a0440c87b97441/LICENSE",
+          "license_sha256": "52fd5fda33c7713213a16fdf77aa2d34718cebfce8d5dfc29acae10a06f8111b",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/api-testing/references/playwright-setup.md",
+              "skills/api-testing/references/schema-validation.md",
+              "skills/api-testing/references/test-patterns.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Examples use Playwright/JavaScript and need adaptation to Go tests and generated contracts."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "evidence-collector",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "The large QA workflow assumes external tooling and does not by itself create Clawdline's exact claim-evidence package.",
+      "candidates": [
+        {
+          "name": "testing",
+          "fit_status": "fits_bounded_task",
+          "fits": "Collects screenshots, logs, responses, and per-case observations.",
+          "limits": "The large QA workflow assumes external tooling and does not by itself create Clawdline's exact claim-evidence package.",
+          "research_round": 2,
+          "source_repository": "https://github.com/akovalion/paranoid-qa",
+          "source_commit": "a244e2bb5b9496c1a34bf08e0fd2b7554e676b6e",
+          "skill_path": "skills/testing/SKILL.md",
+          "skill_url": "https://github.com/akovalion/paranoid-qa/blob/a244e2bb5b9496c1a34bf08e0fd2b7554e676b6e/skills/testing/SKILL.md",
+          "skill_sha256": "75f8f2563ca978ad7511bd78941a6aac768f1c78ae79db39ebcef169c451c6de",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/akovalion/paranoid-qa/blob/a244e2bb5b9496c1a34bf08e0fd2b7554e676b6e/LICENSE",
+          "license_sha256": "10e452f12d89c1e5c8c7c23050200041636f09831c4e0143b3abd969326bdd30",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/testing/references/artifacts.md",
+              "skills/testing/references/backend.md",
+              "skills/testing/references/common-misses.md",
+              "skills/testing/references/cross-cutting.md",
+              "skills/testing/references/fan-out.md",
+              "skills/testing/references/frontend.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "The large QA workflow assumes external tooling and does not by itself create Clawdline's exact claim-evidence package."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "sre",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "monitoring-and-alerting",
+          "fit_status": "fits_bounded_task",
+          "fits": "Designs SLIs, SLOs, and alert severity from observable signals.",
+          "limits": "Example thresholds cannot replace measured daemon and Cloud delivery-state signals.",
+          "research_round": 2,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/monitoring-and-alerting/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/monitoring-and-alerting/SKILL.md",
+          "skill_sha256": "7f9226b4e701582962501644364d7516987882c9d06745bb0e2cb417da0d3bcc",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/monitoring-and-alerting/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/monitoring-and-alerting/SKILL.md",
+                "sha256": "7f9226b4e701582962501644364d7516987882c9d06745bb0e2cb417da0d3bcc",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/monitoring-and-alerting/references/slo-design-guide.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/monitoring-and-alerting/references/slo-design-guide.md",
+                "sha256": "b1dca1a7bec8b45b490899c918dc6a40f5c2206e29b3e9aecceb466379d2e5ad",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "devops",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "devops-rollout-plan",
+          "fit_status": "fits_bounded_task",
+          "fits": "Drafts rollout, verification, and rollback plans.",
+          "limits": "Actual release completion still requires BUILD.json and CloudGate evidence.",
+          "research_round": 1,
+          "source_repository": "https://github.com/github/awesome-copilot",
+          "source_commit": "6efe0d035a6415137153bb9b3959589191b7afbe",
+          "skill_path": "skills/devops-rollout-plan/SKILL.md",
+          "skill_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/devops-rollout-plan/SKILL.md",
+          "skill_sha256": "4895d403e08e9ea4cf59ef06ef843745aa5dd574a1faad83d4140c1f2554b7d4",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/LICENSE",
+          "license_sha256": "e32449d23085399adc1222f7a17408b730550258e51627c153cb108ca9955823",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/devops-rollout-plan/SKILL.md",
+                "url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/devops-rollout-plan/SKILL.md",
+                "sha256": "4895d403e08e9ea4cf59ef06ef843745aa5dd574a1faad83d4140c1f2554b7d4",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "incident-commander",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "incident-response",
+          "fit_status": "fits_bounded_task",
+          "fits": "Coordinates incident triage, mitigation, updates, and follow-up.",
+          "limits": "External status updates require existing authorization and real incident facts.",
+          "research_round": 1,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/incident-response/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/incident-response/SKILL.md",
+          "skill_sha256": "0a35b35d88f8c3c49a527528f82870b31ce4a593e6e5c2fcfe530441fb7b3e46",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/incident-response/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/incident-response/SKILL.md",
+                "sha256": "0a35b35d88f8c3c49a527528f82870b31ce4a593e6e5c2fcfe530441fb7b3e46",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/incident-response/references/incident-playbook.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/incident-response/references/incident-playbook.md",
+                "sha256": "52615b122a79dfdf3f57258048f726f1ebe4588b58b2aaad56b169b8ad339c1c",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "finops",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "cost-optimization",
+          "fit_status": "fits_bounded_task",
+          "fits": "Audits infrastructure and SaaS cost opportunities.",
+          "limits": "Must use actual cost data and retain prior approval for usage-priced API calls.",
+          "research_round": 1,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/cost-optimization/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/cost-optimization/SKILL.md",
+          "skill_sha256": "5589fd8d9c40abb40ca62a9bfba2b67a9e7f5d64d37ca7ca444bc8e1cfb00fb0",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/cost-optimization/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/cost-optimization/SKILL.md",
+                "sha256": "5589fd8d9c40abb40ca62a9bfba2b67a9e7f5d64d37ca7ca444bc8e1cfb00fb0",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/cost-optimization/references/cloud-audit-checklist.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/cost-optimization/references/cloud-audit-checklist.md",
+                "sha256": "88e90cd841d9e14b9c8d04c2e4f4bcf6d7248b319ed5856873f2a45b8a2fd1ed",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "secrets",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "GitHub Advanced Security assumptions do not replace tools/check-private.sh or credential rotation.",
+      "candidates": [
+        {
+          "name": "secret-scanning",
+          "fit_status": "fits_bounded_task",
+          "fits": "Reviews GitHub secret scanning and remediation flows.",
+          "limits": "GitHub Advanced Security assumptions do not replace tools/check-private.sh or credential rotation.",
+          "research_round": 1,
+          "source_repository": "https://github.com/github/awesome-copilot",
+          "source_commit": "6efe0d035a6415137153bb9b3959589191b7afbe",
+          "skill_path": "skills/secret-scanning/SKILL.md",
+          "skill_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/secret-scanning/SKILL.md",
+          "skill_sha256": "ebbaf8a49777e8be6d8c220b91bbee935b2aaab81b3ee976562484a339d750db",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/LICENSE",
+          "license_sha256": "e32449d23085399adc1222f7a17408b730550258e51627c153cb108ca9955823",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/secret-scanning/references/alerts-and-remediation.md",
+              "skills/secret-scanning/references/custom-patterns.md",
+              "skills/secret-scanning/references/push-protection.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "GitHub Advanced Security assumptions do not replace tools/check-private.sh or credential rotation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "ui-designer",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": null,
+      "candidates": [
+        {
+          "name": "frontend-design",
+          "fit_status": "fits_bounded_task",
+          "fits": "Creates intentional visual direction for UI work.",
+          "limits": "Must follow the existing design system and test rendered desktop/mobile states.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/skills",
+          "source_commit": "8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4",
+          "skill_path": "skills/frontend-design/SKILL.md",
+          "skill_url": "https://github.com/anthropics/skills/blob/8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4/skills/frontend-design/SKILL.md",
+          "skill_sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3",
+          "license": "Apache-2.0",
+          "license_path": "skills/frontend-design/LICENSE.txt",
+          "license_url": "https://github.com/anthropics/skills/blob/8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4/skills/frontend-design/LICENSE.txt",
+          "license_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/frontend-design/SKILL.md",
+                "url": "https://github.com/anthropics/skills/blob/8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4/skills/frontend-design/SKILL.md",
+                "sha256": "d91970639e9f5c37682ac7ab60094d35f1c7c1f38d731bd56396563aee10c1d3",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Pinned entry and recursive bundled references were read. No bundled script is executed; external links and live services are excluded from manual preview."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Pinned entry, applicable license, and recursive bundled references were reviewed for read-only presentation."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "ux-architect",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Its extensive memory, templates, scripts, and design assumptions are not cleared for preview.",
+      "candidates": [
+        {
+          "name": "UXCraft",
+          "fit_status": "fits_bounded_task",
+          "fits": "Models flows, information architecture, accessibility, and handoff.",
+          "limits": "Its extensive memory, templates, scripts, and design assumptions are not cleared for preview.",
+          "research_round": 2,
+          "source_repository": "https://github.com/Seance1723/UXCraft",
+          "source_commit": "cd4136e744f831f530efdbba6f43ac06df6e10e2",
+          "skill_path": "SKILL.md",
+          "skill_url": "https://github.com/Seance1723/UXCraft/blob/cd4136e744f831f530efdbba6f43ac06df6e10e2/SKILL.md",
+          "skill_sha256": "107fbb360457c4a64c84f7c05b2428d60c689d1acc1f4063056f688734154a95",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/Seance1723/UXCraft/blob/cd4136e744f831f530efdbba6f43ac06df6e10e2/LICENSE",
+          "license_sha256": "8cf824068e8bbe096f5b7db5cd65e9cd6ece8ba00e2845b418f024221f9219fb",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "references/accessibility-advanced-patterns.md",
+              "references/brand-method-card-based-discovery.md",
+              "references/brand-method-conversion-simplicity.md",
+              "references/brand-method-ecosystem-bundling.md",
+              "references/brand-method-editorial-brand-world.md",
+              "references/brand-method-enterprise-trust-hub.md",
+              "references/brand-method-playful-familiarity.md",
+              "references/brand-method-premium-restraint.md",
+              "references/brand-method-product-cinema.md",
+              "references/brand-method-technical-authority.md",
+              "references/brand-method-utility-command-center.md",
+              "references/color-psychology-branding.md",
+              "references/color-scale-system.md",
+              "references/competitive-landscape.md",
+              "references/content-design-and-i18n.md",
+              "references/data-visualization-dashboard-ux.md",
+              "references/design-discovery-protocol.md",
+              "references/design-system-playbook.md",
+              "references/design-system-schema.md",
+              "references/ethical-inclusive-design.md",
+              "references/industry-reasoning-rules.md",
+              "references/landing-page-patterns.md",
+              "references/output-quality-gates.md",
+              "references/platform-guidelines.md",
+              "references/service-design-journey-mapping.md",
+              "references/tech-stack-guidelines.md",
+              "references/top-100-brand-website-analysis.md",
+              "references/ui-styles-catalog.md",
+              "references/ui-ux-complete-checklist.md",
+              "references/ui-ux-curriculum-and-standards.md",
+              "references/ui-ux-frontend-implementation-rules.md",
+              "references/ui-ux-memory-workflow.md",
+              "references/usability-heuristics.md",
+              "references/ux-measurement-quality-gates.md",
+              "references/ux-research-methods.md",
+              "references/visual-directions.md",
+              "references/wcag-aa-quick-reference.md",
+              "scripts/validate_skill.py"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Its extensive memory, templates, scripts, and design assumptions are not cleared for preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "brand-guardian",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Assumes three brand files that are not this project's canonical sources; visual assets still need checking.",
+      "candidates": [
+        {
+          "name": "critique-brand-consistency",
+          "fit_status": "fits_bounded_task",
+          "fits": "Compares rendered screens with brand mood, voice, and tokens.",
+          "limits": "Assumes three brand files that are not this project's canonical sources; visual assets still need checking.",
+          "research_round": 2,
+          "source_repository": "https://github.com/Owl-Listener/designer-skills",
+          "source_commit": "9a6930cf84a822eb458624bd11c61aac5bbdf224",
+          "skill_path": "visual-critique/skills/critique-brand-consistency/SKILL.md",
+          "skill_url": "https://github.com/Owl-Listener/designer-skills/blob/9a6930cf84a822eb458624bd11c61aac5bbdf224/visual-critique/skills/critique-brand-consistency/SKILL.md",
+          "skill_sha256": "3e0babf21656878969d02a3f147d4e958770023e7768ac2084cb4d2b5f1cc7c0",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/Owl-Listener/designer-skills/blob/9a6930cf84a822eb458624bd11c61aac5bbdf224/LICENSE",
+          "license_sha256": "1400d572fb60897f7970a763fb73d1aa7804b71bad41bf6e45061de7b7a09ac1",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Assumes three brand files that are not this project's canonical sources; visual assets still need checking."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "ui-finish-gate",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Many bundled references and browser assumptions remain unreviewed; it cannot replace the local gate.",
+      "candidates": [
+        {
+          "name": "frontend-visual-qa",
+          "fit_status": "fits_bounded_task",
+          "fits": "Checks rendered UI states, responsiveness, and interaction evidence.",
+          "limits": "Many bundled references and browser assumptions remain unreviewed; it cannot replace the local gate.",
+          "research_round": 2,
+          "source_repository": "https://github.com/daymade/claude-code-skills",
+          "source_commit": "793049513ac79dde7da535cd8315783ff4acf4c0",
+          "skill_path": "frontend-visual-qa/SKILL.md",
+          "skill_url": "https://github.com/daymade/claude-code-skills/blob/793049513ac79dde7da535cd8315783ff4acf4c0/frontend-visual-qa/SKILL.md",
+          "skill_sha256": "92e91d9b0d79ee4019c95b02b732c40479951881eeb7dab00fb5329bd012f266",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/daymade/claude-code-skills/blob/793049513ac79dde7da535cd8315783ff4acf4c0/LICENSE",
+          "license_sha256": "945fb5acb5c4bc9af45b54b9a02be060f5dfca5e0a77244e8aa567de63aed5d1",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "frontend-visual-qa/references/auth-session-and-environment-traps.md",
+              "frontend-visual-qa/references/browser-driving-and-observation-traps.md",
+              "frontend-visual-qa/references/data_viz_tier_and_token_audit.md",
+              "frontend-visual-qa/references/history-derived-checklist.md",
+              "frontend-visual-qa/references/journey-and-page-contracts.md",
+              "frontend-visual-qa/references/reference-parity-decomposition.md",
+              "frontend-visual-qa/references/silent-degradation-and-evidence.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Many bundled references and browser assumptions remain unreviewed; it cannot replace the local gate."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "image-prompt",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Later steps route to generation/publishing tools and references are unreviewed; no paid generation is authorized.",
+      "candidates": [
+        {
+          "name": "image-prompt",
+          "fit_status": "fits_bounded_task",
+          "fits": "Builds a brand-aware image brief and prompt.",
+          "limits": "Later steps route to generation/publishing tools and references are unreviewed; no paid generation is authorized.",
+          "research_round": 2,
+          "source_repository": "https://github.com/social-media-skills/skills",
+          "source_commit": "6e30eeb2f6736bda8683b6bbaa674af3641d7945",
+          "skill_path": "skills/image-prompt/SKILL.md",
+          "skill_url": "https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/skills/image-prompt/SKILL.md",
+          "skill_sha256": "74c9bd598ed37aac7e432e15c9d1d3ffb17ffb2eb3e342068689e23e764185ce",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/LICENSE",
+          "license_sha256": "0da5befdfbe93f4dd08098d43fcd115c8455ae4fef7672f800e761e843727c13",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/image-prompt/references/choosing-the-tool.md",
+              "skills/image-prompt/references/examples.md",
+              "skills/image-prompt/references/prompt-anatomy.md",
+              "skills/image-prompt/references/the-image-brief.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Later steps route to generation/publishing tools and references are unreviewed; no paid generation is authorized."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "pricing",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Real prices, costs, checkout policy, and bundled reference claims need independent evidence.",
+      "candidates": [
+        {
+          "name": "pricing",
+          "fit_status": "fits_bounded_task",
+          "fits": "Analyzes pricing models and tier decisions.",
+          "limits": "Real prices, costs, checkout policy, and bundled reference claims need independent evidence.",
+          "research_round": 1,
+          "source_repository": "https://github.com/coreyhaines31/marketingskills",
+          "source_commit": "5b2c0007766c6a1cf1d53fd8fc73e979e0821022",
+          "skill_path": "skills/pricing/SKILL.md",
+          "skill_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/pricing/SKILL.md",
+          "skill_sha256": "6cb88c2e944331c12f2fb83341ff16aba85a34629df11f4cffc7f611e4df6868",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/LICENSE",
+          "license_sha256": "b70d71e24e40fce5da8f4b6f9cd862096a048e433db7f3c8cac5e348e6d34591",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "skills/pricing/references/pricing-models.md",
+              "skills/pricing/references/pricing-page-teardown.md",
+              "skills/pricing/references/research-methods.md",
+              "skills/pricing/references/tier-structure.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Real prices, costs, checkout policy, and bundled reference claims need independent evidence."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "customer-success",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Uncalibrated fixed scoring and required customer data cannot safely represent this role; zero preview.",
+      "candidates": [
+        {
+          "name": "customer-success-manager",
+          "fit_status": "fits_bounded_task",
+          "fits": "Organizes account-health and success-plan work.",
+          "limits": "Uncalibrated fixed scoring and required customer data cannot safely represent this role; zero preview.",
+          "research_round": 2,
+          "source_repository": "https://github.com/alirezarezvani/claude-skills",
+          "source_commit": "19392f7a08264ed00486a251f5b2098321771f94",
+          "skill_path": "business-growth/skills/customer-success-manager/SKILL.md",
+          "skill_url": "https://github.com/alirezarezvani/claude-skills/blob/19392f7a08264ed00486a251f5b2098321771f94/business-growth/skills/customer-success-manager/SKILL.md",
+          "skill_sha256": "ea53629ec26895fc84229d817f91512879be54331122521b180df3a568826546",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/alirezarezvani/claude-skills/blob/19392f7a08264ed00486a251f5b2098321771f94/LICENSE",
+          "license_sha256": "a20126646f93d32a8989c3cf4772d59194f405034f7babe7daebeac22b8ab151",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "business-growth/skills/customer-success-manager/assets/executive_business_review_template.md",
+              "business-growth/skills/customer-success-manager/assets/onboarding_checklist_template.md",
+              "business-growth/skills/customer-success-manager/assets/qbr_template.md",
+              "business-growth/skills/customer-success-manager/assets/sample_customer_data.json",
+              "business-growth/skills/customer-success-manager/assets/success_plan_template.md",
+              "business-growth/skills/customer-success-manager/references/cs-metrics-benchmarks.md",
+              "business-growth/skills/customer-success-manager/references/cs-playbooks.md",
+              "business-growth/skills/customer-success-manager/references/health-scoring-framework.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Uncalibrated fixed scoring and required customer data cannot safely represent this role; zero preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "support",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Must use current product facts and never send a response without authorization; connector assumptions remain open.",
+      "candidates": [
+        {
+          "name": "ticket-triage",
+          "fit_status": "fits_bounded_task",
+          "fits": "Classifies a support ticket and proposes priority.",
+          "limits": "Must use current product facts and never send a response without authorization; connector assumptions remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "customer-support/skills/ticket-triage/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/customer-support/skills/ticket-triage/SKILL.md",
+          "skill_sha256": "d0e5e95443e358ad2a74811b196071d10807ca95aa20351ab5760feeecee1294",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "customer-support/CONNECTORS.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Must use current product facts and never send a response without authorization; connector assumptions remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "analytics",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Metric definitions and available data must be confirmed locally; connector assumptions remain open.",
+      "candidates": [
+        {
+          "name": "metrics-review",
+          "fit_status": "fits_bounded_task",
+          "fits": "Reviews product metrics and trends.",
+          "limits": "Metric definitions and available data must be confirmed locally; connector assumptions remain open.",
+          "research_round": 1,
+          "source_repository": "https://github.com/anthropics/knowledge-work-plugins",
+          "source_commit": "da38ec1ee89d41e5380e652a97382695003396e7",
+          "skill_path": "product-management/skills/metrics-review/SKILL.md",
+          "skill_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/metrics-review/SKILL.md",
+          "skill_sha256": "e92f364b668074c72b36fd0f69a6adef2ead66640b2c17dc824c043fb613d278",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/LICENSE",
+          "license_sha256": "a6946284993aeec75c7d75906064b66210c46051e562077efb30eb6dcfe72e26",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [
+              "product-management/CONNECTORS.md"
+            ],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Metric definitions and available data must be confirmed locally; connector assumptions remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "devrel",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "Source maturity is limited; public replies and publication require authorization.",
+      "candidates": [
+        {
+          "name": "developer-listening",
+          "fit_status": "fits_bounded_task",
+          "fits": "Listens to developer feedback and drafts engagement ideas.",
+          "limits": "Source maturity is limited; public replies and publication require authorization.",
+          "research_round": 1,
+          "source_repository": "https://github.com/jonathimer/devmarketing-skills",
+          "source_commit": "500b44b53220292879223a807ce0d349aafe2537",
+          "skill_path": "skills/developer-listening/SKILL.md",
+          "skill_url": "https://github.com/jonathimer/devmarketing-skills/blob/500b44b53220292879223a807ce0d349aafe2537/skills/developer-listening/SKILL.md",
+          "skill_sha256": "27ff98538391b330f006576e8f193d83c17ca9762878dfbdcaf2e18736c2c9bd",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/jonathimer/devmarketing-skills/blob/500b44b53220292879223a807ce0d349aafe2537/LICENSE",
+          "license_sha256": "e81ba3c3c17fd29fb3204c49b411705dfc555f49bc9d203790fdae9cb3475bec",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "Source maturity is limited; public replies and publication require authorization."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "privacy",
+      "conclusion": "bounded_task_candidate",
+      "zero_preview_reason": "It lacks code-level data-flow tracing and jurisdiction-specific legal review; zero preview.",
+      "candidates": [
+        {
+          "name": "pia-generation",
+          "fit_status": "fits_bounded_task",
+          "fits": "Drafts a privacy impact assessment for one processing activity.",
+          "limits": "It lacks code-level data-flow tracing and jurisdiction-specific legal review; zero preview.",
+          "research_round": 2,
+          "source_repository": "https://github.com/anthropics/claude-for-legal",
+          "source_commit": "4a6c651889c97cc9140580363c73e0eb17379c2b",
+          "skill_path": "privacy-legal/skills/pia-generation/SKILL.md",
+          "skill_url": "https://github.com/anthropics/claude-for-legal/blob/4a6c651889c97cc9140580363c73e0eb17379c2b/privacy-legal/skills/pia-generation/SKILL.md",
+          "skill_sha256": "e3dc1b30460293f6d842de1fc3441f14fb091ed02427d1f5c527132859adf51d",
+          "license": "Apache-2.0",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/anthropics/claude-for-legal/blob/4a6c651889c97cc9140580363c73e0eb17379c2b/LICENSE",
+          "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "reference_audit": {
+            "status": "open",
+            "observed_entry_references": [],
+            "outcome": "The pinned entry was read. Referenced content and runtime assumptions have not been cleared as a complete preview bundle."
+          },
+          "preview": {
+            "status": "blocked",
+            "reason": "It lacks code-level data-flow tracing and jurisdiction-specific legal review; zero preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        }
+      ]
+    }
+  ]
+}

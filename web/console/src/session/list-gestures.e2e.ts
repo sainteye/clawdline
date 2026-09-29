@@ -54,6 +54,10 @@ type ReadingScenario =
   | "status-one"
   | "status-two"
   | "status-three"
+  | "machine-pending"
+  | "machine-bound"
+  | "epic"
+  | "refresh"
 let readingScenario: ReadingScenario = "normal"
 
 type Row = Record<string, unknown>
@@ -142,6 +146,21 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (readingScenario === "expired") return []
+  if (readingScenario === "machine-pending" || readingScenario === "machine-bound") {
+    return [row(RETAINED, "Machine workspace", safeCloseability(), 500, {
+      machine_scope: true,
+      cwd: "/fixture/machine-workspace",
+      coordinator: readingScenario === "machine-bound" ? { label: "Clawdfather", status: "online", commands: [] } : undefined,
+    })]
+  }
+  if (readingScenario === "epic") return [
+    row(SAFE, "Epic owner", safeCloseability(), 10, { sessionId: "owner-conversation" }),
+    row(BLOCKED, "Feature Root", blockedCloseability(), 100, {
+      sessionId: "feature-conversation",
+      root_assignment: { id: "root-feature", label: "Feature Root", state: "briefed", ownership: "independent_root" },
+      epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
+    }),
+  ]
   if (readingScenario.startsWith("status-")) {
     const extra: Row = {
       work_state: "milestone_complete",
@@ -196,7 +215,7 @@ function rows(): Row[] {
       }),
     ]
   }
-  return [
+  const current = [
     row(SAFE, "Alpha is finished", safeCloseability(), MOVED.safe),
     row(BLOCKED, "Bravo is still working", blockedCloseability(), 400, {
       state: "working",
@@ -207,6 +226,16 @@ function rows(): Row[] {
     row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown),
     row(SPARE, "Delta is finished too", safeCloseability(), spareMoved),
   ]
+  if (readingScenario !== "refresh") return current
+  return current.map((session) => ({
+    ...session,
+    source: { freshness: "unverified", observed_at: Date.now() / 1000 - 3, provenance: "iterm" },
+    closeability: {
+      ...session.closeability as Row,
+      state: "unknown",
+      reasons: [{ code: "session_inventory_stale", kind: "evidence", mover: { kind: "broker" } }],
+    },
+  }))
 }
 
 const ORDER_AT_REST = [BLOCKED, SAFE, NEEDS_ATTESTATION, UNKNOWN, SPARE]
@@ -229,7 +258,7 @@ const streams = new Set<ServerResponse>()
 function snapshot() {
   generation++
   const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
-  const source = readingScenario === "normal" || readingScenario === "worst"
+  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "epic"
     ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
     : readingScenario === "expired"
       ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
@@ -237,13 +266,14 @@ function snapshot() {
   return {
     at: Date.now(),
     scan: {
-      complete: true,
-      completed: { complete: true, sequence: generation },
-      emptyAuthoritative: true,
+      complete: readingScenario !== "refresh",
+      completed: { complete: readingScenario !== "refresh", sequence: generation },
+      emptyAuthoritative: readingScenario !== "refresh",
       epoch: 1,
       generation,
       provenance: "fixture",
       source,
+      notes: readingScenario === "refresh" ? ["session inventory refresh is in progress; prior rows are unverified"] : [],
     },
     // The daemon's own answer moves; the page's order is the page's business.
     sessions: rows(),
@@ -292,6 +322,7 @@ function daemon(): Server {
     if (path === "/v1/health") return json(res, 200, { ok: true })
     if (path === "/v1/places") return json(res, 200, {
       places: [{ id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null }],
+      assistants: [{ id: "codex", label: "Codex" }],
     })
     if (path === "/v1/work/v2/items" && req.method === "GET") {
       workProjectReads.push(url.searchParams.get("project") ?? "")
@@ -671,6 +702,7 @@ const PROBE = `(() => {
     action: swiped ? (swiped.querySelector(".swipe-end")?.textContent ?? null) : null,
     actionKind: swiped ? (swiped.querySelector(".swipe-end")?.dataset.closeability ?? null) : null,
     rowState: swiped ? (swiped.querySelector(".state")?.textContent ?? null) : null,
+    refreshing: rows.some((n) => n.querySelector(".state")?.getAttribute("data-shape")?.includes("+srcunverified")),
     readingBanner: document.querySelector(".session-reading")?.textContent ?? null,
     retainedText: document.querySelector(".retained-reading")?.textContent ?? null,
     moving: rows.some((n) => getComputedStyle(n).transform !== "none"),
@@ -712,6 +744,7 @@ interface Seen {
   action: string | null
   actionKind: string | null
   rowState: string | null
+  refreshing: boolean
   readingBanner: string | null
   retainedText: string | null
   moving: boolean
@@ -861,6 +894,25 @@ class Tab {
     })()`)
   }
 
+  async key(key: "ArrowDown" | "Enter" | "Escape" | "Tab", shift = false): Promise<void> {
+    const code = key === "ArrowDown" ? 40 : key === "Enter" ? 13 : key === "Tab" ? 9 : 27
+    const modifiers = shift ? 8 : 0
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode: code, modifiers }, this.session)
+    await this.b.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: code, modifiers }, this.session)
+  }
+
+  async accessibilityOptions(): Promise<string[]> {
+    const tree = await this.b.send("Accessibility.getFullAXTree", {}, this.session)
+    return tree.nodes.filter((node: any) => node.role?.value === "option").map((node: any) => node.name?.value ?? "")
+  }
+
+  async mouseAt(x: number, y: number, click = false): Promise<void> {
+    await this.b.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y }, this.session)
+    if (!click) return
+    await this.b.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 }, this.session)
+    await this.b.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 }, this.session)
+  }
+
   /** A picture of the phone, for the report. */
   async shot(name: string): Promise<void> {
     if (!shots) return
@@ -937,6 +989,203 @@ async function list(tab: Tab): Promise<Seen> {
   await tab.go("/")
   return tab.until("the list arrives in its resting order", (s) => s.order.join() === ORDER_AT_REST.join())
 }
+
+test("keyboard moves through focused options and Enter opens the highlighted Session on both layouts", () =>
+  inTab(async (tab) => {
+    for (const size of ["phone", "desktop"] as const) {
+      if (size === "desktop") await tab.desktop()
+      await list(tab)
+      await tab.run(`document.querySelector('#rows > li.row').focus()`)
+      for (const id of [SAFE, NEEDS_ATTESTATION]) {
+        await tab.key("ArrowDown")
+        const state = await tab.run(`(() => ({
+          selected: document.querySelector('#rows > li.row[aria-selected="true"]')?.dataset.id,
+          focused: document.activeElement?.dataset.id
+        }))()`)
+        assert.deepEqual(state, { selected: id, focused: id })
+      }
+      await tab.key("Enter")
+      assert.equal(await tab.run(`document.querySelector('#rows > li.row.open')?.dataset.id`), NEEDS_ATTESTATION)
+    }
+  }))
+
+test("the phone option exposes the legacy identity and state without a crown button", () =>
+  inTab(async (tab) => {
+    readingScenario = "worst"
+    try {
+      await tab.go("/")
+      await tab.until("the legacy row arrives", (s) => s.order.join() === RETAINED)
+      const names = await tab.accessibilityOptions()
+      const name = names.find((value) => value.includes("A very long Clawdfather session title")) ?? ""
+      assert.match(name, /Clawdfather/)
+      assert.match(name, /還有 2 項未了結/)
+      assert.equal(await tab.run(`document.querySelector('#rows > li.row .coordinator-mark')?.getAttribute('aria-hidden')`), "true")
+      assert.equal(await tab.run(`document.querySelector('#rows > li.row .coordinator-mark')?.closest('button, [role=button]') !== null`), false)
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("the rebuilt legacy crown does not hover as a control and opens only its Session row", () =>
+  inTab(async (tab) => {
+    readingScenario = "worst"
+    try {
+      await tab.desktop()
+      await tab.go("/")
+      await tab.until("the legacy row arrives", (s) => s.order.join() === RETAINED)
+      const before = await tab.run(`(() => {
+        const mark = document.querySelector('#rows > li.row .coordinator-mark')
+        const box = mark.getBoundingClientRect()
+        const style = getComputedStyle(mark)
+        return { x: box.left + box.width / 2, y: box.top + box.height / 2,
+          pointer: style.pointerEvents, background: style.backgroundColor, border: style.borderColor,
+          target: getComputedStyle(mark, '::before').display }
+      })()`)
+      assert.equal(before.pointer, "none")
+      assert.equal(before.target, "none")
+      await tab.mouseAt(before.x, before.y)
+      const hovered = await tab.run(`(() => {
+        const style = getComputedStyle(document.querySelector('#rows > li.row .coordinator-mark'))
+        return { background: style.backgroundColor, border: style.borderColor }
+      })()`)
+      assert.deepEqual(hovered, { background: before.background, border: before.border })
+      await tab.mouseAt(before.x, before.y, true)
+      assert.equal(await tab.run(`document.querySelector('#rows > li.row.open')?.dataset.id`), RETAINED)
+      assert.equal(await tab.run(`document.querySelector('.coordinator-controls-sheet:not([hidden])') !== null`), false)
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("closing the new Session sheet returns focus to its opener", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    for (const mode of ["Escape", "button", "backdrop"] as const) {
+      await tab.run(`document.getElementById('start-go').focus()`)
+      await tab.press("#start-go")
+      assert.equal(await tab.run(`document.activeElement?.id`), "start-title")
+      if (mode === "Escape") await tab.key("Escape")
+      if (mode === "button") await tab.press("#start-close")
+      if (mode === "backdrop") await tab.press("#start")
+      assert.deepEqual(await tab.run(`({ hidden: document.getElementById('start').hidden, focused: document.activeElement?.id })`),
+        { hidden: true, focused: "start-go" })
+    }
+  }))
+
+test("the machine start is a separate readable action on phone and desktop", () =>
+  inTab(async (tab) => {
+    for (const layout of ["phone", "desktop"] as const) {
+      if (layout === "desktop") await tab.desktop()
+      await list(tab)
+      await tab.press("#start-go")
+      await tab.run(`new Promise((resolve, reject) => {
+        const started = Date.now()
+        const check = () => {
+          const row = document.querySelector('#start-list .machine-place')
+          if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
+          if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
+          setTimeout(check, 50)
+        }
+        check()
+      })`)
+      const shown = await tab.run(`(() => {
+        const machine = document.querySelector('#start-list .machine-place')
+        const project = document.querySelector('#start-list .place[data-id="project-fixture"]')
+        const rect = machine?.getBoundingClientRect()
+        return { name: machine?.querySelector('.name')?.textContent, scope: machine?.querySelector('.where')?.textContent,
+          policy: machine?.getAttribute('aria-description'), visiblePolicy: document.querySelector('#start-list .machine-boundary-note')?.textContent,
+          pending: document.querySelector('#start-list .machine-start-note')?.textContent,
+          enabled: !(machine instanceof HTMLButtonElement && machine.disabled),
+          separate: !!machine && !!project && machine !== project && machine.classList.contains('machine-place'),
+          width: rect?.width, viewport: window.innerWidth }
+      })()`)
+      assert.match(shown.name, /Clawdfather/)
+      assert.match(shown.scope, /Session|機器/)
+      assert.match(shown.pending, /登記|register/)
+      assert.match(shown.policy, /explicitly|明確/)
+      assert.match(shown.visiblePolicy, /proposes|提案/)
+      assert.equal(shown.enabled, true)
+      assert.equal(shown.separate, true)
+      assert.ok(shown.width <= shown.viewport)
+      await tab.run(`new Promise((resolve) => setTimeout(resolve, 180))`)
+      await tab.shot("machine-start-" + layout)
+      await tab.press("#start-close")
+    }
+  }))
+
+test("the start sheet keeps Tab inside and gives focus back on phone and desktop", () =>
+  inTab(async (tab) => {
+    for (const layout of ["phone", "desktop"] as const) {
+      if (layout === "desktop") await tab.desktop()
+      await list(tab)
+      await tab.press("#start-go")
+      await tab.run(`new Promise((resolve, reject) => {
+        const started = Date.now()
+        const check = () => {
+          const row = document.querySelector('#start-list .machine-place')
+          if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
+          if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
+          setTimeout(check, 50)
+        }
+        check()
+      })`)
+      await tab.key("Tab")
+      assert.equal(await tab.run(`document.activeElement?.closest('#start-sheet') !== null`), true)
+      await tab.run(`document.getElementById('start-close').focus()`)
+      await tab.key("Tab")
+      const wrapped = await tab.run(`({ inside: document.activeElement?.closest('#start-sheet') !== null, focused: document.activeElement?.id })`)
+      assert.equal(wrapped.inside && wrapped.focused !== "start-close", true, JSON.stringify(wrapped))
+      await tab.key("Tab", true)
+      assert.equal(await tab.run(`document.activeElement?.id`), "start-close")
+      await tab.key("Escape")
+      assert.deepEqual(await tab.run(`({ hidden: document.getElementById('start').hidden, focused: document.activeElement?.id })`),
+        { hidden: true, focused: "start-go" })
+    }
+  }))
+
+test("machine registration remains visible after a fresh Session read and clears on receipt", () =>
+  inTab(async (tab) => {
+    try {
+      readingScenario = "machine-pending"
+      await tab.go("/")
+      await tab.until("the machine Session arrives", (s) => s.order.join() === RETAINED)
+      const pending = await tab.run(`document.querySelector('#rows .machine-registration')?.textContent`)
+      assert.match(pending, /clawdline coordinator bind/)
+      readingScenario = "machine-bound"
+      await tab.go("/")
+      await tab.until("the bound machine Session arrives", (s) => s.order.join() === RETAINED)
+      assert.equal(await tab.run(`document.querySelector('#rows .machine-registration') === null`), true)
+      assert.equal(await tab.run(`document.querySelector('#rows .coordinator-identity') !== null`), true)
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("an Epic owner's independent Root is visibly nested in the Session list", () =>
+  inTab(async (tab) => {
+    readingScenario = "epic"
+    try {
+      await tab.go("/")
+      await tab.until("the Epic owner and Feature Root arrive", (s) => s.order.join() === [SAFE, BLOCKED].join())
+      await tab.until("the independent Root chip is drawn", (s) => s.taskVisible)
+      const shown = await tab.run(`(() => {
+        const owner = document.querySelector('#rows > li.row[data-id="${SAFE}"]')
+        const feature = document.querySelector('#rows > li.row[data-id="${BLOCKED}"]')
+        return {
+          depth: feature?.dataset.depth,
+          epic: feature?.dataset.epicParent,
+          root: feature?.querySelector('.task-chip')?.textContent?.trim(),
+          offset: feature?.getBoundingClientRect().left - owner?.getBoundingClientRect().left,
+        }
+      })()`)
+      assert.equal(shown.depth, "1")
+      assert.equal(shown.epic, "epic-fixture")
+      assert.ok(shown.root, JSON.stringify(shown))
+      assert.ok(shown.offset >= 20, "the Feature Root is visibly indented under the Epic owner")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
 
 test("the Board assignment picker explains a Session before assignment", () =>
   inTab(async (tab) => {
@@ -1586,6 +1835,39 @@ test("an unknown row keeps saying unknown while its swipe remains an action", ()
     await tab.shot("swipe-unknown")
   }))
 
+test("a brief inventory refresh keeps the last blocked badge and row height while close stays unknown", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    const measure = () => tab.run(`(() => {
+      const row = document.querySelector("#rows > li.row[data-id='${BLOCKED}']")
+      return {
+        height: row.getBoundingClientRect().height,
+        top: row.getBoundingClientRect().top,
+        state: row.querySelector(".state").textContent,
+        badge: row.querySelector(".session-closeability")?.dataset.closeability,
+      }
+    })()`)
+    const before = await measure()
+    assert.equal(before.badge, "blocked")
+    readingScenario = "refresh"
+    try {
+      pushSessions()
+      await tab.until("the retained reading arrived", (s) => s.refreshing)
+      const during = await measure()
+      assert.equal(during.badge, "blocked")
+      assert.match(during.state, /還有 1 項未了結/)
+      assert.doesNotMatch(during.state, /無法判斷能否關閉/)
+      assert.equal(during.height, before.height)
+      assert.equal(during.top, before.top)
+      assert.equal((await tab.seen()).readingBanner, "", "a routine refresh does not add a list banner")
+      const opened = await swipeOpen(tab, BLOCKED)
+      assert.equal(opened.actionKind, "unknown", "the visible badge does not authorize close")
+    } finally {
+      readingScenario = "normal"
+      pushSessions()
+    }
+  }))
+
 test("a session awaiting attestation explains that inside its named confirmation", () =>
   inTab(async (tab) => {
     await list(tab)
@@ -1664,7 +1946,6 @@ test("the densest phone row gives each segment a boundary and never widens the l
         const row = document.querySelector("#rows > li.row")
         const meta = row.querySelector(".meta")
         const state = row.querySelector(".state")
-        const line = row.querySelector(".line")
         const shown = (selector) => getComputedStyle(row.querySelector(selector)).display !== "none"
         const box = row.getBoundingClientRect()
         const rail = scroller.getBoundingClientRect()
@@ -1674,7 +1955,6 @@ test("the densest phone row gives each segment a boundary and never widens the l
           row: [row.clientWidth, row.scrollWidth, box.left, box.right, rail.left, rail.right],
           meta: [meta.clientWidth, meta.scrollWidth],
           state: [state.clientWidth, state.scrollWidth],
-          line: [line.clientWidth, line.scrollWidth, getComputedStyle(line).textOverflow],
           machine: !!row.querySelector(".machine"),
           path: shown(".path"),
           coordinator: shown(".coordinator-chip"),
@@ -1687,8 +1967,6 @@ test("the densest phone row gives each segment a boundary and never widens the l
       assert.ok(measured.row[3] <= measured.row[5], "the card ends inside the list rail: " + JSON.stringify(measured.row))
       assert.ok(measured.meta[1] <= measured.meta[0], "the metadata segments converge inside their line")
       assert.ok(measured.state[1] <= measured.state[0], "the state segments converge inside their line")
-      assert.ok(measured.line[0] >= 70, "the live sentence keeps enough room to attach its ellipsis")
-      assert.equal(measured.line[2], "ellipsis")
       assert.equal(measured.machine, false, "a single-machine list does not repeat its machine on every row")
       assert.equal(measured.path, false, "the repeated path is first to leave the phone row")
       assert.equal(measured.coordinator, false, "the crown keeps the role when its duplicate word leaves")
