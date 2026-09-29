@@ -234,9 +234,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   }, [refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
 
-  const run = async (key: string, task: () => Promise<unknown>) => {
+  const run = async (key: string, task: () => Promise<unknown>, refreshInBackground = false) => {
     if (busy) return false
     setBusy(key); setFailure("")
+    let succeeded = false
     try {
       const answer = await task()
       if (answer && typeof answer === "object" && "item" in answer) {
@@ -246,9 +247,16 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
           setOpenedItem((current) => current?.id === changed.id ? changed : current)
         }
       }
-      await load()
+      // Assignment has already succeeded when its response arrives. The
+      // supporting Board, Session, and image reads can finish after the person
+      // closes this card; they must not keep its action pending.
+      if (!refreshInBackground) await load()
+      succeeded = true
       return true
-    } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+    } catch (e) { setFailure(failureWords(e)); return false } finally {
+      setBusy("")
+      if (succeeded && refreshInBackground) void load()
+    }
   }
   const visibleItems = visibleWorkItems(items, showPlans)
   const hiddenPlans = items.length - visibleItems.length
@@ -585,7 +593,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   busy: string
   failure: string
   clearFailure: () => void
-  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  run: (key: string, task: () => Promise<unknown>, refreshInBackground?: boolean) => Promise<boolean>
   detailLoading: boolean
   detailError: string
   retryDetail: () => void
@@ -657,9 +665,15 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   // take a minute and a half, and the page-level note it used to land in is
   // scrolled out of sight on a phone, where the press looked like nothing.
   const [assignFailed, setAssignFailed] = useState(false)
-  const assign = (task: () => Promise<unknown>) => {
+  const [assigningRoute, setAssigningRoute] = useState<"existing" | "new" | null>(null)
+  const assign = (route: "existing" | "new", task: () => Promise<unknown>) => {
     clearFailure(); setAssignFailed(false)
-    void run(item.id, task).then((ok) => { setAssignFailed(!ok); if (ok) setReassigning(false) })
+    setAssigningRoute(route)
+    void run(item.id, task, true).then((ok) => {
+      setAssigningRoute(null)
+      setAssignFailed(!ok)
+      if (ok) setReassigning(false)
+    })
   }
   const imagePicker = useRef<HTMLInputElement>(null)
   const eligible = useMemo(() => assignmentCandidates(sessions, item), [sessions, item.project.path, item.owner_session])
@@ -766,8 +780,10 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
         <h4 id={`work-assign-existing-${item.id}`}>指派給既有 Session</h4>
         <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
-        <button className="work-assignment-cta" type="button" disabled={!terminal || !!busy}
-          onClick={() => assign(() => assignWorkV2(item, terminal))}>指派給所選 Session</button>
+        <button className="work-assignment-cta" type="button" disabled={!terminal || !!busy} aria-busy={busy === item.id && assigningRoute === "existing"}
+          onClick={() => assign("existing", () => assignWorkV2(item, terminal))}>
+          {busy === item.id && assigningRoute === "existing" && <span className="work-assignment-spinner" aria-hidden="true" />}
+          {busy === item.id && assigningRoute === "existing" ? "正在指派給所選 Session…" : "指派給所選 Session"}</button>
       </section>
       <section className="work-assignment-route" aria-labelledby={`work-assign-new-${item.id}`}>
         <h4 id={`work-assign-new-${item.id}`}>開啟新 Session</h4>
@@ -800,12 +816,14 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
             rememberTeam(next)
             setPersonaChoice(switched.chosen)
           }} />}
-        <button className="work-assignment-cta" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id}
-          onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
+        <button className="work-assignment-cta" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id && assigningRoute === "new"}
+          onClick={() => assign("new", () => assignNewWorkV2(item, assistant, persona?.id))}>
+          {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
-            ? nextWord(busy === item.id ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
-            : busy === item.id ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+            ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
+            : busy === item.id && assigningRoute === "new" ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
       </section>
+      {busy === item.id && <p className="work-assignment-status" role="status">正在處理指派；你可以關閉視窗，完成後看板會更新。</p>}
       {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>取消</button>}
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
@@ -1083,17 +1101,17 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
 }) {
   const modal = useRef<HTMLDivElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
-  useModalDismiss(!!busy, onClose)
+  useModalDismiss(false, onClose)
   useModalFocus(modal, initialFocus)
   // Opened from a Session too, so it lives beside the app root, never inside
   // the fixed Session pane: a phone then keeps one scroll surface.
   return createPortal(<div ref={modal} tabIndex={-1} className={created ? "session-todo-modal work-created-modal" : "session-todo-modal work-created-modal work-item-detail-modal"}
     role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id} work-card-title-${item.id}`}
-    onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
       <div className="work-modal-head"><div><p className="board-eyebrow">{created ? "WORK ITEM CREATED" : "BOARD ITEM"}</p>
         <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
-        <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
+        <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run}
         detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
