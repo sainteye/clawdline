@@ -152,13 +152,13 @@ test("Plan items require an explicit accessible switch before the Board shows th
   assert.match(styles, /\.work-plan-toggle/)
 })
 
-test("Plan scheduling stays prominent while Epic and Feature conversion lives with secondary item actions", () => {
+test("Plan scheduling stays prominent while Epic and Feature conversion appears alongside item actions", () => {
   assert.match(source, /work-plan-card/)
   assert.match(source, /PLAN · 未排入執行/)
   assert.match(source, /item\.phase === "created" \|\| item\.phase === "assigned"/)
-  assert.match(source, /aria-controls=\{`work-more-\$\{item\.id\}`\}.*>更多<\/button>/s)
-  assert.match(source, /className="work-card-more-actions"/)
-  assert.match(source, /convertible && !plan && <button[^>]*>[\s\S]*?轉成 Plan<\/button>/)
+  assert.match(source, /convertible && !plan && <button[\s\S]*?aria-controls=\{`work-convert-\$\{item\.id\}`\}[\s\S]*?轉成 Plan<\/button>/)
+  assert.match(source, /<WorkIcon name="edit" \/> 編輯<\/button>[\s\S]*?轉成 Plan<\/button>[\s\S]*?<WorkIcon name="delete" \/> 刪除<\/button>/)
+  assert.doesNotMatch(source, /work-card-more-actions|work-more-/)
   assert.match(source, /\{!plan && conversionPanel\}/)
   assert.match(source, /convertible && plan && <div className="work-convert-entry">/)
   assert.match(source, /\{plan && conversionPanel\}/)
@@ -169,7 +169,7 @@ test("Plan scheduling stays prominent while Epic and Feature conversion lives wi
   assert.match(styles, /\.work-plan-card/)
   assert.match(styles, /\.work-plan-convert/)
   assert.match(styles, /\.work-convert-cta/)
-  assert.match(styles, /\.work-card-more-actions/)
+  assert.match(styles, /\.work-card-controls \{ flex: 1 1 100%; justify-content: flex-start/)
 })
 
 test("the Board distinguishes initial loading, paging, empty, stale, and error states", () => {
@@ -328,7 +328,7 @@ test("work controls use reusable vector icons instead of font glyph positioning"
   assert.match(icons, /name === "delete"/)
   assert.match(icons, /name === "remind"/)
   assert.match(source, /<WorkIcon name="edit" \/> 編輯/)
-  assert.match(source, /<WorkIcon name="delete" \/> 刪除項目/)
+  assert.match(source, /<WorkIcon name="delete" \/> 刪除/)
   assert.match(source, /className="work-modal-close"[^>]*><WorkIcon name="close" \/><\/button>/)
   assert.match(source, /aria-label=\{`移除參考圖片[\s\S]*?<WorkIcon name="close" \/>/)
   assert.match(source, /className="work-kind-radio"><WorkIcon name=\{kind === value \? "radio" : "circle"\} \/>/)
