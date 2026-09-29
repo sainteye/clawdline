@@ -56,6 +56,7 @@ type ReadingScenario =
   | "status-three"
   | "machine-pending"
   | "machine-bound"
+  | "machine-ranked"
   | "epic"
   | "refresh"
 let readingScenario: ReadingScenario = "normal"
@@ -153,6 +154,10 @@ function rows(): Row[] {
       coordinator: readingScenario === "machine-bound" ? { label: "Clawdfather", status: "online", commands: [] } : undefined,
     })]
   }
+  if (readingScenario === "machine-ranked") return [
+    row(SAFE, "Needs an answer", safeCloseability(), 900, { state: "waiting" }),
+    row(RETAINED, "Machine workspace", safeCloseability(), 1, { machine_scope: true }),
+  ]
   if (readingScenario === "epic") return [
     row(SAFE, "Epic owner", safeCloseability(), 10, { sessionId: "owner-conversation" }),
     row(BLOCKED, "Feature Root", blockedCloseability(), 100, {
@@ -706,6 +711,8 @@ const PROBE = `(() => {
   const swiped = rows.find((n) => n.dataset.swipe === "open" || n.dataset.swipe === "dragging")
   return {
     order: rows.map((n) => n.dataset.id),
+    open: rows.find((n) => n.classList.contains("open"))?.dataset.id ?? null,
+    detailName: document.getElementById("detail-name")?.textContent ?? null,
     swiping: swiped ? swiped.dataset.id : null,
     swipeState: swiped ? swiped.dataset.swipe : null,
     swipeX: swiped ? swiped.style.getPropertyValue("--swipe-x") : "",
@@ -748,6 +755,8 @@ const PROBE = `(() => {
 
 interface Seen {
   order: string[]
+  open: string | null
+  detailName: string | null
   swiping: string | null
   swipeState: string | null
   swipeX: string
@@ -817,6 +826,11 @@ class Tab {
   async desktop(): Promise<void> {
     await this.b.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, mobile: false, deviceScaleFactor: 1 }, this.session)
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: false }, this.session)
+  }
+
+  async phoneWidth(width: number): Promise<void> {
+    await this.b.send("Emulation.setDeviceMetricsOverride", { width, height: PHONE.height, mobile: true, deviceScaleFactor: 2 }, this.session)
+    await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 }, this.session)
   }
 
   async run(expression: string): Promise<any> {
@@ -1188,6 +1202,58 @@ test("machine registration remains visible after a fresh Session read and clears
       assert.equal(await tab.run(`document.querySelector('#rows .coordinator-identity') !== null`), true)
       assert.equal(await tab.run(`document.querySelector('#rows .label')?.textContent`), "Clawdfather")
       assert.equal(await tab.run(`document.querySelector('#rows .clawdfather-crown') !== null`), true)
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("Clawdfather stays first above a waiting Session on phone and desktop", () =>
+  inTab(async (tab) => {
+    try {
+      readingScenario = "machine-ranked"
+      await tab.go("/")
+      await tab.until("Clawdfather leads on phone", (s) => s.order.join() === [RETAINED, SAFE].join())
+      const spoken = await tab.accessibilityOptions()
+      assert.match(spoken[0] ?? "", /Clawdfather/)
+      assert.match(spoken[1] ?? "", /Needs an answer/)
+      await tab.phoneWidth(320)
+      await tab.go("/")
+      await tab.until("Clawdfather leads on a 320px phone", (s) => s.order.join() === [RETAINED, SAFE].join())
+      const narrow = await tab.run(`(() => {
+        const list = document.getElementById('list-scroll')
+        const waiting = document.querySelector('#rows > li.row[data-id="${SAFE}"]')
+        const box = waiting?.getBoundingClientRect()
+        return { width: innerWidth, listWidth: list?.clientWidth, scrollWidth: list?.scrollWidth,
+          waitingState: waiting?.dataset.state, waitingBottom: box?.bottom,
+          open: document.querySelector('#rows > li.row.open')?.dataset.id ?? null }
+      })()`)
+      assert.equal(narrow.width, 320)
+      assert.equal(narrow.waitingState, "waiting")
+      assert.equal(narrow.open, null)
+      assert.ok(narrow.scrollWidth <= narrow.listWidth, JSON.stringify(narrow))
+      assert.ok(narrow.waitingBottom <= PHONE.height, JSON.stringify(narrow))
+      const beforeRefresh = listReads
+      await tab.drag({ x: 160, y: 160 }, { x: 0, y: 220 }, { steps: 10, release: false })
+      await tab.lift()
+      await tab.until("the narrow phone refresh reads again", () => listReads > beforeRefresh)
+      await tab.until("Clawdfather stays first after refresh", (s) => s.order.join() === [RETAINED, SAFE].join())
+      const finger = await tab.centreOf(SAFE)
+      await tab.drag(finger, { x: -90, y: 0 }, { steps: 6, release: false })
+      pushSessions()
+      await tab.until("Clawdfather stays first while a finger holds the list", (s) =>
+        s.order.join() === [RETAINED, SAFE].join())
+      await tab.lift()
+      await tab.go("/")
+      await tab.until("Clawdfather leads after the held gesture", (s) => s.order.join() === [RETAINED, SAFE].join())
+      await tab.press(`#rows > li.row[data-id="${SAFE}"]`)
+      await tab.until("the waiting conversation opens on phone", (s) => s.detailName === "Needs an answer")
+      await tab.desktop()
+      await tab.go("/")
+      await tab.until("Clawdfather leads on desktop", (s) => s.order.join() === [RETAINED, SAFE].join())
+      assert.match((await tab.accessibilityOptions())[0] ?? "", /Clawdfather/)
+      await tab.until("the waiting conversation opens beside the pinned list", (s) => s.open === SAFE)
+      await tab.run(`location.hash = '#session=' + encodeURIComponent(${JSON.stringify(RETAINED)})`)
+      await tab.until("the explicit Clawdfather address wins", (s) => s.open === RETAINED)
     } finally {
       readingScenario = "normal"
     }

@@ -112,10 +112,22 @@ test("the id is the last word when title and time are equal", () => {
   assert.equal(compareSessions(rows[0], rows[0]), 0)
 })
 
-test("a legacy coordinator does not outrank a waiting row", () => {
+test("Clawdfather stays above waiting Sessions whether registered or pending", () => {
   const coordinator = row("cf", "idle", "Clawdfather", { coordinator: { commands: [], label: "Clawdfather", status: "online" } })
-  const rows = [row("w", "waiting", "Waiting"), coordinator]
-  assert.deepEqual(order(rows, { w: 1_000, cf: 0 }), ["w", "cf"])
+  const pending = row("pending", "unknown", "Machine workspace", { machine_scope: true })
+  const waiting = row("w", "waiting", "Waiting")
+  assert.deepEqual(order([waiting, coordinator], { w: 1_000, cf: 0 }), ["cf", "w"])
+  assert.deepEqual(order([waiting, pending], { w: 1_000, pending: 0 }), ["pending", "w"])
+  assert.deepEqual(order([waiting, coordinator], { w: 1_000, cf: 0 }, { filter: "Waiting" }), ["w"])
+})
+
+test("a held position cannot leave Clawdfather below other Sessions", () => {
+  const machine = row("cf", "idle", "Machine workspace", { machine_scope: true })
+  const waiting = row("w", "waiting", "Waiting")
+  const rows = withTimes([waiting, machine], { w: 1_000, cf: 0 })
+  const held = arrangeSessions({ sessions: rows, filter: "", tasks: [], shaping: () => true,
+    hold: { order: ["w", "cf"], waiting: waitingKey(rows) } }).map((r) => r.id)
+  assert.deepEqual(held, ["cf", "w"])
 })
 
 test("an unknown state sorts after every known one", () => {

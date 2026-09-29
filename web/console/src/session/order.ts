@@ -1,8 +1,8 @@
 /*
  * The session list's order.
  *
- * `legacy/js/view/derive.js` `ordered()`, restated with one rule added: inside
- * one state, the session that moved most recently comes first, except working
+ * `legacy/js/view/derive.js` `ordered()`, restated with two rules added: the
+ * machine steward stays first, and inside one state the session that moved most recently comes first, except working
  * sessions, whose movement does not change their position. Everything
  * else is the original's, rule for rule — waiting, working, idle and unknown
  * (`RANK`), then the title, then the id; the filter
@@ -27,7 +27,7 @@
  */
 import type { SessionRow, TaskRow } from "@clawdline/contract"
 
-/** `RANK`: waiting first, always. The list exists to answer "which one stopped and wants me". */
+/** `RANK`: after the machine steward, waiting Sessions come first. */
 const RANK: Readonly<Record<string, number>> = { waiting: 0, working: 1, idle: 2, unknown: 3 }
 
 /** `rankOf`: a state the table does not know sorts after all of them. */
@@ -64,8 +64,8 @@ function movedBand(row: SessionRow): number {
 }
 
 /**
- * State → (outside working: unknown-before-known → most recent movement) →
- * title → id. The machine steward's identity does not outrank a waiting Session.
+ * Machine steward → state → (outside working: unknown-before-known → most
+ * recent movement) → title → id.
  *
  * The time is compared only between rows in the same state, so a session that
  * moved a second ago never climbs over one that is waiting for somebody. The
@@ -85,6 +85,7 @@ export function compareSessions(a: SessionRow, b: SessionRow): number {
   const bt = movedAt(b)
   const bothWorking = a.state === "working" && b.state === "working"
   return (
+    Number(isCoordinator(b)) - Number(isCoordinator(a)) ||
     rankOf(a) - rankOf(b) ||
     (bothWorking ? 0 : movedBand(a) - movedBand(b)) ||
     (bothWorking || at === null || bt === null ? 0 : bt - at) ||
@@ -140,7 +141,8 @@ export function arrangeSessions(a: Arrangement): SessionRow[] {
   if (hold) {
     const at = new Map(hold.order.map((id, i) => [id, i]))
     list.sort(
-      (x, y) => (at.get(x.id) ?? 1e9) - (at.get(y.id) ?? 1e9) || compareSessions(x, y),
+      (x, y) => Number(isCoordinator(y)) - Number(isCoordinator(x)) ||
+        (at.get(x.id) ?? 1e9) - (at.get(y.id) ?? 1e9) || compareSessions(x, y),
     )
   } else {
     list.sort((x, y) => compareSessions(x, y))
