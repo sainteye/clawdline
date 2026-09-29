@@ -1331,7 +1331,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
-    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), acceptance_criteria: "", deployment_policy: "agent_decides" as const }
+    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const }
     const decision = workV2CreateDecision(body, createDecision.current)
     createDecision.current = decision
     onCreate(body, images, decision.key)
