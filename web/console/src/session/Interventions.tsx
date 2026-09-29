@@ -21,6 +21,9 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const [actionStatus, setActionStatus] = useState("")
   const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState("")
+  const busyRef = useRef(false)
+  const actionSerial = useRef(0)
+  const insertedDrafts = useRef(new Map<string, string>())
   const [expanded, setExpanded] = useState(false)
 
   const load = useCallback(async (target: InterventionTarget) => {
@@ -40,6 +43,9 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
 
   useEffect(() => {
     ticket.current++
+    actionSerial.current++
+    busyRef.current = false
+    insertedDrafts.current.clear()
     setPage(null); setPageKey(""); setReadError(""); setActionError(""); setActionStatus(""); setBusy(""); setExpanded(false)
     if (!destination) return
     void load(destination)
@@ -69,38 +75,55 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const shown = pageKey === key ? page : null
   const active = shown?.rows.filter((note) => !note.resolved_at) ?? []
   const recent = shown?.rows.filter((note) => !!note.resolved_at) ?? []
-  const run = async (note: HumanInterventionV2, action: "resolve" | "reopen") => {
-    if (busy || readError || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
+  const run = async (note: HumanInterventionV2, action: "resolve" | "reopen", focusHead = true) => {
+    if (busyRef.current || readError || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
+    const serial = ++actionSerial.current
+    busyRef.current = true
     setBusy(note.id); setActionError(""); setActionStatus("")
     try {
       await humanInterventionActionV2(destination.conversation, note, action)
+      insertedDrafts.current.delete(note.id)
       await load(destination)
       if (sameInterventionTarget(destination, latest.current)) {
         setActionStatus(action === "resolve" ? "已移到最近已處理" : "已重新開啟")
-        window.setTimeout(() => {
+        if (focusHead) window.setTimeout(() => {
           document.querySelector<HTMLElement>(".human-interventions-head")?.focus({ preventScroll: true })
         }, 0)
       }
     }
     catch (error) {
       if (sameInterventionTarget(destination, latest.current)) {
-        setActionError(failureWords(error))
+        setActionError(focusHead ? failureWords(error) : `${failureWords(error)}。回覆已保留在對話框，便條仍待處理；請重試移到已處理。`)
         await load(destination)
       }
     }
-    finally { setBusy("") }
+    finally {
+      if (serial === actionSerial.current) { busyRef.current = false; setBusy("") }
+    }
   }
-  const insert = (value: string) => {
-    if (readError || busy || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
-    if (onInsertDraft) onInsertDraft(destination, value)
-    else appendInterventionDraft(destination, value)
+  const insert = (note: HumanInterventionV2, value: string) => {
+    if (readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
+    const previous = insertedDrafts.current.get(note.id)
+    if (previous && !note.resolved_at) {
+      if (previous !== value) {
+        setActionError("另一個建議回覆已在對話框中；請先修改草稿，再重試移到已處理。")
+        return
+      }
+      if (onInsertDraft) onInsertDraft(destination, "")
+      else document.getElementById("msg")?.focus({ preventScroll: true })
+    } else {
+      if (onInsertDraft) onInsertDraft(destination, value)
+      else appendInterventionDraft(destination, value)
+      if (!note.resolved_at) insertedDrafts.current.set(note.id, value)
+    }
     setExpanded(false)
+    if (!note.resolved_at) void run(note, "resolve", false)
   }
 
   const countWords = readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
   const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
     aria-label={`${countWords}${actionError ? "，操作失敗，請展開查看" : ""}`}
-    onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (!expanded) onExpand?.(); setExpanded(!expanded) }}>
+    onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
       <span>關注</span>
       {active.length > 0 && <span className="human-interventions-dot" aria-hidden="true" />}
       {shown && active.length > 0 && <span className="human-interventions-count">待處理 {active.length}</span>}
@@ -135,7 +158,7 @@ function InterventionCard({ note, disabled, onAction, onInsert }: {
   note: HumanInterventionV2
   disabled: boolean
   onAction: (note: HumanInterventionV2, action: "resolve" | "reopen") => void
-  onInsert: (text: string) => void
+  onInsert: (note: HumanInterventionV2, text: string) => void
 }) {
   const fromAnotherSession = note.source_conversation !== note.target_conversation
   const isReading = note.kind === "read" || note.kind === "report"
@@ -151,7 +174,7 @@ function InterventionCard({ note, disabled, onAction, onInsert }: {
       <h4>建議回覆</h4>
       {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) =>
         <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`將建議回覆加入對話框：${option.draft}`} onClick={() => onInsert(interventionReplyText(note, option.draft))}>
+          disabled={disabled} aria-label={`${note.resolved_at ? "將建議回覆加入對話框" : "將建議回覆加入對話框並移到已處理"}：${option.label}，${option.draft}`} onClick={() => onInsert(note, interventionReplyText(note, option.draft))}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
           <span>{option.draft}</span>
         </button>)}
