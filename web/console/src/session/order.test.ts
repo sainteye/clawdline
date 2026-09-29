@@ -112,10 +112,10 @@ test("the id is the last word when title and time are equal", () => {
   assert.equal(compareSessions(rows[0], rows[0]), 0)
 })
 
-test("Clawdfather stays first, even behind a waiting row that just moved", () => {
+test("a legacy coordinator does not outrank a waiting row", () => {
   const coordinator = row("cf", "idle", "Clawdfather", { coordinator: { commands: [], label: "Clawdfather", status: "online" } })
   const rows = [row("w", "waiting", "Waiting"), coordinator]
-  assert.deepEqual(order(rows, { w: 1_000, cf: 0 }), ["cf", "w"])
+  assert.deepEqual(order(rows, { w: 1_000, cf: 0 }), ["w", "cf"])
 })
 
 test("an unknown state sorts after every known one", () => {

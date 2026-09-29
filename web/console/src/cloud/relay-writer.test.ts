@@ -511,6 +511,15 @@ test("start and resume go as the machine's words; a refusal keeps `app` in the n
   assert.equal(body.error.outcome, "not_done")
 })
 
+test("the machine workspace starts on this machine without entering the Project map", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  await reader.fetch("/v1/places/%40machine/start/codex", post({}, { "Idempotency-Key": "machine-press-1" }))
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "machine-press-1", "mac-a", "start",
+    { place: "@machine", assistant: "codex", model: "" }, "action"])
+  assert.equal(client.calls.some((call) => call[0] === "_place" || call[0] === "startPlace"), false)
+})
+
 test("`/as/<persona>` is read off a start or a resume exactly where the machine's route reads it", () => {
   const cases: [string, Record<string, unknown> | null][] = [
     ["/v1/places/p1/start/claude/as/architect",

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/limits"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -410,7 +411,8 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		// longer depends on what any one browser happened to have watched.
 		Activity: wireActivity(item.Activity),
 		// Read back from the process's command line; absent for none.
-		Persona: item.Persona,
+		Persona:      item.Persona,
+		MachineScope: projects.IsMachineWorkspace(s.cfg.Dir, item.CWD),
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
 

@@ -52,7 +52,10 @@ type Server struct {
 	proxy     *httputil.ReverseProxy
 	inventory app.Inventory
 	store     *store.Store
-	terminals []ports.TerminalHost
+	// replaceMachineItemReceipt is a test seam for a failed post-create
+	// receipt refinement. Nil uses the durable store implementation.
+	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
+	terminals                 []ports.TerminalHost
 	// facts holds the model and spend read out of each record, keyed on the
 	// file's size and time, so the status line's minute-by-minute read of an
 	// unchanged session opens nothing.

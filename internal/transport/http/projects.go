@@ -61,6 +61,7 @@ func (s *Server) projectReaders() *projectReaders {
 	registry := projects.OpenPlaceRegistry(s.cfg.Dir, swiftDirs()...)
 	registry.SetLimit(CapacityLimit(capacity.PlacesRegistered))
 	places := projects.NewPlaces(s.icons.Label, managed)
+	places.MachineStateDir = s.cfg.Dir
 	places.Registered = registry.List
 	r := &projectReaders{
 		places:   places,
@@ -139,7 +140,7 @@ func (s *Server) liveEvidence(ctx context.Context) projects.LiveEvidence {
 	inv := s.reading(ctx)
 	out := projects.LiveEvidence{Complete: inv.Complete, ObservedAt: inv.ObservedAt}
 	for _, item := range inv.Sessions {
-		if item.IsAssistant() && item.CWD != "" {
+		if item.IsAssistant() && item.CWD != "" && !projects.IsMachineWorkspace(s.cfg.Dir, item.CWD) {
 			out.Sessions = append(out.Sessions, projects.LiveSession{TerminalID: item.ID,
 				ConversationID: item.ConversationID, CWD: item.CWD})
 		}

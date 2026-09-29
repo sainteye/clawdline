@@ -349,6 +349,15 @@ func manualConversationTitle(rows []swiftTitle, id, custom string) string {
 }
 
 func (s *Server) startPlace(w http.ResponseWriter, r *http.Request, id, assistant, model, persona string) {
+	if id == projects.MachinePlaceID {
+		if model != "" || persona != "" {
+			writePlaceRefusal(w, http.StatusBadRequest, "machine_start_options_unsupported",
+				"A machine Session uses the configured default model and no Project persona.", "")
+			return
+		}
+		s.startCoordinator(w, r, assistant)
+		return
+	}
 	release, ok := admitOpening(w, r)
 	if !ok {
 		return

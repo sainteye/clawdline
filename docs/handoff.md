@@ -44,7 +44,7 @@ the other.
 
 <!-- clawdline-dispatch-role-contract:v1 -->
 
-- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child only when Clawdfather
+- **Owned child.** `POST /v1/orchestrator/tasks` creates a bounded child whose dispatching root
   retains synthesis, integration, and landing.
 - **Handoff.** `POST /v1/orchestrator/handoffs` is continuation or transfer of an existing work
   line; the receiver must walk the sender's complete REFERENCES, answer VERIFICATION, and continue

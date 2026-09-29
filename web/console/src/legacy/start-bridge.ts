@@ -8,18 +8,17 @@
 // drawn any of them. The copy is kept under the guard so a change to the
 // original turns `tools/check-legacy-css.sh` red and Start.tsx is read again.
 //
-// `js/input/clawdfather.js` is imported: it touches no DOM and decides the
-// Clawdfather row from the transport alone.
+// `js/input/clawdfather.js` remains imported for compatibility with legacy
+// helpers. The React sheet has its own machine-workspace row.
 //
 // The transport is `net/live.js`'s `places`, `pastSessions`, `startPlace` and
 // `resumePlace`, spelled against this daemon. What it deliberately lacks:
 //
 // - `machines`: there is no Cloud here, so the machine row stays hidden as it
 //   is on the Mac's own page.
-// - `coordinatorBearings`: registering Clawdfather writes the Swift app's
-//   coordinator record, which this app must never write. Without the read the
-//   original does not draw the row at all (`clawdfatherChoiceSupported`), which
-//   is its answer for a feature that is missing rather than refused.
+// - `coordinatorBearings`: the React start sheet does not offer coordinator
+//   registration. Existing role records and machine Bearings remain available
+//   through their daemon APIs independently of this transport.
 import { T } from "./js/core/i18n.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import { resumePath, startPath } from "../session/place-routes.js"

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/coordinator"
@@ -26,6 +27,10 @@ import (
 // (cutover A7 needs the crown drawn with that reader switched off).
 type Coordinator struct {
 	Store *store.Store
+	// MachineStateDir, when set, requires every new binding to come from the
+	// daemon-owned machine workspace. Old bindings remain readable and may
+	// register idempotently until their Session ends.
+	MachineStateDir string
 	// Read is a current reading of the machine's sessions.
 	Read func(ctx context.Context) session.Inventory
 	// ProcessStart is when a process started, from the kernel.
@@ -198,6 +203,10 @@ func (c *Coordinator) Register(ctx context.Context, conversation string) (State,
 	if !created {
 		return st, false, nil
 	}
+	if c.MachineStateDir != "" && !projects.IsMachineWorkspace(c.MachineStateDir, live.CWD) {
+		return st, false, RoleRefusal{Status: http.StatusConflict, Code: "coordinator_workspace_required",
+			Message: "A new Clawdfather binding must come from the machine workspace, not a Project Session."}
+	}
 	next.SessionLabel, next.CWD = live.Label, live.CWD
 	payload, _ := json.Marshal(map[string]any{"id": next.ID, "session": next.ConversationID, "terminal": next.TerminalID})
 	if err := c.Store.CommitCoordinator(ctx, nil, next,
@@ -239,6 +248,10 @@ func (c *Coordinator) Rebind(ctx context.Context, expectID string, expectGenerat
 	}
 	if !moved {
 		return st, false, nil
+	}
+	if c.MachineStateDir != "" && !projects.IsMachineWorkspace(c.MachineStateDir, live.CWD) {
+		return st, false, RoleRefusal{Status: http.StatusConflict, Code: "coordinator_workspace_required",
+			Message: "Clawdfather may move only to a Session in the machine workspace."}
 	}
 	next.SessionLabel, next.CWD = live.Label, live.CWD
 	payload, _ := json.Marshal(map[string]any{"id": next.ID, "generation": next.Generation,

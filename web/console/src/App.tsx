@@ -171,7 +171,9 @@ function typing(el: Element | null): el is HTMLElement {
 
 /** A control owns Enter, Space and arrow keys before the Session-list shortcuts do. */
 function interactive(el: Element | null): boolean {
-  return !!el?.closest("button, a[href], input, textarea, select, summary, [contenteditable=true], [role=button], [role=radio], [role=option], [role=tab], [role=switch]")
+  // The list's focused option is the shortcut target; a control inside it
+  // still owns its own keys.
+  return !!el?.closest("button, a[href], input, textarea, select, summary, [contenteditable=true], [role=button], [role=radio], [role=tab], [role=switch]")
 }
 
 /** A row's node, as `rowNodes` holds it there. */

@@ -29,9 +29,10 @@ Clawdline 由 Go daemon 與 React 控制台組成。它看得到你本來就在 
   失敗通知。Cloud Pro 還能用 Webhook 從任何事件啟動同一個任務。
 - **看板與驗收。** 把工作放上 Project 的看板、指派給 Session，由 Agent 帶著證據推進實作、驗證、
   合併與部署。只能事後判斷的改動，放進「等待驗收」清單。
-- **Clawdfather 與派工。** Session 可以把範圍明確的工作派給子 Session、收回結果，或把整條工作
-  交接給新的 Session；交付的工作是否真的落地，由 Clawdline 記錄。也可以指定一個 Session 當
-  整台機器的協調者 **Clawdfather**。
+- **派工與落地。** 看板項目的負責 Session 可以把範圍明確的工作派給子 Session、收回結果，或把整條
+  工作交接給新的 Session；交付的工作是否真的落地，由 Clawdline 記錄。Clawdfather 可在獨立的
+  機器工作區整理 Session 報告、設定與受控的匯入匯出；程式碼工作先建看板項目，再交給專案 Session，
+  Clawdfather 本身不改程式碼。
 - **跨機器的 Project。** 讓第二台機器取得與第一台相同的 Project 名稱、圖示和沒進 git 的 skill，
   以 git origin 對應。
 
@@ -47,7 +48,7 @@ Agent 執行環境與 multiplexer，支援的 Agent 很廣。[Orca](https://gith
 Agent Development Environment，有 worktree、編輯器、diff review 與各種整合。
 
 Clawdline 不是 IDE，也不取代 Claude Code 或 Codex。它是環繞你既有 Session 的控制平面，核心是
-Web／手機控制、broker 派工、落地證據、排程、Webhook 與 Clawdfather 協調。當困難的地方不再是
+Web／手機控制、broker 派工、落地證據、排程、Webhook、看板項目責任與機器管理。當困難的地方不再是
 「開一個 Agent」，而是「長時間可靠地管理多個 Agent」，就是它適合的位置。
 
 ## 安裝

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/coordinator"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -87,6 +88,58 @@ func TestTheRoleIsRegisteredOnceAndNeverTakenOver(t *testing.T) {
 	rec, status, err := c.Store.Coordinator(ctx)
 	if err != nil || status != store.CoordinatorReady || rec.ID != st.Record.ID {
 		t.Fatalf("stored: %v %v %+v", err, status, rec)
+	}
+}
+
+func TestNewBindingsRequireTheMachineWorkspaceWithoutBreakingAnOldBinding(t *testing.T) {
+	c, m, now := newRole(t)
+	ctx := context.Background()
+	project := row("%1", convA, 101)
+	project.CWD = "/project"
+	m.rows = []session.Session{project}
+	old, _, err := c.Register(ctx, convA)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := t.TempDir()
+	c.MachineStateDir = state
+	if _, created, err := c.Register(ctx, convA); err != nil || created {
+		t.Fatalf("the old binding stopped being idempotent: created=%v err=%v", created, err)
+	}
+	*now = now.Add(time.Minute)
+	m.at = *now
+	next := row("%2", convB, 102)
+	next.CWD = "/other-project"
+	m.rows = []session.Session{next}
+	if _, _, err := c.Rebind(ctx, old.Record.ID, old.Record.Generation, convB); code(err) != "coordinator_workspace_required" {
+		t.Fatalf("a Project Session took the role: %v", err)
+	}
+	next.CWD = projects.MachineWorkspace(state)
+	m.rows = []session.Session{next}
+	if _, moved, err := c.Rebind(ctx, old.Record.ID, old.Record.Generation, convB); err != nil || !moved {
+		t.Fatalf("the machine Session could not take the offline role: moved=%v err=%v", moved, err)
+	}
+}
+
+func TestFirstBindingRequiresTheMachineWorkspace(t *testing.T) {
+	c, m, _ := newRole(t)
+	state := t.TempDir()
+	c.MachineStateDir = state
+	project := row("%1", convA, 101)
+	project.CWD = t.TempDir()
+	m.rows = []session.Session{project}
+	if _, _, err := c.Register(context.Background(), convA); code(err) != "coordinator_workspace_required" {
+		t.Fatalf("a Project Session registered as Clawdfather: %v", err)
+	}
+	rec, status, err := c.Store.Coordinator(context.Background())
+	if err != nil || status != store.CoordinatorAbsent || rec != nil {
+		t.Fatalf("rejected binding changed storage: status=%v record=%+v err=%v", status, rec, err)
+	}
+	project.CWD = projects.MachineWorkspace(state)
+	m.rows = []session.Session{project}
+	if _, created, err := c.Register(context.Background(), convA); err != nil || !created {
+		t.Fatalf("machine Session could not register: created=%v err=%v", created, err)
 	}
 }
 

@@ -55,6 +55,23 @@ func TestExplicitPlaceIsListedWithoutAssistantHistory(t *testing.T) {
 	}
 }
 
+func TestMachineWorkspaceIsExcludedFromRecordedAndLivePlaces(t *testing.T) {
+	home := placesHome(t)
+	state := filepath.Join(home, ".config", "clawdline-next")
+	machine := projects.MachineWorkspace(state)
+	project := filepath.Join(home, "code", "ordinary")
+	for _, dir := range []string{machine, project} {
+		recordPlace(t, home, dir)
+	}
+	s := &Server{cfg: config.Config{Dir: state}, broker: &orchestrator.Broker{Dir: state}, icons: &icon.Registry{}}
+	for _, live := range [][]string{nil, {machine, project}} {
+		listed := s.projectReaders().places.List(live, 40)
+		if len(listed) != 1 || listed[0].Path != project {
+			t.Fatalf("recorded/live machine workspace became a Project: %#v", listed)
+		}
+	}
+}
+
 // recordPlace makes dir and a Claude Code transcript folder that names it, the
 // way `claude` leaves one behind after running there.
 func recordPlace(t *testing.T, home, dir string) {
