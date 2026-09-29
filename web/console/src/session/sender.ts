@@ -11,10 +11,9 @@
  *   Cloud it is the command's `request` too (`cloud/relay-writer.ts`).
  * - **A failure is `failed` only when it proves nothing was typed**
  *   (`outcome.ts`); otherwise the card is `unknown` and says so (F3).
- * - **"Try again" reads the transcript first, and a read that fails sends
- *   nothing.** That read fails exactly when the Mac is busy or far away — when
- *   the first attempt is most likely to have landed after all — so the card
- *   goes to `unknown` instead of typing the words a second time (F2).
+ * - **"Try again" reads the transcript first when it can.** If a read fails,
+ *   only a card whose refusal proved nothing was typed can be sent again.
+ *   An uncertain card goes to `unknown` instead of risking a second send (F2).
  * - **Words typed and never submitted are submitted by their Enter, never sent
  *   again.** The machine presses it only while they are still in the input
  *   line (`app.SubmitTyped`); a refusal it proves typed nothing on offers the
@@ -199,19 +198,21 @@ export class Sender {
 
   /**
    * "Try again" on a card that failed, or on an unknown one whose transcript
-   * showed no turn: read the transcript fresh, and post only if it could be
-   * read and does not hold the words.
+   * showed no turn: read the transcript fresh when possible. An unknown card
+   * needs that read before posting; a definite failure can be posted even if
+   * the read is unavailable.
    */
   async resend(token: string): Promise<void> {
     const { cards, now } = this.deps
+    const failed = cards.card(token)?.state === "failed"
     const card = cards.retrying(token)
     if (!card) return
     const turns = await this.readBack(card.session)
-    if (!turns) {
+    if (!turns && !failed) {
       cards.uncertain(token, READ_BACK_FAILED)
       return
     }
-    cards.reconcile(card.session, turns, now())
+    if (turns) cards.reconcile(card.session, turns, now())
     const again = cards.resend(token, now())
     if (again) await this.deliver(again)
   }
