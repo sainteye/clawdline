@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
@@ -578,7 +578,7 @@ function CompactWorkCard({ item, decisions, onOpen }: {
   </article>
 }
 
-function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false }: {
+function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false, foldDescription = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   decisions: Decision[]
@@ -591,6 +591,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   retryDetail: () => void
   focusAssignment?: boolean
   reportsExpanded?: boolean
+  foldDescription?: boolean
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
@@ -737,7 +738,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
     {!plan && conversionPanel}
-    <p>{item.description}</p>
+    {foldDescription ? <WorkDescription key={item.id} description={item.description} id={item.id} /> : <p>{item.description}</p>}
     {convertible && plan && <div className="work-convert-entry">
       <button className="work-convert-cta" type="button" disabled={!!busy} aria-expanded={converting}
         aria-controls={`work-convert-${item.id}`}
@@ -852,6 +853,28 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
     }} />}
   </article>
+}
+
+function WorkDescription({ description, id }: { description: string; id: string }) {
+  const paragraph = useRef<HTMLParagraphElement>(null)
+  const [long, setLong] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  useLayoutEffect(() => {
+    const node = paragraph.current
+    if (!node) return
+    const measure = () => setLong(node.scrollHeight > 6 * parseFloat(getComputedStyle(node).lineHeight) + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [description])
+  return <>
+    <p ref={paragraph} id={`work-description-${id}`} className="work-card-description" data-expanded={expanded}>{description}</p>
+    {long && <button className="work-description-toggle" type="button" aria-expanded={expanded}
+      aria-controls={`work-description-${id}`} onClick={() => setExpanded((shown) => !shown)}>
+      {expanded ? "收合描述" : "顯示完整描述"}
+    </button>}
+  </>
 }
 
 function personaAIError(error: unknown): string {
@@ -1073,7 +1096,7 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
         <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" disabled={!!busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run}
-        detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} />
+        detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
     </div>
   </div>, document.body)
 }
