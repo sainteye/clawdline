@@ -9,6 +9,7 @@ import { retainedStateWords } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
+import "./list-tree.css"
 import "./swipe-archive.css"
 
 export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: number; id?: string }) {
@@ -268,6 +269,8 @@ export function sessionActivityWord(
 export function Row({
   row,
   depth,
+  branchThrough,
+  ancestorThrough,
   selected,
   open,
   swiped,
@@ -275,6 +278,8 @@ export function Row({
 }: {
   row: SessionRow
   depth: number
+  branchThrough: boolean
+  ancestorThrough: boolean
   selected: boolean
   open: boolean
   /** This row's action is uncovered (`swipe.ts`). A phone thing; nothing else sets it. */
@@ -337,13 +342,13 @@ export function Row({
       aria-disabled="false"
       data-coordinator={coordinator ? "1" : undefined}
       data-depth={place.chip && place.depth ? String(place.depth) : undefined}
+      data-tree-through={branchThrough ? "1" : undefined}
       data-epic-parent={row.epic_parent && depth ? row.epic_parent.epic_id : undefined}
       data-swipe-width={actionWidth(row.sessionId)}
       onClick={onPress}
     >
-      <span className="kid" hidden={!place.depth} aria-hidden="true">
-        └
-      </span>
+      <span className="kid" hidden={!place.depth} aria-hidden="true" />
+      {ancestorThrough ? <span className="tree-ancestor" aria-hidden="true" /> : null}
       {row.epic_parent && depth ? <span className="sr-only">隸屬於 Epic 負責人的工作樹</span> : null}
       {coordinator ? (
         // The machine steward's identity is visible without promising a

@@ -3,7 +3,7 @@ import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { actionWidthOf, paintSwipe, Row } from "./session/List.js"
-import { visualDepths } from "./session/order.js"
+import { visualBranches, visualDepths } from "./session/order.js"
 import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Command, CommandSheet } from "./session/Command.js"
@@ -138,6 +138,7 @@ export function SessionsPage({
   const listUnknown = !arrived && wait !== "over"
   const drawn = skeleton ? [] : shown
   const depths = visualDepths(drawn, tasks ?? [], L.taskShaping)
+  const branches = visualBranches(drawn, depths)
 
   // Every spinner in the list, handed to the one clock that drives them all.
   // Re-registered after each render because the rows are rebuilt: a canvas that
@@ -305,6 +306,8 @@ export function SessionsPage({
                   key={L.selectionKey(r)}
                   row={r}
                   depth={depths.get(r.id) ?? 0}
+                  branchThrough={branches.through.has(r.id)}
+                  ancestorThrough={branches.ancestorThrough.has(r.id)}
                   selected={r.id === selected}
                   open={r.id === openId}
                   swiped={r.id === swipedId}

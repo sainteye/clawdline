@@ -160,6 +160,11 @@ function rows(): Row[] {
       root_assignment: { id: "root-feature", label: "Feature Root", state: "briefed", ownership: "independent_root" },
       epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
     }),
+    row(UNKNOWN, "Second Feature Root", unknownCloseability(), 90, {
+      sessionId: "second-feature-conversation",
+      root_assignment: { id: "root-second-feature", label: "Second Feature Root", state: "briefed", ownership: "independent_root" },
+      epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
+    }),
   ]
   if (readingScenario.startsWith("status-")) {
     const extra: Row = {
@@ -1171,7 +1176,7 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
     readingScenario = "epic"
     try {
       await tab.go("/")
-      await tab.until("the Epic owner and Feature Root arrive", (s) => s.order.join() === [SAFE, BLOCKED].join())
+      await tab.until("the Epic owner and Feature Roots arrive", (s) => s.order.join() === [SAFE, BLOCKED, UNKNOWN].join())
       await tab.until("the independent Root chip is drawn", (s) => s.taskVisible)
       const shown = await tab.run(`(() => {
         const owner = document.querySelector('#rows > li.row[data-id="${SAFE}"]')
@@ -1181,12 +1186,21 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
           epic: feature?.dataset.epicParent,
           root: feature?.querySelector('.task-chip')?.textContent?.trim(),
           offset: feature?.getBoundingClientRect().left - owner?.getBoundingClientRect().left,
+          through: feature?.dataset.treeThrough,
+          trunk: feature ? getComputedStyle(feature.querySelector('.kid'), '::before').borderLeftStyle : null,
+          elbow: feature ? getComputedStyle(feature.querySelector('.kid'), '::after').borderTopStyle : null,
+          overflow: feature ? getComputedStyle(feature).overflowX : null,
         }
       })()`)
       assert.equal(shown.depth, "1")
       assert.equal(shown.epic, "epic-fixture")
       assert.ok(shown.root, JSON.stringify(shown))
       assert.ok(shown.offset >= 20, "the Feature Root is visibly indented under the Epic owner")
+      assert.equal(shown.through, "1", "the first Root's trunk reaches the next Root")
+      assert.equal(shown.trunk, "dashed")
+      assert.equal(shown.elbow, "dashed")
+      assert.equal(shown.overflow, "visible", "the connector is not clipped at the card edge")
+      await tab.shot("epic-tree")
     } finally {
       readingScenario = "normal"
     }

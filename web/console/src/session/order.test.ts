@@ -9,7 +9,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionRow, TaskRow } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see above.
-import { arrangeSessions, compareSessions, groupUnderRoots, movedAt, rankOf, visualDepths, waitingKey } from "./order.ts"
+import { arrangeSessions, compareSessions, groupUnderRoots, movedAt, rankOf, visualBranches, visualDepths, waitingKey } from "./order.ts"
 
 function row(id: string, state: string, label: string, extra: Partial<SessionRow> = {}): SessionRow {
   return { id, state, label, backend: "iterm", work_state: "unknown", evidence: "screen", isClaude: true, ...extra } as SessionRow
@@ -214,6 +214,15 @@ test("missing, ambiguous, and cyclic Epic owners leave independent Roots at the 
     epic_parent: { owner_session_id: "a-conversation", epic_id: "epic-b" } } as Partial<SessionRow>)
   assert.deepEqual(groupUnderRoots([a, b], [], () => true).map((item) => item.id), ["a", "b"])
   assert.deepEqual([...visualDepths([a, b], [], () => true).values()], [0, 0])
+})
+
+test("the dotted tree trunk continues through siblings and their descendants", () => {
+  const rows = [row("owner", "idle", "Architect"), row("first", "idle", "Feature A"),
+    row("review", "idle", "Review"), row("second", "idle", "Feature B"), row("other", "idle", "Other")]
+  const depths = new Map([["owner", 0], ["first", 1], ["review", 2], ["second", 1], ["other", 0]])
+  const branches = visualBranches(rows, depths)
+  assert.deepEqual([...branches.through], ["first"])
+  assert.deepEqual([...branches.ancestorThrough], ["review"])
 })
 
 test("a link that goes round in a circle or too deep is dropped, and no row is lost", () => {
