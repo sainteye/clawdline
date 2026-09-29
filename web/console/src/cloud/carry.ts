@@ -87,6 +87,10 @@ export const CARRIED = {
   "squad.catalog.update": "POST /v1/squad/catalog",
   "squad.settings.update": "PUT /v1/squad/settings",
   "squad.motion.update": "PUT /v1/squad/motion",
+  "squad.packages.preview": "POST /v1/squad-packages/preview",
+  "squad.packages.adopt": "POST /v1/squad-packages/adopt",
+  "squad.packages.export": "POST /v1/squad-packages/export",
+  "squad.packages.export.private": "POST /v1/squad-packages/export",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
   // Project settings sync (docs/project-sync.md). The two source reads are

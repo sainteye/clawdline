@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS squad_receipts (
 
 func openSquad(db *sql.DB) error {
 	_, err := db.Exec(squadSchema)
-	return err
+	if err != nil {
+		return err
+	}
+	return openSquadPackages(db)
 }
 
 type SquadLimits struct {
@@ -91,7 +94,7 @@ func (s *Store) SquadUsage(ctx context.Context) (SquadCounts, error) {
 	}{
 		{`SELECT COUNT(*) FROM squad_entities`, &out.Entities},
 		{`SELECT COUNT(*) FROM squad_settings`, &out.Settings},
-		{`SELECT COUNT(*) FROM squad_receipts`, &out.Receipts},
+		{`SELECT (SELECT COUNT(*) FROM squad_receipts)+(SELECT COUNT(*) FROM squad_package_receipts)`, &out.Receipts},
 	} {
 		if err := s.db.QueryRowContext(ctx, item.query).Scan(item.into); err != nil {
 			return SquadCounts{}, classify(err)
@@ -228,7 +231,7 @@ func (s *Store) SaveSquadSetting(ctx context.Context, scopeID, definitionID stri
 			saved = v
 			return 0, nil
 		}
-		if n, err := countRows(ctx, tx, "squad_receipts"); err != nil {
+		if n, err := packageReceiptCount(ctx, tx); err != nil {
 			return 0, err
 		} else if n >= limits.Receipts {
 			return 0, ErrSquadCapacityFull
@@ -293,7 +296,7 @@ func (s *Store) PatchSquadSetting(ctx context.Context, scopeID, definitionID str
 		if err != nil {
 			return 0, err
 		}
-		if n, err := countRows(ctx, tx, "squad_receipts"); err != nil {
+		if n, err := packageReceiptCount(ctx, tx); err != nil {
 			return 0, err
 		} else if n >= limits.Receipts {
 			return 0, ErrSquadCapacityFull
@@ -464,7 +467,7 @@ func (s *Store) SaveSquadEntities(ctx context.Context, rows []SquadEntityRow,
 			saved = v
 			return 0, nil
 		}
-		if n, err := countRows(ctx, tx, "squad_receipts"); err != nil {
+		if n, err := packageReceiptCount(ctx, tx); err != nil {
 			return 0, err
 		} else if n >= limits.Receipts {
 			return 0, ErrSquadCapacityFull
