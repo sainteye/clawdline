@@ -120,7 +120,7 @@ let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
 // The machine's persona catalog, as many roles as the daemon compiles in and
 // with its longest names: the assignment row lays every one of them out on a
-// phone. The created item's words and kind never preselect a role.
+// phone. The issue kind has one default; words like "React" do not override it.
 const PERSONA_NAMES: [string, string, string][] = [
   ["architect", "Architect", "架構師"],
   ["backend", "Backend Engineer", "後端工程師"],
@@ -137,10 +137,11 @@ const PERSONAS = PERSONA_NAMES.map(([id, en, zh]) => ({
   summary: { en, "zh-Hant": zh },
   icon: { accent: "#e07a5f", cells: Array.from({ length: 7 }, () => Array.from({ length: 8 }, () => "#e07a5f")) },
   source: "fixture",
-  suggested_kinds: [],
+  suggested_kinds: id === "minimal-change" ? ["issue"] : id === "architect" ? ["epic"] : [],
 }))
 let createdWork: Record<string, unknown> | null = null
 let createdWorkBody: Record<string, unknown> | null = null
+let assignmentReply: (() => void) | null = null
 let personaSuggestionRequests = 0
 let personaSuggestionKey = ""
 const PROJECT_ICON = {
@@ -322,6 +323,12 @@ function daemon(): Server {
           return json(res, 409, { error: "version_conflict", detail: "fixture item changed" })
         }
         json(res, 200, { ok: true, outcome: "recommend", persona_id: "backend", provider: "codex" })
+      }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
+      return
+    }
+    if (/^\/v1\/work\/v2\/items\/[^/]+\/assign$/.test(path) && req.method === "POST") {
+      void requestJSON(req).then(() => {
+        assignmentReply = () => json(res, 503, { error: "fixture_assignment_paused", detail: "assignment paused for loading verification" })
       }, () => json(res, 400, { error: "invalid_json", detail: "fixture could not read JSON" }))
       return
     }
@@ -1400,6 +1407,7 @@ test("phone: a spoken Board item is prefilled but not created until confirmation
     personaSuggestionRequests = 0
     personaSuggestionKey = ""
     createdWorkBody = null
+    assignmentReply = null
     // The command already read the Project row used by the planner. Make the
     // Board page's immediately following refresh fail, as a slow/offline Cloud
     // read can, and require the confirmation to retain that selected row.
@@ -1568,6 +1576,10 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     await tab.run(`(() => {
       const title = document.querySelector(".work-new-modal input.work-input")
       const description = document.querySelector(".work-new-modal textarea")
+      const issue = Array.from(document.querySelectorAll(".work-new-modal .work-kind-option"))
+        .find((button) => button.querySelector("b")?.textContent === "Issue")
+      if (!issue) throw new Error("Issue kind is missing")
+      issue.click()
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(title, "React console shortcut")
       title.dispatchEvent(new Event("input", { bubbles: true }))
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(description, "Keep this item open so it can be assigned.")
@@ -1633,10 +1645,10 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         rolesScrollSideways: true, roleEdgeRoom: 7 },
       title: "React console shortcut",
       roleDescription: null,
-      chosenRole: "不指定",
+      chosenRole: "最小改動工程師",
       picker: "選擇既有 Session",
       paths: ["指派給既有 Session", "開啟新 Session"],
-      actions: ["開新 Codex Session"],
+      actions: ["開新 Codex Session（最小改動工程師）"],
       actionsUseChips: true,
       focus: "關閉",
       progressBeforeStart: false,
@@ -1759,4 +1771,36 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         action: card.querySelector('[aria-labelledby^="work-assign-existing-"] .work-assignment-action')?.textContent ?? null,
       }
     })()`), { empty: "這個 Project 目前沒有可用的 Session。", action: null })
+
+    // Hold a real assignment request so its loading control can be measured.
+    await tab.run(`document.querySelector('.work-created-modal [aria-labelledby^="work-assign-new-"] .work-assignment-action').click()`)
+    try {
+      const loading = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000
+        const read = () => {
+          const button = document.querySelector('.work-created-modal [aria-labelledby^="work-assign-new-"] .work-assignment-action')
+          const spinner = button?.querySelector('.work-assignment-spinner')
+          if (spinner) {
+            const box = spinner.getBoundingClientRect()
+            return resolve({
+              busy: button.getAttribute('aria-busy'),
+              buttonDisplay: getComputedStyle(button).display,
+              spinnerDisplay: getComputedStyle(spinner).display,
+              width: box.width, height: box.height,
+              animation: getComputedStyle(spinner).animationName,
+            })
+          }
+          if (Date.now() >= deadline) return reject(new Error('assignment spinner did not appear'))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.deepEqual(loading, { busy: "true", buttonDisplay: "flex", spinnerDisplay: "block",
+        width: 14, height: 14, animation: "work-assignment-spin" })
+    } finally {
+      const deadline = Date.now() + 5000
+      while (!assignmentReply && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25))
+      assignmentReply?.()
+      assignmentReply = null
+    }
   }))
