@@ -1,0 +1,69 @@
+# Persona skill candidate decisions
+
+Use this reference when you design the persona squad's skill list. It gives each of the 42 built-in personas one bounded-task candidate and a separate decision about whether the pinned text is ready for **manual preview**. The [machine-readable ledger](persona-skill-decisions.json) holds the exact source, commit, file hash, license evidence, referenced-file audit, fit, and limit for each candidate.
+
+Manual preview means a person may read the pinned entry and the reviewed bundled references. It does **not** mean the Console can display the skill today, the skill has been installed, a provider can run it, or a user has adopted it. No adoption evidence was found in this research cycle. For a persona with no preview-ready candidate, render zero skills. Keep its partial-fit research candidate visible only in the decision ledger until the remaining review is done.
+
+## Decision table
+
+| Persona | Bounded candidate | Manual preview |
+| --- | --- | --- |
+| architect | [architecture-blueprint-generator](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/architecture-blueprint-generator/SKILL.md) | No — The generic blueprint prompt can invent architecture unless every claim is checked against this repository. |
+| backend | [golang-concurrency](https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/SKILL.md) | Yes |
+| frontend | [frontend-component-build](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/SKILL.md) | Yes |
+| minimal-change | [systematic-debugging](https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/systematic-debugging/SKILL.md) | No — Does not enforce this project's smallest-sufficient-change boundary or release checks. |
+| code-reviewer | [go-code-review](https://github.com/cxuu/golang-skills/blob/91f0c2eef559a3168f9d3c38f5f99936d472b508/skills/go-code-review/SKILL.md) | No — Routes to many other Go skills and a shell script; the full dependency graph is not cleared for preview. |
+| reality-checker | [qa-skill](https://github.com/Newoahil/QA-skills/blob/bfc5c490b9266292b28e0be189e6f1acacb8bea5/qa-skill/SKILL.md) | No — Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules. |
+| security | [security-review](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/security-review/SKILL.md) | No — Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules. |
+| technical-writer | [documentation-writer](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/documentation-writer/SKILL.md) | Yes |
+| seo | [seo-audit](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/seo-audit/SKILL.md) | No — Search behavior changes; its bundled international and writing references are not fully reviewed here. |
+| content-writer | [draft-content](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/marketing/skills/draft-content/SKILL.md) | No — Product claims and connector assumptions require independent verification. |
+| ai-search | [ai-seo](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ai-seo/SKILL.md) | No — Unverified platform-effect claims and multiple references block preview until checked against current primary sources. |
+| social-media | [social](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/social/SKILL.md) | No — Scheduling and publishing are outside this role's authorization; bundled platform references remain open. |
+| instagram | [carousel-writer](https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/skills/carousel-writer/SKILL.md) | No — Does not independently clear image rights, alt text, or the whole Instagram grid; bundled references remain open. |
+| email | [emails](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/emails/SKILL.md) | No — Sending, consent, list handling, and integration references need separate review. |
+| growth | [ab-testing](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/ab-testing/SKILL.md) | No — Local baselines, cost, and statistical assumptions are not supplied by the skill; references remain open. |
+| pr | [public-relations](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/public-relations/SKILL.md) | No — Outreach requires explicit authorization; media and platform references remain open. |
+| product-manager | [write-spec](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/write-spec/SKILL.md) | Yes |
+| sprint-prioritizer | [sprint-planning](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/sprint-planning/SKILL.md) | No — Capacity must come from actual Board and team data; connector assumptions remain open. |
+| feedback-synthesizer | [synthesize-research](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/synthesize-research/SKILL.md) | No — Must preserve sample size and contrary evidence; connector assumptions remain open. |
+| trend-researcher | [competitive-brief](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/competitive-brief/SKILL.md) | No — No public source found here covers the complete dated, independent cross-market trend workflow; zero preview. |
+| ux-researcher | [ux-research](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/ux-research/SKILL.md) | Yes |
+| test-automation | [webapp-testing](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/webapp-testing/SKILL.md) | No — Bundled helper code and Cloud relay coverage are not cleared for preview. |
+| accessibility | [accessibility-audit](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/accessibility-audit/SKILL.md) | Yes |
+| performance | [performance-testing](https://github.com/petrkindlmann/qa-skills/blob/b3bb61bd268b147476252c6ed5a0440c87b97441/skills/performance-testing/SKILL.md) | No — Do not stress production; its k6 and Lighthouse examples need a local workload and reference review. |
+| api-tester | [api-testing](https://github.com/petrkindlmann/qa-skills/blob/b3bb61bd268b147476252c6ed5a0440c87b97441/skills/api-testing/SKILL.md) | No — Examples use Playwright/JavaScript and need adaptation to Go tests and generated contracts. |
+| evidence-collector | [testing](https://github.com/akovalion/paranoid-qa/blob/a244e2bb5b9496c1a34bf08e0fd2b7554e676b6e/skills/testing/SKILL.md) | No — The large QA workflow assumes external tooling and does not by itself create Clawdline's exact claim-evidence package. |
+| sre | [monitoring-and-alerting](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/monitoring-and-alerting/SKILL.md) | Yes |
+| devops | [devops-rollout-plan](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/devops-rollout-plan/SKILL.md) | Yes |
+| incident-commander | [incident-response](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/incident-response/SKILL.md) | Yes |
+| finops | [cost-optimization](https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/cost-optimization/SKILL.md) | Yes |
+| secrets | [secret-scanning](https://github.com/github/awesome-copilot/blob/6efe0d035a6415137153bb9b3959589191b7afbe/skills/secret-scanning/SKILL.md) | No — GitHub Advanced Security assumptions do not replace tools/check-private.sh or credential rotation. |
+| ui-designer | [frontend-design](https://github.com/anthropics/skills/blob/8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4/skills/frontend-design/SKILL.md) | Yes |
+| ux-architect | [UXCraft](https://github.com/Seance1723/UXCraft/blob/cd4136e744f831f530efdbba6f43ac06df6e10e2/SKILL.md) | No — Its extensive memory, templates, scripts, and design assumptions are not cleared for preview. |
+| brand-guardian | [critique-brand-consistency](https://github.com/Owl-Listener/designer-skills/blob/9a6930cf84a822eb458624bd11c61aac5bbdf224/visual-critique/skills/critique-brand-consistency/SKILL.md) | No — Assumes three brand files that are not this project's canonical sources; visual assets still need checking. |
+| ui-finish-gate | [frontend-visual-qa](https://github.com/daymade/claude-code-skills/blob/793049513ac79dde7da535cd8315783ff4acf4c0/frontend-visual-qa/SKILL.md) | No — Many bundled references and browser assumptions remain unreviewed; it cannot replace the local gate. |
+| image-prompt | [image-prompt](https://github.com/social-media-skills/skills/blob/6e30eeb2f6736bda8683b6bbaa674af3641d7945/skills/image-prompt/SKILL.md) | No — Later steps route to generation/publishing tools and references are unreviewed; no paid generation is authorized. |
+| pricing | [pricing](https://github.com/coreyhaines31/marketingskills/blob/5b2c0007766c6a1cf1d53fd8fc73e979e0821022/skills/pricing/SKILL.md) | No — Real prices, costs, checkout policy, and bundled reference claims need independent evidence. |
+| customer-success | [customer-success-manager](https://github.com/alirezarezvani/claude-skills/blob/19392f7a08264ed00486a251f5b2098321771f94/business-growth/skills/customer-success-manager/SKILL.md) | No — Uncalibrated fixed scoring and required customer data cannot safely represent this role; zero preview. |
+| support | [ticket-triage](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/customer-support/skills/ticket-triage/SKILL.md) | No — Must use current product facts and never send a response without authorization; connector assumptions remain open. |
+| analytics | [metrics-review](https://github.com/anthropics/knowledge-work-plugins/blob/da38ec1ee89d41e5380e652a97382695003396e7/product-management/skills/metrics-review/SKILL.md) | No — Metric definitions and available data must be confirmed locally; connector assumptions remain open. |
+| devrel | [developer-listening](https://github.com/jonathimer/devmarketing-skills/blob/500b44b53220292879223a807ce0d349aafe2537/skills/developer-listening/SKILL.md) | No — Source maturity is limited; public replies and publication require authorization. |
+| privacy | [pia-generation](https://github.com/anthropics/claude-for-legal/blob/4a6c651889c97cc9140580363c73e0eb17379c2b/privacy-legal/skills/pia-generation/SKILL.md) | No — It lacks code-level data-flow tracing and jurisdiction-specific legal review; zero preview. |
+
+## How the review was bounded
+
+The earlier two research rounds supplied candidate leads. The more specific second-round finding takes precedence for the 14 personas it revisited. Every retained candidate here has a full upstream commit, a pinned original SKILL.md, its SHA-256, and a pinned applicable license file with its SHA-256. All 42 entries and 18 license sources were fetched and screened without installing or executing their content. Repository popularity was not a decision criterion.
+
+For the 11 manual-preview candidates, the audit followed local Markdown links and bundled reference paths recursively from the pinned entry. Every visited file is listed with a pinned URL, digest, and read-only review outcome. External links, live services, sample commands, and scripts are excluded from the preview. A preview candidate whose referenced file is omitted fails the upstream closure check. The other 31 candidates retain a bounded fit finding and an open reference audit; their preview decision is blocked with a reason. A bounded fit is not a claim that the skill can take over the whole persona. In particular, the trend, customer-success, and privacy candidates leave core role duties uncovered.
+
+Run the local check from the repository root:
+
+```text
+python3 tools/check-persona-skill-decisions.py --self-test
+42/42 personas; 42 pinned candidates; 11 manual previews; 0 upstream file reads; valid
+```
+
+The self-test changes the ID order, removes and duplicates an ID, floats a source URL, mismatches license evidence, and falsely marks an open audit as preview-ready. To recheck the pinned public files and recursive bundle closure, run `python3 tools/check-persona-skill-decisions.py --self-test --verify-upstream`. On 2026-09-29 this read 74 unique upstream files and passed. The online check uses public GitHub file URLs; it does not call a usage-priced API or execute third-party code.
+
+This ledger records research and review readiness only. Before any adoption, compare the candidate against the current persona manual, project rules, actual task, required tools, and measured results. Obtain the user's adoption decision separately.
