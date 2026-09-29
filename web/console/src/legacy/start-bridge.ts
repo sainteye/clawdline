@@ -9,7 +9,7 @@
 // original turns `tools/check-legacy-css.sh` red and Start.tsx is read again.
 //
 // `js/input/clawdfather.js` remains imported for compatibility with legacy
-// helpers. The React sheet has its own machine-workspace row.
+// helpers. The React sheet has its own machine-workspace action.
 //
 // The transport is `net/live.js`'s `places`, `pastSessions`, `startPlace` and
 // `resumePlace`, spelled against this daemon. What it deliberately lacks:

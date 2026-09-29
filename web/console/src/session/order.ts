@@ -199,6 +199,35 @@ export function visualDepths(list: SessionRow[], tasks: readonly TaskRow[], shap
   return depths
 }
 
+/** The dotted trunks that must pass a row to reach later visible siblings. */
+export function visualBranches(list: readonly SessionRow[], depths: ReadonlyMap<string, number>): {
+  through: Set<string>
+  ancestorThrough: Set<string>
+} {
+  const through = new Set<string>()
+  const lastAtDepth = new Map<number, string>()
+  for (const row of list) {
+    const depth = depths.get(row.id) ?? 0
+    if (!depth) {
+      lastAtDepth.clear()
+      continue
+    }
+    const previous = lastAtDepth.get(depth)
+    if (previous) through.add(previous)
+    lastAtDepth.set(depth, row.id)
+    for (const level of [...lastAtDepth.keys()]) if (level > depth) lastAtDepth.delete(level)
+  }
+  const ancestorThrough = new Set<string>()
+  let parent: string | null = null
+  for (const row of list) {
+    const depth = depths.get(row.id) ?? 0
+    if (!depth) parent = null
+    else if (depth === 1) parent = row.id
+    else if (depth === 2 && parent && through.has(parent)) ancestorThrough.add(row.id)
+  }
+  return { through, ancestorThrough }
+}
+
 function visualParents(list: SessionRow[], tasks: readonly TaskRow[], shaping: (task: TaskRow) => boolean): Map<string, string> {
   const here = new Map(list.map((row) => [row.id, row]))
   const childOf = new Map<string, string>()

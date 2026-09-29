@@ -1,0 +1,58 @@
+/* The copied list stylesheet gives children a gutter. Draw the ancestry in
+ * that gutter without putting another column inside the session card. */
+.row[data-depth] {
+  overflow: visible;
+}
+
+/* A swipe still clips its moving content. The branch returns at rest. */
+.row[data-depth][data-swipe] {
+  overflow: hidden;
+}
+.row[data-depth][data-swipe] > .kid,
+.row[data-depth][data-swipe] > .tree-ancestor {
+  display: none;
+}
+
+.row[data-depth] > .kid {
+  position: absolute;
+  left: -17px;
+  top: -9px;
+  bottom: -9px;
+  width: 17px;
+  transform: none;
+  font-size: 0;
+  pointer-events: none;
+  color: var(--faint);
+}
+.row[data-depth] > .kid::before,
+.row[data-depth] > .kid::after {
+  content: "";
+  position: absolute;
+  display: block;
+}
+.row[data-depth] > .kid::before {
+  left: 0;
+  top: 0;
+  bottom: 50%;
+  border-left: 2px dashed currentColor;
+}
+.row[data-depth][data-tree-through="1"] > .kid::before {
+  bottom: 0;
+}
+.row[data-depth] > .kid::after {
+  left: 0;
+  top: 50%;
+  width: 17px;
+  border-top: 2px dashed currentColor;
+}
+
+/* A second-level row carries its parent's trunk when another first-level
+ * sibling follows it. The two dotted columns then stay continuous. */
+.row[data-depth="2"] > .tree-ancestor {
+  position: absolute;
+  left: -39px;
+  top: -9px;
+  bottom: -9px;
+  border-left: 2px dashed var(--faint);
+  pointer-events: none;
+}
