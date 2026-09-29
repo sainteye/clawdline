@@ -4,6 +4,8 @@ import {
   OPEN_DOCUMENTS,
   bindDocuments,
   documentIdentityForSession,
+  documentLocatorFromHash,
+  hasDocumentIntent,
   publishedRows,
   type DocumentsPage,
   type DocumentsRequest,
@@ -27,14 +29,9 @@ import sectionMarkup from "./documents/section.html?raw"
  * two Macs publishing one id, a row with no identity — is drawn by
  * `openSessionError` rather than swallowed.
  *
- * **`bindDocumentRoute` is deliberately not wired**, which is a decision rather
- * than a gap. That route exists for a `#document=…` address, and on this
- * transport no such address can be made: `documentShareURL` refuses every
- * locator whose machine is `this-mac`, which is why Share and Copy link sit
- * disabled here exactly as they do on the original's local page. The only
- * fragments left are ones typed by hand, and the page router that would have to
- * recognise them is `App`'s, which this task does not change. `openDirect` is
- * bound and working, so wiring it later is one clause in that router.
+ * A complete `#document=…` address is opened here after `App` selects this
+ * page. The locator is validated before the copied document controller reads
+ * it; malformed links show its error state instead of becoming a list route.
  *
  * `transportChanged` is not wired either: it exists there for a Cloud
  * connection that comes back, and this page has one transport that is either
@@ -83,6 +80,7 @@ function DocumentsPageView({ shown }: { shown: boolean }) {
     // then, and `enter` paints its heading from them, so arrival waits.
     const arrive = () => {
       if (!was.current) return
+      if (hasDocumentIntent(location.hash)) page.current?.openDirect(documentLocatorFromHash(location.hash))
       void page.current?.enter()
       document.getElementById("documents-title")?.focus({ preventScroll: true })
     }
@@ -98,6 +96,15 @@ function DocumentsPageView({ shown }: { shown: boolean }) {
     })
     watch.observe(root, { attributes: true, attributeFilter: ["class"] })
     return () => watch.disconnect()
+  }, [shown])
+
+  useEffect(() => {
+    if (!shown) return
+    const followDocument = () => {
+      if (hasDocumentIntent(location.hash)) page.current?.openDirect(documentLocatorFromHash(location.hash))
+    }
+    window.addEventListener("hashchange", followDocument)
+    return () => window.removeEventListener("hashchange", followDocument)
   }, [shown])
 
   return (

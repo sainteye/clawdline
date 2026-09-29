@@ -273,7 +273,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("archive-session" in CARRIED)
   assert.ok("archived-sessions" in CARRIED)
   assert.ok("restore-archived" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 104)
+  assert.equal(Object.keys(CARRIED).length, 120)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -313,12 +313,8 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.match(body.detail, /on the machine/, "a named refusal says what can be done instead")
   assert.equal(uncarriedWordOf("GET", "/v1/snippets"), "", "the snippet list is carried, so it stands for nothing here")
   assert.equal(uncarried("snippets"), "", "a carried word has no refusal sentence")
-  // A word this machine answers and this console has not carried yet says its own
-  // sentence too, not the same one. This used to be `git`, and then the
-  // terminal's own picture; what is left in `DEFERRED` with a console route
-  // behind it is a session's documents.
-  assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/documents"), "documents")
-  assert.equal(notCarriedDetail("GET", "/v1/sessions/s1/documents"), DEFERRED.documents)
+  assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/documents"), "", "the document listing is carried")
+  assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/documents/project/report.md"), "", "document text is carried")
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/screen"), "", "the live screen's read is carried")
   assert.equal(uncarried("screen"), "", "a carried word has no refusal sentence")
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "", "the Git panel's read is carried")
@@ -414,11 +410,8 @@ test("a deferred word a screen in this console already asks for says so", () => 
     assert.ok(word in DEFERRED, word + " is in DEFERRED_ASKED and not in DEFERRED")
     assert.ok(asked.has(word), "DEFERRED_ASKED names " + word + " and no screen in this console asks for it any more")
   }
-  // And the scan itself has to be able to see a route, or every assertion
-  // above passes by finding nothing. A session's documents are what is left
-  // deferred with a screen in front of them; the live screen was, until it
-  // was carried.
-  assert.ok(asked.has("documents"), "the path scan found no console route for `documents`; it has stopped reading this tree")
+  assert.equal(asked.has("documents"), false, "the document listing is carried")
+  assert.equal(asked.has("document"), false, "document text is carried")
   assert.equal(asked.has("screen"), false, "the live screen is carried, so no console route for it is a deferral")
 })
 
@@ -611,13 +604,12 @@ test("the seam says what this machine can do that this bundle never asks for", a
   const mac = new FakeMac()
   const reader = seam(mac)
   assert.equal(reader.drift(), null, "no descriptor is not agreement")
-  // Two words this machine knows and this bundle does not ask for, one from each
-  // uncarried list: `documents` is DEFERRED and `skills` is NO_MACHINE_ROUTE.
+  // A word this machine knows and this bundle does not ask for.
   // Every pair this test has used before — `board`, `snippets`, `git`,
   // `screen`, and then `shell` — became a carried word, which is exactly the
   // drift this assertion is about.
-  mac.commands = [...Object.keys(CARRIED), "skills", "documents"]
-  assert.deepEqual(reader.drift(), { notCarried: ["documents", "skills"], notOnThisMachine: [] })
+  mac.commands = [...Object.keys(CARRIED), "skills"]
+  assert.deepEqual(reader.drift(), { notCarried: ["skills"], notOnThisMachine: [] })
   mac.commands = Object.keys(CARRIED).filter((word) => word !== "info")
   assert.deepEqual(reader.drift(), { notCarried: [], notOnThisMachine: ["info"] })
 

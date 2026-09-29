@@ -47,6 +47,7 @@ var sections = []section{
 	{"report", "reporting your own finished turn", true},
 	{"send", "talking to another session", false},
 	{"notify", "telling the person", true},
+	{"note", "leaving a durable human intervention above a Session", true},
 	{"board", "the board: items, steps, proposals, decisions, to-dos", false},
 	{"epic", "an Epic you own: its plan, the child review of it, implementing, and its child items", false},
 	{"coordination", "coordination between sessions", false},

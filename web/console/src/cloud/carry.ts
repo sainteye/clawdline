@@ -60,6 +60,8 @@ export const CARRIED = {
   capacity: "GET /v1/capacity",
   "default-models": "GET /v1/settings/default-models",
   "default-models-update": "POST /v1/settings/default-models",
+  document: "GET /v1/sessions/{id}/documents/{scope}/{path}",
+  documents: "GET /v1/sessions/{id}/documents",
   "work-gate-settings": "GET /v1/settings/work-gates",
   "work-gate-settings-update": "POST /v1/settings/work-gates",
   // The dashboard behind the session counts (`machine/`): this machine's CPU
@@ -224,8 +226,6 @@ export const CARRIED = {
  * that question a machine can answer.
  */
 export const DEFERRED = {
-  document: "A document's text is not read over Clawdline Cloud yet: open it on the machine.",
-  documents: "A session's documents are not listed over Clawdline Cloud yet: open them on the machine.",
   // `key` and `answer` are one command under two names on the wire. This
   // console sends a waiting card's press as `answer`, because only that
   // spelling carries `expect`, the fingerprint of the question the press was
@@ -252,7 +252,7 @@ export const DEFERRED = {
  * `git` needed and did not have — the day `git-bridge.ts` landed, the entry
  * had to say so.
  */
-export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = ["document", "documents"]
+export const DEFERRED_ASKED: readonly (keyof typeof DEFERRED)[] = []
 
 /**
  * Words the machine knows and has nothing behind. Asking for one is answered
@@ -355,8 +355,6 @@ export function uncarriedWordOf(method: string, path: string): string {
     switch (b) {
       case "skills":
         return "skills"
-      case "documents":
-        return segments.length > 3 ? "document" : "documents"
     }
   }
   return ""

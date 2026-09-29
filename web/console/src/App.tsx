@@ -16,6 +16,7 @@ import { workWord } from "./pages/work/words.js"
 import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
+import { hasDocumentIntent } from "./legacy/documents-bridge.js"
 import { NewBuild } from "./NewBuild.js"
 import { MachineDashboard } from "./machine/MachineDashboard.js"
 import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
@@ -47,7 +48,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad" | "documents"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -187,7 +188,7 @@ function rowNode(id: string): HTMLElement | null {
 export default function App({ aside }: { aside?: ReactNode | ((light: ConnectionLight) => ReactNode) } = {}) {
   const fleet = useFleet(client)
   const light = useConnectionLight(fleet.live, fleet.refresh)
-  const [page, setPage] = useState<Page>("sessions")
+  const [page, setPage] = useState<Page>(() => hasDocumentIntent(location.hash) ? "documents" : "sessions")
   const [menu, setMenu] = useState(false)
   // The machine dashboard, opened from the counts (machine/MachineDashboard.tsx).
   const [machine, setMachine] = useState(false)
@@ -317,8 +318,9 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   const openAskedRef = useRef<() => Asked>(() => "none")
   useEffect(() => {
     const routeTo = () => {
-      goRef.current(pageFromHash(location.hash, knows), { hash: false })
-      askedRef.current = sessionsInFragment(location.hash)
+      const documentLink = hasDocumentIntent(location.hash)
+      goRef.current(documentLink ? "documents" : pageFromHash(location.hash, knows), { hash: false })
+      askedRef.current = documentLink ? null : sessionsInFragment(location.hash)
       if (askedRef.current) openAskedRef.current()
     }
     routeTo()

@@ -54,6 +54,7 @@ transcript.
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
+| `clawdline note create --target <terminal> --body-file <JSON>` | Leaves one actionable note above a Session (§9a) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
@@ -649,6 +650,22 @@ that it is rare. `--session <terminal>` makes a tap open that session.
 - `409 not_subscribed`: no device is subscribed to pushes.
 - `429 rate_limited`: 30 an hour for the whole machine, shared with every child's notifications.
 - `502 push_failed`: the push service refused; `sent` and `failed` are in the error.
+
+## 9a. Leave a human intervention note
+
+Use a note when a long-running Agent has one concrete thing the person should read, do, or decide and an ordinary chat message could disappear in the stream. The note remains in the target Session's collapsed attention area, marked with a red dot until the person moves it to handled. You may then continue independent work; the person can return at a natural stopping point. A note is not a progress log, a private reminder, a notification, or authorization for a Board decision. Avoid duplicate notes for the same request.
+
+Create one with a JSON body file. `--target` is the live target Session's **terminal id** from the address book (`clawdline guide send`); `--from` defaults to this live Root's conversation id from the environment. The target may be another Session. The CLI reads the machine credential without putting it in the command line, injects the source and target ids, and prints the daemon's durable note id. Reuse the printed `--key` after an uncertain result.
+
+```json
+{"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
+```
+
+```sh
+clawdline note create --target <terminal-id> --body-file note.json
+```
+
+`kind` is `read`, `answer`, `action`, or `report`; `title`, `summary`, `action`, and `reason` are required. An `answer` can offer two to four choices, each with the exact text to put in the composer. `detail` can hold longer text. `document_url` can link to a real, readable Cloud document; verify the document route and file before posting it. A choice only fills the person's composer; the person sends it. Only the person marks the note handled. If your work is actually blocked on the answer, record the waiting-user state and send the existing attention notification once. A visible note alone sends no push and does not wake an Agent.
 
 ## 10. The board
 

@@ -227,6 +227,8 @@ export type WriteRoute =
   | { op: "git"; word: Carried<"git">; session: string }
   | { op: "git-diff"; word: Carried<"git-diff">; session: string }
   | { op: "screen"; word: Carried<"screen">; session: string }
+  | { op: "documents"; word: Carried<"documents">; session: string }
+  | { op: "document"; word: Carried<"document">; session: string; scope: "project" | "task"; task: string; path: string }
   | { op: "answer"; word: Carried<"answer">; session: string }
   | { op: "end"; word: Carried<"end">; session: string }
   | { op: "focus"; word: Carried<"focus">; session: string }
@@ -474,6 +476,15 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a && b === "screen" && segments.length === 3) {
       return { op: "screen", word: "screen", session: a }
     }
+    if (head === "sessions" && a && b === "documents") {
+      if (segments.length === 3) return { op: "documents", word: "documents", session: a }
+      if (c === "project" && segments.length >= 5 && segments.slice(4).every(Boolean)) {
+        return { op: "document", word: "document", session: a, scope: "project", task: "", path: segments.slice(4).join("/") }
+      }
+      if (c === "task" && d && segments.length >= 6 && segments.slice(5).every(Boolean)) {
+        return { op: "document", word: "document", session: a, scope: "task", task: d, path: segments.slice(5).join("/") }
+      }
+    }
     return null
   }
   // The three schedule writes that are not a POST. They are parsed before the
@@ -701,6 +712,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "git":
     case "git-diff":
     case "screen":
+    case "document":
+    case "documents":
     case "uncarried":
       return "flat"
     case "push-subscribe":
@@ -817,6 +830,11 @@ export class RelayWriter {
     try {
       const body = await this.carry(client, route, url, init)
       const ms = this.now() - started
+      if (route.op === "document") {
+        this.host.note({ method, path, answer: "relay", word: route.word, ms })
+        const document = body as { media_type: string; bytes: Uint8Array }
+        return new Response(document.bytes as BodyInit, { status: 200, headers: { "content-type": document.media_type } })
+      }
       if (route.op === "image" || route.op === "work-v2-image") {
         this.host.note({ method, path, answer: "relay", word: route.word, ms })
         const picture = body as { media_type: string; bytes: Uint8Array }
@@ -1047,6 +1065,29 @@ export class RelayWriter {
           throw failure("malformed_read", "a picture is read with the session it belongs to", 400)
         }
         return client.image(await this.identity(client, session), route.artifact)
+      }
+      case "documents":
+      case "document": {
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        const named = url.searchParams.getAll("machine")
+        if (named.length !== 1 || named[0] !== this.host.machine || Array.from(url.searchParams.keys()).some((key) => key !== "machine")) {
+          throw failure("document_machine_mismatch", "The document link does not name this machine.", 400)
+        }
+        if (route.op === "documents") {
+          return client._machineRequest(this.host.machine, "documents", { session: route.session }, "read")
+        }
+        const answer = await client._machineRequest(this.host.machine, "document", {
+          session: route.session, scope: route.scope, task: route.task, path: route.path,
+        }, "read") as { media_type?: unknown; byte_count?: unknown; data?: unknown }
+        if ((answer.media_type !== "text/markdown; charset=utf-8" && answer.media_type !== "text/plain; charset=utf-8") ||
+          typeof answer.data !== "string" || !Number.isSafeInteger(answer.byte_count) || Number(answer.byte_count) < 0) {
+          throw failure("malformed_answer", "The document answer is invalid.", 502)
+        }
+        let bytes: Uint8Array
+        try { bytes = Uint8Array.from(atob(answer.data), (c) => c.charCodeAt(0)) }
+        catch { throw failure("malformed_answer", "The document bytes are invalid.", 502) }
+        if (bytes.length !== answer.byte_count) throw failure("malformed_answer", "The document byte count does not match.", 502)
+        return { media_type: answer.media_type, bytes }
       }
       case "usage": {
         if (typeof client._machineRequest !== "function") {
