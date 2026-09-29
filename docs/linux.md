@@ -121,6 +121,8 @@ host and is not a network-exposed database.
 | Console | served by the daemon, opened in a real browser | document `200` (53 KB), all six assets `200`, session list drew, SSE opened `text/event-stream` and pushed `event: sessions` at once |
 | `clawdline assistants` | read | codex `availability: ok`, quota window read off this machine |
 | Web Push key | `/v1/push/key` | a VAPID key generated on Linux |
+| Owned terminals (`internal/adapters/terminal/owned`) | the package's tests, as root, in Debian bookworm (tmux 3.3a) and Ubuntu 20.04 (tmux 3.0a, the floor), amd64 containers | all pass: open, type, resize, rebuild, close; application-cursor mode; wrapped rows; the generated configuration and `source-file`; a clean `env -i` shell; `中` echoed; the default tmux server and the session list untouched |
+| Owned terminals, after the opening process exits | one process opens a terminal running `sleep 600`, exits; a second process on the same `CLAWDLINE_NEXT_DIR` finds it | same id, same `sleep` pid alive. A process restart only: no systemd in the container, so the unit's `KillMode=process` was not exercised with it |
 
 ## 3. Refused by name, not crashed
 
@@ -260,6 +262,12 @@ headless machine can run schedules it has no way to create. The console draws an
 section with a `+` that leads nowhere.
 
 ### 4.4 Smaller things worth knowing
+
+- **An owned terminal's shell gets `LANG=C.UTF-8` on a minimal image.** A daemon with no UTF-8
+  `LANG` hands its shells `en_US.UTF-8`, but Debian slim has only `C.UTF-8`, and a `LANG` naming a
+  missing locale leaves bash in C while it says UTF-8. So where `locale -a` has no `en_US.UTF-8`
+  and has `C.UTF-8`, the shell gets `C.UTF-8` (`owned/env.go` `lang`). The systemd unit sets no
+  `LANG`; install a locale and set it in the unit to give shells another one.
 
 - **Claude's `5h`/`7d` percentages stay blank until a status line writes them down.** Not a Linux
   defect and not this daemon's: Claude Code hands `rate_limits` to the stdin of whatever

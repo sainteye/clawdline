@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/terminal/owned"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -385,6 +386,15 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: int64(len(rows))}
 		},
+		// The shells this daemon's own tmux server holds (limits N59).
+		capacity.TerminalCount: func() capacity.Reading {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return owned.CountReading(ctx, s.cfg.Dir)
+		},
+		capacity.TerminalInputBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-call guard"} },
+		capacity.TerminalPasteBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-call guard"} },
+		capacity.TerminalHistoryLines: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-read bound"} },
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).
 		// An inventory with no held screens is a known zero, not an

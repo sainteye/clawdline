@@ -86,6 +86,7 @@
       "additionalProperties": false,
       "required": ["name", "state"],
       "properties": {
+        "code": { "description": "The reason as a word a program can branch on, for the capabilities that have one: `terminal` answers `tmux_not_installed`, `tmux_too_old`, `tmux_version_unread` or `no_backend` (Windows). Absent otherwise.", "type": "string" },
         "name": { "$ref": "#/$defs/PlatformCapabilityName" },
         "reason": { "description": "This machine's sentence: why not, why unknown, or what the capability rests on when it is there.", "type": "string" },
         "state": { "$ref": "#/$defs/PlatformCapabilityState" },
@@ -93,9 +94,9 @@
       }
     },
     "PlatformCapabilityName": {
-      "description": "`open_child`: open a session for a dispatched child and brief it, in the terminal the machine's `terminal` setting picks. `read_screen`: read what a session's terminal shows. `send_keys`: type into a session. `clipboard`: lend a picture to the system clipboard for a send (without it a send hands over the picture's path). `global_hotkey`: a key that answers wherever the focus is. `notch`: the island around a MacBook's notch. `launch_at_login`: start when the person logs in.",
+      "description": "`open_child`: open a session for a dispatched child and brief it, in the terminal the machine's `terminal` setting picks. `read_screen`: read what a session's terminal shows. `send_keys`: type into a session. `clipboard`: lend a picture to the system clipboard for a send (without it a send hands over the picture's path). `global_hotkey`: a key that answers wherever the focus is. `notch`: the island around a MacBook's notch. `launch_at_login`: start when the person logs in. `terminal`: open an ordinary shell a person types into, on a tmux server this daemon owns (tmux 3.0 or later).",
       "type": "string",
-      "enum": ["open_child", "read_screen", "send_keys", "clipboard", "global_hotkey", "notch", "launch_at_login"]
+      "enum": ["open_child", "read_screen", "send_keys", "clipboard", "global_hotkey", "notch", "launch_at_login", "terminal"]
     },
     "PlatformCapabilityState": {
       "description": "`available`: this machine has it now. `unavailable`: it positively does not, and `reason` says why. `unknown`: whether it does could not be read — never a no.",

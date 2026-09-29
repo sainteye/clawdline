@@ -4123,6 +4123,12 @@ export interface PlaceStarted {
  * One platform capability on this machine.
  */
 export interface PlatformCapability {
+  /**
+   * The reason as a word a program can branch on, for the capabilities that have
+   * one: `terminal` answers `tmux_not_installed`, `tmux_too_old`,
+   * `tmux_version_unread` or `no_backend` (Windows). Absent otherwise.
+   */
+  code?: string
   name: PlatformCapabilityName
 
   /**
@@ -4146,7 +4152,8 @@ export interface PlatformCapability {
  * the system clipboard for a send (without it a send hands over the picture's
  * path). `global_hotkey`: a key that answers wherever the focus is. `notch`: the
  * island around a MacBook's notch. `launch_at_login`: start when the person logs
- * in.
+ * in. `terminal`: open an ordinary shell a person types into, on a tmux server this
+ * daemon owns (tmux 3.0 or later).
  */
 export type PlatformCapabilityName =
     "open_child"
@@ -4156,8 +4163,9 @@ export type PlatformCapabilityName =
   | "global_hotkey"
   | "notch"
   | "launch_at_login"
+  | "terminal"
 
-export const PlatformCapabilityNameValues: readonly PlatformCapabilityName[] = ["open_child", "read_screen", "send_keys", "clipboard", "global_hotkey", "notch", "launch_at_login"] as const
+export const PlatformCapabilityNameValues: readonly PlatformCapabilityName[] = ["open_child", "read_screen", "send_keys", "clipboard", "global_hotkey", "notch", "launch_at_login", "terminal"] as const
 
 /**
  * `available`: this machine has it now. `unavailable`: it positively does not, and

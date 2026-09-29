@@ -40,12 +40,16 @@ const (
 	CapNotch CapabilityName = "notch"
 	// CapLaunchAtLogin is starting when the person logs in.
 	CapLaunchAtLogin CapabilityName = "launch_at_login"
+	// CapTerminal is opening an ordinary shell a person types into, on a
+	// terminal server this daemon owns (OwnedTerminals).
+	CapTerminal CapabilityName = "terminal"
 )
 
 // CapabilityNames is every platform capability, in the order a reader is
 // shown them.
 var CapabilityNames = []CapabilityName{
 	CapOpenChild, CapReadScreen, CapSendKeys, CapClipboard, CapGlobalHotkey, CapNotch, CapLaunchAtLogin,
+	CapTerminal,
 }
 
 // CapabilityState is three values, not two (design-guidelines DG-7): a probe
@@ -69,6 +73,10 @@ type Capability struct {
 	// Reason is this machine's sentence: why not, why unknown, or what the
 	// capability rests on when it is there.
 	Reason string
+	// Code is the reason as a word a program can branch on, when the
+	// capability has one (`tmux_not_installed`, `no_backend`). Empty for
+	// the capabilities that only have a sentence.
+	Code string
 }
 
 // Capabilities is a set of answers, at most one per name.

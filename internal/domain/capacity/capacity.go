@@ -338,6 +338,12 @@ const (
 	SquadEventIDBytes            = "squad.event_id_bytes"
 	SquadEventPageRows           = "squad.event_page_rows"
 	SquadEventBodyBytes          = "squad.event_body_bytes"
+	// The ordinary shells this machine holds open for a person, and what one
+	// request may type into one or read back from it (limits N59).
+	TerminalCount        = "terminal.count"
+	TerminalInputBytes   = "terminal.input_bytes"
+	TerminalPasteBytes   = "terminal.paste_bytes"
+	TerminalHistoryLines = "terminal.history_lines"
 )
 
 // Entry is one row of the register.
@@ -1750,6 +1756,39 @@ func Register() []Entry {
 			Limit: 15 * 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/squadpackages.MaxPreviewAgeSeconds"},
+		},
+		{
+			// Terminals open on this machine's own tmux server (limits N59).
+			// Each is a person's running shell, so none is let go at the
+			// limit: the next open is refused with terminals_full, and only
+			// a person closes one.
+			Name: TerminalCount, Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/terminal.MaxTerminals"},
+		},
+		{
+			// One batch of keystrokes. Past it the batch is refused with
+			// input_too_large before a byte is typed; the sender splits.
+			Name: TerminalInputBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/terminal.MaxInputBytes"},
+		},
+		{
+			// One paste, the same way.
+			Name: TerminalPasteBytes, Class: Buffer, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/terminal.MaxPasteBytes"},
+		},
+		{
+			// One read of a terminal's history. A larger ask is lowered to
+			// this; the older lines stay in the server's own history.
+			Name: TerminalHistoryLines, Class: Observation, Unit: Rows,
+			Limit: 2000, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/terminal.MaxHistoryLines"},
 		},
 	}
 }

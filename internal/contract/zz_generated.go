@@ -3525,6 +3525,10 @@ type PlaceStarted struct {
 
 // One platform capability on this machine.
 type PlatformCapability struct {
+	// The reason as a word a program can branch on, for the capabilities that have
+	// one: `terminal` answers `tmux_not_installed`, `tmux_too_old`,
+	// `tmux_version_unread` or `no_backend` (Windows). Absent otherwise.
+	Code string                 `json:"code,omitempty"`
 	Name PlatformCapabilityName `json:"name"`
 
 	// This machine's sentence: why not, why unknown, or what the capability rests on
@@ -3543,7 +3547,8 @@ type PlatformCapability struct {
 // a picture to the system clipboard for a send (without it a send hands over
 // the picture's path). `global_hotkey`: a key that answers wherever the focus
 // is. `notch`: the island around a MacBook's notch. `launch_at_login`: start
-// when the person logs in.
+// when the person logs in. `terminal`: open an ordinary shell a person types
+// into, on a tmux server this daemon owns (tmux 3.0 or later).
 type PlatformCapabilityName string
 
 const (
@@ -3554,10 +3559,11 @@ const (
 	PlatformCapabilityNameGlobalHotkey  PlatformCapabilityName = "global_hotkey"
 	PlatformCapabilityNameNotch         PlatformCapabilityName = "notch"
 	PlatformCapabilityNameLaunchAtLogin PlatformCapabilityName = "launch_at_login"
+	PlatformCapabilityNameTerminal      PlatformCapabilityName = "terminal"
 )
 
 // PlatformCapabilityNameValues is every value the contract allows, in contract order.
-var PlatformCapabilityNameValues = []PlatformCapabilityName{PlatformCapabilityNameOpenChild, PlatformCapabilityNameReadScreen, PlatformCapabilityNameSendKeys, PlatformCapabilityNameClipboard, PlatformCapabilityNameGlobalHotkey, PlatformCapabilityNameNotch, PlatformCapabilityNameLaunchAtLogin}
+var PlatformCapabilityNameValues = []PlatformCapabilityName{PlatformCapabilityNameOpenChild, PlatformCapabilityNameReadScreen, PlatformCapabilityNameSendKeys, PlatformCapabilityNameClipboard, PlatformCapabilityNameGlobalHotkey, PlatformCapabilityNameNotch, PlatformCapabilityNameLaunchAtLogin, PlatformCapabilityNameTerminal}
 
 // `available`: this machine has it now. `unavailable`: it positively does not,
 // and `reason` says why. `unknown`: whether it does could not be read — never

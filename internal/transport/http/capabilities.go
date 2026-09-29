@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/sainteye/clawdline/internal/adapters/desktop"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
 )
@@ -26,6 +27,7 @@ func (s *Server) platformCapabilities(ctx context.Context) ports.Capabilities {
 		all = append(all, s.broker.ChildCapabilities(ctx)...)
 	}
 	all = append(all, s.desktopHost().Capabilities(ctx)...)
+	all = append(all, terminal.OwnedTerminalCapability(ctx))
 	out := make(ports.Capabilities, 0, len(ports.CapabilityNames))
 	for _, name := range ports.CapabilityNames {
 		if c, ok := all.Find(name); ok {
@@ -47,7 +49,7 @@ func (s *Server) platformDiagnostics(ctx context.Context) contract.PlatformDiagn
 	for _, c := range caps {
 		out.Capabilities = append(out.Capabilities, contract.PlatformCapability{
 			Name: contract.PlatformCapabilityName(c.Name), State: contract.PlatformCapabilityState(c.State),
-			Via: c.Via, Reason: c.Reason,
+			Via: c.Via, Reason: c.Reason, Code: c.Code,
 		})
 	}
 	return out

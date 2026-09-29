@@ -2,8 +2,11 @@ package terminal
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
@@ -117,4 +120,128 @@ func terminalCapabilities(goos string, reaches []backendReach) ports.Capabilitie
 		return ports.Capability{Name: name, State: ports.CapabilityUnavailable, Reason: strings.Join(absent, "; ")}
 	}
 	return ports.Capabilities{one(ports.CapReadScreen), one(ports.CapSendKeys)}
+}
+
+// The `terminal` capability: an ordinary shell a person types into, on the
+// tmux server this daemon owns (internal/adapters/terminal/owned).
+//
+// **3.0 is the floor**, from tmux's own CHANGES: `send-keys -H`, which every
+// keystroke goes through (keys.go), is listed under "CHANGES FROM 2.9 TO
+// 3.0" ("New -H flag to send-keys to send literal keys"), and
+// `resize-window`, the only way a terminal is sized, under "CHANGES FROM 2.8
+// TO 2.9". The later cursor formats (`cursor_shape`, `cursor_blinking`) are
+// not needed: a tmux without them draws the default cursor.
+const (
+	TmuxMinimumMajor = 3
+	TmuxMinimumMinor = 0
+)
+
+// The codes a `terminal` capability that is not available carries.
+const (
+	CodeTmuxNotInstalled = "tmux_not_installed"
+	CodeTmuxTooOld       = "tmux_too_old"
+	CodeNoBackend        = "no_backend"
+	CodeTmuxUnread       = "tmux_version_unread"
+)
+
+// ParseTmuxVersion reads `tmux -V`: `tmux 3.6a`, `tmux 3.4`, `tmux next-3.7`,
+// `tmux openbsd-7.5`. A build that names no number (`tmux master`) is not
+// read, which is not the same as too old.
+func ParseTmuxVersion(out string) (major, minor int, ok bool) {
+	word := strings.TrimSpace(out)
+	if i := strings.LastIndexByte(word, ' '); i >= 0 {
+		word = word[i+1:]
+	}
+	if i := strings.LastIndexByte(word, '-'); i >= 0 {
+		if strings.HasPrefix(word, "openbsd-") {
+			// OpenBSD's base tmux is numbered after the OS, not tmux, and has
+			// had `send-keys -H` since long before 7.0.
+			return TmuxMinimumMajor, TmuxMinimumMinor, true
+		}
+		word = word[i+1:]
+	}
+	num := func(s string) (int, string, bool) {
+		n, i := 0, 0
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			n = n*10 + int(s[i]-'0')
+			i++
+		}
+		return n, s[i:], i > 0
+	}
+	major, rest, ok := num(word)
+	if !ok || !strings.HasPrefix(rest, ".") {
+		return 0, 0, false
+	}
+	minor, _, ok = num(rest[1:])
+	return major, minor, ok
+}
+
+// TmuxNewEnough is whether a version is at or above the floor.
+func TmuxNewEnough(major, minor int) bool {
+	return major > TmuxMinimumMajor || (major == TmuxMinimumMajor && minor >= TmuxMinimumMinor)
+}
+
+// ownedTerminalCapability decides the answer from what was read, so every
+// platform's answer can be checked on any one of them. `found` is tmux on the
+// PATH; `version` is what `tmux -V` printed, and `versionErr` its failure.
+func ownedTerminalCapability(goos string, found bool, version string, versionErr error) ports.Capability {
+	c := ports.Capability{Name: ports.CapTerminal}
+	switch {
+	case goos == "windows":
+		c.State, c.Code = ports.CapabilityUnavailable, CodeNoBackend
+		c.Reason = "windows has no tmux, and a console this daemon owns (ConPTY) is not built yet"
+	case !found:
+		c.State, c.Code = ports.CapabilityUnavailable, CodeTmuxNotInstalled
+		c.Reason = "tmux is not installed; " + tmuxInstallHint(goos)
+	case versionErr != nil:
+		c.State, c.Code = ports.CapabilityUnknown, CodeTmuxUnread
+		c.Reason = "tmux's version could not be read: " + versionErr.Error()
+	default:
+		major, minor, ok := ParseTmuxVersion(version)
+		switch {
+		case !ok:
+			c.State, c.Code = ports.CapabilityUnknown, CodeTmuxUnread
+			c.Reason = fmt.Sprintf("tmux's version could not be read from %q", strings.TrimSpace(version))
+		case !TmuxNewEnough(major, minor):
+			c.State, c.Code = ports.CapabilityUnavailable, CodeTmuxTooOld
+			c.Reason = fmt.Sprintf("%s is older than tmux %d.%d; %s", strings.TrimSpace(version),
+				TmuxMinimumMajor, TmuxMinimumMinor, tmuxInstallHint(goos))
+		default:
+			c.State, c.Via = ports.CapabilityAvailable, []string{"tmux"}
+			c.Reason = "through a tmux server of this daemon's own (" + strings.TrimSpace(version) + ")"
+		}
+	}
+	return c
+}
+
+func tmuxInstallHint(goos string) string {
+	if goos == "darwin" {
+		return "install it with `brew install tmux`"
+	}
+	return "install tmux 3.0 or later from this system's package manager"
+}
+
+// OwnedTerminalCapability is the `terminal` capability on this machine: a
+// PATH lookup and one `tmux -V`, which starts no server.
+func OwnedTerminalCapability(ctx context.Context) ports.Capability {
+	if runtime.GOOS == "windows" {
+		return ownedTerminalCapability(runtime.GOOS, false, "", nil)
+	}
+	path, _ := FindTmux()
+	if path == "" {
+		return ownedTerminalCapability(runtime.GOOS, false, "", nil)
+	}
+	version, err := TmuxVersion(ctx, path)
+	return ownedTerminalCapability(runtime.GOOS, true, version, err)
+}
+
+// TmuxVersion is what `tmux -V` prints, asked with a two-second ceiling.
+func TmuxVersion(ctx context.Context, binary string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, binary, "-V").Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }

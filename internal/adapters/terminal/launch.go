@@ -268,3 +268,9 @@ func outsideTmux(env []string) []string {
 	}
 	return out
 }
+
+// FindTmux is the tmux this machine has: on the PATH, or failing that in the
+// places package managers put it. The bool says it was on the PATH. A caller
+// that runs the absolute path it is given every time, as the owned terminal
+// server does, needs no more than that it was found.
+func FindTmux() (string, bool) { return NewTmux().binary() }
