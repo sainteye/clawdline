@@ -92,7 +92,9 @@ export function SessionsPage({
   const open = rows.find((r) => r.id === openId) ?? null
   const T = L.strings
   const sourceFailure = scanFailureWords(scanNotes, scanSources)
-  const readingSaid = sourceFailure ?? batchReadingWords(readingSource)
+  const briefRefresh = scanNotes?.includes("session inventory refresh is in progress; prior rows are unverified") &&
+    readingSource?.freshness === "unverified" && Date.now() / 1000 - readingSource.observed_at < 30
+  const readingSaid = sourceFailure ?? (briefRefresh ? null : batchReadingWords(readingSource))
 
   // `thawOrder` redraws the list through the session UI seam once the order it
   // held is let go, and this page is that list.
