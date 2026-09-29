@@ -125,6 +125,7 @@
         "line": { "description": "What a working session says it is doing, read from its screen with the assistant's own clock in it. Present while working; on a waiting session with a menu it is instead that menu's revision (the Swift app's menuRevision), which no row draws and which changes whenever the question does. The Swift app sends it under this name and the row's height depends on it.", "type": "string" },
         "menu": { "$ref": "#/$defs/SessionMenu" },
         "owed": { "$ref": "#/$defs/WorkOwed" },
+        "epic_parent": { "$ref": "#/$defs/EpicSessionParent" },
         "root_assignment": { "$ref": "#/$defs/RootAssignmentRecord" },
         "source": {
           "description": "When and how this row's terminal state was read. `current` was read this pass; `unverified` is the last complete row retained across a failed source reading; `missing` means that source has never answered or its retained answer crossed the cache.session_inventory honesty line. A retained state is a true statement about that earlier moment, never authority for an action now.",
@@ -142,6 +143,16 @@
         "work_state": { "$ref": "#/$defs/WorkState" }
       }
     },
+	"EpicSessionParent": {
+	  "description": "Presentation ancestry of an independent Root opened when an Epic owner assigned a child Board item. The owner is the conversation that made that assignment, even if the Epic is later reassigned. This does not transfer task, landing, or close ownership.",
+	  "type": "object",
+	  "additionalProperties": false,
+	  "required": ["owner_session_id", "epic_id"],
+	  "properties": {
+	    "owner_session_id": { "type": "string" },
+	    "epic_id": { "type": "string" }
+	  }
+	},
 	"SessionAgentState": {
 	  "description": "A shared presentation state. `unknown` means the source could not establish an ending; it is never idle. Broker tasks keep their original state beside this projection.",
 	  "type": "string",

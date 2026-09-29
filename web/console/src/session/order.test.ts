@@ -9,7 +9,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionRow, TaskRow } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see above.
-import { arrangeSessions, compareSessions, groupUnderRoots, movedAt, rankOf, waitingKey } from "./order.ts"
+import { arrangeSessions, compareSessions, groupUnderRoots, movedAt, rankOf, visualDepths, waitingKey } from "./order.ts"
 
 function row(id: string, state: string, label: string, extra: Partial<SessionRow> = {}): SessionRow {
   return { id, state, label, backend: "iterm", work_state: "unknown", evidence: "screen", isClaude: true, ...extra } as SessionRow
@@ -171,6 +171,49 @@ test("a child is placed under the session that asked for it, whatever its own ti
   // The child is working (rank 1), so on its own it would be first; its root
   // decides where it sits.
   assert.deepEqual(order(rows, { other: 50, root: 10 }, { tasks: [task("kid", "root")] }), ["other", "root", "kid"])
+})
+
+test("an Epic assigned independent Root appears under its owner, with its own broker child", () => {
+  const owner = row("owner", "idle", "Architect", { sessionId: "owner-conversation" })
+  const feature = row("feature", "working", "Feature", {
+    sessionId: "feature-conversation",
+    root_assignment: { id: "root-feature", label: "Feature", ownership: "independent_root", state: "briefed" },
+    epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-a" },
+  } as Partial<SessionRow>)
+  const brokerChild = row("broker-child", "working", "Review")
+  const other = row("other", "idle", "Other")
+  const tasks = [task("broker-child", "feature")]
+  const ordered = order([feature, other, brokerChild, owner], { other: 50, owner: 10 }, { tasks })
+  assert.deepEqual(ordered, ["other", "owner", "feature", "broker-child"])
+  const depths = visualDepths([owner, feature, brokerChild, other], tasks, () => true)
+  assert.deepEqual([depths.get("owner"), depths.get("feature"), depths.get("broker-child")], [0, 1, 2])
+  const filtered = visualDepths([feature, brokerChild], tasks, () => true)
+  assert.equal(filtered.get("feature"), 0, "an absent owner leaves the Root visible without indent")
+  assert.equal(filtered.get("broker-child"), 1)
+})
+
+test("an ordinary independent Root cannot acquire Epic ancestry without a Board relationship", () => {
+  const owner = row("owner", "idle", "Architect", { sessionId: "owner-conversation" })
+  const ordinary = row("ordinary", "working", "Ordinary", { sessionId: "ordinary-conversation",
+    root_assignment: { id: "root-ordinary", label: "Ordinary", ownership: "independent_root", state: "briefed" } } as Partial<SessionRow>)
+  assert.deepEqual(order([owner, ordinary], { owner: 1 }, { tasks: [] }), ["ordinary", "owner"])
+  assert.equal(visualDepths([owner, ordinary], [], () => true).get("ordinary"), 0)
+})
+
+test("missing, ambiguous, and cyclic Epic owners leave independent Roots at the top level", () => {
+  const child = row("child", "working", "Feature", { sessionId: "feature-conversation",
+    epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-a" } } as Partial<SessionRow>)
+  const ownerA = row("owner-a", "idle", "Architect A", { sessionId: "owner-conversation" })
+  const ownerB = row("owner-b", "idle", "Architect B", { sessionId: "owner-conversation" })
+  assert.equal(visualDepths([child], [], () => true).get("child"), 0)
+  assert.equal(visualDepths([child, ownerA, ownerB], [], () => true).get("child"), 0)
+
+  const a = row("a", "idle", "A", { sessionId: "a-conversation",
+    epic_parent: { owner_session_id: "b-conversation", epic_id: "epic-a" } } as Partial<SessionRow>)
+  const b = row("b", "idle", "B", { sessionId: "b-conversation",
+    epic_parent: { owner_session_id: "a-conversation", epic_id: "epic-b" } } as Partial<SessionRow>)
+  assert.deepEqual(groupUnderRoots([a, b], [], () => true).map((item) => item.id), ["a", "b"])
+  assert.deepEqual([...visualDepths([a, b], [], () => true).values()], [0, 0])
 })
 
 test("a link that goes round in a circle or too deep is dropped, and no row is lost", () => {
