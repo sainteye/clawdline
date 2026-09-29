@@ -63,7 +63,16 @@ test("a Project-page path selects that Project's durable Board scope", () => {
 test("a terminal address carries its project and terminal and reads back the same", () => {
   const hash = terminalPageHash("place 1", "trm_abc")
   assert.equal(hash, "#page=terminal&project=place%201&terminal=trm_abc")
-  assert.deepEqual(terminalRouteFromHash(hash), { project: "place 1", terminal: "trm_abc" })
-  assert.deepEqual(terminalRouteFromHash("#page=work&project=x"), { project: "", terminal: "" })
+  assert.deepEqual(terminalRouteFromHash(hash), { project: "place 1", terminal: "trm_abc", from: "" })
+  assert.deepEqual(terminalRouteFromHash("#page=work&project=x"), { project: "", terminal: "", from: "" })
   assert.equal(terminalPageHash("p"), "#page=terminal&project=p")
+})
+
+test("a terminal address remembers the page Back returns to, and an old address goes to the board", () => {
+  const hash = terminalPageHash("/w/app", "", "projects")
+  assert.equal(hash, "#page=terminal&project=%2Fw%2Fapp&from=projects")
+  assert.equal(terminalRouteFromHash(hash).from, "projects")
+  assert.equal(terminalRouteFromHash(terminalPageHash("p", "t", "work")).from, "work")
+  assert.equal(terminalRouteFromHash("#page=terminal&project=p&from=elsewhere").from, "")
+  assert.equal(terminalRouteFromHash("#page=terminal&project=p").from, "")
 })

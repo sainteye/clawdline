@@ -36,11 +36,13 @@ export function holderWords(holder: TerminalHolder | undefined | null): string {
 
 /**
  * Why the platform capability `terminal` is not there, as words — never an
- * input surface. `null` when terminals are available.
+ * input surface. `null` when terminals are available. The daemon's own
+ * `reason` is in whatever language the daemon wrote it, so it is never
+ * spliced into this sentence; `unavailableDetail` gives it apart.
  */
 export function unavailableWords(cap: PlatformCapability | undefined): string | null {
   if (!cap || cap.state === "available") return null
-  if (cap.state === "unknown") return nextWord("terminalUnavailableUnknown", { reason: cap.reason ?? "" })
+  if (cap.state === "unknown") return nextWord("terminalUnavailableUnknown")
   switch (cap.code) {
     case "tmux_not_installed":
       return nextWord("terminalUnavailableTmux")
@@ -48,7 +50,15 @@ export function unavailableWords(cap: PlatformCapability | undefined): string | 
       return nextWord("terminalUnavailableWindows")
     case "tmux_too_old":
     case "tmux_version_unread":
-      return nextWord("terminalUnavailableOld", { reason: cap.reason ?? "" })
+      return nextWord("terminalUnavailableOld")
   }
-  return nextWord("terminalUnavailableUnknown", { reason: cap.reason ?? cap.code ?? "" })
+  return nextWord("terminalUnavailableUnknown")
+}
+
+/** The daemon's own words behind `unavailableWords`, shown as it said them, or null. */
+export function unavailableDetail(cap: PlatformCapability | undefined): string | null {
+  if (!cap || cap.state === "available") return null
+  if (cap.state !== "unknown" && (cap.code === "tmux_not_installed" || cap.code === "no_backend")) return null
+  const reason = (cap.reason ?? cap.code ?? "").trim()
+  return reason ? nextWord("terminalMachineReported", { reason }) : null
 }

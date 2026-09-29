@@ -16,7 +16,9 @@ import "./terminal/terminal.css"
  *
  * `#page=terminal&project=<place id>` lists that project's terminals;
  * `&terminal=<id>` shows one. The page has no drawer entry: it is reached
- * from the Projects page and the work page's project scope.
+ * from the Projects page and the work page's project scope, and `&from=`
+ * says which, so the list's Back returns there (an address without it goes
+ * to the board, as every address did before).
  *
  * The console Clawdline Cloud serves says, in one sentence, that terminals are
  * only on the local console and locally paired devices, and draws nothing
@@ -32,6 +34,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
   // The address may name the project by the work page's id or by its folder
   // (the Projects page links by folder); the terminal routes take the id.
   const [place, setPlace] = useState<{ asked: string; id: string; label: string } | "loading" | "failed">("loading")
+  const [again, setAgain] = useState(0)
   const title = useRef<HTMLHeadingElement>(null)
   const hosted = hostedConsole()
 
@@ -62,7 +65,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
     return () => {
       live = false
     }
-  }, [route.project, hosted])
+  }, [route.project, hosted, again])
 
   useEffect(() => {
     if (shown && !route.terminal) title.current?.focus({ preventScroll: true })
@@ -71,7 +74,12 @@ function TerminalPage({ shown }: { shown: boolean }) {
   const known = typeof place === "object" && place.asked === route.project ? place : null
   const project = known?.id ?? ""
   const name = known?.label || project || route.project
-  const backToWork = () => {
+  const toProjects = route.from === "projects"
+  const back = () => {
+    if (toProjects) {
+      requestPage({ page: "projects" })
+      return
+    }
     try {
       history.replaceState(history.state, "", workPageHash(project))
     } catch {
@@ -79,6 +87,11 @@ function TerminalPage({ shown }: { shown: boolean }) {
     }
     requestPage({ page: "work", hash: false })
   }
+  const backButton = (
+    <button className="board-button" type="button" onClick={back}>
+      {nextWord(toProjects ? "terminalBackProjects" : "terminalBackBoard")}
+    </button>
+  )
 
   return (
     <section
@@ -91,7 +104,10 @@ function TerminalPage({ shown }: { shown: boolean }) {
     >
       {hosted ? (
         <div className="terminal-wrap">
-          <h1 id="terminal-title" ref={title} tabIndex={-1}>{nextWord("terminalEntry")}</h1>
+          <header className="board-head terminal-page-head">
+            <h1 id="terminal-title" ref={title} tabIndex={-1}>{nextWord("terminalEntry")}</h1>
+            {backButton}
+          </header>
           <p className="terminal-note" role="note">{nextWord("terminalRefusalCloudNotSupported")}</p>
         </div>
       ) : route.terminal ? (
@@ -99,23 +115,30 @@ function TerminalPage({ shown }: { shown: boolean }) {
           <h1 id="terminal-title" className="terminal-sr">
             {nextWord("terminalEntryFor", { project: name })}
           </h1>
-          <TerminalView id={route.terminal} shown={shown} onBack={() => openTerminalPage(project || route.project)} />
+          <TerminalView id={route.terminal} shown={shown} label={name}
+            onBack={() => openTerminalPage(project || route.project, "", route.from)}
+            onOpenNew={(id) => openTerminalPage(project || route.project, id, route.from)} />
         </>
       ) : (
         <div className="terminal-wrap">
           <header className="board-head terminal-page-head">
             <h1 id="terminal-title" ref={title} tabIndex={-1}>{nextWord("terminalEntry")}</h1>
-            <button className="board-button" type="button" onClick={backToWork}>{nextWord("terminalBack")}</button>
+            {backButton}
           </header>
           {!route.project
             ? <p className="terminal-note" role="note">{nextWord("terminalNoProject")}</p>
             : place === "failed"
-              ? <p className="terminal-note" role="alert">{nextWord("terminalListFailed", { why: nextWord("terminalRefusalUnreachable") })}</p>
+              ? (
+                <div className="terminal-note-row">
+                  <p className="terminal-note" role="alert">{nextWord("terminalProjectsFailed")}</p>
+                  <button className="board-button" type="button" onClick={() => setAgain((n) => n + 1)}>{nextWord("terminalRetry")}</button>
+                </div>
+              )
               : !known
                 ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
                 : !project
                   ? <p className="terminal-note" role="alert">{nextWord("terminalProjectUnknown")}</p>
-                  : <TerminalProjectList project={project} label={name} shown={shown} />}
+                  : <TerminalProjectList project={project} label={name} shown={shown} from={route.from} />}
         </div>
       )}
     </section>

@@ -23,6 +23,9 @@
 .terminal-session-note { color: var(--faint); font-size: 12px; }
 .terminal-status-line { margin: 6px 0 0; min-height: 1.6em; color: var(--dim); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
 .terminal-status-line:empty { min-height: 0; margin: 0; }
+.terminal-note-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.terminal-note-row .terminal-note { margin: 0; }
+.terminal-detail { font-family: var(--mono); font-size: 12px; color: var(--faint); }
 
 /* the list */
 .terminal-list { min-width: 0; }
@@ -38,7 +41,8 @@
 .terminal-row:hover { border-color: var(--accent-ed); }
 .terminal-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .terminal-row-name { font-weight: 600; font-size: 14px; }
-.terminal-row-dir { font-family: var(--mono); font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* Cut from the start, so the folder's own name at the end stays in view. */
+.terminal-row-dir { font-family: var(--mono); font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; direction: rtl; text-align: left; }
 .terminal-row-facts { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--faint); font-size: 12px; line-height: 1.6; }
 .terminal-row-facts [data-status="running"] { color: var(--ok); }
 .terminal-row-facts [data-status="exited"], .terminal-row-facts [data-status="unreachable"] { color: var(--warn); }
@@ -69,8 +73,12 @@
 .terminal-badge { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--bad); color: var(--ink); font-size: 12px; }
 .terminal-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 12px; border: 1px solid var(--bad); border-radius: 10px; background: var(--card); }
 .terminal-ask p { margin: 0; flex: 1 1 16em; font-size: 13px; line-height: 1.6; color: var(--ink); }
-.terminal-danger { color: var(--ink); border-color: var(--bad); }
+/* The answer that acts, drawn apart from Cancel as the Devices page draws Revoke (`.signed-in-danger`). */
+.terminal-danger { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); font-weight: 600; }
 .terminal-ended { margin: 0; padding: 8px 12px; border-left: 2px solid var(--warn); background: var(--card); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.terminal-ended p { margin: 0; }
+.terminal-ended-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.terminal-ended-actions .board-button { min-height: 40px; padding: 6px 12px; }
 .terminal-view .terminal-session-note { margin: 0; }
 
 .terminal-scroll {
@@ -79,6 +87,8 @@
     border: 1px solid var(--line); border-radius: 10px; background: var(--term-bg);
 }
 .terminal-view[data-stale] .terminal-scroll { border-color: var(--warn); }
+/* A screen that is not being updated does not look like one that is. */
+.terminal-view[data-stale] .terminal-host, .terminal-view[data-ended] .terminal-host { opacity: .55; }
 .terminal-view[data-holding] .terminal-scroll:focus-within { border-color: var(--accent-ed); }
 .terminal-host { height: 100%; padding: 6px; box-sizing: border-box; }
 .terminal-view:not([data-holding]) .terminal-host { width: max-content; min-width: 100%; }
@@ -97,7 +107,17 @@
 
 @media (max-width: 899px) {
     .terminal-page:not([data-view="one"]) { padding-inline: 16px; }
-    .terminal-page[data-view="one"] { padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+    /* The visible viewport, not the layout one, so the key row sits above an
+       on-screen keyboard: iOS does not shrink the layout viewport for it.
+       `--vvh` is legacy/js/core/env.js's, as legacy/base.css uses it. */
+    .terminal-page[data-view="one"] {
+        padding: 8px 8px max(8px, env(safe-area-inset-bottom));
+        bottom: auto; height: calc(var(--vvh, 100dvh) - var(--head-h, 52px));
+    }
+    /* One terminal on a phone keeps its rows for the screen: the notes are on the list. */
+    .terminal-view .terminal-session-note { display: none; }
+    .terminal-head { gap: 4px; }
+    .terminal-facts { font-size: 12px; gap: 0 12px; }
     .terminal-keys {
         flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
     }
@@ -113,19 +133,14 @@
     .terminal-session-note { font-size: 11.5px; }
 }
 
-/* 終端 on a paired device's card (Devices page) */
+/* 終端 on a paired device's card (Devices page): the settings window's switch (switch.css). */
 .terminal-grant { margin: 10px 0; }
-.terminal-grant-switch {
-    display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 12px 6px 8px;
-    border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
-    font: inherit; font-size: 13px; cursor: pointer; max-width: 100%; flex-wrap: wrap;
-}
-.terminal-grant-switch:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.terminal-grant-switch:disabled { cursor: progress; opacity: .7; }
-.terminal-grant-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--line); flex: none; }
-.terminal-grant-track > span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--dim); transition: transform .15s var(--ease); }
-.terminal-grant-switch[aria-checked="true"] .terminal-grant-track { background: var(--accent-ed); }
-.terminal-grant-switch[aria-checked="true"] .terminal-grant-track > span { transform: translateX(16px); background: var(--accent); }
+.terminal-grant-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 44px; font-size: 13px; }
+.terminal-grant-row .sw-switch input:focus-visible + .sw-switch-track { outline: 3px solid var(--accent); outline-offset: 3px; }
+.terminal-grant[aria-busy="true"] .sw-switch input { cursor: progress; }
 .terminal-grant-name { font-weight: 600; }
 .terminal-grant-state { color: var(--dim); }
+.terminal-grant-help { margin: 2px 0 0; }
+.terminal-grant-ask { margin-top: 8px; }
+.signed-in .device-facts [data-tone="warn"] { color: var(--ink); border-color: var(--warn); }
 .terminal-grants-note { border-left: 2px solid var(--warn); padding-left: 10px; }

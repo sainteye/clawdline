@@ -174,7 +174,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       // the work page's id, which the terminal page resolves from the folder,
       // as a Project-page link to the work page does (page-route.ts workProjectID).
       const project = page.current?.state.places?.find((place) => place.id === button.dataset.placeId)
-      if (project?.path) openTerminalPage(project.path)
+      if (project?.path) openTerminalPage(project.path, "", "projects")
     }
     rows.addEventListener("click", onSettings)
     rows.addEventListener("click", onTerminal)

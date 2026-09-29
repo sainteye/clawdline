@@ -1,5 +1,5 @@
 import { requestPage } from "../../overlays/index.js"
-import { terminalPageHash } from "../../page-route.js"
+import { terminalPageHash, type TerminalFrom } from "../../page-route.js"
 
 /** Tells a terminal page already on screen that its address changed. */
 export const TERMINAL_ROUTE = "clawdline:terminal-route"
@@ -9,8 +9,8 @@ export const TERMINAL_ROUTE = "clawdline:terminal-route"
  * is replaced, as every page move here is (App's `writeHash`), and the page is
  * told directly, because `replaceState` fires no `hashchange`.
  */
-export function openTerminalPage(project: string, terminal = ""): void {
-  const address = terminalPageHash(project, terminal)
+export function openTerminalPage(project: string, terminal = "", from: TerminalFrom = ""): void {
+  const address = terminalPageHash(project, terminal, from)
   try {
     history.replaceState(history.state, "", address)
   } catch {
