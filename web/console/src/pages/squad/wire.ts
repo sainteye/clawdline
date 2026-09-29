@@ -67,7 +67,11 @@ export function squadView(
   return {
     scopeId: current.scope_id,
     project: projects.find((row) => row.id === current.scope_id) ?? null, projects,
-    teams: catalog.teams.map((team) => ({ id: team.team_id, name: name(team.name) })), personas, sessions,
+    teams: catalog.teams.map((team) => ({ id: team.team_id, name: name(team.name) })), personas,
+    catalogSkills: catalog.skills.filter((skill) => !skill.skill_id.startsWith("clawdline.")).map((skill) => ({
+      id: skill.skill_id, name: name(skill.name), purpose: name(skill.purpose), body: skill.content,
+      source: skill.source, version: skill.version, license: skill.license, icon: skill.icon,
+    })), sessions,
     motion: effective(current.motion, global.motion.value),
     motionSettingsVersion: current.motion_settings_version,
     catalogVersion: catalog.catalog_version, canWrite, partial: false,

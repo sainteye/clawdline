@@ -316,26 +316,27 @@ const (
 	PersonasCatalog   = "personas.catalog"
 	PersonasTextBytes = "personas.text_bytes"
 	// Versioned squad definitions and private settings.
-	SquadEntities              = "squad.entities"
-	SquadSettingsRows          = "squad.settings_rows"
-	SquadReceipts              = "squad.receipts"
-	SquadBodyBytes             = "squad.body_bytes"
-	SquadRequestBytes          = "squad.request_bytes"
-	SquadPlaceLookup           = "squad.place_lookup"
-	SquadPackageArchiveBytes   = "squadpackage.archive_bytes"
-	SquadPackageRequestBytes   = "squadpackage.request_bytes"
-	SquadPackageManifestBytes  = "squadpackage.manifest_bytes"
-	SquadPackageFileBytes      = "squadpackage.file_bytes"
-	SquadPackageExpandedBytes  = "squadpackage.expanded_bytes"
-	SquadPackageEntries        = "squadpackage.entries"
-	SquadPackageExpansionRatio = "squadpackage.expansion_ratio"
-	SquadPackagePreviewRows    = "squadpackage.preview_rows"
-	SquadPackagePreviewAge     = "squadpackage.preview_age"
-	SquadSnapshotBytes         = "squad.snapshot_bytes"
-	SquadRecoveryRows          = "squad.pending_launches"
-	SquadEventIDBytes          = "squad.event_id_bytes"
-	SquadEventPageRows         = "squad.event_page_rows"
-	SquadEventBodyBytes        = "squad.event_body_bytes"
+	SquadEntities                = "squad.entities"
+	SquadSettingsRows            = "squad.settings_rows"
+	SquadReceipts                = "squad.receipts"
+	SquadBodyBytes               = "squad.body_bytes"
+	SquadRequestBytes            = "squad.request_bytes"
+	SquadPlaceLookup             = "squad.place_lookup"
+	SquadPackageArchiveBytes     = "squadpackage.archive_bytes"
+	SquadPackageRequestBytes     = "squadpackage.request_bytes"
+	SquadPackageManifestBytes    = "squadpackage.manifest_bytes"
+	SquadPackageFileBytes        = "squadpackage.file_bytes"
+	SquadPackageExpandedBytes    = "squadpackage.expanded_bytes"
+	SquadPackageEntries          = "squadpackage.entries"
+	SquadPackageExpansionRatio   = "squadpackage.expansion_ratio"
+	SquadPackagePreviewRows      = "squadpackage.preview_rows"
+	SquadPackagePreviewAge       = "squadpackage.preview_age"
+	SquadSnapshotBytes           = "squad.snapshot_bytes"
+	SquadConsoleActiveSkillBytes = "squad.console_active_skill_bytes"
+	SquadRecoveryRows            = "squad.pending_launches"
+	SquadEventIDBytes            = "squad.event_id_bytes"
+	SquadEventPageRows           = "squad.event_page_rows"
+	SquadEventBodyBytes          = "squad.event_body_bytes"
 )
 
 // Entry is one row of the register.
@@ -1600,6 +1601,14 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.MaxSquadSnapshotBytes"},
+		},
+		{
+			// Console refuses another enabled skill before the complete launch
+			// document can approach its larger, authoritative snapshot limit.
+			Name: SquadConsoleActiveSkillBytes, Class: Buffer, Unit: Bytes,
+			Limit: 512 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadConsoleActiveSkillBytes"},
 		},
 		{
 			// Pending squad launch intents that one inventory pass can recover.

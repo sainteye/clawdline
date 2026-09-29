@@ -720,6 +720,13 @@ or conversation identity; the same 256-row bound limits each recovery scan. Neit
 snapshot or abandons a pending launch. The sender receives a typed refusal and both rows appear
 in `/v1/diagnostics.capacity`.
 
+The Console's add-skill flow refuses when enabled skill content for one role would exceed
+512 KiB (`squad.console_active_skill_bytes`). This conservative, person-visible bound leaves
+room under the 1 MiB launch limit for the role body, handbook, metadata and serialization.
+It applies to this Console flow; the server's snapshot bound remains authoritative for other
+writers. The declaration is `internal/domain/squad.MaxSquadConsoleActiveSkillBytes` and the
+matching Console constant is `ACTIVE_SKILL_BYTES` in `web/console/src/pages/squad/skill-create.ts`.
+
 An agent's `client_event_id` is limited to 128 bytes (`squad.event_id_bytes`) and an event request
 to 4 KiB (`squad.event_body_bytes`). A receipt read returns at most 100 rows
 (`squad.event_page_rows`) with an `after` cursor and `has_more` flag. Invalid or oversized writes

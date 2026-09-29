@@ -4,6 +4,7 @@ import * as L from "../legacy/bridge.js"
 import type { PageModule } from "./types.js"
 import { squadApi, type PackPreview, type SquadAPI } from "./squad/api.js"
 import { ReceiptGate, sourceLabel, visiblePersonas, type SquadDraft, type SquadPersona, type SquadReadState, type SquadSkill, type SquadView } from "./squad/model.js"
+import { ACTIVE_SKILL_BYTES, activeSkillBytes, makeSkill, sameSkill, skillInputError, type SkillTransaction } from "./squad/skill-create.js"
 import "./squad/squad.css"
 
 const keyOf = (scope: string, persona: string) => `${scope}\u0000${persona}\u0000handbook`
@@ -92,6 +93,15 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const [busy, setBusy] = useState("")
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [pack, setPack] = useState<"import" | "export" | null>(null)
+  const [skillMode, setSkillMode] = useState<"create" | "attach">("create")
+  const [newSkillName, setNewSkillName] = useState("")
+  const [newSkillPurpose, setNewSkillPurpose] = useState("")
+  const [newSkillContent, setNewSkillContent] = useState("")
+  const [existingSkillId, setExistingSkillId] = useState("")
+  const [skillError, setSkillError] = useState("")
+  const [skillBusy, setSkillBusy] = useState(false)
+  const [skillCloseConfirm, setSkillCloseConfirm] = useState(false)
+  const [skillWriteError, setSkillWriteError] = useState<{ id: string; text: string } | null>(null)
   const [packPreview, setPackPreview] = useState<PackPreview | null>(null)
   const [packFile, setPackFile] = useState<File | null>(null)
   const [packError, setPackError] = useState("")
@@ -112,6 +122,15 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const detailPanel = useRef<HTMLDivElement>(null)
   const pageElement = useRef<HTMLElement>(null)
   const packDialog = useRef<HTMLDialogElement>(null)
+  const skillDialog = useRef<HTMLDialogElement>(null)
+  const skillOpener = useRef<HTMLButtonElement>(null)
+  const skillNameInput = useRef<HTMLInputElement>(null)
+  const skillKeepButton = useRef<HTMLButtonElement>(null)
+  const skillHeading = useRef<HTMLHeadingElement>(null)
+  const skillCheckbox = useRef<HTMLInputElement>(null)
+  const skillDrafts = useRef<Record<string, { name: string; purpose: string; content: string }>>({})
+  const skillTransaction = useRef<SkillTransaction | null>(null)
+  const skillGlobalAtOpen = useRef("")
   const packOpener = useRef<HTMLElement | null>(null)
   const receiptGate = useRef(new ReceiptGate())
   const useTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -157,7 +176,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
       useQueue.current = []; usePlaying.current = false
       void load("")
     }
-    if (!shown && wasShown.current) { request.current++; if (useTimer.current) clearTimeout(useTimer.current); useQueue.current = []; usePlaying.current = false; packDialog.current?.close(); setPack(null); setPackPreview(null); setPackFile(null); setUsing(null) }
+    if (!shown && wasShown.current) { request.current++; if (useTimer.current) clearTimeout(useTimer.current); useQueue.current = []; usePlaying.current = false; packDialog.current?.close(); skillDialog.current?.close(); setPack(null); setPackPreview(null); setPackFile(null); setUsing(null) }
     wasShown.current = shown
   }, [shown, load])
 
@@ -167,6 +186,11 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
     media.addEventListener("change", changed)
     return () => media.removeEventListener("change", changed)
   }, [])
+
+  useEffect(() => {
+    if (skillError) skillDialog.current?.querySelector(".squad-dialog-error")?.scrollIntoView({ block: "nearest" })
+  }, [skillError])
+  useEffect(() => { if (skillCloseConfirm) skillKeepButton.current?.focus() }, [skillCloseConfirm])
 
   const data = reading.kind === "ready" ? reading.data : reading.previous
   dataRef.current = data ?? null
@@ -285,14 +309,154 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
     if (!data || !persona) return
     const requestScope = scope
     const personaId = persona.id
-    setBusy("skills"); setNotice({ text: "正在儲存技能設定…" })
+    setBusy("skills"); setSkillWriteError(null); setNotice({ text: "正在儲存技能設定…" })
     try {
       await api.saveSkills(requestScope, personaId, choices, persona.settingsVersion)
       if (currentScope.current === requestScope) { await load(requestScope); setNotice({ text: "技能設定已儲存，並已重新讀取排序與來源。" }) }
-    } catch (error) { if (currentScope.current === requestScope) setNotice({ text: `技能設定未儲存：${errorDetail(error)}`, error: true }) }
+    } catch (error) { if (currentScope.current === requestScope) {
+      const text = `技能設定未儲存：${errorDetail(error)}`
+      setNotice({ text, error: true }); setSkillWriteError({ id: skillId, text })
+    } }
     finally { setBusy("") }
   }
+  const rereadSkill = async () => {
+    if (!skillWriteError) return
+    const requestScope = scope
+    try {
+      const fresh = await api.read(requestScope)
+      if (currentScope.current === requestScope) {
+        setReading({ kind: "ready", data: fresh }); setSkillWriteError(null)
+        setNotice({ text: "已重新讀取技能設定；請確認目前生效值後再操作。" })
+        requestAnimationFrame(() => skillCheckbox.current?.focus())
+      }
+    } catch (error) { setSkillWriteError({ ...skillWriteError, text: `重新讀取失敗：${errorDetail(error)}` }) }
+  }
   const currentChoices = persona?.skills.map((skill) => ({ id: skill.id, version: skill.version, enabled: skill.enabled.value })) ?? []
+
+  const openSkillDialog = () => {
+    if (!canWrite || !persona) return
+    const draft = skillDrafts.current[`${scope}\u0000${persona.id}`]
+    skillTransaction.current = null
+    skillGlobalAtOpen.current = JSON.stringify(persona.skillsSetting.global)
+    setSkillMode("create"); setNewSkillName(draft?.name ?? ""); setNewSkillPurpose(draft?.purpose ?? ""); setNewSkillContent(draft?.content ?? ""); setExistingSkillId(""); setSkillError(""); setSkillCloseConfirm(false)
+    skillDialog.current?.showModal()
+    requestAnimationFrame(() => skillNameInput.current?.focus())
+  }
+  const recoverSavedSkill = () => {
+    const pending = skillTransaction.current
+    skillTransaction.current = null
+    if (pending && currentScope.current === scope) {
+      void load(scope)
+      setNotice({ text: pending.catalogSaved ? "技能已存入目錄。若尚未加入角色，可重新開啟「新增技能」並選「加入已建立技能」。" : "正在重新讀取技能目錄。若技能其實已建立，可重新開啟「新增技能」並選「加入已建立技能」。" })
+    }
+  }
+  const closeSkillDialog = () => {
+    if (skillBusy) return
+    if (!skillTransaction.current && skillMode === "create" && (newSkillName || newSkillPurpose || newSkillContent)) {
+      setSkillCloseConfirm(true); return
+    }
+    recoverSavedSkill(); skillDialog.current?.close()
+  }
+  const closeSkillDraft = (keep: boolean) => {
+    if (!persona) return
+    const key = `${scope}\u0000${persona.id}`
+    if (keep) skillDrafts.current[key] = { name: newSkillName, purpose: newSkillPurpose, content: newSkillContent }
+    else delete skillDrafts.current[key]
+    setSkillCloseConfirm(false)
+    skillDialog.current?.close()
+  }
+  const addSkill = async () => {
+    if (!canWrite || !persona || !data || skillBusy) return
+    const originalScope = scope
+    const originalPersona = persona.id
+    let target: { id: string; version: string; body: string } | null = null
+    if (skillMode === "create") {
+      const inputError = skillInputError(newSkillName, newSkillPurpose, newSkillContent)
+      if (inputError) { setSkillError(inputError); return }
+      if (!skillTransaction.current) {
+        skillTransaction.current = {
+          skill: makeSkill(newSkillName, newSkillPurpose, newSkillContent, persona.icon),
+          expectedVersion: data.catalogVersion, key: crypto.randomUUID(), scopeId: originalScope, personaId: originalPersona, catalogSaved: false,
+        }
+        delete skillDrafts.current[`${originalScope}\u0000${originalPersona}`]
+      }
+      const transaction = skillTransaction.current
+      target = { id: transaction.skill.skill_id, version: transaction.skill.version, body: transaction.skill.content }
+    } else {
+      const selected = data.catalogSkills.find((skill) => skill.id === existingSkillId)
+      if (!selected) { setSkillError("請選擇要加入的技能；若目錄已更新，請重新讀取後再選。 "); return }
+      target = { id: selected.id, version: selected.version, body: selected.body }
+    }
+    if (activeSkillBytes(data, persona, target) > ACTIVE_SKILL_BYTES) {
+      setSkillError("已啟用技能的內容合計超過安全額度；請先停用其他技能或縮短內容，以免新 Session 無法啟動。")
+      return
+    }
+    setSkillBusy(true); setSkillError("")
+    try {
+      const transaction = skillTransaction.current
+      if (skillMode === "create" && transaction && !transaction.catalogSaved) {
+        try {
+          await api.createSkill(transaction.skill, transaction.expectedVersion, transaction.key)
+          transaction.catalogSaved = true
+        } catch (error) {
+          if (errorCode(error) !== "version_conflict" && errorCode(error) !== "definition_version_conflict") throw error
+          const catalog = await api.readCatalog()
+          const found = catalog.skills.find((skill) => skill.skill_id === transaction.skill.skill_id && skill.version === transaction.skill.version)
+          if (found) {
+            if (!sameSkill(found, transaction.skill)) throw Object.assign(new Error("同一技能識別已有不同內容，請重新整理後檢查。"), { code: "skill_collision" })
+            transaction.catalogSaved = true
+          } else {
+            transaction.expectedVersion = catalog.catalog_version
+            transaction.key = crypto.randomUUID()
+            setSkillError("技能目錄已有新版本；你的內容仍保留，請按「重試建立」以新的目錄版本送出。")
+            return
+          }
+        }
+      }
+      // A settings write replaces the whole list. Read the target scope again
+      // on every attempt, including after an uncertain response.
+      const fresh = await api.read(originalScope)
+      const current = fresh.personas.find((row) => row.id === originalPersona)
+      if (!current) throw Object.assign(new Error("角色已不在目錄中。"), { code: "catalog_inconsistent" })
+      const latest = fresh.catalogSkills.find((skill) => skill.id === target!.id)
+      if (skillMode === "attach" && (!latest || latest.version !== target.version)) {
+        if (currentScope.current === originalScope) setReading({ kind: "ready", data: fresh })
+        setSkillError("這項技能已有新版本；請重新選擇目前版本，再加入角色。")
+        return
+      }
+      const existing = current.skillsSetting.value.find((choice) => choice.id === target!.id)
+      if (existing && (existing.version !== target.version || !existing.enabled)) {
+        setSkillError("角色已使用此技能的其他版本或已停用；請先在技能清單檢查，避免覆蓋現有設定。")
+        return
+      }
+      if (!existing) {
+        if (activeSkillBytes(fresh, current, target) > ACTIVE_SKILL_BYTES) {
+          setSkillError("目前已啟用技能超過安全額度；請先停用其他技能後再加入。")
+          return
+        }
+        await api.saveSkills(originalScope, originalPersona, [...current.skillsSetting.value, { id: target.id, version: target.version, enabled: true }], current.settingsVersion)
+      }
+      const confirmed = await api.read(originalScope)
+      const confirmedPersona = confirmed.personas.find((row) => row.id === originalPersona)
+      if (!confirmedPersona?.skillsSetting.value.some((choice) => choice.id === target!.id && choice.version === target!.version && choice.enabled)) {
+        setSkillError("技能目錄已建立，但角色設定尚未確認。請按重試；不會重複建立技能。")
+        return
+      }
+      const globalChanged = originalScope && skillGlobalAtOpen.current !== JSON.stringify(confirmedPersona.skillsSetting.global)
+      const missingGlobal = globalChanged ? confirmedPersona.skillsSetting.global.filter((choice) =>
+        !confirmedPersona.skillsSetting.value.some((local) => local.id === choice.id && local.version === choice.version)) : []
+      const missingNames = missingGlobal.map((choice) => confirmed.catalogSkills.find((skill) => skill.id === choice.id && skill.version === choice.version)?.name ?? choice.id)
+      if (currentScope.current === originalScope) {
+        setReading({ kind: "ready", data: confirmed }); setSkillId(target.id)
+        setNotice({ text: globalChanged ? `技能已加入並啟用。儲存期間全域技能清單也更新了；此 Project 尚未加入：${missingNames.join("、") || "請比對全域與 Project 清單"}。可從「加入已建立技能」補入，或還原全域繼承。` : "技能已加入並啟用，並已重新讀取生效設定。" })
+      }
+      delete skillDrafts.current[`${originalScope}\u0000${originalPersona}`]
+      skillTransaction.current = null
+      skillDialog.current?.close()
+    } catch (error) {
+      setSkillError(`${skillTransaction.current?.catalogSaved ? "技能目錄已建立，角色尚未確認加入。" : "技能尚未確認建立。"}${errorCode(error) === "skill_collision" ? (error as Error).message : errorDetail(error)} 請重試；已輸入內容仍保留。`)
+    } finally { setSkillBusy(false) }
+  }
   const moveSkill = (id: string, direction: -1 | 1) => {
     const choices = [...currentChoices]
     const index = choices.findIndex((item) => item.id === id)
@@ -418,6 +582,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
           <button className="squad-back" type="button" onClick={backToRoster}>← 返回角色名冊</button>
           <div className="squad-profile"><IconCanvas icon={persona.icon} size={5} /><div><p>角色檔案 / 詳情</p><h2 id="squad-detail-title" ref={detailTitle} tabIndex={-1}>{persona.name}</h2><span>{persona.subtitle}</span></div></div>
           <div className="squad-meta"><span>{persona.teamIds.map((id) => data.teams.find((row) => row.id === id)?.name ?? id).join(" · ") || "未分隊"}</span><span>{persona.source}</span><span>版本 {persona.version}</span></div>
+          <button className="squad-skill-jump" type="button" onClick={() => { skillHeading.current?.scrollIntoView({ block: "start" }); skillHeading.current?.focus() }}>查看／新增技能</button>
           <section className="squad-detail-block"><h3>角色定義</h3><div className="squad-long-text">{persona.body}</div></section>
           <section className="squad-detail-block"><div className="squad-setting-heading"><div><h3>允許管理 agent 自動指派</h3><p>停用只影響管理 agent 的自動候選；你仍可手動指定此角色。</p></div>
             <label className="squad-switch"><input type="checkbox" aria-label={`允許管理 agent 自動指派：${persona.enabled.value ? "已啟用" : "已停用"}`} checked={persona.enabled.value} disabled={!canWrite || !!busy} onChange={(event) => void saveToggle("enabled", event.target.checked)} /><span>{persona.enabled.value ? "已啟用" : "已停用"}</span></label></div>
@@ -432,13 +597,16 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
               <button type="button" disabled={!!busy} onClick={() => setDrafts((all) => { const next = { ...all }; delete next[draftKey]; return next })}>放棄我的草稿</button></div>}
             <div className="squad-actions"><button type="button" disabled={!canWrite || !!busy || !draft || draft.conflict} onClick={() => void saveHandbook()}>{busy === "handbook" ? "處理中…" : "儲存手冊"}</button>
               {scope && persona.handbook.source === "project" && <button type="button" disabled={!canWrite || !!busy} onClick={() => void restoreHandbook()}>還原繼承</button>}</div></section>
-          <section className="squad-detail-block"><div className="squad-panel-head"><h3>專屬技能</h3><span>{persona.skills.length} 項</span></div><p>已採納的技能依優先順序排列；閱讀詳情不代表 Session 已使用。</p>
+          <section className="squad-detail-block"><div className="squad-panel-head"><h3 ref={skillHeading} tabIndex={-1}>專屬技能</h3><span>{persona.skills.length} 項</span></div><p>已採納的技能依優先順序排列；閱讀詳情不代表 Session 已使用。</p>
+            <button ref={skillOpener} className="squad-add-skill" type="button" disabled={!canWrite || !!busy} onClick={openSkillDialog}>新增技能</button>
+            {scope && <p className="squad-source">Project 技能清單是整份覆寫；加入後，未來全域新增的技能不會自動出現在此 Project，可還原全域繼承。</p>}
             <p className="squad-source">全域：{persona.skillsSetting.global.length} 項 · 生效：{persona.skillsSetting.value.length} 項 · 來源：{valueSource(persona.skillsSetting.source, !!scope)}</p>
             {persona.skills.length ? <div className="squad-skills">{persona.skills.map((skill) => <SkillCard key={skill.id} skill={skill} open={skill.id === skillId} animated={using?.skill === skill.id && using.persona === persona.id && data.motion.value && !motionReduced} onPick={() => setSkillId(skill.id === skillId ? "" : skill.id)} />)}
               <SkillDetail skill={openSkill} />
-              {openSkill && <div className="squad-skill-controls"><label className="squad-check"><input type="checkbox" checked={openSkill.enabled.value} disabled={!canWrite || !!busy} onChange={(event) => void saveSkills(currentChoices.map((choice) => choice.id === openSkill.id ? { ...choice, enabled: event.target.checked } : choice))} />此角色可使用此技能</label>
+              {openSkill && <div className="squad-skill-controls"><label className="squad-check"><input ref={skillCheckbox} type="checkbox" checked={openSkill.enabled.value} disabled={!canWrite || !!busy} onChange={(event) => void saveSkills(currentChoices.map((choice) => choice.id === openSkill.id ? { ...choice, enabled: event.target.checked } : choice))} />此角色可使用此技能</label>
                 <div><button type="button" disabled={!canWrite || !!busy || openSkill.order <= 1} onClick={() => moveSkill(openSkill.id, -1)}>上移優先順序</button>
                   <button type="button" disabled={!canWrite || !!busy || openSkill.order >= persona.skills.length} onClick={() => moveSkill(openSkill.id, 1)}>下移優先順序</button></div>
+                {skillWriteError?.id === openSkill.id && <div className="squad-skill-write-error" role="alert"><p>{skillWriteError.text}</p><button type="button" disabled={!!busy} onClick={() => void rereadSkill()}>重新讀取技能</button></div>}
                 <p className="squad-source">生效：{openSkill.enabled.value ? "啟用" : "停用"} · 來源：{valueSource(openSkill.enabled.source, !!scope)}</p></div>}</div> : <div className="squad-empty"><h4>尚無已採納技能</h4><p>這位角色仍可使用；公開研究候選不會自動安裝。</p></div>}
             {hasLocalOverride(persona.skillsSetting.source, !!scope) && <button className="squad-restore" type="button" disabled={!canWrite || !!busy} onClick={() => void restoreSkills()}>還原技能{scope ? "全域繼承" : "內建預設"}</button>}</section>
           <section className="squad-detail-block"><div className="squad-setting-heading"><div><h3>技能使用動畫</h3><p>只在收到 Session 的新「已套用」收據時顯示；減少動態效果時改為靜態文字。</p></div>
@@ -467,10 +635,35 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
             : <><p>預設只匯出可分享的定義。全域與每個 Project 的私人手冊及覆寫必須分別勾選；同機已配對讀者具有機器範圍讀取權。</p>
               <label className="squad-check"><input type="checkbox" checked={includeGlobal} onChange={(event) => { setIncludeGlobal(event.target.checked); setPrivateConfirm(false) }} />包含全域私人設定</label>
               {data?.projects.map((project) => <label className="squad-check" key={project.id}><input type="checkbox" checked={includeProjects.includes(project.id)} onChange={(event) => { setIncludeProjects((rows) => event.target.checked ? [...rows, project.id] : rows.filter((id) => id !== project.id)); setPrivateConfirm(false) }} />包含 {project.name} 的私人設定</label>)}
-              <div className="squad-export-summary"><strong>即將下載：</strong>可分享定義{includeGlobal ? "、全域私人設定" : ""}{includeProjects.map((id) => `、${data?.projects.find((project) => project.id === id)?.name ?? id} 私人設定`).join("")}</div>
+          <div className="squad-export-summary"><strong>即將下載：</strong>可分享定義（包含自寫技能全文）{includeGlobal ? "、全域私人設定" : ""}{includeProjects.map((id) => `、${data?.projects.find((project) => project.id === id)?.name ?? id} 私人設定`).join("")}</div>
               {(includeGlobal || includeProjects.length > 0) && <label className="squad-check"><input type="checkbox" checked={privateConfirm} onChange={(event) => setPrivateConfirm(event.target.checked)} />我確認將上述私人設定放入下載檔</label>}
               <button type="button" disabled={!!busy || !canWrite && (includeGlobal || includeProjects.length > 0)} onClick={() => void exportPack()}>{busy === "export" ? "匯出中…" : "下載資料包"}</button></>}
           {packError && <p className="squad-dialog-error" role="alert">{packError}</p>}</>}
+      </dialog>
+      <dialog ref={skillDialog} className="squad-dialog squad-skill-dialog" aria-labelledby="squad-skill-dialog-title" aria-describedby="squad-skill-disclosure" onCancel={(event) => { event.preventDefault(); if (skillCloseConfirm) setSkillCloseConfirm(false); else closeSkillDialog() }} onClose={() => { recoverSavedSkill(); skillOpener.current?.focus() }}>
+        <div className="squad-dialog-head"><h2 id="squad-skill-dialog-title">為角色新增技能</h2><button type="button" aria-label="關閉新增技能對話框" disabled={skillBusy || skillCloseConfirm} onClick={closeSkillDialog}>×</button></div>
+        <p>角色：{persona?.name ?? ""} · 範圍：{scopeLabel}。加入後只影響之後建立的 Session。</p>
+        <p className="squad-skill-disclosure" id="squad-skill-disclosure">技能全文存於這部機器的全域目錄，同機已配對讀者可讀，也會包含在預設可分享資料包的匯出中。所選範圍只控制此角色能否使用。</p>
+        {skillCloseConfirm ? <div className="squad-skill-confirm" role="group" aria-label="關閉技能草稿"><h3>要保留未送出的技能草稿嗎？</h3><p>保留後，可在這位角色的同一範圍重新開啟「新增技能」繼續編輯。</p>
+          <div className="squad-actions"><button ref={skillKeepButton} type="button" onClick={() => closeSkillDraft(true)}>保留草稿並關閉</button><button type="button" onClick={() => closeSkillDraft(false)}>捨棄草稿</button><button type="button" onClick={() => setSkillCloseConfirm(false)}>繼續編輯</button></div></div> :
+        <form onSubmit={(event) => { event.preventDefault(); void addSkill() }}>
+        <div className="squad-skill-mode" role="group" aria-label="新增技能方式">
+          <label className="squad-check"><input type="radio" name="squad-skill-mode" checked={skillMode === "create"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setSkillMode("create"); setSkillError("") }} />建立新技能</label>
+          <label className="squad-check"><input type="radio" name="squad-skill-mode" checked={skillMode === "attach"} disabled={skillBusy || !!skillTransaction.current} onChange={() => { setSkillMode("attach"); setSkillError("") }} />加入已建立技能</label>
+        </div>
+        {skillMode === "create" ? <div className="squad-skill-form">
+          <label>技能名稱<input ref={skillNameInput} required value={newSkillName} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillName(event.target.value)} /></label>
+          <label>用途摘要<input required value={newSkillPurpose} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillPurpose(event.target.value)} /></label>
+          <p id="squad-skill-content-hint">建立後預設啟用，可回到技能詳情停用。內容最多 64 KiB。</p>
+          <label>技能內容<textarea required rows={8} aria-describedby="squad-skill-content-hint" value={newSkillContent} disabled={skillBusy || !!skillTransaction.current} onChange={(event) => setNewSkillContent(event.target.value)} /></label>
+        </div> : <div className="squad-skill-form"><label>選擇技能<select value={existingSkillId} disabled={skillBusy} onChange={(event) => { setExistingSkillId(event.target.value); setSkillError("") }}>
+          <option value="">請選擇</option>{data?.catalogSkills.filter((skill) => !persona?.skills.some((row) => row.id === skill.id)).map((skill) => <option key={skill.id} value={skill.id}>{skill.name} · 版本 {skill.version}</option>)}
+        </select></label><p>若先前建立成功但未加入角色，可在此選取。目錄升版後會加入目前顯示的版本。</p></div>}
+        {skillTransaction.current?.catalogSaved && <p className="squad-skill-stage" role="status">技能已建立在目錄中，正在加入角色；重試不會重複建立。</p>}
+        {skillError && <p className="squad-dialog-error" role="alert">{skillError}</p>}
+        <div className="squad-actions"><button type="submit" disabled={skillBusy || !canWrite}>{skillBusy ? "處理中…" : skillTransaction.current ? skillTransaction.current.catalogSaved ? "重試加入技能" : "重試建立" : skillMode === "create" ? "建立並啟用" : "加入並啟用"}</button>
+          <button type="button" disabled={skillBusy} onClick={closeSkillDialog}>取消</button></div>
+        </form>}
       </dialog>
     </div>
   </section>

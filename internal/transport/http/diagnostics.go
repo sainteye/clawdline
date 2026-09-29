@@ -195,6 +195,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return capacity.Reading{Known: true, Used: used, Note: "largest immutable squad launch document"}
 		},
+		capacity.SquadConsoleActiveSkillBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-persona Console guard; no retained measurement"}
+		},
 		capacity.SquadRecoveryRows: func() capacity.Reading {
 			if s.store == nil {
 				return capacity.Reading{Known: true, Note: "no store attached"}
