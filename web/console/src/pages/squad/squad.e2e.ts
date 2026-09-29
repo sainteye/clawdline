@@ -274,6 +274,13 @@ test("42 roles, Project inheritance, desktop and mobile return are visible witho
   await tab(1440, 900, async (evaluate, shot) => {
     assert.equal(await evaluate('document.querySelectorAll("#squad .squad-persona-card").length'), 42)
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
+    await evaluate('(() => { const el = document.querySelector("#squad .squad-search input"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "no matching role"); el.dispatchEvent(new Event("input", { bubbles: true })); })()')
+    await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate('document.querySelectorAll("#squad .squad-persona-card").length'), 0)
+    assert.match(await evaluate('document.querySelector("#squad .squad-detail .squad-empty").textContent'), /選擇角色/)
+    await evaluate('document.querySelector("#squad .squad-roster .squad-empty button").click()')
+    await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate('document.querySelectorAll("#squad .squad-persona-card").length'), 42)
     await shot("squad-desktop-global")
     await evaluate('document.querySelector("#squad .squad-persona-card").click()')
     assert.match(await evaluate('document.querySelector("#squad .squad-detail").textContent'), /完整角色定義/)

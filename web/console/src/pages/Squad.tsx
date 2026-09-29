@@ -145,6 +145,11 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
   const data = reading.kind === "ready" ? reading.data : reading.previous
   dataRef.current = data ?? null
   const shownPersonas = useMemo(() => data ? visiblePersonas(data, team, search) : [], [data, team, search])
+  useEffect(() => {
+    if (!data || shownPersonas.some((row) => row.id === selected)) return
+    const next = shownPersonas[0]?.id ?? ""
+    if (next !== selected) { setSelected(next); setSkillId("") }
+  }, [data, shownPersonas, selected])
   const persona = data?.personas.find((row) => row.id === selected) ?? null
   const openSkill = persona?.skills.find((row) => row.id === skillId) ?? null
   const scopeLabel = scope ? data?.project?.name ?? "Project" : "全域"
