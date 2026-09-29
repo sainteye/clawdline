@@ -110,7 +110,8 @@ type ItemV2 struct {
 	Description string
 	// AcceptanceCriteria is the exact bounded Markdown contract for this item.
 	// The owning Session may fill an empty contract once before verification;
-	// later revisions belong to the person. AcceptanceVersion changes only when those bytes change, and
+	// later revisions require the person directly or the dedicated run-backed Root route.
+	// AcceptanceVersion changes only when those bytes change, and
 	// AcceptanceDigest is the SHA-256 of those exact bytes.
 	AcceptanceCriteria string
 	AcceptanceVersion  int64
