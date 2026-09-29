@@ -77,6 +77,11 @@ function errorWords(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/** Why the screen stopped following: the daemon's refusal, or a network that did not answer. */
+function streamLostWords(e: unknown): string {
+  return e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : nextWord("terminalStreamLost")
+}
+
 export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
   id: string
   shown: boolean
@@ -344,7 +349,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
             },
             (e) => {
               const code = e instanceof TerminalRequestError ? e.code : ""
-              setSaid(e instanceof TerminalRequestError ? errorWords(e) : nextWord("terminalStreamLost"))
+              setSaid(streamLostWords(e))
               if (code === "terminal_closed") setStatus("closed")
               else if (!ended && code !== "terminal_forbidden") retry = setTimeout(connect, 3_000)
             },
@@ -648,6 +653,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
             said,
             noticeWords,
             inputState?.retrying ? nextWord("terminalRetrying") : "",
+            inputState?.full ? nextWord("terminalInputFullNext") : "",
             ctrl && canType ? nextWord("terminalCtrlArmed") : "",
             !holding && running && !ended ? nextWord("terminalViewOnly") : "",
           ].filter(Boolean).join(" ")}

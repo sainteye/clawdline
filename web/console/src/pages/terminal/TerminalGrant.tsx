@@ -107,7 +107,7 @@ export function TerminalGrantSwitch({ device, grants, onSaid, onChanged }: {
       <p className="device-help terminal-grant-help">{nextWord("terminalGrantHelp")}</p>
       {asking && (
         <div className="signed-in-ask terminal-grant-ask" role="group" aria-label={nextWord("terminalGrant")}>
-          <p className="device-help">{nextWord("terminalGrantAsk", { name: device.name })}</p>
+          <p className="device-help">{nextWord("terminalGrantAsk", { name: device.name, id: device.id })}</p>
           <button className="device-start signed-in-danger" type="button" disabled={busy}
             aria-busy={busy ? "true" : undefined} onClick={() => void save(true)}>
             {nextWord("terminalGrantConfirm")}
