@@ -105,7 +105,8 @@ test("Board lanes keep items folded until their accessible summary opens the sha
 	assert.match(source, /aria-describedby=\{describedBy\}/)
 	assert.match(source, /id=\{gateDescriptionID\}/)
 	assert.match(source, /id=\{gateSnapshotDescriptionID\}/)
-	assert.match(source, /`\$\{gateSnapshotDescriptionID\} \$\{gateDescriptionID\}`/)
+	assert.match(source, /\[gateShown && gateSnapshotDescriptionID, gateShown && gateDescriptionID,/)
+	assert.match(source, /\.filter\(Boolean\)\.join\(" "\) \|\| undefined/)
 	assert.match(source, /id=\{attentionDescriptionID\}/)
 	assert.match(source, /本輪：\{gateSnapshotText\(/)
   assert.match(source, /setOpenedItem\(item\)/)
@@ -141,15 +142,18 @@ test("Plan items require an explicit accessible switch before the Board shows th
   assert.match(styles, /\.work-plan-toggle/)
 })
 
-test("Plan cards are visually distinct and offer a guarded executable conversion", () => {
+test("Plan, Epic, and Feature cards offer an explicit conversion before implementation", () => {
   assert.match(source, /work-plan-card/)
   assert.match(source, /PLAN · 未排入執行/)
-  assert.match(source, />轉成可執行項目<\/button>/)
+  assert.match(source, /item\.phase === "created" \|\| item\.phase === "assigned"/)
+  assert.match(source, /plan \? "轉成可執行項目" : "轉成 Plan"/)
+  assert.match(source, /className="work-convert-cta"/)
   assert.match(source, /<fieldset className="work-plan-kind-field"><legend>轉換後的項目類型<\/legend>/)
   assert.match(source, /type="radio" name=\{`plan-conversion-/)
-  assert.match(source, /convertWorkV2\(item, conversionKind\)/)
+  assert.match(source, /convertWorkV2\(item, plan \? conversionKind : "plan"\)/)
   assert.match(styles, /\.work-plan-card/)
   assert.match(styles, /\.work-plan-convert/)
+  assert.match(styles, /\.work-convert-cta/)
 })
 
 test("the Board distinguishes initial loading, paging, empty, stale, and error states", () => {
@@ -284,7 +288,7 @@ test("reference pictures use fetch-backed object URLs so Cloud can render their 
 test("every Board card exposes edit and guarded delete flows", () => {
   assert.match(source, /function EditWorkModal/)
   assert.match(source, /編輯看板項目/)
-  assert.match(source, /editWorkV2\(item, title, description, acceptance\)/)
+  assert.match(source, /editWorkV2\(item, title, description\)/)
   assert.match(source, /function DeleteWorkModal/)
   assert.match(source, /刪除看板項目？/)
   assert.match(source, /deleteWorkV2\(item\)/)
@@ -368,7 +372,6 @@ test("an Epic keeps its frame and label without spanning both desktop columns", 
   assert.match(styles, /\.work-cards \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
   assert.doesNotMatch(styles, /\.work-cards > \.work-epic-card \{[^}]*grid-column:/)
   assert.match(styles, /--work-epic: var\(--peer\)/)
-  assert.doesNotMatch(source, /kind === "epic"/)
 })
 
 test("an Epic shows its plan gate, its plan documents, and what assigning it means", () => {

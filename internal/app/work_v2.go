@@ -664,18 +664,16 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 	return out, mapWorkV2Error(err)
 }
 
-type ConvertPlanV2 struct {
+type ConvertKindV2 struct {
 	ExpectedVersion int64
 	Kind            work.Kind
 	Actor           string
 }
 
-// ConvertPlan turns future work into a piece that can be assigned. It is a
-// one-way, person-owned decision: changing any other kind in place would
-// rewrite what an active Session accepted, while a Plan has never entered the
-// execution lifecycle. The item's identity, content, attachments and history
-// stay intact so the decision remains traceable.
-func (w *WorkSystemV2) ConvertPlan(ctx context.Context, id string, c ConvertPlanV2, file WorkV2Filer) (WorkV2View, error) {
+// ConvertKind lets a person move work between planning and execution before
+// implementation starts. An assigned owner is released in the same transaction;
+// the item keeps its identity, content, attachments and history.
+func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKindV2, file WorkV2Filer) (WorkV2View, error) {
 	var out WorkV2View
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		prev, err := tx.Item(id)
@@ -686,22 +684,52 @@ func (w *WorkSystemV2) ConvertPlan(ctx context.Context, id string, c ConvertPlan
 			return store.ErrConflict
 		}
 		if prev.Phase.Terminal() {
-			return work.RefuseV2("item_terminal", "A completed or cancelled Plan cannot be converted.")
+			return work.RefuseV2("item_terminal", "A completed or cancelled item cannot be converted.")
 		}
-		if prev.Kind != work.KindPlan {
-			return work.RefuseV2("not_plan", "Only a Plan can be converted into executable work.")
+		if prev.Kind == work.KindPlan {
+			if !c.Kind.Executable() {
+				return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, or issue.")
+			}
+		} else if (prev.Kind != work.KindEpic && prev.Kind != work.KindFeature) || c.Kind != work.KindPlan {
+			return work.RefuseV2("conversion_kind_invalid", "Convert an epic or feature to a Plan, or a Plan to executable work.")
 		}
-		if !c.Kind.Executable() {
-			return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, or issue.")
+		if (prev.Phase != work.PhaseCreated && prev.Phase != work.PhaseAssigned) || prev.ParentID != "" {
+			return work.RefuseV2("item_not_convertible", "Only a top-level item that has not entered implementation can be converted.")
 		}
-		if prev.Phase != work.PhaseCreated || prev.OwnerSession != "" {
-			return work.RefuseV2("plan_not_convertible", "Only an unassigned Plan that has not entered execution can be converted.")
+		if prev.Phase == work.PhaseAssigned && prev.OwnerSession == "" {
+			return work.RefuseV2("item_not_convertible", "The assigned item has no current owner; refresh it before converting.")
+		}
+		if pending, err := tx.PendingAssignment(id); err != nil {
+			return err
+		} else if pending.ID != "" {
+			return work.RefuseV2("assignment_pending", "A new Session is still opening for this item; wait for that assignment to finish before converting.")
+		}
+		if prev.Kind == work.KindEpic {
+			if children, _, err := tx.Children(id); err != nil {
+				return err
+			} else if children != 0 {
+				return work.RefuseV2("epic_has_children", "An Epic with child items cannot become a Plan.")
+			}
 		}
 		next := prev
+		if prev.OwnerSession != "" {
+			a, err := tx.ActiveAssignment(id)
+			if err != nil {
+				return err
+			}
+			if a.ID == "" || a.SessionID != prev.OwnerSession {
+				return work.RefuseV2("assignment_changed", "The current assignment changed; refresh the item before converting.")
+			}
+			a.State, a.ReleasedAt, a.UpdatedAt = "released", w.now(), w.now()
+			if err := tx.UpdateAssignment(a); err != nil {
+				return err
+			}
+			next.OwnerSession, next.Phase, next.Condition, next.UserAction = "", work.PhaseCreated, "", ""
+		}
 		next.Kind = c.Kind
 		next.UpdatedAt = w.now()
 		if err := tx.PutItem(prev, next, "item.converted", c.Actor, payload(map[string]string{
-			"from": string(prev.Kind), "to": string(next.Kind),
+			"from": string(prev.Kind), "to": string(next.Kind), "previous_session": prev.OwnerSession,
 		})); err != nil {
 			return err
 		}

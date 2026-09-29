@@ -63,3 +63,41 @@ func TestAPlanConversionNamesInvalidTargets(t *testing.T) {
 		t.Fatalf("invalid target: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestAPersonConvertsAnAssignedFeatureIntoAnUnassignedPlan(t *testing.T) {
+	s, _, seed := workV2AssignmentServer(t, session.StateIdle)
+	feature, err := s.workV2().Create(context.Background(), app.NewWorkV2{
+		ProjectID: "project-1", ProjectPath: seed.Item.ProjectPath, Kind: work.KindFeature,
+		Title: "Future direction", Description: "Plan this before starting.", Actor: "local",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := s.workV2().Assign(context.Background(), feature.Item.ID, app.AssignWorkV2{
+		ExpectedVersion: feature.Item.Version, Mode: "existing_session", SessionID: "session-a",
+		TerminalID: "terminal-a", Actor: "local",
+	}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/v1/work/v2/items/" + feature.Item.ID + "/convert"
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodPost, path,
+		fmt.Sprintf(`{"expected_version":%d,"kind":"plan"}`, assigned.Item.Version), "convert-assigned-feature"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("convert: %d %s", rec.Code, rec.Body)
+	}
+	var answer struct {
+		Item workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Item.Kind != "plan" || answer.Item.Area != "planning" || answer.Item.OwnerSession != nil {
+		t.Fatalf("converted item = %+v", answer.Item)
+	}
+	full, err := s.workV2().Item(context.Background(), feature.Item.ID)
+	if err != nil || len(full.Assignments) != 1 || full.Assignments[0].State != "released" {
+		t.Fatalf("released assignment = %+v %v", full.Assignments, err)
+	}
+}
