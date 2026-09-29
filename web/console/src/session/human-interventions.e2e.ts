@@ -60,11 +60,15 @@ function fixture(): Server {
       return
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "process", id: SESSION, signature: "fixture" })
+    if (path === `/v1/sessions/${SESSION}/documents/project/demo.md`) {
+      res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" }); return res.end("# Demo document\n\nThe document opened directly.\n")
+    }
     if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, { ok: true, direct_todos: [], assigned_items: [], recent_items: [], truncated: false })
     if (path.startsWith("/v1/work/v2/human-interventions/")) {
       const note = { id: NOTE, source_conversation: "10000000-0000-4000-8000-000000000001", source_label: "Manager Session",
         target_conversation: CONVERSATION, target_session: SESSION, kind: "answer", title: "Choose a release day",
         summary: "The release is waiting for a date.", action: "Choose a date.", reason: "Only the person knows the preferred date.",
+        document_url: origin + `/#document=1&machine=this-mac&session=${SESSION}&scope=project&path=demo.md`,
         detail: ("The report is ready. Please review the proposed date and the linked evidence.\n").repeat(36), options: showOptions ? [
           { label: "Tuesday", draft: "Tuesday works for me." }, { label: "Wednesday", draft: "Wednesday works for me." }] : [],
         created_at: now, read_at: readAt, resolved_at: resolvedAt, version }
@@ -196,13 +200,15 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector(".human-intervention-card")`)
       assert.equal(await run(`document.querySelector(".session-todos").open`), false)
       assert.match(await run(`document.querySelector(".human-intervention-card").innerText`), /Manager Session/)
-      assert.match(await run(`document.querySelector(".human-intervention-drafts .human-intervention-explain").textContent`), /完整文字，不加特殊格式.*按「送出」才會傳送/)
-      assert.equal(await run(`document.querySelector(".human-intervention-option blockquote").textContent`), "Tuesday works for me.")
-      assert.equal(await run(`document.querySelector(".human-intervention-option blockquote").getBoundingClientRect().top < document.querySelector(".human-intervention-option button").getBoundingClientRect().top`), true)
-      assert.match(await run(`document.querySelector(".human-intervention-state .human-intervention-explain").textContent`), /看過.*紅點仍在.*移到已處理.*不會傳送訊息/)
-      assert.match(await run(`document.querySelector(".human-intervention-stage").textContent`), /未看過.*待處理/)
-      assert.equal(await run(`document.querySelector(".human-intervention-state").getBoundingClientRect().top < document.querySelector(".human-intervention-drafts").getBoundingClientRect().top`), true)
+      assert.equal(await run(`document.querySelectorAll(".human-intervention-option").length`), 2)
+      assert.equal(await run(`document.querySelector(".human-intervention-option").tagName`), "BUTTON")
+      assert.equal(await run(`document.querySelector(".human-intervention-option span").textContent`), "Tuesday works for me.")
+      assert.equal(await run(`document.querySelector(".human-intervention-option").getBoundingClientRect().height >= 48`), true)
+      assert.equal(await run(`!!document.querySelector(".human-intervention-explain, .human-intervention-read, .human-intervention-option-actions")`), false)
+      assert.equal(await run(`document.querySelector(".human-intervention-stage").textContent`), "待處理")
+      assert.equal(await run(`document.querySelector(".human-intervention-drafts").getBoundingClientRect().top < document.querySelector(".human-intervention-state").getBoundingClientRect().top`), true)
       assert.equal(await run(`!!document.querySelector(".human-interventions-panelbar button")`), true)
+      assert.equal(await run(`document.querySelector(".human-interventions-panelbar h2").textContent`), "需要你關注")
       const accessibility = await browser.send("Accessibility.getFullAXTree", {}, id)
       assert.ok(accessibility.nodes.some((node: any) => node.role?.value === "heading" && node.name?.value === "Choose a release day"))
       assert.ok(accessibility.nodes.some((node: any) => node.role?.value === "button" && node.name?.value === "需要你關注，1 筆未處理便條"))
@@ -216,7 +222,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.equal(await run(`document.activeElement?.classList.contains("human-interventions-head")`), true)
       await run(`document.querySelector(".human-interventions-head").click()`)
       await until(`!!document.querySelector(".human-intervention-card")`)
-      await run(`document.querySelector(".human-intervention-option-actions button").focus()`)
+      await run(`document.querySelector(".human-intervention-option").focus()`)
       await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 }, id)
       await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, id)
       await until(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded") === "false"`)
@@ -226,7 +232,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await run(`document.querySelector(".human-intervention-card details summary").click()`)
       assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
       await run(`document.getElementById("msg").textContent = "Existing draft."`)
-      await run(`document.querySelector(".human-intervention-option-actions button").click()`)
+      await run(`document.querySelector(".human-intervention-option").click()`)
       await until(`document.getElementById("msg").textContent.includes("Tuesday works for me.")`)
       assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
       assert.equal(await run(`!!document.querySelector(".human-interventions-backdrop")`), false)
@@ -235,13 +241,9 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await run(`document.dispatchEvent(new CustomEvent("clawdline:intervention-compose", { detail: { target: { machine: "another-machine", session: ${JSON.stringify(SESSION)}, conversation: ${JSON.stringify(CONVERSATION)} }, text: "WRONG MACHINE" } }))`)
       assert.doesNotMatch(await run(`document.getElementById("msg").textContent`), /WRONG MACHINE/)
       await run(`document.querySelector(".human-interventions-head").click()`)
-      await until(`!!document.querySelector(".human-intervention-read")`)
-      await run(`document.querySelector(".human-intervention-read").click()`)
-      await until(`document.querySelector(".human-intervention-card").innerText.includes("已看過")`)
-      assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true, "reading alone does not clear attention")
-      await until(`document.activeElement?.classList.contains("human-intervention-card")`)
-      assert.match(await run(`document.querySelector(".human-intervention-card").innerText`), /移到已處理/)
-      assert.match(await run(`document.querySelector(".human-intervention-stage").textContent`), /已看過.*待處理/)
+      await until(`!!document.querySelector(".human-intervention-resolve")`)
+      assert.equal(await run(`!!document.querySelector(".human-intervention-read, .human-intervention-read-state")`), false)
+      assert.equal(await run(`document.querySelector(".human-intervention-stage").textContent`), "待處理")
       await run(`fetch("/__fixture/fail-actions?on=1")`)
       await run(`document.querySelector(".human-intervention-resolve").click(); document.querySelector(".human-interventions-head").click()`)
       await until(`document.querySelector(".human-interventions-head").innerText.includes("操作失敗")`)
@@ -254,7 +256,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector("#bg-sheet .agents .one.child")`)
       await run(`document.querySelector("#bg-sheet .agents .one.child").click()`)
       await until(`!document.getElementById("msg")`)
-      await run(`document.querySelector(".human-intervention-option-actions button").click()`)
+      await run(`document.querySelector(".human-intervention-option").click()`)
       await until(`!!document.getElementById("msg") && document.getElementById("msg").textContent.includes("Tuesday works for me.")`)
       assert.equal(await run(`document.activeElement?.id`), "msg")
       assert.match(await run(`document.getElementById("msg").textContent`), /Existing draft/)
@@ -262,7 +264,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector(".human-intervention-resolve")`)
       await run(`fetch("/__fixture/fail-reads?on=1")`)
       await run(`document.querySelector(".human-intervention-resolve").click()`)
-      await until(`!!document.querySelector(".human-interventions-error") && document.querySelector(".human-intervention-option-actions button").disabled`)
+      await until(`!!document.querySelector(".human-interventions-error") && document.querySelector(".human-intervention-option").disabled`)
       assert.equal(await run(`document.querySelector(".human-intervention-resolve").disabled`), true)
       await run(`fetch("/__fixture/fail-reads?on=0"); document.querySelector(".human-interventions-error button").click()`)
       await until(`!document.querySelector(".human-interventions-error") && !document.querySelector(".human-interventions-dot")`)
@@ -287,12 +289,61 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await browser.send("Page.reload", {}, id); await browser.loaded(id, noOptionsLoad)
       await until(`!!document.querySelector(".human-interventions-dot")`)
       await run(`document.querySelector(".human-interventions-head").click()`)
-      await until(`!!document.querySelector(".human-intervention-option blockquote")`)
-      assert.equal(await run(`document.querySelector(".human-intervention-option blockquote").textContent`), "Choose a date.")
-      await run(`document.querySelector(".human-intervention-option-actions button").click()`)
+      await until(`!!document.querySelector(".human-intervention-option")`)
+      assert.equal(await run(`document.querySelector(".human-intervention-option span").textContent`), "Choose a date.")
+      await run(`document.querySelector(".human-intervention-option").click()`)
       await until(`document.getElementById("msg").textContent.includes("Choose a date.")`)
       assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
       assert.equal(sendRequests, 0)
     } finally { await browser.send("Target.closeTarget", { targetId }) }
+  })
+  test(name + ": a document link opens its text directly", async () => {
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string, sessionId = id) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    let documentTarget = ""
+    try {
+      await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: name === "phone" }, id)
+      const mark = browser.loadCount
+      await browser.send("Page.navigate", { url: origin + "/#session=" + SESSION }, id)
+      await browser.loaded(id, mark)
+      const link = origin + `/#document=1&machine=this-mac&session=${SESSION}&scope=project&path=demo.md`
+      const deadline = Date.now() + 8000
+      while (!(await run(`!!document.querySelector(".human-interventions-dot")`))) {
+        if (Date.now() > deadline) assert.fail("the note did not appear")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      await run(`document.querySelector(".human-interventions-head").click()`)
+      assert.equal(await run(`document.querySelector(".human-intervention-document").textContent`), "在新分頁開啟文件")
+      assert.equal(await run(`document.querySelector(".human-intervention-document").target`), "_blank")
+      const point = await run(`(() => { const el = document.querySelector(".human-intervention-document"); el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
+      await browser.send("Target.activateTarget", { targetId })
+      await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 }, id)
+      await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 }, id)
+      while (!documentTarget) {
+        const targets = await browser.send("Target.getTargets")
+        documentTarget = targets.targetInfos.find((info: { targetId: string; url: string }) => info.targetId !== targetId && info.url === link)?.targetId ?? ""
+        if (Date.now() > deadline) assert.fail("clicking the note did not open a document tab: " + JSON.stringify(targets.targetInfos.map((info: { url: string }) => info.url)))
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      const { sessionId: docID } = await browser.send("Target.attachToTarget", { targetId: documentTarget, flatten: true })
+      await browser.send("Runtime.enable", {}, docID)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: name === "phone" }, docID)
+      while (!(await run(`document.querySelector("#document-body")?.textContent?.includes("The document opened directly.")`, docID))) {
+        if (Date.now() > deadline) assert.fail("document link did not open: " + JSON.stringify(await run(`({ page: document.documentElement.getAttribute("data-page"), hash: location.hash, hidden: document.getElementById("documents-page")?.hidden, status: document.getElementById("documents-status")?.textContent, body: document.getElementById("document-body")?.textContent?.slice(0, 120) })`, docID)))
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      assert.equal(await run(`document.documentElement.getAttribute("data-page")`, docID), "documents")
+      assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`, docID), true, JSON.stringify(await run(`({ width: document.documentElement.scrollWidth, bad: [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > ${width}).slice(0, 10).map(el => ({ tag: el.tagName, id: el.id, className: el.className, right: el.getBoundingClientRect().right })) })`, docID)))
+      assert.equal(await run(`!!document.querySelector(".human-intervention-card")`), true, "the original note stays open")
+    } finally {
+      if (documentTarget) await browser.send("Target.closeTarget", { targetId: documentTarget })
+      await browser.send("Target.closeTarget", { targetId })
+    }
   })
 }

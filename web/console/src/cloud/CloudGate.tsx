@@ -38,6 +38,7 @@ import {
 } from "./pair-pending.js"
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
+import { machineForAddress } from "./document-target.js"
 import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
@@ -770,7 +771,7 @@ export function CloudGate({ declared }: { declared: string }) {
   // A machine this tab chose before, once it is listed again.
   useEffect(() => {
     if (screen.at !== "machines" || !machines || !who) return
-    const id = remembered()
+    const id = machineForAddress(location.hash, remembered())
     const again = machines.find((m) => m.id === id && m.selectable)
     if (again) choose(again)
   }, [screen, machines, who, choose, remembered])

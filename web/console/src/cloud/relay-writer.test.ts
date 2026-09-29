@@ -134,6 +134,8 @@ class FakeClient implements CloudWriteClient {
     return this.act("_machineRequest", args,
       word === "schedule-run" ? { ok: true, task_id: "t-1" } :
       word === "intents" ? { draft: { place_id: "p1", kind: "work", title: "Voice draft" }, ms: 7 } :
+      word === "documents" ? { documents: [{ scope: "project", path: "demo.md", bytes: 7, modified: 1 }] } :
+      word === "document" ? { scope: "project", path: "demo.md", media_type: "text/markdown; charset=utf-8", byte_count: 7, data: "IyBEZW1vCg==" } :
       word === "work.v2.image" ? { id: body.id, media_type: "image/png", data: "iVBORw==" } : { ok: true })
   }
   _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
@@ -200,6 +202,8 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/sessions/s1/close", "end"],
     ["POST", "/v1/sessions/s1/archive", "archive-session"],
     ["GET", "/v1/sessions/archived", "archived-sessions"],
+    ["GET", "/v1/sessions/s1/documents", "documents"],
+    ["GET", "/v1/sessions/s1/documents/project/demo.md", "document"],
     ["POST", "/v1/sessions/archived/restore", "restore-archived"],
     ["POST", "/v1/sessions/s1/focus", "focus"],
     ["POST", "/v1/places/p1/start", "start"],
@@ -274,6 +278,26 @@ test("each console route is the Cloud word the machine lists, and nothing else",
   assert.equal(writeRoute("POST", "/v1/work/v2/items/w1/gate-purge")?.word, "work.v2.gate-purge")
   assert.equal(writeRoute("DELETE", "/v1/work/v2/items/w1/images/img-1")?.word, "work.v2.image-delete")
   assert.equal(writeRoute("POST", "/v1/work/v2/session-todos/%251/t1/images")?.word, "work.v2.todo-image-create")
+})
+
+test("a Cloud document link reads bytes on its named machine and rejects another machine", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const list = await reader.fetch("/v1/sessions/s1/documents?machine=mac-a")
+  assert.equal(list.status, 200)
+  assert.deepEqual(await json(list), { documents: [{ scope: "project", path: "demo.md", bytes: 7, modified: 1 }] })
+  const document = await reader.fetch("/v1/sessions/s1/documents/project/demo.md?machine=mac-a")
+  assert.equal(document.status, 200)
+  assert.equal(document.headers.get("content-type"), "text/markdown; charset=utf-8")
+  assert.equal(await document.text(), "# Demo\n")
+  assert.deepEqual(client.calls.filter((call) => call[0] === "_machineRequest").map((call) => call.slice(1, 5)), [
+    ["mac-a", "documents", { session: "s1" }, "read"],
+    ["mac-a", "document", { session: "s1", scope: "project", task: "", path: "demo.md" }, "read"],
+  ])
+  const calls = client.calls.length
+  const wrong = await reader.fetch("/v1/sessions/s1/documents/project/demo.md?machine=mac-b")
+  assert.equal(wrong.status, 400)
+  assert.equal(client.calls.length, calls, "a mismatched locator never crosses the relay")
 })
 
 test("a send goes as the machine's `send` under the row's own identity, and answers as the local route does", async () => {

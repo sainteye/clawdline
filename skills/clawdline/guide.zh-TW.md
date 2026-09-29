@@ -50,6 +50,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
+| `clawdline note create --target <terminal> --body-file <JSON>` | 在 Session 上方留下需要人處理的便條（§9a） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
@@ -585,6 +586,22 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 - `409 not_subscribed`：沒有任何裝置訂閱推播。
 - `429 rate_limited`：整台機器每小時 30 則，跟所有 child 的通知共用。
 - `502 push_failed`：push service 拒絕了；`sent` 和 `failed` 在錯誤裡。
+
+## 9a. 留下需要人處理的便條
+
+長時間工作的 Agent 有一件具體的事需要使用者閱讀、執行或決定，而一般對話訊息容易被後續內容淹沒時，使用便條。便條留在目標 Session 預設收合的「關注」區，未處理時顯示紅點；Agent 可以繼續做不依賴該答覆的工作，使用者可在告一段落時回來看。便條不是進度日誌、Agent 私人提醒、推播通知，也不是看板決策的授權。同一件事不要重複貼便條。
+
+把便條內容寫成 JSON 檔。`--target` 是通訊錄中的存活目標 Session **terminal id**（`clawdline guide zh-TW send`）；`--from` 預設由環境取得本存活 Root 的 conversation id。目標可以是另一個 Session。CLI 自行讀取機器憑證並補上來源、目標身分，不會把憑證放進命令列；成功時印出持久便條 id。結果不確定而需重試時，沿用印出的 `--key`。
+
+```json
+{"kind":"answer","title":"請選擇日期","summary":"發布日期需要你決定。","action":"方便時請選一個日期。","reason":"只有你能決定日期。","options":[{"label":"週二","draft":"週二可以。"},{"label":"週三","draft":"週三可以。"}]}
+```
+
+```sh
+clawdline note create --target <terminal-id> --body-file note.json
+```
+
+`kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是要放進對話框的完整文字。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。點選選項只填入使用者的對話草稿，仍由使用者送出。只有使用者會把便條移到已處理。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
 
 ## 10. 看板
 

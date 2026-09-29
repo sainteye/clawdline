@@ -112,10 +112,39 @@ func Digest(v any) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func builtinDefinitionDigest(d Definition) string {
+	if len(d.Skills) == 0 {
+		return Digest(struct {
+			Body   string
+			Source string
+			Teams  []Reference
+		}{d.Body, d.Source, d.Teams})
+	}
+	return Digest(struct {
+		Body   string
+		Source string
+		Teams  []Reference
+		Skills []SkillReference
+	}{d.Body, d.Source, d.Teams, d.Skills})
+}
+
+// PreSkillBuiltinVersion preserves the definition that existing clients may
+// have cached before reviewed skills were linked to their built-in role.
+func PreSkillBuiltinVersion(d Definition) Definition {
+	d.Skills = []SkillReference{}
+	d.Digest = builtinDefinitionDigest(d)
+	d.Version = "sha256:" + d.Digest
+	return d
+}
+
 // Builtins converts the closed launch catalog into immutable full definitions.
-// Its zero-skill slices are intentional: no provider skill has been adopted.
+// Reviewed role skills are bundled locally and never fetched at launch time.
 func Builtins() Catalog {
 	out := Catalog{Definitions: []Definition{}, Teams: []Team{}, Skills: []Skill{}}
+	skillByPersona := builtinSkills()
+	for _, spec := range builtinSkillSpecs {
+		out.Skills = append(out.Skills, skillByPersona[spec.Persona])
+	}
 	for _, name := range persona.Teams {
 		cells := make([][]*string, 7)
 		for row := range cells {
@@ -133,19 +162,19 @@ func Builtins() Catalog {
 		for _, team := range p.Teams {
 			teams = append(teams, Reference{ID: "clawdline.team." + team, Version: "1"})
 		}
+		refs := []SkillReference{}
+		if skill, ok := skillByPersona[p.ID]; ok {
+			refs = append(refs, SkillReference{ID: skill.SkillID, Version: skill.Version, Enabled: true})
+		}
 		d := Definition{
 			DefinitionID: BuiltinID(p.ID), ShortID: p.ID,
 			Source: p.Source, License: persona.UpstreamLicense,
 			Name:    Names{En: p.Name.En, ZhHant: p.Name.ZhHant},
 			Summary: Names{En: p.Summary.En, ZhHant: p.Summary.ZhHant},
 			Body:    p.Text(), Icon: Icon{Accent: p.Icon.Accent, Cells: p.Icon.Cells},
-			Teams: teams, Skills: []SkillReference{}, Builtin: true,
+			Teams: teams, Skills: refs, Builtin: true,
 		}
-		d.Digest = Digest(struct {
-			Body   string
-			Source string
-			Teams  []Reference
-		}{d.Body, d.Source, d.Teams})
+		d.Digest = builtinDefinitionDigest(d)
 		d.Version = "sha256:" + d.Digest
 		out.Definitions = append(out.Definitions, d)
 		for _, team := range p.Teams {

@@ -43,6 +43,8 @@ import {
 import { bindDocumentsPage as bindDocumentsPageOriginal } from "./js/view/documents.js"
 import { nextWord } from "../next-strings.js"
 
+const hosted = !!import.meta.env.VITE_HOSTED_CONSOLE
+
 /** The identity a listing is asked for: one Mac, one Session. */
 export interface DocumentIdentity {
   machine: string
@@ -129,7 +131,7 @@ export function documentIdentityForSession(rows: unknown[], id: string): Documen
   return (documentIdentityForSessionOriginal as (r: unknown[], i: string, k: string) => DocumentIdentity)(
     rows,
     id,
-    "live",
+    hosted ? "cloud" : "live",
   )
 }
 
@@ -163,22 +165,40 @@ function wrongMachine(): Error & { code?: string } {
  */
 async function list(value: unknown): Promise<{ documents: DocumentLocator[] }> {
   const identity = (normalizeDocumentIdentity as (v: unknown) => DocumentIdentity)(value)
-  if (identity.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
+  if (!hosted && identity.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
+  if (hosted && identity.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()
   sayCut(null)
   const headers: Headers[] = []
   const body = await jsonFetch(
-    "/v1/sessions/" + encodeURIComponent(identity.session) + "/documents",
+    "/v1/sessions/" + encodeURIComponent(identity.session) + "/documents" + (hosted ? "?machine=" + encodeURIComponent(identity.machine) : ""),
     undefined,
     (response) => {
       headers.push(response.headers)
     },
   )
-  const listing = (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentLocator[] })(
-    body,
-    identity,
-  )
+  const listing = hosted ? cloudDocumentListing(body, identity)
+    : (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentLocator[] })(body, identity)
   sayCut(headers[0]?.get("X-Clawdline-Truncated") ?? null)
   return listing
+}
+
+function cloudDocumentListing(body: unknown, identity: DocumentIdentity): { documents: DocumentLocator[] } {
+  if (!body || typeof body !== "object" || Array.isArray(body) ||
+    Object.keys(body).length !== 1 || !Array.isArray((body as { documents?: unknown }).documents)) {
+    throw typed("The document listing is invalid.", "bad_payload")
+  }
+  return { documents: (body as { documents: unknown[] }).documents.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw typed("The document listing is invalid.", "bad_payload")
+    const row = raw as Record<string, unknown>
+    const locator = (normalizeDocumentLocator as (v: unknown) => DocumentLocator)({
+      machine: identity.machine, session: identity.session, scope: row.scope, path: row.path,
+      ...(row.scope === "task" ? { task: row.task } : {}),
+    })
+    if (!Number.isSafeInteger(row.bytes) || Number(row.bytes) < 0 || typeof row.modified !== "number" || !Number.isFinite(row.modified)) {
+      throw typed("The document listing is invalid.", "bad_payload")
+    }
+    return { ...locator, bytes: row.bytes, modified: row.modified, ...(typeof row.title === "string" ? { title: row.title } : {}) }
+  }) }
 }
 
 /** The note under the rows, made once beside them. */
@@ -210,10 +230,12 @@ export function cutWords(header: string): string {
 /** `net/live.js`'s `document(value)`: bytes, and the same validator the Cloud answer gets. */
 async function read(value: unknown): Promise<unknown> {
   const locator = (normalizeDocumentLocator as (v: unknown) => DocumentLocator)(value)
-  if (locator.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
+  if (!hosted && locator.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
+  if (hosted && locator.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()
   let path = "/v1/sessions/" + encodeURIComponent(locator.session) + "/documents/" + locator.scope + "/"
   if (locator.scope === "task") path += encodeURIComponent(String(locator.task)) + "/"
   path += locator.path.split("/").map(encodeURIComponent).join("/")
+  if (hosted) path += "?machine=" + encodeURIComponent(locator.machine)
   let response: Response
   try {
     response = await fetch(path, { cache: "no-store" })
@@ -316,9 +338,7 @@ export function bindDocuments(doc: Document, navigate: (page: string) => void): 
     language: () => doc.documentElement.lang || navigator.language || "en",
     list,
     read,
-    // The local transport has no canonical Cloud origin, so no document here
-    // can be shared across devices and both controls say so.
-    shareOrigin: () => null,
+    shareOrigin: () => hosted ? "https://app.clawdline.com" : null,
     navigator: () => navigator,
     navigate: (name: string) => navigate(name),
   })
