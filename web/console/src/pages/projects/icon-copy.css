@@ -16,6 +16,11 @@
 .project-setup-open { min-height: 40px; flex: none; }
 .project-setup-eyebrow { margin: 0; color: var(--accent); font: 600 11px/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .project-setup-dialog { box-sizing: border-box; width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: hidden; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 80px #0008; }
+.project-setup-dialog[data-view="files"] { width: min(1000px, calc(100vw - 32px)); }
+.project-setup-views { display: flex; gap: 5px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.project-setup-views button { min-height: 40px; padding: 6px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
+.project-setup-views button[aria-pressed="true"] { background: var(--card-hi); box-shadow: inset 0 0 0 1px var(--accent-ed); }
+.project-setup-views button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .project-setup-dialog:focus { outline: none; }
 .project-setup-dialog::backdrop { background: #0009; }
 .project-setup-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--line); background: var(--bg); }

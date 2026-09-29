@@ -566,6 +566,17 @@ export class RelayReader {
           projectFile.file ? "project-file-read" : "project-file-list",
           { project: place.id, ...(projectFile.file ? { file: projectFile.file } : {}) })
       }
+      const projectTree = projectTreeRoute(path)
+      if (projectTree) {
+        const query = this.only(url, path, projectTree.file ? "path" : "directory")
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(projectTree.project)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path,
+          projectTree.file ? "project-tree-read" : "project-tree-list",
+          { project: place.id, ...(projectTree.file ? { path: query.path ?? "" } : { directory: query.directory ?? "" }) })
+      }
       // The one carried read whose parameter is a path segment rather than a
       // query field, so it cannot be a case below.
       const project = worktreeLifecycleProject(path)
@@ -1558,6 +1569,16 @@ function projectFileRoute(path: string): { project: string; file?: string } | nu
     const file = parts[5] ? decodeURIComponent(parts[5]) : undefined
     if (!project || parts.length === 6 && !/^[0-9a-f]{32}$/.test(file ?? "")) return null
     return { project, ...(file ? { file } : {}) }
+  } catch { return null }
+}
+
+function projectTreeRoute(path: string): { project: string; file: boolean } | null {
+  const parts = path.split("/")
+  if ((parts.length !== 5 && parts.length !== 6) || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "tree" ||
+    parts.length === 6 && parts[5] !== "file") return null
+  try {
+    const project = decodeURIComponent(parts[3])
+    return project ? { project, file: parts.length === 6 } : null
   } catch { return null }
 }
 

@@ -402,6 +402,36 @@ func decodeProjectFileRead(b body) (plan, bool) {
 	return p, true
 }
 
+func decodeProjectTreeList(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project", "directory") {
+		return plan{}, false
+	}
+	p, ok := machinePlan(b)
+	project, projectOK := b.nonEmpty("project")
+	directory, pathOK := b.str("directory")
+	_, valid := projectfiles.TreePath(directory, false)
+	if !ok || !projectOK || len(project) > 200 || !pathOK || valid != nil {
+		return plan{}, false
+	}
+	p.project, p.path = project, directory
+	return p, true
+}
+
+func decodeProjectTreeRead(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project", "path") {
+		return plan{}, false
+	}
+	p, ok := machinePlan(b)
+	project, projectOK := b.nonEmpty("project")
+	path, pathOK := b.nonEmpty("path")
+	_, valid := projectfiles.TreePath(path, true)
+	if !ok || !projectOK || len(project) > 200 || !pathOK || valid != nil {
+		return plan{}, false
+	}
+	p.project, p.path = project, path
+	return p, true
+}
+
 func decodeProjectFileSave(b body) (plan, bool) {
 	if !b.has("type", "session", "request", "project", "file", "item") {
 		return plan{}, false
@@ -1598,6 +1628,18 @@ func init() {
 			decode: decodeProjectFileRead,
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/files/" + segment(p.id)}
+			}},
+		op{name: "project-tree-list", read: true,
+			decode: decodeProjectTreeList,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/tree",
+					Query: map[string]string{"directory": p.path}}
+			}},
+		op{name: "project-tree-read", read: true,
+			decode: decodeProjectTreeRead,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/tree/file",
+					Query: map[string]string{"path": p.path}}
 			}},
 		op{name: "project-file-save",
 			decode: decodeProjectFileSave,

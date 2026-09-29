@@ -674,8 +674,10 @@ eviction; `projectsync.clones` runs at most two clones at once and refuses a thi
 ### Project instruction and skill files
 
 `projectfiles.list` stops an inventory at 128 file rows and marks it truncated.
-`projectfiles.scan_entries` reads at most 1,024 names from each skill directory and marks any
-remainder truncated. `projectfiles.file_bytes` rejects a text read or save above 128 KiB;
+`projectfiles.scan_entries` reads at most 1,024 names from each skill or Project tree directory
+and marks any remainder truncated. `projectfiles.tree_path_bytes` refuses a tree request path
+above 4,096 bytes, and `projectfiles.tree_depth` refuses one deeper than 64 components.
+`projectfiles.file_bytes` rejects a text read or save above 128 KiB;
 `projectfiles.write_bytes` rejects a save request body above 256 KiB. These are per-request or
 per-directory bounds, so diagnostics reports no retained buffer. See
 [project-files.md](project-files.md).
