@@ -103,8 +103,8 @@
 .squad-source-list { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
 .squad-source-list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .squad-source-list-head button { min-height: 40px; }
-.squad-source-options { display: grid; gap: 5px; max-height: min(34dvh, 270px); overflow: auto; }
-.squad-source-option { display: grid; gap: 3px; width: 100%; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+.squad-source-options { display: grid; grid-auto-rows: max-content; align-content: start; gap: 5px; max-height: min(34dvh, 270px); overflow: auto; }
+.squad-source-option { display: grid; gap: 3px; min-width: 0; width: 100%; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
 .squad-source-option[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-in); }
 .squad-source-option span, .squad-source-option small { overflow-wrap: anywhere; }
 .squad-skill-dialog .squad-actions { position: sticky; bottom: -20px; z-index: 1; padding: 12px 0 0; border-top: 1px solid var(--line); background: var(--card); }
