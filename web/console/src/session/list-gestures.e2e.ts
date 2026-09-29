@@ -1204,7 +1204,7 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
       assert.equal(shown.elbow, "solid")
       assert.equal(shown.trunkWidth, "1px")
       assert.equal(shown.elbowWidth, "1px")
-      assert.equal(shown.opacity, "0.65")
+      assert.equal(shown.opacity, "0.55")
       assert.equal(shown.overflow, "visible", "the connector is not clipped at the card edge")
       await tab.shot("epic-tree")
     } finally {

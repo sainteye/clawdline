@@ -23,7 +23,7 @@
   font-size: 0;
   pointer-events: none;
   color: var(--faint);
-  opacity: 0.65;
+  opacity: 0.55;
 }
 .row[data-depth] > .kid::before,
 .row[data-depth] > .kid::after {
@@ -55,6 +55,6 @@
   top: -9px;
   bottom: -9px;
   border-left: 1px solid var(--faint);
-  opacity: 0.65;
+  opacity: 0.55;
   pointer-events: none;
 }
