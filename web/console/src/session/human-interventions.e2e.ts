@@ -18,6 +18,8 @@ const NOTE = "10000000-0000-4000-8000-000000000032"
 const now = Math.floor(Date.now() / 1000)
 let sendRequests = 0
 let failReads = false
+let failActions = false
+let readDelay = 0
 let noteCount = 1
 const row = {
   id: SESSION, label: "Delivery Session", backend: "owned", state: "idle", work_state: "ready",
@@ -44,9 +46,11 @@ function fixture(): Server {
   let version = 1
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; noteCount = 1; sendRequests = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; sendRequests = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/count") { noteCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")) || 1; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-reads") { failReads = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/fail-actions") { failActions = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/read-delay") { readDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
@@ -62,11 +66,16 @@ function fixture(): Server {
         detail: ("The report is ready. Please review the proposed date and the linked evidence.\n").repeat(36), options: [
           { label: "Tuesday", draft: "Tuesday works for me." }, { label: "Wednesday", draft: "Wednesday works for me." }],
         created_at: now, read_at: readAt, resolved_at: resolvedAt, version }
-      if (req.method === "GET") return failReads ? json(res, 503, { error: "read_failed" }) : json(res, 200, { ok: true, rows: Array.from({ length: noteCount }, (_, index) => ({ ...note, id: `10000000-0000-4000-8000-${String(32 + index).padStart(12, "0")}` })), pruned_resolved: 0 })
+      if (req.method === "GET") {
+        const answer = () => failReads ? json(res, 503, { error: "read_failed" }) : json(res, 200, { ok: true, rows: Array.from({ length: noteCount }, (_, index) => ({ ...note, id: `10000000-0000-4000-8000-${String(32 + index).padStart(12, "0")}` })), pruned_resolved: 0 })
+        if (readDelay) setTimeout(answer, readDelay); else answer()
+        return
+      }
       if (req.method === "POST") {
         const chunks: Buffer[] = []
         req.on("data", (c: Buffer) => chunks.push(c))
         req.on("end", () => {
+          if (failActions) { setTimeout(() => json(res, 503, { error: "action_failed" }), 200); return }
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8"))
           if (body.expected_version !== version) return json(res, 409, { error: "version_conflict" })
           if (path.endsWith("/read")) readAt = now
@@ -161,13 +170,35 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
     }
     try {
       await fetch(origin + "/__fixture/reset")
+      await fetch(origin + "/__fixture/read-delay?ms=1200")
       await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
       await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: name === "phone" }, id)
       const mark = browser.loadCount; await browser.send("Page.navigate", { url: origin + "/#session=" + SESSION }, id); await browser.loaded(id, mark)
+      await until(`!!document.querySelector(".human-interventions-head")`)
+      assert.match(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /載入中/)
+      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /0 筆/)
+      await until(`!!document.querySelector(".human-interventions-dot") && !!document.querySelector(".session-todos-empty")`)
+      await fetch(origin + "/__fixture/read-delay?ms=0")
+      assert.match(await run(`document.querySelector(".human-interventions-live").textContent`), /1 筆未處理/)
+      assert.equal(await run(`document.querySelector(".session-todos").open`), false)
+      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
+      assert.equal(await run(`!!document.querySelector(".human-intervention-card")`), false)
+      assert.equal(await run(`document.querySelector(".session-todos > summary").contains(document.querySelector(".human-interventions-head"))`), true)
+      if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, name + "-collapsed.png"), Buffer.from(data, "base64")) }
+      await browser.send("Target.activateTarget", { targetId })
+      await run(`document.querySelector(".human-interventions-head").focus()`)
+      assert.equal(await run(`document.activeElement?.classList.contains("human-interventions-head")`), true)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
       await until(`!!document.querySelector(".human-intervention-card")`)
+      assert.equal(await run(`document.querySelector(".session-todos").open`), false)
       assert.match(await run(`document.querySelector(".human-intervention-card").innerText`), /Manager Session/)
+      assert.match(await run(`document.querySelector(".human-intervention-options .human-intervention-explain").textContent`), /按「送出」才會傳送/)
+      assert.equal(await run(`document.querySelector(".human-intervention-options .human-intervention-explain").getBoundingClientRect().top < document.querySelector(".human-intervention-option button").getBoundingClientRect().top`), true)
+      assert.equal(await run(`document.querySelector(".human-intervention-actions").previousElementSibling.textContent.includes("不等於回覆或核准")`), true)
       const accessibility = await browser.send("Accessibility.getFullAXTree", {}, id)
       assert.ok(accessibility.nodes.some((node: any) => node.role?.value === "heading" && node.name?.value === "Choose a release day"))
+      assert.ok(accessibility.nodes.some((node: any) => node.role?.value === "button" && node.name?.value === "需要你關注，1 筆未處理便條"))
       assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
       if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, name + "-note.png"), Buffer.from(data, "base64")) }
       await run(`document.querySelector(".human-intervention-card details summary").click()`)
@@ -180,8 +211,17 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.doesNotMatch(await run(`document.getElementById("msg").textContent`), /WRONG MACHINE/)
       await run(`document.querySelector(".human-intervention-actions button:nth-child(1)").click()`)
       await until(`document.querySelector(".human-intervention-card").innerText.includes("已閱讀")`)
+      assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true, "reading alone does not clear attention")
       await until(`document.activeElement?.classList.contains("human-intervention-card")`)
       assert.match(await run(`document.querySelector(".human-intervention-card").innerText`), /標記已處理/)
+      await run(`fetch("/__fixture/fail-actions?on=1")`)
+      await run(`document.querySelector(".human-intervention-actions button:last-child").click(); document.querySelector(".human-interventions-head").click()`)
+      await until(`document.querySelector(".human-interventions-head").innerText.includes("操作失敗")`)
+      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
+      assert.match(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /操作失敗/)
+      assert.equal(await run(`!!document.querySelector(".human-interventions-live[role=alert]")`), true)
+      await run(`fetch("/__fixture/fail-actions?on=0"); document.querySelector(".human-interventions-head").click()`)
+      await until(`!!document.querySelector(".human-intervention-card")`)
       await run(`document.getElementById("bg-strip-line").click()`)
       await until(`!!document.querySelector("#bg-sheet .agents .one.child")`)
       await run(`document.querySelector("#bg-sheet .agents .one.child").click()`)
@@ -195,13 +235,18 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector(".human-interventions-error") && document.querySelector(".human-intervention-option button").disabled`)
       assert.equal(await run(`document.querySelector(".human-intervention-actions button").disabled`), true)
       await run(`fetch("/__fixture/fail-reads?on=0"); document.querySelector(".human-interventions-error button").click()`)
-      await until(`!document.querySelector(".human-interventions-error") && !document.querySelector(".human-intervention-option button").disabled`)
+      await until(`!document.querySelector(".human-interventions-error") && !document.querySelector(".human-interventions-dot")`)
+      assert.equal(await run(`!!document.querySelector(".human-interventions-recent")`), true)
+      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "true")
       assert.equal(await run(`document.querySelectorAll("#tx .entry").length`), 0)
       assert.equal(sendRequests, 0, "choosing a suggested reply must not send it")
       await fetch(origin + "/__fixture/reset")
       await fetch(origin + "/__fixture/count?value=8")
       const nextLoad = browser.loadCount
       await browser.send("Page.reload", {}, id); await browser.loaded(id, nextLoad)
+      await until(`!!document.querySelector(".human-interventions-dot")`)
+      assert.equal(await run(`!!document.querySelector(".human-intervention-card")`), false)
+      await run(`document.querySelector(".human-interventions-head").click()`)
       await until(`document.querySelectorAll(".human-intervention-card").length === 8`)
       assert.equal(await run(`document.querySelector(".human-interventions-body").scrollHeight > document.querySelector(".human-interventions-body").clientHeight`), true)
       assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
