@@ -234,6 +234,19 @@
 .work-card-controls .work-icon { width: 13px; height: 13px; }
 .work-card-controls button:hover { background: var(--accent-in); color: var(--ink); }
 .work-card-controls button.danger:hover { color: var(--warn); }
+.work-card-more-actions {
+    display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px;
+    padding: 4px 0 10px;
+}
+.work-card-more-actions button {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px;
+    background: var(--bg); color: var(--dim); font: 11px/1.3 var(--mono);
+}
+.work-card-more-actions .work-icon { width: 13px; height: 13px; }
+.work-card-more-actions button:hover { border-color: var(--accent-ed); color: var(--ink); }
+.work-card-more-actions button.danger:hover { border-color: var(--warn); color: var(--warn); }
+.work-card-more-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .work-reference-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
 .work-reference-image { position: relative; min-width: 0; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .work-reference-image a { display: block; aspect-ratio: 4 / 3; background: #000; cursor: zoom-in; }
@@ -334,8 +347,7 @@
 .work-actions .chip > .work-icon { width: 13px; height: 13px; }
 
 /* A Plan is deliberately future work: a dashed, quiet card keeps it visually
-   separate from executable cards, while the conversion panel makes the
-   one-way decision to schedule it explicit. */
+   separate from executable cards, while its scheduling action stays visible. */
 :root { --work-plan: var(--dim); --work-plan-ed: color-mix(in srgb, var(--dim) 55%, var(--line)); }
 .work-plan-card {
     border-color: var(--work-plan-ed); border-style: dashed;

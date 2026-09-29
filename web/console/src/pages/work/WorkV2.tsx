@@ -648,6 +648,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [deleting, setDeleting] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [moreActions, setMoreActions] = useState(false)
   const [conversionKind, setConversionKind] = useState<WorkV2ExecutableKind>("feature")
   const [reminded, setReminded] = useState(false)
   // Moving an owned item to another Session opens the same picker an
@@ -672,6 +673,27 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     (plan || item.kind === "epic" || item.kind === "feature")
   const cardClass = epic ? "work-card work-v2-card work-epic-card"
     : plan ? "work-card work-v2-card work-plan-card" : "work-card work-v2-card"
+  const conversionPanel = converting && convertible ? <section id={`work-convert-${item.id}`} className="work-plan-convert"
+    aria-label={plan ? "把 Plan 轉成可執行項目" : `把 ${KIND_META[item.kind].label} 轉成 Plan`}>
+    <div><strong>{plan ? "準備執行這份 Plan" : "移到規劃區"}</strong>
+      <p>{plan ? "轉換後會移到「待指派」" : "轉換後會移到「規劃區」"}；若已指派，會解除目前指派。標題、描述、圖片、步驟與歷史紀錄都會保留。</p></div>
+    {plan && <fieldset className="work-plan-kind-field"><legend>轉換後的項目類型</legend>
+      <div className="work-plan-kind-list">
+        {EXECUTABLE_KINDS.map((kind) => <label key={kind} className="work-plan-kind-option">
+          <input type="radio" name={`plan-conversion-${item.id}`} value={kind} checked={conversionKind === kind}
+            disabled={!!busy} onChange={() => setConversionKind(kind)} />
+          <span aria-hidden="true">{KIND_META[kind].icon}</span><b>{KIND_META[kind].label}</b>
+        </label>)}
+      </div>
+    </fieldset>}
+    <div className="work-actions">
+      <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `convert-${item.id}`}
+        onClick={() => { void run(`convert-${item.id}`, () => convertWorkV2(item, plan ? conversionKind : "plan")).then((ok) => { if (ok) setConverting(false) }) }}>
+        {busy === `convert-${item.id}` ? "轉換中…" : `確認轉成 ${plan ? KIND_META[conversionKind].label : "Plan"}`}</button>
+      <button className="chip" type="button" disabled={!!busy} onClick={() => setConverting(false)}>取消</button>
+    </div>
+    {failure && <p className="work-note" role="alert">轉換失敗：{failure}</p>}
+  </section> : null
   return <article className={cardClass} data-work-id={item.id}
     data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <div className="work-card-toolbar">
@@ -687,10 +709,17 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
         {!item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
         <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
-        {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
-          onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
+        {!item.closed_at && <button type="button" disabled={!!busy} aria-expanded={moreActions}
+          aria-controls={`work-more-${item.id}`} onClick={() => setMoreActions((shown) => !shown)}>更多</button>}
       </div>
     </div>
+    {moreActions && !item.closed_at && <div id={`work-more-${item.id}`} className="work-card-more-actions"
+      role="group" aria-label="更多項目操作">
+      {convertible && !plan && <button type="button" disabled={!!busy}
+        onClick={() => { clearFailure(); setMoreActions(false); setConverting(true) }}>轉成 Plan</button>}
+      <button className="danger" type="button" disabled={!!busy}
+        onClick={() => { clearFailure(); setMoreActions(false); setDeleting(true) }}><WorkIcon name="delete" /> 刪除項目</button>
+    </div>}
     {/* The person's override closes the item without the owning Session's
         evidence, so it asks once more, here on the card, before it does. */}
     {completing && !item.closed_at && <div className="work-actions" role="group" aria-label="確認標記完成">
@@ -709,35 +738,14 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     <EpicParentLine item={item} />
     <CreatedViaNote item={item} />
     <ClaimedViaNote item={item} />
+    {!plan && conversionPanel}
     <p>{item.description}</p>
-    {convertible && <div className="work-convert-entry">
+    {convertible && plan && <div className="work-convert-entry">
       <button className="work-convert-cta" type="button" disabled={!!busy} aria-expanded={converting}
         aria-controls={`work-convert-${item.id}`}
-        onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>
-        {plan ? "轉成可執行項目" : "轉成 Plan"}
-      </button>
+        onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>轉成可執行項目</button>
     </div>}
-    {converting && convertible && <section id={`work-convert-${item.id}`} className="work-plan-convert"
-      aria-label={plan ? "把 Plan 轉成可執行項目" : `把 ${KIND_META[item.kind].label} 轉成 Plan`}>
-      <div><strong>{plan ? "準備執行這份 Plan" : "移到規劃區"}</strong>
-        <p>{plan ? "轉換後會移到「待指派」" : "轉換後會移到「規劃區」"}；若已指派，會解除目前指派。標題、描述、圖片、步驟與歷史紀錄都會保留。</p></div>
-      {plan && <fieldset className="work-plan-kind-field"><legend>轉換後的項目類型</legend>
-        <div className="work-plan-kind-list">
-          {EXECUTABLE_KINDS.map((kind) => <label key={kind} className="work-plan-kind-option">
-            <input type="radio" name={`plan-conversion-${item.id}`} value={kind} checked={conversionKind === kind}
-              disabled={!!busy} onChange={() => setConversionKind(kind)} />
-            <span aria-hidden="true">{KIND_META[kind].icon}</span><b>{KIND_META[kind].label}</b>
-          </label>)}
-        </div>
-      </fieldset>}
-      <div className="work-actions">
-        <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `convert-${item.id}`}
-          onClick={() => { void run(`convert-${item.id}`, () => convertWorkV2(item, plan ? conversionKind : "plan")).then((ok) => { if (ok) setConverting(false) }) }}>
-          {busy === `convert-${item.id}` ? "轉換中…" : `確認轉成 ${plan ? KIND_META[conversionKind].label : "Plan"}`}</button>
-        <button className="chip" type="button" disabled={!!busy} onClick={() => setConverting(false)}>取消</button>
-      </div>
-      {failure && <p className="work-note" role="alert">轉換失敗：{failure}</p>}
-    </section>}
+    {plan && conversionPanel}
     {epicGateDetailShown(item) && <WorkGateDetail item={item} loading={detailLoading} error={detailError}
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
       run={run} retry={retryDetail} />}
