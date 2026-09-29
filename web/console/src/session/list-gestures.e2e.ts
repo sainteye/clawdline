@@ -57,6 +57,7 @@ type ReadingScenario =
   | "machine-pending"
   | "machine-bound"
   | "epic"
+  | "refresh"
 let readingScenario: ReadingScenario = "normal"
 
 type Row = Record<string, unknown>
@@ -214,7 +215,7 @@ function rows(): Row[] {
       }),
     ]
   }
-  return [
+  const current = [
     row(SAFE, "Alpha is finished", safeCloseability(), MOVED.safe),
     row(BLOCKED, "Bravo is still working", blockedCloseability(), 400, {
       state: "working",
@@ -225,6 +226,16 @@ function rows(): Row[] {
     row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown),
     row(SPARE, "Delta is finished too", safeCloseability(), spareMoved),
   ]
+  if (readingScenario !== "refresh") return current
+  return current.map((session) => ({
+    ...session,
+    source: { freshness: "unverified", observed_at: Date.now() / 1000 - 3, provenance: "iterm" },
+    closeability: {
+      ...session.closeability as Row,
+      state: "unknown",
+      reasons: [{ code: "session_inventory_stale", kind: "evidence", mover: { kind: "broker" } }],
+    },
+  }))
 }
 
 const ORDER_AT_REST = [BLOCKED, SAFE, NEEDS_ATTESTATION, UNKNOWN, SPARE]
@@ -255,13 +266,14 @@ function snapshot() {
   return {
     at: Date.now(),
     scan: {
-      complete: true,
-      completed: { complete: true, sequence: generation },
-      emptyAuthoritative: true,
+      complete: readingScenario !== "refresh",
+      completed: { complete: readingScenario !== "refresh", sequence: generation },
+      emptyAuthoritative: readingScenario !== "refresh",
       epoch: 1,
       generation,
       provenance: "fixture",
       source,
+      notes: readingScenario === "refresh" ? ["session inventory refresh is in progress; prior rows are unverified"] : [],
     },
     // The daemon's own answer moves; the page's order is the page's business.
     sessions: rows(),
@@ -690,6 +702,7 @@ const PROBE = `(() => {
     action: swiped ? (swiped.querySelector(".swipe-end")?.textContent ?? null) : null,
     actionKind: swiped ? (swiped.querySelector(".swipe-end")?.dataset.closeability ?? null) : null,
     rowState: swiped ? (swiped.querySelector(".state")?.textContent ?? null) : null,
+    refreshing: rows.some((n) => n.querySelector(".state")?.getAttribute("data-shape")?.includes("+srcunverified")),
     readingBanner: document.querySelector(".session-reading")?.textContent ?? null,
     retainedText: document.querySelector(".retained-reading")?.textContent ?? null,
     moving: rows.some((n) => getComputedStyle(n).transform !== "none"),
@@ -731,6 +744,7 @@ interface Seen {
   action: string | null
   actionKind: string | null
   rowState: string | null
+  refreshing: boolean
   readingBanner: string | null
   retainedText: string | null
   moving: boolean
@@ -1819,6 +1833,39 @@ test("an unknown row keeps saying unknown while its swipe remains an action", ()
     assert.doesNotMatch(asked.sheetSay ?? "", /session_identity_ambiguous/)
     assert.match(asked.technicalText ?? "", /session_identity_ambiguous/)
     await tab.shot("swipe-unknown")
+  }))
+
+test("a brief inventory refresh keeps the last blocked badge and row height while close stays unknown", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    const measure = () => tab.run(`(() => {
+      const row = document.querySelector("#rows > li.row[data-id='${BLOCKED}']")
+      return {
+        height: row.getBoundingClientRect().height,
+        top: row.getBoundingClientRect().top,
+        state: row.querySelector(".state").textContent,
+        badge: row.querySelector(".session-closeability")?.dataset.closeability,
+      }
+    })()`)
+    const before = await measure()
+    assert.equal(before.badge, "blocked")
+    readingScenario = "refresh"
+    try {
+      pushSessions()
+      await tab.until("the retained reading arrived", (s) => s.refreshing)
+      const during = await measure()
+      assert.equal(during.badge, "blocked")
+      assert.match(during.state, /還有 1 項未了結/)
+      assert.doesNotMatch(during.state, /無法判斷能否關閉/)
+      assert.equal(during.height, before.height)
+      assert.equal(during.top, before.top)
+      assert.equal((await tab.seen()).readingBanner, "", "a routine refresh does not add a list banner")
+      const opened = await swipeOpen(tab, BLOCKED)
+      assert.equal(opened.actionKind, "unknown", "the visible badge does not authorize close")
+    } finally {
+      readingScenario = "normal"
+      pushSessions()
+    }
   }))
 
 test("a session awaiting attestation explains that inside its named confirmation", () =>

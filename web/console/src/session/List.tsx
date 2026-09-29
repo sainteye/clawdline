@@ -169,12 +169,22 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  */
 function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine> }) {
   const ref = useRef<HTMLDivElement>(null)
-  const { html, shape } = stateLine(row)
+  const lastCloseability = useRef<SessionRow["closeability"] | null>(null)
+  const inventoryOnly = row.closeability?.state === "unknown" &&
+    row.closeability.reasons?.some((reason) => reason.code === "session_inventory_stale") &&
+    row.closeability.reasons.every((reason) => reason.kind !== "evidence" || reason.code === "session_inventory_stale")
+  const prior = lastCloseability.current
+  const showPrior = row.source?.freshness === "unverified" && !retainedStateWords(row) && inventoryOnly &&
+    (prior?.state === "blocked" || prior?.state === "needs_attestation")
+  const { html, shape } = stateLine(showPrior ? { ...row, closeability: prior } : row)
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
       '<span class="persona-state-name">' + L.escapeHTML(role.name) + "</span></span>"
     : ""
+  useLayoutEffect(() => {
+    if (row.source?.freshness !== "unverified") lastCloseability.current = row.closeability
+  }, [row.closeability, row.source?.freshness])
   useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
     if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
