@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app"
@@ -67,6 +68,38 @@ func dialogServer(t *testing.T) (*Server, *pane, app.WorkV2View, *sync.Mutex, *s
 		s.settleAwaitedAssignments(ctx)
 	}
 	return s, p, v, &mu, &shown
+}
+
+func TestALongEpicDescriptionCanOpenANewSession(t *testing.T) {
+	s, _, v, _, _ := dialogServer(t)
+	description := "Start here. " + strings.Repeat("角色規劃。", 2500)
+	epic, err := s.workV2().Create(context.Background(), app.NewWorkV2{
+		ProjectID: v.Item.ProjectID, ProjectPath: v.Item.ProjectPath, Kind: work.KindEpic,
+		Title: "Plan the squad", Description: description, Actor: "local",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := s.assignWorkV2(context.Background(), epic.Item.ID, "local", epic.Item.Version,
+		"new_session", "", "codex", "", nil)
+	if err != nil {
+		t.Fatalf("the long description prevented assignment: %v", err)
+	}
+	if len(assigned.Assignments) != 1 || assigned.Assignments[0].RootAssignment == "" {
+		t.Fatalf("no Root Assignment was opened: %+v", assigned.Assignments)
+	}
+	root, err := s.broker.RootAssignmentByID(context.Background(), assigned.Assignments[0].RootAssignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root.Assignment.Scope) > 8192 || !utf8.ValidString(root.Assignment.Scope) ||
+		!strings.Contains(root.Assignment.Scope, epic.Item.ID) || !strings.HasPrefix(root.Assignment.Scope, "Start here.") {
+		t.Fatalf("the Root scope does not safely point to the full Epic: %q", root.Assignment.Scope)
+	}
+	current, err := s.workV2().Item(context.Background(), epic.Item.ID)
+	if err != nil || current.Item.Description != description {
+		t.Fatalf("the Board description changed: %v", err)
+	}
 }
 
 // A Board item's new Codex Session that opens on a question only the person
