@@ -62,6 +62,12 @@ export function personaById(list: readonly Persona[] | null, id: string | null |
   return list.find((p) => p.id === id) ?? null
 }
 
+/** Use the catalog's unique default for a Board item kind, without reading its words. */
+export function suggestedPersonaForKind(list: readonly Persona[] | null, kind: string): Persona | null {
+  const matches = (list ?? []).filter((persona) => (persona.suggested_kinds ?? []).includes(kind))
+  return matches.length === 1 ? matches[0] : null
+}
+
 function language(): "en" | "zh-Hant" {
   const lang =
     (typeof document !== "undefined" && document.documentElement.lang) ||
