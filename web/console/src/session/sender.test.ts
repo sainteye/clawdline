@@ -77,18 +77,30 @@ test("every attempt of a card is sent under the card's one request", async () =>
   assert.notEqual(h.posts[2].request, h.posts[0].request, "another card is another request")
 })
 
-// F2: "try again" reads the transcript first. A read that fails is not a
-// reason to type the words again — it is the moment the first attempt is
-// most likely to have landed — so the card says it does not know, and nothing
-// is sent.
-test("try again with a read-back that fails sends nothing and leaves the card unknown", async () => {
+// A refusal that proved no words were typed can be tried again even when the
+// transcript read is unavailable, just as a new composer send can.
+test("try again after a definite refusal sends despite a failed read-back", async () => {
   const h = harness()
   h.answer({ ok: false, status: 429, code: "busy" })
   const card = h.cards.add("s", "yes", [], T0)
   await h.sender.deliver(card)
   h.transcript(null)
   await h.sender.resend(card.token)
-  assert.equal(h.posts.length, 1, "the words were sent a second time on a failed read")
+  assert.equal(h.posts.length, 2, "a failed read cannot block a send known not to have arrived")
+  assert.equal(h.posts[1].request, h.posts[0].request)
+  assert.equal(h.cards.card(card.token)?.state, "accepted")
+})
+
+test("try again after an uncertain send still stops when read-back fails", async () => {
+  const h = harness()
+  h.answer({ ok: false, status: 504, code: "cloud_read_timeout", outcome: "unknown" })
+  const card = h.cards.add("s", "yes", [], T0)
+  await h.sender.deliver(card)
+  h.transcript([])
+  await h.sender.look(card.token)
+  h.transcript(null)
+  await h.sender.resend(card.token)
+  assert.equal(h.posts.length, 1)
   assert.equal(h.cards.card(card.token)?.state, "unknown")
 })
 
