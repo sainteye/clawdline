@@ -156,11 +156,12 @@ splits each line the way a POSIX shell does and checks this.
   is escaped as a TOML basic string (`projects.TOMLString`), and the test decodes it back to the
   exact sentence.
 
-  The persona and Clawdline's Board-language instruction share this one value when both apply,
+  The persona, Clawdline's Board-language instruction, and the instruction to put human choices
+  in an `answer` Note share this one value when they apply,
   so neither replaces the other. **Caveat:** a `-c developer_instructions=…` override *replaces*
   any `developer_instructions` the person set in `~/.codex/config.toml` for that session. It does
   not add to them. A Codex session launched with neither a persona nor a Board language is
-  unaffected.
+  unaffected; its Clawdline skill and the project's `AGENTS.md` remain the instruction surfaces.
 
   A Codex session given any `-c` override also runs without Codex's shared background server:
   codex-cli 0.157.1 shows the startup warning "command-line configuration overrides (-c, …)

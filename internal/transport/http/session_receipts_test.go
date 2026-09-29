@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -314,7 +316,12 @@ func TestTheKeyRouteRefusesAnAnswerForAnotherQuestion(t *testing.T) {
 // A close retried under its key closes once.
 func TestACloseRetriedUnderItsKeyClosesOnce(t *testing.T) {
 	p := waitingPane("%4", "")
+	p.s.State = session.StateIdle
+	p.s.TTY = "ttys004"
+	p.s.PID = os.Getpid()
+	p.s.ConversationID = "00000000-0000-4000-8000-000000000004"
 	s := paneServer(t, p)
+	s.swift = swiftstore.Open(t.TempDir())
 	first := act(t, s, "close", "%4", "end-1", `{"force":false}`)
 	again := act(t, s, "close", "%4", "end-1", `{"force":false}`)
 	if first.Code != 200 || again.Code != 200 || again.Header().Get("Idempotent-Replayed") != "true" {

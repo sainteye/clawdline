@@ -736,6 +736,12 @@ It applies to this Console flow; the server's snapshot bound remains authoritati
 writers. The declaration is `internal/domain/squad.MaxSquadConsoleActiveSkillBytes` and the
 matching Console constant is `ACTIVE_SKILL_BYTES` in `web/console/src/pages/squad/skill-create.ts`.
 
+The machine's skill source list clips each discovered name and description to 240
+characters (`squad.skill_source_summary_runes`) before sending the list, including
+through Cloud. The full `SKILL.md` is read only after a person selects its ID;
+the source scan and selected folder copy use the existing squad entity and
+64 KiB body limits.
+
 An agent's `client_event_id` is limited to 128 bytes (`squad.event_id_bytes`) and an event request
 to 4 KiB (`squad.event_body_bytes`). A receipt read returns at most 100 rows
 (`squad.event_page_rows`) with an `after` cursor and `has_more` flag. Invalid or oversized writes

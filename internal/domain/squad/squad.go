@@ -75,16 +75,25 @@ type Team struct {
 }
 
 type Skill struct {
-	SkillID string `json:"skill_id"`
-	Version string `json:"version"`
-	Source  string `json:"source"`
-	License string `json:"license"`
-	Digest  string `json:"digest"`
-	Name    Names  `json:"name"`
-	Purpose Names  `json:"purpose"`
-	Icon    Icon   `json:"icon"`
-	Content string `json:"content"`
-	Builtin bool   `json:"builtin"`
+	SkillID string      `json:"skill_id"`
+	Version string      `json:"version"`
+	Source  string      `json:"source"`
+	License string      `json:"license"`
+	Digest  string      `json:"digest"`
+	Name    Names       `json:"name"`
+	Purpose Names       `json:"purpose"`
+	Icon    Icon        `json:"icon"`
+	Content string      `json:"content"`
+	Folder  bool        `json:"folder,omitempty"`
+	Files   []SkillFile `json:"files,omitempty"`
+	Builtin bool        `json:"builtin"`
+}
+
+// SkillFile is an immutable file beside SKILL.md in an imported skill folder.
+// ContentBase64 keeps binary assets exact in catalog and launch snapshots.
+type SkillFile struct {
+	Path          string `json:"path"`
+	ContentBase64 string `json:"content_base64"`
 }
 
 type Catalog struct {
@@ -137,6 +146,22 @@ func PreSkillBuiltinVersion(d Definition) Definition {
 	d.Digest = builtinDefinitionDigest(d)
 	d.Version = "sha256:" + d.Digest
 	return d
+}
+
+// HistoricalBuiltinDefinition reconstructs the previously released built-in
+// reference when a client asks for its immutable version after a skill update.
+func HistoricalBuiltinDefinition(d Definition) (Definition, bool) {
+	if !d.Builtin || len(d.Skills) != 1 {
+		return Definition{}, false
+	}
+	old, ok := historicalBuiltinSkillByID(d.Skills[0].ID)
+	if !ok || old.Version == d.Skills[0].Version {
+		return Definition{}, false
+	}
+	d.Skills = []SkillReference{{ID: old.SkillID, Version: old.Version, Enabled: true}}
+	d.Digest = builtinDefinitionDigest(d)
+	d.Version = "sha256:" + d.Digest
+	return d, true
 }
 
 // Builtins converts the closed launch catalog into immutable full definitions.

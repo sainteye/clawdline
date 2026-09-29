@@ -74,6 +74,11 @@ export interface ArchiveAnswer {
  * `force` goes over `close_blocked` exactly as a close's does.
  */
 export interface ArchiveRequest {
+  /**
+   * Optional opaque version from the Session row being archived. A changed reading
+   * refuses the archive.
+   */
+  expected_closeability_version?: string
   force?: boolean
 }
 
@@ -2439,6 +2444,12 @@ export interface CloseRefusal {
 }
 
 export interface CloseRequest {
+  /**
+   * Optional opaque version from a fresh Session row. A changed reading refuses the
+   * close.
+   */
+  expected_closeability_version?: string
+
   /**
    * Close although something is still owed. It cannot override an unreadable
    * obligation list: overriding a refusal is a decision, and there is nothing to
@@ -6834,6 +6845,8 @@ export interface SquadSkill {
   builtin: boolean
   content: string
   digest: string
+  files?: SquadSkillFile[]
+  folder?: boolean
   icon: Icon
   license: string
   name: SquadNames
@@ -6841,6 +6854,11 @@ export interface SquadSkill {
   skill_id: string
   source: string
   version: string
+}
+
+export interface SquadSkillFile {
+  content_base64: string
+  path: string
 }
 
 export interface SquadSkillReference {

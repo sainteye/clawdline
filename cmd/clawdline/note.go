@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -24,7 +25,7 @@ func noteCommand(args []string) {
 	file := fs.String("body-file", "", "JSON note body, or - for stdin")
 	key := fs.String("key", "", "the Idempotency-Key; reuse after an uncertain result")
 	port := fs.Int("port", 0, "the daemon's port")
-	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 || *target == "" || *file == "" {
+	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 0 || *file == "" {
 		noteUsage()
 	}
 	var reader io.Reader
@@ -53,7 +54,7 @@ func noteCommand(args []string) {
 }
 
 func noteUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline note create --target <terminal id> --body-file <JSON path|-> [--from <conversation id>] [--key k] [--port n]")
+	fmt.Fprintln(os.Stderr, "usage: clawdline note create --body-file <JSON path|-> [--target <terminal id>] [--from <conversation id>] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "  the body names kind, title, summary, action, reason and optional detail, options, document_url")
 	os.Exit(2)
 }
@@ -67,8 +68,8 @@ func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []
 			}
 		}
 	}
-	if from == "" || target == "" {
-		fmt.Fprintln(stderr, "clawdline note create: name a live Root conversation and target Session. Nothing was changed.")
+	if from == "" {
+		fmt.Fprintln(stderr, "clawdline note create: name a live Root conversation. Nothing was changed.")
 		return 2
 	}
 	var body map[string]json.RawMessage
@@ -81,6 +82,25 @@ func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []
 			fmt.Fprintf(stderr, "clawdline note create: %s is supplied by this command or the daemon. Nothing was changed.\n", field)
 			return 2
 		}
+	}
+	if target == "" {
+		who, err := b.request(http.MethodGet, "/v1/orchestrator/whoami",
+			url.Values{"conversation_id": {from}}, nil, "")
+		if err != nil {
+			fmt.Fprintln(stderr, "clawdline note create:", err)
+			return 1
+		}
+		if !who.ok() {
+			return report(stdout, stderr, "note create (whoami)", who)
+		}
+		var id struct {
+			TerminalID string `json:"terminal_id"`
+		}
+		if json.Unmarshal(who.Body, &id) != nil || id.TerminalID == "" {
+			fmt.Fprintln(stderr, "clawdline note create: whoami answered without a terminal id. Nothing was changed.")
+			return 1
+		}
+		target = id.TerminalID
 	}
 	fromJSON, _ := json.Marshal(from)
 	targetJSON, _ := json.Marshal(target)

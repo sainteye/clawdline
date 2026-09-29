@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -103,7 +104,7 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	status, raw := f.ask("GET", "/v1/squad/catalog", f.reader, "", "")
 	var catalog contract.SquadCatalog
 	if status != 200 || json.Unmarshal([]byte(raw), &catalog) != nil ||
-		len(catalog.Definitions) != 42 || len(catalog.Skills) != 11 {
+		len(catalog.Definitions) != 42 || len(catalog.Skills) != 12 {
 		t.Fatalf("private catalog = %d, %s", status, raw)
 	}
 	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
@@ -143,6 +144,46 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	}
 	if status, raw := f.ask("GET", "/v1/squad/auto-candidates?conversation_id=claimed", f.local, "", ""); status != 403 || !strings.Contains(raw, "actor_unverified") {
 		t.Fatalf("self-claimed actor = %d, %s", status, raw)
+	}
+}
+
+func TestEarlierBuiltinSkillVersionStillLaunchesAfterPortableUpdate(t *testing.T) {
+	f := newSquadFixture(t)
+	var previous squad.Definition
+	for _, d := range squad.Builtins().Definitions {
+		if d.ShortID == "backend" {
+			var ok bool
+			previous, ok = squad.HistoricalBuiltinDefinition(d)
+			if !ok {
+				t.Fatal("previous backend definition is not addressable")
+			}
+			break
+		}
+	}
+	if status, raw := f.ask("GET", "/v1/squad/definitions/backend?version="+previous.Version, f.reader, "", ""); status != 200 || !strings.Contains(raw, previous.Skills[0].Version) {
+		t.Fatalf("previous definition = %d %s", status, raw)
+	}
+	body := fmt.Sprintf(`{"definition_id":"backend","expected_version":0,"overrides":{"skills":{"present":true,"value":[{"id":%q,"version":%q,"enabled":true}]}}}`,
+		previous.Skills[0].ID, previous.Skills[0].Version)
+	if status, raw := f.ask("PUT", "/v1/squad/settings", f.local, body, "keep-previous-builtin"); status != 200 {
+		t.Fatalf("pin previous skill = %d %s", status, raw)
+	}
+	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
+	if err != nil || len(launch.Skills) != 1 || launch.Skills[0].Version != previous.Skills[0].Version ||
+		!strings.Contains(launch.Skills[0].Content, "Clawdline") {
+		t.Fatalf("previous skill launch = %+v, %v", launch.Skills, err)
+	}
+}
+
+func TestCodeReviewerLaunchReceivesPortableReviewSkill(t *testing.T) {
+	f := newSquadFixture(t)
+	launch, err := f.s.ResolveSquadLaunch(context.Background(), "code-reviewer", "")
+	if err != nil || len(launch.Skills) != 1 ||
+		launch.Skills[0].ID != "clawdline.skill.two-axis-code-review" ||
+		!strings.Contains(launch.Skills[0].Content, "project-rules axis") ||
+		!strings.Contains(launch.Skills[0].Content, "request axis") ||
+		strings.Contains(launch.Skills[0].Content, "Clawdline") {
+		t.Fatalf("code-reviewer launch = %+v, %v", launch.Skills, err)
 	}
 }
 

@@ -3,13 +3,16 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/icon"
@@ -18,12 +21,14 @@ import (
 
 func archivePane(conversation string) *pane {
 	return &pane{s: session.Session{ID: "%4", Backend: session.BackendTmux, Assistant: session.AssistantClaude,
-		State: session.StateIdle, CWD: "/nowhere/quiet-project", ConversationID: conversation, Label: "quiet work"}}
+		State: session.StateIdle, CWD: "/nowhere/quiet-project", ConversationID: conversation, Label: "quiet work",
+		TTY: "ttys004", PID: os.Getpid()}}
 }
 
 func archiveServer(t *testing.T, p *pane) *Server {
 	t.Helper()
 	s := paneServer(t, p)
+	s.swift = swiftstore.Open(t.TempDir())
 	s.icons = &icon.Registry{}
 	s.archive = &app.SessionArchive{Store: s.store, Title: s.sessionDisplayLabel}
 	return s
@@ -101,6 +106,35 @@ func TestAnArchiveNeedsAKeyASenderAndAConversation(t *testing.T) {
 	}
 	if len(nothing.done()) != 0 || len(archivedNow(t, s).Sessions) != 0 {
 		t.Fatalf("closed %q, listed %+v", nothing.done(), archivedNow(t, s))
+	}
+}
+
+func TestArchiveUsesTheSameCurrentCloseEvidenceAsClose(t *testing.T) {
+	p := archivePane("conv-quiet")
+	s := archiveServer(t, p)
+	stale := act(t, s, "archive", "%4", "archive-stale", `{"expected_closeability_version":"stale"}`)
+	if stale.Code != http.StatusConflict || codeOf(t, stale) != "close_not_proven" || len(p.done()) != 0 {
+		t.Fatalf("stale archive: %d %s, terminal=%q", stale.Code, stale.Body, p.done())
+	}
+	if _, err := s.workV2().CreateSessionTodos(context.Background(), app.NewSessionTodosV2{
+		SessionID: "conv-quiet", Texts: []string{"finish the work"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	blocked := act(t, s, "archive", "%4", "archive-blocked", `{}`)
+	if blocked.Code != http.StatusConflict || codeOf(t, blocked) != "close_blocked" || len(p.done()) != 0 {
+		t.Fatalf("blocked archive: %d %s, terminal=%q", blocked.Code, blocked.Body, p.done())
+	}
+	current := s.sessionsPayloadFrom(context.Background(), s.freshReading(context.Background())).Sessions[0].Closeability.Version
+	if _, err := s.workV2().CreateSessionTodos(context.Background(), app.NewSessionTodosV2{
+		SessionID: "conv-quiet", Texts: []string{"newly assigned work"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	changed := act(t, s, "archive", "%4", "archive-old-force",
+		fmt.Sprintf(`{"force":true,"expected_closeability_version":%q}`, current))
+	if changed.Code != http.StatusConflict || codeOf(t, changed) != "close_not_proven" || len(p.done()) != 0 {
+		t.Fatalf("new duty under an old forced decision: %d %s, terminal=%q", changed.Code, changed.Body, p.done())
 	}
 }
 

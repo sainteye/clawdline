@@ -367,9 +367,9 @@ func workV2EpicChildrenInstruction(id string) string {
 		"children are closed — the daemon refuses done while one is open. For each independently opened Feature Root, " +
 		"also track its Session after Board completion: identify it by the Epic parent relation, ask its owner to audit " +
 		"closeability and finish its own obligations, then verify that the Session was closed or record the exact blocker " +
-		"and next owner. A Session report is not a close; never force-close an unknown or blocked Session. " +
-		"If attestation or a guarded close is not implemented in the current daemon, record that as a " +
-		"product blocker and keep the Session; do not substitute a raw terminal action. " +
+		"and next owner. Once the exact Session is idle, its Board items and to-dos are complete, " +
+		"and closeability is safe, use the supported Session close action and confirm it vanished from fresh inventory. " +
+		"A Session report is not a close; do not force-close unknown or blocked work or use a raw terminal action. " +
 		"Create no other Board items."
 }
 

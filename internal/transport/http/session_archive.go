@@ -109,6 +109,18 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request, id strin
 			return
 		}
 	}
+	item, err := s.actions().Find(r.Context(), id)
+	if err != nil {
+		writeActionRefusal(w, err)
+		return
+	}
+	if item.ConversationID == "" {
+		writeRefusal(w, http.StatusConflict, app.ArchiveNoConversation, "That Session has no conversation to archive.")
+		return
+	}
+	if !s.closeEvidence(w, r.Context(), id, body.ExpectedCloseabilityVersion, body.Force) {
+		return
+	}
 	// The whole close ladder, as a close has it.
 	ctx, cancel := context.WithTimeout(r.Context(), closeBudget)
 	defer cancel()

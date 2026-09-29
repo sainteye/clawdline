@@ -13,6 +13,7 @@
 // original, and the copied stylesheet then styles it identically.
 import type { Icon, SessionRow, TaskRow } from "@clawdline/contract"
 import { retrying } from "../strings-retry.js"
+import { currentCloseability, currentCloseabilityBadge, currentCloseabilityShape } from "./current-closeability.js"
 
 /* The imports below are the copied modules. They are plain JavaScript with no
    types, read with allowJs so the compiler infers what it can and checks none
@@ -42,12 +43,9 @@ import { LOCAL_SESSION_MACHINE, machinePresentationForFleet, sessionSelectionKey
 import { bindSessionUI as bindSessionUIOriginal } from "./js/session/ui.js"
 import {
   featureRootChip as featureRootChipOriginal,
-  projectSessionCloseability,
   projectSessionWorkState,
   rowDepth as rowDepthOriginal,
   selfReportedPeerWaitCopy,
-  sessionCloseabilityHTML,
-  sessionCloseabilityShape,
   sessionStatusGlyphHTML,
   sessionWorkStateHTML,
   taskLive as taskLiveOriginal,
@@ -119,13 +117,13 @@ export function workState(row: SessionRow): { state: string } {
   return projectSessionWorkState(row) as { state: string }
 }
 export function closeability(row: SessionRow): { block?: boolean } {
-  return projectSessionCloseability(row) as { block?: boolean }
+  return currentCloseability(row) as { block?: boolean }
 }
 export function workStateHTML(row: SessionRow): string {
   return sessionWorkStateHTML(row) as string
 }
 export function closeabilityHTML(row: SessionRow): string {
-  return sessionCloseabilityHTML(row) as string
+  return currentCloseabilityBadge(row)
 }
 export function glyphHTML(icon: string, copy: string): string {
   return sessionStatusGlyphHTML(icon, copy) as string
@@ -286,7 +284,7 @@ export const featureRootChip = featureRootChipOriginal as (
 /** A session's own account of the peer it waits on; "" when not complete enough to trust. */
 export const selfReportedPeerWait = selfReportedPeerWaitCopy as (s: SessionRow) => string
 /** Everything in the closeability badge whose identity can change its words. */
-export const closeabilityShape = sessionCloseabilityShape as (s: unknown) => string
+export const closeabilityShape = currentCloseabilityShape
 /** The Clawdfather record on a row, normalised, or null. */
 export const coordinatorForSession = coordinatorForSessionOriginal as (
   s: SessionRow | null | undefined,

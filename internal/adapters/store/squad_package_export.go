@@ -13,6 +13,8 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/squadpack"
 )
 
+var ErrSquadSkillFolderExport = errors.New("skill_folder_export_requires_explicit_support")
+
 func packageExportDefinition(ctx context.Context, tx *sql.Tx, row SquadEntityRow) (squadpack.Definition, []byte, error) {
 	var raw, body string
 	err := tx.QueryRowContext(ctx, `SELECT definition,body FROM squad_package_sources
@@ -62,6 +64,9 @@ func packageExportDefinition(ctx context.Context, tx *sql.Tx, row SquadEntityRow
 		var value squad.Skill
 		if err := json.Unmarshal(row.Payload, &value); err != nil {
 			return d, nil, err
+		}
+		if value.Folder || len(value.Files) > 0 {
+			return d, nil, ErrSquadSkillFolderExport
 		}
 		d.Name, d.NameZhHant = value.Name.En, value.Name.ZhHant
 		d.Purpose, d.PurposeZhHant = value.Purpose.En, value.Purpose.ZhHant

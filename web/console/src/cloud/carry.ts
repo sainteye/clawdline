@@ -85,6 +85,7 @@ export const CARRIED = {
   "squad.catalog": "GET /v1/squad/catalog",
   "squad.definition": "GET /v1/squad/definitions/{id}[?version=]",
   "squad.scopes": "GET /v1/squad/scopes",
+  "squad.skill-sources": "GET /v1/squad/skill-sources?provider=&place_id=&id=&folder=",
   "squad.settings": "GET /v1/squad/settings[?place_id=|scope_id=]",
   "squad.settings.update": "PUT /v1/squad/settings",
   "squad.motion.update": "PUT /v1/squad/motion",

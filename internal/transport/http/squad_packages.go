@@ -107,6 +107,8 @@ func packageFailure(w http.ResponseWriter, err error) {
 	var refusal *squadpack.Refusal
 	var conflict store.SquadVersionConflict
 	switch {
+	case errors.Is(err, store.ErrSquadSkillFolderExport):
+		writeRefusal(w, http.StatusConflict, "skill_folder_export_unsupported", "The catalog contains a skill folder; exporting it would omit its files.")
 	case errors.As(err, &refusal):
 		status := http.StatusBadRequest
 		switch refusal.Code {

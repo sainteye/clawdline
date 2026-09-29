@@ -6,6 +6,21 @@ short IDs. The squad adds shareable definitions, private settings, immutable
 launch snapshots, and a truthful record of skill use. It does not install a
 provider skill, fetch a marketplace, or run content from an imported package.
 
+The Console lists skills discovered on the selected machine under the
+registered Project's `.claude/skills`, `.agents/skills`, and `.codex/skills`,
+or the provider's personal and plugin skill directories. A Project source
+requires a registered Project; provider sources also show skills in that
+Project when one is selected. The list carries names, descriptions, and
+locations, with opaque IDs rather than arbitrary file paths. A separate read
+of a selected ID previews its `SKILL.md` and, if requested, its folder files.
+The user can import that text alone or capture the whole folder. Folder imports store file bytes
+and safe relative paths in the versioned skill, then publish those exact files
+beside `SKILL.md` in a fixed launch snapshot. Importing does not install the
+folder into a provider's global skill directory or execute its scripts.
+Cloud carries these reads through the paired machine; reading selected skill
+content and attachments requires a write-capable paired device. The source
+scan does not follow symlinks or accept a client-supplied filesystem path.
+
 ## Identity and ownership
 
 - A definition has a stable `definition_id`, a version, source, license, body,
@@ -120,6 +135,9 @@ parser cannot certify their truth or rights to external attachments.
 
 Export defaults to shareable definitions only. A person explicitly selects
 each global or Project private setting scope and confirms it before download.
+An export containing a folder skill refuses with `skill_folder_export_unsupported`;
+the current offline package format only carries skill text and must never
+silently omit attachments or add them to a shareable archive.
 Neither imported text nor a manifest may execute scripts, fetch URLs, send
 data, authorize a paid API, or override existing user and repository rules.
 Candidate research for all 42 built-ins is recorded separately from review

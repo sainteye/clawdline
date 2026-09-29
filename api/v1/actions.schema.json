@@ -34,7 +34,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "force": { "description": "Close although something is still owed. It cannot override an unreadable obligation list: overriding a refusal is a decision, and there is nothing to decide about when the list could not be read.", "type": "boolean" }
+        "force": { "description": "Close although something is still owed. It cannot override an unreadable obligation list: overriding a refusal is a decision, and there is nothing to decide about when the list could not be read.", "type": "boolean" },
+        "expected_closeability_version": { "description": "Optional opaque version from a fresh Session row. A changed reading refuses the close.", "type": "string" }
       }
     },
     "ActionResult": {

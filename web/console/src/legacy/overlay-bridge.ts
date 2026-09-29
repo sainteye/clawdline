@@ -4,19 +4,16 @@
 // re-exports all of it, and nothing outside legacy/ imports this file or the
 // copied modules directly.
 import { S } from "./js/core/state.js"
+import { currentCloseability, currentCloseabilityBadge, currentCloseabilityLines, currentCloseabilityPlainReasons } from "./current-closeability.js"
 import { failureSentence as failureSentenceOriginal } from "./js/core/failure-text.js"
 import { confirmSpin, drawSpinner, setConfirmSpin as setConfirmSpinOriginal, spinPhase } from "./js/core/pixels.js"
 import {
   byId as byIdOriginal,
-  closeabilityLines as closeabilityLinesOriginal,
   closeabilityMoverText as closeabilityMoverTextOriginal,
-  closeabilityPlainReasons as closeabilityPlainReasonsOriginal,
   lostIfClosed as lostIfClosedOriginal,
   owedBadgeHTML as owedBadgeHTMLOriginal,
-  projectSessionCloseability,
   projectSessionWorkState,
   selfReportedPeerWaitCopy as selfReportedPeerWaitCopyOriginal,
-  sessionCloseabilityHTML,
   sessionStatusGlyphHTML,
   sessionWorkStateHTML,
   suggestedReplyButtonHTML as suggestedReplyButtonHTMLOriginal,
@@ -35,17 +32,17 @@ export interface Closeable {
 
 /** `byId` (`view/derive.js`): the published row for an id, or null when none or more than one. */
 export const byId = byIdOriginal as (id: string | null | undefined) => LegacySession | null
-export const closeabilityOf = projectSessionCloseability as (s: unknown) => Closeable
+export const closeabilityOf = currentCloseability as (s: unknown) => Closeable
 export const workStateOf = projectSessionWorkState as (s: unknown) => { state: string }
-export const closeabilityLines = closeabilityLinesOriginal as (s: unknown) => string[]
+export const closeabilityLines = currentCloseabilityLines
 /** Who clears what is standing in the way, in the reader's language, or "". */
 export function closeabilityMover(s: unknown): string {
-  const projected = projectSessionCloseability(s) as Closeable & { block: { mover?: unknown } | null }
+  const projected = currentCloseability(s) as Closeable & { block: { mover?: unknown } | null }
   if (projected.state === "safe") return ""
   return (closeabilityMoverTextOriginal as (mover: unknown) => string)(projected.block && projected.block.mover)
 }
-export const closeabilityPlainReasons = closeabilityPlainReasonsOriginal as (s: unknown) => { text: string; count: number }[]
-export const closeabilityBadgeHTML = sessionCloseabilityHTML as (s: unknown) => string
+export const closeabilityPlainReasons = currentCloseabilityPlainReasons
+export const closeabilityBadgeHTML = currentCloseabilityBadge
 export const lostIfClosed = lostIfClosedOriginal as (id: string) => string[]
 export const owedBadgeHTML = owedBadgeHTMLOriginal as (s: unknown) => string
 export const selfReportedPeerWaitCopy = selfReportedPeerWaitCopyOriginal as (s: unknown) => string

@@ -54,7 +54,7 @@ transcript.
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
-| `clawdline note create --target <terminal> --body-file <JSON>` | Leaves one actionable note above a Session (§9a) |
+| `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
@@ -655,14 +655,17 @@ that it is rare. `--session <terminal>` makes a tap open that session.
 
 Use a note when a long-running Agent has one concrete thing the person should read, do, or decide and an ordinary chat message could disappear in the stream. The note remains in the target Session's collapsed attention area, marked with a red dot until the person moves it to handled. You may then continue independent work; the person can return at a natural stopping point. A note is not a progress log, a private reminder, a notification, or authorization for a Board decision. Avoid duplicate notes for the same request.
 
-Create one with a JSON body file. `--target` is the live target Session's **terminal id** from the address book (`clawdline guide send`); `--from` defaults to this live Root's conversation id from the environment. The target may be another Session. The CLI reads the machine credential without putting it in the command line, injects the source and target ids, and prints the daemon's durable note id. Reuse the printed `--key` after an uncertain result.
+**Before asking the person to choose in chat**, create one `answer` note containing the actual question, the tradeoffs needed to decide, and two to four complete suggested replies. Each button shows the reply the person can send, so make its `draft` unambiguous on its own. A brief chat pointer is enough after creation. Do not treat note creation, button selection, or marking handled as the person's answer; wait for the sent conversation message before acting on it. If creation fails, say so and ask the question directly. Reserve notes for decisions needing human judgment, not routine choices the Agent can make.
+
+Create one with a JSON body file. Without `--target`, the CLI resolves this live Root's own terminal id through `whoami`. For another Session, use its live **terminal id** from the address book (`clawdline guide send`) as `--target`. `--from` defaults to this live Root's conversation id from the environment. The CLI reads the machine credential without putting it in the command line, injects the source and target ids, and prints the daemon's durable note id. Reuse the printed `--key` after an uncertain result.
 
 ```json
 {"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
 ```
 
 ```sh
-clawdline note create --target <terminal-id> --body-file note.json
+clawdline note create --body-file note.json
+# For another Session: clawdline note create --target <terminal-id> --body-file note.json
 ```
 
 `kind` is `read`, `answer`, `action`, or `report`; `title`, `summary`, `action`, and `reason` are required. An `answer` can offer two to four choices. Each `draft` is the suggested reply shown on its button. When chosen, the Console appends a context line with the note ID, title, and action in the editable composer so the receiving Session knows which request the person answered; the context is not shown on the button. `detail` can hold longer text. `document_url` can link to a real, readable Cloud document; verify the document route and file before posting it. A choice only fills the person's composer; the person sends it. Only the person marks the note handled. If your work is actually blocked on the answer, record the waiting-user state and send the existing attention notification once. A visible note alone sends no push and does not wake an Agent.

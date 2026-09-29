@@ -2,6 +2,8 @@ package squad
 
 import (
 	"embed"
+	"errors"
+	"io/fs"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
@@ -10,13 +12,19 @@ import (
 //go:embed builtin_skills/*.md
 var builtinSkillContent embed.FS
 
+// The previous bundled texts remain addressable by immutable version when a
+// Project override or an older Session refers to one after an update.
+//
+//go:embed builtin_skill_history/*.md
+var builtinSkillHistory embed.FS
+
 type builtinSkillSpec struct {
 	Persona, Name, ZhName, Purpose, ZhPurpose, Source, License string
 }
 
 // Each source is a reviewed, commit-pinned entry in docs/persona-skill-decisions.json.
-// The bundled text is a Clawdline-specific adaptation, not a remote file loaded
-// during a session. Its source and content digest are visible in the catalog.
+// The bundled text is a portable adaptation, not a remote file loaded during
+// a session. The current project's instructions still govern its use.
 var builtinSkillSpecs = []builtinSkillSpec{
 	{"backend", "golang-concurrency", "Go 並行設計", "Design and review Go concurrency", "設計與審查 Go 並行流程", "https://github.com/samber/cc-skills-golang/blob/19a0626ae8565d27a7b7bdf59d8d99d94d7e284c/skills/golang-concurrency/SKILL.md", "MIT"},
 	{"frontend", "frontend-component-build", "前端元件實作", "Build accessible reusable components", "建立可重用且可及的前端元件", "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/frontend-component-build/SKILL.md", "MIT"},
@@ -29,6 +37,7 @@ var builtinSkillSpecs = []builtinSkillSpec{
 	{"incident-commander", "incident-response", "事故應變", "Coordinate incident triage and recovery", "協調事故分級、緩解與復原", "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/incident-response/SKILL.md", "MIT"},
 	{"finops", "cost-optimization", "成本優化", "Analyze verified spend and trade-offs", "分析已驗證的支出與取捨", "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/cost-optimization/SKILL.md", "MIT"},
 	{"ui-designer", "frontend-design", "前端視覺設計", "Develop intentional interface design", "建立有明確方向的介面設計", "https://github.com/anthropics/skills/blob/8a1541c4a3ffa5a20a5a91de0dcf3f0bab1d1ef4/skills/frontend-design/SKILL.md", "Apache-2.0"},
+	{"code-reviewer", "two-axis-code-review", "雙軸程式碼審查", "Review project rules and requested behavior separately", "分別核對專案規則與需求實作", "https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md", "MIT"},
 }
 
 func builtinSkills() map[string]Skill {
@@ -38,24 +47,53 @@ func builtinSkills() map[string]Skill {
 		if err != nil {
 			panic(err) // An embedded file is part of the build, not runtime state.
 		}
-		p, ok := persona.Known(spec.Persona)
-		if !ok {
-			panic("unknown built-in skill persona: " + spec.Persona)
-		}
-		content := strings.TrimSpace(string(body)) + "\n"
-		skill := Skill{
-			SkillID: "clawdline.skill." + spec.Name,
-			Source:  spec.Source, License: spec.License,
-			Name:    Names{En: spec.Name, ZhHant: spec.ZhName},
-			Purpose: Names{En: spec.Purpose, ZhHant: spec.ZhPurpose},
-			Icon:    Icon{Accent: p.Icon.Accent, Cells: p.Icon.Cells},
-			Content: content, Builtin: true,
-		}
-		skill.Digest = Digest(struct {
-			Content, Source, License string
-		}{content, skill.Source, skill.License})
-		skill.Version = "sha256:" + skill.Digest
-		out[spec.Persona] = skill
+		out[spec.Persona] = builtSkill(spec, body)
 	}
 	return out
+}
+
+func builtSkill(spec builtinSkillSpec, body []byte) Skill {
+	p, ok := persona.Known(spec.Persona)
+	if !ok {
+		panic("unknown built-in skill persona: " + spec.Persona)
+	}
+	content := strings.TrimSpace(string(body)) + "\n"
+	skill := Skill{
+		SkillID: "clawdline.skill." + spec.Name,
+		Source:  spec.Source, License: spec.License,
+		Name:    Names{En: spec.Name, ZhHant: spec.ZhName},
+		Purpose: Names{En: spec.Purpose, ZhHant: spec.ZhPurpose},
+		Icon:    Icon{Accent: p.Icon.Accent, Cells: p.Icon.Cells},
+		Content: content, Builtin: true,
+	}
+	skill.Digest = Digest(struct {
+		Content, Source, License string
+	}{content, skill.Source, skill.License})
+	skill.Version = "sha256:" + skill.Digest
+	return skill
+}
+
+// HistoricalBuiltinSkill reads a bundled version that is no longer in the
+// current catalog. Only the previous released texts have this fallback.
+func HistoricalBuiltinSkill(id, version string) (Skill, bool) {
+	skill, ok := historicalBuiltinSkillByID(id)
+	return skill, ok && skill.Version == version
+}
+
+func historicalBuiltinSkillByID(id string) (Skill, bool) {
+	for _, spec := range builtinSkillSpecs {
+		if id != "clawdline.skill."+spec.Name {
+			continue
+		}
+		body, err := builtinSkillHistory.ReadFile("builtin_skill_history/" + spec.Name + ".md")
+		if errors.Is(err, fs.ErrNotExist) {
+			return Skill{}, false
+		}
+		if err != nil {
+			panic(err)
+		}
+		skill := builtSkill(spec, body)
+		return skill, true
+	}
+	return Skill{}, false
 }

@@ -9,7 +9,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "force": { "type": "boolean" }
+        "force": { "type": "boolean" },
+        "expected_closeability_version": { "description": "Optional opaque version from the Session row being archived. A changed reading refuses the archive.", "type": "string" }
       }
     },
     "ArchivedSession": {

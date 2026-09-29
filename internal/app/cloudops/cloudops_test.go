@@ -214,6 +214,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-squad-scopes",
 		method: "GET", path: "/v1/squad/scopes",
 	}, {
+		word: "squad.skill-sources",
+		body: map[string]any{"type": "squad.skill-sources", "session": machine,
+			"request": "req-squad-sources", "provider": "codex", "place_id": "place-a"},
+		session: machine, name: "read:req-squad-sources",
+		method: "GET", path: "/v1/squad/skill-sources",
+		query: map[string]string{"provider": "codex", "place_id": "place-a"},
+	}, {
 		word: "squad.settings",
 		body: map[string]any{"type": "squad.settings", "session": machine,
 			"request": "req-squad-settings", "place_id": "place-a"},
@@ -1963,8 +1970,8 @@ func TestEveryDivergenceIsAboutAWordThisDaemonActuallyAnswers(t *testing.T) {
 			t.Fatalf("%s: %q says too little to act on", word, why)
 		}
 	}
-	// The four measured on 2026-09-18 against this daemon's own routes.
-	for _, word := range []string{"board", "transcript", "info", "end"} {
+	// The remaining differences measured against this daemon's own routes.
+	for _, word := range []string{"board", "transcript", "info"} {
 		if found[word] == "" {
 			t.Fatalf("%s answers differently from the hosted contract and says nothing about it", word)
 		}
@@ -2348,6 +2355,13 @@ func TestArchivingCarriesTheRequestAsItsKey(t *testing.T) {
 		"type": "archive-session", "session": pane, "request": "req-archive"}))
 	if got := r.last(); got.Header["Idempotency-Key"] != "req-archive" || string(got.Body) != `{"force":false}` {
 		t.Fatalf("the archive reached the route as %+v", got)
+	}
+	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "archive-session", "session": pane, "request": "req-versioned", "force": false,
+		"expected_closeability_version": "cl1-current"}))
+	if got := r.last(); got.Header["Idempotency-Key"] != "req-versioned" ||
+		string(got.Body) != `{"expected_closeability_version":"cl1-current","force":false}` {
+		t.Fatalf("the versioned archive reached the route as %+v", got)
 	}
 	open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "restore-archived", "session": MachineReplySession, "request": "req-unarchive",

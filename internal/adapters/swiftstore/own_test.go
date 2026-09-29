@@ -3,6 +3,8 @@ package swiftstore
 import (
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 var (
@@ -18,6 +20,46 @@ func ownCloseInput(l Live) CloseInput {
 }
 
 func strp(v string) *string { return &v }
+
+func TestIdleCloseabilityUsesEvidenceAndOutstandingWork(t *testing.T) {
+	base := Snapshot{Source: SourceDisabled, CoordinatorKnown: true}
+	clear := ownCloseInput(ownRootLive)
+	if got := base.Closeability(clear); got.State != "safe" || got.AttestationID != nil {
+		t.Fatalf("idle clear Session needs no attestation: %+v", got)
+	}
+	open := clear
+	open.Extra = []contract.CloseReason{{Code: "session_todo_open", Kind: "obligation", SubjectID: "todo-1"}}
+	if got := base.Closeability(open); got.State != "blocked" || got.Reasons[0].SubjectID != "todo-1" {
+		t.Fatalf("open to-do did not block: %+v", got)
+	}
+	more := open
+	more.Extra = append(append([]contract.CloseReason(nil), open.Extra...),
+		contract.CloseReason{Code: "board_item_open", Kind: "obligation", SubjectID: "board-2"})
+	first, added := base.Closeability(open), base.Closeability(more)
+	if first.Version == added.Version || added.State != "blocked" {
+		t.Fatalf("a new obligation did not invalidate the blocked decision: %s %s", first.Version, added.Version)
+	}
+	reordered := more
+	reordered.Extra = []contract.CloseReason{more.Extra[1], more.Extra[0]}
+	if got := base.Closeability(reordered); got.Version != added.Version {
+		t.Fatalf("row order changed the same decision: %s %s", got.Version, added.Version)
+	}
+	working := clear
+	working.TerminalState = "working"
+	if got := base.Closeability(working); got.State != "blocked" {
+		t.Fatalf("working Session = %+v", got)
+	}
+	unreadable := clear
+	unreadable.Bound = false
+	if got := base.Closeability(unreadable); got.State != "unknown" {
+		t.Fatalf("unbound Session = %+v", got)
+	}
+	missingState := clear
+	missingState.TerminalState = ""
+	if got := base.Closeability(missingState); got.State != "unknown" {
+		t.Fatalf("missing terminal state = %+v", got)
+	}
+}
 
 // ownFinishedTask is a task of this daemon's, finished, whose child is
 // ownChildLive and whose root is ownRootLive.
@@ -46,7 +88,11 @@ func TestOwnRecordsAloneDrawTheRow(t *testing.T) {
 	if got := snap.TitleOf(ownChildLive, "", []Live{ownChildLive, ownRootLive}).Orchestrator; got != "Own task" {
 		t.Fatalf("the tab is not named by its task: %q", got)
 	}
-	for _, r := range snap.Closeability(ownCloseInput(ownChildLive)).Reasons {
+	closed := snap.Closeability(ownCloseInput(ownChildLive))
+	if closed.State != "safe" {
+		t.Fatalf("a finished idle child with no obligations is %s: %+v", closed.State, closed.Reasons)
+	}
+	for _, r := range closed.Reasons {
 		if r.Code == "swift_store_unreadable" {
 			t.Fatal("a switched-off store was read as unknown")
 		}

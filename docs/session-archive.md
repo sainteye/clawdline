@@ -53,7 +53,7 @@ writes 451 transcripts and resumes the oldest: `Resume` refuses it, `ResumeRecor
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /v1/sessions/{id}/archive` | a device that may send, with an `Idempotency-Key` | body `{force?}`; answers `{ok, id, action: "archived", forced?, archived: ArchivedSession}` |
+| `POST /v1/sessions/{id}/archive` | a device that may send, with an `Idempotency-Key` | body `{force?, expected_closeability_version?}`; answers `{ok, id, action: "archived", forced?, archived: ArchivedSession}` |
 | `GET /v1/sessions/archived` | any paired device | `{sessions: [ArchivedSession], at}`, most recently archived first |
 | `POST /v1/sessions/archived/restore` | a device that may send, with an `Idempotency-Key` | body `{conversations: [id…]}`; one result per distinct id: `{conversation_id, ok, code?, message?, id?, backend?, attach?}` |
 
@@ -73,7 +73,9 @@ transcript is the one thing a resume must not do), `place_unavailable`, `convers
 bound is refused whole with `archive_batch_too_large`.
 
 Clawdline Cloud carries the three as the relay words `archive-session` (on the Session's own
-channel, as `end` is; `force` is optional), `archived-sessions` and `restore-archived`.
+channel, as `end` is; `force` and `expected_closeability_version` are optional),
+`archived-sessions` and `restore-archived`. The archive route rereads the same identity,
+terminal state, Board items, and to-dos as close immediately before it starts.
 
 The bounds — 500 archived conversations and 20 per restore — are registered as
 `sessions.archive_rows` and `sessions.archive_restore_batch` and listed in

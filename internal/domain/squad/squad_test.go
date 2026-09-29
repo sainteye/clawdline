@@ -8,7 +8,7 @@ import (
 
 func TestSquadBuiltinsAndPolicy(t *testing.T) {
 	c := Builtins()
-	if len(c.Definitions) != 42 || len(c.Skills) != 11 {
+	if len(c.Definitions) != 42 || len(c.Skills) != 12 {
 		t.Fatalf("builtins: %d definitions, %d skills", len(c.Definitions), len(c.Skills))
 	}
 	wantSkill := map[string]bool{}
@@ -21,6 +21,11 @@ func TestSquadBuiltinsAndPolicy(t *testing.T) {
 			len(s.Digest) != 64 || s.Source == "" || s.License == "" || s.Content == "" ||
 			s.Icon.Accent == "" || len(s.Icon.Cells) != 7 || skills[s.SkillID].SkillID != "" {
 			t.Fatalf("incomplete or duplicate skill: %+v", s)
+		}
+		for _, projectSpecific := range []string{"Clawdline", "CloudGate", "BUILD.json", "tools/heavy.sh"} {
+			if strings.Contains(s.Content, projectSpecific) {
+				t.Errorf("current skill %s assumes the host project is %s", s.SkillID, projectSpecific)
+			}
 		}
 		skills[s.SkillID] = s
 	}
@@ -39,6 +44,14 @@ func TestSquadBuiltinsAndPolicy(t *testing.T) {
 			}
 			if previous := PreSkillBuiltinVersion(d); previous.Version == d.Version || len(previous.Skills) != 0 {
 				t.Fatalf("skill adoption did not version %s", d.ShortID)
+			}
+			if historical, ok := HistoricalBuiltinDefinition(d); ok {
+				if historical.Version == d.Version || len(historical.Skills) != 1 {
+					t.Fatalf("historical built-in definition %s = %+v", d.ShortID, historical)
+				}
+				if _, ok := HistoricalBuiltinSkill(historical.Skills[0].ID, historical.Skills[0].Version); !ok {
+					t.Fatalf("historical skill %s cannot resolve", d.ShortID)
+				}
 			}
 		} else if previous := PreSkillBuiltinVersion(d); previous.Version != d.Version {
 			t.Fatalf("unaffected builtin changed version %s", d.ShortID)

@@ -494,12 +494,12 @@ test("a Git file diff carries its exact changed path and waits for the machine's
   ])
 })
 
-test("a close carries force and the close gates last read", async () => {
+test("a close carries the displayed version even when the relay has a newer row", async () => {
   const client = new FakeClient()
   client.rows = [row("s1", { closeability: { version: "cv-7" } })]
   const { reader } = seam(client)
-  await reader.fetch("/v1/sessions/s1/close", post({ force: true }))
-  assert.deepEqual(client.calls.pop(), ["end", { machine: "mac-a", session: "s1" }, true, "cv-7"])
+  await reader.fetch("/v1/sessions/s1/close", post({ force: true, expected_closeability_version: "cv-older" }))
+  assert.deepEqual(client.calls.pop(), ["end", { machine: "mac-a", session: "s1" }, true, "cv-older"])
   // A blocked close's reasons: see the two F6 tests below, which go through
   // the copied client's own failure path rather than an error built by hand.
 })
@@ -1630,17 +1630,17 @@ test("an archive rides its Session's channel, and the archive's list and restore
   assert.equal(writeRoute("POST", "/v1/sessions/archived/other"), null)
 
   const client = new FakeClient()
-  client.rows = [row("s1")]
+  client.rows = [row("s1", { closeability: { version: "cv-archive" } })]
   const { reader } = seam(client)
   assert.deepEqual((await reader.snapshot()).sessions.map((s) => s.id), ["s1"])
 
   // The archive is the close's decision: its key is the command's request and
   // `force` is carried as the word spells it.
-  const archived = await reader.fetch("/v1/sessions/s1/archive", post({ force: true }, { "Idempotency-Key": "press-archive-1" }))
+  const archived = await reader.fetch("/v1/sessions/s1/archive", post({ force: true, expected_closeability_version: "cv-stale" }, { "Idempotency-Key": "press-archive-1" }))
   assert.equal(archived.status, 200)
   assert.deepEqual(client.calls.pop(), [
     "_read", { machine: "mac-a", session: "s1" }, "archive-session",
-    { request: "press-archive-1", force: true }, "action:press-archive-1", undefined, undefined,
+    { request: "press-archive-1", force: true, expected_closeability_version: "cv-stale" }, "action:press-archive-1", undefined, undefined,
   ])
   assert.deepEqual((await reader.snapshot()).sessions, [], "an archive is a close: the row goes with it")
 

@@ -7,4 +7,4 @@ Use this skill when shaping a new screen or substantially improving an existing 
 3. Review actual rendered desktop and mobile layouts, long copy, enlarged text, keyboard focus, and reduced motion. Adjust from screenshots and interaction evidence.
 4. Explain design choices in terms of user task and product constraints. Keep the implementation accessible and maintainable.
 
-Do not replace Clawdline's design system with generic examples from an upstream skill.
+Do not replace the current product's design system with generic examples from an upstream skill.

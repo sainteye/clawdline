@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
@@ -94,7 +96,9 @@ func TestACloudAnswerIsTypedOnlyAtTheQuestionItNames(t *testing.T) {
 // is answered with the first answer. The words were typed once.
 func TestACloudSendTriedAgainUnderItsRequestIsTypedOnce(t *testing.T) {
 	p := waitingPane("%4", "")
-	bridge := cloudBridge(paneServer(t, p))
+	s := paneServer(t, p)
+	s.swift = swiftstore.Open(t.TempDir())
+	bridge := cloudBridge(s)
 	body := map[string]any{"type": "send", "session": "%4", "request": "card-1",
 		"text": "delete the build directory", "images": []any{}}
 	first := bridge.Handle(context.Background(), sealed(t, 21, body))
@@ -111,6 +115,13 @@ func TestACloudSendTriedAgainUnderItsRequestIsTypedOnce(t *testing.T) {
 		"expect": fingerprintOf(t, prompt("rm -rf build", 1))}
 	bridge.Handle(context.Background(), sealed(t, 23, press))
 	bridge.Handle(context.Background(), sealed(t, 24, press))
+	// The close now requires an idle, exactly identified Session with all work
+	// settled; the preceding send and menu answer were the active part.
+	p.s.State = "idle"
+	p.s.TTY = "ttys004"
+	p.s.PID = os.Getpid()
+	p.s.ConversationID = "00000000-0000-4000-8000-000000000004"
+	p.show("")
 	end := map[string]any{"type": "end", "session": "%4", "request": "end-1", "accept_loss": false,
 		"expected_closeability_version": ""}
 	bridge.Handle(context.Background(), sealed(t, 25, end))

@@ -48,6 +48,8 @@ func (s *Server) squadRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.squadScopesRead(w, r)
+	case "/v1/squad/skill-sources":
+		s.squadSkillSources(w, r)
 	case "/v1/squad/auto-candidates":
 		s.squadCandidateRead(w, r)
 	default:
@@ -335,6 +337,10 @@ func (s *Server) squadDefinitionRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if d.DefinitionID == resolved && version != "" && d.Builtin && len(d.Skills) > 0 {
+			if historical, ok := squad.HistoricalBuiltinDefinition(d); ok && version == historical.Version {
+				writeJSON(w, historical)
+				return
+			}
 			previous := squad.PreSkillBuiltinVersion(d)
 			if version == previous.Version {
 				writeJSON(w, previous)
@@ -557,6 +563,9 @@ func (s *Server) squadSettingsWrite(w http.ResponseWriter, r *http.Request) {
 					valid = true
 					break
 				}
+			}
+			if !valid {
+				_, valid = squad.HistoricalBuiltinSkill(ref.ID, ref.Version)
 			}
 			if !valid {
 				_, exists, err := s.store.SquadEntityVersion(r.Context(), "skill", ref.ID, ref.Version)
@@ -787,10 +796,11 @@ func (s *Server) squadEntityWrite(w http.ResponseWriter, r *http.Request) {
 			writeRefusal(w, http.StatusBadRequest, "builtin_read_only", "Built-in skills cannot be changed.")
 			return
 		}
-		if len(d.Content) > int(CapacityLimit(capacity.SquadBodyBytes)) || d.Version == "" ||
+		if !squad.ValidSkillFiles(d.Content, d.Files) || (len(d.Files) > 0 && !d.Folder) ||
+			(d.Folder && strings.TrimSpace(d.Content) == "") || d.Version == "" ||
 			d.Source == "" || d.License == "" || d.Name.En == "" ||
 			d.Purpose.En == "" || !squadIconValid(d.Icon) {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "The skill lacks required metadata or exceeds its text limit.")
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "The skill lacks required metadata or its folder files are invalid or too large.")
 			return
 		}
 		given := d.Digest
