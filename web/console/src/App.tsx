@@ -437,10 +437,12 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   // `SessionSelection.reconcile`): a session that went away takes its
   // highlight and its detail with it. A session the address asked for is
   // looked for in every list until it is found or known gone. The first list
-  // to arrive puts the highlight on the top row; on a desk it also opens it,
-  // on a phone it does not — and not when the address asked for another page,
+  // to arrive highlights the top row on a phone. On a desk it opens the first
+  // waiting Session when one exists, otherwise the top row, so a pinned machine
+  // steward does not hide a conversation needing an answer in the other pane.
+  // This default does not apply when the address asked for another page,
   // or for a session: that is answered by the session or by saying it has
-  // gone, never by opening the top one in its place.
+  // gone, never by opening a default row in its place.
   const firstList = useRef(true)
   useEffect(() => {
     // A list without the session being closed is that close's answer
@@ -452,10 +454,11 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
     if (firstList.current && (rows.length || asked === "gone")) {
       firstList.current = false
       if (pageRef.current === "sessions" && asked !== "opened") {
-        const top = L.orderedRows()[0]
+        const ordered = L.orderedRows()
+        const top = ordered[0]
         if (top) {
           if (phone() || asked !== "none") setSelected(top.id)
-          else openSession(top.id, true)
+          else openSession((ordered.find((row) => row.state === "waiting") ?? top).id, true)
         }
       }
     }

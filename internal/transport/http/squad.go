@@ -334,6 +334,13 @@ func (s *Server) squadDefinitionRead(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, d)
 			return
 		}
+		if d.DefinitionID == resolved && version != "" && d.Builtin && len(d.Skills) > 0 {
+			previous := squad.PreSkillBuiltinVersion(d)
+			if version == previous.Version {
+				writeJSON(w, previous)
+				return
+			}
+		}
 	}
 	if version != "" {
 		row, ok, err := s.store.SquadEntityVersion(r.Context(), "definition", resolved, version)

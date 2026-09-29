@@ -2,6 +2,8 @@ package http
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -100,13 +103,28 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	status, raw := f.ask("GET", "/v1/squad/catalog", f.reader, "", "")
 	var catalog contract.SquadCatalog
 	if status != 200 || json.Unmarshal([]byte(raw), &catalog) != nil ||
-		len(catalog.Definitions) != 42 || len(catalog.Skills) != 0 {
+		len(catalog.Definitions) != 42 || len(catalog.Skills) != 11 {
 		t.Fatalf("private catalog = %d, %s", status, raw)
+	}
+	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
+	if err != nil || len(launch.Skills) != 1 || !launch.Skills[0].Enabled ||
+		launch.Skills[0].Content == "" || launch.Skills[0].ID != "clawdline.skill.golang-concurrency" {
+		t.Fatalf("default built-in skill launch = %+v, %v", launch.Skills, err)
 	}
 	for _, d := range catalog.Definitions {
 		if !d.Builtin || d.Body == "" || d.DefinitionID == "" || d.Digest == "" || d.Skills == nil {
 			t.Fatalf("incomplete definition %+v", d)
 		}
+	}
+	var previous squad.Definition
+	for _, d := range squad.Builtins().Definitions {
+		if d.ShortID == "backend" {
+			previous = squad.PreSkillBuiltinVersion(d)
+			break
+		}
+	}
+	if status, raw := f.ask("GET", "/v1/squad/definitions/backend?version="+previous.Version, f.reader, "", ""); status != 200 || !strings.Contains(raw, `"skills":[]`) {
+		t.Fatalf("prior built-in definition = %d, %s", status, raw)
 	}
 	if status, raw := f.ask("GET", "/v1/personas", f.reader, "", ""); status != 200 || strings.Contains(raw, "Clawdline persona") {
 		t.Fatalf("summary leaked full content: %d, %s", status, raw)
@@ -125,6 +143,35 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	}
 	if status, raw := f.ask("GET", "/v1/squad/auto-candidates?conversation_id=claimed", f.local, "", ""); status != 403 || !strings.Contains(raw, "actor_unverified") {
 		t.Fatalf("self-claimed actor = %d, %s", status, raw)
+	}
+}
+
+func TestSquadBuiltInSkillReachesNewSessionFiles(t *testing.T) {
+	f := newSquadFixture(t)
+	snapshot, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
+	if err != nil || len(snapshot.Skills) != 1 || !snapshot.Skills[0].Enabled {
+		t.Fatalf("default backend snapshot: %+v, %v", snapshot.Skills, err)
+	}
+	document, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(document)
+	files, err := squadfiles.Publish(t.TempDir(), "ABCDEFGHIJKLMNOPQRSTUV", hex.EncodeToString(hash[:]), "test-capability", document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := os.ReadFile(files.PromptPath)
+	if err != nil || !strings.Contains(string(prompt), snapshot.Skills[0].ID) {
+		t.Fatalf("launch prompt omitted the built-in skill: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(files.SnapshotPath), "skills"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("launch skill files: %d, %v", len(entries), err)
+	}
+	content, err := os.ReadFile(filepath.Join(filepath.Dir(files.SnapshotPath), "skills", entries[0].Name()))
+	if err != nil || string(content) != snapshot.Skills[0].Content {
+		t.Fatalf("launch skill content differs from snapshot: %v", err)
 	}
 }
 

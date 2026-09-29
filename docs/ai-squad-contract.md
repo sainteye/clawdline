@@ -123,8 +123,14 @@ each global or Project private setting scope and confirms it before download.
 Neither imported text nor a manifest may execute scripts, fetch URLs, send
 data, authorize a paid API, or override existing user and repository rules.
 Candidate research for all 42 built-ins is recorded separately from review
-and adoption. No candidate is shown as installed before explicit adoption;
-zero installed skills is a valid state.
+and adoption. Following the person's 2026-09-29 integration request, 11
+reviewed candidates have Clawdline-specific, locally bundled adaptations in
+the built-in skill catalog and are enabled by default for their matching
+roles. The remaining 31 roles have no default skill. A global or Project
+override can reorder, disable, or remove a role's effective skills. No skill
+is shown as used merely because it is available; only a matching Session
+receipt can report a read, application, or failure. Older Session snapshots
+retain their original skills after this catalog change.
 
 Catalog metadata can be public. Complete definitions, handbooks, skill bodies,
 session snapshots, and private package data require an authorized local reader
