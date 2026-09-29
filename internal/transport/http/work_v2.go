@@ -330,7 +330,16 @@ func workV2EpicInstruction(id string) string {
 		"--reference <task id> --body-file <file>` — what it found and what the plan changed — and if it found real " +
 		"problems, revise the plan (a new plan document) and have that reviewed again, at most twice in all; (4) break the work into steps with " +
 		"`clawdline item step-add " + id + "`; (5) only then `clawdline item phase " + id + " implementing`, which the " +
-		"daemon refuses until a review newer than the latest plan, or a second review, is recorded. During planning, decide whether " +
+		"daemon refuses until a review newer than the latest plan, or a second review, is recorded. Plan verification in order: " +
+		"each implementation child uses focused tests for its own changes; the Epic owner then lands all affected components " +
+		"work into one runnable candidate and checks the required accounts, data, browser and API paths. Only after that candidate " +
+		"works should you dispatch a real end-to-end test. Do not send an end-to-end verifier to a mock UI, disconnected " +
+		"branches or incomplete APIs; resolve setup failures with the implementation owner and rerun the affected paths before " +
+		"the final end-to-end round. Before browser-based verification, prove the chosen worker can open the target URL with " +
+		"an authorized browser or equivalent local automation, and has the required test accounts, fixtures and app/origin " +
+		"permissions. Name that browser route in the brief; `--permission-mode full` alone does not grant browser access. " +
+		"If the preflight fails, fix access or choose an equivalent harness before dispatching; do not repeatedly send a " +
+		"verifier into the same blocker. During planning, decide whether " +
 		"the Epic changes a human-facing interface, user journey, or product policy. If it does, before merging dispatch an independent " +
 		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect`; " +
 		"brief it to inspect the integrated desktop and mobile experience, accessibility, workflow, and product fit, require evidence for " +
