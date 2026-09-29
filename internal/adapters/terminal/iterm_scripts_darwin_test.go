@@ -27,6 +27,7 @@ import (
 const itermModel = `
 const vm = require("vm");
 const writes = [];
+let bulkRequests = 0;
 // Which session was picked, so a reveal can be checked for the tab it chose
 // and not only for having answered yes.
 const selects = [];
@@ -62,13 +63,23 @@ const listed = { select: () => {}, tabs: () => [
   { select: () => {}, sessions: () => [session("GUID-A", "/dev/ttys031", shell), session("GUID-C", "/dev/ttys032", claude),
     session("GUID-D", "/dev/ttys033", deaf)] },
 ] };
+if (complete) {
+  const groups = () => { bulkRequests++; return listed.tabs().map(t => t.sessions()); };
+  groups.id = () => { bulkRequests++; return listed.tabs().map(t => t.sessions().map(s => s.id())); };
+  groups.tty = () => { bulkRequests++; return listed.tabs().map(t => t.sessions().map(s => s.tty())); };
+  Object.defineProperty(groups, "name", { value: () => {
+    bulkRequests++; return listed.tabs().map(t => t.sessions().map(s => s.name()));
+  } });
+  listed.tabs.sessions = groups;
+}
 const app = { running: () => true, windows: () => complete ? [listed] : [unlisted, listed], activate: () => {} };
 const context = vm.createContext({ Application: () => app, delay: () => {}, JSON: JSON });
 const script = process.env.SCRIPT, argv = JSON.parse(process.env.ARGV || "null");
 const answer = argv === null
   ? vm.runInContext(script, context)
   : vm.runInContext(script + "\n;run(" + JSON.stringify(argv) + ")", context);
-process.stdout.write(JSON.stringify({ answer: JSON.parse(answer), writes: writes, selects: selects }));
+process.stdout.write(JSON.stringify({ answer: JSON.parse(answer), writes: writes, selects: selects,
+  bulkRequests: bulkRequests }));
 `
 
 func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
@@ -115,8 +126,9 @@ func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
 }
 
 type modelRun struct {
-	Answer map[string]any `json:"answer"`
-	Writes []struct {
+	Answer       map[string]any `json:"answer"`
+	BulkRequests int            `json:"bulkRequests"`
+	Writes       []struct {
 		ID      string `json:"id"`
 		Text    string `json:"text"`
 		Newline bool   `json:"newline"`
@@ -172,6 +184,19 @@ func TestTheITermListingSkipsAWindowThatWillNotListItsTabs(t *testing.T) {
 	}
 	if run.Answer["unreadable"] != float64(2) {
 		t.Fatalf("unreadable %v, want the window and the tab that would not list", run.Answer["unreadable"])
+	}
+}
+
+func TestTheITermListingReadsAWholeWindowInFourBatches(t *testing.T) {
+	run := runInModelWith(t, itermList, nil, true)
+	rows, _ := run.Answer["sessions"].([]any)
+	if run.BulkRequests != 4 || len(rows) != 3 || run.Answer["unreadable"] != float64(0) {
+		t.Fatalf("bulk listing: requests=%d answer=%v", run.BulkRequests, run.Answer)
+	}
+	for n, want := range []string{"GUID-A", "GUID-C", "GUID-D"} {
+		if rows[n].(map[string]any)["id"] != want {
+			t.Fatalf("row %d was %v, want %s", n, rows[n], want)
+		}
 	}
 }
 

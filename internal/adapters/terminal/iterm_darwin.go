@@ -120,20 +120,78 @@ function itermEach(it, visit) {
 }
 `
 
-// The whole conversation is one script so that it costs one Apple Event round
-// trip rather than one per property per session.
-const itermList = itermEach + `
+// Ask each window for its sessions and three columns of properties. JXA sends
+// one Apple Event per column for the whole window; asking id, tty and name on each
+// session made a window with many tabs cost three round trips per session.
+// A malformed window falls back to the old walk only for that window, so one
+// bad tab cannot make the other windows disappear.
+const itermList = `
 const it = Application("iTerm2");
 if (!it.running()) { JSON.stringify({running:false, sessions:[]}); }
 else {
   const out = [];
-  const walk = itermEach(it, function (s) {
+  let unreadable = 0;
+  const gaps = [];
+  function note(win, why) {
+    unreadable++;
+    let wid = "";
+    try { wid = String(win.id()); } catch (e) {}
+    for (let g = 0; g < gaps.length; g++) {
+      if (gaps[g].window === wid) { gaps[g].regions++; return; }
+    }
+    gaps.push({ window: wid, why: why, regions: 1 });
+  }
+  function append(s) {
     let tty = "", name = "";
     try { tty = String(s.tty() || ""); } catch (e) {}
     try { name = String(s.name() || ""); } catch (e) {}
     out.push({ id: String(s.id()), tty: tty, name: name });
-  });
-  JSON.stringify({running:true, sessions: out, unreadable: walk.unreadable, gaps: walk.gaps});
+  }
+  const wins = it.windows();
+  for (let a = 0; a < wins.length; a++) {
+    const win = wins[a];
+    let tabs = null;
+    try { tabs = win.tabs(); } catch (e) {}
+    if (!tabs) { note(win, "tabs() answered null"); continue; }
+
+    let groups, ids, ttys, names;
+    try {
+      groups = win.tabs.sessions();
+      ids = win.tabs.sessions.id();
+      ttys = win.tabs.sessions.tty();
+      names = win.tabs.sessions.name();
+    } catch (e) {}
+    let whole = Array.isArray(groups) && Array.isArray(ids) && Array.isArray(ttys) && Array.isArray(names) &&
+      groups.length === tabs.length && ids.length === tabs.length &&
+      ttys.length === tabs.length && names.length === tabs.length;
+    if (whole) {
+      for (let b = 0; b < tabs.length; b++) {
+        if (!Array.isArray(groups[b]) || !Array.isArray(ids[b]) ||
+            !Array.isArray(ttys[b]) || !Array.isArray(names[b]) ||
+            ids[b].length !== groups[b].length || ids[b].length !== ttys[b].length ||
+            ids[b].length !== names[b].length || ids[b].some(id => !id)) {
+          whole = false;
+          break;
+        }
+      }
+    }
+    if (whole) {
+      for (let b = 0; b < tabs.length; b++) {
+        for (let c = 0; c < ids[b].length; c++) {
+          out.push({ id: String(ids[b][c] || ""), tty: String(ttys[b][c] || ""),
+            name: String(names[b][c] || "") });
+        }
+      }
+      continue;
+    }
+    for (let b = 0; b < tabs.length; b++) {
+      let sessions = null;
+      try { sessions = tabs[b].sessions(); } catch (e) {}
+      if (!sessions) { note(win, "a tab's sessions() answered null"); continue; }
+      for (let c = 0; c < sessions.length; c++) append(sessions[c]);
+    }
+  }
+  JSON.stringify({running:true, sessions: out, unreadable: unreadable, gaps: gaps});
 }
 `
 

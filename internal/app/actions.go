@@ -126,7 +126,21 @@ func (r Refusal) Unwrap() error { return r.Cause }
 // which source issues it (session.SourceForID); an id in no source's shape
 // falls back to the whole reading, which is where it started.
 func (a Actions) Find(ctx context.Context, id string) (session.Session, error) {
-	inv := a.read(ctx)
+	return findInInventory(a.read(ctx), id)
+}
+
+// FindForRead may use an unverified row the list already showed. It is only
+// for read-only routes: a transcript remains a read of that row's provider
+// file even while iTerm2 cannot enumerate tabs. Actions still call Find and
+// demand a fresh terminal reading before they change anything.
+func (a Actions) FindForRead(ctx context.Context, id string) (session.Session, error) {
+	if a.Reading != nil {
+		return findInInventory(a.Reading.Fast(ctx), id)
+	}
+	return findInInventory(a.Inventory.Read(ctx), id)
+}
+
+func findInInventory(inv session.Inventory, id string) (session.Session, error) {
 	for _, item := range inv.Sessions {
 		if item.ID == id {
 			return item, nil

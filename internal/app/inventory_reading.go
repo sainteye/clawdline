@@ -26,27 +26,27 @@ import (
 // still there is not, because that decision closes sessions and settles tasks,
 // and a snapshot taken before the tab opened would be evidence of something
 // that was never observed (docs/design-decisions.md D05 ③ — an expired
-// snapshot may not stand in for evidence). So there are two words for it, every
+// snapshot may not stand in for evidence). So there are three words for it, every
 // caller says which it needs, and Counts records how each one was answered.
 //
 //   - Recent may be answered from the held reading while it is younger than
 //     the TTL.
+//   - Fast returns bounded prior rows marked unverified while one background
+//     refresh runs; it is only for drawing and read-only lookups.
 //   - Fresh is never answered from a completed reading. It joins a scan that is
 //     still running, or starts one; either way what comes back was taken for
 //     this call.
 //
-// Both are singleflight: readers arriving during a scan share it rather than
+// All are singleflight: readers arriving during a scan share it rather than
 // starting another.
 
 // InventoryTTL is how old the held reading may be before a Recent reader is
 // given a new one.
 //
 // Two seconds because that is the fastest consumer's own clock — the event
-// stream's tick (transport/http streamTick) — so the slower two ride along on
-// a reading that was going to be taken anyway, and a page never shows anything
-// older than the tick it asked on. It is far inside the forty-five seconds past
-// which a row's closeability calls the reading stale, which is the guard that
-// stops an old snapshot from authorising a close.
+// stream's tick (transport/http streamTick). Fast may show an older row while
+// refreshing, but labels it unverified and applies the shorter of its source's
+// age and the registered retention bound. Closeability checks age separately.
 const InventoryTTL = 2 * time.Second
 
 // InventoryScanBudget bounds one scan of the machine.
@@ -97,7 +97,10 @@ type InventoryReading struct {
 	mu    sync.Mutex
 	held  session.Inventory
 	holds bool
-	good  map[string]sourceReading
+	// finishedAt separates the refresh cadence from the observation time: a
+	// slow successful scan must not start the next Apple Event immediately.
+	finishedAt time.Time
+	good       map[string]sourceReading
 	// forgotten is a terminal backend's positive answer that a session was
 	// closed. It prevents an older scan already in flight, or the last-good
 	// shelf during a source outage, from putting that session back on screen.
@@ -191,9 +194,8 @@ func (r *InventoryReading) SetRetentionAge(seconds int64) {
 	r.mu.Unlock()
 }
 
-// Recent is a reading no older than the TTL: the console, the event stream and
-// the Cloud publisher, all of which redraw on a clock of their own and none of
-// which decides anything irreversible from it.
+// Recent waits for a reading no older than the TTL. Fast is the lower-latency
+// drawing path; Within is for a consumer whose own clock is slower.
 func (r *InventoryReading) Recent(ctx context.Context) session.Inventory {
 	r.mu.Lock()
 	if r.holds && r.now().Sub(r.held.ObservedAt) < r.ttl {
@@ -204,6 +206,70 @@ func (r *InventoryReading) Recent(ctx context.Context) session.Inventory {
 	}
 	r.mu.Unlock()
 	return r.take(ctx, false)
+}
+
+// Fast is for drawing and reading a row already shown to the person. Once a
+// complete reading exists, an Apple Event that has not answered yet must not
+// put every viewer behind it. One scan refreshes the held reading in the
+// background; the prior rows are explicitly unverified until it finishes.
+// Expired rows are never returned. Fresh remains the path for decisions.
+func (r *InventoryReading) Fast(ctx context.Context) session.Inventory {
+	r.mu.Lock()
+	if !r.holds {
+		r.mu.Unlock()
+		return r.take(ctx, false)
+	}
+	now := r.now()
+	if now.Sub(r.held.ObservedAt) < r.ttl {
+		inv := r.held
+		r.counts.Held++
+		r.mu.Unlock()
+		return inv
+	}
+	if r.flight == nil && (r.finishedAt.IsZero() || now.Sub(r.finishedAt) >= r.ttl) {
+		r.startLocked(ctx)
+	}
+	inv := r.held
+	inv.Sessions = append([]session.Session(nil), inv.Sessions...)
+	inv.Sources = cloneSources(inv.Sources)
+	inv.Notes = append([]string(nil), inv.Notes...)
+	r.counts.Held++
+	retainFor := r.retainFor
+	r.mu.Unlock()
+
+	kept := inv.Sessions[:0]
+	oldest := now
+	for _, row := range inv.Sessions {
+		at := row.Observation.ObservedAt
+		if at.IsZero() || now.Sub(at) >= retainFor || now.Before(at) {
+			continue
+		}
+		row.Observation.Freshness = session.FreshnessUnverified
+		kept = append(kept, row)
+		if at.Before(oldest) {
+			oldest = at
+		}
+	}
+	inv.Sessions = kept
+	inv.Complete = false
+	for source := range inv.Sources {
+		inv.Sources[source] = false
+	}
+	if len(kept) == 0 {
+		return unreadInventory()
+	}
+	inv.Observation = session.Observation{ObservedAt: oldest, Provenance: inv.Provenance,
+		Freshness: session.FreshnessUnverified}
+	inv.Notes = append(inv.Notes, "session inventory refresh is in progress; prior rows are unverified")
+	return inv
+}
+
+func cloneSources(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for name, complete := range src {
+		dst[name] = complete
+	}
+	return dst
 }
 
 // Within is Recent for a reader whose own clock is slower than the TTL: it is
@@ -250,19 +316,7 @@ func (r *InventoryReading) Held() (session.Inventory, bool) {
 
 func (r *InventoryReading) take(ctx context.Context, fresh bool) session.Inventory {
 	r.mu.Lock()
-	flight := r.flight
-	if flight != nil {
-		r.counts.Joined++
-	} else {
-		flight = &inventoryFlight{done: make(chan struct{})}
-		r.flight = flight
-		r.counts.Scans++
-		// The scan runs on a goroutine with a clock of its own. Were it run on
-		// the leader's, a leader that hung up would take every reader waiting
-		// behind it down too, and the reading it had nearly finished would be
-		// thrown away.
-		go r.run(ctx, flight)
-	}
+	flight := r.startLocked(ctx)
 	r.mu.Unlock()
 
 	select {
@@ -284,6 +338,20 @@ func (r *InventoryReading) take(ctx context.Context, fresh bool) session.Invento
 	}
 }
 
+// startLocked admits one scan regardless of how many pages ask while an Apple
+// Event is slow. The scan has its own clock, not the first caller's deadline.
+func (r *InventoryReading) startLocked(ctx context.Context) *inventoryFlight {
+	if r.flight != nil {
+		r.counts.Joined++
+		return r.flight
+	}
+	flight := &inventoryFlight{done: make(chan struct{})}
+	r.flight = flight
+	r.counts.Scans++
+	go r.run(ctx, flight)
+	return flight
+}
+
 // run takes the reading and hands it to everybody waiting.
 func (r *InventoryReading) run(ctx context.Context, flight *inventoryFlight) {
 	scan, cancel := context.WithTimeout(context.WithoutCancel(ctx), InventoryScanBudget)
@@ -298,6 +366,7 @@ func (r *InventoryReading) run(ctx context.Context, flight *inventoryFlight) {
 	display := r.retainLocked(raw)
 	r.held = display
 	r.holds = true
+	r.finishedAt = r.now()
 	r.flight = nil
 	observers := r.observers
 	r.mu.Unlock()

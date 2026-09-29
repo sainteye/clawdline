@@ -277,17 +277,16 @@ func New(cfg config.Config) (*Server, error) {
 	return srv, nil
 }
 
-// reading is this machine's session list, as it was taken a moment ago.
+// reading is this machine's last bounded display list while its next scan runs.
 //
-// Every route that draws or projects rows reads this. It may be answered from
-// the held reading while that is younger than app.InventoryTTL, which is what
-// makes one scan serve the console, the Cloud publisher and the broker's pass
-// at once instead of three.
+// Every route that draws or projects rows reads this. A prior row beyond
+// app.InventoryTTL is marked unverified while one scan serves the console,
+// Cloud publisher and broker's pass instead of three separate scans.
 func (s *Server) reading(ctx context.Context) session.Inventory {
 	if s.readings == nil {
 		return s.inventory.Read(ctx)
 	}
-	return s.readings.Recent(ctx)
+	return s.readings.Fast(ctx)
 }
 
 // freshReading is a reading taken for this call.

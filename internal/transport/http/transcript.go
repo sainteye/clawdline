@@ -90,7 +90,7 @@ func (s *Server) transcriptRoute(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	item, err := s.actions().Find(ctx, id)
+	item, err := s.actions().FindForRead(ctx, id)
 	if err != nil {
 		writeActionRefusal(w, err)
 		return
@@ -309,7 +309,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	item, err := s.actions().Find(ctx, id)
+	item, err := s.actions().FindForRead(ctx, id)
 	if err != nil {
 		writeActionRefusal(w, err)
 		return
