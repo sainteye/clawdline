@@ -63,6 +63,8 @@ let refuseAdoption = false
 let boundFixture = false
 let bindingDelayMs = 0
 let bindingReads = 0
+let eventHeadReads = 0
+let eventPageReads = 0
 const eventRows: Record<string, unknown>[] = []
 function document() {
   const html = readFileSync(join(dist, "index.html"), "utf8")
@@ -95,7 +97,7 @@ function fixture(): Server {
       const place = url.searchParams.get("place_id")
       return json(res, 200, settings(place === "place-a" ? "project-a" : place === "place-b" ? "project-b" : "global"))
     }
-    if (path === "/v1/squad/events/head") return json(res, 200, { seq: eventRows.at(-1)?.seq ?? 0 })
+    if (path === "/v1/squad/events/head") { eventHeadReads++; return json(res, 200, { seq: eventRows.at(-1)?.seq ?? 0 }) }
     if (path === "/v1/squad/session-bindings") {
       bindingReads++
       setTimeout(() => json(res, 200, { bindings: boundFixture ? [{
@@ -105,6 +107,7 @@ function fixture(): Server {
       return
     }
     if (path === "/v1/squad/events") {
+      eventPageReads++
       const after = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("after") ?? 0)
       const events = eventRows.filter((row) => Number(row.seq) > after)
       return json(res, 200, { events, next_after: events.at(-1)?.seq ?? after, has_more: false })
@@ -376,7 +379,14 @@ test("an existing receipt and a read stay quiet while a new bound applied receip
     conversation_id: "conversation-1", definition_id: definitions[0].definition_id, scope_id: "global",
     skill_id: "community.skill.draft", skill_version: "v1", status, at: Date.now() })
   eventRows.push(receipt(1, "applied"))
+  const initialHeads = eventHeadReads
+  const initialPages = eventPageReads
   await tab(1440, 900, async (evaluate) => {
+    const baselineDeadline = Date.now() + 5_000
+    while (eventHeadReads <= initialHeads || eventPageReads <= initialPages) {
+      if (Date.now() > baselineDeadline) throw new Error("event baseline and first poll did not finish")
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
     assert.equal(await evaluate('!!document.querySelector("#squad .squad-use")'), false, "the initial head is a baseline")
     eventRows.push(receipt(2, "read"))
     await new Promise((resolve) => setTimeout(resolve, 3500))

@@ -11,7 +11,7 @@ export interface PackPreview {
   catalogVersion: number
   additions: string[]
   updates: string[]
-  conflicts: { id: string; reason: string }[]
+  conflicts: { kind: string; id: string; reason: string }[]
   dependencies: string[]
   source: string
   license: string
@@ -76,6 +76,17 @@ function base64Of(bytes: Uint8Array): string {
   let binary = ""
   for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
   return btoa(binary)
+}
+
+function conflictReason(code?: string): string {
+  switch (code) {
+    case "reserved_id": return "內建項目不能覆蓋"
+    case "name_conflict": return "名稱已由其他 ID 使用"
+    case "version_content_conflict": return "版本相同但內容不同"
+    case "version_downgrade": return "資料包版本比現有版本舊"
+    case "version_incomparable": return "版本無法比較"
+    default: return code || "目錄衝突"
+  }
 }
 
 class HttpSquadAPI implements SquadAPI {
@@ -157,7 +168,7 @@ class HttpSquadAPI implements SquadAPI {
       archiveBase64, scopeId: reply.scope, catalogVersion: reply.catalog_version,
       additions: reply.changes.filter((change) => change.action === "add").map(label),
       updates: reply.changes.filter((change) => change.action === "update").map(label),
-      conflicts: reply.changes.filter((change) => change.action === "conflict").map((change) => ({ id: change.id, reason: change.conflict_code || "目錄衝突" })),
+      conflicts: reply.changes.filter((change) => change.action === "conflict").map((change) => ({ kind: change.kind, id: change.id, reason: conflictReason(change.conflict_code) })),
       dependencies: [...new Set(reply.changes.flatMap((change) => change.dependents))],
       source: reply.source || "", license: reply.license || "", privateScopes: reply.private_scopes ?? [],
     }
