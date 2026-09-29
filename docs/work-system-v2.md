@@ -360,7 +360,13 @@ With verification on, the maker's `clawdline item phase <id> verifying` sends it
 same-Project worktree, branch, and full committed HEAD. The daemon requires a clean tracked tree
 and a strict descendant of the cycle base, then durably queues a detached read-only Codex checker.
 Issue uses Code Reviewer; Epic final end-to-end verification uses Reality Checker only after all
-children are terminal; Feature uses Evidence Collector when it has a reference image or design
+children are terminal and the affected components have landed in one runnable candidate. Before
+any browser or multi-account end-to-end dispatch, the owner checks the candidate's cross-component
+smoke path, proves the chosen worker can open the target URL with an authorized browser or equivalent
+local harness, and supplies test accounts, fixtures, and origin permissions. A missing browser is
+resolved before dispatch rather than discovered through repeated failed read-only tasks. Focused
+child and integration checks may run earlier; the final end-to-end pass does not run on mock UI,
+disconnected branches, or incomplete APIs. Feature uses Evidence Collector when it has a reference image or design
 document, otherwise Reality Checker. A result has `PASS`, `FAIL`, or `NEEDS_WORK` with bounded
 per-claim evidence; an unverified claim explains why and is never PASS. Missing, malformed, stale,
 or mismatched results cannot authorize merging. Technical failure gets one bounded retry before
