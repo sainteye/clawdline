@@ -3,6 +3,9 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,14 +50,15 @@ func boardTitleFixture(t *testing.T, mode string) (*Server, context.Context) {
 		t.Fatal(err)
 	}
 	item := work.ItemV2{ID: "10000000-0000-4000-8000-0000000000b1", ProjectID: "project-a", ProjectPath: "/project-a",
-		Kind: work.KindFeature, Title: "Board item title", Description: "d", Phase: work.PhaseCreated,
+		Kind: work.KindFeature, Title: "Board item title", Description: "d", Phase: work.PhaseAssigned,
+		OwnerSession:     "resumed-conversation",
 		DeploymentPolicy: work.DeployAgentDecides, CreatedBy: "local", CreatedAt: at, UpdatedAt: at, Cycle: 1, Version: 1}
 	if err := st.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
 		if err := tx.CreateItem(item, "local", `{}`); err != nil {
 			return err
 		}
 		return tx.CreateAssignment(work.AssignmentV2{ID: "assignment-a", WorkID: item.ID, Mode: mode,
-			SessionID: "resumed-conversation", Assistant: "claude", State: "active", HumanActor: "local",
+			SessionID: "resumed-conversation", TerminalID: "OLD-TERMINAL", Assistant: "claude", State: "active", HumanActor: "local",
 			RootAssignment: a.ID, CreatedAt: at, UpdatedAt: at})
 	}); err != nil {
 		t.Fatal(err)
@@ -147,5 +151,146 @@ func TestAManualTitleOutranksTheBoardTitle(t *testing.T) {
 	}
 	if got := liveRowLabel(t, s, ctx, row); got != "Typed by the person" {
 		t.Fatalf("the manual title lost to %q", got)
+	}
+}
+
+func TestOwningRootNamesItsSessionAndKeepsTheNameAfterResume(t *testing.T) {
+	s, ctx := boardTitleFixture(t, "new_session")
+	path := "/v1/work/v2/agent/items/10000000-0000-4000-8000-0000000000b1/session-name"
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, path,
+		`{"session_id":"resumed-conversation","title":"Repair Session naming"}`, "name-one"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("name: %d %s", rec.Code, rec.Body)
+	}
+	if got := liveRowLabel(t, s, ctx, resumedRow("resumed-conversation")); got != "Repair Session naming" {
+		t.Fatalf("resumed label = %q", got)
+	}
+}
+
+func nameBoardRoot(s *Server, title, key string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost,
+		"/v1/work/v2/agent/items/10000000-0000-4000-8000-0000000000b1/session-name",
+		`{"session_id":"resumed-conversation","title":"`+title+`"}`, key))
+	return rec
+}
+
+func TestRootNamingIsFirstWriteOnlyAndChecksCurrentOwnershipOnEveryRequest(t *testing.T) {
+	s, ctx := boardTitleFixture(t, "new_session")
+	if rec := nameBoardRoot(s, "Repair naming", "first"); rec.Code != http.StatusOK {
+		t.Fatalf("first: %d %s", rec.Code, rec.Body)
+	}
+	if rec := nameBoardRoot(s, "Repair naming", "another-key"); rec.Code != http.StatusOK {
+		t.Fatalf("same name: %d %s", rec.Code, rec.Body)
+	}
+	if rec := nameBoardRoot(s, "A different name", "different"); rec.Code != http.StatusConflict || codeOf(t, rec) != "session_already_named" {
+		t.Fatalf("different name: %d %s", rec.Code, rec.Body)
+	}
+	if err := s.store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		item, err := tx.Item("10000000-0000-4000-8000-0000000000b1")
+		if err != nil {
+			return err
+		}
+		assignment, err := tx.ActiveAssignment(item.ID)
+		if err != nil {
+			return err
+		}
+		assignment.State = "released"
+		if err := tx.UpdateAssignment(assignment); err != nil {
+			return err
+		}
+		next := item
+		next.OwnerSession = "another-conversation"
+		return tx.PutItem(item, next, "item.reassigned", "local", `{}`)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := nameBoardRoot(s, "Repair naming", "first"); rec.Code != http.StatusConflict || codeOf(t, rec) != "not_item_owner" {
+		t.Fatalf("old request after reassignment: %d %s", rec.Code, rec.Body)
+	}
+	if got := liveRowLabel(t, s, ctx, resumedRow("resumed-conversation")); got != "Repair naming" {
+		t.Fatalf("the original conversation lost its name: %q", got)
+	}
+}
+
+func TestRootNamingRejectsInvalidNamesAndExistingSessionAssignments(t *testing.T) {
+	s, ctx := boardTitleFixture(t, "new_session")
+	for _, tc := range []struct{ title, code string }{
+		{"   ", "invalid_title"},
+		{strings.Repeat("界", 67), "invalid_title"},
+	} {
+		rec := nameBoardRoot(s, tc.title, "invalid-"+tc.title)
+		if rec.Code != http.StatusUnprocessableEntity || codeOf(t, rec) != tc.code {
+			t.Fatalf("invalid %q: %d %s", tc.title, rec.Code, rec.Body)
+		}
+	}
+	invalidUTF8 := httptest.NewRequest(http.MethodPost,
+		"/v1/work/v2/agent/items/10000000-0000-4000-8000-0000000000b1/session-name",
+		strings.NewReader("{\"session_id\":\"resumed-conversation\",\"title\":\"\xff\"}"))
+	invalidUTF8 = invalidUTF8.WithContext(agentWorkV2Request(http.MethodPost, "/", `{}`, "invalid-utf8").Context())
+	bad := httptest.NewRecorder()
+	s.workV2Route(bad, invalidUTF8)
+	if bad.Code != http.StatusBadRequest || codeOf(t, bad) != "invalid_title" {
+		t.Fatalf("invalid UTF-8: %d %s", bad.Code, bad.Body)
+	}
+	if got := liveRowLabel(t, s, ctx, resumedRow("resumed-conversation")); got != "Board item title" {
+		t.Fatalf("invalid names changed the row: %q", got)
+	}
+	other, _ := boardTitleFixture(t, "existing_session")
+	if rec := nameBoardRoot(other, "Should not apply", "existing"); rec.Code != http.StatusConflict || codeOf(t, rec) != "not_item_owner" {
+		t.Fatalf("existing Session: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRootNamingRejectsAMismatchedRootRecord(t *testing.T) {
+	s, ctx := boardTitleFixture(t, "new_session")
+	_, err := s.store.UpdateOpened(ctx, store.TableRootAssignments, "root-a", func(o store.Opened) (*store.Opened, []store.Event, error) {
+		var root orchestrator.RootAssignment
+		if err := json.Unmarshal(o.Record, &root); err != nil {
+			return nil, nil, err
+		}
+		root.Assistant = "codex"
+		o.Record, _ = json.Marshal(root)
+		return &o, nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := nameBoardRoot(s, "Wrong Root", "wrong-root"); rec.Code != http.StatusConflict || codeOf(t, rec) != "root_assignment_mismatch" {
+		t.Fatalf("mismatched Root: %d %s", rec.Code, rec.Body)
+	}
+	_, err = s.store.UpdateOpened(ctx, store.TableRootAssignments, "root-a", func(o store.Opened) (*store.Opened, []store.Event, error) {
+		var root orchestrator.RootAssignment
+		if err := json.Unmarshal(o.Record, &root); err != nil {
+			return nil, nil, err
+		}
+		root.Assistant, root.ID = "claude", "another-root"
+		o.Record, _ = json.Marshal(root)
+		return &o, nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := nameBoardRoot(s, "Wrong Root", "wrong-id"); rec.Code != http.StatusConflict || codeOf(t, rec) != "root_assignment_mismatch" {
+		t.Fatalf("mismatched Root id: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestExplicitRenameAndManualTitleOutrankAnAgentNamedBoardRoot(t *testing.T) {
+	s, ctx := boardTitleFixture(t, "new_session")
+	if rec := nameBoardRoot(s, "Repair naming", "first"); rec.Code != http.StatusOK {
+		t.Fatalf("name: %d %s", rec.Code, rec.Body)
+	}
+	row := resumedRow("resumed-conversation")
+	row.CustomTitle = "Person's /rename"
+	if got := liveRowLabel(t, s, ctx, row); got != "Person's /rename" {
+		t.Fatalf("/rename was covered by %q", got)
+	}
+	if _, err := s.saveSessionTitle(row, "Person's Clawdline title", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := liveRowLabel(t, s, ctx, row); got != "Person's Clawdline title" {
+		t.Fatalf("manual title was covered by %q", got)
 	}
 }

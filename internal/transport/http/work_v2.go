@@ -489,7 +489,9 @@ func (s *Server) tellFormerOwner(ctx context.Context, previous work.AssignmentV2
 // workV2RootAssignmentAcceptance is the acceptance of the Root Assignment a
 // new Session is opened with for an item.
 func workV2RootAssignmentAcceptanceForItem(item work.ItemV2) string {
-	process := "Implement, verify, merge, and deploy according to the item's deployment policy. " +
+	process := "After reading the objective and scope, choose a short Session name that states your actual task, " +
+		"then run `clawdline item name " + item.ID + " \"<task name>\"` once. This changes your Session's name, " +
+		"not the Board item's title. Implement, verify, merge, and deploy according to the item's deployment policy. " +
 		workV2GateModeInstruction(item) + " " + workV2AgentAcceptanceInstruction(item) + workV2KindSteps(item) + " " +
 		workV2PhaseInstruction(item.ID) + " " + workV2CompletionReportInstruction
 	if item.AcceptanceCriteria == "" {
@@ -2211,6 +2213,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "claim" && r.Method == http.MethodPost {
 		s.agentClaimItem(w, r, parts[1])
+		return
+	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "session-name" && r.Method == http.MethodPost {
+		s.agentNameItemSession(w, r, parts[1])
 		return
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "edit" && r.Method == http.MethodPatch {

@@ -216,10 +216,11 @@ type Owed struct {
 
 // RootAssignment is an independently owned Feature Root.
 type RootAssignment struct {
-	ID       string                  `json:"id"`
-	Label    string                  `json:"label"`
-	State    string                  `json:"state"`
-	Identity *RootAssignmentIdentity `json:"identity"`
+	ID         string                  `json:"id"`
+	Label      string                  `json:"label"`
+	AgentNamed bool                    `json:"agent_named,omitempty"`
+	State      string                  `json:"state"`
+	Identity   *RootAssignmentIdentity `json:"identity"`
 }
 
 // RootAssignmentIdentity is matched loosely: the optional facts only have to

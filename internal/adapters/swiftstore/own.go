@@ -36,6 +36,7 @@ type BoardTitle struct {
 	Assistant      string
 	ConversationID string
 	Label          string
+	AgentNamed     bool
 }
 
 // With lays own records over the snapshot and returns the merged one; the
