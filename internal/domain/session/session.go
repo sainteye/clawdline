@@ -194,6 +194,10 @@ type Session struct {
 	// with, read from its command line (persona.FromCommandLine); empty for
 	// none. The command line is the record: nothing else stores it.
 	Persona string `json:"persona,omitempty"`
+	// SquadLaunchID is parsed from the immutable prompt path on the process
+	// command line. It is not sent on the session wire; the binding API joins
+	// it with the durable launch and conversation record.
+	SquadLaunchID string `json:"-"`
 
 	// Rungs are the parts Label was chosen from, kept so a reader holding a
 	// higher rung (a name typed in the Swift app, the task that opened the tab)

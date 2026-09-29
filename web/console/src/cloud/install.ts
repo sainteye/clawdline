@@ -1,4 +1,4 @@
-import { followFleetFrom } from "../client.js"
+import { followFleetFrom, followFleetWriteAccess } from "../client.js"
 import { carryPictures } from "../legacy/images-bridge.js"
 import type { RelayReader } from "./relay-reader.js"
 
@@ -32,6 +32,7 @@ export function readThroughRelay(reader: RelayReader): void {
     return network(input, init)
   }
   followFleetFrom(reader.stream())
+  followFleetWriteAccess(() => reader.mayWrite())
   carryPictures(async (artifact, session) => {
     const res = await reader.fetch(
       "/v1/artifacts/images/" + encodeURIComponent(artifact.id) + "?session=" + encodeURIComponent(session),

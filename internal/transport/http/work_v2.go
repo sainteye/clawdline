@@ -29,6 +29,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -1582,7 +1583,8 @@ func checkWorkV2Persona(mode, id string) error {
 		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "persona_not_applicable",
 			Message: "A persona is chosen when a new Session opens; an existing Session keeps the one it was opened with. Nothing was assigned."}
 	}
-	if _, ok := persona.Known(id); mode == "new_session" && !ok {
+	_, builtin := persona.Known(id)
+	if mode == "new_session" && !builtin && !squad.ValidCustomID(id) {
 		return &app.WorkError{Status: http.StatusBadRequest, Code: "unknown_persona",
 			Message: "persona must be one of: " + strings.Join(persona.IDs(), ", ") + ". Nothing was assigned."}
 	}
@@ -1693,6 +1695,18 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	item, err := s.workV2().Item(ctx, id)
 	if err != nil {
 		return app.WorkV2View{}, err
+	}
+	if personaID != "" {
+		snapshot, err := s.ResolveSquadLaunch(ctx, personaID, item.Item.ProjectPath)
+		if err != nil {
+			if errors.Is(err, ErrSquadLaunchDefinition) {
+				return app.WorkV2View{}, &app.WorkError{Status: http.StatusBadRequest, Code: "unknown_persona", Message: "No installed role has that ID."}
+			}
+			return app.WorkV2View{}, err
+		}
+		if epicOwner != "" && !snapshot.AutoAssignEnabled {
+			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "persona_disabled_for_auto_assignment", Message: "This role is disabled for automatic assignment in the target Project."}
+		}
 	}
 	previous := workV2ActiveOwner(item)
 	briefItem, err := s.workV2().PreviewAssignment(ctx, item.Item)
@@ -2879,6 +2893,9 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 	if !ok {
 		return
 	}
+	if !s.requireSquadWorkActor(w, r, body.SessionID) {
+		return
+	}
 	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
 	if !ok {
 		return
@@ -2946,6 +2963,9 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
+		return
+	}
+	if !s.requireSquadWorkActor(w, r, body.SessionID) {
 		return
 	}
 	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)

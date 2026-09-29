@@ -57,7 +57,7 @@ func epicChildrenServer(t *testing.T, phase work.Phase) (*Server, *pane, app.Wor
 	return s, p, owned
 }
 
-func agentPost(t *testing.T, s *Server, path, key string, body map[string]any) *httptest.ResponseRecorder {
+func agentPost(t *testing.T, s *Server, path, key string, body map[string]any, capability ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -66,10 +66,40 @@ func agentPost(t *testing.T, s *Server, path, key string, body map[string]any) *
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", key)
+	if len(capability) > 0 {
+		req.Header.Set(squadSessionCapabilityHeader, capability[0])
+	}
 	req = req.WithContext(context.WithValue(req.Context(), accessKey{}, access{machine: true, verdict: auth.Verdict{Allowed: true}}))
 	rec := httptest.NewRecorder()
 	s.workV2Route(rec, req)
 	return rec
+}
+
+func TestBoundEpicOwnerMustProveItsOwnSquadCapability(t *testing.T) {
+	s, _, epic := epicChildrenServer(t, work.PhaseImplementing)
+	ctx := context.Background()
+	launch, err := s.store.PrepareSquadLaunch(ctx, json.RawMessage(`{"definition_id":"clawdline.persona.product-manager","scope_id":"project-test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.RecordSquadTerminal(ctx, launch.ID, "owner-terminal"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.BindSquadConversation(ctx, launch.ID, epicOwnerConversation); err != nil {
+		t.Fatal(err)
+	}
+	path := "/v1/work/v2/agent/items/" + epic.Item.ID + "/children"
+	body := map[string]any{"expected_version": epic.Item.Version, "session_id": epicOwnerConversation,
+		"kind": "issue", "title": "A child", "description": "One part."}
+	if got := agentPost(t, s, path, "bound-missing", body); got.Code != http.StatusForbidden || !strings.Contains(got.Body.String(), "session_actor_required") {
+		t.Fatalf("missing capability = %d %s", got.Code, got.Body)
+	}
+	if got := agentPost(t, s, path, "bound-wrong", body, "wrong"); got.Code != http.StatusForbidden || !strings.Contains(got.Body.String(), "session_actor_required") {
+		t.Fatalf("wrong capability = %d %s", got.Code, got.Body)
+	}
+	if got := agentPost(t, s, path, "bound-valid", body, launch.ActorCapability); got.Code != http.StatusCreated {
+		t.Fatalf("bound owner = %d %s", got.Code, got.Body)
+	}
 }
 
 type epicChildAnswer struct {

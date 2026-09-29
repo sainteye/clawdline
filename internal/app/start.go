@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
 	"runtime"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
@@ -43,6 +45,12 @@ type Starter struct {
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.
 	PersonaDir string
+	// Squad is the durable launch snapshot store. ResolveSquadSnapshot is the
+	// effective catalog/settings resolver, injected by the HTTP composition
+	// root. Nil keeps isolated legacy tests on the old launch path.
+	Squad                *store.Store
+	SquadDir             string
+	ResolveSquadSnapshot func(context.Context, string, string) (json.RawMessage, error)
 }
 
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
@@ -97,8 +105,12 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	if s.Language != nil {
 		language = s.Language(assistant)
 	}
+	preflightPersona := persona
+	if s.ResolveSquadSnapshot != nil && persona != "" {
+		preflightPersona = ""
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-		Model: model, Resume: resume, Language: language, Persona: persona, PersonaDir: s.PersonaDir})
+		Model: model, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir})
 	if err != nil {
 		if errors.Is(err, projects.ErrUnknownPersona) {
 			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "unknown_persona", Message: err.Error()}
@@ -108,7 +120,6 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		}
 		return Started{}, err
 	}
-	launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
 	if !placeIsDirectory(place.Path) {
 		return Started{}, notFound("No place named that")
 	}
@@ -118,6 +129,24 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	reach := projects.TmuxReach(s.Launcher.TmuxReach(ctx))
 	choice := s.Terminal()
 	plan := projects.ChoosePlan(choice, itermOpen, reach)
+	if plan == projects.PlanITerm || plan == projects.PlanTmux || plan == projects.PlanTmuxDetached {
+		prepared, err := s.prepareSquadLaunch(ctx, place.Path, persona, resume)
+		if err != nil {
+			return Started{}, err
+		}
+		if prepared.files.PromptPath != "" {
+			launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
+				Model: model, Resume: resume, Language: language, Persona: persona,
+				SquadPromptPath: prepared.files.PromptPath})
+			if err != nil {
+				_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
+				return Started{}, err
+			}
+			launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
+			return s.openSquadTerminal(ctx, place, model, plan, prepared, launch.ShellCommand())
+		}
+	}
+	launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
 
 	switch plan {
 	case projects.PlanITerm:
@@ -177,8 +206,8 @@ func unavailableTerminal(choice projects.TerminalChoice, goos string) StartRefus
 // new terminal (CodexNaming.rememberResumedTitle). This daemon has neither
 // record, so a conversation off the ordinary list is the only one it resumes.
 //
-// persona is the one the resumed session is launched as: a system prompt is
-// given at launch, so a conversation resumed without one runs without it.
+// A conversation with a recorded squad launch resumes its original immutable
+// snapshot. A legacy conversation without that record uses persona as before.
 func (s Starter) Resume(ctx context.Context, place projects.Place, sessionID, assistant, persona string) (Started, error) {
 	id, ok := projects.SessionName(sessionID)
 	if !ok {

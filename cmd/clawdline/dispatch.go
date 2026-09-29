@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // `clawdline dispatch`: an owned child in one command, the four steps of guide
@@ -185,7 +186,8 @@ func checkDispatchFlags(stderr io.Writer, o dispatchOptions) int {
 		return dispatchRefusal(stderr, "--claims is required: the relative paths the child may write (--claims '' for none).")
 	}
 	if o.Persona != "" {
-		if _, ok := persona.Known(o.Persona); !ok {
+		_, builtin := persona.Known(o.Persona)
+		if !builtin && !squad.ValidCustomID(o.Persona) {
 			return dispatchRefusal(stderr, "--persona %q is not a persona this build has; it has %s.",
 				o.Persona, strings.Join(persona.IDs(), ", "))
 		}

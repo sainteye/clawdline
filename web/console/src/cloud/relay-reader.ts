@@ -124,6 +124,7 @@ export interface CloudEvent {
  */
 export interface CloudReadClient {
   readonly ready?: boolean
+  readonly allowWrites?: boolean
   /**
    * `keepConnected`'s hook on every client it made (`cloud-boot.js`,
    * `attach`): asked `"demand"`, it answers whether a connection is live or on
@@ -419,6 +420,11 @@ export class RelayReader {
     this.epoch = this.now()
   }
 
+  /** The paired device's current write capability, for disabling controls. */
+  mayWrite(): boolean {
+    return this.client?.allowWrites === true
+  }
+
   /** What was asked of this seam, newest last, at most 400 rows. */
   get log(): readonly SeamRow[] {
     return this.rows
@@ -588,6 +594,12 @@ export class RelayReader {
         return await this.machineRead(init?.signal, method, path, "work.v2.human-interventions", { terminal: humanConversation })
       }
       const workItem = workV2ItemID(path)
+      if (path.startsWith("/v1/squad/definitions/")) {
+        const q = this.only(url, path, "version")
+        const id = decodeURIComponent(path.slice("/v1/squad/definitions/".length))
+        if (!id || id.includes("/")) return this.refuse(method, path, 404, "unknown_definition", "No definition has that ID.")
+        return await this.machineRead(init?.signal, method, path, "squad.definition", { definition_id: id, ...(q.version ? { version: q.version } : {}) })
+      }
       const gateExport = workV2ItemActionID(path, "gate-export")
       if (gateExport) {
         this.only(url, path)
@@ -598,6 +610,31 @@ export class RelayReader {
         return await this.machineRead(init?.signal, method, path, "work.v2.item", { id: workItem })
       }
       switch (path) {
+        case "/v1/squad/catalog":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "squad.catalog", {})
+        case "/v1/squad/scopes":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "squad.scopes", {})
+        case "/v1/squad/settings": {
+          const q = this.only(url, path, "place_id", "scope_id")
+          if (q.place_id && q.scope_id) return this.refuse(method, path, 400, "scope_mismatch", "Name one Project scope.")
+          return await this.machineRead(init?.signal, method, path, "squad.settings", q.place_id ? { place_id: q.place_id } : q.scope_id ? { scope_id: q.scope_id } : {})
+        }
+        case "/v1/squad/session-bindings":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "squad-session-bindings", {})
+        case "/v1/squad/events/head":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "squad-event-head", {})
+        case "/v1/squad/events": {
+          const q = this.only(url, path, "after", "limit")
+          const after = q.after ?? "0", limit = q.limit ?? "50"
+          if (!/^(0|[1-9][0-9]*)$/.test(after) || !/^[1-9][0-9]*$/.test(limit) || !Number.isSafeInteger(Number(after)) || !Number.isSafeInteger(Number(limit))) {
+            return this.refuse(method, path, 400, "invalid_cursor", "The squad event cursor or limit is invalid.")
+          }
+          return await this.machineRead(init?.signal, method, path, "squad-events", { after: Number(after), limit: Number(limit) })
+        }
         case "/v1/sessions":
           this.note(method, path, "local")
           return json(200, await this.initialSnapshot(init?.signal))

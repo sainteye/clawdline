@@ -46,7 +46,7 @@ import {
  * stylesheet is that app's. The drawer is `input/sidebar.js` and the page
  * switch is `core/pages.js`, rule for rule.
  */
-type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive"
+type Page = "sessions" | "devices" | "projects" | "timeline" | "plan" | "settings" | "work" | "verify" | "archive" | "squad"
 
 /** What became of a session the address asked for: see `openAsked`. */
 type Asked = "none" | "waiting" | "opened" | "gone"
@@ -793,6 +793,18 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
           >
             <SidebarIcon name="verify" />
             {verifyWord("nav")}
+          </button>
+          <button
+            className="sidebar-item"
+            id="nav-squad"
+            type="button"
+            data-page-to="squad"
+            aria-current={page === "squad" ? "page" : undefined}
+            disabled={!ready("squad")}
+            onClick={() => go("squad")}
+          >
+            <SidebarIcon name="squad" />
+            角色小隊
           </button>
           {/* 封存 (docs/session-archive.md): the Sessions archived from the
               list's swipe, each with the way back. */}

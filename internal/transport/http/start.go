@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // Starting a session in a place, and picking a recorded one back up — the
@@ -104,7 +105,8 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 	if n := len(parts); r.Method == http.MethodPost && n >= 5 && parts[n-2] == "as" &&
 		(parts[1] == "start" && n <= 6 || parts[1] == "resume" && n == 6) {
 		persona, parts = parts[n-1], parts[:n-2]
-		if _, ok := personas.Known(persona); !ok {
+		_, builtin := personas.Known(persona)
+		if !builtin && !squad.ValidCustomID(persona) {
 			writePlaceRefusal(w, http.StatusBadRequest, "unknown_persona",
 				"No persona named that. GET /v1/personas lists the ones this machine has.", "")
 			return
@@ -248,8 +250,11 @@ func (s *Server) starter(reading startReading) app.Starter {
 		Past: func(ctx context.Context, place projects.Place, assistant string) []projects.Past {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
-		Recorded:   projects.Recorded,
-		PersonaDir: personas.Dir(s.cfg.Dir),
+		Recorded:             projects.Recorded,
+		PersonaDir:           personas.Dir(s.cfg.Dir),
+		Squad:                s.store,
+		SquadDir:             s.cfg.Dir,
+		ResolveSquadSnapshot: s.resolveSquadSnapshot,
 		// The broker's answer, so a session the person starts and one the
 		// broker opens answer in the same language.
 		Language: func(assistant string) string {
@@ -460,6 +465,14 @@ func admitOpening(w http.ResponseWriter, r *http.Request) (func(), bool) {
 
 // writeStartRefusal writes a Starter refusal and answers its code.
 func writeStartRefusal(w http.ResponseWriter, err error) string {
+	if errors.Is(err, ErrSquadLaunchDefinition) {
+		writePlaceRefusal(w, http.StatusBadRequest, "unknown_persona", "No installed role has that ID.", "")
+		return "unknown_persona"
+	}
+	if errors.Is(err, ErrSquadLaunchProject) {
+		writePlaceRefusal(w, http.StatusBadRequest, "unknown_project", "The Project scope is unavailable.", "")
+		return "unknown_project"
+	}
 	var refusal app.StartRefusal
 	if errors.As(err, &refusal) {
 		writePlaceRefusal(w, refusal.Status, refusal.Code, refusal.Message, refusal.App)

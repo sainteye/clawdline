@@ -253,6 +253,21 @@ func New(cfg config.Config) (*Server, error) {
 	srv.restore = srv.newSessionRestore()
 	srv.archive = srv.newSessionArchive()
 	srv.readings.Observe(srv.restore.Observe)
+	srv.readings.Observe(func(ctx context.Context, inv session.Inventory) {
+		if err := app.ReconcileSquadLaunches(ctx, srv.store, srv.cfg.Dir, inv); err != nil {
+			log.Printf("squad launch reconciliation: %v", err)
+		}
+	})
+	srv.squadActor = func(r *http.Request) (squad.Actor, error) {
+		bound, ok, err := srv.store.AuthenticateSquadActor(r.Context(), r.Header.Get(squadSessionCapabilityHeader))
+		if err != nil {
+			return squad.Actor{}, err
+		}
+		if !ok {
+			return squad.Actor{}, squad.ErrActorUnverified
+		}
+		return squad.Actor{Verified: true, DefinitionID: bound.DefinitionID, ScopeID: bound.ScopeID}, nil
+	}
 	srv.inventory.Held.SetLimits(CapacityLimit(capacity.ScreensCaptureSlots),
 		CapacityLimit(capacity.CacheTerminalScreens))
 	// The transcript caches and the skills cache hold their register rows' limits.
@@ -500,6 +515,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/places/", s.placeRoute)
 	// The built-in personas a start or a dispatch may name (personas.go).
 	mux.HandleFunc("/v1/personas", s.personasRoute)
+	mux.HandleFunc("/v1/squad/events/head", s.squadEventHead)
+	mux.HandleFunc("/v1/squad/events", s.squadEvents)
+	mux.HandleFunc("/v1/squad/session-bindings", s.squadSessionBindings)
+	mux.HandleFunc("/v1/squad/session-events", s.squadSessionEvents)
 	mux.HandleFunc("/v1/squad/", s.squadRoute)
 	mux.HandleFunc("/v1/squad-packages/", s.squadPackagesRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)

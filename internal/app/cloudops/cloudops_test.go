@@ -262,6 +262,21 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-package-export-private",
 		method: "POST", path: "/v1/squad-packages/export", body2: `{"confirm_private":true,"private_scopes":["global"]}`,
 	}, {
+		word:    "squad-session-bindings",
+		body:    map[string]any{"type": "squad-session-bindings", "session": machine, "request": "req-bindings"},
+		session: machine, name: "read:req-bindings",
+		method: "GET", path: "/v1/squad/session-bindings",
+	}, {
+		word:    "squad-event-head",
+		body:    map[string]any{"type": "squad-event-head", "session": machine, "request": "req-event-head"},
+		session: machine, name: "read:req-event-head",
+		method: "GET", path: "/v1/squad/events/head",
+	}, {
+		word:    "squad-events",
+		body:    map[string]any{"type": "squad-events", "session": machine, "request": "req-events", "after": 7, "limit": 50},
+		session: machine, name: "read:req-events",
+		method: "GET", path: "/v1/squad/events", query: map[string]string{"after": "7", "limit": "50"},
+	}, {
 		word: "past-sessions",
 		body: map[string]any{"type": "past-sessions", "session": machine, "request": "req-past",
 			"place": "/Users/sean/code/clawdline-go", "assistant": "codex"},

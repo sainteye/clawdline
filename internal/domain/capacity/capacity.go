@@ -330,6 +330,11 @@ const (
 	SquadPackageExpansionRatio = "squadpackage.expansion_ratio"
 	SquadPackagePreviewRows    = "squadpackage.preview_rows"
 	SquadPackagePreviewAge     = "squadpackage.preview_age"
+	SquadSnapshotBytes         = "squad.snapshot_bytes"
+	SquadRecoveryRows          = "squad.pending_launches"
+	SquadEventIDBytes          = "squad.event_id_bytes"
+	SquadEventPageRows         = "squad.event_page_rows"
+	SquadEventBodyBytes        = "squad.event_body_bytes"
 )
 
 // Entry is one row of the register.
@@ -1576,6 +1581,49 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/domain/persona.MaxPersonaBytes"},
+		},
+		{
+			// One complete immutable AI squad launch document. A larger
+			// launch is refused before an intent or snapshot is persisted.
+			Name: SquadSnapshotBytes, Class: Evidence, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.MaxSquadSnapshotBytes"},
+		},
+		{
+			// Pending squad launch intents that one inventory pass can recover.
+			// At capacity, new launches refuse instead of starving later rows.
+			Name: SquadRecoveryRows, Class: Evidence, Unit: Rows,
+			Limit: 256, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.MaxSquadRecoveryRows"},
+		},
+		{
+			// An agent's idempotency key for one reported skill event.
+			Name: SquadEventIDBytes, Class: Buffer, Unit: Bytes,
+			Limit: 128, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.MaxSquadEventIDBytes"},
+		},
+		{
+			// One JSON skill-event report from a local session.
+			Name: SquadEventBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/http.maxSquadEventBodyBytes"},
+		},
+		{
+			// A durable skill-event cursor page; more events remain for
+			// the next read rather than being dropped from the store.
+			Name: SquadEventPageRows, Class: Buffer, Unit: Rows,
+			Limit: 100, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.MaxSquadEventPageRows"},
 		},
 		{
 			// One explicitly requested Board-role classification reads the

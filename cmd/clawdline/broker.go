@@ -154,6 +154,15 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 		return answer{}, err
 	}
 	req.Header.Set("X-Clawdline-Orchestrator", b.token)
+	if method == http.MethodPost &&
+		(path == "/v1/orchestrator/tasks" || strings.HasPrefix(path, "/v1/work/v2/agent/items/")) &&
+		os.Getenv(squadCapabilityEnv) != "" {
+		capability, err := readSquadCapability(os.Getenv(squadCapabilityEnv))
+		if err != nil {
+			return answer{}, err
+		}
+		req.Header.Set("X-Clawdline-Session-Capability", capability)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

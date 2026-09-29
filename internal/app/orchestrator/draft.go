@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -102,7 +103,8 @@ func admitPersona(raw json.RawMessage) (string, error) {
 	if json.Unmarshal(raw, &id) != nil {
 		return "", refuse(http.StatusUnprocessableEntity, "bad_task", "persona must be a string")
 	}
-	if _, ok := persona.Known(id); !ok {
+	_, builtin := persona.Known(id)
+	if !builtin && !squad.ValidCustomID(id) {
 		return "", refuse(http.StatusUnprocessableEntity, "bad_task",
 			"persona must be one of: "+strings.Join(persona.IDs(), ", "))
 	}

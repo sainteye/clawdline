@@ -162,7 +162,9 @@ func TestSquadEffectiveSettingsAcrossProjectsAndPatch(t *testing.T) {
 	}
 	a := get("/v1/squad/settings?place_id=a")
 	b := get("/v1/squad/settings?place_id=b")
-	if a.ScopeID != projects.ProjectID(f.paths["a"]) || b.ScopeID != projects.ProjectID(f.paths["b"]) ||
+	scopeA, _ := projects.ResolveScope(f.paths["a"])
+	scopeB, _ := projects.ResolveScope(f.paths["b"])
+	if a.ScopeID != scopeA.ID || b.ScopeID != scopeB.ID ||
 		persona(a).Handbook.Value != "" || persona(a).Handbook.Source != "project" ||
 		persona(a).GlobalHandbook.Value != "global" || persona(b).Handbook.Value != "global" ||
 		persona(b).Handbook.Source != "global" {
@@ -247,8 +249,9 @@ func TestSquadLaunchSnapshotCarriesOrderedVersionedSkills(t *testing.T) {
 		t.Fatalf("settings = %d %s", status, raw)
 	}
 	snapshot, err := f.s.ResolveSquadLaunch(context.Background(), "backend", f.paths["a"])
+	scopeA, _ := projects.ResolveScope(f.paths["a"])
 	if err != nil || snapshot.DefinitionID != "clawdline.persona.backend" ||
-		snapshot.ScopeID != projects.ProjectID(f.paths["a"]) ||
+		snapshot.ScopeID != scopeA.ID ||
 		snapshot.Definition.Body == "" || snapshot.Handbook.Text != "team rules" ||
 		!snapshot.AutoAssignEnabled ||
 		len(snapshot.Skills) != 2 || snapshot.Skills[0].ID != "example.skill.two" ||

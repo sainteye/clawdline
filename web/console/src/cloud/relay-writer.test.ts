@@ -1646,3 +1646,36 @@ test("the machine dashboard crosses as its machine word, with no field of its ow
   assert.equal(bad.status, 501)
   assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "machine_usage_unsupported")
 })
+
+test("squad settings carry per-field patches and package reads never gain write authority", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const patch = { definition_id: "role-a", expected_version: 3, overrides: { handbook: { present: true, value: "" } } }
+  const saved = await reader.fetch("/v1/squad/settings", {
+    method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": "save-1" }, body: JSON.stringify(patch),
+  })
+  assert.equal(saved.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "save-1", "mac-a", "squad.settings.update", { changes: patch }, "action"])
+
+  const archive = { archive_base64: "UEs=", scope_id: "global" }
+  assert.equal((await reader.fetch("/v1/squad-packages/preview", post(archive))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "squad.packages.preview", { package: archive }, "read"])
+
+  const publicExport = { private_scopes: [], confirm_private: false }
+  assert.equal((await reader.fetch("/v1/squad-packages/export", post(publicExport))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "squad.packages.export", { package: publicExport }, "read"])
+
+  const privateExport = { private_scopes: ["global", "project-a"], confirm_private: true }
+  assert.equal((await reader.fetch("/v1/squad-packages/export", post(privateExport, { "Idempotency-Key": "export-1" }))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "export-1", "mac-a", "squad.packages.export.private", { package: privateExport }, "action"])
+
+  const adopt = { ...archive, preview_token: "token", choices: { "role-a": "keep" } }
+  assert.equal((await reader.fetch("/v1/squad-packages/adopt", post(adopt, { "Idempotency-Key": "adopt-1" }))).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "adopt-1", "mac-a", "squad.packages.adopt", { package: adopt }, "action"])
+
+  const sent = client.calls.length
+  assert.equal((await reader.fetch("/v1/squad-packages/export", post({ private_scopes: ["global"], confirm_private: false }))).status, 400)
+  assert.equal((await reader.fetch("/v1/squad-packages/adopt", post(adopt))).status, 400)
+  assert.equal((await reader.fetch("/v1/squad/session-events", post({ skill_id: "x" }))).status, 501)
+  assert.equal(client.calls.length, sent, "refused commands never reach the machine")
+})

@@ -711,3 +711,18 @@ enough for the maximum encoded ZIP, and refuses a larger body before parsing. Th
 preview at capacity; `squadpackage.preview_age` expires each grant after 900 seconds. Expired
 grants are pruned when a new preview is saved. A preview grant contains hashes and catalog
 metadata, never the ZIP bytes or private text. Adoption reuploads and revalidates the same ZIP.
+
+### N59: squad launch snapshots and skill receipts
+
+`squad.snapshot_bytes` refuses an immutable launch document larger than 1 MiB before storing or
+publishing it. `squad.pending_launches` refuses a new launch when 256 intents still await terminal
+or conversation identity; the same 256-row bound limits each recovery scan. Neither bound evicts a
+snapshot or abandons a pending launch. The sender receives a typed refusal and both rows appear
+in `/v1/diagnostics.capacity`.
+
+An agent's `client_event_id` is limited to 128 bytes (`squad.event_id_bytes`) and an event request
+to 4 KiB (`squad.event_body_bytes`). A receipt read returns at most 100 rows
+(`squad.event_page_rows`) with an `after` cursor and `has_more` flag. Invalid or oversized writes
+are refused before a receipt is committed. Stored receipts are evidence and are not evicted by
+this page bound. The sources are `internal/adapters/store/squad_launch.go`,
+`internal/adapters/store/squad_events.go`, and `internal/transport/http/squad_events.go`.

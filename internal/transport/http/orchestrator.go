@@ -165,7 +165,8 @@ func (s *Server) brokerDispatch(w http.ResponseWriter, r *http.Request) {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request", "task_id and secret are required.")
 		return
 	}
-	req := orchestrator.DispatchRequest{TaskID: body.TaskID, Secret: body.Secret}
+	req := orchestrator.DispatchRequest{TaskID: body.TaskID, Secret: body.Secret,
+		ActorCapability: r.Header.Get(squadSessionCapabilityHeader)}
 	if body.Generation != nil {
 		// A non-string value fails the cast and is treated exactly as absent,
 		// as in the Swift app: a caller that sent a number did not read the

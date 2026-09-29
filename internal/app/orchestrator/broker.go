@@ -35,8 +35,14 @@ import (
 // exactly that reason.
 type Broker struct {
 	Store *store.Store
-	Tasks taskdir.Root
-	Git   *git.Git
+	// SquadActorRequired makes agent dispatch prove the bound launch and root
+	// conversation. Production enables it; isolated broker tests can exercise
+	// legacy protocol behavior without a squad catalog.
+	SquadActorRequired   bool
+	SquadAutoAssignable  func(context.Context, string, string) (bool, error)
+	ResolveSquadSnapshot func(context.Context, string, string) (json.RawMessage, error)
+	Tasks                taskdir.Root
+	Git                  *git.Git
 	// AssistantQuotas reads the account-level evidence used when this dispatch
 	// chose an assistant. The result is copied into the task record: a later
 	// reader must be able to answer what the broker knew then, rather than

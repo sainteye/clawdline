@@ -21,6 +21,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // The hand-over routes (broker-design B8; the dispatch role contract in this
@@ -67,10 +68,27 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if model == "" && b.DefaultModel != nil {
 		model = b.DefaultModel(assistant)
 	}
+	preflightPersona := persona
+	if b.ResolveSquadSnapshot != nil && persona != "" {
+		preflightPersona = ""
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model,
-		Language: b.SessionLanguage(assistant), Persona: persona, PersonaDir: b.PersonaDir()})
+		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir()})
 	if err != nil {
 		return openedSession{}, err
+	}
+	prepared, err := b.prepareSquadLaunch(ctx, persona, cwd)
+	if err != nil {
+		return openedSession{}, err
+	}
+	if prepared.files.PromptPath != "" {
+		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model,
+			Language: b.SessionLanguage(assistant), Persona: persona,
+			SquadPromptPath: prepared.files.PromptPath})
+		if err != nil {
+			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
+			return openedSession{}, err
+		}
 	}
 	args := append([]string{}, launch.Arguments...)
 	for _, dir := range addDirs {
@@ -96,10 +114,16 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	window := b.autoCompactFor(launch.Assistant, nil)
 	command := envPrefix(launch.Assistant, autoCompactEnv(window)) +
 		strings.Join(append([]string{launch.Assistant}, args...), " ")
+	if prepared.files.PromptPath != "" {
+		command = "env " + prepared.files.PrivateEnv() + " " + command
+	}
 
 	if b.Lanes != nil {
 		release, err := b.Lanes.Acquire(ctx, "open:"+name)
 		if err != nil {
+			if prepared.launch.ID != "" {
+				_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
+			}
 			return openedSession{}, refuseWith(http.StatusTooManyRequests, "terminal_busy",
 				"This machine already has as many terminal writes in hand as it admits; nothing was opened.",
 				map[string]any{"retry_after": 5})
@@ -125,8 +149,12 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		err = terminal.Failure{Message: (childPlan{kind: plan, choice: choice, reach: reach}).failure(runtime.GOOS)}
 	}
 	if err != nil {
+		if prepared.launch.ID != "" {
+			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
+		}
 		return openedSession{}, err
 	}
+	b.recordSquadTerminal(ctx, prepared, out.TerminalID)
 	out.OpenedAt = b.now().Unix()
 	return out, nil
 }
@@ -634,7 +662,8 @@ func validateAssignment(req RootAssignmentRequest) error {
 		return badAssignment("project_dir must be an absolute path to an existing directory.")
 	}
 	if req.Persona != "" {
-		if _, ok := personas.Known(req.Persona); !ok {
+		_, builtin := personas.Known(req.Persona)
+		if !builtin && !squad.ValidCustomID(req.Persona) {
 			return badAssignment("persona must be one of: " + strings.Join(personas.IDs(), ", ") + ".")
 		}
 	}
