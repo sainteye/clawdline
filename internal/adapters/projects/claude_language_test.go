@@ -93,7 +93,7 @@ func TestLaunchCarriesTheResponseLanguage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := codex.ShellCommand(); !strings.Contains(got,
-		`developer_instructions="Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag \"zh-TW\"."`) {
+		`developer_instructions="Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag \"zh-TW\".`) || !strings.Contains(got, "When you need the person to choose between concrete options") {
 		t.Fatalf("Codex language instruction is absent from %q", got)
 	}
 
