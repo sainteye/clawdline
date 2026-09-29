@@ -110,6 +110,12 @@ open. In the console they are folded into **Session to-dos**, with only their ru
 closed row. Broker children stay in the main session list, where each already has its own session
 row, and are not drawn a second time as provider subagents.
 
+Only a terminal running Claude or Codex is a Session. An ordinary shell is never a row, and every
+route under `/v1/sessions/{id}/` answers `409 not_an_agent_session` for one, whether it would have
+typed, read its screen or read its directory, and whether it came from this machine's network or
+from Cloud. The broker's own typing does not pass through those routes, so a child's pane still
+receives its briefing in the seconds before `claude` replaces its shell.
+
 `GET /v1/sessions` answers one inventory. `GET /v1/events` streams whole snapshots, named
 `sessions` and `orchestrator`, plus `screen` frames for a session being watched. Whole snapshots,
 not patches, because a view built from two sources that update at different times shows a state
