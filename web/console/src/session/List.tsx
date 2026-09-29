@@ -336,29 +336,16 @@ export function Row({
       </span>
       {row.epic_parent && depth ? <span className="sr-only">隸屬於 Epic 負責人的工作樹</span> : null}
       {coordinator ? (
-        // `fillCoordinatorMark`: the canvas moves inside a button, with the
-        // crown after it. In the original the button opens the Clawdfather
-        // controls; that sheet is not in this console, so a press does nothing
-        // rather than open the session behind it.
-        <button
-          className="coordinator-mark"
-          type="button"
-          aria-controls="coordinator-controls"
-          aria-expanded="false"
-          aria-haspopup={coordinator.mark.ariaHaspopup}
-          aria-label={coordinator.mark.ariaLabel}
-          title={coordinator.mark.ariaLabel}
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-          }}
-        >
+        // The machine steward's identity is visible without promising a
+        // command panel that this console does not provide.
+        <span className="coordinator-mark" aria-hidden="true">
           {mark}
           <span className="clawdfather-crown" aria-hidden="true" />
-        </button>
+        </span>
       ) : (
         mark
       )}
+      {coordinator && <span className="coordinator-identity">{coordinator.badge}</span>}
       <div className="title" style={{ color: L.accentTint(row.icon?.accent) }}>
         <span className="label">{row.label || row.tty || row.id}</span>
         <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
@@ -372,7 +359,7 @@ export function Row({
           <span className="n">{agentCount(row)}</span>
         </span>
         {coordinator && (
-          <span className="coordinator-chip" title={coordinator.label}>
+          <span className="coordinator-chip" title={coordinator.label} aria-hidden="true">
             {coordinator.badge}
           </span>
         )}
@@ -388,6 +375,9 @@ export function Row({
         </span>
       </div>
       <StateLine row={row} role={role} />
+      {row.machine_scope && !row.coordinator ? (
+        <p className="machine-registration" role="status">{nextWord("machineSessionPendingRow")}</p>
+      ) : null}
       {/* The phone's swipe control, in `buildRow`'s markup and uncovered by
           `swipe.ts`. It never closes anything: it opens the confirmation every
           other close in this console goes through, which is where the reasons

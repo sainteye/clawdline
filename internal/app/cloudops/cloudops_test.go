@@ -2418,6 +2418,8 @@ func TestAStartOrAResumeMayNameAPersona(t *testing.T) {
 	}{
 		{"start with none", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
 			"place": place, "assistant": "", "model": ""}, "/v1/places/" + escaped + "/start"},
+		{"start in the machine workspace", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
+			"place": "@machine", "assistant": "codex", "model": ""}, "/v1/places/%40machine/start/codex"},
 		{"start with a model", map[string]any{"type": "start", "session": MachineReplySession, "request": "req",
 			"place": place, "assistant": "claude", "model": "opus", "persona": "architect"},
 			"/v1/places/" + escaped + "/start/claude/opus/as/architect"},

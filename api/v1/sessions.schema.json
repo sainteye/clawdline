@@ -114,6 +114,7 @@
         "closeability": { "$ref": "#/$defs/Closeability" },
         "coordination": { "$ref": "#/$defs/SessionCoordination" },
         "coordinator": { "$ref": "#/$defs/SessionCoordinator" },
+        "machine_scope": { "description": "This Session is in the daemon's machine workspace. It may still need role registration; the coordinator field is the registration receipt.", "type": "boolean" },
         "cwd": { "type": "string" },
         "disposition": { "$ref": "#/$defs/WorkDisposition" },
         "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },

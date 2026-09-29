@@ -306,6 +306,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 func itemUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>")
 	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]")
+	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f] [--acceptance-file f]")
@@ -326,6 +327,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
+	fmt.Fprintln(os.Stderr, "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;")
 	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
 	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
 	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
@@ -469,6 +471,14 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n", name)
 			return 2
 		}
+		if f.assign.terminal != "" && f.assign.open {
+			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
+			return 2
+		}
+		if why := f.assign.personaRefusal("--assign-terminal", "--assign-new"); why != "" {
+			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was created.\n", name, why)
+			return 2
+		}
 		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
 			"Nothing was created. Without a message sent through Clawdline, file a proposal "+
 				"(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals.")
@@ -489,6 +499,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		}
 		if len(steps) > 0 {
 			body["steps"] = steps
+		}
+		if a := f.assign.request(); a != nil {
+			body["assign"] = a
 		}
 		path = "/v1/work/v2/agent/items"
 	case "child":
@@ -710,18 +723,35 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 				revision.Source.Run, revision.Source.SessionID, revision.Source.At, revision.Source.Excerpt)
 		}
 	}
-	if op == "child" {
+	if op == "child" || op == "add" {
 		var got struct {
+			AssignmentState string `json:"assignment_state"`
 			AssignmentError *struct {
 				Code    string `json:"code"`
 				Message string `json:"message"`
 			} `json:"assignment_error"`
 		}
 		if json.Unmarshal(a.Body, &got) == nil && got.AssignmentError != nil {
-			fmt.Fprintf(stderr, "clawdline %s: the item was created but not assigned: %s: %s\n"+
-				"Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n",
-				name, got.AssignmentError.Code, got.AssignmentError.Message, it.ID)
+			fmt.Fprintf(stderr, "clawdline %s: the item was created but not assigned: %s: %s\n",
+				name, got.AssignmentError.Code, got.AssignmentError.Message)
+			if op == "child" {
+				fmt.Fprintf(stderr, "Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n", it.ID)
+			} else {
+				fmt.Fprintf(stderr, "The person can assign item %s from the Board.\n", it.ID)
+			}
 			return 1
+		}
+		if op == "add" {
+			switch got.AssignmentState {
+			case "not_requested":
+				fmt.Fprintf(stderr, "Board item %s was created but not assigned. The person can assign it from the Board.\n", it.ID)
+			case "awaiting_user":
+				fmt.Fprintf(stderr, "Board item %s is awaiting the person's first dialog in the new Project Session; no owner is assigned yet. Open that Session and answer its first screen, then check the Board.\n", it.ID)
+				return 1
+			case "pending":
+				fmt.Fprintf(stderr, "Board item %s was created; delegation outcome needs review. Check the Board before trying another assignment.\n", it.ID)
+				return 1
+			}
 		}
 	}
 	if (op == "add" || op == "claim") && it.Kind == "epic" {

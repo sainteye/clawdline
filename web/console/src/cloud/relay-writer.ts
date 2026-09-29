@@ -981,6 +981,17 @@ export class RelayWriter {
       case "past":
         return client.pastSessions(route.place, route.assistant)
       case "start":
+        if (route.place === "@machine") {
+          if (route.model || route.persona || typeof client._machineRequest !== "function") {
+            throw failure("cloud_not_carried", "machine Session start", 501)
+          }
+          const request = headerOf(init, "idempotency-key")
+          const body = { place: "@machine", assistant: route.assistant, model: "" }
+          if (request && typeof client._machineRequestAs === "function") {
+            return client._machineRequestAs(request, this.host.machine, "start", body, "action")
+          }
+          return client._machineRequest(this.host.machine, "start", body, "action")
+        }
         if (route.persona) {
           return this.asPersona(client, "start", route.place, {
             assistant: route.assistant, model: route.model,

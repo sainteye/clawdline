@@ -5896,6 +5896,12 @@ export interface SessionRow {
    * it under this name and the row's height depends on it.
    */
   line?: string
+
+  /**
+   * This Session is in the daemon's machine workspace. It may still need role
+   * registration; the coordinator field is the registration receipt.
+   */
+  machine_scope?: boolean
   menu?: SessionMenu
   owed?: WorkOwed
 

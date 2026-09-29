@@ -280,7 +280,7 @@ export function SessionsPage({
               id="start-go"
               type="button"
               title={T.webStart}
-              aria-label={T.webStartLabel}
+              aria-label={T.webStart}
               onClick={() => Start.open()}
             >
               <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">

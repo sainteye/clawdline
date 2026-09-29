@@ -19,6 +19,7 @@ const PlaceRegistryFile = "places.json"
 var (
 	ErrPlaceRegistryFull = errors.New("the place registry is full")
 	ErrNotDirectory      = errors.New("the place is not a directory")
+	ErrMachineWorkspace  = errors.New("the machine workspace is not a Project")
 )
 
 // RegisteredPlace is one explicit choice and when it was made. The time puts
@@ -71,6 +72,11 @@ func (r *PlaceRegistry) Add(paths []string, at time.Time) ([]RegisteredPlace, er
 	canonical, err := canonicalDirectories(paths)
 	if err != nil {
 		return nil, err
+	}
+	for _, path := range canonical {
+		if IsMachineWorkspace(r.dir, path) {
+			return nil, ErrMachineWorkspace
+		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

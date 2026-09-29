@@ -1,0 +1,37 @@
+.sheet .place.machine-place {
+  border-color: var(--line);
+  background: var(--card);
+  margin-bottom: 3px;
+}
+
+.sheet .machine-start-note {
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 10px 9px 50px;
+}
+
+.sheet .machine-boundary-note { padding-top: 0; }
+
+.row > .machine-registration {
+  grid-column: 2 / -1;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 3px 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sheet .place.machine-place .machine-mark {
+  grid-row: 1 / span 2;
+  align-self: center;
+  justify-self: center;
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.sheet .place.machine-place .where {
+  white-space: normal;
+}

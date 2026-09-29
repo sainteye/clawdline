@@ -2,8 +2,8 @@
 
 After this page your Claude Code and Codex sessions can use Clawdline themselves: hand a bounded
 piece of work to a child session, get its result back, have the landing of that work recorded, and
-pass a line of work to another session. You can also make one session **Clawdfather**, the
-machine's coordinator, and read the whole machine through it.
+pass a line of work to another session. The Board item's owning Session remains responsible for
+that work. Machine Bearings can be read without creating a Clawdfather Session.
 
 ## Availability
 
@@ -86,32 +86,19 @@ clawdline session report --summary "The parser test is in and passing"
 When a session is too full or should stop, it can hand its line of work to a new session. It
 writes a handoff note — what the receiver must read, questions to verify before continuing, and
 where to pick up — and Clawdline opens the successor with it and tells the sender when it has
-picked up. The session holding the Clawdfather role cannot hand off. For a new, independent line
-of work, a session can open a new root session instead. Both are in the guide's `landing` part.
+picked up. A session holding the legacy Clawdfather role cannot hand off the line carrying that
+role; an explicitly separate line has a guarded exception. For a new, independent line of work, a
+session can open a new root session instead. Both are in the guide's `landing` part.
 
-## 5. Clawdfather
+## 5. Clawdfather and Board ownership
 
-One live session can hold the machine-wide coordinator role.
+Use **Open Clawdfather** in the new Session sheet to start an assistant in Clawdline's separate machine workspace. That directory is not a Project and is not offered for ordinary Project starts or Board assignment. Clawdfather can help inspect Sessions and machine Bearings, report what is known and unknown, change the machine settings Clawdline exposes, and import or export the Project metadata and supported assistant settings described in [project-sync.md](../project-sync.md).
 
-**Make one.** When you start a session (**+** in the session list), tick **把新的 session 命名為
-Clawdfather** (name the new session Clawdfather). It appears only while the machine has no
-coordinator. Clawdline asks the new session to register itself. With the skill installed, you can
-instead ask any live session to take the Clawdfather role; the guide's `coordination` part has the
-route.
+Clawdfather does not edit Clawdline or any other Project's source code. When you ask it to arrange engineering work, it first creates a Board item in that Project, then assigns the item to a Project Session. That Session owns implementation, child dispatch, verification, merge and deployment. If you did not ask for a new Board item, Clawdfather proposes one for you to accept before delegation. The machine Session itself cannot own a Project item. The separate cwd is a workflow boundary, not an operating system sandbox.
 
-**Use it.** Clawdfather's row in the list carries a crown. Press it to open its controls:
+Opening the neutral Session is not itself a coordinator registration. In that Session, run `clawdline coordinator bind` after its conversation ID is available. The command registers it or rebinds a proven offline predecessor using its current ID and generation. An online or unreadable old Session cannot be replaced. `clawdline guide coordination` has the request details. Machine Bearings do not require a registered coordinator.
 
-| Group | Controls | Today |
-| --- | --- | --- |
-| **觀察** (observe) | **狀態報告** (status report), **你離開之後** (since you were away), **重工、衝突與歸屬** (duplicates, conflicts and ownership), **落地收尾** (landing closure) | Read the machine's state and show it |
-| **協調** (coordinate) | **深度狀態盤點** (deep status audit) | Sends Clawdfather an audit request after a second press |
-| | **協調工作**, **問 Clawdfather**, **派出獨立工作** (coordinate work, ask, dispatch independent work) | Draft or preview only; nothing is sent |
-| **在線狀態** (presence) | **安靜監看** (quiet watch) | Draft only |
-| **管理** (administration) | **範圍與權限** (scope and permissions) | Read |
-| | **停止 Clawdfather**, **重新連上 Clawdfather** | Preview only |
-
-If Clawdfather's session goes offline, another session can take the role over; succession by
-Clawdline itself is not built.
+The rationale and limits are in [clawdfather-role.md](../clawdfather-role.md).
 
 ## Troubleshooting
 
@@ -120,12 +107,12 @@ Clawdline itself is not built.
   **派工作給別的 session** (dispatch to other sessions).
 - **A dispatch is refused with `stale_inventory`**: the command re-reads and retries once by itself;
   if it still fails, run it again.
-- **The new session did not become Clawdfather**: ask it to follow `clawdline guide coordination`
-  and register itself.
+- **An older coordinator registration is offline**: read `clawdline guide coordination` for the
+  guarded rebind route. An unknown reading does not prove the old Session is gone.
 
 ## Deeper
 
 - [skill.md](../skill.md) — the skill stub, the compiled guide and the thin commands.
 - [worktrees.md](../worktrees.md) — how child worktrees are kept and cleaned up.
-- [broker.md](../broker.md) and [coordination.md](../coordination.md) — the broker and the
-  coordinator's design (in Chinese).
+- [broker.md](../broker.md) — broker receipts and status; [coordination.md](../coordination.md)
+  is an earlier proposal (in Chinese).

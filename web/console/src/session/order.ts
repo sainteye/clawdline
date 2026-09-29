@@ -4,8 +4,8 @@
  * `legacy/js/view/derive.js` `ordered()`, restated with one rule added: inside
  * one state, the session that moved most recently comes first, except working
  * sessions, whose movement does not change their position. Everything
- * else is the original's, rule for rule — Clawdfather first, then waiting,
- * working, idle and unknown (`RANK`), then the title, then the id; the filter
+ * else is the original's, rule for rule — waiting, working, idle and unknown
+ * (`RANK`), then the title, then the id; the filter
  * over label, folder, tty and backend; the order held while a pointer is over
  * the list and let go the moment the set of waiting sessions changes; and a
  * dispatched child placed under the session that asked for it, and an Epic
@@ -35,15 +35,10 @@ export function rankOf(row: Pick<SessionRow, "state">): number {
   return Object.hasOwn(RANK, row.state) ? RANK[row.state] : 9
 }
 
-/** `coordinatorSession`: the Clawdfather row carries an object, and nothing else does. */
-function isCoordinator(row: Pick<SessionRow, "coordinator">): boolean {
+/** Machine stewardship is never a visual child of a Project Session. */
+function isCoordinator(row: Pick<SessionRow, "coordinator" | "machine_scope">): boolean {
   const value: unknown = row.coordinator
-  return !!value && typeof value === "object" && !Array.isArray(value)
-}
-
-/** `coordinatorFirst`. */
-function coordinatorFirst(a: SessionRow, b: SessionRow): number {
-  return (isCoordinator(a) ? 0 : 1) - (isCoordinator(b) ? 0 : 1)
+  return row.machine_scope === true || (!!value && typeof value === "object" && !Array.isArray(value))
 }
 
 /**
@@ -69,8 +64,8 @@ function movedBand(row: SessionRow): number {
 }
 
 /**
- * Clawdfather → state → (outside working: unknown-before-known → most recent
- * movement) → title → id.
+ * State → (outside working: unknown-before-known → most recent movement) →
+ * title → id. The machine steward's identity does not outrank a waiting Session.
  *
  * The time is compared only between rows in the same state, so a session that
  * moved a second ago never climbs over one that is waiting for somebody. The
@@ -90,7 +85,6 @@ export function compareSessions(a: SessionRow, b: SessionRow): number {
   const bt = movedAt(b)
   const bothWorking = a.state === "working" && b.state === "working"
   return (
-    coordinatorFirst(a, b) ||
     rankOf(a) - rankOf(b) ||
     (bothWorking ? 0 : movedBand(a) - movedBand(b)) ||
     (bothWorking || at === null || bt === null ? 0 : bt - at) ||
@@ -146,7 +140,7 @@ export function arrangeSessions(a: Arrangement): SessionRow[] {
   if (hold) {
     const at = new Map(hold.order.map((id, i) => [id, i]))
     list.sort(
-      (x, y) => coordinatorFirst(x, y) || (at.get(x.id) ?? 1e9) - (at.get(y.id) ?? 1e9) || compareSessions(x, y),
+      (x, y) => (at.get(x.id) ?? 1e9) - (at.get(y.id) ?? 1e9) || compareSessions(x, y),
     )
   } else {
     list.sort((x, y) => compareSessions(x, y))

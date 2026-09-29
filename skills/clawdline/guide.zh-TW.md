@@ -617,17 +617,21 @@ echo "下次 release 前把 release notes 整理好。" | \
 - `item add` 會讀這個對話最新的 run（`GET /v1/orchestrator/sessions/<conversation>/run`），除非用
   `--run` 指定；送出前先印出 Idempotency-Key（用 `--key` 重送同一筆寫入），成功後印出建立的項目和
   每個 step 的 id。它就是 `POST /v1/work/v2/agent/items`，body 是 `{"session_id", "via": {"run"},
-  "project_id", "kind", "title", "description", "deployment_policy"?, "steps"?: ["…"]}`。
+  "project_id", "kind", "title", "description", "deployment_policy"?, "steps"?: ["…"], "assign"?: {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}`。
 - Feature 或 Issue 建好時**已經指派給你**，phase 是 `assigned`，並帶著 steps：依序是那些 `--step`，
   沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。不會有任何字打進你的 terminal——是你自己
   要的。照順序做，每一步確認完成後就勾掉（`clawdline item steps <item id>`、`clawdline item step-done
   <item id> <step id>`；做下去發現還少一步，就用 `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic 也一樣建好就指派給你，
   但進 implementing 之前要先走完 Epic 流程（見下文）。Refactor、Plan 會以未指派狀態建在規劃區，
   不帶 steps（`planning_has_no_steps`）。
+- 已登記的 Clawdfather 是工程項目的例外：它不能擁有或修改 Project 程式碼。使用者的訊息明確要求新項目時，
+  可以用 `clawdline item add --project <place id> --kind feature --title "…" --assign-new`（或
+  `--assign-terminal <id>`）先建立項目，再交給 Project Session。若指派失敗，項目保留為未指派，
+  回應會說明 `assignment_error`，使用者可從看板指派；沒有明確要求時先提案並等待接受。
 - 使用者會看到卡片上寫著「Session 依你 HH:MM 的訊息建立」，並引用他的原話。
 - 拒絕，每一種都什麼都不寫：`run_unknown`（沒指名 run，或沒有這個 run）、`run_expired`（超過一天）、
   `run_other_session`（那是傳給別的 Session 的訊息）、`session_not_found`、`child_session`（child 用
-  `result.json` 回報）、`project_not_found`、`project_mismatch`（可執行的項目必須在你工作的 Project
+  `result.json` 回報）、`project_not_found`、`project_mismatch`（一般可執行項目必須在你工作的 Project
   裡）、`too_many_steps`（超過 128）、`run_items_exhausted`（一則訊息最多撐五個項目）。
 - **沒有 run**——使用者是直接在 terminal 打字，所以 `item add` 回 `no_run` 或 `run_unknown`：改走
   提案（見下文），並告訴使用者到看板的 Agent 提案裡接受它。
@@ -1009,7 +1013,9 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 ## 11. 協調
 
-**整台機器的 coordinator（"Clawdfather"）。** `GET /v1/orchestrator/coordinator` 查看這個角色；
+**整台機器的 coordinator（"Clawdfather"）。** 它在 daemon 管理的獨立機器工作區處理 Session 報告與受控機器作業，絕不修改任何 Project 的程式碼，包含 Clawdline。使用者明確要求工程工作時，先用 `clawdline item add --project … --assign-new` 建立目標 Project 的看板項目，再交給該 Project 的 Session；沒有建立項目的明確要求時，先送提案給使用者決定。接手的看板負責人負責子任務派工、驗證與落地。工作區是工作流程邊界，不是檔案系統沙盒。新綁定必須來自該工作區，既有綁定仍可讀取。請從控制台的 Clawdfather 入口開啟 Session，再以對話 ID 登記角色。產品邊界見 `docs/clawdfather-role.md`。
+在新 Session 裡執行 `clawdline coordinator bind`，用自己的對話 ID 登記；只有舊綁定已被證實離線時才會換綁，在線或讀不到狀態都會拒絕。
+`GET /v1/orchestrator/coordinator` 查看這個角色；
 `/coordinator/bearings` 是整台機器的概況（進行中的 task、pending 的 landing、還開著的 wait、dead letter、
 被持有的 lease，以及哪些是 `unknown`）。帶 `{"session_id": "<conversation id>"}` 呼叫
 `POST …/coordinator/register` 就取得這個角色；綁定的 session 離線之後，`POST …/coordinator/rebind` 會把

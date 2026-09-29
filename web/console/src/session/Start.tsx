@@ -4,6 +4,7 @@ import { nextWord } from "../next-strings.js"
 import { loadPersonas, personaById, personasNow, rememberPersona, rememberTeam, rememberedPersona, rememberedTeam, switchTeam } from "../personas.js"
 import { drawRoleRow } from "./RoleRow.js"
 import "./persona.css"
+import "./machine-start.css"
 
 /**
  * Starting a session, and picking one back up — `input/start.js`, function for
@@ -20,10 +21,8 @@ import "./persona.css"
  *
  * - **No machine row.** The transport has no `machines` read (no Cloud), so the
  *   row stays hidden, as it does on the Mac's own page.
- * - **No Clawdfather row.** Registering one writes the Swift app's coordinator
- *   record, which this app never writes. The transport therefore carries no
- *   `coordinatorBearings`, and `clawdfatherChoiceSupported` hides the row — the
- *   original's answer for a feature that is missing rather than refused.
+ * - **A separate machine row.** Clawdfather starts in a daemon-owned workspace,
+ *   outside the Project list. Board owners still carry Project work.
  * - **Write is assumed until refused.** This daemon's health carries no `write`
  *   flag; a `write_disabled` refusal turns it off, as the composer does.
  * - **The arriving row is found by its terminal id.** The original matches the
@@ -63,6 +62,7 @@ interface StartHost {
 
 const HOLD = 15000 // how long the band waits before it admits it has stopped waiting
 const MANY = 8 // places, past which a box to filter them earns its row
+const MACHINE_PLACE = "@machine"
 
 const api = L.startApi
 
@@ -95,6 +95,7 @@ let placesGeneration = 0
 // Held at the placeholder's position through the first following list, so the
 // arrival replaces the placeholder in place before ordinary ordering resumes.
 let landed: string | null = null
+let opener: HTMLElement | null = null
 
 /* The list redraws when the wait changes: `renderList()` in the original. */
 let version = 0
@@ -176,6 +177,11 @@ function ownWhy(e: Failure, reading?: "past"): string {
   }
   if (code === "cloud_not_carried") return nextWord("cloudNotCarried")
   if (code === "write_disabled") return T().webStartOff
+  if (code === "coordinator_online") return nextWord("machineSessionOnline")
+  if (code === "coordinator_liveness_unknown") return nextWord("machineSessionUnknown")
+  if (code === "coordinator_session_exists") return nextWord("machineSessionExists")
+  if (code === "machine_workspace_invalid") return nextWord("machineWorkspaceInvalid")
+  if (code === "coordinator_store_invalid") return nextWord("machineRoleInvalid")
   if (code === "not_found") return T().webStartGone
   if (e && e.app && code === "terminal_closed") return L.fillString(T().webStartTerminalClosed, { app: e.app })
   if (code === "terminal_unsupported") return T().webStartTerminalUnsupported
@@ -350,20 +356,6 @@ function drawResume(): void {
   row.appendChild(chip)
 }
 
-/**
- * `drawClawdfather`. The transport carries no Bearings read, so this is the
- * original's first line and nothing after it: the row is not drawn.
- */
-function drawClawdfather(): void {
-  const row = el("start-clawdfather-row")
-  if (!L.clawdfatherChoiceSupported(api)) {
-    row.hidden = true
-    return
-  }
-  const choice = L.clawdfatherCreationChoice(null, false, !resume && !at)
-  row.hidden = !choice.shown
-}
-
 function edge(): void {
   const list = el("start-list")
   const more = list.scrollHeight - list.scrollTop - list.clientHeight > 2
@@ -383,7 +375,6 @@ function draw(): void {
     el("start-persona").hidden = true
     el("start-machine").hidden = true
     el("start-resume").hidden = true
-    el("start-clawdfather-row").hidden = true
     list.innerHTML = ""
     return
   }
@@ -392,7 +383,6 @@ function draw(): void {
   drawWith()
   drawPersona()
   drawResume()
-  drawClawdfather()
 
   if (at) {
     drawPast(list, box)
@@ -419,6 +409,30 @@ function draw(): void {
   }
 
   list.innerHTML = ""
+  if (!resume && !find.trim()) {
+    const li = document.createElement("li")
+    const row = document.createElement("button")
+    row.type = "button"
+    row.className = "place machine-place"
+    row.dataset.id = MACHINE_PLACE
+    row.setAttribute("aria-description", `${nextWord("machineSessionDetails")}. ${nextWord("machineSessionBoundary")}`)
+    row.disabled = !!pressing || !!wait || !with_
+    if (pressing === MACHINE_PLACE) row.dataset.busy = "1"
+    row.innerHTML = '<span class="machine-mark" aria-hidden="true">♛</span><span class="name"></span><span class="where"></span>'
+    ;(row.querySelector(".name") as HTMLElement).textContent = nextWord("machineSessionStart")
+    ;(row.querySelector(".where") as HTMLElement).textContent = pressing === MACHINE_PLACE
+      ? T().webStarting : nextWord("machineSessionScope")
+    li.appendChild(row)
+    list.appendChild(li)
+    const note = document.createElement("li")
+    note.className = "machine-start-note"
+    note.textContent = nextWord("machineSessionPending")
+    list.appendChild(note)
+    const boundary = document.createElement("li")
+    boundary.className = "machine-start-note machine-boundary-note"
+    boundary.textContent = nextWord("machineSessionBoundary")
+    list.appendChild(boundary)
+  }
   matching().forEach((p) => {
     const li = document.createElement("li")
     const row = document.createElement("button")
@@ -600,12 +614,13 @@ function press(id: string): void {
   said("")
   draw()
   startPress.start()
-  const as = chosenPersona()
+  const as = id === MACHINE_PLACE ? "" : chosenPersona()
   asked(() => api.startPlace(id, with_, undefined, as || undefined))
     .then((d) => {
       startPress.settle(() => {
         pressing = null
-        began(d && d.id, place, d && d.attach)
+        began(d && d.id, place || (id === MACHINE_PLACE
+          ? { id, label: "Clawdfather", path: nextWord("machineSessionScope") } : null), d && d.attach)
       })
     })
     .catch((e: Failure) => {
@@ -707,6 +722,8 @@ function hideBand(): void {
 }
 
 function open(): void {
+  const active = document.activeElement
+  opener = active instanceof HTMLElement && active !== document.body ? active : el("start-go")
   el("start").hidden = false
   said("")
   leave()
@@ -715,7 +732,7 @@ function open(): void {
   void loadPersonas().then(() => draw())
   if (write && !wait) load()
   draw()
-  el("start-close").focus({ preventScroll: true })
+  el("start-title").focus({ preventScroll: true })
 }
 
 function close(): void {
@@ -724,6 +741,11 @@ function close(): void {
   loading = false
   el("start").hidden = true
   L.setStartSpin(null)
+  const visible = (node: HTMLElement | null) =>
+    node?.isConnected && !node.closest("[hidden]") && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden"
+  const target = [opener, el("start-go"), el("rows"), el("brand")].find(visible)
+  opener = null
+  target?.focus({ preventScroll: true })
 }
 
 /** `byId(wait.identity)`, by the bare terminal id: see the header. */
@@ -838,6 +860,22 @@ export function StartSheet() {
         ev.stopImmediatePropagation()
         return
       }
+      if (ev.key === "Tab") {
+        const focusable = [...sheet.querySelectorAll<HTMLElement>('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])')]
+          .filter((node) => !node.closest("[hidden]") && node.getClientRects().length > 0)
+        if (!focusable.length) {
+          ev.preventDefault()
+          return
+        }
+        const index = focusable.indexOf(document.activeElement as HTMLElement)
+        const next = index < 0
+          ? (ev.shiftKey ? focusable.length - 1 : 0)
+          : (index + (ev.shiftKey ? -1 : 1) + focusable.length) % focusable.length
+        ev.preventDefault()
+        focusable[next].focus()
+        ev.stopImmediatePropagation()
+        return
+      }
       if (meta && (ev.key === "i" || ev.key === "I")) {
         ev.preventDefault()
         ev.stopImmediatePropagation()
@@ -869,8 +907,8 @@ export function StartSheet() {
 
   return (
     <div className="overlay" id="start" hidden>
-      <div className="sheet" role="dialog" aria-modal="true" id="start-sheet" aria-label={T.webStartLabel}>
-        <h2 id="start-title">{T.webStart}</h2>
+      <div className="sheet" role="dialog" aria-modal="true" id="start-sheet" aria-labelledby="start-title">
+        <h2 id="start-title" tabIndex={-1}>{T.webStart}</h2>
 
         <div className="block">
           <p className="say" id="start-say" role="status" aria-live="polite"></p>
@@ -878,16 +916,6 @@ export function StartSheet() {
           <div className="row" id="start-with" hidden></div>
           <div className="row persona-row" id="start-persona" role="group" aria-label={nextWord("personaPicker")} hidden></div>
           <div className="row" id="start-resume" hidden></div>
-          <div className="row" id="start-clawdfather-row" hidden>
-            <button className="chip check" id="start-clawdfather" type="button" aria-pressed="false" disabled>
-              <svg className="tick" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
-                <rect className="box" x="0.5" y="0.5" width="13" height="13" rx="3.5"></rect>
-                <path className="mark" d="M3.6 7.1 5.9 9.4 10.4 4.6" strokeLinecap="round" strokeLinejoin="round"></path>
-              </svg>
-              <span id="start-clawdfather-label"></span>
-            </button>
-            <span className="clawdfather-state" id="start-clawdfather-state" role="status" aria-live="polite"></span>
-          </div>
           <input
             className="find"
             id="start-filter"
