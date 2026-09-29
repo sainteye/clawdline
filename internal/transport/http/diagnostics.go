@@ -188,6 +188,57 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.PersonaSuggestionContextBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-turn Board role-classification input; released with the turn"}
 		},
+		capacity.SquadEntities: func() capacity.Reading {
+			counts, err := s.store.SquadUsage(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: counts.Entities}
+		},
+		capacity.SquadSettingsRows: func() capacity.Reading {
+			counts, err := s.store.SquadUsage(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: counts.Settings}
+		},
+		capacity.SquadReceipts: func() capacity.Reading {
+			counts, err := s.store.SquadUsage(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: counts.Receipts}
+		},
+		capacity.SquadBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-body guard; no retained buffer"}
+		},
+		capacity.SquadRequestBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
+		},
+		capacity.SquadPlaceLookup: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read place catalog bound"}
+		},
+		capacity.SquadPackageArchiveBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-ZIP guard"} },
+		capacity.SquadPackageRequestBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request base64 envelope guard"}
+		},
+		capacity.SquadPackageManifestBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-manifest guard"} },
+		capacity.SquadPackageFileBytes:     func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-entry guard"} },
+		capacity.SquadPackageExpandedBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-ZIP expanded bytes guard"} },
+		capacity.SquadPackageEntries:       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-ZIP entry count guard"} },
+		capacity.SquadPackageExpansionRatio: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-entry compression ratio guard"}
+		},
+		capacity.SquadPackagePreviewRows: func() capacity.Reading {
+			n, err := s.store.SquadPackagePreviewUsage(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: n}
+		},
+		capacity.SquadPackagePreviewAge: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "durable preview grants expire after 15 minutes"}
+		},
 		"icons.saved": func() capacity.Reading {
 			if s.icons == nil {
 				return capacity.Reading{Known: true, Note: "no icon registry attached"}

@@ -68,6 +68,7 @@ marked English in the tables below. The rest are written in Traditional Chinese.
 | [privacy-guard.md](privacy-guard.md) | Public design note | English | What keeps the person's own things out of a public repository: the working-tree scan, the history scan, the four answers, and the checkpoint that makes a daily run affordable |
 | [publishing.md](publishing.md) | Public operations guide | English | CI coverage, the guarded development remote, the filtered publication path, and when GitHub status becomes visible |
 | [project-sync.md](project-sync.md) | Public design note | English | A project's name, icon and untracked skills owned by one machine and mirrored read-only on others: identity by git origin, what is never copied, Cloud and file transport |
+| [squad-packages.md](squad-packages.md) | Public design note | English | Offline squad ZIP format, contribution example, validation, preview, adoption and private export boundaries |
 | [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
 
 ## How it got here

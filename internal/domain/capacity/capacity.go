@@ -105,9 +105,10 @@ func KnownClass(c Class) bool { _, ok := allowed[c]; return ok }
 type Unit string
 
 const (
-	Bytes      Unit = "bytes"
-	Characters Unit = "characters"
-	Rows       Unit = "rows"
+	Bytes       Unit = "bytes"
+	Characters  Unit = "characters"
+	Rows        Unit = "rows"
+	Multipliers Unit = "multipliers"
 	// Seconds is the age of an observation whose honesty depends on a time
 	// horizon. It is a capacity in the literal sense: once filled, the held
 	// observation expires and the reader must say it does not know.
@@ -313,6 +314,22 @@ const (
 	// most one persona's injected text may be (docs/personas.md).
 	PersonasCatalog   = "personas.catalog"
 	PersonasTextBytes = "personas.text_bytes"
+	// Versioned squad definitions and private settings.
+	SquadEntities              = "squad.entities"
+	SquadSettingsRows          = "squad.settings_rows"
+	SquadReceipts              = "squad.receipts"
+	SquadBodyBytes             = "squad.body_bytes"
+	SquadRequestBytes          = "squad.request_bytes"
+	SquadPlaceLookup           = "squad.place_lookup"
+	SquadPackageArchiveBytes   = "squadpackage.archive_bytes"
+	SquadPackageRequestBytes   = "squadpackage.request_bytes"
+	SquadPackageManifestBytes  = "squadpackage.manifest_bytes"
+	SquadPackageFileBytes      = "squadpackage.file_bytes"
+	SquadPackageExpandedBytes  = "squadpackage.expanded_bytes"
+	SquadPackageEntries        = "squadpackage.entries"
+	SquadPackageExpansionRatio = "squadpackage.expansion_ratio"
+	SquadPackagePreviewRows    = "squadpackage.preview_rows"
+	SquadPackagePreviewAge     = "squadpackage.preview_age"
 )
 
 // Entry is one row of the register.
@@ -1569,6 +1586,96 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/http.personaSuggestionContextLimit"},
+		},
+		{
+			Name: SquadEntities, Class: Evidence, Unit: Rows,
+			Limit: 1024, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Health, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadEntities"},
+		},
+		{
+			Name: SquadSettingsRows, Class: Evidence, Unit: Rows,
+			Limit: 10000, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Health, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadSettingsRows"},
+		},
+		{
+			Name: SquadReceipts, Class: Idempotency, Unit: Rows,
+			Limit: 10000, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadReceipts"},
+		},
+		{
+			Name: SquadBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxSquadBodyBytes"},
+		},
+		{
+			Name: SquadRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 256 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxSquadRequestBytes"},
+		},
+		{
+			Name: SquadPlaceLookup, Class: Observation, Unit: Rows,
+			Limit: 1024, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxSquadPlaceLookup"},
+		},
+		{
+			Name: SquadPackageArchiveBytes, Class: Buffer, Unit: Bytes,
+			Limit: 512 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxArchiveBytes"},
+		},
+		{
+			Name: SquadPackageRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxRequestBytes"},
+		},
+		{
+			Name: SquadPackageManifestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 128 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxManifestBytes"},
+		},
+		{
+			Name: SquadPackageFileBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxFileBytes"},
+		},
+		{
+			Name: SquadPackageExpandedBytes, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxExpandedBytes"},
+		},
+		{
+			Name: SquadPackageEntries, Class: Buffer, Unit: Rows,
+			Limit: 128, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxEntries"},
+		},
+		{
+			Name: SquadPackageExpansionRatio, Class: Buffer, Unit: Multipliers,
+			Limit: 64, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squadpack.MaxExpansionRatio"},
+		},
+		{
+			Name: SquadPackagePreviewRows, Class: Buffer, Unit: Rows,
+			Limit: 1024, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/squadpackages.MaxPreviewRows"},
+		},
+		{
+			Name: SquadPackagePreviewAge, Class: Cache, Unit: Seconds,
+			Limit: 15 * 60, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/squadpackages.MaxPreviewAgeSeconds"},
 		},
 	}
 }

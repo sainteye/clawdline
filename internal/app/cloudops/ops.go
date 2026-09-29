@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // body is one decoded request. It is a map rather than a struct per word
@@ -418,6 +419,57 @@ func machinePlan(b body) (plan, bool) {
 	return plan{session: id, request: request, name: "read:" + request}, true
 }
 
+func squadCloudScopePlan(b body) (plan, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "session", "request"},
+		[]string{"type", "session", "request", "place_id"},
+		[]string{"type", "session", "request", "scope_id"}) {
+		return plan{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, false
+	}
+	if v, exists := b["place_id"]; exists {
+		p.place, ok = v.(string)
+		if !ok || p.place == "" || len(p.place) > 256 || !printable(p.place) {
+			return plan{}, false
+		}
+	}
+	if v, exists := b["scope_id"]; exists {
+		p.scope, ok = v.(string)
+		if !ok || p.scope == "" || len(p.scope) > 256 || !printable(p.scope) {
+			return plan{}, false
+		}
+	}
+	return p, true
+}
+
+func squadCloudQuery(p plan) map[string]string {
+	out := map[string]string{}
+	if p.place != "" {
+		out["place_id"] = p.place
+	}
+	if p.scope != "" {
+		out["scope_id"] = p.scope
+	}
+	return out
+}
+
+func squadCloudWritePlan(field string) func(body) (plan, bool) {
+	return func(b body) (plan, bool) {
+		if !b.has("type", "session", "request", field) {
+			return plan{}, false
+		}
+		p, ok := actionPlan(b, false)
+		if !ok || p.request == "" {
+			return plan{}, false
+		}
+		p.document, ok = b.object(field, squad.MaxSquadRequestBytes)
+		return p, ok
+	}
+}
+
 // personaName is a start's or a resume's optional `persona`: absent is none,
 // and present it is a non-empty, bounded, printable name, held to the same
 // shape as a session name before it becomes a path segment. Whether the catalog
@@ -799,6 +851,89 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/personas"}
+			}},
+
+		// The complete squad catalog and private effective settings cross only
+		// the paired machine relay. The local route repeats its own read gate.
+		op{name: "squad.catalog", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/catalog", Header: asDevice()}
+			}},
+		op{name: "squad.definition", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request", "definition_id"},
+					[]string{"type", "session", "request", "definition_id", "version"}) {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				p.id, ok = b.nonEmpty("definition_id")
+				if !ok || len(p.id) > 256 || !printable(p.id) {
+					return plan{}, false
+				}
+				if v, exists := b["version"]; exists {
+					p.key, ok = v.(string)
+					if !ok || p.key == "" || len(p.key) > 256 || !printable(p.key) {
+						return plan{}, false
+					}
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				query := map[string]string{}
+				if p.key != "" {
+					query["version"] = p.key
+				}
+				return LocalRequest{Method: "GET", Path: "/v1/squad/definitions/" + segment(p.id),
+					Query: query, Header: asDevice()}
+			}},
+		op{name: "squad.scopes", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/scopes", Header: asDevice()}
+			}},
+		op{name: "squad.settings", read: true,
+			decode: func(b body) (plan, bool) {
+				p, ok := squadCloudScopePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/settings",
+					Query: squadCloudQuery(p), Header: asDevice()}
+			}},
+		op{name: "squad.settings.update",
+			decode: squadCloudWritePlan("changes"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PUT", Path: "/v1/squad/settings",
+					Body: p.document, Header: asDevice()}
+			}},
+		op{name: "squad.motion.update",
+			decode: squadCloudWritePlan("changes"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PUT", Path: "/v1/squad/motion",
+					Body: p.document, Header: asDevice()}
+			}},
+		op{name: "squad.catalog.update",
+			decode: squadCloudWritePlan("changes"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/squad/catalog",
+					Body: p.document, Header: asDevice()}
 			}},
 
 		op{name: "past-sessions", read: true,
