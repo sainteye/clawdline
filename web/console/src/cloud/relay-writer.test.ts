@@ -655,6 +655,8 @@ test("Work v2 person actions keep their exact route subject and body across Clou
       "work.v2.gate-purge", { id: "w1", item: { expected_version: 7, sha256: "abc" } }],
     ["/v1/work/v2/items/w1/assign", { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" },
       "work.v2.assign", { id: "w1", item: { expected_version: 1, mode: "new_session", assistant: "codex", model: "default" } }],
+    ["/v1/work/v2/items/w1/convert", { expected_version: 2, kind: "plan" },
+      "work.v2.convert", { id: "w1", item: { expected_version: 2, kind: "plan" } }],
     ["/v1/work/v2/items/w1/persona-suggestion", { expected_version: 1 },
       "work.v2.persona-suggestion", { id: "w1", item: { expected_version: 1 } }],
     ["/v1/work/v2/items/w1/remind", { expected_version: 2 },

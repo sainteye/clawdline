@@ -286,6 +286,7 @@ export type WriteRoute =
   | { op: "work-v2-gate-decision"; word: Carried<"work.v2.gate-decision">; id: string }
   | { op: "work-v2-gate-purge"; word: Carried<"work.v2.gate-purge">; id: string }
   | { op: "work-v2-assign"; word: Carried<"work.v2.assign">; id: string }
+  | { op: "work-v2-convert"; word: Carried<"work.v2.convert">; id: string }
   | { op: "work-v2-persona-suggestion"; word: Carried<"work.v2.persona-suggestion">; id: string }
   | { op: "work-v2-remind"; word: Carried<"work.v2.remind">; id: string }
   | { op: "work-v2-cancel"; word: Carried<"work.v2.cancel">; id: string }
@@ -530,6 +531,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (b === "items" && c && d === "assign" && segments.length === 5) {
       return { op: "work-v2-assign", word: "work.v2.assign", id: c }
     }
+    if (b === "items" && c && d === "convert" && segments.length === 5) {
+      return { op: "work-v2-convert", word: "work.v2.convert", id: c }
+    }
     if (b === "items" && c && d === "persona-suggestion" && segments.length === 5) {
       return { op: "work-v2-persona-suggestion", word: "work.v2.persona-suggestion", id: c }
     }
@@ -722,6 +726,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "work-v2-create":
     case "work-v2-edit":
     case "work-v2-assign":
+    case "work-v2-convert":
     case "work-v2-remind":
     case "work-v2-cancel":
     case "work-v2-complete":
@@ -1337,6 +1342,9 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-assign": {
+        return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-convert": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-persona-suggestion": {

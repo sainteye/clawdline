@@ -799,6 +799,18 @@ func (t *WorkV2Tx) ActiveAssignment(workID string) (work.AssignmentV2, error) {
 	return a, err
 }
 
+// PendingAssignment is any new-Session assignment still in flight, including
+// the interval before its Root Assignment has an id or opens a dialog.
+func (t *WorkV2Tx) PendingAssignment(workID string) (work.AssignmentV2, error) {
+	a, err := scanAssignmentV2(t.tx.QueryRowContext(t.ctx, `SELECT `+assignmentV2Columns+`
+    FROM work_v2_assignments WHERE work_id=? AND state='assigning'
+    ORDER BY rowid DESC LIMIT 1`, workID))
+	if err == sql.ErrNoRows {
+		return work.AssignmentV2{}, nil
+	}
+	return a, err
+}
+
 // AwaitedAssignment is the item's pending assignment whose Feature Root is
 // waiting on a dialog (WorkV2AwaitedAssignments); zero when there is none.
 func (t *WorkV2Tx) AwaitedAssignment(workID string) (work.AssignmentV2, error) {

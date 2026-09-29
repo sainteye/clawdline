@@ -1197,6 +1197,12 @@ func init() {
 				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/assign",
 					Body: p.document, Header: asDevice()}
 			}},
+		op{name: "work.v2.convert",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/convert",
+					Body: p.document, Header: asDevice()}
+			}},
 
 		op{name: "work.v2.persona-suggestion",
 			decode: decodeWorkV2NamedDocument("id", "item"),

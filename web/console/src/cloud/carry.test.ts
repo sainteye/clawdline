@@ -199,6 +199,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/items/w1/cancel"],
     ["POST", "/v1/work/v2/items/w1/complete"],
     ["POST", "/v1/work/v2/items/w1/assign"],
+    ["POST", "/v1/work/v2/items/w1/convert"],
     ["POST", "/v1/work/v2/items/w1/persona-suggestion"],
     ["POST", "/v1/work/v2/items/w1/remind"],
     ["GET", "/v1/work/v2/images/img1"],
@@ -242,7 +243,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 101, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
+  // 102, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
   // compaction comparison, the seven verification words, the Settings page's capacity read, two default-model words and two work-gate words, the three words that
@@ -271,7 +272,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("archive-session" in CARRIED)
   assert.ok("archived-sessions" in CARRIED)
   assert.ok("restore-archived" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 101)
+  assert.equal(Object.keys(CARRIED).length, 102)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

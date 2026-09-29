@@ -461,6 +461,10 @@ func workV2ActiveOwner(item app.WorkV2View) work.AssignmentV2 {
 // typed only when the terminal still holds that conversation and reads idle,
 // so a recycled terminal never receives another Session's work.
 func (s *Server) tellReleasedOwner(ctx context.Context, previous work.AssignmentV2, id, title string) {
+	s.tellFormerOwner(ctx, previous, workV2ReleasedNotice(id, title))
+}
+
+func (s *Server) tellFormerOwner(ctx context.Context, previous work.AssignmentV2, notice string) {
 	if previous.TerminalID == "" {
 		return
 	}
@@ -468,7 +472,7 @@ func (s *Server) tellReleasedOwner(ctx context.Context, previous work.Assignment
 	if err != nil || sess.ConversationID != previous.SessionID {
 		return
 	}
-	_, _ = s.actions().SendIfIdle(ctx, sess.ID, workV2ReleasedNotice(id, title))
+	_, _ = s.actions().SendIfIdle(ctx, sess.ID, notice)
 }
 
 // workV2RootAssignmentAcceptance is the acceptance of the Root Assignment a
@@ -1390,6 +1394,16 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	}
 	var out app.WorkV2View
 	var err error
+	var convertingOwner work.AssignmentV2
+	if action == "convert" {
+		before, readErr := s.workV2().Item(r.Context(), id)
+		if readErr != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, readErr)
+			return
+		}
+		convertingOwner = workV2ActiveOwner(before)
+	}
 	switch action {
 	case "assign":
 		out, err = s.assignWorkV2By(r.Context(), id, actor, "", body.ExpectedVersion, body.Mode, body.TerminalID,
@@ -1403,7 +1417,7 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 	case "unassign":
 		out, err = s.workV2().Unassign(r.Context(), id, body.ExpectedVersion, actor, file)
 	case "convert":
-		out, err = s.workV2().ConvertPlan(r.Context(), id, app.ConvertPlanV2{
+		out, err = s.workV2().ConvertKind(r.Context(), id, app.ConvertKindV2{
 			ExpectedVersion: body.ExpectedVersion, Kind: body.Kind, Actor: actor,
 		}, file)
 	case "cancel":
@@ -1420,6 +1434,9 @@ func (s *Server) workV2PersonAction(w http.ResponseWriter, r *http.Request, id, 
 		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 		s.writeWorkV2Error(w, err)
 		return
+	}
+	if action == "convert" && convertingOwner.ID != "" {
+		s.tellFormerOwner(r.Context(), convertingOwner, fmt.Sprintf("Clawdline converted Board item %s to another kind and removed its assignment from this Session. It is no longer yours: stop work on it and do not change its phase, steps or documents.", id))
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)

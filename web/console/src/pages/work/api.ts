@@ -529,7 +529,7 @@ export const purgeWorkGate = (itemID: string, expectedVersion: number, sha256: s
     expected_version: expectedVersion, sha256,
   })
 
-export const convertWorkV2 = (item: WorkV2Item, kind: WorkV2ExecutableKind) =>
+export const convertWorkV2 = (item: WorkV2Item, kind: WorkV2ExecutableKind | "plan") =>
   mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}/convert`, {
     expected_version: item.version,
     kind,
