@@ -1275,6 +1275,78 @@ test("machine dashboard opens the existing Clawdfather and its icon offers draft
       await tab.shot("clawdfather-suggestions-phone")
       assert.equal(await tab.run(`document.querySelector('#snippets:not([hidden])') === null`), true)
       assert.equal(await tab.run(`document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button').length`), 5)
+      const icons = await tab.run(`(() => [...document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button')].map((button) => ({
+        title: button.textContent.trim(),
+        svg: button.querySelector('svg')?.outerHTML || '',
+        shape: [...button.querySelectorAll('svg path, svg rect, svg circle')].map((part) => part.outerHTML).join(''),
+      })))()`)
+      assert.deepEqual(icons.map((icon: { title: string }) => icon.title), [
+        "整理 Session 進度", "檢查機器狀況", "檢視 Clawdline 設定", "匯入或匯出專案設定", "建立看板項目並派工",
+      ])
+      assert.equal(new Set(icons.map((icon: { shape: string }) => icon.shape)).size, 5)
+      for (const icon of icons) {
+        assert.match(icon.svg, /class="sidebar-icon"/)
+        assert.match(icon.svg, /aria-hidden="true"/)
+        assert.match(icon.svg, /focusable="false"/)
+        assert.ok(icon.shape)
+      }
+      const geometry = () => tab.run(`(() => {
+        const sheet = document.querySelector('#clawdfather-suggestions .sheet')
+        const list = sheet.querySelector('.clawdfather-suggestions-list')
+        return { viewport: innerWidth, sheetRight: sheet.getBoundingClientRect().right,
+          sheetOverflow: sheet.scrollWidth - sheet.clientWidth, listOverflow: list.scrollWidth - list.clientWidth,
+          rows: [...list.querySelectorAll('button')].map((button) => {
+            const box = button.getBoundingClientRect()
+            const icon = button.querySelector('svg').getBoundingClientRect()
+            const label = button.querySelector('span').getBoundingClientRect()
+            return { left: box.left, right: box.right, height: box.height, overflow: button.scrollWidth - button.clientWidth,
+              iconLeft: icon.left, iconRight: icon.right, iconMiddle: (icon.top + icon.bottom) / 2,
+              labelLeft: label.left, labelMiddle: (label.top + label.bottom) / 2,
+              color: getComputedStyle(button).color, iconColor: getComputedStyle(button.querySelector('svg')).color }
+          }) }
+      })()`)
+      for (const width of [390, 320]) {
+        await tab.phoneWidth(width)
+        const layout = await geometry()
+        assert.equal(layout.viewport, width)
+        assert.ok(layout.sheetRight <= width + 1)
+        assert.ok(layout.sheetOverflow <= 1 && layout.listOverflow <= 1)
+        for (const row of layout.rows) {
+          assert.ok(row.height >= 48, `suggestion row is ${row.height}px high`)
+          assert.ok(row.overflow <= 1 && row.left >= -1 && row.right <= width + 1)
+          assert.ok(row.iconLeft >= row.left && row.iconRight < row.labelLeft)
+          assert.ok(Math.abs(row.iconMiddle - row.labelMiddle) <= 1)
+          assert.equal(row.iconColor, row.color)
+        }
+        await tab.shot(`clawdfather-suggestions-${width}-dark`)
+      }
+      await tab.desktop()
+      const desktopLayout = await geometry()
+      assert.equal(desktopLayout.viewport, 1280)
+      assert.ok(desktopLayout.sheetOverflow <= 1 && desktopLayout.listOverflow <= 1)
+      assert.ok(desktopLayout.rows.every((row: { overflow: number; height: number }) => row.overflow <= 1 && row.height >= 48))
+      await tab.shot("clawdfather-suggestions-desktop-dark")
+      // The Console currently ships a dark palette only. Exercise this sheet against light tokens
+      // so the icons' inherited color remains readable if a light palette is introduced.
+      await tab.run(`(() => {
+        const style = document.documentElement.style
+        for (const [name, value] of Object.entries({ '--card': '#ffffff', '--card-hi': '#f3f4f6',
+          '--line': '#d7d9df', '--ink': '#1b1d21', '--dim': '#4b5563' })) style.setProperty(name, value)
+      })()`)
+      const lightLayout = await geometry()
+      assert.ok(lightLayout.rows.every((row: { color: string; iconColor: string }) =>
+        row.color === "rgb(27, 29, 33)" && row.iconColor === row.color))
+      await tab.shot("clawdfather-suggestions-desktop-light-palette")
+      await tab.phoneWidth(320)
+      const lightPhone = await geometry()
+      assert.ok(lightPhone.sheetOverflow <= 1 && lightPhone.listOverflow <= 1)
+      assert.ok(lightPhone.rows.every((row: { overflow: number; iconRight: number; labelLeft: number }) =>
+        row.overflow <= 1 && row.iconRight < row.labelLeft))
+      await tab.shot("clawdfather-suggestions-320-light-palette")
+      assert.equal(await tab.run(`document.activeElement?.textContent?.trim()`), "整理 Session 進度")
+      await tab.key("Tab")
+      assert.equal(await tab.run(`document.activeElement?.textContent?.trim()`), "檢查機器狀況")
+      await tab.key("Tab", true)
       assert.equal(await tab.run(`document.activeElement?.textContent?.trim()`), "整理 Session 進度")
       await tab.run(`document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button')[1].focus()`)
       pushSessions()
@@ -1287,6 +1359,28 @@ test("machine dashboard opens the existing Clawdfather and its icon offers draft
       await tab.press("#detail-snippets")
       await tab.key("Escape")
       assert.equal(await tab.run(`document.activeElement?.id`), "detail-snippets")
+      await tab.run(`document.documentElement.lang = 'en'`)
+      await tab.press("#detail-snippets")
+      assert.deepEqual(await tab.run(`([...document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button')].map((button) => button.textContent.trim()))`), [
+        "Summarize Sessions", "Check machine status", "Review Clawdline settings",
+        "Import or export project settings", "Create a Board item and delegate",
+      ])
+      assert.deepEqual(await tab.run(`([...document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button')].map((button) =>
+        [...button.querySelectorAll('svg path, svg rect, svg circle')].map((part) => part.outerHTML).join('')))`),
+      icons.map((icon: { shape: string }) => icon.shape))
+      const edge = (index: number, side: "left" | "right") => tab.run(`(() => {
+        const box = document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button')[${index}].getBoundingClientRect()
+        return { x: Math.round(${JSON.stringify(side)} === 'left' ? box.left + 3 : box.right - 3), y: Math.round(box.top + box.height / 2) }
+      })()`)
+      const left = await edge(0, "left")
+      await tab.tap(left.x, left.y)
+      assert.equal(await tab.run(`document.getElementById('clawdfather-suggestions') === null`), true)
+      assert.match(await tab.run(`document.getElementById('msg')?.textContent`), /Summarize the progress of Sessions/)
+      await tab.press("#detail-snippets")
+      const right = await edge(4, "right")
+      await tab.tap(right.x, right.y)
+      assert.equal(await tab.run(`document.getElementById('clawdfather-suggestions') === null`), true)
+      assert.match(await tab.run(`document.getElementById('msg')?.textContent`), /create a Board item/i)
     } finally {
       readingScenario = "normal"
     }
