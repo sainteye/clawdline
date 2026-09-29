@@ -120,8 +120,7 @@ let requestedPaths: string[] = []
 let failPlacesOnRequest = 0
 // The machine's persona catalog, as many roles as the daemon compiles in and
 // with its longest names: the assignment row lays every one of them out on a
-// phone. No suggested kinds, so only the created item's words can recommend a
-// role in the assignment test below.
+// phone. The created item's words and kind never preselect a role.
 const PERSONA_NAMES: [string, string, string][] = [
   ["architect", "Architect", "架構師"],
   ["backend", "Backend Engineer", "後端工程師"],
@@ -1597,7 +1596,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
             const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
             const firstRole = roles?.firstElementChild?.getBoundingClientRect()
             const roleRow = roles?.getBoundingClientRect()
-            const outside = [...card.querySelectorAll(".work-assignment-cta, .work-persona-ai-button, .work-assignment-route > .work-new-session")]
+            const outside = [...card.querySelectorAll(".work-assignment-action, .work-persona-ai-button, .work-assignment-route > .work-new-session")]
               .map((el) => el.getBoundingClientRect())
               .filter((box) => box.left < panel.left - 0.5 || box.right > panel.right + 0.5)
             return {
@@ -1610,12 +1609,14 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
             }
             })(),
             title: card.querySelector("h3")?.textContent,
-            suggestion: card.querySelector(".work-persona-suggestion")?.textContent ?? null,
             roleDescription: roles.getAttribute("aria-describedby"),
             chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
             picker: card.querySelector(".work-session-trigger > span:not(.work-session-placeholder):not(.work-project-chevron)")?.textContent,
             paths: [...card.querySelectorAll(".work-assignment-route h4")].map((heading) => heading.textContent),
-            actions: [...card.querySelectorAll(".work-assignment-cta")].map((button) => button.textContent),
+            actions: [...card.querySelectorAll(".work-assignment-action")].map((button) => button.textContent),
+            actionsUseChips: [...card.querySelectorAll(".work-assignment-action")].every((button) =>
+              button.classList.contains("chip") && getComputedStyle(button).backgroundColor ===
+                getComputedStyle(card.querySelector(".work-persona-ai-button")).backgroundColor),
             focus: document.activeElement?.getAttribute("aria-label"),
             progressBeforeStart: !!card.querySelector(".work-milestones"),
             sessionsPage: !document.getElementById("app").hidden,
@@ -1631,12 +1632,12 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       fits: { panelInView: true, modalScrollsSideways: false, controlsOutsidePanel: 0, personaChips: PERSONAS.length + 1,
         rolesScrollSideways: true, roleEdgeRoom: 7 },
       title: "React console shortcut",
-      suggestion: null,
       roleDescription: null,
-      chosenRole: "前端工程師",
+      chosenRole: "不指定",
       picker: "選擇既有 Session",
       paths: ["指派給既有 Session", "開啟新 Session"],
-      actions: ["指派給所選 Session", "開新 Codex Session（前端工程師）"],
+      actions: ["開新 Codex Session"],
+      actionsUseChips: true,
       focus: "指派既有 Session",
       progressBeforeStart: false,
       sessionsPage: true,
@@ -1650,7 +1651,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     assert.deepEqual(await tab.run(`(() => {
       const modal = document.querySelector(".work-created-modal")
       const panel = modal.querySelector(".work-created-panel").getBoundingClientRect()
-      const actions = [...modal.querySelectorAll(".work-assignment-cta")].map((button) => button.getBoundingClientRect())
+      const actions = [...modal.querySelectorAll(".work-assignment-action")].map((button) => button.getBoundingClientRect())
       const roles = modal.querySelector(".work-new-persona")
       const roleRow = roles.getBoundingClientRect()
       const firstRole = roles.firstElementChild.getBoundingClientRect()
@@ -1658,7 +1659,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         panelInView: panel.left >= 0 && panel.right <= innerWidth,
         modalScrollsSideways: modal.scrollWidth > modal.clientWidth,
         actionsInPanel: actions.every((box) => box.left >= panel.left && box.right <= panel.right),
-        actionsTallEnough: actions.every((box) => box.height >= 42),
+        actionsTallEnough: actions.every((box) => box.height >= 36),
         roleEdgeRoom: Math.round(firstRole.left - roleRow.left),
         progressBeforeStart: !!modal.querySelector(".work-milestones"),
       }
@@ -1668,9 +1669,8 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
     await tab.view(DESK, "light")
     await tab.shot("smart-role-desktop-light")
 
-    // The recommendation is only a default. Keyboard users move from the
-    // picker through the assistant choices to the first native role button;
-    // choosing it overrides the default and the launch button agrees.
+    // With no Session chosen, its confirmation is absent from the keyboard
+    // path. The person can choose a role before asking AI.
     const keyboard: string[] = []
     for (let index = 0; index < 4; index++) {
       await tab.press("Tab")
@@ -1681,26 +1681,27 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
       const role = document.querySelector(".work-created-modal .work-new-persona .chip")
       return { active: document.activeElement === role, disabled: role.disabled, text: role.textContent }
     })()`), { active: true, disabled: false, text: "不指定" })
-    await tab.run(`document.activeElement.click()`)
+    await tab.run(`(() => {
+      const role = document.querySelector('.work-created-modal [data-persona-id="frontend"]')
+      role.focus()
+      role.click()
+    })()`)
     assert.deepEqual(await tab.run(`(() => {
       const card = document.querySelector(".work-created-modal .work-v2-card")
       const roles = card.querySelector(".work-new-persona")
       return {
         focused: document.activeElement?.textContent,
         chosenRole: roles.querySelector('[aria-checked="true"] span')?.textContent,
-        suggestion: card.querySelector(".work-persona-suggestion")?.textContent ?? null,
-        actions: [...card.querySelectorAll(".work-assignment-cta")].map((button) => button.textContent),
+        actions: [...card.querySelectorAll(".work-assignment-action")].map((button) => button.textContent),
       }
     })()`), {
-      focused: "不指定",
-      chosenRole: "不指定",
-      suggestion: null,
-      actions: ["指派給所選 Session", "開新 Codex Session"],
+      focused: "前端工程師",
+      chosenRole: "前端工程師",
+      actions: ["開新 Codex Session（前端工程師）"],
     })
 
-    // The local suggestion remains the default until this explicit press.
-    // One press sends one receipted request, changes the preselection to the
-    // catalog id AI returned, and still permits a manual override afterward.
+    // One explicit press sends one receipted request, selects the catalog id
+    // AI returned, and still permits a manual override afterward.
     await tab.run(`document.querySelector(".work-created-modal .work-persona-ai-button").click()`)
     const ai = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 5000
@@ -1713,7 +1714,7 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
           return resolve({
             status: status.textContent,
             chosenRole,
-            action: [...card.querySelectorAll(".work-assignment-cta")].at(-1)?.textContent,
+            action: [...card.querySelectorAll(".work-assignment-action")].at(-1)?.textContent,
           })
         }
         if (Date.now() >= deadline) return reject(new Error("AI role suggestion did not arrive"))
@@ -1736,4 +1737,24 @@ test("phone and desktop: the Board shortcut keeps a new item open for assignment
         aiStatus: card.querySelector(".work-persona-ai-result[role=status]")?.textContent,
       }
     })()`), { chosenRole: "不指定", aiStatus: "AI 建議：後端工程師目前已改選其他角色" })
+
+    // When this context has no eligible Session, the menu explains why and
+    // still offers no confirmation action.
+    await tab.run(`document.querySelector('.work-created-modal .work-session-trigger').click()`)
+    await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 5000
+      const read = () => {
+        if (document.querySelector('.work-created-modal .work-session-menu')) return resolve(true)
+        if (Date.now() >= deadline) return reject(new Error('existing Session menu did not open'))
+        setTimeout(read, 25)
+      }
+      read()
+    })`)
+    assert.deepEqual(await tab.run(`(() => {
+      const card = document.querySelector('.work-created-modal .work-v2-card')
+      return {
+        empty: card.querySelector('.work-session-menu')?.textContent,
+        action: card.querySelector('[aria-labelledby^="work-assign-existing-"] .work-assignment-action')?.textContent ?? null,
+      }
+    })()`), { empty: "這個 Project 目前沒有可用的 Session。", action: null })
   }))

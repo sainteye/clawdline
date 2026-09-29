@@ -7,7 +7,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, suggestedPersonaForItem, switchTeam } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
@@ -594,15 +594,12 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
-  // The role a new Session is opened as. Until the person picks one, the
-  // item's words suggest a role when they distinguish one; otherwise the
-  // unique kind default remains (epic → architect, issue → minimal-change).
-  // "" is none, explicitly chosen by the person.
+  // A new Session starts without a role. Only a manual choice or an explicit
+  // AI suggestion changes it; "" is the person's choice of no role.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState<string | null>(null)
   const [team, setTeam] = useState(rememberedTeam)
-  const personaSuggestion = suggestedPersonaForItem(personas, item)
-  const persona = personaById(personas, personaChoice ?? personaSuggestion?.persona.id)
+  const persona = personaById(personas, personaChoice)
   const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
   const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
   const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
@@ -765,8 +762,8 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
         <h4 id={`work-assign-existing-${item.id}`}>指派給既有 Session</h4>
         <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
-        <button className="work-assignment-cta" type="button" disabled={!terminal || !!busy}
-          onClick={() => assign(() => assignWorkV2(item, terminal))}>指派給所選 Session</button>
+        {terminal && <button className="chip on work-assignment-action" type="button" disabled={!!busy}
+          onClick={() => assign(() => assignWorkV2(item, terminal))}>指派給所選 Session</button>}
       </section>
       <section className="work-assignment-route" aria-labelledby={`work-assign-new-${item.id}`}>
         <h4 id={`work-assign-new-${item.id}`}>開啟新 Session</h4>
@@ -799,7 +796,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
             rememberTeam(next)
             setPersonaChoice(switched.chosen)
           }} />}
-        <button className="work-assignment-cta" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id}
+        <button className="chip on work-assignment-action" type="button" disabled={!!busy || aiSuggestionBusy} aria-busy={busy === item.id}
           onClick={() => assign(() => assignNewWorkV2(item, assistant, persona?.id))}>
           {persona
             ? nextWord(busy === item.id ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })

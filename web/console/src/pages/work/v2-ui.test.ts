@@ -86,6 +86,11 @@ test("the assignment picker shows one compact AI suggestion action", () => {
   assert.doesNotMatch(styles, /\.work-persona-ai\s*\{/)
 })
 
+test("an existing Session gets a confirmation only after selection", () => {
+  assert.match(source, /\{terminal && <button className="chip on work-assignment-action"/)
+  assert.doesNotMatch(styles, /\.work-assignment-action\s*\{[^}]*background:/)
+})
+
 test("assigned Board items show their generated TODO receipts", () => {
   assert.match(workSteps, /function WorkSteps/)
   assert.match(source, /item\.steps/)
