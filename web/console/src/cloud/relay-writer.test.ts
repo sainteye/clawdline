@@ -67,7 +67,10 @@ class FakeClient implements CloudWriteClient {
     return this.act("answer", [identity, key], { type: "envelope" })
   }
   _read(identity: CloudIdentity, type: string, extra: Record<string, unknown>, answer: string, timeoutMs?: number, options?: unknown) {
-    return this.act("_read", [identity, type, extra, answer, timeoutMs, options], { ok: true, id: identity.session, action: "keyed" })
+    return this.act("_read", [identity, type, extra, answer, timeoutMs, options], type === "document"
+      ? { scope: "project", path: "demo.md", media_type: "text/markdown; charset=utf-8", byte_count: 7, data: "IyBEZW1vCg==" }
+      : type === "documents" ? { documents: [{ scope: "project", path: "demo.md", bytes: 7, modified: 1 }] }
+      : { ok: true, id: identity.session, action: "keyed" })
   }
   end(identity: CloudIdentity, acceptLoss: boolean, version: string) {
     return this.act("end", [identity, acceptLoss, version], { ok: true, id: identity.session, action: "closed" })
@@ -290,10 +293,15 @@ test("a Cloud document link reads bytes on its named machine and rejects another
   assert.equal(document.status, 200)
   assert.equal(document.headers.get("content-type"), "text/markdown; charset=utf-8")
   assert.equal(await document.text(), "# Demo\n")
-  assert.deepEqual(client.calls.filter((call) => call[0] === "_machineRequest").map((call) => call.slice(1, 5)), [
-    ["mac-a", "documents", { session: "s1" }, "read"],
-    ["mac-a", "document", { session: "s1", scope: "project", task: "", path: "demo.md" }, "read"],
-  ])
+  assert.equal(client.calls.some((call) => call[0] === "_machineRequest" && (call[2] === "document" || call[2] === "documents")), false)
+  const listing = client.calls.find((call) => call[0] === "_read" && call[2] === "documents")
+  assert.deepEqual(listing?.slice(1, 5), [{ machine: "mac-a", session: "s1" }, "documents", {}, "documents"],
+    "the listing uses the Session channel and its legacy answer name")
+  const read = client.calls.find((call) => call[0] === "_read" && call[2] === "document")
+  assert.deepEqual(read?.[1], { machine: "mac-a", session: "s1" }, "the document answer returns on the Session channel")
+  assert.deepEqual({ ...(read?.[3] as Record<string, unknown>), request: null },
+    { request: null, scope: "project", task: "", path: "demo.md" })
+  assert.equal(read?.[4], "read:" + (read?.[3] as { request: string }).request)
   const calls = client.calls.length
   const wrong = await reader.fetch("/v1/sessions/s1/documents/project/demo.md?machine=mac-b")
   assert.equal(wrong.status, 400)
