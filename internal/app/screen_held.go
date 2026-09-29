@@ -120,6 +120,7 @@ type sourceScreenHost interface {
 }
 
 type heldScreen struct {
+	backend  session.Backend
 	text     string
 	readable bool
 	at       time.Time
@@ -202,14 +203,20 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 	h.mu.Lock()
 	entry := h.held[s.ID]
 	if entry == nil {
-		entry = &heldScreen{}
+		entry = &heldScreen{backend: s.Backend}
 		h.held[s.ID] = entry
 		h.evictLocked(now)
 	}
+	entry.backend = s.Backend
 	entry.asked = now
 	stale := entry.at.IsZero() || now.Sub(entry.at) >= heldFor(s.Backend)
 	sourceQuiet := s.Backend == session.BackendITerm && now.Before(h.itermQuiet)
-	start := stale && !entry.capturing && !now.Before(entry.quietUntil) && !sourceQuiet && h.inflight < h.slots
+	// An earlier row can become stale again before a later row has ever had
+	// its first capture. Give an eligible unread row the next free slot rather
+	// than refreshing the earlier rows forever in inventory order.
+	firstReadingOwed := !entry.at.IsZero() && h.unreadCaptureWaitingLocked(now, s.ID)
+	start := stale && !entry.capturing && !now.Before(entry.quietUntil) && !sourceQuiet &&
+		!firstReadingOwed && h.inflight < h.slots
 	switch {
 	case start:
 		entry.capturing = true
@@ -220,6 +227,8 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 		// refresh is on its way.
 	case stale && (now.Before(entry.quietUntil) || sourceQuiet):
 		h.counts.Backoff++
+	case stale && firstReadingOwed:
+		// This is priority for another row, not a capture-slot refusal.
 	case stale:
 		h.counts.Refused++
 	}
@@ -238,6 +247,21 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 		return "", false
 	}
 	return text, true
+}
+
+// unreadCaptureWaitingLocked counts only rows that were asked about recently
+// and can actually use a slot. A failed tab in backoff, or an iTerm source
+// outage, must not hold healthy rows behind an impossible first capture.
+func (h *HeldScreens) unreadCaptureWaitingLocked(now time.Time, except string) bool {
+	for id, entry := range h.held {
+		if id == except || !entry.at.IsZero() || entry.asked.IsZero() || entry.capturing ||
+			now.Sub(entry.asked) > ScreenHeldIdle || now.Before(entry.quietUntil) ||
+			(entry.backend == session.BackendITerm && now.Before(h.itermQuiet)) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // heldFor is how long this backend's screen is good for.

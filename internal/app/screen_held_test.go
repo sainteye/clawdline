@@ -28,6 +28,29 @@ type sourceFailTerminal struct {
 	sourceFailed bool
 }
 
+type recordingTerminal struct {
+	mu   sync.Mutex
+	ids  []string
+	fail map[string]bool
+}
+
+func (r *recordingTerminal) Capture(_ context.Context, row session.Session) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ids = append(r.ids, row.ID)
+	if r.fail[row.ID] {
+		delete(r.fail, row.ID)
+		return "", false
+	}
+	return "screen", true
+}
+
+func (r *recordingTerminal) captured() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.ids...)
+}
+
 func (s *sourceFailTerminal) CaptureWithFailure(ctx context.Context, row session.Session) (string, bool, bool) {
 	text, ok := s.Capture(ctx, row)
 	return text, ok, !ok && s.sourceFailed
@@ -135,6 +158,92 @@ func TestTheListDoesNotWaitForATerminalAndIsBoundedWhileItDoesNot(t *testing.T) 
 	}
 	if after, _, _ := host.stats(); after != before {
 		t.Errorf("five reads of a screen held for %s cost %d more captures", ScreenHeldOnDemand, after-before)
+	}
+}
+
+// An iTerm capture can take longer than the held screen's freshness window.
+// Inventory walks rows in a stable order, so without first-capture priority
+// the early rows repeatedly refreshed while a later Epic root stayed unknown.
+func TestUnreadScreenGetsASlotBeforeEarlierRowsRefresh(t *testing.T) {
+	host := &recordingTerminal{fail: map[string]bool{}}
+	h := NewHeldScreens(host)
+	h.SetLimits(1, ScreenHeldLimit)
+	now := time.Unix(2_000_000, 0)
+	h.now = func() time.Time { return now }
+	rows := []session.Session{
+		{ID: "first", Backend: session.BackendITerm},
+		{ID: "second", Backend: session.BackendITerm},
+		{ID: "third", Backend: session.BackendITerm},
+	}
+	settle := func() {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			h.mu.Lock()
+			quiet := h.inflight == 0
+			h.mu.Unlock()
+			if quiet {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("capture did not finish")
+	}
+	for round := 0; round < len(rows); round++ {
+		for _, row := range rows {
+			h.Capture(context.Background(), row)
+		}
+		settle()
+		now = now.Add(ScreenHeldOnDemand + time.Second)
+	}
+	if got := host.captured(); len(got) != 3 || got[0] != "first" || got[1] != "second" || got[2] != "third" {
+		t.Fatalf("first captures in inventory order = %v, want every row before refresh", got)
+	}
+	h.Capture(context.Background(), rows[0])
+	settle()
+	if got := host.captured(); len(got) != 4 || got[3] != "first" {
+		t.Fatalf("refresh did not resume after first captures: %v", got)
+	}
+}
+
+func TestFailedUnreadScreenInBackoffDoesNotHoldOtherCaptures(t *testing.T) {
+	host := &recordingTerminal{fail: map[string]bool{"second": true}}
+	h := NewHeldScreens(host)
+	h.SetLimits(1, ScreenHeldLimit)
+	now := time.Unix(2_000_000, 0)
+	h.now = func() time.Time { return now }
+	rows := []session.Session{
+		{ID: "first", Backend: session.BackendITerm},
+		{ID: "second", Backend: session.BackendITerm},
+		{ID: "third", Backend: session.BackendITerm},
+	}
+	settle := func() {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			h.mu.Lock()
+			quiet := h.inflight == 0
+			h.mu.Unlock()
+			if quiet {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("capture did not finish")
+	}
+	for round := 0; round < 3; round++ {
+		for _, row := range rows {
+			h.Capture(context.Background(), row)
+		}
+		settle()
+		if round == 0 {
+			now = now.Add(ScreenHeldOnDemand + time.Second)
+		} else {
+			now = now.Add(time.Second)
+		}
+	}
+	if got := host.captured(); len(got) != 3 || got[0] != "first" || got[1] != "second" || got[2] != "third" {
+		t.Fatalf("failed first capture stalled other rows: %v", got)
 	}
 }
 

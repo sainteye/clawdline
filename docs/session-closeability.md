@@ -88,6 +88,13 @@ Closed, and grouped by `kind`, because the three groups have three different nex
 Any `evidence` reason forces `unknown`. Any `obligation` reason with no `evidence` reason forces
 `blocked`. `attestation` reasons appear only when nothing else is outstanding.
 
+`terminal_unreadable` means no positive terminal state was available for that row. A terminal
+listing can still be complete and its process identity can still be exact: the list's screen
+sampler may not yet have captured that row, a capture may have failed, or a captured screen may
+not contain a recognizable state. These cases must remain unknown until a readable state is
+observed. The sampler gives a row awaiting its first eligible capture priority over refreshing
+earlier rows, so a slow source cannot indefinitely hide later rows in inventory order.
+
 Every reason names a `mover` — `session` (with `self: true` when it is this one), `person`, `task`
 or `broker`. When every outstanding reason points at the same mover, the projection lifts it to
 the top-level `mover` field, which is what a UI can put on one line. Several movers is reported as
