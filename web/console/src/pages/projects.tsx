@@ -136,7 +136,10 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         gear.title = "專案設定"
         gear.setAttribute("aria-label", `專案設定：${wrapper.querySelector(".project-row-name")?.textContent || "專案"}`)
         gear.setAttribute("aria-haspopup", "dialog")
-        gear.textContent = "⚙"
+        gear.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M10.09 4.54h3.82l.54 1.66 1.35.77 1.71-.35 1.9 3.3-1.16 1.3v1.56l1.16 1.3-1.9 3.3-1.71-.35-1.35.77-.54 1.66h-3.82l-.54-1.66-1.35-.77-1.71.35-1.9-3.3 1.16-1.3v-1.56l-1.16-1.3 1.9-3.3 1.71.35 1.35-.77Z"/>
+          <circle cx="12" cy="12" r="2.5"/>
+        </svg>`
         wrapper.classList.add("has-settings")
         wrapper.appendChild(gear)
       }
