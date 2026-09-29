@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ProjectPlace } from "../work/api.js"
+import { ProjectTreeIcon } from "./ProjectTreeIcon.js"
 import {
   listProjectFiles, readProjectFile, saveProjectFile, ProjectFileError,
   type ProjectFile, type ProjectFileContent, type ProjectFileList,
@@ -34,12 +35,13 @@ function FolderRows({ folder, selected, busy, choose }: {
   const files = [...folder.files].sort((a, b) => a.name.localeCompare(b.name))
   return <>
     {folders.map(child => <details className="project-files-folder" key={child.path}>
-      <summary><span aria-hidden="true" className="project-files-folder-arrow">▸</span><span>{child.name}</span></summary>
+      <summary><span aria-hidden="true" className="project-files-folder-arrow">▸</span><ProjectTreeIcon kind="folder" /><span>{child.name}</span></summary>
       <div className="project-files-folder-children"><FolderRows folder={child} selected={selected} busy={busy} choose={choose} /></div>
     </details>)}
     {files.map(file => <button type="button" key={file.id}
       className="project-files-row" aria-current={selected === file.id ? "true" : undefined}
       disabled={busy} onClick={() => choose(file)}>
+      <ProjectTreeIcon kind="file" />
       <strong>{file.name}</strong><span>{file.location}</span>
       <small>{STATUS[file.status]}{file.source === "global" ? " · 唯讀" : ""}</small>
     </button>)}

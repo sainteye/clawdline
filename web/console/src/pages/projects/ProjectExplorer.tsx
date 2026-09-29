@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { ProjectPlace } from "../work/api.js"
+import { ProjectTreeIcon } from "./ProjectTreeIcon.js"
 import { ProjectFileError } from "./project-files-api.js"
 import { listProjectDirectory, readProjectTreeFile, type TreeContent, type TreeEntry, type TreeListing } from "./project-tree-api.js"
 import "./project-explorer.css"
@@ -33,16 +34,16 @@ function DirectoryRows({ listing, listings, loading, errors, selected, open, cho
   return <ul className="project-explorer-entries">
     {listing.entries.map(entry => <li key={entry.path}>
       {entry.kind === "directory" ? <details className="project-explorer-folder" onToggle={event => { if (event.currentTarget.open) open(entry.path) }}>
-        <summary><span aria-hidden="true" className="project-explorer-caret">▸</span><span aria-hidden="true">▣</span><span>{entry.name}</span></summary>
+        <summary><span aria-hidden="true" className="project-explorer-caret">▸</span><ProjectTreeIcon kind="folder" /><span>{entry.name}</span></summary>
         <div className="project-explorer-children">
           {loading.has(entry.path) && <p role="status">正在讀取…</p>}
           {errors[entry.path] && <p role="alert">{errors[entry.path]} <button type="button" onClick={() => retry(entry.path)}>重試</button></p>}
           {listings[entry.path] && <DirectoryRows listing={listings[entry.path]} listings={listings} loading={loading} errors={errors} selected={selected} open={open} choose={choose} retry={retry} />}
         </div>
       </details> : entry.kind === "file" ? <button type="button" className="project-explorer-file" aria-current={selected === entry.path ? "true" : undefined} onClick={() => choose(entry)}>
-        <span aria-hidden="true">▤</span><span>{entry.name}</span>
+        <ProjectTreeIcon kind="file" /><span>{entry.name}</span>
       </button> : <span className="project-explorer-unavailable" title={entry.kind === "link" ? "連結不會從檔案樹開啟" : "不支援的檔案類型"}>
-        <span aria-hidden="true">◇</span><span>{entry.name}</span><small>{entry.kind === "link" ? "連結" : "無法預覽"}</small>
+        <ProjectTreeIcon kind={entry.kind} /><span>{entry.name}</span><small>{entry.kind === "link" ? "連結" : "無法預覽"}</small>
       </span>}
     </li>)}
     {listing.entries.length === 0 && <li className="project-explorer-empty">這個資料夾沒有檔案。</li>}

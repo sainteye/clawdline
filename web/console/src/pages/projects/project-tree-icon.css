@@ -1,0 +1,4 @@
+.project-tree-icon { display: block; flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.project-tree-icon--folder { color: var(--accent); }
+.project-tree-icon--file, .project-tree-icon--link, .project-tree-icon--other { color: var(--dim); }
+.project-tree-icon-fill { fill: currentColor; stroke: none; opacity: .18; }
