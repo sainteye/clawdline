@@ -88,6 +88,8 @@ let currentClaudeModel = "claude-opus-5-5"
 let generation = 0
 let intentRequests = 0
 let placeRequests = 0
+let projectFileText = "first instruction"
+let projectFileVersion = "version-one"
 let smartTitleRequests = 0
 let machineSettings: Record<string, unknown> = {
   codex_default_model: "",
@@ -275,6 +277,7 @@ function daemon(): Server {
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
     if (path === "/v1/personas") return json(res, 200, { license: "MIT", personas: PERSONAS })
+    if (path === "/v1/projects" && req.method === "GET") return json(res, 503, { error: "board_unavailable" })
     if (path === "/__project_request_count") return json(res, 200, { count: placeRequests })
     if (path === "/v1/places") {
       placeRequests++
@@ -291,6 +294,26 @@ function daemon(): Server {
           setup: { icon: "generated", deploy: "ready", deploy_activity: "running", servers: "missing", server_count: 0, sync: "ready" },
         }],
       })
+    }
+    if (path === "/v1/projects/fixture-place/files" && req.method === "GET") {
+      return json(res, 200, { files: [
+        { id: "fixture-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true },
+        { id: "missing-file", name: "CLAUDE.md", location: "CLAUDE.md", source: "project", assistant: "claude", kind: "instruction", status: "missing", editable: false },
+        { id: "global-skill", name: "SKILL.md", location: ".claude/skills/global/SKILL.md", source: "global", assistant: "claude", kind: "skill", status: "ready", editable: false },
+      ], truncated: false, skipped: [] })
+    }
+    if (path === "/v1/projects/fixture-place/files/fixture-file") {
+      const file = { id: "fixture-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true }
+      if (req.method === "GET") return json(res, 200, { file, text: projectFileText, version: projectFileVersion })
+      if (req.method === "PUT") {
+        void requestJSON(req).then((body) => {
+          if (body.expected_version !== projectFileVersion) return json(res, 409, { error: "file_changed", detail: "changed" })
+          projectFileText = String(body.content)
+          projectFileVersion = "version-two"
+          return json(res, 200, { file, text: projectFileText, version: projectFileVersion })
+        }, () => json(res, 400, { error: "bad_request", detail: "bad JSON" }))
+        return
+      }
     }
     if (path === "/v1/work/v2/items" && req.method === "GET") {
       return json(res, 200, { ok: true, rows: createdWork ? [createdWork] : [], counts: {}, truncated: false })
@@ -1329,6 +1352,87 @@ test("phone: the command textarea keeps the full sheet width and the microphone 
     assert.ok(Math.abs(layout.microphone.centreY - layout.stop.centreY) <= 0.5, "the listening stop icon is vertically centred")
   }))
 
+test("Project files: gear shows filenames and a phone can edit while protecting an unsaved draft", () =>
+  inTab(PHONE, async (tab) => {
+    projectFileText = "first instruction"
+    projectFileVersion = "version-one"
+    await tab.go("/#page=projects")
+    const opened = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 6000
+      const wait = () => {
+        const gear = document.querySelector('button.project-row-settings[data-place-id="fixture-place"]')
+        if (!gear) { if (Date.now() > deadline) reject(new Error("Project gear did not appear: " + location.href + " " + document.querySelector("#projects-rows")?.innerHTML.slice(0, 1000))); else setTimeout(wait, 25); return }
+        gear.click()
+        const rows = () => {
+          const dialog = document.querySelector(".project-setup-dialog")
+          const file = [...document.querySelectorAll(".project-files-row")].find((node) => node.textContent.includes("AGENTS.md"))
+          if (!dialog?.open || !file) { if (Date.now() > deadline) reject(new Error("file inventory did not appear")); else setTimeout(rows, 25); return }
+          resolve({ groups: [...document.querySelectorAll(".project-files-group h4")].map(n => n.textContent), names: [...document.querySelectorAll(".project-files-row strong")].map(n => n.textContent), fullScreen: dialog.getBoundingClientRect().width === innerWidth, gearLabel: gear.getAttribute("aria-label") })
+        }
+        rows()
+      }
+      wait()
+    })`)
+    assert.deepEqual(opened.groups, ["Codex 指令", "Claude Code 指令", "Skills 技能"])
+    assert.deepEqual(opened.names, ["AGENTS.md", "CLAUDE.md", "SKILL.md"])
+    assert.equal(opened.fullScreen, true)
+    assert.match(opened.gearLabel, /專案設定/)
+    const edited = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 6000
+      const row = [...document.querySelectorAll(".project-files-row")].find(n => n.textContent.includes("AGENTS.md"))
+      row.click()
+      const read = () => {
+        const content = document.querySelector(".project-files-text")
+        if (!content) { if (Date.now() > deadline) reject(new Error("file content did not load")); else setTimeout(read, 25); return }
+        const edit = [...document.querySelectorAll(".project-files-actions button")].find(n => n.textContent === "編輯檔案")
+        edit.click()
+        const editing = () => {
+          const textarea = document.querySelector(".project-files-editor textarea")
+          if (!textarea) { if (Date.now() > deadline) reject(new Error("file editor did not appear")); else setTimeout(editing, 25); return }
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set
+          setter.call(textarea, "edited instruction")
+          textarea.dispatchEvent(new Event("input", { bubbles: true }))
+          window.confirm = () => false
+          document.querySelector(".project-setup-close").click()
+          resolve({ stillOpen: document.querySelector(".project-setup-dialog").open, draft: textarea.value, content: content.textContent, focused: document.activeElement === textarea })
+        }
+        editing()
+      }
+      read()
+    })`)
+    assert.deepEqual(edited, { stillOpen: true, draft: "edited instruction", content: "first instruction", focused: true })
+    await tab.run(`(() => { [...document.querySelectorAll(".project-files-actions button")].find(n => n.textContent === "儲存檔案").click() })()`)
+    const saved = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 6000
+      const wait = () => {
+        const status = document.querySelector(".project-files-detail [role=status]")?.textContent || ""
+        if (status.includes("已儲存")) return resolve({ status, text: document.querySelector(".project-files-text")?.textContent })
+        if (Date.now() > deadline) return reject(new Error("save not confirmed: " + status))
+        setTimeout(wait, 25)
+      }
+      wait()
+    })`)
+    assert.equal(saved.text, "edited instruction")
+    assert.equal(projectFileText, "edited instruction")
+    for (const width of [320, 390, 620, 768, 900]) {
+      await tab.view({ width, height: 844, mobile: width < 900 }, "dark")
+      const layout = await tab.run(`(() => ({ viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, dialog: document.querySelector(".project-setup-dialog").getBoundingClientRect().width }))()`)
+      assert.equal(layout.overflow, false, `horizontal overflow at ${width}px`)
+    }
+    await tab.run(`document.querySelector(".project-setup-close").click()`)
+    const closed = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 3000
+      const wait = () => {
+        const dialog = document.querySelector(".project-setup-dialog")
+        if (!dialog.open && document.activeElement?.classList.contains("project-row-settings")) return resolve(true)
+        if (Date.now() > deadline) return reject(new Error("dialog did not restore focus: " + document.activeElement?.outerHTML.slice(0, 200)))
+        setTimeout(wait, 25)
+      }
+      wait()
+    })`)
+    assert.equal(closed, true)
+  }))
+
 test("phone: Projects opens a reviewable setup Session without using the intent planner", () =>
   inTab(PHONE, async (tab) => {
     const plannedBefore = intentRequests
@@ -1339,7 +1443,7 @@ test("phone: Projects opens a reviewable setup Session without using the intent 
         const management = document.querySelector(".project-tools")
         const launcher = document.querySelector(".project-setup")
         const trigger = launcher?.querySelector(".project-setup-open")
-        const dialog = launcher?.querySelector(".project-setup-dialog")
+        const dialog = document.querySelector(".project-setup-dialog")
         const readiness = dialog?.querySelector(".project-readiness-card")
         const button = readiness?.querySelector(".project-readiness-action")
         if (!management || !launcher || !trigger || !dialog || !readiness || !button) {

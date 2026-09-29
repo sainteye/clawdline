@@ -1401,6 +1401,26 @@ func Register() []Entry {
 			Sources: []string{"internal/domain/projectsync.MaxProjectFiles"},
 		},
 		{
+			Name: "projectfiles.list", Class: Buffer, Unit: Rows,
+			Limit: 128, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projectfiles.MaxFiles"},
+		},
+		{
+			Name: "projectfiles.scan_entries", Class: Buffer, Unit: Rows,
+			Limit: 1024, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projectfiles.MaxScanEntries"},
+		},
+		{
+			Name: "projectfiles.file_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 128 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projectfiles.MaxFileBytes"},
+		},
+		{
+			Name: "projectfiles.write_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projectfiles.MaxWriteBytes"},
+		},
+		{
 			Name: "projectsync.file_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectsync.MaxFileBytes"},

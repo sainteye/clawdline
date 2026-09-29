@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/projectfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
@@ -358,6 +359,61 @@ func decodeProjectRefresh(b body) (plan, bool) {
 		return plan{}, false
 	}
 	p.project = project
+	return p, true
+}
+
+func projectFileID(b body) (string, bool) {
+	id, ok := b.nonEmpty("file")
+	if !ok || len(id) != 32 {
+		return "", false
+	}
+	for _, c := range id {
+		if c < '0' || c > '9' && c < 'a' || c > 'f' {
+			return "", false
+		}
+	}
+	return id, true
+}
+
+func decodeProjectFileList(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project") {
+		return plan{}, false
+	}
+	p, ok := machinePlan(b)
+	project, projectOK := b.nonEmpty("project")
+	if !ok || !projectOK || len(project) > 200 {
+		return plan{}, false
+	}
+	p.project = project
+	return p, true
+}
+
+func decodeProjectFileRead(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project", "file") {
+		return plan{}, false
+	}
+	p, ok := machinePlan(b)
+	project, projectOK := b.nonEmpty("project")
+	file, fileOK := projectFileID(b)
+	if !ok || !projectOK || len(project) > 200 || !fileOK {
+		return plan{}, false
+	}
+	p.project, p.id = project, file
+	return p, true
+}
+
+func decodeProjectFileSave(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project", "file", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	project, projectOK := b.nonEmpty("project")
+	file, fileOK := projectFileID(b)
+	document, documentOK := b.object("item", projectfiles.MaxWriteBytes)
+	if !ok || p.request == "" || !projectOK || len(project) > 200 || !fileOK || !documentOK {
+		return plan{}, false
+	}
+	p.project, p.id, p.document = project, file, document
 	return p, true
 }
 
@@ -1532,6 +1588,22 @@ func init() {
 			},
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/projects"}
+			}},
+		op{name: "project-file-list", read: true,
+			decode: decodeProjectFileList,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/files"}
+			}},
+		op{name: "project-file-read", read: true,
+			decode: decodeProjectFileRead,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/files/" + segment(p.id)}
+			}},
+		op{name: "project-file-save",
+			decode: decodeProjectFileSave,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "PUT", Path: "/v1/projects/" + segment(p.project) + "/files/" + segment(p.id),
+					Body: p.document, Header: asDevice()}
 			}},
 
 		// Project settings sync (docs/project-sync.md): a source offers, a

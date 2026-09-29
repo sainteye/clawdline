@@ -13,6 +13,8 @@ import { useSyncExternalStore } from "react"
 export const OPEN_INFO = "clawdline:open-info"
 export const OPEN_CONFIRM = "clawdline:open-confirm"
 export const GO_PAGE = "clawdline:go-page"
+/** A cancelable check before the shell hides a page with an open editor. */
+export const BEFORE_PAGE_CHANGE = "clawdline:before-page-change"
 
 export interface PageRequest {
   /** The page to show, by the name `Pages.knows` knows it by. */

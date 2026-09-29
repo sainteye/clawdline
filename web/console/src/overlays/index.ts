@@ -6,6 +6,7 @@ export { ActionConfirm, endedIfGone, hostConfirm } from "./action-confirm.js"
 export { SessionFacts } from "./facts.js"
 export {
   GO_PAGE,
+  BEFORE_PAGE_CHANGE,
   OPEN_CONFIRM,
   OPEN_INFO,
   getClosingId,

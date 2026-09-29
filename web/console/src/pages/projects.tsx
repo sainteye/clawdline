@@ -125,9 +125,8 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         const next = replaceSuffix(value, words.boardBefore, words.boardAfter)
         if (next !== value) line.textContent = next
       }
-      for (const worktrees of rows.querySelectorAll<HTMLButtonElement>(".project-row-worktrees")) {
-        const wrapper = worktrees.closest<HTMLElement>(".project-row-wrap")
-        const project = wrapper?.querySelector<HTMLButtonElement>(".project-row[data-place-id]")
+      for (const project of rows.querySelectorAll<HTMLButtonElement>(".project-row[data-place-id]")) {
+        const wrapper = project.closest<HTMLElement>(".project-row-wrap")
         if (!wrapper || !project || wrapper.querySelector(".project-row-settings")) continue
         const gear = document.createElement("button")
         gear.type = "button"

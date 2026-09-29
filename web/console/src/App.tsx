@@ -24,6 +24,7 @@ import { SidebarIcon, type SidebarIconName } from "./SidebarIcon.js"
 import { sessionCountState, sessionReadingChinese, totalSessionWords } from "./session-reading.js"
 import {
   ActionConfirm,
+  BEFORE_PAGE_CHANGE,
   GO_PAGE,
   Info,
   OPEN_CONFIRM,
@@ -293,6 +294,7 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   // so coming back to it writes that session's address, not the page's.
   const go = (to: Page, options?: { hash?: boolean }) => {
     if (!knows(to) || to === pageRef.current) return false
+    if (!document.dispatchEvent(new CustomEvent(BEFORE_PAGE_CHANGE, { cancelable: true, detail: { from: pageRef.current, to } }))) return false
     pageRef.current = to
     setPage(to)
     if (document.documentElement.classList.contains("booting")) landOnBrand.current = true
@@ -320,7 +322,12 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   useEffect(() => {
     const routeTo = () => {
       const documentLink = hasDocumentIntent(location.hash)
-      goRef.current(documentLink ? "documents" : pageFromHash(location.hash, knows), { hash: false })
+      const target = documentLink ? "documents" : pageFromHash(location.hash, knows)
+      const from = pageRef.current
+      if (!goRef.current(target, { hash: false }) && target !== from) {
+        writeHash("#page=" + encodeURIComponent(from))
+        return
+      }
       askedRef.current = documentLink ? null : sessionsInFragment(location.hash)
       if (askedRef.current) openAskedRef.current()
     }
