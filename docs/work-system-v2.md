@@ -10,6 +10,10 @@ This page is normative for the replacement. Where the earlier board design, work
 or broker projection disagrees with it, this page wins for v2. The acceptance contract is
 [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md).
 
+Agent requests for a person's attention on a Session use the separate
+[`human-interventions.md`](human-interventions.md) contract. They do not change
+direct Session to-dos or formal Board decisions.
+
 The implementation surface is `/v1/work/v2/`. Person writes require a send-capable device;
 Agent writes are isolated under `/v1/work/v2/agent/`. The old background Board sweep is not
 started, so a reset store remains empty instead of being repopulated by inferred digests or

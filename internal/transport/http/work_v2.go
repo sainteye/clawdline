@@ -744,6 +744,8 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 		s.workV2DeleteImage(w, r, parts[1], parts[3])
 	case len(parts) >= 2 && parts[0] == "session-todos":
 		s.workV2SessionTodos(w, r, parts[1:])
+	case len(parts) >= 2 && parts[0] == "human-interventions":
+		s.workV2HumanInterventions(w, r, parts[1:])
 	case len(parts) >= 2 && parts[0] == "agent":
 		s.workV2Agent(w, r, parts[1:])
 	case rest == "proposals":
@@ -2126,6 +2128,10 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []string) {
 	if !machineAuthed(r) {
 		writeRefusal(w, http.StatusUnauthorized, "machine_required", "Only an authenticated Session may use this route.")
+		return
+	}
+	if len(parts) == 1 && parts[0] == "human-interventions" && r.Method == http.MethodPost {
+		s.agentCreateHumanIntervention(w, r)
 		return
 	}
 	if len(parts) == 1 && parts[0] == "items" && r.Method == http.MethodPost {

@@ -226,6 +226,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["POST", "/v1/work/v2/proposals/pr1/accept"],
     ["POST", "/v1/work/v2/session-todos/%251"],
     ["POST", "/v1/work/v2/session-todos/%251/t1/send"],
+    ["POST", "/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000003/read"],
     ["POST", "/v1/sessions/s1/interrupt"],
     ["GET", "/v1/sessions/restorable"],
     ["POST", "/v1/sessions/restorable/restore"],
@@ -243,7 +244,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("schedules" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
-  // 102, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
+  // 104, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
   // compaction comparison, the seven verification words, the Settings page's capacity read, two default-model words and two work-gate words, the three words that
@@ -272,7 +273,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("archive-session" in CARRIED)
   assert.ok("archived-sessions" in CARRIED)
   assert.ok("restore-archived" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 102)
+  assert.equal(Object.keys(CARRIED).length, 104)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

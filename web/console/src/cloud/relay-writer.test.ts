@@ -669,6 +669,7 @@ test("Work v2 person actions keep their exact route subject and body across Clou
       "work.v2.todo-image-create", { terminal: "%1", id: "t1", item: { expected_version: 1, title: "screen.png", data_url: "data:image/png;base64,cG5n" } }],
     ["/v1/work/v2/session-todos/%251/t1/send", {}, "work.v2.todo-action", { terminal: "%1", id: "t1", action: "send", item: {} }],
     ["/v1/work/v2/session-todos/%251/t1/reopen", {}, "work.v2.todo-action", { terminal: "%1", id: "t1", action: "reopen", item: {} }],
+    ["/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002/10000000-0000-4000-8000-000000000003/read", { expected_version: 1 }, "work.v2.human-intervention-action", { terminal: "conversation:10000000-0000-4000-8000-000000000002", id: "10000000-0000-4000-8000-000000000003", action: "read", item: { expected_version: 1 } }],
   ]
   for (const [path, sent, word, body] of cases) {
     const response = await reader.fetch(path, post(sent))
