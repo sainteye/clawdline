@@ -217,6 +217,8 @@ export interface WriteHost {
  * report name.
  */
 export type WriteRoute =
+ | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update"> }
+  | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
  | { op: "project-icon-copy"; word: Carried<"project-icon-copy">; id: string }
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
   | { op: "project-mirror-detach"; word: Carried<"project-mirror-detach"> }
@@ -497,6 +499,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
   if (head === "projects" && a && b === "icon" && segments.length === 3 && method === "PUT") return { op: "project-icon-copy", word: "project-icon-copy", id: a }
+  if (head === "squad" && segments.length === 2 && method === "PUT") {
+    if (a === "settings") return { op: "squad-write", word: "squad.settings.update" }
+    if (a === "motion") return { op: "squad-write", word: "squad.motion.update" }
+  }
   if (head === "project-sync" && a === "mirror" && segments.length === 2 && method === "DELETE") {
     return { op: "project-mirror-detach", word: "project-mirror-detach" }
   }
@@ -505,6 +511,12 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "verification-delete", word: "verification.delete", id: a }
   }
   if (method !== "POST") return null
+  if (head === "squad" && a === "catalog" && segments.length === 2) return { op: "squad-write", word: "squad.catalog.update" }
+  if (head === "squad-packages" && segments.length === 2) {
+    if (a === "preview") return { op: "squad-package", word: "squad.packages.preview" }
+    if (a === "adopt") return { op: "squad-package", word: "squad.packages.adopt" }
+    if (a === "export") return { op: "squad-package", word: "squad.packages.export" }
+  }
   if (head === "settings" && a === "default-models" && segments.length === 2) {
     return { op: "default-models-update", word: "default-models-update" }
   }
@@ -718,6 +730,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "default-models-update":
     case "work-gate-settings":
     case "work-gate-settings-update":
+    case "squad-write":
+    case "squad-package":
     case "board-command":
     case "project-icon-copy":
     case "project-mirror-apply":
@@ -1303,6 +1317,30 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "squad-write": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("idempotency_key_required", "Squad writes need an Idempotency-Key.", 400)
+        return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, request)
+      }
+      case "squad-package": {
+        for (const [key] of url.searchParams) throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud.`, 501)
+        const body = await bodyOf(init)
+        const wrapped = { package: body }
+        if (route.word === "squad.packages.adopt") {
+          const request = headerOf(init, "idempotency-key")
+          if (!request) throw failure("idempotency_key_required", "Package adoption needs an Idempotency-Key.", 400)
+          return this.machineWorkV2(client, route.word, wrapped, request)
+        }
+        if (route.word === "squad.packages.export" && Array.isArray(body.private_scopes) && body.private_scopes.length > 0) {
+          if (body.confirm_private !== true) throw failure("private_confirmation_required", "Private export needs explicit confirmation.", 400)
+          const request = headerOf(init, "idempotency-key")
+          if (!request) throw failure("idempotency_key_required", "Private export needs an Idempotency-Key.", 400)
+          return this.machineWorkV2(client, "squad.packages.export.private", wrapped, request)
+        }
+        if (typeof client._machineRequest !== "function") throw failure("cloud_not_carried", route.word, 501)
+        return client._machineRequest(this.host.machine, route.word, wrapped, "read")
       }
       case "board-command": {
         for (const [key] of url.searchParams) {

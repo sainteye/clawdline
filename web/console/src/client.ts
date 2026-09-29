@@ -17,6 +17,7 @@ import { ClawdlineClient, nativeEventSourceTransport, type StreamTransport } fro
 export const client = new ClawdlineClient({ fetch: (input, init) => globalThis.fetch(input, init) })
 
 let fleetStream: StreamTransport | null = null
+let fleetMayWrite: (() => boolean) | null = null
 
 /**
  * The live connection the session list follows: the daemon's `/v1/events`, or
@@ -35,7 +36,16 @@ export function followsRelay(): boolean {
   return fleetStream !== null
 }
 
+/** A presentation hint; the daemon still checks every write. */
+export function mayWriteThroughCurrentTransport(): boolean {
+  return fleetMayWrite?.() ?? true
+}
+
 /** Follow `transport` instead of `/v1/events`. Set once, before the console is drawn. */
 export function followFleetFrom(transport: StreamTransport): void {
   fleetStream = transport
+}
+
+export function followFleetWriteAccess(read: () => boolean): void {
+  fleetMayWrite = read
 }
