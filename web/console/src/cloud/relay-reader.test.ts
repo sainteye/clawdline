@@ -778,6 +778,8 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/v2/session-todos/%251", "work.v2.session-todos", { terminal: "%1" }],
   ["/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002", "work.v2.human-interventions", { terminal: "conversation:10000000-0000-4000-8000-000000000002" }],
   ["/v1/projects", "projects", {}],
+  ["/v1/projects/cloud-p1/files", "project-file-list", { project: "p1" }],
+  ["/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-read", { project: "p1", file: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }],
   ["/v1/personas", "personas", {}],
   ["/v1/projects/%2Fp/worktrees", "project-worktree-lifecycle", { project: "/p" }],
   ["/v1/board?project=p1", "board", { project: "p1", item: "" }],
@@ -819,6 +821,18 @@ test("the work system, the projects and the timeline reach the machine as their 
     assert.equal(logged.answer, "relay", path + " was answered somewhere other than the machine")
     assert.equal(logged.word, word, path + " is logged as " + logged.word)
   }
+})
+
+test("Project file reads stay on the selected Project's machine and accept only inventoried ids", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+  client._place = () => ({ machine: "mac-b", id: "p1", path: "/repo" })
+  const other = await r.fetch("/v1/projects/cloud-p1/files")
+  assert.equal(other.status, 409)
+  assert.equal(client.reads.length, 0)
+  const invalid = await r.fetch("/v1/projects/cloud-p1/files/%2Fetc%2Fpasswd")
+  assert.equal(invalid.status, 501)
+  assert.equal(client.reads.length, 0)
 })
 
 test("a carried read stops when its caller's signal fires, instead of waiting out the relay's minute", async () => {

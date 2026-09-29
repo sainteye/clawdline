@@ -220,6 +220,7 @@ export type WriteRoute =
  | { op: "squad-write"; word: Carried<"squad.settings.update" | "squad.motion.update" | "squad.catalog.update"> }
   | { op: "squad-package"; word: Carried<"squad.packages.preview" | "squad.packages.adopt" | "squad.packages.export"> }
  | { op: "project-icon-copy"; word: Carried<"project-icon-copy">; id: string }
+  | { op: "project-file-save"; word: Carried<"project-file-save">; project: string; file: string }
   | { op: "project-mirror-apply"; word: Carried<"project-mirror-apply"> }
   | { op: "project-mirror-detach"; word: Carried<"project-mirror-detach"> }
   | { op: "send"; word: Carried<"send">; session: string }
@@ -511,6 +512,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return { op: "work-v2-edit", word: "work.v2.edit", id: c }
   }
   if (head === "projects" && a && b === "icon" && segments.length === 3 && method === "PUT") return { op: "project-icon-copy", word: "project-icon-copy", id: a }
+  if (head === "projects" && a && b === "files" && c && segments.length === 4 && method === "PUT" && /^[0-9a-f]{32}$/.test(c)) {
+    return { op: "project-file-save", word: "project-file-save", project: a, file: c }
+  }
   if (head === "squad" && segments.length === 2 && method === "PUT") {
     if (a === "settings") return { op: "squad-write", word: "squad.settings.update" }
     if (a === "motion") return { op: "squad-write", word: "squad.motion.update" }
@@ -751,6 +755,7 @@ function spellingOf(route: WriteRoute): Spelling {
     case "squad-package":
     case "board-command":
     case "project-icon-copy":
+    case "project-file-save":
     case "project-mirror-apply":
     case "project-mirror-detach":
       return "flat"
@@ -1419,6 +1424,16 @@ export class RelayWriter {
         const place = client._place(route.id)
         if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
         return this.machineWorkV2(client, route.word, { id: place.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "project-file-save": {
+        if (typeof client._place !== "function" || typeof client._machineRequestAs !== "function") throw failure("cloud_not_carried", route.word, 501)
+        if ([...url.searchParams].length) throw failure("cloud_not_carried", "Project file saves take no query fields.", 501)
+        const place = client._place(route.project)
+        if (place.machine !== this.host.machine) throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
+        const request = headerOf(init, "idempotency-key")
+        if (!request) throw failure("idempotency_key_required", "Saving a Project file needs an Idempotency-Key.", 400)
+        return client._machineRequestAs(request, place.machine, route.word,
+          { project: place.id, file: route.file, item: await bodyOf(init) }, "action")
       }
       case "project-mirror-apply":
         return this.machineWorkV2(client, route.word, { item: await bodyOf(init) }, headerOf(init, "idempotency-key"))

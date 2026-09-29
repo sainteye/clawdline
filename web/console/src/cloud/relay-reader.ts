@@ -555,6 +555,17 @@ export class RelayReader {
       if (method !== "GET") {
         return this.refuse(method, path, 501, "cloud_not_carried", this.notCarried(method, path))
       }
+      const projectFile = projectFileRoute(path)
+      if (projectFile) {
+        this.only(url, path)
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(projectFile.project)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path,
+          projectFile.file ? "project-file-read" : "project-file-list",
+          { project: place.id, ...(projectFile.file ? { file: projectFile.file } : {}) })
+      }
       // The one carried read whose parameter is a path segment rather than a
       // query field, so it cannot be a case below.
       const project = worktreeLifecycleProject(path)
@@ -1528,6 +1539,18 @@ function worktreeLifecycleProject(path: string): string {
   } catch {
     return ""
   }
+}
+
+/** One inventoried file under a Project, or the Project's inventory itself. */
+function projectFileRoute(path: string): { project: string; file?: string } | null {
+  const parts = path.split("/")
+  if ((parts.length !== 5 && parts.length !== 6) || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "files") return null
+  try {
+    const project = decodeURIComponent(parts[3])
+    const file = parts[5] ? decodeURIComponent(parts[5]) : undefined
+    if (!project || parts.length === 6 && !/^[0-9a-f]{32}$/.test(file ?? "")) return null
+    return { project, ...(file ? { file } : {}) }
+  } catch { return null }
 }
 
 /** The terminal in the exact Work v2 Session to-do list route. */

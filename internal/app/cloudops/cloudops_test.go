@@ -625,6 +625,20 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-projects",
 		method: "GET", path: "/v1/projects",
 	}, {
+		word:    "project-file-list",
+		body:    map[string]any{"type": "project-file-list", "session": machine, "request": "req-file-list", "project": "p1"},
+		session: machine, name: "read:req-file-list", method: "GET", path: "/v1/projects/p1/files",
+	}, {
+		word:    "project-file-read",
+		body:    map[string]any{"type": "project-file-read", "session": machine, "request": "req-file-read", "project": "p1", "file": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		session: machine, name: "read:req-file-read", method: "GET", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}, {
+		word: "project-file-save",
+		body: map[string]any{"type": "project-file-save", "session": machine, "request": "req-file-save", "project": "p1", "file": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"item": map[string]any{"expected_version": "v1", "content": "updated"}},
+		session: machine, name: "action:req-file-save", method: "PUT", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		body2: `{"content":"updated","expected_version":"v1"}`,
+	}, {
 		// The Project id is a path segment here, so the escaping is the
 		// answer to a different question than the query above's.
 		word: "project-worktree-lifecycle",
@@ -1192,6 +1206,23 @@ func TestAReadDoesNotNeedTheWriteSwitch(t *testing.T) {
 	}
 }
 
+func TestProjectFileCloudReadsDoNotGrantRemoteWrites(t *testing.T) {
+	r := &router{}
+	closed := Bridge{MachineID: "mac-01", Router: r}
+	file := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	read := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "project-file-read", "session": MachineReplySession, "request": "read-1", "project": "p1", "file": file}))
+	if read.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("read with remote writes off: %+v; requests: %+v", read, r.seen)
+	}
+	save := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "project-file-save", "session": MachineReplySession, "request": "save-1", "project": "p1", "file": file,
+		"item": map[string]any{"expected_version": "v1", "content": "updated"}}))
+	if save.Code != "cloud_commands_disabled" || len(r.seen) != 1 {
+		t.Fatalf("write with remote writes off: %+v; requests: %+v", save, r.seen)
+	}
+}
+
 // TestAMalformedBodyIsRefusedWhereItSafelyNames walks the shapes a viewer can
 // get wrong. Each one is refused, and each refusal goes only where the body's
 // own identity fields safely say it would have gone.
@@ -1224,6 +1255,17 @@ func TestAMalformedBodyIsRefusedWhereItSafelyNames(t *testing.T) {
 		body: map[string]any{"type": "document", "session": pane, "request": "req",
 			"scope": "project", "task": "", "path": "index.html"},
 		code: "malformed_read", published: true,
+	}, {
+		name: "a Project file read cannot name a path",
+		body: map[string]any{"type": "project-file-read", "session": MachineReplySession,
+			"request": "req", "project": "p1", "file": "../../secret"},
+		code: "malformed_read", published: true,
+	}, {
+		name: "a Project file save cannot name a path",
+		body: map[string]any{"type": "project-file-save", "session": MachineReplySession,
+			"request": "req", "project": "p1", "file": "../../secret",
+			"item": map[string]any{"expected_version": "v1", "content": "updated"}},
+		code: "malformed_command", published: true,
 	}, {
 		name: "a voice rate this machine does not transcribe",
 		body: map[string]any{"type": "voice", "session": MachineReplySession,
@@ -1631,7 +1673,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
-		"board", "board-command", "board.items", "timeline", "projects", "project-worktree-lifecycle",
+		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",

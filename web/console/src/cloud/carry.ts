@@ -97,6 +97,9 @@ export const CARRIED = {
   "squad.packages.export": "POST /v1/squad-packages/export",
   "squad.packages.export.private": "POST /v1/squad-packages/export (private scopes)",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
+  "project-file-list": "GET /v1/projects/{project}/files",
+  "project-file-read": "GET /v1/projects/{project}/files/{file}",
+  "project-file-save": "PUT /v1/projects/{project}/files/{file}",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
   // Project settings sync (docs/project-sync.md). The two source reads are
   // also asked of *another* paired machine by `cloud/project-sync.ts`, which

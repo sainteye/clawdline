@@ -291,6 +291,10 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		},
 		"projectsync.manifest_projects": func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-manifest guard"} },
 		"projectsync.project_files":     func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-project guard"} },
+		"projectfiles.list":             func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-inventory file count guard"} },
+		"projectfiles.scan_entries":     func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-skill-directory scan guard"} },
+		"projectfiles.file_bytes":       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-file read and save guard"} },
+		"projectfiles.write_bytes":      func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request save body guard"} },
 		"projectsync.file_bytes":        func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-file guard"} },
 		"projectsync.path_bytes":        func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-path guard"} },
 		capacity.SessionsShellOutputBytes: func() capacity.Reading {

@@ -669,6 +669,15 @@ Cloud alike; `projectsync.mirrored` keeps at most 512 mirrored repositories with
 eviction; `projectsync.clones` runs at most two clones at once and refuses a third with
 `429 clone_busy`. See [project-sync.md](project-sync.md).
 
+### Project instruction and skill files
+
+`projectfiles.list` stops an inventory at 128 file rows and marks it truncated.
+`projectfiles.scan_entries` reads at most 1,024 names from each skill directory and marks any
+remainder truncated. `projectfiles.file_bytes` rejects a text read or save above 128 KiB;
+`projectfiles.write_bytes` rejects a save request body above 256 KiB. These are per-request or
+per-directory bounds, so diagnostics reports no retained buffer. See
+[project-files.md](project-files.md).
+
 ### A child that stalls after its briefing
 
 `stallIdleLimit` (5 minutes) is how long a child whose briefing was typed, and which has not signed
