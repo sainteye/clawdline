@@ -19,6 +19,8 @@ const (
 	MaxSquadBodyBytes    = 64 << 10
 	MaxSquadRequestBytes = 256 << 10
 	MaxSquadPlaceLookup  = 1024
+	// Mirrored by the Console before it lets a person enable another skill.
+	MaxSquadConsoleActiveSkillBytes = 512 << 10
 )
 
 const BuiltinPrefix = "clawdline.persona."

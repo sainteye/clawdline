@@ -36,6 +36,17 @@ export interface SquadSkill {
   order: number
 }
 
+export interface SquadCatalogSkill {
+  id: string
+  name: string
+  purpose: string
+  body: string
+  source: string
+  version: string
+  license: string
+  icon: Icon
+}
+
 export interface SquadPersona {
   id: string
   settingsVersion: number
@@ -60,6 +71,7 @@ export interface SquadView {
   projects: SquadProject[]
   teams: SquadTeam[]
   personas: SquadPersona[]
+  catalogSkills: SquadCatalogSkill[]
   sessions: SquadSession[]
   motion: Effective<boolean>
   motionSettingsVersion: number

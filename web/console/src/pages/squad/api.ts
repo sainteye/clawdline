@@ -1,6 +1,18 @@
 import { client, mayWriteThroughCurrentTransport } from "../../client.js"
 import type { SquadReceipt, SquadSession, SquadView } from "./model.js"
 import { squadView, type WireCatalog, type WireSettings } from "./wire.js"
+import type { Icon } from "@clawdline/contract"
+
+export interface NewSquadSkill {
+  skill_id: string
+  version: string
+  source: string
+  license: string
+  name: { en: string; "zh-Hant": string }
+  purpose: { en: string; "zh-Hant": string }
+  icon: Icon
+  content: string
+}
 
 export interface PackPreview {
   digest: string
@@ -20,6 +32,8 @@ export interface PackPreview {
 
 export interface SquadAPI {
   read(scopeId: string): Promise<SquadView>
+  readCatalog(): Promise<WireCatalog>
+  createSkill(skill: NewSquadSkill, expectedVersion: number, key: string): Promise<void>
   boundSessions(): Promise<SquadSession[]>
   saveHandbook(scopeId: string, personaId: string, value: string, expectedVersion: number): Promise<void>
   restoreHandbook(scopeId: string, personaId: string, expectedVersion: number): Promise<void>
@@ -67,12 +81,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return value as T
 }
 
-function write(body: unknown): RequestInit {
-  return { method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) }
+function write(body: unknown, key: string = crypto.randomUUID()): RequestInit {
+  return { method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) }
 }
 
-function post(body: unknown): RequestInit {
-  return { ...write(body), method: "POST" }
+function post(body: unknown, key?: string): RequestInit {
+  return { ...write(body, key), method: "POST" }
 }
 
 function base64Of(bytes: Uint8Array): string {
@@ -125,6 +139,12 @@ class HttpSquadAPI implements SquadAPI {
     const view = squadView(catalog, global, current, projects, sessionsResult.value, mayWriteThroughCurrentTransport())
     view.partial = !scopesResult.ok || !sessionsResult.ok
     return view
+  }
+
+  readCatalog(): Promise<WireCatalog> { return request<WireCatalog>("/v1/squad/catalog") }
+
+  async createSkill(skill: NewSquadSkill, expectedVersion: number, key: string): Promise<void> {
+    await request("/v1/squad/catalog", post({ kind: "skill", expected_version: expectedVersion, entity: { skill } }, key))
   }
 
   async boundSessions(): Promise<SquadSession[]> {

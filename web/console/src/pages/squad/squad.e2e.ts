@@ -42,6 +42,13 @@ let globalAutoAssign = true
 let globalAutoVersion = 0
 let globalMotion = true
 let globalMotionVersion = 1
+let globalSkillChoices = definitions[0].skills.map((choice) => ({ ...choice }))
+let projectSkillChoices: typeof globalSkillChoices | null = null
+let refuseNextSkillWrite = false
+let dropNextSkillWrite = false
+let dropNextCatalogReply = false
+const catalogWrites: { key: string; body: Record<string, any> }[] = []
+const catalogReceipts = new Map<string, { catalog_version: number }>()
 const settingsWrites: Record<string, unknown>[] = []
 function settings(scope: string) {
   const project = scope !== "global"
@@ -53,7 +60,9 @@ function settings(scope: string) {
       handbook: index === 0 && scope === "project-a" ? field(projectAText, "project", projectAVersion) : field("全域手冊", "global", 1),
       global_handbook: field("全域手冊", "global", 1),
       auto_assign: index === 0 && scope === "project-a" ? field(false, "project", 2) : field(index === 0 ? globalAutoAssign : true, "global", index === 0 ? globalAutoVersion : 1),
-      skills: field(row.skills, project ? "global" : "default", project ? 1 : 0),
+      skills: index === 0 ? field(project && scope === "project-a" && projectSkillChoices ? projectSkillChoices : globalSkillChoices,
+        project && scope === "project-a" && projectSkillChoices ? "project" : globalSkillChoices.length !== row.skills.length ? "global" : project ? "global" : "default", project ? projectAVersion : globalAutoVersion)
+        : field(row.skills, project ? "global" : "default", project ? 1 : 0),
     })),
   }
 }
@@ -81,6 +90,25 @@ function fixture(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
     if (path === "/v1/squad/catalog") {
+      if (req.method === "POST") {
+        const chunks: Buffer[] = []
+        req.on("data", (chunk) => chunks.push(chunk))
+        req.on("end", () => {
+          const body = JSON.parse(Buffer.concat(chunks).toString() || "{}") as Record<string, any>
+          const key = String(req.headers["idempotency-key"] || "")
+          catalogWrites.push({ key, body })
+          const previous = catalogReceipts.get(key)
+          if (previous) return json(res, 200, previous)
+          if (body.expected_version !== catalog.catalog_version) return json(res, 409, { error: "version_conflict", current_version: catalog.catalog_version })
+          ;(catalog.skills as any[]).push(body.entity.skill)
+          catalog.catalog_version++
+          const receipt = { catalog_version: catalog.catalog_version }
+          catalogReceipts.set(key, receipt)
+          if (dropNextCatalogReply) { dropNextCatalogReply = false; res.writeHead(200, { "content-type": "application/json" }); return res.end("unreadable reply") }
+          return json(res, 200, receipt)
+        })
+        return
+      }
       if (catalogFailure === "offline") return res.destroy()
       if (catalogFailure === "forbidden") return json(res, 403, { error: "forbidden", detail: "Not allowed" })
       if (catalogFailure === "service") return json(res, 503, { error: "store_unavailable", detail: "Storage unavailable" })
@@ -101,6 +129,14 @@ function fixture(): Server {
             return json(res, 409, { error: "version_conflict", detail: "Settings changed", current_version: projectAVersion })
           }
           const overrides = body.overrides as { auto_assign?: { value?: boolean } } | undefined
+          const skills = (body.overrides as { skills?: { value?: typeof globalSkillChoices } } | undefined)?.skills
+          if (skills) {
+            if (dropNextSkillWrite) return res.destroy()
+            if (refuseNextSkillWrite) { refuseNextSkillWrite = false; return json(res, 409, { error: "version_conflict", current_version: projectAVersion }) }
+            if (body.place_id === "place-a") { projectSkillChoices = skills.value ?? []; projectAVersion++ }
+            else { globalSkillChoices = skills.value ?? []; globalAutoVersion++ }
+            return json(res, 200, { scope_id: body.place_id === "place-a" ? "project-a" : "global", version: body.place_id === "place-a" ? projectAVersion : globalAutoVersion })
+          }
           if (body.definition_id === definitions[0].definition_id && overrides?.auto_assign && !body.place_id && !body.scope_id) {
             globalAutoAssign = !!overrides.auto_assign.value
             globalAutoVersion++
@@ -611,5 +647,250 @@ test("real keys operate the roster, skill, dialog and named switches", async () 
     })
   } finally {
     globalAutoAssign = true; globalAutoVersion = 0; globalMotion = true; globalMotionVersion = 1
+  }
+})
+
+test("a person creates a skill on mobile, disables it, and sees the saved state after reload", async () => {
+  const oldCatalogLength = catalog.skills.length
+  const oldChoices = globalSkillChoices
+  try {
+    await tab(390, 844, async (evaluate, shot, { press, axName }) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      await evaluate('document.querySelector("#squad .squad-add-skill").focus()')
+      await press("Enter")
+      const openDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open'))) {
+        if (Date.now() > openDeadline) throw new Error("keyboard did not open add-skill dialog")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.match(await axName('#squad dialog[aria-labelledby="squad-skill-dialog-title"]'), /為角色新增技能/)
+      assert.match(await evaluate('document.querySelector("#squad .squad-skill-disclosure").textContent'), /技能全文.*預設可分享資料包/)
+      await evaluate(`(() => { const fields = document.querySelectorAll("#squad .squad-skill-form input, #squad .squad-skill-form textarea");
+        const values = ["使用者測試技能", "整理實際測試結果", "先讀證據，再列出可驗證結論。"];
+        fields.forEach((el, i) => { const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, values[i]); el.dispatchEvent(new Event("input", { bubbles: true })); }); })()`)
+      await shot("squad-add-skill-mobile")
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
+      const deadline = Date.now() + 5_000
+      while (!(await evaluate('!document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open && document.querySelector("#squad .squad-detail")?.textContent.includes("使用者測試技能")'))) {
+        if (Date.now() > deadline) throw new Error("created skill did not appear")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await evaluate('document.activeElement === document.querySelector("#squad .squad-add-skill")'), true)
+      assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
+      if (!(await evaluate('document.querySelectorAll("#squad .squad-skill-card")[1]?.getAttribute("aria-expanded") === "true"'))) {
+        await evaluate('document.querySelectorAll("#squad .squad-skill-card")[1].click()')
+      }
+      await evaluate('document.querySelector("#squad .squad-skill-controls input").click()')
+      const toggleDeadline = Date.now() + 5_000
+      while (await evaluate('document.querySelector("#squad .squad-skill-controls input")?.checked')) {
+        if (Date.now() > toggleDeadline) throw new Error("skill did not disable")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    })
+    await tab(1440, 900, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      assert.match(await evaluate('document.querySelector("#squad .squad-detail").textContent'), /使用者測試技能/)
+      assert.match(await evaluate('document.querySelector("#squad .squad-detail").textContent'), /已停用/)
+    })
+    assert.equal(catalog.skills.length, oldCatalogLength + 1)
+    assert.equal(globalSkillChoices.at(-1)?.enabled, false)
+  } finally {
+    catalog.skills.splice(oldCatalogLength)
+    globalSkillChoices = oldChoices
+  }
+})
+
+test("mobile skill shortcut and all close paths preserve or discard an unsent draft", async () => {
+  await tab(390, 844, async (evaluate, shot, { press }) => {
+    await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+    await evaluate('document.querySelector("#squad .squad-skill-jump").click()')
+    assert.equal(await evaluate('document.activeElement?.textContent'), "專屬技能")
+    await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+    const hint = await evaluate(`(() => { const dialog = document.querySelector("#squad .squad-skill-dialog"); const note = dialog.querySelector("#squad-skill-content-hint"); const content = dialog.querySelector("textarea");
+      return { beforeContent: note.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING, visible: note.getBoundingClientRect().top < dialog.getBoundingClientRect().bottom } })()`)
+    assert.ok(hint.beforeContent)
+    assert.ok(hint.visible)
+    await evaluate(`(() => { const fields = document.querySelectorAll("#squad .squad-skill-form input, #squad .squad-skill-form textarea");
+      ["未送出的草稿", "保留文字", "一段需要繼續編輯的技能內容。"].forEach((value, i) => { const el = fields[i];
+        const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value); el.dispatchEvent(new Event("input", { bubbles: true })); }); })()`)
+    await press("Escape")
+    assert.match(await evaluate('document.querySelector("#squad .squad-skill-confirm")?.textContent'), /保留未送出/)
+    await evaluate('document.querySelector("#squad .squad-skill-confirm button").click()')
+    await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+    assert.equal(await evaluate('document.querySelector("#squad .squad-skill-form textarea").value'), "一段需要繼續編輯的技能內容。")
+    await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-actions button[type=button]").click()')
+    assert.match(await evaluate('document.querySelector("#squad .squad-skill-confirm")?.textContent'), /捨棄草稿/)
+    await evaluate('document.querySelectorAll("#squad .squad-skill-confirm button")[1].click()')
+    await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+    assert.equal(await evaluate('document.querySelector("#squad .squad-skill-form textarea").value'), "")
+    await shot("squad-add-skill-mobile-reviewed")
+    await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-dialog-head button").click()')
+  })
+})
+
+test("skill toggle failures show a nearby reread action and keep server state", async () => {
+  try {
+    await tab(390, 844, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('document.querySelector("#squad .squad-skill-card").click()')
+      for (const kind of ["offline", "conflict"]) {
+        if (kind === "offline") dropNextSkillWrite = true
+        else refuseNextSkillWrite = true
+        await evaluate('document.querySelector("#squad .squad-skill-controls input[type=checkbox]").click()')
+        const deadline = Date.now() + 5_000
+        while (!(await evaluate('document.querySelector("#squad .squad-skill-write-error")?.textContent.includes("重新讀取技能")'))) {
+          if (Date.now() > deadline) throw new Error(kind + " skill failure was not shown beside the toggle: " + await evaluate('document.querySelector("#squad .squad-skill-controls")?.textContent') + "; notice=" + await evaluate('document.querySelector("#squad .squad-notice")?.textContent') + "; writes=" + settingsWrites.length)
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        dropNextSkillWrite = false
+        assert.equal(await evaluate('document.querySelector("#squad .squad-skill-controls input[type=checkbox]").checked'), true)
+        await evaluate('document.querySelector("#squad .squad-skill-write-error button").click()')
+        while (await evaluate('!!document.querySelector("#squad .squad-skill-write-error")')) {
+          if (Date.now() > deadline) throw new Error(kind + " skill reread did not complete")
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        assert.equal(await evaluate('document.querySelector("#squad .squad-skill-controls input[type=checkbox]").checked'), true)
+        assert.equal(await evaluate('document.activeElement === document.querySelector("#squad .squad-skill-controls input[type=checkbox]")'), true)
+      }
+    })
+  } finally { dropNextSkillWrite = false; refuseNextSkillWrite = false }
+})
+
+test("a lost create reply and failed role write recover without another catalog entry", async () => {
+  const oldCatalogLength = catalog.skills.length
+  const oldChoices = globalSkillChoices
+  const oldWrites = catalogWrites.length
+  dropNextCatalogReply = true; refuseNextSkillWrite = true
+  try {
+    await tab(1440, 900, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      const readyDeadline = Date.now() + 5_000
+      while (!(await evaluate('!document.querySelector("#squad .squad-add-skill").disabled'))) {
+        if (Date.now() > readyDeadline) throw new Error("add-skill button did not become ready")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate(`(() => { const fields = document.querySelectorAll("#squad .squad-skill-form input, #squad .squad-skill-form textarea");
+        ["可恢復技能", "測試失敗路徑", "第一次已儲存，第二次可重試。"].forEach((value, i) => { const el = fields[i];
+          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value); el.dispatchEvent(new Event("input", { bubbles: true })); }); })()`)
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
+      const firstDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-dialog-error")?.textContent.includes("尚未確認建立")'))) {
+        if (Date.now() > firstDeadline) throw new Error("lost reply was not shown: " + await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]")?.textContent') + "; writes=" + catalogWrites.length)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
+      const secondDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-dialog-error")?.textContent.includes("目錄已建立")'))) {
+        if (Date.now() > secondDeadline) throw new Error("partial success was not shown")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await evaluate('document.querySelector("#squad .squad-skill-form input").value'), "可恢復技能")
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-dialog-head button").click()')
+      const reloadDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-add-skill") && !document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open'))) {
+        if (Date.now() > reloadDeadline) throw new Error("dialog did not close")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      while (!(await evaluate('!document.querySelector("#squad .squad-add-skill").disabled'))) {
+        if (Date.now() > reloadDeadline) throw new Error("catalog reload did not finish")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate('document.querySelectorAll("#squad .squad-skill-mode input")[1].click()')
+      const listDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-skill-form select")?.textContent.includes("可恢復技能")'))) {
+        if (Date.now() > listDeadline) throw new Error("saved catalog skill was not offered: " + await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]")?.textContent'))
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-skill-form select"); el.selectedIndex = 1; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
+      const doneDeadline = Date.now() + 5_000
+      while (!(await evaluate('!document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open && document.querySelector("#squad .squad-detail")?.textContent.includes("可恢復技能")'))) {
+        if (Date.now() > doneDeadline) throw new Error("saved skill did not attach")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    })
+    assert.equal(catalog.skills.length, oldCatalogLength + 1)
+    assert.equal(catalogWrites.length - oldWrites, 2)
+    assert.equal(catalogWrites[oldWrites].key, catalogWrites[oldWrites + 1].key, "an uncertain retry reuses the key")
+  } finally {
+    dropNextCatalogReply = false; refuseNextSkillWrite = false
+    catalog.skills.splice(oldCatalogLength); globalSkillChoices = oldChoices
+  }
+})
+
+test("closing after a lost create reply refreshes the catalog for recovery", async () => {
+  const oldCatalogLength = catalog.skills.length
+  const oldChoices = globalSkillChoices
+  dropNextCatalogReply = true
+  try {
+    await tab(1440, 900, async (evaluate) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate(`(() => { const fields = document.querySelectorAll("#squad .squad-skill-form input, #squad .squad-skill-form textarea");
+        ["回覆遺失技能", "測試關閉後恢復", "目錄已儲存但回覆無法讀取。"].forEach((value, i) => { const el = fields[i];
+          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value); el.dispatchEvent(new Event("input", { bubbles: true })); }); })()`)
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
+      const deadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-dialog-error")?.textContent.includes("尚未確認建立")'))) {
+        if (Date.now() > deadline) throw new Error("lost response was not shown")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-dialog-head button").click()')
+      while (!(await evaluate('!document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open && !document.querySelector("#squad .squad-add-skill").disabled'))) {
+        if (Date.now() > deadline) throw new Error("catalog did not refresh after close")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      await evaluate('document.querySelectorAll("#squad .squad-skill-mode input")[1].click()')
+      const listDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-skill-form select")?.textContent.includes("回覆遺失技能")'))) {
+        if (Date.now() > listDeadline) throw new Error("created skill was not available for recovery")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    })
+    assert.equal(catalog.skills.length, oldCatalogLength + 1)
+  } finally {
+    dropNextCatalogReply = false
+    catalog.skills.splice(oldCatalogLength); globalSkillChoices = oldChoices
+  }
+})
+
+test("a Project skill joins only that Project's role settings", async () => {
+  const oldCatalogLength = catalog.skills.length
+  const oldGlobal = globalSkillChoices
+  const oldProject = projectSkillChoices
+  try {
+    await tab(1440, 900, async (evaluate, shot) => {
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-scope select"); el.value = "project-a"; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      const readyDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-scope select").value === "project-a" && !document.querySelector("#squad .squad-add-skill")?.disabled'))) {
+        if (Date.now() > readyDeadline) throw new Error("Project did not become writable")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      assert.match(await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").textContent'), /範圍：Project A/)
+      await evaluate(`(() => { const fields = document.querySelectorAll("#squad .squad-skill-form input, #squad .squad-skill-form textarea");
+        ["Project 技能", "只供此範圍的角色使用", "先檢查本 Project 的資料。"].forEach((value, i) => { const el = fields[i];
+          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value); el.dispatchEvent(new Event("input", { bubbles: true })); }); })()`)
+      await shot("squad-add-skill-desktop")
+      await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
+      const savedDeadline = Date.now() + 5_000
+      while (!(await evaluate('!document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title]").open && document.querySelector("#squad .squad-detail")?.textContent.includes("Project 技能")'))) {
+        if (Date.now() > savedDeadline) throw new Error("Project skill did not appear")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    })
+    assert.equal(projectSkillChoices?.at(-1)?.id, (catalog.skills as any[]).at(-1).skill_id)
+    assert.equal(globalSkillChoices, oldGlobal, "global skills are not rewritten")
+  } finally {
+    catalog.skills.splice(oldCatalogLength); projectSkillChoices = oldProject
   }
 })

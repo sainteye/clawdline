@@ -84,6 +84,21 @@
 .squad-conflict p { font-size: 12px; }
 .squad-conflict button { margin: 4px 5px 0 0; padding: 7px 10px; font-size: 12px; }
 .squad-skills { display: grid; gap: 8px; }
+.squad-add-skill { margin: 0 0 12px; padding: 8px 13px; border-color: var(--accent-ed) !important; background: var(--accent-in) !important; font-size: 12px !important; }
+.squad-skill-jump { display: none; }
+.squad-skill-write-error { padding: 10px; border: 1px solid var(--warn); border-radius: 9px; }
+.squad-skill-write-error p { margin: 0 0 8px; }
+.squad-skill-write-error button { padding: 7px 10px; }
+.squad-skill-disclosure, .squad-skill-stage { padding: 10px; border: 1px solid var(--accent-ed); border-radius: 9px; background: var(--accent-in); }
+.squad-skill-confirm { margin-top: 16px; padding: 14px; border: 1px solid var(--warn); border-radius: 9px; }
+.squad-skill-confirm h3 { margin: 0; }
+.squad-skill-mode { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0; }
+.squad-skill-form { display: grid; gap: 12px; }
+.squad-skill-form label { display: grid; gap: 5px; font-size: 13px; }
+.squad-skill-form :is(input, select, textarea) { width: 100%; min-height: 44px; padding: 9px 10px; }
+.squad-skill-form textarea { line-height: 1.6; resize: vertical; }
+.squad-skill-form p { margin: 0; color: var(--dim); }
+.squad-skill-dialog .squad-actions { position: sticky; bottom: -20px; z-index: 1; padding: 12px 0 0; border-top: 1px solid var(--line); background: var(--card); }
 .squad-skill-card { display: grid; gap: 5px; width: 100%; padding: 11px !important; text-align: left; font-size: 12px !important; }
 .squad-skill-card[data-open] { border-color: var(--accent-ed); background: var(--accent-in); }
 .squad-skill-card[data-use] { animation: squad-card-used 1.25s ease-out; }
@@ -149,6 +164,7 @@
   .squad-pack-actions h3, .squad-pack-actions p { grid-column: 1 / -1; }
   .squad-roster { margin-bottom: 18px; }
   .squad-detail { width: 100%; }
+  .squad-skill-jump { display: inline-flex; margin: 0 20px 14px; padding: 8px 12px; font-size: 12px; }
   .squad-back { display: inline-flex; align-items: center; margin: 12px 0 0 12px; padding: 7px 11px; font-size: 12px !important; }
   .squad-layout[data-mobile-view="detail"] .squad-rail, .squad-layout[data-mobile-view="detail"] .squad-roster { display: none; }
   .squad-layout[data-mobile-view="roster"] .squad-detail { display: none; }

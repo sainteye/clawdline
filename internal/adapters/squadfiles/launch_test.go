@@ -69,3 +69,48 @@ func TestPublishSquadLaunchRejectsBadSnapshotWithoutFiles(t *testing.T) {
 		t.Fatalf("files written before digest check: %v", err)
 	}
 }
+
+func TestDisabledSkillStaysInSnapshotButNotInPublishedPromptOrFiles(t *testing.T) {
+	dir := t.TempDir()
+	document := json.RawMessage(`{"definition_id":"clawdline.persona.backend","scope_id":"global","definition":{"version":"1","body":"Role definition"},"handbook":{"text":""},"skills":[{"id":"user.skill.disabled","version":"1","enabled":false,"content":"disabled body","source":"user-authored","digest":"one"},{"id":"user.skill.enabled","version":"1","enabled":true,"content":"enabled body","source":"user-authored","digest":"two"}]}`)
+	sum := sha256.Sum256(document)
+	files, err := Publish(dir, "abcdefghijklmnopqrstuv", hex.EncodeToString(sum[:]), "capability", document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := os.ReadFile(files.PromptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(prompt), "user.skill.disabled") || !strings.Contains(string(prompt), "user.skill.enabled") {
+		t.Fatalf("published prompt lists wrong skills: %s", prompt)
+	}
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(files.SnapshotPath), "skills"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("published skills = %d, %v", len(entries), err)
+	}
+	content, err := os.ReadFile(filepath.Join(filepath.Dir(files.SnapshotPath), "skills", entries[0].Name()))
+	if err != nil || string(content) != "enabled body" {
+		t.Fatalf("published content = %q, %v", content, err)
+	}
+	stored, err := os.ReadFile(files.SnapshotPath)
+	if err != nil || !strings.Contains(string(stored), `"id":"user.skill.disabled"`) {
+		t.Fatalf("snapshot lost disabled skill: %v", err)
+	}
+	// Enabling the skill later creates a different launch; the first remains
+	// immutable for a Session that already owns it.
+	enabled := json.RawMessage(strings.Replace(string(document), `"enabled":false`, `"enabled":true`, 1))
+	nextSum := sha256.Sum256(enabled)
+	next, err := Publish(dir, "abcdefghijklmnopqrstu0", hex.EncodeToString(nextSum[:]), "new-capability", enabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextEntries, err := os.ReadDir(filepath.Join(filepath.Dir(next.SnapshotPath), "skills"))
+	if err != nil || len(nextEntries) != 2 {
+		t.Fatalf("new launch skills = %d, %v", len(nextEntries), err)
+	}
+	oldEntries, err := os.ReadDir(filepath.Join(filepath.Dir(files.SnapshotPath), "skills"))
+	if err != nil || len(oldEntries) != 1 {
+		t.Fatalf("old launch changed = %d, %v", len(oldEntries), err)
+	}
+}

@@ -7,7 +7,7 @@ const field = <T>(value: T) => ({ global: value, value, source: "default" as con
 
 test("team and search use data teams, including ones outside the old built-in list", () => {
   const data: SquadView = {
-    scopeId: "global", project: null, projects: [], teams: [{ id: "community.design", name: "社群設計隊" }],
+    scopeId: "global", project: null, projects: [], teams: [{ id: "community.design", name: "社群設計隊" }], catalogSkills: [],
     personas: [{ id: "community.persona.a", settingsVersion: 1, name: "長名稱設計角色", subtitle: "Designer", summary: "看長文字", body: "", source: "", version: "1",
       icon: { accent: "#fff", cells: [["#fff"]] }, teamIds: ["community.design"], enabled: field(true), handbook: field(""), skillsSetting: field([]), skills: [] }],
     sessions: [], motion: field(true), motionSettingsVersion: 1, catalogVersion: 1, canWrite: true, partial: false,
