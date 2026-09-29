@@ -794,10 +794,11 @@ func (s *Server) squadEntityWrite(w http.ResponseWriter, r *http.Request) {
 			writeRefusal(w, http.StatusBadRequest, "builtin_read_only", "Built-in skills cannot be changed.")
 			return
 		}
-		if len(d.Content) > int(CapacityLimit(capacity.SquadBodyBytes)) || d.Version == "" ||
+		if !squad.ValidSkillFiles(d.Content, d.Files) || (len(d.Files) > 0 && !d.Folder) ||
+			(d.Folder && strings.TrimSpace(d.Content) == "") || d.Version == "" ||
 			d.Source == "" || d.License == "" || d.Name.En == "" ||
 			d.Purpose.En == "" || !squadIconValid(d.Icon) {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "The skill lacks required metadata or exceeds its text limit.")
+			writeRefusal(w, http.StatusBadRequest, "bad_request", "The skill lacks required metadata or its folder files are invalid or too large.")
 			return
 		}
 		given := d.Digest

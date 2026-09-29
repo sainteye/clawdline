@@ -213,9 +213,22 @@
         "content": {
           "type": "string"
         },
+        "folder": { "type": "boolean" },
+        "files": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SquadSkillFile" }
+        },
         "builtin": {
           "type": "boolean"
         }
+      }
+    },
+    "SquadSkillFile": {
+      "type": "object",
+      "required": ["path", "content_base64"],
+      "properties": {
+        "path": { "type": "string" },
+        "content_base64": { "type": "string" }
       }
     },
     "SquadCatalog": {

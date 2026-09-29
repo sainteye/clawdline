@@ -12,6 +12,8 @@ export interface NewSquadSkill {
   purpose: { en: string; "zh-Hant": string }
   icon: Icon
   content: string
+  folder?: boolean
+  files?: { path: string; content_base64: string }[]
 }
 
 export interface PackPreview {

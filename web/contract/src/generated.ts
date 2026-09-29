@@ -6845,6 +6845,8 @@ export interface SquadSkill {
   builtin: boolean
   content: string
   digest: string
+  files?: SquadSkillFile[]
+  folder?: boolean
   icon: Icon
   license: string
   name: SquadNames
@@ -6852,6 +6854,11 @@ export interface SquadSkill {
   skill_id: string
   source: string
   version: string
+}
+
+export interface SquadSkillFile {
+  content_base64: string
+  path: string
 }
 
 export interface SquadSkillReference {
