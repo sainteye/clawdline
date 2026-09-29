@@ -48,6 +48,8 @@ func (s *Server) squadRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.squadScopesRead(w, r)
+	case "/v1/squad/skill-sources":
+		s.squadSkillSources(w, r)
 	case "/v1/squad/auto-candidates":
 		s.squadCandidateRead(w, r)
 	default:

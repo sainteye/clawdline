@@ -6,11 +6,20 @@ short IDs. The squad adds shareable definitions, private settings, immutable
 launch snapshots, and a truthful record of skill use. It does not install a
 provider skill, fetch a marketplace, or run content from an imported package.
 
-The Console can import a local Project, Claude Code, or Codex `SKILL.md` as
-text, or capture its entire selected folder. Folder imports store file bytes
+The Console lists skills discovered on the selected machine under the
+registered Project's `.claude/skills`, `.agents/skills`, and `.codex/skills`,
+or the provider's personal and plugin skill directories. A Project source
+requires a registered Project; provider sources also show skills in that
+Project when one is selected. The list carries names, descriptions, and
+locations, with opaque IDs rather than arbitrary file paths. A separate read
+of a selected ID previews its `SKILL.md` and, if requested, its folder files.
+The user can import that text alone or capture the whole folder. Folder imports store file bytes
 and safe relative paths in the versioned skill, then publish those exact files
 beside `SKILL.md` in a fixed launch snapshot. Importing does not install the
 folder into a provider's global skill directory or execute its scripts.
+Cloud carries these reads through the paired machine; reading selected skill
+content and attachments requires a write-capable paired device. The source
+scan does not follow symlinks or accept a client-supplied filesystem path.
 
 ## Identity and ownership
 

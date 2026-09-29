@@ -118,6 +118,20 @@ function fixture(): Server {
       return json(res, 200, catalog)
     }
     if (path === "/v1/squad/scopes") return json(res, 200, scopes)
+    if (path === "/v1/squad/skill-sources") {
+      const q = new URL(req.url ?? "/", "http://fixture").searchParams
+      const provider = q.get("provider"), id = q.get("id")
+      const project = { id: "project-helper", name: "Project helper", purpose: "Read the project evidence", location: "Project · .claude/skills / helper" }
+      const codex = { id: "codex-helper", name: "Codex helper", purpose: "Help with code", location: "Codex · 個人技能 / helper" }
+      if (provider === "project" && q.get("place_id") !== "place-a") return json(res, 400, { error: "project_required" })
+      if (!id) return json(res, 200, { skills: provider === "project" ? [project] : provider === "codex" ? [codex] : [] })
+      if (id === project.id && provider === "project") return json(res, 200, { name: project.name, purpose: project.purpose,
+        content: "---\nname: Project helper\ndescription: Read the project evidence\n---\n# Steps\n",
+        files: q.get("folder") === "true" ? [{ path: "references/guide.txt", content_base64: Buffer.from("reference bytes").toString("base64") }] : [] })
+      if (id === codex.id && provider === "codex") return json(res, 200, { name: codex.name, purpose: codex.purpose,
+        content: "---\nname: Codex helper\ndescription: Help with code\n---\n# Steps\n", files: [] })
+      return json(res, 404, { error: "skill_source_missing" })
+    }
     if (path === "/v1/squad/settings") {
       if (req.method === "PUT") {
         const chunks: Buffer[] = []
@@ -921,23 +935,34 @@ test("a role can select and enable an existing built-in skill", async () => {
 test("a project skill folder retains attachments and a Codex SKILL.md can be copied alone", async () => {
   const oldCatalogLength = catalog.skills.length
   const oldChoices = globalSkillChoices
+  const oldProjectChoices = projectSkillChoices
   try {
     await tab(1440, 900, async (evaluate) => {
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-scope select"); el.value = "project-a"; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      const readyDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-scope select").value === "project-a" && !document.querySelector("#squad .squad-add-skill")?.disabled'))) {
+        if (Date.now() > readyDeadline) throw new Error("Project did not become writable")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
       await evaluate('document.querySelector("#squad .squad-persona-card").click()')
       await evaluate('document.querySelector("#squad .squad-add-skill").click()')
       await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[2].click()')
-      await evaluate(`(() => { const input = document.querySelector('#squad .squad-skill-form input[type=file]'); const transfer = new DataTransfer();
-        const main = new File(['---\\nname: Project helper\\ndescription: >\\n  Read the project evidence\\n---\\n# Steps\\n'], 'SKILL.md', { type: 'text/markdown' });
-        const reference = new File(['reference bytes'], 'guide.txt');
-        Object.defineProperty(main, 'webkitRelativePath', { value: 'helper/SKILL.md' });
-        Object.defineProperty(reference, 'webkitRelativePath', { value: 'helper/references/guide.txt' });
-        transfer.items.add(main); transfer.items.add(reference); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); })()`)
+      while (!(await evaluate('document.querySelector("#squad .squad-source-option")?.textContent.includes("Project helper")'))) {
+        if (Date.now() > readyDeadline + 5_000) throw new Error("Project skill was not listed")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-source-option").click()')
       const readDeadline = Date.now() + 5_000
       while (!(await evaluate('document.querySelector("#squad .squad-skill-form [role=status]")?.textContent.includes("1 個附檔")'))) {
         if (Date.now() > readDeadline) throw new Error("folder preview did not finish")
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
       assert.equal(await evaluate('document.querySelectorAll("#squad .squad-skill-form input[required]")[1].value'), "Read the project evidence")
+      await evaluate('(() => { const field = document.querySelector("#squad .squad-skill-form input[required]"); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; setter.call(field, "Project helper draft"); field.dispatchEvent(new Event("input", { bubbles: true })); })()')
+      await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-dialog-head button").click()')
+      await evaluate('document.querySelector("#squad .squad-skill-confirm button").click()')
+      await evaluate('document.querySelector("#squad .squad-add-skill").click()')
+      assert.equal(await evaluate('document.querySelector("#squad .squad-skill-form input[required]").value'), "Project helper draft")
       await evaluate('document.querySelector("#squad .squad-skill-dialog .squad-actions button[type=submit]").click()')
       const savedDeadline = Date.now() + 5_000
       while (!(await evaluate('!document.querySelector("#squad .squad-skill-dialog").open'))) {
@@ -947,7 +972,11 @@ test("a project skill folder retains attachments and a Codex SKILL.md can be cop
       await evaluate('document.querySelector("#squad .squad-add-skill").click()')
       await evaluate('document.querySelectorAll("#squad .squad-skill-mode input[name=squad-skill-mode]")[2].click()')
       await evaluate('(() => { const source = document.querySelector("#squad .squad-skill-form select"); source.value = "codex"; source.dispatchEvent(new Event("change", { bubbles: true })); document.querySelectorAll("#squad .squad-skill-form input[name=squad-import-kind]")[1].click(); })()')
-      await evaluate(`(() => { const input = document.querySelector('#squad .squad-skill-form input[type=file]'); const transfer = new DataTransfer(); transfer.items.add(new File(['---\\nname: Codex helper\\ndescription: Help with code\\n---\\n# Steps\\n'], 'SKILL.md')); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); })()`)
+      while (!(await evaluate('document.querySelector("#squad .squad-source-option")?.textContent.includes("Codex helper")'))) {
+        if (Date.now() > savedDeadline + 5_000) throw new Error("Codex skill was not listed")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-source-option").click()')
       while (!(await evaluate('document.querySelector("#squad .squad-skill-form [role=status]")?.textContent.includes("已讀取")'))) {
         if (Date.now() > savedDeadline + 5_000) throw new Error("text preview did not finish")
         await new Promise((resolve) => setTimeout(resolve, 50))
@@ -971,5 +1000,5 @@ test("a project skill folder retains attachments and a Codex SKILL.md can be cop
       assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
       assert.match(await evaluate('document.querySelector("#squad .squad-skill-dialog").textContent'), /完整技能資料夾.*只複製 SKILL.md 文字/)
     })
-  } finally { catalog.skills.splice(oldCatalogLength); globalSkillChoices = oldChoices }
+  } finally { catalog.skills.splice(oldCatalogLength); globalSkillChoices = oldChoices; projectSkillChoices = oldProjectChoices }
 })

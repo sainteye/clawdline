@@ -322,6 +322,7 @@ const (
 	SquadBodyBytes               = "squad.body_bytes"
 	SquadRequestBytes            = "squad.request_bytes"
 	SquadPlaceLookup             = "squad.place_lookup"
+	SkillSourceSummaryRunes      = "squad.skill_source_summary_runes"
 	SquadPackageArchiveBytes     = "squadpackage.archive_bytes"
 	SquadPackageRequestBytes     = "squadpackage.request_bytes"
 	SquadPackageManifestBytes    = "squadpackage.manifest_bytes"
@@ -1677,6 +1678,12 @@ func Register() []Entry {
 			Limit: 64 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/squad.MaxSquadBodyBytes"},
+		},
+		{
+			Name: SkillSourceSummaryRunes, Class: Observation, Unit: Characters,
+			Limit: 240, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxSkillSourceSummaryRunes"},
 		},
 		{
 			Name: SquadRequestBytes, Class: Buffer, Unit: Bytes,
