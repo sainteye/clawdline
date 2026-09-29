@@ -81,6 +81,39 @@ func TestAWindowITermCannotReadDoesNotMakeEveryRowUnknown(t *testing.T) {
 	}
 }
 
+func TestSessionDirectTodoAppearsAndClearsInCloseEvidence(t *testing.T) {
+	s := gapServer(t)
+	ctx := context.Background()
+	rows, err := s.workV2().CreateSessionTodos(ctx, app.NewSessionTodosV2{
+		SessionID: "conv-tmux", Texts: []string{"finish the work"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasTodo := func() bool {
+		for _, row := range s.sessionsPayloadFrom(ctx, oneBlindWindow()).Sessions {
+			if row.ID != "%8" {
+				continue
+			}
+			for _, reason := range row.Closeability.Reasons {
+				if reason.Code == "session_todo_open" && reason.SubjectID == rows[0].ID {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !hasTodo() {
+		t.Fatal("an open Session to-do did not reach closeability")
+	}
+	if _, err := s.workV2().CompleteDirectTodo(ctx, rows[0].ID, "conv-tmux", "conv-tmux", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if hasTodo() {
+		t.Fatal("the completed to-do still blocks closing")
+	}
+}
+
 // And the window is on the wire, so the person can see what is in the way
 // instead of asking iTerm2 by hand.
 func TestTheSnapshotSaysWhichWindowWouldNotOpen(t *testing.T) {

@@ -159,6 +159,11 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// missing for every row, as an unreadable Swift store is.
 	own, ownErr := s.ownOverlay(records, lives)
 	swift = swift.With(own)
+	responsibilities, responsibilityErr := s.store.OpenSessionResponsibilities(records)
+	openBySession := make(map[string][]store.SessionResponsibility)
+	for _, item := range responsibilities {
+		openBySession[item.Session] = append(openBySession[item.Session], item)
+	}
 	now := time.Now()
 	// Names chosen in this daemon live in its own config.json and outrank the
 	// retired app's read-only rows. They are laid onto the same projection so
@@ -169,7 +174,10 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	// side of it by the label this list gives them.
 	labels := make(map[string]string, len(items))
 	for i, item := range items {
-		project := s.icons.Label(item.CWD)
+		project := ""
+		if s.icons != nil {
+			project = s.icons.Label(item.CWD)
+		}
 		if project == "" && item.CWD != "" {
 			project = filepath.Base(item.CWD)
 		}
@@ -192,6 +200,8 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			owed:       owed,
 			owedErr:    owedErr,
 			ownErr:     ownErr,
+			closure:    openBySession[item.ConversationID],
+			closureErr: responsibilityErr,
 			inv:        inv,
 			now:        now,
 			generation: gen,
@@ -392,6 +402,8 @@ type rowInput struct {
 	owed       []task.Obligation
 	owedErr    error
 	ownErr     error // this daemon's own records not all read (ownrecords.go)
+	closure    []store.SessionResponsibility
+	closureErr error
 	inv        session.Inventory
 	now        time.Time
 	generation int64
@@ -409,8 +421,12 @@ type rowInput struct {
 func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	item := in.item
 	state := string(item.State)
+	var glyph *contract.Icon
+	if s.icons != nil {
+		glyph = wireIcon(s.icons.For(item.CWD))
+	}
 	row := contract.SessionRow{
-		Icon:     wireIcon(s.icons.For(item.CWD)),
+		Icon:     glyph,
 		ID:       item.ID,
 		Backend:  contract.Backend(item.Backend),
 		State:    contract.SessionState(item.State),
@@ -493,6 +509,18 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	}
 
 	extra := ownCloseReasons(item, in.owed, in.owedErr)
+	for _, open := range in.closure {
+		extra = append(extra, contract.CloseReason{
+			Code: open.Code, Kind: "obligation", SubjectKind: "work", SubjectID: open.ID,
+			Mover: contract.CloseMover{Kind: "session", Self: true},
+		})
+	}
+	if in.closureErr != nil {
+		extra = append(extra, contract.CloseReason{
+			Code: "session_work_unreadable", Kind: "evidence",
+			Mover: contract.CloseMover{Kind: "broker"},
+		})
+	}
 	if in.ownErr != nil {
 		extra = append(extra, contract.CloseReason{
 			Code: "own_records_unreadable", Kind: "evidence",

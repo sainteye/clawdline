@@ -59,15 +59,16 @@ type ReadingScenario =
   | "machine-ranked"
   | "epic"
   | "refresh"
+  | "safe-cleared"
 let readingScenario: ReadingScenario = "normal"
 
 type Row = Record<string, unknown>
 
-/** A reading that proves nothing is owed: current, attested, and no reason left. */
+/** A Go reading that proves nothing is owed without a retired attestation. */
 function safeCloseability(): Row {
   return {
     activity_generation: 3,
-    attestation_id: "att-fixture",
+    attestation_id: null,
     mover: null,
     obligation_generation: 3,
     observed_at: 1,
@@ -259,7 +260,7 @@ let listReads = 0
 /** Project filters sent by the Board, including a Project-page deep link. */
 let workProjectReads: string[] = []
 /** `POST /v1/sessions/{id}/close`, with the Idempotency-Key each arrived under. */
-let closes: { id: string; key: string; force: unknown }[] = []
+let closes: { id: string; key: string; force: unknown; version: unknown }[] = []
 let machineStarts: { path: string; key: string }[] = []
 /** Explicit reminder presses received from an assigned Board item detail. */
 let workReminders = 0
@@ -503,7 +504,7 @@ function daemon(): Server {
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
       const sessionID = decodeURIComponent(sessionWork[1])
-      const assigned = sessionID === SAFE
+      const assigned = sessionID === SAFE && readingScenario !== "safe-cleared"
         ? [{
             id: "work-fixture",
             project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
@@ -606,8 +607,11 @@ function daemon(): Server {
       req.on("data", (chunk) => (body += chunk))
       req.on("end", () => {
         let force: unknown = null
+        let version: unknown = null
         try {
-          force = (JSON.parse(body || "{}") as { force?: unknown }).force
+          const options = JSON.parse(body || "{}") as { force?: unknown; expected_closeability_version?: unknown }
+          force = options.force
+          version = options.expected_closeability_version
         } catch {
           /* the test reads what arrived, not what it meant */
         }
@@ -615,6 +619,7 @@ function daemon(): Server {
           id: decodeURIComponent(closing[1]),
           key: String(req.headers["idempotency-key"] ?? ""),
           force,
+          version,
         })
         if (decodeURIComponent(closing[1]) === BLOCKED && force !== true) {
           return json(res, 409, {
@@ -2062,16 +2067,25 @@ test("pressing the uncovered close asks first, naming the row, with Cancel under
 
 test("the second press is what closes it, once, under a key a retry can be answered with", () =>
   inTab(async (tab) => {
-    await list(tab)
-    await swipeOpen(tab, SAFE)
-    await tab.press("li.row[data-swipe='open'] > .swipe-end")
-    await tab.until("the confirmation has checked Board work", (s) => s.sheet !== null && s.confirmDisabled === false)
-    await tab.press("#action-confirm-go")
-    await tab.until("the close has been asked for", () => closes.length > 0)
-    assert.equal(closes.length, 1, "one press, one close")
-    assert.equal(closes[0].id, SAFE)
-    assert.equal(closes[0].force, false, "the first decision is not forced")
-    assert.ok(closes[0].key.length > 0, "under an Idempotency-Key, so a lost answer is not a second close")
+    readingScenario = "safe-cleared"
+    try {
+      await list(tab)
+      const open = await swipeOpen(tab, SAFE)
+      assert.equal(open.actionKind, "safe", "the Go safe reading needs no retired attestation")
+      assert.match(open.rowState ?? "", /可以安全關閉/)
+      await tab.press("li.row[data-swipe='open'] > .swipe-end")
+      const asked = await tab.until("the confirmation has checked Board work", (s) => s.sheet !== null && s.confirmDisabled === false)
+      assert.match(asked.sheetSay ?? "", /Clawdline 已確認這個 Session 可以安全關閉/)
+      await tab.press("#action-confirm-go")
+      await tab.until("the close has been asked for", () => closes.length > 0)
+      assert.equal(closes.length, 1, "one press, one close")
+      assert.equal(closes[0].id, SAFE)
+      assert.equal(closes[0].force, false, "the first decision is not forced")
+      assert.equal(closes[0].version, "cl1_fixture", "the decision carries the version displayed when the sheet opened")
+      assert.ok(closes[0].key.length > 0, "under an Idempotency-Key, so a lost answer is not a second close")
+    } finally {
+      readingScenario = "normal"
+    }
   }))
 
 test("a row with something still owed still uncovers the close action", () =>
@@ -2115,6 +2129,7 @@ test("a refused close explains what is owed, then still close overrides that dis
     await tab.press("#action-confirm-go")
     await tab.until("the override reaches the daemon", () => closes.length === 2)
     assert.equal(closes[1].force, true, "only the explicit still-close decision overrides the gate")
+    assert.equal(closes[1].version, closes[0].version, "the override stays bound to the displayed decision")
     assert.notEqual(closes[1].key, closes[0].key, "the override is a new decision, not a retry")
   }))
 

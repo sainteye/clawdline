@@ -303,7 +303,7 @@ func TestAnEpicsOwnerIsToldItMayCreateAndAssignChildren(t *testing.T) {
 		for _, want := range []string{"clawdline item child " + id, "clawdline item assign", "--assign-terminal",
 			"clawdline guide send", "remain responsible", "all its children are closed",
 			"track its Session after Board completion", "closeability", "A Session report is not a close",
-			"If attestation or a guarded close is not implemented"} {
+			"Board items and to-dos are complete", "use the supported Session close action"} {
 			if !strings.Contains(brief, want) {
 				t.Errorf("%s lacks %q:\n%s", name, want, brief)
 			}

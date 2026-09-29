@@ -120,8 +120,8 @@ export class ClawdlineClient {
    * Without one, an answer lost on a phone's connection leaves the caller with
    * a choice between never knowing and closing something twice.
    */
-  close(id: string, force = false, request?: string): Promise<ActionResult> {
-    return this.post(sessionRoutes.close(id), { force }, request ? { "Idempotency-Key": request } : undefined)
+  close(id: string, force = false, request?: string, expectedCloseabilityVersion?: string): Promise<ActionResult> {
+    return this.post(sessionRoutes.close(id), { force, expected_closeability_version: expectedCloseabilityVersion }, request ? { "Idempotency-Key": request } : undefined)
   }
 
   /**
@@ -132,8 +132,8 @@ export class ClawdlineClient {
    * `close_blocked` with its reasons included, and `force` goes over it as a
    * close's does. `request` is the decision's key, as it is for `close`.
    */
-  archive(id: string, force = false, request?: string): Promise<ArchiveAnswer> {
-    return this.post(sessionRoutes.archive(id), { force }, request ? { "Idempotency-Key": request } : undefined)
+  archive(id: string, force = false, request?: string, expectedCloseabilityVersion?: string): Promise<ArchiveAnswer> {
+    return this.post(sessionRoutes.archive(id), { force, expected_closeability_version: expectedCloseabilityVersion }, request ? { "Idempotency-Key": request } : undefined)
   }
 
   /** The archived conversations, most recently archived first. */

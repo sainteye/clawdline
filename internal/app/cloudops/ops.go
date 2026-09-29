@@ -2108,10 +2108,6 @@ func init() {
 		op{name: "key", decode: decodeAnswer("key"), route: routeAnswer, guard: answerNamesItsQuestion},
 
 		op{name: "end",
-			divergence: "`expected_closeability_version` is carried and this daemon's close " +
-				"route does not compare it, so a viewer's compare-and-swap against a stale " +
-				"reading is not the guard it is on the Swift app; the route's own obligation " +
-				"check still runs",
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "accept_loss",
 					"expected_closeability_version") {
@@ -2130,9 +2126,8 @@ func init() {
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
-				// This daemon spells it `close`. `expected_closeability_version`
-				// is carried so the wire stays whole, and the route ignores it
-				// today — see docs/cloud-wire.md §10.5.
+				// This daemon spells it `close`; the route compares the optional
+				// version against its current Session reading.
 				out := map[string]any{"force": p.acceptLoss}
 				if p.closeability != "" {
 					out["expected_closeability_version"] = p.closeability
@@ -2347,7 +2342,9 @@ func init() {
 		op{name: "archive-session",
 			decode: func(b body) (plan, bool) {
 				if !b.hasOneOf([]string{"type", "session", "request"},
-					[]string{"type", "session", "request", "force"}) {
+					[]string{"type", "session", "request", "force"},
+					[]string{"type", "session", "request", "expected_closeability_version"},
+					[]string{"type", "session", "request", "force", "expected_closeability_version"}) {
 					return plan{}, false
 				}
 				p, ok := actionPlan(b, true)
@@ -2361,11 +2358,22 @@ func init() {
 					}
 					p.acceptLoss = force
 				}
+				if _, named := b["expected_closeability_version"]; named {
+					version, ok := b.str("expected_closeability_version")
+					if !ok {
+						return plan{}, false
+					}
+					p.closeability = version
+				}
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
+				out := map[string]any{"force": p.acceptLoss}
+				if p.closeability != "" {
+					out["expected_closeability_version"] = p.closeability
+				}
 				return LocalRequest{Method: "POST", Path: "/v1/sessions/" + segment(p.target) + "/archive",
-					Body: jsonBody(map[string]any{"force": p.acceptLoss})}
+					Body: jsonBody(out)}
 			}},
 
 		op{name: "archived-sessions", read: true,

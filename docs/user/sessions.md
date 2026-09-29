@@ -118,8 +118,8 @@ first says whether closing is safe:
 
 - **可以安全關閉** (safe to close): the button reads **關閉 Session**. The assistant quits, then its
   terminal tab closes.
-- **安全關閉** (close safely): only the session's own confirmation is missing, and nothing on the
-  Board or its to-dos is open.
+- An idle Session with complete identity evidence and no open Board item, to-do, child work, or
+  self-declared debt is **可以安全關閉** without an extra attestation.
 - **還有 N 項未了結** (N obligations remain): the session still owes a delivery, a landing or a
   to-do. **回到 session 檢查** takes you back to look; **仍要關閉** (close anyway) closes it after
   a second, explicit press.

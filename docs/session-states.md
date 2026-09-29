@@ -165,13 +165,13 @@ evidence-only checks.
 night this page was written they were being read off each other: a quiet row invites work and can
 still own a pending landing, a dirty isolated checkout, a waiter parked on its files, or a debt
 nobody has paid. So closeability rides beside `work_state` and `owed` as a projection of its own,
-with four values and one action each:
+with three current values and one action each. `needs_attestation` is a retired Swift value; the
+Go daemon does not require a second declaration after recorded work is complete:
 
 | state | icon | you should | zh-Hant row |
 | --- | --- | --- | --- |
 | `blocked` | 🔒 | **Do not close.** The broker sees one or more positive obligations, and the reasons name them. | `🔒 還有 2 項未了結` |
-| `needs_attestation` | 🗝 | **Ask that session.** The broker's blockers are clear; only the session itself can account for shared-tree hunks it owns, local todos, deployments and decisions nobody wrote down. | `🗝 等這個 session 自己確認` |
-| `safe` | 🔓 | **The close button may proceed.** Blockers clear *and* a fresh closure attestation is bound to the exact current process. | `🔓 可以安全關閉` |
+| `safe` | 🔓 | **The close button may proceed.** The Session is idle, its exact identity and inventory are fresh, and its Board items, to-dos, broker obligations and self-declared debt are clear. | `🔓 可以安全關閉` |
 | `unknown` | *(none, on purpose)* | **Refresh or audit.** The evidence is stale, missing or ambiguous. It never renders as safe. | `無法判斷能否關閉`（灰、斜體） |
 
 `unknown` deliberately outranks `blocked`. A stale or ambiguous source does not merely add a row
@@ -181,15 +181,15 @@ underneath; what changes is the headline.
 
 `work_complete` is not this. It proves either one task scope or one current root Session delivery
 landed; neither proves that root tab has accounted for every local or external obligation. The full
-contract — the closed reason vocabulary, the two generations, the attestation route and the
-compare-and-swap on close — is in [`session-closeability.md`](session-closeability.md).
+current rule and the retired attestation design are distinguished in
+[`session-closeability.md`](session-closeability.md).
 
 ### The important combinations
 
 - `ready` + `blocked`: it can accept another task, but it still owns something and must not close.
 - `working` + `blocked`: it is executing now and also has a known closing obligation.
-- `work_complete` + `needs_attestation`: the named task or current Session delivery landed, but
-  the root Session has not yet accounted for all local or external work.
+- `work_complete` + `blocked`: the named task or current Session delivery landed, but another
+  Board item, to-do, child task, or self-declared debt remains.
 - `unknown` work state + `unknown` closeability: neither absence asks the user to act immediately,
   and neither may be upgraded to "idle" or "safe" by guessing.
 

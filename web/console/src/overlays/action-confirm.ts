@@ -62,6 +62,7 @@ interface Pending {
   why: string[]
   closeNotes: { text: string; count: number }[]
   closeability: string | null
+  closeabilityVersion: string | null
   help: Help | null
   work: WorkV2Item[]
   recentWork: WorkV2Item[]
@@ -217,11 +218,13 @@ export const ActionConfirm = {
     // Why the broker cannot yet say it is safe, and which one thing moves each of those.
     const why = closes(kind) ? closeabilityLines(row) : []
     const closeable = closes(kind) ? closeabilityOf(row) : null
+    const version = (row?.closeability as { version?: unknown } | undefined)?.version
     const help = closeabilityHelpModel(closeable)
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
       closeNotes: closes(kind) ? closeabilityPlainReasons(row) : [],
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
+      closeabilityVersion: typeof version === "string" && version ? version : null,
       workState: closes(kind) ? "loading" : "ready", workTruncated: false,
       force: false, request: mintRequest(),
     }
@@ -484,7 +487,16 @@ export const ActionConfirm = {
    * the authoritative list, from a fresher reading than the page's, so the
    * sheet comes back up carrying them.
    */
-  reopenEndBlocked(id: string, reasons: readonly CloseReason[], kind: CloseKind = "end"): void {
+  reopenEndBlocked(id: string, reasons: readonly CloseReason[], kind: CloseKind = "end", attemptedVersion: string | null = null): void {
+    // A forced second decision is only meaningful when the person can see
+    // exactly what the daemon refused and which reading it refused against.
+    // Older Cloud failure envelopes can lose the reasons; ask for a new row
+    // instead of offering an override over an undisclosed obligation.
+    if (!attemptedVersion || reasons.length === 0) {
+      host.refresh()
+      toast(nextWord("endWorkCloseUnknown"), true)
+      return
+    }
     this.open(kind, id)
     const pending = this.pending
     if (!pending) return
@@ -492,6 +504,7 @@ export const ActionConfirm = {
     // ask, and pressing again is a second decision about what it said, not a
     // retry of a request whose answer was lost.
     pending.request = mintRequest()
+    pending.closeabilityVersion = attemptedVersion
     const row = byId(id) as Record<string, unknown> | null
     const base = (row && (row.closeability as Record<string, unknown>)) || {}
     const refused = { ...(row || { id }), closeability: { ...base, state: "blocked", reasons: [...reasons] } }
@@ -534,7 +547,7 @@ export const ActionConfirm = {
       // refusal to start leaves nothing to release them, so the sheet lets go.
       this.busy = true
       this.sync()
-      if (!end(pending.id, pending.request, pending.force, pending.kind)) {
+      if (!end(pending.id, pending.request, pending.force, pending.kind, pending.closeabilityVersion)) {
         this.busy = false
         this.sync()
         this.close(false)
@@ -639,7 +652,7 @@ function mintRequest(): string {
 }
 
 /** `false` is the only answer that tells the sheet nothing is coming back. */
-function end(id: string, request: string, force: boolean, kind: CloseKind): boolean {
+function end(id: string, request: string, force: boolean, kind: CloseKind, version: string | null): boolean {
   if (!id || !host.writable() || getClosingId()) return false
   const ticket = ++endTicket
   endKind = kind
@@ -648,7 +661,7 @@ function end(id: string, request: string, force: boolean, kind: CloseKind): bool
   settlingEnd = false
   endWait.start()
   ActionConfirm.sync()
-  const sent = kind === "archive" ? client.archive(id, force, request) : client.close(id, force, request)
+  const sent = kind === "archive" ? client.archive(id, force, request, version ?? undefined) : client.close(id, force, request, version ?? undefined)
   sent.then(
     () => finishEnd(id, ticket, true),
     (e) => finishEnd(id, ticket, false, e),
@@ -669,10 +682,11 @@ function finishEnd(id: string, ticket: number, ok: boolean, error?: unknown): vo
     setClosingId(null)
     settlingEnd = false
     endTicket += 1
+    const attemptedVersion = ActionConfirm.pending?.closeabilityVersion ?? null
     ActionConfirm.finish()
     if (!ok && error instanceof RefusalError && error.code === "close_blocked") {
       endWasOpen = false
-      ActionConfirm.reopenEndBlocked(id, error.reasons, endKind)
+      ActionConfirm.reopenEndBlocked(id, error.reasons, endKind, attemptedVersion)
       return
     }
     const open = host.openId()

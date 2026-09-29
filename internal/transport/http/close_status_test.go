@@ -3,7 +3,31 @@ package http
 import (
 	"net/http"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/contract"
 )
+
+func TestCloseUsesFreshIdleWorkEvidenceWithoutAnAttestation(t *testing.T) {
+	for _, c := range []struct {
+		state   contract.CloseabilityState
+		force   bool
+		version string
+		want    bool
+		code    string
+	}{
+		{"safe", false, "current", true, ""},
+		{"safe", false, "stale", false, "close_not_proven"},
+		{"blocked", false, "current", false, "close_blocked"},
+		{"blocked", true, "current", true, ""},
+		{"unknown", true, "current", false, "closeability_unknown"},
+		{"needs_attestation", false, "current", false, "closeability_unknown"},
+	} {
+		allowed, code := closeEvidenceDecision(contract.Closeability{State: c.state, Version: "current"}, c.version, c.force)
+		if allowed != c.want || code != c.code {
+			t.Errorf("%s force=%v version=%s: allowed=%v code=%s", c.state, c.force, c.version, allowed, code)
+		}
+	}
+}
 
 // The status each rung of a close answers with (actions.go), and — which is
 // the half that is easy to get wrong — whether a retry under the same

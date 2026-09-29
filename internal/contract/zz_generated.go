@@ -70,7 +70,10 @@ type ArchiveAnswer struct {
 // POST /v1/sessions/{id}/archive. An absent body is an archive without force.
 // `force` goes over `close_blocked` exactly as a close's does.
 type ArchiveRequest struct {
-	Force bool `json:"force,omitempty"`
+	// Optional opaque version from the Session row being archived. A changed reading
+	// refuses the archive.
+	ExpectedCloseabilityVersion string `json:"expected_closeability_version,omitempty"`
+	Force                       bool   `json:"force,omitempty"`
 }
 
 // One archived conversation.
@@ -2086,6 +2089,10 @@ type CloseRefusal struct {
 }
 
 type CloseRequest struct {
+	// Optional opaque version from a fresh Session row. A changed reading refuses the
+	// close.
+	ExpectedCloseabilityVersion string `json:"expected_closeability_version,omitempty"`
+
 	// Close although something is still owed. It cannot override an unreadable
 	// obligation list: overriding a refusal is a decision, and there is nothing to
 	// decide about when the list could not be read.

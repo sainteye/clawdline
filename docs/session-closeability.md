@@ -1,13 +1,17 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 
-**Current Go daemon (2026-09-29):** `GET /v1/sessions` projects closeability from the read-only
-legacy snapshot plus Go broker records (`internal/transport/http/sessions.go`). The Go server does
-not register `POST /v1/orchestrator/sessions/:id/closure`, does not write closure attestations,
-and `POST /v1/sessions/:id/close` does not accept the version-bound proof described below
-(`internal/transport/http/orchestrator.go`, `internal/transport/http/actions.go`). Thus a
-`needs_attestation` row cannot reach `safe` through a supported Go workflow. Preserve the Session
-and record this as a product blocker; do not use a raw terminal close or the retired route. The
-design below is historical evidence and a starting point for a separately reviewed Go feature.
+**Current Go daemon (2026-09-29):** An idle Session is `safe` when its process identity and
+inventory are current and exact, its assigned Board items and both kinds of to-dos are settled,
+and neither the broker nor the Session records unfinished work. `GET /v1/sessions` projects this
+from the read-only legacy snapshot and Go records (`internal/transport/http/sessions.go`).
+`POST /v1/sessions/:id/close` and `/archive` read the same projection and accept an optional
+`expected_closeability_version`; a changed reading is refused. The legacy closure attestation
+has no writer in the Go daemon and is no longer required. A Session completion report alone
+does not close a Session. Unknown identity, unreadable records, active work, or an explicit
+Session debt still prevent ordinary close. The design below documents the retired Swift policy,
+including its attestation route, and is retained as historical evidence.
+The Go version covers the sorted reason set, including Board and TODO IDs, so a new obligation
+invalidates a previously displayed forced-close decision even when both readings are `blocked`.
 
 # Session closeability and Status vNext
 

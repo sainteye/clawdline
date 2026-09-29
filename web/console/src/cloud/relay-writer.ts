@@ -928,7 +928,8 @@ export class RelayWriter {
         // Swift Mac refuses a close against a reading that has moved.
         const row = await this.row(client, route.session)
         const closeability = row?.closeability as { version?: unknown } | undefined
-        const version = typeof closeability?.version === "string" ? closeability.version : ""
+        const version = typeof body.expected_closeability_version === "string" && body.expected_closeability_version
+          ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
         const request = headerOf(init, "idempotency-key")
         if (request && typeof client._read === "function") {
           return client._read(identity, "end", {
@@ -947,7 +948,13 @@ export class RelayWriter {
         if (typeof client._read !== "function") throw failure("cloud_not_carried", route.word, 501)
         const body = await bodyOf(init)
         const identity = await this.identity(client, route.session)
-        return client._read(identity, route.word, { request, force: body.force === true }, "action:" + request)
+        const row = await this.row(client, route.session)
+        const closeability = row?.closeability as { version?: unknown } | undefined
+        const version = typeof body.expected_closeability_version === "string" && body.expected_closeability_version
+          ? body.expected_closeability_version : typeof closeability?.version === "string" ? closeability.version : ""
+        return client._read(identity, route.word, {
+          request, force: body.force === true, expected_closeability_version: version,
+        }, "action:" + request)
       }
       case "focus":
         return client.focus(await this.identity(client, route.session))

@@ -853,7 +853,7 @@ commands carrying the paired-device marker, each with the route's JSON body whol
 `{task}`，本機 broker 要的是 materialized `task.json` 加 task id 與 secret，沒有任何 pinned wire shape
 說這些怎麼帶、那個檔案可以寫到哪裡。舊版為此回 409 `cloud_dispatch_unpinned`，這裡一字不改。
 
-**三個「接上了但答案不一樣」的地方**（`cloudops.Divergences()` 會把它們列出來，接線的人在決定要對外
+**兩個「接上了但答案不一樣」的地方**（`cloudops.Divergences()` 會把它們列出來，接線的人在決定要對外
 advertise 哪些字時讀得到）：
 
 1. `board`：這個 daemon 的 `/v1/board` 是「從現在跑著的 session 推出來的 projects 快照」
@@ -861,12 +861,7 @@ advertise 哪些字時讀得到）：
    兩邊回答的不是同一個問題。**在 Go 的 board 對齊之前，不要把 `board` 放進對外宣告的 `commands`**；
    要改成一律拒絕的話，`internal/app/cloudops/ops.go` 裡把 `board` 的 `route` 拿掉就會變
    `unknown_command`，是一行。
-2. `end`：`expected_closeability_version` 有帶過去，`POST /v1/sessions/{id}/close` **沒有比對它**
-   （`contract.CloseRequest` 只有 `force`）。route 自己的 obligation 檢查照跑，所以不是沒有守門，
-   但 viewer 以為的「拿我看到的那一版做 compare-and-swap」在這裡不成立。要補要動
-   `internal/transport/http`（另一條線的 claims），不在這一波。
-
-3. `push-subscribe`：**每一個 Cloud viewer 在這裡都是同一台裝置。** in-process 的 Cloud 請求帶的是這台
+2. `push-subscribe`：**每一個 Cloud viewer 在這裡都是同一台裝置。** in-process 的 Cloud 請求帶的是這台
    機器自己的 local token（`internal/transport/cloud.LocalAuthorizer`），而 push store 一台裝置只留一列
    （`push.Store.Add` 以 endpoint 或 device 取代舊列），所以第二個用 Cloud 開通知的瀏覽器會把第一個
    擠掉——同一台 Mac 在自己網域上配對的兩支手機則是各留一列。存下來的 web-app origin 也因此是這個

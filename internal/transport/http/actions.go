@@ -193,6 +193,9 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			if !s.closeEvidence(w, ctx, id, body.ExpectedCloseabilityVersion, body.Force) {
+				return
+			}
 			// A close walks a ladder now — the assistant's own quit word,
 			// the wait for it to leave, then the terminal — and the ordinary
 			// fifteen seconds is shorter than the ladder's own worst case, so
@@ -219,6 +222,60 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 		})
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "no such action on a session")
+	}
+}
+
+// closeEvidence uses the same projection shown in the Session list. A task
+// obligation alone is not the whole answer: assigned Board items, direct
+// to-dos, identity, terminal state, and the Session's own owed declaration
+// also have to be read before ending its process.
+func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, expected string, force bool) bool {
+	snapshot := s.sessionsPayloadFrom(ctx, s.freshReading(ctx))
+	for _, row := range snapshot.Sessions {
+		if row.ID != id {
+			continue
+		}
+		c := row.Closeability
+		allowed, refusal := closeEvidenceDecision(c, expected, force)
+		switch refusal {
+		case "close_not_proven":
+			writeRefusal(w, http.StatusConflict, "close_not_proven", "The Session changed since it was shown. Read it again before closing.")
+			return false
+		case "close_blocked":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(contract.CloseRefusal{
+				Error: "close_blocked", Detail: "This Session still has unfinished work.", Reasons: c.Reasons,
+			})
+			return false
+		case "closeability_unknown":
+			writeRefusal(w, http.StatusConflict, "closeability_unknown", "The Session cannot be read clearly enough to close.")
+			return false
+		}
+		return allowed
+	}
+	if snapshot.Scan.Complete {
+		writeRefusal(w, http.StatusNotFound, "session_not_found", "That Session is no longer present.")
+	} else {
+		writeRefusal(w, http.StatusConflict, "closeability_unknown", "The Session inventory is incomplete.")
+	}
+	return false
+}
+
+func closeEvidenceDecision(c contract.Closeability, expected string, force bool) (bool, string) {
+	if expected != "" && c.Version != expected {
+		return false, "close_not_proven"
+	}
+	switch c.State {
+	case contract.CloseabilityStateSafe:
+		return true, ""
+	case contract.CloseabilityStateBlocked:
+		if force {
+			return true, ""
+		}
+		return false, "close_blocked"
+	default:
+		return false, "closeability_unknown"
 	}
 }
 

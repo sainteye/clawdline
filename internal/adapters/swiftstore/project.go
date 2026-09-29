@@ -3,6 +3,7 @@ package swiftstore
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -853,7 +854,7 @@ func (s Snapshot) attestation(l Live) *ClosureAttestation {
 }
 
 // version is Orchestrator.closeabilityVersion.
-func version(l Live, activity, obligation int64, state string) string {
+func version(l Live, activity, obligation int64, state string, reasons []contract.CloseReason) string {
 	dash := func(v string) string {
 		if v == "" {
 			return "-"
@@ -871,6 +872,17 @@ func version(l Live, activity, obligation int64, state string) string {
 	fields := []string{"cl1", l.TerminalID, dash(l.Assistant), "/dev/" + strings.TrimPrefix(l.TTY, "/dev/"),
 		pid, start, dash(l.ConversationID),
 		strconv.FormatInt(activity, 10), strconv.FormatInt(obligation, 10), "-", state}
+	// Go-owned Board items and to-dos are not part of the retired store's
+	// obligation generation. A forced close must still reject a changed list.
+	// Sort full reason encodings so a database row-order change is not a new
+	// decision, while a new or removed reason always is.
+	encoded := make([]string, 0, len(reasons))
+	for _, reason := range reasons {
+		value, _ := json.Marshal(reason)
+		encoded = append(encoded, string(value))
+	}
+	sort.Strings(encoded)
+	fields = append(fields, encoded...)
 	sum := sha256.Sum256([]byte(strings.Join(fields, "\x01")))
 	return "cl1_" + hex.EncodeToString(sum[:])[:32]
 }
@@ -907,7 +919,7 @@ func (s Snapshot) Closeability(in CloseInput) contract.Closeability {
 	if in.Matches != 1 {
 		evidence = append(evidence, reason("session_identity_ambiguous", "evidence", "session", l.TerminalID, moverBroker()))
 	}
-	if in.TerminalState == "unknown" {
+	if in.TerminalState != "idle" && in.TerminalState != "working" && in.TerminalState != "waiting" {
 		evidence = append(evidence, reason("terminal_unreadable", "evidence", "session", l.TerminalID, moverBroker()))
 	}
 
@@ -924,36 +936,28 @@ func (s Snapshot) Closeability(in CloseInput) contract.Closeability {
 	activity := s.Activity[l.TerminalID]
 	obligationGen := s.ObligationGeneration
 	provenance := []string{"broker"}
-	attestations := []contract.CloseReason{}
 	var attestationID *string
 	att := s.attestation(l)
 	matched := att != nil && att.Matches(l)
-	if len(evidence) == 0 && len(obligations) == 0 {
-		if matched {
-			provenance = append(provenance, "self")
-			if att.ActivityGeneration == activity && att.ObligationGeneration == obligationGen {
-				id := att.ID
-				attestationID = &id
-			} else {
-				attestations = append(attestations, reason("attestation_superseded", "attestation", "attestation", att.ID, moverSelf()))
-			}
-		} else {
-			attestations = append(attestations, reason("attestation_missing", "attestation", "session", l.TerminalID, moverSelf()))
-		}
-	} else if matched {
+	if matched {
 		provenance = append(provenance, "self")
+		if att.ActivityGeneration == activity && att.ObligationGeneration == obligationGen {
+			id := att.ID
+			attestationID = &id
+		}
 	}
 
-	state := "needs_attestation"
+	// An idle Session with exact, fresh identity and no recorded responsibility
+	// is closeable. The retired app's extra attestation has no writer in this
+	// daemon and cannot be the final gate for completed work.
+	state := "safe"
 	switch {
 	case len(evidence) > 0:
 		state = "unknown"
 	case len(obligations) > 0:
 		state = "blocked"
-	case attestationID != nil:
-		state = "safe"
 	}
-	reasons := append(append(evidence, obligations...), attestations...)
+	reasons := append(evidence, obligations...)
 	var unique []contract.CloseMover
 	for _, r := range reasons {
 		dup := false
@@ -978,7 +982,7 @@ func (s Snapshot) Closeability(in CloseInput) contract.Closeability {
 		ObservedAt:           in.Now.Unix(),
 		ActivityGeneration:   activity,
 		ObligationGeneration: obligationGen,
-		Version:              version(l, activity, obligationGen, state),
+		Version:              version(l, activity, obligationGen, state, reasons),
 		Provenance:           provenance,
 		Source: contract.CloseSource{
 			Provenance:    "session_watch",
