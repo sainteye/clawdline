@@ -3060,6 +3060,17 @@ export interface DocumentTask {
 }
 
 /**
+ * Presentation ancestry of an independent Root opened when an Epic owner assigned a
+ * child Board item. The owner is the conversation that made that assignment, even
+ * if the Epic is later reassigned. This does not transfer task, landing, or close
+ * ownership.
+ */
+export interface EpicSessionParent {
+  epic_id: string
+  owner_session_id: string
+}
+
+/**
  * How loud an obligation has become. Escalation changes visibility, never verdict:
  * nothing here ever declares a session dead.
  */
@@ -5859,6 +5870,7 @@ export interface SessionRow {
   coordinator?: SessionCoordinator
   cwd?: string
   disposition?: WorkDisposition
+  epic_parent?: EpicSessionParent
   evidence: Evidence
   icon?: Icon
   id: string

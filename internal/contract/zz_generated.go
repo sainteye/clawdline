@@ -2627,6 +2627,15 @@ type DocumentTask struct {
 	Title string `json:"title"`
 }
 
+// Presentation ancestry of an independent Root opened when an Epic owner
+// assigned a child Board item. The owner is the conversation that made that
+// assignment, even if the Epic is later reassigned. This does not transfer
+// task, landing, or close ownership.
+type EpicSessionParent struct {
+	EpicID         string `json:"epic_id"`
+	OwnerSessionID string `json:"owner_session_id"`
+}
+
 // How loud an obligation has become. Escalation changes visibility, never
 // verdict: nothing here ever declares a session dead.
 type Escalation string
@@ -4969,6 +4978,7 @@ type SessionRow struct {
 	Coordinator   *SessionCoordinator  `json:"coordinator,omitempty"`
 	CWD           string               `json:"cwd,omitempty"`
 	Disposition   *WorkDisposition     `json:"disposition,omitempty"`
+	EpicParent    *EpicSessionParent   `json:"epic_parent,omitempty"`
 	Evidence      Evidence             `json:"evidence"`
 	Icon          *Icon                `json:"icon,omitempty"`
 	ID            string               `json:"id"`

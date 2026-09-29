@@ -1141,6 +1141,54 @@ func (s *Store) WorkV2RootAssignmentsForSessions(ctx context.Context, projectPat
 	return out, rows.Err()
 }
 
+// EpicRootParent is the stable visual relationship recorded when an Epic
+// owner assigned a child item to a new, independently owned Root Session.
+// The owner's conversation is taken from the assignment actor, not the
+// Epic's current owner, which may change after this Root was opened.
+type EpicRootParent struct {
+	OwnerSession string
+	EpicID       string
+}
+
+func (s *Store) WorkV2EpicRootParentsForSessions(ctx context.Context, assistant string, sessionIDs []string) (map[string]EpicRootParent, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	out := map[string]EpicRootParent{}
+	if assistant == "" || len(sessionIDs) == 0 {
+		return out, nil
+	}
+	ids, err := json.Marshal(sessionIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT a.session_id, a.human_actor, i.parent_id
+		FROM work_v2_assignments a JOIN work_v2_items i ON i.id=a.work_id
+		JOIN work_v2_items epic ON epic.id=i.parent_id AND epic.kind='epic' AND epic.project_id=i.project_id
+		WHERE a.session_id IN (SELECT value FROM json_each(?)) AND a.assistant=?
+		  AND a.mode='new_session' AND a.root_assignment_id<>''
+		  AND a.state IN ('active','released') AND i.parent_id<>''
+		  AND substr(a.human_actor,1,?)=?
+		ORDER BY a.updated_at DESC, a.rowid DESC`, string(ids), assistant, len(work.ActorEpicOwner), work.ActorEpicOwner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sessionID, actor, epicID string
+		if err := rows.Scan(&sessionID, &actor, &epicID); err != nil {
+			return nil, err
+		}
+		owner := strings.TrimPrefix(actor, work.ActorEpicOwner)
+		if owner != "" && owner != sessionID {
+			if _, seen := out[sessionID]; !seen {
+				out[sessionID] = EpicRootParent{OwnerSession: owner, EpicID: epicID}
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) WorkV2Events(ctx context.Context, workID string, after int64, limit int) ([]work.EventV2, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT seq, work_id, kind, actor, previous_version, next_version, payload, at
     FROM work_v2_events WHERE work_id=? AND seq>? ORDER BY seq LIMIT ?`, workID, after, limit)

@@ -8,7 +8,8 @@
  * (`RANK`), then the title, then the id; the filter
  * over label, folder, tty and backend; the order held while a pointer is over
  * the list and let go the moment the set of waiting sessions changes; and a
- * dispatched child placed under the session that asked for it (`grouped`).
+ * dispatched child placed under the session that asked for it, and an Epic
+ * child item's independent Root placed under the owner who assigned it.
  *
  * **When a session last moved is the daemon's answer, not this page's.** It
  * used to be a clock each browser kept in its own `localStorage`, watching the
@@ -32,6 +33,12 @@ const RANK: Readonly<Record<string, number>> = { waiting: 0, working: 1, idle: 2
 /** `rankOf`: a state the table does not know sorts after all of them. */
 export function rankOf(row: Pick<SessionRow, "state">): number {
   return Object.hasOwn(RANK, row.state) ? RANK[row.state] : 9
+}
+
+/** Machine stewardship is never a visual child of a Project Session. */
+function isCoordinator(row: Pick<SessionRow, "coordinator" | "machine_scope">): boolean {
+  const value: unknown = row.coordinator
+  return row.machine_scope === true || (!!value && typeof value === "object" && !Array.isArray(value))
 }
 
 /**
@@ -155,36 +162,8 @@ export function groupUnderRoots(
   tasks: readonly TaskRow[],
   shaping: (task: TaskRow) => boolean,
 ): SessionRow[] {
-  if (!tasks.length || list.length < 2) return list
-  const here = new Map(list.map((row) => [row.id, row]))
-  const childOf = new Map<string, string>()
-  for (const t of tasks) {
-    if (!shaping(t) || !t.child || !t.root) continue
-    const kid = t.child.terminalId
-    const root = t.root.terminalId
-    if (!kid || !root || kid === root) continue
-    const row = here.get(kid)
-    if (!row || !here.has(root)) continue
-    childOf.set(kid, root)
-  }
-  // Depths are read off the links as they stand while this walks, as the
-  // original's are, so a broken chain costs its own rows their indent and
-  // never anybody else's.
-  for (const kid of [...childOf.keys()]) {
-    let n = 0
-    let at = kid
-    const seen = new Set<string>()
-    while (childOf.has(at) && n <= 2) {
-      if (seen.has(at)) {
-        n = 99
-        break
-      }
-      seen.add(at)
-      at = childOf.get(at)!
-      n++
-    }
-    if (n > 2) childOf.delete(kid)
-  }
+  if (list.length < 2) return list
+  const childOf = visualParents(list, tasks, shaping)
   if (!childOf.size) return list
 
   const kids = new Map<string, SessionRow[]>()
@@ -202,4 +181,70 @@ export function groupUnderRoots(
   }
   for (const row of list) if (!childOf.has(row.id)) place(row)
   return out.length === list.length ? out : list
+}
+
+/** The depth actually shown by the same parent links used for list ordering. */
+export function visualDepths(list: SessionRow[], tasks: readonly TaskRow[], shaping: (task: TaskRow) => boolean): Map<string, number> {
+  const parents = visualParents(list, tasks, shaping)
+  const depths = new Map<string, number>()
+  for (const row of list) {
+    let depth = 0
+    let at = row.id
+    while (parents.has(at) && depth < 2) {
+      depth++
+      at = parents.get(at)!
+    }
+    depths.set(row.id, depth)
+  }
+  return depths
+}
+
+function visualParents(list: SessionRow[], tasks: readonly TaskRow[], shaping: (task: TaskRow) => boolean): Map<string, string> {
+  const here = new Map(list.map((row) => [row.id, row]))
+  const childOf = new Map<string, string>()
+  for (const t of tasks) {
+    if (!shaping(t) || !t.child || !t.root) continue
+    const kid = t.child.terminalId
+    const root = t.root.terminalId
+    if (!kid || !root || kid === root) continue
+    const row = here.get(kid)
+    if (!row || !here.has(root)) continue
+    if (isCoordinator(row)) continue
+    childOf.set(kid, root)
+  }
+  // A Board assignment is independent in the broker. Its immutable actor
+  // still gives it presentation ancestry under the Epic owner who opened it.
+  // Resolve conversations only inside this visible list; an absent or
+  // ambiguous owner never leaves an orphaned indent.
+  const byConversation = new Map<string, string | null>()
+  for (const row of list) {
+    if (!row.sessionId) continue
+    byConversation.set(row.sessionId, byConversation.has(row.sessionId) ? null : row.id)
+  }
+  for (const row of list) {
+    if (childOf.has(row.id) || !row.epic_parent || isCoordinator(row)) continue
+    const owner = byConversation.get(row.epic_parent.owner_session_id)
+    if (owner && owner !== row.id) childOf.set(row.id, owner)
+  }
+  // Depths are read off the links as they stand while this walks, as the
+  // original's are, so a broken chain costs its own rows their indent and
+  // never anybody else's.
+  const invalid = new Set<string>()
+  for (const kid of childOf.keys()) {
+    let n = 0
+    let at = kid
+    const seen = new Set<string>()
+    while (childOf.has(at) && n <= 2) {
+      if (seen.has(at)) {
+        n = 99
+        break
+      }
+      seen.add(at)
+      at = childOf.get(at)!
+      n++
+    }
+    if (n > 2) invalid.add(kid)
+  }
+  for (const kid of invalid) childOf.delete(kid)
+  return childOf
 }

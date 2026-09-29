@@ -56,6 +56,7 @@ type ReadingScenario =
   | "status-three"
   | "machine-pending"
   | "machine-bound"
+  | "epic"
 let readingScenario: ReadingScenario = "normal"
 
 type Row = Record<string, unknown>
@@ -151,6 +152,14 @@ function rows(): Row[] {
       coordinator: readingScenario === "machine-bound" ? { label: "Clawdfather", status: "online", commands: [] } : undefined,
     })]
   }
+  if (readingScenario === "epic") return [
+    row(SAFE, "Epic owner", safeCloseability(), 10, { sessionId: "owner-conversation" }),
+    row(BLOCKED, "Feature Root", blockedCloseability(), 100, {
+      sessionId: "feature-conversation",
+      root_assignment: { id: "root-feature", label: "Feature Root", state: "briefed", ownership: "independent_root" },
+      epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
+    }),
+  ]
   if (readingScenario.startsWith("status-")) {
     const extra: Row = {
       work_state: "milestone_complete",
@@ -238,7 +247,7 @@ const streams = new Set<ServerResponse>()
 function snapshot() {
   generation++
   const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
-  const source = readingScenario === "normal" || readingScenario === "worst"
+  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "epic"
     ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
     : readingScenario === "expired"
       ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
@@ -1133,6 +1142,32 @@ test("machine registration remains visible after a fresh Session read and clears
       await tab.until("the bound machine Session arrives", (s) => s.order.join() === RETAINED)
       assert.equal(await tab.run(`document.querySelector('#rows .machine-registration') === null`), true)
       assert.equal(await tab.run(`document.querySelector('#rows .coordinator-identity') !== null`), true)
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("an Epic owner's independent Root is visibly nested in the Session list", () =>
+  inTab(async (tab) => {
+    readingScenario = "epic"
+    try {
+      await tab.go("/")
+      await tab.until("the Epic owner and Feature Root arrive", (s) => s.order.join() === [SAFE, BLOCKED].join())
+      await tab.until("the independent Root chip is drawn", (s) => s.taskVisible)
+      const shown = await tab.run(`(() => {
+        const owner = document.querySelector('#rows > li.row[data-id="${SAFE}"]')
+        const feature = document.querySelector('#rows > li.row[data-id="${BLOCKED}"]')
+        return {
+          depth: feature?.dataset.depth,
+          epic: feature?.dataset.epicParent,
+          root: feature?.querySelector('.task-chip')?.textContent?.trim(),
+          offset: feature?.getBoundingClientRect().left - owner?.getBoundingClientRect().left,
+        }
+      })()`)
+      assert.equal(shown.depth, "1")
+      assert.equal(shown.epic, "epic-fixture")
+      assert.ok(shown.root, JSON.stringify(shown))
+      assert.ok(shown.offset >= 20, "the Feature Root is visibly indented under the Epic owner")
     } finally {
       readingScenario = "normal"
     }
