@@ -133,6 +133,16 @@ func TestPastRootAssignmentTitleWinsBelowAManualTitle(t *testing.T) {
 	if got := displayedTitle("p", "session-a", front{opening: "Read root assignment"}, titles); got != "Person's title" {
 		t.Fatalf("manual title: %q", got)
 	}
+	got = codexListed(body, "/p", nil, titles)
+	if len(got) != 1 || got[0].Title != "Person's title" {
+		t.Fatalf("Codex manual title: %+v", got)
+	}
+	titles.Manual = func(id, custom string) string { return "" }
+	titles.AgentNamed = func(string) bool { return true }
+	titles.Recorded = func(string) (string, string) { return "Person's /rename", "Person's /rename" }
+	if got := displayedTitle("p", "session-a", front{opening: "Read root assignment"}, titles); got != "Person's /rename" {
+		t.Fatalf("explicit /rename: %q", got)
+	}
 }
 
 // A title Claude Code wrote from nothing but pasted images gives way to the

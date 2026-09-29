@@ -423,6 +423,34 @@ func (t *WorkV2Tx) CompleteReceipt(k ReceiptKey, a ReceiptAnswer) error {
 	return nil
 }
 
+// UpdateOpened keeps a broker record change in the same transaction as a
+// Board item and its active assignment. A nil next row is an idempotent no-op.
+func (t *WorkV2Tx) UpdateOpened(table, id string, change func(Opened) (*Opened, []Event, error)) (Opened, error) {
+	name, err := openedTable(table)
+	if err != nil {
+		return Opened{}, err
+	}
+	cur, err := scanOpened(t.tx.QueryRowContext(t.ctx,
+		`SELECT id, state, record, created_at, updated_at FROM `+name+` WHERE id = ?`, id))
+	if err != nil {
+		return Opened{}, err
+	}
+	next, events, err := change(cur)
+	if err != nil || next == nil {
+		return cur, err
+	}
+	if _, err := t.tx.ExecContext(t.ctx,
+		`UPDATE `+name+` SET state = ?, record = ?, updated_at = ? WHERE id = ?`,
+		next.State, string(next.Record), next.UpdatedAt.Unix(), id); err != nil {
+		return Opened{}, err
+	}
+	if err := insertEvents(t.ctx, t.tx, events); err != nil {
+		return Opened{}, err
+	}
+	t.wrote += 1 + int64(len(events))
+	return *next, nil
+}
+
 // InvalidateWorkV2VerificationAuthorization is the store-side seam for the
 // verification coordinator's rounds and PASS/override authorization. This
 // core owns no round table yet, so there is nothing durable to stale here;

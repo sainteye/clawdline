@@ -395,7 +395,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  setting <get|set> <key> <value>   planning_gate, verify_gate, or claude_auto_compact_window")
 	fmt.Fprintln(os.Stderr, "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step")
 	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
-	fmt.Fprintln(os.Stderr, "  item <add|claim|child|assign|steps|step-add|step-done|doc|phase>   a Board item the person's message asked for, an Epic's children, steps, documents and phase")
+	fmt.Fprintln(os.Stderr, "  item <add|claim|name|child|assign|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase")
 	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
 	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
 	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed; what each assistant's account has left")
