@@ -7,6 +7,45 @@ import {
 import "./project-files.css"
 
 type EditState = { dirty: boolean; busy: boolean }
+type Folder = { name: string; path: string; folders: Map<string, Folder>; files: ProjectFile[] }
+
+function fileTree(files: ProjectFile[]): Folder {
+  const root: Folder = { name: "", path: "", folders: new Map(), files: [] }
+  for (const file of files) {
+    const parts = file.location.split("/").filter(Boolean)
+    let parent = root
+    for (const name of parts.slice(0, -1)) {
+      let child = parent.folders.get(name)
+      if (!child) {
+        child = { name, path: parent.path ? `${parent.path}/${name}` : name, folders: new Map(), files: [] }
+        parent.folders.set(name, child)
+      }
+      parent = child
+    }
+    parent.files.push(file)
+  }
+  return root
+}
+
+function FolderRows({ folder, selected, busy, choose }: {
+  folder: Folder; selected: string; busy: boolean; choose(file: ProjectFile): void
+}) {
+  const folders = [...folder.folders.values()].sort((a, b) => a.name.localeCompare(b.name))
+  const files = [...folder.files].sort((a, b) => a.name.localeCompare(b.name))
+  return <>
+    {folders.map(child => <details className="project-files-folder" key={child.path}>
+      <summary><span aria-hidden="true" className="project-files-folder-arrow">▸</span><span>{child.name}</span></summary>
+      <div className="project-files-folder-children"><FolderRows folder={child} selected={selected} busy={busy} choose={choose} /></div>
+    </details>)}
+    {files.map(file => <button type="button" key={file.id}
+      className="project-files-row" aria-current={selected === file.id ? "true" : undefined}
+      disabled={busy} onClick={() => choose(file)}>
+      <strong>{file.name}</strong><span>{file.location}</span>
+      <small>{STATUS[file.status]}{file.source === "global" ? " · 唯讀" : ""}</small>
+    </button>)}
+  </>
+}
+
 const STATUS: Record<ProjectFile["status"], string> = {
   ready: "可檢視", missing: "尚未建立", unsafe: "連結或非一般檔案，已略過",
   unreadable: "目前無法讀取", too_large: "檔案過大",
@@ -137,12 +176,13 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
           {groups.map(group => <div className="project-files-group" key={group.id}>
             <h4>{group.title}</h4>
             {list.files.filter(f => groupOf(f) === group.id).length === 0 && <p>沒有找到檔案。</p>}
-            {list.files.filter(f => groupOf(f) === group.id).map(file => <button type="button" key={file.id}
-              className="project-files-row" aria-current={selected === file.id ? "true" : undefined}
-              disabled={busy} onClick={() => void choose(file)}>
-              <strong>{file.name}</strong><span>{file.source === "global" ? "全域" : "此專案"} · {file.location}</span>
-              <small>{STATUS[file.status]}{file.source === "global" ? " · 唯讀" : ""}</small>
-            </button>)}
+            {(["project", "global"] as const).map(source => {
+              const files = list.files.filter(f => groupOf(f) === group.id && f.source === source)
+              return files.length > 0 && <div className="project-files-source" key={source}>
+                <h5>{source === "project" ? "此專案" : "本機全域"}</h5>
+                <FolderRows folder={fileTree(files)} selected={selected} busy={busy} choose={file => void choose(file)} />
+              </div>
+            })}
           </div>)}
         </nav>
         <div className="project-files-detail">

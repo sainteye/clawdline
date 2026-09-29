@@ -640,6 +640,14 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "project-file-read", "session": machine, "request": "req-file-read", "project": "p1", "file": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		session: machine, name: "read:req-file-read", method: "GET", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}, {
+		word:    "project-tree-list",
+		body:    map[string]any{"type": "project-tree-list", "session": machine, "request": "req-tree-list", "project": "p1", "directory": "src/nested"},
+		session: machine, name: "read:req-tree-list", method: "GET", path: "/v1/projects/p1/tree", query: map[string]string{"directory": "src/nested"},
+	}, {
+		word:    "project-tree-read",
+		body:    map[string]any{"type": "project-tree-read", "session": machine, "request": "req-tree-read", "project": "p1", "path": "src/page.ts"},
+		session: machine, name: "read:req-tree-read", method: "GET", path: "/v1/projects/p1/tree/file", query: map[string]string{"path": "src/page.ts"},
+	}, {
 		word: "project-file-save",
 		body: map[string]any{"type": "project-file-save", "session": machine, "request": "req-file-save", "project": "p1", "file": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"item": map[string]any{"expected_version": "v1", "content": "updated"}},
@@ -1222,10 +1230,15 @@ func TestProjectFileCloudReadsDoNotGrantRemoteWrites(t *testing.T) {
 	if read.Status != 200 || len(r.seen) != 1 {
 		t.Fatalf("read with remote writes off: %+v; requests: %+v", read, r.seen)
 	}
+	tree := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "project-tree-read", "session": MachineReplySession, "request": "tree-1", "project": "p1", "path": "src/page.ts"}))
+	if tree.Status != 200 || len(r.seen) != 2 {
+		t.Fatalf("tree read with remote writes off: %+v; requests: %+v", tree, r.seen)
+	}
 	save := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
 		"type": "project-file-save", "session": MachineReplySession, "request": "save-1", "project": "p1", "file": file,
 		"item": map[string]any{"expected_version": "v1", "content": "updated"}}))
-	if save.Code != "cloud_commands_disabled" || len(r.seen) != 1 {
+	if save.Code != "cloud_commands_disabled" || len(r.seen) != 2 {
 		t.Fatalf("write with remote writes off: %+v; requests: %+v", save, r.seen)
 	}
 }
@@ -1266,6 +1279,16 @@ func TestAMalformedBodyIsRefusedWhereItSafelyNames(t *testing.T) {
 		name: "a Project file read cannot name a path",
 		body: map[string]any{"type": "project-file-read", "session": MachineReplySession,
 			"request": "req", "project": "p1", "file": "../../secret"},
+		code: "malformed_read", published: true,
+	}, {
+		name: "a Project tree read cannot climb outside the Project",
+		body: map[string]any{"type": "project-tree-read", "session": MachineReplySession,
+			"request": "req", "project": "p1", "path": "../secret"},
+		code: "malformed_read", published: true,
+	}, {
+		name: "a Project tree directory cannot name Git metadata",
+		body: map[string]any{"type": "project-tree-list", "session": MachineReplySession,
+			"request": "req", "project": "p1", "directory": ".git"},
 		code: "malformed_read", published: true,
 	}, {
 		name: "a Project file save cannot name a path",
@@ -1680,7 +1703,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
-		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-worktree-lifecycle",
+		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",

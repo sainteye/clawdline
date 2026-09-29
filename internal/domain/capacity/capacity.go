@@ -1417,6 +1417,16 @@ func Register() []Entry {
 			Sources: []string{"internal/adapters/projectfiles.MaxScanEntries"},
 		},
 		{
+			Name: "projectfiles.tree_path_bytes", Class: Buffer, Unit: Bytes,
+			Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projectfiles.MaxTreePathBytes"},
+		},
+		{
+			Name: "projectfiles.tree_depth", Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/projectfiles.MaxTreeDepth"},
+		},
+		{
 			Name: "projectfiles.file_bytes", Class: Buffer, Unit: Bytes,
 			Limit: 128 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/projectfiles.MaxFileBytes"},

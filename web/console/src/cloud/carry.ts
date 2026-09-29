@@ -101,6 +101,8 @@ export const CARRIED = {
   "project-file-list": "GET /v1/projects/{project}/files",
   "project-file-read": "GET /v1/projects/{project}/files/{file}",
   "project-file-save": "PUT /v1/projects/{project}/files/{file}",
+  "project-tree-list": "GET /v1/projects/{project}/tree?directory=",
+  "project-tree-read": "GET /v1/projects/{project}/tree/file?path=",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
   // Project settings sync (docs/project-sync.md). The two source reads are
   // also asked of *another* paired machine by `cloud/project-sync.ts`, which

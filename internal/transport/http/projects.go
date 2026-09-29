@@ -323,6 +323,11 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.projectFilesRoute(w, r, parts[0], id)
 		return
 	}
+	if len(parts) >= 2 && parts[0] != "" && parts[1] == "tree" &&
+		(len(parts) == 2 || len(parts) == 3 && parts[2] == "file") {
+		s.projectTreeRoute(w, r, parts[0], len(parts) == 3)
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "icon" {
 		s.projectIconRoute(w, r, parts[0])
 		return
