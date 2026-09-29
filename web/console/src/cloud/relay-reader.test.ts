@@ -897,3 +897,27 @@ test("a refusal from the machine's own route stays that route's refusal", async 
   const refusal = await body<{ error: string }>(res)
   assert.equal(refusal.error, "project_required", "a route's refusal is not turned into a seam refusal")
 })
+
+test("squad reads carry exact scope, binding and cursor fields to the chosen machine", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+  const cases: [string, string, Record<string, unknown>][] = [
+    ["/v1/squad/catalog", "squad.catalog", {}],
+    ["/v1/squad/scopes", "squad.scopes", {}],
+    ["/v1/squad/definitions/role%20one?version=2.0.0", "squad.definition", { definition_id: "role one", version: "2.0.0" }],
+    ["/v1/squad/settings?place_id=p1", "squad.settings", { place_id: "p1" }],
+    ["/v1/squad/settings?scope_id=project-a", "squad.settings", { scope_id: "project-a" }],
+    ["/v1/squad/session-bindings", "squad-session-bindings", {}],
+    ["/v1/squad/events/head", "squad-event-head", {}],
+    ["/v1/squad/events?after=12&limit=50", "squad-events", { after: 12, limit: 50 }],
+  ]
+  for (const [path, word, reqBody] of cases) {
+    assert.equal((await r.fetch(path)).status, 200, path)
+    assert.deepEqual(client.reads.at(-1), { machine: "mac-a", word, body: reqBody }, path)
+  }
+  const count = client.reads.length
+  for (const path of ["/v1/squad/events?after=-1", "/v1/squad/events?after=1.5", "/v1/squad/events?limit=0", "/v1/squad/settings?place_id=p1&scope_id=p2"]) {
+    assert.equal((await r.fetch(path)).status, 400, path)
+  }
+  assert.equal(client.reads.length, count, "invalid reads never reach the machine")
+})
