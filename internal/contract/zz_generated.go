@@ -5492,6 +5492,236 @@ const (
 // SourceFreshnessValues is every value the contract allows, in contract order.
 var SourceFreshnessValues = []SourceFreshness{SourceFreshnessCurrent, SourceFreshnessStale, SourceFreshnessMissing, SourceFreshnessUnverified}
 
+type SquadCandidates struct {
+	DefinitionIds []string `json:"definition_ids"`
+	ScopeID       string   `json:"scope_id"`
+}
+
+type SquadCatalog struct {
+	CatalogVersion int64             `json:"catalog_version"`
+	Definitions    []SquadDefinition `json:"definitions"`
+	Skills         []SquadSkill      `json:"skills"`
+	Teams          []SquadTeam       `json:"teams"`
+}
+
+type SquadChoice struct {
+	Enabled bool   `json:"enabled"`
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type SquadDefinition struct {
+	Body         string                `json:"body"`
+	Builtin      bool                  `json:"builtin"`
+	DefinitionID string                `json:"definition_id"`
+	Digest       string                `json:"digest"`
+	Icon         Icon                  `json:"icon"`
+	License      string                `json:"license"`
+	Name         SquadNames            `json:"name"`
+	ShortID      string                `json:"short_id,omitempty"`
+	Skills       []SquadSkillReference `json:"skills"`
+	Source       string                `json:"source"`
+	Summary      SquadNames            `json:"summary"`
+	Teams        []SquadReference      `json:"teams"`
+	Version      string                `json:"version"`
+}
+
+type SquadEffectivePersona struct {
+	AutoAssign      SquadFieldBool   `json:"auto_assign"`
+	DefinitionID    string           `json:"definition_id"`
+	GlobalHandbook  SquadFieldText   `json:"global_handbook"`
+	Handbook        SquadFieldText   `json:"handbook"`
+	SettingsVersion int64            `json:"settings_version"`
+	Skills          SquadFieldSkills `json:"skills"`
+}
+
+type SquadEffectiveSettings struct {
+	Motion                SquadFieldBool          `json:"motion"`
+	MotionSettingsVersion int64                   `json:"motion_settings_version"`
+	Personas              []SquadEffectivePersona `json:"personas"`
+	PlaceID               string                  `json:"place_id,omitempty"`
+	ScopeID               string                  `json:"scope_id"`
+	ScopeKind             string                  `json:"scope_kind"`
+}
+
+type SquadEntityPayload struct {
+	Definition *SquadDefinition `json:"definition,omitempty"`
+	Skill      *SquadSkill      `json:"skill,omitempty"`
+	Team       *SquadTeam       `json:"team,omitempty"`
+}
+
+type SquadEntityReply struct {
+	CatalogVersion int64  `json:"catalog_version"`
+	Digest         string `json:"digest"`
+	ID             string `json:"id"`
+	Version        string `json:"version"`
+}
+
+type SquadEntityRequest struct {
+	Entity          SquadEntityPayload `json:"entity"`
+	ExpectedVersion int64              `json:"expected_version"`
+	Kind            string             `json:"kind"`
+}
+
+type SquadEvent struct {
+	At             string `json:"at"`
+	ConversationID string `json:"conversation_id"`
+	DefinitionID   string `json:"definition_id"`
+	FailureCode    string `json:"failure_code,omitempty"`
+	ReceiptID      string `json:"receipt_id"`
+	ScopeID        string `json:"scope_id"`
+	Seq            int64  `json:"seq"`
+	SkillID        string `json:"skill_id"`
+	SkillVersion   string `json:"skill_version"`
+	SnapshotID     string `json:"snapshot_id"`
+	Status         string `json:"status"`
+}
+
+type SquadEventHead struct {
+	Seq int64 `json:"seq"`
+}
+
+type SquadEvents struct {
+	Events    []SquadEvent `json:"events"`
+	HasMore   bool         `json:"has_more"`
+	NextAfter int64        `json:"next_after"`
+}
+
+type SquadFieldBool struct {
+	Present bool   `json:"present"`
+	Source  string `json:"source"`
+	Value   bool   `json:"value"`
+	Version int64  `json:"version"`
+}
+
+type SquadFieldSkills struct {
+	Present bool          `json:"present"`
+	Source  string        `json:"source"`
+	Value   []SquadChoice `json:"value"`
+	Version int64         `json:"version"`
+}
+
+type SquadFieldText struct {
+	Present bool   `json:"present"`
+	Source  string `json:"source"`
+	Value   string `json:"value"`
+	Version int64  `json:"version"`
+}
+
+type SquadInputBool struct {
+	Present bool `json:"present"`
+	Value   bool `json:"value"`
+}
+
+type SquadInputSkills struct {
+	Present bool          `json:"present"`
+	Value   []SquadChoice `json:"value"`
+}
+
+type SquadInputText struct {
+	Present bool   `json:"present"`
+	Value   string `json:"value"`
+}
+
+type SquadMotionRequest struct {
+	ExpectedVersion int64          `json:"expected_version"`
+	Motion          SquadInputBool `json:"motion"`
+	PlaceID         string         `json:"place_id,omitempty"`
+	ScopeID         string         `json:"scope_id,omitempty"`
+}
+
+type SquadNames struct {
+	En     string `json:"en"`
+	ZhHant string `json:"zh-Hant"`
+}
+
+type SquadOverride struct {
+	AutoAssign *SquadInputBool   `json:"auto_assign,omitempty"`
+	Handbook   *SquadInputText   `json:"handbook,omitempty"`
+	Skills     *SquadInputSkills `json:"skills,omitempty"`
+}
+
+type SquadReference struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type SquadRefusal struct {
+	CurrentVersion int64  `json:"current_version,omitempty"`
+	Detail         string `json:"detail"`
+	Error          string `json:"error"`
+}
+
+type SquadSaveRequest struct {
+	DefinitionID    string        `json:"definition_id"`
+	ExpectedVersion int64         `json:"expected_version"`
+	Overrides       SquadOverride `json:"overrides"`
+	PlaceID         string        `json:"place_id,omitempty"`
+	ScopeID         string        `json:"scope_id,omitempty"`
+}
+
+type SquadScopeInfo struct {
+	Kind    string `json:"kind"`
+	Label   string `json:"label"`
+	Path    string `json:"path,omitempty"`
+	PlaceID string `json:"place_id,omitempty"`
+	ScopeID string `json:"scope_id"`
+}
+
+type SquadScopes struct {
+	ScopeIds []string         `json:"scope_ids"`
+	Scopes   []SquadScopeInfo `json:"scopes"`
+}
+
+type SquadSessionBinding struct {
+	ConversationID string `json:"conversation_id,omitempty"`
+	DefinitionID   string `json:"definition_id,omitempty"`
+	ScopeID        string `json:"scope_id,omitempty"`
+	SessionID      string `json:"session_id"`
+	SnapshotID     string `json:"snapshot_id,omitempty"`
+	State          string `json:"state"`
+}
+
+type SquadSessionBindings struct {
+	Bindings []SquadSessionBinding `json:"bindings"`
+}
+
+type SquadSkill struct {
+	Builtin bool       `json:"builtin"`
+	Content string     `json:"content"`
+	Digest  string     `json:"digest"`
+	Icon    Icon       `json:"icon"`
+	License string     `json:"license"`
+	Name    SquadNames `json:"name"`
+	Purpose SquadNames `json:"purpose"`
+	SkillID string     `json:"skill_id"`
+	Source  string     `json:"source"`
+	Version string     `json:"version"`
+}
+
+type SquadSkillReference struct {
+	Enabled bool   `json:"enabled"`
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type SquadTeam struct {
+	Builtin  bool             `json:"builtin"`
+	Digest   string           `json:"digest"`
+	Icon     Icon             `json:"icon"`
+	License  string           `json:"license"`
+	Name     SquadNames       `json:"name"`
+	Personas []SquadReference `json:"personas"`
+	Source   string           `json:"source"`
+	TeamID   string           `json:"team_id"`
+	Version  string           `json:"version"`
+}
+
+type SquadWriteReply struct {
+	ScopeID string `json:"scope_id"`
+	Version int64  `json:"version"`
+}
+
 type StartAssistant struct {
 	Availability StartAvailability `json:"availability"`
 	ID           string            `json:"id"`

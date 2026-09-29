@@ -29,6 +29,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/process"
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	psync "github.com/sainteye/clawdline/internal/adapters/projectsync"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -45,6 +46,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/icon"
 	"github.com/sainteye/clawdline/internal/domain/projectsync"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 type Server struct {
@@ -149,6 +151,12 @@ type Server struct {
 	// pairAgentTask is the record-reading seam behind
 	// /v1/cloud/pairing/agent/<task_id>: nil reads the broker's own record.
 	pairAgentTask func(context.Context, string) (orchestrator.Record, error)
+	// squadPlace is the known-place lookup seam. A real request resolves only
+	// places the machine knows; tests substitute a bounded catalog.
+	squadPlace  func(context.Context, string) (projects.Scope, bool)
+	squadPlaces func(context.Context) []projects.Place
+	// Root wires a per-Session capability verifier here. Nil fails closed.
+	squadActor func(*http.Request) (squad.Actor, error)
 }
 
 // servedBy names which implementation answered. It is how a reader tells this
@@ -489,6 +497,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/places/", s.placeRoute)
 	// The built-in personas a start or a dispatch may name (personas.go).
 	mux.HandleFunc("/v1/personas", s.personasRoute)
+	mux.HandleFunc("/v1/squad/", s.squadRoute)
 	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
 	mux.HandleFunc("/v1/projects/", s.projectsRoute)
 	// Project settings a source machine offers and a mirror applies (project_sync.go).

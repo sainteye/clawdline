@@ -96,6 +96,7 @@ var sessionFields = map[string]string{
 	// W8: a root's own notification names where it lands the way the push
 	// test does.
 	"orchestrator#BrokerMachineNotifyRequest.session_id": "terminal: the Swift route's terminal-neutral id, compared with a watched terminal as PushTestRequest.session_id is (push.go pushSessionURL); retire with it",
+	"squad#SquadSessionBinding.session_id":               "terminal: a live binding row may not yet have a conversation id; retire when the session inventory can identify every row by conversation id",
 }
 
 func TestEverySessionFieldSaysWhichSessionItNames(t *testing.T) {

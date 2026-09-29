@@ -6618,6 +6618,236 @@ export type SourceFreshness =
 
 export const SourceFreshnessValues: readonly SourceFreshness[] = ["current", "stale", "missing", "unverified"] as const
 
+export interface SquadCandidates {
+  definition_ids: string[]
+  scope_id: string
+}
+
+export interface SquadCatalog {
+  catalog_version: number
+  definitions: SquadDefinition[]
+  skills: SquadSkill[]
+  teams: SquadTeam[]
+}
+
+export interface SquadChoice {
+  enabled: boolean
+  id: string
+  version: string
+}
+
+export interface SquadDefinition {
+  body: string
+  builtin: boolean
+  definition_id: string
+  digest: string
+  icon: Icon
+  license: string
+  name: SquadNames
+  short_id?: string
+  skills: SquadSkillReference[]
+  source: string
+  summary: SquadNames
+  teams: SquadReference[]
+  version: string
+}
+
+export interface SquadEffectivePersona {
+  auto_assign: SquadFieldBool
+  definition_id: string
+  global_handbook: SquadFieldText
+  handbook: SquadFieldText
+  settings_version: number
+  skills: SquadFieldSkills
+}
+
+export interface SquadEffectiveSettings {
+  motion: SquadFieldBool
+  motion_settings_version: number
+  personas: SquadEffectivePersona[]
+  place_id?: string
+  scope_id: string
+  scope_kind: string
+}
+
+export interface SquadEntityPayload {
+  definition?: SquadDefinition
+  skill?: SquadSkill
+  team?: SquadTeam
+}
+
+export interface SquadEntityReply {
+  catalog_version: number
+  digest: string
+  id: string
+  version: string
+}
+
+export interface SquadEntityRequest {
+  entity: SquadEntityPayload
+  expected_version: number
+  kind: string
+}
+
+export interface SquadEvent {
+  at: string
+  conversation_id: string
+  definition_id: string
+  failure_code?: string
+  receipt_id: string
+  scope_id: string
+  seq: number
+  skill_id: string
+  skill_version: string
+  snapshot_id: string
+  status: string
+}
+
+export interface SquadEventHead {
+  seq: number
+}
+
+export interface SquadEvents {
+  events: SquadEvent[]
+  has_more: boolean
+  next_after: number
+}
+
+export interface SquadFieldBool {
+  present: boolean
+  source: string
+  value: boolean
+  version: number
+}
+
+export interface SquadFieldSkills {
+  present: boolean
+  source: string
+  value: SquadChoice[]
+  version: number
+}
+
+export interface SquadFieldText {
+  present: boolean
+  source: string
+  value: string
+  version: number
+}
+
+export interface SquadInputBool {
+  present: boolean
+  value: boolean
+}
+
+export interface SquadInputSkills {
+  present: boolean
+  value: SquadChoice[]
+}
+
+export interface SquadInputText {
+  present: boolean
+  value: string
+}
+
+export interface SquadMotionRequest {
+  expected_version: number
+  motion: SquadInputBool
+  place_id?: string
+  scope_id?: string
+}
+
+export interface SquadNames {
+  en: string
+  "zh-Hant": string
+}
+
+export interface SquadOverride {
+  auto_assign?: SquadInputBool
+  handbook?: SquadInputText
+  skills?: SquadInputSkills
+}
+
+export interface SquadReference {
+  id: string
+  version: string
+}
+
+export interface SquadRefusal {
+  current_version?: number
+  detail: string
+  error: string
+}
+
+export interface SquadSaveRequest {
+  definition_id: string
+  expected_version: number
+  overrides: SquadOverride
+  place_id?: string
+  scope_id?: string
+}
+
+export interface SquadScopeInfo {
+  kind: string
+  label: string
+  path?: string
+  place_id?: string
+  scope_id: string
+}
+
+export interface SquadScopes {
+  scope_ids: string[]
+  scopes: SquadScopeInfo[]
+}
+
+export interface SquadSessionBinding {
+  conversation_id?: string
+  definition_id?: string
+  scope_id?: string
+  session_id: string
+  snapshot_id?: string
+  state: string
+}
+
+export interface SquadSessionBindings {
+  bindings: SquadSessionBinding[]
+}
+
+export interface SquadSkill {
+  builtin: boolean
+  content: string
+  digest: string
+  icon: Icon
+  license: string
+  name: SquadNames
+  purpose: SquadNames
+  skill_id: string
+  source: string
+  version: string
+}
+
+export interface SquadSkillReference {
+  enabled: boolean
+  id: string
+  version: string
+}
+
+export interface SquadTeam {
+  builtin: boolean
+  digest: string
+  icon: Icon
+  license: string
+  name: SquadNames
+  personas: SquadReference[]
+  source: string
+  team_id: string
+  version: string
+}
+
+export interface SquadWriteReply {
+  scope_id: string
+  version: number
+}
+
 export interface StartAssistant {
   availability: StartAvailability
   id: string

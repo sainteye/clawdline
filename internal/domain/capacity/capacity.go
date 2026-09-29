@@ -305,6 +305,13 @@ const (
 	// most one persona's injected text may be (docs/personas.md).
 	PersonasCatalog   = "personas.catalog"
 	PersonasTextBytes = "personas.text_bytes"
+	// Versioned squad definitions and private settings.
+	SquadEntities     = "squad.entities"
+	SquadSettingsRows = "squad.settings_rows"
+	SquadReceipts     = "squad.receipts"
+	SquadBodyBytes    = "squad.body_bytes"
+	SquadRequestBytes = "squad.request_bytes"
+	SquadPlaceLookup  = "squad.place_lookup"
 )
 
 // Entry is one row of the register.
@@ -1513,6 +1520,42 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/transport/http.personaSuggestionContextLimit"},
+		},
+		{
+			Name: SquadEntities, Class: Evidence, Unit: Rows,
+			Limit: 1024, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Health, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadEntities"},
+		},
+		{
+			Name: SquadSettingsRows, Class: Evidence, Unit: Rows,
+			Limit: 10000, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Health, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadSettingsRows"},
+		},
+		{
+			Name: SquadReceipts, Class: Idempotency, Unit: Rows,
+			Limit: 10000, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Person,
+			Sources: []string{"internal/domain/squad.MaxSquadReceipts"},
+		},
+		{
+			Name: SquadBodyBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxSquadBodyBytes"},
+		},
+		{
+			Name: SquadRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 256 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxSquadRequestBytes"},
+		},
+		{
+			Name: SquadPlaceLookup, Class: Observation, Unit: Rows,
+			Limit: 1024, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/squad.MaxSquadPlaceLookup"},
 		},
 	}
 }
