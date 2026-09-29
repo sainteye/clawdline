@@ -3,11 +3,13 @@ import type { Terminal as TerminalRow, TerminalControl, TerminalFrame, TerminalH
 import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
 import { quietFleetStream } from "../../client.js"
-import { byteWords, nextWord } from "../../next-strings.js"
+import { localMachines } from "../../legacy/devices-bridge.js"
+import { byteWords, nextWord, type NextWord } from "../../next-strings.js"
 import {
   TerminalRequestError,
   closeTerminal,
   fetchTransport,
+  openTerminal,
   readHistory,
   readTerminal,
   resizeTerminal,
@@ -15,7 +17,9 @@ import {
 } from "./api.js"
 import { frameBytes } from "./frame-writer.js"
 import { TerminalInputClient, type InputState } from "./input-client.js"
+import { StatusMessage, holderKey, isRegionKey, pasteRefusal, withCtrl } from "./keys.js"
 import { TAB } from "./tab.js"
+import { firstSize } from "./TerminalProjectList.js"
 import { holderWords, terminalRefusalWords } from "./words.js"
 
 /**
@@ -36,6 +40,10 @@ import { holderWords, terminalRefusalWords } from "./words.js"
  * page never opens /v1/events, and while it is on screen the console's session
  * list reads instead of holding that stream open (a browser keeps about six
  * connections to one host; client.ts `quietFleetStream`).
+ *
+ * The keyboard is the program's once the screen has focus, Tab and Escape
+ * included, so F6 is the one key kept back: from the screen it moves to Back,
+ * and from the header it returns to the screen (keys.ts `isRegionKey`).
  */
 
 const FONT = 'ui-monospace, "SF Mono", "Cascadia Mono", "Noto Sans Mono CJK TC", Menlo, Consolas, monospace'
@@ -50,11 +58,18 @@ function plain(line: string): string {
   return line.replace(/\x1b\[[0-9;:?]*[ -/]*[@-~]/g, "").replace(/\x1b[=>]/g, "")
 }
 
+/** The phone's key row: what it shows, what it sends (an arrow's final byte), and its spoken name. */
+const KEY_ROW: [string, string, NextWord | null][] = [
+  ["Esc", "\x1b", null], ["Ctrl", "ctrl", "terminalKeyCtrl"], ["Tab", "\t", null],
+  ["←", "D", "terminalKeyLeft"], ["↑", "A", "terminalKeyUp"], ["↓", "B", "terminalKeyDown"], ["→", "C", "terminalKeyRight"],
+]
+
 function clock(at: number): string {
   return new Date(at * 1000).toLocaleTimeString()
 }
 
 type History = { kind: "loading" } | { kind: "failed"; why: string } | { kind: "lines"; lines: string[] }
+type Asking = "close" | "takeover" | null
 type Stream = "connecting" | "open" | "lost"
 
 function errorWords(e: unknown): string {
@@ -62,8 +77,23 @@ function errorWords(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean; onBack: () => void }) {
+/** Why the screen stopped following: the daemon's refusal, or a network that did not answer. */
+function streamLostWords(e: unknown): string {
+  return e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : nextWord("terminalStreamLost")
+}
+
+export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
+  id: string
+  shown: boolean
+  /** The project's name, for the screen's accessible name. */
+  label: string
+  onBack: () => void
+  /** Show a terminal this view just opened. */
+  onOpenNew: (id: string) => void
+}) {
   const host = useRef<HTMLDivElement>(null)
+  const backButton = useRef<HTMLButtonElement>(null)
+  const cancelButton = useRef<HTMLButtonElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const term = useRef<XTerm | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -83,11 +113,35 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
   const [stream, setStream] = useState<Stream>("connecting")
   const [revoked, setRevoked] = useState("")
   const [loaded, setLoaded] = useState<"loading" | "ready" | "failed">("loading")
-  const [asking, setAsking] = useState(false)
+  const [asking, setAsking] = useState<Asking>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [said, setSaid] = useState("")
+  const [said, setSaidWords] = useState("")
   const [history, setHistory] = useState<History | null>(null)
   const [ctrl, setCtrl] = useState(false)
+  const [reader, setReader] = useState(false)
+  const [machine, setMachine] = useState("")
+  const [opening, setOpening] = useState(false)
+  // What the status line says about the last action goes away by itself
+  // (keys.ts `StatusMessage`), so it is never read beside a later state.
+  const message = useRef<StatusMessage | null>(null)
+  if (!message.current) message.current = new StatusMessage(setSaidWords)
+  const setSaid = useCallback((words: string) => message.current?.say(words), [])
+  useEffect(() => () => message.current?.dispose(), [])
+  const labelRef = useRef(label)
+  labelRef.current = label
+
+  // ---- which machine: the name the Devices page gives it, or "this machine"
+  useEffect(() => {
+    let live = true
+    const fallback = nextWord("devicesThisMachine")
+    localMachines(fallback).then(
+      (a) => live && setMachine(String(a.machines[0]?.label ?? "") || fallback),
+      () => live && setMachine(fallback),
+    )
+    return () => {
+      live = false
+    }
+  }, [])
 
   // ---- the input client, one per terminal and tab
   useEffect(() => {
@@ -115,8 +169,8 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
     setClosedBy(null)
     setRevoked("")
     setHistory(null)
-    setAsking(false)
-    setSaid("")
+    setAsking(null)
+    message.current?.clear()
     readTerminal(id, TAB).then(
       (t) => {
         if (!live) return
@@ -175,10 +229,10 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       if (!d || !Number.isFinite(d.cols) || !Number.isFinite(d.rows) || d.cols < 2 || d.rows < 2) return
       if (f && f.cols === d.cols && f.rows === d.rows) return
       resizeTerminal(id, c.state.epoch, TAB, d.cols, d.rows).catch((e) => {
-        setSaid(nextWord("terminalActionFailed", { action: "resize", why: errorWords(e) }))
+        setSaid(nextWord("terminalActionFailed", { action: nextWord("terminalActionResize"), why: errorWords(e) }))
       })
     }, 120)
-  }, [id])
+  }, [id, setSaid])
 
   // ---- xterm.js, loaded on first use
   useEffect(() => {
@@ -202,13 +256,11 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       const addon = new FitAddon()
       t.loadAddon(addon)
       t.open(el)
-      t.textarea?.setAttribute("aria-label", nextWord("terminalEntry"))
+      t.textarea?.setAttribute("aria-label", nextWord("terminalScreenFor", { project: labelRef.current }))
       const encoder = new TextEncoder()
       t.onData((data) => {
-        let out = data
-        if (ctrlArmed.current && data.length === 1) {
-          const code = data.toUpperCase().charCodeAt(0)
-          if (code >= 0x40 && code <= 0x5f) out = String.fromCharCode(code & 0x1f)
+        const { out } = withCtrl(ctrlArmed.current, data)
+        if (ctrlArmed.current) {
           ctrlArmed.current = false
           setCtrl(false)
         }
@@ -227,27 +279,48 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
     load().catch(() => !disposed && setLoaded("failed"))
     // Every paste goes to /paste as one request, never through the keystroke
     // path, whatever xterm.js would have made of it.
+    // A paste this tab may not send is said, never dropped in silence.
     const onPaste = (ev: ClipboardEvent) => {
       const text = ev.clipboardData?.getData("text/plain") ?? ""
       ev.preventDefault()
       ev.stopImmediatePropagation()
-      if (text) input.current?.paste(text)
+      if (!text) return
+      const refused = pasteRefusal(input.current?.state ?? null)
+      if (refused || !input.current?.paste(text)) setSaid(nextWord(refused ?? "terminalPasteWatching"))
+    }
+    // F6 leaves the screen for the header's Back, before xterm.js sees it,
+    // so it is never typed.
+    const onRegion = (ev: KeyboardEvent) => {
+      if (!isRegionKey(ev)) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      backButton.current?.focus()
     }
     // Keys typed into the terminal are the program's: the console's own
     // shortcuts (Escape leaves a page, Ctrl+K moves to the list) must not see
     // them.
     const onKey = (ev: KeyboardEvent) => ev.stopPropagation()
     el.addEventListener("paste", onPaste, true)
+    el.addEventListener("keydown", onRegion, true)
     el.addEventListener("keydown", onKey)
     return () => {
       disposed = true
       el.removeEventListener("paste", onPaste, true)
+      el.removeEventListener("keydown", onRegion, true)
       el.removeEventListener("keydown", onKey)
       term.current?.dispose()
       term.current = null
       fit.current = null
     }
-  }, [id, draw])
+  }, [id, draw, setSaid])
+
+  useEffect(() => {
+    term.current?.textarea?.setAttribute("aria-label", nextWord("terminalScreenFor", { project: label }))
+  }, [label, loaded])
+
+  useEffect(() => {
+    if (term.current) term.current.options.screenReaderMode = reader
+  }, [reader, loaded])
 
   // ---- the stream
   useEffect(() => {
@@ -276,7 +349,7 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
             },
             (e) => {
               const code = e instanceof TerminalRequestError ? e.code : ""
-              setSaid(errorWords(e))
+              setSaid(streamLostWords(e))
               if (code === "terminal_closed") setStatus("closed")
               else if (!ended && code !== "terminal_forbidden") retry = setTimeout(connect, 3_000)
             },
@@ -327,7 +400,21 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       es?.close()
       loud()
     }
-  }, [id, shown, draw])
+  }, [id, shown, draw, setSaid])
+
+  // ---- a change of hands is said, and what was said before it goes
+  const hands = useRef<string | null>(null)
+  useEffect(() => {
+    const now = holderKey(control)
+    const was = hands.current
+    hands.current = now
+    if (!control || was === null || was === now) return
+    const h = control.held ? control.holder : null
+    setSaid(!h ? nextWord("terminalNowNobody")
+      : h.same_client ? nextWord("terminalNowHeldByYou") : nextWord("terminalNowHeldBy", { holder: holderWords(h) }))
+    // A confirmation about the hands before this one is no longer true.
+    setAsking((a) => (a === "takeover" ? null : a))
+  }, [control, setSaid])
 
   // ---- the lease follows what the terminal says
   useEffect(() => {
@@ -337,7 +424,7 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
     // Nobody holds it: this tab takes it, so opening a terminal means typing
     // in it. Somebody does: this tab watches until the person takes over.
     if (!control.held) void c.control("acquire").then((code) => code && setSaid(terminalRefusalWords(code)))
-  }, [control, status])
+  }, [control, status, setSaid])
 
   // Typing is on only while it can land.
   const holding = !!inputState?.holding
@@ -347,7 +434,14 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
     const t = term.current
     if (!t) return
     t.options.disableStdin = !(holding && !stale && running)
+    // A blinking cursor says "type here"; it does not blink while nothing typed would land.
+    t.options.cursorBlink = !stale && running
   }, [holding, stale, running, loaded])
+
+  // A confirmation takes the focus to its safe answer.
+  useEffect(() => {
+    if (asking) cancelButton.current?.focus()
+  }, [asking])
 
   useEffect(() => {
     if (holding) proposeSize()
@@ -368,7 +462,7 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
   // ---- actions
   const act = async (name: string, fn: () => Promise<string>) => {
     setBusy(name)
-    setSaid("")
+    message.current?.clear()
     try {
       const code = await fn()
       if (code) setSaid(terminalRefusalWords(code))
@@ -378,6 +472,7 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
   }
   const acquire = (action: "acquire" | "takeover") => act(action, async () => {
     const code = (await input.current?.control(action)) ?? ""
+    setAsking(null)
     if (!code) term.current?.focus()
     return code
   })
@@ -390,7 +485,7 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
     if (!input.current?.state.holding || epoch === null || epoch === undefined) return "not_controller"
     try {
       await closeTerminal(id, epoch, TAB)
-      setAsking(false)
+      setAsking(null)
       setStatus("closed")
       setClosedBy({ name: "", local: false, same_device: true, same_client: true })
       input.current?.terminalGone("terminal_closed")
@@ -408,6 +503,19 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       setHistory({ kind: "failed", why: errorWords(e) })
     }
   }
+  const openNew = async () => {
+    const project = meta?.project_id
+    if (!project) return
+    setOpening(true)
+    try {
+      const size = firstSize()
+      onOpenNew((await openTerminal(project, size.cols, size.rows)).id)
+    } catch (e) {
+      setSaid(nextWord("terminalOpenFailed", { why: errorWords(e) }))
+    } finally {
+      setOpening(false)
+    }
+  }
   const key = (bytes: string) => {
     if (bytes === "ctrl") {
       ctrlArmed.current = !ctrlArmed.current
@@ -415,7 +523,11 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       term.current?.focus()
       return
     }
-    input.current?.type(new TextEncoder().encode(bytes))
+    // Esc, Tab or an arrow from the row goes as it is and lets Ctrl go (keys.ts `withCtrl`).
+    const { out } = withCtrl(ctrlArmed.current, bytes)
+    ctrlArmed.current = false
+    setCtrl(false)
+    input.current?.type(new TextEncoder().encode(out))
     term.current?.focus()
   }
   const arrow = (final: string) => (lastFrame.current?.modes.app_cursor ? "\x1bO" : "\x1b[") + final
@@ -423,10 +535,11 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
   // ---- words
   const holder = control?.held ? control.holder : null
   const someoneElse = !!control?.held && !holder?.same_client
+  const outOfDate = stale || stream === "lost"
   const fresh = stream === "connecting" && lastAt === null
     ? nextWord("terminalConnecting")
-    : stale || stream === "lost"
-      ? nextWord("terminalStale")
+    : outOfDate
+      ? lastAt !== null ? nextWord("terminalStaleAt", { time: clock(lastAt) }) : nextWord("terminalStale")
       : lastAt !== null ? nextWord("terminalFresh", { time: clock(lastAt) }) : nextWord("terminalConnecting")
   const notice = inputState?.notice
   // A terminal that ended says so below the header (`endWords`); there is no
@@ -448,18 +561,28 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       : status === "exited" ? nextWord("terminalExited")
         : status === "unreachable" ? nextWord("terminalRefusalUnreachable") : ""
 
+  const canType = holding && !stale && running
+  const holderName = holderWords(holder)
+
   return (
-    <div className="terminal-view" data-holding={holding ? "" : undefined} data-stale={stale ? "" : undefined}>
+    <div className="terminal-view" data-holding={holding ? "" : undefined} data-stale={outOfDate ? "" : undefined}
+      data-ended={ended || revoked ? "" : undefined}
+      onKeyDown={(ev) => {
+        // F6 from anywhere in the header goes back to the screen.
+        if (!isRegionKey(ev.nativeEvent) || loaded !== "ready") return
+        ev.preventDefault()
+        term.current?.focus()
+      }}>
       <header className="terminal-head">
         <div className="terminal-head-row">
-          <button className="board-button" type="button" onClick={onBack}>{nextWord("terminalBack")}</button>
+          <button className="board-button" type="button" ref={backButton} onClick={onBack}>{nextWord("terminalBack")}</button>
           <dl className="terminal-facts">
-            <div><dt>{nextWord("terminalMachine")}</dt><dd>{nextWord("devicesThisMachine")}</dd></div>
-            <div data-tone={stale || stream === "lost" ? "warn" : undefined}>
+            <div><dt>{nextWord("terminalMachine")}</dt><dd className="terminal-machine">{machine || nextWord("devicesThisMachine")}</dd></div>
+            <div data-tone={outOfDate ? "warn" : undefined}>
               <dt className="terminal-sr">{nextWord("terminalFresh", { time: "" }).trim()}</dt>
               <dd className="terminal-fresh">{fresh}</dd>
             </div>
-            <div><dt>{nextWord("terminalControlLabel")}</dt><dd className="terminal-holder">{holderWords(holder)}</dd></div>
+            <div><dt>{nextWord("terminalControlLabel")}</dt><dd className="terminal-holder">{holderName}</dd></div>
           </dl>
         </div>
         <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
@@ -470,8 +593,8 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
             </button>
           )}
           {!holding && someoneElse && (
-            <button className="board-button" type="button" disabled={!!busy || ended || !!revoked}
-              aria-busy={busy === "takeover" ? "true" : undefined} onClick={() => void acquire("takeover")}>
+            <button className="board-button terminal-takeover" type="button" disabled={!!busy || ended || !!revoked}
+              aria-expanded={asking === "takeover"} onClick={() => setAsking("takeover")}>
               {nextWord("terminalTakeover")}
             </button>
           )}
@@ -485,36 +608,70 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
             onClick={() => (history ? setHistory(null) : void showHistory())}>
             {history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}
           </button>
+          <button className="board-button terminal-reader" type="button" aria-pressed={reader}
+            onClick={() => setReader((r) => !r)}>
+            {nextWord("terminalReaderMode")}
+          </button>
           <button className="board-button terminal-close" type="button" disabled={ended || !!busy}
-            aria-expanded={asking}
-            onClick={() => (holding ? setAsking(true) : setSaid(nextWord("terminalCloseNeedsControl")))}>
+            aria-expanded={asking === "close"}
+            onClick={() => (holding ? setAsking("close") : setSaid(nextWord("terminalCloseNeedsControl")))}>
             {nextWord("terminalClose")}
           </button>
           {inputState?.full && <span className="terminal-badge" role="alert">{nextWord("terminalInputFull")}</span>}
         </div>
-        {asking && (
+        {asking === "takeover" && someoneElse && (
+          <div className="terminal-ask" role="group" aria-label={nextWord("terminalTakeover")}>
+            <p>{nextWord("terminalTakeoverAsk", { holder: holderName })}</p>
+            <button className="board-button terminal-danger" type="button" disabled={!!busy}
+              aria-busy={busy === "takeover" ? "true" : undefined} onClick={() => void acquire("takeover")}>
+              {nextWord("terminalTakeoverConfirm")}
+            </button>
+            <button className="board-button" type="button" ref={cancelButton} disabled={!!busy} onClick={() => setAsking(null)}>
+              {nextWord("terminalCancel")}
+            </button>
+          </div>
+        )}
+        {asking === "close" && (
           <div className="terminal-ask" role="group" aria-label={nextWord("terminalClose")}>
             <p>{nextWord("terminalCloseAsk")}</p>
             <button className="board-button terminal-danger" type="button" disabled={!!busy}
               aria-busy={busy === "close" ? "true" : undefined} onClick={() => void close()}>
               {nextWord("terminalCloseConfirm")}
             </button>
-            <button className="board-button" type="button" disabled={!!busy} onClick={() => setAsking(false)}>
+            <button className="board-button" type="button" ref={cancelButton} disabled={!!busy} onClick={() => setAsking(null)}>
               {nextWord("terminalCancel")}
             </button>
           </div>
         )}
-        <p className="terminal-note terminal-session-note">{nextWord("terminalSessionNote")}</p>
+        <p className="terminal-note terminal-session-note">
+          {nextWord("terminalSessionNote")}<span className="terminal-leave-hint"> · {nextWord("terminalLeaveHint")}</span>
+        </p>
         <p className="terminal-status-line" role="status" aria-live="polite">
           {[
             metaFailed,
+            outOfDate && running && !ended ? nextWord("terminalStalePaused") : "",
             said,
             noticeWords,
             inputState?.retrying ? nextWord("terminalRetrying") : "",
+            inputState?.full ? nextWord("terminalInputFullNext") : "",
+            ctrl && canType ? nextWord("terminalCtrlArmed") : "",
             !holding && running && !ended ? nextWord("terminalViewOnly") : "",
           ].filter(Boolean).join(" ")}
         </p>
-        {endWords && <p className="terminal-ended" role="alert">{endWords}</p>}
+        {endWords && (
+          <div className="terminal-ended" role="alert">
+            <p>{endWords}</p>
+            <div className="terminal-ended-actions">
+              <button className="board-button" type="button" onClick={onBack}>{nextWord("terminalBackToList")}</button>
+              {meta?.project_id && !revoked && (
+                <button className="board-button" type="button" disabled={opening}
+                  aria-busy={opening ? "true" : undefined} onClick={() => void openNew()}>
+                  {opening ? nextWord("terminalOpening") : nextWord("terminalOpenNew")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
       {history && (
         <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}>
@@ -528,18 +685,20 @@ export function TerminalView({ id, shown, onBack }: { id: string; shown: boolean
       )}
       <div className="terminal-scroll" ref={scroller} hidden={history !== null}>
         {loaded === "loading" && <p className="terminal-note terminal-loading">{nextWord("terminalConnecting")}</p>}
-        {loaded === "failed" && <p className="terminal-note" role="alert">{nextWord("terminalRefusalUnreachable")}</p>}
+        {loaded === "failed" && (
+          <div className="terminal-loading terminal-note-row">
+            <p className="terminal-note" role="alert">{nextWord("terminalScreenLoadFailed")}</p>
+            <button className="board-button" type="button" onClick={() => location.reload()}>{nextWord("terminalReload")}</button>
+          </div>
+        )}
         <div className="terminal-host" ref={host} data-meta-cols={meta?.cols} />
       </div>
       <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
-        {[
-          ["Esc", "\x1b"], ["Ctrl", "ctrl"], ["Tab", "\t"],
-          ["←", "D"], ["↑", "A"], ["↓", "B"], ["→", "C"],
-        ].map(([label, value]) => (
+        {KEY_ROW.map(([label, value, name]) => (
           <button key={label} type="button" className="terminal-key"
-            disabled={!(holding && !stale && running)}
+            disabled={!canType}
             aria-pressed={value === "ctrl" ? ctrl : undefined}
-            aria-label={value === "ctrl" ? nextWord("terminalKeyCtrl") : undefined}
+            aria-label={name ? nextWord(name) : undefined}
             onPointerDown={(ev) => ev.preventDefault()}
             onClick={() => key(value.length === 1 && value >= "A" && value <= "D" ? arrow(value) : value)}>
             {label}

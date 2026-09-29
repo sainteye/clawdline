@@ -15,7 +15,8 @@ export function TerminalEntry({ project, label }: { project: string; label: stri
   return (
     <details className="terminal-entry" open={open} onToggle={(ev) => setOpen(ev.currentTarget.open)}>
       <summary aria-label={nextWord("terminalEntryFor", { project: label || project })}>{nextWord("terminalEntry")}</summary>
-      {open && <TerminalProjectList project={project} label={label || project} shown={open} headingLevel={3} />}
+      {/* The summary already names it; the list's own heading is kept for a screen reader only. */}
+      {open && <TerminalProjectList project={project} label={label || project} shown={open} from="work" headingLevel={3} />}
     </details>
   )
 }

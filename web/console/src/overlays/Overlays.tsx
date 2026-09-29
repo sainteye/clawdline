@@ -1,5 +1,6 @@
 import { Fragment, useEffect } from "react"
 import * as L from "../legacy/bridge.js"
+import { nextWord } from "../next-strings.js"
 import { ActionConfirm, bindActionConfirm } from "./action-confirm.js"
 import { bindInfo } from "./info.js"
 
@@ -38,6 +39,8 @@ export function Overlays() {
     [["⏎"], T.webKeysOpen],
     [["/"], T.webKeysFilter],
     [["esc"], T.webKeysEscape],
+    // The terminal page's one key that is not the program's (pages/terminal/keys.ts).
+    [["F6"], nextWord("terminalKeysLeave")],
     [["⌘K"], T.webKeysList],
     [["⌘J"], T.webKeysPane],
     [["⌘I"], T.webSessionInfo],

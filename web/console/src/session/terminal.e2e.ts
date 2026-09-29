@@ -16,13 +16,20 @@
 //
 // The daemon must serve this worktree's build (CLAWDLINE_NEXT_WEB=…/dist).
 // With CLAWDLINE_TERMINAL_DAEMON_PID set to that throwaway daemon's pid, the
-// stale-screen check stops it for a few seconds and continues it.
+// stale-screen check stops it for a few seconds and continues it; with
+// CLAWDLINE_TERMINAL_TMUX_SOCKET set to its own tmux socket
+// ($CLAWDLINE_NEXT_DIR/tmux/term.sock), the not-answering check does the same
+// to that private tmux server. States a daemon on this machine cannot be put
+// in (no tmux, which it also finds outside PATH, and Windows) are drawn from
+// its own diagnostics answer with the capability rewritten in the browser.
+// With CLAWDLINE_HOSTED_ORIGIN set to a second throwaway daemon serving a
+// build whose `hostedConsole()` answers true, the hosted page is drawn too.
 // Every terminal this opens it closes again; it touches no other.
 //
 // Named `.e2e.ts` rather than `.test.ts` so the unit run does not start a browser.
 import { test, before, after, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { spawn, type ChildProcess } from "node:child_process"
+import { execFileSync, spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -34,6 +41,8 @@ const shots = process.env.CLAWDLINE_SHOTS || ""
 const fixture = process.env.CLAWDLINE_TERMINAL_PROJECT || "f3-fixture"
 const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 const skip = !origin || !token ? "set CLAWDLINE_TERMINAL_ORIGIN and CLAWDLINE_TERMINAL_TOKEN to a throwaway daemon" : false
+const tmuxSocket = process.env.CLAWDLINE_TERMINAL_TMUX_SOCKET || ""
+const hostedOrigin = process.env.CLAWDLINE_HOSTED_ORIGIN || ""
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -71,6 +80,8 @@ class Browser {
   private seq = 0
   private pending = new Map<number, Pending>()
   events: Event[] = []
+  /** Called with every event as it arrives, for the ones a test must answer (Fetch.requestPaused). */
+  readonly handlers = new Set<(e: Event) => void>()
   private ws: WebSocket
 
   private constructor(ws: WebSocket) {
@@ -85,6 +96,7 @@ class Browser {
         return
       }
       this.events.push(msg)
+      for (const h of this.handlers) h(msg)
     })
   }
 
@@ -165,6 +177,7 @@ const KEYS: Record<string, { key: string; code: string; vk: number; text?: strin
   enter: { key: "Enter", code: "Enter", vk: 13, text: "\r" },
   escape: { key: "Escape", code: "Escape", vk: 27 },
   tab: { key: "Tab", code: "Tab", vk: 9 },
+  f6: { key: "F6", code: "F6", vk: 117 },
 }
 
 /** Every tab still open: a failed test leaves none behind to hold connections. */
@@ -181,8 +194,8 @@ class Tab {
     this.target = target
   }
 
-  static async open(b: Browser, phone = false): Promise<Tab> {
-    const { targetId } = await b.send("Target.createTarget", { url: "about:blank" })
+  static async open(b: Browser, phone = false, browserContextId?: string): Promise<Tab> {
+    const { targetId } = await b.send("Target.createTarget", { url: "about:blank", ...(browserContextId ? { browserContextId } : {}) })
     const { sessionId } = await b.send("Target.attachToTarget", { targetId, flatten: true })
     await b.send("Page.enable", {}, sessionId)
     await b.send("Runtime.enable", {}, sessionId)
@@ -288,6 +301,30 @@ class Tab {
       .map((e) => new URL(String(e.params?.request?.url)).pathname)
   }
 
+  /** Rewrite this tab's /v1/diagnostics answer, as a daemon on another platform would give it. */
+  async rewriteDiagnostics(change: (body: any) => void): Promise<void> {
+    this.b.handlers.add((e) => {
+      if (e.sessionId !== this.session || e.method !== "Fetch.requestPaused") return
+      const id = e.params.requestId
+      void (async () => {
+        const { body, base64Encoded } = await this.b.send("Fetch.getResponseBody", { requestId: id }, this.session)
+        const json = JSON.parse(base64Encoded ? Buffer.from(body, "base64").toString() : body)
+        change(json)
+        await this.b.send("Fetch.fulfillRequest", {
+          requestId: id, responseCode: 200,
+          responseHeaders: [{ name: "content-type", value: "application/json" }],
+          body: Buffer.from(JSON.stringify(json)).toString("base64"),
+        }, this.session)
+      })().catch(() => this.b.send("Fetch.continueRequest", { requestId: id }, this.session).catch(() => {}))
+    })
+    await this.b.send("Fetch.enable", { patterns: [{ urlPattern: "*/v1/diagnostics*", requestStage: "Response" }] }, this.session)
+  }
+
+  /** What has focus, as a person reads it. */
+  focused(): Promise<string> {
+    return this.run(`(() => { const a = document.activeElement; return (a?.getAttribute("aria-label") || a?.textContent || a?.className || "").trim().slice(0, 60) })()`)
+  }
+
   requests(mark: number, part: string): { url: string; body: string }[] {
     return this.b.events.slice(mark)
       .filter((e) => e.sessionId === this.session && e.method === "Network.requestWillBeSent")
@@ -355,27 +392,56 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 
-test("a terminal opens from the Projects page and takes keys the way its programs asked", { skip }, async () => {
+/** Whether the throwaway project is a row of the Projects page, which lists the Board's start points. */
+async function projectsPageLists(path: string): Promise<boolean> {
+  const answer = await api("/v1/board").catch(() => null)
+  const projects = (answer?.board ?? answer)?.projects ?? []
+  return projects.some((p: { isStartPoint?: boolean; displayPath?: string }) => p.isStartPoint === true && p.displayPath === path)
+}
+
+test("the Projects page's 終端 leads to the project's list", { skip }, async (t) => {
+  const place = (await api("/v1/places")).places.find((p: { id: string }) => p.id === project)
+  if (!(await projectsPageLists(place.path))) {
+    t.skip("the throwaway project is not a Board start point on this daemon, so the Projects page has no row for it")
+    return
+  }
   const tab = await Tab.open(browser)
   await tab.go("#page=projects")
-  // The Projects page: every row has 終端, and it leads to that project's
-  // list. Its rows are this machine's real projects, so nothing is opened
-  // there — the list is only read.
   await tab.run(`new Promise((ok, fail) => {
     const t = setTimeout(() => fail(new Error("no 終端 button on the project rows")), 8000)
     const look = () => document.querySelector("button.project-row-terminal") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  await tab.shot("01-projects-terminal-entry")
   await tab.press("button.project-row-terminal")
+  assert.match(await tab.run("location.hash"), /^#page=terminal&project=%2F.*&from=projects$/, "the Projects page links by folder, and says where Back goes")
+  await tab.close()
+})
+
+test("a terminal list opened from the Projects page goes back there", { skip }, async () => {
+  const place = (await api("/v1/places")).places.find((p: { id: string }) => p.id === project)
+  const tab = await Tab.open(browser)
+  // The address the Projects page's 終端 writes (projects.tsx, page-route.ts `terminalPageHash`).
+  await tab.go(`#page=terminal&project=${encodeURIComponent(place.path)}&from=projects`)
   await tab.run(`new Promise((ok, fail) => {
     const t = setTimeout(() => fail(new Error("no terminal list")), 8000)
     const look = () => document.querySelector("#terminal:not([hidden]) .terminal-list-title") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  assert.match(await tab.run("location.hash"), /^#page=terminal&project=%2F/, "the Projects page links by folder")
-  assert.ok(await tab.run(`!/project-/.test(document.querySelector("#terminal .terminal-list-title").textContent)`), "the list is titled with the project's name")
+  const back = await tab.run(`document.querySelector("#terminal .terminal-page-head .board-button").textContent`)
+  assert.equal(back, "回到專案")
   await tab.shot("02-terminal-list-from-projects")
+  await tab.press("#terminal .terminal-page-head .board-button")
+  await tab.run(`new Promise((ok, fail) => {
+    const t = setTimeout(() => fail(new Error("Back did not reach the Projects page: " + location.hash)), 8000)
+    const look = () => /page=projects/.test(location.hash) ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  await tab.close()
+})
+
+test("a terminal opens from the work page and takes keys the way its programs asked", { skip }, async () => {
+  const tab = await Tab.open(browser)
+  await tab.go("#page=work&project=" + encodeURIComponent(project))
 
   // The work page's project scope, on the throwaway project: 終端, then 開新終端.
   await tab.run(`location.hash = ${JSON.stringify("#page=work&project=" + encodeURIComponent(project))}`)
@@ -518,7 +584,23 @@ test("closing the tab and opening the address again finds the same shell and scr
   await second.go(address)
   await second.until("the second tab says another tab holds input", (s) => s.holder === OTHER_TAB && has(s, "sleep 600"))
   await second.shot("10-second-tab-watching")
-  await second.press("#terminal .terminal-actions .board-button:first-child")
+  // Take over asks first, naming who is in control, with the focus on Cancel;
+  // Cancel leaves the lease where it was.
+  const tid = new URLSearchParams(address.slice(1)).get("terminal")
+  const epochBefore = (await api(`/v1/terminals/${tid}?client=e2e`)).control.epoch
+  await second.press("#terminal .terminal-takeover")
+  await second.until("take over asks first", () => true)
+  const ask = await second.run(`document.querySelector("#terminal .terminal-ask p")?.textContent ?? ""`)
+  assert.match(ask, new RegExp(OTHER_TAB + "正在控制"), "the confirmation names the holder: " + ask)
+  assert.equal(await second.focused(), "取消", "the focus is on Cancel")
+  await second.shot("10b-takeover-confirm")
+  await second.press("#terminal .terminal-ask .board-button:not(.terminal-danger)")
+  await pause(400)
+  assert.equal((await api(`/v1/terminals/${tid}?client=e2e`)).control.epoch, epochBefore, "Cancel left the lease epoch unchanged")
+  assert.equal(((await second.run(PROBE)) as Seen).holder, OTHER_TAB)
+  await second.press("#terminal .terminal-takeover")
+  await second.until("asked again", () => true)
+  await second.press("#terminal .terminal-ask .terminal-danger")
   await second.until("the second tab took over", (s) => s.holder === YOU)
   await tab.until("the first tab now watches", (s) => s.holder === OTHER_TAB)
   await tab.shot("11-first-tab-after-takeover")
@@ -558,6 +640,9 @@ test("closing the tab and opening the address again finds the same shell and scr
       await second.until("the header says the screen may be stale", (s) => s.fresh.includes("畫面可能過期"), 12_000)
       const stale = (await second.run(PROBE)) as Seen
       assert.equal(stale.stdin, false, "no key is taken while stale")
+      assert.match(stale.fresh, /最後 \S*\d+:\d\d:\d\d/, "the last frame's time stays in the header: " + stale.fresh)
+      assert.ok(await second.run(`document.querySelector("#terminal .terminal-view [aria-live] ")?.textContent.includes("輸入已暫停")`),
+        "the aria-live status line says typing is paused")
       assert.equal(await second.run(`document.querySelector("#terminal .xterm").closest(".terminal-view").hasAttribute("data-stale")`), true)
       await second.shot("13-stale")
     } finally {
@@ -570,9 +655,11 @@ test("closing the tab and opening the address again finds the same shell and scr
   await second.press("#terminal .terminal-close")
   await second.until("closing asks first", () => true)
   assert.ok(await second.run(`!!document.querySelector("#terminal .terminal-ask")`), "a confirmation is shown")
+  assert.equal(await second.focused(), "取消", "the close confirmation puts the focus on Cancel")
   await second.shot("14-close-confirm")
   await second.press("#terminal .terminal-ask .terminal-danger")
   await tab.until("the watching tab is told the terminal was closed", (s) => s.ended.length > 0, 10_000)
+  assert.ok(await tab.run(`!!document.querySelector("#terminal .terminal-ended .board-button")`), "the ended terminal offers a way on")
   await tab.shot("15-closed-seen-by-other-tab")
   for (const t of more) await t.close()
   await second.close()
@@ -590,9 +677,17 @@ test("on a phone the special keys type through the same client and nothing is wi
   await tab.line(String.raw`printf '\e[?1h'; cat -v`)
   await pause(800)
   if (process.env.E2E_DEBUG) setTimeout(() => console.log("sent", tab.requests(sentFrom, "/input").map((r) => JSON.stringify(Buffer.from(JSON.parse(r.body).data, "base64").toString()))), 3000)
-  await tab.press(`#terminal .terminal-key[aria-label]`) // Ctrl, armed
-  assert.equal(await tab.run(`document.querySelector("#terminal .terminal-key[aria-label]").getAttribute("aria-pressed")`), "true")
-  await tab.press(`#terminal .terminal-key[aria-label]`) // and off again
+  await tab.press(`#terminal .terminal-key[aria-pressed]`) // Ctrl, armed
+  assert.equal(await tab.run(`document.querySelector("#terminal .terminal-key[aria-pressed]").getAttribute("aria-pressed")`), "true")
+  assert.match(((await tab.run(PROBE)) as Seen).status, /Ctrl 已按下/, "the status line says Ctrl is held")
+  await tab.press(`#terminal .terminal-key[aria-pressed]`) // and off again
+  // Ctrl then Esc from the row: Esc goes as it is and Ctrl is let go.
+  await tab.press(`#terminal .terminal-key[aria-pressed]`)
+  await tab.run(`[...document.querySelectorAll("#terminal .terminal-key")].find((b) => b.textContent === "Esc").click()`)
+  assert.equal(await tab.run(`document.querySelector("#terminal .terminal-key[aria-pressed]").getAttribute("aria-pressed")`), "false", "Esc let Ctrl go")
+  await tab.key("enter")
+  await tab.until("Esc reached cat as it is", (s) => has(s, "^["))
+  await tab.line("clear")
   const keys = await tab.run(`[...document.querySelectorAll("#terminal .terminal-key")].map((b) => b.textContent)`)
   assert.deepEqual(keys, ["Esc", "Ctrl", "Tab", "←", "↑", "↓", "→"])
   await tab.run(`[...document.querySelectorAll("#terminal .terminal-key")].find((b) => b.textContent === "↑").click()`)
@@ -602,7 +697,7 @@ test("on a phone the special keys type through the same client and nothing is wi
   assert.ok(seen.scrollWidth <= seen.width, `no sideways page scroll (${seen.scrollWidth} > ${seen.width})`)
   await tab.shot("16-phone-375-key-row")
   // Ctrl from the row, then c: an interrupt.
-  await tab.press(`#terminal .terminal-key[aria-label]`)
+  await tab.press(`#terminal .terminal-key[aria-pressed]`)
   await tab.text("c")
   await pause(300)
   await tab.line("echo after-ctrl-c")
@@ -622,50 +717,225 @@ test("on a phone the special keys type through the same client and nothing is wi
   await tab.close()
 })
 
-test("the header's controls are reached with the keyboard alone", { skip }, async () => {
+test("the keyboard reaches the header, goes into the terminal with Tab, and leaves it with F6", { skip }, async () => {
   const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
   opened.add(made.id)
   const tab = await Tab.open(browser)
   await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
-  await tab.until("drawn", (s) => s.holder === YOU, 10_000)
+  await tab.until("drawn", (s) => s.holder === YOU && prompted(s), 15_000)
+  await tab.b.send("Page.bringToFront", {}, tab.session)
   await tab.run(`document.activeElement?.blur(); document.querySelector("#terminal .terminal-head").setAttribute("tabindex", "-1"); document.querySelector("#terminal .terminal-head").focus()`)
+  const mark = tab.b.mark()
   const reached: string[] = []
-  for (let i = 0; i < 7; i++) {
+  const inTerminal = () => tab.run(`document.activeElement?.classList.contains("xterm-helper-textarea") ?? false`)
+  for (let i = 0; i < 12 && !(await inTerminal()); i++) {
     await tab.key("tab")
-    reached.push(await tab.run(`(() => { const a = document.activeElement; return (a?.getAttribute("aria-label") || a?.textContent || a?.className || "").trim().slice(0, 40) })()`))
+    reached.push(await tab.focused())
   }
-  const visibleRing = await tab.run(`getComputedStyle(document.activeElement).outlineStyle`)
-  if (shots) writeFileSync(join(shots, "keyboard-pass.json"), JSON.stringify({ reached, visibleRing }, null, 2))
-  for (const want of ["返回", "釋放", "歷史", "關閉終端"]) assert.ok(reached.includes(want), `${want} is reached by Tab: ${reached.join(" → ")}`)
-  await tab.shot("19-keyboard-focus")
+  assert.ok(await inTerminal(), "Tab reaches the terminal: " + reached.join(" → "))
+  const visibleRing = await tab.run(`(() => { const b = document.querySelector("#terminal .terminal-head .board-button"); b.focus(); const o = getComputedStyle(b).outlineStyle; document.querySelector("#terminal .xterm-helper-textarea").focus(); return o })()`)
+  const name = await tab.focused()
+  assert.match(name, /按 F6 離開/, "the screen's name says how to leave it")
+  await tab.key("f6")
+  const afterF6 = await tab.focused()
+  assert.equal(afterF6, "返回", "F6 moved the focus to Back")
+  await tab.shot("19-keyboard-f6-back")
+  await tab.key("f6")
+  assert.ok(await inTerminal(), "F6 from the header goes back into the terminal")
+  await pause(500)
+  const typed = tab.requests(mark, "/input").map((r) => Buffer.from(JSON.parse(r.body).data, "base64").toString())
+  assert.ok(typed.every((t) => !t.includes("\t")), "the shell received no Tab: " + JSON.stringify(typed))
+  const hint = await tab.run(`document.querySelector("#terminal .terminal-leave-hint")?.textContent ?? ""`)
+  assert.match(hint, /F6/, "a visible hint names F6")
+  if (shots) writeFileSync(join(shots, "keyboard-pass.json"), JSON.stringify({ reached, visibleRing, screenName: name, afterF6, inputsSent: typed, hint }, null, 2))
+  for (const want of ["返回", "釋放", "歷史", "關閉終端"]) assert.ok(reached.some((r) => r.startsWith(want)), `${want} is reached by Tab: ${reached.join(" → ")}`)
   await tab.close()
 })
 
-test("a paired device's card on the Devices page grants and takes back terminal access", { skip }, async () => {
-  const devices = (await api("/v1/auth/devices")).devices as { id: string; name: string; terminal?: boolean }[]
-  if (devices.length === 0) return // `clawdline open --print` against the throwaway daemon makes one
-  const device = devices[0]
+/** A browser device of this machine's own, as `clawdline open --print` makes one: read-only, no terminal. */
+async function pairedDevice(): Promise<{ id: string; token: string }> {
+  const made = await api("/v1/auth/devices/browser", { method: "POST", body: JSON.stringify({ send: false }) })
+  return { id: made.id, token: made.token }
+}
+
+/** A tab in a browser context of its own, signed in as `device`. */
+async function deviceTab(device: { token: string }, phone = false): Promise<Tab> {
+  const { browserContextId } = await browser.send("Target.createBrowserContext", {})
+  const tab = await Tab.open(browser, phone, browserContextId)
+  await tab.b.send("Network.setCookie", { name: "clawdline-next", value: device.token, domain: new URL(origin).hostname, path: "/" }, tab.session)
+  return tab
+}
+
+const grantOf = async (id: string) => (await api("/v1/auth/devices")).devices.find((d: { id: string }) => d.id === id)?.terminal === true
+
+test("a paired device's card asks by name before it gives a terminal, and takes it back at once", { skip }, async () => {
+  const device = await pairedDevice()
   const tab = await Tab.open(browser)
   await tab.go("#page=devices")
-  const SWITCH = `document.querySelector(${JSON.stringify(`[data-device="${device.id}"] .terminal-grant-switch`)})`
+  const CARD = `[data-device="${device.id}"]`
+  const BOX = `document.querySelector(${JSON.stringify(CARD + " .terminal-grant input[type=checkbox]")})`
   await tab.run(`new Promise((ok, fail) => {
     const t = setTimeout(() => fail(new Error("no 終端 switch on the device card")), 8000)
-    const look = () => ${SWITCH}?.getAttribute("aria-checked") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    const look = () => ${BOX} && !${BOX}.disabled ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  const before = device.terminal === true
-  assert.equal(await tab.run(`${SWITCH}.getAttribute("aria-checked")`), String(before))
-  await tab.run(`${SWITCH}.scrollIntoView({ block: "center" })`)
-  await tab.run(`${SWITCH}.click()`)
+  assert.equal(await tab.run(`${BOX}.checked`), false)
+  const caps = () => tab.run(`document.querySelector(${JSON.stringify(CARD + " .device-facts span")}).textContent`)
+  assert.equal(await caps(), "只能讀")
+  assert.match(await tab.run(`document.querySelector(${JSON.stringify(CARD + " .terminal-grant-help")}).textContent`), /不會給這個權限/)
+  await tab.run(`${BOX}.scrollIntoView({ block: "center" })`)
+  await tab.run(`${BOX}.click()`)
+  await tab.until("turning it on asks first", () => true)
+  const ask = await tab.run(`document.querySelector(${JSON.stringify(CARD + " .terminal-grant-ask p")})?.textContent ?? ""`)
+  assert.ok(ask.includes(device.id), "the confirmation names the device by its id, as two devices can share a name: " + ask)
+  assert.match(ask, /遠端寫入更大/, "and says it is more than remote writes")
+  assert.equal(await tab.focused(), "取消", "the focus is on Cancel")
+  await tab.shot("20a-devices-grant-confirm")
+  await tab.press(`${CARD} .terminal-grant-ask .device-start:not(.signed-in-danger)`)
+  await pause(300)
+  assert.equal(await tab.run(`${BOX}.checked`), false, "Cancel left the switch off")
+  assert.equal(await grantOf(device.id), false, "Cancel left the grant off on the machine")
+  await tab.run(`${BOX}.click()`)
+  await tab.until("asked again", () => true)
+  await tab.press(`${CARD} .terminal-grant-ask .signed-in-danger`)
   await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("the switch did not turn")), 8000)
-    const look = () => ${SWITCH}.getAttribute("aria-checked") === ${JSON.stringify(String(!before))} ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    const t = setTimeout(() => fail(new Error("the switch did not turn on")), 8000)
+    const look = () => ${BOX}.checked ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  const after = (await api("/v1/auth/devices")).devices.find((d: { id: string }) => d.id === device.id)
-  assert.equal(after.terminal === true, !before, "the machine holds what the switch says")
+  assert.equal(await grantOf(device.id), true, "the machine holds what the switch says")
+  const shown = await caps()
+  assert.ok(!shown.includes("只能讀"), "no read-only label beside a terminal grant: " + shown)
+  assert.match(shown, /可開 shell/)
   await tab.shot("20-devices-terminal-grant")
-  await tab.run(`${SWITCH}.click()`)
-  await tab.run(`new Promise((ok) => { const look = () => ${SWITCH}.getAttribute("aria-checked") === ${JSON.stringify(String(before))} ? ok(true) : setTimeout(look, 50); look() })`)
+  await tab.run(`${BOX}.click()`) // off: no question
+  await tab.run(`new Promise((ok, fail) => {
+    const t = setTimeout(() => fail(new Error("the switch did not turn off")), 8000)
+    const look = () => !${BOX}.checked ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  assert.equal(await tab.run(`!!document.querySelector(${JSON.stringify(CARD + " .terminal-grant-ask")})`), false, "turning it off did not ask")
+  assert.equal(await grantOf(device.id), false)
+  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await tab.close()
+})
+
+test("a paired device without a terminal grant is told so, with no button that would fail the same way", { skip }, async () => {
+  const device = await pairedDevice()
+  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(made.id)
+  const tab = await deviceTab(device)
+  await tab.go(`#page=terminal&project=${encodeURIComponent(project)}`)
+  await tab.run(`new Promise((ok, fail) => {
+    const t = setTimeout(() => fail(new Error("no refusal on the list: " + document.querySelector("#terminal")?.textContent)), 10000)
+    const look = () => document.querySelector("#terminal .terminal-note[role=alert]") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  const said = await tab.run(`document.querySelector("#terminal .terminal-note[role=alert]").textContent`)
+  assert.match(said, /「裝置」頁開啟授權/, "the next step is named: " + said)
+  assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-open-new")`), false, "no 開新終端 to press into the same refusal")
+  await tab.shot("21-unauthorised-device")
+  await tab.run(`location.hash = ${JSON.stringify(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)}`)
+  await tab.until("the terminal itself refuses in words", (s) => /裝置」頁開啟授權/.test(s.status), 10_000)
+  await tab.shot("21b-unauthorised-device-terminal")
+  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await tab.close()
+})
+
+test("a device whose grant is taken back while it watches is told, with the way back named", { skip }, async () => {
+  const device = await pairedDevice()
+  await api(`/v1/auth/devices/${device.id}/terminal`, { method: "POST", body: JSON.stringify({ grant: true }) })
+  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(made.id)
+  const tab = await deviceTab(device)
+  await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
+  await tab.until("the device sees the screen", (s) => prompted(s), 15_000)
+  await api(`/v1/auth/devices/${device.id}/terminal`, { method: "POST", body: JSON.stringify({ grant: false }) })
+  const seen = await tab.until("the device is told its access was taken back", (s) => s.ended.includes("收回"), 12_000)
+  assert.match(seen.ended, /「裝置」頁重新開啟/, "the next step is named: " + seen.ended)
+  assert.equal(await tab.run(`document.querySelector("#terminal .terminal-view").hasAttribute("data-ended")`), true, "the last frame is drawn as not live")
+  await tab.shot("22-revoked-mid-stream")
+  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await tab.close()
+})
+
+// While its tmux server does not answer, the daemon's stream sends nothing at
+// all — its `unreachable` state arrives only once tmux answers again
+// (internal/app/terminals/stream.go) — so what a person sees is the stale
+// screen: the last frame's time, typing paused, and that it catches up.
+test("a terminal server that stops answering shows the last screen's time and that typing is paused", { skip: skip || (!tmuxSocket ? "set CLAWDLINE_TERMINAL_TMUX_SOCKET to the throwaway daemon's own tmux socket" : false) }, async () => {
+  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(made.id)
+  const tab = await Tab.open(browser)
+  await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
+  await tab.until("drawn", (s) => s.holder === YOU && prompted(s), 15_000)
+  // Only the throwaway daemon's own tmux server, on the socket it was given.
+  const pid = Number(execFileSync("tmux", ["-S", tmuxSocket, "display-message", "-p", "#{pid}"]).toString().trim())
+  assert.ok(pid > 0)
+  process.kill(pid, "SIGSTOP")
+  try {
+    const seen = await tab.until("the page says the screen may be stale and typing is paused", (s) => s.fresh.includes("最後") && s.status.includes("輸入已暫停"), 20_000)
+    assert.equal(seen.stdin, false, "no key is taken")
+    await tab.shot("23-server-not-answering")
+  } finally {
+    process.kill(pid, "SIGCONT")
+  }
+  await tab.until("fresh and running again", (s) => !s.ended && !s.fresh.includes("最後") && s.stdin, 30_000)
+  await tab.close()
+})
+
+test("input past what a tab holds is refused in words that say what to do", { skip }, async () => {
+  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(made.id)
+  const tab = await Tab.open(browser)
+  await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
+  await tab.until("drawn", (s) => s.holder === YOU && prompted(s), 15_000)
+  await tab.focusTerminal()
+  await tab.text("x".repeat(70 * 1024))
+  const seen = await tab.until("the badge and the next step", (s) => /分成較小/.test(s.status), 8_000)
+  assert.ok(await tab.run(`!!document.querySelector("#terminal .terminal-badge")`), "輸入塞滿 is shown: " + seen.status)
+  await tab.shot("24-input-full")
+  await tab.close()
+})
+
+test("a machine that cannot open terminals says why and what to do, with no button", { skip }, async () => {
+  for (const [name, code, want] of [
+    ["25-no-tmux", "tmux_not_installed", /brew install tmux/],
+    ["26-windows-unsupported", "no_backend", /macOS 與 Linux/],
+  ] as const) {
+    const tab = await Tab.open(browser)
+    await tab.rewriteDiagnostics((body) => {
+      const cap = body.platform.capabilities.find((c: { name: string }) => c.name === "terminal")
+      Object.assign(cap, { state: "unavailable", code, reason: code === "no_backend" ? "terminals need tmux, which this platform does not have" : "tmux was not found" })
+    })
+    await tab.go(`#page=terminal&project=${encodeURIComponent(project)}`)
+    await tab.run(`new Promise((ok, fail) => {
+      const t = setTimeout(() => fail(new Error("no reason on the list")), 10000)
+      const look = () => document.querySelector("#terminal .terminal-note[role=note]:not(.terminal-session-note)") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+      look()
+    })`)
+    const said = await tab.run(`document.querySelector("#terminal .terminal-list .terminal-note[role=note]").textContent`)
+    assert.match(said, want, name + ": " + said)
+    assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-open-new")`), false, "no 開新終端")
+    await tab.shot(name)
+    await tab.close()
+  }
+})
+
+test("the console Clawdline Cloud serves says where terminals are, and has a way back", { skip: skip || (!hostedOrigin ? "set CLAWDLINE_HOSTED_ORIGIN to a daemon serving a build whose hostedConsole() is true" : false) }, async () => {
+  const tab = await Tab.open(browser)
+  const mark = tab.b.mark()
+  await tab.b.send("Network.setCookie", { name: "clawdline-next", value: process.env.CLAWDLINE_HOSTED_TOKEN || "", domain: new URL(hostedOrigin).hostname, path: "/" }, tab.session)
+  await tab.b.send("Page.navigate", { url: hostedOrigin + "/#page=terminal&project=" + encodeURIComponent(project) }, tab.session)
+  await tab.b.loaded(tab.session, mark)
+  await tab.run(`new Promise((ok, fail) => {
+    const t = setTimeout(() => fail(new Error("no hosted sentence")), 10000)
+    const look = () => document.querySelector("#terminal:not([hidden]) .terminal-note[role=note]") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  assert.match(await tab.run(`document.querySelector("#terminal .terminal-note[role=note]").textContent`), /本機 Console/)
+  assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-page-head .board-button")`), true, "a Back is there")
+  assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-open-new, #terminal .xterm")`), false, "nothing takes input")
+  await tab.shot("27-hosted-console")
   await tab.close()
 })

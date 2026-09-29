@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import "./switch.css"
 
 /**
  * The window's furniture, as the AppKit original draws it.
