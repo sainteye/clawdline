@@ -297,6 +297,7 @@ export type WriteRoute =
   | { op: "work-v2-todo-create"; word: Carried<"work.v2.todo-create">; terminal: string }
   | { op: "work-v2-todo-image-create"; word: Carried<"work.v2.todo-image-create">; terminal: string; id: string }
   | { op: "work-v2-todo-action"; word: Carried<"work.v2.todo-action">; terminal: string; id: string; action: "send" | "complete" | "reopen" | "delete" }
+  | { op: "work-v2-human-intervention-action"; word: Carried<"work.v2.human-intervention-action">; terminal: string; id: string; action: "read" | "resolve" | "reopen" }
   // Manual `title` is not a Cloud word at all — not here and not in the Swift
   // app's vocabulary — so this one is a plain string.
   | { op: "uncarried"; word: string; session?: string }
@@ -562,6 +563,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     }
     if (b === "session-todos" && c && todoID && (action === "send" || action === "complete" || action === "reopen" || action === "delete") && segments.length === 6) {
       return { op: "work-v2-todo-action", word: "work.v2.todo-action", terminal: c, id: todoID, action }
+    }
+    if (b === "human-interventions" && c && todoID && (action === "read" || action === "resolve" || action === "reopen") && segments.length === 6) {
+      return { op: "work-v2-human-intervention-action", word: "work.v2.human-intervention-action", terminal: c, id: todoID, action }
     }
     return null
   }
@@ -1386,6 +1390,9 @@ export class RelayWriter {
         return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-todo-action": {
+        return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "work-v2-human-intervention-action": {
         return this.machineWorkV2(client, route.word, { terminal: route.terminal, id: route.id, action: route.action, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))
       }
       case "uncarried":

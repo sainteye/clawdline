@@ -582,6 +582,11 @@ export class RelayReader {
         this.only(url, path)
         return await this.machineRead(init?.signal, method, path, "work.v2.session-todos", { terminal: workTerminal })
       }
+      const humanConversation = workV2HumanInterventionConversation(path)
+      if (humanConversation) {
+        this.only(url, path)
+        return await this.machineRead(init?.signal, method, path, "work.v2.human-interventions", { terminal: humanConversation })
+      }
       const workItem = workV2ItemID(path)
       const gateExport = workV2ItemActionID(path, "gate-export")
       if (gateExport) {
@@ -1494,6 +1499,17 @@ function workV2SessionTodosTerminal(path: string): string {
   if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "work" || parts[3] !== "v2" || parts[4] !== "session-todos") return ""
   try {
     return decodeURIComponent(parts[5])
+  } catch {
+    return ""
+  }
+}
+
+function workV2HumanInterventionConversation(path: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 6 || parts[1] !== "v1" || parts[2] !== "work" || parts[3] !== "v2" || parts[4] !== "human-interventions") return ""
+  try {
+    const conversation = decodeURIComponent(parts[5])
+    return /^conversation:[0-9a-f-]{36}$/.test(conversation) ? conversation : ""
   } catch {
     return ""
   }

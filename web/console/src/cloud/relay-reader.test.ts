@@ -776,6 +776,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/v2/items/work-1/gate-export", "work.v2.gate-export", { id: "work-1" }],
   ["/v1/work/v2/proposals?state=pending", "work.v2.proposals", { state: "pending" }],
   ["/v1/work/v2/session-todos/%251", "work.v2.session-todos", { terminal: "%1" }],
+  ["/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002", "work.v2.human-interventions", { terminal: "conversation:10000000-0000-4000-8000-000000000002" }],
   ["/v1/projects", "projects", {}],
   ["/v1/personas", "personas", {}],
   ["/v1/projects/%2Fp/worktrees", "project-worktree-lifecycle", { project: "/p" }],

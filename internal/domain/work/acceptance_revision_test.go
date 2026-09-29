@@ -18,6 +18,10 @@ func TestAcceptanceRevisionInstructionUsesOnlyUnambiguousConversationContext(t *
 		{"question", "為何不能修改驗收？", true, false},
 		{"discussion", "我們應該討論如何修改驗收", true, false},
 		{"direct polite question", "可以請你修改這個項目的驗收嗎？", true, true},
+		{"policy discussion is not a revision request", "我不認為 Agent 不應該在要求下不能修改驗收", true, false},
+		{"explicit prohibition survives two negatives", "我不認為不能討論，但請不要修改驗收", true, false},
+		{"request for another action", "請開議題。不要修改驗收", true, false},
+		{"unrelated denial before request", "這件事不應由我處理。請修改驗收", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := AcceptanceRevisionInstruction(tc.text, id, "Parent Epic", tc.sole); got != tc.want {

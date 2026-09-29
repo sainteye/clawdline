@@ -184,6 +184,8 @@ export const CARRIED = {
   "work.v2.proposal-resolve": "POST /v1/work/v2/proposals/{id}/{accept|reject}",
   "work.v2.proposals": "GET /v1/work/v2/proposals?state=",
   "work.v2.session-todos": "GET /v1/work/v2/session-todos/{terminal}",
+  "work.v2.human-interventions": "GET /v1/work/v2/human-interventions/{conversation}",
+  "work.v2.human-intervention-action": "POST /v1/work/v2/human-interventions/{conversation}/{id}/{action}",
   "work.v2.todo-action": "POST /v1/work/v2/session-todos/{terminal}/{id}/{action}",
   "work.v2.todo-create": "POST /v1/work/v2/session-todos/{terminal}",
   "work.v2.todo-image-create": "POST /v1/work/v2/session-todos/{terminal}/{id}/images",
