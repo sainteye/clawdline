@@ -146,6 +146,32 @@ func CanonicalProjectKey(projectDir string) (string, bool) {
 	return standardized(raw), true
 }
 
+// Scope identifies which squad settings a place uses. A repository and each
+// of its linked worktrees share one scope; a directory outside Git has its own
+// place scope. CanonicalProjectKey's bool only means the path was absolute, so
+// callers must use this tagged result when they need to distinguish the two.
+type Scope struct {
+	Kind string
+	Key  string
+	ID   string
+}
+
+const (
+	ScopeRepository = "repo"
+	ScopePlace      = "place"
+)
+
+func ResolveScope(projectDir string) (Scope, bool) {
+	key, ok := CanonicalProjectKey(projectDir)
+	if !ok {
+		return Scope{}, false
+	}
+	if _, err := os.Lstat(filepath.Join(key, ".git")); err == nil {
+		return Scope{Kind: ScopeRepository, Key: key, ID: ProjectID(key)}, true
+	}
+	return Scope{Kind: ScopePlace, Key: key, ID: "place:" + PlaceID(key)}, true
+}
+
 func home() string {
 	h, err := os.UserHomeDir()
 	if err != nil {
