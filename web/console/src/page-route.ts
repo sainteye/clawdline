@@ -57,3 +57,25 @@ export function pageFromHash<Page extends string>(
   const wanted = pageInHash(hash)
   return wanted && knows(wanted) ? wanted : "sessions"
 }
+
+export interface TerminalRoute {
+  project: string
+  terminal: string
+}
+
+/** The project and terminal a terminal-page address names (`#page=terminal&project=…&terminal=…`). */
+export function terminalRouteFromHash(hash: string): TerminalRoute {
+  if (pageInHash(hash) !== "terminal") return { project: "", terminal: "" }
+  return {
+    project: valueInHash(hash, "project")?.trim() ?? "",
+    terminal: valueInHash(hash, "terminal")?.trim() ?? "",
+  }
+}
+
+/** A bookmarkable terminal-page address: a project's terminals, or one terminal in it. */
+export function terminalPageHash(project: string, terminal = ""): string {
+  let hash = "#page=terminal"
+  if (project.trim()) hash += "&project=" + encodeURIComponent(project.trim())
+  if (terminal.trim()) hash += "&terminal=" + encodeURIComponent(terminal.trim())
+  return hash
+}
