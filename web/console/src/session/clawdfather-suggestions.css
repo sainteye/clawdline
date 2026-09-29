@@ -1,0 +1,50 @@
+.clawdfather-suggestions {
+  width: min(480px, 100%);
+  padding: 0;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+}
+.clawdfather-suggestions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.clawdfather-suggestions-head h2 { margin: 0; font-size: 15px; }
+.clawdfather-suggestions-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--dim);
+  background: transparent;
+  cursor: pointer;
+}
+.clawdfather-suggestions-list {
+  overflow-y: auto;
+  padding: 8px 12px 16px;
+}
+.clawdfather-suggestions-list button {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.clawdfather-suggestions-list button:last-child { border-bottom: 0; }
+.clawdfather-suggestions-list button:hover { background: var(--card-hi); }
+.clawdfather-suggestions button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 560px) {
+  .clawdfather-suggestions {
+    width: 100%;
+    max-height: calc(100dvh - 12px);
+    border-radius: 16px 16px 0 0;
+  }
+}

@@ -21,8 +21,8 @@ import "./machine-start.css"
  *
  * - **No machine row.** The transport has no `machines` read (no Cloud), so the
  *   row stays hidden, as it does on the Mac's own page.
- * - **A separate machine action.** Clawdfather starts in a daemon-owned workspace,
- *   beside the resume switch rather than among Projects. Board owners still carry Project work.
+ * - **A separate machine action.** The machine dashboard opens a focused
+ *   Clawdfather sheet; ordinary Project starts never offer it.
  * - **Write is assumed until refused.** This daemon's health carries no `write`
  *   flag; a `write_disabled` refusal turns it off, as the composer does.
  * - **The arriving row is found by its terminal id.** The original matches the
@@ -96,6 +96,7 @@ let placesGeneration = 0
 // arrival replaces the placeholder in place before ordinary ordering resumes.
 let landed: string | null = null
 let opener: HTMLElement | null = null
+let machineOnly = false
 
 /* The list redraws when the wait changes: `renderList()` in the original. */
 let version = 0
@@ -357,15 +358,6 @@ function drawResume(): void {
     row.appendChild(chip)
   }
 
-  const machine = document.createElement("button")
-  machine.type = "button"
-  machine.className = "chip machine-start"
-  machine.innerHTML = '<span class="clawdfather-crown" aria-hidden="true"></span><span class="label"></span>'
-  ;(machine.querySelector(".label") as HTMLElement).textContent = pressing === MACHINE_PLACE
-    ? T().webStarting : nextWord("machineSessionStart")
-  machine.disabled = !!pressing || !!wait || !with_
-  machine.onclick = () => press(MACHINE_PLACE)
-  row.appendChild(machine)
 }
 
 function edge(): void {
@@ -379,6 +371,11 @@ function draw(): void {
   if (sheetHidden()) return
   const list = el("start-list")
   const box = el<HTMLInputElement>("start-filter")
+  const machineAction = el<HTMLButtonElement>("start-machine-action")
+  machineAction.hidden = !machineOnly
+  machineAction.disabled = !!pressing || !!wait || !with_ || !write
+  machineAction.querySelector(".label")!.textContent =
+    pressing === MACHINE_PLACE ? T().webStarting : nextWord("machineSessionStart")
 
   if (!write) {
     say(T().webStartOff)
@@ -388,6 +385,18 @@ function draw(): void {
     el("start-machine").hidden = true
     el("start-resume").hidden = true
     list.innerHTML = ""
+    return
+  }
+
+  if (machineOnly) {
+    drawMachines()
+    drawWith()
+    el("start-persona").hidden = true
+    el("start-resume").hidden = true
+    el("start-resume").innerHTML = ""
+    box.hidden = true
+    list.innerHTML = ""
+    say(wait ? T().webStartWaiting : loading ? T().webLoading : nextWord("machineSessionScope"))
     return
   }
 
@@ -709,9 +718,11 @@ function hideBand(): void {
   L.setBandSpin(null)
 }
 
-function open(): void {
+function openMode(machine: boolean): void {
   const active = document.activeElement
-  opener = active instanceof HTMLElement && active !== document.body ? active : el("start-go")
+  opener = machine ? el("counts") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
+  machineOnly = machine
+  el("start-title").textContent = machine ? "Clawdfather" : T().webStart
   el("start").hidden = false
   said("")
   leave()
@@ -722,6 +733,8 @@ function open(): void {
   draw()
   el("start-title").focus({ preventScroll: true })
 }
+
+function open(): void { openMode(false) }
 
 function close(): void {
   if (pressing) return
@@ -743,6 +756,7 @@ function arrived(id: string) {
 
 export const Start = {
   open,
+  openMachine: () => openMode(true),
   close,
   press,
   pick,
@@ -826,6 +840,7 @@ export function StartSheet() {
     const onOverlay = () => close()
     const onSheet = (ev: Event) => ev.stopPropagation()
     const onClose = () => close()
+    const onMachine = () => press(MACHINE_PLACE)
     const onInput = () => Start.typed(filter.value)
     const onScroll = () => Start.scrolled()
     const onList = (ev: Event) => {
@@ -877,6 +892,7 @@ export function StartSheet() {
     start.addEventListener("click", onOverlay)
     sheet.addEventListener("click", onSheet)
     el("start-close").addEventListener("click", onClose)
+    el("start-machine-action").addEventListener("click", onMachine)
     filter.addEventListener("input", onInput)
     list.addEventListener("scroll", onScroll, { passive: true })
     list.addEventListener("click", onList)
@@ -886,6 +902,7 @@ export function StartSheet() {
       start.removeEventListener("click", onOverlay)
       sheet.removeEventListener("click", onSheet)
       el("start-close")?.removeEventListener("click", onClose)
+      el("start-machine-action")?.removeEventListener("click", onMachine)
       filter.removeEventListener("input", onInput)
       list.removeEventListener("scroll", onScroll)
       list.removeEventListener("click", onList)
@@ -904,6 +921,10 @@ export function StartSheet() {
           <div className="row" id="start-with" hidden></div>
           <div className="row persona-row" id="start-persona" role="group" aria-label={nextWord("personaPicker")} hidden></div>
           <div className="row" id="start-resume" hidden></div>
+          <button className="chip machine-start" id="start-machine-action" type="button" hidden>
+            <span className="clawdfather-crown" aria-hidden="true" />
+            <span className="label">{nextWord("machineSessionStart")}</span>
+          </button>
           <input
             className="find"
             id="start-filter"

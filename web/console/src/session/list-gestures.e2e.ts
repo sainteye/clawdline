@@ -260,6 +260,7 @@ let listReads = 0
 let workProjectReads: string[] = []
 /** `POST /v1/sessions/{id}/close`, with the Idempotency-Key each arrived under. */
 let closes: { id: string; key: string; force: unknown }[] = []
+let machineStarts: { path: string; key: string }[] = []
 /** Explicit reminder presses received from an assigned Board item detail. */
 let workReminders = 0
 /** Every stream this daemon is holding open, so a new list can be pushed down one. */
@@ -335,10 +336,23 @@ function daemon(): Server {
       return json(res, 200, snapshot())
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
+    if (path === "/v1/machine/usage") return json(res, 200, {
+      at: Date.now(), interval_ms: 3000, cores: 4, cpu_percent: 40, load: [1.6, 1.2, 1.0],
+      memory_total_bytes: 8 * 1024 ** 3, memory_used_bytes: 4 * 1024 ** 3,
+      memory_available_bytes: 4 * 1024 ** 3, swap_total_bytes: 2 * 1024 ** 3,
+      swap_used_bytes: 0, groups: [{
+        kind: "session", id: SAFE, pid: 10, processes: 3, cpu_percent: 12,
+        rss_bytes: 300 * 1024 ** 2, swap_bytes: 0,
+      }], others: [],
+    })
     if (path === "/v1/places") return json(res, 200, {
       places: [{ id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null }],
       assistants: [{ id: "codex", label: "Codex" }],
     })
+    if (path === "/v1/places/%40machine/start/codex" && req.method === "POST") {
+      machineStarts.push({ path, key: String(req.headers["idempotency-key"] ?? "") })
+      return json(res, 200, { id: pane(707) })
+    }
     if (path === "/v1/work/v2/items" && req.method === "GET") {
       workProjectReads.push(url.searchParams.get("project") ?? "")
       return json(res, 200, {
@@ -1096,62 +1110,69 @@ test("closing the new Session sheet returns focus to its opener", () =>
     }
   }))
 
-test("the machine start sits beside resume with the yellow crown on phone and desktop", () =>
+test("the machine dashboard owns Clawdfather creation on phone and desktop", () =>
   inTab(async (tab) => {
-    for (const layout of ["phone", "desktop"] as const) {
+    for (const layout of ["phone", "narrow", "desktop"] as const) {
+      if (layout === "narrow") await tab.phoneWidth(320)
       if (layout === "desktop") await tab.desktop()
       await list(tab)
       await tab.press("#start-go")
+      assert.equal(await tab.run(`document.querySelector('#start-resume .machine-start') === null`), true)
+      await tab.press("#start-close")
+      await tab.press("#counts")
       await tab.run(`new Promise((resolve, reject) => {
         const started = Date.now()
         const check = () => {
-          const row = document.querySelector('#start-resume .machine-start')
-          if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
-          if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
-          setTimeout(check, 50)
+          if (document.querySelector('.machine-gauges')) resolve(true)
+          else if (Date.now() - started > 5000) reject(new Error('machine usage did not load'))
+          else setTimeout(check, 20)
         }
         check()
       })`)
       const shown = await tab.run(`(() => {
-        const machine = document.querySelector('#start-resume .machine-start')
-        const resume = document.querySelector('#start-resume .chip.check')
-        const project = document.querySelector('#start-list .place[data-id="project-fixture"]')
+        const machine = document.querySelector('.machine-clawdfather')
         const rect = machine?.getBoundingClientRect()
-        const resumeRect = resume?.getBoundingClientRect()
         const crown = machine?.querySelector('.clawdfather-crown')
         return { name: machine?.textContent, crown: crown ? getComputedStyle(crown).backgroundColor : '',
           crownShape: crown ? getComputedStyle(crown).clipPath : '',
-          notes: document.querySelectorAll('#start-list .machine-start-note').length,
-          enabled: !(machine instanceof HTMLButtonElement && machine.disabled),
-          separate: !!machine && !!project && !project.contains(machine),
-          besideResume: !!rect && !!resumeRect && Math.abs(rect.top - resumeRect.top) < 2 && rect.left >= resumeRect.right,
           width: rect?.width, right: rect?.right, viewport: window.innerWidth }
       })()`)
       assert.match(shown.name, /^(開啟|Open) Clawdfather$/)
       assert.equal(shown.crown, "rgb(240, 199, 94)")
       assert.notEqual(shown.crownShape, "none")
-      assert.equal(shown.notes, 0)
-      assert.equal(shown.enabled, true)
-      assert.equal(shown.separate, true)
-      assert.equal(shown.besideResume, true)
       assert.ok(shown.width <= shown.viewport)
       assert.ok(shown.right <= shown.viewport)
-      await tab.run(`new Promise((resolve) => setTimeout(resolve, 180))`)
+      await tab.shot("machine-dashboard-" + layout)
+      await tab.press(".machine-clawdfather")
+      assert.equal(await tab.run(`document.getElementById('machine-title') === null`), true)
+      assert.equal(await tab.run(`document.getElementById('start-title')?.textContent`), "Clawdfather")
+      await tab.run(`new Promise((resolve, reject) => {
+        const began = Date.now()
+        const check = () => {
+          const button = document.getElementById('start-machine-action')
+          if (button instanceof HTMLButtonElement && !button.disabled) return resolve(true)
+          if (Date.now() - began > 5000) return reject(new Error('machine action did not become available'))
+          setTimeout(check, 50)
+        }
+        check()
+      })`)
+      assert.equal(await tab.run(`document.querySelector('#start-list .place') === null`), true)
       await tab.shot("machine-start-" + layout)
       await tab.press("#start-close")
     }
   }))
 
-test("the start sheet keeps Tab inside and gives focus back on phone and desktop", () =>
+test("the focused machine start sheet keeps Tab inside and gives focus back", () =>
   inTab(async (tab) => {
     for (const layout of ["phone", "desktop"] as const) {
       if (layout === "desktop") await tab.desktop()
       await list(tab)
-      await tab.press("#start-go")
+      await tab.press("#counts")
+      await tab.press(".machine-clawdfather")
       await tab.run(`new Promise((resolve, reject) => {
         const started = Date.now()
         const check = () => {
-          const row = document.querySelector('#start-resume .machine-start')
+          const row = document.querySelector('#start-machine-action')
           if (row instanceof HTMLButtonElement && !row.disabled) return resolve(true)
           if (Date.now() - started > 5000) return reject(new Error('machine start did not become available'))
           setTimeout(check, 50)
@@ -1168,8 +1189,39 @@ test("the start sheet keeps Tab inside and gives focus back on phone and desktop
       assert.equal(await tab.run(`document.activeElement?.id`), "start-close")
       await tab.key("Escape")
       assert.deepEqual(await tab.run(`({ hidden: document.getElementById('start').hidden, focused: document.activeElement?.id })`),
-        { hidden: true, focused: "start-go" })
+        { hidden: true, focused: "counts" })
+      for (const mode of ["button", "backdrop"] as const) {
+        await tab.press("#counts")
+        await tab.press(".machine-clawdfather")
+        if (mode === "button") await tab.press("#start-close")
+        else await tab.press("#start")
+        assert.deepEqual(await tab.run(`({ hidden: document.getElementById('start').hidden, focused: document.activeElement?.id })`),
+          { hidden: true, focused: "counts" })
+      }
     }
+  }))
+
+test("the dashboard creation button uses the guarded machine start route", () =>
+  inTab(async (tab) => {
+    machineStarts = []
+    await list(tab)
+    await tab.press("#counts")
+    await tab.press(".machine-clawdfather")
+    await tab.run(`new Promise((resolve, reject) => {
+      const started = Date.now()
+      const check = () => {
+        const button = document.getElementById('start-machine-action')
+        if (button instanceof HTMLButtonElement && !button.disabled) resolve(true)
+        else if (Date.now() - started > 5000) reject(new Error('machine start did not become available'))
+        else setTimeout(check, 50)
+      }
+      check()
+    })`)
+    await tab.press("#start-machine-action")
+    for (let i = 0; i < 40 && machineStarts.length === 0; i++) await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(machineStarts.length, 1)
+    assert.equal(machineStarts[0].path, "/v1/places/%40machine/start/codex")
+    assert.match(machineStarts[0].key, /.+/)
   }))
 
 test("machine registration remains visible after a fresh Session read and clears on receipt", () =>
@@ -1205,6 +1257,49 @@ test("machine registration remains visible after a fresh Session read and clears
     } finally {
       readingScenario = "normal"
     }
+  }))
+
+test("machine dashboard opens the existing Clawdfather and its icon offers draft suggestions", () =>
+  inTab(async (tab) => {
+    try {
+      readingScenario = "machine-bound"
+      await tab.go("/")
+      await tab.until("the machine Session arrives", (s) => s.order.join() === RETAINED)
+      await tab.press("#counts")
+      assert.match(await tab.run(`document.querySelector('.machine-clawdfather')?.textContent`), /前往 Clawdfather/)
+      await tab.press(".machine-clawdfather")
+      await tab.until("the existing Clawdfather opens", (s) => s.detailName === "Clawdfather")
+      assert.equal(await tab.run(`document.getElementById('start')?.hidden`), true)
+      assert.match(await tab.run(`document.getElementById('detail-snippets')?.getAttribute('aria-label')`), /Clawdfather/)
+      await tab.press("#detail-snippets")
+      await tab.shot("clawdfather-suggestions-phone")
+      assert.equal(await tab.run(`document.querySelector('#snippets:not([hidden])') === null`), true)
+      assert.equal(await tab.run(`document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button').length`), 5)
+      assert.equal(await tab.run(`document.activeElement?.textContent?.trim()`), "整理 Session 進度")
+      await tab.run(`document.querySelectorAll('#clawdfather-suggestions .clawdfather-suggestions-list button')[1].focus()`)
+      pushSessions()
+      await tab.run(`new Promise((resolve) => setTimeout(resolve, 100))`)
+      assert.equal(await tab.run(`document.activeElement?.textContent?.trim()`), "檢查機器狀況")
+      await tab.press("#clawdfather-suggestions .clawdfather-suggestions-list button:first-child")
+      assert.equal(await tab.run(`document.getElementById('clawdfather-suggestions') === null`), true)
+      assert.match(await tab.run(`document.getElementById('msg')?.textContent`), /整理這台機器目前各 Session/)
+      assert.equal(await tab.run(`document.activeElement?.id`), "msg")
+      await tab.press("#detail-snippets")
+      await tab.key("Escape")
+      assert.equal(await tab.run(`document.activeElement?.id`), "detail-snippets")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("an ordinary Session keeps the Snippets icon", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    await tab.press(`#rows > li.row[data-id="${SAFE}"]`)
+    assert.match(await tab.run(`document.getElementById('detail-snippets')?.getAttribute('aria-label')`), /常用句|Snippets/)
+    await tab.press("#detail-snippets")
+    assert.equal(await tab.run(`document.getElementById('snippets')?.hidden`), false)
+    assert.equal(await tab.run(`document.getElementById('clawdfather-suggestions') === null`), true)
   }))
 
 test("Clawdfather stays first above a waiting Session on phone and desktop", () =>

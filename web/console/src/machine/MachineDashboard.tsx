@@ -20,6 +20,7 @@ import {
 } from "./model.js"
 import { failureWords, readMachineUsage } from "./read.js"
 import { Mark } from "../session/List.js"
+import { nextWord } from "../next-strings.js"
 import "./machine.css"
 
 /** How often an open dashboard asks. The route answers a second ask inside 1.5 s from its last reading. */
@@ -39,7 +40,11 @@ function chinese(): boolean {
  * whether this machine is why everything is slow, and which session is using
  * it. Mounted only while open, so a closed dashboard asks nothing.
  */
-export function MachineDashboard({ sessions, onClose }: { sessions: readonly SessionRow[]; onClose: () => void }) {
+export function MachineDashboard({ sessions, onClose, onClawdfather }: {
+  sessions: readonly SessionRow[]
+  onClose: () => void
+  onClawdfather: (id: string | null) => void
+}) {
   const zh = chinese()
   const [usage, setUsage] = useState<MachineUsage | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -108,6 +113,7 @@ export function MachineDashboard({ sessions, onClose }: { sessions: readonly Ses
 
   const v = usage ? verdict(usage) : null
   const stale = !!usage && !!error
+  const steward = sessions.find((row) => row.machine_scope || row.coordinator)
 
   return (
     <div className="overlay machine-overlay" onClick={onClose}>
@@ -138,6 +144,10 @@ export function MachineDashboard({ sessions, onClose }: { sessions: readonly Ses
 
         {!usage && error ? <p className="machine-verdict" data-level="warn">{failureWords(error, zh)}</p> : null}
         {!usage && !error ? <Skeleton /> : null}
+        <button className="machine-clawdfather" type="button" onClick={() => onClawdfather(steward?.id ?? null)}>
+          <span className="clawdfather-crown" aria-hidden="true" />
+          <span>{steward ? (zh ? "前往 Clawdfather" : "Go to Clawdfather") : nextWord("machineSessionStart")}</span>
+        </button>
 
         {usage && v ? (
           <>
