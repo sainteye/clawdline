@@ -7,7 +7,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, suggestedPersonaForKind, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
@@ -603,12 +603,12 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
-  // A new Session starts without a role. Only a manual choice or an explicit
-  // AI suggestion changes it; "" is the person's choice of no role.
+  // The catalog's unique kind default is selected until the person chooses.
+  // Item words never change the role; "" explicitly chooses no role.
   const personas = usePersonas()
   const [personaChoice, setPersonaChoice] = useState<string | null>(null)
   const [team, setTeam] = useState(rememberedTeam)
-  const persona = personaById(personas, personaChoice)
+  const persona = personaChoice === null ? suggestedPersonaForKind(personas, item.kind) : personaById(personas, personaChoice)
   const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
   const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
   const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
