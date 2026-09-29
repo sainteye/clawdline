@@ -80,6 +80,13 @@ export const CARRIED = {
   // with no parameter. A machine that does not list it is refused by the copied
   // client before anything leaves (`_unsupportedRefusal`).
   personas: "GET /v1/personas",
+  "squad.catalog": "GET /v1/squad/catalog",
+  "squad.definition": "GET /v1/squad/definitions/{id}",
+  "squad.scopes": "GET /v1/squad/scopes",
+  "squad.settings": "GET /v1/squad/settings[?place_id=|scope_id=]",
+  "squad.catalog.update": "POST /v1/squad/catalog",
+  "squad.settings.update": "PUT /v1/squad/settings",
+  "squad.motion.update": "PUT /v1/squad/motion",
   "project-worktree-lifecycle": "GET /v1/projects/{project}/worktrees",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
   // Project settings sync (docs/project-sync.md). The two source reads are

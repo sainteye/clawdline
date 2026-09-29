@@ -198,6 +198,46 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-places",
 		method: "GET", path: "/v1/places",
 	}, {
+		word:    "squad.catalog",
+		body:    map[string]any{"type": "squad.catalog", "session": machine, "request": "req-squad-catalog"},
+		session: machine, name: "read:req-squad-catalog",
+		method: "GET", path: "/v1/squad/catalog",
+	}, {
+		word: "squad.definition",
+		body: map[string]any{"type": "squad.definition", "session": machine,
+			"request": "req-squad-definition", "definition_id": "backend"},
+		session: machine, name: "read:req-squad-definition",
+		method: "GET", path: "/v1/squad/definitions/backend",
+	}, {
+		word:    "squad.scopes",
+		body:    map[string]any{"type": "squad.scopes", "session": machine, "request": "req-squad-scopes"},
+		session: machine, name: "read:req-squad-scopes",
+		method: "GET", path: "/v1/squad/scopes",
+	}, {
+		word: "squad.settings",
+		body: map[string]any{"type": "squad.settings", "session": machine,
+			"request": "req-squad-settings", "place_id": "place-a"},
+		session: machine, name: "read:req-squad-settings",
+		method: "GET", path: "/v1/squad/settings", query: map[string]string{"place_id": "place-a"},
+	}, {
+		word: "squad.catalog.update",
+		body: map[string]any{"type": "squad.catalog.update", "session": machine,
+			"request": "req-squad-catalog-write", "changes": map[string]any{"expected_version": 0}},
+		session: machine, name: "action:req-squad-catalog-write",
+		method: "POST", path: "/v1/squad/catalog", body2: `{"expected_version":0}`,
+	}, {
+		word: "squad.settings.update",
+		body: map[string]any{"type": "squad.settings.update", "session": machine,
+			"request": "req-squad-settings-write", "changes": map[string]any{"expected_version": 0}},
+		session: machine, name: "action:req-squad-settings-write",
+		method: "PUT", path: "/v1/squad/settings", body2: `{"expected_version":0}`,
+	}, {
+		word: "squad.motion.update",
+		body: map[string]any{"type": "squad.motion.update", "session": machine,
+			"request": "req-squad-motion-write", "changes": map[string]any{"expected_version": 0}},
+		session: machine, name: "action:req-squad-motion-write",
+		method: "PUT", path: "/v1/squad/motion", body2: `{"expected_version":0}`,
+	}, {
 		word: "past-sessions",
 		body: map[string]any{"type": "past-sessions", "session": machine, "request": "req-past",
 			"place": "/Users/sean/code/clawdline-go", "assistant": "codex"},
