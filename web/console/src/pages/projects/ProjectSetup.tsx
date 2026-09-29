@@ -7,6 +7,7 @@ import { Mark } from "../../session/List.js"
 import { readProjectPlaces, type ProjectPlace } from "../work/api.js"
 import { BEFORE_PAGE_CHANGE } from "../../overlays/index.js"
 import { ProjectFiles } from "./ProjectFiles.js"
+import { ProjectExplorer } from "./ProjectExplorer.js"
 import {
   projectSetupCapabilities,
   projectSetupInstructions,
@@ -75,6 +76,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const pendingSelection = useRef<ProjectPlace | null>(null)
   const scopedTrigger = useRef<HTMLButtonElement | null>(null)
   const [projectPath, setProjectPath] = useState<string | null>(null)
+  const [view, setView] = useState<"settings" | "files">("settings")
   const filesState = useRef({ dirty: false, busy: false })
   const [closeNotice, setCloseNotice] = useState("")
   const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
@@ -125,6 +127,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       scopedTrigger.current = button
       setCloseNotice("")
       setProjectPath(path)
+      setView("settings")
       void load()
       dialog.current?.showModal()
       dialog.current?.focus({ preventScroll: true })
@@ -171,6 +174,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   </section>
     {createPortal(<dialog
       className="project-setup-dialog"
+      data-view={view}
       ref={dialog}
       tabIndex={-1}
       aria-labelledby="project-setup-title"
@@ -198,12 +202,27 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       <div className="project-setup-dialog-heading">
         <div>
           <p className="project-setup-eyebrow">專案能力健檢</p>
-          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || "專案"} · 設定` : "還差什麼，一眼看懂"}</h2>
+          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || "專案"} · ${view === "files" ? "檔案" : "設定"}` : "還差什麼，一眼看懂"}</h2>
         </div>
         <button className="project-setup-close" type="button" aria-label="關閉專案設定" onClick={requestClose}>關閉</button>
       </div>
       <div className="project-setup-dialog-body">
         {closeNotice && <p role="status">{closeNotice}</p>}
+        {projectPath && <div className="project-setup-views" aria-label="專案內容">
+          <button type="button" aria-pressed={view === "settings"} onClick={() => setView("settings")}>設定與指引</button>
+          <button type="button" aria-pressed={view === "files"} onClick={() => {
+            if (!mayLeave()) return
+            filesState.current = { dirty: false, busy: false }
+            setView("files")
+          }}>檔案</button>
+        </div>}
+        {view === "files" && projectPath && <>
+          {loading && <p role="status">正在讀取專案…</p>}
+          {!loading && error && <p role="alert">{error} <button type="button" onClick={() => void load()}>重試</button></p>}
+          {!loading && !error && !visiblePlaces[0] && <p role="status">這個專案已不在清單中。請回專案列表重新選擇。</p>}
+          {!loading && !error && visiblePlaces[0] && <ProjectExplorer key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
+        </>}
+        {view === "settings" && <>
         <div className="project-setup-heading">
           <p>檢視這台機器的專案設定與指令檔案；可在下方編輯現有的專案檔案。缺少的設定仍可先交給 AI 檢查。</p>
           {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
@@ -216,6 +235,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? "目前讀不到這個專案的設定，請重新讀取。" : <>這台機器還沒有可檢查的專案。先在該目錄開過一次 assistant，或用 <code>clawdline project add</code> 登記。</>}</p>}
         {error && <p role="alert">{error}</p>}
         <button className="project-setup-refresh" type="button" disabled={loading} onClick={() => void load()}>重新讀取</button>
+        </>}
       </div>
     </dialog>, document.body)}
   </>

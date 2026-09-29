@@ -9,6 +9,16 @@
 .project-files-group + .project-files-group { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
 .project-files-group h4 { margin: 2px 4px 8px; font-size: 13px; }
 .project-files-group > p { margin: 0 4px; color: var(--dim); font-size: 12px; }
+.project-files-source + .project-files-source { margin-top: 12px; }
+.project-files-source h5 { margin: 8px 4px 5px; color: var(--dim); font-size: 12px; font-weight: 600; }
+.project-files-folder { margin-left: 6px; }
+.project-files-folder summary { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 3px 6px; border-radius: 8px; color: var(--ink); cursor: pointer; font-size: 13px; overflow-wrap: anywhere; list-style: none; }
+.project-files-folder summary::-webkit-details-marker { display: none; }
+.project-files-folder summary:hover { background: var(--card-hi); }
+.project-files-folder summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.project-files-folder-arrow { flex: none; color: var(--dim); font-size: 12px; transition: transform 120ms ease; }
+.project-files-folder[open] > summary .project-files-folder-arrow { transform: rotate(90deg); }
+.project-files-folder-children { margin-left: 10px; padding-left: 5px; border-left: 1px solid var(--line); }
 .project-files-row { display: grid; width: 100%; gap: 3px; margin: 3px 0; padding: 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .project-files-row:hover, .project-files-row[aria-current="true"] { border-color: var(--accent-ed); background: var(--card-hi); }
 .project-files-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

@@ -295,6 +295,25 @@ function daemon(): Server {
         }],
       })
     }
+    if (path === "/v1/projects/fixture-place/tree" && req.method === "GET") {
+      const directory = url.searchParams.get("directory") ?? ""
+      if (directory === "") return json(res, 200, { directory, entries: [
+        { name: "src", path: "src", kind: "directory" },
+        { name: "README.md", path: "README.md", kind: "file", size: 10 },
+        { name: "linked", path: "linked", kind: "link" },
+      ], truncated: false })
+      if (directory === "src") return json(res, 200, { directory, entries: [
+        { name: "main.ts", path: "src/main.ts", kind: "file", size: 25 },
+        { name: "image.png", path: "src/image.png", kind: "file", size: 9 },
+      ], truncated: false })
+      return json(res, 404, { error: "file_not_found" })
+    }
+    if (path === "/v1/projects/fixture-place/tree/file" && req.method === "GET") {
+      const file = url.searchParams.get("path")
+      if (file === "src/main.ts") return json(res, 200, { path: file, text: "export const answer = 42\n", size: 25, version: "v1" })
+      if (file === "src/image.png") return json(res, 422, { error: "not_text" })
+      return json(res, 404, { error: "file_not_found" })
+    }
     if (path === "/v1/projects/fixture-place/files" && req.method === "GET") {
       return json(res, 200, { files: [
         { id: "fixture-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true },
@@ -1377,6 +1396,18 @@ test("Project files: gear shows filenames and a phone can edit while protecting 
     assert.deepEqual(opened.names, ["AGENTS.md", "CLAUDE.md", "SKILL.md"])
     assert.equal(opened.fullScreen, true)
     assert.match(opened.gearLabel, /專案設定/)
+    const folder = await tab.run(`(() => {
+      const file = [...document.querySelectorAll(".project-files-row")].find(node => node.textContent.includes("SKILL.md"))
+      const parents = []
+      for (let node = file.parentElement; node; node = node.parentElement) {
+        if (node.matches(".project-files-folder")) parents.unshift(node)
+        if (node.matches(".project-files-group")) break
+      }
+      const collapsedBefore = parents.every(parent => !parent.open)
+      for (const parent of parents) parent.querySelector(":scope > summary").click()
+      return { collapsedBefore, expandedAfter: parents.every(parent => parent.open), folders: parents.map(node => node.querySelector(":scope > summary")?.textContent?.trim()) }
+    })()`)
+    assert.deepEqual(folder, { collapsedBefore: true, expandedAfter: true, folders: ["▸.claude", "▸skills", "▸global"] })
     const edited = await tab.run(`new Promise((resolve, reject) => {
       const deadline = Date.now() + 6000
       const row = [...document.querySelectorAll(".project-files-row")].find(n => n.textContent.includes("AGENTS.md"))
@@ -1431,6 +1462,68 @@ test("Project files: gear shows filenames and a phone can edit while protecting 
       wait()
     })`)
     assert.equal(closed, true)
+  }))
+
+test("Project explorer: phone expands folders and previews a chosen text file", () =>
+  inTab(PHONE, async (tab) => {
+    await tab.go("/#page=projects")
+    const preview = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 6000
+      const wait = () => {
+        const gear = document.querySelector('button.project-row-settings[data-place-id="fixture-place"]')
+        if (!gear) { if (Date.now() > deadline) reject(new Error("Project gear did not appear")); else setTimeout(wait, 25); return }
+        gear.click()
+        const view = () => {
+          const files = [...document.querySelectorAll(".project-setup-views button")].find(node => node.textContent === "檔案")
+          if (!files) { if (Date.now() > deadline) reject(new Error("file view did not appear")); else setTimeout(view, 25); return }
+          files.click()
+          root()
+        }
+        const root = () => {
+          const folder = [...document.querySelectorAll(".project-explorer-folder > summary")].find(node => node.textContent.includes("src"))
+          if (!folder) { if (Date.now() > deadline) reject(new Error("root directory did not appear")); else setTimeout(root, 25); return }
+          folder.click()
+          const nested = () => {
+            const file = [...document.querySelectorAll(".project-explorer-file")].find(node => node.textContent.includes("main.ts"))
+            if (!file) { if (Date.now() > deadline) reject(new Error("nested file did not appear")); else setTimeout(nested, 25); return }
+            file.click()
+            const content = () => {
+              const text = document.querySelector(".project-explorer-text")?.textContent
+              if (!text) { if (Date.now() > deadline) reject(new Error("file preview did not appear")); else setTimeout(content, 25); return }
+              resolve({ text, path: document.querySelector(".project-explorer-preview-head code")?.textContent, headingFocused: document.activeElement === document.querySelector(".project-explorer-preview-head h4"), linked: document.querySelector(".project-explorer-unavailable")?.textContent })
+            }
+            content()
+          }
+          nested()
+        }
+        view()
+      }
+      wait()
+    })`)
+    assert.equal(preview.text, "export const answer = 42\n")
+    assert.equal(preview.path, "src/main.ts")
+    assert.equal(preview.headingFocused, true)
+    assert.match(preview.linked, /linked.*連結/)
+    for (const width of [320, 390, 620, 900]) {
+      await tab.view({ width, height: 844, mobile: width < 900 }, "dark")
+      const overflow = await tab.run(`document.documentElement.scrollWidth > innerWidth`)
+      assert.equal(overflow, false, `horizontal overflow at ${width}px`)
+    }
+    await tab.run(`(() => { [...document.querySelectorAll(".project-explorer-preview-head button")].find(node => node.textContent.includes("返回"))?.click() })()`)
+    const returned = await tab.run(`document.activeElement?.classList.contains("project-explorer-file")`)
+    assert.equal(returned, true)
+    await tab.run(`(() => { [...document.querySelectorAll(".project-explorer-file")].find(node => node.textContent.includes("image.png"))?.click() })()`)
+    const refusal = await tab.run(`new Promise((resolve, reject) => {
+      const deadline = Date.now() + 6000
+      const wait = () => {
+        const alert = document.querySelector(".project-explorer-preview [role=alert]")?.textContent
+        if (alert) return resolve(alert)
+        if (Date.now() > deadline) return reject(new Error("binary refusal did not appear"))
+        setTimeout(wait, 25)
+      }
+      wait()
+    })`)
+    assert.match(refusal, /UTF-8/)
   }))
 
 test("phone: Projects opens a reviewable setup Session without using the intent planner", () =>
