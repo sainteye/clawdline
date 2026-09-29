@@ -1358,6 +1358,56 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	_, _ = w.Write(answer)
 }
 
+// agentReviseAcceptance relays one explicit, recent instruction to the live
+// owning Root. The app rechecks ownership, freshness against the current
+// contract, item version, and instruction intent inside the item transaction.
+func (s *Server) agentReviseAcceptance(w http.ResponseWriter, r *http.Request, id string) {
+	if !machineAuthed(r) {
+		writeRefusal(w, http.StatusUnauthorized, "machine_required", "Only an authenticated Session may use this route.")
+		return
+	}
+	var body struct {
+		ExpectedVersion    int64  `json:"expected_version"`
+		SessionID          string `json:"session_id"`
+		AcceptanceCriteria string `json:"acceptance_criteria"`
+		Via                struct {
+			Run string `json:"run"`
+		} `json:"via"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := s.relayRefuser(w, r, k)
+	run, sess, err := s.relaySession(r.Context(), body.Via.Run, body.SessionID,
+		"A revision needs the run of the person's explicit message to this Session.", "nothing was revised")
+	if err != nil {
+		refuse(err)
+		return
+	}
+	criteria := body.AcceptanceCriteria
+	itemOf := s.workV2ItemProjector(r.Context())
+	var answer []byte
+	_, err = s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
+		AcceptanceCriteria: &criteria, OwnerSession: sess.ConversationID, Actor: sess.ConversationID,
+		RevisionRun: run}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+		answer, _ = json.Marshal(map[string]any{"ok": true, "item": itemOf(v),
+			"acceptance_source": map[string]any{"run": run.ID, "session_id": run.Session,
+				"at": run.At.Unix(), "excerpt": run.Excerpt}})
+		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+	})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
+}
+
 func newWorkV2UUID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
@@ -2144,6 +2194,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "edit" && r.Method == http.MethodPatch {
 		s.workV2Edit(w, r, parts[1], false)
+		return
+	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "acceptance-revision" && r.Method == http.MethodPost {
+		s.agentReviseAcceptance(w, r, parts[1])
 		return
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "reopen" && r.Method == http.MethodPost {

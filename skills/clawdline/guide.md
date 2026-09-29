@@ -878,7 +878,16 @@ verification; verification only skips planning but still checks the exact candid
 the ordinary lifecycle. The person need not fill acceptance on the Board. If a gated item arrives
 without it, write observable criteria with `clawdline item acceptance <item id> --body-file <file>`
 after assignment and before the gated transition. The owning Session may fill an empty contract
-once; subsequent revisions belong to the person (or an Epic owner's reasoned escalation decision).
+once. When the person explicitly tells this owning Root through Clawdline to revise this item's
+acceptance, write the complete replacement Markdown to a file and run
+`clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`.
+Read the item version with `clawdline item steps <id>` and the message run from
+`GET /v1/orchestrator/sessions/<conversation>/run`. The retained message excerpt must explicitly
+request an acceptance change; a prohibition, discussion, or bare question is not authorization.
+It may refer to the item by conversation context if this Root
+owns exactly one open item; otherwise it must identify the item by ID or title. The run must be
+newer than the current acceptance version. A typed refusal means nothing changed. Retry an uncertain response with
+the same `--key`, `--run`, `--expected-version`, and file bytes. The person can also edit directly.
 Changing it before merging invalidates old PASS and overrides; once merging starts it is locked.
 
 With captured verification on, run `clawdline item phase <id> verifying` from a clean registered

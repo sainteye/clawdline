@@ -74,6 +74,57 @@ func (r Run) Evidence() map[string]any {
 		"said_at": r.At.Unix()}
 }
 
+// AcceptanceRevisionInstruction requires the retained words of the person's
+// message to request an acceptance change. An item reference is required when
+// the owning Root has more than one open item. A run proves a message existed,
+// not that an unrelated message authorized an edit.
+func AcceptanceRevisionInstruction(excerpt, itemID, title string, soleOwnedItem bool) bool {
+	words := strings.ToLower(strings.Join(strings.Fields(excerpt), " "))
+	identified := strings.Contains(words, strings.ToLower(itemID))
+	if title = strings.ToLower(strings.TrimSpace(title)); title != "" {
+		identified = identified || strings.Contains(words, title)
+	}
+	// A conversation may refer to "this Epic" without repeating its title.
+	// That context is usable only when this Root owns exactly one open item.
+	for n := 0; n+36 <= len(words); n++ {
+		candidate := words[n : n+36]
+		if RunShaped(candidate) && candidate != strings.ToLower(itemID) {
+			return false
+		}
+	}
+	if !identified && !soleOwnedItem {
+		return false
+	}
+	acceptance := strings.Contains(words, "驗收") || strings.Contains(words, "acceptance")
+	change := false
+	for _, verb := range []string{"修訂", "修改", "更新", "改寫", "改成", "改為", "調整", "刪除", "revise", "change", "update", "edit", "remove"} {
+		change = change || strings.Contains(words, verb)
+	}
+	if !acceptance || !change {
+		return false
+	}
+	for _, denial := range []string{"不要", "別改", "禁止", "不准", "不得", "不應", "不能", "不可以", "do not", "don't", "never", "must not", "should not"} {
+		if strings.Contains(words, denial) {
+			return false
+		}
+	}
+	request := false
+	for _, marker := range []string{"請", "幫我", "麻煩", "我要求", "我要", "我想要", "改成", "改為", "應改", "please "} {
+		request = request || strings.Contains(words, marker)
+	}
+	for _, imperative := range []string{"revise ", "change ", "update ", "edit ", "remove "} {
+		request = request || strings.HasPrefix(words, imperative)
+	}
+	if !request {
+		return false
+	}
+	question := strings.ContainsAny(words, "?？") || strings.Contains(words, "為何") || strings.Contains(words, "why ")
+	if question && !strings.Contains(words, "請") && !strings.Contains(words, "please ") {
+		return false
+	}
+	return true
+}
+
 // RunShaped is the shape of a run id: a lowercase UUID, as this daemon
 // issues them. Anything else was never issued and is refused before a read.
 func RunShaped(id string) bool {
