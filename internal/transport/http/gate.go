@@ -471,6 +471,16 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
 			return http.StatusForbidden, "forbidden", "This device may read, and not change work gates."
 		}
+	case p == "/v1/squad-packages/preview" || p == "/v1/squad-packages/export":
+		// Preview grants and public exports leave catalog and settings unchanged.
+		// The export handler separately requires Send for selected private scopes.
+		if !v.Allowed {
+			return http.StatusForbidden, "forbidden", "This device may not read squad packages."
+		}
+	case strings.HasPrefix(p, "/v1/squad-packages/") || strings.HasPrefix(p, "/v1/squad/"):
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			return http.StatusForbidden, "forbidden", "This device may read the squad, and not change it."
+		}
 	case p == "/v1/orchestrator/tasks" || strings.HasPrefix(p, "/v1/orchestrator/tasks/"):
 		// dispatch.go, and the task-secret routes.
 	case p == "/v1/orchestrator/proposals":
