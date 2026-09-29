@@ -53,6 +53,22 @@ func TestAComposerBuriedUnderLaterOutputIsNotIdle(t *testing.T) {
 	}
 }
 
+func TestAnOldInterruptLineDoesNotKeepAFinishedTurnWorking(t *testing.T) {
+	screen := "• Working (17s • esc to interrupt)\n" +
+		strings.Repeat("the completed answer has another line\n", 30) +
+		"› Ask Codex to do anything\n"
+	if state, sure := ReadState(screen, AssistantCodex); state != StateIdle || !sure {
+		t.Fatalf("a finished turn with an old interrupt line: got %v (sure=%v), want idle", state, sure)
+	}
+}
+
+func TestACurrentWorkingLineStillReportsWorking(t *testing.T) {
+	screen := "• Working (17s • esc to interrupt)\n\n› Ask Codex to do anything\n"
+	if state, sure := ReadState(screen, AssistantCodex); state != StateWorking || !sure {
+		t.Fatalf("a current working line: got %v (sure=%v), want working", state, sure)
+	}
+}
+
 // An empty screen is unknown, and unknown is an answer.
 func TestAnEmptyScreenStaysUnknown(t *testing.T) {
 	if state, sure := ReadState("   \n\n  ", AssistantCodex); state != StateUnknown || sure {

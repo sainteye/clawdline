@@ -20,15 +20,6 @@ func ReadState(screen string, assistant Assistant) (State, bool) {
 	}
 	lines := strings.Split(Plain(screen), "\n")
 
-	// Both assistants draw the same shape while a turn runs: a bullet, a word
-	// and a clock, with the way out named on the same line.
-	for _, line := range lines {
-		if strings.Contains(line, "esc to interrupt") ||
-			strings.Contains(line, "Esc to interrupt") {
-			return StateWorking, true
-		}
-	}
-
 	// An empty composer is positive evidence of an idle session: the assistant
 	// has drawn its prompt and is waiting for a person, not for itself.
 	//
