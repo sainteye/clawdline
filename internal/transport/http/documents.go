@@ -57,6 +57,9 @@ import (
 func (s *Server) withDocuments(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isDocumentsReading(r.URL.EscapedPath()) {
+			if s.refuseOrdinaryShell(w, r) {
+				return
+			}
 			s.documentsRoute(w, r)
 			return
 		}

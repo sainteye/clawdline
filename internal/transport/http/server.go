@@ -371,6 +371,11 @@ func (s *Server) Handler() http.Handler {
 		if s.archivedRoute(w, r) {
 			return
 		}
+		// Everything below names a session by id, and only an assistant is
+		// one (agent_session_only.go).
+		if s.refuseOrdinaryShell(w, r) {
+			return
+		}
 		if sessionID, agentID, ok := agentPath(r); ok {
 			s.sessionAgentRoute(w, r, sessionID, agentID)
 			return
