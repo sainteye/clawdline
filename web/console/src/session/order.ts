@@ -199,7 +199,7 @@ export function visualDepths(list: SessionRow[], tasks: readonly TaskRow[], shap
   return depths
 }
 
-/** The dotted trunks that must pass a row to reach later visible siblings. */
+/** The tree trunks that must pass a row to reach later visible siblings. */
 export function visualBranches(list: readonly SessionRow[], depths: ReadonlyMap<string, number>): {
   through: Set<string>
   ancestorThrough: Set<string>

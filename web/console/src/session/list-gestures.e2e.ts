@@ -1189,6 +1189,9 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
           through: feature?.dataset.treeThrough,
           trunk: feature ? getComputedStyle(feature.querySelector('.kid'), '::before').borderLeftStyle : null,
           elbow: feature ? getComputedStyle(feature.querySelector('.kid'), '::after').borderTopStyle : null,
+          trunkWidth: feature ? getComputedStyle(feature.querySelector('.kid'), '::before').borderLeftWidth : null,
+          elbowWidth: feature ? getComputedStyle(feature.querySelector('.kid'), '::after').borderTopWidth : null,
+          opacity: feature ? getComputedStyle(feature.querySelector('.kid')).opacity : null,
           overflow: feature ? getComputedStyle(feature).overflowX : null,
         }
       })()`)
@@ -1197,8 +1200,11 @@ test("an Epic owner's independent Root is visibly nested in the Session list", (
       assert.ok(shown.root, JSON.stringify(shown))
       assert.ok(shown.offset >= 20, "the Feature Root is visibly indented under the Epic owner")
       assert.equal(shown.through, "1", "the first Root's trunk reaches the next Root")
-      assert.equal(shown.trunk, "dashed")
-      assert.equal(shown.elbow, "dashed")
+      assert.equal(shown.trunk, "solid")
+      assert.equal(shown.elbow, "solid")
+      assert.equal(shown.trunkWidth, "1px")
+      assert.equal(shown.elbowWidth, "1px")
+      assert.equal(shown.opacity, "0.65")
       assert.equal(shown.overflow, "visible", "the connector is not clipped at the card edge")
       await tab.shot("epic-tree")
     } finally {
