@@ -50,7 +50,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const timer = setTimeout(() => controller.abort(), init.method ? 30_000 : 10_000)
   let response: Response
   try { response = await fetch(client.url(path), { ...init, signal: controller.signal }) }
-  catch (error) { throw new SquadError("offline", error instanceof Error ? error.message : "無法連線至角色小隊服務。", 0) }
+  catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new SquadError("timeout", "角色小隊服務回應逾時。", 0)
+    throw new SquadError("offline", "目前無法連線至角色小隊服務。", 0)
+  }
   finally { clearTimeout(timer) }
   let value: unknown
   try { value = await response.json() }

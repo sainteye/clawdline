@@ -37,17 +37,22 @@ const field = <T>(value: T, source: "default" | "global" | "project" = "default"
 let projectAText = ""
 let projectAVersion = 2
 let refuseNextSettingsWrite = false
+let catalogFailure: "offline" | "forbidden" | "invalid_response" | "service" | null = null
+let globalAutoAssign = true
+let globalAutoVersion = 0
+let globalMotion = true
+let globalMotionVersion = 1
 const settingsWrites: Record<string, unknown>[] = []
 function settings(scope: string) {
   const project = scope !== "global"
   return {
-    scope_id: scope, scope_kind: project ? "repo" : "global", motion: field(true, "global", 1),
-    motion_settings_version: project ? 0 : 1,
+    scope_id: scope, scope_kind: project ? "repo" : "global", motion: field(globalMotion, "global", globalMotionVersion),
+    motion_settings_version: project ? 0 : globalMotionVersion,
     personas: definitions.map((row, index) => ({
-      definition_id: row.definition_id, settings_version: project && scope === "project-a" && index === 0 ? projectAVersion : 0,
+      definition_id: row.definition_id, settings_version: project && scope === "project-a" && index === 0 ? projectAVersion : index === 0 && !project ? globalAutoVersion : 0,
       handbook: index === 0 && scope === "project-a" ? field(projectAText, "project", projectAVersion) : field("全域手冊", "global", 1),
       global_handbook: field("全域手冊", "global", 1),
-      auto_assign: index === 0 && scope === "project-a" ? field(false, "project", 2) : field(true, "global", 1),
+      auto_assign: index === 0 && scope === "project-a" ? field(false, "project", 2) : field(index === 0 ? globalAutoAssign : true, "global", index === 0 ? globalAutoVersion : 1),
       skills: field(row.skills, project ? "global" : "default", project ? 1 : 0),
     })),
   }
@@ -75,7 +80,13 @@ function document() {
 function fixture(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/v1/squad/catalog") return json(res, 200, catalog)
+    if (path === "/v1/squad/catalog") {
+      if (catalogFailure === "offline") return res.destroy()
+      if (catalogFailure === "forbidden") return json(res, 403, { error: "forbidden", detail: "Not allowed" })
+      if (catalogFailure === "service") return json(res, 503, { error: "store_unavailable", detail: "Storage unavailable" })
+      if (catalogFailure === "invalid_response") { res.writeHead(200, { "content-type": "text/html" }); return res.end("Broken response") }
+      return json(res, 200, catalog)
+    }
     if (path === "/v1/squad/scopes") return json(res, 200, scopes)
     if (path === "/v1/squad/settings") {
       if (req.method === "PUT") {
@@ -89,6 +100,12 @@ function fixture(): Server {
             projectAText = "他人更新的手冊"; projectAVersion++
             return json(res, 409, { error: "version_conflict", detail: "Settings changed", current_version: projectAVersion })
           }
+          const overrides = body.overrides as { auto_assign?: { value?: boolean } } | undefined
+          if (body.definition_id === definitions[0].definition_id && overrides?.auto_assign && !body.place_id && !body.scope_id) {
+            globalAutoAssign = !!overrides.auto_assign.value
+            globalAutoVersion++
+            return json(res, 200, { scope_id: "global", version: globalAutoVersion })
+          }
           return json(res, 200, { scope_id: "project-a", version: projectAVersion + 1 })
         })
         return
@@ -96,6 +113,17 @@ function fixture(): Server {
       const url = new URL(req.url ?? "/", "http://fixture")
       const place = url.searchParams.get("place_id")
       return json(res, 200, settings(place === "place-a" ? "project-a" : place === "place-b" ? "project-b" : "global"))
+    }
+    if (path === "/v1/squad/motion" && req.method === "PUT") {
+      const chunks: Buffer[] = []
+      req.on("data", (chunk) => chunks.push(chunk))
+      req.on("end", () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString() || "{}") as { motion?: { value?: boolean } }
+        globalMotion = !!body.motion?.value
+        globalMotionVersion++
+        json(res, 200, { scope_id: "global", version: globalMotionVersion })
+      })
+      return
     }
     if (path === "/v1/squad/events/head") { eventHeadReads++; return json(res, 200, { seq: eventRows.at(-1)?.seq ?? 0 }) }
     if (path === "/v1/squad/session-bindings") {
@@ -245,12 +273,19 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 
-async function tab(width: number, height: number, run: (evaluate: (code: string) => Promise<any>, shot: (name: string) => Promise<void>) => Promise<void>, reducedMotion = false) {
+interface PageControls {
+  press(key: "Enter" | " " | "Tab" | "Escape"): Promise<void>
+  axName(selector: string): Promise<string>
+}
+
+async function tab(width: number, height: number, run: (evaluate: (code: string) => Promise<any>, shot: (name: string) => Promise<void>, controls: PageControls) => Promise<void>, reducedMotion = false, ready: "roster" | "error" = "roster") {
   const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
   const { sessionId } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
   try {
+    await browser.send("Target.activateTarget", { targetId })
     await browser.send("Page.enable", {}, sessionId)
     await browser.send("Runtime.enable", {}, sessionId)
+    await browser.send("Accessibility.enable", {}, sessionId)
     await browser.send("Emulation.setDeviceMetricsOverride", { width, height, mobile: width < 600, deviceScaleFactor: 1 }, sessionId)
     if (reducedMotion) await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] }, sessionId)
     await browser.send("Page.navigate", { url: origin + "/#page=squad" }, sessionId)
@@ -260,8 +295,11 @@ async function tab(width: number, height: number, run: (evaluate: (code: string)
       return answer.result.value
     }
     const deadline = Date.now() + 10_000
-    while (!(await evaluate('!document.documentElement.classList.contains("booting") && document.querySelectorAll("#squad:not([hidden]) .squad-persona-card").length').catch(() => 0))) {
-      if (Date.now() > deadline) throw new Error("squad roster did not load")
+    const readyExpression = ready === "roster"
+      ? '!document.documentElement.classList.contains("booting") && document.querySelectorAll("#squad:not([hidden]) .squad-persona-card").length'
+      : '!document.documentElement.classList.contains("booting") && !!document.querySelector("#squad:not([hidden]) .squad-error")'
+    while (!(await evaluate(readyExpression).catch(() => 0))) {
+      if (Date.now() > deadline) throw new Error("squad " + ready + " state did not load")
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     const shot = async (name: string) => {
@@ -269,7 +307,21 @@ async function tab(width: number, height: number, run: (evaluate: (code: string)
       const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, sessionId)
       writeFileSync(join(shots, name + ".png"), Buffer.from(data, "base64"))
     }
-    await run(evaluate, shot)
+    const controls: PageControls = {
+      press: async (key) => {
+        const code = key === " " ? "Space" : key
+        const virtualKey = { Enter: 13, " ": 32, Tab: 9, Escape: 27 }[key]
+        await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode: virtualKey, text: key === " " ? " " : key === "Enter" ? "\r" : undefined }, sessionId)
+        await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: virtualKey }, sessionId)
+      },
+      axName: async (selector) => {
+        const { root } = await browser.send("DOM.getDocument", {}, sessionId)
+        const { nodeId } = await browser.send("DOM.querySelector", { nodeId: root.nodeId, selector }, sessionId)
+        const { nodes } = await browser.send("Accessibility.getPartialAXTree", { nodeId, fetchRelatives: false }, sessionId)
+        return nodes?.[0]?.name?.value ?? ""
+      },
+    }
+    await run(evaluate, shot, controls)
   } finally { await browser.send("Target.closeTarget", { targetId }).catch(() => undefined) }
 }
 
@@ -309,6 +361,84 @@ test("42 roles, Project inheritance, desktop and mobile return are visible witho
     assert.equal(await evaluate('document.activeElement?.classList.contains("squad-persona-card")'), true)
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
   })
+  await tab(195, 844, async (evaluate, shot) => {
+    const layout = await evaluate(`(() => {
+      const cards = document.querySelector("#squad .squad-cards")
+      const name = cards.querySelector(".squad-card-names strong")
+      const style = getComputedStyle(name)
+      return { columns: getComputedStyle(cards).gridTemplateColumns.split(" ").length,
+        nameWidth: name.getBoundingClientRect().width, nameHeight: name.getBoundingClientRect().height,
+        lineHeight: parseFloat(style.lineHeight),
+        offenders: [...document.querySelectorAll("#squad, #squad .squad-wrap, #squad .squad-layout, #squad .squad-rail, #squad .squad-roster, #squad .squad-cards, #squad .squad-persona-card")].filter((node) => {
+          const rect = node.getBoundingClientRect()
+          return rect.width && (rect.right > innerWidth + 1 || rect.left < -1)
+        }).slice(0, 12).map((node) => node.tagName.toLowerCase() + "." + node.className + " " + Math.round(node.getBoundingClientRect().right)) }
+    })()`)
+    assert.equal(layout.columns, 1, "200% zoom uses one roster column")
+    assert.deepEqual(layout.offenders, [], "the Squad page stays within its 195px viewport")
+    assert.ok(layout.nameHeight <= layout.lineHeight * 2.1, "role names do not wrap one character per line: " + JSON.stringify(layout))
+    await evaluate('document.querySelector("#squad .squad-persona-card").scrollIntoView()')
+    await shot("squad-mobile-zoom-200")
+  })
+})
+
+test("offline, permission, invalid-response and service failures use Chinese recovery guidance", async () => {
+  const cases = [
+    { failure: "offline", title: "目前無法連線", guidance: "確認連線" },
+    { failure: "forbidden", title: "沒有權限讀取", guidance: "重新登入" },
+    { failure: "invalid_response", title: "回應無法讀取", guidance: "重新整理頁面" },
+    { failure: "service", title: "暫時無法讀取", guidance: "稍後重試" },
+  ] as const
+  try {
+    for (const item of cases) {
+      catalogFailure = item.failure
+      await tab(390, 844, async (evaluate) => {
+        const words = await evaluate('document.querySelector("#squad .squad-error").textContent') as string
+        assert.match(words, new RegExp(item.title))
+        assert.match(words, new RegExp(item.guidance))
+        assert.doesNotMatch(words, /Failed to fetch|Not allowed|Storage unavailable|Broken response/)
+        assert.equal(await evaluate('document.querySelector("#squad .squad-error button").textContent'), "重試讀取")
+      }, false, "error")
+    }
+  } finally { catalogFailure = null }
+})
+
+test("a draft survives an offline read and returns when its Project is reopened", async () => {
+  catalogFailure = null
+  try {
+    await tab(390, 844, async (evaluate) => {
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-scope select"); el.value = "project-a"; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      const projectDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-scope select")?.value === "project-a" && !!document.querySelector("#squad .squad-persona-card")'))) {
+        if (Date.now() > projectDeadline) throw new Error("Project A did not load")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-handbook-editor textarea"); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(el, "離線前的草稿"); el.dispatchEvent(new Event("input", { bubbles: true })); })()')
+      catalogFailure = "offline"
+      await evaluate('(() => { window.confirm = () => true; const el = document.querySelector("#squad .squad-scope select"); el.value = ""; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      const errorDeadline = Date.now() + 5_000
+      while (!(await evaluate('!!document.querySelector("#squad .squad-error")'))) {
+        if (Date.now() > errorDeadline) throw new Error("offline state did not appear")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      catalogFailure = null
+      await evaluate('document.querySelector("#squad .squad-error button").click()')
+      const retryDeadline = Date.now() + 5_000
+      while (!(await evaluate('!!document.querySelector("#squad .squad-persona-card")'))) {
+        if (Date.now() > retryDeadline) throw new Error("retry did not restore the roster")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('(() => { const el = document.querySelector("#squad .squad-scope select"); el.value = "project-a"; el.dispatchEvent(new Event("change", { bubbles: true })); })()')
+      const returnDeadline = Date.now() + 5_000
+      while (!(await evaluate('document.querySelector("#squad .squad-scope select")?.value === "project-a" && !!document.querySelector("#squad .squad-persona-card")'))) {
+        if (Date.now() > returnDeadline) throw new Error("Project A did not return")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      await evaluate('document.querySelector("#squad .squad-persona-card").click()')
+      assert.equal(await evaluate('document.querySelector("#squad .squad-handbook-editor textarea").value'), "離線前的草稿")
+    })
+  } finally { catalogFailure = null }
 })
 
 test("package preview preserves explicit privacy choices and stale adoption requires a new preview", async () => {
@@ -426,4 +556,60 @@ test("an existing receipt and a read stay quiet while a new bound applied receip
   }, true)
   boundFixture = false
   eventRows.length = 0
+})
+
+test("real keys operate the roster, skill, dialog and named switches", async () => {
+  globalAutoAssign = true; globalAutoVersion = 0; globalMotion = true; globalMotionVersion = 1
+  try {
+    await tab(390, 844, async (evaluate, _shot, { press }) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").focus()')
+      await press("Enter")
+      await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      assert.equal(await evaluate('document.querySelector("#squad .squad-layout").dataset.mobileView'), "detail")
+      assert.equal(await evaluate('document.activeElement?.id'), "squad-detail-title")
+      await evaluate('document.querySelector("#squad .squad-skill-card").focus()')
+      await press(" ")
+      assert.equal(await evaluate('document.querySelector("#squad .squad-skill-card").getAttribute("aria-expanded")'), "true")
+      await evaluate('document.querySelector("#squad .squad-back").focus()')
+      await press(" ")
+      await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      assert.equal(await evaluate('document.querySelector("#squad .squad-layout").dataset.mobileView'), "roster")
+      assert.equal(await evaluate('document.activeElement?.classList.contains("squad-persona-card")'), true)
+      await press("Tab")
+      assert.equal(await evaluate('document.activeElement === document.querySelectorAll("#squad .squad-persona-card")[1]'), true)
+      await evaluate('document.querySelector("#squad .squad-pack-actions button").focus()')
+      await press("Enter")
+      assert.equal(await evaluate('document.querySelector("#squad dialog").open'), true)
+      await press("Escape")
+      await evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      assert.equal(await evaluate('document.querySelector("#squad dialog").open'), false)
+      assert.equal(await evaluate('document.activeElement === document.querySelector("#squad .squad-pack-actions button")'), true)
+    })
+    await tab(1440, 900, async (evaluate, _shot, { press, axName }) => {
+      await evaluate('document.querySelector("#squad .squad-persona-card").focus()')
+      await press("Enter")
+      const assignment = '#squad .squad-switch input[aria-label^="允許管理 agent 自動指派"]'
+      const motion = '#squad .squad-switch input[aria-label^="技能使用動畫"]'
+      assert.match(await axName(assignment), /允許管理 agent 自動指派：已啟用/)
+      await evaluate(`document.querySelector(${JSON.stringify(assignment)}).focus()`)
+      await press(" ")
+      const assignmentDeadline = Date.now() + 5_000
+      while (!(await axName(assignment)).includes("已停用")) {
+        if (Date.now() > assignmentDeadline) throw new Error("assignment switch name did not update: " + await axName(assignment))
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await evaluate(`document.querySelector(${JSON.stringify(assignment)}).checked`), false)
+      assert.match(await axName(motion), /技能使用動畫：開啟/)
+      await evaluate(`document.querySelector(${JSON.stringify(motion)}).focus()`)
+      await press(" ")
+      const motionDeadline = Date.now() + 5_000
+      while (!(await axName(motion)).includes("關閉")) {
+        if (Date.now() > motionDeadline) throw new Error("motion switch name did not update")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await evaluate(`document.querySelector(${JSON.stringify(motion)}).checked`), false)
+    })
+  } finally {
+    globalAutoAssign = true; globalAutoVersion = 0; globalMotion = true; globalMotionVersion = 1
+  }
 })

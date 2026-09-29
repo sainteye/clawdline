@@ -18,6 +18,7 @@
 .squad-scope select { width: min(260px, 38vw); min-height: 44px; padding: 9px 12px; }
 .squad-notice { min-height: 32px; padding: 8px 12px; margin: 0 0 14px; border: 1px solid var(--accent-ed); border-radius: 9px; background: var(--accent-in); font-size: 13px; }
 .squad-notice[data-error] { border-color: var(--warn); color: var(--ink); }
+.squad-notice button { min-height: 32px; margin-left: 8px; padding: 4px 9px; font-size: 12px; }
 .squad-layout { display: grid; grid-template-columns: minmax(208px, 248px) minmax(300px, 1fr) minmax(380px, 1.13fr); align-items: start; gap: 16px; }
 .squad-rail, .squad-detail { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
 .squad-rail { padding: 18px; }
@@ -159,6 +160,10 @@
   .squad-card-foot { font-size: 10px; }
   .squad-detail-block { margin: 0 14px; }
   .squad-profile, .squad-meta { padding-left: 14px; padding-right: 14px; }
+}
+@media (max-width: 260px) {
+  .squad-pack-actions { grid-template-columns: minmax(0, 1fr); }
+  .squad-cards { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   .squad-page *, .squad-page *::before, .squad-page *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
