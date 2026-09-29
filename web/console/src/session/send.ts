@@ -122,7 +122,7 @@ export function deliverUntilSeen(card: PendingSend): Promise<string> {
   })
 }
 
-/** A card's "try again" (`Sender.resend`): read first, and send only on a read that shows no turn. */
+/** A card's "try again" (`Sender.resend`): read first when possible; a definite refusal can retry without it. */
 export function resend(token: string): Promise<void> {
   return sender.resend(token)
 }
