@@ -16,6 +16,9 @@ export interface NewSquadSkill {
   files?: { path: string; content_base64: string }[]
 }
 
+export interface SkillSourceRow { id: string; name: string; purpose: string; location: string }
+export interface SkillSourceDetail { name: string; purpose: string; content: string; files: { path: string; content_base64: string }[]; folder_error?: string }
+
 export interface PackPreview {
   digest: string
   previewDigest: string
@@ -35,6 +38,8 @@ export interface PackPreview {
 export interface SquadAPI {
   read(scopeId: string): Promise<SquadView>
   readCatalog(): Promise<WireCatalog>
+  skillSources(scopeId: string, provider: "project" | "claude-code" | "codex"): Promise<SkillSourceRow[]>
+  skillSource(scopeId: string, provider: "project" | "claude-code" | "codex", id: string, folder: boolean): Promise<SkillSourceDetail>
   createSkill(skill: NewSquadSkill, expectedVersion: number, key: string): Promise<void>
   boundSessions(): Promise<SquadSession[]>
   saveHandbook(scopeId: string, personaId: string, value: string, expectedVersion: number): Promise<void>
@@ -144,6 +149,19 @@ class HttpSquadAPI implements SquadAPI {
   }
 
   readCatalog(): Promise<WireCatalog> { return request<WireCatalog>("/v1/squad/catalog") }
+
+  private async skillSourcePath(scopeId: string, provider: "project" | "claude-code" | "codex", extra: Record<string, string> = {}) {
+    const ref = await this.scopeRef(scopeId)
+    if (provider === "project" && !ref.place_id) throw new SquadError("project_required", "請先在角色小隊選擇已登錄的 Project。", 400)
+    return "/v1/squad/skill-sources?" + new URLSearchParams({ provider, ...(ref.place_id ? { place_id: ref.place_id } : {}), ...extra })
+  }
+  async skillSources(scopeId: string, provider: "project" | "claude-code" | "codex"): Promise<SkillSourceRow[]> {
+    const reply = await request<{ skills: SkillSourceRow[] }>(await this.skillSourcePath(scopeId, provider))
+    return reply.skills
+  }
+  skillSource(scopeId: string, provider: "project" | "claude-code" | "codex", id: string, folder: boolean): Promise<SkillSourceDetail> {
+    return this.skillSourcePath(scopeId, provider, { id, folder: String(folder) }).then((path) => request<SkillSourceDetail>(path))
+  }
 
   async createSkill(skill: NewSquadSkill, expectedVersion: number, key: string): Promise<void> {
     await request("/v1/squad/catalog", post({ kind: "skill", expected_version: expectedVersion, entity: { skill } }, key))

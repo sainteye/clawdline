@@ -214,6 +214,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-squad-scopes",
 		method: "GET", path: "/v1/squad/scopes",
 	}, {
+		word: "squad.skill-sources",
+		body: map[string]any{"type": "squad.skill-sources", "session": machine,
+			"request": "req-squad-sources", "provider": "codex", "place_id": "place-a"},
+		session: machine, name: "read:req-squad-sources",
+		method: "GET", path: "/v1/squad/skill-sources",
+		query: map[string]string{"provider": "codex", "place_id": "place-a"},
+	}, {
 		word: "squad.settings",
 		body: map[string]any{"type": "squad.settings", "session": machine,
 			"request": "req-squad-settings", "place_id": "place-a"},

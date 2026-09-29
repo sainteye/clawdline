@@ -616,6 +616,14 @@ export class RelayReader {
         case "/v1/squad/scopes":
           this.only(url, path)
           return await this.machineRead(init?.signal, method, path, "squad.scopes", {})
+        case "/v1/squad/skill-sources": {
+          const q = this.only(url, path, "provider", "place_id", "id", "folder")
+          if (!q.provider || !["project", "claude-code", "codex"].includes(q.provider) ||
+            (!!q.id !== !!q.folder) || (q.folder && q.folder !== "true" && q.folder !== "false")) {
+            return this.refuse(method, path, 400, "invalid_source", "Choose a listed skill source.")
+          }
+          return await this.machineRead(init?.signal, method, path, "squad.skill-sources", q)
+        }
         case "/v1/squad/settings": {
           const q = this.only(url, path, "place_id", "scope_id")
           if (q.place_id && q.scope_id) return this.refuse(method, path, 400, "scope_mismatch", "Name one Project scope.")

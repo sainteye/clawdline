@@ -905,6 +905,8 @@ test("squad reads carry exact scope, binding and cursor fields to the chosen mac
   const cases: [string, string, Record<string, unknown>][] = [
     ["/v1/squad/catalog", "squad.catalog", {}],
     ["/v1/squad/scopes", "squad.scopes", {}],
+    ["/v1/squad/skill-sources?provider=codex&place_id=p1", "squad.skill-sources", { provider: "codex", place_id: "p1" }],
+    ["/v1/squad/skill-sources?provider=claude-code&id=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef&folder=false", "squad.skill-sources", { provider: "claude-code", id: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", folder: "false" }],
     ["/v1/squad/definitions/role%20one?version=2.0.0", "squad.definition", { definition_id: "role one", version: "2.0.0" }],
     ["/v1/squad/settings?place_id=p1", "squad.settings", { place_id: "p1" }],
     ["/v1/squad/settings?scope_id=project-a", "squad.settings", { scope_id: "project-a" }],

@@ -906,6 +906,45 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/squad/scopes", Header: asDevice()}
 			}},
+		op{name: "squad.skill-sources", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf(
+					[]string{"type", "session", "request", "provider"},
+					[]string{"type", "session", "request", "provider", "place_id"},
+					[]string{"type", "session", "request", "provider", "id", "folder"},
+					[]string{"type", "session", "request", "provider", "place_id", "id", "folder"}) {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				p.assistant, ok = b.nonEmpty("provider")
+				if !ok || (p.assistant != "project" && p.assistant != "claude-code" && p.assistant != "codex") {
+					return plan{}, false
+				}
+				if _, has := b["place_id"]; has {
+					p.place, ok = b.nonEmpty("place_id")
+					if !ok || len(p.place) > 256 || !printable(p.place) {
+						return plan{}, false
+					}
+				}
+				if _, has := b["id"]; has {
+					p.id, ok = b.nonEmpty("id")
+					if !ok || len(p.id) != 64 || !printable(p.id) {
+						return plan{}, false
+					}
+					p.key, ok = b.str("folder")
+					if !ok || (p.key != "true" && p.key != "false") {
+						return plan{}, false
+					}
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/skill-sources",
+					Query: someOf(map[string]string{"provider": p.assistant, "place_id": p.place, "id": p.id, "folder": p.key}), Header: asDevice()}
+			}},
 		op{name: "squad.settings", read: true,
 			decode: func(b body) (plan, bool) {
 				p, ok := squadCloudScopePlan(b)
