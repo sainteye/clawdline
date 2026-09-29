@@ -493,7 +493,7 @@ export type CreateWorkV2Body = {
   kind: WorkV2Kind
   title: string
   description: string
-  acceptance_criteria: string
+  acceptance_criteria?: string
   deployment_policy: "required" | "not_required" | "agent_decides"
 }
 
