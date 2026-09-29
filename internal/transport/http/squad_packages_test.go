@@ -58,6 +58,12 @@ func TestPackageRoutesKeepPreviewAndPublicExportReadableButProtectAdoptionAndPri
 	if status != 200 || !strings.Contains(raw, `"catalog_version":1`) {
 		t.Fatalf("adoption = %d: %s", status, raw)
 	}
+	if status, body := f.ask("GET", "/v1/squad/catalog", f.reader, "", ""); status != 200 || !strings.Contains(body, "example.squad.persona.writer") {
+		t.Fatalf("catalog after package adoption = %d: %s", status, body)
+	}
+	if status, body := f.ask("GET", "/v1/squad/settings", f.reader, "", ""); status != 200 {
+		t.Fatalf("settings after package adoption = %d: %s", status, body)
+	}
 	if retry, body := f.ask("POST", "/v1/squad-packages/adopt", f.sender, string(adoptBody), "adopt-1"); retry != 200 || body != raw {
 		t.Fatalf("same adoption replay = %d: %s", retry, body)
 	}

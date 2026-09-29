@@ -117,7 +117,32 @@ func packageActiveRows(ctx context.Context, q packageQuerier) ([]SquadEntityRow,
 	return out, rows.Err()
 }
 
-func packageExisting(rows []SquadEntityRow) ([]squadpack.Existing, error) {
+func packageSourceDigests(ctx context.Context, q packageQuerier) (map[string]string, error) {
+	rows, err := q.QueryContext(ctx, `SELECT kind,id,version,definition FROM squad_package_sources`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	digests := map[string]string{}
+	for rows.Next() {
+		var kind, id, version, raw string
+		if err := rows.Scan(&kind, &id, &version, &raw); err != nil {
+			return nil, err
+		}
+		var def squadpack.Definition
+		if err := json.Unmarshal([]byte(raw), &def); err != nil {
+			return nil, err
+		}
+		digests[kind+"\x00"+id+"\x00"+version] = squadpack.DefinitionDigest(def)
+	}
+	return digests, rows.Err()
+}
+
+func packageExisting(ctx context.Context, q packageQuerier, rows []SquadEntityRow) ([]squadpack.Existing, error) {
+	sourceDigests, err := packageSourceDigests(ctx, q)
+	if err != nil {
+		return nil, err
+	}
 	out := []squadpack.Existing{}
 	builtin := squad.Builtins()
 	for _, d := range builtin.Definitions {
@@ -129,6 +154,10 @@ func packageExisting(rows []SquadEntityRow) ([]squadpack.Existing, error) {
 			Version: d.Version, Name: d.Name.En, Digest: d.Digest, Builtin: true})
 	}
 	for _, row := range rows {
+		definitionDigest := row.Digest
+		if sourceDigest := sourceDigests[row.Kind+"\x00"+row.ID+"\x00"+row.Version]; sourceDigest != "" {
+			definitionDigest = sourceDigest
+		}
 		switch row.Kind {
 		case "definition":
 			var d squad.Definition
@@ -140,7 +169,7 @@ func packageExisting(rows []SquadEntityRow) ([]squadpack.Existing, error) {
 				refs = append(refs, r.ID)
 			}
 			out = append(out, squadpack.Existing{Kind: "persona", ID: row.ID,
-				Version: row.Version, Digest: row.Digest, Name: d.Name.En, References: refs})
+				Version: row.Version, Digest: definitionDigest, Name: d.Name.En, References: refs})
 		case "team":
 			var d squad.Team
 			if err := json.Unmarshal(row.Payload, &d); err != nil {
@@ -151,14 +180,14 @@ func packageExisting(rows []SquadEntityRow) ([]squadpack.Existing, error) {
 				refs = append(refs, r.ID)
 			}
 			out = append(out, squadpack.Existing{Kind: "team", ID: row.ID,
-				Version: row.Version, Digest: row.Digest, Name: d.Name.En, References: refs})
+				Version: row.Version, Digest: definitionDigest, Name: d.Name.En, References: refs})
 		case "skill":
 			var d squad.Skill
 			if err := json.Unmarshal(row.Payload, &d); err != nil {
 				return nil, err
 			}
 			out = append(out, squadpack.Existing{Kind: "skill", ID: row.ID,
-				Version: row.Version, Digest: row.Digest, Name: d.Name.En})
+				Version: row.Version, Digest: definitionDigest, Name: d.Name.En})
 		default:
 			return nil, fmt.Errorf("unknown squad entity kind %q", row.Kind)
 		}
@@ -179,7 +208,7 @@ func (c PackageCatalog) Snapshot(ctx context.Context) (squadpackages.Snapshot, e
 	if err != nil {
 		return squadpackages.Snapshot{}, classify(err)
 	}
-	existing, err := packageExisting(rows)
+	existing, err := packageExisting(ctx, c.Store.db, rows)
 	if err != nil {
 		return squadpackages.Snapshot{}, err
 	}
