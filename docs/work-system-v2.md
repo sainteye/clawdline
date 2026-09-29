@@ -488,6 +488,17 @@ notice, inspects the landing receipt and worktree inventory, and prunes only pro
 or task-temporary residue; unlanded, mixed, and unknown material stays preserved with a named next
 owner. The parent Epic remains open until all children are `done` or `cancelled`.
 
+Closing the Board items is separate from closing the independent Root Sessions that an Epic opened
+with `--assign-new`. After a child's `done`, the Epic owner inventories those Roots through
+`GET /v1/sessions`, matching `epic_parent.epic_id` and checking the exact Session's
+`closeability`. The Root owner settles its own obligations and attests after a close audit;
+`clawdline session report` is only a delivered-turn receipt. A supported Session close is attempted
+only with verified identity and `closeability.state=safe`, then confirmed by a fresh inventory.
+`blocked` is followed up with its named mover; `unknown` preserves the Session and records the
+missing evidence and next owner. Neither a raw terminal close nor a forced archive substitutes
+for closeability. The Epic's final coordination report names every Root's closure or its exact
+blocker even when the Board items are already `done`.
+
 The Epic's owner is told all of this where it is told the Epic procedure: the Root Assignment's
 Constraints and acceptance and the assignment and reassignment briefs name `clawdline item child`
 and `clawdline item assign`, the address book the terminal ids come from, and the responsibility

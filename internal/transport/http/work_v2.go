@@ -353,7 +353,11 @@ func workV2EpicChildrenInstruction(id string) string {
 		"session address book, `clawdline guide send`; without an --assign flag the item waits for the person), and " +
 		"`clawdline item assign <child id> --terminal <id> | --new` to hand one to another Session. You remain responsible " +
 		"for the Epic: follow every child to done, integrate their work, and move the Epic to done only when all its " +
-		"children are closed — the daemon refuses done while one is open. Create no other Board items."
+		"children are closed — the daemon refuses done while one is open. For each independently opened Feature Root, " +
+		"also track its Session after Board completion: identify it by the Epic parent relation, ask its owner to audit " +
+		"closeability and finish its own obligations, then verify that the Session was closed or record the exact blocker " +
+		"and next owner. A Session report is not a close; never force-close an unknown or blocked Session. " +
+		"Create no other Board items."
 }
 
 // workV2CreateRule is what an owner is told about creating Board items: an

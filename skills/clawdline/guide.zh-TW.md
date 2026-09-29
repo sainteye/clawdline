@@ -1027,6 +1027,16 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   殘留，只清除已證明與 landing 相同（landed-identical）或屬於本任務的暫存內容；未 landing、混合或未知的內容保留並指明
   下一位負責者。所有子項目都 `done` 或 `cancelled` 後才可宣告上層 Epic 完成；否則
   `epic_children_open` 會寫明還有幾個未結束。除了 Epic 的子項目，不要建立其他看板項目。
+- **子項目完成不等於獨立 Feature Root 的 Session 已關閉。** 對每個由 Epic `--assign-new` 開出的
+  Root，用 `GET /v1/sessions` 的 `epic_parent.epic_id` 核對所屬 Epic、Session 身分及
+  `closeability`；不要只靠標題或終端機排列猜測，也不要把 `clawdline session report` 當成關閉。
+  子項目 `done` 後立即請該 Root 負責人清點自己的未完成 task、landing、通知、待辦和工作樹，依
+  `clawdline` 關閉流程完成報告與本人 attestation。只有 `closeability.state=safe`、身分與
+  工作均可核對時，才經支援的 Session 關閉操作結束它，再重讀清單確認已消失；不要用
+  `clawdline close <terminal id>` 繞過判定。`blocked` 就追具名責任人完成義務，`unknown`
+  （例如 `terminal_unreadable`）就保留 Session、記錄缺少的證據與下一位處理者；不可強制關閉、
+  封存或宣稱清完。宣告 Epic 收尾前，逐一列出這些 Session 的關閉結果或具名阻礙；
+  Board 的 `done` 不會代替這項清點。
 
 ## 11. 協調
 

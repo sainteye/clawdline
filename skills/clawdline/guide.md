@@ -1187,6 +1187,18 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   or task-temporary material. Keep unlanded, mixed, or unknown bytes for the next owner. Do not
   declare the parent Epic done until every child is `done` or `cancelled`: `epic_children_open`
   names how many remain. Create no Board item other than the Epic's children.
+- **A completed child does not close its independent Feature Root Session.** For every Root opened
+  by the Epic with `--assign-new`, use `GET /v1/sessions` and `epic_parent.epic_id` to verify its
+  Epic, identity, and `closeability`; do not infer ownership from a label or terminal position,
+  and do not treat `clawdline session report` as closure. After the child reaches `done`, ask that
+  Root's owner to audit its own tasks, landings, notices, to-dos, and worktree, then complete its
+  close report and attestation. Only when identity and work are verified and
+  `closeability.state=safe` may a supported Session close action end it; reread the inventory to
+  confirm it is gone. Do not bypass the guard with `clawdline close <terminal id>`. Follow up on
+  `blocked` with its named mover. For `unknown` (including `terminal_unreadable`), preserve the
+  Session and record the missing evidence and next owner; do not force-close, archive, or claim it
+  was cleared. Before declaring Epic coordination finished, enumerate each Root's close result or
+  named blocker. Board `done` does not replace this inventory.
 
 ## 11. Coordination
 

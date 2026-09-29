@@ -301,7 +301,8 @@ func TestAnEpicsOwnerIsToldItMayCreateAndAssignChildren(t *testing.T) {
 		"reassignment":                workV2ReassignmentBrief(id, "Big", work.KindEpic, work.PhaseImplementing),
 	} {
 		for _, want := range []string{"clawdline item child " + id, "clawdline item assign", "--assign-terminal",
-			"clawdline guide send", "remain responsible", "all its children are closed"} {
+			"clawdline guide send", "remain responsible", "all its children are closed",
+			"track its Session after Board completion", "closeability", "A Session report is not a close"} {
 			if !strings.Contains(brief, want) {
 				t.Errorf("%s lacks %q:\n%s", name, want, brief)
 			}
