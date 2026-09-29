@@ -335,6 +335,10 @@ func (s *Server) squadDefinitionRead(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if d.DefinitionID == resolved && version != "" && d.Builtin && len(d.Skills) > 0 {
+			if historical, ok := squad.HistoricalBuiltinDefinition(d); ok && version == historical.Version {
+				writeJSON(w, historical)
+				return
+			}
 			previous := squad.PreSkillBuiltinVersion(d)
 			if version == previous.Version {
 				writeJSON(w, previous)
@@ -557,6 +561,9 @@ func (s *Server) squadSettingsWrite(w http.ResponseWriter, r *http.Request) {
 					valid = true
 					break
 				}
+			}
+			if !valid {
+				_, valid = squad.HistoricalBuiltinSkill(ref.ID, ref.Version)
 			}
 			if !valid {
 				_, exists, err := s.store.SquadEntityVersion(r.Context(), "skill", ref.ID, ref.Version)

@@ -82,6 +82,11 @@ func (s *Server) ResolveSquadLaunch(ctx context.Context, personaID, projectPath 
 			}
 		}
 		if selected == nil {
+			if historical, ok := squad.HistoricalBuiltinSkill(ref.ID, ref.Version); ok {
+				selected = &historical
+			}
+		}
+		if selected == nil {
 			row, ok, err := s.store.SquadEntityVersion(ctx, "skill", ref.ID, ref.Version)
 			if err != nil {
 				return squad.LaunchSnapshot{}, err

@@ -139,6 +139,22 @@ func PreSkillBuiltinVersion(d Definition) Definition {
 	return d
 }
 
+// HistoricalBuiltinDefinition reconstructs the previously released built-in
+// reference when a client asks for its immutable version after a skill update.
+func HistoricalBuiltinDefinition(d Definition) (Definition, bool) {
+	if !d.Builtin || len(d.Skills) != 1 {
+		return Definition{}, false
+	}
+	old, ok := historicalBuiltinSkillByID(d.Skills[0].ID)
+	if !ok || old.Version == d.Skills[0].Version {
+		return Definition{}, false
+	}
+	d.Skills = []SkillReference{{ID: old.SkillID, Version: old.Version, Enabled: true}}
+	d.Digest = builtinDefinitionDigest(d)
+	d.Version = "sha256:" + d.Digest
+	return d, true
+}
+
 // Builtins converts the closed launch catalog into immutable full definitions.
 // Reviewed role skills are bundled locally and never fetched at launch time.
 func Builtins() Catalog {
