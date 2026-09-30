@@ -40,6 +40,22 @@
 > that asks this Session to do the work now. `--assign-new` and `--assign-terminal` stay
 > Clawdfather's. Details are in [`work-system-v2.md` §7.1](work-system-v2.md).
 
+> **Closing a Session that owns Board items (2026-09-30).** An unfinished v2 Board item owned by a
+> Session blocks closing it, with one of two reasons. **Not started** — `board_item_unstarted` — is an
+> item still in phase `assigned` (never moved to `implementing` or later) with no step marked done;
+> every other unfinished item is `board_item_open` and blocks exactly as before. The one definition
+> is `unstartedBoardItem` in `internal/adapters/store/session_close.go`. When unstarted items are all
+> that block the close, the console's close confirmation lists them and says closing will remove this
+> Session from them and they go back to unassigned; its button sends a forced close pinned to that
+> reading's `expected_closeability_version`, and the daemon first unassigns each item through
+> `WorkSystemV2.Unassign` — the operation behind `POST /v1/work/v2/items/{id}/unassign`, recorded in
+> the person's name — and only then closes. A release that fails closes nothing and answers 409
+> `close_release_failed`; 409 files no receipt, so pressing again reruns it, and an item already
+> released is skipped. Any forced close or archive releases the Session's unstarted items the same
+> way; a started item stays assigned. It is done inside the close rather than by the console calling
+> the unassign route per item because Clawdline Cloud carries no unassign command, and because each
+> unassign changes the closeability version the close is pinned to.
+
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon
 > 做的唯讀查詢（§8）。實作決定的依據仍是 [`design-decisions.md`](design-decisions.md)（D30–D39、U1–U6），

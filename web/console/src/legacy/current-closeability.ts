@@ -43,8 +43,9 @@ export function currentCloseabilityPlainReasons(value: unknown): { text: string;
   const current = displayRow(value)
   const rows = originalPlainReasons(current) as { text: string; count: number }[]
   const reasons = currentCloseability(value).reasons as Reason[]
-  const newCodes: Record<string, "closeReasonBoard" | "closeReasonTodo" | "closeReasonDispatchTodo"> = {
+  const newCodes: Record<string, "closeReasonBoard" | "closeReasonBoardUnstarted" | "closeReasonTodo" | "closeReasonDispatchTodo"> = {
     board_item_open: "closeReasonBoard",
+    board_item_unstarted: "closeReasonBoardUnstarted",
     session_todo_open: "closeReasonTodo",
     dispatch_todo_open: "closeReasonDispatchTodo",
   }

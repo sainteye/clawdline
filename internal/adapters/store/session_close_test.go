@@ -43,3 +43,54 @@ func TestCloseResponsibilityReadSeparatesOpenFromCompletedWork(t *testing.T) {
 		}
 	}
 }
+
+// An item still in `assigned` with no step done is the one kind a close may
+// release; one moved on, or with a step done, is started and stays open.
+func TestCloseResponsibilityReadSeparatesUnstartedBoardItems(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	statements := []string{
+		`INSERT INTO work_v2_items
+ (id,project_id,project_path,kind,title,description,phase,deployment_policy,owner_session,created_by,created_at,updated_at,version)
+ VALUES ('fresh','p','/p','issue','t','b','assigned','not_required','s1','test',1,1,4),
+ ('stepped','p','/p','issue','t','b','assigned','not_required','s1','test',1,1,1),
+ ('moving','p','/p','issue','t','b','implementing','not_required','s1','test',1,1,1),
+ ('elsewhere','p','/p','issue','t','b','assigned','not_required','s2','test',1,1,1)`,
+		`INSERT INTO work_v2_steps (id,work_id,title,done,position,created_by,created_at)
+ VALUES ('a','stepped','one',1,0,'test',1),('b','fresh','two',0,0,'test',1)`,
+	}
+	for _, stmt := range statements {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.OpenSessionResponsibilities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := map[string]string{}
+	for _, item := range got {
+		codes[item.ID] = item.Code
+	}
+	want := map[string]string{"fresh": "board_item_unstarted", "stepped": "board_item_open",
+		"moving": "board_item_open", "elsewhere": "board_item_unstarted"}
+	if len(codes) != len(want) {
+		t.Fatalf("codes = %v", codes)
+	}
+	for id, code := range want {
+		if codes[id] != code {
+			t.Fatalf("%s = %q, want %q (all %v)", id, codes[id], code, codes)
+		}
+	}
+	items, err := s.UnstartedBoardItems(ctx, "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ID != "fresh" || items[0].Version != 4 {
+		t.Fatalf("unstarted = %+v", items)
+	}
+}

@@ -981,9 +981,10 @@ test("F6: a blocked close, through the copied client's real failure path", async
   assert.equal(body.error, "close_blocked")
   // What the page is really handed today. `cloud-failure.js` keeps only the
   // §11.6 detail fields and `close_blocked` has none there, so the reasons
-  // stop at the copied client; the sheet reopens "blocked" with no list. The
-  // fix belongs in that copied file's source (the Swift app's console) and is
-  // named by the todo below.
+  // stop at the copied client. The close sheet reads them back from the row
+  // it was refused against (`overlays/close-release.ts` `refusedReasons`);
+  // carrying them here belongs in that copied file's source (the Swift app's
+  // console) and is named by the todo below.
   assert.equal(body.reasons, undefined)
 })
 
