@@ -312,6 +312,33 @@ func TestAServerStartedWithTheDaemonsWholeEnvironmentGivesACleanShell(t *testing
 	}
 }
 
+// The daemon's systemd account on Linux has nologin as its shell, in SHELL
+// and in the user database. A terminal still opens a shell that answers.
+func TestAServiceAccountWithNologinGetsAShellThatAnswers(t *testing.T) {
+	var nologin string
+	for _, path := range []string{"/usr/sbin/nologin", "/sbin/nologin", "/usr/bin/false", "/bin/false"} {
+		if _, err := os.Stat(path); err == nil {
+			nologin = path
+			break
+		}
+	}
+	if nologin == "" {
+		t.Skip("no nologin or false on this machine")
+	}
+	s := newServer(t, testDir(t))
+	s.machine.Getenv = func(k string) string {
+		if k == "SHELL" {
+			return nologin
+		}
+		return os.Getenv(k)
+	}
+	s.machine.LoginShell = func(context.Context, string) string { return nologin }
+	term := open(t, s, 100, 24)
+	keys(t, s, term.ID, "echo h\"\"i\r")
+	waitFrame(t, s, term.ID, "hi echoed under SHELL="+nologin, func(f terminal.Frame) bool { return hasLine(f, "hi") })
+	t.Logf("SHELL=%s ran %s", nologin, s.shell)
+}
+
 // Acceptance 6. Run as the rest are, this is a daemon with whatever LANG the
 // test has. Run under `env -i HOME=… PATH=/usr/bin:/bin`, it is a daemon
 // started from the desktop, and the LANG is the machine's.

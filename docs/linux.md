@@ -268,6 +268,16 @@ section with a `+` that leads nowhere.
   missing locale leaves bash in C while it says UTF-8. So where `locale -a` has no `en_US.UTF-8`
   and has `C.UTF-8`, the shell gets `C.UTF-8` (`owned/env.go` `lang`). The systemd unit sets no
   `LANG`; install a locale and set it in the unit to give shells another one.
+- **An owned terminal on the service account runs `/bin/bash`, not the account's `nologin`.** The
+  account `tools/bootstrap-linux-user-service.sh` sets up has `/usr/sbin/nologin` as its login
+  shell, in `getent passwd` and in the unit's `SHELL`, and a terminal running it closed the moment
+  it opened (`terminal_closed`, `tmux list-sessions: server exited unexpectedly`). A terminal runs
+  `SHELL`, else the account's shell, only when that is an interactive shell: an absolute path the
+  account can run, not named `nologin` or `false`, and listed in `/etc/shells` where that file
+  exists. Anything else gets `/bin/bash`, or `/bin/sh` where there is no bash (on macOS, `/bin/zsh`),
+  and the shell's `SHELL` names the one it got (`owned/env.go` `shell`). This gives the account
+  nothing it did not have: the same account already runs Agents that execute arbitrary commands.
+  To give the terminals another shell, give the account that login shell.
 
 - **Claude's `5h`/`7d` percentages stay blank until a status line writes them down.** Not a Linux
   defect and not this daemon's: Claude Code hands `rate_limits` to the stdin of whatever

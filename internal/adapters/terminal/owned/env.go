@@ -53,6 +53,10 @@ type Machine struct {
 	Account func() (*user.User, error)
 	// LoginShell is the account's shell from the user database.
 	LoginShell func(ctx context.Context, name string) string
+	// Executable is whether a path is a file this account can run.
+	Executable func(path string) bool
+	// Shells is the content of /etc/shells, or an error where there is none.
+	Shells func() ([]byte, error)
 }
 
 func (m Machine) goos() string {
@@ -89,9 +93,7 @@ func (m Machine) paneEnv(ctx context.Context) (env []string, shell string) {
 			fill(values, "LOGNAME", u.Username)
 		}
 	}
-	if values["SHELL"] == "" {
-		values["SHELL"] = m.loginShell(ctx, values["USER"])
-	}
+	values["SHELL"] = m.shell(ctx, values["SHELL"], values["USER"])
 	fill(values, "PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
 	values["LANG"] = m.lang(ctx)
 	values["TERM"] = "tmux-256color"
@@ -199,20 +201,72 @@ func localeInstalled(name string) bool {
 	return false
 }
 
-// loginShell is the account's shell from the user database, for a daemon
-// started without SHELL.
-func (m Machine) loginShell(ctx context.Context, name string) string {
-	read := m.LoginShell
-	if read == nil {
-		read = userShell
+// shell is the shell a terminal runs: SHELL, else the account's shell from
+// the user database, when that is an interactive shell; else the fallback.
+//
+// The Linux service account `tools/bootstrap-linux-user-service.sh` makes
+// has /usr/sbin/nologin in both, and a pane running it closes at once. The
+// fallback gives that account nothing it lacks: the same account already
+// runs Agents that execute arbitrary commands.
+func (m Machine) shell(ctx context.Context, fromEnv, name string) string {
+	shell := fromEnv
+	if shell == "" {
+		read := m.LoginShell
+		if read == nil {
+			read = userShell
+		}
+		shell = read(ctx, name)
 	}
-	if shell := read(ctx, name); shell != "" {
+	if m.interactive(shell) {
 		return shell
 	}
+	return m.fallbackShell()
+}
+
+// interactive is whether a shell can hold a terminal: an absolute path this
+// account can run, not nologin or false, and listed in /etc/shells where
+// there is one.
+func (m Machine) interactive(shell string) bool {
+	if !filepath.IsAbs(shell) || !m.executable(shell) {
+		return false
+	}
+	if base := filepath.Base(shell); base == "nologin" || base == "false" {
+		return false
+	}
+	read := m.Shells
+	if read == nil {
+		read = func() ([]byte, error) { return os.ReadFile("/etc/shells") }
+	}
+	listed, err := read()
+	if err != nil {
+		return true
+	}
+	for _, line := range strings.Split(string(listed), "\n") {
+		if strings.TrimSpace(line) == shell {
+			return true
+		}
+	}
+	return false
+}
+
+// fallbackShell is macOS's zsh; elsewhere bash where there is one, else sh.
+func (m Machine) fallbackShell() string {
 	if m.goos() == "darwin" {
 		return "/bin/zsh"
 	}
+	if m.executable("/bin/bash") {
+		return "/bin/bash"
+	}
 	return "/bin/sh"
+}
+
+func (m Machine) executable(path string) bool {
+	if m.Executable != nil {
+		return m.Executable(path)
+	}
+	// A path with a slash is checked where it is, for this account.
+	_, err := exec.LookPath(path)
+	return err == nil
 }
 
 func userShell(ctx context.Context, name string) string {

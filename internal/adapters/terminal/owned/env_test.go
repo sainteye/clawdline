@@ -19,6 +19,8 @@ func envMachine(goos string, vars map[string]string) Machine {
 		LocaleExists: func(string) bool { return true },
 		Account:      func() (*user.User, error) { return nil, errors.New("no account in a test") },
 		LoginShell:   func(context.Context, string) string { return "" },
+		Executable:   func(string) bool { return true },
+		Shells:       func() ([]byte, error) { return nil, errors.New("no /etc/shells in a test") },
 	}
 }
 
@@ -114,10 +116,53 @@ func TestLang(t *testing.T) {
 	}
 }
 
+// A service account's login shell is nologin, and a terminal running it
+// closes at once. Whatever is not an interactive shell, from SHELL or from
+// the user database, becomes the same fallback a daemon with no shell gets.
 func TestTheShellFallsBackPerPlatform(t *testing.T) {
-	for goos, want := range map[string]string{"darwin": "/bin/zsh", "linux": "/bin/sh"} {
-		if got := envMachine(goos, nil).loginShell(context.Background(), "p"); got != want {
-			t.Errorf("%s: %q", goos, got)
+	const shells = "# /etc/shells: valid login shells\n/bin/sh\n/bin/bash\n/usr/bin/bash\n/bin/zsh\n/usr/bin/zsh\n/usr/sbin/nologin\n"
+	runnable := map[string]bool{
+		"/bin/sh": true, "/bin/bash": true, "/usr/bin/bash": true, "/bin/zsh": true, "/usr/bin/zsh": true,
+		"/usr/sbin/nologin": true, "/sbin/nologin": true, "/bin/false": true, "/usr/bin/false": true, "/opt/fish": true,
+	}
+	for _, c := range []struct {
+		goos, shell, want string
+		noBash, noShells  bool
+	}{
+		{goos: "darwin", want: "/bin/zsh"},
+		{goos: "linux", want: "/bin/bash"},
+		{goos: "linux", want: "/bin/sh", noBash: true},
+		// Listed in Ubuntu's /etc/shells, and still no shell.
+		{goos: "linux", shell: "/usr/sbin/nologin", want: "/bin/bash"},
+		{goos: "linux", shell: "/sbin/nologin", want: "/bin/bash"},
+		{goos: "linux", shell: "/bin/false", want: "/bin/bash"},
+		{goos: "linux", shell: "/usr/bin/false", want: "/bin/bash"},
+		{goos: "linux", shell: "/usr/sbin/nologin", want: "/bin/sh", noBash: true},
+		{goos: "linux", shell: "/usr/sbin/nologin", want: "/bin/bash", noShells: true},
+		{goos: "darwin", shell: "/usr/bin/false", want: "/bin/zsh"},
+		{goos: "linux", shell: "/opt/not-runnable", want: "/bin/bash"},
+		{goos: "linux", shell: "zsh", want: "/bin/bash"},
+		{goos: "linux", shell: "/opt/fish", want: "/bin/bash"},
+		{goos: "linux", shell: "/opt/fish", want: "/opt/fish", noShells: true},
+		{goos: "linux", shell: "/usr/bin/zsh", want: "/usr/bin/zsh"},
+		{goos: "darwin", shell: "/bin/zsh", want: "/bin/zsh"},
+	} {
+		for _, from := range []string{"SHELL", "user database"} {
+			m := envMachine(c.goos, map[string]string{"USER": "p"})
+			if from == "SHELL" {
+				m.Getenv = func(k string) string { return map[string]string{"USER": "p", "SHELL": c.shell}[k] }
+			} else {
+				m.LoginShell = func(context.Context, string) string { return c.shell }
+			}
+			m.Executable = func(p string) bool { return runnable[p] && !(c.noBash && strings.HasSuffix(p, "/bash")) }
+			if !c.noShells {
+				m.Shells = func() ([]byte, error) { return []byte(shells), nil }
+			}
+			env, got := m.paneEnv(context.Background())
+			if got != c.want || asMap(env)["SHELL"] != c.want {
+				t.Errorf("%s %q from %s (no bash %v, no /etc/shells %v): ran %q with SHELL=%q, want %q",
+					c.goos, c.shell, from, c.noBash, c.noShells, got, asMap(env)["SHELL"], c.want)
+			}
 		}
 	}
 }
