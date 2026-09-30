@@ -92,7 +92,10 @@ The bounds — 500 archived conversations and 20 per restore — are registered 
 - **A transcript deleted since the archive cannot be restored** (`conversation_not_found`).
 - **Over Clawdline Cloud a blocked archive loses its reasons.** The copied `cloud-failure.js` drops
   `reasons` from `close_blocked`, as it does for a close (the F6 todo in
-  `cloud/relay-writer.test.ts`): the sheet still comes back to be forced, without the list.
+  `cloud/relay-writer.test.ts`). The sheet comes back with the reasons of the row it was refused
+  against instead, because the daemon refuses any other reading with `close_not_proven`
+  (`overlays/close-release.ts` `refusedReasons`); only a row that has since moved still gets the
+  "cannot confirm" notice.
 
 ## The console
 

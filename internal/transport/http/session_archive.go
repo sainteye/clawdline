@@ -124,7 +124,7 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request, id strin
 	// The whole close ladder, as a close has it.
 	ctx, cancel := context.WithTimeout(r.Context(), closeBudget)
 	defer cancel()
-	_, row, err := s.actions().Archive(ctx, id, body.Force)
+	_, row, err := s.closeActions(r).Archive(ctx, id, body.Force)
 	if err != nil {
 		writeActionRefusal(w, err)
 		return

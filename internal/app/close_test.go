@@ -189,3 +189,41 @@ func TestASessionOnlyTheProcessTableSawIsClosedThroughItsProcess(t *testing.T) {
 		t.Fatalf("close with no process closer = %v, want backend_unsupported", err)
 	}
 }
+
+// A forced close takes the session off its unstarted Board items before the
+// terminal is touched; an unforced one never releases anything; and a release
+// that failed leaves the terminal open with a typed refusal.
+func TestAForcedCloseReleasesUnstartedItemsFirstAndStopsWhenItCannot(t *testing.T) {
+	ctx := context.Background()
+	h := &closeHost{conversation: "conv-1"}
+	a := closeActions(h)
+	a.ReleaseUnstarted = func(_ context.Context, s session.Session) error {
+		h.calls = append(h.calls, "release:"+s.ConversationID)
+		return nil
+	}
+	if _, err := a.Close(ctx, "%1", false); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(h.calls) != "[close]" {
+		t.Fatalf("an unforced close released: %v", h.calls)
+	}
+	h.calls = nil
+	if _, err := a.Close(ctx, "%1", true); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(h.calls) != "[release:conv-1 close]" {
+		t.Fatalf("a forced close: %v", h.calls)
+	}
+
+	h.calls = nil
+	failed := errors.New("version_conflict")
+	a.ReleaseUnstarted = func(context.Context, session.Session) error { return failed }
+	_, err := a.Close(ctx, "%1", true)
+	ref, ok := err.(Refusal)
+	if !ok || ref.Code != CloseReleaseFailed || !errors.Is(err, failed) {
+		t.Fatalf("a failed release: %v", err)
+	}
+	if len(h.calls) != 0 {
+		t.Fatalf("the terminal was closed after the release failed: %v", h.calls)
+	}
+}

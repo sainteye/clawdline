@@ -56,7 +56,16 @@ type Actions struct {
 	Archives *SessionArchive
 	// Processes ends a session no terminal backend lists (ProcessCloser).
 	Processes ports.ProcessCloser
+	// ReleaseUnstarted takes the session off every Board item it owns that
+	// nobody has started, before a forced close ends it (docs/work-system.md).
+	// It runs only once the person has seen those items listed and pressed
+	// close anyway. Nil releases nothing.
+	ReleaseUnstarted func(ctx context.Context, s session.Session) error
 }
+
+// CloseReleaseFailed: a forced close could not take the session off its
+// unstarted Board items, so nothing was closed.
+const CloseReleaseFailed = "close_release_failed"
 
 // laneWait is the longest a write waits for its terminal's turn.
 var laneWait = 10 * time.Second
@@ -655,6 +664,16 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	closeIt, err := a.closer(s)
 	if err != nil {
 		return session.Session{}, err
+	}
+	// Released before the close and not after: an item left assigned to a
+	// Session that is gone waits for nobody, and a release that failed must
+	// leave the Session open for the person to try again.
+	if force && a.ReleaseUnstarted != nil {
+		if err := a.ReleaseUnstarted(ctx, s); err != nil {
+			return s, Refusal{Code: CloseReleaseFailed,
+				Detail: "the session could not be taken off its unstarted Board items, so it was not closed",
+				Cause:  err}
+		}
 	}
 	// A close types into the session now — the assistant's own quit word,
 	// before anything is taken away (terminal.farewell) — so it takes the

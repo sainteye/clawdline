@@ -16,6 +16,7 @@ import {
 import { nextWord } from "../next-strings.js"
 import { readSessionWorkV2, type DirectTodoV2, type WorkV2Item } from "../pages/work/api.js"
 import { toast, toastFailure } from "./toast.js"
+import { refusedReasons, releasableItems } from "./close-release.js"
 
 /**
  * The second press before a session-changing action reaches the daemon —
@@ -36,6 +37,15 @@ import { toast, toastFailure } from "./toast.js"
  *   the closeability lines — the original's `reopenEndWithLost` answer to a
  *   refusal that carries a list. Pressing "still close" overrides that known
  *   obligation and asks again under a fresh decision id.
+ * - A close blocked only by Board items nobody has started lists them and
+ *   says it will take this Session off them (docs/work-system.md). Its press
+ *   is the person's decision over exactly that list, so it sends `force`
+ *   pinned to the reading that listed them, and the daemon releases those
+ *   items before it closes; a release that fails closes nothing.
+ * - Over Clawdline Cloud a `close_blocked` arrives without its reasons (the
+ *   copied `cloud-failure.js` drops them). The row read at the refused
+ *   version lists the same ones, so the sheet reopens with those instead of
+ *   saying it cannot tell (`refusedReasons`).
  * - "archive" (docs/session-archive.md) is the close with a different ending:
  *   the same sheet, the same work reminder, the same `close_blocked` reopen
  *   and forced second decision, sent to `/v1/sessions/{id}/archive`, which
@@ -69,6 +79,11 @@ interface Pending {
   directTodos: DirectTodoV2[]
   workState: "loading" | "ready" | "unreadable"
   workTruncated: boolean
+  /**
+   * Board items this close takes the Session off: set only when unstarted
+   * items are all that block it, and then the press is that decision.
+   */
+  release: string[]
   /** True only after the daemon disclosed the obligations this decision overrides. */
   force: boolean
   /** The decision's own id, which is the close's `Idempotency-Key`. */
@@ -220,13 +235,19 @@ export const ActionConfirm = {
     const closeable = closes(kind) ? closeabilityOf(row) : null
     const version = (row?.closeability as { version?: unknown } | undefined)?.version
     const help = closeabilityHelpModel(closeable)
+    const pinned = typeof version === "string" && version ? version : null
+    // Only against a reading the daemon can hold the press to: without its
+    // version a newly started item could be released under an old list.
+    const release = closes(kind) && pinned
+      ? releasableItems((row as { closeability?: Parameters<typeof releasableItems>[0] } | null)?.closeability)
+      : []
     this.pending = {
       id, kind, action, opener: returnFocus, ask: ask || null, lost, why,
       closeNotes: closes(kind) ? closeabilityPlainReasons(row) : [],
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
-      closeabilityVersion: typeof version === "string" && version ? version : null,
+      closeabilityVersion: pinned,
       workState: closes(kind) ? "loading" : "ready", workTruncated: false,
-      force: false, request: mintRequest(),
+      release, force: release.length > 0, request: mintRequest(),
     }
     this.busy = false
     sheet.dataset.kind = kind
@@ -281,7 +302,7 @@ export const ActionConfirm = {
     say.replaceChildren()
 
     const {
-      lost, closeability, help, work, recentWork, directTodos, workState, workTruncated, closeNotes,
+      lost, closeability, help, work, recentWork, directTodos, workState, workTruncated, closeNotes, release,
     } = pending
     const openDirect = directTodos.filter((todo) => !todo.completed_at)
     const completedDirect = directTodos.filter((todo) => !!todo.completed_at)
@@ -338,7 +359,21 @@ export const ActionConfirm = {
       say.appendChild(completed)
     }
 
-    if (work.length || openDirect.length) {
+    if (release.length) {
+      // The items this press takes the Session off, by their Board titles
+      // when the list has them.
+      const section = document.createElement("section")
+      section.className = "end-work-open end-work-release"
+      const heading = document.createElement("h3")
+      heading.textContent = nextWord("endWorkReleaseHeading")
+      const list = document.createElement("ul")
+      for (const id of release) {
+        const item = work.find((candidate) => candidate.id === id)
+        list.appendChild(this.endWorkRow(nextWord("endWorkBoardLabel"), item ? item.title : id))
+      }
+      section.append(heading, list)
+      say.appendChild(section)
+    } else if (work.length || openDirect.length) {
       const section = document.createElement("section")
       section.className = "end-work-open"
       const heading = document.createElement("h3")
@@ -363,7 +398,7 @@ export const ActionConfirm = {
     } else if (help && recordedWorkClear) {
       statusClass = "is-ready"
       statusCopy = nextWord("endWorkReadyToClose")
-    } else if (closeNotes.length) {
+    } else if (closeNotes.length && !release.length) {
       statusClass = "is-warning"
       const notes = closeNotes.map((note) => note.count > 1 ? `${note.text} (${note.count})` : note.text)
       statusCopy = notes.join(" ")
@@ -492,7 +527,9 @@ export const ActionConfirm = {
     // exactly what the daemon refused and which reading it refused against.
     // Older Cloud failure envelopes can lose the reasons; ask for a new row
     // instead of offering an override over an undisclosed obligation.
-    if (!attemptedVersion || reasons.length === 0) {
+    const row = byId(id) as Record<string, unknown> | null
+    const known = refusedReasons(reasons, row, attemptedVersion)
+    if (!attemptedVersion || known.length === 0) {
       host.refresh()
       toast(nextWord("endWorkCloseUnknown"), true)
       return
@@ -505,14 +542,14 @@ export const ActionConfirm = {
     // retry of a request whose answer was lost.
     pending.request = mintRequest()
     pending.closeabilityVersion = attemptedVersion
-    const row = byId(id) as Record<string, unknown> | null
     const base = (row && (row.closeability as Record<string, unknown>)) || {}
-    const refused = { ...(row || { id }), closeability: { ...base, state: "blocked", reasons: [...reasons] } }
+    const refused = { ...(row || { id }), closeability: { ...base, state: "blocked", reasons: known } }
     const projected = closeabilityOf(refused)
     pending.why = closeabilityLines(refused)
     pending.closeNotes = closeabilityPlainReasons(refused)
     pending.closeability = projected.state
     pending.help = closeabilityHelpModel(projected)
+    pending.release = releasableItems({ state: "blocked", reasons: known })
     pending.force = true
     this.renderEnd(pending)
     this.sync()
@@ -586,7 +623,9 @@ export const ActionConfirm = {
       const recordedWorkClear = this.pending?.workState === "ready" &&
         this.pending.work.length === 0 && !this.pending.directTodos.some((todo) => !todo.completed_at)
       const archiving = this.pending?.kind === "archive"
-      go.textContent = help
+      go.textContent = this.pending?.release.length
+        ? archiving ? nextWord("endWorkReleaseAndArchive") : nextWord("endWorkReleaseAndClose")
+        : help
         ? archiving
           ? recordedWorkClear ? nextWord("archiveGo") : nextWord("archiveAnyway")
           : recordedWorkClear ? nextWord("endWorkConfirmClose") : help.confirmLabel
@@ -694,6 +733,7 @@ function finishEnd(id: string, ticket: number, ok: boolean, error?: unknown): vo
     endWasOpen = false
     host.refresh()
     if (ok) toast(endKind === "archive" ? nextWord("archiveDone") : T.webEndSession + " ✓", false)
+    else if (error instanceof RefusalError && error.code === "close_release_failed") toast(nextWord("endWorkReleaseFailed"), true)
     else toastFailure(error, T.webRequestFailed)
   })
 }

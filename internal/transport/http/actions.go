@@ -15,6 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/task"
 )
 
@@ -202,7 +203,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			// the route would have cut it off part way through.
 			ctx, more := context.WithTimeout(r.Context(), closeBudget)
 			defer more()
-			if _, err := s.actions().Close(ctx, id, body.Force); err != nil {
+			if _, err := s.closeActions(r).Close(ctx, id, body.Force); err != nil {
 				writeActionRefusal(w, err)
 				return
 			}
@@ -369,6 +370,44 @@ func (s *Server) actions() app.Actions {
 		}}
 }
 
+// closeActions is actions for a person's close: a forced one first takes the
+// session off the Board items it owns that nobody has started, through the
+// same operation the Board's own unassign route runs, in the person's name.
+func (s *Server) closeActions(r *http.Request) app.Actions {
+	a := s.actions()
+	if s.store == nil {
+		return a
+	}
+	actor := personPrincipal(r)
+	a.ReleaseUnstarted = func(ctx context.Context, sess session.Session) error {
+		return s.releaseUnstarted(ctx, sess.ConversationID, actor)
+	}
+	return a
+}
+
+// releaseUnstarted unassigns every unstarted Board item the conversation owns.
+// An item somebody else already took off it, or that started meanwhile, is no
+// longer this close's to release: the first answers item_unassigned, and the
+// second is not in the list, so a retried close after a partial release goes
+// on from where the first stopped.
+func (s *Server) releaseUnstarted(ctx context.Context, conversation, actor string) error {
+	items, err := s.store.UnstartedBoardItems(ctx, conversation)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		_, err := s.workV2().Unassign(ctx, item.ID, item.Version, actor, nil)
+		var refused *app.WorkError
+		if errors.As(err, &refused) && refused.Code == "item_unassigned" {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("release board item %s: %w", item.ID, err)
+		}
+	}
+	return nil
+}
+
 // writeActionRefusal gives each typed refusal the status that describes it, and
 // carries a blocked close's reasons out to the caller.
 //
@@ -412,6 +451,10 @@ func actionStatus(code string) int {
 		// see. 409 is the honest shape: try again when the reading is whole.
 		return http.StatusConflict
 	case "close_blocked":
+		return http.StatusConflict
+	case app.CloseReleaseFailed:
+		// Nothing was closed, and the same decision may be pressed again:
+		// 409 files no receipt, so a retry under its key runs the release anew.
 		return http.StatusConflict
 	case "close_nothing_there":
 		// The session was gone before the close reached it. The caller's

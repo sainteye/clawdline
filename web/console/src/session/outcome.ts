@@ -45,6 +45,9 @@ const NOT_DONE: ReadonlySet<string> = new Set([
   "input_moved", "input_behind_question", "input_unreadable",
   // A close refused by what the session owes, or by not being able to say.
   "close_blocked", "closeability_unknown",
+  // A forced close whose release of unstarted Board items failed: the
+  // Session was left open (`app.CloseReleaseFailed`).
+  "close_release_failed",
   // The request's receipt, refused before it was carried out.
   "idempotency_key_reused", "receipts_full", "store_busy", "store_unavailable",
 ])

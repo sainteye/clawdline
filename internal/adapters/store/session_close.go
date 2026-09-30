@@ -10,6 +10,47 @@ type SessionResponsibility struct {
 	ID      string
 }
 
+// unstartedBoardItem is the one definition of a Board item nobody has started
+// (docs/work-system.md, "Closing a Session that owns Board items"): it is still
+// in `assigned`, never moved on to implementing or later, and none of its steps
+// is marked done. Only such an item may be released by a close; every other
+// unfinished item keeps blocking it.
+const unstartedBoardItem = `phase='assigned' AND NOT EXISTS
+	(SELECT 1 FROM work_v2_steps st WHERE st.work_id=work_v2_items.id AND st.done=1)`
+
+// UnstartedBoardItem is one item a close may release: its id and the version
+// the unassign is made against.
+type UnstartedBoardItem struct {
+	ID      string
+	Version int64
+}
+
+// UnstartedBoardItems is every unstarted Board item the conversation owns, in
+// id order. A failed query is an error, never an empty list.
+func (s *Store) UnstartedBoardItems(ctx context.Context, conversation string) ([]UnstartedBoardItem, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	if conversation == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,version FROM work_v2_items
+		WHERE owner_session=? AND `+unstartedBoardItem+` ORDER BY id`, conversation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []UnstartedBoardItem{}
+	for rows.Next() {
+		var item UnstartedBoardItem
+		if err := rows.Scan(&item.ID, &item.Version); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 // OpenSessionResponsibilities reads every unfinished assignment once for a
 // session inventory. A failed query is not an empty list: callers fail closed.
 func (s *Store) OpenSessionResponsibilities(ctx context.Context) ([]SessionResponsibility, error) {
@@ -19,8 +60,10 @@ func (s *Store) OpenSessionResponsibilities(ctx context.Context) ([]SessionRespo
 	queries := []struct {
 		code, sql string
 	}{
+		{"board_item_unstarted", `SELECT owner_session,id FROM work_v2_items
+			WHERE owner_session<>'' AND ` + unstartedBoardItem},
 		{"board_item_open", `SELECT owner_session,id FROM work_v2_items
-			WHERE owner_session<>'' AND phase NOT IN ('done','cancelled')`},
+			WHERE owner_session<>'' AND phase NOT IN ('done','cancelled') AND NOT (` + unstartedBoardItem + `)`},
 		{"session_todo_open", `SELECT session_id,id FROM session_direct_todos
 			WHERE completed_at IS NULL`},
 		{"dispatch_todo_open", `SELECT owner_session,id FROM todos
