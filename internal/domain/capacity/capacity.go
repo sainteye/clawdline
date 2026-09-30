@@ -350,6 +350,10 @@ const (
 	TerminalLeaseSeconds = "terminal.lease_seconds"
 	TerminalGrantsBytes  = "terminal.grants_bytes"
 	TerminalBodyBytes    = "terminal.body_bytes"
+	// What a new tab or pane is typed to start an assistant, and the scripts
+	// that hold a line too long to type.
+	TerminalLaunchLineBytes = "terminal.launch_line_bytes"
+	TerminalLaunchScripts   = "terminal.launch_scripts"
 )
 
 // Entry is one row of the register.
@@ -1876,6 +1880,25 @@ func Register() []Entry {
 			Limit: 6<<20 + 4<<10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/http.terminalBodyLimit"},
+		},
+		{
+			// One line typed into a new iTerm2 tab or tmux pane to start an
+			// assistant. Its shell has not taken the tty yet, and macOS keeps
+			// 1024 bytes of a line in canonical mode: a longer one arrived cut
+			// off and started nothing. A line past this is never typed; it is
+			// written to a script and the short line that runs it is typed.
+			Name: TerminalLaunchLineBytes, Class: Buffer, Unit: Bytes,
+			Limit: 512, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/terminal.MaxTypedLaunchBytes"},
+		},
+		{
+			// Those scripts. Each removes itself when its tab runs it; one a
+			// tab never ran stays, and the oldest go first.
+			Name: TerminalLaunchScripts, Class: Work, Unit: Rows,
+			Limit: 64, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/terminal.MaxLaunchScripts"},
 		},
 	}
 }

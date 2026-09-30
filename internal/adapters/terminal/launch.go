@@ -128,6 +128,12 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if bin == "" {
 		return "", Failure{Message: "tmux is not installed."}
 	}
+	// A new pane's shell is as young as a new iTerm2 tab's, and its tty cuts
+	// a long paste the same way (typedLaunchLine).
+	command, err := typedLaunchLine(command)
+	if err != nil {
+		return "", err
+	}
 	args := append([]string{}, create...)
 	if cwd != "" {
 		args = append(args, "-c", cwd)

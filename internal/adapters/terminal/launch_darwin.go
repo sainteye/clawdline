@@ -66,7 +66,8 @@ function run(argv) {
 `
 
 // NewITermTab runs itermNewTab. The line is an argument, never part of the
-// script text, so nothing in it is read as JavaScript. The id is returned as
+// script text, so nothing in it is read as JavaScript; a line too long for a
+// new tab's tty is typed as the short line that runs it (typedLaunchLine). The id is returned as
 // iTerm2 spells it, which is how this daemon's inventory lists the tab.
 func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -76,14 +77,13 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 		return "", err
 	}
 	defer release()
-	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", line)
-	cmd.Stdin = strings.NewReader(itermNewTab)
-	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	line, err = typedLaunchLine(line)
 	if err != nil {
-		return "", osascriptFailure(ctx, stderr.String(), err, "iTerm2 would not open a tab.")
+		return "", err
+	}
+	out, stderr, err := itermOpenTab(ctx, line)
+	if err != nil {
+		return "", osascriptFailure(ctx, stderr, err, "iTerm2 would not open a tab.")
 	}
 	var answer struct {
 		OK    bool   `json:"ok"`
@@ -100,6 +100,19 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 		return "", Failure{Message: answer.Error}
 	}
 	return answer.ID, nil
+}
+
+// itermOpenTab runs itermNewTab with line and answers what it printed and
+// what it said on stderr. A variable so a test can see the line that would be
+// typed without opening a tab in anybody's iTerm2.
+var itermOpenTab = func(ctx context.Context, line string) ([]byte, string, error) {
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", line)
+	cmd.Stdin = strings.NewReader(itermNewTab)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	return out, stderr.String(), err
 }
 
 // itermCloseScript is iterm.js's `close`: one session, found by the id iTerm2

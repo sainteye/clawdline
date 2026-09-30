@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/logs"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/terminal/owned"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -423,7 +424,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return g.grants.Reading()
 		},
-		capacity.TerminalBodyBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request guard"} },
+		capacity.TerminalBodyBytes:       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request guard"} },
+		capacity.TerminalLaunchLineBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-launch guard"} },
+		capacity.TerminalLaunchScripts:   terminal.LaunchScriptsReading,
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).
 		// An inventory with no held screens is a known zero, not an
