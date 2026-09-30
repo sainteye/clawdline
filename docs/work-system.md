@@ -30,6 +30,15 @@
 > redispatch; a material change outside the reviewed UX, policy, brand or security boundary gets
 > one focused specialist review. It complements rather than replaces plan review and checker PASS; details are in
 > [`work-system-v2.md` §6.4b](work-system-v2.md).
+>
+> **A Session creates a Board item unassigned unless it is told to take it (2026-09-30).**
+> `clawdline item add` used to leave every Feature, Issue and Epic assigned to the Session that ran
+> it, in `assigned`. The person often asks a Session to write an item up for later, so the item now
+> lands unassigned where unassigned items of its kind wait on the Board, still carrying its `--step`
+> rows (or the steps seeded from its description's list). `--assign-self` (`"assign": {"mode":
+> "self"}`) takes it in the same write, exactly as before, and the guide reserves it for a message
+> that asks this Session to do the work now. `--assign-new` and `--assign-terminal` stay
+> Clawdfather's. Details are in [`work-system-v2.md` §7.1](work-system-v2.md).
 
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon

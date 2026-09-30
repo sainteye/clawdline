@@ -18,8 +18,10 @@ import (
 // `clawdline item`: a Board item a Session creates because the person told it
 // to, in a message sent through Clawdline (docs/work-system-v2.md §2, amended
 // 2026-09-25). `add` creates it under that message's run — read from this
-// conversation's latest run unless --run names one — and it arrives assigned
-// to this Session with its steps. `claim` takes an existing, unassigned item
+// conversation's latest run unless --run names one — and it arrives
+// unassigned with its steps, or assigned to this Session with --assign-self
+// when that message told it to do the work now. `claim` takes an existing,
+// unassigned item
 // for this Session under that message's run, when the message told it to.
 // `acceptance` lets the owning Session fill an empty acceptance contract.
 // `steps` lists an item's steps with their
@@ -53,11 +55,23 @@ type itemFlags struct {
 	assign                                                     assignFlags
 }
 
-// assignFlags is who `item child` or `item assign` hands the item to: an
-// existing Session by terminal id, or a new Session Clawdline opens.
+// assignFlags is who `item add`, `item child` or `item assign` hands the item
+// to: an existing Session by terminal id, a new Session Clawdline opens, or —
+// for `item add` only — the Session running the command (self).
 type assignFlags struct {
 	terminal, assistant, model, persona string
-	open                                bool
+	open, self                          bool
+}
+
+// choices is how many Sessions were named; more than one is refused.
+func (a assignFlags) choices() int {
+	n := 0
+	for _, named := range []bool{a.terminal != "", a.open, a.self} {
+		if named {
+			n++
+		}
+	}
+	return n
 }
 
 // personaRefusal is why --persona cannot go with this choice, or "": a
@@ -83,6 +97,8 @@ func (a assignFlags) personaRefusal(terminalFlag, newFlag string) string {
 // request is the daemon's assign object, or nil when no Session was named.
 func (a assignFlags) request() map[string]any {
 	switch {
+	case a.self:
+		return map[string]any{"mode": "self"}
 	case a.terminal != "":
 		return map[string]any{"mode": "existing_session", "terminal_id": a.terminal}
 	case a.open:
@@ -138,6 +154,7 @@ func itemCommand(args []string) {
 	var assign assignFlags
 	fs.StringVar(&assign.terminal, "assign-terminal", "", "for child: assign it to the existing Session in this terminal")
 	fs.BoolVar(&assign.open, "assign-new", false, "for child: assign it to a new Session Clawdline opens")
+	fs.BoolVar(&assign.self, "assign-self", false, "for add: assign it to this Session, when the person's message asks it to do the work now")
 	fs.StringVar(&assign.terminal, "terminal", "", "for assign: the existing Session's terminal id")
 	fs.BoolVar(&assign.open, "new", false, "for assign: a new Session Clawdline opens")
 	fs.StringVar(&assign.assistant, "assistant", "", "with a new Session: claude or codex (default codex)")
@@ -314,7 +331,7 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 func itemUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>")
 	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]")
-	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
+	fmt.Fprintln(os.Stderr, "                          [--assign-self | --assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item name [--conversation id] [--port n] <item id> <Session task name>")
@@ -337,7 +354,8 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
 	fmt.Fprintln(os.Stderr, "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;")
-	fmt.Fprintln(os.Stderr, "  it arrives assigned to this Session, and its --step rows are the item's steps, not to-dos;")
+	fmt.Fprintln(os.Stderr, "  it arrives unassigned, and its --step rows are the item's steps, not to-dos; --assign-self")
+	fmt.Fprintln(os.Stderr, "  assigns it to this Session, only when the person's message asks this Session to do the work now;")
 	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
 	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
 	fmt.Fprintln(os.Stderr, "  name lets an assigned new Feature Root choose its own task name once, after reading the item;")
@@ -484,8 +502,8 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n", name)
 			return 2
 		}
-		if f.assign.terminal != "" && f.assign.open {
-			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
+		if f.assign.choices() > 1 {
+			fmt.Fprintf(stderr, "clawdline %s: --assign-self, --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
 			return 2
 		}
 		if why := f.assign.personaRefusal("--assign-terminal", "--assign-new"); why != "" {
@@ -523,6 +541,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: --kind and --title are both required. Nothing was created.\n", name)
 			return 2
 		}
+		if f.assign.self {
+			fmt.Fprintf(stderr, "clawdline %s: --assign-self is for item add; an Epic's child goes to "+
+				"--assign-terminal or --assign-new. Nothing was created.\n", name)
+			return 2
+		}
 		if f.assign.terminal != "" && f.assign.open {
 			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
 			return 2
@@ -550,7 +573,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	case "assign":
 		itemID := strings.TrimSpace(args[0])
 		a := f.assign.request()
-		if a == nil || (f.assign.terminal != "" && f.assign.open) {
+		if a == nil || f.assign.self || f.assign.choices() > 1 {
 			fmt.Fprintf(stderr, "clawdline %s: name one Session: --terminal <terminal id> or --new. Nothing was changed.\n", name)
 			return 2
 		}
@@ -758,6 +781,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			switch got.AssignmentState {
 			case "not_requested":
 				fmt.Fprintf(stderr, "Board item %s was created but not assigned. The person can assign it from the Board.\n", it.ID)
+				if f.assign.request() == nil && it.Kind != "refactor" && it.Kind != "plan" {
+					fmt.Fprintf(stderr, "When the person's message asks this Session to do it, take it with `clawdline item claim %s`.\n", it.ID)
+				}
 			case "awaiting_user":
 				fmt.Fprintf(stderr, "Board item %s is awaiting the person's first dialog in the new Project Session; no owner is assigned yet. Open that Session and answer its first screen, then check the Board.\n", it.ID)
 				return 1
@@ -767,7 +793,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			}
 		}
 	}
-	if (op == "add" || op == "claim") && it.Kind == "epic" {
+	if (op == "add" || op == "claim") && it.Kind == "epic" && it.OwnerSession != nil {
 		fmt.Fprintf(stdout, "This is an Epic: write its plan with `clawdline item doc %s --role plan --title Plan`, "+
 			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s`), record the review with "+
 			"`--role plan_review --reference <task id>`, then move it to implementing. `clawdline guide epic` says how.\n",

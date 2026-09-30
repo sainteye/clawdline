@@ -49,8 +49,9 @@ and projects an assigned item into its owner's Session to-do panel.
    no run is needed, and nothing else may be created that way.
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, completes by hand, or reopens an
    item.** An Agent may not
-   appoint itself or another Session — except that an item created under §7.1 arrives assigned to
-   the Session that relayed the person's message, and an item claimed under §7.2 is assigned to
+   appoint itself or another Session — except that an item created under §7.1 with
+   `{"assign":{"mode":"self"}}` arrives assigned to the Session that relayed the person's message
+   (the default, since 2026-09-30, is unassigned), and an item claimed under §7.2 is assigned to
    the Session the person's message told to take it, because that message is the person's
    assignment — and *(amended 2026-09-27)* the owner Session of an Epic assigns and reassigns that
    Epic's own open child items (§6.5), because the person assigned it the Epic. A person's completion (`POST /v1/work/v2/items/<id>/complete`, event
@@ -522,7 +523,7 @@ coordination to the new owner, whose `session_id` then passes the check.
 
 | Operation | Person/device | Owning Agent | Other Agent | Broker/rule |
 | --- | ---: | ---: | ---: | ---: |
-| Create item | yes | yes, on the person's explicit message relayed by its run (§7.1); arrives assigned to itself. An Epic's owner: Feature/Issue children of that Epic, after its plan gate (§6.5) | no | no |
+| Create item | yes | yes, on the person's explicit message relayed by its run (§7.1); arrives unassigned, or assigned to itself with `assign: self` when that message asks it to do the work now. An Epic's owner: Feature/Issue children of that Epic, after its plan gate (§6.5) | no | no |
 | Assign/reassign/unassign/delete (cancel) | yes | assign/reassign only, by an Epic's owner, of that Epic's open children (§6.5) | no | no |
 | Complete by hand (to `done` without evidence) | yes | no | no | no |
 | Reopen terminal work | yes | own just-completed `done` only, never a person's completion | no | no |
@@ -574,7 +575,7 @@ issued only when a person sends a Session a message through this daemon, and
 POST /v1/work/v2/agent/items     (machine auth, Idempotency-Key required)
 {"session_id": "<conversation id>", "via": {"run": "<run id>"}, "project_id": "<place id>",
  "kind": "…", "title": "…", "description": "…", "deployment_policy"?: "…", "steps"?: ["…"],
- "assign"?: {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}
+ "assign"?: {"mode": "self"} | {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}
 ```
 
 Each check refuses by a typed code and writes nothing: the run exists (`run_unknown`, also for no
@@ -587,19 +588,34 @@ run backs at most five created items, open or closed (`run_items_exhausted`, cap
 `run.created_items`).
 
 One transaction writes the item with `created_by = user_via_session:<run>` and an `item.created`
-event carrying `via_run` and `session_id`. For Feature, Issue and Epic it also writes an active
-`existing_session` assignment to that Session, moves the item to `assigned`, and writes its steps:
+event carrying `via_run` and `session_id`. For Feature, Issue and Epic it also writes its steps:
 the explicit `steps` in order, or — when there are none — the description's two or more top-level
-list rows exactly as a person's assignment seeds them. Explicit steps replace that seeding, so no
-step is written twice. Nothing is typed into the Session's terminal: it asked. Refactor and Plan
+list rows exactly as a person's assignment seeds them. Explicit steps replace that seeding, and a
+later assignment seeds nothing when steps exist, so no step is written twice. Refactor and Plan
 are created unassigned in Planning, as a person's would be.
+
+*(Amended 2026-09-30.)* The executable item is created **unassigned**, in `created`, where an
+unassigned item of its kind waits on the Board, and the answer says `assignment_state:
+"not_requested"`. The person often asks a Session to write work up for later, not to start it, and
+until this date every item a Session created arrived assigned to it. The Session takes the item in
+the same transaction only with `"assign": {"mode": "self"}` (`clawdline item add --assign-self`),
+which the guide reserves for a message asking this Session to do the work now: that writes an active
+`existing_session` assignment to the Session's own terminal and moves the item to `assigned`, and
+the answer says `assigned: true`, `assignment_state: "assigned"`. Nothing is typed into the
+Session's terminal: it asked. `self` is its own mode rather than `existing_session` with the
+caller's terminal id because the daemon already knows the caller, so a terminal id could only
+disagree with it, and because the assignment then commits with the item instead of in a second,
+separately failing request; `self` takes no other field (`invalid_assignment`). A Session asked
+later to take an item it created uses §7.2's claim. Refactor and Plan stay unassigned with or
+without `self`.
 
 The registered Clawdfather is the narrow exception for executable items: it works outside every
 Project and never owns or edits Project code. On a person's explicit Clawdline message it first
 creates the target Project's item unassigned, then may delegate it to a Project Session with
 `clawdline item add --project … --assign-new` or `--assign-terminal`. The daemon requires its
 current role binding to be online and to name the exact creating Session (`coordinator_required`),
-and rejects `assign` on ordinary Session item creation (`machine_delegation_required`). The
+rejects `existing_session` and `new_session` on ordinary Session item creation
+(`machine_delegation_required`), and refuses Clawdfather's own `self` (`invalid_assignment`). The
 item and an initial receipt naming its ID commit in one transaction. Assignment then runs and
 refines the receipt. The response separates `item_created` from `assignment_state`: `assigned` only
 when a Project owner is recorded, `awaiting_user` when a new Session stopped at its first dialog,

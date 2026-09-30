@@ -80,12 +80,14 @@ func TestAnEpicIsAssignableAndRefactorAndPlanAreNot(t *testing.T) {
 	}
 }
 
-// A Session's `item add --kind epic` arrives assigned to it with its steps,
-// as a Feature does; a Refactor still takes none.
+// A Session's `item add --kind epic --assign-self` arrives assigned to it
+// with its steps, as a Feature does; a Refactor still takes none.
 func TestAnEpicFromASessionArrivesAssignedWithItsSteps(t *testing.T) {
 	w, _ := newEpicTest(t)
 	run := sessionItemRun(t, w, "conv-a")
-	v, err := w.CreateFromSession(context.Background(), newSessionItem(run, work.KindEpic, "big", "plan", "build"), nil)
+	n := newSessionItem(run, work.KindEpic, "big", "plan", "build")
+	n.AssignSelf = true
+	v, err := w.CreateFromSession(context.Background(), n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

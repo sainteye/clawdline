@@ -2618,10 +2618,11 @@ func (s *Server) agentAddSessionTodos(w http.ResponseWriter, r *http.Request, co
 // (work-system-v2 §2, amended 2026-09-25). The body names that message's run;
 // the run must exist, be recent and have been said to this Session, the
 // Session must be a live non-child one, and one run backs at most
-// runItemLimit items. An executable item arrives assigned to the Session with
-// its steps; nothing is typed into the terminal, because the Session asked
-// for it. Every refusal is typed and writes nothing, and a replay with the
-// same key answers what was stored.
+// runItemLimit items. An executable item arrives unassigned with its steps,
+// unless the body asks {"assign":{"mode":"self"}}: then it arrives assigned to
+// the Session in the same transaction, and nothing is typed into the terminal,
+// because the Session asked for it. Every refusal is typed and writes nothing,
+// and a replay with the same key answers what was stored.
 func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		SessionID string `json:"session_id"`
@@ -2665,10 +2666,29 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if body.Assign != nil {
+	// "self" is the creating Session taking the item it creates. It is its
+	// own mode rather than existing_session with the caller's terminal: the
+	// daemon already knows the caller, so a terminal id could only disagree
+	// with it, and the assignment is written in the create's own transaction
+	// instead of by a second, separately failing assign.
+	assignSelf := body.Assign != nil && body.Assign.Mode == "self"
+	switch {
+	case assignSelf && machineTriage:
+		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
+			Message: "Clawdfather delegates a Project item to a Project Session with " +
+				"{\"mode\":\"existing_session\",…} or {\"mode\":\"new_session\",…}; it does not take one itself. Nothing was created."})
+		return
+	case assignSelf:
+		if a := body.Assign; a.TerminalID != "" || a.Assistant != "" || a.Model != "" || a.Persona != "" {
+			refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
+				Message: "{\"mode\":\"self\"} is the Session making the request and takes no other field; nothing was created."})
+			return
+		}
+	case body.Assign != nil:
 		if !machineTriage {
 			refuse(&app.WorkError{Status: http.StatusForbidden, Code: "machine_delegation_required",
-				Message: "Only Clawdfather may create and delegate a Project item in one request."})
+				Message: "Only Clawdfather may create and delegate a Project item in one request; " +
+					"a Session takes the item it creates with {\"assign\":{\"mode\":\"self\"}}."})
 			return
 		}
 		if err := body.Assign.check(); err != nil {
@@ -2687,8 +2707,8 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 	var answer []byte
 	created, err := s.workV2().CreateFromSession(r.Context(), app.NewSessionItemV2{Run: *run, SessionID: sess.ConversationID,
 		TerminalID: sess.ID, Assistant: string(sess.Assistant), SessionProject: sessionProject,
-		MachineTriage: machineTriage,
-		ProjectID:     project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
+		MachineTriage: machineTriage, AssignSelf: assignSelf,
+		ProjectID: project.ID, ProjectPath: project.Path, Kind: work.Kind(body.Kind), Title: body.Title,
 		Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
@@ -2701,7 +2721,14 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 					"assigned": false, "assignment_state": state, "item": s.workV2ItemOf(catalog, v)})
 				return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 			}
-			answer = workV2Answer(s.workV2ItemOf(catalog, v))
+			item := s.workV2ItemOf(catalog, v)
+			assigned := v.Item.OwnerSession != ""
+			state := "not_requested"
+			if assigned {
+				state = "assigned"
+			}
+			answer, _ = json.Marshal(map[string]any{"ok": true, "assigned": assigned,
+				"assignment_state": state, "item": item})
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
 		})
 	if err != nil {

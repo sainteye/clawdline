@@ -622,7 +622,7 @@ Issue 項目並指派給其他 Session（`clawdline guide epic`）。
 
 ```
 clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
-  --step "第一步" --step "第二步" …   [--description-file f | description 從 stdin]
+  --step "第一步" --step "第二步" …   [--description-file f | description 從 stdin] [--assign-self]
 ```
 
 範例。使用者寫：「開一個看板項目整理 release notes，TODO：起草、檢查連結、發佈。」這就是一條指令，
@@ -637,13 +637,19 @@ echo "下次 release 前把 release notes 整理好。" | \
 - `item add` 會讀這個對話最新的 run（`GET /v1/orchestrator/sessions/<conversation>/run`），除非用
   `--run` 指定；送出前先印出 Idempotency-Key（用 `--key` 重送同一筆寫入），成功後印出建立的項目和
   每個 step 的 id。它就是 `POST /v1/work/v2/agent/items`，body 是 `{"session_id", "via": {"run"},
-  "project_id", "kind", "title", "description", "deployment_policy"?, "steps"?: ["…"], "assign"?: {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}`。
-- Feature 或 Issue 建好時**已經指派給你**，phase 是 `assigned`，並帶著 steps：依序是那些 `--step`，
-  沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。不會有任何字打進你的 terminal——是你自己
-  要的。照順序做，每一步確認完成後就勾掉（`clawdline item steps <item id>`、`clawdline item step-done
-  <item id> <step id>`；做下去發現還少一步，就用 `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。Epic 也一樣建好就指派給你，
-  但進 implementing 之前要先走完 Epic 流程（見下文）。Refactor、Plan 會以未指派狀態建在規劃區，
-  不帶 steps（`planning_has_no_steps`）。
+  "project_id", "kind", "title", "description", "deployment_policy"?, "steps"?: ["…"], "assign"?: {"mode": "self"} | {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}`，
+  回 `201` 和 `{"item", "assigned", "assignment_state"}`。
+- Feature、Issue、Epic 預設建好時**不指派給任何人**，放在看板上同類未指派項目所在的地方，並帶著 steps：
+  依序是那些 `--step`，沒給的話，就是 description 裡兩列以上的頂層 Markdown 清單。使用者常常只是要你
+  先把工作寫下來、之後再做；建立項目不代表項目歸你。`assignment_state` 是 `not_requested`。
+- **只有使用者的訊息要這個 Session 現在就去做**（「開個項目然後把它做掉」）時，才加 `--assign-self`
+  （`"assign": {"mode": "self"}`）。這樣項目建好時就**指派給你**，phase 是 `assigned`，在同一筆寫入裡
+  完成。不會有任何字打進你的 terminal——是你自己要的。照順序做，每一步確認完成後就勾掉
+  （`clawdline item steps <item id>`、`clawdline item step-done <item id> <step id>`；做下去發現還少一步，就用
+  `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。
+  這樣接下的 Epic，進 implementing 之前要先走完 Epic 流程（見下文）。使用者之後才要你接下你先前建好、
+  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor、Plan 不論有沒有 `--assign-self`，
+  都以未指派狀態建在規劃區，不帶 steps（`planning_has_no_steps`）。
 - 已登記的 Clawdfather 是工程項目的例外：它不能擁有或修改 Project 程式碼。使用者的訊息明確要求新項目時，
   可以用 `clawdline item add --project <place id> --kind feature --title "…" --assign-new`（或
   `--assign-terminal <id>`）先建立項目，再交給 Project Session。若指派失敗，項目保留為未指派，

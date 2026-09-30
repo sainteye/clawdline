@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -65,6 +66,19 @@ func sessionItemBody(t *testing.T, session, run, project, kind string, steps ...
 	return string(b)
 }
 
+// selfAssigned is a create body that also asks {"assign":{"mode":"self"}}:
+// the Session takes the item it creates.
+func selfAssigned(t *testing.T, body string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		t.Fatal(err)
+	}
+	m["assign"] = map[string]string{"mode": "self"}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
 func issueTestRun(t *testing.T, s *Server, p *pane, text string) string {
 	t.Helper()
 	run, err := s.runs().Issue(context.Background(), p.s, "local", text)
@@ -77,7 +91,7 @@ func issueTestRun(t *testing.T, s *Server, p *pane, text string) string {
 func TestASessionCreatesAnItemOnThePersonsMessageAndThePersonSeesTheirWords(t *testing.T) {
 	s, p, project := sessionItemServer(t)
 	run := issueTestRun(t, s, p, "Make a Board item: draft, check and publish the notes")
-	body := sessionItemBody(t, p.s.ConversationID, run, project, "feature", "draft", "check", "publish")
+	body := selfAssigned(t, sessionItemBody(t, p.s.ConversationID, run, project, "feature", "draft", "check", "publish"))
 
 	rec := httptest.NewRecorder()
 	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", body, "session-item-1"))
@@ -85,14 +99,16 @@ func TestASessionCreatesAnItemOnThePersonsMessageAndThePersonSeesTheirWords(t *t
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}
 	var created struct {
-		OK   bool           `json:"ok"`
-		Item workV2ItemWire `json:"item"`
+		OK              bool           `json:"ok"`
+		Assigned        bool           `json:"assigned"`
+		AssignmentState string         `json:"assignment_state"`
+		Item            workV2ItemWire `json:"item"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
 	it := created.Item
-	if it.Phase != "assigned" || it.OwnerSession == nil || *it.OwnerSession != p.s.ConversationID ||
+	if !created.Assigned || created.AssignmentState != "assigned" || it.Phase != "assigned" || it.OwnerSession == nil || *it.OwnerSession != p.s.ConversationID ||
 		it.CreatedBy != work.ActorViaSession+run || len(it.Assignments) != 1 ||
 		it.Assignments[0].State != "active" || it.Assignments[0].TerminalID != p.s.ID ||
 		it.AcceptanceCriteria != "The release notes are ready to publish." || it.AcceptanceVersion != 1 ||
@@ -146,6 +162,93 @@ func TestASessionCreatesAnItemOnThePersonsMessageAndThePersonSeesTheirWords(t *t
 	s.workV2Route(list, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open", nil))
 	if list.Code != http.StatusOK || strings.Count(list.Body.String(), `"created_via":{"run":"`+run+`"`) != 1 {
 		t.Fatalf("list: %d %s", list.Code, list.Body)
+	}
+}
+
+// A person often asks a Session to write an item up for later: without
+// {"assign":{"mode":"self"}} the item is created unassigned, with its steps,
+// and the answer says no assignment was requested.
+func TestASessionCreatedItemIsUnassignedWithItsStepsByDefault(t *testing.T) {
+	s, p, project := sessionItemServer(t)
+	run := issueTestRun(t, s, p, "Put the release notes on the Board for later: draft, check, publish")
+	for _, kind := range []string{"feature", "issue", "epic"} {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items",
+			sessionItemBody(t, p.s.ConversationID, run, project, kind, "draft", "check", "publish"), "unassigned-"+kind))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%s: %d %s", kind, rec.Code, rec.Body)
+		}
+		var created struct {
+			Assigned        bool           `json:"assigned"`
+			AssignmentState string         `json:"assignment_state"`
+			Item            workV2ItemWire `json:"item"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+			t.Fatal(err)
+		}
+		it := created.Item
+		if created.Assigned || created.AssignmentState != "not_requested" || it.Phase != "created" ||
+			it.OwnerSession != nil || len(it.Assignments) != 0 {
+			t.Fatalf("%s arrived taken: %s", kind, rec.Body)
+		}
+		var titles []string
+		for _, st := range it.Steps {
+			titles = append(titles, st.Title)
+		}
+		if strings.Join(titles, "|") != "draft|check|publish" {
+			t.Fatalf("%s steps: %v", kind, titles)
+		}
+		// The Session can still take it when the person later says so.
+		claim := httptest.NewRecorder()
+		s.workV2Route(claim, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items/"+it.ID+"/claim",
+			fmt.Sprintf(`{"expected_version":%d,"session_id":%q,"via":{"run":%q}}`, it.Version, p.s.ConversationID, run),
+			"claim-"+kind))
+		if claim.Code != http.StatusOK || !strings.Contains(claim.Body.String(), `"phase":"assigned"`) {
+			t.Fatalf("%s claim: %d %s", kind, claim.Code, claim.Body)
+		}
+		full, err := s.workV2().Item(context.Background(), it.ID)
+		if err != nil || len(full.Steps) != 3 {
+			t.Fatalf("%s: claiming wrote steps twice: %d %v", kind, len(full.Steps), err)
+		}
+	}
+	if effects := p.done(); len(effects) != 0 {
+		t.Fatalf("the route typed into the Session: %v", effects)
+	}
+}
+
+// {"mode":"self"} is the Session taking what it creates, and nothing else:
+// it names no terminal, and Clawdfather never takes a Project item itself.
+// Delegating to another Session stays Clawdfather's.
+func TestSelfAssignmentIsTheCallerOnly(t *testing.T) {
+	s, p, project := sessionItemServer(t)
+	run := issueTestRun(t, s, p, "make an item and do it")
+	withAssign := func(assign map[string]string) string {
+		var m map[string]any
+		_ = json.Unmarshal([]byte(sessionItemBody(t, p.s.ConversationID, run, project, "issue")), &m)
+		m["assign"] = assign
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	for _, c := range []struct {
+		name   string
+		assign map[string]string
+		status int
+		code   string
+	}{
+		{"self with a terminal", map[string]string{"mode": "self", "terminal_id": "pane-9"},
+			http.StatusUnprocessableEntity, "invalid_assignment"},
+		{"another Session", map[string]string{"mode": "existing_session", "terminal_id": p.s.ID},
+			http.StatusForbidden, "machine_delegation_required"},
+	} {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", withAssign(c.assign), "self-"+c.name))
+		if rec.Code != c.status || codeOf(t, rec) != c.code {
+			t.Fatalf("%s: %d %s", c.name, rec.Code, rec.Body)
+		}
+	}
+	items, _, err := s.workV2().List(context.Background(), "", "", "all", "")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("refusals wrote %d items (%v)", len(items), err)
 	}
 }
 
@@ -247,6 +350,13 @@ func TestRegisteredClawdfatherDistinguishesUnassignedAndFailedDelegation(t *test
 	if failed.Code != http.StatusCreated || !strings.Contains(failed.Body.String(), `"assignment_state":"failed"`) ||
 		!strings.Contains(failed.Body.String(), `"assignment_error"`) {
 		t.Fatalf("failed assignment: %d %s", failed.Code, failed.Body)
+	}
+	// Clawdfather delegates; it never takes a Project item itself.
+	self := httptest.NewRecorder()
+	s.workV2Route(self, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items",
+		selfAssigned(t, body), "machine-self"))
+	if self.Code != http.StatusUnprocessableEntity || codeOf(t, self) != "invalid_assignment" {
+		t.Fatalf("Clawdfather self: %d %s", self.Code, self.Body)
 	}
 }
 

@@ -22,11 +22,15 @@ import (
 // demonstrably said to that Session. A person typing straight into the
 // terminal leaves no run, and that case stays the proposal path.
 //
-// An executable item arrives already assigned to the Session that created it,
-// with its steps in place; a planning item is created unassigned, in Planning,
-// exactly as a person's would be. Everything — the item, its assignment, its
-// steps and the receipt — is one transaction: it is written whole or not at
-// all.
+// An executable item arrives unassigned, with its steps in place, where an
+// unassigned item of its kind lives on the Board: a person often asks a
+// Session to write work up for later, not to start it. It arrives assigned to
+// the creating Session only when the Session asks for that (AssignSelf),
+// because the person's message told it to do the work now. A planning item is
+// created unassigned, in Planning, exactly as a person's would be, whether or
+// not the Session asked for it. Everything — the item, its steps, any
+// assignment and the receipt — is one transaction: it is written whole or not
+// at all.
 
 // runItemLimit is how many items one person's message may back. A message
 // that asks for more is a plan, which belongs on the Board as one planning
@@ -48,6 +52,9 @@ type NewSessionItemV2 struct {
 	// MachineTriage is set by the HTTP layer only for the live, registered
 	// machine steward. It creates an unassigned Project item for delegation.
 	MachineTriage bool
+	// AssignSelf assigns an executable item to the creating Session in the
+	// same transaction. Without it the item is created unassigned.
+	AssignSelf bool
 
 	ProjectID          string
 	ProjectPath        string
@@ -63,8 +70,9 @@ type NewSessionItemV2 struct {
 	Steps []string
 }
 
-// CreateFromSession creates the item, and for an executable kind its active
-// assignment to the creating Session and its steps, in one transaction.
+// CreateFromSession creates the item, and for an executable kind its steps and,
+// when AssignSelf asks, its active assignment to the creating Session, in one
+// transaction.
 func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2, file WorkV2Filer) (WorkV2View, error) {
 	if err := work.RelayTo(n.Run, n.SessionID, time.Time{}); err != nil {
 		return WorkV2View{}, relayRefusal(err)
@@ -102,7 +110,8 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 	}
 	if !i.Planning() && !n.MachineTriage && n.SessionProject != i.ProjectPath {
 		return WorkV2View{}, workV2Error(http.StatusConflict, "project_mismatch",
-			"This Session is not working in that Project, so the item could not be assigned to it; nothing was created.")
+			"This Session is not working in that Project; nothing was created. "+
+				"A Session creates Board items only in the Project it works in.")
 	}
 	var gates WorkV2GateSettings
 	if !i.Planning() {
@@ -129,7 +138,7 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 		}
 		out = WorkV2View{Item: i, Assignments: []work.AssignmentV2{}, Documents: []work.DocumentV2{},
 			Images: []work.ImageV2{}, Steps: []work.StepV2{}, Events: []work.EventV2{}}
-		if n.MachineTriage && !i.Planning() {
+		if !i.Planning() && (n.MachineTriage || !n.AssignSelf) {
 			seeded, err := addSessionItemSteps(tx, i, steps, n.SessionID, now)
 			if err != nil {
 				return err

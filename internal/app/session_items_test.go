@@ -38,14 +38,15 @@ func refusedAsWork(t *testing.T, err error, code string) {
 	}
 }
 
-// An executable item a Session creates on its person's message arrives
-// assigned to that Session, with the description's list as its steps and the
-// message as its provenance, in one write.
+// An executable item a Session creates on its person's message, asking to
+// take it, arrives assigned to that Session, with the description's list as
+// its steps and the message as its provenance, in one write.
 func TestASessionCreatesAnAssignedItemWithStepsFromThePersonsMessage(t *testing.T) {
 	w := newWorkV2Test(t)
 	run := sessionItemRun(t, w, "conv-a")
-	v, err := w.CreateFromSession(context.Background(), newSessionItem(run, work.KindFeature,
-		"Do these:\n- first\n- second\n- third"), nil)
+	n := newSessionItem(run, work.KindFeature, "Do these:\n- first\n- second\n- third")
+	n.AssignSelf = true
+	v, err := w.CreateFromSession(context.Background(), n, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +84,48 @@ func TestASessionCreatesAnAssignedItemWithStepsFromThePersonsMessage(t *testing.
 	active, _, err := w.List(context.Background(), "", "conv-a", "open", "")
 	if err != nil || len(active) != 1 {
 		t.Fatalf("the Session's assigned projection: %d %v", len(active), err)
+	}
+}
+
+// Without AssignSelf an executable item is created unassigned, where the
+// person's unassigned items of its kind wait, and still carries its steps —
+// the explicit ones, or the description's list — for whoever takes it.
+func TestASessionCreatedItemIsUnassignedWithItsStepsByDefault(t *testing.T) {
+	w := newWorkV2Test(t)
+	run := sessionItemRun(t, w, "conv-a")
+	for _, n := range []NewSessionItemV2{
+		newSessionItem(run, work.KindFeature, "Later:\n- first\n- second"),
+		newSessionItem(run, work.KindIssue, "Later", "first", "second"),
+		newSessionItem(run, work.KindEpic, "Later", "first", "second"),
+	} {
+		v, err := w.CreateFromSession(context.Background(), n, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Item.OwnerSession != "" || v.Item.Phase != work.PhaseCreated || len(v.Assignments) != 0 ||
+			v.Item.Area() == "planning" {
+			t.Fatalf("%s arrived taken: %+v", n.Kind, v.Item)
+		}
+		full, err := w.Item(context.Background(), v.Item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var titles []string
+		for _, s := range full.Steps {
+			titles = append(titles, s.Title)
+		}
+		if strings.Join(titles, "|") != "first|second" {
+			t.Fatalf("%s steps: %v", n.Kind, titles)
+		}
+		for _, e := range full.Events {
+			if e.Kind == "item.assigned" {
+				t.Fatalf("%s was assigned: %+v", n.Kind, full.Events)
+			}
+		}
+	}
+	mine, _, err := w.List(context.Background(), "", "conv-a", "open", "")
+	if err != nil || len(mine) != 0 {
+		t.Fatalf("the Session's assigned projection: %d %v", len(mine), err)
 	}
 }
 

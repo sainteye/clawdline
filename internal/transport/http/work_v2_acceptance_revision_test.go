@@ -27,7 +27,7 @@ func TestAgentAcceptanceRevisionRequiresCurrentPersonsInstructionAndReplays(t *t
 	createRun := issueTestRun(t, s, p, "Create the release notes item")
 	created := httptest.NewRecorder()
 	s.workV2Route(created, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items",
-		sessionItemBody(t, owner, createRun, project, "issue"), "revision-create"))
+		selfAssigned(t, sessionItemBody(t, owner, createRun, project, "issue")), "revision-create"))
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", created.Code, created.Body)
 	}

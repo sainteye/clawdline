@@ -687,7 +687,7 @@ Clawdline, so it has a run — explicitly asks for one, create it yourself:
 
 ```
 clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
-  --step "first step" --step "second step" …   [--description-file f | description on stdin]
+  --step "first step" --step "second step" …   [--description-file f | description on stdin] [--assign-self]
 ```
 
 Worked example. The person writes: *"Make a Board item to clean up the release notes, TODO: draft
@@ -703,14 +703,24 @@ echo "Clean up the release notes before the next release." | \
   unless `--run` names one, prints its Idempotency-Key before asking (`--key` retries the same
   write), and prints the created item with each step's id. It is
   `POST /v1/work/v2/agent/items` with `{"session_id", "via": {"run"}, "project_id", "kind",
-  "title", "description", "deployment_policy"?, "steps"?: ["…"], "assign"?: {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}`.
-- A Feature or Issue arrives **assigned to you**, in `assigned`, with its steps: the `--step` rows
-  in order, or — when you give none — two or more top-level Markdown list rows of the description.
-  Nothing is typed into your terminal; you asked for it. Work the steps in order, complete each
-  one when it is verified (`clawdline item steps <item id>`, `clawdline item step-done <item id>
-  <step id>`; `clawdline item step-add` adds one the work turns out to need), and advance the phases with `clawdline item phase` as for any assigned item (below). An Epic arrives
-  assigned the same way, and then follows the Epic procedure (below) before it may be implemented.
-  A Refactor or Plan is created unassigned, in Planning, and takes no steps (`planning_has_no_steps`).
+  "title", "description", "deployment_policy"?, "steps"?: ["…"], "assign"?: {"mode": "self"} | {"mode": "existing_session", "terminal_id": "…"} | {"mode": "new_session", "assistant"?: "…"}}`,
+  answered `201` with `{"item", "assigned", "assignment_state"}`.
+- A Feature, Issue or Epic arrives **unassigned** by default, where the person's unassigned items of
+  that kind wait on the Board, with its steps: the `--step` rows in order, or — when you give none —
+  two or more top-level Markdown list rows of the description. The person often asks you to write
+  work up for later; creating the item does not make it yours. `assignment_state` is
+  `not_requested`.
+- Add `--assign-self` (`"assign": {"mode": "self"}`) **only when the person's message asks this
+  Session to do the work now** ("make an item for this and do it"). The item then arrives
+  **assigned to you**, in `assigned`, in the same write. Nothing is typed into your terminal; you
+  asked for it. Work the steps in order, complete each one when it is verified
+  (`clawdline item steps <item id>`, `clawdline item step-done <item id> <step id>`; `clawdline item step-add` adds
+  one the work turns out to need), and advance the phases with `clawdline item phase` as for any
+  assigned item (below). An Epic taken this way then follows the Epic procedure (below) before it
+  may be implemented. If the person asks you to take an item you created unassigned later, use
+  `clawdline item claim` (below).
+  A Refactor or Plan is created unassigned, in Planning, with or without `--assign-self`, and takes
+  no steps (`planning_has_no_steps`).
 - The registered Clawdfather is the exception for executable Project work: it never owns or edits
   Project code. When the person's message explicitly requests a new item, it may use
   `clawdline item add --project <place id> --kind feature --title "…" --assign-new` (or
@@ -728,7 +738,8 @@ echo "Clean up the release notes before the next release." | \
   `child_session` (a child reports through `result.json`), `project_not_found`,
   `project_mismatch` (an ordinary executable item must be in the Project you work in),
   `coordinator_required` (a machine Session without the live role), `machine_delegation_required`
-  (an ordinary Session requested the machine-only combined assignment), `too_many_steps`
+  (an ordinary Session requested the machine-only combined assignment to another Session),
+  `invalid_assignment` (a malformed `assign`, or Clawdfather asking for `self`), `too_many_steps`
   (more than 128), `run_items_exhausted` (one message backs at most five items).
 - **No run** — the person typed straight into the terminal, so `item add` answers `no_run` or
   `run_unknown`: fall back to a proposal (below) and tell the person to accept it in the Board's

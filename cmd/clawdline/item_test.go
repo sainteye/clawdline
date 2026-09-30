@@ -127,6 +127,47 @@ func TestItemAddCanCreateThenDelegateFromTheMachineSteward(t *testing.T) {
 	}
 }
 
+// --assign-self asks the daemon for {"mode":"self"}; without it no assign is
+// sent and the item waits unassigned, with the way to take it later named.
+func TestItemAddTakesTheItemOnlyWithAssignSelf(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 201, createdItem })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "add", itemFlags{project: "p1", kind: "feature", title: "Ship it",
+		description: "d", run: itemRun, assign: assignFlags{self: true}}, nil, thinConversation, "item-self", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	if seen := s.requests(); len(seen) != 1 || !strings.Contains(string(seen[0].Body), `"assign":{"mode":"self"}`) {
+		t.Fatalf("requests = %+v", seen)
+	}
+
+	const unassigned = `{"ok":true,"assigned":false,"assignment_state":"not_requested",` +
+		`"item":{"id":"item-2","title":"Later","kind":"issue","phase":"created","owner_session":null,"version":1}}`
+	s, b = newStandIn(t, func(r *http.Request) (int, string) { return 201, unassigned })
+	out.Reset()
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "add", itemFlags{project: "p1", kind: "issue", title: "Later",
+		description: "d", run: itemRun}, nil, thinConversation, "item-later", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	if seen := s.requests(); len(seen) != 1 || strings.Contains(string(seen[0].Body), `"assign"`) {
+		t.Fatalf("requests = %+v", seen)
+	}
+	if !strings.Contains(out.String(), "item-2  Later  [issue, created, unassigned]") ||
+		!strings.Contains(errs.String(), "clawdline item claim item-2") {
+		t.Fatalf("stdout %q stderr %q", out.String(), errs.String())
+	}
+
+	for _, both := range []assignFlags{{self: true, open: true}, {self: true, terminal: "t1"}} {
+		s, b = newStandIn(t, func(r *http.Request) (int, string) { return 201, createdItem })
+		errs.Reset()
+		if code := sessionItem(&out, &errs, b, "add", itemFlags{project: "p1", kind: "issue", title: "x",
+			description: "d", run: itemRun, assign: both}, nil, thinConversation, "", envOf(nil)); code != 2 ||
+			!strings.Contains(errs.String(), "one choice") || len(s.requests()) != 0 {
+			t.Fatalf("%+v: exit %d, %s", both, code, errs.String())
+		}
+	}
+}
+
 func TestMachineItemAddExplainsEveryDelegationState(t *testing.T) {
 	for _, tc := range []struct {
 		name, state, errorJSON, want string
