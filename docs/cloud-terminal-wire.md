@@ -25,10 +25,10 @@ Connection states are `opening`, `active`, `rekey_pending` and `closed`. An `ope
 Connection metadata is a separate relay control frame sent only on a machine WebSocket that completed challenge and hello, never through `/v1/ingest`:
 
 ```json
-{"type":"terminal_connection","action":"register","machine":"<id>","viewer":"<id>","connection":"<random>","expires_at":0}
+{"type":"terminal_connection","request_id":"<uuid>","action":"register","machine":"<id>","viewer":"<id>","connection":"<random>","expires_at":0}
 ```
 
-`action` is `register` or `retire`; `expires_at` here is Unix milliseconds and must be in the future but no more than ten minutes away. Registration cannot extend an existing connection id. The relay requires the authenticated attachment's role and device/machine id to match `machine`, the viewer's current terminal capability, and a matching paired subscription reservation. Only the machine that registered a connection can retire it. It answers `terminal_connection_registered`, `terminal_connection_retired` or a typed refusal. Lost retirement confirmation is bounded by expiry; a lost registration confirmation prevents frame fanout/cache. A viewer cancellation uses ordinary unsubscribe.
+`action` is `register` or `retire`; `expires_at` here is Unix milliseconds and must be in the future but no more than ten minutes away. Registration cannot extend an existing connection id. The relay requires the authenticated attachment's role and device/machine id to match `machine`, the viewer's current terminal capability, and a matching paired subscription reservation. Only the machine that registered a connection can retire it. It answers `terminal_connection_registered`, `terminal_connection_retired` or `terminal_connection_refused`; each answer echoes `request_id`, `action`, `machine`, `viewer` and `connection`, and a refusal adds a typed `code`. On the same authenticated machine socket, a repeated `request_id` with identical payload replays the fixed answer; the same id with a different payload is a typed conflict. A DO restart discards this idempotency state and cached frame: the machine uses a new request id only after the viewer has re-established the paired reservation, and the viewer waits for a new complete frame. Lost retirement confirmation is bounded by expiry; a lost registration confirmation prevents frame fanout/cache. A viewer cancellation uses ordinary unsubscribe.
 
 ## Plaintext shapes
 
