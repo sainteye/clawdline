@@ -148,7 +148,7 @@ func TestDispatchWritesTheBriefAndPostsIt(t *testing.T) {
 		t.Errorf("deliverables = %s", got)
 	}
 	if got, _ := json.Marshal(task["root"]); string(got) !=
-		`{"assistant":"claude","label":"my root","session_id":"`+thinConversation+`"}` {
+		`{"assistant":"claude","label":"my root","project_dir":"/repo","session_id":"`+thinConversation+`"}` {
 		t.Errorf("root = %s", got)
 	}
 	if _, ok := task["secret"]; ok {

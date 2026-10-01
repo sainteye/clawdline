@@ -392,7 +392,7 @@ func taskFile(id string, o dispatchOptions, conversation, rootAssistant string) 
 	if claims == nil {
 		claims = []string{}
 	}
-	root := map[string]any{"session_id": conversation, "assistant": rootAssistant}
+	root := map[string]any{"session_id": conversation, "assistant": rootAssistant, "project_dir": o.ProjectDir}
 	if o.Label != "" {
 		root["label"] = o.Label
 	}

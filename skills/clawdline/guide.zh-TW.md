@@ -282,7 +282,7 @@ claims、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `work_id` | 選填，這個 task 所服務的看板項目的 UUID |
 | `persona` | 選填，內建角色的 id（`GET /v1/personas`）；預設沒有 |
 | `auto_compact_window` | 選填，只限 Claude：child 在 context 到多少 token（50000–1000000）時壓縮，或 `null` 表示不壓縮。不寫就跟著這台機器的 `claude_auto_compact_window`，使用者沒設就是關閉。用來比較兩次執行，不是每份 brief 都要寫：壓縮可能漏掉細節 |
-| `root` | **必填**：`{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
+| `root` | **必填**：`{"session_id": "<你的 conversation id>", "assistant": "claude"\|"codex", "project_dir": "<與外層 project_dir 相同的絕對 repository 路徑>", "label": "…"}`。有角色範圍的 root 需要 `root.project_dir`，daemon 才能驗證 Project 範圍。 |
 
 **派工前，要讓 worker surface 與啟動模式符合 child 必須使用的每一項工具。** brief 必須列出必要工具，
 root 也必須證明選到的 surface 真的提供它們。Codex CLI child 不會因為調整 permission flag，就得到
@@ -322,6 +322,7 @@ task 最多兩次。
 | 422 | `bad_task` | 訊息會點出是哪個欄位。「No readable task.json under …」也是這一種——檢查 `task_root` |
 | 422 | `claims_required` | 補上 `claims` |
 | 422 | `root_session_required`、`root_assistant_required` | 補上 `root.session_id` 和 `root.assistant` |
+| 403 | `session_scope_mismatch` | 檢查 `root.project_dir` 是否存在，且與根 Session 的 Project 及角色快照相符。修正 brief 或 CLI；不要請使用者改 Project 設定。 |
 | 422 | `detached_route_required` | 你送了 `root.poll_only`；那是 detached automation（§6） |
 | **409** | **`stale_inventory`** | 你的 `generation` 沒帶或過期了。錯誤裡附著目前完整的 inventory：讀它、重新判斷，再用它的 `generation` 重送 |
 | 409 | `graph_*` | task-graph 的准入規則（`graph` 欄位） |
