@@ -10,7 +10,7 @@ async function fixture() {
   const master = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   const sender = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
   const machineKey = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
-  const events = new Set<(event: { type: string; channels?: string[]; code?: string }) => void>()
+  const events = new Set<(event: { type: string; channels?: string[]; code?: string; error?: { code?: string } }) => void>()
   const published: TerminalEnvelope[] = []
   const observed: unknown[] = []
   let confirm = true
@@ -39,7 +39,9 @@ async function fixture() {
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", machineKey.privateKey, envelopeSigningBytes(envelope))))
     return envelope
   }
-  return { adapter, client, fresh, seen, published, observed, seal, setConfirm: (value: boolean) => { confirm = value }, master }
+  return { adapter, client, fresh, seen, published, observed, seal,
+    emitRelay: (event: { type: string; error?: { code?: string } }) => events.forEach((fn) => fn(event)),
+    setConfirm: (value: boolean) => { confirm = value }, master }
 }
 
 test("the no-cache receipt is subscribed before an outbound open can be published", async () => {
@@ -93,5 +95,37 @@ test("a verified term frame can be observed once on the authenticated socket", a
   assert.throws(() => f.adapter.observeTerminalFrame(frame), /terminal_bad_envelope/)
   const wrong = { ...frame, seq: 6 }
   assert.throws(() => f.adapter.observeTerminalFrame(wrong), /terminal_bad_envelope/)
+  f.adapter.dispose()
+})
+
+test("a revocation notice reaches the tab only through a signed current receipt route and key", async () => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  const notice = { v: 1, type: "terminal_notice", connection: f.fresh.connection,
+    code: "terminal_access_revoked", machine_incarnation: "machine-start" }
+  const wrongRoute = await f.seal(3, notice)
+  wrongRoute.ch = `termr/${machine}/wrong/${f.fresh.connection}`
+  await f.client._receiveEnvelope(wrongRoute, false)
+  const wrongKey = await f.seal(4, notice, "termr", crypto.getRandomValues(new Uint8Array(32)))
+  await f.client._receiveEnvelope(wrongKey, false)
+  const wrongSignature = await f.seal(5, notice)
+  wrongSignature.sig = bytesBase64(crypto.getRandomValues(new Uint8Array(64)))
+  await f.client._receiveEnvelope(wrongSignature, false)
+  assert.equal(f.seen.length, 0, "invalid envelopes cannot change the session")
+  const valid = await f.seal(6, notice)
+  await f.client._receiveEnvelope(valid, false)
+  assert.equal(f.seen.length, 1)
+  assert.deepEqual((f.seen[0] as { plaintext: unknown }).plaintext, notice)
+  f.adapter.dispose()
+})
+
+test("a typed relay subscription refusal keeps its source code", async () => {
+  const f = await fixture()
+  f.setConfirm(false)
+  const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  f.emitRelay({ type: "error", error: { code: "forbidden" } })
+  await assert.rejects(subscribed, /forbidden/)
+  assert.equal(f.seen.length, 0)
   f.adapter.dispose()
 })

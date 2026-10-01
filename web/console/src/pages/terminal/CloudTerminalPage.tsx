@@ -164,6 +164,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   })
   const goBack = () => openTerminalPage(project, "", from)
   const status = stateWords(snapshot.state)
+  const accessError = error === "forbidden" || error === "terminal_forbidden" || error === "terminal_access_revoked"
   const holder = !snapshot.control?.held ? nextWord("terminalControlNobody") :
     (snapshot.control.holder?.name || snapshot.control.holder?.same_device)
       ? holderWords(snapshot.control.holder)
@@ -174,8 +175,9 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     <div className="terminal-note-row"><h2>{nextWord("terminalListTitle", { project: label })}</h2>
       <button className="board-button" type="button" disabled={!!busy || loading || !!error} aria-busy={busy === "open"} onClick={openNew}>{nextWord("terminalOpenNew")}</button></div>
     {loading && <p className="terminal-note" role="status">{nextWord("terminalListLoading")}</p>}
-    {error && <div><p className="terminal-note" role="alert">{error === "terminal_open_state_unknown" ? nextWord("terminalCloudOpenUnknown") : nextWord("terminalListFailed", { why: error })}</p>
-      <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReloadList")}</button></div>}
+    {error && <div><p className="terminal-note" role="alert">{accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) :
+      error === "terminal_open_state_unknown" ? nextWord("terminalCloudOpenUnknown") : nextWord("terminalListFailed", { why: error })}</p>
+      {!accessError && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReloadList")}</button>}</div>}
     {!loading && !error && rows.length === 0 && <p className="terminal-note">{nextWord("terminalListEmpty")}</p>}
     <ul className="terminal-rows">{rows.map((row) => <li key={row.id}>
       <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, row.id, from)}>
@@ -197,7 +199,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
         {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || !!error || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
           {snapshot.control?.held ? nextWord("terminalTakeover") : nextWord("terminalAcquire")}</button>}
-        {(snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
+        {!accessError && (snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
           onClick={() => setConfirm("reacquire")}>{nextWord("terminalCloudReacquire")}</button>}
         {(snapshot.state === "stale" || snapshot.state === "offline") && <button className="board-button" type="button" disabled={!!busy}
           onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
@@ -216,11 +218,11 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
         <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
       </div>}
       <p className="terminal-status-line" role="status" aria-live="polite">{loading ? nextWord("terminalConnecting") :
-        error ? nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
+        error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
           snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
           snapshot.state === "revoked" ? nextWord("terminalRefusalAccessRevoked") :
             !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
-      {error && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button>}
+      {error && !accessError && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
     </header>
     {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2><pre ref={historyFocus} tabIndex={0}>{history.join("\n")}</pre></section>}
