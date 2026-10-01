@@ -33,6 +33,7 @@ const (
 	CloudTerminalIngressLimit                 = 16
 	CloudTerminalRefusalsLimit                = 16
 	CloudTerminalRevocationRetireSecondsLimit = 3
+	CloudTerminalFrameHeartbeatSecondsLimit   = 3
 )
 
 // TerminalCapacity reports the terminal rail without exposing its keys or
@@ -63,7 +64,8 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 	case capacity.CloudTerminalRefusals:
 		r.Used = int64(len(l.terminalRefusals))
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline,
-		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire:
+		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire,
+		capacity.CloudTerminalFrameHeartbeat:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -109,6 +111,8 @@ type terminalConnection struct {
 	client            string
 	frameSeq          uint64
 	publishedFrameSeq uint64
+	framePendingSeq   uint64
+	framePending      bool
 	watchCancel       context.CancelFunc
 	watchReady        chan struct{}
 	receipts          map[string][]byte
@@ -124,6 +128,12 @@ func terminalReceiptSettleID(channel string, seq uint64) string {
 
 func (l *Link) terminalReceiptSettled(channel string, seq uint64) {
 	l.terminalMu.Lock()
+	for _, connection := range l.terminalConnections {
+		if channel == "term/"+l.identity.MachineID+"/"+connection.viewer+"/"+connection.id && connection.framePending && connection.framePendingSeq == seq {
+			connection.framePending = false
+			break
+		}
+	}
 	id := terminalReceiptSettleID(channel, seq)
 	c := l.terminalRetireAfterReceipt[id]
 	delete(l.terminalRetireAfterReceipt, id)
@@ -926,7 +936,7 @@ func (l *Link) watchTerminal(ctx context.Context, svc *terminals.Service, p term
 		c.watchCancel()
 	}
 	ready := make(chan struct{})
-	c.watchCancel, c.watchReady, c.terminalID, c.client, c.frameSeq, c.publishedFrameSeq = cancel, ready, id, client, 0, 0
+	c.watchCancel, c.watchReady, c.terminalID, c.client = cancel, ready, id, client
 	l.terminalMu.Unlock()
 	go func() {
 		defer watch.Stop()
@@ -935,44 +945,61 @@ func (l *Link) watchTerminal(ctx context.Context, svc *terminals.Service, p term
 		case <-watchCtx.Done():
 			return
 		}
-		_ = watch.Run(watchCtx, func(e terminals.Event) error {
+		_ = watch.RunWithFrameHeartbeat(watchCtx, CloudTerminalFrameHeartbeatSecondsLimit*time.Second, func(e terminals.Event) error {
 			if e.Kind != terminals.EventFrame {
 				return nil
 			}
-			if err := svc.Allow(p); err != nil {
-				l.closeTerminalConnection(c)
-				return err
-			}
-			l.terminalMu.Lock()
-			if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c || c.terminalID != id ||
-				!c.expires.After(l.opts.Now()) {
-				l.terminalMu.Unlock()
-				return context.Canceled
-			}
-			c.frameSeq++
-			seq := c.frameSeq
-			l.terminalMu.Unlock()
-			payload, err := json.Marshal(map[string]any{"v": 1, "type": "terminal_frame",
-				"terminal_id": string(id), "connection": c.id, "frame_seq": seq,
-				"captured_at": float64(e.Frame.At.UnixMilli()) / 1000, "frame": cloudWireFrame(e.Frame)})
-			if err != nil {
-				return err
-			}
-			if err := svc.Allow(p); err != nil {
-				l.closeTerminalConnection(c)
-				return err
-			}
-			if err := l.publishTerminal(watchCtx, Outbound{Channel: "term/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id,
-				Class: string(domaincloud.ClassStream), Payload: payload, Key: c.key, KeyID: c.keyID}); err != nil {
-				return err
-			}
-			l.terminalMu.Lock()
-			if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c && c.frameSeq >= seq {
-				c.publishedFrameSeq = seq
-			}
-			l.terminalMu.Unlock()
-			return nil
+			return l.sendTerminalFrame(watchCtx, svc, p, c, id, e.Frame)
 		})
 	}()
 	return nil
+}
+
+func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p terminals.Principal,
+	c *terminalConnection, id terminal.ID, frame terminal.Frame) error {
+	if err := svc.Allow(p); err != nil {
+		l.revokeRegisteredTerminal(ctx, c)
+		return err
+	}
+	l.terminalMu.Lock()
+	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c || c.terminalID != id ||
+		!c.expires.After(l.opts.Now()) || c.denied {
+		l.terminalMu.Unlock()
+		return context.Canceled
+	}
+	if c.framePending {
+		l.terminalMu.Unlock()
+		return nil
+	}
+	c.frameSeq++
+	seq := c.frameSeq
+	l.terminalMu.Unlock()
+	payload, err := json.Marshal(map[string]any{"v": 1, "type": "terminal_frame",
+		"terminal_id": string(id), "connection": c.id, "frame_seq": seq,
+		"captured_at": float64(frame.At.UnixMilli()) / 1000, "frame": cloudWireFrame(frame)})
+	if err != nil {
+		return err
+	}
+	if err := svc.Allow(p); err != nil {
+		l.revokeRegisteredTerminal(ctx, c)
+		return err
+	}
+	l.terminalMu.Lock()
+	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c || c.denied || c.framePending {
+		l.terminalMu.Unlock()
+		return nil
+	}
+	if l.relay == nil {
+		l.terminalMu.Unlock()
+		return ErrRelayNotReady
+	}
+	envelopeSeq, err := l.relay.PublishTracked(ctx, Outbound{Channel: "term/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id,
+		Class: string(domaincloud.ClassStream), Payload: payload, Key: c.key, KeyID: c.keyID})
+	if err == nil {
+		c.framePending = true
+		c.framePendingSeq = envelopeSeq
+		c.publishedFrameSeq = seq
+	}
+	l.terminalMu.Unlock()
+	return err
 }

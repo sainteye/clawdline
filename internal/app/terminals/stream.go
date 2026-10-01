@@ -151,7 +151,19 @@ func (w *Watch) Stop() {
 // loses access, or send fails. It begins with the lease, the state and the
 // newest frame, and after that sends a frame only when the screen changed:
 // the newest one, read no more often than CaptureGap, never a queue of them.
+// Cloud callers use RunWithFrameHeartbeat to recapture an unchanged screen.
 func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
+	return w.run(ctx, 0, send)
+}
+
+// RunWithFrameHeartbeat also sends a freshly captured complete frame when the
+// screen has been still for heartbeat. Cloud viewers use this to distinguish
+// an idle shell from a disconnected machine.
+func (w *Watch) RunWithFrameHeartbeat(ctx context.Context, heartbeat time.Duration, send func(Event) error) error {
+	return w.run(ctx, heartbeat, send)
+}
+
+func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Event) error) error {
 	s, id := w.s, w.id
 	if err := s.allowed(w.v.who); err != nil {
 		return send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
@@ -164,6 +176,7 @@ func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 		return err
 	}
 	last := w.first
+	lastSentAt := last.At
 	// Watch may have spent time capturing the first frame while access was
 	// revoked. Do not release that frame merely because Watch was admitted.
 	if err := s.allowed(w.v.who); err != nil {
@@ -174,7 +187,7 @@ func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 		return err
 	}
 	var poll <-chan time.Time
-	if w.wake == nil {
+	if w.wake == nil || heartbeat > 0 {
 		t := time.NewTicker(pollEvery)
 		defer t.Stop()
 		poll = t.C
@@ -217,7 +230,7 @@ func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 				return true, err
 			}
 		}
-		if frame.Rev != last.Rev {
+		if frame.Rev != last.Rev || (heartbeat > 0 && frame.At.Sub(lastSentAt) >= heartbeat) {
 			if err := s.allowed(w.v.who); err != nil {
 				return true, send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
 					"this device may no longer see this machine's terminals")})
@@ -226,6 +239,7 @@ func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 			if err := send(Event{Kind: EventFrame, Frame: frame}); err != nil {
 				return true, err
 			}
+			lastSentAt = frame.At
 		} else {
 			last.At = frame.At
 		}
