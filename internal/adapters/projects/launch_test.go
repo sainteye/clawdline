@@ -10,13 +10,16 @@ import (
 // The line a new terminal is typed is the one thing on the start route a
 // person's machine executes, so its exact spelling is pinned here.
 func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	pathEnv := "PATH='" + filepath.Join(state, "bin") + "'" + string(os.PathListSeparator) + `"$PATH"`
 	l, err := Admit(LaunchRequest{ProjectRoot: "/tmp/it's here", Assistant: AssistantClaude})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := "cd '/tmp/it'\\''s here' && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION " +
 		"-u CLAUDE_PID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN " +
-		"-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT claude"
+		"-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT " + pathEnv + " claude"
 	if got := l.ShellLine(); got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}
@@ -26,8 +29,21 @@ func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := r.ShellCommand(), "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "+
-		"-u CODEX_SANDBOX_NETWORK_DISABLED codex resume 0f1e0000-0000-4000-8000-000000000001 --model opus"; got != want {
+		"-u CODEX_SANDBOX_NETWORK_DISABLED "+pathEnv+" codex resume 0f1e0000-0000-4000-8000-000000000001 --model opus"; got != want {
 		t.Fatalf("resume first\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestStartedAssistantCanFindClawdlineOnPATH(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	l, err := Admit(LaunchRequest{ProjectRoot: "/project", Assistant: AssistantCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "PATH='" + filepath.Join(state, "bin") + "'" + string(os.PathListSeparator) + `"$PATH"`
+	if got := l.ShellCommand(); !strings.Contains(got, want) {
+		t.Fatalf("started assistant cannot find Clawdline: %q lacks %q", got, want)
 	}
 }
 
@@ -196,13 +212,16 @@ func TestWeakTitleStepsAsideOnlyForAFallback(t *testing.T) {
 // model_reasoning_effort=…`, after the model, which is where the Swift app's
 // measured line has it.
 func TestLaunchCarriesTheCodexReasoningEffort(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	pathEnv := "PATH='" + filepath.Join(state, "bin") + "'" + string(os.PathListSeparator) + `"$PATH"`
 	l, err := Admit(LaunchRequest{ProjectRoot: "/p", Assistant: AssistantCodex,
 		Model: "gpt-5.6-sol", ReasoningEffort: "xhigh"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX " +
-		"-u CODEX_SANDBOX_NETWORK_DISABLED codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
+		"-u CODEX_SANDBOX_NETWORK_DISABLED " + pathEnv + " codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
 	if got := l.ShellCommand(); got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}
