@@ -5891,6 +5891,13 @@ export interface SessionRow {
   agents?: SessionAgent[]
   agents_reading?: SessionAgentReading
   assistant?: Assistant
+
+  /**
+   * Unresolved attention notes for this conversation. Zero is a successful empty
+   * reading; absent means the count or current unique session identity could not be
+   * established.
+   */
+  attention_count?: number
   backend: Backend
   closeability: Closeability
   coordination?: SessionCoordination
