@@ -151,7 +151,12 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   const openNew = () => void run("open", async () => {
     if (!session) return
     const size = firstSize()
-    const answer = await session.create(project, size.cols, size.rows)
+    let answer
+    try { answer = await session.create(project, size.cols, size.rows) }
+    catch (error) {
+      if (reason(error) === "terminal_receipt_timeout") throw Object.assign(new Error("terminal_open_state_unknown"), { code: "terminal_open_state_unknown" })
+      throw error
+    }
     const next = answer.result?.id
     if (typeof next !== "string") throw new Error("terminal_bad_receipt")
     openTerminalPage(project, next, from)
@@ -164,8 +169,8 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     <div className="terminal-note-row"><h2>{nextWord("terminalListTitle", { project: label })}</h2>
       <button className="board-button" type="button" disabled={!!busy || loading || !!error} aria-busy={busy === "open"} onClick={openNew}>{nextWord("terminalOpenNew")}</button></div>
     {loading && <p className="terminal-note" role="status">{nextWord("terminalListLoading")}</p>}
-    {error && <div><p className="terminal-note" role="alert">{nextWord("terminalListFailed", { why: error })}</p>
-      <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button></div>}
+    {error && <div><p className="terminal-note" role="alert">{error === "terminal_open_state_unknown" ? nextWord("terminalCloudOpenUnknown") : nextWord("terminalListFailed", { why: error })}</p>
+      <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReloadList")}</button></div>}
     {!loading && !error && rows.length === 0 && <p className="terminal-note">{nextWord("terminalListEmpty")}</p>}
     <ul className="terminal-rows">{rows.map((row) => <li key={row.id}>
       <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, row.id, from)}>
