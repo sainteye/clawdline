@@ -343,7 +343,7 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.equal(uncarried("info"), "", "a carried word has no refusal sentence")
 })
 
-test("a terminal is refused over Cloud as machine-only, not as something waiting to be carried", async () => {
+test("terminal HTTP routes remain local while hosted terminals use separate encrypted channels", async () => {
   const mac = new FakeMac()
   const reader = seam(mac)
   for (const path of ["/v1/terminals?project=p", "/v1/terminals/trm_x", "/v1/terminals/trm_x/stream?client=c", "/v1/terminals/trm_x/history"]) {
@@ -358,7 +358,7 @@ test("a terminal is refused over Cloud as machine-only, not as something waiting
   assert.equal(notCarriedDetail("POST", "/v1/auth/devices/dev-1/terminal"), MACHINE_ONLY[1].sentence)
   assert.equal(machineOnly("/v1/auth/devices/dev-1/revoke"), "", "only the grant route is a terminal route")
   assert.equal(machineOnly("/v1/terminalsx"), "", "a prefix is a whole segment")
-  for (const word of words()) assert.ok(!/terminal/.test(word), word + ": a terminal is never a Cloud word")
+  for (const word of words()) assert.ok(!/terminal/.test(word), word + ": the generic Router has no terminal word")
   assert.equal(mac.asked.length, 0, "nothing was asked of the machine")
 })
 

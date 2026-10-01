@@ -114,7 +114,8 @@ function TerminalPage({ shown }: { shown: boolean }) {
             <h1 id="terminal-title" ref={title} tabIndex={-1}>{nextWord("terminalEntry")}</h1>
             {!route.terminal && backButton}
           </header>
-          {place === "failed" ? <p className="terminal-note" role="alert">{nextWord("terminalProjectsFailed")}</p>
+          {place === "failed" ? <div className="terminal-note-row"><p className="terminal-note" role="alert">{nextWord("terminalProjectsFailed")}</p>
+              <button className="board-button" type="button" onClick={() => setAgain((n) => n + 1)}>{nextWord("terminalRetry")}</button></div>
             : !known ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
               : <CloudTerminalPage project={project} label={name} id={route.terminal} shown={shown} from={route.from} />}
         </>
