@@ -215,3 +215,27 @@ func (s *Store) HumanInterventionCapacityCounts(ctx context.Context) (int64, int
 	}
 	return open, total, nil
 }
+
+// OpenHumanInterventionCounts reads the list's attention summary in one query.
+// A missing key means zero only when this query succeeded; callers must not
+// turn a failed read into an empty map.
+func (s *Store) OpenHumanInterventionCounts(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT target_conversation,COUNT(*) FROM human_interventions WHERE resolved_at IS NULL GROUP BY target_conversation`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int64{}
+	for rows.Next() {
+		var conversation string
+		var count int64
+		if err := rows.Scan(&conversation, &count); err != nil {
+			return nil, err
+		}
+		counts[conversation] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return counts, nil
+}
