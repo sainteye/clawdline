@@ -1,27 +1,18 @@
 import type { TerminalControl, TerminalFrame } from "@clawdline/contract"
 import { bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
-import { freshTerminalConnection, type TerminalChannelEvent } from "./terminal-transport.js"
+import { completeTerminalFrame, freshTerminalConnection, type TerminalChannelEvent, type TerminalEnvelope } from "./terminal-transport.js"
 
 export interface TerminalWire {
   subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void>
   unsubscribeTerminal(connection: string): void
   publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }>
+  observeTerminalFrame(envelope: TerminalEnvelope): void
 }
 
 type Receipt = { v: 1; type: "terminal_receipt"; request_id: string; connection: string; operation: string;
   status: "ok" | "refused" | "unknown"; result?: Record<string, unknown>; error?: string }
 type Frame = { v: 1; type: "terminal_frame"; terminal_id: string; connection: string; frame_seq: number;
   captured_at: number; frame: TerminalFrame }
-function completeFrame(frame: TerminalFrame | undefined): frame is TerminalFrame {
-  return !!frame && typeof frame.rev === "string" && Number.isFinite(frame.at) &&
-    Number.isSafeInteger(frame.cols) && frame.cols > 0 && Number.isSafeInteger(frame.rows) && frame.rows > 0 &&
-    !!frame.cursor && Number.isSafeInteger(frame.cursor.x) && Number.isSafeInteger(frame.cursor.y) &&
-    typeof frame.cursor.visible === "boolean" && !!frame.modes &&
-    typeof frame.modes.app_cursor === "boolean" && typeof frame.modes.app_keypad === "boolean" &&
-    typeof frame.modes.mouse_sgr === "boolean" && typeof frame.modes.alt === "boolean" &&
-    ["none", "standard", "button", "any"].includes(frame.modes.mouse) &&
-    Array.isArray(frame.lines) && frame.lines.length === frame.rows && frame.lines.every((line) => typeof line === "string")
-}
 export type CloudTerminalState = "opening" | "synchronizing" | "just_synced" | "live" | "stale" | "offline" | "revoked" | "unknown" | "closed"
 export interface CloudTerminalSnapshot {
   state: CloudTerminalState
@@ -312,10 +303,11 @@ export class CloudTerminalSession {
       event.envelope.ch.startsWith("term/") &&
       Number.isSafeInteger(value.frame_seq) && value.frame_seq > this.frameSeq &&
       typeof value.captured_at === "number" && Math.abs(Date.now() / 1000 - value.captured_at) <= STALE_MS / 1000 &&
-      completeFrame(value.frame)) {
+      completeTerminalFrame(value.frame)) {
       const first = this.frameSeq === 0
       this.frameSeq = value.frame_seq
       this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
+      this.transport.observeTerminalFrame(event.envelope)
       this.maybeActivate()
     }
   }
