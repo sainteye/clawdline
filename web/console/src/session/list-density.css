@@ -73,11 +73,6 @@
   background: currentColor;
 }
 
-.row .state > .session-attention-unknown {
-  color: var(--faint);
-  font-weight: 400;
-}
-
 .row .state > .session-work-completion,
 .row .state > .session-closeability,
 .row .state > .session-work-owed,

@@ -76,10 +76,11 @@ for (const width of [320, 375, 390, 1280]) {
         await new Promise((r) => setTimeout(r, 50))
       }
       await fetch(origin + "/__fixture/list-count?value=-1")
-      while (!(await run(`!!document.querySelector('.row[data-id="${SESSION}"] .session-attention-unknown')`))) {
-        if (Date.now() > deadline) assert.fail("unknown count did not appear")
+      while (await run(`!!document.querySelector('.row[data-id="${SESSION}"] .session-attention, .row[data-id="${SESSION}"][data-attention]')`)) {
+        if (Date.now() > deadline) assert.fail("unknown count still showed a list indicator")
         await new Promise((r) => setTimeout(r, 50))
       }
+      assert.equal(await run(`document.querySelector('.row[data-id="${SESSION}"] .wants')?.textContent?.length > 0`), true)
       await fetch(origin + "/__fixture/list-count?value=1")
       while (!(await run(`document.querySelector('.row[data-id="${SESSION}"] .session-attention')?.textContent?.includes('待處理 1')`))) {
         if (Date.now() > deadline) assert.fail("reopened note did not return to the list")
