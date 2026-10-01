@@ -1,0 +1,17 @@
+/* The empty list on a phone, sized to its words.
+   The copied rule (legacy/responsive.css, pinned) makes the empty home list at
+   least a whole screen tall and adds half a screen of padding under it, room
+   for a picture that has never loaded (docs/replica.md: the webp answers 404
+   on both sides). The schedules are drawn below that list, so a phone with no
+   session showed one sentence on an empty screen and nothing to say there was
+   anything further down: it read as having no tasks either. The block now ends
+   with its words, and the schedules start right under them.
+   One step more specific than the copied rule: this file is imported by
+   Sessions.tsx, which the bundle reaches before main.tsx's legacy imports. */
+@media (max-width: 899px) {
+    .pane-list .empty.home-hero-list {
+        min-height: 0;
+        padding-bottom: 28px;
+        background: none;
+    }
+}
