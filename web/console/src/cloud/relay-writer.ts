@@ -908,10 +908,11 @@ export class RelayWriter {
         const text = typeof body.text === "string" ? body.text : ""
         const images = Array.isArray(body.images) ? body.images.filter((x): x is string => typeof x === "string") : []
         const identity = await this.identity(client, route.session)
-        // F2: the card's one request for every attempt, so the machine answers a
-        // second attempt with the first one's answer (its receipt) instead of
-        // typing the words again. The copied `send` mints a new id per call,
-        // so the same read it makes is made here with the card's.
+        // F2: use the card's current request, so an unanswered attempt keeps
+        // its receipt. A confirmed terminal failure may use a new request
+        // after the person checks for a turn and accepts duplicate risk.
+        // The copied `send` mints a new id per call, so the same read it makes
+        // is made here with the card's.
         const request = headerOf(init, "idempotency-key")
         if (request && typeof client._read === "function") {
           return client._read(identity, "send", { request, text, images }, "action:" + request)

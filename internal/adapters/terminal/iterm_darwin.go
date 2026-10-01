@@ -220,6 +220,15 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 			Detail: "iTerm2 listing is in failure backoff"})
 		return inv, nil
 	}
+	select {
+	case appleEvents <- struct{}{}:
+		defer func() { <-appleEvents }()
+	default:
+		inv.Complete = false
+		inv.Gaps = append(inv.Gaps, session.Gap{Source: "iterm", Scope: "listing",
+			Detail: "iTerm2 listing deferred while a terminal action is running"})
+		return inv, nil
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -508,9 +517,9 @@ func itermSight(ctx context.Context, s session.Session) (farewellSight, error) {
 // this whole process (docs/design-decisions.md D22). The caller's lane already
 // keeps one writer per session; this is the adapter's own half, because two
 // scripts that each ask iTerm2 for "the current window" and then act on it can
-// interleave inside iTerm2 whatever sessions they were aimed at. Reading the
-// session list and a screen stay outside it: they change nothing, and a
-// twenty-second tab opening must not stall the list every page is drawn from.
+// interleave inside iTerm2 whatever sessions they were aimed at. A listing
+// takes this lane only when it is free, so it cannot compete with an effect;
+// screen captures stay outside it and are bounded by the held-screen reader.
 var appleEvents = make(chan struct{}, 1)
 
 // effect waits only as long as the caller can still use the lane. A mutex
@@ -534,16 +543,17 @@ func effect(ctx context.Context) (func(), error) {
 
 // itermCall runs one effect script with its arguments — never inside the
 // script text, so no quoting rule has to be right about them — and reads its
-// `{ok, error}` answer. A script that answered "not done" is a failure, never
-// a quiet success.
+// `{ok, error}` answer. Its script budget starts after the lane is acquired;
+// waiting behind a bounded listing cannot consume the time needed to send.
+// A script that answered "not done" is a failure, never a quiet success.
 func itermCall(ctx context.Context, script string, limit time.Duration, args ...string) error {
-	ctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
 	release, err := effect(ctx)
 	if err != nil {
 		return err
 	}
 	defer release()
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", append([]string{"-l", "JavaScript", "-"}, args...)...)
 	cmd.Stdin = strings.NewReader(script)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")

@@ -24,7 +24,7 @@
  *   `ok` and nothing else.
  *
  * **A card outlives the page.** The words and, more to the point, the card's
- * one `request` are kept in this browser's store and put back by `restore`
+ * current `request` are kept in this browser's store and put back by `restore`
  * (`persist.ts`, F4) — because a card that went with the page took the request
  * with it, and the same message written again under a new request is the thing
  * the request exists to stop (F2). Nothing is sent on the way back: a restored
@@ -53,19 +53,17 @@ export interface PendingSend {
   /** The pictures as `data:` URLs, kept so that sending again sends them too. */
   readonly pictures: readonly string[]
   /**
-   * The one request every attempt of this card is sent under, as its
-   * Idempotency-Key (F2). The Mac answers a second attempt with the first
-   * one's answer rather than typing the words again, so "try again" after an
-   * answer that was lost is not the same message twice.
+   * The request this card currently uses as its Idempotency-Key (F2). A
+   * confirmed terminal failure may be tried as a new request only after the
+   * person checks that the transcript has no turn and accepts duplicate risk.
    */
-  readonly request: string
+  request: string
   state: PendingState
   /** The refusal's code, while `failed` or `unknown`. */
   failure: string
   /**
    * An `unknown` card whose transcript was read, fresh, after it failed, and
-   * did not hold the turn. Only then is sending it again offered — under the
-   * same request, so an attempt still on its way is not doubled.
+   * did not hold the turn. Only then is sending it again offered.
    */
   absent: boolean
   /** The last attempt, in milliseconds. */
@@ -371,7 +369,7 @@ export class PendingSends {
    * what the new attempt must not be mistaken for — including the first
    * attempt, if that one arrived after all.
    */
-  resend(token: string, now: number): PendingSend | null {
+  resend(token: string, now: number, newRequest = false): PendingSend | null {
     const card = this.find(token)
     if (!card || card.partial) return null
     if (card.state !== "failed" && !card.checking) return null
@@ -382,6 +380,7 @@ export class PendingSends {
     card.sentAt = now
     card.acceptedAt = 0
     card.known = occurrences(this.seen.get(card.session) ?? [])
+    if (newRequest) card.request = newRequestID()
     this.changed()
     return card
   }

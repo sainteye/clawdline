@@ -62,6 +62,7 @@ function row() {
 
 /** Every Idempotency-Key a send arrived under, in order. */
 let keys: string[] = []
+let failFirst = false
 /** The first send is never answered, which is how a card is lost mid-flight. */
 let held: ServerResponse[] = []
 /** What the transcript holds, which the test moves. */
@@ -113,6 +114,10 @@ function send(req: IncomingMessage, res: ServerResponse) {
   const key = String(req.headers["idempotency-key"] ?? "")
   keys.push(key)
   req.resume()
+  if (failFirst && keys.length === 1) {
+    req.on("end", () => json(res, 500, { error: { code: "send_failed", message: "iTerm2 did not answer in time" } }))
+    return
+  }
   // The first attempt is the one the page is still waiting for when it goes.
   if (keys.length === 1) {
     held.push(res)
@@ -229,6 +234,7 @@ const PROBE = `(() => {
     words: (n.querySelector(".body")?.textContent || "").trim(),
     look: !!n.querySelector("[data-pending-look]"),
     again: !!n.querySelector("[data-pending-retry]"),
+    warning: (n.querySelector(".pending-state")?.textContent || "").trim(),
   }))
   let kept = null
   try { kept = window.localStorage.getItem("clawdline.session.cards") } catch (e) { kept = "threw" }
@@ -243,7 +249,7 @@ const PROBE = `(() => {
 
 type Seen = {
   console: boolean
-  cards: { state: string; words: string; look: boolean; again: boolean }[]
+  cards: { state: string; words: string; look: boolean; again: boolean; warning: string }[]
   turns: number
   /** The send button is there and takes a press. */
   ready: boolean
@@ -419,10 +425,34 @@ async function wipe(): Promise<void> {
 
 async function fresh(): Promise<void> {
   keys = []
+  failFirst = false
   turns = []
   for (const res of held.splice(0)) res.destroy()
   await wipe()
 }
+
+test("a filed terminal failure warns before a new request can resend", async () => {
+  await fresh()
+  failFirst = true
+  const tab = await Tab.open(browser, origin)
+  try {
+    await tab.go("/#session=" + SESSION)
+    await tab.until("the session opens", (s) => s.console && s.cards.length === 0)
+    await tab.say(SAID)
+    const failed = await tab.until("the failed send asks for a look", (s) => s.cards.length === 1 && s.cards[0].look)
+    assert.equal(failed.cards[0].again, false)
+    await tab.press("[data-pending-look]")
+    const checked = await tab.until("the card warns about duplicate delivery", (s) => s.cards.length === 1 && s.cards[0].again)
+    assert.match(checked.cards[0].warning, /可能重複|may duplicate|duplicate it/)
+    const first = keys[0]
+    await tab.press("[data-pending-retry]")
+    await tab.until("the fresh request is accepted", (s) => s.cards.length === 1 && s.cards[0].state === "accepted")
+    assert.equal(keys.length, 2)
+    assert.notEqual(keys[1], first)
+  } finally {
+    await tab.close()
+  }
+})
 
 test("a card still sending survives the reload, and is sent again under the same request", async () => {
   await fresh()

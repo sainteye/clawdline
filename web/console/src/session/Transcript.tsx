@@ -581,15 +581,15 @@ function pendingHTML(card: PendingSend): ReactElement {
   } else if (card.state === "unknown") {
     // F3: the words may be on the Mac. The card says it does not know and
     // offers a look, not "try again"; only a look that read the transcript
-    // and found no turn offers sending — under the card's one request, which
-    // the Mac answers with the first attempt's answer if that one landed.
+    // and found no turn offers sending. A confirmed send_failed has a filed
+    // failure, so another send needs a fresh request and a duplicate warning.
     //
     // A card the page was still sending when it was reloaded says that
     // (`sendInterrupted`): the request went with the page, so nothing answered
     // and nothing here knows. Looking is the same press as for any other
     // unknown card.
     const said = card.absent
-      ? "sendAbsent"
+      ? card.failure === "send_failed" ? "sendAbsentMayDuplicate" : "sendAbsent"
       : card.failure === INTERRUPTED
         ? "sendInterrupted"
         : card.failure === "input_moved"
@@ -604,9 +604,9 @@ function pendingHTML(card: PendingSend): ReactElement {
         ? '<button type="button" class="go" data-pending-retry="' +
           esc(card.token) +
           '" title="' +
-          esc(nextWord("sendAgainTip")) +
+          esc(nextWord(card.failure === "send_failed" ? "sendAgainMayDuplicateTip" : "sendAgainTip")) +
           '">' +
-          esc(nextWord("sendAgain")) +
+          esc(nextWord(card.failure === "send_failed" ? "sendAgainMayDuplicate" : "sendAgain")) +
           "</button>"
         : '<button type="button" class="go" data-pending-look="' +
           esc(card.token) +

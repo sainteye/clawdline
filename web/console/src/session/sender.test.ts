@@ -104,6 +104,37 @@ test("try again after an uncertain send still stops when read-back fails", async
   assert.equal(h.cards.card(card.token)?.state, "unknown")
 })
 
+test("a confirmed terminal failure uses a new request only after the person checks an absent turn", async () => {
+  const h = harness()
+  h.answer({ ok: false, status: 500, code: "send_failed" })
+  const card = h.cards.add("s", "follow up", [], T0)
+  await h.sender.deliver(card)
+  await h.sender.resend(card.token)
+  assert.equal(h.posts.length, 1, "an unchecked failure is never sent again")
+  h.transcript([])
+  await h.sender.look(card.token)
+  h.clock.t += 2_000
+  await h.sender.resend(card.token)
+  assert.equal(h.posts.length, 2)
+  assert.notEqual(h.posts[1].request, h.posts[0].request, "the filed 500 cannot answer a new attempt")
+  assert.equal(h.cards.card(card.token)?.state, "accepted")
+})
+
+test("a terminal failure is not retried with a new request when the fresh read is unavailable", async () => {
+  const h = harness()
+  h.answer({ ok: false, status: 500, code: "send_failed" })
+  const card = h.cards.add("s", "follow up", [], T0)
+  await h.sender.deliver(card)
+  await h.sender.look(card.token)
+  h.transcript(null)
+  await h.sender.resend(card.token)
+  assert.equal(h.posts.length, 1)
+  assert.equal(h.cards.card(card.token)?.failure, "send_failed")
+  h.transcript([user("follow up", T0 + 1_000)])
+  await h.sender.look(card.token)
+  assert.equal(h.cards.card(card.token), undefined, "a late turn settles the card")
+})
+
 test("try again: a turn the read-back shows settles the card; an unknown card is not retried blind", async () => {
   const h = harness()
   h.answer({ ok: false, status: 429, code: "busy" })
