@@ -14,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // W6: reclamation, linger, handoffs, Feature Roots and graphs
@@ -454,6 +455,21 @@ func (x *typedKeys) count(terminal string) int {
 func TestAHandoffIsTypedOnce(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	project := t.TempDir()
+	workID := "c6400001-0000-4000-8000-000000000011"
+	when := time.Now().Truncate(time.Second)
+	item := work.ItemV2{ID: workID, ProjectID: "p", ProjectPath: project, Kind: work.KindFeature,
+		Title: "Continue", Phase: work.PhaseImplementing, DeploymentPolicy: work.DeployAgentDecides,
+		OwnerSession: rootConversation, CreatedBy: "person", CreatedAt: when, UpdatedAt: when, Cycle: 1, Version: 1}
+	if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		if err := tx.CreateItem(item, "person", "{}"); err != nil {
+			return err
+		}
+		return tx.CreateAssignment(work.AssignmentV2{ID: NewUUID(), WorkID: workID,
+			Mode: "existing_session", SessionID: rootConversation, TerminalID: "%1", Assistant: "claude",
+			State: "active", HumanActor: "person", CreatedAt: when, UpdatedAt: when})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	keys := &typedKeys{}
 	b.Type = keys.Type
 	b.Launcher = &openingLauncher{pane: "%51"}
@@ -479,6 +495,9 @@ func TestAHandoffIsTypedOnce(t *testing.T) {
 	h, replayed, err := b.OpenHandoff(ctx, req)
 	if err != nil || replayed || h.State != HandoffDelivered {
 		t.Fatalf("%+v replayed=%v err=%v", h, replayed, err)
+	}
+	if len(h.BoardItems) != 1 || h.BoardItems[0] != workID {
+		t.Fatalf("handoff did not capture sender's Board item: %+v", h.BoardItems)
 	}
 	if keys.count("%51") != 1 || !strings.Contains(keys.lines["%51"][0], pkg) {
 		t.Fatalf("receiver typedKeys %v", keys.lines["%51"])

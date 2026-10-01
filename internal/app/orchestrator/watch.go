@@ -69,6 +69,9 @@ type Pulse struct {
 	// settled: briefed once the person answered it, or failed because the tab
 	// was left or closed (root_dialog.go).
 	RootDialogs int
+	// HandoffBoards counts delivered handoffs whose receiver began a turn and
+	// whose captured Board responsibilities moved in the same transaction.
+	HandoffBoards int
 	// StoreErr is why the pass could not read the store, when it could not.
 	// A pass that read nothing because it could not read is not a pass that
 	// found nothing, and the two must not look alike from outside.
@@ -180,6 +183,7 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	// Feature Roots left at a dialog, briefed once somebody answered it
 	// (root_dialog.go).
 	p.RootDialogs = b.tendRootDialogs(ctx, rd)
+	p.HandoffBoards = b.tendHandoffBoards(ctx, rd)
 	p.Notices = b.PumpNotices(ctx)
 	// Finished children's tabs whose linger is over (linger.go), and — off
 	// the beat, when one is due — the reclamation sweep (reclaim.go).

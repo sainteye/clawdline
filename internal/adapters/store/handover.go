@@ -270,6 +270,36 @@ func (s *Store) ListOpenedIn(ctx context.Context, table, state string, limit int
 	return s.listOpened(ctx, table, state, limit)
 }
 
+// PendingBoardHandoffs reads only delivered handoffs whose captured Board
+// responsibilities have not moved. Completed history cannot crowd retries
+// out of the bounded beat page.
+func (s *Store) PendingBoardHandoffs(ctx context.Context, limit int) ([]Opened, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, state, record, created_at, updated_at
+	  FROM broker_handoffs WHERE state='delivered' AND json_valid(record)
+	  AND json_array_length(json_extract(record, '$.board_items')) > 0
+	  AND COALESCE(json_extract(record, '$.board_transferred_at'), 0) = 0
+	  ORDER BY created_at DESC, id LIMIT ?`, limit)
+	if err != nil {
+		return nil, classify(err)
+	}
+	defer rows.Close()
+	out := []Opened{}
+	for rows.Next() {
+		var o Opened
+		var raw string
+		var created, updated int64
+		if err := rows.Scan(&o.ID, &o.State, &raw, &created, &updated); err != nil {
+			return nil, classify(err)
+		}
+		o.Record, o.CreatedAt, o.UpdatedAt = json.RawMessage(raw), time.Unix(created, 0), time.Unix(updated, 0)
+		out = append(out, o)
+	}
+	return out, classify(rows.Err())
+}
+
 func (s *Store) listOpened(ctx context.Context, table, state string, limit int) ([]Opened, error) {
 	name, err := openedTable(table)
 	if err != nil {
