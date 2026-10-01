@@ -927,8 +927,8 @@ a stale request.
 `clawdline setting get|set planning_gate|verify_gate` accepts `on/off` or `true/false`. The first
 successful assignment in an execution cycle freezes both values. Reassignment and later global
 setting changes do not change that cycle. An Epic or Feature with captured planning on needs
-acceptance criteria, a plan, and independent plan review before implementing (Feature: one review;
-Epic: at most two). An Issue never has a planning gate. Planning off bypasses forced Epic planning
+acceptance criteria before implementing. An Epic also needs a plan and independent review; a Feature
+uses the risk assessment below to decide whether those are needed. An Issue never has a planning gate. Planning off bypasses forced Epic planning
 too. Both on means planning then independent verification; planning only retains ordinary merge
 verification; verification only skips planning but still checks the exact candidate; both off uses
 the ordinary lifecycle. The person need not fill acceptance on the Board. If a gated item arrives
@@ -1073,12 +1073,22 @@ Board item and opens directly from the Session's Recently Done row.
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 
-### Epic and Feature: plan, then review when captured on
+### Epic and Feature: assess review risk before implementation
 
-An Epic or Feature whose cycle captured planning on needs a `plan` document and a `plan_review`
-document after the latest plan before `assigned → implementing`. An Epic allows at most two required
-reviews; a Feature allows one. An Issue is exempt, and planning off bypasses this check even for
-Epic. When you own an item with planning on:
+An Epic whose cycle captured planning on needs a plan and independent review. A Feature first
+records an `other` document titled `Review risk assessment` with this JSON body, replacing each
+value and giving a concrete reason:
+
+```json
+{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Only a local display label changes."}
+```
+
+Write the Feature's short acceptance criteria first, then use
+`clawdline item doc <id> --role other --title "Review risk assessment" --body-file risk.json`.
+If all four decisions are false and deployment is not required, implement and run focused tests.
+Do not dispatch a reviewer for that routine change.
+If you later write a plan, assess its scope again after that plan; the old routine decision expires.
+If any decision is true or uncertain, or the assessment is missing, use the reviewed-plan path:
 
 1. Plan it carefully and write the plan onto the item:
    ```
@@ -1094,9 +1104,11 @@ Epic. When you own an item with planning on:
    ```
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
-   If the review found real problems, revise the plan (a new `plan` document) and have that one
-   reviewed again: a plan written after the last review needs a fresh review. Two reviews are
-   the most asked: a plan revised after the second goes on without a third.
+   If a Feature plan changes after review, write an `other` document titled
+   `Review boundary assessment` after the revised plan with JSON
+   `{"new_risk_boundary":false,"reason":"..."}` only when the change stays inside the
+   earlier review's risk boundary. A new or uncertain boundary gets a focused fresh review.
+   The existing Epic two-review ceiling still applies.
 4. Break the work into steps with `clawdline item step-add <item id> …`.
 5. Only then `clawdline item phase <item id> implementing`.
 
@@ -1124,10 +1136,10 @@ are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and
   (`plan_review_task_other_item`), has kind `plan_review` (`plan_review_task_wrong_kind`), finished
   with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
   (`plan_review_task_stale`). A review with no plan before it is refused `epic_plan_required`.
-- `clawdline item phase <item id> implementing` on a planning-on Epic or Feature is refused when
-  the plan or independent review evidence is missing (`epic_plan_required` or
-  `epic_plan_review_required` for Epic; the `feature_` equivalents for Feature). The Epic keeps the
-  two-review ceiling; Feature requires one. A planning-off Epic may enter implementing directly.
+- `clawdline item phase <item id> implementing` on a planning-on Epic is refused without its
+  reviewed plan (`epic_plan_required` or `epic_plan_review_required`). A planning-on Feature needs either a valid routine-risk assessment or its
+  reviewed plan; a revised Feature plan also needs unchanged-boundary evidence or another review.
+  A planning-off Epic may enter implementing directly.
 
 **Break the Epic into child items, and hand them out.** This is the one exception to "a session
 creates a Board item only when the person's message tells it to" and to "only the person assigns

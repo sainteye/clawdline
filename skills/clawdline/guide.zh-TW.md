@@ -806,7 +806,7 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 **本輪擷取的規劃與驗證 gate。** `planning_gate` 預設開、`verify_gate` 預設關；
 `clawdline setting get|set planning_gate|verify_gate` 接受 `on/off` 或 `true/false`。每輪第一次成功
 指派時固定兩個值；同輪改派或之後改全域設定都不影響本輪。規劃 gate 開啟的 Epic 與 Feature 在進入實作前
-須有驗收條件、計劃及獨立審查（Feature 一次，Epic 最多兩次）；Issue 不受規劃 gate 約束。規劃關閉時，
+須有驗收條件。Epic 仍須計畫與獨立審查；Feature 依風險判讀決定是否需要。Issue 不受規劃 gate 約束。規劃關閉時，
 Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規劃沿用一般 Merge 驗證；只開驗證會跳過規劃，
 但仍檢查固定候選提交；兩者皆關走一般流程。使用者不必在看板填寫驗收條件。受 gate 約束的項目若尚無
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
@@ -921,11 +921,20 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
 
-### Epic 與 Feature：本輪規劃開啟時先寫計畫、再審查
+### Epic 與 Feature：依風險決定獨立審查
 
-本輪擷取規劃 gate 為開的 Epic 或 Feature，在 `assigned → implementing` 前須有 `plan` 文件，以及
-寫在最新 plan 之後的 `plan_review` 文件。Epic 最多要求兩次審查，Feature 要求一次；Issue 不受此 gate
-約束，規劃關閉的 Epic 也跳過。擁有規劃 gate 開啟的項目時：
+本輪規劃 gate 開啟的 Epic 仍須計畫及獨立審查。Feature 先以 `other` 文件記錄風險判讀，標題固定為
+`Review risk assessment`，內容是 JSON，四個布林值與具體理由都必填：
+
+```json
+{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"只改本機介面的顯示文字。"}
+```
+
+先寫簡短可觀察的驗收條件，再以
+`clawdline item doc <id> --role other --title "Review risk assessment" --body-file risk.json` 記錄。
+四項皆否、部署政策不是 `required` 時，實作後做針對性測試即可。
+若之後新增計畫，須在該計畫之後重新判讀；舊的例行風險判讀不再生效。
+任何一項為是或無法確認、或沒有有效判讀時，仍走以下計畫審查流程：
 
 1. 仔細規劃，把計畫寫到項目上：
    ```
@@ -939,8 +948,10 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
    ```
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
-   審查找到真正的問題，就修改計畫（寫一份新的 `plan` 文件），再審一次：寫在最後一次審查之後的計畫，
-   需要新的審查。審查最多兩次：第二次審查後再改的計畫，不必第三次審查就能繼續。
+   Feature 的計畫在審查後修訂時，若仍在原審查的風險邊界內，於修訂計畫之後新增標題為
+   `Review boundary assessment` 的 `other` 文件，JSON 寫
+   `{"new_risk_boundary":false,"reason":"具體說明"}`。跨越新的或無法確認的邊界才派一次針對性複審。
+   Epic 保留原有最多兩次強制審查的規則。
 4. 用 `clawdline item step-add <item id> …` 把工作拆成 steps。
 5. 這些都做完，才 `clawdline item phase <item id> implementing`。
 
@@ -964,10 +975,9 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
   `plan_review`（`plan_review_task_wrong_kind`）、以 `success` 結束（`plan_review_task_unfinished`）、
   派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
   `epic_plan_required` 拒絕。
-- 本輪規劃 gate 開啟的 Epic 或 Feature 在缺少計劃或獨立審查時，不能以
-  `clawdline item phase <item id> implementing` 進入實作（Epic 回 `epic_plan_required` 或
-  `epic_plan_review_required`；Feature 對應 `feature_` 開頭的拒絕碼）。Epic 保留最多兩次審查的上限；Feature
-  需要一次。規劃關閉的 Epic 可以直接進入實作。
+- 本輪規劃 gate 開啟的 Epic 缺少已審查計畫時不能進入實作（`epic_plan_required` 或
+  `epic_plan_review_required`）；Feature 則需要有效的例行風險判讀，
+  或已審查計畫。修訂後的 Feature 計畫還需要未跨新邊界的紀錄或一次新審查。規劃關閉的 Epic 可直接進入實作。
 
 **把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入

@@ -396,8 +396,14 @@ func workV2ParentNote(parent work.ItemV2) string {
 }
 
 func workV2FeatureInstruction(id string) string {
-	return "This Feature's captured planning gate is on: before code, write its plan with `clawdline item doc " + id +
-		" --role plan --title \"Plan\"`, have one independent `plan_review` child review it, record that review, then move it to implementing."
+	return "This Feature's captured planning gate is on. Record a review risk assessment as an `other` document " +
+		"titled `Review risk assessment`, with JSON booleans production_deployment, access_or_security, " +
+		"cross_data_transaction, irreversible_effect, and a concrete reason. When all four are false and deployment " +
+		"is not required, concise acceptance criteria and focused tests suffice; move to implementing without a child. " +
+		"If any risk is true or uncertain, write a plan with `clawdline item doc " + id +
+		" --role plan --title \"Plan\"`, have an independent `plan_review` child review it, and record the review. " +
+		"After revising a reviewed plan, record an `other` document titled `Review boundary assessment` with " +
+		"new_risk_boundary=false and a reason only when the change stays within the reviewed boundary; otherwise request a focused fresh review."
 }
 
 // workV2KindSteps is the planning/steps instruction captured for this cycle.

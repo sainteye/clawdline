@@ -414,8 +414,9 @@ func DocumentRoleApplies(i ItemV2, role string) error {
 
 // PlanningGate is the rule a Feature or Epic crosses before implementing.
 // It reads only the current cycle snapshot, never the later global setting.
-// A Feature requires one independent review and an Epic retains its existing
-// two-review ceiling. Issues and planning-off cycles are exempt.
+// A Feature can use a recorded routine-risk assessment in place of a plan
+// review. Elevated or unclassified work retains the independent review gate.
+// Revisions need an explicit unchanged-boundary assessment or a fresh review.
 func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 	if i.Phase != PhaseAssigned || next != PhaseImplementing || i.Kind == KindIssue {
 		return nil
@@ -431,6 +432,9 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 	}
 	if strings.TrimSpace(i.AcceptanceCriteria) == "" {
 		return RefuseV2("acceptance_required", "Write acceptance criteria before this item enters implementation.")
+	}
+	if i.Kind == KindFeature && RoutineReviewRisk(i, plans) {
+		return nil
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0
 	for n, d := range plans {
@@ -451,7 +455,8 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 	case lastPlan < 0:
 		return RefuseV2(prefix+"_plan_required",
 			"Write the item's plan first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
-	case lastReview < lastPlan && reviews < rounds:
+	case lastReview < lastPlan && ((i.Kind == KindEpic && reviews < rounds) ||
+		(i.Kind == KindFeature && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
 		return RefuseV2(prefix+"_plan_review_required",
 			"Have an independent child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
 				"`), then record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")

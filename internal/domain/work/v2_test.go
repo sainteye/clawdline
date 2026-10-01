@@ -216,8 +216,8 @@ func TestPlanningGateUsesTheCapturedModeAndKind(t *testing.T) {
 		t.Fatalf("Feature without review = %s", got)
 	}
 	if got := code(PlanningGate(feature, PhaseImplementing,
-		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "" {
-		t.Fatalf("Feature exceeded its one-review ceiling: %s", got)
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "feature_plan_review_required" {
+		t.Fatalf("Feature revision without boundary evidence = %s", got)
 	}
 	epic := item(KindEpic, true)
 	if got := code(PlanningGate(epic, PhaseImplementing,

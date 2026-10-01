@@ -59,6 +59,36 @@ func advanceTo(w *WorkSystemV2, item *WorkV2View, next work.Phase) error {
 	return err
 }
 
+func TestRoutineFeatureRiskDocumentOpensPlanningGate(t *testing.T) {
+	w, _ := newEpicTest(t)
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Planning: true}, nil
+	}
+	v := createWorkV2Test(t, w, work.KindFeature)
+	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusedAsWork(t, advanceTo(w, &owned, work.PhaseImplementing), "feature_plan_required")
+	bad := AddDocumentV2{ExpectedVersion: owned.Item.Version, SessionID: "session-a", Role: "other",
+		Title: work.ReviewRiskTitle, Body: `{"production_deployment":false,"reason":"missing decisions"}`}
+	_, err = w.AddDocument(context.Background(), owned.Item.ID, bad, nil)
+	refusedAsWork(t, err, "review_assessment_invalid")
+	bad.Body = `{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Only a local display label changes."}`
+	added, err := w.AddDocument(context.Background(), owned.Item.ID, bad, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned.Item = added.Item
+	if err := advanceTo(w, &owned, work.PhaseImplementing); err != nil {
+		t.Fatal(err)
+	}
+	if owned.Item.Phase != work.PhaseImplementing {
+		t.Fatalf("phase = %s", owned.Item.Phase)
+	}
+}
+
 // An Epic is assigned like a Feature and lands in its lifecycle lanes;
 // Refactor and Plan are still refused.
 func TestAnEpicIsAssignableAndRefactorAndPlanAreNot(t *testing.T) {
