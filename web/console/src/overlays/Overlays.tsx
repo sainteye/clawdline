@@ -3,6 +3,7 @@ import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { ActionConfirm, bindActionConfirm } from "./action-confirm.js"
 import { bindInfo } from "./info.js"
+import { bindRoleDetail } from "./role-detail.js"
 
 /**
  * The three overlays and the toast, as `index.html` writes them: the keyboard
@@ -22,7 +23,7 @@ export function Overlays() {
   const T = L.strings
 
   useEffect(() => {
-    const unbind = [bindKeys(), bindInfo(), bindActionConfirm()]
+    const unbind = [bindKeys(), bindInfo(), bindRoleDetail(), bindActionConfirm()]
     return () => unbind.forEach((off) => off())
   }, [])
 
@@ -89,6 +90,15 @@ export function Overlays() {
             <button className="chip" id="info-close" type="button">
               {T.webClose}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="overlay role-detail-overlay" id="role-detail" hidden>
+        <div className="sheet role-detail-sheet" role="dialog" aria-modal="true" aria-labelledby="role-detail-title">
+          <div className="role-detail-content" id="role-detail-content"></div>
+          <div className="buttons">
+            <button className="chip" id="role-detail-close" type="button">{T.webClose}</button>
           </div>
         </div>
       </div>

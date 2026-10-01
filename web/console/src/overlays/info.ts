@@ -24,9 +24,10 @@ import {
   workStateBadgeHTML,
   workStateOf,
 } from "../legacy/bridge.js"
-import { loadPersonas, onPersonas, personaById, personaName, personaSummary, personasNow } from "../personas.js"
+import { loadPersonas, onPersonas, personaById, personaName, personasNow } from "../personas.js"
 import { toast } from "./toast.js"
 import { ActionConfirm } from "./action-confirm.js"
+import { RoleDetail } from "./role-detail.js"
 import "./info-next.css"
 
 /**
@@ -356,30 +357,16 @@ function statusHTML(s: Row | null): string {
  * 61%`, but a phone hides nothing here, and this card was the one place that
  * had the tokens and not the window. Unknown is said, never drawn as 0%.
  */
-/**
- * The role this session was launched as (docs/personas.md), named in full, as
- * a `details` like the statuses above it: the bot and the name, and, opened,
- * the one-line summary and the file it was adapted from. The text the session
- * was launched with stays on the machine (the catalog never carries it).
- * Nothing when the row has no persona or the catalog does not name it.
- */
+/** The role this session was launched as; unknown roles have no detail entry. */
 function roleHTML(s: Row | null): string {
   const persona = personaById(personasNow(), s?.persona)
   if (!persona) return ""
-  const summary = personaSummary(persona)
-  // `source` names one upstream file or several, comma-separated; each is a
-  // link named by its file.
-  const links = (persona.source || "").split(",").map((u) => u.trim()).filter(openable)
-    .map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer" title="' + esc(u) + '">' +
-      esc(u.replace(/[?#].*$/, "").split("/").pop() || u) + "</a>")
-  const source = links.length ? '<p class="note">' + esc(nextWord("personaSource")) + " " + links.join(", ") + "</p>" : ""
   return (
-    '<details class="session-status-detail persona-detail" data-status-kind="role"><summary>' +
+    '<button type="button" class="persona-detail-button" data-role-detail="1" aria-haspopup="dialog">' +
     '<span class="persona-info"><canvas class="persona-info-bot" width="0" height="0" aria-hidden="true"></canvas>' +
     '<span class="persona-info-name">' + esc(personaName(persona)) + "</span></span>" +
     '<span class="status-tap">' + esc(T.webInfoTapForDetails) + "</span>" +
-    '</summary><div class="status-explanation">' + (summary ? "<p>" + esc(summary) + "</p>" : "") + source +
-    "</div></details>"
+    "</button>"
   )
 }
 
@@ -553,16 +540,13 @@ function draw(): void {
   const keptTitle = titleBox ? titleBox.value : null
   const titleFocused = !!titleBox && document.activeElement === titleBox
   const titleCaret = titleFocused ? titleBox?.selectionStart ?? null : null
-  const roleOpen = !!box.querySelector<HTMLDetailsElement>('details[data-status-kind="role"]')?.open
   const again = drawn
   box.classList.toggle("again", again)
   box.innerHTML = data ? html(data) : ""
-  const roleBox = box.querySelector<HTMLDetailsElement>('details[data-status-kind="role"]')
-  if (roleBox) {
-    roleBox.open = roleOpen
-    const persona = personaById(personasNow(), session()?.persona)
-    if (persona) L.paintIcon(roleBox.querySelector<HTMLCanvasElement>("canvas.persona-info-bot"), persona.icon, 3)
-  }
+  const roleButton = box.querySelector<HTMLButtonElement>("button[data-role-detail]")
+  const persona = personaById(personasNow(), session()?.persona)
+  if (roleButton && persona) L.paintIcon(roleButton.querySelector<HTMLCanvasElement>("canvas.persona-info-bot"), persona.icon, 3)
+  RoleDetail.follow(forId, persona)
   if (data) drawn = true
   const refresh = node("info-refresh") as HTMLButtonElement | null
   if (refresh) refresh.disabled = loading
@@ -659,6 +643,7 @@ export const Info = {
   },
 
   close(): void {
+    RoleDetail.close(false)
     const overlay = node("info")
     if (overlay) overlay.hidden = true
     // An answer still on its way is no longer wanted by the card. The shared
@@ -870,6 +855,12 @@ export function bindInfo(): () => void {
     const smartTitle = t.closest<HTMLButtonElement>("button[data-title-smart]")
     if (smartTitle) {
       if (!smartTitle.disabled) Info.confirmSmartTitle(smartTitle)
+      return
+    }
+    const role = t.closest<HTMLButtonElement>("button[data-role-detail]")
+    if (role && forId) {
+      const persona = personaById(personasNow(), session()?.persona)
+      if (persona) RoleDetail.open(forId, persona)
       return
     }
     if (t.closest("button[data-status-review]")) Info.close()

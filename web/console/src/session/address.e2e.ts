@@ -714,6 +714,71 @@ test("desk: opening a session writes it into the address, and a reload comes bac
     assert.equal((await tab.seen()).hash, FRAGMENT[TTY])
   }))
 
+test("Session Info opens a role detail dialog and restores focus when it closes", async () => {
+  const assigned = ROWS[0] as (typeof ROWS)[number] & { persona?: string }
+  const first = PERSONAS[0] as (typeof PERSONAS)[number] & { teams?: string[] }
+  const oldSource = first.source
+  assigned.persona = "architect"
+  first.teams = ["engineering", "design"]
+  first.source = "https://example.com/architect.md"
+  try {
+    await inTab(DESK, async (tab) => {
+      await tab.go("/" + FRAGMENT[TMUX])
+      await tab.until("the persona session opens", (s) => s.open === TMUX)
+      await tab.run(`document.getElementById("detail-info").click()`)
+      await tab.run(`new Promise((resolve, reject) => {
+        const until = Date.now() + 5000
+        const wait = () => document.querySelector("#info button[data-role-detail]") ? resolve(true) :
+          Date.now() < until ? setTimeout(wait, 30) : reject(new Error("role did not load"))
+        wait()
+      })`)
+      await tab.run(`document.querySelector("#info button[data-role-detail]").click()`)
+      const detail = await tab.run(`(() => ({
+        open: !document.getElementById("role-detail").hidden,
+        inert: document.getElementById("info").hasAttribute("inert"),
+        title: document.getElementById("role-detail-title")?.textContent,
+        words: document.getElementById("role-detail-content")?.textContent,
+        source: document.querySelector("#role-detail-content a")?.getAttribute("href"),
+        focus: document.activeElement?.id,
+      }))()`)
+      assert.equal(detail.open, true)
+      assert.equal(detail.inert, true)
+      assert.equal(detail.title, "架構師")
+      assert.match(detail.words, /工程團隊/)
+      assert.match(detail.words, /設計團隊/)
+      assert.match(detail.words, /Epic/)
+      assert.equal(detail.source, "https://example.com/architect.md")
+      assert.equal(detail.focus, "role-detail-close")
+      await tab.press("Tab")
+      assert.equal(await tab.run(`document.activeElement?.getAttribute("href")`), "https://example.com/architect.md")
+      await tab.run(`document.getElementById("info-refresh").click()`)
+      assert.equal(await tab.run(`document.getElementById("role-detail-title")?.textContent`), "架構師")
+      assert.equal(await tab.run(`document.activeElement?.getAttribute("href")`), "https://example.com/architect.md")
+      await tab.press("Escape")
+      assert.deepEqual(await tab.run(`(() => ({
+        roleClosed: document.getElementById("role-detail").hidden,
+        infoOpen: !document.getElementById("info").hidden,
+        focusRestored: document.activeElement?.hasAttribute("data-role-detail"),
+      }))()`), { roleClosed: true, infoOpen: true, focusRestored: true })
+      await tab.run(`document.querySelector("#info button[data-role-detail]").click()`)
+      await tab.view(PHONE, "dark")
+      const phone = await tab.run(`(() => {
+        const sheet = document.querySelector(".role-detail-sheet")
+        const content = document.getElementById("role-detail-content")
+        return { withinViewport: sheet.getBoundingClientRect().bottom <= innerHeight,
+          noSideScroll: content.scrollWidth <= content.clientWidth }
+      })()`)
+      assert.deepEqual(phone, { withinViewport: true, noSideScroll: true })
+      await tab.run(`document.getElementById("role-detail-close").click()`)
+      assert.equal(await tab.run(`document.getElementById("role-detail").hidden`), true)
+    })
+  } finally {
+    delete assigned.persona
+    delete first.teams
+    first.source = oldSource
+  }
+})
+
 test("desk: only the current Claude model is selected when model IDs share a prefix", async () => {
   try {
     for (const [model, expected] of [

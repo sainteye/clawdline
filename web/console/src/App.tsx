@@ -27,6 +27,7 @@ import {
   BEFORE_PAGE_CHANGE,
   GO_PAGE,
   Info,
+  RoleDetail,
   OPEN_CONFIRM,
   OPEN_INFO,
   Overlays,
@@ -592,6 +593,10 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
     }
     if (meta && (key === "i" || key === "I")) {
       ev.preventDefault()
+      if (RoleDetail.isOpen()) {
+        RoleDetail.close()
+        return
+      }
       if (Info.isOpen()) {
         Info.close()
         return
@@ -603,6 +608,11 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
     }
 
     if (key === "Escape") {
+      if (RoleDetail.isOpen()) {
+        ev.preventDefault()
+        RoleDetail.close()
+        return
+      }
       if (Info.isOpen()) {
         Info.close()
         return
