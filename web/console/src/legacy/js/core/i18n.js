@@ -756,6 +756,7 @@ export var T = {
     closeabilityBlocked: "1 obligation remains\u001f{n} obligations remain",
     closeabilityNeedsAttestation: "Waiting for session attestation",
     closeabilityUnknown: "Closeability unknown",
+    closeabilityRefreshing: "Checking whether this Session can be closed",
     closeabilityWhy: "Not closeable because",
     closeabilityMoverSelf: "this session moves it",
     closeabilityMoverPerson: "you move it",

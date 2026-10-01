@@ -14,6 +14,7 @@
   "closeabilitySafe": "可以安全關閉",
   "closeabilityTechnicalDetails": "技術細節",
   "closeabilityUnknown": "無法判斷能否關閉",
+  "closeabilityRefreshing": "正在重新確認能否關閉",
   "closeabilityWhy": "不能關閉的原因",
   "dir": "ltr",
   "hintKeys": "快速鍵",

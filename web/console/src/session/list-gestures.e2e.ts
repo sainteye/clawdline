@@ -2185,6 +2185,23 @@ test("a brief inventory refresh keeps the last blocked badge and row height whil
     }
   }))
 
+test("a safe row says it is checking during a brief inventory refresh", () =>
+  inTab(async (tab) => {
+    await list(tab)
+    readingScenario = "refresh"
+    try {
+      pushSessions()
+      await tab.until("the retained reading arrived", (s) => s.refreshing)
+      const open = await swipeOpen(tab, SAFE)
+      assert.equal(open.actionKind, "unknown", "a prior safe answer cannot authorize close")
+      assert.match(open.rowState ?? "", /正在重新確認能否關閉/)
+      assert.doesNotMatch(open.rowState ?? "", /無法判斷能否關閉/)
+    } finally {
+      readingScenario = "normal"
+      pushSessions()
+    }
+  }))
+
 test("a session awaiting attestation explains that inside its named confirmation", () =>
   inTab(async (tab) => {
     await list(tab)

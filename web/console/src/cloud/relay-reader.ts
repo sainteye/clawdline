@@ -1030,7 +1030,14 @@ export class RelayReader {
    * or retry policy is introduced here.
    */
   private async initialSnapshot(signal?: AbortSignal | null): Promise<SessionsSnapshot> {
-    if (this.initialSnapshotDelivered || !signal) return this.snapshot()
+    if (this.initialSnapshotDelivered) {
+      // A person's refresh is a new question about the machine, not a read of
+      // the relay's retained rows. Those rows may omit a quiet Session after
+      // relay eviction. The connection's recovery asks once; ask again here.
+      await this.machineRead(signal, "GET", "/v1/sessions", "sessions.snapshot", {})
+      return this.snapshot()
+    }
+    if (!signal) return this.snapshot()
     if (!this.initialSnapshotFlight) {
       this.initialSnapshotFlight = this.waitForInitialSnapshot(signal).finally(() => {
         this.initialSnapshotDelivered = true

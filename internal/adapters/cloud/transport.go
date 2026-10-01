@@ -386,6 +386,7 @@ func (t *Transport) setState(state string) {
 func (t *Transport) keepalive(conn *Conn, done <-chan struct{}) {
 	ticker := time.NewTicker(KeepaliveInterval)
 	defer ticker.Stop()
+	lastWall := t.opts.Now()
 	for {
 		select {
 		case <-done:
@@ -393,6 +394,17 @@ func (t *Transport) keepalive(conn *Conn, done <-chan struct{}) {
 		case <-t.stopped:
 			return
 		case <-ticker.C:
+			now := t.opts.Now()
+			// A sleeping laptop can resume with a socket that still accepts a
+			// write locally although the relay has already forgotten it. A
+			// wall-clock gap beyond the receive deadline proves this socket
+			// cannot have kept its liveness contract; redial immediately.
+			if missedKeepalive(lastWall, now) {
+				t.logf("cloud keepalive missed its receive window; reconnecting")
+				_ = conn.Close()
+				return
+			}
+			lastWall = now
 			if err := conn.WriteText(PingFrame, t.opts.Now().Add(KeepaliveInterval)); err != nil {
 				t.logf("cloud keepalive failed reason=%s", FailureCode(err))
 				_ = conn.Close()
@@ -400,6 +412,10 @@ func (t *Transport) keepalive(conn *Conn, done <-chan struct{}) {
 			}
 		}
 	}
+}
+
+func missedKeepalive(previous, now time.Time) bool {
+	return now.UnixMilli()-previous.UnixMilli() > ReceiveTimeout.Milliseconds()
 }
 
 // rotateToken closes the socket a minute before the device token expires, so

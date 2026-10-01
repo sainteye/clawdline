@@ -13,6 +13,16 @@ import (
 	domain "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
+func TestMissedKeepaliveAfterMachineSleep(t *testing.T) {
+	before := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if missedKeepalive(before, before.Add(KeepaliveInterval)) {
+		t.Fatal("an ordinary keepalive interval must keep the socket")
+	}
+	if !missedKeepalive(before, before.Add(ReceiveTimeout+time.Millisecond)) {
+		t.Fatal("a wall-clock gap beyond the receive deadline must redial")
+	}
+}
+
 // tokenServer answers the one control-plane route the transport needs.
 func tokenServer(t *testing.T) *httptest.Server {
 	t.Helper()

@@ -292,7 +292,15 @@ export function sessionCloseabilityHTML(s) {
             { n: obligations });
     } else if (projected.state === "needs_attestation") {
         copy = T.closeabilityNeedsAttestation;
-    } else copy = T.closeabilityUnknown;
+    } else {
+        // Fast list reads keep a prior row while a background scan runs. Its
+        // close gate is unknown for that moment, but this is an active check,
+        // not a terminal failure to determine closeability.
+        var source = s && s.source;
+        var refreshing = source && source.freshness === "unverified" &&
+            projected.reasons.some(function (row) { return row.code === "session_inventory_stale"; });
+        copy = refreshing ? T.closeabilityRefreshing : T.closeabilityUnknown;
+    }
     var mover = projected.block && projected.block.mover;
     var moverSaid = projected.state === "safe" ? "" : closeabilityMoverText(mover);
     var title = moverSaid ? copy + " · " + moverSaid : copy;
