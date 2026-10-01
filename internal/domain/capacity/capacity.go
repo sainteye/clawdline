@@ -359,6 +359,7 @@ const (
 	CloudTerminalIngress           = "cloud.terminal_ingress"
 	CloudTerminalRefusals          = "cloud.terminal_refusals"
 	CloudTerminalRevocationRetire  = "cloud.terminal_revocation_retire_seconds"
+	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
 	TerminalBodyBytes              = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
@@ -1938,6 +1939,12 @@ func Register() []Entry {
 			Limit: 3, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalRevocationRetireSecondsLimit"},
+		},
+		{
+			Name: CloudTerminalFrameHeartbeat, Class: Cache, Unit: Seconds,
+			Limit: 3, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalFrameHeartbeatSecondsLimit"},
 		},
 		{
 			// The terminal grants file. A larger one is not read, and then

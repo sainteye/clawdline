@@ -24,6 +24,75 @@ import (
 const testConnection = "AAAAAAAAAAAAAAAAAAAAAA"
 const testKeyID = "rk-AQEBAQEBAQEBAQEBAQEBAQ"
 
+func TestTerminalFramesWaitForRelaySettlementAndKeepNewestCapture(t *testing.T) {
+	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), nil, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := domaincloud.NewDeviceKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	master, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := terminal.NewID()
+	c := &terminalConnection{viewer: "viewer", id: testConnection, keyID: testKeyID, key: key,
+		expires: time.Now().Add(time.Minute), terminalID: id}
+	l := &Link{identity: adaptercloud.Identity{MachineID: "machine"}, opts: LinkOptions{Now: time.Now},
+		terminalConnections: map[string]*terminalConnection{terminalConnectionID("viewer", testConnection): c}}
+	l.relay = &Relay{Transport: &adaptercloud.Transport{}, Spool: spool, MachineID: "machine", Signer: signer, Secret: master, KeyID: adaptercloud.MasterKeyID}
+	svc := terminals.New(nil, func(terminals.Principal) error { return nil })
+	p := terminals.Principal{Device: "viewer", Cloud: true}
+	first := time.Now().Add(-4 * time.Second)
+	for _, at := range []time.Time{first, first.Add(time.Second), first.Add(2 * time.Second)} {
+		if err := l.sendTerminalFrame(context.Background(), svc, p, c, id, terminal.Frame{Rev: "still", At: at, Lines: []string{"$ "}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := spool.Row(1); ok {
+		t.Fatal("a second frame entered the spool before ACK")
+	}
+	if c.publishedFrameSeq != 1 {
+		t.Fatalf("published %d frames before ACK", c.publishedFrameSeq)
+	}
+	l.terminalReceiptSettled("term/machine/viewer/"+testConnection, c.framePendingSeq)
+	latest := time.Now()
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, id, terminal.Frame{Rev: "still", At: latest, Lines: []string{"$ "}}); err != nil {
+		t.Fatal(err)
+	}
+	row, ok := spool.Row(1)
+	if !ok {
+		t.Fatal("fresh frame was not sent after ACK")
+	}
+	env, err := domaincloud.DecodeEnvelope(row.Sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := env.Open(key, func(string) (ed25519.PublicKey, bool) { return signer.PublicKey(), true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frame struct {
+		FrameSeq   uint64  `json:"frame_seq"`
+		CapturedAt float64 `json:"captured_at"`
+		Frame      struct {
+			At float64 `json:"at"`
+		} `json:"frame"`
+	}
+	if err := json.Unmarshal(plain, &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.FrameSeq != 2 || frame.CapturedAt != float64(latest.UnixMilli())/1000 || frame.Frame.At != frame.CapturedAt {
+		t.Fatalf("ACK did not release a freshly signed full frame: %+v", frame)
+	}
+}
+
 var testRequestID = strings.Join([]string{"12345678", "1234", "4123", "8123", "123456789abc"}, "-")
 
 func TestTerminalRequestRejectsForgedShapeAndKey(t *testing.T) {
