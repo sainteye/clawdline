@@ -138,6 +138,29 @@ test("refresh asks the machine to restate quiet Sessions after the first list", 
   assert.deepEqual(client.reads, [{ machine: "mac-a", word: "sessions.snapshot", body: {} }])
 })
 
+test("reopening a complete list reads the relay once without restating every Session", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1")]
+  client.sessionInventoryByMachine.set("mac-a", inventory("mac-a", "s1"))
+  const r = reader(client, { t: 1000 })
+  const initial = { signal: new AbortController().signal, headers: { "X-Clawdline-Initial-Read": "1" } }
+  await r.fetch("/v1/sessions", initial)
+  await r.fetch("/v1/sessions", initial)
+  assert.equal(client.reads.length, 0)
+})
+
+test("reopening an incomplete list still asks the machine for missing rows", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1")]
+  client.sessionInventoryByMachine.set("mac-a", inventory("mac-a", "s1"))
+  const r = reader(client, { t: 1000 })
+  const initial = { signal: new AbortController().signal, headers: { "X-Clawdline-Initial-Read": "1" } }
+  await r.fetch("/v1/sessions", initial)
+  client.recovering = ["mac-a"]
+  await r.fetch("/v1/sessions", initial)
+  assert.deepEqual(client.reads, [{ machine: "mac-a", word: "sessions.snapshot", body: {} }])
+})
+
 test("an agent transcript is a session read of the chosen machine, never the generic machine request", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })

@@ -2000,6 +2000,16 @@ test("a Project-page Board address selects and reads that Project", () =>
 
 // ---- the two gestures that were here first
 
+test("opening and idling on the list takes one HTTP snapshot while the stream stays open", () =>
+  inTab(async (tab) => {
+    const before = listReads
+    await list(tab)
+    assert.equal(listReads - before, 1, "opening the list reads one snapshot")
+    assert.equal(streams.size, 1, "one stream carries later updates")
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+    assert.equal(listReads - before, 1, "idle stream updates do not request another full snapshot")
+  }))
+
 test("pull to refresh: a pull at the top reads the list again and says so on the way", () =>
   inTab(async (tab) => {
     await list(tab)
@@ -2219,7 +2229,7 @@ test("a brief inventory refresh keeps the last blocked badge and row height whil
     }
   }))
 
-test("a safe row says it is checking during a brief inventory refresh", () =>
+test("a safe row retains its last confirmed status while verification pauses", () =>
   inTab(async (tab) => {
     await list(tab)
     readingScenario = "refresh"
@@ -2228,12 +2238,16 @@ test("a safe row says it is checking during a brief inventory refresh", () =>
       await tab.until("the retained reading arrived", (s) => s.refreshing)
       const open = await swipeOpen(tab, SAFE)
       assert.equal(open.actionKind, "unknown", "a prior safe answer cannot authorize close")
-      assert.match(open.rowState ?? "", /正在重新確認能否關閉/)
+      assert.match(open.rowState ?? "", /上次確認可安全關閉/)
+      assert.match(open.rowState ?? "", /驗證暫停/)
       assert.doesNotMatch(open.rowState ?? "", /無法判斷能否關閉/)
     } finally {
       readingScenario = "normal"
       pushSessions()
     }
+    await tab.until("the complete reading arrived", (s) => !s.refreshing)
+    const restored = await swipeOpen(tab, SAFE)
+    assert.equal(restored.actionKind, "safe", "a complete new reading restores the close action")
   }))
 
 test("a session awaiting attestation explains that inside its named confirmation", () =>

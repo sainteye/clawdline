@@ -673,7 +673,8 @@ export class RelayReader {
         }
         case "/v1/sessions":
           this.note(method, path, "local")
-          return json(200, await this.initialSnapshot(init?.signal))
+          return json(200, await this.initialSnapshot(init?.signal,
+            new Headers(init?.headers).get("X-Clawdline-Initial-Read") === "1"))
         case "/v1/orchestrator/tasks": {
           // The list the session list's indent is computed from. Without it
           // `groupUnderRoots` has nothing to group by and returns the rows as
@@ -1035,8 +1036,15 @@ export class RelayReader {
    * request deadline and the best partial reading is returned. No second clock
    * or retry policy is introduced here.
    */
-  private async initialSnapshot(signal?: AbortSignal | null): Promise<SessionsSnapshot> {
+  private async initialSnapshot(signal?: AbortSignal | null, initial = false): Promise<SessionsSnapshot> {
     if (this.initialSnapshotDelivered) {
+      // Remounting the list is another view of the same relay reading. Only a
+      // person's refresh asks the machine again, unless the held pass is
+      // incomplete and a restatement could recover missing rows.
+      if (initial) {
+        const held = await this.snapshot()
+        if (held.scan.complete) return held
+      }
       // A person's refresh is a new question about the machine, not a read of
       // the relay's retained rows. Those rows may omit a quiet Session after
       // relay eviction. The connection's recovery asks once; ask again here.

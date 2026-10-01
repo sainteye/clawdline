@@ -51,7 +51,7 @@ export class FleetStore {
 
   /** Reads once, then follows the stream if this host has one. */
   async start(): Promise<void> {
-    await this.refresh()
+    await this.refresh(true)
     if (!this.transport) return
     this.handle = this.transport.open(this.client.url(routes.events), {
       onOpen: () => this.set({ live: true }),
@@ -75,9 +75,9 @@ export class FleetStore {
     this.set({ live: false })
   }
 
-  async refresh(): Promise<void> {
+  async refresh(initial = false): Promise<void> {
     try {
-      this.accept(await this.client.sessions())
+      this.accept(await this.client.sessions(initial))
     } catch (err) {
       this.set({ error: err instanceof Error ? err.message : String(err), loaded: true })
     }
