@@ -313,7 +313,7 @@ included — so the task the child reads is the one that was validated, and it d
 | `work_id` | optional UUID of the board item this serves |
 | `persona` | optional built-in persona id (`GET /v1/personas`); none by default |
 | `auto_compact_window` | optional, Claude only: the context size in tokens (50000–1000000) the child compacts at, or `null` for none. Absent follows the machine's `claude_auto_compact_window`, which is off unless the person set it. For comparing runs, not for everyday briefs: a compaction may lose detail |
-| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "label": "…"}` |
+| `root` | **required**: `{"session_id": "<your conversation id>", "assistant": "claude"\|"codex", "project_dir": "<the same absolute repository path as project_dir>", "label": "…"}`. A role-scoped root needs `root.project_dir` for the daemon to verify its Project scope. |
 
 **Match the worker surface and launch mode to every tool the child must use before dispatching it.**
 The brief names the required tools and the root proves that the chosen surface supplies them. A
@@ -357,6 +357,7 @@ most twice per original.
 | 422 | `bad_task` | The message names the field. Includes "No readable task.json under …" — check `task_root` |
 | 422 | `claims_required` | Add `claims` |
 | 422 | `root_session_required`, `root_assistant_required` | Add `root.session_id` and `root.assistant` |
+| 403 | `session_scope_mismatch` | Check that `root.project_dir` is present and matches the root Session's Project and role snapshot. Correct the brief or CLI; do not ask the person to change Project settings. |
 | 422 | `detached_route_required` | You sent `root.poll_only`; that is detached automation (§6) |
 | **409** | **`stale_inventory`** | Your `generation` is missing or old. The whole current inventory is inside the error: read it, decide again, resend with its `generation` |
 | 409 | `graph_*` | A task-graph admission rule (the `graph` field) |
