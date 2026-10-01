@@ -71,7 +71,7 @@ func TestAClaudeChildIsLaunchedWithTheMachinesWindow(t *testing.T) {
 	b, _ = newTestBroker(t)
 	b.AutoCompactWindow = windowOf(120_000)
 	r, line = dispatchWith(t, b, "c2800002-0000-4000-8000-000000000002", "claude", nil)
-	if !strings.HasPrefix(line, "env -u CLAUDECODE ") || !strings.Contains(line, " "+AutoCompactEnv+"=120000 claude ") {
+	if !strings.HasPrefix(line, "env -u CLAUDECODE ") || !strings.Contains(line, " "+AutoCompactEnv+"=120000 "+projects.ClawdlinePathEnv()+" claude ") {
 		t.Fatalf("the window is not in the child's environment:\n%s", line)
 	}
 	if !windowIs(r.AutoCompactWindow, 120_000) || r.AutoCompactRequested != nil {
@@ -212,7 +212,7 @@ func TestASessionTheBrokerOpensCarriesTheWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(launcher.line(), " "+AutoCompactEnv+"=200000 claude ") {
+	if !strings.Contains(launcher.line(), " "+AutoCompactEnv+"=200000 "+projects.ClawdlinePathEnv()+" claude ") {
 		t.Fatalf("the opened session's line does not carry the window:\n%s", launcher.line())
 	}
 	if !windowIs(opened.AutoCompactWindow, 200_000) {
