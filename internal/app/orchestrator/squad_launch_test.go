@@ -84,3 +84,52 @@ func TestSquadDispatchRequiresBoundActorAndHonorsDisabledRole(t *testing.T) {
 	}
 	check("", "pending-terminal", "conversation-a", "session_actor_required")
 }
+
+func TestSquadDispatchUsesAdmittedProjectScope(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	project := filepath.Join(dir, "project")
+	other := filepath.Join(dir, "other")
+	for _, path := range []string{project, other} {
+		if err := os.MkdirAll(filepath.Join(path, ".git"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope, _ := projects.ResolveScope(project)
+	document, _ := json.Marshal(map[string]string{"definition_id": "clawdline.persona.minimal-change", "scope_id": scope.ID})
+	launch, err := st.PrepareSquadLaunch(ctx, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSquadTerminal(ctx, launch.ID, "terminal-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindSquadConversation(ctx, launch.ID, "conversation-a"); err != nil {
+		t.Fatal(err)
+	}
+	b := &Broker{Store: st, SquadActorRequired: true}
+	for _, tc := range []struct{ name, project, nested, want string }{
+		{"same without nested", project, "", ""},
+		{"same with nested", project, project, ""},
+		{"cross project", other, "", "session_scope_mismatch"},
+		{"conflicting nested", project, other, "bad_task"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, _ := json.Marshal(map[string]any{"session_id": "conversation-a", "assistant": "claude", "project_dir": tc.nested})
+			p := 1
+			claims := []string{}
+			record, err := b.admit("11111111-1111-4111-8111-111111111111", draft{Protocol: &p, TaskID: "11111111-1111-4111-8111-111111111111", Assistant: "claude", ProjectDir: tc.project, Title: "Do the thing", Instructions: "Do it", Claims: &claims, Root: (*json.RawMessage)(&root)}, false, false)
+			if err == nil {
+				err = b.checkSquadDispatchActor(ctx, DispatchRequest{ActorCapability: launch.ActorCapability}, record, "terminal-a")
+			}
+			if got := refusalCode(err); got != tc.want {
+				t.Fatalf("refusal = %q (%v), want %q", got, err, tc.want)
+			}
+		})
+	}
+}

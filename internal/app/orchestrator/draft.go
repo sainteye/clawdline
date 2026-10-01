@@ -300,6 +300,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		if err != nil {
 			return Record{}, err
 		}
+		if admitted.ProjectDir != "" && filepath.Clean(admitted.ProjectDir) != filepath.Clean(d.ProjectDir) {
+			return bad("root.project_dir must match project_dir")
+		}
+		admitted.ProjectDir = filepath.Clean(d.ProjectDir)
 		root = admitted
 	}
 	for name, raw := range map[string]json.RawMessage{

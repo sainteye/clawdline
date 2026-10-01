@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 )
 
 const (
@@ -280,6 +283,62 @@ func TestDispatchWritesTheBriefAndPostsIt(t *testing.T) {
 	}
 	if strings.Contains(out.String()+errs.String(), dispatchSecret) || strings.Contains(out.String()+errs.String(), thinToken) {
 		t.Fatal("a credential was printed")
+	}
+}
+
+func TestCLIBriefPassesDaemonProjectAdmission(t *testing.T) {
+	project := t.TempDir()
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"0123456789abcdef"}}
+	_, client := w.daemon(t, func(int) (int, string) { return 200, dispatchedAnswer("spawning") })
+	env := testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	env.toplevel = func() (string, error) { return project, nil }
+	var out, errs bytes.Buffer
+	if code := dispatchTask(&out, &errs, client, testDispatchOptions(), env); code != 0 {
+		t.Fatalf("CLI dispatch exit %d: %s", code, errs.String())
+	}
+	path := filepath.Join(w.root, dispatchID, "task.json")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	for _, tc := range []struct {
+		name   string
+		nested any
+		want   string
+	}{
+		{"CLI output", project, ""},
+		{"missing nested", nil, ""},
+		{"conflicting nested", other, "bad_task"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var brief map[string]any
+			if err := json.Unmarshal(body, &brief); err != nil {
+				t.Fatal(err)
+			}
+			root := brief["root"].(map[string]any)
+			if tc.nested == nil {
+				delete(root, "project_dir")
+			} else {
+				root["project_dir"] = tc.nested
+			}
+			changed, _ := json.Marshal(brief)
+			if err := os.WriteFile(path, changed, 0600); err != nil {
+				t.Fatal(err)
+			}
+			broker := &orchestrator.Broker{Tasks: taskdir.Root{Dir: w.root}}
+			record, err := broker.ReadDraft(dispatchID)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if record.Root == nil || record.Root.ProjectDir != project {
+					t.Fatalf("admitted root = %+v", record.Root)
+				}
+			} else if ref, ok := err.(orchestrator.Refusal); !ok || ref.Code != tc.want {
+				t.Fatalf("admission = %v, want %s", err, tc.want)
+			}
+		})
 	}
 }
 
