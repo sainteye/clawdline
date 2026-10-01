@@ -19,9 +19,4 @@
 .start-mode-tabs button { flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
 .start-mode-tabs button[aria-selected="true"] { background: var(--accent-in); color: var(--accent); }
 .sheet #start-mode-tabs[hidden], .sheet #start-mode-panel [hidden] { display: none; }
-.filter-row .session-search-toggle { width: 36px; height: 36px; }
-.filter-row .session-mode-toggle { margin-left: auto; }
-.filter-row:not([data-search="open"]) input#filter { display: none; }
-.filter-row[data-search="open"] .session-mode-toggle { margin-left: 0; }
-.filter-row[data-search="open"] .slash { display: none; }
 @media (max-width: 480px) { .filter-row { gap: 5px; padding-inline: 7px; white-space: nowrap; } .filter-row .start { width: 34px; min-width: 34px; } }

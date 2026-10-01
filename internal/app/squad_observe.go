@@ -22,8 +22,8 @@ func ReconcileSquadLaunches(ctx context.Context, st *store.Store, stateDir strin
 	observed := map[string]session.Session{}
 	for _, item := range inv.Sessions {
 		if item.SquadLaunchID != "" && item.IsAssistant() {
-			if prior, seen := observed[item.SquadLaunchID]; seen && prior.ID != item.ID {
-				// Two processes claim one launch: neither is authoritative.
+			if prior, seen := observed[item.SquadLaunchID]; seen && (prior.ID != item.ID || prior.ConversationID != item.ConversationID) {
+				// Conflicting process or conversation claims are not authoritative.
 				observed[item.SquadLaunchID] = session.Session{}
 			} else if !seen {
 				observed[item.SquadLaunchID] = item
@@ -56,6 +56,16 @@ func ReconcileSquadLaunches(ctx context.Context, st *store.Store, stateDir strin
 			continue
 		}
 		if err := st.BindSquadConversation(ctx, launch.ID, item.ConversationID); err != nil {
+			return err
+		}
+	}
+	for launchID, item := range observed {
+		if item.ID == "" || item.ConversationID == "" {
+			continue
+		}
+		if err := st.RebindSquadConversation(ctx, launchID, item.ID, item.ConversationID); errors.Is(err, store.ErrSquadLaunchUnknown) {
+			continue
+		} else if err != nil {
 			return err
 		}
 	}

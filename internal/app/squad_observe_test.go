@@ -71,3 +71,34 @@ func TestSquadObservationRecoversFromUniqueProcessWithoutTerminalReceipt(t *test
 		t.Fatalf("unrecovered actor = %+v, %t, %v", actor, ok, err)
 	}
 }
+
+func TestSquadObservationFollowsConversationChangeInSameLaunch(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	launch, err := st.PrepareSquadLaunch(ctx, json.RawMessage(`{"definition_id":"clawdline.persona.architect","scope_id":"project-test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSquadTerminal(ctx, launch.ID, "terminal-a"); err != nil {
+		t.Fatal(err)
+	}
+	observe := func(conversation string) {
+		t.Helper()
+		inv := session.Inventory{Sessions: []session.Session{{ID: "terminal-a", Assistant: session.AssistantCodex,
+			ConversationID: conversation, SquadLaunchID: launch.ID}}}
+		if err := ReconcileSquadLaunches(ctx, st, dir, inv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe("startup-conversation")
+	observe("assigned-conversation")
+	actor, ok, err := st.AuthenticateSquadActor(ctx, launch.ActorCapability)
+	if err != nil || !ok || actor.ConversationID != "assigned-conversation" {
+		t.Fatalf("actor after provider identity changed = %+v, %t, %v", actor, ok, err)
+	}
+}
