@@ -279,7 +279,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 126)
+  assert.equal(Object.keys(CARRIED).length, 127)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

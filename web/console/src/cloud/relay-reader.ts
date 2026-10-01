@@ -622,6 +622,12 @@ export class RelayReader {
         if (!id || id.includes("/")) return this.refuse(method, path, 404, "unknown_definition", "No definition has that ID.")
         return await this.machineRead(init?.signal, method, path, "squad.definition", { definition_id: id, ...(q.version ? { version: q.version } : {}) })
       }
+      if (path.startsWith("/v1/squad/session-snapshots/")) {
+        this.only(url, path)
+        const conversation = decodeURIComponent(path.slice("/v1/squad/session-snapshots/".length))
+        if (!conversation || conversation.includes("/")) return this.refuse(method, path, 404, "snapshot_not_found", "No role snapshot belongs to that conversation.")
+        return await this.machineRead(init?.signal, method, path, "squad-session-snapshot", { conversation })
+      }
       const gateExport = workV2ItemActionID(path, "gate-export")
       if (gateExport) {
         this.only(url, path)

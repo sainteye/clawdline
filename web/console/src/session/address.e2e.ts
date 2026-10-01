@@ -277,6 +277,18 @@ function daemon(): Server {
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
     if (path === "/v1/personas") return json(res, 200, { license: "MIT", personas: PERSONAS })
+    if (path === "/v1/squad/session-snapshots/10000000-0000-4000-8000-000000000001") return json(res, 200, {
+      snapshot_id: "fixture-snapshot", snapshot: {
+        definition_id: "clawdline.persona.architect", definition: { version: "fixture-v1", body: "# Architect\n\nComplete launch definition marker." },
+        handbook: { text: "Project handbook marker." },
+        skills: [{ id: "fixture.skill", version: "1", enabled: true, name: { en: "Blueprint", "zh-Hant": "藍圖技能" },
+          purpose: { en: "Draft plans", "zh-Hant": "撰寫計畫" }, content: "Complete skill content marker." }],
+      },
+    })
+    if (path.startsWith("/v1/squad/session-snapshots/")) return json(res, 404, { error: "snapshot_not_found" })
+    if (path === "/v1/squad/definitions/clawdline.persona.backend") return json(res, 200, {
+      definition_id: "clawdline.persona.backend", version: "current-v2", body: "Current catalog definition marker.", skills: [],
+    })
     if (path === "/v1/projects" && req.method === "GET") return json(res, 503, { error: "board_unavailable" })
     if (path === "/__project_request_count") return json(res, 200, { count: placeRequests })
     if (path === "/v1/places") {
@@ -747,12 +759,23 @@ test("Session Info opens a role detail dialog and restores focus when it closes"
       assert.match(detail.words, /工程團隊/)
       assert.match(detail.words, /設計團隊/)
       assert.match(detail.words, /Epic/)
+      await tab.run(`new Promise((resolve, reject) => {
+        const until = Date.now() + 5000
+        const wait = () => document.getElementById("role-detail-content")?.textContent?.includes("Complete launch definition marker") ? resolve(true) :
+          Date.now() < until ? setTimeout(wait, 30) : reject(new Error("full definition did not load"))
+        wait()
+      })`)
+      assert.match(await tab.run(`document.getElementById("role-detail-content")?.textContent`), /藍圖技能/)
+      await tab.run(`document.querySelector("#role-detail-content details summary").click()`)
+      assert.match(await tab.run(`document.getElementById("role-detail-content")?.textContent`), /Complete skill content marker/)
       assert.equal(detail.source, "https://example.com/architect.md")
       assert.equal(detail.focus, "role-detail-close")
+      await tab.run(`document.getElementById("role-detail-close").focus()`)
       await tab.press("Tab")
       assert.equal(await tab.run(`document.activeElement?.getAttribute("href")`), "https://example.com/architect.md")
       await tab.run(`document.getElementById("info-refresh").click()`)
       assert.equal(await tab.run(`document.getElementById("role-detail-title")?.textContent`), "架構師")
+      assert.equal(await tab.run(`document.querySelector("#role-detail-content details")?.open`), true)
       assert.equal(await tab.run(`document.activeElement?.getAttribute("href")`), "https://example.com/architect.md")
       await tab.press("Escape")
       assert.deepEqual(await tab.run(`(() => ({
@@ -776,6 +799,34 @@ test("Session Info opens a role detail dialog and restores focus when it closes"
     delete assigned.persona
     delete first.teams
     first.source = oldSource
+  }
+})
+
+test("a legacy Session labels the current role definition as a catalog version", async () => {
+  const assigned = ROWS[1] as (typeof ROWS)[number] & { persona?: string }
+  assigned.persona = "backend"
+  try {
+    await inTab(DESK, async (tab) => {
+      await tab.go("/" + FRAGMENT[TTY])
+      await tab.until("the persona session opens", (s) => s.open === TTY)
+      await tab.run(`document.getElementById("detail-info").click()`)
+      await tab.run(`new Promise((resolve, reject) => {
+        const until = Date.now() + 5000
+        const wait = () => document.querySelector("#info button[data-role-detail]") ? resolve(true) :
+          Date.now() < until ? setTimeout(wait, 30) : reject(new Error("role did not load"))
+        wait()
+      })`)
+      await tab.run(`document.querySelector("#info button[data-role-detail]").click()`)
+      await tab.run(`new Promise((resolve, reject) => {
+        const until = Date.now() + 5000
+        const wait = () => document.getElementById("role-detail-content")?.textContent?.includes("Current catalog definition marker") ? resolve(true) :
+          Date.now() < until ? setTimeout(wait, 30) : reject(new Error("catalog definition did not load: " + document.getElementById("role-detail-content")?.textContent))
+        wait()
+      })`).catch((error) => { throw new Error(String(error) + " paths=" + requestedPaths.slice(-10).join(",")) })
+      assert.match(await tab.run(`document.getElementById("role-detail-content")?.textContent`), /無法核實此 Session 啟動時的定義/)
+    })
+  } finally {
+    delete assigned.persona
   }
 })
 

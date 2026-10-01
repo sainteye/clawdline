@@ -32,6 +32,17 @@ func TestSquadEventHTTPRequiresBoundLocalActorAndReadsCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{store: st}
+	snapshot := httptest.NewRecorder()
+	s.squadSessionSnapshotRead(snapshot, httptest.NewRequest(http.MethodGet, "/v1/squad/session-snapshots/conversation-a", nil))
+	if snapshot.Code != http.StatusOK || !strings.Contains(snapshot.Body.String(), `"snapshot_id":"`+launch.SnapshotID+`"`) ||
+		!strings.Contains(snapshot.Body.String(), `"id":"skill.a"`) {
+		t.Fatalf("bound snapshot status/body = %d %s", snapshot.Code, snapshot.Body.String())
+	}
+	missing := httptest.NewRecorder()
+	s.squadSessionSnapshotRead(missing, httptest.NewRequest(http.MethodGet, "/v1/squad/session-snapshots/legacy-conversation", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("legacy snapshot status = %d", missing.Code)
+	}
 	request := func(local bool, capability, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodPost, "/v1/squad/session-events", strings.NewReader(body))
 		r.Header.Set(squadSessionCapabilityHeader, capability)
