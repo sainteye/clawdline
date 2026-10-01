@@ -257,7 +257,7 @@ An owned child is a bounded task under you. **You keep synthesis, integration an
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--persona <id>] [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
+  [--persona <id>] [--work-id uuid] [--task-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
 ```
 
 It makes the id and the secret, reads the inventory for `generation` and `task_root`, writes
@@ -271,6 +271,14 @@ yours unless `--assistant` says otherwise; the project is this directory's git t
 `--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. The secret is
 never in argv, in `task.json` or in what it prints, and the token is read as every thin command
 reads it.
+
+For a review that may need retrying, choose a lowercase UUID before the first call and pass it
+as `--task-id` on every attempt. The command keeps a private copy of the original dispatch
+intent beside `task.json`, so an identical retry can resend even after the daemon rewrites the
+brief. The broker returns the original task id with `(replayed)`; a changed brief is refused locally. If
+the command times out or its output is lost, check `GET /v1/orchestrator/tasks/<id>` before
+assuming failure. A missing task can be retried with the same id and brief. An explicit
+refusal did not create a task and can also be retried after correcting its cause.
 
 `--persona <id>` launches the child as a built-in persona (`persona` in `task.json`); an id this
 build lacks is refused locally. No kind gets one by default, `plan_review` included: name

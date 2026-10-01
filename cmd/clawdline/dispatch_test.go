@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,116 @@ func testDispatchOptions() dispatchOptions {
 		Isolation: "worktree", PermissionMode: "edits", Timeout: 45, Kind: "feature",
 		Deliverables: []string{"docs/x.md"}, Model: "opus", Label: "my root",
 		Instructions: "Do the whole thing.\n",
+	}
+}
+
+func TestDispatchRetryUsesSameTaskIDAfterLostAnswer(t *testing.T) {
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"aaaaaaaaaaaaaaaa"}}
+	s, b := w.daemon(t, func(n int) (int, string) {
+		if n == 2 {
+			return 200, strings.Replace(dispatchedAnswer("spawning"), `"ok":true`, `"ok":true,"replayed":true`, 1)
+		}
+		return 200, dispatchedAnswer("spawning")
+	})
+	o := testDispatchOptions()
+	o.TaskID = dispatchID
+	env := testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	for i := 0; i < 2; i++ {
+		var out, errs bytes.Buffer
+		if code := dispatchTask(&out, &errs, b, o, env); code != 0 || !strings.Contains(out.String(), dispatchID) {
+			t.Fatalf("attempt %d: exit %d, out %q, err %q", i, code, out.String(), errs.String())
+		}
+		if i == 0 {
+			if err := os.WriteFile(filepath.Join(w.root, dispatchID, "task.json"), []byte(`{"task_id":"`+dispatchID+`","created_at":"now"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if i == 1 && !strings.Contains(out.String(), "(replayed)") {
+			t.Fatalf("retry did not identify the existing task: %q", out.String())
+		}
+	}
+	if w.posts != 2 {
+		t.Fatalf("posts = %d", w.posts)
+	}
+	for _, body := range postBodies(s) {
+		if body["task_id"] != dispatchID {
+			t.Fatalf("retry used another id: %+v", body)
+		}
+	}
+}
+
+func TestDispatchUnansweredRequestKeepsRetryableBrief(t *testing.T) {
+	root := t.TempDir()
+	posts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]string{"generation": "aaaaaaaaaaaaaaaa", "task_root": root})
+			return
+		}
+		posts++
+		if posts == 1 {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		_, _ = w.Write([]byte(strings.Replace(dispatchedAnswer("spawning"), `"ok":true`, `"ok":true,"replayed":true`, 1)))
+	}))
+	defer srv.Close()
+	b := &broker{base: srv.URL, token: thinToken, client: srv.Client()}
+	o := testDispatchOptions()
+	o.TaskID = dispatchID
+	env := testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	if code := dispatchTask(&out, &errs, b, o, env); code != 1 || !strings.Contains(errs.String(), "is unknown") || !strings.Contains(errs.String(), "--task-id "+dispatchID) {
+		t.Fatalf("uncertain dispatch: %d, %q", code, errs.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, dispatchID, "task.json")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errs.Reset()
+	if code := dispatchTask(&out, &errs, b, o, env); code != 0 || !strings.Contains(out.String(), dispatchID+" spawning") || !strings.Contains(out.String(), "(replayed)") || posts != 2 {
+		t.Fatalf("retry: %d, out %q, err %q, posts %d", code, out.String(), errs.String(), posts)
+	}
+}
+
+func TestDispatchExplicitRefusalCanRetrySameID(t *testing.T) {
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"aaaaaaaaaaaaaaaa"}}
+	_, b := w.daemon(t, func(n int) (int, string) {
+		if n == 1 {
+			return 409, `{"error":{"code":"claims_busy","message":"busy"}}`
+		}
+		return 200, dispatchedAnswer("spawning")
+	})
+	o := testDispatchOptions()
+	o.TaskID = dispatchID
+	env := testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	if code := dispatchTask(&out, &errs, b, o, env); code == 0 || !strings.Contains(errs.String(), "claims_busy") {
+		t.Fatalf("refusal: %d %q", code, errs.String())
+	}
+	out.Reset()
+	errs.Reset()
+	if code := dispatchTask(&out, &errs, b, o, env); code != 0 || !strings.Contains(out.String(), dispatchID) {
+		t.Fatalf("retry: %d %q", code, errs.String())
+	}
+}
+
+func TestDispatchSameIDWithChangedBriefDoesNotPost(t *testing.T) {
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"aaaaaaaaaaaaaaaa"}}
+	_, b := w.daemon(t, func(int) (int, string) { return 200, dispatchedAnswer("spawning") })
+	o := testDispatchOptions()
+	o.TaskID = dispatchID
+	env := testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	if code := dispatchTask(&out, &errs, b, o, env); code != 0 {
+		t.Fatalf("first: %d %s", code, errs.String())
+	}
+	o.Instructions = "A different review."
+	out.Reset()
+	errs.Reset()
+	if code := dispatchTask(&out, &errs, b, o, env); code == 0 || !strings.Contains(errs.String(), "different brief") || w.posts != 1 {
+		t.Fatalf("changed brief: %d %q, posts %d", code, errs.String(), w.posts)
 	}
 }
 

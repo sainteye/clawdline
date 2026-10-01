@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
@@ -73,6 +74,7 @@ func (l *listFlag) Set(v string) error {
 type dispatchOptions struct {
 	Title, ProjectDir, Assistant, Isolation, PermissionMode string
 	Kind, Model, WorkID, Label, Conversation, RootAssistant string
+	TaskID                                                  string
 	Persona                                                 string
 	Claims                                                  []string
 	ClaimsGiven                                             bool
@@ -109,6 +111,7 @@ func dispatchCommand(args []string) {
 	fs.StringVar(&o.Model, "model", "", "optional model override")
 	fs.StringVar(&o.Persona, "persona", "", "a built-in persona to launch the child as (none by default)")
 	fs.StringVar(&o.WorkID, "work-id", "", "the board item this serves (a UUID)")
+	fs.StringVar(&o.TaskID, "task-id", "", "stable task UUID to reuse after an uncertain dispatch")
 	fs.StringVar(&o.Label, "label", "", "this root's label on screen")
 	instructionsFile := fs.String("instructions-file", "", "the brief (default: stdin)")
 	fs.StringVar(&o.Conversation, "conversation", "", "this assistant's conversation id (default: from the environment)")
@@ -142,7 +145,7 @@ func dispatchCommand(args []string) {
 func dispatchUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
 		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
-		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid] [--label l] "+
+		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid] [--task-id uuid] [--label l] "+
 		"[--instructions-file f | instructions on stdin] [--conversation id] [--port n] [--json]")
 	fmt.Fprintln(os.Stderr, "  dispatches an owned child: writes task.json, reads the inventory, posts the task")
 	os.Exit(2)
@@ -191,6 +194,9 @@ func checkDispatchFlags(stderr io.Writer, o dispatchOptions) int {
 			return dispatchRefusal(stderr, "--persona %q is not a persona this build has; it has %s.",
 				o.Persona, strings.Join(persona.IDs(), ", "))
 		}
+	}
+	if o.TaskID != "" && !orchestrator.IsTaskID(o.TaskID) {
+		return dispatchRefusal(stderr, "--task-id must be a lowercase UUID.")
 	}
 	return 0
 }
@@ -255,10 +261,38 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		fmt.Fprintln(stderr, "clawdline dispatch: no task id or secret could be made:", err)
 		return 1
 	}
-	dir, err := writeTaskFile(inv.TaskRoot, id, taskFile(id, o, conversation, rootAssistant))
+	if o.TaskID != "" {
+		id = o.TaskID
+	}
+	brief := taskFile(id, o, conversation, rootAssistant)
+	dir := filepath.Join(inv.TaskRoot, id)
+	created := false
+	old, readErr := os.ReadFile(filepath.Join(dir, "dispatch-intent.json"))
+	if readErr == nil {
+		want, _ := json.Marshal(brief)
+		var existing any
+		if json.Unmarshal(old, &existing) != nil {
+			return usage("task %s has an unreadable dispatch intent; inspect it before retrying.", id)
+		}
+		got, _ := json.Marshal(existing)
+		if string(got) != string(want) {
+			return usage("task %s already has a different brief; choose a different --task-id.", id)
+		}
+	} else if os.IsNotExist(readErr) {
+		if _, taskErr := os.Stat(filepath.Join(dir, "task.json")); taskErr == nil {
+			return usage("task %s already exists without a retryable dispatch intent; inspect it before retrying.", id)
+		}
+		dir, err = writeTaskFile(inv.TaskRoot, id, brief)
+		created = err == nil
+	} else {
+		return usage("task %s could not be inspected: %v.", id, readErr)
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "clawdline dispatch:", err, "Nothing was dispatched.")
 		return 1
+	}
+	if o.TaskID != "" {
+		fmt.Fprintf(stderr, "Task ID: %s; retry this dispatch with --task-id %s if the response is lost.\n", id, id)
 	}
 	warnings := inv.overlapLines()
 
@@ -276,7 +310,9 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		// this command can follow, and that is said rather than chased.
 		again, code := readDispatchInventory(stderr, b, o)
 		if code != 0 {
-			_ = os.RemoveAll(dir)
+			if created {
+				_ = os.RemoveAll(dir)
+			}
 			return code
 		}
 		warnings = again.overlapLines()
@@ -286,13 +322,15 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		// Whether the daemon took it is unknown, so the brief stays.
 		fmt.Fprintln(stderr, "clawdline dispatch:", err)
 		fmt.Fprintf(stderr, "Whether task %s was dispatched is unknown: GET /v1/orchestrator/tasks/%s answers it. "+
-			"Its task.json stays at %s.\n", id, id, dir)
+			"Its task.json stays at %s. Retry with --task-id %s and the same brief.\n", id, id, dir, id)
 		return 1
 	}
 	if !a.ok() {
 		// A refusal made nothing: the directory this command made is its own,
 		// and a task id is never reused.
-		_ = os.RemoveAll(dir)
+		if created {
+			_ = os.RemoveAll(dir)
+		}
 		return report(stdout, stderr, "dispatch", a)
 	}
 	if o.JSON {
@@ -447,6 +485,10 @@ func writeTaskFile(root, id string, task map[string]any) (string, error) {
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("%s could not be written: %w.", path, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dispatch-intent.json"), append(data, '\n'), 0o600); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", fmt.Errorf("dispatch intent for %s could not be written: %w.", id, err)
 	}
 	return dir, nil
 }
