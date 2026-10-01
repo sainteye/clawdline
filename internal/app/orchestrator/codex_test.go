@@ -153,6 +153,8 @@ func TestAChildThatDrewNoInputLineSaysSo(t *testing.T) {
 // each CLI spells it, and only Codex is told the directory is one to work in —
 // Claude Code neither takes that flag nor asks that question.
 func TestTheLaunchLineIsSpelledForItsOwnCLI(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
 	const cwd = "/private/tmp/cl-launch-probe"
 	const tasks = "/private/tmp/cl-launch-tasks"
 	for _, c := range []struct {
@@ -175,6 +177,9 @@ func TestTheLaunchLineIsSpelledForItsOwnCLI(t *testing.T) {
 			t.Fatal(err)
 		}
 		line := shellCommand(launch, Record{Assistant: c.assistant, PermissionMode: c.mode}, tasks, cwd)
+		if want := projects.ClawdlinePathEnv(); !strings.Contains(line, want) {
+			t.Errorf("%s/%s: the launch line does not put Clawdline on PATH:\n%s", c.assistant, c.mode, line)
+		}
 		for _, want := range c.want {
 			if !strings.Contains(line, want) {
 				t.Errorf("%s/%s: the launch line does not carry %q:\n%s", c.assistant, c.mode, want, line)

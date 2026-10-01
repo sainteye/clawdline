@@ -129,6 +129,7 @@ func envPrefix(assistant string, set []string) string {
 		parts = append(parts, "-u "+k)
 	}
 	parts = append(parts, set...)
+	parts = append(parts, projects.ClawdlinePathEnv())
 	if len(parts) == 0 {
 		return ""
 	}

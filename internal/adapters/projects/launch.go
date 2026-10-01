@@ -3,9 +3,11 @@ package projects
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
@@ -364,6 +366,12 @@ func UpdateCheckArgs(assistant string) []string {
 	return []string{"-c", "check_for_update_on_startup=false"}
 }
 
+// ClawdlinePathEnv makes the daemon's stable CLI available to an assistant.
+func ClawdlinePathEnv() string {
+	return "PATH=" + ShellQuoted(filepath.Join(config.Dir(), "bin")) +
+		string(os.PathListSeparator) + `"$PATH"`
+}
+
 // ShellCommand is ProviderLaunchPlan.shellCommand: `env -u …` first, so the
 // program runs as its own process with nothing in front of it in `ps`.
 func (l Launch) ShellCommand() string {
@@ -375,7 +383,7 @@ func (l Launch) ShellCommand() string {
 		}
 		prefix = "env " + strings.Join(parts, " ") + " "
 	}
-	return prefix + strings.Join(append([]string{l.Assistant}, l.Arguments...), " ")
+	return prefix + ClawdlinePathEnv() + " " + strings.Join(append([]string{l.Assistant}, l.Arguments...), " ")
 }
 
 // ShellLine is ProviderLaunchPlan.shellLine: what an iTerm2 tab is typed.
