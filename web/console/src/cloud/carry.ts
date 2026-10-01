@@ -308,9 +308,9 @@ export const ANSWERED_HERE: readonly string[] = [
 ]
 
 /**
- * Routes this machine answers only to itself and to devices paired with it,
- * and refuses over Clawdline Cloud by name: a terminal, and the grant that
- * lets a device use one.
+ * HTTP routes this machine answers only to itself and paired devices. The
+ * hosted terminal uses its separate encrypted channels, not this generic
+ * Cloud Router; terminal grant writes also remain local to the machine.
  *
  * **Why a fourth list and not one of the three.** Those three are the
  * machine's Cloud vocabulary, held to `Implemented()` and `Vocabulary()` by the
@@ -318,19 +318,19 @@ export const ANSWERED_HERE: readonly string[] = [
  * a thing the relay could be asked to carry. Nor is it `ANSWERED_HERE`, which
  * is what this seam answers. So without this list a terminal route fell to the
  * last sentence of `notCarriedDetail` — "do it on the machine itself" — which
- * is true and hides the reason: it is not waiting to be carried, it never
- * will be. The machine says the same with its own refusal,
+ * is true and hides the reason: this HTTP route is not carried. The machine
+ * says the same with its own refusal,
  * `terminal_cloud_not_supported`, for a request that reaches it anyway
  * (`internal/transport/http/terminals.go`).
  */
 export const MACHINE_ONLY: readonly { readonly route: RegExp; readonly sentence: string }[] = [
   {
     route: /^\/v1\/terminals(\/|$)/,
-    sentence: "Terminals are used on this machine's own console or a device paired with it, never through Clawdline Cloud.",
+    sentence: "Terminal HTTP routes are local to this machine or a paired device. Hosted terminals use separate encrypted Cloud channels.",
   },
   {
     route: /^\/v1\/auth\/devices\/[^/]+\/terminal$/,
-    sentence: "A device is given access to this machine's terminals on the machine itself, never through Clawdline Cloud.",
+    sentence: "Terminal grants are changed on this machine. Hosted terminals use those grants but cannot change them.",
   },
 ]
 

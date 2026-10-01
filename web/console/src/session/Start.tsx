@@ -114,7 +114,8 @@ let terminalGeneration = 0
 function checkTerminalAccess(): void {
   const generation = ++terminalGeneration
   if (hostedConsole()) {
-    terminalAccess = { state: "blocked", reason: nextWord("terminalRefusalCloudNotSupported") }
+    // The Cloud terminal page checks its own E2E grant before exposing input.
+    terminalAccess = { state: "ready", reason: "" }
     draw()
     return
   }
@@ -679,6 +680,7 @@ function press(id: string): void {
     if (pressing || terminalAccess.state !== "ready") return
     const place = (places || []).find((p) => p.id === id)
     if (!place) return
+    if (hostedConsole()) { close(); openTerminalPage(id, "", "sessions"); return }
     pressing = id
     draw()
     const size = firstSize()

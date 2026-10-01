@@ -26,7 +26,7 @@ export class TerminalRequestError extends Error {
   }
 }
 
-/** The console Clawdline Cloud serves: terminals are never carried there (plan v3 D5, D6). */
+/** The console Clawdline Cloud serves; terminal requests there use terminal-session.ts. */
 export function hostedConsole(): boolean {
   return followsRelay() || !!(import.meta as { env?: Record<string, unknown> }).env?.VITE_HOSTED_CONSOLE
 }
