@@ -55,8 +55,12 @@ func TestAnEpicsOwnerBriefSaysPlanReviewStepsThenImplement(t *testing.T) {
 			}
 		}
 	}
-	if strings.Contains(workV2AssignmentBrief(id, "Small", work.KindFeature), "plan_review") {
-		t.Error("a Feature's brief asks for a plan review")
+	featureBrief := workV2AssignmentBriefForItem(work.ItemV2{ID: id, Title: "Small", Kind: work.KindFeature,
+		Cycle: 1, GateSnapshotCycle: 1, PlanningGate: true})
+	for _, want := range []string{"Review risk assessment", "production_deployment", "focused tests", "plan_review"} {
+		if !strings.Contains(featureBrief, want) {
+			t.Errorf("a Feature's risk brief lacks %q", want)
+		}
 	}
 }
 

@@ -1253,12 +1253,13 @@ func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 	return err
 }
 
-// PlanDocuments is every plan and plan_review document on one item, oldest
-// first, with only its role and time: what an Epic's gate reads. Seconds tie,
-// so insertion order breaks the tie.
+// PlanDocuments includes the review risk and boundary declarations in the
+// same insertion order as plans and reviews. Seconds tie, so rowid breaks it.
 func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT role, created_at FROM work_v2_documents
-    WHERE work_id=? AND role IN ('plan','plan_review') ORDER BY created_at, rowid`, workID)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT role, title, body, created_at FROM work_v2_documents
+    WHERE work_id=? AND (role IN ('plan','plan_review') OR
+      (role='other' AND title IN (?,?))) ORDER BY created_at, rowid`, workID,
+		work.ReviewRiskTitle, work.ReviewBoundaryTitle)
 	if err != nil {
 		return nil, err
 	}
@@ -1267,7 +1268,7 @@ func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
 	for rows.Next() {
 		var d work.DocumentV2
 		var created int64
-		if err := rows.Scan(&d.Role, &created); err != nil {
+		if err := rows.Scan(&d.Role, &d.Title, &d.Body, &created); err != nil {
 			return nil, err
 		}
 		d.WorkID, d.CreatedAt = workID, time.Unix(created, 0)

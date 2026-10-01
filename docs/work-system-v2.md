@@ -296,20 +296,36 @@ When the policy is `agent_decides`, skipping deployment requires an Agent-author
 `not_applicable` decision with a concrete reason. `done` is refused if neither deploy evidence nor
 that decision exists. A person may change the policy; the Agent may not.
 
-### 6.4 Captured planning for Epic and Feature
+### 6.4 Captured planning and risk-based review
 
 The planning setting defaults on, but the first successful assignment of an execution cycle
-captures it with the verification setting. A captured planning-on Epic or Feature cannot go
-`assigned → implementing` until it holds acceptance criteria, a `plan` document, and a
-`plan_review` document written after the latest `plan`. The owner writes the plan (`clawdline item doc <id> --role plan`),
-dispatches a read-only child with `--kind plan_review --work-id <id>`, and records that child's
-review as a `plan_review` whose `reference` is the child's task id and whose body is the review's
-substance for the person — what it found and what the plan changed in response. A plan rewritten
-after a review needs a fresh review, up to two required reviews for Epic or one for Feature: a
-plan rewritten after the ceiling goes on without another forced review. Issue is always exempt.
-Planning off bypasses the forced plan and review even for Epic.
+captures it with the verification setting. A captured planning-on Epic still needs acceptance
+criteria, a plan and an independent plan review before `assigned → implementing`; its existing
+two-review ceiling remains. A captured planning-on Feature needs acceptance criteria and an
+explicit review-risk assessment. The owning Session writes an `other` document titled
+`Review risk assessment` with a JSON body containing four required booleans —
+`production_deployment`, `access_or_security`, `cross_data_transaction`, and
+`irreversible_effect` — and a nonempty `reason`. When all four are false and the item's
+deployment policy is not `required`, the Feature may start implementation without a plan or
+child review. This is intended for small, reversible changes such as a local interface detail;
+the owner still runs focused tests and verifies the behavior. A missing, malformed or elevated
+assessment fails closed: the Feature needs a plan and an independent review. A required
+production deployment cannot be classified as routine. The assessment is an attributed,
+versioned Board document and its creation is recorded in the item event ledger.
+If a plan is written after the assessment, the routine exemption expires until the owner
+records a new assessment of that plan's scope.
 
-The phase route refuses a planning-on transition when the plan or review is absent. The document route accepts
+The owner writes a high-risk plan (`clawdline item doc <id> --role plan`), dispatches a read-only
+child with `--kind plan_review --work-id <id>`, and records the child's substantive review as a
+`plan_review` whose `reference` is the task id. For a Feature plan revised after a review, a
+fresh review is required unless the owner adds an `other` document titled
+`Review boundary assessment` after that revision, with JSON
+`{"new_risk_boundary":false,"reason":"..."}` explaining why the change remains inside the
+earlier review's risk boundary. A changed or uncertain boundary requires a focused new review.
+The existing Epic revision rule remains in force. Issue remains exempt from this planning gate;
+planning off bypasses the forced Epic and Feature planning checks.
+
+The phase route refuses an Epic or elevated Feature planning-on transition when required plan or review evidence is absent. The document route accepts
 a `plan_review` only when its task is a real review of this plan, read from the broker's task
 record in the same transaction as the item's owner: the task exists
 (`plan_review_task_unknown`), was dispatched by the item's owning Session

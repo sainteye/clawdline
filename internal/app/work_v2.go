@@ -1696,6 +1696,20 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 		if err := work.DocumentRoleApplies(prev, c.Role); err != nil {
 			return err
 		}
+		if c.Title == work.ReviewRiskTitle || c.Title == work.ReviewBoundaryTitle {
+			if c.Role != "other" || c.Reference != "" {
+				return work.RefuseV2("review_assessment_invalid", "Review assessments use role other and a JSON body, without a reference.")
+			}
+			var err error
+			if c.Title == work.ReviewRiskTitle {
+				_, err = work.ParseReviewRisk(c.Body)
+			} else {
+				_, err = work.ParseReviewBoundary(c.Body)
+			}
+			if err != nil {
+				return work.RefuseV2("review_assessment_invalid", err.Error())
+			}
+		}
 		if c.Role == work.DocumentPlanReview {
 			if err := checkPlanReviewTask(tx, prev, c.Reference); err != nil {
 				return err
