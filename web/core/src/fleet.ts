@@ -95,6 +95,23 @@ export class FleetStore {
     if (held && held.scan.epoch === next.scan.epoch && next.scan.generation < held.scan.generation) {
       return
     }
+    if (held && held.scan.epoch === next.scan.epoch && !next.scan.complete) {
+      const present = new Set(next.sessions.map((row) => row.id))
+      const completeSources = new Set(next.scan.sources?.filter((source) => source.complete).map((source) => source.source) ?? [])
+      const retained = held.sessions.filter((row) => !present.has(row.id) && !completeSources.has(row.source?.provenance ?? ""))
+        .map((row) => {
+          const reasons = row.closeability.reasons.some((reason) => reason.code === "session_inventory_stale")
+            ? row.closeability.reasons
+            : [...row.closeability.reasons,
+                { code: "session_inventory_stale", kind: "evidence", mover: { kind: "broker", person_needed: false, self: false } }]
+          return { ...row,
+            source: { freshness: "unverified" as const, observed_at: row.source?.observed_at ?? held.at,
+              provenance: row.source?.provenance ?? held.scan.provenance },
+            closeability: { ...row.closeability, state: "unknown" as const, attestation_id: null, reasons },
+          }
+        })
+      next = { ...next, sessions: [...next.sessions, ...retained] }
+    }
     this.set({ snapshot: next, loaded: true, error: null })
   }
 
