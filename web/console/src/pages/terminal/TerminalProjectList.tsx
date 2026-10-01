@@ -94,7 +94,7 @@ export function TerminalProjectList({ project, label, shown, from, headingLevel 
     void load()
   }, [shown, load])
 
-  if (hosted) return <p className="terminal-note" role="note">{nextWord("terminalRefusalCloudNotSupported")}</p>
+  if (hosted) return <p className="terminal-note" role="note">{nextWord("terminalCloudUseHostedEntry")}</p>
 
   const Heading = headingLevel === 2 ? "h2" : "h3"
   const open = async () => {

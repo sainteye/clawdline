@@ -79,6 +79,33 @@ test("a receipt alone never enables input; first and later full frames have dist
   session.dispose()
 })
 
+test("unchanged full frames keep an idle shell fresh and typable for 30 seconds", async () => {
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const wire = new Wire()
+  wire.lease = { ...held, expires_at: now / 1000 + 90 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const connection = wire.latest()
+    wire.frame(connection, 1, "unchanged")
+    const originalRev = session.snapshot.frame?.rev
+    for (let seq = 2; seq <= 11; seq++) {
+      now += 3_000
+      wire.frame(connection, seq, "unchanged")
+      ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+      assert.equal(session.snapshot.state, "live")
+      assert.equal(session.snapshot.canType, true, `input paused after ${(seq - 1) * 3} seconds`)
+      assert.equal(session.snapshot.frame?.rev, originalRev)
+    }
+    assert.equal(wire.observed.length, 11, "each verified full frame is acknowledged despite the same revision")
+  } finally {
+    session.dispose()
+    Date.now = realNow
+  }
+})
+
 test("rekey keeps the lease client and checks a read-only high-water mark before typing", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")

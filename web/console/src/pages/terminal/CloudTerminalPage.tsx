@@ -10,6 +10,7 @@ import { frameBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
 import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
+import { KEY_ROW, bindTerminalKeyboard, isRegionKey, withCtrl } from "./keys.js"
 import { holderWords, terminalShortID } from "./words.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
@@ -42,6 +43,8 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   const [busy, setBusy] = useState("")
   const [history, setHistory] = useState<string[] | null>(null)
   const [reader, setReader] = useState(false)
+  const [ctrl, setCtrl] = useState(false)
+  const ctrlArmed = useRef(false)
   const [confirm, setConfirm] = useState<"takeover" | "close" | "reacquire" | null>(null)
   const screen = useRef<HTMLDivElement>(null)
   const terminal = useRef<XTerm | null>(null)
@@ -91,7 +94,11 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
         term.loadAddon(addon)
         term.open(screen.current)
         term.textarea?.setAttribute("aria-label", nextWord("terminalScreenFor", { project: label }))
-        term.onData((data) => { void session?.input(new TextEncoder().encode(data)).catch((e) => setError(reason(e))) })
+        term.onData((data) => {
+          const { out } = withCtrl(ctrlArmed.current, data)
+          if (ctrlArmed.current) { ctrlArmed.current = false; setCtrl(false) }
+          void session?.input(new TextEncoder().encode(out)).catch((e) => setError(reason(e)))
+        })
         term.onBinary((data) => { const bytes = Uint8Array.from(data, (char) => char.charCodeAt(0) & 0xff)
           void session?.input(bytes).catch((e) => setError(reason(e))) })
         terminal.current = term
@@ -107,12 +114,9 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
       const text = event.clipboardData?.getData("text/plain") ?? ""
       if (text) void session?.paste(text).catch((e) => setError(reason(e)))
     }
-    const key = (event: KeyboardEvent) => {
-      event.stopPropagation()
-      if (event.key === "F6") { event.preventDefault(); back.current?.focus() }
-    }
-    element.addEventListener("paste", paste, true); element.addEventListener("keydown", key, true)
-    return () => { cancelled = true; element.removeEventListener("paste", paste, true); element.removeEventListener("keydown", key, true)
+    const unbindKeys = bindTerminalKeyboard(element, () => back.current?.focus())
+    element.addEventListener("paste", paste, true)
+    return () => { cancelled = true; element.removeEventListener("paste", paste, true); unbindKeys()
       terminal.current?.dispose(); terminal.current = null; fit.current = null; lastRev.current = "" }
   }, [id, shown, session, label])
 
@@ -149,6 +153,16 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     setBusy(name); setError("")
     try { await action() } catch (e) { setError(reason(e)) } finally { setBusy("") }
   }
+  const reloadList = () => void run("list", async () => {
+    if (!session) return
+    setLoading(true)
+    try {
+      const answer = await session.request("list", { project_id: project, client: TAB })
+      const terminals = answer.result?.terminals
+      if (!Array.isArray(terminals)) throw new Error("terminal_bad_receipt")
+      setRows(terminals as TerminalRow[])
+    } finally { setLoading(false) }
+  })
   const openNew = () => void run("open", async () => {
     if (!session) return
     const size = firstSize()
@@ -163,6 +177,19 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     openTerminalPage(project, next, from)
   })
   const goBack = () => openTerminalPage(project, "", from)
+  const sendKey = (value: string) => {
+    if (value === "ctrl") {
+      ctrlArmed.current = !ctrlArmed.current
+      setCtrl(ctrlArmed.current)
+      terminal.current?.focus()
+      return
+    }
+    const bytes = /^[ABCD]$/.test(value) ? (snapshot.frame?.modes.app_cursor ? "\x1bO" : "\x1b[") + value : value
+    const { out } = withCtrl(ctrlArmed.current, bytes)
+    ctrlArmed.current = false; setCtrl(false)
+    void session?.input(new TextEncoder().encode(out)).catch((e) => setError(reason(e)))
+    terminal.current?.focus()
+  }
   const status = stateWords(snapshot.state)
   const accessError = error === "forbidden" || error === "terminal_forbidden" || error === "terminal_access_revoked"
   const holder = !snapshot.control?.held ? nextWord("terminalControlNobody") :
@@ -177,7 +204,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     {loading && <p className="terminal-note" role="status">{nextWord("terminalListLoading")}</p>}
     {error && <div><p className="terminal-note" role="alert">{accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) :
       error === "terminal_open_state_unknown" ? nextWord("terminalCloudOpenUnknown") : nextWord("terminalListFailed", { why: error })}</p>
-      {!accessError && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReloadList")}</button>}</div>}
+      {!accessError && <button className="board-button" type="button" disabled={!!busy} onClick={reloadList}>{nextWord("terminalCloudReloadList")}</button>}</div>}
     {!loading && !error && rows.length === 0 && <p className="terminal-note">{nextWord("terminalListEmpty")}</p>}
     <ul className="terminal-rows">{rows.map((row) => <li key={row.id}>
       <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, row.id, from)}>
@@ -185,9 +212,13 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
       </button></li>)}</ul>
   </section>
 
-  return <div className="terminal-view" data-holding={snapshot.canType ? "" : undefined} data-stale={!snapshot.canType ? "" : undefined}
-    onKeyDown={(event) => { if (event.key === "F6" && event.target !== screen.current) {
-      event.preventDefault(); if (history) historyFocus.current?.focus(); else terminal.current?.focus()
+  return <div className="terminal-view" data-holding={snapshot.canType ? "" : undefined} data-stale={snapshot.state === "stale" || snapshot.state === "offline" ? "" : undefined}
+    onKeyDown={(event) => { if (isRegionKey(event.nativeEvent)) {
+      event.preventDefault()
+      if (history) {
+        if (event.target === historyFocus.current) back.current?.focus()
+        else historyFocus.current?.focus()
+      } else terminal.current?.focus()
     } }}>
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord("terminalBack")}</button>
@@ -196,7 +227,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
           <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
           <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl></div>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
-        {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || !!error || snapshot.state === "revoked"}
+        {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || accessError || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
           {snapshot.control?.held ? nextWord("terminalTakeover") : nextWord("terminalAcquire")}</button>}
         {!accessError && (snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
@@ -222,14 +253,15 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
           snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
           snapshot.state === "revoked" ? nextWord("terminalRefusalAccessRevoked") :
             !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
-      {error && !accessError && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button>}
+      {error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline" && <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
     </header>
     {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2><pre ref={historyFocus} tabIndex={0}>{history.join("\n")}</pre></section>}
     <div className="terminal-scroll" hidden={history !== null}>{loading && <p className="terminal-note">{nextWord("terminalConnecting")}</p>}<div className="terminal-host" ref={screen} /></div>
     <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
-      {([ ["Esc", "\x1b"], ["Tab", "\t"], ["←", "\x1b[D"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["→", "\x1b[C"] ] as const).map(([name, bytes]) =>
-        <button key={name} className="terminal-key" type="button" disabled={!snapshot.canType} onClick={() => void session?.input(new TextEncoder().encode(bytes)).catch((e) => setError(reason(e)))}>{name}</button>)}
+      {KEY_ROW.map(([name, value, spoken]) =>
+        <button key={name} className="terminal-key" type="button" disabled={!snapshot.canType} aria-label={spoken ? nextWord(spoken) : undefined}
+          aria-pressed={value === "ctrl" ? ctrl : undefined} onPointerDown={(event) => event.preventDefault()} onClick={() => sendKey(value)}>{name}</button>)}
     </div>
   </div>
 }

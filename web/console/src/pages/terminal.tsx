@@ -111,7 +111,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
       {hosted ? (
         <>
           <header className="board-head terminal-page-head">
-            <h1 id="terminal-title" ref={title} tabIndex={-1}>{nextWord("terminalEntry")}</h1>
+            <h1 id="terminal-title" ref={title} tabIndex={-1}>{route.terminal ? nextWord("terminalEntryFor", { project: name }) : nextWord("terminalEntry")}</h1>
             {!route.terminal && backButton}
           </header>
           {place === "failed" ? <div className="terminal-note-row"><p className="terminal-note" role="alert">{nextWord("terminalProjectsFailed")}</p>
