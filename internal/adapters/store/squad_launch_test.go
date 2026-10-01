@@ -118,6 +118,48 @@ func TestSquadLaunchPersistsOriginalSnapshotAndBindsOnce(t *testing.T) {
 	}
 }
 
+func TestSquadConversationRebindKeepsTheTerminalAndConversationExclusive(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	document := json.RawMessage(`{"definition_id":"clawdline.persona.architect","scope_id":"project-test"}`)
+	first, err := s.PrepareSquadLaunch(ctx, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.PrepareSquadLaunch(ctx, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ launch, terminal, conversation string }{{first.ID, "terminal-a", "startup"}, {second.ID, "terminal-b", "taken"}} {
+		if err := s.RecordSquadTerminal(ctx, tc.launch, tc.terminal); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.BindSquadConversation(ctx, tc.launch, tc.conversation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RebindSquadConversation(ctx, first.ID, "terminal-other", "assigned"); !errors.Is(err, ErrSquadLaunchConflict) {
+		t.Fatalf("wrong terminal rebound: %v", err)
+	}
+	if err := s.RebindSquadConversation(ctx, first.ID, "terminal-a", "taken"); !errors.Is(err, ErrSquadConversationTaken) {
+		t.Fatalf("another launch's conversation rebound: %v", err)
+	}
+	if err := s.RebindSquadConversation(ctx, first.ID, "terminal-a", "assigned"); err != nil {
+		t.Fatal(err)
+	}
+	actor, ok, err := s.AuthenticateSquadActor(ctx, first.ActorCapability)
+	if err != nil || !ok || actor.ConversationID != "assigned" {
+		t.Fatalf("rebound actor = %+v, %t, %v", actor, ok, err)
+	}
+	if _, ok, err := s.SquadBindingForSession(ctx, "terminal-a", "startup"); err != nil || ok {
+		t.Fatalf("old conversation remains bound: %t, %v", ok, err)
+	}
+}
+
 func TestSquadLaunchPrepareIsAtomicAndBounded(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(t.TempDir())

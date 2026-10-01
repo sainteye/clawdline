@@ -125,10 +125,13 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
 `/v1/terminals*` 是這台機器自己的 tmux server 上的一般 shell（契約：`api/v1/terminals.schema.json`，
 上限：`docs/limits.md` N59、N60）。放行的順序：
 
-- **Clawdline Cloud 一律拒絕**，`terminal_cloud_not_supported`。Cloud 的請求在這個行程裡用這台機器
-  自己的 token 回答（`internal/transport/cloud/local.go`），不先擋就等於把 Cloud 上的檢視者當成這台機器本身。
-  `Router.Do` 無條件標記 `viaCloud`（跟 app origin 有沒有給無關），每條 terminal 路由與 grant 路由都先問它。
-  Console 端的 `web/console/src/cloud/carry.ts` 把它們列在 `MACHINE_ONLY`：不是 Cloud 詞彙、不會「以後再帶」。
+- **Generic Cloud requests still reject terminal and grant HTTP routes** with
+  `terminal_cloud_not_supported`. The machine answers those requests with its own token
+  (`internal/transport/cloud/local.go`), so `Router.Do` marks them `viaCloud` and those routes
+  reject them. Hosted terminal traffic instead uses dedicated signed, end-to-end encrypted
+  `termi`, `term`, and `termr` channels. The machine checks the Cloud principal and the local
+  terminal grant for every terminal operation; the relay cannot turn a generic machine request
+  into terminal authority. See `docs/cloud-terminal-wire.md`.
 - **本機自己的 token** 直接可以。
 - **配對過的裝置要同時**：仍在裝置清單（`Holds`），而且在 `terminal-grants.json` 裡有一筆 grant。配對、
   密碼登入、`send`、`remote_write` 都不給 grant；看畫面也要 grant；有 grant 的裝置在拿到控制租約之前只能看。

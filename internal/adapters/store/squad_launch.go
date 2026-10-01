@@ -313,6 +313,51 @@ func (s *Store) BindSquadConversation(ctx context.Context, launchID, conversatio
 	return classify(tx.Commit())
 }
 
+// RebindSquadConversation follows a new provider conversation observed in the
+// same launch process and terminal. Resumed launches keep their original ID.
+func (s *Store) RebindSquadConversation(ctx context.Context, launchID, terminalID, conversationID string) error {
+	if launchID == "" || terminalID == "" || conversationID == "" {
+		return ErrSquadLaunchConflict
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return classify(err)
+	}
+	defer tx.Rollback()
+	var heldTerminal, heldConversation, resumeOf, state string
+	err = tx.QueryRowContext(ctx, `SELECT terminal_id,conversation_id,resume_of,state FROM squad_launches WHERE id=?`, launchID).
+		Scan(&heldTerminal, &heldConversation, &resumeOf, &state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrSquadLaunchUnknown
+	}
+	if err != nil {
+		return classify(err)
+	}
+	if state != "bound" || heldTerminal != terminalID {
+		return ErrSquadLaunchConflict
+	}
+	if heldConversation == conversationID || resumeOf != "" {
+		return nil
+	}
+	var taken int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM squad_launches WHERE conversation_id=? AND state='bound' AND id<>? LIMIT 1`, conversationID, launchID).Scan(&taken)
+	if err == nil {
+		return ErrSquadConversationTaken
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return classify(err)
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE squad_launches SET conversation_id=?,updated_at=? WHERE id=? AND terminal_id=? AND conversation_id=? AND state='bound'`,
+		conversationID, time.Now().Unix(), launchID, terminalID, heldConversation)
+	if err != nil {
+		return classify(err)
+	}
+	if changed, err := result.RowsAffected(); err != nil || changed != 1 {
+		return ErrSquadLaunchConflict
+	}
+	return classify(tx.Commit())
+}
+
 // SquadSnapshotForConversation returns the original document, never current
 // settings. Absence tells the caller to use explicit legacy_unsnapshotted mode.
 func (s *Store) SquadSnapshotForConversation(ctx context.Context, conversationID string) (json.RawMessage, string, bool, error) {

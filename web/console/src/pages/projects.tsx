@@ -13,7 +13,6 @@ import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../over
 import sectionMarkup from "./projects/section.html?raw"
 import { nextWord, type NextWord } from "../next-strings.js"
 import { workPageHash } from "../page-route.js"
-import { hostedConsole } from "./terminal/api.js"
 import { openTerminalPage } from "./terminal/navigate.js"
 
 type ProjectTarget = RetiredBoardProject & { id?: string; label?: string; path?: string }
@@ -143,9 +142,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         </svg>`
         wrapper.classList.add("has-settings")
         wrapper.appendChild(gear)
-        // 終端: this project's terminals. Not on the console Clawdline Cloud
-        // serves, where terminals are never carried.
-        if (hostedConsole()) continue
+        // 終端: this project's terminals, locally or through the selected Cloud machine.
         const name = wrapper.querySelector(".project-row-name")?.textContent || nextWord("terminalEntry")
         const terminal = document.createElement("button")
         terminal.type = "button"

@@ -655,7 +655,6 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
 
     if (key === "/" && !typing(document.activeElement) && pageRef.current === "sessions" && !meta && !ev.altKey) {
       ev.preventDefault()
-      if (filterEl && getComputedStyle(filterEl).display === "none") document.getElementById("search-toggle")?.click()
       requestAnimationFrame(() => { filterEl?.focus(); filterEl?.select() })
       return
     }
