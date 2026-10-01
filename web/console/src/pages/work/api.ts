@@ -215,9 +215,9 @@ export interface ProjectPlacePage {
   places: ProjectPlace[]
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function call<T>(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 15_000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res: Response
   try {
     res = await fetch(path, { credentials: "same-origin", ...init, signal: controller.signal })
@@ -598,10 +598,10 @@ export const deleteWorkV2Image = (item: WorkV2Item, imageID: string) =>
 // Send and the other actions need the live target they act on.
 export const readSessionWorkV2 = (terminalID: string, conversationID = "") => {
   const target = conversationID ? `conversation:${conversationID}` : terminalID
-  return call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`)
+  return call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`, {}, 30_000)
 }
 export const readHumanInterventionsV2 = (conversationID: string) =>
-  call<HumanInterventionsV2>(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${conversationID}`)}`)
+  call<HumanInterventionsV2>(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${conversationID}`)}`, {}, 30_000)
 export const humanInterventionActionV2 = (
   conversationID: string, note: HumanInterventionV2, action: "read" | "resolve" | "reopen",
 ) => mutate<{ note: HumanInterventionV2 }>(

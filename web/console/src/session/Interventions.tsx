@@ -14,6 +14,7 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const latest = useRef<InterventionTarget | null>(destination)
   latest.current = destination
   const ticket = useRef(0)
+  const flight = useRef<{ key: string; promise: Promise<void> } | null>(null)
   const [page, setPage] = useState<HumanInterventionsV2 | null>(null)
   const [pageKey, setPageKey] = useState("")
   const [readError, setReadError] = useState("")
@@ -26,19 +27,26 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const insertedDrafts = useRef(new Map<string, string>())
   const [expanded, setExpanded] = useState(false)
 
-  const load = useCallback(async (target: InterventionTarget) => {
+  const load = useCallback((target: InterventionTarget): Promise<void> => {
+    const targetKey = JSON.stringify(target)
+    if (flight.current?.key === targetKey) return flight.current.promise
     const mine = ++ticket.current
     setReading(true)
-    try {
-      const next = await readHumanInterventionsV2(target.conversation)
-      if (mine === ticket.current && sameInterventionTarget(target, latest.current)) {
-        setPage(next); setPageKey(JSON.stringify(target)); setReadError("")
+    const promise = (async () => {
+      try {
+        const next = await readHumanInterventionsV2(target.conversation)
+        if (mine === ticket.current && sameInterventionTarget(target, latest.current)) {
+          setPage(next); setPageKey(targetKey); setReadError("")
+        }
+      } catch (error) {
+        if (mine === ticket.current && sameInterventionTarget(target, latest.current)) setReadError(failureWords(error))
+      } finally {
+        if (mine === ticket.current) setReading(false)
       }
-    } catch (error) {
-      if (mine === ticket.current && sameInterventionTarget(target, latest.current)) setReadError(failureWords(error))
-    } finally {
-      if (mine === ticket.current) setReading(false)
-    }
+    })()
+    flight.current = { key: targetKey, promise }
+    void promise.finally(() => { if (flight.current?.promise === promise) flight.current = null })
+    return promise
   }, [])
 
   useEffect(() => {
@@ -123,7 +131,7 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const countWords = readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
   const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
     aria-label={`${countWords}${actionError ? "，操作失敗，請展開查看" : ""}`}
-    onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
+    onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (readError) { void load(destination); return } if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
       <span>關注</span>
       {active.length > 0 && <span className="human-interventions-dot" aria-hidden="true" />}
       {shown && active.length > 0 && <span className="human-interventions-count">待處理 {active.length}</span>}
