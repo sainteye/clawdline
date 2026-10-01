@@ -1,0 +1,220 @@
+import { useEffect, useRef, useState } from "react"
+import type { Terminal as TerminalRow } from "@clawdline/contract"
+import type { Terminal as XTerm } from "@xterm/xterm"
+import type { FitAddon } from "@xterm/addon-fit"
+import { nextWord } from "../../next-strings.js"
+import { watchTerminalHost, type TerminalHost } from "../../cloud/terminal-host.js"
+import { TerminalChannelTransport } from "../../cloud/terminal-transport.js"
+import { CloudTerminalSession, type CloudTerminalSnapshot } from "../../cloud/terminal-session.js"
+import { frameBytes } from "./frame-writer.js"
+import { TAB } from "./tab.js"
+import { openTerminalPage } from "./navigate.js"
+import { firstSize } from "./TerminalProjectList.js"
+import { terminalShortID } from "./words.js"
+
+const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
+function reason(error: unknown): string { return (error as { code?: string })?.code ?? (error instanceof Error ? error.message : "cloud_failed") }
+function stateWords(state: CloudTerminalSnapshot["state"]): string {
+  switch (state) {
+    case "opening": return nextWord("terminalConnecting")
+    case "synchronizing": return nextWord("terminalCloudSyncing")
+    case "just_synced": return nextWord("terminalCloudJustSynced")
+    case "live": return nextWord("terminalCloudLive")
+    case "stale": return nextWord("terminalCloudStale")
+    case "offline": return nextWord("terminalCloudOffline")
+    case "revoked": return nextWord("terminalRefusalAccessRevoked")
+    case "unknown": return nextWord("terminalCloudUnknown")
+    case "closed": return nextWord("terminalRefusalClosed")
+  }
+}
+
+/** Hosted-only terminal page. The local TerminalView and its fetch/SSE route remain untouched. */
+export function CloudTerminalPage({ project, label, id, shown, from }: {
+  project: string; label: string; id: string; shown: boolean; from: "" | "projects" | "work" | "sessions"
+}) {
+  const [host, setHost] = useState<TerminalHost | null>(null)
+  const [session, setSession] = useState<CloudTerminalSession | null>(null)
+  const [snapshot, setSnapshot] = useState<CloudTerminalSnapshot>(empty)
+  const [rows, setRows] = useState<TerminalRow[]>([])
+  const [meta, setMeta] = useState<TerminalRow | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [busy, setBusy] = useState("")
+  const [history, setHistory] = useState<string[] | null>(null)
+  const [reader, setReader] = useState(false)
+  const [confirm, setConfirm] = useState<"takeover" | "close" | "reacquire" | null>(null)
+  const screen = useRef<HTMLDivElement>(null)
+  const terminal = useRef<XTerm | null>(null)
+  const fit = useRef<FitAddon | null>(null)
+  const lastRev = useRef("")
+  const back = useRef<HTMLButtonElement>(null)
+  useEffect(() => watchTerminalHost(setHost), [])
+
+  useEffect(() => {
+    if (!shown || !host || !project) return
+    let live = true
+    const transport = new TerminalChannelTransport(host.client, host.machine)
+    const next = new CloudTerminalSession(transport, TAB)
+    const stop = next.subscribe((value) => live && setSnapshot(value))
+    setSession(next); setSnapshot(empty); setLoading(true); setError(""); setMeta(null); setRows([])
+    void (async () => {
+      try {
+        await next.start()
+        if (id) {
+          const answer = await next.attach(id)
+          if (live) setMeta(answer.result as unknown as TerminalRow)
+        } else {
+          const answer = await next.request("list", { project_id: project, client: TAB })
+          const terminals = answer.result?.terminals
+          if (!Array.isArray(terminals)) throw new Error("terminal_bad_receipt")
+          if (live) setRows(terminals as TerminalRow[])
+        }
+      } catch (e) { if (live) setError(reason(e)) }
+      finally { if (live) setLoading(false) }
+    })()
+    return () => { live = false; stop(); next.dispose(); transport.dispose(); setSession(null) }
+  }, [host, project, id, shown])
+
+  useEffect(() => {
+    if (!id || !screen.current || !shown) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")])
+        await import("@xterm/xterm/css/xterm.css")
+        if (cancelled || !screen.current) return
+        const term = new Terminal({ cols: 80, rows: 24, scrollback: 0, fontSize: 13,
+          fontFamily: 'ui-monospace, "SF Mono", "Noto Sans Mono CJK TC", Menlo, Consolas, monospace',
+          theme: { background: "#101114", foreground: "#e8e6e3", cursor: "#e8e6e3" }, screenReaderMode: reader })
+        const addon = new FitAddon()
+        term.loadAddon(addon)
+        term.open(screen.current)
+        term.textarea?.setAttribute("aria-label", nextWord("terminalScreenFor", { project: label }))
+        term.onData((data) => { void session?.input(new TextEncoder().encode(data)).catch((e) => setError(reason(e))) })
+        term.onBinary((data) => { const bytes = Uint8Array.from(data, (char) => char.charCodeAt(0) & 0xff)
+          void session?.input(bytes).catch((e) => setError(reason(e))) })
+        terminal.current = term
+        fit.current = addon
+        term.options.disableStdin = !session?.snapshot.canType
+        const current = session?.snapshot.frame
+        if (current) { term.resize(current.cols, current.rows); term.write(frameBytes(current)); lastRev.current = current.rev }
+      } catch (e) { if (!cancelled) setError(reason(e)) }
+    })()
+    const element = screen.current
+    const paste = (event: ClipboardEvent) => {
+      event.preventDefault(); event.stopImmediatePropagation()
+      const text = event.clipboardData?.getData("text/plain") ?? ""
+      if (text) void session?.paste(text).catch((e) => setError(reason(e)))
+    }
+    const key = (event: KeyboardEvent) => {
+      event.stopPropagation()
+      if (event.key === "F6") { event.preventDefault(); back.current?.focus() }
+    }
+    element.addEventListener("paste", paste, true); element.addEventListener("keydown", key, true)
+    return () => { cancelled = true; element.removeEventListener("paste", paste, true); element.removeEventListener("keydown", key, true)
+      terminal.current?.dispose(); terminal.current = null; fit.current = null; lastRev.current = "" }
+  }, [id, shown, session, label])
+
+  useEffect(() => {
+    const term = terminal.current
+    const frame = snapshot.frame
+    if (!term || !frame || frame.rev === lastRev.current) return
+    lastRev.current = frame.rev
+    if (term.cols !== frame.cols || term.rows !== frame.rows) term.resize(frame.cols, frame.rows)
+    term.write(frameBytes(frame))
+  }, [snapshot.frame])
+  useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = !snapshot.canType }, [snapshot.canType])
+  useEffect(() => { if (terminal.current) terminal.current.options.screenReaderMode = reader }, [reader])
+  useEffect(() => {
+    const box = screen.current?.parentElement
+    if (!box || !session || !snapshot.canType || typeof ResizeObserver === "undefined") return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const suggest = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        const size = fit.current?.proposeDimensions()
+        if (!size || size.cols < 2 || size.rows < 2 ||
+          (size.cols === snapshot.frame?.cols && size.rows === snapshot.frame?.rows)) return
+        void session.resize(size.cols, size.rows).catch((error) => setError(reason(error)))
+      }, 120)
+    }
+    const observer = new ResizeObserver(suggest)
+    observer.observe(box)
+    suggest()
+    return () => { observer.disconnect(); if (timer) clearTimeout(timer) }
+  }, [session, snapshot.canType, snapshot.frame?.cols, snapshot.frame?.rows])
+
+  const run = async (name: string, action: () => Promise<void>) => {
+    setBusy(name); setError("")
+    try { await action() } catch (e) { setError(reason(e)) } finally { setBusy("") }
+  }
+  const openNew = () => void run("open", async () => {
+    if (!session) return
+    const size = firstSize()
+    const answer = await session.create(project, size.cols, size.rows)
+    const next = answer.result?.id
+    if (typeof next !== "string") throw new Error("terminal_bad_receipt")
+    openTerminalPage(project, next, from)
+  })
+  const goBack = () => openTerminalPage(project, "", from)
+  const status = stateWords(snapshot.state)
+  if (!host) return <p className="terminal-note" role="status">{nextWord("terminalCloudOffline")}</p>
+  if (!project) return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
+  if (!id) return <section className="terminal-wrap" aria-label={nextWord("terminalListTitle", { project: label })}>
+    <div className="terminal-note-row"><h2>{nextWord("terminalListTitle", { project: label })}</h2>
+      <button className="board-button" type="button" disabled={!!busy || loading || !!error} aria-busy={busy === "open"} onClick={openNew}>{nextWord("terminalOpenNew")}</button></div>
+    {loading && <p className="terminal-note" role="status">{nextWord("terminalListLoading")}</p>}
+    {error && <div><p className="terminal-note" role="alert">{nextWord("terminalListFailed", { why: error })}</p>
+      <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button></div>}
+    {!loading && !error && rows.length === 0 && <p className="terminal-note">{nextWord("terminalListEmpty")}</p>}
+    <ul className="terminal-rows">{rows.map((row) => <li key={row.id}>
+      <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, row.id, from)}>
+        {nextWord("terminalIdentity", { id: terminalShortID(row.id) })} · {row.status}
+      </button></li>)}</ul>
+  </section>
+
+  return <div className="terminal-view" data-holding={snapshot.canType ? "" : undefined} data-stale={!snapshot.canType ? "" : undefined}
+    onKeyDown={(event) => { if (event.key === "F6" && event.target !== screen.current) { event.preventDefault(); terminal.current?.focus() } }}>
+    <header className="terminal-head">
+      <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord("terminalBack")}</button>
+        <dl className="terminal-facts"><div><dt>{nextWord("terminalEntry")}</dt><dd>{terminalShortID(id)}</dd></div>
+          <div><dt>{nextWord("terminalMachine")}</dt><dd>{host.machine}</dd></div>
+          <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
+          <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{snapshot.control?.holder?.same_client ? nextWord("terminalControlYou") : nextWord("terminalControlNobody")}</dd></div></dl></div>
+      <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
+        {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || !!error || snapshot.state === "revoked"}
+          onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
+          {snapshot.control?.held ? nextWord("terminalTakeover") : nextWord("terminalAcquire")}</button>}
+        {(snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
+          onClick={() => setConfirm("reacquire")}>{nextWord("terminalCloudReacquire")}</button>}
+        {(snapshot.state === "stale" || snapshot.state === "offline") && <button className="board-button" type="button" disabled={!!busy}
+          onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
+        {snapshot.control?.holder?.same_client && snapshot.hasLease && <button className="board-button" type="button" disabled={!!busy}
+          onClick={() => void run("release", () => session!.release())}>{nextWord("terminalRelease")}</button>}
+        <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("history", async () => setHistory(history ? null : await session!.history()))}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
+        <button className="board-button" type="button" aria-pressed={reader} onClick={() => setReader((value) => !value)}>{nextWord("terminalReaderMode")}</button>
+        <button className="board-button" type="button" disabled={!snapshot.canType || !!busy} onClick={() => setConfirm("close")}>{nextWord("terminalClose")}</button>
+      </div>
+      {confirm && <div className="terminal-ask" role="group" aria-label={confirm === "close" ? nextWord("terminalClose") : nextWord("terminalTakeover")}>
+        <p>{confirm === "reacquire" ? nextWord("terminalCloudReacquireAsk") : nextWord(confirm === "close" ? "terminalCloseAsk" : "terminalTakeoverAsk", { holder: "" })}</p>
+        <button className="board-button terminal-danger" type="button" disabled={!!busy} onClick={() => void run(confirm, async () => {
+          if (confirm === "close") { await session!.close(); goBack() } else await session!.acquire(confirm === "reacquire" ? "acquire" : "takeover")
+          setConfirm(null)
+        })}>{nextWord(confirm === "close" ? "terminalCloseConfirm" : confirm === "reacquire" ? "terminalCloudReacquire" : "terminalTakeoverConfirm")}</button>
+        <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
+      </div>}
+      <p className="terminal-status-line" role="status" aria-live="polite">{loading ? nextWord("terminalConnecting") :
+        error ? nextWord("terminalCloudError", { code: error }) : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
+          snapshot.state === "revoked" ? nextWord("terminalRefusalAccessRevoked") :
+            !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
+      {error && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button>}
+      {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
+    </header>
+    {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2><pre tabIndex={0}>{history.join("\n")}</pre></section>}
+    <div className="terminal-scroll" hidden={history !== null}>{loading && <p className="terminal-note">{nextWord("terminalConnecting")}</p>}<div className="terminal-host" ref={screen} /></div>
+    <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
+      {([ ["Esc", "\x1b"], ["Tab", "\t"], ["←", "\x1b[D"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["→", "\x1b[C"] ] as const).map(([name, bytes]) =>
+        <button key={name} className="terminal-key" type="button" disabled={!snapshot.canType} onClick={() => void session?.input(new TextEncoder().encode(bytes)).catch((e) => setError(reason(e)))}>{name}</button>)}
+    </div>
+  </div>
+}

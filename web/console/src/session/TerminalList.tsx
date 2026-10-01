@@ -149,7 +149,10 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
     requestAnimationFrame(() => closeOpener.current?.focus())
   }
 
-  if (hosted) return <p className="terminal-list-message" role="note">{nextWord("terminalRefusalCloudNotSupported")}</p>
+  if (hosted) return <div className="terminal-list-message" role="note">
+    <p>{nextWord("terminalCloudChooseProject")}</p>
+    <button type="button" onClick={() => Start.openTerminal()}>{nextWord("terminalOpenNew")}</button>
+  </div>
   if (blocked) return <p className="terminal-list-message" role="note">{blocked}</p>
   const names = rowNames(rows.map((row) => row.created))
   const q = filter.trim().toLocaleLowerCase()

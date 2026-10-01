@@ -38,6 +38,8 @@ import {
 } from "./pair-pending.js"
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { readThroughRelay } from "./install.js"
+import { setTerminalHost } from "./terminal-host.js"
+import type { TerminalCloudClient } from "./terminal-transport.js"
 import { machineForAddress } from "./document-target.js"
 import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
@@ -350,6 +352,7 @@ export function CloudGate({ declared }: { declared: string }) {
     next.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
     next.attach(current)
     reader.current = next
+    setTerminalHost({ client: current as unknown as TerminalCloudClient, machine: machine.id })
     readThroughRelay(next)
     uninstallScheduleWebhooks.current?.()
     uninstallCloudPush.current?.()
@@ -690,6 +693,7 @@ export function CloudGate({ declared }: { declared: string }) {
           if (reader.current) {
             // A renewal or a reconnect: the console keeps reading, through the new client.
             reader.current.attach(next)
+            setTerminalHost({ client: next as unknown as TerminalCloudClient, machine: reader.current.machine })
             setScreen({ at: "console" })
             return
           }
@@ -715,6 +719,7 @@ export function CloudGate({ declared }: { declared: string }) {
           return
         case "retrying":
           reader.current?.lost()
+          setTerminalHost(null)
           if (!reader.current) {
             setScreen({
               at: "retrying",
@@ -725,15 +730,18 @@ export function CloudGate({ declared }: { declared: string }) {
           return
         case "terminal_error":
           reader.current?.lost()
+          setTerminalHost(null)
           setScreen({ at: "failed", code: update.error?.code ?? update.reason ?? "terminal_error" })
           return
         case "revoked":
           reader.current?.lost()
+          setTerminalHost(null)
           setScreen({ at: "revoked", url: session.current?.signInURL() ?? "" })
           return
         case "reconnecting":
         case "paused":
           reader.current?.lost()
+          setTerminalHost(null)
           return
       }
     },
@@ -762,6 +770,7 @@ export function CloudGate({ declared }: { declared: string }) {
     return () => {
       line.current?.stop()
       line.current = null
+      setTerminalHost(null)
       unlisten.current?.()
       unlisten.current = null
       if (recheck.current) clearTimeout(recheck.current)

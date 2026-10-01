@@ -7,6 +7,7 @@ import { hostedConsole } from "./terminal/api.js"
 import { TERMINAL_ROUTE, openTerminalPage } from "./terminal/navigate.js"
 import { TerminalProjectList } from "./terminal/TerminalProjectList.js"
 import { TerminalView } from "./terminal/TerminalView.js"
+import { CloudTerminalPage } from "./terminal/CloudTerminalPage.js"
 import type { PageModule } from "./types.js"
 import "./terminal/terminal.css"
 
@@ -20,9 +21,8 @@ import "./terminal/terminal.css"
  * says which, so the list's Back returns there (an address without it goes
  * to the board, as every address did before).
  *
- * The console Clawdline Cloud serves says, in one sentence, that terminals are
- * only on the local console and locally paired devices, and draws nothing
- * that could take input.
+ * The hosted branch uses its dedicated encrypted terminal channels. The local
+ * branch keeps its existing fetch/SSE transport.
  */
 
 function currentRoute(): TerminalRoute {
@@ -50,7 +50,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
   }, [shown])
 
   useEffect(() => {
-    if (!route.project || hosted) return
+    if (!route.project) return
     let live = true
     setPlace((was) => (was !== "loading" && was !== "failed" && was.asked === route.project ? was : "loading"))
     readProjectPlaces().then(
@@ -109,13 +109,15 @@ function TerminalPage({ shown }: { shown: boolean }) {
       data-view={route.terminal ? "one" : "list"}
     >
       {hosted ? (
-        <div className="terminal-wrap">
+        <>
           <header className="board-head terminal-page-head">
             <h1 id="terminal-title" ref={title} tabIndex={-1}>{nextWord("terminalEntry")}</h1>
-            {backButton}
+            {!route.terminal && backButton}
           </header>
-          <p className="terminal-note" role="note">{nextWord("terminalRefusalCloudNotSupported")}</p>
-        </div>
+          {place === "failed" ? <p className="terminal-note" role="alert">{nextWord("terminalProjectsFailed")}</p>
+            : !known ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
+              : <CloudTerminalPage project={project} label={name} id={route.terminal} shown={shown} from={route.from} />}
+        </>
       ) : route.terminal ? (
         <>
           <h1 id="terminal-title" className="terminal-sr">
