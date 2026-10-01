@@ -13,6 +13,7 @@ type Receipt = { v: 1; type: "terminal_receipt"; request_id: string; connection:
   status: "ok" | "refused" | "unknown"; result?: Record<string, unknown>; error?: string }
 type Frame = { v: 1; type: "terminal_frame"; terminal_id: string; connection: string; frame_seq: number;
   captured_at: number; frame: TerminalFrame }
+type Notice = { v: 1; type: "terminal_notice"; connection: string; code: string; machine_incarnation: string }
 export type CloudTerminalState = "opening" | "synchronizing" | "just_synced" | "live" | "stale" | "offline" | "revoked" | "unknown" | "closed"
 export interface CloudTerminalSnapshot {
   state: CloudTerminalState
@@ -127,8 +128,10 @@ export class CloudTerminalSession {
       this.frameSeq = previousFrameSeq
       this.retiringConnection = ""
       this.rotationReady = false
-      this.active = previousActive && Date.now() < previousExpiry
-      this.set({ ...prior, state: previous && Date.now() < previousExpiry ? prior.state : "unknown", reason: (error as Error).message })
+      this.active = this.s.state !== "revoked" && previousActive && Date.now() < previousExpiry
+      if (this.s.state !== "revoked") {
+        this.set({ ...prior, state: previous && Date.now() < previousExpiry ? prior.state : "unknown", reason: (error as Error).message })
+      }
       throw error
     } finally {
       this.openingNew = false
@@ -272,17 +275,35 @@ export class CloudTerminalSession {
     return lines
   }
   private forgetLease(reason: string): void { this.epoch = null; this.inputUnknown = true; this.set({ control: null, state: "unknown", reason }) }
+  private revoke(reason: string): void {
+    this.epoch = null
+    this.inputUnknown = true
+    this.active = false
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(fail("terminal_access_revoked"))
+    }
+    this.pending.clear()
+    this.set({ control: null, state: "revoked", reason })
+  }
   private event(event: TerminalChannelEvent): void {
     if ("error" in event) {
+      if (this.s.state === "revoked") return
       this.inputUnknown = true
       if (event.error === "machine_offline" || event.error === "machine_stale") this.set({ state: "offline", reason: event.error })
-      else if (event.error.includes("revoked") || event.error === "terminal_forbidden") this.set({ state: "revoked", reason: event.error })
+      else if (event.error.includes("revoked") || event.error === "terminal_forbidden" || event.error === "forbidden") this.revoke(event.error)
       else this.set({ state: "unknown", reason: event.error })
       return
     }
-    const value = event.plaintext as Receipt | Frame
+    const value = event.plaintext as Receipt | Frame | Notice
     if (value?.v !== 1 || value.connection !== this.connection) return
-    if (value.type === "terminal_receipt") {
+    if (this.s.state === "revoked" && value.type !== "terminal_notice") return
+    if (value.type === "terminal_notice") {
+      if (!event.envelope.ch.startsWith("termr/") || !event.envelope.ch.endsWith("/" + this.connection) ||
+        value.code !== "terminal_access_revoked" || typeof value.machine_incarnation !== "string" ||
+        !value.machine_incarnation || "request_id" in value) return
+      this.revoke(value.machine_incarnation === this.incarnation ? "terminal_access_revoked" : "terminal_machine_restarted")
+    } else if (value.type === "terminal_receipt") {
       if (!event.envelope.ch.startsWith("termr/")) return
       const pending = this.pending.get(value.request_id)
       if (!pending || pending.connection !== value.connection || pending.operation !== value.operation ||
@@ -291,7 +312,7 @@ export class CloudTerminalSession {
       if (value.status === "ok") pending.resolve(value)
       else {
         if (value.status === "unknown") this.forgetLease("terminal_input_state_unknown")
-        else if (["terminal_forbidden", "terminal_access_revoked"].includes(value.error ?? "")) this.set({ state: "revoked", reason: value.error ?? "terminal_forbidden" })
+        else if (["terminal_forbidden", "terminal_access_revoked"].includes(value.error ?? "")) this.revoke(value.error ?? "terminal_forbidden")
         else if (value.error === "terminal_closed") this.set({ state: "closed", reason: value.error })
         else if (pending.operation === "input" || pending.operation === "paste") {
           this.inputUnknown = true
@@ -331,6 +352,7 @@ export class CloudTerminalSession {
       .finally(() => { this.activating = false })
   }
   private checkFreshness(): void {
+    if (this.s.state === "revoked") return
     if (this.epoch !== null && this.active && !this.openingNew && !this.retiringConnection &&
       !this.inputUnknown && !this.renewing && Date.now() - this.lastRenew >= 10_000) {
       this.renewing = true

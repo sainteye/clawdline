@@ -5,7 +5,7 @@ export interface TerminalEnvelope {
   v: number; ch: string; seq: number; ts: number; class: string; key_id: string
   nonce: string; ct: string; sender: string; sig: string
 }
-type RelayEvent = { type: string; channels?: string[]; code?: string; status?: string; ch?: string; seq?: number }
+type RelayEvent = { type: string; channels?: string[]; code?: string; error?: { code?: string }; status?: string; ch?: string; seq?: number }
 export interface TerminalCloudClient {
   deviceID: string | null
   devicePrivateKey: CryptoKey | null
@@ -193,9 +193,20 @@ export class TerminalChannelTransport {
       }
       listener({ envelope, plaintext, realign })
     }
-    catch (e) { listener({ error: (e as { code?: string }).code ?? "terminal_bad_envelope" }) }
+    catch {
+      // An unauthenticated or obsolete envelope cannot change this tab's lease state.
+    }
   }
   private relay(event: RelayEvent): void {
+    const code = event.code ?? event.error?.code ?? "relay_error"
+    if (event.type === "error" && (code === "forbidden" || code === "terminal_forbidden") && this.waiting.size) {
+      for (const [connection, waiter] of this.waiting) {
+        clearTimeout(waiter.timer)
+        this.waiting.delete(connection)
+        waiter.reject(fail(code))
+      }
+      return
+    }
     if (event.type === "subscriptions" && event.channels) {
       for (const [connection, waiter] of this.waiting) {
         if (this.channels(connection).every((ch) => event.channels!.includes(ch))) {
@@ -207,7 +218,7 @@ export class TerminalChannelTransport {
       typeof event.seq === "number" && this.sent.has(event.seq)
     if (ours) this.sent.delete(event.seq!)
     if ((event.type === "publish_error" && ours) || event.type === "error") {
-      for (const listener of this.listeners.values()) listener({ error: event.code ?? "relay_error" })
+      for (const listener of this.listeners.values()) listener({ error: code })
     }
     if (event.type === "ack" && ours && (event.status === "machine_offline" || event.status === "machine_stale")) {
       for (const listener of this.listeners.values()) listener({ error: event.status })

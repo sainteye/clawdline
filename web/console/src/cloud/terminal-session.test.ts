@@ -18,7 +18,7 @@ class Wire implements TerminalWire {
   channels = new Map<string, (event: TerminalChannelEvent) => void>()
   observed: TerminalEnvelope[] = []
   requests: Record<string, unknown>[] = []
-  inputResult: "ok" | "unknown" = "ok"
+  inputResult: "ok" | "unknown" | "refused" = "ok"
   incarnation = "first-machine-start"
   lease = held
   async subscribeTerminal(connection: string, _keyID: string, _raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
@@ -43,6 +43,7 @@ class Wire implements TerminalWire {
       v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
       ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
       status: operation === "input" ? this.inputResult : "ok", result,
+      ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
     }))
     return { sender: viewer, seq: this.requests.length }
   }
@@ -141,6 +142,65 @@ test("the lease renews on its own cadence and an expired lease cannot type", asy
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
   assert.equal(wire.requests.filter((request) => (request.body as { action?: string } | undefined)?.action === "renew").length, 1)
   ;(session as unknown as { set(value: object): void }).set({ control: { ...held, expires_at: Date.now() / 1000 - 1 } })
+  assert.equal(session.snapshot.canType, false)
+  session.dispose()
+})
+
+test("a current signed revocation notice clears the lease and stays revoked", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+  const connection = wire.latest()
+  wire.frame(connection, 1, "screen")
+  assert.equal(session.snapshot.canType, true)
+  const notice = { v: 1, type: "terminal_notice", connection, code: "terminal_access_revoked",
+    machine_incarnation: wire.incarnation }
+  wire.emit(connection, "term", notice)
+  assert.equal(session.snapshot.canType, true, "a notice on the frame route is ignored")
+  wire.emit(connection, "termr", { ...notice, request_id: crypto.randomUUID() })
+  assert.equal(session.snapshot.canType, true, "a notice cannot masquerade as a receipt")
+  wire.emit(connection, "termr", notice)
+  assert.equal(session.snapshot.state, "revoked")
+  assert.equal(session.snapshot.hasLease, false)
+  assert.equal(session.snapshot.canType, false)
+  await assert.rejects(session.input(new TextEncoder().encode("do not type")), /terminal_input_paused/)
+  wire.frame(connection, 2, "later")
+  assert.equal(session.snapshot.state, "revoked")
+  session.dispose()
+})
+
+test("a different incarnation fails closed and an old connection cannot revoke the new one", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+  wire.frame(wire.latest(), 1, "old")
+  const old = wire.latest()
+  await session.start()
+  const current = wire.latest()
+  wire.emit(old, "termr", { v: 1, type: "terminal_notice", connection: old,
+    code: "terminal_access_revoked", machine_incarnation: wire.incarnation })
+  assert.notEqual(session.snapshot.state, "revoked")
+  wire.frame(current, 1, "new")
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  assert.equal(session.snapshot.canType, true)
+  wire.emit(current, "termr", { v: 1, type: "terminal_notice", connection: current,
+    code: "terminal_access_revoked", machine_incarnation: "another-start" })
+  assert.equal(session.snapshot.state, "revoked")
+  assert.equal(session.snapshot.hasLease, false)
+  assert.equal(session.snapshot.canType, false)
+  session.dispose()
+})
+
+test("a machine terminal-forbidden receipt revokes a previously held lease", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+  wire.frame(wire.latest(), 1, "screen")
+  assert.equal(session.snapshot.canType, true)
+  wire.inputResult = "refused"
+  await assert.rejects(session.input(new TextEncoder().encode("x")), /terminal_forbidden/)
+  assert.equal(session.snapshot.state, "revoked")
+  assert.equal(session.snapshot.hasLease, false)
   assert.equal(session.snapshot.canType, false)
   session.dispose()
 })
