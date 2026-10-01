@@ -233,10 +233,15 @@ export function visualBranches(list: readonly SessionRow[], depths: ReadonlyMap<
 function visualParents(list: SessionRow[], tasks: readonly TaskRow[], shaping: (task: TaskRow) => boolean): Map<string, string> {
   const here = new Map(list.map((row) => [row.id, row]))
   const childOf = new Map<string, string>()
+  const byConversation = new Map<string, string | null>()
+  for (const row of list) {
+    if (!row.sessionId) continue
+    byConversation.set(row.sessionId, byConversation.has(row.sessionId) ? null : row.id)
+  }
   for (const t of tasks) {
     if (!shaping(t) || !t.child || !t.root) continue
     const kid = t.child.terminalId
-    const root = t.root.terminalId
+    const root = t.root.terminalId || (t.root.sessionId ? byConversation.get(t.root.sessionId) : null)
     if (!kid || !root || kid === root) continue
     const row = here.get(kid)
     if (!row || !here.has(root)) continue
@@ -247,11 +252,6 @@ function visualParents(list: SessionRow[], tasks: readonly TaskRow[], shaping: (
   // still gives it presentation ancestry under the Epic owner who opened it.
   // Resolve conversations only inside this visible list; an absent or
   // ambiguous owner never leaves an orphaned indent.
-  const byConversation = new Map<string, string | null>()
-  for (const row of list) {
-    if (!row.sessionId) continue
-    byConversation.set(row.sessionId, byConversation.has(row.sessionId) ? null : row.id)
-  }
   for (const row of list) {
     if (childOf.has(row.id) || !row.epic_parent || isCoordinator(row)) continue
     const owner = byConversation.get(row.epic_parent.owner_session_id)

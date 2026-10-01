@@ -185,6 +185,15 @@ test("a child is placed under the session that asked for it, whatever its own ti
   assert.deepEqual(order(rows, { other: 50, root: 10 }, { tasks: [task("kid", "root")] }), ["other", "root", "kid"])
 })
 
+test("a child stays under its visible root when the task's screen snapshot missed that root", () => {
+  const root = row("root", "idle", "Root", { sessionId: "root-conversation" })
+  const kid = row("kid", "working", "Kid")
+  const task = { id: "task", child: { terminalId: "kid" },
+    root: { sessionId: "root-conversation", terminalId: "" } } as TaskRow
+  assert.deepEqual(order([root, kid], {}, { tasks: [task] }), ["root", "kid"])
+  assert.equal(visualDepths([root, kid], [task], () => true).get("kid"), 1)
+})
+
 test("an Epic assigned independent Root appears under its owner, with its own broker child", () => {
   const owner = row("owner", "idle", "Architect", { sessionId: "owner-conversation" })
   const feature = row("feature", "working", "Feature", {
