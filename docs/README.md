@@ -15,8 +15,8 @@ Every document in this directory, and what kind it is.
 - **User page**: how to finish one job with Clawdline — what you need, the steps with the exact
   labels and commands, how to tell it worked and how to undo it. They link here for the design.
 
-The user pages are in English, and so are the two pages that introduce the project and the pages
-marked English in the tables below. The rest are written in Traditional Chinese.
+The user pages are in English, as are the project introduction and the pages marked English below.
+Some historical design and migration records remain in Traditional Chinese.
 
 ## Using Clawdline
 
@@ -68,6 +68,7 @@ marked English in the tables below. The rest are written in Traditional Chinese.
 | [privacy-guard.md](privacy-guard.md) | Public design note | English | What keeps the person's own things out of a public repository: the working-tree scan, the history scan, the four answers, and the checkpoint that makes a daily run affordable |
 | [publishing.md](publishing.md) | Public operations guide | English | CI coverage, the guarded development remote, the filtered publication path, and when GitHub status becomes visible |
 | [project-sync.md](project-sync.md) | Public design note | English | A project's name, icon and untracked skills owned by one machine and mirrored read-only on others: identity by git origin, what is never copied, Cloud and file transport |
+| [cloud.md](cloud.md) | Public design note | English | The current Go daemon's Cloud components, trust boundary, pairing, requests and hosted-console verification limits |
 | [squad-packages.md](squad-packages.md) | Public design note | English | Offline squad ZIP format, contribution example, validation, preview, adoption and private export boundaries |
 | [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
 
