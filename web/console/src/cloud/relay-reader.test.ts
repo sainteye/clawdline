@@ -126,6 +126,18 @@ test("the list is the chosen machine's rows, with the machine kept and the relay
   assert.equal("identity" in snap.sessions[0], false)
 })
 
+test("refresh asks the machine to restate quiet Sessions after the first list", async () => {
+  const client = new FakeClient()
+  client.rows = [row("mac-a", "s1")]
+  client.sessionInventoryByMachine.set("mac-a", inventory("mac-a", "s1"))
+  const r = reader(client, { t: 1000 })
+  await r.fetch("/v1/sessions", { signal: new AbortController().signal })
+  assert.equal(client.reads.length, 0, "connection recovery owns the first restatement")
+
+  await r.fetch("/v1/sessions", { signal: new AbortController().signal })
+  assert.deepEqual(client.reads, [{ machine: "mac-a", word: "sessions.snapshot", body: {} }])
+})
+
 test("an agent transcript is a session read of the chosen machine, never the generic machine request", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })
