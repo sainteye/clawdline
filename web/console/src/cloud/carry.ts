@@ -91,6 +91,7 @@ export const CARRIED = {
   "squad.motion.update": "PUT /v1/squad/motion",
   "squad.catalog.update": "POST /v1/squad/catalog",
   "squad-session-bindings": "GET /v1/squad/session-bindings",
+  "squad-session-snapshot": "GET /v1/squad/session-snapshots/{conversation}",
   "squad-event-head": "GET /v1/squad/events/head",
   "squad-events": "GET /v1/squad/events?after=&limit=",
   "squad.packages.preview": "POST /v1/squad-packages/preview",

@@ -82,6 +82,13 @@
 .role-detail-content dd { min-width: 0; color: var(--ink); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .role-detail-sources a { color: var(--accent); }
 .role-detail-note { margin: 18px 0 0; color: var(--faint); font-size: 11px; line-height: 1.5; }
+.role-detail-full { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; }
+.role-detail-full h3 { margin: 18px 0 8px; font-size: 14px; }
+.role-detail-origin { color: var(--faint); font-size: 11px; line-height: 1.5; }
+.role-detail-text { margin: 8px 0 18px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); font-family: inherit; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.role-detail-full details { border-top: 1px solid var(--line); padding: 11px 0; }
+.role-detail-full summary { cursor: pointer; color: var(--accent); font-size: 13px; font-weight: 600; }
+.role-detail-full details p { font-size: 12px; line-height: 1.5; color: var(--dim); }
 .role-detail-sheet .buttons { display: flex; justify-content: flex-end; padding: 14px 22px; border-top: 1px solid var(--line); }
 .role-detail-sheet .buttons .chip { min-width: 88px; }
 @media (max-width: 520px) {

@@ -527,6 +527,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/squad/events/head", s.squadEventHead)
 	mux.HandleFunc("/v1/squad/events", s.squadEvents)
 	mux.HandleFunc("/v1/squad/session-bindings", s.squadSessionBindings)
+	mux.HandleFunc("/v1/squad/session-snapshots/", s.squadRoute)
 	mux.HandleFunc("/v1/squad/session-events", s.squadSessionEvents)
 	mux.HandleFunc("/v1/squad/", s.squadRoute)
 	mux.HandleFunc("/v1/squad-packages/", s.squadPackagesRoute)

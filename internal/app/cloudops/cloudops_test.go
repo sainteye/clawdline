@@ -725,6 +725,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-personas",
 		method: "GET", path: "/v1/personas",
 	}, {
+		word: "squad-session-snapshot",
+		body: map[string]any{"type": "squad-session-snapshot", "session": machine,
+			"request": "req-role-snapshot", "conversation": "conversation-a"},
+		session: machine, name: "read:req-role-snapshot", method: "GET",
+		path: "/v1/squad/session-snapshots/conversation-a",
+	}, {
 		word: "send",
 		body: map[string]any{"type": "send", "session": pane, "request": "req-send",
 			"text": "hello", "images": []any{}},
