@@ -12,7 +12,8 @@ export const TERMINAL_ROUTE = "clawdline:terminal-route"
 export function openTerminalPage(project: string, terminal = "", from: TerminalFrom = ""): void {
   const address = terminalPageHash(project, terminal, from)
   try {
-    history.replaceState(history.state, "", address)
+    if (from === "sessions") history.pushState(history.state, "", address)
+    else history.replaceState(history.state, "", address)
   } catch {
     location.hash = address
   }

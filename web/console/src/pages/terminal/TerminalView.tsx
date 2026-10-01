@@ -20,7 +20,7 @@ import { TerminalInputClient, type InputState } from "./input-client.js"
 import { StatusMessage, holderKey, isRegionKey, pasteRefusal, withCtrl } from "./keys.js"
 import { TAB } from "./tab.js"
 import { firstSize } from "./TerminalProjectList.js"
-import { holderWords, terminalRefusalWords } from "./words.js"
+import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
 
 /**
  * One terminal: its screen, drawn by xterm.js from the daemon's frames, and
@@ -577,6 +577,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
         <div className="terminal-head-row">
           <button className="board-button" type="button" ref={backButton} onClick={onBack}>{nextWord("terminalBack")}</button>
           <dl className="terminal-facts">
+            <div><dt>{nextWord("terminalEntry")}</dt><dd title={id}>{nextWord("terminalIdentity", { id: terminalShortID(id) })}</dd></div>
             <div><dt>{nextWord("terminalMachine")}</dt><dd className="terminal-machine">{machine || nextWord("devicesThisMachine")}</dd></div>
             <div data-tone={outOfDate ? "warn" : undefined}>
               <dt className="terminal-sr">{nextWord("terminalFresh", { time: "" }).trim()}</dt>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
-import { terminalRouteFromHash, workPageHash, workProjectID, type TerminalRoute } from "../page-route.js"
+import { sessionsPageHash, terminalRouteFromHash, workPageHash, workProjectID, type TerminalRoute } from "../page-route.js"
 import { requestPage } from "../overlays/index.js"
 import { readProjectPlaces } from "./work/api.js"
 import { hostedConsole } from "./terminal/api.js"
@@ -76,6 +76,12 @@ function TerminalPage({ shown }: { shown: boolean }) {
   const name = known?.label || project || route.project
   const toProjects = route.from === "projects"
   const back = () => {
+    if (route.from === "sessions") {
+      try { history.replaceState(history.state, "", sessionsPageHash(true)) } catch { location.hash = sessionsPageHash(true) }
+      requestPage({ page: "sessions", hash: false })
+      window.dispatchEvent(new HashChangeEvent("hashchange"))
+      return
+    }
     if (toProjects) {
       requestPage({ page: "projects" })
       return
@@ -89,7 +95,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
   }
   const backButton = (
     <button className="board-button" type="button" onClick={back}>
-      {nextWord(toProjects ? "terminalBackProjects" : "terminalBackBoard")}
+      {route.from === "sessions" ? nextWord("terminalBackSessions") : nextWord(toProjects ? "terminalBackProjects" : "terminalBackBoard")}
     </button>
   )
 
