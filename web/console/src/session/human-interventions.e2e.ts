@@ -22,6 +22,8 @@ let failActions = false
 let readDelay = 0
 let noteCount = 1
 let showOptions = true
+let listWaiting = false
+let listAttentionCount = 1
 const row = {
   id: SESSION, label: "Delivery Session", backend: "owned", state: "idle", work_state: "ready",
   evidence: "process", assistant: "codex", sessionId: CONVERSATION, cwd: "/tmp/fixture",
@@ -30,8 +32,75 @@ const row = {
   closeability: { activity_generation: 1, attestation_id: null, mover: null, obligation_generation: 1,
     observed_at: 1, provenance: [], reasons: [], session_generation: 1, source: "broker", state: "safe", version: "fixture" },
 }
+
+for (const width of [320, 375, 390, 1280]) {
+  test(`list at ${width}px keeps attention and provider waiting visible`, async () => {
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    try {
+      await fetch(origin + "/__fixture/reset")
+      await fetch(origin + "/__fixture/list-waiting?on=1")
+      await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 2, mobile: width < 900 }, id)
+      const mark = browser.loadCount; await browser.send("Page.navigate", { url: origin + "/" }, id); await browser.loaded(id, mark)
+      const deadline = Date.now() + 8000
+      while (!(await run(`!!document.querySelector('.row[data-id="${SESSION}"] .session-attention')`))) {
+        if (Date.now() > deadline) assert.fail("list attention did not load")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      const visible = await run(`(() => {
+        const row = document.querySelector('.row[data-id="${SESSION}"]');
+        const attention = row.querySelector('.session-attention');
+        const waiting = row.querySelector('.wants');
+        const box = attention.getBoundingClientRect();
+        const waitBox = waiting?.getBoundingClientRect();
+        return { attention: attention.textContent, waiting: waiting?.textContent,
+          within: box.width > 0 && box.left >= 0 && box.right <= ${width},
+          waitWithin: !!waitBox && waitBox.width > 0 && waitBox.left >= 0 && waitBox.right <= ${width},
+          scrollWidth: document.documentElement.scrollWidth };
+      })()`)
+      assert.match(visible.attention, /關注 · 待處理 1/)
+      assert.equal(visible.within, true, JSON.stringify(visible))
+      assert.equal(visible.waitWithin, true, JSON.stringify(visible))
+      assert.equal(visible.scrollWidth <= width, true, JSON.stringify(visible))
+      const ax = await browser.send("Accessibility.getFullAXTree", {}, id)
+      assert.ok(ax.nodes.some((node: any) => node.role?.value === "option" && /待處理 1/.test(node.name?.value ?? "")), "the list option names the unresolved note")
+      await fetch(origin + "/__fixture/list-count?value=0")
+      while (await run(`!!document.querySelector('.row[data-id="${SESSION}"] .session-attention')`)) {
+        if (Date.now() > deadline) assert.fail("resolved note stayed on the list")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      await fetch(origin + "/__fixture/list-count?value=-1")
+      while (!(await run(`!!document.querySelector('.row[data-id="${SESSION}"] .session-attention-unknown')`))) {
+        if (Date.now() > deadline) assert.fail("unknown count did not appear")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      await fetch(origin + "/__fixture/list-count?value=1")
+      while (!(await run(`document.querySelector('.row[data-id="${SESSION}"] .session-attention')?.textContent?.includes('待處理 1')`))) {
+        if (Date.now() > deadline) assert.fail("reopened note did not return to the list")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      await run(`document.querySelector('.row[data-id="${SESSION}"]').focus()`)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
+      while (!(await run(`location.hash.includes('session=${SESSION}')`))) {
+        if (Date.now() > deadline) assert.fail("Enter did not open the Session")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    } finally {
+      await browser.send("Target.closeTarget", { targetId })
+    }
+  })
+}
 const snapshot = () => ({ at: Date.now(), scan: { complete: true, completed: { complete: true, sequence: 1 },
-  emptyAuthoritative: true, epoch: 1, generation: 1, provenance: "fixture" }, sessions: [row] })
+  emptyAuthoritative: true, epoch: 1, generation: 1, provenance: "fixture" },
+  sessions: [{ ...row, ...(listAttentionCount < 0 ? {} : { attention_count: listAttentionCount }),
+    state: listWaiting ? "waiting" : "idle", work_state: listWaiting ? "waiting_you" : "ready" }] })
 const TYPES: Record<string, string> = { ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".webp": "image/webp" }
 function json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
 function document(): string {
@@ -45,9 +114,13 @@ function fixture(): Server {
   let readAt: number | null = null
   let resolvedAt: number | null = null
   let version = 1
+  const eventClients = new Set<ServerResponse>()
+  const publish = () => { for (const client of eventClients) client.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; sendRequests = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; listWaiting = false; listAttentionCount = 1; sendRequests = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/list-waiting") { listWaiting = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/list-count") { listAttentionCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")); publish(); return json(res, 200, { ok: true }) }
     if (path === "/__fixture/count") { noteCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")) || 1; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/options") { showOptions = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") !== "0"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-reads") { failReads = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
@@ -57,6 +130,8 @@ function fixture(): Server {
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
+      eventClients.add(res)
+      res.on("close", () => eventClients.delete(res))
       return
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "process", id: SESSION, signature: "fixture" })
@@ -85,8 +160,8 @@ function fixture(): Server {
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8"))
           if (body.expected_version !== version) return json(res, 409, { error: "version_conflict" })
           if (path.endsWith("/read")) readAt = now
-          else if (path.endsWith("/resolve")) { readAt = now; resolvedAt = now }
-          else if (path.endsWith("/reopen")) resolvedAt = null
+          else if (path.endsWith("/resolve")) { readAt = now; resolvedAt = now; listAttentionCount = 0; publish() }
+          else if (path.endsWith("/reopen")) { resolvedAt = null; listAttentionCount = 1; publish() }
           else return json(res, 404, { error: "not_found" })
           version++
           return json(res, 200, { ok: true, note: { ...note, read_at: readAt, resolved_at: resolvedAt, version } })
