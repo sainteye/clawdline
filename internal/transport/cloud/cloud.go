@@ -41,6 +41,10 @@ type Outbound struct {
 	Channel string
 	Class   string
 	Payload []byte
+	// A terminal frame or receipt is sealed under this one viewer connection's
+	// key. Other channels leave these empty and use the account content key.
+	Key   cloud.ContentKey
+	KeyID string
 	// Reply names the request this answers, for the transport's own log and
 	// for the receipt it may correlate. It is not part of the payload.
 	Reply Reply

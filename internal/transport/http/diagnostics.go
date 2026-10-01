@@ -54,6 +54,18 @@ import (
 // dead letter's.
 const capacityPushDeadline = 2 * time.Minute
 
+func (s *Server) terminalCapacity(name string) capacity.Reading {
+	line, ok := cloudLines.Load(s.cfg.Dir)
+	if !ok {
+		return capacity.Reading{Known: true, Note: "Cloud terminal line is off"}
+	}
+	reader, ok := line.(interface{ TerminalCapacity(string) capacity.Reading })
+	if !ok {
+		return capacity.Unmeasured("Cloud line does not report terminal capacity")
+	}
+	return reader.TerminalCapacity(name)
+}
+
 // capacityOverrides is the register resolved against CLAWDLINE_NEXT_CAPACITY,
 // once per process: every adapter that enforces a row's limit and the beat
 // that measures it read the same numbers.
@@ -769,6 +781,15 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return r
 		},
+		capacity.CloudTerminalRosterRefresh:     func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterRefresh) },
+		capacity.CloudTerminalRosterDeadline:    func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterDeadline) },
+		capacity.CloudTerminalConnections:       func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalConnections) },
+		capacity.CloudTerminalViewerConnections: func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalViewerConnections) },
+		capacity.CloudTerminalRequestBytes:      func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRequestBytes) },
+		capacity.CloudTerminalReceipts:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceipts) },
+		capacity.CloudTerminalKeySeconds:        func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalKeySeconds) },
+		capacity.CloudTerminalIngress:           func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalIngress) },
+		capacity.CloudTerminalRefusals:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRefusals) },
 		// C4: the Cloud line's outbound spool, both of its bounds.
 		capacity.CloudSpool: func() capacity.Reading {
 			rows, _ := s.spoolReadings()

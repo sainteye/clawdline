@@ -153,6 +153,10 @@ func (w *Watch) Stop() {
 // the newest one, read no more often than CaptureGap, never a queue of them.
 func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 	s, id := w.s, w.id
+	if err := s.allowed(w.v.who); err != nil {
+		return send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
+			"this device may no longer see this machine's terminals")})
+	}
 	if err := send(Event{Kind: EventControl, Control: s.Control(id)}); err != nil {
 		return err
 	}
@@ -160,6 +164,12 @@ func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 		return err
 	}
 	last := w.first
+	// Watch may have spent time capturing the first frame while access was
+	// revoked. Do not release that frame merely because Watch was admitted.
+	if err := s.allowed(w.v.who); err != nil {
+		return send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
+			"this device may no longer see this machine's terminals")})
+	}
 	if err := send(Event{Kind: EventFrame, Frame: last}); err != nil {
 		return err
 	}
@@ -208,6 +218,10 @@ func (w *Watch) Run(ctx context.Context, send func(Event) error) error {
 			}
 		}
 		if frame.Rev != last.Rev {
+			if err := s.allowed(w.v.who); err != nil {
+				return true, send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
+					"this device may no longer see this machine's terminals")})
+			}
 			last = frame
 			if err := send(Event{Kind: EventFrame, Frame: frame}); err != nil {
 				return true, err

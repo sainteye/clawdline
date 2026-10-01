@@ -340,16 +340,25 @@ const (
 	SquadEventBodyBytes          = "squad.event_body_bytes"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
-	TerminalCount        = "terminal.count"
-	TerminalInputBytes   = "terminal.input_bytes"
-	TerminalPasteBytes   = "terminal.paste_bytes"
-	TerminalHistoryLines = "terminal.history_lines"
-	TerminalLane         = "terminal.lane"
-	TerminalViewers      = "terminal.viewers"
-	TerminalStreams      = "terminal.streams"
-	TerminalLeaseSeconds = "terminal.lease_seconds"
-	TerminalGrantsBytes  = "terminal.grants_bytes"
-	TerminalBodyBytes    = "terminal.body_bytes"
+	TerminalCount                  = "terminal.count"
+	TerminalInputBytes             = "terminal.input_bytes"
+	TerminalPasteBytes             = "terminal.paste_bytes"
+	TerminalHistoryLines           = "terminal.history_lines"
+	TerminalLane                   = "terminal.lane"
+	TerminalViewers                = "terminal.viewers"
+	TerminalStreams                = "terminal.streams"
+	TerminalLeaseSeconds           = "terminal.lease_seconds"
+	TerminalGrantsBytes            = "terminal.grants_bytes"
+	CloudTerminalRosterRefresh     = "cloud.terminal_roster_refresh_seconds"
+	CloudTerminalRosterDeadline    = "cloud.terminal_roster_deadline_seconds"
+	CloudTerminalConnections       = "cloud.terminal_connections"
+	CloudTerminalViewerConnections = "cloud.terminal_viewer_connections"
+	CloudTerminalRequestBytes      = "cloud.terminal_request_bytes"
+	CloudTerminalReceipts          = "cloud.terminal_receipts"
+	CloudTerminalKeySeconds        = "cloud.terminal_key_seconds"
+	CloudTerminalIngress           = "cloud.terminal_ingress"
+	CloudTerminalRefusals          = "cloud.terminal_refusals"
+	TerminalBodyBytes              = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
 	TerminalLaunchLineBytes = "terminal.launch_line_bytes"
@@ -1864,6 +1873,64 @@ func Register() []Entry {
 			Limit: 30, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/terminals.MaxLeaseSeconds"},
+		},
+		{
+			// Active Cloud terminal authority expires after this many seconds.
+			// The next terminal operation waits for one bounded refresh or is
+			// refused; ordinary Cloud Session traffic does not depend on it.
+			Name: CloudTerminalRosterRefresh, Class: Cache, Unit: Seconds,
+			Limit: 2, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalRosterRefreshLimit"},
+		},
+		{
+			// A terminal roster request past this deadline fails closed.
+			Name: CloudTerminalRosterDeadline, Class: Cache, Unit: Seconds,
+			Limit: 2, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalRosterDeadlineLimit"},
+		},
+		{
+			Name: CloudTerminalConnections, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalConnectionsLimit"},
+		},
+		{
+			Name: CloudTerminalViewerConnections, Class: Buffer, Unit: Rows,
+			Limit: 2, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalViewerConnectionsLimit"},
+		},
+		{
+			Name: CloudTerminalRequestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 6<<20 + 4<<10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalRequestBytesLimit"},
+		},
+		{
+			Name: CloudTerminalReceipts, Class: Idempotency, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptsLimit"},
+		},
+		{
+			Name: CloudTerminalKeySeconds, Class: Cache, Unit: Seconds,
+			Limit: 600, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalKeySecondsLimit"},
+		},
+		{
+			Name: CloudTerminalIngress, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalIngressLimit", "internal/transport/cloud.(*Link).runOnce:chan(CloudTerminalIngressLimit)"},
+		},
+		{
+			Name: CloudTerminalRefusals, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalRefusalsLimit", "internal/transport/cloud.(*Link).runOnce:chan(CloudTerminalRefusalsLimit)"},
 		},
 		{
 			// The terminal grants file. A larger one is not read, and then
