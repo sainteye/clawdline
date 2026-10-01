@@ -53,12 +53,44 @@ func (s *Server) squadRoute(w http.ResponseWriter, r *http.Request) {
 	case "/v1/squad/auto-candidates":
 		s.squadCandidateRead(w, r)
 	default:
+		if strings.HasPrefix(routePath(r), "/v1/squad/session-snapshots/") {
+			s.squadSessionSnapshotRead(w, r)
+			return
+		}
 		if strings.HasPrefix(routePath(r), "/v1/squad/definitions/") && r.Method == http.MethodGet {
 			s.squadDefinitionRead(w, r)
 			return
 		}
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such squad route.")
 	}
+}
+
+// squadSessionSnapshotRead returns the immutable role bytes used at launch.
+// A missing snapshot is explicit so an older Session is never described as
+// though the current catalog were the instructions it received.
+func (s *Server) squadSessionSnapshotRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Session role snapshots are read with GET.")
+		return
+	}
+	conversation := strings.TrimPrefix(routePath(r), "/v1/squad/session-snapshots/")
+	if conversation == "" || strings.Contains(conversation, "/") {
+		writeRefusal(w, http.StatusNotFound, "snapshot_not_found", "No role snapshot belongs to that conversation.")
+		return
+	}
+	document, id, found, err := s.store.SquadSnapshotForConversation(r.Context(), conversation)
+	if err != nil {
+		squadFailure(w, err, true)
+		return
+	}
+	if !found {
+		writeRefusal(w, http.StatusNotFound, "snapshot_not_found", "No role snapshot belongs to that conversation.")
+		return
+	}
+	writeJSON(w, struct {
+		SnapshotID string          `json:"snapshot_id"`
+		Snapshot   json.RawMessage `json:"snapshot"`
+	}{SnapshotID: id, Snapshot: document})
 }
 
 func (s *Server) squadCandidateRead(w http.ResponseWriter, r *http.Request) {

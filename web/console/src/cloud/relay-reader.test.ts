@@ -940,6 +940,7 @@ test("squad reads carry exact scope, binding and cursor fields to the chosen mac
     ["/v1/squad/settings?place_id=p1", "squad.settings", { place_id: "p1" }],
     ["/v1/squad/settings?scope_id=project-a", "squad.settings", { scope_id: "project-a" }],
     ["/v1/squad/session-bindings", "squad-session-bindings", {}],
+    ["/v1/squad/session-snapshots/conversation-a", "squad-session-snapshot", { conversation: "conversation-a" }],
     ["/v1/squad/events/head", "squad-event-head", {}],
     ["/v1/squad/events?after=12&limit=50", "squad-events", { after: 12, limit: 50 }],
   ]

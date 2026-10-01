@@ -303,11 +303,15 @@ showed before this feature, never a sheet that breaks after a press.
   could not tell which role it was). Measured with mocked rows and the real catalog: every row is
   87.9 px on a 390 px phone and 77.6 px on a desktop, with or without a role; all sixteen names (both teams) fit
   whole at 390 px in both languages, beside a long working sentence too; no sideways scroll.
-- **Session info.** Under the status, a "Role" section holds a `details` shaped like the statuses:
-  the bot at three pixels a cell and the full name, and, opened, the one-line summary and the
-  upstream files it was adapted from, each a link named by its file. The injected text is not
-  shown: it never leaves the machine. Opened, it stays open when the card redraws. No persona, or
-  one the catalog does not name, has no section.
+- **Session info.** Under the status, a "Role" button opens a detail dialog with the catalog
+  summary, teams, suggested item kinds, and upstream links. It then reads the immutable launch
+  snapshot for that conversation from `GET /v1/squad/session-snapshots/{conversation}` and shows
+  the complete definition, handbook, and role skill contents and enabled flags. This paired read
+  is distinct from the lightweight `/v1/personas` catalog. A legacy Session without a snapshot
+  reads the current versioned Squad definition and, only if it references skills, the catalog's
+  matching skill versions; the dialog labels that version as current rather than claiming it was
+  launched with those bytes. A refresh keeps the loaded detail and open skill sections. No persona,
+  or one the catalog does not name, has no entry.
 - **Session detail header.** A row whose `persona` the catalog names shows the bot alone, at two
   pixels a cell, at the head of the line under the session's name, before the path. The name and
   summary are its title and the session button's description (`aria-describedby`), never drawn.

@@ -1072,6 +1072,21 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/squad/session-bindings", Header: asDevice()}
 			}},
+		op{name: "squad-session-snapshot", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "conversation") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				p.id, ok = b.nonEmpty("conversation")
+				return p, ok && printable(p.id)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/squad/session-snapshots/" + segment(p.id), Header: asDevice()}
+			}},
 
 		op{name: "squad-event-head", read: true,
 			decode: func(b body) (plan, bool) {

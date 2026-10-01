@@ -546,7 +546,7 @@ function draw(): void {
   const roleButton = box.querySelector<HTMLButtonElement>("button[data-role-detail]")
   const persona = personaById(personasNow(), session()?.persona)
   if (roleButton && persona) L.paintIcon(roleButton.querySelector<HTMLCanvasElement>("canvas.persona-info-bot"), persona.icon, 3)
-  RoleDetail.follow(forId, persona)
+  RoleDetail.follow(forId, String(session()?.sessionId || ""), persona)
   if (data) drawn = true
   const refresh = node("info-refresh") as HTMLButtonElement | null
   if (refresh) refresh.disabled = loading
@@ -860,7 +860,7 @@ export function bindInfo(): () => void {
     const role = t.closest<HTMLButtonElement>("button[data-role-detail]")
     if (role && forId) {
       const persona = personaById(personasNow(), session()?.persona)
-      if (persona) RoleDetail.open(forId, persona)
+      if (persona) RoleDetail.open(forId, String(session()?.sessionId || ""), persona)
       return
     }
     if (t.closest("button[data-status-review]")) Info.close()
