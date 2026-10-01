@@ -242,15 +242,17 @@ type Link struct {
 	stopRun context.CancelFunc
 	rotated bool
 
-	terminalRosterMu    sync.Mutex
-	terminalRosterAt    time.Time
-	terminalRosterErr   error
-	terminalRosterWait  chan struct{}
-	terminalMu          sync.Mutex
-	terminalConnections map[string]*terminalConnection
-	machineIncarnation  string
-	terminalRequests    chan Inbound
-	terminalRefusals    chan Inbound
+	terminalRosterMu           sync.Mutex
+	terminalRosterAt           time.Time
+	terminalRosterErr          error
+	terminalRosterWait         chan struct{}
+	terminalMu                 sync.Mutex
+	terminalConnections        map[string]*terminalConnection
+	terminalRetireAfterReceipt map[string]*terminalConnection
+	terminalMetadata           func(context.Context, string, *terminalConnection) error
+	machineIncarnation         string
+	terminalRequests           chan Inbound
+	terminalRefusals           chan Inbound
 }
 
 const TerminalCapability = "terminal_control"
@@ -287,7 +289,7 @@ func (l *Link) PinnedTerminalViewer(device string) (string, bool) {
 // and frame. It requires a fresh Cloud roster, the exact locally pinned key,
 // and terminal_control. The terminal grant remains the service's final check.
 func (l *Link) TerminalViewerAllowed(device string) bool {
-	if !l.settings.Enabled || !l.allowCommands() || l.roster == nil || l.pinned == nil || !l.terminalRosterFresh() {
+	if !l.TerminalViewerCloudCapable(device) || l.pinned == nil {
 		return false
 	}
 	pin, ok, err := l.pinned.PublicKeyFor(device)
@@ -304,6 +306,21 @@ func (l *Link) TerminalViewerAllowed(device string) bool {
 		}
 		key, err := base64.StdEncoding.DecodeString(row.PublicKey)
 		return err == nil && bytes.Equal(key, pin)
+	}
+	return false
+}
+
+// TerminalViewerCloudCapable is the Cloud-side prerequisite for a relay
+// connection registration. Local pin and grant are checked again after that
+// registration, so a locally refused viewer can receive a keyed refusal.
+func (l *Link) TerminalViewerCloudCapable(device string) bool {
+	if !l.settings.Enabled || !l.allowCommands() || l.roster == nil || !l.terminalRosterFresh() {
+		return false
+	}
+	for _, row := range l.roster.Devices() {
+		if row.ID == device && (row.RevokedAt == nil || *row.RevokedAt == "") && hasAny(row.Caps, TerminalCapability) {
+			return true
+		}
 	}
 	return false
 }
@@ -503,6 +520,7 @@ func (l *Link) wire() error {
 		Replay:       domaincloud.NewReplayWindow(0),
 		Inbound:      l.relay.Deliver,
 		OnDisconnect: l.closeAllTerminalConnections,
+		OnSettled:    l.terminalReceiptSettled,
 		PublicKeyFor: l.publicKeyFor,
 		ContentKey:   secret,
 		Log:          func(line string) { l.logf("%s", line) },

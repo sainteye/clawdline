@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,13 +25,14 @@ import (
 )
 
 const (
-	CloudTerminalConnectionsLimit       = 16
-	CloudTerminalViewerConnectionsLimit = 2
-	CloudTerminalRequestBytesLimit      = 6<<20 + 4<<10
-	CloudTerminalReceiptsLimit          = 64
-	CloudTerminalKeySecondsLimit        = 600
-	CloudTerminalIngressLimit           = 16
-	CloudTerminalRefusalsLimit          = 16
+	CloudTerminalConnectionsLimit             = 16
+	CloudTerminalViewerConnectionsLimit       = 2
+	CloudTerminalRequestBytesLimit            = 6<<20 + 4<<10
+	CloudTerminalReceiptsLimit                = 64
+	CloudTerminalKeySecondsLimit              = 600
+	CloudTerminalIngressLimit                 = 16
+	CloudTerminalRefusalsLimit                = 16
+	CloudTerminalRevocationRetireSecondsLimit = 3
 )
 
 // TerminalCapacity reports the terminal rail without exposing its keys or
@@ -61,7 +63,7 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 	case capacity.CloudTerminalRefusals:
 		r.Used = int64(len(l.terminalRefusals))
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline,
-		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds:
+		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -112,6 +114,118 @@ type terminalConnection struct {
 	receipts          map[string][]byte
 	receiptOrder      []string
 	rekeyPending      bool
+	denied            bool
+	deniedAt          time.Time
+}
+
+func terminalReceiptSettleID(channel string, seq uint64) string {
+	return channel + "/" + strconv.FormatUint(seq, 10)
+}
+
+func (l *Link) terminalReceiptSettled(channel string, seq uint64) {
+	l.terminalMu.Lock()
+	id := terminalReceiptSettleID(channel, seq)
+	c := l.terminalRetireAfterReceipt[id]
+	delete(l.terminalRetireAfterReceipt, id)
+	l.terminalMu.Unlock()
+	if c != nil {
+		l.closeTerminalConnection(c)
+	}
+}
+
+func (l *Link) terminalMetadataAction(ctx context.Context, action string, c *terminalConnection) error {
+	if l.terminalMetadata != nil {
+		return l.terminalMetadata(ctx, action, c)
+	}
+	if l.transport == nil && l.terminalMetadata == nil {
+		return ErrRelayNotReady
+	}
+	return l.transport.TerminalConnection(ctx, action, c.viewer, c.id, c.expires)
+}
+
+// Refusal is queued while relay registration remains active. The connection
+// stops host effects immediately; retirement follows this receipt's relay
+// settlement, or the bounded revocation tombstone when no ack arrives.
+func (l *Link) refuseRegisteredTerminal(ctx context.Context, c *terminalConnection, receipt terminalReceipt) {
+	l.terminalMu.Lock()
+	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c {
+		l.terminalMu.Unlock()
+		return
+	}
+	c.denied = true
+	if c.deniedAt.IsZero() {
+		c.deniedAt = l.opts.Now()
+	}
+	for id, pending := range l.terminalRetireAfterReceipt {
+		if pending == c {
+			delete(l.terminalRetireAfterReceipt, id)
+		}
+	}
+	if c.watchCancel != nil {
+		c.watchCancel()
+	}
+	l.terminalMu.Unlock()
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		l.closeTerminalConnection(c)
+		return
+	}
+	if l.relay == nil {
+		l.closeTerminalConnection(c)
+		return
+	}
+	channel := terminalReceiptChannel(l.identity.MachineID, c)
+	l.terminalMu.Lock()
+	seq, err := l.relay.PublishTracked(ctx, Outbound{Channel: channel,
+		Class: string(domaincloud.ClassCtl), Payload: data, Key: c.key, KeyID: c.keyID})
+	if err == nil {
+		if l.terminalRetireAfterReceipt == nil {
+			l.terminalRetireAfterReceipt = map[string]*terminalConnection{}
+		}
+		l.terminalRetireAfterReceipt[terminalReceiptSettleID(channel, seq)] = c
+	}
+	l.terminalMu.Unlock()
+	if err != nil {
+		l.closeTerminalConnection(c)
+	}
+}
+
+func (l *Link) revokeRegisteredTerminal(ctx context.Context, c *terminalConnection) {
+	l.terminalMu.Lock()
+	if c.denied || l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c {
+		l.terminalMu.Unlock()
+		return
+	}
+	c.denied = true
+	c.deniedAt = l.opts.Now()
+	if c.watchCancel != nil {
+		c.watchCancel()
+	}
+	l.terminalMu.Unlock()
+	data, err := json.Marshal(map[string]any{"v": 1, "type": "terminal_notice", "connection": c.id,
+		"code": "terminal_access_revoked", "machine_incarnation": l.machineIncarnation})
+	if err != nil {
+		l.closeTerminalConnection(c)
+		return
+	}
+	if l.relay == nil {
+		l.closeTerminalConnection(c)
+		return
+	}
+	channel := terminalReceiptChannel(l.identity.MachineID, c)
+	l.terminalMu.Lock()
+	seq, err := l.relay.PublishTracked(ctx, Outbound{Channel: channel,
+		Class: string(domaincloud.ClassCtl), Payload: data, Key: c.key, KeyID: c.keyID})
+	if err == nil {
+		if l.terminalRetireAfterReceipt == nil {
+			l.terminalRetireAfterReceipt = map[string]*terminalConnection{}
+		}
+		l.terminalRetireAfterReceipt[terminalReceiptSettleID(channel, seq)] = c
+	}
+	l.terminalMu.Unlock()
+	if err != nil {
+		l.closeTerminalConnection(c)
+	}
 }
 
 func terminalConnectionID(viewer, connection string) string { return viewer + "/" + connection }
@@ -174,13 +288,14 @@ func (l *Link) sweepTerminalConnections() {
 	}
 	l.terminalMu.Unlock()
 	svc, err := l.terminalService()
-	if err != nil {
-		l.closeAllTerminalConnections()
-		return
-	}
 	for _, c := range connections {
-		if !c.expires.After(l.opts.Now()) || svc.Allow(terminals.Principal{Device: c.viewer, Cloud: true}) != nil {
+		l.terminalMu.Lock()
+		denied, deniedAt := c.denied, c.deniedAt
+		l.terminalMu.Unlock()
+		if !c.expires.After(l.opts.Now()) || (denied && !deniedAt.Add(CloudTerminalRevocationRetireSecondsLimit*time.Second).After(l.opts.Now())) {
 			l.closeTerminalConnection(c)
+		} else if !denied && (err != nil || svc.Allow(terminals.Principal{Device: c.viewer, Cloud: true}) != nil) {
+			l.revokeRegisteredTerminal(context.Background(), c)
 		}
 	}
 }
@@ -217,6 +332,7 @@ func (l *Link) closeAllTerminalConnections() {
 		delete(l.terminalConnections, id)
 		retired = append(retired, c)
 	}
+	l.terminalRetireAfterReceipt = nil
 	l.terminalMu.Unlock()
 	for _, c := range retired {
 		l.retireTerminalConnection(c)
@@ -225,19 +341,15 @@ func (l *Link) closeAllTerminalConnections() {
 
 func (l *Link) revokeTerminalViewer(viewer string) error {
 	l.terminalMu.Lock()
-	retired := []*terminalConnection{}
-	for id, c := range l.terminalConnections {
+	denied := []*terminalConnection{}
+	for _, c := range l.terminalConnections {
 		if c.viewer == viewer {
-			if c.watchCancel != nil {
-				c.watchCancel()
-			}
-			delete(l.terminalConnections, id)
-			retired = append(retired, c)
+			denied = append(denied, c)
 		}
 	}
 	l.terminalMu.Unlock()
-	for _, c := range retired {
-		l.retireTerminalConnection(c)
+	for _, c := range denied {
+		l.revokeRegisteredTerminal(context.Background(), c)
 	}
 	if l.opts.DropTerminalGrant != nil {
 		return l.opts.DropTerminalGrant(viewer)
@@ -300,15 +412,15 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 	svc, err := l.terminalService()
 	if err != nil {
 		l.logf("cloud terminal: service unavailable: %v", err)
-		c := l.getTerminalConnection(in.Sender, req.Connection)
-		if c == nil && (req.Operation == "open_connection" || req.Operation == "rekey_connection") {
-			if key, keyErr := parseConnectionKey(req); keyErr == nil {
-				c = &terminalConnection{viewer: in.Sender, id: req.Connection, keyID: req.KeyID,
-					key: key, receipts: map[string][]byte{}}
-			}
+		name, _ := l.PinnedTerminalViewer(in.Sender)
+		p := terminals.Principal{Device: in.Sender, Name: name, Cloud: true}
+		if req.Operation == "open_connection" || req.Operation == "rekey_connection" {
+			l.openTerminalConnection(ctx, nil, p, req)
+			return
 		}
+		c := l.getTerminalConnection(in.Sender, req.Connection)
 		if c != nil {
-			l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+			l.refuseRegisteredTerminal(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
 				Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
 				Status: "refused", Error: string(terminal.CodeUnsupported)})
 		}
@@ -324,9 +436,17 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 	if c == nil {
 		return // No key exists to encrypt a trustworthy receipt to this tab.
 	}
+	l.terminalMu.Lock()
+	denied := c.denied
+	l.terminalMu.Unlock()
+	if denied {
+		l.refuseRegisteredTerminal(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+			Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
+			Status: "refused", Error: string(terminal.CodeForbidden)})
+		return
+	}
 	if err := svc.Allow(p); err != nil {
-		l.closeTerminalConnection(c)
-		l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+		l.refuseRegisteredTerminal(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
 			Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
 			Status: "refused", Error: string(terminal.CodeForbidden)})
 		return
@@ -414,9 +534,7 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 	c := &terminalConnection{viewer: p.Device, id: req.Connection, keyID: req.KeyID, key: key,
 		expires: l.opts.Now().Add(CloudTerminalKeySecondsLimit * time.Second), receipts: map[string][]byte{},
 		rekeyPending: req.Operation == "rekey_connection"}
-	if err := svc.Allow(p); err != nil {
-		l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
-			Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: string(terminal.CodeForbidden)})
+	if !l.TerminalViewerCloudCapable(p.Device) {
 		return
 	}
 	l.terminalMu.Lock()
@@ -446,8 +564,21 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 	}
 	l.terminalConnections[id] = c
 	l.terminalMu.Unlock()
-	if l.transport == nil || l.transport.TerminalConnection(ctx, "register", c.viewer, c.id, c.expires) != nil {
+	if l.terminalMetadataAction(ctx, "register", c) != nil {
 		l.closeTerminalConnection(c)
+		return
+	}
+	code := ""
+	if !l.TerminalViewerAllowed(p.Device) {
+		code = string(terminal.CodeForbidden)
+	} else if svc == nil {
+		code = string(terminal.CodeUnsupported)
+	} else if svc.Allow(p) != nil {
+		code = string(terminal.CodeForbidden)
+	}
+	if code != "" {
+		l.refuseRegisteredTerminal(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+			Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: code})
 		return
 	}
 	l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
@@ -481,6 +612,11 @@ func (l *Link) closeTerminalConnection(c *terminalConnection) {
 	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c {
 		delete(l.terminalConnections, terminalConnectionID(c.viewer, c.id))
 		removed = true
+		for id, pending := range l.terminalRetireAfterReceipt {
+			if pending == c {
+				delete(l.terminalRetireAfterReceipt, id)
+			}
+		}
 		if c.watchCancel != nil {
 			c.watchCancel()
 		}
@@ -492,13 +628,13 @@ func (l *Link) closeTerminalConnection(c *terminalConnection) {
 }
 
 func (l *Link) retireTerminalConnection(c *terminalConnection) {
-	if l.transport == nil {
+	if l.transport == nil && l.terminalMetadata == nil {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		if err := l.transport.TerminalConnection(ctx, "retire", c.viewer, c.id, c.expires); err != nil {
+		if err := l.terminalMetadataAction(ctx, "retire", c); err != nil {
 			l.logf("cloud terminal: relay retirement failed viewer=%s connection=%s: %v", c.viewer, c.id, err)
 		}
 	}()

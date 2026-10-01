@@ -218,15 +218,22 @@ func (r *Relay) Queue() (waiting, depth int, counters capacity.Counters) {
 // which is a different fact from whether it arrived — the relay's ack is, and
 // the status counters carry it.
 func (r *Relay) Publish(ctx context.Context, out Outbound) error {
+	_, err := r.PublishTracked(ctx, out)
+	return err
+}
+
+// PublishTracked returns the envelope sequence so a terminal refusal can
+// retire its relay registration only after that specific receipt is settled.
+func (r *Relay) PublishTracked(ctx context.Context, out Outbound) (uint64, error) {
 	if r.Transport == nil || r.Spool == nil {
-		return ErrRelayNotReady
+		return 0, ErrRelayNotReady
 	}
 	classes, ok := domaincloud.ChannelClasses(out.Channel)
 	if !ok || len(classes) == 0 {
-		return errors.New("that is not a channel this build knows: " + out.Channel)
+		return 0, errors.New("that is not a channel this build knows: " + out.Channel)
 	}
 	if err := domaincloud.ProducibleChannel(out.Channel); err != nil {
-		return err
+		return 0, err
 	}
 	class := domaincloud.Class(out.Class)
 	if out.Class == "" {
@@ -235,7 +242,7 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 	key, keyID := r.Secret, r.keyID()
 	if strings.HasPrefix(out.Channel, "term/") || strings.HasPrefix(out.Channel, "termr/") {
 		if !out.Key.Valid() || !strings.HasPrefix(out.KeyID, "rk-") {
-			return errors.New("a terminal answer needs its connection key")
+			return 0, errors.New("a terminal answer needs its connection key")
 		}
 		key, keyID = out.Key, out.KeyID
 	}
@@ -262,7 +269,7 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 		seq, err = r.Spool.ReserveAnswer(kind, out.Channel, out.Channel, len(out.Payload), out.Headroom)
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	now := r.now()
@@ -278,13 +285,16 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 		Rand:   rand.Reader,
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	sealed, err := envelope.CanonicalJSON()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return r.Spool.Seal(seq, sealed, now)
+	if err := r.Spool.Seal(seq, sealed, now); err != nil {
+		return 0, err
+	}
+	return seq, nil
 }
 
 // ChannelFull reports whether this error is one channel at its cap.
