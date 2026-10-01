@@ -82,7 +82,7 @@ export function SessionsPage({
   // does not hand its frames to this page.
   const tasks = useTasks(arrived, rows)
   const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(true)
   const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const onRoute = () => setTerminalMode(sessionsTerminalMode(location.hash))
