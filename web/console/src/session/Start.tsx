@@ -139,7 +139,10 @@ function setMode(next: StartMode): void {
   try { localStorage.setItem(MODE_KEY, next) } catch { /* storage is optional */ }
   leave()
   if (next === "terminal") checkTerminalAccess()
-  else draw()
+  else {
+    void loadPersonas().then(() => draw())
+    draw()
+  }
 }
 
 /* The list redraws when the wait changes: `renderList()` in the original. */
@@ -819,7 +822,7 @@ function openMode(machine: boolean, requested?: StartMode): void {
   leave()
   persona = rememberedPersona()
   team = rememberedTeam()
-  void loadPersonas().then(() => draw())
+  if (mode === "session") void loadPersonas().then(() => draw())
   if (!wait) load()
   if (mode === "terminal") checkTerminalAccess()
   draw()

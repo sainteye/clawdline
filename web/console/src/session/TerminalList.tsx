@@ -68,11 +68,14 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
       controller = new AbortController()
       const timeout = setTimeout(() => controller?.abort(), 2500)
       try {
-        const [machine, list] = await Promise.all([readTerminalMachine(controller.signal), listTerminals("", TAB, controller.signal)])
+        const [machine, list] = await Promise.allSettled([readTerminalMachine(controller.signal), listTerminals("", TAB, controller.signal)])
         if (mine !== generation.current) return
-        const unavailable = unavailableWords(machine.capability)
+        if (list.status === "rejected") throw list.reason
+        // A paired device may list terminals while the machine-wide diagnostics
+        // endpoint refuses it. The list is the authority for this device's grant.
+        const unavailable = machine.status === "fulfilled" ? unavailableWords(machine.value.capability) : null
         setBlocked(unavailable ?? "")
-        setRows(list.terminals.filter((terminal) => terminal.status === "running"))
+        setRows(list.value.terminals.filter((terminal) => terminal.status === "running"))
         setError("")
       } catch (e) {
         if (mine !== generation.current) return
