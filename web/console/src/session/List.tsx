@@ -105,6 +105,12 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const retainedSaid = retained
     ? `<span class="session-work-copy retained-reading" title="${L.escapeHTML(retained)}">${L.escapeHTML(retained)}</span>`
     : ""
+  const attention = row.attention_count
+  const attentionSaid = typeof attention === "number" && attention > 0
+    ? `<span class="session-attention" aria-label="關注，待處理 ${attention} 筆便條"><span class="session-attention-dot" aria-hidden="true"></span>關注 · 待處理 ${attention}</span>`
+    : attention === undefined && row.sessionId
+      ? '<span class="session-attention session-attention-unknown">關注未確認</span>'
+      : ""
   let workSaid = notStarted ? "" : L.workStateHTML(row)
   // The batch banner owns the source failure. Once an earlier reading is old
   // enough to deserve words, those words ride beside the normal state as the
@@ -134,24 +140,25 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     (n ? "+sh" + n : "") +
     (waitShape ? "+cw" + waitShape : "") +
     (row.source ? "+src" + row.source.freshness + ":" + row.source.observed_at : "")
+    + (attentionSaid ? "+attention" + (attention ?? "unknown") : "")
 
   let html: string
   if (work.state === "waiting_you") {
-    html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + peerSaid + workSaid + retainedSaid + shellsSaid
+    html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (work.state === "working") {
     // The spinner alone. The provider's live line ("Wrangling… (5m 1s · …)")
     // is drawn under the conversation itself (`WorkingLine` in Transcript.tsx);
     // in the list it was a second copy of words nobody reads there, and it
     // crowded out the badges beside it.
-    html = '<canvas class="spin"></canvas>' + peerSaid + workSaid + retainedSaid + shellsSaid
+    html = '<canvas class="spin"></canvas>' + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (notStarted) {
-    html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + peerSaid + workSaid + shellsSaid
+    html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + attentionSaid + peerSaid + workSaid + shellsSaid
   } else if (work.state === "unknown" && row.state === "unknown") {
     // The label already says the state could not be read; the work copy
     // beside it would say so again.
-    html = `<span class="unread">${L.escapeHTML(nextWord("sessionStateUnrecognizedList"))}</span>` + peerSaid + retainedSaid + shellsSaid
+    html = `<span class="unread">${L.escapeHTML(nextWord("sessionStateUnrecognizedList"))}</span>` + attentionSaid + peerSaid + retainedSaid + shellsSaid
   } else {
-    html = peerSaid + workSaid + retainedSaid + shellsSaid
+    html = attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   }
   return { html, shape }
 }
@@ -338,6 +345,7 @@ export function Row({
       data-id={row.id}
       data-selection-key={L.selectionKey(row)}
       data-state={row.state}
+      data-attention={row.attention_count && row.attention_count > 0 ? "open" : row.sessionId && row.attention_count === undefined ? "unknown" : undefined}
       data-coordination={waiting ? "waiting" : owed ? "owed" : undefined}
       aria-selected={selected ? "true" : "false"}
       aria-disabled="false"

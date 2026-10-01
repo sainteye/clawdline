@@ -4991,18 +4991,23 @@ type SessionRow struct {
 	Agents        []SessionAgent       `json:"agents,omitempty"`
 	AgentsReading *SessionAgentReading `json:"agents_reading,omitempty"`
 	Assistant     Assistant            `json:"assistant,omitempty"`
-	Backend       Backend              `json:"backend"`
-	Closeability  Closeability         `json:"closeability"`
-	Coordination  *SessionCoordination `json:"coordination,omitempty"`
-	Coordinator   *SessionCoordinator  `json:"coordinator,omitempty"`
-	CWD           string               `json:"cwd,omitempty"`
-	Disposition   *WorkDisposition     `json:"disposition,omitempty"`
-	EpicParent    *EpicSessionParent   `json:"epic_parent,omitempty"`
-	Evidence      Evidence             `json:"evidence"`
-	Icon          *Icon                `json:"icon,omitempty"`
-	ID            string               `json:"id"`
-	Identity      IdentityBinding      `json:"identity,omitempty"`
-	IsClaude      bool                 `json:"isClaude"`
+
+	// Unresolved attention notes for this conversation. Zero is a successful empty
+	// reading; absent means the count or current unique session identity could not be
+	// established.
+	AttentionCount int64                `json:"attention_count,omitempty"`
+	Backend        Backend              `json:"backend"`
+	Closeability   Closeability         `json:"closeability"`
+	Coordination   *SessionCoordination `json:"coordination,omitempty"`
+	Coordinator    *SessionCoordinator  `json:"coordinator,omitempty"`
+	CWD            string               `json:"cwd,omitempty"`
+	Disposition    *WorkDisposition     `json:"disposition,omitempty"`
+	EpicParent     *EpicSessionParent   `json:"epic_parent,omitempty"`
+	Evidence       Evidence             `json:"evidence"`
+	Icon           *Icon                `json:"icon,omitempty"`
+	ID             string               `json:"id"`
+	Identity       IdentityBinding      `json:"identity,omitempty"`
+	IsClaude       bool                 `json:"isClaude"`
 
 	// What the session is called, by the Swift app's rungs (ITerm.swift
 	// preferredDisplayLabel): a name typed in Clawdline (the Swift store's config.json

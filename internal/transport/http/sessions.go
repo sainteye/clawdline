@@ -68,7 +68,9 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 // outer field shadows the embedded one for encoding/json.
 type sessionRowWire struct {
 	contract.SessionRow
-	WorkPersonNeeded *bool `json:"work_person_needed,omitempty"`
+	// A successful zero must survive omitempty on the generated integer.
+	AttentionCount   *int64 `json:"attention_count,omitempty"`
+	WorkPersonNeeded *bool  `json:"work_person_needed,omitempty"`
 	// Menu shadows the generated field for the same reason: a multi-select's
 	// unticked row is `checked: false`, which the generated bool would drop.
 	Menu *menuWire `json:"menu,omitempty"`
@@ -131,6 +133,15 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 		lives[i] = liveOf(item)
 	}
 	matches := identityMatchCounts(items)
+	conversationMatches := map[string]int{}
+	for _, item := range items {
+		if item.ConversationID != "" {
+			conversationMatches[item.ConversationID]++
+		}
+	}
+	// One database read for the entire fleet. An error leaves the count
+	// unknown on every row, rather than turning it into zero.
+	attentionCounts, attentionErr := s.store.OpenHumanInterventionCounts(records)
 	s.lastScreen.Store(&screenReading{at: time.Now(), rows: onScreen(items)})
 	// The assignment actor is the stable source of Epic ancestry. A missing
 	// Board reading leaves a Root independent instead of inventing a parent.
@@ -190,7 +201,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 	gen := generation.Add(1)
 	rows := make([]sessionRowWire, 0, len(items))
 	for i, item := range items {
-		rows = append(rows, s.sessionRow(rowInput{
+		row := s.sessionRow(rowInput{
 			item:       item,
 			live:       lives[i],
 			label:      labels[item.ID],
@@ -208,7 +219,15 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			role:       role,
 			ownRole:    ownRole,
 			epicParent: epicParents[string(item.Assistant)+"\x00"+item.ConversationID],
-		}))
+		})
+		if attentionErr == nil && item.ConversationID != "" && conversationMatches[item.ConversationID] == 1 &&
+			row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent &&
+			(item.Binding == session.BindingCommandLine || item.Binding == session.BindingOpenFile ||
+				item.Binding == session.BindingLiveTitle || item.Binding == session.BindingRegistry) {
+			count := attentionCounts[item.ConversationID]
+			row.AttentionCount = &count
+		}
+		rows = append(rows, row)
 	}
 
 	return sessionsSnapshotWire{

@@ -53,6 +53,31 @@
   min-width: 8ch;
 }
 
+/* An unresolved note is a second reason to open the Session. Keep its count
+ * whole beside a provider question; secondary context gives way first. */
+.row .state > .session-attention {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: #f45b64;
+  font: 600 11.5px/1.2 var(--mono);
+}
+
+.row .state .session-attention-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.row .state > .session-attention-unknown {
+  color: var(--faint);
+  font-weight: 400;
+}
+
 .row .state > .session-work-completion,
 .row .state > .session-closeability,
 .row .state > .session-work-owed,
@@ -137,6 +162,30 @@
  * row is active and where it belongs.
  */
 @media (max-width: 480px) {
+  .row[data-attention] .state > .persona-state {
+    order: 5;
+    max-width: 14px;
+    overflow: hidden;
+  }
+
+  .row[data-attention] .state > .persona-state .persona-state-name {
+    display: none;
+  }
+
+  .row[data-attention] .state > .session-attention {
+    order: 1;
+  }
+
+  .row[data-attention] .state > .wants,
+  .row[data-attention] .state > .spin {
+    order: 0;
+    flex: 0 0 auto;
+  }
+
+  .row[data-attention] .state > :not(.wants):not(.spin):not(.session-attention):not(.persona-state) {
+    order: 6;
+  }
+
   .row .meta .path,
   .row .meta .coordinator-chip {
     display: none;
