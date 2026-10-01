@@ -82,24 +82,12 @@ export function SessionsPage({
   // does not hand its frames to this page.
   const tasks = useTasks(arrived, rows)
   const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
-  const [searchOpen, setSearchOpen] = useState(true)
-  const searchRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const onRoute = () => setTerminalMode(sessionsTerminalMode(location.hash))
     window.addEventListener("hashchange", onRoute)
     window.addEventListener("popstate", onRoute)
     return () => { window.removeEventListener("hashchange", onRoute); window.removeEventListener("popstate", onRoute) }
   }, [])
-  const openSearch = () => {
-    setSearchOpen(true)
-    requestAnimationFrame(() => searchRef.current?.focus())
-  }
-  const closeSearch = (returnFocus = false) => {
-    onFilter("")
-    if (searchRef.current) searchRef.current.value = ""
-    setSearchOpen(false)
-    if (returnFocus) requestAnimationFrame(() => document.getElementById("search-toggle")?.focus())
-  }
   const toggleTerminalMode = () => {
     const next = !terminalMode
     location.hash = sessionsPageHash(next)
@@ -246,16 +234,12 @@ export function SessionsPage({
         hidden={!onScreen}
       >
         <section className="pane pane-list">
-          <div className="filter-row" data-search={searchOpen ? "open" : "closed"}>
-            <button className="start session-search-toggle" id="search-toggle" type="button" aria-label={nextWord("terminalSearch")} aria-expanded={searchOpen} aria-controls="filter" onClick={() => searchOpen ? closeSearch() : openSearch()}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
-            </button>
+          <div className="filter-row">
             {/* Every attribute here keeps a password manager out of a box that
                 filters a list (`index.html`). Uncontrolled, because a controlled
                 input writes a `value` attribute the original does not have. */}
             <input
               id="filter"
-              ref={searchRef}
               type="search"
               name="q7f3"
               placeholder={T.webFilterPlaceholder}
@@ -269,13 +253,10 @@ export function SessionsPage({
               data-form-type="other"
               aria-label={T.webFilterLabel}
               onChange={(e) => onFilter(e.target.value)}
-              onBlur={() => { if (!filter) setSearchOpen(false) }}
-              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSearch(true) } }}
             />
             <button className="start session-mode-toggle" type="button" title={nextWord("terminalListMode")} aria-label={nextWord("terminalListMode")} aria-pressed={terminalMode} onClick={toggleTerminalMode}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
             </button>
-            <span className="slash">/</span>
             {/* Saying what to start opens the voice-to-draft command sheet;
                 picking where to start opens the ordinary start sheet. */}
             <button
