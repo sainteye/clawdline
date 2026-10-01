@@ -85,6 +85,9 @@ func TestTerminalAdmissionNeedsExactPinRosterCapabilityAndFreshRead(t *testing.T
 	if !l.TerminalViewerAllowed("viewer") {
 		t.Fatal("exact pin and terminal_control were refused")
 	}
+	if l.TerminalViewerAllowed("another-viewer") {
+		t.Fatal("another viewer inherited the authorized viewer connection")
+	}
 	mu.Lock()
 	row.Caps = []string{SendCapability}
 	mu.Unlock()
@@ -151,5 +154,12 @@ func TestTerminalReceiptUsesOnlyViewerConnectionKey(t *testing.T) {
 	}
 	if _, err := envelope.Open(master, pin); err == nil {
 		t.Fatal("account master key opened private receipt")
+	}
+	otherKey, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := envelope.Open(otherKey, pin); err == nil {
+		t.Fatal("another viewer connection key opened private receipt")
 	}
 }
