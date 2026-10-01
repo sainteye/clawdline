@@ -10,7 +10,7 @@ import { frameBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
 import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
-import { terminalShortID } from "./words.js"
+import { holderWords, terminalShortID } from "./words.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
 function reason(error: unknown): string { return (error as { code?: string })?.code ?? (error instanceof Error ? error.message : "cloud_failed") }
@@ -48,6 +48,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   const fit = useRef<FitAddon | null>(null)
   const lastRev = useRef("")
   const back = useRef<HTMLButtonElement>(null)
+  const historyFocus = useRef<HTMLPreElement>(null)
   useEffect(() => watchTerminalHost(setHost), [])
 
   useEffect(() => {
@@ -163,6 +164,10 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   })
   const goBack = () => openTerminalPage(project, "", from)
   const status = stateWords(snapshot.state)
+  const holder = !snapshot.control?.held ? nextWord("terminalControlNobody") :
+    (snapshot.control.holder?.name || snapshot.control.holder?.same_device)
+      ? holderWords(snapshot.control.holder)
+      : nextWord("terminalControlOtherDevice")
   if (!host) return <p className="terminal-note" role="status">{nextWord("terminalCloudOffline")}</p>
   if (!project) return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
   if (!id) return <section className="terminal-wrap" aria-label={nextWord("terminalListTitle", { project: label })}>
@@ -179,13 +184,15 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   </section>
 
   return <div className="terminal-view" data-holding={snapshot.canType ? "" : undefined} data-stale={!snapshot.canType ? "" : undefined}
-    onKeyDown={(event) => { if (event.key === "F6" && event.target !== screen.current) { event.preventDefault(); terminal.current?.focus() } }}>
+    onKeyDown={(event) => { if (event.key === "F6" && event.target !== screen.current) {
+      event.preventDefault(); if (history) historyFocus.current?.focus(); else terminal.current?.focus()
+    } }}>
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord("terminalBack")}</button>
         <dl className="terminal-facts"><div><dt>{nextWord("terminalEntry")}</dt><dd>{terminalShortID(id)}</dd></div>
           <div><dt>{nextWord("terminalMachine")}</dt><dd>{host.machine}</dd></div>
           <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
-          <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{snapshot.control?.holder?.same_client ? nextWord("terminalControlYou") : nextWord("terminalControlNobody")}</dd></div></dl></div>
+          <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl></div>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
         {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || !!error || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
@@ -201,7 +208,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
         <button className="board-button" type="button" disabled={!snapshot.canType || !!busy} onClick={() => setConfirm("close")}>{nextWord("terminalClose")}</button>
       </div>
       {confirm && <div className="terminal-ask" role="group" aria-label={confirm === "close" ? nextWord("terminalClose") : nextWord("terminalTakeover")}>
-        <p>{confirm === "reacquire" ? nextWord("terminalCloudReacquireAsk") : nextWord(confirm === "close" ? "terminalCloseAsk" : "terminalTakeoverAsk", { holder: "" })}</p>
+        <p>{confirm === "reacquire" ? nextWord("terminalCloudReacquireAsk") : nextWord(confirm === "close" ? "terminalCloseAsk" : "terminalTakeoverAsk", { holder })}</p>
         <button className="board-button terminal-danger" type="button" disabled={!!busy} onClick={() => void run(confirm, async () => {
           if (confirm === "close") { await session!.close(); goBack() } else await session!.acquire(confirm === "reacquire" ? "acquire" : "takeover")
           setConfirm(null)
@@ -209,13 +216,14 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
         <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
       </div>}
       <p className="terminal-status-line" role="status" aria-live="polite">{loading ? nextWord("terminalConnecting") :
-        error ? nextWord("terminalCloudError", { code: error }) : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
+        error ? nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
+          snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
           snapshot.state === "revoked" ? nextWord("terminalRefusalAccessRevoked") :
             !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
       {error && <button className="board-button" type="button" onClick={() => window.location.reload()}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
     </header>
-    {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2><pre tabIndex={0}>{history.join("\n")}</pre></section>}
+    {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2><pre ref={historyFocus} tabIndex={0}>{history.join("\n")}</pre></section>}
     <div className="terminal-scroll" hidden={history !== null}>{loading && <p className="terminal-note">{nextWord("terminalConnecting")}</p>}<div className="terminal-host" ref={screen} /></div>
     <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
       {([ ["Esc", "\x1b"], ["Tab", "\t"], ["←", "\x1b[D"], ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["→", "\x1b[C"] ] as const).map(([name, bytes]) =>
