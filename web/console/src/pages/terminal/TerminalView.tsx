@@ -4,7 +4,7 @@ import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
 import { quietFleetStream } from "../../client.js"
 import { localMachines } from "../../legacy/devices-bridge.js"
-import { byteWords, nextWord, type NextWord } from "../../next-strings.js"
+import { byteWords, nextWord } from "../../next-strings.js"
 import {
   TerminalRequestError,
   closeTerminal,
@@ -17,7 +17,7 @@ import {
 } from "./api.js"
 import { frameBytes } from "./frame-writer.js"
 import { TerminalInputClient, type InputState } from "./input-client.js"
-import { StatusMessage, holderKey, isRegionKey, pasteRefusal, withCtrl } from "./keys.js"
+import { KEY_ROW, StatusMessage, holderKey, isRegionKey, pasteRefusal, withCtrl } from "./keys.js"
 import { TAB } from "./tab.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
@@ -59,11 +59,6 @@ function plain(line: string): string {
 }
 
 /** The phone's key row: what it shows, what it sends (an arrow's final byte), and its spoken name. */
-const KEY_ROW: [string, string, NextWord | null][] = [
-  ["Esc", "\x1b", null], ["Ctrl", "ctrl", "terminalKeyCtrl"], ["Tab", "\t", null],
-  ["←", "D", "terminalKeyLeft"], ["↑", "A", "terminalKeyUp"], ["↓", "B", "terminalKeyDown"], ["→", "C", "terminalKeyRight"],
-]
-
 function clock(at: number): string {
   return new Date(at * 1000).toLocaleTimeString()
 }

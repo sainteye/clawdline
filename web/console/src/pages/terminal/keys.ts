@@ -15,6 +15,23 @@ export function isRegionKey(ev: { key: string; altKey: boolean; ctrlKey: boolean
   return ev.key === "F6" && !ev.altKey && !ev.ctrlKey && !ev.metaKey
 }
 
+/** Let xterm's textarea handle program keys, then contain browser page shortcuts. */
+export function bindTerminalKeyboard(element: HTMLElement, onRegion: () => void): () => void {
+  const region = (event: KeyboardEvent) => {
+    if (!isRegionKey(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    onRegion()
+  }
+  const contain = (event: KeyboardEvent) => event.stopPropagation()
+  element.addEventListener("keydown", region, true)
+  element.addEventListener("keydown", contain)
+  return () => {
+    element.removeEventListener("keydown", region, true)
+    element.removeEventListener("keydown", contain)
+  }
+}
+
 /**
  * What the key row's Ctrl does to the next input. Ctrl applies to one key: a
  * single character that has a control form becomes it; anything else — a
@@ -27,6 +44,12 @@ export function withCtrl(armed: boolean, data: string): { out: string; armed: fa
   const code = data.toUpperCase().charCodeAt(0)
   return { out: code >= 0x40 && code <= 0x5f ? String.fromCharCode(code & 0x1f) : data, armed: false }
 }
+
+/** Labels and values shared by the local and hosted phone key rows. */
+export const KEY_ROW: [string, string, NextWord | null][] = [
+  ["Esc", "\x1b", null], ["Ctrl", "ctrl", "terminalKeyCtrl"], ["Tab", "\t", null],
+  ["←", "D", "terminalKeyLeft"], ["↑", "A", "terminalKeyUp"], ["↓", "B", "terminalKeyDown"], ["→", "C", "terminalKeyRight"],
+]
 
 /** Why a paste was not sent, or null when it was: a paste is never dropped in silence. */
 export function pasteRefusal(state: { holding: boolean; stale: boolean } | null): NextWord | null {
