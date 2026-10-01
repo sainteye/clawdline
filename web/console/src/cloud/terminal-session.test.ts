@@ -16,6 +16,7 @@ const frame = (rev: string): TerminalFrame => ({ rev, at: Date.now() / 1000, col
 
 class Wire implements TerminalWire {
   channels = new Map<string, (event: TerminalChannelEvent) => void>()
+  observed: TerminalEnvelope[] = []
   requests: Record<string, unknown>[] = []
   inputResult: "ok" | "unknown" = "ok"
   incarnation = "first-machine-start"
@@ -24,6 +25,7 @@ class Wire implements TerminalWire {
     this.channels.set(connection, listener)
   }
   unsubscribeTerminal(connection: string): void { this.channels.delete(connection) }
+  observeTerminalFrame(envelope: TerminalEnvelope): void { this.observed.push(envelope) }
   async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
     this.requests.push(request)
     const operation = request.operation as string
@@ -63,7 +65,12 @@ test("a receipt alone never enables input; first and later full frames have dist
   await session.attach(terminalID)
   await session.acquire("acquire")
   assert.equal(session.snapshot.canType, false)
+  assert.equal(wire.observed.length, 0, "a receipt does not observe a frame")
+  wire.emit(wire.latest(), "term", { v: 1, type: "terminal_frame", terminal_id: terminalID,
+    connection: wire.latest(), frame_seq: 1, captured_at: Date.now() / 1000, frame: { ...frame("partial"), lines: [] } })
+  assert.equal(wire.observed.length, 0, "an incomplete frame is not observed")
   wire.frame(wire.latest(), 1, "first")
+  assert.equal(wire.observed.length, 1)
   assert.equal(session.snapshot.state, "just_synced")
   assert.equal(session.snapshot.canType, true)
   wire.frame(wire.latest(), 2, "later")

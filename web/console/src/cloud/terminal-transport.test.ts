@@ -12,12 +12,16 @@ async function fixture() {
   const machineKey = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
   const events = new Set<(event: { type: string; channels?: string[]; code?: string }) => void>()
   const published: TerminalEnvelope[] = []
+  const observed: unknown[] = []
   let confirm = true
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: sender.privateKey, ready: true, retired: false,
     nextSequence: async () => 7, socketSubscriptions: new Map(), subscriptionHolds: new Map(),
     _outboundMachinePairing: async () => ({ masterKey: master, keyID: "ms-1", senderKey: machineKey.publicKey, senderID: machine }),
-    _send(frame) { if ((frame as { type?: string }).type === "publish") published.push((frame as { envelope: TerminalEnvelope }).envelope) },
+    _send(frame) {
+      if ((frame as { type?: string }).type === "publish") published.push((frame as { envelope: TerminalEnvelope }).envelope)
+      if ((frame as { type?: string }).type === "terminal_frame_observed") observed.push(frame)
+    },
     _sendSubscriptionFrame(_type, channels) { if (confirm) queueMicrotask(() => events.forEach((fn) => fn({ type: "subscriptions", channels }))) },
     _receiveEnvelope: async () => undefined,
     events(fn) { events.add(fn); return () => { events.delete(fn) } },
@@ -35,7 +39,7 @@ async function fixture() {
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", machineKey.privateKey, envelopeSigningBytes(envelope))))
     return envelope
   }
-  return { adapter, client, fresh, seen, published, seal, setConfirm: (value: boolean) => { confirm = value }, master }
+  return { adapter, client, fresh, seen, published, observed, seal, setConfirm: (value: boolean) => { confirm = value }, master }
 }
 
 test("the no-cache receipt is subscribed before an outbound open can be published", async () => {
@@ -66,5 +70,28 @@ test("the machine signature, viewer route, key and sequence all gate a receipt",
   await assert.rejects(f.adapter.openTerminalEnvelope({ ...(await f.seal(3, body)), ch: `termr/${machine}/wrong/${f.fresh.connection}` }, f.fresh.connection), /terminal_wrong_viewer/)
   await assert.rejects(f.adapter.openTerminalEnvelope({ ...(await f.seal(3, body)), key_id: "rk-old" }, f.fresh.connection), /terminal_bad_envelope/)
   await assert.rejects(f.adapter.openTerminalEnvelope(await f.seal(3, body, "termr", crypto.getRandomValues(new Uint8Array(32))), f.fresh.connection), /terminal_bad_key/)
+  f.adapter.dispose()
+})
+
+test("a verified term frame can be observed once on the authenticated socket", async () => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  const invalid = await f.seal(4, { v: 1, type: "terminal_frame", connection: f.fresh.connection,
+    terminal_id: "trm_test", frame_seq: 1, captured_at: Date.now() / 1000, frame: { lines: [] } }, "term")
+  await f.client._receiveEnvelope(invalid, false)
+  assert.throws(() => f.adapter.observeTerminalFrame(invalid), /terminal_bad_envelope/)
+  const frame = await f.seal(5, { v: 1, type: "terminal_frame", connection: f.fresh.connection,
+    terminal_id: "trm_test", frame_seq: 2, captured_at: Date.now() / 1000,
+    frame: { rev: "full", at: Date.now() / 1000, cols: 80, rows: 1, lines: ["ready"],
+      cursor: { x: 0, y: 0, visible: true }, modes: { app_cursor: false, app_keypad: false, mouse_sgr: false,
+        alt: false, mouse: "none" } } }, "term")
+  await f.client._receiveEnvelope(frame, false)
+  assert.equal(f.observed.length, 0, "decryption alone is not acceptance by the terminal session")
+  f.adapter.observeTerminalFrame(frame)
+  assert.deepEqual(f.observed, [{ type: "terminal_frame_observed", machine, viewer,
+    connection: f.fresh.connection, envelope_seq: 5 }])
+  assert.throws(() => f.adapter.observeTerminalFrame(frame), /terminal_bad_envelope/)
+  const wrong = { ...frame, seq: 6 }
+  assert.throws(() => f.adapter.observeTerminalFrame(wrong), /terminal_bad_envelope/)
   f.adapter.dispose()
 })
