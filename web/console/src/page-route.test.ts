@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { pageFromHash, terminalPageHash, terminalRouteFromHash, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
+import { pageFromHash, sessionsPageHash, sessionsTerminalMode, terminalPageHash, terminalRouteFromHash, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
 
 const knows = (name: string): name is "sessions" | "devices" => name === "sessions" || name === "devices"
 
@@ -75,4 +75,12 @@ test("a terminal address remembers the page Back returns to, and an old address 
   assert.equal(terminalRouteFromHash(terminalPageHash("p", "t", "work")).from, "work")
   assert.equal(terminalRouteFromHash("#page=terminal&project=p&from=elsewhere").from, "")
   assert.equal(terminalRouteFromHash("#page=terminal&project=p").from, "")
+  assert.equal(terminalRouteFromHash(terminalPageHash("p", "t", "sessions")).from, "sessions")
+})
+
+test("the Session address keeps the terminal mode through a reload", () => {
+  assert.equal(sessionsPageHash(true), "#page=sessions&mode=terminal")
+  assert.equal(sessionsTerminalMode(sessionsPageHash(true)), true)
+  assert.equal(sessionsTerminalMode(sessionsPageHash()), false)
+  assert.equal(sessionsTerminalMode("#page=work&mode=terminal"), false)
 })

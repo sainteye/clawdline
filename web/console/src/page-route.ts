@@ -59,7 +59,16 @@ export function pageFromHash<Page extends string>(
 }
 
 /** The page a terminal-page address was opened from, which its Back returns to; "" is the board, as before `from` existed. */
-export type TerminalFrom = "projects" | "work" | ""
+export type TerminalFrom = "projects" | "work" | "sessions" | ""
+
+/** The Session list mode carried by its own address. */
+export function sessionsTerminalMode(hash: string): boolean {
+  return pageInHash(hash) === "sessions" && valueInHash(hash, "mode") === "terminal"
+}
+
+export function sessionsPageHash(terminal = false): string {
+  return "#page=sessions" + (terminal ? "&mode=terminal" : "")
+}
 
 export interface TerminalRoute {
   project: string
@@ -68,7 +77,7 @@ export interface TerminalRoute {
 }
 
 function terminalFrom(value: string | null): TerminalFrom {
-  return value === "projects" || value === "work" ? value : ""
+  return value === "projects" || value === "work" || value === "sessions" ? value : ""
 }
 
 /** The project and terminal a terminal-page address names (`#page=terminal&project=…&terminal=…&from=…`). */
