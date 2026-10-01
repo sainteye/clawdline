@@ -8,9 +8,9 @@
  *
  * The daemon may be this machine or one across Clawdline Cloud
  * (`cloud/relay-writer.ts`); nothing here knows which. Both are asked the same
- * way: `POST /v1/sessions/<id>/send` under the card's one Idempotency-Key, so a
- * second attempt of the same card is answered with the first attempt's answer
- * rather than typed again (F2).
+ * way: `POST /v1/sessions/<id>/send` under the card's Idempotency-Key. A
+ * confirmed `send_failed` needs a fresh key after the person checks the
+ * transcript and accepts duplicate risk; unanswered attempts keep their key.
  *
  * This file is also where the cards are given somewhere to live between page
  * loads (`persist.ts`, F4): this browser's `localStorage`, read once here and

@@ -5,10 +5,10 @@
  * `node --test` can hold them, because each of them is about a message that may
  * already be on the Mac:
  *
- * - **Every attempt of a card is one request.** The card's `request` goes as
- *   the Idempotency-Key, and the Mac answers a second attempt with the first
- *   one's answer rather than typing the words again (F2). Across Clawdline
- *   Cloud it is the command's `request` too (`cloud/relay-writer.ts`).
+ * - **A card keeps its request across unanswered attempts.** Its `request`
+ *   goes as the Idempotency-Key locally and across Cloud. After a confirmed
+ *   terminal `send_failed`, a person may accept duplicate risk and send with
+ *   a new request; a filed 500 cannot be retried under its old key.
  * - **A failure is `failed` only when it proves nothing was typed**
  *   (`outcome.ts`); otherwise the card is `unknown` and says so (F3).
  * - **"Try again" reads the transcript first when it can.** If a read fails,
@@ -20,8 +20,8 @@
  *   Enter again, and any other answer is `unknown` and looked at.
  * - **An `unknown` card is looked at, not retried.** Looking reads the
  *   transcript: the turn there settles the card; a read that shows no turn
- *   marks it `absent`, and only then is sending offered — under the same
- *   request, so an attempt still queued on the Mac is not doubled.
+ *   marks it `absent`, and only then is sending offered. A `send_failed`
+ *   answer has finished on the Mac and is filed under its old request.
  *
  * Nothing is imported at run time, so `node --test` loads it as it is.
  */
@@ -57,8 +57,8 @@ const POST_WAIT_MS = 75_000
 
 /**
  * One attempt, as the daemon's own route takes it: `POST
- * /v1/sessions/<id>/send` under the card's one Idempotency-Key. The body is the
- * same bytes for every attempt of the card, because the key names the route
+ * /v1/sessions/<id>/send` under the card's current Idempotency-Key. The body
+ * stays the same when an attempt is retried, because a key names the route
  * and the body together, and a key reused with other bytes is refused.
  */
 export async function postCard(doFetch: typeof fetch, url: (path: string) => string, card: PendingSend): Promise<Posted> {
@@ -204,16 +204,19 @@ export class Sender {
    */
   async resend(token: string): Promise<void> {
     const { cards, now } = this.deps
-    const failed = cards.card(token)?.state === "failed"
+    const previous = cards.card(token)
+    const failed = previous?.state === "failed"
+    const newRequest = previous?.state === "unknown" && previous.absent && previous.failure === "send_failed"
+    const failure = previous?.failure || READ_BACK_FAILED
     const card = cards.retrying(token)
     if (!card) return
     const turns = await this.readBack(card.session)
     if (!turns && !failed) {
-      cards.uncertain(token, READ_BACK_FAILED)
+      cards.uncertain(token, failure)
       return
     }
     if (turns) cards.reconcile(card.session, turns, now())
-    const again = cards.resend(token, now())
+    const again = cards.resend(token, now(), newRequest)
     if (again) await this.deliver(again)
   }
 

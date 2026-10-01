@@ -244,6 +244,58 @@ func TestTheITermListingReadsAWholeWindowInFourBatches(t *testing.T) {
 	}
 }
 
+func TestITermInventoryDoesNotCompeteWithAnEffect(t *testing.T) {
+	release, err := effect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	listed := false
+	i := NewITerm()
+	i.list = func(context.Context) ([]byte, error) {
+		listed = true
+		return []byte(`{"running":true,"sessions":[]}`), nil
+	}
+	inv, err := i.Inventory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed || inv.Complete {
+		t.Fatalf("listing competed with a terminal effect: listed=%v complete=%v", listed, inv.Complete)
+	}
+}
+
+func TestITermEffectWaitingOnAListingIsTypedBusy(t *testing.T) {
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	i := NewITerm()
+	i.list = func(context.Context) ([]byte, error) {
+		close(started)
+		<-finish
+		return []byte(`{"running":true,"sessions":[]}`), nil
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = i.Inventory(context.Background())
+	}()
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := effect(ctx)
+	var busy EffectBusy
+	if !errors.As(err, &busy) {
+		t.Errorf("effect waiting on listing = %T %v, want typed busy", err, err)
+	}
+	close(finish)
+	<-done
+	release, err := effect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+}
+
 // Every script that looks for one session finds it past such a window.
 func TestEveryITermScriptFindsASessionPastAWindowThatWillNotList(t *testing.T) {
 	if run := runInModel(t, itermTypeScript, []string{"GUID-A", "hello"}); run.Answer["ok"] != true ||
