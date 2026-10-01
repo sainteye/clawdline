@@ -34,6 +34,11 @@ export function holderWords(holder: TerminalHolder | undefined | null): string {
   return holder.name
 }
 
+/** A stable short form of the terminal UUID, shared by the list and terminal page. */
+export function terminalShortID(id: string): string {
+  return id.slice(-8)
+}
+
 /**
  * Why the platform capability `terminal` is not there, as words — never an
  * input surface. `null` when terminals are available. The daemon's own

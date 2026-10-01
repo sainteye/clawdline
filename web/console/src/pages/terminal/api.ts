@@ -82,8 +82,9 @@ export const fetchTransport: Transport = {
   },
 }
 
-export function listTerminals(project: string, tab: string): Promise<TerminalList> {
-  return call(`/v1/terminals?project=${encodeURIComponent(project)}&client=${encodeURIComponent(tab)}`)
+export function listTerminals(project: string, tab: string, signal?: AbortSignal): Promise<TerminalList> {
+  const scope = project ? `project=${encodeURIComponent(project)}&` : ""
+  return call(`/v1/terminals?${scope}client=${encodeURIComponent(tab)}`, { signal })
 }
 
 export function readTerminal(id: string, tab: string): Promise<Terminal> {
@@ -129,9 +130,9 @@ export interface TerminalMachine {
   terminals?: TerminalDiagnostics
 }
 
-export async function readTerminalMachine(): Promise<TerminalMachine> {
+export async function readTerminalMachine(signal?: AbortSignal): Promise<TerminalMachine> {
   const d = await call<{ platform?: { capabilities?: PlatformCapability[] }; terminals?: TerminalDiagnostics }>(
-    "/v1/diagnostics",
+    "/v1/diagnostics", { signal },
   )
   return {
     capability: d.platform?.capabilities?.find((c) => c.name === "terminal"),

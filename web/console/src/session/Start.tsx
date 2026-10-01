@@ -5,6 +5,11 @@ import { loadPersonas, personaById, personasNow, rememberPersona, rememberTeam, 
 import { drawRoleRow } from "./RoleRow.js"
 import "./persona.css"
 import "./machine-start.css"
+import { hostedConsole, listTerminals, openTerminal, readTerminalMachine, TerminalRequestError } from "../pages/terminal/api.js"
+import { firstSize } from "../pages/terminal/TerminalProjectList.js"
+import { openTerminalPage } from "../pages/terminal/navigate.js"
+import { TAB } from "../pages/terminal/tab.js"
+import { terminalRefusalWords, unavailableWords } from "../pages/terminal/words.js"
 
 /**
  * Starting a session, and picking one back up — `input/start.js`, function for
@@ -97,6 +102,45 @@ let placesGeneration = 0
 let landed: string | null = null
 let opener: HTMLElement | null = null
 let machineOnly = false
+type StartMode = "session" | "terminal"
+const MODE_KEY = "clawdline.start.mode"
+function savedMode(): StartMode {
+  try { return localStorage.getItem(MODE_KEY) === "terminal" ? "terminal" : "session" } catch { return "session" }
+}
+let mode: StartMode = "session"
+let terminalAccess: { state: "loading" | "ready" | "blocked"; reason: string } = { state: "loading", reason: "" }
+let terminalGeneration = 0
+
+function checkTerminalAccess(): void {
+  const generation = ++terminalGeneration
+  if (hostedConsole()) {
+    terminalAccess = { state: "blocked", reason: nextWord("terminalRefusalCloudNotSupported") }
+    draw()
+    return
+  }
+  terminalAccess = { state: "loading", reason: "" }
+  draw()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 4000)
+  Promise.allSettled([readTerminalMachine(controller.signal), listTerminals("", TAB, controller.signal)]).then(([machine, list]) => {
+    clearTimeout(timeout)
+    if (generation !== terminalGeneration || sheetHidden()) return
+    const unavailable = machine.status === "fulfilled" ? unavailableWords(machine.value.capability) : nextWord("terminalUnavailableUnknown")
+    const refusal = list.status === "rejected" ? list.reason : null
+    const reason = refusal instanceof TerminalRequestError ? terminalRefusalWords(refusal.code) : refusal ? nextWord("terminalUnavailableUnknown") : unavailable
+    terminalAccess = reason ? { state: "blocked", reason } : { state: "ready", reason: "" }
+    draw()
+  })
+}
+
+function setMode(next: StartMode): void {
+  if (pressing || wait || machineOnly) return
+  mode = next
+  try { localStorage.setItem(MODE_KEY, next) } catch { /* storage is optional */ }
+  leave()
+  if (next === "terminal") checkTerminalAccess()
+  else draw()
+}
 
 /* The list redraws when the wait changes: `renderList()` in the original. */
 let version = 0
@@ -372,12 +416,23 @@ function draw(): void {
   const list = el("start-list")
   const box = el<HTMLInputElement>("start-filter")
   const machineAction = el<HTMLButtonElement>("start-machine-action")
+  const tabs = el("start-mode-tabs")
+  tabs.hidden = machineOnly
+  const panel = el("start-mode-panel")
+  panel.setAttribute("role", machineOnly ? "group" : "tabpanel")
+  panel.setAttribute("aria-labelledby", machineOnly ? "start-title" : mode === "session" ? "start-session-tab" : "start-terminal-tab")
+  panel.tabIndex = machineOnly ? -1 : 0
+  el("start-session-tab").setAttribute("aria-selected", mode === "session" ? "true" : "false")
+  el("start-terminal-tab").setAttribute("aria-selected", mode === "terminal" ? "true" : "false")
+  el("start-session-tab").tabIndex = mode === "session" ? 0 : -1
+  el("start-terminal-tab").tabIndex = mode === "terminal" ? 0 : -1
+  el("start-title").textContent = machineOnly ? "Clawdfather" : mode === "terminal" ? nextWord("terminalStartTitle") : T().webStart
   machineAction.hidden = !machineOnly
   machineAction.disabled = !!pressing || !!wait || !with_ || !write
   machineAction.querySelector(".label")!.textContent =
     pressing === MACHINE_PLACE ? T().webStarting : nextWord("machineSessionStart")
 
-  if (!write) {
+  if (!write && mode === "session") {
     say(T().webStartOff)
     box.hidden = true
     el("start-with").hidden = true
@@ -400,10 +455,26 @@ function draw(): void {
     return
   }
 
-  drawMachines()
-  drawWith()
-  drawPersona()
-  drawResume()
+  if (mode === "terminal") {
+    el("start-machine").hidden = true
+    el("start-with").hidden = true
+    el("start-persona").hidden = true
+    el("start-resume").hidden = true
+    el("start-resume").innerHTML = ""
+    box.hidden = terminalAccess.state !== "ready" || !(places && places.length > MANY)
+    box.placeholder = T().webStartFilter
+    box.setAttribute("aria-label", T().webStartFilter)
+    if (terminalAccess.state !== "ready") {
+      list.innerHTML = ""
+      say(terminalAccess.state === "loading" ? T().webLoading : terminalAccess.reason)
+      return
+    }
+  } else {
+    drawMachines()
+    drawWith()
+    drawPersona()
+    drawResume()
+  }
 
   if (at) {
     drawPast(list, box)
@@ -423,7 +494,7 @@ function draw(): void {
           : T().webStartPick,
   )
 
-  box.hidden = !(places && places.length > MANY)
+  box.hidden = terminalAccess.state !== "ready" && mode === "terminal" || !(places && places.length > MANY)
   if (box.hidden && box.value) {
     box.value = ""
     find = ""
@@ -601,6 +672,24 @@ function leave(): void {
 }
 
 function press(id: string): void {
+  if (mode === "terminal") {
+    if (pressing || terminalAccess.state !== "ready") return
+    const place = (places || []).find((p) => p.id === id)
+    if (!place) return
+    pressing = id
+    draw()
+    const size = firstSize()
+    void openTerminal(id, size.cols, size.rows).then((made) => {
+      pressing = null
+      close()
+      openTerminalPage(id, made.id, "sessions")
+    }, (e: unknown) => {
+      pressing = null
+      said(nextWord("terminalOpenFailed", { why: e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : String(e) }), e)
+      draw()
+    })
+    return
+  }
   if (pressing || wait || !write || typeof api.startPlace !== "function") return
   const place = (places || []).find((p) => p.id === id) ?? null
   if (resume && resumable() && place) {
@@ -718,10 +807,12 @@ function hideBand(): void {
   L.setBandSpin(null)
 }
 
-function openMode(machine: boolean): void {
+function openMode(machine: boolean, requested?: StartMode): void {
   const active = document.activeElement
   opener = machine ? el("counts") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
   machineOnly = machine
+  mode = machine ? "session" : requested ?? savedMode()
+  if (requested) try { localStorage.setItem(MODE_KEY, requested) } catch { /* storage is optional */ }
   el("start-title").textContent = machine ? "Clawdfather" : T().webStart
   el("start").hidden = false
   said("")
@@ -729,7 +820,8 @@ function openMode(machine: boolean): void {
   persona = rememberedPersona()
   team = rememberedTeam()
   void loadPersonas().then(() => draw())
-  if (write && !wait) load()
+  if (!wait) load()
+  if (mode === "terminal") checkTerminalAccess()
   draw()
   el("start-title").focus({ preventScroll: true })
 }
@@ -756,6 +848,7 @@ function arrived(id: string) {
 
 export const Start = {
   open,
+  openTerminal: () => openMode(false, "terminal"),
   openMachine: () => openMode(true),
   close,
   press,
@@ -841,6 +934,8 @@ export function StartSheet() {
     const onSheet = (ev: Event) => ev.stopPropagation()
     const onClose = () => close()
     const onMachine = () => press(MACHINE_PLACE)
+    const onSessionTab = () => setMode("session")
+    const onTerminalTab = () => setMode("terminal")
     const onInput = () => Start.typed(filter.value)
     const onScroll = () => Start.scrolled()
     const onList = (ev: Event) => {
@@ -863,8 +958,17 @@ export function StartSheet() {
         ev.stopImmediatePropagation()
         return
       }
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(ev.key) &&
+          (document.activeElement === el("start-session-tab") || document.activeElement === el("start-terminal-tab"))) {
+        ev.preventDefault()
+        ev.stopImmediatePropagation()
+        const next = ev.key === "Home" ? "session" : ev.key === "End" ? "terminal" : mode === "session" ? "terminal" : "session"
+        setMode(next)
+        el(next === "session" ? "start-session-tab" : "start-terminal-tab").focus()
+        return
+      }
       if (ev.key === "Tab") {
-        const focusable = [...sheet.querySelectorAll<HTMLElement>('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])')]
+        const focusable = [...sheet.querySelectorAll<HTMLElement>('button:not([disabled]):not([hidden]):not([tabindex="-1"]), input:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])')]
           .filter((node) => !node.closest("[hidden]") && node.getClientRects().length > 0)
         if (!focusable.length) {
           ev.preventDefault()
@@ -893,6 +997,8 @@ export function StartSheet() {
     sheet.addEventListener("click", onSheet)
     el("start-close").addEventListener("click", onClose)
     el("start-machine-action").addEventListener("click", onMachine)
+    el("start-session-tab").addEventListener("click", onSessionTab)
+    el("start-terminal-tab").addEventListener("click", onTerminalTab)
     filter.addEventListener("input", onInput)
     list.addEventListener("scroll", onScroll, { passive: true })
     list.addEventListener("click", onList)
@@ -903,6 +1009,8 @@ export function StartSheet() {
       sheet.removeEventListener("click", onSheet)
       el("start-close")?.removeEventListener("click", onClose)
       el("start-machine-action")?.removeEventListener("click", onMachine)
+      el("start-session-tab")?.removeEventListener("click", onSessionTab)
+      el("start-terminal-tab")?.removeEventListener("click", onTerminalTab)
       filter.removeEventListener("input", onInput)
       list.removeEventListener("scroll", onScroll)
       list.removeEventListener("click", onList)
@@ -914,8 +1022,12 @@ export function StartSheet() {
     <div className="overlay" id="start" hidden>
       <div className="sheet" role="dialog" aria-modal="true" id="start-sheet" aria-labelledby="start-title">
         <h2 id="start-title" tabIndex={-1}>{T.webStart}</h2>
+        <div className="start-mode-tabs" id="start-mode-tabs" role="tablist" aria-label={nextWord("terminalStartModeLabel")}>
+          <button type="button" role="tab" id="start-session-tab" aria-selected="true" aria-controls="start-mode-panel">{nextWord("terminalStartSessionTab")}</button>
+          <button type="button" role="tab" id="start-terminal-tab" aria-selected="false" aria-controls="start-mode-panel">{nextWord("terminalStartTerminalTab")}</button>
+        </div>
 
-        <div className="block">
+        <div className="block" id="start-mode-panel" role="tabpanel" aria-labelledby="start-session-tab" tabIndex={0}>
           <p className="say" id="start-say" role="status" aria-live="polite"></p>
           <div className="row" id="start-machine" hidden></div>
           <div className="row" id="start-with" hidden></div>

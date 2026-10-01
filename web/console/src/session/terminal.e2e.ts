@@ -173,11 +173,13 @@ const PROBE = `(() => {
 
 const KEYS: Record<string, { key: string; code: string; vk: number; text?: string }> = {
   up: { key: "ArrowUp", code: "ArrowUp", vk: 38 },
+  right: { key: "ArrowRight", code: "ArrowRight", vk: 39 },
   down: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
   enter: { key: "Enter", code: "Enter", vk: 13, text: "\r" },
   escape: { key: "Escape", code: "Escape", vk: 27 },
   tab: { key: "Tab", code: "Tab", vk: 9 },
   f6: { key: "F6", code: "F6", vk: 117 },
+  slash: { key: "/", code: "Slash", vk: 191 },
 }
 
 /** Every tab still open: a failed test leaves none behind to hold connections. */
@@ -338,6 +340,109 @@ const has = (s: Seen, text: string) => s.rows.some((r) => r.includes(text))
 const prompted = (s: Seen) => s.rows.some((r) => r.includes(fixture))
 const YOU = "你（這個分頁）"
 const OTHER_TAB = "另一個分頁"
+
+test("Session list opens terminals, remembers its mode, filters, and closes one", { skip }, async () => {
+  const tab = await Tab.open(browser, true)
+  await tab.go("#page=sessions")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Session toolbar did not render")), 5000); const look = () => document.querySelector("#start-go") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.press("#start-go")
+  assert.equal(await tab.run(`document.querySelector("#start-session-tab")?.getAttribute("aria-selected")`), "true")
+  await tab.run(`document.querySelector("#start-session-tab").focus()`)
+  await tab.key("right")
+  assert.equal(await tab.run(`document.querySelector("#start-terminal-tab")?.getAttribute("aria-selected")`), "true")
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error(document.querySelector("#start-say")?.textContent || "no projects")), 8000)
+    const look = () => document.querySelector("#start-list .place") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  assert.equal(await tab.run(`document.querySelector("#start-with")?.hidden && document.querySelector("#start-resume")?.hidden`), true)
+  await tab.press("#start-list .place")
+  const first = await tab.until("new terminal page", (s) => /page=terminal.*terminal=/.test(s.hash) && s.stdin, 12000)
+  const firstID = new URLSearchParams(first.hash.slice(1)).get("terminal")!
+  opened.add(firstID)
+  await tab.run(`location.hash = "#page=sessions&mode=terminal"`)
+  const second = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(second.id)
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error("no two terminal cards")), 8000)
+    const look = () => document.querySelectorAll(".session-terminal-rows li").length === 2 ? (clearTimeout(end), ok(true)) : setTimeout(look, 100)
+    look()
+  })`)
+  const list = await tab.run(`(() => ({
+    hash: location.hash,
+    cards: [...document.querySelectorAll(".session-terminal-rows li")].map((node) => node.textContent),
+    width: document.documentElement.scrollWidth,
+    rowWidth: document.querySelector(".filter-row")?.scrollWidth,
+    viewport: innerWidth,
+  }))()`)
+  assert.equal(list.hash, "#page=sessions&mode=terminal")
+  assert.equal(list.cards.length, 2)
+  assert.ok(list.cards.every((card: string) => card.includes("f3-fixture") && card.includes("執行中")))
+  assert.notEqual(list.cards[0], list.cards[1], "two terminals in one project show distinct IDs")
+  assert.ok(list.width <= list.viewport && list.rowWidth <= list.viewport, JSON.stringify(list))
+  await tab.press(".session-terminal-card")
+  assert.ok((await tab.run(`location.hash`)).includes("from=sessions"))
+  await tab.run(`history.back()`)
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Back lost terminal mode")), 5000); const look = () => location.hash === "#page=sessions&mode=terminal" ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.run(`history.forward()`)
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Forward lost terminal page")), 5000); const look = () => location.hash.includes("page=terminal") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.run(`history.back()`)
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Back lost terminal cards")), 5000); const look = () => document.querySelectorAll(".session-terminal-rows li").length === 2 ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  const changed = Date.now()
+  await api(`/v1/terminals/${second.id}/control`, { method: "POST", body: JSON.stringify({ action: "acquire", client: "e2e-other-tab" }) })
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error("other tab did not appear within five seconds")), 5000)
+    const look = () => [...document.querySelectorAll(".session-terminal-rows li")].some((node) => node.textContent?.includes("另一個分頁")) ? (clearTimeout(end), ok(true)) : setTimeout(look, 100)
+    look()
+  })`)
+  assert.ok(Date.now() - changed < 5000)
+  await api(`/v1/terminals/${second.id}/control`, { method: "POST", body: JSON.stringify({ action: "release", client: "e2e-other-tab" }) })
+  await tab.shot("session-terminal-list-375")
+  await tab.size(1280, 800)
+  await tab.shot("session-terminal-list-desktop")
+  await tab.size(375, 812, true)
+  await tab.key("slash")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("search did not focus")), 3000); const look = () => document.activeElement?.id === "filter" ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  assert.equal(await tab.run(`document.activeElement?.id`), "filter")
+  await tab.text("not-here")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("filter did not apply")), 3000); const look = () => document.querySelectorAll(".session-terminal-rows li").length === 0 ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.key("escape")
+  assert.equal(await tab.run(`document.querySelector("#filter")?.offsetParent === null`), true)
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("search focus did not return")), 3000); const look = () => document.activeElement?.id === "search-toggle" ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.run(`location.reload()`)
+  await pause(600)
+  assert.equal(await tab.run(`document.querySelector(".session-mode-toggle")?.getAttribute("aria-pressed")`), "true")
+  await tab.press(".session-terminal-close")
+  assert.equal(await tab.run(`!!document.querySelector(".session-terminal-confirm")`), true)
+  assert.match(await tab.run(`document.querySelector(".session-terminal-confirm h2")?.textContent ?? ""`), /f3-fixture.*[0-9a-f]{8}/)
+  assert.equal(await tab.focused(), "取消")
+  await tab.press(".session-terminal-confirm button:last-child")
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error("terminal did not close")), 8000)
+    const look = () => document.querySelectorAll(".session-terminal-rows li").length === 1 ? (clearTimeout(end), ok(true)) : setTimeout(look, 100)
+    look()
+  })`)
+})
+
+test("Session terminal entry explains unavailable tmux without project buttons", { skip }, async () => {
+  const tab = await Tab.open(browser)
+  await tab.rewriteDiagnostics((body) => {
+    const cap = body.platform.capabilities.find((row: { name: string }) => row.name === "terminal")
+    cap.state = "unavailable"
+    cap.code = "tmux_not_installed"
+  })
+  await tab.go("#page=sessions")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Session toolbar did not render")), 5000); const look = () => document.querySelector("#start-go") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.press("#start-go")
+  await tab.press("#start-terminal-tab")
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error("tmux explanation did not appear")), 6000)
+    const look = () => document.querySelector("#start-say")?.textContent?.includes("tmux") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  assert.equal(await tab.run(`document.querySelectorAll("#start-list .place").length`), 0)
+  await tab.shot("session-terminal-unavailable")
+})
 
 let project = ""
 let address = ""
@@ -767,6 +872,41 @@ async function deviceTab(device: { token: string }, phone = false): Promise<Tab>
 }
 
 const grantOf = async (id: string) => (await api("/v1/auth/devices")).devices.find((d: { id: string }) => d.id === id)?.terminal === true
+
+test("Session terminal mode gives an ungranted device a reason and no open action", { skip }, async () => {
+  const device = await pairedDevice()
+  const tab = await deviceTab(device, true)
+  await tab.go("#page=sessions&mode=terminal")
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error("device refusal did not appear: " + document.body.innerText.slice(0, 500))), 6000)
+    const look = () => document.querySelector(".terminal-list-message")?.textContent?.includes("沒有使用") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  assert.equal(await tab.run(`document.querySelector(".session-terminal-head button") === null`), true)
+  await tab.press("#start-go")
+  await tab.press("#start-terminal-tab")
+  await tab.run(`new Promise((ok, fail) => {
+    const end = setTimeout(() => fail(new Error("start refusal did not appear")), 6000)
+    const look = () => document.querySelector("#start-say")?.textContent?.includes("沒有使用") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
+    look()
+  })`)
+  assert.equal(await tab.run(`document.querySelectorAll("#start-list .place").length`), 0)
+  await tab.shot("session-terminal-device-refused")
+})
+
+test("hosted Session terminal entries explain their local-only limit", { skip: skip || !hostedOrigin }, async () => {
+  const tab = await Tab.open(browser, true)
+  const mark = tab.b.mark()
+  await tab.go("#page=sessions&mode=terminal")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("hosted note missing: " + JSON.stringify({ hash: location.hash, text: document.querySelector(".terminal-list-message")?.textContent, page: document.documentElement.dataset.page, body: document.body.innerText.slice(0, 150) }))), 5000); const look = () => document.querySelector(".terminal-list-message")?.textContent?.includes("本機") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  assert.equal(await tab.run(`document.querySelector(".session-terminal-head button") === null`), true)
+  await tab.press("#start-go")
+  await tab.press("#start-terminal-tab")
+  assert.equal(await tab.run(`document.querySelectorAll("#start-list .place").length`), 0)
+  assert.ok((await tab.run(`document.querySelector("#start-say")?.textContent ?? ""`)).includes("本機"))
+  assert.equal(tab.requests(mark, "/v1/terminals").length, 0)
+  await tab.shot("session-terminal-hosted")
+})
 
 test("a paired device's card asks by name before it gives a terminal, and takes it back at once", { skip }, async () => {
   const device = await pairedDevice()

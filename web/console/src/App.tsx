@@ -653,6 +653,12 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
       return
     }
 
+    if (key === "/" && !typing(document.activeElement) && pageRef.current === "sessions" && !meta && !ev.altKey) {
+      ev.preventDefault()
+      if (filterEl && getComputedStyle(filterEl).display === "none") document.getElementById("search-toggle")?.click()
+      requestAnimationFrame(() => { filterEl?.focus(); filterEl?.select() })
+      return
+    }
     if (typing(document.activeElement) || interactive(document.activeElement)) return
     if (meta || ev.altKey) return
     // A sheet is over the page, so `j` is not "move down the list behind it",
@@ -676,11 +682,6 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
           ev.preventDefault()
           openSession(selectedRef.current)
         }
-        break
-      case "/":
-        ev.preventDefault()
-        filterEl?.focus()
-        filterEl?.select()
         break
       case "g": {
         ev.preventDefault()

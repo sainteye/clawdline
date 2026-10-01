@@ -232,18 +232,24 @@ type HandoffRequest struct {
 
 // Handoff is one handoff as this broker keeps it.
 type Handoff struct {
-	ID          string         `json:"handoff_id"`
-	State       string         `json:"state"`
-	ProjectDir  string         `json:"project_dir"`
-	Dir         string         `json:"dir"`
-	Title       string         `json:"title,omitempty"`
-	FromSession string         `json:"from_session"`
-	FromTerm    string         `json:"from_terminal,omitempty"`
-	Plain       bool           `json:"coordinator_plain_handoff"`
-	Assistant   string         `json:"assistant"`
-	Model       string         `json:"model,omitempty"`
-	CreatedAt   int64          `json:"created"`
-	Opened      *openedSession `json:"opened,omitempty"`
+	ID          string `json:"handoff_id"`
+	State       string `json:"state"`
+	ProjectDir  string `json:"project_dir"`
+	Dir         string `json:"dir"`
+	Title       string `json:"title,omitempty"`
+	FromSession string `json:"from_session"`
+	// BoardItems is the open work owned by the sender in this Project when the
+	// handoff was opened. Later assignments are not part of this handoff.
+	BoardItems []string `json:"board_items,omitempty"`
+	// BoardTransferredAt is set with the item and assignment writes, once the
+	// receiver has a conversation id and has begun reading the handoff.
+	BoardTransferredAt int64          `json:"board_transferred_at,omitempty"`
+	FromTerm           string         `json:"from_terminal,omitempty"`
+	Plain              bool           `json:"coordinator_plain_handoff"`
+	Assistant          string         `json:"assistant"`
+	Model              string         `json:"model,omitempty"`
+	CreatedAt          int64          `json:"created"`
+	Opened             *openedSession `json:"opened,omitempty"`
 	// TypeAttemptedAt is recorded before the line is typed, and is the reason
 	// it is never typed twice. DeliveredAt is when it was typed into a
 	// composer: typed, not read — the receipt that it was read is the
@@ -387,6 +393,15 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	h := Handoff{
 		ID: req.ID, State: HandoffOpening, ProjectDir: project, Dir: dir, Title: title,
 		FromSession: from, FromTerm: sender.ID, Plain: true, Assistant: assistant, Model: model, CreatedAt: now.Unix(),
+	}
+	items, _, err := b.Store.WorkV2ItemsPage(ctx, "", from, "open", "", 0, "", store.WorkV2OpenLimit)
+	if err != nil {
+		return Handoff{}, false, storeError(err)
+	}
+	for _, item := range items {
+		if filepath.Clean(item.ProjectPath) == project {
+			h.BoardItems = append(h.BoardItems, item.ID)
+		}
 	}
 	if err := b.createOpened(ctx, store.TableHandoffs, h.ID, h.State, h, "handoff.opening", now); err != nil {
 		if errors.Is(err, store.ErrOpenedExists) {
