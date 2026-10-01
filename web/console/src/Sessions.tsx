@@ -272,7 +272,9 @@ export function SessionsPage({
               onBlur={() => { if (!filter) setSearchOpen(false) }}
               onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSearch(true) } }}
             />
-            <button className="start session-mode-toggle" type="button" aria-pressed={terminalMode} onClick={toggleTerminalMode}>{nextWord("terminalListMode")}</button>
+            <button className="start session-mode-toggle" type="button" title={nextWord("terminalListMode")} aria-label={nextWord("terminalListMode")} aria-pressed={terminalMode} onClick={toggleTerminalMode}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
+            </button>
             <span className="slash">/</span>
             {/* Saying what to start opens the voice-to-draft command sheet;
                 picking where to start opens the ordinary start sheet. */}
@@ -316,9 +318,9 @@ export function SessionsPage({
               className="start"
               id="start-go"
               type="button"
-              title={T.webStart}
-              aria-label={T.webStart}
-              onClick={() => Start.open()}
+              title={terminalMode ? nextWord("terminalStartTitle") : T.webStart}
+              aria-label={terminalMode ? nextWord("terminalStartTitle") : T.webStart}
+              onClick={() => terminalMode ? Start.openTerminal() : Start.open()}
             >
               <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
                 <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
