@@ -252,18 +252,38 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 		case "closeability_unknown":
 			writeRefusal(w, http.StatusConflict, "closeability_unknown", "The Session cannot be read clearly enough to close.")
 			return false
+		case "close_inventory_unavailable":
+			writeRefusal(w, http.StatusConflict, "close_inventory_unavailable", "A fresh Session inventory did not complete. Try again after the next scan.")
+			return false
 		}
 		return allowed
 	}
 	if snapshot.Scan.Complete {
 		writeRefusal(w, http.StatusNotFound, "session_not_found", "That Session is no longer present.")
 	} else {
-		writeRefusal(w, http.StatusConflict, "closeability_unknown", "The Session inventory is incomplete.")
+		writeRefusal(w, http.StatusConflict, "close_inventory_unavailable", "A fresh Session inventory did not complete. Try again after the next scan.")
 	}
 	return false
 }
 
 func closeEvidenceDecision(c contract.Closeability, expected string, force bool) (bool, string) {
+	// A failed fresh scan is a retryable inability to verify, regardless of
+	// the version the last successful list advertised. Do not imply that the
+	// Session itself changed when only the inventory reader failed.
+	if c.State == contract.CloseabilityStateUnknown {
+		inventoryProblem := false
+		for _, reason := range c.Reasons {
+			if reason.Code == "session_inventory_stale" || reason.Code == "session_inventory_missing" {
+				inventoryProblem = true
+			} else if reason.Kind == "evidence" {
+				return false, "closeability_unknown"
+			}
+		}
+		if inventoryProblem {
+			return false, "close_inventory_unavailable"
+		}
+		return false, "closeability_unknown"
+	}
 	if expected != "" && c.Version != expected {
 		return false, "close_not_proven"
 	}
@@ -446,7 +466,7 @@ func actionStatus(code string) int {
 	switch code {
 	case "session_not_found":
 		return http.StatusNotFound
-	case "session_unknown", "closeability_unknown":
+	case "session_unknown", "closeability_unknown", "close_inventory_unavailable":
 		// Not 404. The machine did not say this is absent; it said it could not
 		// see. 409 is the honest shape: try again when the reading is whole.
 		return http.StatusConflict

@@ -12,7 +12,7 @@ test("only a refusal decided before the terminal was touched says it did not hap
     "bad_request", "empty_text", "too_large", "session_not_found", "session_unknown", "busy",
     "pictures_unavailable", "backend_unsupported", "write_disabled", "forbidden", "unauthorized",
     "menu_moved", "menu_unreadable", "menu_unverified", "idempotency_key_reused", "receipts_full",
-    "store_busy", "store_unavailable", "close_blocked", "closeability_unknown",
+    "store_busy", "store_unavailable", "close_blocked", "closeability_unknown", "close_inventory_unavailable",
   ]) {
     assert.equal(outcomeOf({ status: 409, code }), "not_done", code)
   }

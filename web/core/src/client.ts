@@ -52,8 +52,8 @@ export class ClawdlineClient {
   health(): Promise<Health> {
     return this.get(routes.health)
   }
-  sessions(): Promise<SessionsSnapshot> {
-    return this.get(routes.sessions)
+  sessions(initial = false): Promise<SessionsSnapshot> {
+    return this.get(routes.sessions, initial ? { "X-Clawdline-Initial-Read": "1" } : undefined)
   }
   inventory(): Promise<Inventory> {
     return this.get(routes.inventory)
@@ -172,8 +172,8 @@ export class ClawdlineClient {
     return this.post(routes.board, body)
   }
 
-  private get<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: "GET" })
+  private get<T>(path: string, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>(path, { method: "GET", headers })
   }
 
   private post<T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> {
