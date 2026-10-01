@@ -685,8 +685,12 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
         <div className="squad-detail" ref={detailPanel} aria-labelledby="squad-detail-title">{persona ? <>
           <button className="squad-back" type="button" onClick={backToRoster}>← 返回角色名冊</button>
           <div className="squad-profile"><IconCanvas icon={persona.icon} size={5} /><div><p>角色檔案 / 詳情</p><h2 id="squad-detail-title" ref={detailTitle} tabIndex={-1}>{persona.name}</h2><span>{persona.subtitle}</span></div></div>
-          <div className="squad-meta"><span>{persona.teamIds.map((id) => data.teams.find((row) => row.id === id)?.name ?? id).join(" · ") || "未分隊"}</span><span><LinkedText text={persona.source} /></span><span>版本 {persona.version}</span>
-            {persona.version.startsWith("sha256:") && <p className="squad-version-explanation">SHA-256 是角色定義內容的指紋；內容變動時會更新，用來辨識使用的版本。</p>}</div>
+          <div className="squad-meta"><span>{persona.teamIds.map((id) => data.teams.find((row) => row.id === id)?.name ?? id).join(" · ") || "未分隊"}</span>
+            <details className="squad-meta-detail"><summary>來源與版本</summary>
+              <dl><div><dt>來源</dt><dd><LinkedText text={persona.source} /></dd></div>
+                <div><dt>版本</dt><dd>{persona.version}</dd></div></dl>
+              {persona.version.startsWith("sha256:") && <p className="squad-version-explanation">SHA-256 是角色定義內容的指紋；內容變動時會更新，用來辨識使用的版本。</p>}
+            </details></div>
           <button className="squad-skill-jump" type="button" onClick={() => { skillHeading.current?.scrollIntoView({ block: "start" }); skillHeading.current?.focus() }}>查看／新增技能</button>
           <section className="squad-detail-block"><h3>角色定義</h3><PersonaDefinition key={persona.id} persona={persona} /></section>
           <section className="squad-detail-block"><div className="squad-setting-heading"><div><h3>允許管理 agent 自動指派</h3><p>停用只影響管理 agent 的自動候選；你仍可手動指定此角色。</p></div>
