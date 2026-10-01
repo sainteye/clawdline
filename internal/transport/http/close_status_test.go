@@ -20,12 +20,22 @@ func TestCloseUsesFreshIdleWorkEvidenceWithoutAnAttestation(t *testing.T) {
 		{"blocked", false, "current", false, "close_blocked"},
 		{"blocked", true, "current", true, ""},
 		{"unknown", true, "current", false, "closeability_unknown"},
+		{"unknown", false, "stale", false, "closeability_unknown"},
 		{"needs_attestation", false, "current", false, "closeability_unknown"},
 	} {
 		allowed, code := closeEvidenceDecision(contract.Closeability{State: c.state, Version: "current"}, c.version, c.force)
 		if allowed != c.want || code != c.code {
 			t.Errorf("%s force=%v version=%s: allowed=%v code=%s", c.state, c.force, c.version, allowed, code)
 		}
+	}
+	failedScan := contract.Closeability{State: contract.CloseabilityStateUnknown, Version: "fresh",
+		Reasons: []contract.CloseReason{{Code: "session_inventory_stale"}}}
+	if allowed, code := closeEvidenceDecision(failedScan, "previous", false); allowed || code != "close_inventory_unavailable" {
+		t.Fatalf("failed fresh inventory: allowed=%v code=%s", allowed, code)
+	}
+	failedScan.Reasons = append(failedScan.Reasons, contract.CloseReason{Code: "own_records_unreadable", Kind: "evidence"})
+	if allowed, code := closeEvidenceDecision(failedScan, "previous", false); allowed || code != "closeability_unknown" {
+		t.Fatalf("multiple missing evidence sources: allowed=%v code=%s", allowed, code)
 	}
 }
 
@@ -47,6 +57,7 @@ func TestEachCloseRefusalCarriesItsOwnStatusAndRetryRule(t *testing.T) {
 	}{
 		{"close_blocked", http.StatusConflict, false},
 		{"closeability_unknown", http.StatusConflict, false},
+		{"close_inventory_unavailable", http.StatusConflict, false},
 		{"close_nothing_there", http.StatusNotFound, false},
 		{"close_occupied", http.StatusConflict, false},
 		{"close_unreadable", http.StatusConflict, false},

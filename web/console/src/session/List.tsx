@@ -6,7 +6,7 @@ import { sessionMark, sessionName } from "../brand-mark.js"
 import { requestConfirm } from "../overlays/events.js"
 import { ACTION_WIDTH, actionWidth, archivable, revealFor, swipes, type Reveal } from "./swipe.js"
 import { conversationNotStarted } from "./readiness.js"
-import { retainedStateWords } from "../session-reading.js"
+import { retainedStateWords, sessionReadingChinese } from "../session-reading.js"
 import { rowPersonaLine } from "../personas.js"
 import { usePersonas } from "./PersonaBot.js"
 import "./list-density.css"
@@ -105,6 +105,9 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const retainedSaid = retained
     ? `<span class="session-work-copy retained-reading" title="${L.escapeHTML(retained)}">${L.escapeHTML(retained)}</span>`
     : ""
+  const pausedSaid = row.source?.freshness === "unverified"
+    ? `<span class="session-work-copy retained-reading">${sessionReadingChinese() ? "驗證暫停" : "Verification paused"} · ${L.escapeHTML(new Date(row.source.observed_at * 1000).toLocaleTimeString())}</span>`
+    : ""
   const attention = row.attention_count
   const attentionSaid = typeof attention === "number" && attention > 0
     ? `<span class="session-attention" aria-label="關注，待處理 ${attention} 筆便條"><span class="session-attention-dot" aria-hidden="true"></span>關注 · 待處理 ${attention}</span>`
@@ -158,7 +161,7 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   } else {
     html = attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   }
-  return { html, shape }
+  return { html: html + pausedSaid, shape }
 }
 
 /**
@@ -180,9 +183,12 @@ function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof row
     row.closeability.reasons?.some((reason) => reason.code === "session_inventory_stale") &&
     row.closeability.reasons.every((reason) => reason.kind !== "evidence" || reason.code === "session_inventory_stale")
   const prior = lastCloseability.current
-  const showPrior = row.source?.freshness === "unverified" && !retainedStateWords(row) && inventoryOnly &&
-    (prior?.state === "blocked" || prior?.state === "needs_attestation")
+  const showPrior = row.source?.freshness === "unverified" && inventoryOnly &&
+    (prior?.state === "safe" || prior?.state === "blocked" || prior?.state === "needs_attestation")
   const { html, shape } = stateLine(showPrior ? { ...row, closeability: prior } : row)
+  const confirmedSafe = showPrior && prior?.state === "safe"
+    ? `<span class="session-closeability retained-reading" data-closeability="safe">${sessionReadingChinese() ? "上次確認可安全關閉" : "Previously safe to close"}</span>`
+    : ""
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
@@ -195,7 +201,7 @@ function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof row
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
     if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
   }, [html, role?.persona])
-  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html }} />
+  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html + confirmedSafe }} />
 }
 
 /**
