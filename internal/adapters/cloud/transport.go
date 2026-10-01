@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,6 +51,8 @@ type Options struct {
 	// Inbound is called for every envelope that passed decoding, the channel
 	// check, signature verification and the replay window. It must not block.
 	Inbound func(cloud.Envelope, []byte)
+	// OnDisconnect invalidates terminal connection registrations tied to this socket.
+	OnDisconnect func()
 	// PublicKeyFor answers the pinned public key for a sender.
 	PublicKeyFor cloud.PublicKeyFor
 	// ContentKey opens an inbound envelope. A nil one means inbound envelopes
@@ -80,7 +83,10 @@ type Transport struct {
 	rotating uint64
 	// ready is closed and replaced on each successful handshake; a waiter
 	// takes a copy under the lock.
-	ready chan struct{}
+	ready             chan struct{}
+	terminalControlMu sync.Mutex
+	terminalPending   chan terminalControlResult
+	terminalExpected  terminalControlFrame
 
 	stopOnce sync.Once
 	stopped  chan struct{}
@@ -355,13 +361,17 @@ func (t *Transport) promote(conn *Conn, tokenExpiry time.Time) uint64 {
 // demote clears the socket, but only if it is still the current one.
 func (t *Transport) demote(generation uint64) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.generation != generation {
+		t.mu.Unlock()
 		return
 	}
 	t.conn = nil
 	if t.state == StateConnected {
 		t.state = StateReconnecting
+	}
+	t.mu.Unlock()
+	if t.opts.OnDisconnect != nil {
+		t.opts.OnDisconnect()
 	}
 }
 
@@ -491,6 +501,9 @@ func (t *Transport) handle(conn *Conn, data []byte) error {
 		return conn.WriteText([]byte(`{"type":"pong"}`), t.opts.Now().Add(KeepaliveInterval))
 	case FramePong, FrameSubscriptions:
 		return nil
+	case FrameTerminalConnectionRegistered, FrameTerminalConnectionRetired, FrameTerminalConnectionRefused:
+		t.handleTerminalConnection(data)
+		return nil
 	case FrameError:
 		relay := decodeError(data)
 		if terminalRelayCodes[relay.Code] || tokenExpiryCodes[relay.Code] {
@@ -591,6 +604,13 @@ func (t *Transport) handleEnvelope(data []byte) {
 		t.logf("cloud dropped an envelope reason=%s ch=%s", DropWrongChannel, envelope.Ch)
 		return
 	}
+	if strings.HasPrefix(envelope.Ch, "termi/") {
+		parts := strings.Split(envelope.Ch, "/")
+		if len(parts) != 3 || parts[2] != envelope.Sender || envelope.KeyID != MasterKeyID {
+			t.opts.Status.Dropped(DropWrongChannel)
+			return
+		}
+	}
 	if t.opts.PublicKeyFor == nil {
 		t.opts.Status.Dropped(DropRosterUnreadable)
 		return
@@ -642,6 +662,8 @@ func (t *Transport) handleEnvelope(data []byte) {
 func (t *Transport) deliverable(channel string) bool {
 	switch {
 	case channel == "ctl/"+t.opts.Identity.MachineID:
+		return true
+	case strings.HasPrefix(channel, "termi/"+t.opts.Identity.MachineID+"/"):
 		return true
 	case len(channel) > 3 && channel[:3] == "ho/":
 		return true

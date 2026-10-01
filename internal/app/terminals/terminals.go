@@ -85,6 +85,9 @@ type Principal struct {
 	Name string
 	// Local is this machine's own token.
 	Local bool
+	// Cloud is set only by the signed-envelope ingress. HTTP requests cannot
+	// choose it; the service asks the Cloud link to revalidate this principal.
+	Cloud bool
 }
 
 // Access is whether p may still see and operate terminals: nil is yes, and an
@@ -102,6 +105,10 @@ type Control struct {
 	Expires time.Time
 	// Applied is the highest input number typed under Epoch.
 	Applied uint64
+	// Unknown means a host call may have typed bytes without acknowledging
+	// them. A reconnect must acquire a new epoch instead of continuing at
+	// Applied, even when that high-water mark matches the browser's copy.
+	Unknown bool
 }
 
 // Action is a control request.
@@ -219,6 +226,10 @@ func (s *Service) allowed(p Principal) error {
 	return nil
 }
 
+// Allow checks a principal without asking a terminal to exist. The signed
+// Cloud ingress uses it before accepting a new per-viewer connection key.
+func (s *Service) Allow(p Principal) error { return s.allowed(p) }
+
 // Open starts a shell in dir.
 func (s *Service) Open(ctx context.Context, p Principal, req ports.OpenTerminal) (terminal.Terminal, error) {
 	if err := s.allowed(p); err != nil {
@@ -326,7 +337,7 @@ func (s *Service) controlLocked(id terminal.ID) Control {
 		return Control{Epoch: s.epochs[id]}
 	}
 	return Control{Held: true, Holder: l.holder, Client: l.client, Epoch: l.epoch,
-		Expires: l.expires, Applied: l.applied}
+		Expires: l.expires, Applied: l.applied, Unknown: l.unknown}
 }
 
 func (l *lease) heldBy(p Principal, client string) bool {
@@ -464,6 +475,11 @@ func (s *Service) typed(ctx context.Context, p Principal, id terminal.ID, client
 		return 0, false, err
 	}
 	defer release()
+	// A request can wait in the lane while a pin or grant is revoked. The
+	// earlier check is only admission to the queue, not admission to the host.
+	if err := s.allowed(p); err != nil {
+		return 0, false, err
+	}
 
 	s.mu.Lock()
 	if r := s.holderLocked(id, p, client, epoch, false); r != nil {
@@ -494,6 +510,11 @@ func (s *Service) typed(ctx context.Context, p Principal, id terminal.ID, client
 		return 0, false, r
 	}
 	s.mu.Unlock()
+	// The host effect begins after this last access verdict. An effect already
+	// running cannot be rolled back; its receipt reports applied or unknown.
+	if err := s.allowed(p); err != nil {
+		return 0, false, err
+	}
 
 	// Typed outside s.mu and inside the lane: a slow tmux holds up this
 	// terminal's next input and nobody else's control or stream. A caller

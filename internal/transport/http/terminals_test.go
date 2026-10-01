@@ -16,8 +16,145 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/terminal"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
+
+type cloudTerminalGrantStub struct{ allowed bool }
+
+func (s *cloudTerminalGrantStub) Status() cloud.Status { return cloud.Status{Enabled: true} }
+func (s *cloudTerminalGrantStub) PinnedTerminalViewer(device string) (string, bool) {
+	if s.allowed && device == "cloud-viewer" {
+		return "Cloud viewer", true
+	}
+	return "", false
+}
+func (s *cloudTerminalGrantStub) TerminalViewerAllowed(device string) bool {
+	return s.allowed && device == "cloud-viewer"
+}
+
+func TestCloudPinNeedsLocalGrantAndCloudRouterCannotWriteIt(t *testing.T) {
+	f := newTermFixture(t, newFakeTerms())
+	stub := &cloudTerminalGrantStub{allowed: true}
+	SetCloudLine(f.dir, stub)
+	t.Cleanup(func() { SetCloudLine(f.dir, nil) })
+	p := terminals.Principal{Device: "cloud-viewer", Cloud: true}
+	svc, err := f.s.CloudTerminalService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Allow(p); err == nil {
+		t.Fatal("a pin without a grant used a terminal")
+	}
+	if rec := f.do(http.MethodPost, "/v1/auth/devices/cloud-viewer/terminal", f.local, `{"grant":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("local grant: %d %s", rec.Code, rec.Body)
+	}
+	if err := svc.Allow(p); err != nil {
+		t.Fatalf("pinned and locally granted viewer: %v", err)
+	}
+	router := cloud.Router{Handler: f.h, Authorize: cloud.LocalAuthorizer(f.local, f.machine)}
+	if got, err := router.Do(context.Background(), cloudops.LocalRequest{Method: http.MethodPost,
+		Path: "/v1/auth/devices/cloud-viewer/terminal", Body: []byte(`{"grant":false}`)}); err != nil ||
+		got.Status != http.StatusForbidden || !strings.Contains(string(got.Body), "terminal_cloud_not_supported") {
+		t.Fatalf("Cloud grant route: %+v, %v", got, err)
+	}
+	stub.allowed = false
+	if err := svc.Allow(p); err == nil {
+		t.Fatal("a revoked pin retained terminal access")
+	}
+}
+
+func TestQueuedTerminalInputRechecksGrantBeforeHostEffect(t *testing.T) {
+	host := newFakeTerms()
+	f := newTermFixture(t, host)
+	term := f.open(f.local)
+	device, token := f.device("phone", true)
+	if _, rec := f.control(term.ID, token, "tab", "acquire"); rec.Code != http.StatusOK {
+		t.Fatal(rec.Body)
+	}
+	svc, err := f.s.terminalService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.mu.Lock()
+	host.keysDelay = 300 * time.Millisecond
+	host.mu.Unlock()
+	first := make(chan string, 1)
+	second := make(chan string, 1)
+	go func() { first <- f.input(term.ID, token, "tab", 1, 1, "first").Body.String() }()
+	deadline := time.Now().Add(time.Second)
+	for svc.Lanes().Stats().Admitted < 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	go func() { second <- f.input(term.ID, token, "tab", 1, 2, "second").Body.String() }()
+	for svc.Lanes().Stats().Admitted < 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if svc.Lanes().Stats().Admitted < 2 {
+		t.Fatal("the second input never entered the terminal lane")
+	}
+	if rec := f.do(http.MethodPost, "/v1/auth/devices/"+device+"/terminal", f.local, `{"grant":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
+	}
+	<-first
+	if got := <-second; !strings.Contains(got, "terminal_forbidden") {
+		t.Fatalf("queued input after revoke: %s", got)
+	}
+	for _, typed := range host.typedNow() {
+		if typed == "second" {
+			t.Fatal("revoked queued input reached the host")
+		}
+	}
+}
+
+func TestRevocationDuringInitialCaptureNeverSendsFrame(t *testing.T) {
+	host := newFakeTerms()
+	f := newTermFixture(t, host)
+	term := f.open(f.local)
+	device, _ := f.device("phone", true)
+	svc, err := f.s.terminalService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host.frameEntered = make(chan struct{}, 1)
+	host.frameRelease = make(chan struct{})
+	type answer struct {
+		watch *terminals.Watch
+		err   error
+	}
+	ready := make(chan answer, 1)
+	p := terminals.Principal{Device: device}
+	go func() {
+		w, err := svc.Watch(context.Background(), p, terminal.ID(term.ID), "tab")
+		ready <- answer{w, err}
+	}()
+	select {
+	case <-host.frameEntered:
+	case <-time.After(time.Second):
+		t.Fatal("capture did not begin")
+	}
+	if rec := f.do(http.MethodPost, "/v1/auth/devices/"+device+"/terminal", f.local, `{"grant":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
+	}
+	close(host.frameRelease)
+	a := <-ready
+	if a.err != nil {
+		t.Fatal(a.err)
+	}
+	defer a.watch.Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var events []terminals.EventKind
+	_ = a.watch.Run(ctx, func(e terminals.Event) error { events = append(events, e.Kind); return nil })
+	for _, kind := range events {
+		if kind == terminals.EventFrame {
+			t.Fatalf("revoked first frame escaped: %v", events)
+		}
+	}
+	if len(events) == 0 || events[0] != terminals.EventRefusal {
+		t.Fatalf("revocation events: %v", events)
+	}
+}
 
 // Acceptance 1: a paired device reaches a terminal only with a grant. Every
 // other key — `send`, `remote_write`, having paired at all — is refused.
@@ -170,6 +307,9 @@ func TestInputIsTypedOnceInOrderAndNeverGuessed(t *testing.T) {
 	host.mu.Unlock()
 	if rec := f.input(term.ID, f.local, "a", 1, 2, "lost"); termCode(rec) != "input_state_unknown" {
 		t.Fatalf("a tmux that never answered: %d %s", rec.Code, rec.Body)
+	}
+	if control := svc.Control(terminal.ID(term.ID)); !control.Unknown || control.Applied != 1 {
+		t.Fatalf("unknown host effect must not look like known high water: %+v", control)
 	}
 	for _, seq := range []int64{2, 3} {
 		if rec := f.input(term.ID, f.local, "a", 1, seq, "again"); termCode(rec) != "input_state_unknown" {

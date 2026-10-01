@@ -111,6 +111,9 @@ type Pairing struct {
 	Pinned     *adaptercloud.PinnedStore
 	Now        func() time.Time
 	Log        func(format string, args ...any)
+	// OnRevoke removes a local terminal grant and active Cloud connection
+	// after the pin has been refused. A failure is reported as partial revoke.
+	OnRevoke func(string) error
 
 	mu         sync.Mutex
 	state      PairingState
@@ -411,6 +414,11 @@ func (p *Pairing) Revoke(deviceID string) (bool, error) {
 	changed, err := p.Pinned.Revoke(deviceID, p.now())
 	if err == nil && changed {
 		p.logf("cloud: viewer %s is no longer allowed on this machine", deviceID)
+		if p.OnRevoke != nil {
+			if dropErr := p.OnRevoke(deviceID); dropErr != nil {
+				return true, fmt.Errorf("the viewer pin was revoked but its terminal grant could not be removed: %w", dropErr)
+			}
+		}
 	}
 	return changed, err
 }

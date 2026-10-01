@@ -35,6 +35,27 @@ type CloudLine interface {
 	Status() cloudtransport.Status
 }
 
+// CloudTerminalLine is the local terminal admission half of a running Cloud
+// link. The HTTP grant route can recognize a locally pinned Cloud device, but
+// only signed-envelope ingress can produce a Cloud terminal principal.
+type CloudTerminalLine interface {
+	PinnedTerminalViewer(device string) (name string, ok bool)
+	TerminalViewerAllowed(device string) bool
+}
+
+func (s *Server) cloudTerminalLine() CloudTerminalLine {
+	return cloudTerminalLine(s.cfg.Dir)
+}
+
+func cloudTerminalLine(dir string) CloudTerminalLine {
+	line, ok := cloudLines.Load(dir)
+	if !ok {
+		return nil
+	}
+	terminalLine, _ := line.(CloudTerminalLine)
+	return terminalLine
+}
+
 var cloudLines sync.Map // dir -> CloudLine
 
 // SetCloudLine registers the link that answers for a state directory. Passing

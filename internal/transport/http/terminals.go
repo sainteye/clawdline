@@ -128,6 +128,20 @@ func (s *Server) terminalDiagnostics() *contract.TerminalDiagnostics {
 // the devices or the grants change.
 func (s *Server) terminalAccess(p terminals.Principal) error {
 	g := s.gate()
+	if p.Cloud {
+		line := s.cloudTerminalLine()
+		if line == nil || !line.TerminalViewerAllowed(p.Device) {
+			return terminal.Refuse(terminal.CodeForbidden, "this Cloud device may no longer use terminals")
+		}
+		if g.grants == nil {
+			return terminal.Refuse(terminal.CodeForbidden, "the terminal grants could not be read")
+		}
+		granted, err := g.grants.Granted(p.Device)
+		if err != nil || !granted {
+			return terminal.Refuse(terminal.CodeForbidden, "this Cloud device has no readable terminal grant")
+		}
+		return nil
+	}
 	if g.auth == nil {
 		return terminal.Refuse(terminal.CodeForbidden, "the device store could not be read")
 	}
@@ -151,6 +165,30 @@ func (s *Server) terminalAccess(p terminals.Principal) error {
 			"this device has not been given access to this machine's terminals")
 	}
 	return nil
+}
+
+// CloudTerminalService is the dedicated Cloud ingress' access to the same
+// terminal service and leases used by local viewers. It does not expose an
+// HTTP route or mint a local bearer for a Cloud request.
+func (s *Server) CloudTerminalService() (*terminals.Service, error) {
+	return s.terminalService()
+}
+
+// CloudTerminalProject resolves an open request only after the signed Cloud
+// ingress has authorized the viewer. It uses the local project catalog.
+func (s *Server) CloudTerminalProject(ctx context.Context, id string) (string, bool) {
+	return s.terminalProjectDir(ctx, id)
+}
+
+// CloudDropTerminalGrant runs only after a local Cloud pin revoke. It removes
+// the grant so re-pairing the same device requires a new local decision.
+func (s *Server) CloudDropTerminalGrant(device string) error {
+	g := s.gate()
+	if g.grants == nil {
+		return errors.New("terminal grants are unavailable")
+	}
+	_, err := g.grants.Set(device, false, time.Now())
+	return err
 }
 
 // terminalPrincipal is who is asking, or the refusal already written.
@@ -617,6 +655,13 @@ func (g *gate) terminalGrantRoute(w http.ResponseWriter, r *http.Request, device
 	req.Grant = grant
 	d, held := g.auth.Holds(device)
 	if !held {
+		if line := cloudTerminalLine(g.dir); line != nil {
+			if name, pinned := line.PinnedTerminalViewer(device); pinned {
+				d.Name, d.ID, held = name, device, true
+			}
+		}
+	}
+	if !held {
 		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No paired device has that id.")
 		return
 	}
@@ -657,6 +702,11 @@ func (g *gate) dropTerminalGrants() {
 	}
 	if err := g.grants.Keep(func(device string) bool {
 		_, ok := g.auth.Holds(device)
+		if !ok {
+			if line := cloudTerminalLine(g.dir); line != nil {
+				_, ok = line.PinnedTerminalViewer(device)
+			}
+		}
 		return ok
 	}); err != nil {
 		log.Printf("auth: the grants of a revoked device could not be removed: %v", err)

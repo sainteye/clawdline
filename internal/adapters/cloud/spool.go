@@ -41,22 +41,28 @@ import (
 type SpoolChannel string
 
 const (
-	SpoolChannelS    SpoolChannel = "s"
-	SpoolChannelT    SpoolChannel = "t"
-	SpoolChannelOrch SpoolChannel = "orch"
-	SpoolChannelCtl  SpoolChannel = "ctl"
-	SpoolChannelCtlr SpoolChannel = "ctlr"
-	SpoolChannelHo   SpoolChannel = "ho"
+	SpoolChannelS     SpoolChannel = "s"
+	SpoolChannelT     SpoolChannel = "t"
+	SpoolChannelOrch  SpoolChannel = "orch"
+	SpoolChannelCtl   SpoolChannel = "ctl"
+	SpoolChannelCtlr  SpoolChannel = "ctlr"
+	SpoolChannelHo    SpoolChannel = "ho"
+	SpoolChannelTerm  SpoolChannel = "term"
+	SpoolChannelTermr SpoolChannel = "termr"
 )
 
 // IsControl reports the channels that never coalesce and whose ready rows burn
 // at restart when their owner is gone (`CloudOutboundSpool.swift:35-36`).
-func (c SpoolChannel) IsControl() bool { return c == SpoolChannelCtl || c == SpoolChannelCtlr }
+func (c SpoolChannel) IsControl() bool {
+	return c == SpoolChannelCtl || c == SpoolChannelCtlr || c == SpoolChannelTermr
+}
 
 // IsLatestValue reports the channels that carry the whole current value rather
 // than a step. Keeping an older never-sent snapshot has no delivery value and
 // can only hold the newer one behind it (`CloudOutboundSpool.swift:38-40`).
-func (c SpoolChannel) IsLatestValue() bool { return c == SpoolChannelS || c == SpoolChannelOrch }
+func (c SpoolChannel) IsLatestValue() bool {
+	return c == SpoolChannelS || c == SpoolChannelOrch || c == SpoolChannelTerm
+}
 
 // SpoolState is a row's place in its life.
 type SpoolState string

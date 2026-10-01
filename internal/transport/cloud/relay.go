@@ -73,6 +73,9 @@ type Relay struct {
 	// answered one, so it is called on the way in rather than on the way out.
 	// Nil is nobody listening.
 	Audience func(sender string)
+	// Terminal receives signed, decrypted termi envelopes on its own lane.
+	// Terminal traffic never consumes the ordinary Cloud request queue.
+	Terminal func(Inbound)
 
 	once     sync.Once
 	requests chan Inbound
@@ -129,6 +132,12 @@ func (r *Relay) Deliver(envelope domaincloud.Envelope, plaintext []byte) {
 	}
 	if r.Audience != nil {
 		r.Audience(envelope.Sender)
+	}
+	if strings.HasPrefix(in.Channel, "termi/") {
+		if r.Terminal != nil {
+			r.Terminal(in)
+		}
+		return
 	}
 	select {
 	case r.requests <- in:
@@ -223,6 +232,13 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 	if out.Class == "" {
 		class = classes[0]
 	}
+	key, keyID := r.Secret, r.keyID()
+	if strings.HasPrefix(out.Channel, "term/") || strings.HasPrefix(out.Channel, "termr/") {
+		if !out.Key.Valid() || !strings.HasPrefix(out.KeyID, "rk-") {
+			return errors.New("a terminal answer needs its connection key")
+		}
+		key, keyID = out.Key, out.KeyID
+	}
 
 	kind := adaptercloud.SpoolChannel(strings.SplitN(out.Channel, "/", 2)[0])
 	var (
@@ -255,9 +271,9 @@ func (r *Relay) Publish(ctx context.Context, out Outbound) error {
 		Seq:    seq,
 		Ts:     uint64(now.UnixMilli()),
 		Class:  class,
-		KeyID:  r.keyID(),
+		KeyID:  keyID,
 		Sender: r.MachineID,
-		Key:    r.Secret,
+		Key:    key,
 		Signer: r.Signer,
 		Rand:   rand.Reader,
 	})

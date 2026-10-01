@@ -27,9 +27,11 @@ type fakeTerms struct {
 	next  int
 	// keysDelay holds every Keys call this long; keysHang makes the next
 	// one wait until its context ends, the shape of a tmux that never said.
-	keysDelay time.Duration
-	keysHang  bool
-	typed     []string
+	keysDelay    time.Duration
+	keysHang     bool
+	frameEntered chan struct{}
+	frameRelease chan struct{}
+	typed        []string
 }
 
 type fakeTerm struct {
@@ -71,6 +73,13 @@ func (f *fakeTerms) get(id terminal.ID) (*fakeTerm, error) {
 }
 
 func (f *fakeTerms) Frame(_ context.Context, id terminal.ID) (terminal.Frame, error) {
+	if f.frameEntered != nil {
+		select {
+		case f.frameEntered <- struct{}{}:
+		default:
+		}
+		<-f.frameRelease
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	t, err := f.get(id)

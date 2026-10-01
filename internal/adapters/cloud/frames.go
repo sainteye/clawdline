@@ -18,19 +18,22 @@ import (
 
 // Frame type names, both directions.
 const (
-	FrameChallenge     = "challenge"
-	FrameHello         = "hello"
-	FrameReady         = "ready"
-	FramePublish       = "publish"
-	FrameSubscribe     = "subscribe"
-	FrameUnsubscribe   = "unsubscribe"
-	FramePing          = "ping"
-	FramePong          = "pong"
-	FrameEnvelope      = "envelope"
-	FrameAck           = "ack"
-	FramePublishError  = "publish_error"
-	FrameSubscriptions = "subscriptions"
-	FrameError         = "error"
+	FrameChallenge                    = "challenge"
+	FrameHello                        = "hello"
+	FrameReady                        = "ready"
+	FramePublish                      = "publish"
+	FrameSubscribe                    = "subscribe"
+	FrameUnsubscribe                  = "unsubscribe"
+	FramePing                         = "ping"
+	FramePong                         = "pong"
+	FrameEnvelope                     = "envelope"
+	FrameAck                          = "ack"
+	FramePublishError                 = "publish_error"
+	FrameSubscriptions                = "subscriptions"
+	FrameError                        = "error"
+	FrameTerminalConnectionRegistered = "terminal_connection_registered"
+	FrameTerminalConnectionRetired    = "terminal_connection_retired"
+	FrameTerminalConnectionRefused    = "terminal_connection_refused"
 )
 
 // ChallengeContext is the domain string the handshake signature is bound to.

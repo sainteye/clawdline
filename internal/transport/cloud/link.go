@@ -22,9 +22,11 @@ package cloud
 // off means the request in flight too.
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,6 +39,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
@@ -173,6 +176,11 @@ type LinkOptions struct {
 	// answered by exactly the handler a paired browser on this machine's own
 	// network reaches.
 	Handler http.Handler
+	// TerminalService is the only ingress to the local terminal service from
+	// signed Cloud envelopes. The regular Router remains forbidden.
+	TerminalService   func() (*terminals.Service, error)
+	TerminalProject   func(context.Context, string) (string, bool)
+	DropTerminalGrant func(string) error
 	// Authorize stamps the credential the gate judges an in-process request by.
 	Authorize func(*http.Request)
 	// Version is this build, for the machine registration record.
@@ -233,6 +241,108 @@ type Link struct {
 	// a cancel with no flag is a shutdown, a cancel with it is a rotation.
 	stopRun context.CancelFunc
 	rotated bool
+
+	terminalRosterMu    sync.Mutex
+	terminalRosterAt    time.Time
+	terminalRosterErr   error
+	terminalRosterWait  chan struct{}
+	terminalMu          sync.Mutex
+	terminalConnections map[string]*terminalConnection
+	machineIncarnation  string
+	terminalRequests    chan Inbound
+	terminalRefusals    chan Inbound
+}
+
+const TerminalCapability = "terminal_control"
+
+const (
+	CloudTerminalRosterRefreshLimit  = 2
+	CloudTerminalRosterDeadlineLimit = 2
+)
+
+// PinnedTerminalViewer names a locally pinned, unrevoked Cloud viewer for the
+// local-only grant page. An account roster row alone never creates a grantable
+// device here.
+func (l *Link) PinnedTerminalViewer(device string) (string, bool) {
+	if l.pinned == nil {
+		return "", false
+	}
+	key, ok, err := l.pinned.PublicKeyFor(device)
+	if err != nil || !ok || len(key) != ed25519.PublicKeySize {
+		return "", false
+	}
+	rows, err := l.pinned.Devices()
+	if err != nil {
+		return "", false
+	}
+	for _, row := range rows {
+		if row.DeviceID == device && row.Active() {
+			return row.Name, true
+		}
+	}
+	return "", false
+}
+
+// TerminalViewerAllowed is rechecked by terminal service before each effect
+// and frame. It requires a fresh Cloud roster, the exact locally pinned key,
+// and terminal_control. The terminal grant remains the service's final check.
+func (l *Link) TerminalViewerAllowed(device string) bool {
+	if !l.settings.Enabled || !l.allowCommands() || l.roster == nil || l.pinned == nil || !l.terminalRosterFresh() {
+		return false
+	}
+	pin, ok, err := l.pinned.PublicKeyFor(device)
+	if err != nil || !ok {
+		return false
+	}
+	if refused, err := l.pinned.Refused(device); err != nil || refused {
+		return false
+	}
+	for _, row := range l.roster.Devices() {
+		if row.ID != device || (row.RevokedAt != nil && *row.RevokedAt != "") ||
+			!hasAny(row.Caps, TerminalCapability) {
+			continue
+		}
+		key, err := base64.StdEncoding.DecodeString(row.PublicKey)
+		return err == nil && bytes.Equal(key, pin)
+	}
+	return false
+}
+
+// terminalRosterFresh singleflights the active terminal roster read. A failed
+// or timed-out read expires terminal authority only; the normal Cloud command
+// path keeps its own roster policy and never waits for this one.
+func (l *Link) terminalRosterFresh() bool {
+	now := l.opts.Now()
+	l.terminalRosterMu.Lock()
+	if !l.terminalRosterAt.IsZero() && now.Sub(l.terminalRosterAt) < CloudTerminalRosterRefreshLimit*time.Second {
+		ok := l.terminalRosterErr == nil
+		l.terminalRosterMu.Unlock()
+		return ok
+	}
+	if wait := l.terminalRosterWait; wait != nil {
+		l.terminalRosterMu.Unlock()
+		select {
+		case <-wait:
+		case <-time.After(CloudTerminalRosterDeadlineLimit * time.Second):
+			return false
+		}
+		l.terminalRosterMu.Lock()
+		ok := l.terminalRosterErr == nil && now.Sub(l.terminalRosterAt) < CloudTerminalRosterRefreshLimit*time.Second
+		l.terminalRosterMu.Unlock()
+		return ok
+	}
+	wait := make(chan struct{})
+	l.terminalRosterWait = wait
+	l.terminalRosterMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), CloudTerminalRosterDeadlineLimit*time.Second)
+	err := l.roster.Refresh(ctx)
+	cancel()
+	l.terminalRosterMu.Lock()
+	l.terminalRosterAt, l.terminalRosterErr = l.opts.Now(), err
+	l.terminalRosterWait = nil
+	close(wait)
+	l.terminalRosterMu.Unlock()
+	return err == nil
 }
 
 // ErrDisabledLink is Run's answer for a link whose switch is off. It is not a
@@ -257,6 +367,11 @@ func Open(opts LinkOptions) (*Link, error) {
 		return nil, err
 	}
 	link := &Link{opts: opts, file: file, settings: settings, state: StateOff}
+	incarnation := make([]byte, 16)
+	if _, err := rand.Read(incarnation); err != nil {
+		return nil, err
+	}
+	link.machineIncarnation = base64.RawURLEncoding.EncodeToString(incarnation)
 	if !settings.Enabled {
 		return link, nil
 	}
@@ -294,10 +409,11 @@ func Open(opts LinkOptions) (*Link, error) {
 		// Read from the store rather than captured, so that a rotation
 		// between two pairings cannot hand the second browser the first
 		// browser's key.
-		Keys:   link.pairingKeys,
-		Pinned: link.pinned,
-		Now:    opts.Now,
-		Log:    opts.Log,
+		Keys:     link.pairingKeys,
+		Pinned:   link.pinned,
+		OnRevoke: link.revokeTerminalViewer,
+		Now:      opts.Now,
+		Log:      opts.Log,
 	}
 	if err := link.wire(); err != nil {
 		link.fail(err)
@@ -386,6 +502,7 @@ func (l *Link) wire() error {
 		Status:       status,
 		Replay:       domaincloud.NewReplayWindow(0),
 		Inbound:      l.relay.Deliver,
+		OnDisconnect: l.closeAllTerminalConnections,
 		PublicKeyFor: l.publicKeyFor,
 		ContentKey:   secret,
 		Log:          func(line string) { l.logf("%s", line) },
@@ -422,6 +539,7 @@ func (l *Link) wire() error {
 	// viewer that arrived after this machine's last change gets the current
 	// state instead of waiting for the heartbeat (`Publisher.Seen`).
 	l.relay.Audience = l.publisher.Seen
+	l.relay.Terminal = l.deliverTerminal
 	// `sessions.snapshot` is answered by the publisher, which is the only
 	// thing that can put the rows back on their channels.
 	l.service.Bridge.Sessions = l.publisher.Snapshot
@@ -506,6 +624,16 @@ func (l *Link) Run(ctx context.Context) error {
 
 // runOnce holds one socket up until its context is done.
 func (l *Link) runOnce(ctx context.Context) error {
+	l.terminalRequests = make(chan Inbound, CloudTerminalIngressLimit)
+	l.terminalRefusals = make(chan Inbound, CloudTerminalRefusalsLimit)
+	terminalCtx, stopTerminal := context.WithCancel(ctx)
+	terminalDone := make(chan struct{})
+	go func() { defer close(terminalDone); l.runTerminal(terminalCtx) }()
+	defer func() {
+		stopTerminal()
+		<-terminalDone
+		l.closeAllTerminalConnections()
+	}()
 	// The roster is fetched once before the socket opens, so that a viewer's
 	// first envelope is not dropped as `unknown_sender` while the first lookup
 	// is still in flight.
