@@ -5,13 +5,14 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-**A local control plane for Claude Code and Codex. See every session, know which one needs you,
-and let agents hand work to each other without losing the delivery record.**
+**Keep track of the Claude Code and Codex sessions you already run. See which ones need you,
+hand off bounded work, and know when a delivery actually lands.**
 
-Clawdline is a Go daemon with a React console. It watches the Claude Code and Codex sessions you
-already run in tmux (and iTerm2 on a Mac) — no wrapper, no hooks — and lets you read, answer, start
-and stop them from a browser or your phone. Your agents and code stay on your machine; the optional
-Clawdline Cloud connection is only an end-to-end encrypted path to it from another device.
+Clawdline is a local Go daemon with a browser console. It finds sessions in tmux on macOS and Linux
+(and iTerm2 on macOS) without a wrapper or hooks. Follow work across projects, answer a waiting
+session from another device, and keep ownership and delivery evidence with the work. Your agents
+and code stay on your machine. Optional Clawdline Cloud connects browsers and multiple machines
+through an end-to-end encrypted relay.
 
 ## What it does
 
@@ -19,24 +20,21 @@ Clawdline Cloud connection is only an end-to-end encrypted path to it from anoth
   <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline updating the state of several Claude Code and Codex sessions.">
 </p>
 
-- **Sessions and attention.** Every session with its project, assistant and state: working, waiting
-  for you, idle, or unreadable — never guessed as idle. Open one to read the real transcript, answer
-  its question, send text or a marked-up picture, dictate, stop the current turn, or close it
-  safely.
-- **From your phone.** The same console in any browser. Reach it over an SSH forward, your own
-  cloudflared tunnel, or Clawdline Cloud, with reading and acting as separate permissions, and get
-  a push notification when a question has waited ten minutes.
-- **Schedules and webhooks.** Save a task for Claude Code or Codex and run it on the local clock,
-  with catch-up, a timeout and a failure notice. On Cloud Pro, a webhook starts the same task from
-  any event.
-- **Board and Verify.** Put work on a project's Board, assign it to a session, and let the agent
-  move it through implementation, verification, merge and deployment with evidence. Keep changes
-  that can only be judged later on a list of things waiting to be verified.
-- **Dispatch and landing.** A Board item's owning session can dispatch bounded work to children,
-  get the result back, and hand a line of work to a fresh session. Clawdline records when delivered
-  work actually lands. Clawdfather can work from a separate machine workspace to report on Sessions, settings and supported imports or exports. For code work it creates a Board item first and delegates it to a Project Session; it never edits code itself.
-- **Projects across machines.** Give a second machine the same project names, icons and untracked
-  skills as the first, matched by git origin.
+- **Existing sessions, visible together.** See each session's project, assistant and state across
+  tmux and, on macOS, iTerm2. An unreadable session is marked unreadable, not guessed idle. Open its
+  transcript, answer it, start a session, stop a turn or close one safely.
+- **Attention on the device you're using.** Read and answer in a browser or on your phone, with
+  separate read and send permissions. Web Push can tell a subscribed device when a question has
+  waited ten minutes, an agent calls for attention or a scheduled run fails.
+- **Owned dispatch and landing.** A Project Session can send bounded work to a child, receive its
+  result and hand a line of work to a successor. Claims guard against overlapping writes; task
+  receipts and the landing record distinguish a child finishing from its work reaching the target.
+- **A Board that follows delivery.** Assign project work to a Session and follow its steps through
+  implementation, verification, merge and deployment with evidence. The owning Session remains
+  responsible for child work; the Board shows decisions that need you.
+- **Optional encrypted Cloud.** Connect several machines and a phone through Clawdline Cloud's
+  end-to-end encrypted relay. Cloud is off by default and in preview; SSH forwarding and your own
+  tunnel are other ways to reach a machine.
 
 <p align="center">
   <img src="docs/assets/fleet-phone.png" width="390" alt="Clawdline on a phone, showing working, waiting, and child sessions across several projects.">
