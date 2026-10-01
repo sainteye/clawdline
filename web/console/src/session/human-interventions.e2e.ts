@@ -170,8 +170,8 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
       return result.value
     }
-    const until = async (expression: string) => {
-      const deadline = Date.now() + 8_000
+    const until = async (expression: string, timeout = 8_000) => {
+      const deadline = Date.now() + timeout
       while (!(await run(expression))) { if (Date.now() > deadline) assert.fail("UI did not reach " + expression); await new Promise((r) => setTimeout(r, 50)) }
     }
     try {
@@ -300,6 +300,15 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       const nextLoad = browser.loadCount
       await browser.send("Page.reload", {}, id); await browser.loaded(id, nextLoad)
       await until(`!!document.querySelector(".human-interventions-dot")`)
+
+      await run(`fetch("/__fixture/fail-reads?on=1")`)
+      await until(`document.querySelector(".human-interventions-head").innerText.includes("讀取失敗")`, 20000)
+      await run(`fetch("/__fixture/fail-reads?on=0")`)
+      await run(`document.querySelector(".human-interventions-head").click()`)
+      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
+      assert.equal(await run(`!!document.querySelector(".human-interventions")`), false)
+      await until(`!document.querySelector(".human-interventions-head").innerText.includes("讀取失敗")`)
+
       assert.equal(await run(`!!document.querySelector(".human-intervention-card")`), false)
       await run(`document.querySelector(".human-interventions-head").click()`)
       await until(`document.querySelectorAll(".human-intervention-card").length === 8`)

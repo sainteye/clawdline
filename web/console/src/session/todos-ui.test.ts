@@ -20,6 +20,12 @@ test("Session todo reads use durable conversation identity when it is available"
   assert.match(source, /readSessionWorkV2\(rowID, rowSessionID\)/)
 })
 
+test("Session to-do and attention reads allow a response past the refresh interval", () => {
+  const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
+  assert.match(api, /readSessionWorkV2[\s\S]*?call<SessionWorkV2>\([^\n]*30_000\)/)
+  assert.match(api, /readHumanInterventionsV2[\s\S]*?call<HumanInterventionsV2>\([^\n]*30_000\)/)
+})
+
 test("a Session with no first conversation does not report a to-do read failure", () => {
   assert.match(source, /const readReady = sessionTodosReady\(row\)/)
   assert.match(source, /if \(!rowID \|\| !readReady\) return/)
