@@ -60,7 +60,10 @@ type ReadingScenario =
   | "epic"
   | "refresh"
   | "safe-cleared"
+  | "session-gap"
 let readingScenario: ReadingScenario = "normal"
+let sessionGap = false
+let sessionGapComplete = false
 
 type Row = Record<string, unknown>
 
@@ -148,6 +151,10 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (readingScenario === "expired") return []
+  if (readingScenario === "session-gap") {
+    const child = row(BLOCKED, "Alpha child", blockedCloseability(), 100, { state: "working" })
+    return sessionGap ? [child] : [row(SAFE, "Zulu root", safeCloseability(), 10), child]
+  }
   if (readingScenario === "machine-pending" || readingScenario === "machine-bound") {
     return [row(RETAINED, "Machine workspace", safeCloseability(), 500, {
       machine_scope: true,
@@ -270,7 +277,7 @@ const streams = new Set<ServerResponse>()
 function snapshot() {
   generation++
   const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
-  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "epic"
+  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "epic" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
     ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
     : readingScenario === "expired"
       ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
@@ -278,9 +285,9 @@ function snapshot() {
   return {
     at: Date.now(),
     scan: {
-      complete: readingScenario !== "refresh",
-      completed: { complete: readingScenario !== "refresh", sequence: generation },
-      emptyAuthoritative: readingScenario !== "refresh",
+      complete: readingScenario !== "refresh" && (!sessionGap || sessionGapComplete),
+      completed: { complete: readingScenario !== "refresh" && (!sessionGap || sessionGapComplete), sequence: generation },
+      emptyAuthoritative: readingScenario !== "refresh" && (!sessionGap || sessionGapComplete),
       epoch: 1,
       generation,
       provenance: "fixture",
@@ -581,7 +588,10 @@ function daemon(): Server {
       return json(res, 200, { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct, truncated: false })
     }
     if (path === "/v1/orchestrator/tasks") {
-      const tasks = readingScenario === "worst"
+      const tasks = readingScenario === "session-gap"
+        ? [{ id: "task-gap-fixture", state: "briefed", created: 1,
+            root: { terminalId: SAFE, sessionId: "conversation-" + SAFE }, child: { terminalId: BLOCKED } }]
+        : readingScenario === "worst"
         ? [{
             id: "task-fixture",
             task_id: "task-fixture",
@@ -1032,6 +1042,30 @@ async function list(tab: Tab): Promise<Seen> {
   await tab.go("/")
   return tab.until("the list arrives in its resting order", (s) => s.order.join() === ORDER_AT_REST.join())
 }
+
+test("an incomplete session reading keeps a confirmed root and its child together", () =>
+  inTab(async (tab) => {
+    readingScenario = "session-gap"
+    sessionGap = false
+    sessionGapComplete = false
+    try {
+      await tab.go("/")
+      await tab.until("the confirmed parent and child arrive", (s) =>
+        s.order.join() === [SAFE, BLOCKED].join() && s.taskVisible)
+      sessionGap = true
+      pushSessions()
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const after = await tab.seen()
+      assert.deepEqual(after.order, [SAFE, BLOCKED])
+      sessionGapComplete = true
+      pushSessions()
+      await tab.until("a complete reading confirms the root is gone", (s) => s.order.join() === BLOCKED)
+    } finally {
+      sessionGap = false
+      sessionGapComplete = false
+      readingScenario = "normal"
+    }
+  }))
 
 test("keyboard moves through focused options and Enter opens the highlighted Session on both layouts", () =>
   inTab(async (tab) => {
