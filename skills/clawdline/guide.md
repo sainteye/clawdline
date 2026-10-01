@@ -475,7 +475,13 @@ THREADS** (where to pick up). Then post, with a closed body:
 ```
 
 The receiver is told to read the file, walk its references, answer its verification questions and
-continue. You get one `handoff_receipt` notice when it picks up. Refusals: `bad_task` (a missing or
+continue. At opening, the handoff captures the sender's open Board items in that Project. Once the
+receiver has a conversation id and its first conversation record is observed, those items' active
+assignments and owners move to the receiver in one transaction. A failed handoff leaves ownership
+with the sender. An item already closed, moved to somebody else or being assigned separately is
+left alone. A verification-gated item in verifying or merging returns to implementing so its new
+owner must verify it again. You get one `handoff_receipt` notice when the handoff line is typed;
+that notice alone does not prove the Board transfer occurred. Refusals: `bad_task` (a missing or
 empty `handoff.md` included), `sender_not_found`, `sender_ambiguous`, `rate_limited`,
 `terminal_busy`, and `succession_required` if you hold the machine coordinator role — succession is
 not available in this daemon (`501`), so that session cannot hand off.
