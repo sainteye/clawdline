@@ -93,16 +93,17 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
   // the sheet is built when it opens and `open()` there clears the field for
   // the same reason.
   const [query, setQuery] = useState("")
-  const search = useRef<HTMLInputElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const read = useMemo(() => () => client.transcript(row.id, LIMIT), [row.id])
   const { data, pending } = usePoll<TranscriptPage>(read, POLL_MS)
   const entries = useMemo(() => (data ? data.entries : []), [data])
   const newestFirst = L.settingsNewestFirst()
 
-  // `open()`: the field takes the keyboard, without the page jumping to it.
+  // Focus enters the sheet, so its Escape closes it, but not the field: a
+  // phone would open its keyboard over the list the person came to read.
   useEffect(() => {
-    search.current?.focus({ preventScroll: true })
+    closeButton.current?.focus({ preventScroll: true })
   }, [])
 
   // `draw()` puts the list back at its top; it is a new list each time the
@@ -166,7 +167,6 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
           type="search"
           autoComplete="off"
           enterKeyHint="search"
-          ref={search}
           placeholder={words.search}
           aria-label={words.search}
           onChange={(ev) => setQuery(ev.target.value)}
@@ -199,7 +199,7 @@ function Sheet({ row, onClose }: { row: SessionRow; onClose: () => void }) {
         )}
       </div>
       <div className="buttons">
-        <button className="chip" id="user-messages-close" type="button" onClick={onClose}>
+        <button className="chip" id="user-messages-close" type="button" ref={closeButton} onClick={onClose}>
           {T.webClose}
         </button>
       </div>
