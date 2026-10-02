@@ -442,6 +442,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.TerminalBodyBytes:       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request guard"} },
 		capacity.TerminalLaunchLineBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-launch guard"} },
 		capacity.DispatchAlsoWorkIDs:     func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-dispatch guard"} },
+		capacity.HandoffWorktrees:        func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPatchBytes:       func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPackBytes:        func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.TerminalLaunchScripts:   terminal.LaunchScriptsReading,
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).

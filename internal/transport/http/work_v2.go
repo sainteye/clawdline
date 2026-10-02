@@ -22,6 +22,7 @@ import (
 	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -510,6 +511,61 @@ func workV2TakeoverNote(phase work.Phase) string {
 	return fmt.Sprintf("Another Session owned it before and no longer does; the item is in phase %s, and its steps, "+
 		"documents and history are kept. Read them, and look for work the previous Session left in this Project "+
 		"(its branch or worktree) before starting over, then continue from where it stopped.", phase)
+}
+
+// workV2HandoffInput is what the Board adds to the handoff pack when an
+// in-flight item (implementing through deploying) is taken over by a new
+// Session; nil otherwise. It is read from the store and the previous owner's
+// transcript file only: the previous owner is never asked and never waited
+// on, so an owner stopped by its quota or gone altogether changes nothing
+// but what the pack can say about its last message.
+func (s *Server) workV2HandoffInput(ctx context.Context, item app.WorkV2View, previous work.AssignmentV2) *orchestrator.HandoffInput {
+	switch item.Item.Phase {
+	case work.PhaseImplementing, work.PhaseVerifying, work.PhaseMerging, work.PhaseDeploying:
+	default:
+		return nil
+	}
+	if previous.ID == "" {
+		return nil
+	}
+	in := &orchestrator.HandoffInput{ItemID: item.Item.ID, Title: item.Item.Title, Phase: string(item.Item.Phase),
+		PreviousSession: previous.SessionID}
+	for _, step := range item.Steps {
+		if !step.Done {
+			in.OpenSteps = append(in.OpenSteps, step.Title)
+		}
+	}
+	in.LastMessage, in.LastMessageUnread = s.lastAssistantMessage(ctx, previous)
+	return in
+}
+
+// lastAssistantMessage is the previous owner's last assistant message, or why
+// it could not be read.
+func (s *Server) lastAssistantMessage(ctx context.Context, previous work.AssignmentV2) (string, string) {
+	if previous.TerminalID == "" {
+		return "", "the assignment names no terminal"
+	}
+	sess, err := s.actions().Find(ctx, previous.TerminalID)
+	if err != nil {
+		return "", "its terminal " + previous.TerminalID + " is gone: " + err.Error()
+	}
+	if sess.ConversationID != previous.SessionID {
+		return "", "its terminal " + previous.TerminalID + " now holds another conversation"
+	}
+	page, err := s.sessionTail(sess)
+	if err != nil {
+		return "", "its transcript could not be read: " + err.Error()
+	}
+	last := ""
+	for _, entry := range page.Entries {
+		if entry.Kind == transcript.KindAssistant && strings.TrimSpace(entry.Text) != "" {
+			last = strings.TrimSpace(entry.Text)
+		}
+	}
+	if last == "" {
+		return "", "its transcript tail holds no assistant message"
+	}
+	return last, ""
 }
 
 // workV2ReleasedNotice is what the Session an item was moved away from is
@@ -2153,7 +2209,8 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
 			RelevantReferences: references,
-			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem)}})
+			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem)},
+		Handoff: s.workV2HandoffInput(ctx, item, previous)})
 	// Its first screen was a question only the person may answer: the
 	// assignment stays pending and the item asks them to answer it, and the
 	// broker's beat finishes it either way (settleAwaitedAssignments).

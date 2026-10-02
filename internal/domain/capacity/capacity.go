@@ -392,6 +392,11 @@ const (
 	TerminalLaunchScripts   = "terminal.launch_scripts"
 	// The further Board items one dispatch carries beside its work_id.
 	DispatchAlsoWorkIDs = "dispatch.also_work_ids"
+	// What a reassigned in-flight item's handoff pack copies out of the
+	// previous owner's worktrees.
+	HandoffWorktrees  = "handoff.worktrees"
+	HandoffPatchBytes = "handoff.patch_bytes"
+	HandoffPackBytes  = "handoff.pack_bytes"
 )
 
 // Entry is one row of the register.
@@ -2180,6 +2185,28 @@ func Register() []Entry {
 			Limit: 7, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/orchestrator.MaxAlsoWorkIDs"},
+		},
+		{
+			// The worktrees one handoff pack reads, the bytes of one
+			// worktree's patch and of all the pack's patches. Past each the
+			// pack refuses that copy and says "truncated" and what it left
+			// to read by hand; the reassignment itself never fails on it.
+			Name: HandoffWorktrees, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxHandoffWorktrees"},
+		},
+		{
+			Name: HandoffPatchBytes, Class: Buffer, Unit: Bytes,
+			Limit: 8 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxHandoffPatchBytes"},
+		},
+		{
+			Name: HandoffPackBytes, Class: Buffer, Unit: Bytes,
+			Limit: 32 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxHandoffPackBytes"},
 		},
 	}
 }
