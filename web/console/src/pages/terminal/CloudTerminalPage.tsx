@@ -24,7 +24,7 @@ function stateWords(state: CloudTerminalSnapshot["state"]): string {
     case "live": return nextWord("terminalCloudLive")
     case "stale": return nextWord("terminalCloudStale")
     case "offline": return nextWord("terminalCloudOffline")
-    case "revoked": return nextWord("terminalRefusalAccessRevoked")
+    case "revoked": return nextWord("terminalCloudAccessRevoked")
     case "unknown": return nextWord("terminalCloudUnknown")
     case "closed": return nextWord("terminalRefusalClosed")
   }
@@ -246,7 +246,7 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
       <p className="terminal-status-line" role="status" aria-live="polite">{loading ? nextWord("terminalConnecting") :
         error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
           snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
-          snapshot.state === "revoked" ? nextWord("terminalRefusalAccessRevoked") :
+          snapshot.state === "revoked" ? nextWord("terminalCloudAccessRevoked") :
             !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
       {error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline" && <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}

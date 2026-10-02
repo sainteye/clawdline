@@ -58,3 +58,27 @@ test("a successful patch without a changed account read is not reported as enabl
     : reply(200, { devices: [{ id, caps: ["read_sessions"], capability_epoch: 4, revoked_at: null }] })
   await assert.rejects(changeTerminalPermission(api, id, true, fetcher), /permission_unconfirmed/)
 })
+
+test("a lost PATCH response is resolved from the account's actual changed state", async () => {
+  let calls = 0
+  const fetcher = async (_url: string, init?: RequestInit): Promise<Response> => {
+    if (init?.method === "PATCH") throw new TypeError("network response lost")
+    calls++
+    return reply(200, { devices: [{ id, caps: calls === 1 ? ["read_sessions"] : ["read_sessions", "terminal_control"],
+      capability_epoch: calls === 1 ? 4 : 5, revoked_at: null }] })
+  }
+  assert.deepEqual((await changeTerminalPermission(api, id, true, fetcher)).caps, ["read_sessions", "terminal_control"])
+  assert.equal(calls, 2)
+})
+
+test("an unreadable account after PATCH is explicitly unknown", async () => {
+  let calls = 0
+  const fetcher = async (_url: string, init?: RequestInit): Promise<Response> => {
+    if (init?.method === "PATCH") throw new TypeError("network response lost")
+    calls++
+    return calls === 1
+      ? reply(200, { devices: [{ id, caps: ["read_sessions"], capability_epoch: 4, revoked_at: null }] })
+      : reply(503, { error: { code: "offline" } })
+  }
+  await assert.rejects(changeTerminalPermission(api, id, true, fetcher), /permission_unknown/)
+})
