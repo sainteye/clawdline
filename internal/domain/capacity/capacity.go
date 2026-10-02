@@ -376,6 +376,7 @@ const (
 	CloudTerminalRevocationRetire  = "cloud.terminal_revocation_retire_seconds"
 	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
 	CloudTerminalEarlyFrames       = "cloud.terminal_early_frames"
+	CloudTerminalObservationRows   = "cloud.terminal_observation_rows"
 	CloudTerminalUnconfirmed       = "cloud.terminal_unconfirmed_seconds"
 	TerminalBodyBytes              = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
@@ -2063,6 +2064,15 @@ func Register() []Entry {
 			Name: CloudTerminalEarlyFrames, Class: Buffer, Unit: Rows,
 			Limit: 1, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A browser page writes at most 128 content-free terminal stages
+			// to its local console. The daemon publishes the policy but cannot
+			// measure page usage or retract console entries already written.
+			Name: CloudTerminalObservationRows, Class: Observation, Unit: Rows,
+			Limit: 128, AtLimit: Refuse,
+			Deviation: "Browser console entries cannot be evicted; later diagnostic stages are omitted after 128 without affecting terminal delivery.",
+			Told:      []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
 			Name: CloudTerminalUnconfirmed, Class: Cache, Unit: Seconds,
