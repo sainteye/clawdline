@@ -243,7 +243,16 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
 列出還欠著的。只有 cherry-pick 或 `incorporated` 的交付才需要手動記錄（`clawdline guide landing`）。
 
-**6. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉，然後一次
+**6. 結案報告**：找出原因需要深入調查時（直接觀察就確認的修正不需要）。在 `done` 之前加入：項目一旦
+`done` 就沒有持有者，這時送報告會回 `409 not_item_owner`。
+
+```sh
+clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
+```
+
+寫給提出問題的人讀，用 Markdown，不放私密資料。
+
+**7. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉，然後一次
 推進一個 phase：
 
 ```sh
@@ -258,14 +267,6 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 `done` 依項目的部署政策帶 `--deployment` 或 `--no-deployment-reason`。本輪擷取了 verification 時，
 `verifying → merging` 需要 checker 的 PASS：進入 `verifying` 之前先讀 `clawdline guide zh-TW board` 的
 「本輪擷取的規劃與驗證 gate」。
-
-**7. 結案報告**：找出原因需要深入調查時（直接觀察就確認的修正不需要），在 `done` 之前：
-
-```sh
-clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
-```
-
-寫給提出問題的人讀，用 Markdown，不放私密資料。
 
 **8. 回報這個 turn**：最後一個動作是 `clawdline session report --summary "…"`（§7）。
 
