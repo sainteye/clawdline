@@ -101,7 +101,7 @@ test("an expanded Session todo fold has a clickable glass backdrop over the conv
 test("owned Board work shows explicit release milestones and recent completion", () => {
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   const milestones = readFileSync(new URL("../pages/work/WorkMilestones.tsx", import.meta.url), "utf8")
-  assert.match(source, /<WorkMilestones phase=\{item\.phase\} \/>/)
+  assert.match(source, /<WorkMilestones phase=\{item\.phase\} verifyGate=\{item\.verify_gate\} \/>/)
   assert.match(milestones, /state === "done" \? "check"/)
   assert.match(source, /page\.recent_items\.map/)
   assert.match(source, /最近完成的看板項目/)

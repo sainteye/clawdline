@@ -298,11 +298,10 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 		"--work-id <item id>",
 		"file:line",
 		"clawdline task show <task id>",
-		"clawdline task ack <task id> <notice id>",
+		"clawdline task wait <task id>",
 		"clawdline item step-done <item id> <step id>",
 		"clawdline item phase <item id> implementing",
-		"clawdline item phase <item id> verifying",
-		"merging --verification",
+		"deploying --no-landing-reason",
 		"deploying --commit <sha> --target main --remote origin",
 		"done --deployment",
 		"--no-deployment-reason",
@@ -325,6 +324,13 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 		for _, want := range append(wants, prefix+"board", prefix+"epic", prefix+"landing", prefix+"dispatch") {
 			if !strings.Contains(string(part), want) {
 				t.Errorf("%s: the feature-root part does not carry %q", lang, want)
+			}
+		}
+		// With the verify gate off, implementing goes straight to deploying;
+		// the gated line lives in board and `item steps` points there.
+		for _, gone := range []string{"verifying", "`merging`", " merging ", "verification gate", "驗證 gate"} {
+			if strings.Contains(string(part), gone) {
+				t.Errorf("%s: the feature-root part still names %q", lang, gone)
 			}
 		}
 		// After `done` the item is unassigned and a completion report from

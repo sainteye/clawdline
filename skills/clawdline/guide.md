@@ -76,7 +76,8 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
-| `clawdline task ack <task id> <notice id>` | Acknowledges a child's completion notice (§5) |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read (§5) |
+| `clawdline task ack <task id> <notice id>` | Closes a completion notice by hand; rarely needed, since `task show` and `task wait` close it (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
@@ -302,8 +303,9 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
   `clawdline guide dispatch`.
 
 **5. When a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
-`clawdline task show <task id>`, integrate the delivery, then
-`clawdline task ack <task id> <notice id>`. Integrate a worktree child by **merging its branch** into the target. **The merge records the
+`clawdline task show <task id>`, then integrate the delivery; reading it closes the notice, so there
+is no separate ACK. To block until your children finish instead, run
+`clawdline task wait <task id>…` (default `--timeout 9m`, `--any` for the first one). Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
 what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
 `nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
@@ -332,8 +334,6 @@ clawdline item finish <item id> --verification "what was run and what it showed"
 Or advance one phase at a time:
 
 ```sh
-clawdline item phase <item id> verifying
-clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
 clawdline item phase <item id> deploying --no-landing-reason "why there is no code"    # work with no code
@@ -341,9 +341,9 @@ clawdline item phase <item id> done --deployment "what went live, where, which v
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
 
-`done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. With
-captured verification on, `verifying → merging` needs a checker PASS: read "Captured planning and
-verification gates" in `clawdline guide board` before entering `verifying`.
+`done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. When
+`clawdline item steps <item id>` prints a gate line, this item keeps the longer path that line
+points to.
 
 **8. Report the turn**: `clawdline session report --summary "…"` (§7).
 
@@ -548,8 +548,8 @@ You do not call those routes.
   `GET /v1/orchestrator/tasks` lists them (`?state=`, `?limit=` up to 500).
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
   is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
-  released writes, its branch, how many leftovers) and the two commands to run —
-  `clawdline task show <id>`, then `clawdline task ack <id> <notice_id>`. Its JSON still carries
+  released writes, its branch, how many leftovers) and the one command to run,
+  `clawdline task show <id>`, which closes the notice once it has printed the task. Its JSON still carries
   `state`, `result_path`, `outstanding`, `leftovers`, `notice_id` and `ack_path`. It retries on a 5→300-second ladder, eight
   times, until you acknowledge it — and never types while you are showing a menu. A menu does not
   use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone:
@@ -558,7 +558,8 @@ You do not call those routes.
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  `clawdline task ack <id> <notice_id>` sends it and prints one line. A second ACK answers
+  `clawdline task show <id>` and `clawdline task wait <id>…` send it for a finished task after printing it;
+  `clawdline task ack <id> <notice_id>` sends it by hand and prints one line. A second ACK answers
   `changed: false`. Unacknowledged notices are listed at
   `GET /v1/orchestrator/completions`; `POST /v1/orchestrator/completions/reconcile` re-arms them.
   A notice that gave up is typed once more the next time your session is idle.
@@ -567,7 +568,7 @@ You do not call those routes.
   lists `unacknowledged_completions` — each child of yours that finished and that you have not
   acknowledged, with `task_id`, `title`, `state`, `kind`, `result_path`, `notice_id` and `ack_path`, whether
   its notice is still pending or gave up. `clawdline session report` prints them after its receipt.
-  For each: `clawdline task show <id>`, integrate it, then ACK it; the ACK takes it off both lists.
+  For each: `clawdline task show <id>`, then integrate it; the read is the ACK and takes it off both lists.
   `task show` prints the summary whole and counts what it leaves out; `--json` is the daemon's whole
   answer, symbols and artifacts included. Read `result.json` itself only when that is not enough.
 - **A delivery that names leftovers** — things the child says it did not do — changes nothing by
@@ -1227,7 +1228,10 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 
 - One step at a time: `assigned → implementing → verifying → merging → deploying → done`.
   From `verifying` you may go back to `implementing`; from `merging`, back to `implementing` or
-  `verifying`. Nothing skips a phase, and `done` is reached only from `deploying`.
+  `verifying`. An item whose captured verify gate is off may also go from `implementing` straight
+  to `deploying` on its landing evidence (below), with `verification` optional; a gated item is
+  refused that step with `verification_gate_on` and walks the whole line. Nothing else skips a
+  phase, and `done` is reached only from `deploying`.
 - `merging` needs `verification`. `deploying` needs a landing: a broker child of this item that
   landed, or `landing` naming a commit the daemon finds on both the Project's local `target` branch
   and `refs/remotes/<remote>/<target>` — push first. When the work landed in another repository
