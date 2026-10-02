@@ -293,7 +293,9 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 				"root_key":       rootKey(other.Root),
 			})
 	}
-	if len(record.Claims) == 0 {
+	// Missing is nil: `"claims": []` is the answer "writes nothing" (draft.go),
+	// and warning about an answer teaches a root to stop giving it.
+	if record.Claims == nil {
 		warnings = append(warnings, Warning{Code: "claims_missing", Message: claimsMissingMessage})
 	}
 
@@ -1168,6 +1170,10 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 	// same breath and kept on the landing, because this is the last moment
 	// anybody can act on the answer (LandingSettlement).
 	head, settled := b.settlement(ctx, id)
+	// And, for an isolated child that declared it writes nothing, what its
+	// own branch and checkout show it wrote — read here, outside the write
+	// right, because a read-only child owes no landing unless they show one.
+	readOnly, wrote := b.readOnlyEvidence(ctx, id, state)
 	// The settlement's event says what the end did to the child's tab and by
 	// which rule (tabPolicy), so "why is this tab still open" has an answer
 	// in the store rather than only in this code.
@@ -1190,20 +1196,43 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 			r.Worktree.Head = head.commit
 			settlement = settled
 		}
-		// A task that reserved paths in the shared tree still owes a landing,
-		// and so does an isolated one, whose declared paths became its landing
-		// write set. Delivered is not landed, and the obligation is what keeps
-		// the difference visible to the next root rather than to nobody.
+		// A task that declared paths to write still owes a landing, and so
+		// does an isolated one, whose branch is its delivery. A shared task
+		// that declared none owes nothing: "writes nothing" is an answer.
+		// Delivered is not landed, and the obligation is what keeps the
+		// difference visible to the next root rather than to nobody.
 		//
 		// It opens with no target (D19): which branch the work belongs on is
 		// the root's to say, the first time it records this landing, and
 		// until then every reader treats the target as not decided — never as
 		// whatever the repository's HEAD happens to be.
-		if r.Gate == nil && r.Landing == nil && (len(r.Claims) > 0 || r.Worktree != nil) {
-			r.Landing = &Landing{
-				State:      LandingPending,
-				Note:       settlementNote(settlement),
-				Settlement: settlement,
+		//
+		// A child that declared `"claims": []` and whose branch and checkout
+		// show nothing is recorded nothing_to_land as it ends, with the note
+		// that says why; one that wrote anyway, or could not be read, owes the
+		// landing and its note names the evidence. Unknown is never empty.
+		writes, known := r.DeclaredWrites()
+		if r.Gate == nil && r.Landing == nil {
+			switch {
+			case readOnly && wrote == "" && known && len(writes) == 0:
+				r.Landing = &Landing{State: LandingNothingToLand, Note: landingEmptyNote, At: now,
+					Settlement: settlement}
+				extra["landing"] = string(LandingNothingToLand)
+			case readOnly && wrote != "" && known && len(writes) == 0:
+				r.Landing = &Landing{
+					State:      LandingPending,
+					Note:       "it declared no writes, but " + wrote,
+					Settlement: settlement,
+				}
+			case len(writes) > 0 || r.Worktree != nil:
+				// Declared writes, or a checkout whose evidence was not
+				// read: a child that timed out or was cancelled may still
+				// be writing, and an unread checkout is not an empty one.
+				r.Landing = &Landing{
+					State:      LandingPending,
+					Note:       settlementNote(settlement),
+					Settlement: settlement,
+				}
 			}
 		}
 		if r.Root != nil && r.Notice == nil {
