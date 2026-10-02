@@ -17,6 +17,10 @@ const CONVERSATION = "10000000-0000-4000-8000-000000000031"
 const NOTE = "10000000-0000-4000-8000-000000000032"
 const now = Math.floor(Date.now() / 1000)
 let sendRequests = 0
+let sentTexts: string[] = []
+let sentBeforeResolve: number[] = []
+let failSends = false
+let sendDelay = 0
 let failReads = false
 let failActions = false
 let readDelay = 0
@@ -119,7 +123,9 @@ function fixture(): Server {
   const publish = () => { for (const client of eventClients) client.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; listWaiting = false; listAttentionCount = 1; sendRequests = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; listWaiting = false; listAttentionCount = 1; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/fail-sends") { failSends = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/send-delay") { sendDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/list-waiting") { listWaiting = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/list-count") { listAttentionCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")); publish(); return json(res, 200, { ok: true }) }
     if (path === "/__fixture/count") { noteCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")) || 1; return json(res, 200, { ok: true }) }
@@ -161,7 +167,7 @@ function fixture(): Server {
           const body = JSON.parse(Buffer.concat(chunks).toString("utf8"))
           if (body.expected_version !== version) return json(res, 409, { error: "version_conflict" })
           if (path.endsWith("/read")) readAt = now
-          else if (path.endsWith("/resolve")) { readAt = now; resolvedAt = now; listAttentionCount = 0; publish() }
+          else if (path.endsWith("/resolve")) { sentBeforeResolve.push(sentTexts.length); readAt = now; resolvedAt = now; listAttentionCount = 0; publish() }
           else if (path.endsWith("/reopen")) { resolvedAt = null; listAttentionCount = 1; publish() }
           else return json(res, 404, { error: "not_found" })
           version++
@@ -169,6 +175,17 @@ function fixture(): Server {
         })
         return
       }
+    }
+    if (req.method === "POST" && path === `/v1/sessions/${SESSION}/send`) {
+      sendRequests++
+      const chunks: Buffer[] = []
+      req.on("data", (c: Buffer) => chunks.push(c))
+      req.on("end", () => setTimeout(() => {
+        if (failSends) return json(res, 503, { error: "machine_offline", outcome: "not_done" })
+        sentTexts.push(JSON.parse(Buffer.concat(chunks).toString("utf8")).text)
+        json(res, 200, { ok: true })
+      }, sendDelay))
+      return
     }
     if (path.startsWith("/v1/")) {
       if (req.method === "POST" && (path.endsWith("/send") || path === "/v1/messages")) sendRequests++
@@ -238,7 +255,7 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
-  test(name + ": the person reads and composes without accidental sending", async () => {
+  test(name + ": tapping a suggested reply sends it once and then resolves the note", async () => {
     const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
     const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
     const run = async (expression: string) => {
@@ -281,6 +298,8 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.equal(await run(`document.querySelector(".human-intervention-option span").textContent`), "Tuesday works for me.")
       assert.doesNotMatch(await run(`document.querySelector(".human-intervention-option").getAttribute("aria-label")`), /Clawdline 便條/)
       assert.equal(await run(`document.querySelector(".human-intervention-drafts h4").textContent`), "建議回覆")
+      assert.equal(await run(`document.querySelector(".human-intervention-hint").textContent`), "點一下就直接送出到對話。")
+      assert.match(await run(`document.querySelector(".human-intervention-option").getAttribute("aria-label")`), /^送出這個回覆並移到已處理：Tuesday/)
       assert.equal(await run(`document.querySelector(".human-intervention-option").getBoundingClientRect().height >= 48`), true)
       assert.equal(await run(`!!document.querySelector(".human-intervention-explain, .human-intervention-read, .human-intervention-option-actions")`), false)
       assert.equal(await run(`document.querySelector(".human-intervention-stage").textContent`), "待處理")
@@ -309,57 +328,81 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector(".human-intervention-card")`)
       await run(`document.querySelector(".human-intervention-card details summary").click()`)
       assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
+      const expand = async () => {
+        if (await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`) !== "true") await run(`document.querySelector(".human-interventions-head").click()`)
+        await until(`!!document.querySelector(".human-intervention-card")`)
+      }
+      const reopen = async () => {
+        await expand()
+        await run(`document.querySelector(".human-interventions-recent").open = true; document.querySelector(".human-intervention-reopen").click()`)
+        await until(`!!document.querySelector(".human-intervention-resolve") && !document.querySelector(".human-intervention-option").disabled`)
+      }
+      // A double tap, and a second suggestion while the first is on its way, send one message.
       await run(`document.getElementById("msg").textContent = "Existing draft."`)
-      await run(`document.querySelector(".human-intervention-option").click()`)
-      await until(`document.getElementById("msg").textContent.includes("Tuesday works for me.")`)
-      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
-      assert.equal(await run(`!!document.querySelector(".human-interventions-backdrop")`), false)
-      assert.equal(await run(`document.activeElement?.id`), "msg")
-      assert.match(await run(`document.getElementById("msg").textContent`), /Existing draft/)
-      assert.match(await run(`document.getElementById("msg").textContent`), /Clawdline 便條 10000000-0000-4000-8000-000000000032/)
+      await fetch(origin + "/__fixture/send-delay?ms=600")
+      await run(`(() => { const options = document.querySelectorAll(".human-intervention-option"); options[0].click(); options[0].click(); options[1].click() })()`)
+      await until(`document.querySelector(".human-interventions-status")?.textContent === "正在送出回覆…"`)
+      assert.equal(await run(`document.querySelector(".human-intervention-option").disabled`), true)
+      assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true, "the note stays pending while the reply is on its way")
+      await until(`document.querySelector(".human-interventions-status")?.textContent === "回覆已送出，便條已移到最近已處理"`)
+      await fetch(origin + "/__fixture/send-delay?ms=0")
+      assert.equal(sentTexts.length, 1, "one tap sends exactly one message")
+      assert.equal(sendRequests, 1)
+      assert.match(sentTexts[0], /^Tuesday works for me\.\n\n\(Clawdline 便條 10000000-0000-4000-8000-000000000032：「Choose a release day」；待回覆事項：Choose a date\.\)$/)
+      assert.deepEqual(sentBeforeResolve, [1], "the note is resolved only after the reply was sent")
+      assert.equal(await run(`document.getElementById("msg").textContent`), "Existing draft.", "the composer's own text is untouched")
       await until(`!document.querySelector(".human-interventions-dot")`)
-      await run(`document.querySelector(".human-interventions-head").click()`)
-      await until(`!!document.querySelector(".human-interventions-recent")`)
-      await run(`document.querySelector(".human-interventions-recent > summary").click()`)
+      if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, name + "-sent.png"), Buffer.from(data, "base64")) }
       assert.equal(await run(`document.querySelector(".human-interventions-recent .human-intervention-stage").textContent`), "已處理")
-      assert.equal(await run(`!!document.querySelector(".human-interventions-recent .human-intervention-reopen")`), true)
-      await run(`document.dispatchEvent(new CustomEvent("clawdline:intervention-compose", { detail: { target: { machine: "another-machine", session: ${JSON.stringify(SESSION)}, conversation: ${JSON.stringify(CONVERSATION)} }, text: "WRONG MACHINE" } }))`)
-      assert.doesNotMatch(await run(`document.getElementById("msg").textContent`), /WRONG MACHINE/)
-      await run(`document.querySelector(".human-intervention-reopen").click()`)
-      await until(`!!document.querySelector(".human-intervention-resolve")`)
-      assert.equal(await run(`!!document.querySelector(".human-intervention-read, .human-intervention-read-state")`), false)
-      assert.equal(await run(`document.querySelector(".human-intervention-stage").textContent`), "待處理")
-      const copiesBeforeFailure = await run(`(document.getElementById("msg").textContent.match(/Tuesday works for me\./g) || []).length`)
-      await run(`fetch("/__fixture/fail-actions?on=1")`)
+      assert.match(await run(`document.querySelector(".human-interventions-recent .human-intervention-option").getAttribute("aria-label")`), /^再次送出這個回覆：/)
+
+      // A send that fails leaves the note pending and says the reply was not sent.
+      await reopen()
+      await fetch(origin + "/__fixture/fail-sends?on=1")
       await run(`document.querySelector(".human-intervention-option").click()`)
-      await until(`document.querySelector(".human-interventions-head").innerText.includes("操作失敗")`)
-      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
-      assert.match(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /操作失敗/)
+      await until(`document.querySelector(".human-interventions-error")?.textContent.includes("回覆沒有送出，便條仍待處理")`)
+      assert.match(await run(`document.querySelector(".human-interventions-error").textContent`), /再點一次建議回覆重試/)
+      if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, name + "-send-failed.png"), Buffer.from(data, "base64")) }
+      assert.match(await run(`document.querySelector(".human-interventions-head").innerText`), /操作失敗/)
       assert.equal(await run(`!!document.querySelector(".human-interventions-live[role=alert]")`), true)
       assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true)
-      assert.equal(await run(`(document.getElementById("msg").textContent.match(/Tuesday works for me\./g) || []).length`), copiesBeforeFailure + 1,
-        "the failed status update must leave the newly inserted draft in the composer")
-      await run(`fetch("/__fixture/fail-actions?on=0"); document.querySelector(".human-interventions-head").click()`)
-      await until(`!!document.querySelector(".human-intervention-option") && !document.querySelector(".human-intervention-option").disabled`)
-      await run(`document.querySelectorAll(".human-intervention-option")[1].click()`)
-      await until(`!!document.querySelector(".human-interventions-error")`)
-      assert.match(await run(`document.querySelector(".human-interventions-error").textContent`), /另一個建議回覆已在對話框中/)
-      assert.doesNotMatch(await run(`document.getElementById("msg").textContent`), /Wednesday works for me/)
+      assert.equal(await run(`document.querySelector(".human-intervention-stage").textContent`), "待處理")
+      assert.deepEqual(sentBeforeResolve, [1], "a failed send resolves nothing")
+      assert.equal(sentTexts.length, 1)
+      assert.equal(await run(`document.getElementById("msg").textContent`), "Existing draft.")
+      // Retrying the tap sends it.
+      await fetch(origin + "/__fixture/fail-sends?on=0")
+      await until(`!document.querySelector(".human-intervention-option").disabled`)
+      await run(`document.querySelector(".human-intervention-option").click()`)
+      await until(`!document.querySelector(".human-interventions-dot")`)
+      assert.equal(sentTexts.length, 2)
+      assert.deepEqual(sentBeforeResolve, [1, 2])
+
+      // A sent reply whose note could not be resolved says so.
+      await reopen()
+      await fetch(origin + "/__fixture/fail-actions?on=1")
+      await run(`document.querySelector(".human-intervention-option").click()`)
+      await until(`document.querySelector(".human-interventions-error")?.textContent.includes("回覆已送出，但便條仍待處理")`)
+      assert.equal(sentTexts.length, 3)
+      assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true)
+      await fetch(origin + "/__fixture/fail-actions?on=0")
+
+      // From a subagent's transcript the reply still goes to the Session, and the Root view comes back with the draft intact.
+      await run(`document.querySelector(".human-interventions-head").click()`)
+      await until(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded") === "false"`)
       await run(`document.getElementById("bg-strip-line").click()`)
       await until(`!!document.querySelector("#bg-sheet .agents .one.child")`)
       await run(`document.querySelector("#bg-sheet .agents .one.child").click()`)
       await until(`!document.getElementById("msg")`)
+      await expand()
+      await until(`!document.querySelector(".human-intervention-option").disabled`)
       await run(`document.querySelector(".human-intervention-option").click()`)
-      await until(`!!document.getElementById("msg") && document.getElementById("msg").textContent.includes("Tuesday works for me.")`)
       await until(`!document.querySelector(".human-interventions-dot")`)
-      assert.equal(await run(`(document.getElementById("msg").textContent.match(/Tuesday works for me\./g) || []).length`), copiesBeforeFailure + 1,
-        "retrying the same choice must not append a duplicate draft")
-      assert.equal(await run(`document.activeElement?.id`), "msg")
-      assert.match(await run(`document.getElementById("msg").textContent`), /Existing draft/)
-      await run(`document.querySelector(".human-interventions-head").click()`)
-      await run(`document.querySelector(".human-interventions-recent > summary").click()`)
-      await run(`document.querySelector(".human-intervention-reopen").click()`)
-      await until(`!!document.querySelector(".human-intervention-resolve")`)
+      assert.equal(sentTexts.length, 4)
+      await until(`!!document.getElementById("msg")`)
+      assert.equal(await run(`document.getElementById("msg").textContent`), "Existing draft.")
+
+      await reopen()
       await run(`fetch("/__fixture/fail-reads?on=1")`)
       await run(`document.querySelector(".human-intervention-resolve").click()`)
       await until(`!!document.querySelector(".human-interventions-error") && document.querySelector(".human-intervention-option").disabled`)
@@ -369,8 +412,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.equal(await run(`!!document.querySelector(".human-interventions-recent")`), true)
       assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").innerText`), /待處理 1/)
       assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "true")
-      assert.equal(await run(`document.querySelectorAll("#tx .entry").length`), 0)
-      assert.equal(sendRequests, 0, "choosing a suggested reply must not send it")
+      assert.equal(sentTexts.length, 4, "resolving by hand sends nothing")
       await fetch(origin + "/__fixture/reset")
       await fetch(origin + "/__fixture/count?value=8")
       const nextLoad = browser.loadCount
@@ -400,11 +442,10 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.equal(await run(`document.querySelector(".human-intervention-drafts h4").textContent`), "建議回覆")
       assert.equal(await run(`document.querySelector(".human-intervention-option span").textContent`), "Choose a date.")
       await run(`document.querySelector(".human-intervention-option").click()`)
-      await until(`document.getElementById("msg").textContent.includes("Choose a date.")`)
       await until(`!document.querySelector(".human-interventions-dot")`)
-      assert.match(await run(`document.getElementById("msg").textContent`), /Clawdline 便條 10000000-0000-4000-8000-000000000032/)
-      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
-      assert.equal(sendRequests, 0)
+      assert.equal(sentTexts.length, 1)
+      assert.match(sentTexts[0], /^Choose a date\.\n\n\(Clawdline 便條 10000000-0000-4000-8000-000000000032/)
+      assert.equal(await run(`document.getElementById("msg").textContent`), "")
     } finally { await browser.send("Target.closeTarget", { targetId }) }
   })
   test(name + ": a document link opens its text directly", async () => {

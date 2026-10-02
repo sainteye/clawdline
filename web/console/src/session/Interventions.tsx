@@ -4,11 +4,13 @@ import * as L from "../legacy/bridge.js"
 import { humanInterventionActionV2, readHumanInterventionsV2, type HumanInterventionV2, type HumanInterventionsV2 } from "../pages/work/api.js"
 import { failureWords } from "../pages/work/shared.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
-import { appendInterventionDraft, interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
+import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
+import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
+import { deliverUntilSeen, pendingSends } from "./send.js"
 import "./interventions.css"
 
 /** Keep the attention entry in the todo header while its panel stays independent. */
-export function useInterventions(row: SessionRow | null, onInsertDraft?: (target: InterventionTarget, text: string) => void, onExpand?: () => void) {
+export function useInterventions(row: SessionRow | null, onReplySent?: () => void, onExpand?: () => void) {
   const destination = interventionTarget(row)
   const key = destination ? JSON.stringify(destination) : ""
   const latest = useRef<InterventionTarget | null>(destination)
@@ -24,7 +26,6 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const [busy, setBusy] = useState("")
   const busyRef = useRef(false)
   const actionSerial = useRef(0)
-  const insertedDrafts = useRef(new Map<string, string>())
   const [expanded, setExpanded] = useState(false)
 
   const load = useCallback((target: InterventionTarget): Promise<void> => {
@@ -53,7 +54,6 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
     ticket.current++
     actionSerial.current++
     busyRef.current = false
-    insertedDrafts.current.clear()
     setPage(null); setPageKey(""); setReadError(""); setActionError(""); setActionStatus(""); setBusy(""); setExpanded(false)
     if (!destination) return
     void load(destination)
@@ -83,25 +83,24 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   const shown = pageKey === key ? page : null
   const active = shown?.rows.filter((note) => !note.resolved_at) ?? []
   const recent = shown?.rows.filter((note) => !!note.resolved_at) ?? []
-  const run = async (note: HumanInterventionV2, action: "resolve" | "reopen", focusHead = true) => {
+  const run = async (note: HumanInterventionV2, action: "resolve" | "reopen") => {
     if (busyRef.current || readError || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
     const serial = ++actionSerial.current
     busyRef.current = true
     setBusy(note.id); setActionError(""); setActionStatus("")
     try {
       await humanInterventionActionV2(destination.conversation, note, action)
-      insertedDrafts.current.delete(note.id)
       await load(destination)
       if (sameInterventionTarget(destination, latest.current)) {
         setActionStatus(action === "resolve" ? "已移到最近已處理" : "已重新開啟")
-        if (focusHead) window.setTimeout(() => {
+        window.setTimeout(() => {
           document.querySelector<HTMLElement>(".human-interventions-head")?.focus({ preventScroll: true })
         }, 0)
       }
     }
     catch (error) {
       if (sameInterventionTarget(destination, latest.current)) {
-        setActionError(focusHead ? failureWords(error) : `${failureWords(error)}。回覆已保留在對話框，便條仍待處理；請重試移到已處理。`)
+        setActionError(failureWords(error))
         await load(destination)
       }
     }
@@ -109,23 +108,54 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
       if (serial === actionSerial.current) { busyRef.current = false; setBusy("") }
     }
   }
-  const insert = (note: HumanInterventionV2, value: string) => {
-    if (readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
-    const previous = insertedDrafts.current.get(note.id)
-    if (previous && !note.resolved_at) {
-      if (previous !== value) {
-        setActionError("另一個建議回覆已在對話框中；請先修改草稿，再重試移到已處理。")
+  // A suggested reply is a conversation message: it goes through the
+  // composer's own send path (`send.ts`) to the Session's Root conversation,
+  // whatever transcript is on screen, and never touches the composer's text.
+  // The note is resolved only once the daemon has taken the words, so a
+  // cleared dot always means an answer was sent. A resolved note's reply is
+  // sent again on an explicit tap and the note stays resolved.
+  const reply = async (note: HumanInterventionV2, text: string) => {
+    if (!row || readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
+    const serial = ++actionSerial.current
+    busyRef.current = true
+    setBusy(note.id); setActionError(""); setActionStatus("正在送出回覆…")
+    const current = () => sameInterventionTarget(destination, latest.current)
+    try {
+      const card = pendingSends.add(row.id, text, [], Date.now())
+      const code = await deliverUntilSeen(card)
+      if (code) {
+        // A definite refusal: the note's button is the one way to try again,
+        // so the transcript does not keep a second retry for the same words.
+        // An uncertain one keeps its card, which can look before resending.
+        const failed = pendingSends.card(card.token)?.state === "failed"
+        if (failed) pendingSends.dismiss(card.token)
+        if (current()) {
+          setActionStatus("")
+          setActionError(failed
+            ? `回覆沒有送出，便條仍待處理。${pendingFailureSentence(code)}${pendingFailureCanRetry(code) ? " 可以再點一次建議回覆重試。" : ""}`
+            : `無法確認回覆是否送出，便條仍待處理。請先在對話中查看這則訊息，確認沒送出再重試。${pendingFailureSentence(code)}`)
+        }
         return
       }
-      if (onInsertDraft) onInsertDraft(destination, "")
-      else document.getElementById("msg")?.focus({ preventScroll: true })
-    } else {
-      if (onInsertDraft) onInsertDraft(destination, value)
-      else appendInterventionDraft(destination, value)
-      if (!note.resolved_at) insertedDrafts.current.set(note.id, value)
+      onReplySent?.()
+      if (note.resolved_at) {
+        if (current()) setActionStatus("回覆已送出")
+        return
+      }
+      try {
+        await humanInterventionActionV2(destination.conversation, note, "resolve")
+        await load(destination)
+        if (current()) setActionStatus("回覆已送出，便條已移到最近已處理")
+      } catch (error) {
+        if (current()) {
+          setActionStatus("")
+          setActionError(`回覆已送出，但便條仍待處理：${failureWords(error)} 請按「移到已處理」重試，不必再送一次回覆。`)
+          await load(destination)
+        }
+      }
+    } finally {
+      if (serial === actionSerial.current) { busyRef.current = false; setBusy("") }
     }
-    setExpanded(false)
-    if (!note.resolved_at) void run(note, "resolve", false)
   }
 
   const countWords = readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
@@ -150,9 +180,9 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
       {actionError && <p className="human-interventions-error" role="alert">{actionError}</p>}
       {actionStatus && <p className="human-interventions-status" role="status">{actionStatus}</p>}
       {shown && active.length === 0 && <p className="human-interventions-empty">目前沒有需要處理的便條。</p>}
-      {active.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} onAction={run} onInsert={insert} />)}
+      {active.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} />)}
       {recent.length > 0 && <details className="human-interventions-recent"><summary>最近已處理（{recent.length}）</summary>
-        {recent.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} onAction={run} onInsert={insert} />)}
+        {recent.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} />)}
       </details>}
       {!!shown?.pruned_resolved && <p className="human-interventions-retention">本機已清理 {shown.pruned_resolved} 筆較舊的已處理便條。</p>}
     </div>
@@ -162,11 +192,12 @@ export function useInterventions(row: SessionRow | null, onInsertDraft?: (target
   return { head, live, body, close: () => setExpanded(false) }
 }
 
-function InterventionCard({ note, disabled, onAction, onInsert }: {
+function InterventionCard({ note, disabled, sending, onAction, onReply }: {
   note: HumanInterventionV2
   disabled: boolean
+  sending: boolean
   onAction: (note: HumanInterventionV2, action: "resolve" | "reopen") => void
-  onInsert: (note: HumanInterventionV2, text: string) => void
+  onReply: (note: HumanInterventionV2, text: string) => void
 }) {
   const fromAnotherSession = note.source_conversation !== note.target_conversation
   const isReading = note.kind === "read" || note.kind === "report"
@@ -178,11 +209,12 @@ function InterventionCard({ note, disabled, onAction, onInsert }: {
     <p className="human-intervention-reason">原因：{note.reason}</p>
     {note.document_url && <p><a className="human-intervention-document" href={note.document_url} target="_blank" rel="noopener noreferrer"><WorkIcon name="file" />在新分頁開啟文件</a></p>}
     {note.detail && <details className="human-intervention-more"><summary>閱讀完整內容</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
-    <div className="human-intervention-drafts" role="group" aria-label="建議回覆">
+    <div className="human-intervention-drafts" role="group" aria-label="建議回覆" aria-busy={sending}>
       <h4>建議回覆</h4>
+      <p className="human-intervention-hint">點一下就直接送出到對話。</p>
       {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) =>
         <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`${note.resolved_at ? "將建議回覆加入對話框" : "將建議回覆加入對話框並移到已處理"}：${option.label}，${option.draft}`} onClick={() => onInsert(note, interventionReplyText(note, option.draft))}>
+          disabled={disabled} aria-label={`${note.resolved_at ? "再次送出這個回覆" : "送出這個回覆並移到已處理"}：${option.label}，${option.draft}`} onClick={() => onReply(note, interventionReplyText(note, option.draft))}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
           <span>{option.draft}</span>
         </button>)}

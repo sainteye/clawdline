@@ -23,7 +23,7 @@ import { ShellPanel } from "./ShellPanel.js"
 import { BackgroundStrip } from "./BackgroundStrip.js"
 import { StatusLine } from "./StatusLine.js"
 import { Todos } from "./Todos.js"
-import { appendInterventionDraft, interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
+import { interventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { UserMessages } from "./UserMessages.js"
 import { Snippets } from "./Snippets.js"
 import { ClawdfatherSuggestions } from "./ClawdfatherSuggestions.js"
@@ -88,10 +88,8 @@ export function Detail({
 }) {
   const T = L.strings
   const [agentId, setAgentId] = useState<string | null>(null)
-  const [pendingIntervention, setPendingIntervention] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
   const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
-  const pendingInterventionID = useRef(0)
   useEffect(() => { setAgentId(null); setSavedComposerDraft(null) }, [row?.id])
   useEffect(() => setSuggestionsOpen(false), [row?.id])
   const chooseAgent = (id: string | null) => {
@@ -292,12 +290,8 @@ export function Detail({
           if (restore) document.getElementById("bg-strip-line")?.focus({ preventScroll: true })
         }}
       />
-      <Todos row={row} onInsertDraft={(target, text) => {
-        if (!sameInterventionTarget(target, interventionTarget(row))) return
-        if (!selectedAgent) { appendInterventionDraft(target, text); return }
-        setPendingIntervention({ target, text, id: ++pendingInterventionID.current })
-        setAgentId(null)
-      }} />
+      {/* A sent reply went to the Root conversation; show it there. */}
+      <Todos row={row} onReplySent={() => setAgentId(null)} />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
@@ -309,7 +303,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} pendingIntervention={pendingIntervention} onInterventionConsumed={(id) => setPendingIntervention((current) => current?.id === id ? null : current)} />}
+      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} />}
       {selectedAgent ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens

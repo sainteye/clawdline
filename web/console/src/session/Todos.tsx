@@ -18,7 +18,6 @@ import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { useInterventions } from "./Interventions.js"
-import type { InterventionTarget } from "./intervention-composer.js"
 import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
 import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
@@ -27,9 +26,9 @@ import "../pages/work/work.css"
 import "./todos.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
-export function Todos({ row, onInsertDraft }: { row: SessionRow | null; onInsertDraft?: (target: InterventionTarget, text: string) => void }) {
+export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySent?: () => void }) {
   const [open, setOpen] = useState(false)
-  const attention = useInterventions(row, onInsertDraft, () => setOpen(false))
+  const attention = useInterventions(row, onReplySent, () => setOpen(false))
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState("")
   const [images, setImages] = useState<File[]>([])

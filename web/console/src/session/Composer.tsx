@@ -14,7 +14,7 @@ import {
 } from "../legacy/shots-bridge.js"
 import * as V from "../legacy/voice-bridge.js"
 import { COMPOSE_APPEND } from "../legacy/snippets-bridge.js"
-import { INTERVENTION_COMPOSE, interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
+import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import {
   clampSkillPickerIndex,
   filterSkills,
@@ -78,15 +78,11 @@ export function Composer({
   onDid,
   onScreen,
   restoredDraft,
-  pendingIntervention,
-  onInterventionConsumed,
 }: {
   row: SessionRow | null
   onDid: () => void
   onScreen?: () => void
   restoredDraft?: { target: InterventionTarget; text: string } | null
-  pendingIntervention?: { target: InterventionTarget; text: string; id: number } | null
-  onInterventionConsumed?: (id: number) => void
 }) {
   const T = L.strings
   const msg = useRef<HTMLDivElement>(null)
@@ -374,28 +370,6 @@ export function Composer({
   // Restoration is needed when this composer is remounted after viewing a subagent.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoredDraft])
-
-  const consumedIntervention = useRef(0)
-  useEffect(() => {
-    if (!pendingIntervention || consumedIntervention.current === pendingIntervention.id) return
-    consumedIntervention.current = pendingIntervention.id
-    if (sameInterventionTarget(pendingIntervention.target, interventionDestination.current)) {
-      sink.current(pendingIntervention.text)
-      msg.current?.focus()
-    }
-    onInterventionConsumed?.(pendingIntervention.id)
-  }, [pendingIntervention, onInterventionConsumed])
-
-  useEffect(() => {
-    const appended = (event: Event) => {
-      const detail = (event as CustomEvent<{ target?: InterventionTarget; text?: unknown }>).detail
-      if (typeof detail?.text !== "string" || !sameInterventionTarget(detail.target ?? null, interventionDestination.current)) return
-      sink.current(detail.text)
-      msg.current?.focus()
-    }
-    document.addEventListener(INTERVENTION_COMPOSE, appended)
-    return () => document.removeEventListener(INTERVENTION_COMPOSE, appended)
-  }, [])
 
   // The microphone, attached once. `Voice` is a module rather than a hook for
   // the reason the original is one object: there is one recorder on the page,
