@@ -215,6 +215,7 @@ const (
 	RunCreatedItems           = "run.created_items"
 	RunClaimedItems           = "run.claimed_items"
 	EpicChildItems            = "epic.child_items"
+	PlanReviewBlockingListed  = "planreview.blocking_listed"
 	WorkRequestBodyBytes      = "work.request_body_bytes"
 	// Planning and verification gates use the exact stable names approved by
 	// the Epic plan. Unlike older rows, these names are one underscore-delimited
@@ -939,6 +940,16 @@ func Register() []Entry {
 			Limit: 64, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/work.EpicChildLimit"},
+		},
+		{
+			// The blocking findings a planning-gate refusal names
+			// (*_plan_review_blocking). The rest are counted, "and N more";
+			// the whole receipt stays on the review task. The findings past
+			// the limit coalesce into that one count.
+			Name: PlanReviewBlockingListed, Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/work.PlanReviewBlockingListLimit"},
 		},
 		{
 			Name: WorkRequestBodyBytes, Class: Buffer, Unit: Bytes,

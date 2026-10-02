@@ -508,8 +508,8 @@ func TestTheBriefingsResultSampleFinishesFirstTime(t *testing.T) {
 // hold; any other task's says nothing of it.
 func TestOnlyAReviewBriefingNamesTheReviewReceipt(t *testing.T) {
 	b, _ := newTestBroker(t)
-	words := []string{`"review":`, "safe_to_land", "changes_required", "specification", "repository_invariants",
-		"runtime_failure_behavior", "`blocking`", "`important`", "`minor`"}
+	words := []string{`"review":`, "safe_to_land", "proceed_with_findings", "changes_required", "specification",
+		"repository_invariants", "runtime_failure_behavior", "`blocking`", "`non_blocking`"}
 	review := b.ChildBrief(Record{ID: "7ab00042-0000-4000-8000-000000000042", Title: "t", Kind: "plan_review", TimeoutMinutes: 30}, "/tmp")
 	plain := b.ChildBrief(Record{ID: "7ab00043-0000-4000-8000-000000000043", Title: "t", Kind: "custom", TimeoutMinutes: 30}, "/tmp")
 	for _, w := range words {

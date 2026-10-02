@@ -29,11 +29,14 @@ const (
 	VerdictSafeToLand      ReviewVerdict = "safe_to_land"
 	VerdictChangesRequired ReviewVerdict = "changes_required"
 	VerdictAbandoned       ReviewVerdict = "abandoned"
+	// VerdictProceedWithFindings is a review with findings of which none is
+	// blocking: the work may go on, and the findings are for the author.
+	VerdictProceedWithFindings ReviewVerdict = "proceed_with_findings"
 )
 
 // Advances reports whether work may continue past a review with this verdict.
 // A review that asked for changes has finished its job, and the node that
 // carries out those changes is the next one, not a blocked one.
 func (v ReviewVerdict) Advances() bool {
-	return v == VerdictSafeToLand || v == VerdictChangesRequired
+	return v == VerdictSafeToLand || v == VerdictChangesRequired || v == VerdictProceedWithFindings
 }

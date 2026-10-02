@@ -1393,7 +1393,11 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 		if err != nil {
 			return work.ItemV2{}, nil, err
 		}
-		if err := work.PlanningGate(prev, c.Next, plans); err != nil {
+		review, err := latestPlanReview(tx, plans)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		if err := work.PlanningGate(prev, c.Next, plans, review); err != nil {
 			return work.ItemV2{}, nil, err
 		}
 		if prev.Kind == work.KindEpic && c.Next == work.PhaseDone {
@@ -2137,6 +2141,35 @@ func planReviewDocument(result *taskdir.Result) (string, string) {
 		cut--
 	}
 	return title, string(body.Bytes()[:cut]) + notice
+}
+
+// latestPlanReview reads what the item's latest plan_review concluded from
+// the receipt of the task it references (the document body may be cut or
+// free-form; the task record is the whole receipt). A task that is gone,
+// unreadable or carries no review is a legacy receipt; a store that did not
+// answer is an error, never a review that found nothing.
+func latestPlanReview(tx *store.WorkV2Tx, plans []work.DocumentV2) (work.PlanReviewSummary, error) {
+	ref := ""
+	for _, d := range plans {
+		if d.Role == work.DocumentPlanReview {
+			ref = d.Reference
+		}
+	}
+	if ref == "" {
+		return work.PlanReviewSummary{Legacy: true}, nil
+	}
+	row, err := tx.BrokerTask(ref)
+	if errors.Is(err, store.ErrNoTask) {
+		return work.PlanReviewSummary{Legacy: true}, nil
+	}
+	if err != nil {
+		return work.PlanReviewSummary{}, err
+	}
+	r, err := orchestrator.Decode(row.Record)
+	if err != nil || r.Result == nil {
+		return work.PlanReviewSummary{Legacy: true}, nil
+	}
+	return work.ReadPlanReview(r.Result.Review), nil
 }
 
 // checkPlanReviewTask accepts a plan_review only when its reference is a

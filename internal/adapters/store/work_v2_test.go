@@ -116,7 +116,7 @@ VALUES
 				{Role: work.DocumentPlan},
 				{Role: work.DocumentPlanReview},
 			}
-			if err := work.PlanningGate(got, work.PhaseImplementing, plans); err != nil {
+			if err := work.PlanningGate(got, work.PhaseImplementing, plans, work.PlanReviewSummary{}); err != nil {
 				t.Errorf("migrated Epic did not preserve its reviewed-plan crossing: %v", err)
 			}
 		}

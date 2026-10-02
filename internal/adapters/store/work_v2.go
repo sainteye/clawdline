@@ -1466,9 +1466,11 @@ func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 }
 
 // PlanDocuments includes the review boundary declarations in the same
-// insertion order as plans and reviews. Seconds tie, so rowid breaks it.
+// insertion order as plans and reviews. Seconds tie, so rowid breaks it. A
+// plan_review carries its reference, the review task whose receipt the
+// planning gate reads.
 func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT role, title, body, created_at FROM work_v2_documents
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT role, title, body, reference, created_at FROM work_v2_documents
     WHERE work_id=? AND (role IN ('plan','plan_review') OR
       (role='other' AND title=?)) ORDER BY created_at, rowid`, workID,
 		work.ReviewBoundaryTitle)
@@ -1480,7 +1482,7 @@ func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
 	for rows.Next() {
 		var d work.DocumentV2
 		var created int64
-		if err := rows.Scan(&d.Role, &d.Title, &d.Body, &created); err != nil {
+		if err := rows.Scan(&d.Role, &d.Title, &d.Body, &d.Reference, &created); err != nil {
 			return nil, err
 		}
 		d.WorkID, d.CreatedAt = workID, time.Unix(created, 0)

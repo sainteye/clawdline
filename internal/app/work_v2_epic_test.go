@@ -455,3 +455,119 @@ func TestAnAutomaticPlanReviewRefusesAsTheManualOneDoes(t *testing.T) {
 		t.Fatalf("oversized receipt: %+v %v", v.Documents, err)
 	}
 }
+
+// reviewedWith is a finished plan_review child whose receipt has one finding
+// of each severity given; "-" is a finding with no severity at all.
+func reviewedWith(id, item string, at time.Time, severities ...string) orchestrator.Record {
+	r := reviewTask(id, item, at)
+	var findings []string
+	for n, s := range severities {
+		sev := ""
+		if s != "-" {
+			sev = `"severity":"` + s + `",`
+		}
+		findings = append(findings, `{"id":"f-`+string(rune('a'+n))+`",`+sev+`"summary":"Finding `+string(rune('A'+n))+`","evidence":["plan:1"]}`)
+	}
+	status := "pass"
+	if len(findings) > 0 {
+		status = "findings"
+	}
+	receipt := `{"verdict":"changes_required","axes":[{"axis":"specification","status":"` + status + `","findings":[` +
+		strings.Join(findings, ",") + `]},{"axis":"repository_invariants","status":"pass","findings":[]},` +
+		`{"axis":"runtime_failure_behavior","status":"pass","findings":[]}]}`
+	r.Result = &taskdir.Result{Status: "success", Summary: "Reviewed", Review: json.RawMessage(receipt)}
+	return r
+}
+
+// The phase route reads the latest plan review's receipt from its task: a
+// blocking finding stops implementing and is named in the refusal; zero
+// findings, only non-blocking ones, or a legacy receipt with no severities
+// let the item through. An Epic whose second review still blocks is told it
+// may go on only by the person's override or a raised review limit.
+func TestThePlanningGateBlocksOnlyABlockingPlanReview(t *testing.T) {
+	w, clock := newEpicTest(t)
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Planning: true}, nil
+	}
+	feature := func(t *testing.T) WorkV2View {
+		t.Helper()
+		v := createWorkV2Test(t, w, work.KindFeature)
+		required := true
+		v, err := w.Edit(context.Background(), v.Item.ID, EditWorkV2{ExpectedVersion: v.Item.Version,
+			ReviewRequired: &required, Actor: "local", Person: true}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+			Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := addDoc(w, &owned, work.DocumentPlan, ""); err != nil {
+			t.Fatal(err)
+		}
+		return owned
+	}
+	for n, c := range []struct {
+		name       string
+		severities []string
+		code       string
+	}{
+		{"zero findings", nil, ""},
+		{"only non-blocking", []string{"non_blocking", "minor"}, ""},
+		{"contains blocking", []string{"non_blocking", "blocking"}, "feature_plan_review_blocking"},
+		{"legacy receipt without severity", []string{"blocking", "-"}, ""},
+	} {
+		item := feature(t)
+		review := reviewedWith("7e000000-0000-4000-8000-00000000060"+string(rune('0'+n)), item.Item.ID, clock.at, c.severities...)
+		putTask(t, w.Store, review)
+		if err := addDoc(w, &item, work.DocumentPlanReview, review.ID); err != nil {
+			t.Fatal(err)
+		}
+		err := advanceTo(w, &item, work.PhaseImplementing)
+		if c.code == "" {
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			continue
+		}
+		refusedAsWork(t, err, c.code)
+		if !strings.Contains(err.Error(), `"Finding B"`) || strings.Contains(err.Error(), `"Finding A"`) ||
+			!strings.Contains(err.Error(), "clawdline dispatch --kind plan_review --work-id "+item.Item.ID) {
+			t.Fatalf("%s: the refusal does not list the blocking finding and the next command: %v", c.name, err)
+		}
+	}
+
+	epic := assignedEpic(t, w)
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	first := reviewedWith("7e000000-0000-4000-8000-000000000611", epic.Item.ID, clock.at, "blocking")
+	putTask(t, w.Store, first)
+	if err := addDoc(w, &epic, work.DocumentPlanReview, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	refusedAsWork(t, advanceTo(w, &epic, work.PhaseImplementing), "epic_plan_review_blocking")
+	clock.at = clock.at.Add(time.Minute)
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	refusedAsWork(t, advanceTo(w, &epic, work.PhaseImplementing), "epic_plan_review_required")
+	second := reviewedWith("7e000000-0000-4000-8000-000000000612", epic.Item.ID, clock.at, "blocking")
+	putTask(t, w.Store, second)
+	if err := addDoc(w, &epic, work.DocumentPlanReview, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	err := advanceTo(w, &epic, work.PhaseImplementing)
+	refusedAsWork(t, err, "epic_plan_review_blocking")
+	if !strings.Contains(err.Error(), "raises the review limit") || !strings.Contains(err.Error(), "only the person can") {
+		t.Fatalf("the Epic past its rounds is not told its two ways forward: %v", err)
+	}
+	// Revised a third time, with no third review: the rounds are used and the
+	// second review's blocking finding still stands.
+	clock.at = clock.at.Add(time.Minute)
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	refusedAsWork(t, advanceTo(w, &epic, work.PhaseImplementing), "epic_plan_review_blocking")
+}

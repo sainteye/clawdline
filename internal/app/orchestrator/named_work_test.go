@@ -2,10 +2,13 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -257,6 +260,80 @@ func TestADispatchMayCarrySeveralBoardItems(t *testing.T) {
 			return err
 		}); err != nil || len(bound) != 1 || bound[0].ID != id {
 			t.Fatalf("tasks of %s: %d rows, %v", item, len(bound), err)
+		}
+	}
+}
+
+// A dispatch bound to a planning-gated Epic whose latest plan review has a
+// blocking finding is refused by name, and lists that finding; a new plan
+// review is still dispatched, and a review with only non-blocking findings,
+// or a legacy one with no severities, stops nothing.
+func TestADispatchOnAPlanWithABlockingReviewIsRefused(t *testing.T) {
+	b, ctx, clock := newTodoBroker(t)
+	project := t.TempDir()
+	put := func(item, review string, receipt string) {
+		t.Helper()
+		now := clock.now()
+		it := work.ItemV2{ID: item, ProjectID: "p", ProjectPath: project, Kind: work.KindEpic, Title: "Epic",
+			Description: "Large.", Phase: work.PhaseAssigned, DeploymentPolicy: work.DeployAgentDecides, CreatedBy: "local",
+			CreatedAt: now, UpdatedAt: now, Cycle: 1, Version: 1, GateSnapshotCycle: 1, GateSnapshotAt: now,
+			PlanningGate: true, AcceptanceCriteria: "It works."}
+		rec := Record{ID: review, Kind: "plan_review", WorkID: item, State: StateSuccess, CreatedAt: now, ProjectDir: project,
+			Result: &taskdir.Result{Status: "success", Summary: "Reviewed", Review: json.RawMessage(receipt)}}
+		body, _ := json.Marshal(rec)
+		if _, err := b.Store.CreateBrokerTask(ctx, store.BrokerRow{ID: review, Project: project, Assistant: "claude",
+			State: string(StateSuccess), CreatedAt: now, SecretHash: "h", Record: body}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+			if err := tx.CreateItem(it, "local", "{}"); err != nil {
+				return err
+			}
+			for n, role := range []string{work.DocumentPlan, work.DocumentPlanReview} {
+				ref := ""
+				if role == work.DocumentPlanReview {
+					ref = review
+				}
+				if err := tx.AddDocument(work.DocumentV2{ID: item[:len(item)-1] + string(rune('a'+n)), WorkID: item, Role: role,
+					Title: role, Reference: ref, Position: int64(n + 1), Version: 1, CreatedAt: now, UpdatedAt: now}); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	receipt := func(severity string) string {
+		sev := ""
+		if severity != "" {
+			sev = `"severity":"` + severity + `",`
+		}
+		return `{"verdict":"changes_required","axes":[{"axis":"specification","status":"findings","findings":[` +
+			`{"id":"f-1",` + sev + `"summary":"No rollback for the migration","evidence":["plan.md:3"]}]},` +
+			`{"axis":"repository_invariants","status":"pass","findings":[]},{"axis":"runtime_failure_behavior","status":"pass","findings":[]}]}`
+	}
+	blocked, nonBlocking, legacy := "0b0a0000-0000-4000-8000-0000000005a1", "0b0a0000-0000-4000-8000-0000000005b1",
+		"0b0a0000-0000-4000-8000-0000000005c1"
+	put(blocked, "7e000000-0000-4000-8000-0000000005a1", receipt("blocking"))
+	put(nonBlocking, "7e000000-0000-4000-8000-0000000005b1", receipt("non_blocking"))
+	put(legacy, "7e000000-0000-4000-8000-0000000005c1", receipt(""))
+
+	task := "d15a0000-0000-4000-8000-000000000501"
+	writeBrief(t, b, task, project, map[string]any{"work_id": blocked, "kind": "custom"})
+	_, err := b.Dispatch(ctx, DispatchRequest{TaskID: task, Secret: w1Secret})
+	if refusalCode(err) != "epic_plan_review_blocking" || !strings.Contains(err.Error(), "No rollback for the migration") {
+		t.Fatalf("a dispatch past a blocking review answered %v", err)
+	}
+	for n, c := range []struct{ name, item, kind string }{
+		{"a new plan review", blocked, "plan_review"},
+		{"only non-blocking findings", nonBlocking, "custom"},
+		{"a legacy receipt without severities", legacy, "custom"},
+	} {
+		task := "d15a0000-0000-4000-8000-00000000051" + string(rune('0'+n))
+		writeBrief(t, b, task, project, map[string]any{"work_id": c.item, "kind": c.kind})
+		if _, err := b.Dispatch(ctx, DispatchRequest{TaskID: task, Secret: w1Secret}); err != nil {
+			t.Fatalf("%s was refused: %v", c.name, err)
 		}
 	}
 }

@@ -697,6 +697,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.EpicChildItems: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Epic guard, counted inside each child create; no retained buffer"}
 		},
+		capacity.PlanReviewBlockingListed: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-refusal list of blocking findings; no retained buffer"}
+		},
 		capacity.WorkRequestBodyBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},

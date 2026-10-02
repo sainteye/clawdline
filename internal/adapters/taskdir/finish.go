@@ -380,10 +380,14 @@ func absentOrBounded(v any, max int) bool {
 }
 
 // validateReview is the closed review receipt: a verdict, and exactly the three
-// axes, each passing with no findings or carrying at least one.
+// axes, each passing with no findings or carrying at least one. A finding's
+// severity is blocking or non_blocking; important and minor, from the older
+// template, are still accepted and count as non-blocking. safe_to_land means
+// no findings at all, proceed_with_findings means findings of which none is
+// blocking, and changes_required stays legal whenever there are findings.
 func validateReview(value any) string {
 	review, ok := value.(map[string]any)
-	if !ok || !exactKeys(review, "verdict", "axes") || !oneOf(review["verdict"], "safe_to_land", "changes_required") {
+	if !ok || !exactKeys(review, "verdict", "axes") || !oneOf(review["verdict"], "safe_to_land", "proceed_with_findings", "changes_required") {
 		return "review must contain only a valid verdict and exactly three axes"
 	}
 	axes, ok := review["axes"].([]any)
@@ -392,7 +396,7 @@ func validateReview(value any) string {
 	}
 	wanted := map[string]bool{"specification": true, "repository_invariants": true, "runtime_failure_behavior": true}
 	seen := map[string]bool{}
-	findings := 0
+	findings, blocking := 0, 0
 	for _, a := range axes {
 		axis, ok := a.(map[string]any)
 		name, _ := axis["axis"].(string)
@@ -408,12 +412,15 @@ func validateReview(value any) string {
 			id, _ := finding["id"].(string)
 			evidence, evidenceOK := finding["evidence"].([]any)
 			if !ok || !exactKeys(finding, "id", "severity", "summary", "evidence") || !isSlug(finding["id"]) || ids[id] ||
-				!oneOf(finding["severity"], "blocking", "important", "minor") || !nonEmpty(finding["summary"], 500) ||
+				!oneOf(finding["severity"], "blocking", "non_blocking", "important", "minor") || !nonEmpty(finding["summary"], 500) ||
 				!evidenceOK || len(evidence) < 1 || len(evidence) > 8 || !allNonEmpty(evidence, 500) {
 				return "each review finding must use the exact id/severity/summary/evidence schema"
 			}
 			ids[id] = true
 			findings++
+			if finding["severity"] == "blocking" {
+				blocking++
+			}
 		}
 		if (axis["status"] == "pass") != (len(list) == 0) {
 			return "a passing axis has no findings and a findings axis has at least one"
@@ -424,6 +431,9 @@ func validateReview(value any) string {
 	}
 	if (review["verdict"] == "safe_to_land") != (findings == 0) {
 		return "review verdict must agree with its findings"
+	}
+	if review["verdict"] == "proceed_with_findings" && blocking > 0 {
+		return "proceed_with_findings is for findings none of which is blocking; use changes_required"
 	}
 	return ""
 }
