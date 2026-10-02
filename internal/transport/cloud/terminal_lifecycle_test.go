@@ -120,6 +120,60 @@ func TestUnconfirmedCloudConnectionReleasesViewerSlot(t *testing.T) {
 	}
 }
 
+func TestRelayDeliveredFrameDoesNotConfirmViewerConnection(t *testing.T) {
+	l, _, c, svc, retired := terminalLifecycleFixture(t)
+	p := terminals.Principal{Device: c.viewer, Cloud: true}
+	c.unconfirmedDeadline = time.Now().Add(time.Second)
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID,
+		terminal.Frame{Rev: "still", At: time.Now(), Lines: []string{"$ "}}); err != nil {
+		t.Fatal(err)
+	}
+	l.terminalReceiptSettled("term/machine/viewer/"+c.id, c.framePendingSeq, adaptercloud.SettleDelivered)
+	l.terminalMu.Lock()
+	deadline := c.unconfirmedDeadline
+	l.terminalMu.Unlock()
+	if deadline.IsZero() {
+		t.Fatal("relay delivery cleared viewer confirmation deadline")
+	}
+	l.terminalMu.Lock()
+	c.unconfirmedDeadline = time.Now().Add(-time.Second)
+	l.terminalMu.Unlock()
+	l.sweepTerminalConnections()
+	select {
+	case <-retired:
+	case <-time.After(time.Second):
+		t.Fatal("unobserved frame kept relay registration")
+	}
+}
+
+func TestTerminalOpeningReceiptNeedsSubsequentViewerRequest(t *testing.T) {
+	for _, operation := range []string{"open", "read", "rekey_connection"} {
+		t.Run(operation, func(t *testing.T) {
+			l, _, c, _, retired := terminalLifecycleFixture(t)
+			c.unconfirmedDeadline = time.Time{}
+			if err := l.sendTerminalReceipt(context.Background(), c, terminalReceipt{V: 1, Type: "terminal_receipt",
+				RequestID: testRequestID, Connection: c.id, Operation: operation, Status: "ok"}); err != nil {
+				t.Fatal(err)
+			}
+			l.terminalMu.Lock()
+			deadline := c.unconfirmedDeadline
+			l.terminalMu.Unlock()
+			if deadline.IsZero() {
+				t.Fatal("opening receipt did not arm viewer confirmation deadline")
+			}
+			l.terminalMu.Lock()
+			c.unconfirmedDeadline = time.Now().Add(-time.Second)
+			l.terminalMu.Unlock()
+			l.sweepTerminalConnections()
+			select {
+			case <-retired:
+			case <-time.After(time.Second):
+				t.Fatal("unconfirmed receipt kept relay registration")
+			}
+		})
+	}
+}
+
 func TestUnacknowledgedFirstFrameReceiptExpiresWithoutFrame(t *testing.T) {
 	l, spool, c, svc, retired := terminalLifecycleFixture(t)
 	p := terminals.Principal{Device: c.viewer, Cloud: true}
