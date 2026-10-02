@@ -16,6 +16,7 @@ import (
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
+	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/terminal"
@@ -23,6 +24,16 @@ import (
 
 const testConnection = "AAAAAAAAAAAAAAAAAAAAAA"
 const testKeyID = "rk-AQEBAQEBAQEBAQEBAQEBAQ"
+
+type stillCloudHost struct{ ports.OwnedTerminals }
+
+func (*stillCloudHost) Frame(context.Context, terminal.ID) (terminal.Frame, error) {
+	return terminal.Frame{Rev: "still", At: time.Now(), Cols: 80, Rows: 24, Lines: []string{"$ "}}, nil
+}
+
+func (*stillCloudHost) Changed(context.Context, terminal.ID) (<-chan struct{}, func(), error) {
+	return make(chan struct{}), func() {}, nil
+}
 
 func TestTerminalFramesWaitForRelaySettlementAndKeepNewestCapture(t *testing.T) {
 	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), nil, time.Now)
@@ -61,7 +72,7 @@ func TestTerminalFramesWaitForRelaySettlementAndKeepNewestCapture(t *testing.T) 
 	if c.publishedFrameSeq != 1 {
 		t.Fatalf("published %d frames before ACK", c.publishedFrameSeq)
 	}
-	l.terminalReceiptSettled("term/machine/viewer/"+testConnection, c.framePendingSeq)
+	l.terminalReceiptSettled("term/machine/viewer/"+testConnection, c.framePendingSeq, adaptercloud.SettleDelivered)
 	latest := time.Now()
 	if err := l.sendTerminalFrame(context.Background(), svc, p, c, id, terminal.Frame{Rev: "still", At: latest, Lines: []string{"$ "}}); err != nil {
 		t.Fatal(err)
@@ -316,7 +327,7 @@ func TestLocalGrantRefusalRegistersBeforeReceiptAndRetiresAfterSettlement(t *tes
 		t.Fatal("retired before receipt settlement")
 	default:
 	}
-	l.terminalReceiptSettled(env.Ch, env.Seq)
+	l.terminalReceiptSettled(env.Ch, env.Seq, adaptercloud.SettleDelivered)
 	select {
 	case <-retired:
 	case <-time.After(time.Second):
@@ -464,7 +475,7 @@ func TestRevokedTerminalNoticesViewerAndRefusesNextInput(t *testing.T) {
 		t.Fatal("metadata retirement overtook the correlated refusal")
 	default:
 	}
-	l.terminalReceiptSettled("termr/machine/viewer/"+testConnection, 1)
+	l.terminalReceiptSettled("termr/machine/viewer/"+testConnection, 1, adaptercloud.SettleDelivered)
 	select {
 	case <-retired:
 	case <-time.After(time.Second):
