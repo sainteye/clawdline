@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   condition         TEXT NOT NULL DEFAULT '' CHECK (condition IN ('','blocked','waiting_user','owner_required','owner_offline','evidence_unknown','assignment_failed','assigned_unnotified')),
   user_action       TEXT NOT NULL DEFAULT '',
   deployment_policy TEXT NOT NULL CHECK (deployment_policy IN ('required','not_required','agent_decides')),
+  review_required   INTEGER NOT NULL DEFAULT 0 CHECK (review_required IN (0,1)),
   owner_session     TEXT NOT NULL DEFAULT '',
   created_by        TEXT NOT NULL,
   created_at        INTEGER NOT NULL,
@@ -235,6 +236,9 @@ func openWorkV2(db *sql.DB) error {
 		{"planning_gate", `ALTER TABLE work_v2_items ADD COLUMN planning_gate INTEGER NOT NULL DEFAULT 0 CHECK (planning_gate IN (0,1))`},
 		{"verify_gate", `ALTER TABLE work_v2_items ADD COLUMN verify_gate INTEGER NOT NULL DEFAULT 0 CHECK (verify_gate IN (0,1))`},
 		{"cycle_base_commit", `ALTER TABLE work_v2_items ADD COLUMN cycle_base_commit TEXT NOT NULL DEFAULT ''`},
+		// review_required is the person's "Needs independent review" switch on
+		// a Feature; every item written before it reads unchecked.
+		{"review_required", `ALTER TABLE work_v2_items ADD COLUMN review_required INTEGER NOT NULL DEFAULT 0 CHECK (review_required IN (0,1))`},
 	}
 	for _, column := range columns {
 		if has, err = hasColumn(db, "work_v2_items", column.name); err != nil {
@@ -475,12 +479,14 @@ func (t *WorkV2Tx) AddEffect(e Effect) (int64, error) {
 const workV2Columns = `id, project_id, project_path, kind, title, description,
   acceptance_criteria, acceptance_version, acceptance_digest, phase, condition, user_action,
   deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle,
-  gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate, cycle_base_commit, version, created_via, parent_id`
+  gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate, cycle_base_commit, version, created_via, parent_id,
+  review_required`
 
 const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description,
   i.acceptance_criteria, i.acceptance_version, i.acceptance_digest, i.phase, i.condition, i.user_action,
   i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle,
-  i.gate_snapshot_cycle, i.gate_snapshot_at, i.planning_gate, i.verify_gate, i.cycle_base_commit, i.version, i.created_via, i.parent_id`
+  i.gate_snapshot_cycle, i.gate_snapshot_at, i.planning_gate, i.verify_gate, i.cycle_base_commit, i.version, i.created_via, i.parent_id,
+  i.review_required`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var i work.ItemV2
@@ -491,7 +497,7 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 		&i.AcceptanceCriteria, &i.AcceptanceVersion, &i.AcceptanceDigest, &i.Phase,
 		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
 		&i.Cycle, &i.GateSnapshotCycle, &gateAt, &i.PlanningGate, &i.VerifyGate, &i.CycleBaseCommit,
-		&i.Version, &via, &i.ParentID)
+		&i.Version, &via, &i.ParentID, &i.ReviewRequired)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
 	}
@@ -604,13 +610,13 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	      (id, project_id, project_path, kind, title, description, acceptance_criteria, acceptance_version,
 	       acceptance_digest, phase, condition, user_action, deployment_policy, owner_session, created_by,
 	       created_at, updated_at, closed_at, cycle, gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate,
-	       cycle_base_commit, version, created_via, parent_id)
-	      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	       cycle_base_commit, version, created_via, parent_id, review_required)
+	      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.AcceptanceCriteria,
 		i.AcceptanceVersion, i.AcceptanceDigest, i.Phase, i.Condition,
 		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle,
 		i.GateSnapshotCycle, gateSnapshotUnix(i.GateSnapshotAt), i.PlanningGate, i.VerifyGate, i.CycleBaseCommit, i.Version,
-		createdViaColumn(i.CreatedVia), i.ParentID)
+		createdViaColumn(i.CreatedVia), i.ParentID, i.ReviewRequired)
 	if err != nil {
 		return err
 	}
@@ -640,10 +646,10 @@ func (t *WorkV2Tx) ItemsCreatedBy(actor string) (int64, error) {
 func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, error) {
 	found, err := scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items
       WHERE project_id=? AND project_path=? AND kind=? AND title=? AND description=? AND acceptance_criteria=?
-        AND deployment_policy=? AND phase='created' AND owner_session='' AND closed_at IS NULL AND created_via=''
-        AND cycle=1 AND version=1
+        AND deployment_policy=? AND review_required=? AND phase='created' AND owner_session='' AND closed_at IS NULL
+        AND created_via='' AND cycle=1 AND version=1
       ORDER BY created_at, id LIMIT 1`,
-		i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.AcceptanceCriteria, i.DeploymentPolicy))
+		i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.AcceptanceCriteria, i.DeploymentPolicy, i.ReviewRequired))
 	if errors.Is(err, ErrNoWorkV2) {
 		return work.ItemV2{}, false, nil
 	}
@@ -654,12 +660,12 @@ func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) 
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
 	      description=?, acceptance_criteria=?, acceptance_version=?, acceptance_digest=?, phase=?, condition=?, user_action=?,
 	      deployment_policy=?, owner_session=?, updated_at=?, closed_at=?, cycle=?, gate_snapshot_cycle=?, gate_snapshot_at=?, planning_gate=?,
-	      verify_gate=?, cycle_base_commit=?, version=version+1 WHERE id=? AND version=?`,
+	      verify_gate=?, cycle_base_commit=?, review_required=?, version=version+1 WHERE id=? AND version=?`,
 		next.ProjectID, next.ProjectPath, next.Kind, next.Title, next.Description, next.AcceptanceCriteria,
 		next.AcceptanceVersion, next.AcceptanceDigest, next.Phase, next.Condition,
 		next.UserAction, next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
 		next.GateSnapshotCycle, gateSnapshotUnix(next.GateSnapshotAt), next.PlanningGate, next.VerifyGate,
-		next.CycleBaseCommit, prev.ID, prev.Version)
+		next.CycleBaseCommit, next.ReviewRequired, prev.ID, prev.Version)
 	if err != nil {
 		return err
 	}
@@ -1253,13 +1259,13 @@ func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 	return err
 }
 
-// PlanDocuments includes the review risk and boundary declarations in the
-// same insertion order as plans and reviews. Seconds tie, so rowid breaks it.
+// PlanDocuments includes the review boundary declarations in the same
+// insertion order as plans and reviews. Seconds tie, so rowid breaks it.
 func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT role, title, body, created_at FROM work_v2_documents
     WHERE work_id=? AND (role IN ('plan','plan_review') OR
-      (role='other' AND title IN (?,?))) ORDER BY created_at, rowid`, workID,
-		work.ReviewRiskTitle, work.ReviewBoundaryTitle)
+      (role='other' AND title=?)) ORDER BY created_at, rowid`, workID,
+		work.ReviewBoundaryTitle)
 	if err != nil {
 		return nil, err
 	}

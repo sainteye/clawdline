@@ -937,7 +937,7 @@ a stale request.
 successful assignment in an execution cycle freezes both values. Reassignment and later global
 setting changes do not change that cycle. An Epic or Feature with captured planning on needs
 acceptance criteria before implementing. An Epic also needs a plan and independent review; a Feature
-uses the risk assessment below to decide whether those are needed. An Issue never has a planning gate. Planning off bypasses forced Epic planning
+needs them only when the person checked its Needs independent review switch (below). An Issue never has a planning gate. Planning off bypasses forced Epic planning
 too. Both on means planning then independent verification; planning only retains ordinary merge
 verification; verification only skips planning but still checks the exact candidate; both off uses
 the ordinary lifecycle. The person need not fill acceptance on the Board. If a gated item arrives
@@ -1082,22 +1082,20 @@ Board item and opens directly from the Session's Recently Done row.
 `/v1/board` is the Swift app's old cards, read-only. Landing is a broker fact: an item is never
 marked landed by hand (`422 landing_is_broker_fact`).
 
-### Epic and Feature: assess review risk before implementation
+### Epic and Feature: follow the person's review switch before implementation
 
-An Epic whose cycle captured planning on needs a plan and independent review. A Feature first
-records an `other` document titled `Review risk assessment` with this JSON body, replacing each
-value and giving a concrete reason:
+An Epic whose cycle captured planning on needs a plan and independent review. A Feature carries the
+person's **Needs independent review** switch (`review_required` on the item; `clawdline item steps
+<id>` prints it). Only the person sets it, on the Board; you cannot, and you do not judge the
+Feature's risk yourself. The daemon reads the switch when you ask to enter `implementing`.
 
-```json
-{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Only a local display label changes."}
-```
+- **Unchecked** (the default): write the Feature's short acceptance criteria, implement, and run
+  focused tests. Do not write a plan for review, do not dispatch a `plan_review` child, and do not
+  record a risk assessment.
+- **Checked**, and for every planning-on Epic: use the reviewed-plan path.
 
-Write the Feature's short acceptance criteria first, then use
-`clawdline item doc <id> --role other --title "Review risk assessment" --body-file risk.json`.
-If all four decisions are false and deployment is not required, implement and run focused tests.
-Do not dispatch a reviewer for that routine change.
-If you later write a plan, assess its scope again after that plan; the old routine decision expires.
-If any decision is true or uncertain, or the assessment is missing, use the reviewed-plan path:
+If you think an unchecked Feature deserves review, say so to the person and let them check it;
+there is no Agent-side way to ask the daemon for one.
 
 1. Plan it carefully and write the plan onto the item:
    ```
@@ -1146,8 +1144,10 @@ are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and
   with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
   (`plan_review_task_stale`). A review with no plan before it is refused `epic_plan_required`.
 - `clawdline item phase <item id> implementing` on a planning-on Epic is refused without its
-  reviewed plan (`epic_plan_required` or `epic_plan_review_required`). A planning-on Feature needs either a valid routine-risk assessment or its
-  reviewed plan; a revised Feature plan also needs unchanged-boundary evidence or another review.
+  reviewed plan (`epic_plan_required` or `epic_plan_review_required`). A planning-on Feature the person checked
+  Needs independent review on is refused the same way (`feature_plan_required` or
+  `feature_plan_review_required`); an unchecked one needs only its acceptance criteria. A revised
+  plan on a checked Feature also needs unchanged-boundary evidence or another review.
   A planning-off Epic may enter implementing directly.
 
 **Break the Epic into child items, and hand them out.** This is the one exception to "a session

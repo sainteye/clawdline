@@ -55,11 +55,20 @@ func TestAnEpicsOwnerBriefSaysPlanReviewStepsThenImplement(t *testing.T) {
 			}
 		}
 	}
-	featureBrief := workV2AssignmentBriefForItem(work.ItemV2{ID: id, Title: "Small", Kind: work.KindFeature,
-		Cycle: 1, GateSnapshotCycle: 1, PlanningGate: true})
-	for _, want := range []string{"Review risk assessment", "production_deployment", "focused tests", "plan_review"} {
+	feature := work.ItemV2{ID: id, Title: "Small", Kind: work.KindFeature, Cycle: 1, GateSnapshotCycle: 1, PlanningGate: true}
+	featureBrief := workV2AssignmentBriefForItem(feature)
+	for _, want := range []string{"has not checked Needs independent review", "focused tests",
+		"do not dispatch a plan_review child", "Do not record a risk assessment"} {
 		if !strings.Contains(featureBrief, want) {
-			t.Errorf("a Feature's risk brief lacks %q", want)
+			t.Errorf("an unchecked Feature's brief lacks %q", want)
+		}
+	}
+	feature.ReviewRequired = true
+	featureBrief = workV2AssignmentBriefForItem(feature)
+	for _, want := range []string{"checked Needs independent review", "clawdline item doc " + id + " --role plan ",
+		"plan_review", "Review boundary assessment"} {
+		if !strings.Contains(featureBrief, want) {
+			t.Errorf("a checked Feature's brief lacks %q", want)
 		}
 	}
 }

@@ -19,3 +19,10 @@ test("an uncertain create keeps one idempotency key until its content changes", 
   const changed = workV2CreateDecision({ ...body, description: "A different decision" }, retry)
   assert.notEqual(changed.key, first.key)
 })
+
+test("checking Needs independent review on a Feature is a different create decision", () => {
+  const feature = { ...body, kind: "feature" as const, review_required: false }
+  const first = workV2CreateDecision(feature)
+  assert.equal(workV2CreateDecision({ ...feature }, first).key, first.key)
+  assert.notEqual(workV2CreateDecision({ ...feature, review_required: true }, first).key, first.key)
+})

@@ -5,11 +5,15 @@ import (
 	"time"
 )
 
-func TestFeatureReviewFollowsRecordedRisk(t *testing.T) {
+// The person's switch, not an Agent's classification, decides whether a
+// planning-on Feature needs a reviewed plan. A required deployment no longer
+// forces a review by itself.
+func TestFeatureReviewFollowsThePersonsSwitch(t *testing.T) {
 	item := ItemV2{ID: "feature", Kind: KindFeature, Phase: PhaseAssigned, Cycle: 1,
 		GateSnapshotCycle: 1, GateSnapshotAt: time.Unix(1, 0), PlanningGate: true,
 		AcceptanceCriteria: "A visible result", DeploymentPolicy: DeployAgentDecides}
 	code := func(docs ...DocumentV2) string {
+		t.Helper()
 		err := PlanningGate(item, PhaseImplementing, docs)
 		if err == nil {
 			return ""
@@ -20,37 +24,34 @@ func TestFeatureReviewFollowsRecordedRisk(t *testing.T) {
 		}
 		return r.Code
 	}
-	routine := DocumentV2{Role: "other", Title: ReviewRiskTitle, Body: `{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Only a local display label changes."}`}
-	if got := code(); got != "feature_plan_required" {
-		t.Fatalf("unclassified: %s", got)
-	}
-	if got := code(routine); got != "" {
-		t.Fatalf("routine: %s", got)
-	}
-	if got := code(routine, DocumentV2{Role: DocumentPlan}); got != "feature_plan_review_required" {
-		t.Fatalf("plan changed after assessment: %s", got)
-	}
-	for _, body := range []string{
-		`{"production_deployment":true,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Deploys production."}`,
-		`{"production_deployment":false,"access_or_security":true,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Changes access."}`,
-		`{"production_deployment":false,"access_or_security":false,"cross_data_transaction":true,"irreversible_effect":false,"reason":"Moves ownership."}`,
-		`{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":true,"reason":"Cannot reverse."}`,
-		`{"production_deployment":false,"reason":"Missing decisions."}`,
-	} {
-		if got := code(DocumentV2{Role: "other", Title: ReviewRiskTitle, Body: body}); got != "feature_plan_required" {
-			t.Errorf("elevated or malformed %s: %s", body, got)
-		}
+	if got := code(); got != "" {
+		t.Fatalf("unchecked Feature with acceptance and no documents: %s", got)
 	}
 	item.DeploymentPolicy = DeployRequired
-	if got := code(routine); got != "feature_plan_required" {
-		t.Fatalf("required deployment: %s", got)
+	if got := code(); got != "" {
+		t.Fatalf("unchecked Feature with a required deployment: %s", got)
+	}
+	item.AcceptanceCriteria = ""
+	if got := code(); got != "acceptance_required" {
+		t.Fatalf("unchecked Feature without acceptance: %s", got)
+	}
+	item.AcceptanceCriteria, item.DeploymentPolicy = "A visible result", DeployAgentDecides
+	item.ReviewRequired = true
+	if got := code(); got != "feature_plan_required" {
+		t.Fatalf("checked Feature without a plan: %s", got)
+	}
+	if got := code(DocumentV2{Role: DocumentPlan}); got != "feature_plan_review_required" {
+		t.Fatalf("checked Feature with an unreviewed plan: %s", got)
+	}
+	if got := code(DocumentV2{Role: DocumentPlan}, DocumentV2{Role: DocumentPlanReview}); got != "" {
+		t.Fatalf("checked Feature with a reviewed plan: %s", got)
 	}
 }
 
 func TestFeaturePlanRevisionNamesItsRiskBoundary(t *testing.T) {
 	item := ItemV2{ID: "feature", Kind: KindFeature, Phase: PhaseAssigned, Cycle: 1,
 		GateSnapshotCycle: 1, GateSnapshotAt: time.Unix(1, 0), PlanningGate: true,
-		AcceptanceCriteria: "A visible result"}
+		AcceptanceCriteria: "A visible result", ReviewRequired: true}
 	plan := DocumentV2{Role: DocumentPlan}
 	review := DocumentV2{Role: DocumentPlanReview}
 	boundary := DocumentV2{Role: "other", Title: ReviewBoundaryTitle,

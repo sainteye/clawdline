@@ -120,12 +120,17 @@ type ItemV2 struct {
 	Condition          Condition
 	UserAction         string
 	DeploymentPolicy   DeploymentPolicy
-	OwnerSession       string
-	CreatedBy          string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	ClosedAt           time.Time
-	Cycle              int64
+	// ReviewRequired is the person's "Needs independent review" switch on a
+	// Feature. Only the person sets it, and the planning gate reads it live
+	// when the Feature asks to enter implementing; it is never captured in
+	// the gate snapshot. It is always false on every other kind.
+	ReviewRequired bool
+	OwnerSession   string
+	CreatedBy      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ClosedAt       time.Time
+	Cycle          int64
 	// GateSnapshotCycle is zero until the first successful assignment of this
 	// cycle. When it equals Cycle, PlanningGate and VerifyGate are immutable
 	// for that cycle, including across reassignment.
@@ -376,11 +381,25 @@ func ValidateNewV2(i ItemV2) error {
 	case !i.DeploymentPolicy.Valid():
 		return RefuseV2("invalid_deployment_policy", "Deployment policy is required, not_required, or agent_decides.")
 	}
+	if err := ReviewRequiredApplies(i.Kind, i.ReviewRequired); err != nil {
+		return err
+	}
 	if i.Kind.Executable() && i.Phase != PhaseCreated {
 		return RefuseV2("invalid_initial_phase", "Executable work begins in created.")
 	}
 	if !i.Kind.Executable() && i.Phase != PhaseCreated {
 		return RefuseV2("invalid_initial_phase", "Planning work does not enter execution.")
+	}
+	return nil
+}
+
+// ReviewRequiredApplies refuses the person's "Needs independent review"
+// switch on anything but a Feature: an Epic is always reviewed when planning
+// is on and an Issue never is, so the switch would say nothing there.
+func ReviewRequiredApplies(k Kind, required bool) error {
+	if required && k != KindFeature {
+		return RefuseV2("review_required_not_applicable",
+			"Needs independent review is a Feature's switch; an Epic is always reviewed with planning on and an Issue is not.")
 	}
 	return nil
 }
@@ -414,9 +433,10 @@ func DocumentRoleApplies(i ItemV2, role string) error {
 
 // PlanningGate is the rule a Feature or Epic crosses before implementing.
 // It reads only the current cycle snapshot, never the later global setting.
-// A Feature can use a recorded routine-risk assessment in place of a plan
-// review. Elevated or unclassified work retains the independent review gate.
-// Revisions need an explicit unchanged-boundary assessment or a fresh review.
+// A Feature takes the reviewed-plan path only when the person checked its
+// ReviewRequired switch, read live; otherwise its acceptance criteria are
+// enough. A reviewed Feature plan revised later needs an explicit
+// unchanged-boundary assessment or a fresh review.
 func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 	if i.Phase != PhaseAssigned || next != PhaseImplementing || i.Kind == KindIssue {
 		return nil
@@ -433,7 +453,7 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 	if strings.TrimSpace(i.AcceptanceCriteria) == "" {
 		return RefuseV2("acceptance_required", "Write acceptance criteria before this item enters implementation.")
 	}
-	if i.Kind == KindFeature && RoutineReviewRisk(i, plans) {
+	if i.Kind == KindFeature && !i.ReviewRequired {
 		return nil
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0

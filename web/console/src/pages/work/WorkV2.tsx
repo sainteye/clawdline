@@ -18,7 +18,7 @@ import { WorkGateAttention, WorkGateDetail, WorkGateLine } from "./WorkGate.js"
 import { gateSnapshotText } from "./gate-status.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
-import { EPIC_GATE_HINT, epicGate, epicGateDetailShown, epicGateShown, isEpic } from "./epic-gate.js"
+import { epicGate, epicGateDetailShown, epicGateShown, isEpic, planGateHint } from "./epic-gate.js"
 import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, shortWorkID } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
@@ -40,6 +40,7 @@ import {
   deleteWorkV2,
   deleteWorkV2Image,
   editWorkV2,
+  setWorkV2ReviewRequired,
   readDecisions,
   readProjectPlaces,
   readSessionWorkV2,
@@ -656,6 +657,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const [converting, setConverting] = useState(false)
   const [conversionKind, setConversionKind] = useState<WorkV2ExecutableKind>("feature")
   const [reminded, setReminded] = useState(false)
+  const [reviewRequiredFailed, setReviewRequiredFailed] = useState(false)
   // Moving an owned item to another Session opens the same picker an
   // unassigned card shows, without its owner among the choices.
   const [reassigning, setReassigning] = useState(false)
@@ -760,6 +762,11 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
       run={run} />}
     <WorkItemDecisions decisions={decisions} busy={!!busy} run={run} />
+    {item.kind === "feature" && <ReviewRequiredField id={`work-review-required-${item.id}`} checked={item.review_required === true}
+      disabled={!!busy || !!item.closed_at} busy={busy === `review-required-${item.id}`}
+      onChange={(checked) => { clearFailure(); setReviewRequiredFailed(false)
+        void run(`review-required-${item.id}`, () => setWorkV2ReviewRequired(item, checked)).then((ok) => setReviewRequiredFailed(!ok)) }} />}
+    {reviewRequiredFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {epic && <EpicChildren item={item} sessions={sessions} />}
     {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
@@ -935,15 +942,15 @@ function ClaimedViaNote({ item }: { item: WorkV2Item }) {
   </details>
 }
 
-/** Where an Epic stands against the plan gate before it may start implementing. */
+/** Where an Epic, or a Feature that needs independent review, stands against the plan gate before it may start implementing. */
 function EpicGateChecklist({ item }: { item: WorkV2Item }) {
   const gate = epicGate(item.documents)
-  return <section className="work-epic-gate" aria-label="Epic 實作前檢查" data-ready={gate.ready ? "" : undefined}>
+  return <section className="work-epic-gate" aria-label={isEpic(item) ? "Epic 實作前檢查" : "Feature 實作前檢查"} data-ready={gate.ready ? "" : undefined}>
     <ul>
       <li data-state={gate.plan ? "done" : "open"}><WorkIcon name={gate.plan ? "check" : "circle"} />計劃書</li>
       <li data-state={gate.review ? "done" : "open"}><WorkIcon name={gate.review ? "check" : "circle"} />Child Review</li>
     </ul>
-    {!gate.ready && <p>{EPIC_GATE_HINT}</p>}
+    {!gate.ready && <p>{planGateHint(item)}</p>}
   </section>
 }
 
@@ -1111,6 +1118,21 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
         detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
     </div>
   </div>, document.body)
+}
+
+/** The person's "Needs independent review" choice on a Feature, with the sentence saying what it costs. */
+function ReviewRequiredField({ id, checked, disabled, busy = false, onChange }: {
+  id: string
+  checked: boolean
+  disabled: boolean
+  busy?: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return <div className="work-review-required">
+    <label htmlFor={id}><input id={id} type="checkbox" checked={checked} disabled={disabled} aria-busy={busy || undefined}
+      aria-describedby={`${id}-hint`} onChange={(event) => onChange(event.target.checked)} /> {workWord("reviewRequiredLabel")}</label>
+    <small id={`${id}-hint`}>{workWord("reviewRequiredHint")}</small>
+  </div>
 }
 
 function EditWorkModal({ item, busy, failure, onClose, onSave }: {
@@ -1322,6 +1344,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   const [kind, setKind] = useState<WorkV2Kind>(initialDraft.kind || "feature")
   const [title, setTitle] = useState(initialDraft.title || "")
   const [description, setDescription] = useState(initialDraft.description || "")
+  const [reviewRequired, setReviewRequired] = useState(false)
   const [images, setImages] = useState<File[]>([])
   const createDecision = useRef<WorkV2CreateDecision | null>(null)
   const projectPlaces = initialDraft.project && !places.some((place) => place.id === initialDraft.project?.id)
@@ -1333,7 +1356,8 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
   return <div className="session-todo-modal work-new-modal" role="dialog" aria-modal="true" aria-labelledby="work-new-v2-title"
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
-    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const }
+    const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const,
+      ...(kind === "feature" ? { review_required: reviewRequired } : {}) }
     const decision = workV2CreateDecision(body, createDecision.current)
     createDecision.current = decision
     onCreate(body, images, decision.key)
@@ -1349,6 +1373,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
     <VoiceTextarea label="描述" value={description} onValue={setDescription} />
+    {kind === "feature" && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
     <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>

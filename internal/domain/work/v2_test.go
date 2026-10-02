@@ -46,6 +46,7 @@ func TestV2CreationRequiresHumanReadableWork(t *testing.T) {
 		"title":       func(i *ItemV2) { i.Title = " " },
 		"description": func(i *ItemV2) { i.Description = "" },
 		"policy":      func(i *ItemV2) { i.DeploymentPolicy = "maybe" },
+		"review":      func(i *ItemV2) { i.Kind, i.ReviewRequired = KindIssue, true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := valid
@@ -209,6 +210,7 @@ func TestPlanningGateUsesTheCapturedModeAndKind(t *testing.T) {
 		t.Fatalf("Issue was gated: %s", got)
 	}
 	feature := item(KindFeature, true)
+	feature.ReviewRequired = true
 	if got := code(PlanningGate(feature, PhaseImplementing, nil)); got != "feature_plan_required" {
 		t.Fatalf("Feature without plan = %s", got)
 	}

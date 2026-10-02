@@ -362,6 +362,7 @@ function daemon(): Server {
           condition: null,
           area: "unassigned",
           deployment_policy: body.deployment_policy,
+          review_required: body.review_required === true,
           owner_session: null,
           created_at: 1,
           updated_at: 1,

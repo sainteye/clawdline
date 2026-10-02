@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { workProjectName } from "./words.ts"
+import { workProjectName, workWordIn } from "./words.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { proposalFoldShouldOpen } from "./fold.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
@@ -48,4 +48,11 @@ test("declining for now and recording an evidence-backed resolution are visibly 
     if (prior) Object.defineProperty(globalThis, "navigator", prior)
     else Reflect.deleteProperty(globalThis, "navigator")
   }
+})
+
+test("the Needs independent review checkbox is worded in both languages", () => {
+  assert.equal(workWordIn("en", "reviewRequiredLabel"), "Needs independent review")
+  assert.equal(workWordIn("en", "reviewRequiredHint"), "When checked, a plan must be written and reviewed by an independent child before work starts.")
+  assert.equal(workWordIn("zh-Hant", "reviewRequiredLabel"), "需要獨立審查")
+  assert.equal(workWordIn("zh-Hant", "reviewRequiredHint"), "勾選後，開工前要先寫計畫並由獨立 child 審查。")
 })
