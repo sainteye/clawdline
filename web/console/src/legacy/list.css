@@ -178,6 +178,14 @@
 }
 /* The absence stays visually quiet: italic, faint, and deliberately without an icon. */
 .session-work-copy[data-work-state="unknown"] { font-style: italic; }
+/* A reported turn stays quiet but readable; an item awaiting acceptance has
+   its own stronger sentence. The words carry the distinction without color. */
+.session-work-completion[data-acceptance="none"] .session-work-copy,
+.session-work-completion[data-acceptance="unknown"] .session-work-copy { color: var(--dim); }
+.session-work-completion[data-acceptance="pending"] .session-work-copy { color: var(--ink); }
+/* The completion copy contains plain text. A block can show its ellipsis;
+   inline-flex clips an anonymous text item halfway through a glyph. */
+.session-work-completion > .session-work-copy { display: block; }
 /* The second axis — a debt badge that can ride beside any state, including a working row. */
 .session-work-owed {
     flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
