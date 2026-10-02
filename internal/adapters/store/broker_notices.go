@@ -135,14 +135,14 @@ func (s *Store) BrokerNotice(ctx context.Context, taskID string) (BrokerNotice, 
 	if err := reading(); err != nil {
 		return BrokerNotice{}, err
 	}
-	return scanNotice(s.db.QueryRowContext(ctx,
+	return scanNotice(s.rd.QueryRowContext(ctx,
 		`SELECT `+noticeColumns+` FROM broker_notices WHERE task_id = ?`, taskID))
 }
 
 // BrokerNotices reads every envelope, keyed by task, for a list that joins
 // them onto the task rows without asking once per row.
 func (s *Store) BrokerNotices(ctx context.Context) (map[string]BrokerNotice, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+noticeColumns+` FROM broker_notices`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+noticeColumns+` FROM broker_notices`)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (s *Store) BrokerNotices(ctx context.Context) (map[string]BrokerNotice, err
 // DueBrokerNotices is every open envelope whose next attempt is due, oldest
 // deadline first, at most limit of them.
 func (s *Store) DueBrokerNotices(ctx context.Context, now time.Time, limit int) ([]BrokerNotice, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT `+noticeColumns+` FROM broker_notices
 		 WHERE state IN ('pending', 'delivered') AND next_retry_at <= ?
 		 ORDER BY next_retry_at ASC, created_at ASC LIMIT ?`, now.Unix(), limit)
@@ -227,7 +227,7 @@ type NoticeCounts struct {
 // BrokerNoticeCounts reads the ledger's totals.
 func (s *Store) BrokerNoticeCounts(ctx context.Context) (NoticeCounts, error) {
 	var out NoticeCounts
-	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM broker_notices GROUP BY state`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT state, COUNT(*) FROM broker_notices GROUP BY state`)
 	if err != nil {
 		return out, err
 	}
@@ -251,7 +251,7 @@ func (s *Store) BrokerNoticeCounts(ctx context.Context) (NoticeCounts, error) {
 	}
 	rows.Close()
 	var oldest sql.NullInt64
-	if err := s.db.QueryRowContext(ctx,
+	if err := s.rd.QueryRowContext(ctx,
 		`SELECT MIN(created_at) FROM broker_notices WHERE state IN ('pending', 'delivered')`).Scan(&oldest); err != nil {
 		return out, err
 	}

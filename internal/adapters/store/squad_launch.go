@@ -90,7 +90,7 @@ func (s *Store) SquadBindingForSession(ctx context.Context, terminalID, conversa
 	if terminalID == "" || conversationID == "" {
 		return SquadSessionBinding{}, false, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT l.terminal_id,l.conversation_id,l.snapshot_id,s.document
+	rows, err := s.rd.QueryContext(ctx, `SELECT l.terminal_id,l.conversation_id,l.snapshot_id,s.document
 		FROM squad_launches l JOIN squad_snapshots s ON s.id=l.snapshot_id
 		WHERE l.terminal_id=? AND l.conversation_id=? AND l.state='bound' LIMIT 2`, terminalID, conversationID)
 	if err != nil {
@@ -249,7 +249,7 @@ func (s *Store) RecordSquadTerminal(ctx context.Context, launchID, terminalID st
 		return nil
 	}
 	var existing, state string
-	err = s.db.QueryRowContext(ctx, `SELECT terminal_id,state FROM squad_launches WHERE id=?`, launchID).Scan(&existing, &state)
+	err = s.rd.QueryRowContext(ctx, `SELECT terminal_id,state FROM squad_launches WHERE id=?`, launchID).Scan(&existing, &state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrSquadLaunchUnknown
 	}
@@ -363,7 +363,7 @@ func (s *Store) RebindSquadConversation(ctx context.Context, launchID, terminalI
 func (s *Store) SquadSnapshotForConversation(ctx context.Context, conversationID string) (json.RawMessage, string, bool, error) {
 	var document []byte
 	var snapshotID string
-	err := s.db.QueryRowContext(ctx, `SELECT s.document,s.id FROM squad_launches l
+	err := s.rd.QueryRowContext(ctx, `SELECT s.document,s.id FROM squad_launches l
 		JOIN squad_snapshots s ON s.id=l.snapshot_id
 		WHERE l.conversation_id=? AND l.state='bound'
 		ORDER BY l.created_at,l.id LIMIT 1`, conversationID).Scan(&document, &snapshotID)
@@ -382,7 +382,7 @@ func (s *Store) SquadSnapshotForConversation(ctx context.Context, conversationID
 
 func (s *Store) SquadLargestSnapshotBytes(ctx context.Context) (int64, error) {
 	var bytes int64
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(LENGTH(document)),0) FROM squad_snapshots`).Scan(&bytes)
+	err := s.rd.QueryRowContext(ctx, `SELECT COALESCE(MAX(LENGTH(document)),0) FROM squad_snapshots`).Scan(&bytes)
 	return bytes, classify(err)
 }
 
@@ -395,7 +395,7 @@ func (s *Store) AuthenticateSquadActor(ctx context.Context, capability string) (
 	sum := sha256.Sum256([]byte(capability))
 	var actor SquadActor
 	var document []byte
-	err := s.db.QueryRowContext(ctx, `SELECT l.id,l.snapshot_id,l.terminal_id,l.conversation_id,s.document
+	err := s.rd.QueryRowContext(ctx, `SELECT l.id,l.snapshot_id,l.terminal_id,l.conversation_id,s.document
 		FROM squad_launches l JOIN squad_snapshots s ON s.id=l.snapshot_id
 		WHERE l.actor_hash=? AND l.state='bound'`, hex.EncodeToString(sum[:])).Scan(
 		&actor.LaunchID, &actor.SnapshotID, &actor.TerminalID, &actor.ConversationID, &document)
@@ -424,7 +424,7 @@ func (s *Store) SquadHasLaunchForTerminal(ctx context.Context, terminalID string
 		return false, nil
 	}
 	var exists int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM squad_launches
+	err := s.rd.QueryRowContext(ctx, `SELECT 1 FROM squad_launches
 		WHERE terminal_id=? AND state IN ('pending','bound') LIMIT 1`, terminalID).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -452,7 +452,7 @@ type PendingSquadLaunch struct {
 }
 
 func (s *Store) PendingSquadLaunches(ctx context.Context) ([]PendingSquadLaunch, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,terminal_id FROM squad_launches
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,terminal_id FROM squad_launches
 		WHERE state='pending' ORDER BY created_at,id LIMIT ?`, MaxSquadRecoveryRows)
 	if err != nil {
 		return nil, classify(err)
@@ -471,6 +471,6 @@ func (s *Store) PendingSquadLaunches(ctx context.Context) ([]PendingSquadLaunch,
 
 func (s *Store) SquadPendingLaunchCount(ctx context.Context) (int64, error) {
 	var count int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM squad_launches WHERE state='pending'`).Scan(&count)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM squad_launches WHERE state='pending'`).Scan(&count)
 	return count, classify(err)
 }

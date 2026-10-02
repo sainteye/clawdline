@@ -98,7 +98,7 @@ func (s *Store) Lingers(ctx context.Context) ([]Linger, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT task_id, backend, pane, session, deadline, created_at FROM broker_lingers ORDER BY deadline, task_id`)
 	if err != nil {
 		return nil, classify(err)
@@ -254,7 +254,7 @@ func (s *Store) ReadOpened(ctx context.Context, table, id string) (Opened, error
 	if err := reading(); err != nil {
 		return Opened{}, err
 	}
-	return scanOpened(s.db.QueryRowContext(ctx,
+	return scanOpened(s.rd.QueryRowContext(ctx,
 		`SELECT id, state, record, created_at, updated_at FROM `+name+` WHERE id = ?`, id))
 }
 
@@ -277,7 +277,7 @@ func (s *Store) PendingBoardHandoffs(ctx context.Context, limit int) ([]Opened, 
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, state, record, created_at, updated_at
+	rows, err := s.rd.QueryContext(ctx, `SELECT id, state, record, created_at, updated_at
 	  FROM broker_handoffs WHERE state='delivered' AND json_valid(record)
 	  AND json_array_length(json_extract(record, '$.board_items')) > 0
 	  AND COALESCE(json_extract(record, '$.board_transferred_at'), 0) = 0
@@ -308,7 +308,7 @@ func (s *Store) listOpened(ctx context.Context, table, state string, limit int) 
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id, state, record, created_at, updated_at FROM `+name+` WHERE ? = '' OR state = ?
 		 ORDER BY created_at DESC, id LIMIT ?`, state, state, limit)
 	if err != nil {
@@ -414,7 +414,7 @@ func (s *Store) Reclaims(ctx context.Context) ([]Reclaim, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT task_id, subject, outcome, reason, bytes, detail, first_at, last_at FROM broker_reclaim
 		 ORDER BY first_at, task_id, subject`)
 	if err != nil {
@@ -447,7 +447,7 @@ func (s *Store) ReclaimOf(ctx context.Context, task, subject string) (Reclaim, e
 	var r Reclaim
 	var detail string
 	var first, last int64
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT task_id, subject, outcome, reason, bytes, detail, first_at, last_at FROM broker_reclaim
 		 WHERE task_id = ? AND subject = ?`, task, subject).
 		Scan(&r.Task, &r.Subject, &r.Outcome, &r.Reason, &r.Bytes, &detail, &first, &last)

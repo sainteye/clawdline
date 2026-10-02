@@ -309,7 +309,7 @@ func (s *Store) ReceiptUses(ctx context.Context, window time.Duration, now time.
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT scope,
 		        SUM(CASE WHEN state IN ('pending', 'complete') AND created_at >= ? THEN 1 ELSE 0 END),
 		        SUM(CASE WHEN state = 'expired' THEN 1 ELSE 0 END)
