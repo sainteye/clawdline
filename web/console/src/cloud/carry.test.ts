@@ -208,6 +208,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/tasks/t1"],
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
+    ["GET", "/v1/usage/work-units"],
     ["GET", "/v1/capacity"],
     ["GET", "/v1/settings/default-models"],
     ["POST", "/v1/settings/default-models"],
@@ -256,6 +257,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("usage.item" in CARRIED)
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
+  assert.ok("usage.work-units" in CARRIED)
   assert.ok("capacity" in CARRIED)
   assert.ok("default-models" in CARRIED)
   assert.ok("default-models-update" in CARRIED)
@@ -279,7 +281,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 127)
+  assert.equal(Object.keys(CARRIED).length, 128)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

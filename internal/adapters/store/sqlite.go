@@ -224,6 +224,9 @@ func Open(dir string) (*Store, error) {
 	if err := openUsage(db); err != nil {
 		return nil, err
 	}
+	if err := openWorkCursors(db); err != nil {
+		return nil, err
+	}
 	if err := openVerifications(db); err != nil {
 		return nil, err
 	}

@@ -1166,6 +1166,14 @@ func (b *Broker) Settle(ctx context.Context, id string, state State, why string,
 // spawn_failed child's session to close — in the same transaction, and
 // answers their ids for the caller to run after the commit.
 func (b *Broker) settle(ctx context.Context, id string, state State, why string, result *taskdir.Result, effects ...store.Effect) (Record, []int64, error) {
+	r, ids, err := b.settleOnce(ctx, id, state, why, result, effects...)
+	if err == nil && b.WorkUnitEdge != nil {
+		b.WorkUnitEdge(id, "end", string(state), r.FinishedAt)
+	}
+	return r, ids, err
+}
+
+func (b *Broker) settleOnce(ctx context.Context, id string, state State, why string, result *taskdir.Result, effects ...store.Effect) (Record, []int64, error) {
 	now := b.now()
 	// What the delivery branch holds as the task ends, asked of git before the
 	// write right is taken (D08) and applied inside it only to the branch it

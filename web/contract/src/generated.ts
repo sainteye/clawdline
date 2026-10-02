@@ -8592,6 +8592,205 @@ export interface UsageTokens {
 }
 
 /**
+ * One stored cursor row, as it was written. `edge` is `start`, `end`, `release`,
+ * `acquire`, `settled:end` or `settled:release`. A row with no `session` is the
+ * unit's own marker: the edge happened, with its `outcome` (the broker's terminal
+ * state, the item's closing phase, `step-done`) and a `state` of `cursor_missing`
+ * when the cursor could not be taken; it has no reading. `at` is when the edge
+ * happened and `taken_at` when the reading was taken (Unix seconds). `state` is
+ * empty for a current reading, or one of `not_yet_read`, `ledger_behind`,
+ * `transcript_missing`, `transcript_unreadable`, `cursor_missing`, `settled`,
+ * `settled_after_growth`.
+ */
+export interface UsageWorkCursor {
+  at: number
+  cycle: string
+  edge: string
+  outcome: string
+  reading?: UsageWorkReading
+  seq: number
+  session: string
+  state: string
+  taken_at: number
+  unit_id: string
+  unit_kind: UsageWorkKind
+}
+
+/**
+ * One transcript of a session, its own or a subagent's: how far the ledger had read
+ * it and how it stood on disk when the cursor was taken (Unix seconds). `seen` is
+ * false when the file was not found.
+ */
+export interface UsageWorkFile {
+  conversation: string
+  file_modified_at: number
+  file_size: number
+  ledger_modified_at: number
+  ledger_size: number
+  more: boolean
+  reason?: UsageReason
+  seen: boolean
+}
+
+/**
+ * A unit of work: a child `task` from admission to its terminal state, a Board
+ * `item` from entering implementing to done or cancelled (one per cycle), or one of
+ * its `step`s from the previous step's completion, or the item entering
+ * implementing, to its own completion.
+ */
+export type UsageWorkKind =
+    "task"
+  | "item"
+  | "step"
+
+export const UsageWorkKindValues: readonly UsageWorkKind[] = ["task", "item", "step"] as const
+
+/**
+ * A model a reading names (the last one each transcript used), and whether it has a
+ * price.
+ */
+export interface UsageWorkModel {
+  model: string
+  priced: boolean
+}
+
+/**
+ * One session's cumulative ledger reading at a cursor: totals only. `present` is
+ * false when the ledger had no row of it. `tokens` includes its subagents; `calls`
+ * are its own and its subagents'; `peak_context` is its own. `behind` says the
+ * ledger had not read one of its files as it was on disk.
+ */
+export interface UsageWorkReading {
+  assistant?: string
+  behind: boolean
+  calls: number
+  compactions: number
+  files: UsageWorkFile[]
+  models: UsageWorkModel[]
+  more: boolean
+  peak_context: number
+  present: boolean
+  read_at: number
+  reason?: UsageReason
+  tokens: UsageTokens
+}
+
+/**
+ * One session's part of a unit. `counted` says its delta is in the unit's totals.
+ * `peak_start` is null when it had no starting reading; `peak_rose` says its peak
+ * context grew during the unit. A per-unit peak is not kept by the ledger and is
+ * not given.
+ */
+export interface UsageWorkSession {
+  calls: number
+  compactions: number
+  conversation: string
+  counted: boolean
+  delta: UsageWorkTokens
+  models: UsageWorkModel[]
+  peak_end: number
+  peak_rose: boolean
+  peak_start: number | null
+  states: UsageWorkState[]
+}
+
+/**
+ * Why part of a unit of work's delta is not a plain end minus start
+ * (docs/token-ledger.md "One unit of work"). `not_yet_read`: the ledger had no row
+ * of a session at a cursor; its delta is not counted. `transcript_missing`,
+ * `transcript_unreadable`: the session's row said so at a cursor. `missing`: a
+ * session the closed unit counts has no reading at one of its edges; not counted.
+ * `ledger_behind`: at the end the ledger had not read the transcript up to its size
+ * and modification time, so the delta is a lower bound until settled. `settled`: a
+ * later reading caught up with exactly what the end cursor saw and replaces it.
+ * `settled_after_growth`: the later reading caught up only after the transcript
+ * grew, so it may hold work done after the unit ended; it is not used as the end,
+ * except for a session the end cursor did not see at all, where it is an upper
+ * bound. `session_handoff`: the item's owner changed while it was open; the leaving
+ * session is measured to its release, the arriving one from its acquisition.
+ * `started_inside`: a session with no starting reading that joined an item after it
+ * started, counted from zero. `mixed_models`: the unit's sessions name more than
+ * one model; `unpriced`: a model has no price. Either makes the cost unknown and
+ * keeps the tokens. `cursor_missing`: an edge's cursor could not be taken. `open`:
+ * the unit has not ended. `no_session`: the unit ended with no session counted for
+ * it.
+ */
+export type UsageWorkState =
+    "not_yet_read"
+  | "transcript_missing"
+  | "transcript_unreadable"
+  | "missing"
+  | "ledger_behind"
+  | "settled"
+  | "settled_after_growth"
+  | "session_handoff"
+  | "started_inside"
+  | "mixed_models"
+  | "unpriced"
+  | "cursor_missing"
+  | "open"
+  | "no_session"
+
+export const UsageWorkStateValues: readonly UsageWorkState[] = ["not_yet_read", "transcript_missing", "transcript_unreadable", "missing", "ledger_behind", "settled", "settled_after_growth", "session_handoff", "started_inside", "mixed_models", "unpriced", "cursor_missing", "open", "no_session"] as const
+
+/**
+ * A delta by part. There is no cost here on purpose: a unit's cost is on the unit,
+ * null when it is not known.
+ */
+export interface UsageWorkTokens {
+  cache_read: number
+  cache_write_1h: number
+  cache_write_5m: number
+  input: number
+  output: number
+  total: number
+
+  /**
+   * The delta's tokens whose model has no price.
+   */
+  unpriced: number
+}
+
+/**
+ * One unit cycle: what its counted sessions added between its cursors, and the raw
+ * cursors. `started_at` and `ended_at` are Unix seconds, 0 when that edge has no
+ * marker. `cost` is null unless `cost_known`: the unit ended, every session was
+ * counted exactly, and one priced model is named.
+ */
+export interface UsageWorkUnit {
+  calls: number
+  compactions: number
+  cost: number | null
+  cost_known: boolean
+  cursors: UsageWorkCursor[]
+  cycle: string
+  ended_at: number
+  id: string
+  kind: UsageWorkKind
+  models: UsageWorkModel[]
+  outcome: string
+  sessions: UsageWorkSession[]
+  started_at: number
+  states: UsageWorkState[]
+  tokens: UsageWorkTokens
+}
+
+/**
+ * GET /v1/usage/work-units?since=… (docs/token-ledger.md "One unit of work"):
+ * every unit with a cursor in [`since`, `until`] (Unix seconds), the most recent
+ * first, each whole even when it started before `since`. `since` is `<n>d`, `<n>h`
+ * or a Unix time, 14 days when absent. `truncated` says more units were in the
+ * range than one answer reads (limits N73). Behind cursors the ledger has caught up
+ * with are settled before the answer is read.
+ */
+export interface UsageWorkUnits {
+  since: number
+  truncated: boolean
+  units: UsageWorkUnit[]
+  until: number
+}
+
+/**
  * One record. Times are Unix seconds. `source` is absent when it has none;
  * `schedule_id` is empty when no schedule is linked. `closed_at` is 0 and
  * `close_reason` empty while it is open. `seed` names the record the daemon planted

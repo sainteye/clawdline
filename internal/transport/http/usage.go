@@ -35,6 +35,7 @@ func (s *Server) usageLedger() *app.UsageLedger {
 // directory there is nothing to read, and the daemon says so and goes on.
 func (s *Server) StartUsage(ctx context.Context) {
 	u := s.usageLedger()
+	s.startWorkUnits(ctx)
 	if u.Home == "" {
 		log.Printf("usage: no home directory; the token ledger is not read")
 		return
@@ -81,6 +82,10 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if routePath(r) == "/v1/usage/compare-compaction" {
 		s.usageCompareCompaction(w, r)
+		return
+	}
+	if routePath(r) == "/v1/usage/work-units" {
+		s.usageWorkUnits(w, r)
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(routePath(r), "/v1/usage/"), "/")

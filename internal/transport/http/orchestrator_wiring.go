@@ -63,8 +63,11 @@ func outboxFault() func(point string, e store.Effect) {
 
 func newBroker(s *Server) *orchestrator.Broker {
 	return &orchestrator.Broker{
-		EffectFault:          outboxFault(),
-		Store:                s.store,
+		EffectFault: outboxFault(),
+		Store:       s.store,
+		// A task's admission and end, for the token ledger's work-unit
+		// cursors (docs/token-ledger.md "One unit of work").
+		WorkUnitEdge:         s.workUnitEdge(),
 		SquadActorRequired:   true,
 		ResolveSquadSnapshot: s.resolveSquadSnapshot,
 		SquadAutoAssignable: func(ctx context.Context, personaID, projectPath string) (bool, error) {

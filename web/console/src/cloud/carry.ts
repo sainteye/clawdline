@@ -171,6 +171,8 @@ export const CARRIED = {
   "usage.item": "GET /v1/usage/items/{id}",
   "usage.session": "GET /v1/usage/sessions/{conversation}",
   "usage.task": "GET /v1/usage/tasks/{id}",
+  // What each unit of work added (docs/token-ledger.md "One unit of work").
+  "usage.work-units": "GET /v1/usage/work-units[?since=]",
   // Things waiting to be verified (`pages/verify.tsx`, docs/verifications.md):
   // the phone is where the person reads them, so every route crosses. Two
   // machine reads and five commands, each with its body as the route reads it.

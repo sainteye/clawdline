@@ -224,6 +224,56 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
 - Later: the Board card's cost line, and the Swift ledger's Project/Feature analytics migrated onto
   these rows.
 
+## One unit of work
+
+A long owner Session's bill is every call it ever made: one Epic owner measured on 2026-10-02 showed
+4,031 calls and about 560M tokens, 551M of them cache reads. That is not what one piece of its work
+cost. So each unit of work leaves a **cursor** at its edges — every session counted for it, with
+that session's *cumulative* ledger reading at that moment — and a unit's cost is end minus start,
+per session, summed. The cumulative answers above keep their meaning.
+
+- **The units.** A child task from the broker's admission (`Broker.create`) to its terminal state
+  — success, failure, timeout, cancelled, spawn_failed (`Broker.settle`) — with that state as its
+  outcome. A Board item from entering `implementing` to `done` or `cancelled`, one unit per
+  `cycle`, so a reopened item is new rows rather than an overwrite. A step of an item, from the
+  previous step's completion or the item entering implementing to its own `step-done`.
+- **Which sessions.** A task's are the transcripts whose first message names it (`ForTask`); an
+  item's, and a step's, its owner sessions and their dispatched tasks' sessions (`ForItem`). A
+  reading is the session's measured tokens by part, its subagents' included, with calls,
+  compactions, its own peak context, the model each transcript last used and whether it has a price,
+  `read_at`, `more`, the row's reason, and each file's size and modification time beside what the
+  ledger had read. Totals only: no prompt, tool input, terminal output or transcript text.
+- **Where.** `usage_work_cursors` (`internal/adapters/store/work_cursors.go`), append-only: one row
+  per unit, cycle, edge and session, and a marker row per edge. The first one wins, so a replayed
+  dispatch, a settlement posted twice or a phase set twice adds nothing, and a replayed start
+  cannot give a session that joined later a starting reading it never had.
+- **Off the caller's path.** The broker and the Board (`Store.ObserveWorkV2`, told after each Board
+  write commits) only queue the edge; a worker reads the ledger and writes the rows in the order
+  they were posted. A cursor that cannot be taken is logged once and leaves a `cursor_missing`
+  marker; dispatch and phase changes never wait on it or fail with it (limits N73).
+- **States, never a silent zero.** `not_yet_read`: the ledger had no row of a session at a cursor;
+  its delta is not counted. `missing`: a closed unit has no reading of a session at one edge.
+  `ledger_behind`: the end found the ledger short of the transcript, so the delta is a lower bound;
+  after each ledger pass, and before every answer, a caught-up reading is recorded beside it as
+  `settled:end` — `settled` when it is exactly what the end saw, `settled_after_growth` when the
+  transcript had grown since and may hold later work. A task that ended before the ledger found its
+  child at all gets the later reading as an upper bound. `session_handoff`: the item's owner changed
+  mid-unit; the leaving session is read at release and measured to it, the arriving one from its
+  acquisition. `started_inside`: a session with no starting reading that joined an item later,
+  counted from zero (a task's sessions always begin after its admission, so for a task this is
+  not a state). `mixed_models` and `unpriced` (a Codex model): the tokens stay, the cost is `null`
+  — never zero, never the priced part presented as the whole. Peak context is not additive: each
+  session has its peak at start and at end and whether it rose; no per-unit peak is made up.
+- **Reading it.** `GET /v1/usage/work-units?since=…` (`14d` by default; a phone asks it through
+  Cloud as `usage.work-units`) answers every unit with a cursor in the range, whole, the most recent
+  first: its raw cursors, each session's delta and states, the summed tokens by part, and a cost
+  only when the unit ended, every session was counted exactly and one priced model is named.
+  `app.UsageLedger.WorkUnits` is the same for a report built on it.
+- **What it cannot tell.** The model is each transcript's last one, so a session that switched and
+  switched back between two cursors looks unmixed. A session that owned an item, left and came back
+  twice within one cycle has only its first release and acquisition kept. Units that ended before
+  this was built have no cursors.
+
 ## Long-running sessions
 
 The largest lever measured is not a document but a session's age: context above 200k tokens was 42%

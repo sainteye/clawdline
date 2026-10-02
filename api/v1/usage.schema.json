@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "usage.schema.json",
   "title": "Token ledger",
-  "description": "GET /v1/usage/sessions/{conversation}, /v1/usage/tasks/{id} and /v1/usage/items/{id} (docs/token-ledger.md \"What a person and a session see\"): what a session, a child task or a Board item spent; GET /v1/usage/compare-compaction, the child tasks grouped by the compaction window they were launched with, by what each token was spent on. Read with a paired device or this machine's orchestrator token. Totals only: no prompt, tool input or transcript text is ever in an answer.",
+  "description": "GET /v1/usage/sessions/{conversation}, /v1/usage/tasks/{id} and /v1/usage/items/{id} (docs/token-ledger.md \"What a person and a session see\"): what a session, a child task or a Board item spent; GET /v1/usage/compare-compaction, the child tasks grouped by the compaction window they were launched with, by what each token was spent on; GET /v1/usage/work-units, what each unit of work added between its start and end cursors. Read with a paired device or this machine's orchestrator token. Totals only: no prompt, tool input or transcript text is ever in an answer.",
   "$defs": {
     "UsageCategoryName": {
       "description": "What a token was spent on (docs/token-ledger.md \"Categories\").",
@@ -251,6 +251,149 @@
         "excluded_truncated": { "type": "boolean" },
         "truncated": { "type": "boolean" },
         "not_recorded": { "type": "array", "items": { "$ref": "#/$defs/UsageCompareMissing" } }
+      }
+    },
+    "UsageWorkState": {
+      "description": "Why part of a unit of work's delta is not a plain end minus start (docs/token-ledger.md \"One unit of work\"). `not_yet_read`: the ledger had no row of a session at a cursor; its delta is not counted. `transcript_missing`, `transcript_unreadable`: the session's row said so at a cursor. `missing`: a session the closed unit counts has no reading at one of its edges; not counted. `ledger_behind`: at the end the ledger had not read the transcript up to its size and modification time, so the delta is a lower bound until settled. `settled`: a later reading caught up with exactly what the end cursor saw and replaces it. `settled_after_growth`: the later reading caught up only after the transcript grew, so it may hold work done after the unit ended; it is not used as the end, except for a session the end cursor did not see at all, where it is an upper bound. `session_handoff`: the item's owner changed while it was open; the leaving session is measured to its release, the arriving one from its acquisition. `started_inside`: a session with no starting reading that joined an item after it started, counted from zero. `mixed_models`: the unit's sessions name more than one model; `unpriced`: a model has no price. Either makes the cost unknown and keeps the tokens. `cursor_missing`: an edge's cursor could not be taken. `open`: the unit has not ended. `no_session`: the unit ended with no session counted for it.",
+      "type": "string",
+      "enum": ["not_yet_read", "transcript_missing", "transcript_unreadable", "missing", "ledger_behind", "settled", "settled_after_growth", "session_handoff", "started_inside", "mixed_models", "unpriced", "cursor_missing", "open", "no_session"]
+    },
+    "UsageWorkKind": {
+      "description": "A unit of work: a child `task` from admission to its terminal state, a Board `item` from entering implementing to done or cancelled (one per cycle), or one of its `step`s from the previous step's completion, or the item entering implementing, to its own completion.",
+      "type": "string",
+      "enum": ["task", "item", "step"]
+    },
+    "UsageWorkTokens": {
+      "description": "A delta by part. There is no cost here on purpose: a unit's cost is on the unit, null when it is not known.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_read", "cache_write_1h", "cache_write_5m", "input", "output", "total", "unpriced"],
+      "properties": {
+        "input": { "type": "number" },
+        "cache_write_1h": { "type": "number" },
+        "cache_write_5m": { "type": "number" },
+        "cache_read": { "type": "number" },
+        "output": { "type": "number" },
+        "total": { "type": "number" },
+        "unpriced": { "description": "The delta's tokens whose model has no price.", "type": "number" }
+      }
+    },
+    "UsageWorkModel": {
+      "description": "A model a reading names (the last one each transcript used), and whether it has a price.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "priced"],
+      "properties": {
+        "model": { "type": "string" },
+        "priced": { "type": "boolean" }
+      }
+    },
+    "UsageWorkFile": {
+      "description": "One transcript of a session, its own or a subagent's: how far the ledger had read it and how it stood on disk when the cursor was taken (Unix seconds). `seen` is false when the file was not found.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversation", "file_modified_at", "file_size", "ledger_modified_at", "ledger_size", "more", "seen"],
+      "properties": {
+        "conversation": { "type": "string" },
+        "ledger_size": { "type": "integer" },
+        "ledger_modified_at": { "type": "integer" },
+        "file_size": { "type": "integer" },
+        "file_modified_at": { "type": "integer" },
+        "seen": { "type": "boolean" },
+        "more": { "type": "boolean" },
+        "reason": { "$ref": "#/$defs/UsageReason" }
+      }
+    },
+    "UsageWorkReading": {
+      "description": "One session's cumulative ledger reading at a cursor: totals only. `present` is false when the ledger had no row of it. `tokens` includes its subagents; `calls` are its own and its subagents'; `peak_context` is its own. `behind` says the ledger had not read one of its files as it was on disk.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["behind", "calls", "compactions", "files", "models", "more", "peak_context", "present", "read_at", "tokens"],
+      "properties": {
+        "assistant": { "type": "string" },
+        "present": { "type": "boolean" },
+        "reason": { "$ref": "#/$defs/UsageReason" },
+        "read_at": { "type": "integer" },
+        "more": { "type": "boolean" },
+        "tokens": { "$ref": "#/$defs/UsageTokens" },
+        "calls": { "type": "integer" },
+        "compactions": { "type": "integer" },
+        "peak_context": { "type": "integer" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkModel" } },
+        "files": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkFile" } },
+        "behind": { "type": "boolean" }
+      }
+    },
+    "UsageWorkCursor": {
+      "description": "One stored cursor row, as it was written. `edge` is `start`, `end`, `release`, `acquire`, `settled:end` or `settled:release`. A row with no `session` is the unit's own marker: the edge happened, with its `outcome` (the broker's terminal state, the item's closing phase, `step-done`) and a `state` of `cursor_missing` when the cursor could not be taken; it has no reading. `at` is when the edge happened and `taken_at` when the reading was taken (Unix seconds). `state` is empty for a current reading, or one of `not_yet_read`, `ledger_behind`, `transcript_missing`, `transcript_unreadable`, `cursor_missing`, `settled`, `settled_after_growth`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "cycle", "edge", "outcome", "seq", "session", "state", "taken_at", "unit_id", "unit_kind"],
+      "properties": {
+        "seq": { "type": "integer" },
+        "unit_kind": { "$ref": "#/$defs/UsageWorkKind" },
+        "unit_id": { "type": "string" },
+        "cycle": { "type": "string" },
+        "edge": { "type": "string" },
+        "session": { "type": "string" },
+        "at": { "type": "integer" },
+        "taken_at": { "type": "integer" },
+        "outcome": { "type": "string" },
+        "state": { "type": "string" },
+        "reading": { "$ref": "#/$defs/UsageWorkReading" }
+      }
+    },
+    "UsageWorkSession": {
+      "description": "One session's part of a unit. `counted` says its delta is in the unit's totals. `peak_start` is null when it had no starting reading; `peak_rose` says its peak context grew during the unit. A per-unit peak is not kept by the ledger and is not given.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "compactions", "conversation", "counted", "delta", "models", "peak_end", "peak_rose", "states"],
+      "properties": {
+        "conversation": { "type": "string" },
+        "states": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkState" } },
+        "counted": { "type": "boolean" },
+        "delta": { "$ref": "#/$defs/UsageWorkTokens" },
+        "calls": { "type": "integer" },
+        "compactions": { "type": "integer" },
+        "peak_start": { "nullable": true, "type": "integer" },
+        "peak_end": { "type": "integer" },
+        "peak_rose": { "type": "boolean" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkModel" } }
+      }
+    },
+    "UsageWorkUnit": {
+      "description": "One unit cycle: what its counted sessions added between its cursors, and the raw cursors. `started_at` and `ended_at` are Unix seconds, 0 when that edge has no marker. `cost` is null unless `cost_known`: the unit ended, every session was counted exactly, and one priced model is named.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "compactions", "cost_known", "cursors", "cycle", "ended_at", "id", "kind", "models", "outcome", "sessions", "started_at", "states", "tokens"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/UsageWorkKind" },
+        "id": { "type": "string" },
+        "cycle": { "type": "string" },
+        "started_at": { "type": "integer" },
+        "ended_at": { "type": "integer" },
+        "outcome": { "type": "string" },
+        "states": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkState" } },
+        "tokens": { "$ref": "#/$defs/UsageWorkTokens" },
+        "cost": { "nullable": true, "type": "number" },
+        "cost_known": { "type": "boolean" },
+        "calls": { "type": "integer" },
+        "compactions": { "type": "integer" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkModel" } },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkSession" } },
+        "cursors": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkCursor" } }
+      }
+    },
+    "UsageWorkUnits": {
+      "description": "GET /v1/usage/work-units?since=… (docs/token-ledger.md \"One unit of work\"): every unit with a cursor in [`since`, `until`] (Unix seconds), the most recent first, each whole even when it started before `since`. `since` is `<n>d`, `<n>h` or a Unix time, 14 days when absent. `truncated` says more units were in the range than one answer reads (limits N73). Behind cursors the ledger has caught up with are settled before the answer is read.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "truncated", "units", "until"],
+      "properties": {
+        "since": { "type": "integer" },
+        "until": { "type": "integer" },
+        "truncated": { "type": "boolean" },
+        "units": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkUnit" } }
       }
     },
     "UsageDiagnostics": {

@@ -412,6 +412,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/usage/compare-compaction",
 		query: map[string]string{"since": "14d"},
 	}, {
+		word: "usage.work-units",
+		body: map[string]any{"type": "usage.work-units", "session": machine,
+			"request": "req-usage-work", "since": "36h"},
+		session: machine, name: "read:req-usage-work",
+		method: "GET", path: "/v1/usage/work-units",
+		query: map[string]string{"since": "36h"},
+	}, {
 		// Things waiting to be verified: two reads on the machine's channel
 		// and five commands, each a device's press, each with its document
 		// handed to the route whole.
@@ -1723,7 +1730,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.v2.assign", "work.v2.persona-suggestion", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.seen", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.convert",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action",
-		"usage.session", "usage.task", "usage.item", "usage.compare-compaction",
+		"usage.session", "usage.task", "usage.item", "usage.compare-compaction", "usage.work-units",
 		"verification.list", "verification.get", "verification.create", "verification.note",
 		"verification.criterion", "verification.close", "verification.delete"} {
 		if !implemented[word] {

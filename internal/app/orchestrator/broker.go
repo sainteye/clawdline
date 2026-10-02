@@ -154,6 +154,11 @@ type Broker struct {
 	// both agent notification routes answer 409 agent_notify_disabled before
 	// judging anything else. Nil is on, the setting's default.
 	NotifyEnabled func() bool
+	// WorkUnitEdge is told a task's admission (edge "start") and its end
+	// (edge "end", with its terminal state) after each has committed, so the
+	// token ledger can take a cursor (docs/token-ledger.md "One unit of
+	// work"). It must return at once; nil tells nobody.
+	WorkUnitEdge func(taskID, edge, outcome string, at time.Time)
 	// pushed is a test's signal that a dead letter's push, which runs off the
 	// beat's pass, has finished. Nil in production.
 	pushed func()
@@ -572,6 +577,9 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string, effect
 	}
 	if err != nil {
 		return nil, storeError(err)
+	}
+	if b.WorkUnitEdge != nil {
+		b.WorkUnitEdge(r.ID, "start", string(r.State), r.CreatedAt)
 	}
 	return ids, nil
 }

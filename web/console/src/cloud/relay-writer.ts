@@ -252,7 +252,7 @@ export type WriteRoute =
   | { op: "image"; word: Carried<"image">; artifact: string }
   | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
-  | { op: "usage-compare"; word: Carried<"usage.compare-compaction"> }
+  | { op: "usage-compare"; word: Carried<"usage.compare-compaction" | "usage.work-units"> }
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
@@ -457,6 +457,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // this page may hold no row for a child's conversation at all.
     if (head === "usage" && a === "compare-compaction" && segments.length === 2) {
       return { op: "usage-compare", word: "usage.compare-compaction" }
+    }
+    // What each unit of work added: the same one field, `since`.
+    if (head === "usage" && a === "work-units" && segments.length === 2) {
+      return { op: "usage-compare", word: "usage.work-units" }
     }
     if (head === "usage" && b && segments.length === 3) {
       const word = USAGE_WORD[a ?? ""]

@@ -70,6 +70,9 @@ var sessionFields = map[string]string{
 	// The token ledger names an item's owner by the conversation its rows
 	// are keyed by (app.ForItem).
 	"usage#UsageItemOwner.session": conversation,
+	// A work-unit cursor's session is a ledger row's conversation; empty on
+	// the unit's own marker row.
+	"usage#UsageWorkCursor.session": conversation,
 	// A note's author when a session writes it: the calling conversation
 	// (`clawdline verify note` reads it from conversationEnv).
 	"verifications#VerificationNoteCreate.session":         conversation,
