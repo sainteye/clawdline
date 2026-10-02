@@ -165,3 +165,38 @@ func TestNoLandingReasonStandsInOnlyForNoCode(t *testing.T) {
 		t.Fatalf("reason on another step: %v", err)
 	}
 }
+
+// With the verify gate captured off, verifying and merging are one step: the
+// landing evidence moves implementing straight to deploying. A gated item
+// keeps the long line.
+func TestAnUngatedItemDeploysFromImplementingOnItsLandingEvidence(t *testing.T) {
+	w := newWorkV2Test(t)
+	v := implementingWorkV2Test(t, w)
+	if v.Item.VerifyGate {
+		t.Fatal("the test item captured a verify gate")
+	}
+	deployed, err := deploy(t, w, v, directLandingTest(strings.Repeat("a", 40)), "")
+	if err != nil || deployed.Item.Phase != work.PhaseDeploying {
+		t.Fatalf("an ungated item with a commit did not deploy: %+v %v", deployed.Item, err)
+	}
+	other := implementingWorkV2Test(t, w)
+	if _, err := deploy(t, w, other, nil, ""); err == nil || !strings.Contains(err.Error(), "invalid_transition") {
+		t.Fatalf("an ungated item without a landing deployed: %v", err)
+	}
+	deployed, err = deploy(t, w, other, nil, "a decision, no code")
+	if err != nil || deployed.Item.Phase != work.PhaseDeploying {
+		t.Fatalf("an ungated item with a no-landing reason did not deploy: %+v %v", deployed.Item, err)
+	}
+
+	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
+		return WorkV2GateSettings{Verify: true}, nil
+	}
+	gated := implementingWorkV2Test(t, w)
+	if !gated.Item.VerifyGate {
+		t.Fatal("the gated item did not capture its verify gate")
+	}
+	if _, err := deploy(t, w, gated, directLandingTest(strings.Repeat("b", 40)), ""); err == nil ||
+		!strings.Contains(err.Error(), "verification_gate_on") {
+		t.Fatalf("a gated item skipped verifying and merging: %v", err)
+	}
+}

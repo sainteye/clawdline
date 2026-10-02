@@ -218,7 +218,7 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
         <span className="session-owned-open"><WorkIcon name="open" /></span>
       </span>
     </button>
-    <WorkMilestones phase={item.phase} />
+    <WorkMilestones phase={item.phase} verifyGate={item.verify_gate} />
     <WorkSteps steps={item.steps} />
   </article>
 }

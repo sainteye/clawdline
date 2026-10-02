@@ -90,6 +90,29 @@ func TestOnlyTheClosedAgentLifecycleAdvances(t *testing.T) {
 	}
 }
 
+func TestAnUngatedItemDeploysStraightFromImplementingWithItsLanding(t *testing.T) {
+	i := ItemV2{Kind: KindFeature, OwnerSession: "session-a", Phase: PhaseImplementing,
+		DeploymentPolicy: DeployAgentDecides}
+	if err := AgentTransition(i, PhaseDeploying, false, true, false, false); err != nil {
+		t.Fatalf("an ungated item with its landing could not deploy: %v", err)
+	}
+	if AgentTransition(i, PhaseDeploying, false, false, false, false) == nil {
+		t.Fatal("an ungated item without a landing deployed")
+	}
+	if err := AgentTransition(i, PhaseVerifying, false, false, false, false); err != nil {
+		t.Fatalf("the long line closed for an ungated item: %v", err)
+	}
+	i.VerifyGate = true
+	err := AgentTransition(i, PhaseDeploying, true, true, false, false)
+	var refused RefusalV2
+	if !errors.As(err, &refused) || refused.Code != "verification_gate_on" {
+		t.Fatalf("a gated item skipped verifying: %v", err)
+	}
+	if !strings.Contains(refused.Message, "Captured planning and verification gates") {
+		t.Fatalf("the refusal does not point at the gate section: %q", refused.Message)
+	}
+}
+
 func TestAnUnassignedOrTerminalItemRejectsAgentProgress(t *testing.T) {
 	i := ItemV2{Kind: KindFeature, Phase: PhaseAssigned, DeploymentPolicy: DeployAgentDecides}
 	if AgentTransition(i, PhaseImplementing, false, false, false, false) == nil {

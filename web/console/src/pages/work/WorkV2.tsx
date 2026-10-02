@@ -937,7 +937,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     <WorkEpicPlanDocuments item={item} />
     <WorkItemDocuments item={item} placement="before_steps" />
     <WorkSteps steps={item.steps} />
-    <WorkMilestones phase={item.phase} />
+    <WorkMilestones phase={item.phase} verifyGate={item.verify_gate} />
     <WorkItemDocuments item={item} placement="after_steps" />
     <WorkCompletionReports item={item} expanded={reportsExpanded} />
     {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
