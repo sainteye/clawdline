@@ -357,7 +357,7 @@ func TestGuideVersionAndRefusalLookup(t *testing.T) {
 		}
 		first, rest, _ := strings.Cut(out.String(), "\n")
 		hash, ok := strings.CutPrefix(first, "guide-version: ")
-		if !ok || len(hash) != 64 || strings.Contains(rest, "guide-version:") {
+		if !ok || len(hash) != 64 || strings.HasPrefix(rest, "guide-version:") {
 			t.Fatalf("%v: first line %q", args, first)
 		}
 		out.Reset()

@@ -6,12 +6,13 @@ build that printed this guide, and a test fails when one is not. Print it again 
 `clawdline guide` rather than trusting a copy; `clawdline guide zh-TW` is the same guide in
 Traditional Chinese. `clawdline guide` prints the core and names the other parts; print a part
 (`clawdline guide dispatch`) when you reach the work it covers, or `clawdline guide all` for
-the full text. A named part starts with `guide-version: <sha256>`; pass `--since <hash>` to
-`clawdline guide <part>` to receive one `unchanged <hash>` line when that part is identical.
-Use `clawdline guide refused <code>` to print the part that explains a refusal.
+the full text. Whatever it prints, the core included, starts with `guide-version: <sha256>`;
+run the same command with `--since <hash>` and, when that text is unchanged, it prints the one
+line `unchanged <hash>` instead. `clawdline guide refused <code>` prints the part that explains a
+refusal code, and exits 1 with nothing on stdout when no part names it.
 
-In this guide, **step** means one checklist entry on an item, **writes** means paths a task
-may change, **assignment** means who owns the work, and **part** means one named guide section.
+In this guide, a **step** is one checklist entry on an item, a task's **writes** are the paths it
+may change, **assignment** is who owns an item, and a **part** is one named piece of this guide.
 
 ## 0. If you learned Clawdline from the Swift app, read this first
 
@@ -187,7 +188,7 @@ note written then will say an unowned route reaches that app; it does not.
 
 ### Set up a Project's Clawdline display
 
-Use this section when the person asks you to make the Project you are working in legible in
+Use this part when the person asks you to make the Project you are working in legible in
 Clawdline. The outcome is not “some files exist”; it is that the Project has a truthful name and
 mark, long-running work can report progress, and its development servers can be seen without
 Clawdline starting them.
@@ -349,7 +350,7 @@ GET /v1/orchestrator/inventory?project=<absolute repo path>[&claims=a,b]
   `unreadable`. Every row carries a `do` the daemon would accept. With `claims`, each live row
   says what it `overlaps`.
 - **`generation` is required to dispatch** (§4). It is 16 hex characters over the rows' sealed
-  fields; it moves when a row starts, ends or changes claims.
+  fields; it moves when a row starts, ends or changes writes.
 - **`task_root` is where your `task.json` goes.** It is this daemon's own field; the Swift broker
   had none because it hard-coded `/tmp/.clawdline`.
 - `400 bad_request` when `project` is not an absolute path inside a Git repository.
@@ -383,9 +384,9 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 It makes the id and the secret, reads the inventory for `generation` and `task_root`, writes
 `task.json`, posts the task, and on one `stale_inventory` reads the inventory again and resends
 once. It prints `dispatched <id> <state> [worktree <path>]`, then one line per warning — the
-daemon's, and each live task whose claims overlap yours. `--json` prints the daemon's answer
+daemon's, and each live task whose writes overlap yours. `--json` prints the daemon's answer
 instead. A refusal is `refused, <status> <code>: <message>` on stderr and exit 1; the table at the
-end of this section says what each code means. The root is your conversation, from
+end of this part says what each code means. The root is your conversation, from
 `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; the child's assistant is
 yours unless `--assistant` says otherwise; the project is this directory's git top-level unless
 `--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. The secret is
@@ -422,7 +423,7 @@ need it again. (A respawn is the one answer that carries a secret: its copy's ne
 
 **3. Write `<task_root>/<TASK_ID>/task.json`.** The daemon reads the brief from this file, not from
 the request. At admission it validates it, rewrites `task.json` from what it admitted, and writes the
-child's `CHILD.md` from the same record — title, instructions, claims, deliverables, kind and timeout
+child's `CHILD.md` from the same record — title, instructions, writes, deliverables, kind and timeout
 included — so the task the child reads is the one that was validated, and it does not read `task.json`.
 
 | Field | Rule |
@@ -503,7 +504,7 @@ most twice per original.
 | 503 | `squad_policy_unavailable` | The role assignment settings could not be read; nothing was started |
 | 409 | `persona_disabled_for_auto_assignment` | That persona is turned off for automatic assignment in the target Project |
 | 429 | `over_capacity` | Your child slots (default 5) or the machine's are full; `retry_after` |
-| 409 | `workspace_busy` | Another root's claims overlap; the error names the blocking task |
+| 409 | `workspace_busy` | Another root's writes overlap; the error names the blocking task |
 | 409 | `worktree_unavailable` | The private checkout could not be made |
 | 429 | `terminal_busy` | Every terminal-write lane is busy; `retry_after: 5` |
 
@@ -518,7 +519,7 @@ You do not call those routes.
   `GET /v1/orchestrator/tasks` lists them (`?state=`, `?limit=` up to 500).
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
   is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
-  released claims, its branch, how many leftovers) and the two commands to run —
+  released writes, its branch, how many leftovers) and the two commands to run —
   `clawdline task show <id>`, then `clawdline task ack <id> <notice_id>`. Its JSON still carries
   `state`, `result_path`, `outstanding`, `leftovers`, `notice_id` and `ack_path`. It retries on a 5→300-second ladder, eight
   times, until you acknowledge it — and never types while you are showing a menu. A menu does not
@@ -620,7 +621,7 @@ The other three kinds of work each have their own route. Which one is a boundary
 | **Detached automation** | `POST /v1/orchestrator/detached-tasks` | Unattended work with nobody to report to |
 
 **Handoff.** Write `<state dir>/handoffs/<handoff_id>/handoff.md` first (the list route answers
-`package_root`). It should carry three sections: **REFERENCES** (everything the receiver must
+`package_root`). It should carry three headings: **REFERENCES** (everything the receiver must
 read), **VERIFICATION** (questions it answers from those sources before continuing) and **OPEN
 THREADS** (where to pick up). Then post, with a closed body:
 
@@ -737,7 +738,7 @@ clawdline session report --summary "One concrete sentence about what was deliver
 ```
 
 It draws one check on your session's row: **delivered, awaiting approval**. It is weaker than a
-landing and claims no review. It shows while the daemon reads the session as idle — working,
+landing and asks for no review. It shows while the daemon reads the session as idle — working,
 waiting or an unreadable screen outrank it — and only while that terminal holds the same
 conversation.
 
@@ -932,7 +933,7 @@ clawdline item claim <item id>
   is being opened for it — only the person moves an item between Sessions); `item_terminal` (done or
   cancelled); `planning_not_assignable` (a Refactor or Plan stays in Planning; an Epic can be claimed);
   `version_conflict` (it changed; run the command again); `run_claims_exhausted` (one message backs
-  at most five claims).
+  at most five uses).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
 
 **Assign a Board item to a new Session the person asked for.** When the person's message through
@@ -951,7 +952,7 @@ clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--
   the persona the new Session runs as.
 - Refusals, each writing nothing: those of `item claim` (`run_unknown`, `run_expired`,
   `run_other_session`, `session_not_found`, `child_session`, `project_mismatch`, `item_assigned`,
-  `item_terminal`, `version_conflict`, and `run_claims_exhausted`: claims and assignments share one
+  `item_terminal`, `version_conflict`, and `run_claims_exhausted`: `item claim` and `item assign` share one
   message's five); `kind_person_assigns` (only a Feature or an Issue); `new_session_only` (to take it
   yourself, claim it); `unknown_persona`; `persona_disabled_for_auto_assignment` (the role is off for
   automatic assignment in that Project).
@@ -989,7 +990,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
   make unexplained acronyms, internal identifiers, code paths, or implementation jargon the main
   explanation. The Board first shows title, source, and reason; **Explain / 詳細說明** expands what
   changes and what the person will see when it is done.
-- **To propose an item with a TODO list**, write the list as two or more top-level Markdown list
+- **To propose an item with steps**, write the list as two or more top-level Markdown list
   rows in `description`. When the person accepts and assigns the item, each row becomes one of its
   `steps` (see below).
 - `201` answers the pending proposal. The person accepts, edits or rejects it in the Board's Agent
@@ -1024,7 +1025,7 @@ session_cannot_decide`). Read the latest run at
 pre-question run is refused by name. A person typing straight into a terminal has no run, so ask
 them to answer through Clawdline or in the console.
 
-**Your to-do list.** `GET /v1/orchestrator/sessions/<conversation id>/todos` — named by
+**Your children still to collect.** `GET /v1/orchestrator/sessions/<conversation id>/todos` — named by
 conversation id, not terminal (`409 session_id_is_terminal` otherwise). The broker opens and closes
 these from task facts; there is nothing to write.
 
@@ -1032,7 +1033,7 @@ At every turn boundary, before declaring yourself idle, also read
 `GET /v1/work/v2/agent/session-todos/<conversation id>`. Its `assigned_items` are Board items the
 person has given this Session, its `recent_items` are items this Session recently completed, and its
 `direct_todos` are quick requests, and its `unacknowledged_completions` are children of yours that
-finished without your ACK (section 5). This pull is how an assignment made while you were working waits
+finished without your ACK (§5). This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
 next owned work and read its complete record with `clawdline item steps <id>` (the route is
 `GET /v1/work/v2/items/<id>`).
@@ -1129,7 +1130,7 @@ worktree at its committed candidate: the CLI sends the current branch and full H
 checks Project, cycle base, tree and acceptance digest. A detached read-only Codex checker uses
 `code-reviewer` for Issue, `reality-checker` for Epic, and `evidence-collector` for a Feature with
 reference pictures or a design document (otherwise `reality-checker`). Its typed verdict is
-`PASS`, `FAIL`, or `NEEDS_WORK`; unverified claims say why and never authorize merging. A missing
+`PASS`, `FAIL`, or `NEEDS_WORK`; unverified statements say why and never authorize merging. A missing
 or malformed result is a technical failure, with one bounded retry and then escalation. An Epic's
 final end-to-end round waits until all children are terminal and the affected components are integrated
 into one runnable candidate. Focused child tests and integration smoke checks happen first; do not
@@ -1224,7 +1225,7 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
-its `--step` rows. Each step is an item-local TODO, not another Board item.
+its `--step` rows. Each step is a checklist entry on that item, not another Board item.
 Complete a verified step with `clawdline item step-done <item id> <step id>`; it reads the version
 and sends `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` with
 `{"expected_version", "session_id"}`. Run it again after a version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
@@ -1264,7 +1265,7 @@ boundary into a file, then:
 clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
 ```
 
-It sends `POST /v1/work/v2/agent/items/<id>/documents` for you (the Epic part of this section,
+It sends `POST /v1/work/v2/agent/items/<id>/documents` for you (the Epic part of §10,
 `clawdline guide epic`, lists its fields). A hand-built curl to that route without the credential
 the command reads answers `401 unauthorized`. The body is Markdown, at most 64 KiB. Write for the person who reported the problem, not as a raw
 debug log, and keep private data out of it. The active owner must add it before the item becomes

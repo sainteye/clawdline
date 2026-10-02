@@ -107,9 +107,11 @@ func TestRefusalCodesFindTheirOwningPart(t *testing.T) {
 }
 
 // Every code the refusal part names in backticks resolves to a part, and to
-// the same part in both languages.
+// the same part in both languages. `error` and `retry_after` are the answer's
+// field names, which that part also backticks; they are not codes.
 func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
 	span := regexp.MustCompile("`(?:[0-9]{3} )?([a-z][a-z0-9_]*)`")
+	fields := map[string]bool{"error": true, "retry_after": true}
 	codes := map[string]bool{}
 	for _, lang := range Topics() {
 		part, err := Section(lang, "refused")
@@ -117,10 +119,12 @@ func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, m := range span.FindAllSubmatch(part, -1) {
-			codes[string(m[1])] = true
+			if !fields[string(m[1])] {
+				codes[string(m[1])] = true
+			}
 		}
 	}
-	if len(codes) < 5 {
+	if len(codes) < 4 {
 		t.Fatalf("found only %d codes in the refusal part: %v", len(codes), codes)
 	}
 	for code := range codes {
