@@ -111,7 +111,9 @@ func noticeCommands(line string) [][]string {
 // Every command in every completion line the broker can write — for each thing
 // a delivery branch can hold when the task ends — is one this binary parses
 // and, for a landing, sends to the route as the route reads it. The lines are
-// the broker's own (FinishedLine), not copies of them.
+// the broker's own (FinishedLine), not copies of them — and, for a committed
+// branch, the cherry-pick line `task show` prints in the notice's place
+// (CarriedByHand).
 func TestEveryCommandACompletionNoticeNamesRuns(t *testing.T) {
 	id := taskTestID
 	worktree := &orchestrator.Worktree{Branch: "clawdline/task/" + id, Path: "/w/" + id}
@@ -129,6 +131,9 @@ func TestEveryCommandACompletionNoticeNamesRuns(t *testing.T) {
 	lands := 0
 	for name, r := range records {
 		line := b.FinishedLine(r, "n-1")
+		if r.Landing.Settlement == orchestrator.SettlementCarried {
+			line += "; " + orchestrator.CarriedByHand(id)
+		}
 		named := noticeCommands(line)
 		if len(named) < 2 {
 			t.Fatalf("%s: the line names %d commands:\n%s", name, len(named), line)
@@ -144,8 +149,8 @@ func TestEveryCommandACompletionNoticeNamesRuns(t *testing.T) {
 			}
 			switch m[1] {
 			case "show":
-				if len(words) != 1 || words[0] != id {
-					t.Errorf("%s: %q is not `task show <task id>`", name, m[0])
+				if len(words) != 3 || words[0] != id || words[1] != "--ack" || words[2] != "n-1" {
+					t.Errorf("%s: %q is not `task show <task id> --ack <notice id>`", name, m[0])
 				}
 			case "ack":
 				if len(words) != 2 || words[0] != id {

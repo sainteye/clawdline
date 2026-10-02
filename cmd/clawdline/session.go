@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 )
 
 // `clawdline session report`: the root's own delivery receipt for a turn that
@@ -160,7 +162,7 @@ func remindUnacknowledgedCompletions(stderr io.Writer, b *broker, conversation s
 	fmt.Fprintln(stderr, len(answer.Completions), phrase)
 	for _, c := range answer.Completions {
 		fmt.Fprintf(stderr, "  %s  %s (%s; notice %s)  read %s\n", c.TaskID, c.Title, c.State, c.NoticeState, c.ResultPath)
-		fmt.Fprintf(stderr, "    then: clawdline task ack %s %s\n", c.TaskID, c.NoticeID)
+		fmt.Fprintf(stderr, "    then: %s\n", orchestrator.ShowCommand(c.TaskID, c.NoticeID))
 	}
 }
 

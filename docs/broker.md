@@ -46,12 +46,36 @@ hours later by asking. Three things changed:
   acknowledged, pending, delivered or dead, with task id, title, state, `result_path`, `notice_id`, `notice_state`,
   `last_error` and `ack_path`. A ledger that cannot be read says `unacknowledged_completions_unknown` rather than an
   empty list. `clawdline session report` prints them on stderr after the receipt, as it does open to-dos. An ACK
-  (the route, `clawdline task ack`, or a landing the root records) takes it off both.
+  (the route, `clawdline task show <id> --ack <notice>`, `clawdline task ack`, or a landing the root records) takes
+  it off both.
 - **A dead letter is typed once more when its root reads idle.** Idle is the one moment a line costs nothing: no
   menu, no turn to interrupt, an empty composer. The beat types it there once (`task.completion.retyped`; the attempt
   count past the limit is the durable mark it was spent), the notice stays a dead letter — no second push — and it is
   not typed again. Only dead letters at most `maxRetypeAge` (24 hours) old qualify; older ones wait for a person's
   `reconcile`.
+
+**A notice already on the root's screen is reminded, not retyped (`notice.go`, 2026-10-02).** Measured over the 14
+days before: a completion notice was a median 967 characters, 30% of completion events reached their root two or more
+times, and the number of copies a root saw was almost exactly the number of attempts — every rung of the
+acknowledgement ladder typed the whole notice again, and each copy was re-read on every later call of that
+conversation. Of 241 extra copies, 111 came before the root had reached the first, 69 after the root had run
+`task show` and not `task ack`, 23 after a daemon restart, 18 after an ACK that did not arrive.
+
+- **Version 3 of the completion notice** carries the task, its state, the notice id, the counts that are not zero and
+  one sentence; the result path, the ACK route and the doubled timeout flag went (`docs/messages.md`). For one record
+  measured on both versions: 845 → 434 characters for a plain success, 1,126 → 546 for a committed branch (the
+  common case), 1,141 → 730 for an empty one, 890 → 504 for a timeout. A committed branch's cherry-pick alternative
+  moved to `task show`, which prints it under the landing line.
+- **One command reads and acknowledges.** The sentence names `clawdline task show <id> --ack <notice>`, which prints
+  the view and then posts the ACK. The root running it is the observation; a view that could not be read sends no
+  ACK, and an ACK that is refused or never arrives prints its code (`ack_unsent` for the latter) and exits 1.
+  `clawdline task ack` still works on its own.
+- **A notice that has been delivered is followed by a reminder.** When the ledger row has `transport_delivered_at`,
+  what the next rung types is a `task_reminder` line of about 350 characters naming the same command, never the whole
+  notice again; the row survives a restart, so the choice does too. A notice that has never been delivered is typed
+  whole on every retry. Nothing else moved: delivered is still not observed, a reminder sets neither `observed_at`
+  nor the ACK, and the two ladders, the eight attempts, dead letter, the holds and `NoticeSeen` are as they were.
+  The failure-injection tests are in `notice_reminder_test.go`.
 
 ## Landing ledger 的字
 

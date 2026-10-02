@@ -75,8 +75,8 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
-| `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
-| `clawdline task ack <task id> <notice id>` | Acknowledges a child's completion notice (§5) |
+| `clawdline task show [--json] [--ack <notice id>] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout; `--ack` then acknowledges its completion notice (§5) |
+| `clawdline task ack <task id> <notice id>` | Acknowledges a child's completion notice on its own (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
@@ -284,9 +284,11 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - Read-only work is `--claims ""`. Every flag, and every refusal code, is in
   `clawdline guide dispatch`.
 
-**5. When a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
-`clawdline task show <task id>`, integrate the delivery, then
-`clawdline task ack <task id> <notice id>`. Integrate a worktree child by **merging its branch** into the target. **The merge records the
+**5. When a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run the one
+command it names, `clawdline task show <task id> --ack <notice id>`: it prints the task and then
+acknowledges the notice, which stops the reminders (`clawdline task ack <task id> <notice id>` does
+the second half alone). Acknowledging says you read it; what you still
+owe the delivery is its landing, tracked on its own. Then integrate it. Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
 what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
 `nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
@@ -529,17 +531,22 @@ You do not call those routes.
   `GET /v1/orchestrator/tasks` lists them (`?state=`, `?limit=` up to 500).
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
   is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
-  released writes, its branch, how many leftovers) and the two commands to run —
-  `clawdline task show <id>`, then `clawdline task ack <id> <notice_id>`. Its JSON still carries
-  `state`, `result_path`, `outstanding`, `leftovers`, `notice_id` and `ack_path`. It retries on a 5→300-second ladder, eight
-  times, until you acknowledge it — and never types while you are showing a menu. A menu does not
-  use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone:
+  released writes, its branch, how many leftovers) and the one command to run —
+  `clawdline task show <id> --ack <notice_id>`. Its JSON (version 3) carries `task`, `state` and
+  `notice_id`, and `outstanding`, `leftovers` and `claims_released` only when they say something;
+  the result is what `task show` prints. A line that could not be typed is retried on a 5→300-second
+  ladder. Once it is on your screen and you have not acknowledged it, it is not typed again whole:
+  a short `task_reminder` line naming the same command is, on a 2→30-minute ladder — eight
+  typings in all, then it gives up. It never types while you are showing a menu. A menu does not
+  use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone.
+  `--ack` sends the acknowledgement only after the view is printed, and when it does not land it
+  says so (`ack_unsent`, or the route's refusal) and exits 1 — run it again. The route itself:
 
   ```
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  `clawdline task ack <id> <notice_id>` sends it and prints one line. A second ACK answers
+  `clawdline task ack <id> <notice_id>` sends it alone and prints one line. A second ACK answers
   `changed: false`. Unacknowledged notices are listed at
   `GET /v1/orchestrator/completions`; `POST /v1/orchestrator/completions/reconcile` re-arms them.
   A notice that gave up is typed once more the next time your session is idle.
@@ -548,7 +555,7 @@ You do not call those routes.
   lists `unacknowledged_completions` — each child of yours that finished and that you have not
   acknowledged, with `task_id`, `title`, `state`, `kind`, `result_path`, `notice_id` and `ack_path`, whether
   its notice is still pending or gave up. `clawdline session report` prints them after its receipt.
-  For each: `clawdline task show <id>`, integrate it, then ACK it; the ACK takes it off both lists.
+  For each: `clawdline task show <id> --ack <notice_id>`, then integrate it; the ACK takes it off both lists.
   `task show` prints the summary whole and counts what it leaves out; `--json` is the daemon's whole
   answer, symbols and artifacts included. Read `result.json` itself only when that is not enough.
 - **A delivery that names leftovers** — things the child says it did not do — changes nothing by

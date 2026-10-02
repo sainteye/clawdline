@@ -1176,6 +1176,17 @@ function noticeHTML(v: View, e: Entry, at: number): ReactElement {
     if (n.claims_released === true && n.child_may_still_write === true) {
       detail += '<div class="notice-warning">' + esc(T.webNoticeClaimsReleased) + "</div>"
     }
+  } else if (n.kind === "task_reminder") {
+    // The short line typed instead of a completion notice that already reached
+    // this session: the same event, said again, so it is drawn as a reminder
+    // and not as a second completion.
+    title = nextWord("noticeReminder")
+    detail =
+      '<div class="notice-task">' +
+      esc(task.id || T.webNoticeTask) +
+      '</div><div class="notice-meta">' +
+      esc(nextWord("noticeReminderSay")) +
+      "</div>"
   } else if (n.kind === "workspace_overlap") {
     title = T.webNoticeWorkspaceOverlap
     tone = "overlap"

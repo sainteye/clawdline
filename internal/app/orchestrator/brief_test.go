@@ -74,8 +74,9 @@ func TestTheBriefingSignsWithOneCommand(t *testing.T) {
 }
 
 // The completion notice's human half is a pointer, not a manual: which task,
-// how it ended, how many leftovers, and the two commands. Its machine half
-// keeps every key it had.
+// how it ended, how many leftovers, and the one command. Its machine half
+// keeps what a machine reads and nothing the sentence or the command says
+// again (version 3).
 func TestTheCompletionNoticeIsShort(t *testing.T) {
 	b := &Broker{Tasks: taskdir.New(t.TempDir())}
 	r := Record{ID: "b7000000-0000-4000-8000-000000000002", Title: strings.Repeat("t", 60), State: StateSuccess,
@@ -96,14 +97,19 @@ func TestTheCompletionNoticeIsShort(t *testing.T) {
 	if err := json.Unmarshal([]byte(inner), &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"protocol", "version", "kind", "audience", "task", "state", "result_path",
-		"outstanding", "leftovers", "claims_released", "child_may_still_write", "body", "notice_id", "ack_path"} {
+	for _, key := range []string{"protocol", "version", "kind", "task", "state", "leftovers", "body", "notice_id"} {
 		if _, ok := fields[key]; !ok {
 			t.Errorf("the notice lost its %q", key)
 		}
 	}
+	for _, key := range []string{"audience", "result_path", "ack_path", "child_may_still_write", "claims_released",
+		"outstanding"} {
+		if _, ok := fields[key]; ok {
+			t.Errorf("the notice still carries %q", key)
+		}
+	}
 	body, _ := fields["body"].(string)
-	for _, want := range []string{"clawdline task show " + r.ID, "clawdline task ack " + r.ID + " " + r.Notice.ID,
+	for _, want := range []string{"clawdline task show " + r.ID + " --ack " + r.Notice.ID,
 		"3 leftover", "nothing is committed", r.Worktree.Path} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the body does not say %q:\n%s", want, body)

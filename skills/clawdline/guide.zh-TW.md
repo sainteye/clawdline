@@ -70,8 +70,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
-| `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
-| `clawdline task ack <task id> <notice id>` | ACK 一則 child 完成通知（§5） |
+| `clawdline task show [--json] [--ack <notice id>] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout；加 `--ack` 會接著 ACK 它的完成通知（§5） |
+| `clawdline task ack <task id> <notice id>` | 單獨 ACK 一則 child 完成通知（§5） |
 | `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 從任何一台機器透過 Cloud webhook 啟動一個排程，並等它的結果；exit code 說明它怎麼結束（「排程」一節）。不需要 daemon |
@@ -253,8 +253,10 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - 調查或 Explore child 的 brief 還要寫明停止條件——回答了就結束任務的那個問題——以及 turn 上限。
 - 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-TW dispatch`。
 
-**5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
-整合交付，然後 `clawdline task ack <task id> <notice id>`。worktree child 的整合方式是**把它的 branch
+**5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行它寫的那一個指令
+`clawdline task show <task id> --ack <notice id>`：先印出 task，再 ACK 這則通知，提醒就會停（只要 ACK 就用
+`clawdline task ack <task id> <notice id>`）。ACK 代表你讀過了；
+這次交付還欠的是 landing，那另外記。然後整合交付。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
 列出還欠著的。用 `--claims ""` 派出、什麼都沒寫的 child，broker 會自己記 `nothing_to_land`。其他情況用
 `clawdline task land <task id> <state>`（`clawdline guide landing`）。
@@ -472,23 +474,26 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 - `clawdline task show <id>`——單一 task 和它的狀態（`GET /v1/orchestrator/tasks/<id>`）。`GET /v1/orchestrator/tasks` 列出全部
   （`?state=`、`?limit=` 最多 500）。
 - **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`。** 它的 `body` 只有一句：哪個 task、
-  怎麼結束、只屬於這次交付的事實（stalled、writes 已釋放、它的 branch、幾個 leftover），以及要執行的兩個
-  指令——先 `clawdline task show <id>`，再 `clawdline task ack <id> <notice_id>`。JSON 仍帶著 `state`、
-  `result_path`、`outstanding`、`leftovers`、`notice_id` 和 `ack_path`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
-  打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去：
+  怎麼結束、只屬於這次交付的事實（stalled、writes 已釋放、它的 branch、幾個 leftover），以及要執行的那一個
+  指令——`clawdline task show <id> --ack <notice_id>`。JSON（version 3）帶著 `task`、`state`、`notice_id`，
+  `outstanding`、`leftovers`、`claims_released` 只在有內容時才出現；結果看 `task show`。打不進去的那一行照
+  5→300 秒的階梯重試。一旦已經打到你的畫面上、你還沒 ACK，就不會再整份重打，而是照 2→30 分鐘的階梯打一行
+  短的 `task_reminder`，寫著同一個指令——全部加起來八次，之後放棄。你正在顯示選單時，它絕不打字。選單不會
+  用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去。`--ack` 只在畫面印出之後才送 ACK；沒送成時
+  會說出來（`ack_unsent`，或路由的拒絕碼）並以 1 結束——再執行一次。路由本身：
 
   ```
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  `clawdline task ack <id> <notice_id>` 會送出它，並印一行結果。第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
+  `clawdline task ack <id> <notice_id>` 會單獨送出它，並印一行結果。第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
   `POST /v1/orchestrator/completions/reconcile` 會把它們重新排上。已經放棄的通知，會在你的 session 下一次
   閒置時再打一次。
 - **就算你沒看到那一行，也會知道。** 你每個 turn 邊界都會讀的
   `GET /v1/work/v2/agent/session-todos/<conversation id>` 會列出 `unacknowledged_completions`：每一個已經
   結束、你還沒 ACK 的 child，附 `task_id`、`title`、`state`、`kind`、`result_path`、`notice_id` 和 `ack_path`，不管它的
-  通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都先執行
-  `clawdline task show <id>`、整合，然後 ACK；ACK 之後兩邊都不會再列。`task show` 會完整印出 summary，
+  通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都執行
+  `clawdline task show <id> --ack <notice_id>`，然後整合；ACK 之後兩邊都不會再列。`task show` 會完整印出 summary，
   省略的部分只給數量；`--json` 是 daemon 的完整回應，包括 symbols 與 artifacts。只有不夠用時才去讀
   `result.json` 本身。
 - **交付裡列了 leftovers**（child 說它沒做的事），本身不會觸發任何事。`task show` 會列出它們的標題。要把

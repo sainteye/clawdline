@@ -379,13 +379,14 @@ func TestTaskShowIsTheCompactView(t *testing.T) {
 		`"branch_exists":null,"commits":null,"dirty":null,"merged":null}}}`
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, task })
 	var out, errs bytes.Buffer
-	if code := showTask(&out, &errs, b, taskTestID, false); code != 0 {
+	if code := showTask(&out, &errs, b, taskTestID, false, ""); code != 0 {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
 	got := out.String()
 	for _, want := range []string{"success", "result.json collected", "Did the whole thing.\nOn two lines.",
 		"Roots read one line per child", "3 symbols", "2 runs, last pass: go test ./...",
-		"pending (branch_carries_commits)", "/w/x"} {
+		"pending (branch_carries_commits)", "/w/x",
+		"a cherry-pick is recorded with clawdline task land " + taskTestID + " landed --target <branch> --commit <commit>"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("task show does not say %q:\n%s", want, got)
 		}
@@ -401,7 +402,79 @@ func TestTaskShowIsTheCompactView(t *testing.T) {
 	}
 
 	out.Reset()
-	if code := showTask(&out, &errs, b, taskTestID, true); code != 0 || !strings.Contains(out.String(), `"out of scope"`) {
+	if code := showTask(&out, &errs, b, taskTestID, true, ""); code != 0 || !strings.Contains(out.String(), `"out of scope"`) {
 		t.Fatalf("--json: exit %d:\n%s", code, out.String())
+	}
+}
+
+// `task show --ack` is the one command a completion notice names: the view
+// first, and the acknowledgement only once the view is printed. An
+// acknowledgement that does not land — refused, or lost on the way — says so
+// with its code and exits 1, because a printed view is not a stopped notice:
+// the broker keeps reminding until the ACK arrives.
+func TestTaskShowAckPrintsThenAcknowledges(t *testing.T) {
+	task := `{"ok":true,"task":{"id":"` + taskTestID + `","title":"shorter protocol","state":"success"}}`
+	const notice = "ae000000-0000-4000-8000-00000000000a"
+	cases := []struct {
+		name     string
+		ack      func() (int, string) // nil: the connection is cut
+		get      int
+		code     int
+		stdout   []string
+		stderr   string
+		requests int
+	}{
+		{name: "acknowledged", get: 200, code: 0, requests: 2,
+			ack: func() (int, string) {
+				return 200, `{"ok":true,"acknowledged":true,"changed":true,"notice_id":"` + notice + `"}`
+			},
+			stdout: []string{"shorter protocol", "acknowledged " + taskTestID + " notice " + notice}},
+		{name: "refused", get: 200, code: 1, requests: 2,
+			ack: func() (int, string) {
+				return 409, `{"error":{"code":"completion_notice_mismatch","message":"The notice id does not identify this task's completion envelope."}}`
+			},
+			stdout: []string{"shorter protocol"},
+			stderr: "clawdline task show --ack: refused, 409 completion_notice_mismatch"},
+		{name: "lost on the way", get: 200, code: 1, requests: 2, ack: nil,
+			stdout: []string{"shorter protocol"},
+			stderr: "clawdline task show --ack: ack_unsent, the notice is still unacknowledged"},
+		{name: "no view, no ack", get: 404, code: 1, requests: 1,
+			ack:    func() (int, string) { t.Fatal("acknowledged a task whose view was not printed"); return 0, "" },
+			stderr: "clawdline task show: refused, 404 not_found"},
+	}
+	for _, c := range cases {
+		s, b := newStandIn(t, func(r *http.Request) (int, string) {
+			if r.Method == http.MethodGet {
+				if c.get != 200 {
+					return c.get, `{"error":{"code":"not_found","message":"No task named x."}}`
+				}
+				return 200, task
+			}
+			if c.ack == nil {
+				panic(http.ErrAbortHandler)
+			}
+			return c.ack()
+		})
+		var out, errs bytes.Buffer
+		if code := showTask(&out, &errs, b, taskTestID, false, notice); code != c.code {
+			t.Errorf("%s: exit %d, want %d; stderr %s", c.name, code, c.code, errs.String())
+		}
+		for _, want := range c.stdout {
+			if !strings.Contains(out.String(), want) {
+				t.Errorf("%s: stdout does not say %q:\n%s", c.name, want, out.String())
+			}
+		}
+		if !strings.Contains(errs.String(), c.stderr) || (c.stderr == "" && errs.Len() != 0) {
+			t.Errorf("%s: stderr %q, want %q", c.name, errs.String(), c.stderr)
+		}
+		seen := s.requests()
+		if len(seen) != c.requests || seen[0].Method != http.MethodGet {
+			t.Fatalf("%s: asked %+v", c.name, seen)
+		}
+		if c.requests == 2 && (seen[1].Method != http.MethodPost ||
+			seen[1].EscapedPath != "/v1/orchestrator/tasks/"+taskTestID+"/completion/ack" ||
+			string(seen[1].Body) != `{"notice_id":"`+notice+`"}`) {
+			t.Fatalf("%s: the acknowledgement was sent as %+v", c.name, seen[1])
+		}
 	}
 }

@@ -106,8 +106,9 @@ func taskUsage() {
 	fmt.Fprintln(os.Stderr, "  validates <task dir>/result.json.tmp and publishes it as result.json, then asks the broker to collect it")
 	fmt.Fprintln(os.Stderr, "       clawdline task ack [--port n] <task id> <notice id>")
 	fmt.Fprintln(os.Stderr, "  acknowledges a child's completion notice, so the daemon stops typing it into this session")
-	fmt.Fprintln(os.Stderr, "       clawdline task show [--port n] [--json] <task id>")
-	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout")
+	fmt.Fprintln(os.Stderr, "       clawdline task show [--port n] [--json] [--ack <notice id>] <task id>")
+	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout;")
+	fmt.Fprintln(os.Stderr, "  with --ack, acknowledges its completion notice once the view is printed")
 	fmt.Fprintln(os.Stderr, "       clawdline task land [--port n] <task id> <landed|incorporated|abandoned|nothing_to_land|pending>")
 	fmt.Fprintln(os.Stderr, "                           [--target b] [--commit c] [--carrier-task id] [--note t]")
 	fmt.Fprintln(os.Stderr, "  records a child's landing by hand, with the orchestrator token; a merge into its target records itself")
@@ -315,14 +316,20 @@ func ackTask(stdout, stderr io.Writer, b *broker, id, notice string) int {
 		fmt.Fprintln(stderr, "clawdline task ack: both the task id and the notice id are required")
 		return 2
 	}
+	return sendAck(stdout, stderr, b, "task ack", id, notice)
+}
+
+// sendAck posts one acknowledgement and says what came of it, for `task ack`
+// and for `task show --ack`.
+func sendAck(stdout, stderr io.Writer, b *broker, name, id, notice string) int {
 	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(id)+"/completion/ack", nil,
 		map[string]string{"notice_id": notice}, "")
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline task ack:", err)
+		fmt.Fprintf(stderr, "clawdline %s: %s: %v\n", name, ackUnsent, err)
 		return 1
 	}
 	if !a.ok() {
-		return report(stdout, stderr, "task ack", a)
+		return report(stdout, stderr, name, a)
 	}
 	var got contract.BrokerAckResult
 	_ = json.Unmarshal(a.Body, &got)
@@ -717,6 +724,11 @@ func writePrivate(path string, body []byte) error {
 	return os.Rename(tmp, path)
 }
 
+// ackUnsent is what `task ack` and `task show --ack` say when the
+// acknowledgement never reached the daemon: the notice is still unacknowledged
+// and its reminders go on, which is the one thing a root must not read as done.
+const ackUnsent = "ack_unsent, the notice is still unacknowledged"
+
 // `clawdline task show <task id>`: the view of one child a root needs to
 // integrate it.
 //
@@ -725,11 +737,21 @@ func writePrivate(path string, body []byte) error {
 // every leftover's reasons — to learn a state, a summary and what is left.
 // This prints those, and counts the rest; `--json` is the daemon's whole
 // answer for the rare root that needs a symbol by name.
+//
+// `--ack <notice id>` is what the completion notice names (2026-10-02). It
+// used to name `task show` and then `task ack`, and roots ran the first and
+// not the second: of the extra copies of a notice measured over 14 days, 69
+// were typed at a root that had already read the task. The acknowledgement is
+// sent only after the view is printed — the root running this command is the
+// observation, and a view that could not be read is not one — and an
+// acknowledgement that fails says so with its code and exits 1, rather than
+// leaving a printed view to look like the end of the matter.
 func showCommand(args []string) {
 	fs := flag.NewFlagSet("task show", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	asJSON := fs.Bool("json", false, "print the daemon's whole answer")
+	ack := fs.String("ack", "", "acknowledge this completion notice once the view is printed")
 	if err := fs.Parse(args); err != nil {
 		taskUsage()
 	}
@@ -745,16 +767,25 @@ func showCommand(args []string) {
 	if err != nil {
 		fail(err)
 	}
-	os.Exit(showTask(os.Stdout, os.Stderr, b, id, *asJSON))
+	os.Exit(showTask(os.Stdout, os.Stderr, b, id, *asJSON, *ack))
 }
 
-// showTask is the command, answering its exit status.
-func showTask(stdout, stderr io.Writer, b *broker, id string, asJSON bool) int {
-	id = strings.TrimSpace(id)
+// showTask is the command, answering its exit status. A non-empty ack is the
+// notice to acknowledge once the view is printed.
+func showTask(stdout, stderr io.Writer, b *broker, id string, asJSON bool, ack string) int {
+	id, ack = strings.TrimSpace(id), strings.TrimSpace(ack)
 	if id == "" {
 		fmt.Fprintln(stderr, "clawdline task show: the task id is required")
 		return 2
 	}
+	if code := printTask(stdout, stderr, b, id, asJSON); code != 0 || ack == "" {
+		return code
+	}
+	return sendAck(stdout, stderr, b, "task show --ack", id, ack)
+}
+
+// printTask prints one task, compactly or whole, answering its exit status.
+func printTask(stdout, stderr io.Writer, b *broker, id string, asJSON bool) int {
 	a, err := b.request(http.MethodGet, "/v1/orchestrator/tasks/"+url.PathEscape(id), nil, nil, "")
 	if err != nil {
 		fmt.Fprintln(stderr, "clawdline task show:", err)
@@ -802,6 +833,11 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 		fmt.Fprintln(w, "landing:      none owed")
 	case l.Settlement != "":
 		fmt.Fprintf(w, "landing:      %s (%s)\n", l.State, l.Settlement)
+		// The completion notice says a merge records this by itself and
+		// leaves the other way to here.
+		if l.State == contract.BrokerLandingStatePending && l.Settlement == contract.BrokerLandingSettlementBranchCarriesCommits {
+			fmt.Fprintf(w, "              %s\n", orchestrator.CarriedByHand(t.ID))
+		}
 	default:
 		fmt.Fprintf(w, "landing:      %s\n", l.State)
 	}

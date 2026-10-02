@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,14 +55,21 @@ var zeroTime time.Time
 // noticeBody is the `clawdline.notice` object, whose key set is closed and
 // whose encoding must be one physical line: a newline inside it would split the
 // message into two things the far side cannot parse.
+//
+// **Version 3 carries what a machine reads and nothing the sentence or the
+// command already says** (2026-10-02). Version 2 also named the result path,
+// the ACK route, an audience that was always "root" and the timeout flag
+// twice; measured over 14 days a completion notice was a median 967
+// characters, and every copy of it was re-read on each later call of the
+// root's conversation. The result is what `clawdline task show` prints and the
+// ACK is its `--ack`, so neither path is typed any more.
 type noticeBody struct {
 	Protocol string     `json:"protocol"`
 	Version  int        `json:"version"`
 	Kind     string     `json:"kind"`
-	Audience string     `json:"audience"`
 	Task     noticeTask `json:"task"`
 	State    string     `json:"state"`
-	Result   string     `json:"result_path"`
+	NoticeID string     `json:"notice_id"`
 	// Outstand is how many other tasks of the root being told are still
 	// running. It is the Swift app's field (`Orchestrator.swift:8661`:
 	// `liveTasks(under: [parentTaskId]).count`), whose parent is a task
@@ -70,18 +78,38 @@ type noticeBody struct {
 	// `"outstanding": 0`, which reads as "nothing else of yours is running"
 	// and meant "nobody counted" (work-system-review §2.2). It counts the
 	// live rows this broker can decode; a row it cannot decode is named as
-	// unreadable wherever tasks are listed and is not counted here.
-	Outstand int `json:"outstanding"`
+	// unreadable wherever tasks are listed and is not counted here. Since
+	// version 3 it is left out when it is 0, which is now a count.
+	Outstand int `json:"outstanding,omitempty"`
 	// Leftovers is how many things this delivery says it did not do. The list
 	// itself is in result.json and on the task, which the root is being told
 	// to read; what belongs in one line typed at a session is the number and
 	// the fact that nothing happens to them until somebody acts.
-	Leftovers int    `json:"leftovers,omitempty"`
-	Released  bool   `json:"claims_released"`
-	MayWrite  bool   `json:"child_may_still_write"`
-	Body      string `json:"body"`
-	NoticeID  string `json:"notice_id"`
-	AckPath   string `json:"ack_path"`
+	Leftovers int `json:"leftovers,omitempty"`
+	// Released is present only when a timeout released the task's claims,
+	// which is also when its tab may still be writing: version 2 said the one
+	// fact as two flags.
+	Released bool   `json:"claims_released,omitempty"`
+	Body     string `json:"body"`
+}
+
+// reminderBody is what is typed instead of the notice once the notice itself
+// has reached the root's screen: the ids, and one sentence naming the command.
+//
+// Every rung of the acknowledgement ladder used to type the whole notice
+// again. Measured over 14 days, 30% of completion events reached their root
+// two or more times, and every extra arrival was a whole copy. A root that has
+// the notice on its screen does not need it again; it needs to be told it has
+// not answered it. A notice that never reached the screen — the terminal
+// refused it, the root was not there — is still typed whole: that is the first
+// time the root reads it.
+type reminderBody struct {
+	Protocol string `json:"protocol"`
+	Version  int    `json:"version"`
+	Kind     string `json:"kind"`
+	TaskID   string `json:"task_id"`
+	NoticeID string `json:"notice_id"`
+	Body     string `json:"body"`
 }
 
 type noticeTask struct {
@@ -97,8 +125,11 @@ type noticeTask struct {
 // 2026-09-26 at 0.5–0.8% of a root's cost, before the root then read the
 // whole result.json anyway (2.1%). Now it says which task, how it ended, the
 // facts that are this delivery's alone — a stall, released claims, the state
-// of its branch, how many leftovers — and the two commands: `clawdline task
-// show` for the compact view, `clawdline task ack` to stop the retries. What
+// of its branch, how many leftovers — and one command: `clawdline task show
+// <id> --ack <notice>`, which prints the compact view and then acknowledges.
+// It used to name `task show` and `task ack` separately, and roots ran the
+// first and not the second: 69 of 241 extra arrivals measured over 14 days
+// were a notice typed again at a root that had already read the task. What
 // to do about a leftover or a landing is the guide's §5 and §6, read once
 // per session rather than typed once per child.
 func (b *Broker) FinishedLine(r Record, noticeID string) string {
@@ -106,7 +137,10 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	if len(short) > 8 {
 		short = short[:8]
 	}
-	line := fmt.Sprintf("[clawdline] task %s (%s) finished: %s", short, r.Title, r.State)
+	// Neither the title nor "[clawdline]" is repeated here: the line is typed
+	// inside the notice, whose wrapper says where it is from and whose `task`
+	// carries the title.
+	line := fmt.Sprintf("task %s finished: %s", short, r.State)
 	if r.State == StateTimeout && len(r.Lease()) > 0 {
 		line += "; claims released, its tab may still be writing"
 	}
@@ -125,9 +159,16 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	if n := len(leftoversOf(r)); n > 0 {
 		line += fmt.Sprintf("; %d leftover(s)", n)
 	}
-	line += " — run clawdline task show " + r.ID
+	return line + " — run " + ShowCommand(r.ID, noticeID)
+}
+
+// ShowCommand is the one command a completion notice and its reminder name:
+// the compact view of the task and, when there is a notice, its
+// acknowledgement once the view is printed.
+func ShowCommand(id, noticeID string) string {
+	line := "clawdline task show " + id
 	if noticeID != "" {
-		line += ", then clawdline task ack " + r.ID + " " + noticeID
+		line += " --ack " + noticeID
 	}
 	return line
 }
@@ -171,14 +212,23 @@ func landingLine(r Record) string {
 		return "nothing is committed on branch " + branch + "; commit in " + path +
 			" before the sweep takes it, or " + LandCommand(r.ID, LandingAbandoned)
 	case SettlementCarried:
-		return "committed on branch " + branch + "; merge it into its target and the broker records the " +
-			"landing by itself (a cherry-pick: " + LandCommand(r.ID, LandingLanded) + ")"
+		// The cherry-pick alternative is `clawdline task show`'s to print
+		// (CarriedByHand), not every notice's: it was a third of this clause,
+		// typed at every root for the rare one that does not merge.
+		return "committed on branch " + branch + "; a merge records its landing by itself"
 	case SettlementUnreadable:
 		return "branch " + branch + " could not be read; look at it, then run " +
 			LandCommand(r.ID, LandingLanded) + " or " + LandCommand(r.ID, LandingAbandoned)
 	}
 	return "it wrote the shared checkout; record the landing with " + LandCommand(r.ID, LandingLanded) +
 		", or run " + LandCommand(r.ID, LandingAbandoned)
+}
+
+// CarriedByHand is how a root records a committed delivery it carried by
+// something other than a merge, which the completion notice leaves to
+// `clawdline task show`.
+func CarriedByHand(id string) string {
+	return "a cherry-pick is recorded with " + LandCommand(id, LandingLanded)
 }
 
 // LandCommand is the `clawdline task land` line that records one landing
@@ -228,30 +278,68 @@ func (b *Broker) NoticeWire(ctx context.Context, r Record) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("this machine could not count the root's other running tasks: %w", err)
 	}
-	body := noticeBody{
+	return wrapNotice(noticeBody{
 		Protocol:  NoticeProtocol,
-		Version:   NoticeVersion,
+		Version:   CompletionNoticeVersion,
 		Kind:      NoticeKind(r),
-		Audience:  "root",
 		Task:      noticeTask{ID: r.ID, Title: r.Title},
 		State:     string(r.State),
-		Result:    filepath.Join(b.Tasks.Path(r.ID), "result.json"),
+		NoticeID:  r.Notice.ID,
 		Outstand:  outstanding,
 		Leftovers: len(leftoversOf(r)),
 		Released:  r.State == StateTimeout && len(r.Lease()) > 0,
-		MayWrite:  r.State == StateTimeout && len(r.Lease()) > 0,
 		Body:      b.FinishedLine(r, r.Notice.ID),
-		NoticeID:  r.Notice.ID,
-		AckPath:   "/v1/orchestrator/tasks/" + r.ID + "/completion/ack",
+	})
+}
+
+// ReminderWire is the line typed instead of the notice once the notice has
+// reached the root's screen (reminderBody).
+func ReminderWire(r Record) (string, error) {
+	if r.Notice == nil {
+		return "", fmt.Errorf("this task has no completion envelope")
 	}
-	encoded, err := json.Marshal(body)
-	if err != nil {
+	short := r.ID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	return wrapNotice(reminderBody{
+		Protocol: NoticeProtocol,
+		Version:  CompletionNoticeVersion,
+		Kind:     ReminderKind,
+		TaskID:   r.ID,
+		NoticeID: r.Notice.ID,
+		Body:     "task " + short + " is not acknowledged — run " + ShowCommand(r.ID, r.Notice.ID),
+	})
+}
+
+// completionWire is what one attempt types: the whole notice the first time
+// it reaches the root's screen, and the reminder after that. DeliveredAt is
+// the ledger's, so a daemon restarted between the two still knows which.
+func (b *Broker) completionWire(ctx context.Context, r Record) (string, error) {
+	if r.Notice != nil && !r.Notice.DeliveredAt.IsZero() {
+		return ReminderWire(r)
+	}
+	return b.NoticeWire(ctx, r)
+}
+
+// wrapNotice encodes one notice object as the one physical line it is typed as.
+//
+// Without the HTML escaping json.Marshal does by default: every `<branch>` a
+// landing clause names cost eleven characters more as `\u003cbranch\u003e`, in
+// a line no browser parses. The one sequence that matters here, a `</` that
+// could read as the end of the wrapper, is still escaped, as `<\/`.
+func wrapNotice(body any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(body); err != nil {
 		return "", err
 	}
-	if strings.ContainsAny(string(encoded), "\n\r") {
+	encoded := strings.ReplaceAll(strings.TrimSuffix(buf.String(), "\n"), "</", `<\/`)
+	if strings.ContainsAny(encoded, "\n\r") {
 		return "", fmt.Errorf("the notice could not be encoded safely")
 	}
-	return "<clawdline-notice>" + string(encoded) + "</clawdline-notice>", nil
+	return "<clawdline-notice>" + encoded + "</clawdline-notice>", nil
 }
 
 // leftoversOf is what a task's delivery said it did not do, or nothing at all
@@ -503,7 +591,7 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 			r = now
 		}
 	}
-	wire, err := b.NoticeWire(ctx, r)
+	wire, err := b.completionWire(ctx, r)
 	if err != nil {
 		return b.spendAttempt(ctx, r.ID, seen, at, "transport_failed", err.Error())
 	}
@@ -772,7 +860,7 @@ func (b *Broker) retypeIfIdle(ctx context.Context, r Record, live []session.Sess
 	if state, _ := b.readComposer(ctx, target.ID, r.Root.Assistant); state != ComposerEmpty {
 		return false
 	}
-	wire, err := b.NoticeWire(ctx, r)
+	wire, err := b.completionWire(ctx, r)
 	if err != nil {
 		return false
 	}

@@ -1987,7 +1987,8 @@ func markerRemoval(raw string, start, end int) (int, int) {
 // decodeNotice decodes Clawdline's own notice about a task, a wait or a
 // handoff: `<clawdline-notice>{…}</clawdline-notice>`, with each kind's
 // closed key set, as the Swift app's `ClawdlineMessage.decode` — plus
-// `task_finished`'s `leftovers`, which the broker began writing after it.
+// `task_finished`'s `leftovers`, which the broker began writing after it, and
+// version 3's completion notice and reminder (completionV3).
 func decodeNotice(raw string) (*Notice, bool) {
 	obj, ok := envelope(raw, "<clawdline-notice>", "</clawdline-notice>")
 	if !ok {
@@ -1997,8 +1998,11 @@ func decodeNotice(raw string) (*Notice, bool) {
 	version, hasVersion := obj.integer("version")
 	kind, hasKind := obj.str("kind")
 	body, _ := obj.str("body")
-	if proto != "clawdline.notice" || !hasVersion || (version != 1 && version != 2) || !hasKind || body == "" {
+	if proto != "clawdline.notice" || !hasVersion || version < 1 || version > 3 || !hasKind || body == "" {
 		return nil, false
+	}
+	if version == 3 {
+		return completionV3(obj, kind, body)
 	}
 	n := &Notice{Kind: kind, Body: body}
 	taskAudience := func() bool {
@@ -2126,6 +2130,63 @@ func decodeNotice(raw string) (*Notice, bool) {
 		}
 		n.Audience, n.HandoffID, n.Assistant, n.ProjectDir, n.State = audience, handoffID, assistant, projectDir, state
 
+	default:
+		return nil, false
+	}
+	return n, true
+}
+
+// completionV3 decodes version 3, which only the completion notice has: the
+// first notice of a finished or stalled task, and the reminder typed instead
+// of it once it has reached its root. Version 3 dropped what the sentence or
+// the command already says — the result path, the ACK route, an audience
+// that was always "root", and the timeout flag said twice — so
+// `claims_released` stands for both of version 2's flags, and `outstanding`
+// and `leftovers` are present only when above zero.
+func completionV3(obj object, kind, body string) (*Notice, bool) {
+	n := &Notice{Kind: kind, Body: body}
+	id, _ := obj.str("notice_id")
+	if !isUUID(id) {
+		return nil, false
+	}
+	n.NoticeID = strings.ToLower(id)
+	switch kind {
+	case "task_finished", "task_stalled":
+		task, ok := noticeTask(obj["task"])
+		state, _ := obj.str("state")
+		if !ok || !knownTaskState(state) ||
+			!keysBetween(obj, []string{"protocol", "version", "kind", "task", "state", "notice_id", "body"},
+				[]string{"outstanding", "leftovers", "claims_released"}) {
+			return nil, false
+		}
+		if _, present := obj["outstanding"]; present {
+			v, ok := obj.integer("outstanding")
+			if !ok || v < 0 {
+				return nil, false
+			}
+			n.Outstanding = v
+		}
+		if _, present := obj["leftovers"]; present {
+			v, ok := obj.integer("leftovers")
+			if !ok || v < 0 {
+				return nil, false
+			}
+			n.Leftovers = v
+		}
+		if _, present := obj["claims_released"]; present {
+			v, ok := obj.boolean("claims_released")
+			if !ok {
+				return nil, false
+			}
+			n.ClaimsReleased, n.ChildMayStillWrite = v, v
+		}
+		n.Task, n.State = &task, state
+	case "task_reminder":
+		taskID, _ := obj.str("task_id")
+		if taskID == "" || !sameKeys(obj, "protocol", "version", "kind", "task_id", "notice_id", "body") {
+			return nil, false
+		}
+		n.Task = &NoticeTask{ID: taskID}
 	default:
 		return nil, false
 	}

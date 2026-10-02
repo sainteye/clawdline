@@ -174,7 +174,7 @@ func TestSessionReportSaysAChildFinishedUnacknowledged(t *testing.T) {
 			`"notice_id":"n-1","notice_state":"dead_letter","ack_path":"/v1/orchestrator/tasks/c6f3-1/completion/ack"}]}`,
 			"1 child task of this Session finished and is not acknowledged:\n" +
 				"  c6f3-1  the relay reconnects (success; notice dead_letter)  read /t/c6f3-1/result.json\n" +
-				"    then: clawdline task ack c6f3-1 n-1\n"},
+				"    then: clawdline task show c6f3-1 --ack n-1\n"},
 		{"none", `{"ok":true,"unacknowledged_completions":[]}`, ""},
 		{"unknown", `{"ok":true,"unacknowledged_completions":[],"unacknowledged_completions_unknown":true}`,
 			"Whether a child of this Session finished without being acknowledged could not be read.\n"},
