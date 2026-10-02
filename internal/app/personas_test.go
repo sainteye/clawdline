@@ -81,6 +81,9 @@ func (f *personaTerminal) NewTmuxWindow(_ context.Context, _, command string) (s
 	f.command = command
 	return "%70", nil
 }
+func (f *personaTerminal) PrepareTmuxViewer(context.Context, string) (string, error) {
+	return "", errors.New("no viewer")
+}
 func (f *personaTerminal) NewTmuxSession(context.Context, string, string, string) (string, error) {
 	return "", errors.New("the server is running")
 }

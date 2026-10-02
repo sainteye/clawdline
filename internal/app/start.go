@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/ports"
+	"github.com/sainteye/clawdline/internal/app/tmuxview"
 )
 
 // Starter is StartPoints.start and StartPoints.resume: open a terminal where a
@@ -129,7 +130,8 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	reach := projects.TmuxReach(s.Launcher.TmuxReach(ctx))
 	choice := s.Terminal()
 	plan := projects.ChoosePlan(choice, itermOpen, reach)
-	if plan == projects.PlanITerm || plan == projects.PlanTmux || plan == projects.PlanTmuxDetached {
+	if plan == projects.PlanITerm || plan == projects.PlanITermTmux || plan == projects.PlanTmux ||
+		plan == projects.PlanTmuxDetached {
 		prepared, err := s.prepareSquadLaunch(ctx, place.Path, persona, resume)
 		if err != nil {
 			return Started{}, err
@@ -155,6 +157,8 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 			return Started{}, openRefusal(err, "iTerm2")
 		}
 		return Started{ID: id, Backend: "iterm", Model: model}, nil
+	case projects.PlanITermTmux:
+		return s.openViewed(ctx, place, model, launch.ShellCommand())
 	case projects.PlanTmux:
 		id, err := s.Launcher.NewTmuxWindow(ctx, place.Path, launch.ShellCommand())
 		if err != nil {
@@ -176,6 +180,17 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	}
 }
 
+// openViewed is PlanITermTmux for the start route: a tmux session of its own,
+// shown in an iTerm2 tab. A tab that did not open is not a failed start — the
+// assistant is already running — so Attach says how to see it instead.
+func (s Starter) openViewed(ctx context.Context, place projects.Place, model, command string) (Started, error) {
+	opened, err := tmuxview.Open(ctx, s.Launcher, place.Path, tmuxview.SessionName("session"), command)
+	if err != nil {
+		return Started{}, openRefusal(err, "")
+	}
+	return Started{ID: opened.PaneID, Backend: tmuxview.Backend, Attach: opened.Attach, Model: model}, nil
+}
+
 // unavailableTerminal names the terminal this platform can actually use.
 // PlanNotRunning means iTerm2 is closed on macOS, but off macOS it means auto
 // found no tmux at all (or that an impossible iTerm2 setting was carried here).
@@ -189,7 +204,7 @@ func unavailableTerminal(choice projects.TerminalChoice, goos string) StartRefus
 			Message: "iTerm2 is not running, and this will not launch it for you. Open it on the machine and try again.",
 			App:     "iTerm2"}
 	}
-	if choice == projects.TerminalITerm {
+	if choice.NamesITerm() {
 		return StartRefusal{Status: http.StatusConflict, Code: "terminal_unsupported",
 			Message: "iTerm2 is selected for new sessions, but " + goos + " has no iTerm2. Choose tmux in Settings."}
 	}

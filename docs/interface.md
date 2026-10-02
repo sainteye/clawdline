@@ -188,13 +188,54 @@ had. Two questions, one answer, and no spelling for half the combinations.
 
 | | what a start does |
 | --- | --- |
-| **Auto** | iTerm2 while it is open; tmux while it is not; and with neither, an ask to open iTerm2. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. |
-| **iTerm2** | an iTerm2 tab, and a refusal naming iTerm2 when it is shut. Named, so a tmux server running beside it is deliberately *not* an answer — picking iTerm2 over auto asks for the tab you can see rather than a pane you cannot. |
+| **Auto** | iTerm2 while it is open; tmux while it is not; and with neither, an ask to open iTerm2. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. With tmux installed, "iTerm2" is a viewer tab on a tmux session — the section below. |
+| **iTerm2** | an iTerm2 tab, and a refusal naming iTerm2 when it is shut. Named, so a tmux server running beside it is deliberately *not* an answer — picking iTerm2 over auto asks for the tab you can see rather than a pane you cannot. With tmux installed, the tab is a viewer on a tmux session, as for auto. |
+| **iTerm2 (native tab)** | `iterm_native`: the session runs in the iTerm2 tab itself, read and typed into through iTerm2's Apple Events — what **iTerm2** meant before 2026-10-02, kept as the way back. Refused like **iTerm2** when iTerm2 is shut. |
 | **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. With no tmux on this Mac at all the start is refused, `terminal_unsupported`. That refusal has no application to name — tmux is not one — so unlike `terminal_closed` the phone does not write a sentence around a name; it draws a sentence of its own saying that Settings asks for tmux, that this Mac has none, and that the answers are to install it or to choose another terminal here. |
 
-The key is `terminal` in `config.json`, and its values are `auto`, `iterm` and `tmux`. It is read
-at the moment a session starts rather than when the app launches, so the next session goes where
-this now says and nothing has to be restarted.
+The key is `terminal` in `config.json`, and its values are `auto`, `iterm`, `iterm_native` and
+`tmux`. It is read at the moment a session starts rather than when the app launches, so the next
+session goes where this now says and nothing has to be restarted.
+
+## An iTerm2 tab that only shows a tmux session
+
+Since 2026-10-02, a session Clawdline itself opens on a Mac with iTerm2 open and tmux installed —
+from the start route, a squad launch, a dispatched child, or a hand-over — runs in tmux, and the
+iTerm2 tab you see only shows it. iTerm2's Apple Events stall in episodes of 3 to 18 minutes
+(eleven of them between 2026-09-23 and 2026-10-02 in one daemon's log): a screen read is killed at
+its limit, a send answers "iTerm2 did not answer in time.", and a session that lives in an iTerm2
+tab can be neither read nor typed into until the episode passes. Reading the same screen with
+`tmux capture-pane` took about 4 ms, with no lock and no Apple Event.
+
+What happens, in order:
+
+1. `tmux new-session -d -s <name>` on your default tmux server, starting one if none is running,
+   with the assistant's line typed at a login shell as for any tmux start. A child's session is
+   `clawdline-task-<id8>` and a hand-over's `clawdline-<kind>-<id8>`, as they always were; anything
+   else gets `clawdline-session-<8 random hex>`. tmux refuses a name it already has, so a session is
+   never shared with somebody else's.
+2. `set-option -t '=<name>:' mouse on`, on that session alone, so the mouse wheel scrolls tmux's
+   history inside the tab. Nothing global and no other session is changed. If it cannot be set,
+   that is logged and the session goes on without it.
+3. One iTerm2 tab, typed `exec '<absolute tmux>' attach -t '=<name>'`. `=` makes tmux match the name
+   exactly rather than as a prefix, and `exec` means that when the session ends the tab's shell
+   ends with it and the tab closes.
+
+**The session is the tmux pane.** It is recorded with backend `tmux` and its pane id, so the list,
+the screen, a briefing, every line and key, an interrupt and a close all go through tmux. Opening
+the tab is the only Apple Event left. The tab's own iTerm2 row runs `tmux attach` and no assistant,
+so it is not listed as a second session. **Reveal** finds the tab through the tty of the tmux
+client that is attached to the session, and selects it.
+
+**When only half of it works.** If the tmux session could not be started, nothing is opened and the
+start fails as it always did. If the session started but the tab did not open — iTerm2 in one of
+its stalls, say — the work has still started and is not started again: the start answers with the
+tmux pane and the line to see it yourself, `tmux attach -t '=<name>'`, and the daemon's log says
+why there is no tab.
+
+Tabs you open by hand are not affected: they are still read and typed into through iTerm2. To have
+Clawdline open native tabs again, choose **iTerm2 (native tab)**. Without tmux installed, iTerm2
+and auto open native tabs as they always did.
 
 **A value this app cannot read is treated as one that was never written**, which is what the
 migration below is for — and because the next save then writes that migrated answer over what was

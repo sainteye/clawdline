@@ -48,6 +48,9 @@ func (f *w4Terminal) NewITermTab(context.Context, string) (string, error) {
 func (f *w4Terminal) NewTmuxWindow(context.Context, string, string) (string, error) {
 	return "", errors.New("never a window on somebody's server")
 }
+func (f *w4Terminal) PrepareTmuxViewer(context.Context, string) (string, error) {
+	return "", errors.New("no viewer")
+}
 func (f *w4Terminal) NewTmuxSession(context.Context, string, string, string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

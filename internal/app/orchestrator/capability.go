@@ -72,7 +72,7 @@ func (p childPlan) backend() string {
 	switch p.kind {
 	case projects.PlanITerm:
 		return "iterm"
-	case projects.PlanTmux, projects.PlanTmuxDetached:
+	case projects.PlanTmux, projects.PlanTmuxDetached, projects.PlanITermTmux:
 		return "tmux"
 	}
 	return ""
@@ -84,6 +84,9 @@ func (p childPlan) capability(goos string) ports.Capability {
 	switch backend := p.backend(); {
 	case backend == "iterm":
 		c.State, c.Via, c.Reason = ports.CapabilityAvailable, []string{backend}, "a new iTerm2 tab for each child"
+	case p.kind == projects.PlanITermTmux:
+		c.State, c.Via, c.Reason = ports.CapabilityAvailable, []string{backend},
+			"a new tmux session for each child, shown in an iTerm2 tab"
 	case backend == "tmux":
 		c.State, c.Via, c.Reason = ports.CapabilityAvailable, []string{backend}, "a new detached tmux session for each child"
 	case !p.asked:
@@ -108,9 +111,9 @@ func (p childPlan) failure(goos string) string {
 		return "tmux is the terminal for new sessions in Settings, and there is no tmux on this machine."
 	case p.kind == projects.PlanNoTmux:
 		return "tmux is the terminal for new sessions in Settings, and tmux is not installed."
-	case p.choice == projects.TerminalITerm && mac:
+	case p.choice.NamesITerm() && mac:
 		return "iTerm2 is not running, and this will not launch it for you."
-	case p.choice == projects.TerminalITerm:
+	case p.choice.NamesITerm():
 		return "iTerm2 is the terminal for new sessions in Settings, and " + goos + " has no iTerm2; set it to tmux."
 	}
 	// auto, with neither iTerm2 open nor a tmux server running.

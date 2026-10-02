@@ -19,6 +19,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/app/tmuxview"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -754,6 +755,13 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// task, easy to find and easy to close.
 		terminalID, openErr = b.Launcher.NewTmuxSession(ctx, cwd, ChildSessionName(r.ID), command)
 		backend = "tmux"
+	case projects.PlanITermTmux:
+		// The same session as above, and an iTerm2 tab that shows it. The
+		// child is the pane: its screen is read, its briefing typed and its
+		// close made through tmux, never through the tab.
+		var viewed tmuxview.Opened
+		viewed, openErr = tmuxview.Open(ctx, b.Launcher, cwd, ChildSessionName(r.ID), command)
+		terminalID, backend = viewed.PaneID, tmuxview.Backend
 	default:
 		openErr = terminal.Failure{Message: plan.failure(runtime.GOOS)}
 	}

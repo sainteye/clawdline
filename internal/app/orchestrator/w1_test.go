@@ -181,6 +181,9 @@ func (f *fakeLauncher) NewITermTab(context.Context, string) (string, error) {
 func (f *fakeLauncher) NewTmuxWindow(context.Context, string, string) (string, error) {
 	return "", errors.New("no")
 }
+func (f *fakeLauncher) PrepareTmuxViewer(context.Context, string) (string, error) {
+	return "", errors.New("no")
+}
 func (f *fakeLauncher) NewTmuxSession(context.Context, string, string, string) (string, error) {
 	return "", errors.New("no")
 }

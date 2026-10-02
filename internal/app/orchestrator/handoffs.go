@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/app/tmuxview"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
@@ -145,6 +146,10 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	case projects.PlanTmux, projects.PlanTmuxDetached:
 		out.TerminalID, err = b.Launcher.NewTmuxSession(ctx, cwd, name, command)
 		out.Backend = "tmux"
+	case projects.PlanITermTmux:
+		var viewed tmuxview.Opened
+		viewed, err = tmuxview.Open(ctx, b.Launcher, cwd, name, command)
+		out.TerminalID, out.Backend = viewed.PaneID, tmuxview.Backend
 	default:
 		err = terminal.Failure{Message: (childPlan{kind: plan, choice: choice, reach: reach}).failure(runtime.GOOS)}
 	}

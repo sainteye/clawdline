@@ -398,16 +398,31 @@ const (
 	TerminalAuto  TerminalChoice = "auto"
 	TerminalITerm TerminalChoice = "iterm"
 	TerminalTmux  TerminalChoice = "tmux"
+	// TerminalITermNative is the escape hatch to how `iterm` opened a session
+	// before 2026-10-02: the program runs in the iTerm2 tab itself, and every
+	// read, send and key goes through iTerm2's Apple Events.
+	TerminalITermNative TerminalChoice = "iterm_native"
 )
+
+// TerminalChoices is every value the `terminal` key takes, in the order
+// Settings offers them.
+var TerminalChoices = []string{string(TerminalAuto), string(TerminalITerm), string(TerminalITermNative),
+	string(TerminalTmux)}
 
 // ParseTerminalChoice reads the `terminal` key. Absent or unknown is `auto`,
 // which is what an unset Swift config means.
 func ParseTerminalChoice(raw string) TerminalChoice {
 	switch TerminalChoice(raw) {
-	case TerminalITerm, TerminalTmux:
+	case TerminalITerm, TerminalITermNative, TerminalTmux:
 		return TerminalChoice(raw)
 	}
 	return TerminalAuto
+}
+
+// NamesITerm is whether the setting asks for iTerm2 by name, as a viewer or
+// natively: either way a closed iTerm2 is a refusal, never a fallback.
+func (c TerminalChoice) NamesITerm() bool {
+	return c == TerminalITerm || c == TerminalITermNative
 }
 
 // TmuxReach is StartPoints.TmuxReach.
@@ -428,6 +443,12 @@ const (
 	PlanTmuxDetached
 	PlanNotRunning
 	PlanNoTmux
+	// PlanITermTmux runs the program in a new detached tmux session and shows
+	// it in a new iTerm2 tab that only attaches to it. The session is the tmux
+	// pane: reading, typing, keys and closing all go through tmux, and the one
+	// Apple Event is the one that opens the tab
+	// (docs/interface.md, "An iTerm2 tab that only shows a tmux session").
+	PlanITermTmux
 )
 
 // ITermBundleID is StartPoints.itermBundleID.
@@ -435,11 +456,22 @@ const ITermBundleID = "com.googlecode.iterm2"
 
 // ChoosePlan is StartPoints.plan(terminal:running:tmux:), and like it reads
 // nothing: every fact it decides from is an argument.
+//
+// Where the Swift app opened a native iTerm2 tab, a machine with tmux installed
+// now opens a tmux session with an iTerm2 tab as its viewer: iTerm2's Apple
+// Events stall for minutes at a time, and a session read and typed into through
+// them is a session nobody can reach while they do. Only `iterm_native`, or a
+// machine without tmux, still opens the native tab.
 func ChoosePlan(choice TerminalChoice, itermOpen bool, tmux TmuxReach) PlanKind {
 	switch choice {
-	case TerminalITerm:
+	case TerminalITermNative:
 		if itermOpen {
 			return PlanITerm
+		}
+		return PlanNotRunning
+	case TerminalITerm:
+		if itermOpen {
+			return itermPlan(tmux)
 		}
 		return PlanNotRunning
 	case TerminalTmux:
@@ -452,7 +484,7 @@ func ChoosePlan(choice TerminalChoice, itermOpen bool, tmux TmuxReach) PlanKind 
 		return PlanNoTmux
 	}
 	if itermOpen {
-		return PlanITerm
+		return itermPlan(tmux)
 	}
 	switch tmux {
 	case TmuxRunning:
@@ -463,9 +495,26 @@ func ChoosePlan(choice TerminalChoice, itermOpen bool, tmux TmuxReach) PlanKind 
 	return PlanNotRunning
 }
 
+// itermPlan is the plan for an open iTerm2: a viewer tab on a tmux session when
+// tmux is installed, running or not, and the native tab when it is not.
+func itermPlan(tmux TmuxReach) PlanKind {
+	if tmux == TmuxAbsent {
+		return PlanITerm
+	}
+	return PlanITermTmux
+}
+
 // TmuxStartedSessionName is Tmux.startedSessionName: the session a server this
 // daemon started for itself is given, so there is a name to attach to.
 const TmuxStartedSessionName = "clawdline"
 
 // TmuxAttachCommand is Tmux.attachCommand.
 func TmuxAttachCommand() string { return "tmux attach -t " + TmuxStartedSessionName }
+
+// TmuxAttachSessionCommand is the line a person types to see the session
+// called name. The target is `=name`, which tmux matches exactly rather than
+// as a prefix, and it is quoted: zsh reads a word opening with `=` as a
+// command to look up.
+func TmuxAttachSessionCommand(name string) string {
+	return "tmux attach -t " + ShellQuoted("="+name)
+}

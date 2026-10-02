@@ -92,9 +92,24 @@ func TestPlanTable(t *testing.T) {
 		tmux   TmuxReach
 		want   PlanKind
 	}{
-		{TerminalAuto, true, TmuxRunning, PlanITerm},
+		// iTerm2 open and tmux installed, running or not: a tmux session with
+		// an iTerm2 tab as its viewer.
+		{TerminalAuto, true, TmuxRunning, PlanITermTmux},
+		{TerminalAuto, true, TmuxInstalled, PlanITermTmux},
+		{TerminalITerm, true, TmuxRunning, PlanITermTmux},
+		{TerminalITerm, true, TmuxInstalled, PlanITermTmux},
+		// Without tmux, exactly the native tab it always was.
+		{TerminalAuto, true, TmuxAbsent, PlanITerm},
+		{TerminalITerm, true, TmuxAbsent, PlanITerm},
+		// The escape hatch is the native tab whatever tmux there is.
+		{TerminalITermNative, true, TmuxRunning, PlanITerm},
+		{TerminalITermNative, true, TmuxInstalled, PlanITerm},
+		{TerminalITermNative, true, TmuxAbsent, PlanITerm},
+		{TerminalITermNative, false, TmuxRunning, PlanNotRunning},
+		{ParseTerminalChoice("iterm_native"), true, TmuxRunning, PlanITerm},
 		{TerminalAuto, false, TmuxRunning, PlanTmux},
 		{TerminalAuto, false, TmuxInstalled, PlanTmuxDetached},
+		{TerminalAuto, false, TmuxAbsent, PlanNotRunning},
 		{TerminalITerm, false, TmuxRunning, PlanNotRunning},
 		{TerminalTmux, true, TmuxRunning, PlanTmux},
 		{TerminalTmux, true, TmuxInstalled, PlanTmuxDetached},
@@ -105,6 +120,15 @@ func TestPlanTable(t *testing.T) {
 		if got := ChoosePlan(c.choice, c.iterm, c.tmux); got != c.want {
 			t.Errorf("%v %v %v: got %v want %v", c.choice, c.iterm, c.tmux, got, c.want)
 		}
+	}
+}
+
+// The attach line a person is given names the session exactly and survives
+// zsh, which reads a bare word opening with `=` as a command to look up.
+func TestTmuxAttachSessionCommandQuotesTheExactTarget(t *testing.T) {
+	if got, want := TmuxAttachSessionCommand("clawdline-task-aaaaaaaa"),
+		"tmux attach -t '=clawdline-task-aaaaaaaa'"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
