@@ -272,7 +272,8 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 `clawdline task show <task id>`, integrate the delivery, then
 `clawdline task ack <task id> <notice id>`. Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
-what is still owed. Only a cherry-pick or an `incorporated` delivery needs a hand record
+what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
+`nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
 (`clawdline guide landing`).
 
 **6. Finish the item.** Complete each step once it is verified with
@@ -524,10 +525,17 @@ You do not call those routes.
 ## 6. Landing, and the other three kinds of work
 
 **After you merge a child's branch, do nothing more**: the broker records `landed` itself (below).
-A landing posted by hand is for what a merge does not cover — a cherry-pick, an `incorporated`
-delivery, `nothing_to_land`, `abandoned`. Posting one after a merge is unnecessary.
+A child that declared no writes (`--claims ""`), finished by itself, and left nothing on its branch
+or in its checkout is recorded `nothing_to_land` by the broker before its notice is typed. A
+landing recorded by hand is for what neither covers — a cherry-pick, an `incorporated` delivery,
+`nothing_to_land`, `abandoned` — and is one command, sent with the orchestrator token:
 
-**Record the landing obligation** when a child with claims comes back and you will not merge it:
+```
+clawdline task land <task id> <landed|incorporated|abandoned|nothing_to_land|pending> \
+  [--target <branch>] [--commit <sha>] [--carrier-task <task id>] [--note "…"]
+```
+
+It is this route, which a script may call with the `X-Clawdline-Orchestrator` header:
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
@@ -549,13 +557,13 @@ POST /v1/orchestrator/tasks/<id>/landing
   is the single branch holding the delivery. A cherry-pick, an `incorporated` delivery and
   `nothing_to_land` are still yours to record.
 - **The completion notice names the state of the branch when the task ended**, and each asks for
-  one thing. *Nothing is committed on its branch*: a landing is proved from that branch, so as it
-  stands nothing could ever be recorded as landed — commit in its checkout, on that branch, while
-  the checkout is still on disk; once the sweep takes it, only `abandoned` and `nothing_to_land`
-  remain. *Committed on its branch*: merge that branch into its target and record the landing with
-  the commit that carries it. *Could not be read*: whether anything was committed is not known —
-  look at the branch before recording. *Wrote the shared checkout*: record the landing with the
-  commit that carries that work onto its target, or `abandoned`.
+  one thing, as a command. *Nothing is committed on its branch*: a landing is proved from that
+  branch, so as it stands nothing could ever be recorded as landed — commit in its checkout, on that
+  branch, while the checkout is still on disk, or `clawdline task land <id> abandoned`. *Committed on
+  its branch*: merge that branch into its target; the merge records the landing. *Could not be
+  read*: look at the branch, then record it. *Wrote the shared checkout*: `clawdline task land <id>
+  landed` with the commit that carries that work onto its target, or `abandoned`. *It wrote nothing,
+  and the broker recorded nothing_to_land*: only the ACK is left.
 
 `clawdline landings` (`GET /v1/orchestrator/landings`) is every pending landing on the machine, each
 with an `ownership.status`. `unknown` is not "nobody": it means the evidence could not be read.

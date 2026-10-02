@@ -241,7 +241,8 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 **5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
 整合交付，然後 `clawdline task ack <task id> <notice id>`。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
-列出還欠著的。只有 cherry-pick 或 `incorporated` 的交付才需要手動記錄（`clawdline guide landing`）。
+列出還欠著的。用 `--claims ""` 派出、什麼都沒寫的 child，broker 會自己記 `nothing_to_land`。其他情況用
+`clawdline task land <task id> <state>`（`clawdline guide landing`）。
 
 **6. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉，然後一次
 推進一個 phase：
@@ -463,11 +464,17 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 
 ## 6. Landing，以及另外三種工作
 
-**merge 了 child 的 branch 之後，什麼都不用再做**：broker 會自己記下 `landed`（見下）。手動送的
-landing 是給 merge 涵蓋不到的情況——cherry-pick、`incorporated` 的交付、`nothing_to_land`、`abandoned`。
-merge 之後再手動送一次是多餘的。
+**merge 了 child 的 branch 之後，什麼都不用再做**：broker 會自己記下 `landed`（見下）。宣告不寫入
+（`--claims ""`）、自己結束、branch 和 checkout 都沒留下東西的 child，broker 會在打完成通知之前自己記
+`nothing_to_land`。手動記的 landing 是給這兩者都涵蓋不到的情況——cherry-pick、`incorporated` 的交付、
+`nothing_to_land`、`abandoned`——而且是一行指令，帶 orchestrator token 送出：
 
-帶著 claims 的 child 回來、而你不會 merge 它時，**記下 landing 義務**：
+```
+clawdline task land <task id> <landed|incorporated|abandoned|nothing_to_land|pending> \
+  [--target <branch>] [--commit <sha>] [--carrier-task <task id>] [--note "…"]
+```
+
+它就是下面這條 route；script 可以帶 `X-Clawdline-Orchestrator` header 直接呼叫：
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
@@ -479,12 +486,12 @@ POST /v1/orchestrator/tasks/<id>/landing
 - **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
   自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
   是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
-- **完成通知會寫出 task 結束當下 branch 的狀態**，每一種只要求一件事。*branch 上什麼都沒 commit*：landing
-  要從那個 branch 證明，所以照現況永遠不可能記成 landed——趁 checkout 還在磁碟上，在它裡面、那個 branch
-  上 commit；sweep 把 checkout 收走之後，只剩 `abandoned` 和 `nothing_to_land` 可記。*branch 上有
-  commit*：把那個 branch 合併進 target，再用帶著它的 commit 記 landing。*讀不到*：不知道有沒有 commit——
-  先去看 branch 再記。*寫進共用 checkout*：用把那份工作帶上 target 的 commit 記 landing，或記
-  `abandoned`。
+- **完成通知會寫出 task 結束當下 branch 的狀態**，每一種只要求一件事，而且寫成指令。*branch 上什麼都沒
+  commit*：landing 要從那個 branch 證明，所以照現況永遠不可能記成 landed——趁 checkout 還在磁碟上，在它
+  裡面、那個 branch 上 commit，或執行 `clawdline task land <id> abandoned`。*branch 上有 commit*：把那個
+  branch 合併進 target；merge 會自己記 landing。*讀不到*：先去看 branch 再記。*寫進共用 checkout*：
+  `clawdline task land <id> landed` 帶上把那份工作帶上 target 的 commit，或記 `abandoned`。*它什麼都沒寫，
+  broker 已記 nothing_to_land*：只剩 ACK。
 - `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
   `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
   `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。
