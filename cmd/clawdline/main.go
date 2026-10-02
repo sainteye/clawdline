@@ -111,7 +111,7 @@ func main() {
 	case "item":
 		itemCommand(os.Args[2:])
 	case "landings":
-		readCommand("landings", "/v1/orchestrator/landings", os.Args[2:])
+		landingsCommand(os.Args[2:])
 	case "assistants":
 		readCommand("assistants", "/v1/orchestrator/assistants", os.Args[2:])
 	case "guide":
@@ -406,7 +406,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  item <add|claim|name|child|assign|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase")
 	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
 	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
-	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed; what each assistant's account has left")
+	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed (--work-id: every landing recorded for one item); what each assistant's account has left")
 	fmt.Fprintln(os.Stderr, "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)")
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")

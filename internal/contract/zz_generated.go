@@ -2999,6 +2999,16 @@ type InventorySession struct {
 	TTY            string       `json:"tty,omitempty"`
 }
 
+// GET /v1/orchestrator/landings?work_id=<item>: every landing recorded for one
+// Board item — its bound tasks' and its root landings — the same rows the
+// item read carries as `landings`. An item that does not exist is 404
+// `work_not_found`, not an empty list.
+type ItemLandingList struct {
+	At       int64             `json:"at"`
+	Landings []RecordedLanding `json:"landings"`
+	WorkID   string            `json:"work_id"`
+}
+
 // One key for a session's menu: a digit "1"…"9" answers the row with that
 // number, "tab" and "shift+tab" are the only other keys, and "submit" presses a
 // multi-select's button, and "enter" presses Enter on a send that was typed and
@@ -3992,6 +4002,50 @@ type PushTestRequest struct {
 type PushUnsubscribeRequest struct {
 	ID string `json:"id"`
 }
+
+// One landing recorded for a Board item, as the broker holds it. The item read
+// and GET /v1/orchestrator/landings?work_id= answer the same rows from the same
+// code. `state` is `landed` or `incorporated`, or `unknown` for a bound task
+// whose record could not be read, which is never shown as no landing.
+type RecordedLanding struct {
+	Commit     string `json:"commit,omitempty"`
+	ID         string `json:"id"`
+	RecordedAt int64  `json:"recorded_at,omitempty"`
+
+	// The remote whose copy of the target also held the commit; root landings only.
+	Remote       string `json:"remote,omitempty"`
+	RemoteCommit string `json:"remote_commit,omitempty"`
+
+	// The repository the commit is on: the item's Project or the other catalog Project
+	// the landing named.
+	Repository string                `json:"repository,omitempty"`
+	Source     RecordedLandingSource `json:"source"`
+	State      string                `json:"state"`
+	Target     string                `json:"target,omitempty"`
+
+	// What the target branch named when the landing was proved.
+	TargetCommit string `json:"target_commit,omitempty"`
+
+	// The bound task, for `task`.
+	TaskID string `json:"task_id,omitempty"`
+}
+
+// Where a recorded landing of a Board item comes from. `task`: a bound broker
+// task's landed or incorporated record; its id is the task id. `root`: a broker
+// root landing row, written when the owning Session proved a commit with `item
+// phase deploying --commit --target --remote` and no child task carried it.
+// `phase_event`: a landing copy an older daemon wrote into the item's phase
+// event before root landings had rows of their own; read, never rewritten.
+type RecordedLandingSource string
+
+const (
+	RecordedLandingSourceTask       RecordedLandingSource = "task"
+	RecordedLandingSourceRoot       RecordedLandingSource = "root"
+	RecordedLandingSourcePhaseEvent RecordedLandingSource = "phase_event"
+)
+
+// RecordedLandingSourceValues is every value the contract allows, in contract order.
+var RecordedLandingSourceValues = []RecordedLandingSource{RecordedLandingSourceTask, RecordedLandingSourceRoot, RecordedLandingSourcePhaseEvent}
 
 // Every refusal on this daemon has this shape. A caller reads `error` as the
 // code and never parses `detail`.

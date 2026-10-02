@@ -113,6 +113,9 @@ func openBroker(db *sql.DB) error {
 	if _, err := db.Exec(brokerNoticeSchema); err != nil {
 		return err
 	}
+	if err := openRootLandings(db); err != nil {
+		return err
+	}
 	return migrateBrokerNotices(db)
 }
 
