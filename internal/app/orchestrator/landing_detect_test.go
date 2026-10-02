@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // The broker records a landing once the branch is merged (landing_detect.go).
@@ -348,5 +349,25 @@ func TestDetectLandingsForLooksNowAtTheNamedTasksOnly(t *testing.T) {
 	}
 	if (&Broker{}).DetectLandingsFor(ctx, []string{merged.ID}) != nil {
 		t.Fatal("a broker without git looked")
+	}
+}
+
+// ⑩ An immediate look spends at most its budget: past it, the named tasks are
+// answered as not asked and nothing is recorded, for the beat to reach later.
+func TestDetectLandingsForStopsAtItsBudget(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	repo := gitRepo(t)
+	merged := deliveredTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000094")
+	gitIn(t, repo, "merge", "-q", "--no-ff", "-m", "merge", merged.Worktree.Branch)
+	was := landingDetectNowBudget
+	landingDetectNowBudget = time.Nanosecond
+	t.Cleanup(func() { landingDetectNowBudget = was })
+
+	found := b.DetectLandingsFor(ctx, []string{merged.ID})
+	if len(found) != 1 || found[0].Landed || found[0].Reason == "" {
+		t.Fatalf("found = %+v", found)
+	}
+	if l := landingOf(t, b, ctx, merged.ID); l.State != LandingPending {
+		t.Fatalf("a look past its budget recorded %+v", l)
 	}
 }

@@ -52,6 +52,14 @@ const (
 	landingDetectTimeout = 10 * time.Second
 )
 
+// landingDetectNowBudget bounds one immediate look (DetectLandingsFor) as a
+// whole: it runs inside an `item finish` or `item phase deploying` request,
+// and sixteen tasks at ten seconds each would hold that request for nearly
+// three minutes. Tasks not asked before it runs out are answered as not
+// asked, and the beat reaches them on its next look. A var so a test can
+// spend it.
+var landingDetectNowBudget = 20 * time.Second
+
 // landingDetectNote is the note a detected landing carries.
 const landingDetectNote = "recorded by the broker: the delivery branch was merged into its target"
 
@@ -329,7 +337,8 @@ type LandingDetection struct {
 // task goes through detectLanding, so whatever the beat would refuse this
 // refuses too, and like the beat it never closes the root's completion
 // notice (Land is not called). Only tasks the beat would look at are asked;
-// at most landingDetectLimit of them, each under landingDetectTimeout.
+// at most landingDetectLimit of them, each under landingDetectTimeout, all
+// under landingDetectNowBudget.
 //
 // A failed look is not a refusal: the caller goes on, and the step it takes
 // answers from what is recorded. The answer says what each look found, for
@@ -338,10 +347,17 @@ func (b *Broker) DetectLandingsFor(ctx context.Context, ids []string) []LandingD
 	if b == nil || b.Git == nil || b.Store == nil {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, landingDetectNowBudget)
+	defer cancel()
 	var out []LandingDetection
 	for _, id := range ids {
-		if len(out) >= landingDetectLimit || ctx.Err() != nil {
+		if len(out) >= landingDetectLimit {
 			break
+		}
+		if ctx.Err() != nil {
+			out = append(out, LandingDetection{Task: id,
+				Reason: "it was not asked: this look ran out of its time; the broker looks again within a minute"})
+			continue
 		}
 		r, _, err := b.Record(ctx, id)
 		if err != nil {
