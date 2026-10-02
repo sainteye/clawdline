@@ -807,7 +807,7 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 **本輪擷取的規劃與驗證 gate。** `planning_gate` 預設開、`verify_gate` 預設關；
 `clawdline setting get|set planning_gate|verify_gate` 接受 `on/off` 或 `true/false`。每輪第一次成功
 指派時固定兩個值；同輪改派或之後改全域設定都不影響本輪。規劃 gate 開啟的 Epic 與 Feature 在進入實作前
-須有驗收條件。Epic 仍須計畫與獨立審查；Feature 依風險判讀決定是否需要。Issue 不受規劃 gate 約束。規劃關閉時，
+須有驗收條件。Epic 仍須計畫與獨立審查；Feature 只有在使用者勾選「需要獨立審查」時才需要（見下文）。Issue 不受規劃 gate 約束。規劃關閉時，
 Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規劃沿用一般 Merge 驗證；只開驗證會跳過規劃，
 但仍檢查固定候選提交；兩者皆關走一般流程。使用者不必在看板填寫驗收條件。受 gate 約束的項目若尚無
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
@@ -922,20 +922,17 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
 `/v1/board` 是 Swift app 的舊卡片，唯讀。landing 是 broker 的事實：項目永遠不會被人手動標成已 landing
 （`422 landing_is_broker_fact`）。
 
-### Epic 與 Feature：依風險決定獨立審查
+### Epic 與 Feature：照使用者的「需要獨立審查」勾選決定
 
-本輪規劃 gate 開啟的 Epic 仍須計畫及獨立審查。Feature 先以 `other` 文件記錄風險判讀，標題固定為
-`Review risk assessment`，內容是 JSON，四個布林值與具體理由都必填：
+本輪規劃 gate 開啟的 Epic 仍須計畫及獨立審查。Feature 上有使用者設定的「需要獨立審查」勾選框
+（項目欄位 `review_required`，`clawdline item steps <id>` 會印出來）。只有使用者能在看板上設定；你不能改，
+也不要自己判斷這個 Feature 的風險。daemon 在你要求進入 `implementing` 時才讀這個值。
 
-```json
-{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"只改本機介面的顯示文字。"}
-```
+- **沒勾**（預設）：寫好簡短可觀察的驗收條件，實作後做針對性測試即可。不要為審查寫計畫、
+  不要派 `plan_review` child，也不要記錄風險判讀。
+- **有勾**，以及所有規劃 gate 開啟的 Epic：走以下計畫審查流程。
 
-先寫簡短可觀察的驗收條件，再以
-`clawdline item doc <id> --role other --title "Review risk assessment" --body-file risk.json` 記錄。
-四項皆否、部署政策不是 `required` 時，實作後做針對性測試即可。
-若之後新增計畫，須在該計畫之後重新判讀；舊的例行風險判讀不再生效。
-任何一項為是或無法確認、或沒有有效判讀時，仍走以下計畫審查流程：
+如果你覺得沒勾的 Feature 應該審查，直接跟使用者說，由使用者決定要不要勾；Agent 沒有向 daemon 要求審查的途徑。
 
 1. 仔細規劃，把計畫寫到項目上：
    ```
@@ -977,8 +974,9 @@ body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成�
   派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
   `epic_plan_required` 拒絕。
 - 本輪規劃 gate 開啟的 Epic 缺少已審查計畫時不能進入實作（`epic_plan_required` 或
-  `epic_plan_review_required`）；Feature 則需要有效的例行風險判讀，
-  或已審查計畫。修訂後的 Feature 計畫還需要未跨新邊界的紀錄或一次新審查。規劃關閉的 Epic 可直接進入實作。
+  `epic_plan_review_required`）；使用者勾了「需要獨立審查」的 Feature 也一樣
+  （`feature_plan_required` 或 `feature_plan_review_required`），沒勾的只需要驗收條件。有勾的 Feature
+  修訂計畫後，還需要未跨新邊界的紀錄或一次新審查。規劃關閉的 Epic 可直接進入實作。
 
 **把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入

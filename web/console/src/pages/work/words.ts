@@ -224,6 +224,8 @@ const words = {
     usageBaseInstructions: "Instruction files",
     usageBaseMcp: "MCP instructions",
     usageBaseOther: "Other",
+    reviewRequiredLabel: "Needs independent review",
+    reviewRequiredHint: "When checked, a plan must be written and reviewed by an independent child before work starts.",
   },
   "zh-Hant": {
     nav: "看板",
@@ -420,6 +422,8 @@ const words = {
     usageBaseInstructions: "指示檔",
     usageBaseMcp: "MCP 指示",
     usageBaseOther: "其他",
+    reviewRequiredLabel: "需要獨立審查",
+    reviewRequiredHint: "勾選後，開工前要先寫計畫並由獨立 child 審查。",
   },
 } as const
 

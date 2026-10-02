@@ -154,7 +154,10 @@ type NewWorkV2 struct {
 	Description        string
 	AcceptanceCriteria string
 	DeploymentPolicy   work.DeploymentPolicy
-	Actor              string
+	// ReviewRequired is the person's "Needs independent review" switch; only
+	// the person's create route carries it, and only a Feature takes true.
+	ReviewRequired bool
+	Actor          string
 }
 
 func validateWorkV2Acceptance(criteria string) error {
@@ -271,8 +274,8 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 	now := w.now()
 	i := work.ItemV2{ID: newWorkID(), ProjectID: n.ProjectID, ProjectPath: n.ProjectPath, Kind: n.Kind,
 		Title: n.Title, Description: n.Description, Phase: work.PhaseCreated,
-		DeploymentPolicy: n.DeploymentPolicy, CreatedBy: n.Actor, CreatedAt: now, UpdatedAt: now,
-		Cycle: 1, Version: 1}
+		DeploymentPolicy: n.DeploymentPolicy, ReviewRequired: n.ReviewRequired, CreatedBy: n.Actor, CreatedAt: now,
+		UpdatedAt: now, Cycle: 1, Version: 1}
 	work.SetAcceptance(&i, n.AcceptanceCriteria)
 	if err := work.ValidateNewV2(i); err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
@@ -291,7 +294,8 @@ func (w *WorkSystemV2) Create(ctx context.Context, n NewWorkV2, file WorkV2Filer
 			}
 			return nil
 		}
-		if err := tx.CreateItem(i, n.Actor, payload(map[string]any{"project_id": i.ProjectID, "kind": i.Kind})); err != nil {
+		if err := tx.CreateItem(i, n.Actor, payload(map[string]any{"project_id": i.ProjectID, "kind": i.Kind,
+			"review_required": i.ReviewRequired})); err != nil {
 			return err
 		}
 		if file != nil {
@@ -562,9 +566,13 @@ type EditWorkV2 struct {
 	AcceptanceCriteria *string
 	Condition          *work.Condition
 	UserAction         *string
-	Actor              string
-	OwnerSession       string
-	Person             bool
+	// ReviewRequired sets the person's "Needs independent review" switch on a
+	// Feature. Like the deployment policy, the person may change it and the
+	// Agent may not.
+	ReviewRequired *bool
+	Actor          string
+	OwnerSession   string
+	Person         bool
 	// RevisionRun is a daemon-issued message from the person to the owning
 	// Root. Only the dedicated acceptance revision route sets it.
 	RevisionRun *work.Run
@@ -653,6 +661,16 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 				next.UserAction = ""
 			}
 		}
+		if c.ReviewRequired != nil {
+			if !c.Person {
+				return workV2Error(http.StatusForbidden, "review_required_person_only",
+					"Only the person decides whether a Feature needs independent review; the Agent follows their switch.")
+			}
+			if err := work.ReviewRequiredApplies(prev.Kind, *c.ReviewRequired); err != nil {
+				return err
+			}
+			next.ReviewRequired = *c.ReviewRequired
+		}
 		if c.UserAction != nil {
 			next.UserAction = strings.TrimSpace(*c.UserAction)
 			if len(next.UserAction) > workV2UserActionLimit {
@@ -679,6 +697,9 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			"acceptance_version": next.AcceptanceVersion, "acceptance_digest": next.AcceptanceDigest,
 			"verification_authorization_invalidated": acceptanceChanged,
 			"condition":                              c.Condition, "user_action": c.UserAction != nil}
+		if c.ReviewRequired != nil {
+			event["review_required"] = next.ReviewRequired
+		}
 		if c.RevisionRun != nil {
 			actor = c.RevisionRun.Actor()
 			event["acceptance_source"] = map[string]any{"run": c.RevisionRun.Evidence(), "excerpt": c.RevisionRun.Excerpt}
@@ -761,6 +782,11 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 			next.OwnerSession, next.Phase, next.Condition, next.UserAction = "", work.PhaseCreated, "", ""
 		}
 		next.Kind = c.Kind
+		// The review switch is a Feature's alone; it does not follow the item
+		// into another kind.
+		if next.Kind != work.KindFeature {
+			next.ReviewRequired = false
+		}
 		next.UpdatedAt = w.now()
 		if err := tx.PutItem(prev, next, "item.converted", c.Actor, payload(map[string]string{
 			"from": string(prev.Kind), "to": string(next.Kind), "previous_session": prev.OwnerSession,
@@ -1696,17 +1722,11 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 		if err := work.DocumentRoleApplies(prev, c.Role); err != nil {
 			return err
 		}
-		if c.Title == work.ReviewRiskTitle || c.Title == work.ReviewBoundaryTitle {
+		if c.Title == work.ReviewBoundaryTitle {
 			if c.Role != "other" || c.Reference != "" {
 				return work.RefuseV2("review_assessment_invalid", "Review assessments use role other and a JSON body, without a reference.")
 			}
-			var err error
-			if c.Title == work.ReviewRiskTitle {
-				_, err = work.ParseReviewRisk(c.Body)
-			} else {
-				_, err = work.ParseReviewBoundary(c.Body)
-			}
-			if err != nil {
+			if _, err := work.ParseReviewBoundary(c.Body); err != nil {
 				return work.RefuseV2("review_assessment_invalid", err.Error())
 			}
 		}

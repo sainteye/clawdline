@@ -399,6 +399,7 @@ test("an Epic keeps its frame and label without spanning both desktop columns", 
 test("an Epic shows its plan gate, its plan documents, and what assigning it means", () => {
   const report = readFileSync(new URL("./WorkCompletionReport.tsx", import.meta.url), "utf8")
   assert.match(source, /\{epicGateShown\(item\) && <EpicGateChecklist item=\{item\} \/>\}/)
+  assert.match(source, /\{!gate\.ready && <p>\{planGateHint\(item\)\}<\/p>\}/)
   assert.match(source, />計劃書<\/li>/)
   assert.match(source, />Child Review<\/li>/)
   assert.match(source, /<WorkEpicPlanDocuments item=\{item\} \/>/)
@@ -447,4 +448,14 @@ test("a Session opens its Board item as the Board's own card, with the same cont
   assert.match(source, /onOpenWorkItem\(/)
   assert.match(source, /\{openedItem && <CreatedWorkModal item=\{openedItem\} created=\{false\}/)
   assert.match(source, /<WorkCard item=\{item\}[^>]*reportsExpanded=\{!created\}/)
+})
+
+test("a Feature carries the person's Needs independent review checkbox on create and on its card", () => {
+  assert.match(source, /\.\.\.\(kind === "feature" \? \{ review_required: reviewRequired \} : \{\}\)/)
+  assert.match(source, /\{kind === "feature" && <ReviewRequiredField id="work-new-review-required"/)
+  assert.match(source, /\{item\.kind === "feature" && <ReviewRequiredField id=\{`work-review-required-\$\{item\.id\}`\} checked=\{item\.review_required === true\}/)
+  assert.match(source, /setWorkV2ReviewRequired\(item, checked\)/)
+  assert.match(source, /workWord\("reviewRequiredLabel"\)/)
+  assert.match(source, /workWord\("reviewRequiredHint"\)/)
+  assert.doesNotMatch(source, /[Rr]isk assessment|風險評估/)
 })

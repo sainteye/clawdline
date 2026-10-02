@@ -3,8 +3,11 @@ import { documentsNewestFirst } from "./completion-report-order.js"
 
 /**
  * When an Epic captures planning on assignment, its owner writes a plan and
- * a Child Session reviews it before implementation. The daemon enforces the
- * captured mode; this checklist only shows that Epic's current state.
+ * a Child Session reviews it before implementation. A Feature does the same
+ * only when the person checked "Needs independent review" on it; an unchecked
+ * Feature needs only acceptance criteria, so nothing here is missing for it.
+ * The daemon enforces the captured mode; this checklist only shows the
+ * item's current state.
  */
 export interface EpicGate {
   /** A `plan` document exists. */
@@ -15,6 +18,7 @@ export interface EpicGate {
 }
 
 export const EPIC_GATE_HINT = "本輪已啟用規劃 gate：Epic 要先寫計劃書、經 Child Session review，才能開始實作"
+export const FEATURE_GATE_HINT = "本輪已啟用規劃 gate，且這個 Feature 需要獨立審查：要先寫計劃書、經 Child Session review，才能開始實作"
 
 export function isEpic(item: Pick<WorkV2Item, "kind">): boolean {
   return item.kind === "epic"
@@ -33,9 +37,23 @@ export function epicGate(documents: WorkV2Document[] | undefined): EpicGate {
 
 const BEFORE_IMPLEMENTING = new Set<WorkV2Item["phase"]>(["created", "assigning", "assigned"])
 
-/** Show the checklist only after this Epic has captured an enabled planning gate. */
-export function epicGateShown(item: Pick<WorkV2Item, "kind" | "phase" | "closed_at" | "gate_snapshot_cycle" | "planning_gate">): boolean {
-  return isEpic(item) && item.gate_snapshot_cycle > 0 && item.planning_gate && !item.closed_at && BEFORE_IMPLEMENTING.has(item.phase)
+/**
+ * Whether a plan and its independent review stand between this item and
+ * implementing, when planning is on: always for an Epic, for a Feature only
+ * when the person checked "Needs independent review", never for anything else.
+ */
+export function planReviewRequired(item: Pick<WorkV2Item, "kind" | "review_required">): boolean {
+  return isEpic(item) || (item.kind === "feature" && item.review_required === true)
+}
+
+/** Show the checklist only after an item that needs plan review has captured an enabled planning gate. */
+export function epicGateShown(item: Pick<WorkV2Item, "kind" | "review_required" | "phase" | "closed_at" | "gate_snapshot_cycle" | "planning_gate">): boolean {
+  return planReviewRequired(item) && item.gate_snapshot_cycle > 0 && item.planning_gate && !item.closed_at && BEFORE_IMPLEMENTING.has(item.phase)
+}
+
+/** The sentence under an unfinished checklist, naming why this item needs it. */
+export function planGateHint(item: Pick<WorkV2Item, "kind">): string {
+  return isEpic(item) ? EPIC_GATE_HINT : FEATURE_GATE_HINT
 }
 
 /**

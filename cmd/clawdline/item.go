@@ -406,6 +406,7 @@ type itemWire struct {
 	GateSnapshotCycle  int64   `json:"gate_snapshot_cycle"`
 	PlanningGate       bool    `json:"planning_gate"`
 	VerifyGate         bool    `json:"verify_gate"`
+	ReviewRequired     bool    `json:"review_required"`
 	Steps              []struct {
 		ID       string `json:"id"`
 		Title    string `json:"title"`
@@ -441,6 +442,11 @@ func printItem(w io.Writer, it itemWire) {
 	}
 	if it.GateSnapshotCycle > 0 {
 		fmt.Fprintf(w, "  gates cycle %d: planning=%t verification=%t\n", it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
+	}
+	if it.Kind == "feature" {
+		// The person's switch, read when the Feature asks to enter
+		// implementing; the Agent follows it and never sets it.
+		fmt.Fprintf(w, "  needs independent review (set by the person): %t\n", it.ReviewRequired)
 	}
 	if len(it.Steps) == 0 {
 		fmt.Fprintln(w, "  (no steps)")

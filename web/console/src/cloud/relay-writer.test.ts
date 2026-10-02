@@ -691,6 +691,8 @@ test("Work v2 person actions keep their exact route subject and body across Clou
   const cases: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
     ["/v1/work/v2/items", { project_id: "cloud-p1", kind: "feature", title: "A", description: "B", acceptance_criteria: "- Done", deployment_policy: "agent_decides" },
       "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", acceptance_criteria: "- Done", deployment_policy: "agent_decides" } }],
+    ["/v1/work/v2/items", { project_id: "cloud-p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides", review_required: true },
+      "work.v2.create", { item: { project_id: "p1", kind: "feature", title: "A", description: "B", deployment_policy: "agent_decides", review_required: true } }],
     ["/v1/work/v2/items/w1/gate-decision", { expected_version: 7, action: "override", reason: "Evidence reviewed" },
       "work.v2.gate-decision", { id: "w1", item: { expected_version: 7, action: "override", reason: "Evidence reviewed" } }],
     ["/v1/work/v2/items/w1/gate-purge", { expected_version: 7, sha256: "abc" },
@@ -731,6 +733,14 @@ test("Work v2 person actions keep their exact route subject and body across Clou
   assert.equal(edited.status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.edit", {
     id: "w1", item: { expected_version: 4, title: "Edited", description: "Changed", acceptance_criteria: "# Changed" },
+  }, "action"])
+
+  const reviewRequired = await reader.fetch("/v1/work/v2/items/w1", {
+    ...post({ expected_version: 5, review_required: true }), method: "PATCH",
+  })
+  assert.equal(reviewRequired.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "work.v2.edit", {
+    id: "w1", item: { expected_version: 5, review_required: true },
   }, "action"])
 
   const cancelled = await reader.fetch("/v1/work/v2/items/w1/cancel", post({

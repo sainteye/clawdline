@@ -61,22 +61,25 @@ type workV2ProjectWire struct {
 }
 
 type workV2ItemWire struct {
-	ID                 string                `json:"id"`
-	Project            workV2ProjectWire     `json:"project"`
-	Kind               string                `json:"kind"`
-	Title              string                `json:"title"`
-	Description        string                `json:"description"`
-	AcceptanceCriteria string                `json:"acceptance_criteria"`
-	AcceptanceVersion  int64                 `json:"acceptance_version"`
-	AcceptanceDigest   string                `json:"acceptance_digest"`
-	Phase              string                `json:"phase"`
-	Condition          *string               `json:"condition"`
-	UserAction         string                `json:"user_action"`
-	Area               string                `json:"area"`
-	DeploymentPolicy   string                `json:"deployment_policy"`
-	OwnerSession       *string               `json:"owner_session"`
-	CreatedBy          string                `json:"created_by"`
-	CreatedVia         *workV2CreatedViaWire `json:"created_via,omitempty"`
+	ID                 string            `json:"id"`
+	Project            workV2ProjectWire `json:"project"`
+	Kind               string            `json:"kind"`
+	Title              string            `json:"title"`
+	Description        string            `json:"description"`
+	AcceptanceCriteria string            `json:"acceptance_criteria"`
+	AcceptanceVersion  int64             `json:"acceptance_version"`
+	AcceptanceDigest   string            `json:"acceptance_digest"`
+	Phase              string            `json:"phase"`
+	Condition          *string           `json:"condition"`
+	UserAction         string            `json:"user_action"`
+	Area               string            `json:"area"`
+	DeploymentPolicy   string            `json:"deployment_policy"`
+	// ReviewRequired is the person's "Needs independent review" switch; it
+	// is false on every item but a Feature the person checked.
+	ReviewRequired bool                  `json:"review_required"`
+	OwnerSession   *string               `json:"owner_session"`
+	CreatedBy      string                `json:"created_by"`
+	CreatedVia     *workV2CreatedViaWire `json:"created_via,omitempty"`
 	// ParentID is the Epic this item was broken out of by the Epic's owner
 	// Session; absent for every other item.
 	ParentID string `json:"parent_id,omitempty"`
@@ -395,13 +398,18 @@ func workV2ParentNote(parent work.ItemV2) string {
 		"so keep its phase and steps current.", parent.ID, parent.Title)
 }
 
-func workV2FeatureInstruction(id string) string {
-	return "This Feature's captured planning gate is on. Record a review risk assessment as an `other` document " +
-		"titled `Review risk assessment`, with JSON booleans production_deployment, access_or_security, " +
-		"cross_data_transaction, irreversible_effect, and a concrete reason. When all four are false and deployment " +
-		"is not required, concise acceptance criteria and focused tests suffice; move to implementing without a child. " +
-		"If any risk is true or uncertain, write a plan with `clawdline item doc " + id +
-		" --role plan --title \"Plan\"`, have an independent `plan_review` child review it, and record the review. " +
+func workV2FeatureInstruction(item work.ItemV2) string {
+	id := item.ID
+	if !item.ReviewRequired {
+		return "This Feature's captured planning gate is on, and the person has not checked Needs independent review. " +
+			"Concise acceptance criteria and focused tests suffice; move to implementing without writing a plan for review " +
+			"and do not dispatch a plan_review child. Do not record a risk assessment: whether a Feature is reviewed is the " +
+			"person's switch, read when the item asks to enter implementing. If the person checks it before then, the phase " +
+			"route asks for a plan and its review."
+	}
+	return "This Feature's captured planning gate is on, and the person checked Needs independent review. " +
+		"Write a plan with `clawdline item doc " + id + " --role plan --title \"Plan\"`, have an independent `plan_review` " +
+		"child review it, and record the review before moving to implementing. " +
 		"After revising a reviewed plan, record an `other` document titled `Review boundary assessment` with " +
 		"new_risk_boundary=false and a reason only when the change stays within the reviewed boundary; otherwise request a focused fresh review."
 }
@@ -412,7 +420,7 @@ func workV2KindSteps(item work.ItemV2) string {
 		return workV2EpicInstruction(item.ID)
 	}
 	if item.Kind == work.KindFeature && item.PlanningGate {
-		return workV2FeatureInstruction(item.ID) + " " + workV2StepsInstruction(item.ID)
+		return workV2FeatureInstruction(item) + " " + workV2StepsInstruction(item.ID)
 	}
 	if (item.Kind == work.KindEpic || item.Kind == work.KindFeature) && item.HasGateSnapshot() && !item.PlanningGate {
 		return "This cycle captured planning_gate off, so no planning document or independent review is forced before implementing. " +
@@ -654,7 +662,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 	out := workV2ItemWire{ID: i.ID, Project: p, Kind: string(i.Kind), Title: i.Title, Description: i.Description,
 		AcceptanceCriteria: i.AcceptanceCriteria, AcceptanceVersion: i.AcceptanceVersion, AcceptanceDigest: i.AcceptanceDigest,
 		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, Area: i.Area(),
-		DeploymentPolicy: string(i.DeploymentPolicy), OwnerSession: optionalString(i.OwnerSession),
+		DeploymentPolicy: string(i.DeploymentPolicy), ReviewRequired: i.ReviewRequired, OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, GateSnapshotCycle: i.GateSnapshotCycle,
 		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
@@ -1286,6 +1294,7 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 		Description        string `json:"description"`
 		AcceptanceCriteria string `json:"acceptance_criteria"`
 		DeploymentPolicy   string `json:"deployment_policy"`
+		ReviewRequired     bool   `json:"review_required"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -1304,7 +1313,7 @@ func (s *Server) workV2Create(w http.ResponseWriter, r *http.Request) {
 	var answer []byte
 	v, err := s.workV2().Create(r.Context(), app.NewWorkV2{ProjectID: p.ID, ProjectPath: p.Path, Kind: work.Kind(body.Kind),
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
-		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Actor: actor},
+		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), ReviewRequired: body.ReviewRequired, Actor: actor},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}, true
@@ -1339,7 +1348,10 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		AcceptanceCriteria *string `json:"acceptance_criteria"`
 		Condition          *string `json:"condition"`
 		UserAction         *string `json:"user_action"`
-		SessionID          string  `json:"session_id"`
+		// ReviewRequired is the person's alone; the app refuses it from a
+		// Session by name rather than as an unknown field.
+		ReviewRequired *bool  `json:"review_required"`
+		SessionID      string `json:"session_id"`
 		// Phase is read only to refuse it by name: a Session that reaches
 		// for the edit route to close its item is told where the phase moves.
 		Phase json.RawMessage `json:"phase"`
@@ -1373,7 +1385,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	var answer []byte
 	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
-		Condition: condition, UserAction: body.UserAction, Actor: actor,
+		Condition: condition, UserAction: body.UserAction, ReviewRequired: body.ReviewRequired, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 		answer = workV2Answer(itemOf(v))
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

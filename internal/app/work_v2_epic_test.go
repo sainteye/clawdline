@@ -59,34 +59,45 @@ func advanceTo(w *WorkSystemV2, item *WorkV2View, next work.Phase) error {
 	return err
 }
 
-func TestRoutineFeatureRiskDocumentOpensPlanningGate(t *testing.T) {
+// Whether a planning-on Feature needs a reviewed plan is the person's switch,
+// read live when the Feature asks to enter implementing. The owning Session
+// cannot flip it, and an Issue cannot take it.
+func TestFeatureReviewFollowsThePersonsSwitch(t *testing.T) {
 	w, _ := newEpicTest(t)
 	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
 		return WorkV2GateSettings{Planning: true}, nil
 	}
-	v := createWorkV2Test(t, w, work.KindFeature)
-	owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
-		Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
-	if err != nil {
-		t.Fatal(err)
+	assign := func(v WorkV2View) WorkV2View {
+		t.Helper()
+		owned, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
+			Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return owned
 	}
-	refusedAsWork(t, advanceTo(w, &owned, work.PhaseImplementing), "feature_plan_required")
-	bad := AddDocumentV2{ExpectedVersion: owned.Item.Version, SessionID: "session-a", Role: "other",
-		Title: work.ReviewRiskTitle, Body: `{"production_deployment":false,"reason":"missing decisions"}`}
-	_, err = w.AddDocument(context.Background(), owned.Item.ID, bad, nil)
-	refusedAsWork(t, err, "review_assessment_invalid")
-	bad.Body = `{"production_deployment":false,"access_or_security":false,"cross_data_transaction":false,"irreversible_effect":false,"reason":"Only a local display label changes."}`
-	added, err := w.AddDocument(context.Background(), owned.Item.ID, bad, nil)
-	if err != nil {
-		t.Fatal(err)
+	unchecked := assign(createWorkV2Test(t, w, work.KindFeature))
+	if err := advanceTo(w, &unchecked, work.PhaseImplementing); err != nil {
+		t.Fatalf("an unchecked Feature was held: %v", err)
 	}
-	owned.Item = added.Item
-	if err := advanceTo(w, &owned, work.PhaseImplementing); err != nil {
-		t.Fatal(err)
+
+	checked := assign(createWorkV2Test(t, w, work.KindFeature))
+	yes := true
+	_, err := w.Edit(context.Background(), checked.Item.ID, EditWorkV2{ExpectedVersion: checked.Item.Version,
+		ReviewRequired: &yes, Actor: "session-a", OwnerSession: "session-a"}, nil)
+	refusedAsWork(t, err, "review_required_person_only")
+	edited, err := w.Edit(context.Background(), checked.Item.ID, EditWorkV2{ExpectedVersion: checked.Item.Version,
+		ReviewRequired: &yes, Actor: "local", Person: true}, nil)
+	if err != nil || !edited.Item.ReviewRequired {
+		t.Fatalf("the person's switch: %+v %v", edited.Item, err)
 	}
-	if owned.Item.Phase != work.PhaseImplementing {
-		t.Fatalf("phase = %s", owned.Item.Phase)
-	}
+	checked.Item = edited.Item
+	refusedAsWork(t, advanceTo(w, &checked, work.PhaseImplementing), "feature_plan_required")
+
+	issue := createWorkV2Test(t, w, work.KindIssue)
+	_, err = w.Edit(context.Background(), issue.Item.ID, EditWorkV2{ExpectedVersion: issue.Item.Version,
+		ReviewRequired: &yes, Actor: "local", Person: true}, nil)
+	refusedAsWork(t, err, "review_required_not_applicable")
 }
 
 // An Epic is assigned like a Feature and lands in its lifecycle lanes;
@@ -264,7 +275,15 @@ func TestAnEpicEntersImplementingOnlyAfterAReviewedPlan(t *testing.T) {
 		t.Fatalf("phase %s", epic.Item.Phase)
 	}
 
+	// A Feature the person checked Needs independent review on takes the
+	// same reviewed-plan path.
 	feature := createWorkV2Test(t, w, work.KindFeature)
+	required := true
+	feature, err := w.Edit(context.Background(), feature.Item.ID, EditWorkV2{ExpectedVersion: feature.Item.Version,
+		ReviewRequired: &required, Actor: "local", Person: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	owned, err := w.Assign(context.Background(), feature.Item.ID, AssignWorkV2{ExpectedVersion: feature.Item.Version,
 		Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
 	if err != nil {
@@ -274,6 +293,7 @@ func TestAnEpicEntersImplementingOnlyAfterAReviewedPlan(t *testing.T) {
 	if err := addDoc(w, &owned, work.DocumentPlan, ""); err != nil {
 		t.Fatal(err)
 	}
+	refusedAsWork(t, advanceTo(w, &owned, work.PhaseImplementing), "feature_plan_review_required")
 	featureReview := reviewTask("7e000000-0000-4000-8000-000000000303", owned.Item.ID, clock.at)
 	putTask(t, w.Store, featureReview)
 	if err := addDoc(w, &owned, work.DocumentPlanReview, featureReview.ID); err != nil {

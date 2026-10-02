@@ -90,7 +90,8 @@ func TestItemAddPostsThreeStepsInOrderUnderTheLatestRun(t *testing.T) {
 	}
 	for _, want := range []string{"item-1  Ship it  [feature, assigned, assigned to " + thinConversation + "]",
 		"acceptance v1 sha256:aaaaaaaa", "The release is visible.",
-		"gates cycle 1: planning=true verification=false", "[ ] s1  draft", "[ ] s2  check", "[ ] s3  publish"} {
+		"gates cycle 1: planning=true verification=false", "needs independent review (set by the person): false",
+		"[ ] s1  draft", "[ ] s2  check", "[ ] s3  publish"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("stdout lacks %q:\n%s", want, out.String())
 		}

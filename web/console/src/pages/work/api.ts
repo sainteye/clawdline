@@ -351,6 +351,13 @@ export interface WorkV2Item {
   user_action: string
   area: "planning" | "unassigned" | WorkV2Phase
   deployment_policy: "required" | "not_required" | "agent_decides"
+  /**
+   * The person's "Needs independent review" choice. Meaningful only for a
+   * Feature: with the planning gate on, a checked Feature needs a plan and an
+   * independent plan review before implementing; an unchecked one needs only
+   * acceptance criteria. Always false on other kinds.
+   */
+  review_required: boolean
   owner_session: string | null
   created_by?: string
   /** Present when a Session created the item on the person's message through Clawdline. */
@@ -495,6 +502,8 @@ export type CreateWorkV2Body = {
   description: string
   acceptance_criteria?: string
   deployment_policy: "required" | "not_required" | "agent_decides"
+  /** Sent only for a Feature; the daemon refuses `true` on any other kind. */
+  review_required?: boolean
 }
 
 export const createWorkV2 = (body: CreateWorkV2Body, key?: string) =>
@@ -534,6 +543,13 @@ export const editWorkV2 = (item: WorkV2Item, title: string, description: string,
     title,
     description,
     ...(acceptance === undefined ? {} : { acceptance_criteria: acceptance }),
+  }, "PATCH")
+
+/** The person's one-press "Needs independent review" choice on a Feature; nothing else on the item changes. */
+export const setWorkV2ReviewRequired = (item: WorkV2Item, required: boolean) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, {
+    expected_version: item.version,
+    review_required: required,
   }, "PATCH")
 
 export interface GateExport {
