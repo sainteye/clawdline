@@ -256,7 +256,8 @@ conclusion, not the file dumps; you keep synthesis, integration and landing.
 clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
 ```
 
-- `--work-id` binds the child to the item, so its landing counts as the item's.
+- `--work-id` binds the child to the item, so its landing counts as the item's. Repeat it when one
+  child does several items: the first is the child's line, and the landing counts for every one.
 - The title is one line of at most 60 characters saying what will be different. Any colon (`:` or
   `：`) is refused, because it joins an observation to an explanation; so is "the user" as the
   subject, or a title opening with a code-formatted identifier. Each answers `bad_task` with
@@ -272,11 +273,31 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 `clawdline task show <task id>`, integrate the delivery, then
 `clawdline task ack <task id> <notice id>`. Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
-what is still owed. Only a cherry-pick or an `incorporated` delivery needs a hand record
+what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
+`nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
 (`clawdline guide landing`).
 
-**6. Finish the item.** Complete each step once it is verified with
-`clawdline item step-done <item id> <step id>`, then advance one phase at a time:
+**6. Completion report**, when finding the cause took substantial investigation (a direct,
+observed fix needs none). Add it before `done`: once the item is done it is unassigned, and the
+report answers `409 not_item_owner`.
+
+```sh
+clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
+```
+
+Write it for the person who reported the problem, in Markdown, with no private data.
+
+**7. Finish the item.** Complete each step once it is verified with
+`clawdline item step-done <item id> <step id>`. Once the child's branch is merged, one command
+takes the item from where it stands to `done`; the commit, target and remote come from the recorded
+landing, so you type only the notes:
+
+```sh
+clawdline item finish <item id> --verification "what was run and what it showed" \
+  --deployment "what went live, where, which version"      # or --no-deployment-reason "…"
+```
+
+Or advance one phase at a time:
 
 ```sh
 clawdline item phase <item id> verifying
@@ -290,15 +311,6 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 `done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. With
 captured verification on, `verifying → merging` needs a checker PASS: read "Captured planning and
 verification gates" in `clawdline guide board` before entering `verifying`.
-
-**7. Completion report**, when finding the cause took substantial investigation (a direct,
-observed fix needs none), before `done`:
-
-```sh
-clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
-```
-
-Write it for the person who reported the problem, in Markdown, with no private data.
 
 **8. Report the turn**: `clawdline session report --summary "…"` as your last action (§7).
 
@@ -352,7 +364,7 @@ An owned child is a bounded task under you. **You keep synthesis, integration an
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--persona <id>] [--work-id uuid] [--task-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
+  [--persona <id>] [--work-id uuid …] [--task-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
 ```
 
 It makes the id and the secret, reads the inventory for `generation` and `task_root`, writes
@@ -524,10 +536,17 @@ You do not call those routes.
 ## 6. Landing, and the other three kinds of work
 
 **After you merge a child's branch, do nothing more**: the broker records `landed` itself (below).
-A landing posted by hand is for what a merge does not cover — a cherry-pick, an `incorporated`
-delivery, `nothing_to_land`, `abandoned`. Posting one after a merge is unnecessary.
+A child that declared no writes (`--claims ""`), finished by itself, and left nothing on its branch
+or in its checkout is recorded `nothing_to_land` by the broker before its notice is typed. A
+landing recorded by hand is for what neither covers — a cherry-pick, an `incorporated` delivery,
+`nothing_to_land`, `abandoned` — and is one command, sent with the orchestrator token:
 
-**Record the landing obligation** when a child with claims comes back and you will not merge it:
+```
+clawdline task land <task id> <landed|incorporated|abandoned|nothing_to_land|pending> \
+  [--target <branch>] [--commit <sha>] [--carrier-task <task id>] [--note "…"]
+```
+
+It is this route, which a script may call with the `X-Clawdline-Orchestrator` header:
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
@@ -549,13 +568,13 @@ POST /v1/orchestrator/tasks/<id>/landing
   is the single branch holding the delivery. A cherry-pick, an `incorporated` delivery and
   `nothing_to_land` are still yours to record.
 - **The completion notice names the state of the branch when the task ended**, and each asks for
-  one thing. *Nothing is committed on its branch*: a landing is proved from that branch, so as it
-  stands nothing could ever be recorded as landed — commit in its checkout, on that branch, while
-  the checkout is still on disk; once the sweep takes it, only `abandoned` and `nothing_to_land`
-  remain. *Committed on its branch*: merge that branch into its target and record the landing with
-  the commit that carries it. *Could not be read*: whether anything was committed is not known —
-  look at the branch before recording. *Wrote the shared checkout*: record the landing with the
-  commit that carries that work onto its target, or `abandoned`.
+  one thing, as a command. *Nothing is committed on its branch*: a landing is proved from that
+  branch, so as it stands nothing could ever be recorded as landed — commit in its checkout, on that
+  branch, while the checkout is still on disk, or `clawdline task land <id> abandoned`. *Committed on
+  its branch*: merge that branch into its target; the merge records the landing. *Could not be
+  read*: look at the branch, then record it. *Wrote the shared checkout*: `clawdline task land <id>
+  landed` with the commit that carries that work onto its target, or `abandoned`. *It wrote nothing,
+  and the broker recorded nothing_to_land*: only the ACK is left.
 
 `clawdline landings` (`GET /v1/orchestrator/landings`) is every pending landing on the machine, each
 with an `ownership.status`. `unknown` is not "nobody": it means the evidence could not be read.
@@ -888,10 +907,31 @@ clawdline item claim <item id>
   at most five claims).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
 
-Never claim an item on your own initiative — only the one the person's message names — and never
-use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
-(`session_cannot_create_item`). An Epic's owner assigns the Epic's own children with
-`clawdline item assign` (`clawdline guide epic`), and nothing else.
+**Assign a Board item to a new Session the person asked for.** When the person's message through
+Clawdline asks you to hand a specific unassigned Feature or Issue to a new Session — *"open a
+security Session for <item id>"* — assign it; that is one command:
+
+```
+clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--persona <id>]
+```
+
+- On an item that is no Epic's child, `item assign` reads this conversation's latest run unless
+  `--run` names one, as `item claim` does. It is `POST /v1/work/v2/agent/items/<id>/assign` with
+  `{"expected_version", "session_id", "mode": "new_session", "assistant"?, "model"?, "persona"?,
+  "via": {"run"}}`, and opens the new Session the person's own "New Session" choice opens.
+- The card says "Assigned by a Session from your message at HH:MM", with their words quoted and
+  the persona the new Session runs as.
+- Refusals, each writing nothing: those of `item claim` (`run_unknown`, `run_expired`,
+  `run_other_session`, `session_not_found`, `child_session`, `project_mismatch`, `item_assigned`,
+  `item_terminal`, `version_conflict`, and `run_claims_exhausted`: claims and assignments share one
+  message's five); `kind_person_assigns` (only a Feature or an Issue); `new_session_only` (to take it
+  yourself, claim it); `unknown_persona`; `persona_disabled_for_auto_assignment` (the role is off for
+  automatic assignment in that Project).
+
+Never claim or assign an item on your own initiative — only the one the person's message names — and
+never use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
+(`session_cannot_create_item`). An Epic's owner also assigns the Epic's own children with
+`clawdline item assign` (`clawdline guide epic`).
 
 **Name a new Session opened for a Board item.** After you read its objective and scope, choose a
 short name that describes your actual task and run `clawdline item name <item id> "<task name>"`.
@@ -1128,6 +1168,31 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `landing_target_unresolved`, `landing_not_on_target`, `landing_remote_unresolved`,
   `landing_not_published`, and `version_conflict`: reread and send again.
 
+**Finishing in one command.** After the work has landed, `clawdline item finish <item id>` walks
+the item from `implementing`, `verifying`, `merging` or `deploying` to `done` in one transaction:
+
+```
+POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "verification"?: "…",
+ "landing"?: {"commit"?, "target"?, "remote"?, "project"?},
+ "deployment"?: "…", "no_deployment_reason"?: "…"}
+```
+
+- Each step is the one `item phase` takes, through the same gates, and writes its own
+  `item.phase_changed`; any step refused refuses the whole and nothing is written.
+- The landing is read, not typed: the commit is the gate's authorized candidate on a gated item,
+  otherwise the bound children's landed commit; the target is the branch their landings name; the
+  remote is the one that branch tracks. Any field you give wins, and the result is proved against
+  git as `item phase deploying` proves it. A captured verification gate still needs its PASS: from
+  `implementing` a gated item is refused `verification_candidate_required`, so enter `verifying`
+  with `item phase` from the candidate worktree, wait for the PASS, then finish.
+- An item already `done` is answered as it stands and nothing is written, so the same landing seen
+  twice moves nothing.
+- Refusals add `verification_required`, `landing_required`, `deployment_required` (the note that
+  step lacked), `landing_target_unknown`, `landing_remote_unknown`, `landing_remote_unreadable`,
+  `landing_ambiguous` (name it with the flag) and `finish_not_started` (still before
+  `implementing`).
+
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
 its `--step` rows. Each step is an item-local TODO, not another Board item.
@@ -1286,7 +1351,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   children come out of a reviewed plan), `item_terminal` (the Epic is finished),
   `child_kind_not_allowed` (only `feature` or `issue`), `epic_children_full` (an Epic holds at most
   32 children, open or closed), `not_epic_child` (`item assign` of an item that is no Epic's child —
-  the person assigns it), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422: a
+  the person assigns it, unless their message asks you to: `clawdline guide board`), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422: a
   persona with an existing Session) and `unknown_persona` (400: an id the catalog lacks).
 - **A persona** is a role a new Session is launched with: text added to its system prompt that makes
   it work the way that role works, for the whole conversation. It is only for a new Session

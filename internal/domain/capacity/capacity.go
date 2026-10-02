@@ -380,6 +380,8 @@ const (
 	// that hold a line too long to type.
 	TerminalLaunchLineBytes = "terminal.launch_line_bytes"
 	TerminalLaunchScripts   = "terminal.launch_scripts"
+	// The further Board items one dispatch carries beside its work_id.
+	DispatchAlsoWorkIDs = "dispatch.also_work_ids"
 )
 
 // Entry is one row of the register.
@@ -903,9 +905,10 @@ func Register() []Entry {
 		},
 		{
 			// The Board items one person's message may have a Session claim
-			// on it, mirroring run.created_items. Counted over every
-			// assignment claimed on that run, active or released; the sixth
-			// is refused run_claims_exhausted and nothing is written.
+			// on it, or assign to a new Session on it, mirroring
+			// run.created_items. Counted over every assignment made on that
+			// run, whatever its state; the sixth is refused
+			// run_claims_exhausted and nothing is written.
 			Name: RunClaimedItems, Class: Buffer, Unit: Rows,
 			Limit: 5, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
@@ -2085,6 +2088,16 @@ func Register() []Entry {
 			Limit: 64, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/terminal.MaxLaunchScripts"},
+		},
+		{
+			// The items one child carries beside its work_id: one branch and
+			// one landing for all of them. A dispatch naming more is refused
+			// whole with bad_task, never trimmed, because a dropped item is
+			// one whose landing would silently not count.
+			Name: DispatchAlsoWorkIDs, Class: Buffer, Unit: Rows,
+			Limit: 7, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxAlsoWorkIDs"},
 		},
 	}
 }

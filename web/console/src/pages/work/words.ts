@@ -166,6 +166,8 @@ const words = {
     createdViaSession: "Created by the Session from your message at {time}",
     createdViaQuote: "Your message",
     claimedViaSession: "Claimed by the Session from your message at {time}",
+    assignedViaSession: "Assigned by a Session from your message at {time}",
+    assignedViaSessionPersona: "Assigned by a Session from your message at {time}; the new Session runs as {persona}",
     createdBySession: "Created by the Session from your message",
     createdByEpicOwner: "Split out by the Epic's owner Session",
     createdByEpicOwnerAt: "Split out by the Epic's owner Session at {time}",
@@ -373,6 +375,8 @@ const words = {
     createdViaSession: "Session 依你 {time} 的訊息建立",
     createdViaQuote: "你的訊息",
     claimedViaSession: "Session 依你 {time} 的訊息認領",
+    assignedViaSession: "Session 依你 {time} 的訊息指派",
+    assignedViaSessionPersona: "Session 依你 {time} 的訊息指派，新 Session 的角色是{persona}",
     createdBySession: "Session 依你的訊息建立",
     createdByEpicOwner: "由 Epic 的負責 Session 拆分建立",
     createdByEpicOwnerAt: "由 Epic 的負責 Session 在 {time} 拆分建立",
@@ -480,6 +484,10 @@ export interface CreatedVia {
   excerpt?: string
   /** The Epic an item was split out of, when the Epic's owner Session created it. */
   epic_id?: string
+  /** On an assignment: a Session handed the item to a new Session on this message, rather than claiming it. */
+  assigned?: boolean
+  /** With `assigned`: the persona id the new Session was opened as; absent for none. */
+  persona?: string
 }
 
 /** A Unix time as this browser's local HH:MM. */
@@ -498,12 +506,17 @@ export function createdViaLine(via: CreatedVia | null | undefined, lang: "en" | 
 }
 
 /**
- * The line a card a Session claimed on the person's message carries, or null
- * for an item the person assigned or nobody holds.
+ * The line a card a Session claimed, or assigned to a new Session, on the
+ * person's message carries, or null for an item the person assigned or nobody
+ * holds. `persona` is the shown name of the new Session's persona; without it
+ * the persona id is named, and with neither the line names none.
  */
-export function claimedViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string | null {
+export function claimedViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language(), persona?: string): string | null {
   if (!via || !via.run || !via.at) return null
-  return workWordIn(lang, "claimedViaSession", { time: clockOf(via.at) })
+  const time = clockOf(via.at)
+  if (!via.assigned) return workWordIn(lang, "claimedViaSession", { time })
+  const named = persona || via.persona
+  return named ? workWordIn(lang, "assignedViaSessionPersona", { time, persona: named }) : workWordIn(lang, "assignedViaSession", { time })
 }
 
 /**

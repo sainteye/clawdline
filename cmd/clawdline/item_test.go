@@ -648,7 +648,7 @@ func TestItemChildSaysAnAssignmentThatFailed(t *testing.T) {
 // its assign route; without a Session named it asks nothing.
 func TestItemAssignPostsTheChosenSession(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
-		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4}}`
+		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4,"parent_id":"epic-1"}}`
 	})
 	var out, errs bytes.Buffer
 	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, assistant: "codex", model: "m"}},
@@ -669,6 +669,69 @@ func TestItemAssignPostsTheChosenSession(t *testing.T) {
 	if code := sessionItem(&out, &errs, b, "assign", itemFlags{}, []string{"child-1"}, thinConversation, "", envOf(nil)); code != 2 ||
 		len(s.requests()) != 0 {
 		t.Fatalf("no Session named: exit %d, %d requests", code, len(s.requests()))
+	}
+}
+
+// `item assign --new` on an item that is no Epic's child goes under the
+// person's message: it reads this conversation's latest run (or --run) and
+// sends it as via.run. An existing Session is refused before anything is
+// asked, and so is a conversation with no run, before the assignment.
+func TestItemAssignOfAnOrdinaryItemGoesUnderThePersonsMessage(t *testing.T) {
+	ordinary := `{"ok":true,"item":{"id":"item-1","title":"Notes","kind":"feature","phase":"created","owner_session":null,"version":3}}`
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if strings.HasSuffix(r.URL.Path, "/run") {
+			return 200, `{"ok":true,"run":{"id":"` + itemRun + `","session_id":"` + thinConversation + `"}}`
+		}
+		return 200, ordinary
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, assistant: "claude", persona: "security"}},
+		[]string{"item-1"}, thinConversation, "k-run", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 3 || seen[1].EscapedPath != "/v1/orchestrator/sessions/"+thinConversation+"/run" ||
+		seen[2].EscapedPath != "/v1/work/v2/agent/items/item-1/assign" || seen[2].Key != "k-run" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	var body struct {
+		Mode    string            `json:"mode"`
+		Persona string            `json:"persona"`
+		Version int64             `json:"expected_version"`
+		Via     map[string]string `json:"via"`
+	}
+	if err := json.Unmarshal(seen[2].Body, &body); err != nil || body.Mode != "new_session" || body.Persona != "security" ||
+		body.Version != 3 || body.Via["run"] != itemRun {
+		t.Fatalf("body = %s", seen[2].Body)
+	}
+
+	s, b = newStandIn(t, func(r *http.Request) (int, string) { return 200, ordinary })
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{terminal: "%9"}},
+		[]string{"item-1"}, thinConversation, "", envOf(nil)); code != 2 || !strings.Contains(errs.String(), "item claim item-1") {
+		t.Fatalf("existing Session: exit %d: %s", code, errs.String())
+	}
+	for _, r := range s.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("an existing Session posted: %+v", r)
+		}
+	}
+
+	s, b = newStandIn(t, func(r *http.Request) (int, string) {
+		if strings.HasSuffix(r.URL.Path, "/run") {
+			return 404, `{"error":"no_run","detail":"no message"}`
+		}
+		return 200, ordinary
+	})
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true}},
+		[]string{"item-1"}, thinConversation, "", envOf(nil)); code == 0 || !strings.Contains(errs.String(), "Nothing was assigned.") {
+		t.Fatalf("no run: exit %d: %s", code, errs.String())
+	}
+	for _, r := range s.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("no run posted: %+v", r)
+		}
 	}
 }
 
@@ -698,7 +761,7 @@ func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
 	}
 
 	s, b = newStandIn(t, func(r *http.Request) (int, string) {
-		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4}}`
+		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4,"parent_id":"epic-1"}}`
 	})
 	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, persona: "code-reviewer"}},
 		[]string{"child-1"}, thinConversation, "", envOf(nil)); code != 0 {
@@ -728,5 +791,42 @@ func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
 			len(s.requests()) != 0 || !strings.Contains(errs.String(), tc.says) {
 			t.Errorf("%s %+v: exit %d, %d requests, %q", tc.op, tc.assign, code, len(s.requests()), errs.String())
 		}
+	}
+}
+
+// `finish` reads the item for its version and posts only the notes it was
+// given; a landing flag travels alone, for the daemon to fill in the rest.
+func TestItemFinishPostsOnlyTheNotesItWasGiven(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	f := itemFlags{phase: phaseEvidence{verification: "go test ./... passed", deployment: "daemon rebuilt", remote: "upstream"}}
+	if code := sessionItem(&out, &errs, b, "finish", f, []string{"item-1"}, "", "", env); code != 0 {
+		t.Fatalf("finish exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[0].Method != "GET" || seen[1].Method != "POST" ||
+		seen[1].EscapedPath != "/v1/work/v2/agent/items/item-1/finish" || seen[1].Key == "" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(seen[1].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	landing, _ := body["landing"].(map[string]any)
+	if body["expected_version"] != float64(2) || body["session_id"] != thinConversation ||
+		body["verification"] != "go test ./... passed" || body["deployment"] != "daemon rebuilt" ||
+		len(landing) != 1 || landing["remote"] != "upstream" || len(body) != 5 {
+		t.Fatalf("finish body = %s", seen[1].Body)
+	}
+
+	// With no landing flag, no landing is sent: the daemon reads it.
+	s, b = newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	f = itemFlags{phase: phaseEvidence{noDeployment: "library only"}}
+	if code := sessionItem(&out, &errs, b, "finish", f, []string{"item-1"}, "", "", env); code != 0 {
+		t.Fatalf("finish exit %d: %s", code, errs.String())
+	}
+	if p := s.requests()[1]; strings.Contains(string(p.Body), "landing") || !strings.Contains(string(p.Body), `"no_deployment_reason":"library only"`) {
+		t.Fatalf("finish body = %s", p.Body)
 	}
 }

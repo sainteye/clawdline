@@ -64,6 +64,7 @@ type draft struct {
 	Root           *json.RawMessage `json:"root"`
 	Model          string           `json:"model"`
 	WorkID         json.RawMessage  `json:"work_id"`
+	AlsoWorkIDs    json.RawMessage  `json:"also_work_ids"`
 
 	// Graph is a node's place in a task graph (graphs.go, W6).
 	//
@@ -333,6 +334,10 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if err != nil {
 		return Record{}, err
 	}
+	also, err := admitAlsoWorkIDs(d.AlsoWorkIDs, workID)
+	if err != nil {
+		return Record{}, err
+	}
 	graph, err := admitGraph(d.Graph)
 	if err != nil {
 		return Record{}, err
@@ -370,6 +375,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		Persona:              personaID,
 		AutoCompactRequested: compact,
 		WorkID:               workID,
+		AlsoWorkIDs:          also,
 		Graph:                graph,
 		Gate:                 gate,
 		State:                StateQueued,
@@ -391,6 +397,51 @@ func admitWorkID(raw json.RawMessage) (string, error) {
 			"work_id must be a lowercase UUID naming a work item, or left out")
 	}
 	return v, nil
+}
+
+// MaxAlsoWorkIDs is how many further items one dispatch may carry beside
+// work_id. A child is one branch and one landing; past a handful the items are
+// not one delivery and belong to separate children.
+const MaxAlsoWorkIDs = 7
+
+// admitAlsoWorkIDs reads the further items a dispatch carries. Each is a work
+// id, none repeats or repeats work_id, and there are no more than
+// MaxAlsoWorkIDs; they need work_id itself, which stays the task's line. A
+// list that breaks any of these is refused whole, never trimmed: a dropped id
+// is an item whose landing would silently not count.
+func admitAlsoWorkIDs(raw json.RawMessage, workID string) ([]string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var ids []string
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, refuse(http.StatusUnprocessableEntity, "bad_task",
+			"also_work_ids must be a list of lowercase UUIDs naming work items, or left out")
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if workID == "" {
+		return nil, refuse(http.StatusUnprocessableEntity, "bad_task",
+			"also_work_ids needs work_id: the first item is the task's line, the rest are carried beside it")
+	}
+	if len(ids) > MaxAlsoWorkIDs {
+		return nil, refuse(http.StatusUnprocessableEntity, "bad_task",
+			fmt.Sprintf("a dispatch carries at most %d items beside work_id; split the rest into their own dispatches", MaxAlsoWorkIDs))
+	}
+	seen := map[string]bool{workID: true}
+	for _, id := range ids {
+		if !IsTaskID(id) {
+			return nil, refuse(http.StatusUnprocessableEntity, "bad_task",
+				"also_work_ids must be a list of lowercase UUIDs naming work items, or left out")
+		}
+		if seen[id] {
+			return nil, refuse(http.StatusUnprocessableEntity, "bad_task",
+				"also_work_ids names "+id+" twice, or names work_id again")
+		}
+		seen[id] = true
+	}
+	return ids, nil
 }
 
 // modelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never

@@ -403,6 +403,12 @@ type Record struct {
 	// (lines.go in internal/domain/work) when it admits the task. Empty for a
 	// task with no root, and for a step of other work whose line nobody named.
 	WorkID string `json:"work_id,omitempty"`
+	// AlsoWorkIDs are further Board items the same dispatch carries, beside
+	// WorkID: one child doing three items. WorkID stays the task's line
+	// (D36); each of these only finds the task among its own, so the
+	// task's landing counts for every item it carried. Present only when
+	// the dispatch named WorkID itself.
+	AlsoWorkIDs []string `json:"also_work_ids,omitempty"`
 	// WorkFrom is how WorkID was decided: named, respawn, graph or dispatch.
 	WorkFrom string `json:"work_from,omitempty"`
 	// Graph is the task graph this task is a node of, `current_node` naming
@@ -581,6 +587,7 @@ func (r Record) Brief() taskdir.Brief {
 		Persona:        r.Persona,
 		CreatedAt:      r.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		WorkID:         r.WorkID,
+		AlsoWorkIDs:    r.AlsoWorkIDs,
 	}
 	if r.Gate != nil {
 		b.VerificationGate, _ = json.Marshal(r.Gate)

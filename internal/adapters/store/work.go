@@ -93,6 +93,8 @@ CREATE TRIGGER IF NOT EXISTS moves_no_delete BEFORE DELETE ON moves
   BEGIN SELECT RAISE(ABORT, 'moves_append_only'); END;
 CREATE INDEX IF NOT EXISTS broker_tasks_work ON broker_tasks(json_extract(record, '$.work_id'))
   WHERE json_valid(record);
+CREATE INDEX IF NOT EXISTS broker_tasks_also_work ON broker_tasks(created_at, id)
+  WHERE json_valid(record) AND json_extract(record, '$.also_work_ids') IS NOT NULL;
 `
 
 // The last index is on the broker's table and is the board's: a task is

@@ -815,7 +815,8 @@ type AssignWorkV2 struct {
 	Actor           string
 	AssignmentID    string
 	// Claim is the person's message a Session claims the item on
-	// (ClaimFromSession); nil for a person's own assignment.
+	// (ClaimFromSession), or, with Claim.Assigned, assigns it to a new
+	// Session on (RunAssignment); nil for a person's own assignment.
 	Claim *work.CreatedViaV2
 	// EpicOwner is the Session assigning a child of the Epic it owns
 	// (epic_children.go); empty for a person's own assignment. The owner
@@ -922,6 +923,11 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			return work.RefuseV2("item_terminal", "Reopen terminal work before assigning it.")
 		}
 		if c.Claim != nil {
+			if c.Claim.Assigned {
+				if err := runMayAssign(prev, c); err != nil {
+					return err
+				}
+			}
 			if err := claimable(tx, prev, c.Actor); err != nil {
 				return err
 			}
@@ -1016,7 +1022,10 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			fields["previous_session"] = old.SessionID
 		}
 		if c.Claim != nil {
-			fields["via_run"], fields["claimed"], fields["excerpt"] = c.Claim.Run, true, c.Claim.Excerpt
+			fields["via_run"], fields["claimed"], fields["excerpt"] = c.Claim.Run, !c.Claim.Assigned, c.Claim.Excerpt
+			if c.Claim.Assigned {
+				fields["assigned_by"], fields["persona"] = c.Claim.Session, c.Claim.Persona
+			}
 		}
 		if err := tx.PutItem(prev, next, "item.assigned", c.Actor, payload(fields)); err != nil {
 			return err
@@ -1249,6 +1258,8 @@ type AdvanceWorkV2 struct {
 	Candidate *contract.WorkGateCandidateReceipt
 	RoundID   string
 	AttemptID string
+	// Finish marks a step taken by Finish, in the item's history.
+	Finish bool
 }
 
 // VerifiedLandingV2 is a Git reading made by the HTTP adapter, never the
@@ -1282,159 +1293,355 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if prev.Version != c.ExpectedVersion {
 			return store.ErrConflict
 		}
-		if prev.OwnerSession != c.SessionID || c.SessionID == "" {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may advance this item.")
-		}
-		rows, err := tx.Tasks(id)
+		next, effectIDs, err := w.advanceTx(tx, id, prev, c)
 		if err != nil {
 			return err
-		}
-		facts, unknown := Facts(rows)
-		if unknown > 0 {
-			return work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
-		}
-		hasLanding := c.Landing.complete()
-		for _, f := range facts {
-			if work.OutcomeOf(f) == work.OutcomeLanded {
-				hasLanding = true
-				break
-			}
-		}
-		hasVerification := strings.TrimSpace(c.Verification) != ""
-		var authorization store.WorkGateAuthorization
-		if prev.Phase == work.PhaseVerifying && c.Next == work.PhaseMerging && prev.VerifyGate {
-			authorization, err = w.authorizeVerification(tx, prev)
-			if err != nil {
-				return err
-			}
-			hasVerification = true
-		}
-		if prev.Phase == work.PhaseMerging && c.Next == work.PhaseDeploying && prev.VerifyGate {
-			authorization, err = w.authorizeVerification(tx, prev)
-			if err != nil {
-				return err
-			}
-			if c.Landing == nil || c.Landing.Commit != authorization.CandidateCommit {
-				return work.RefuseV2("verified_candidate_mismatch",
-					"The landing commit must be the exact candidate authorized by the current PASS or override.")
-			}
-		}
-		if err := work.AgentTransition(prev, c.Next, hasVerification, hasLanding,
-			strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
-			return err
-		}
-		if c.Next == work.PhaseVerifying && prev.GateNeedsAcceptance() && strings.TrimSpace(prev.AcceptanceCriteria) == "" {
-			return work.RefuseV2("acceptance_required", "Write acceptance criteria before verification begins.")
-		}
-		if prev.Kind == work.KindEpic || prev.Kind == work.KindFeature {
-			plans, err := tx.PlanDocuments(id)
-			if err != nil {
-				return err
-			}
-			if err := work.PlanningGate(prev, c.Next, plans); err != nil {
-				return err
-			}
-			if prev.Kind == work.KindEpic && c.Next == work.PhaseDone {
-				_, open, err := tx.Children(id)
-				if err != nil {
-					return err
-				}
-				if err := work.EpicDoneGate(prev, c.Next, open); err != nil {
-					return err
-				}
-			}
-		}
-		if prev.Phase == work.PhaseImplementing && c.Next == work.PhaseVerifying && prev.VerifyGate {
-			if prev.Kind == work.KindEpic {
-				_, open, err := tx.Children(id)
-				if err != nil {
-					return err
-				}
-				if open != 0 {
-					return work.RefuseV2("epic_children_open",
-						fmt.Sprintf("Finish or cancel every Epic child before its final Reality Checker round; %d remain open.", open))
-				}
-			}
-			active, err := tx.ActiveAssignment(id)
-			if err != nil {
-				return err
-			}
-			candidate := c.Candidate
-			if candidate == nil || c.RoundID == "" || c.AttemptID == "" || active.ID == "" ||
-				candidate.AssignmentID != active.ID || candidate.OwnerSessionID != prev.OwnerSession ||
-				candidate.Cycle != prev.Cycle || candidate.CriteriaVersion != prev.AcceptanceVersion ||
-				candidate.CriteriaDigest != prev.AcceptanceDigest || candidate.Commit == "" || candidate.Tree == "" {
-				return work.RefuseV2("verification_candidate_required",
-					"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest.")
-			}
-			persona, err := tx.WorkGateCheckerPersona(prev)
-			if err != nil {
-				return err
-			}
-			now := w.now()
-			round := contract.WorkGateRound{ID: c.RoundID, ItemID: id, Cycle: prev.Cycle,
-				Acceptance: contract.WorkGateAcceptance{Criteria: prev.AcceptanceCriteria,
-					Version: prev.AcceptanceVersion, Digest: prev.AcceptanceDigest},
-				Candidate: *candidate, CheckerPersona: persona, State: contract.WorkGateRoundStateQueued,
-				CreatedAt: now.Unix(), UpdatedAt: now.Unix(), Attempts: []contract.WorkGateAttempt{{
-					ID: c.AttemptID, RoundID: c.RoundID, Attempt: 0, State: contract.WorkGateAttemptStateQueued,
-					CreatedAt: now.Unix(), UpdatedAt: now.Unix(),
-				}}}
-			if err := tx.CreateWorkGateRound(round, prev.CycleBaseCommit); err != nil {
-				return err
-			}
-		}
-		if c.Next == work.PhaseDone {
-			steps, err := tx.Steps(id)
-			if err != nil {
-				return err
-			}
-			incomplete := 0
-			for _, step := range steps {
-				if !step.Done {
-					incomplete++
-				}
-			}
-			if incomplete > 0 {
-				return work.RefuseV2("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
-			}
-		}
-		now := w.now()
-		next := prev
-		next.Phase, next.Condition, next.UserAction, next.UpdatedAt = c.Next, "", "", now
-		if c.Next == work.PhaseDone {
-			next.ClosedAt, next.OwnerSession = now, ""
-			a, err := tx.ActiveAssignment(id)
-			if err != nil {
-				return err
-			}
-			if a.ID != "" {
-				a.State, a.ReleasedAt, a.UpdatedAt = "released", now, now
-				if err := tx.UpdateAssignment(a); err != nil {
-					return err
-				}
-			}
-		}
-		if err := tx.PutItem(prev, next, "item.phase_changed", c.Actor, payload(map[string]any{
-			"from": prev.Phase, "to": c.Next, "verification": c.Verification,
-			"landing": c.Landing, "deployment": c.Deployment, "no_deployment_reason": c.NoDeploymentReason})); err != nil {
-			return err
-		}
-		next.Version++
-		var effectIDs []int64
-		if c.Next == work.PhaseDone {
-			for _, effect := range c.Effects {
-				id, err := tx.AddEffect(effect)
-				if err != nil {
-					return err
-				}
-				effectIDs = append(effectIDs, id)
-			}
 		}
 		out = WorkV2View{Item: next, EffectIDs: effectIDs}
 		if file != nil {
 			if k, ans, ok := file(out); ok {
 				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
+// advanceTx moves prev one phase on inside tx, through every gate the phase
+// route has, and answers the item as written. Advance and Finish both use it,
+// so a step Finish takes is the step `item phase` would have taken.
+func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2, c AdvanceWorkV2) (work.ItemV2, []int64, error) {
+	if prev.OwnerSession != c.SessionID || c.SessionID == "" {
+		return work.ItemV2{}, nil, work.RefuseV2("not_item_owner", "Only the owning Session may advance this item.")
+	}
+	rows, err := tx.Tasks(id)
+	if err != nil {
+		return work.ItemV2{}, nil, err
+	}
+	facts, unknown := Facts(rows)
+	if unknown > 0 {
+		return work.ItemV2{}, nil, work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
+	}
+	hasLanding := c.Landing.complete()
+	var landedTasks []string
+	for _, f := range facts {
+		if work.OutcomeOf(f) == work.OutcomeLanded {
+			hasLanding = true
+			landedTasks = append(landedTasks, f.Task)
+		}
+	}
+	hasVerification := strings.TrimSpace(c.Verification) != ""
+	var authorization store.WorkGateAuthorization
+	if prev.Phase == work.PhaseVerifying && c.Next == work.PhaseMerging && prev.VerifyGate {
+		authorization, err = w.authorizeVerification(tx, prev)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		hasVerification = true
+	}
+	if prev.Phase == work.PhaseMerging && c.Next == work.PhaseDeploying && prev.VerifyGate {
+		authorization, err = w.authorizeVerification(tx, prev)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		if c.Landing == nil || c.Landing.Commit != authorization.CandidateCommit {
+			return work.ItemV2{}, nil, work.RefuseV2("verified_candidate_mismatch",
+				"The landing commit must be the exact candidate authorized by the current PASS or override.")
+		}
+	}
+	if err := work.AgentTransition(prev, c.Next, hasVerification, hasLanding,
+		strings.TrimSpace(c.Deployment) != "", strings.TrimSpace(c.NoDeploymentReason) != ""); err != nil {
+		return work.ItemV2{}, nil, err
+	}
+	if c.Next == work.PhaseVerifying && prev.GateNeedsAcceptance() && strings.TrimSpace(prev.AcceptanceCriteria) == "" {
+		return work.ItemV2{}, nil, work.RefuseV2("acceptance_required", "Write acceptance criteria before verification begins.")
+	}
+	if prev.Kind == work.KindEpic || prev.Kind == work.KindFeature {
+		plans, err := tx.PlanDocuments(id)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		if err := work.PlanningGate(prev, c.Next, plans); err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		if prev.Kind == work.KindEpic && c.Next == work.PhaseDone {
+			_, open, err := tx.Children(id)
+			if err != nil {
+				return work.ItemV2{}, nil, err
+			}
+			if err := work.EpicDoneGate(prev, c.Next, open); err != nil {
+				return work.ItemV2{}, nil, err
+			}
+		}
+	}
+	if prev.Phase == work.PhaseImplementing && c.Next == work.PhaseVerifying && prev.VerifyGate {
+		if prev.Kind == work.KindEpic {
+			_, open, err := tx.Children(id)
+			if err != nil {
+				return work.ItemV2{}, nil, err
+			}
+			if open != 0 {
+				return work.ItemV2{}, nil, work.RefuseV2("epic_children_open",
+					fmt.Sprintf("Finish or cancel every Epic child before its final Reality Checker round; %d remain open.", open))
+			}
+		}
+		active, err := tx.ActiveAssignment(id)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		candidate := c.Candidate
+		if candidate == nil || c.RoundID == "" || c.AttemptID == "" || active.ID == "" ||
+			candidate.AssignmentID != active.ID || candidate.OwnerSessionID != prev.OwnerSession ||
+			candidate.Cycle != prev.Cycle || candidate.CriteriaVersion != prev.AcceptanceVersion ||
+			candidate.CriteriaDigest != prev.AcceptanceDigest || candidate.Commit == "" || candidate.Tree == "" {
+			return work.ItemV2{}, nil, work.RefuseV2("verification_candidate_required",
+				"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest.")
+		}
+		persona, err := tx.WorkGateCheckerPersona(prev)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		now := w.now()
+		round := contract.WorkGateRound{ID: c.RoundID, ItemID: id, Cycle: prev.Cycle,
+			Acceptance: contract.WorkGateAcceptance{Criteria: prev.AcceptanceCriteria,
+				Version: prev.AcceptanceVersion, Digest: prev.AcceptanceDigest},
+			Candidate: *candidate, CheckerPersona: persona, State: contract.WorkGateRoundStateQueued,
+			CreatedAt: now.Unix(), UpdatedAt: now.Unix(), Attempts: []contract.WorkGateAttempt{{
+				ID: c.AttemptID, RoundID: c.RoundID, Attempt: 0, State: contract.WorkGateAttemptStateQueued,
+				CreatedAt: now.Unix(), UpdatedAt: now.Unix(),
+			}}}
+		if err := tx.CreateWorkGateRound(round, prev.CycleBaseCommit); err != nil {
+			return work.ItemV2{}, nil, err
+		}
+	}
+	if c.Next == work.PhaseDone {
+		steps, err := tx.Steps(id)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		incomplete := 0
+		for _, step := range steps {
+			if !step.Done {
+				incomplete++
+			}
+		}
+		if incomplete > 0 {
+			return work.ItemV2{}, nil, work.RefuseV2("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
+		}
+	}
+	now := w.now()
+	next := prev
+	next.Phase, next.Condition, next.UserAction, next.UpdatedAt = c.Next, "", "", now
+	if c.Next == work.PhaseDone {
+		next.ClosedAt, next.OwnerSession = now, ""
+		a, err := tx.ActiveAssignment(id)
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		if a.ID != "" {
+			a.State, a.ReleasedAt, a.UpdatedAt = "released", now, now
+			if err := tx.UpdateAssignment(a); err != nil {
+				return work.ItemV2{}, nil, err
+			}
+		}
+	}
+	change := map[string]any{
+		"from": prev.Phase, "to": c.Next, "verification": c.Verification,
+		"landing": c.Landing, "deployment": c.Deployment, "no_deployment_reason": c.NoDeploymentReason}
+	if c.Next == work.PhaseDeploying && len(landedTasks) > 0 {
+		// The broker's landings this step rested on, so the item's own
+		// history says which merge moved it, whoever typed the command.
+		change["landed_tasks"] = landedTasks
+	}
+	if c.Finish {
+		change["finish"] = true
+	}
+	if err := tx.PutItem(prev, next, "item.phase_changed", c.Actor, payload(change)); err != nil {
+		return work.ItemV2{}, nil, err
+	}
+	next.Version++
+	var effectIDs []int64
+	if c.Next == work.PhaseDone {
+		for _, effect := range c.Effects {
+			id, err := tx.AddEffect(effect)
+			if err != nil {
+				return work.ItemV2{}, nil, err
+			}
+			effectIDs = append(effectIDs, id)
+		}
+	}
+	return next, effectIDs, nil
+}
+
+// FinishWorkV2 is one `item finish`: the evidence for every phase still
+// ahead of the item, given once. Verification is needed only where no gate's
+// PASS stands in for it; Landing only where no bound task's landing does.
+type FinishWorkV2 struct {
+	ExpectedVersion    int64
+	SessionID          string
+	Verification       string
+	Landing            *VerifiedLandingV2
+	Deployment         string
+	NoDeploymentReason string
+	Actor              string
+	Effects            []store.Effect
+}
+
+// finishNext is the phase each step of Finish moves to, keyed by the phases
+// it may start from: the line `item phase` walks after implementing.
+var finishNext = map[work.Phase]work.Phase{
+	work.PhaseImplementing: work.PhaseVerifying,
+	work.PhaseVerifying:    work.PhaseMerging,
+	work.PhaseMerging:      work.PhaseDeploying,
+	work.PhaseDeploying:    work.PhaseDone,
+}
+
+// Finish walks an item from where it stands to done in one transaction, each
+// step through advanceTx — the same owner check, planning gate, verification
+// gate, landing rule, step check and deployment rule `item phase` applies —
+// and writes one item.phase_changed per step, so the history reads as if the
+// four commands had been typed. Any step refused refuses the whole: nothing is
+// written, and the refusal names the step that was missing its evidence.
+//
+// Idempotent at its end: an item already done is answered as it stands and
+// nothing is written — no event, no second completion effect — whatever key
+// the request carries. A request replayed with its Idempotency-Key is answered
+// from its receipt before this runs. A cancelled item is refused.
+func (w *WorkSystemV2) Finish(ctx context.Context, id string, c FinishWorkV2, file WorkV2Filer) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		cur, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if cur.Phase == work.PhaseDone {
+			out = WorkV2View{Item: cur}
+			if file != nil {
+				if k, ans, ok := file(out); ok {
+					return tx.CompleteReceipt(k, ans)
+				}
+			}
+			return nil
+		}
+		if cur.Version != c.ExpectedVersion {
+			return store.ErrConflict
+		}
+		if _, ok := finishNext[cur.Phase]; !ok {
+			if cur.Phase.Terminal() {
+				return work.RefuseV2("item_terminal", "A person must reopen terminal work.")
+			}
+			return work.RefuseV2("finish_not_started",
+				"Finish moves an item from implementing onward; this one is "+string(cur.Phase)+". Move it to implementing first.")
+		}
+		var effectIDs []int64
+		for cur.Phase != work.PhaseDone {
+			step := AdvanceWorkV2{ExpectedVersion: cur.Version, SessionID: c.SessionID, Next: finishNext[cur.Phase],
+				Actor: c.Actor, Finish: true}
+			switch step.Next {
+			case work.PhaseMerging:
+				step.Verification = c.Verification
+			case work.PhaseDeploying:
+				step.Landing = c.Landing
+			case work.PhaseDone:
+				step.Deployment, step.NoDeploymentReason, step.Effects = c.Deployment, c.NoDeploymentReason, c.Effects
+			}
+			next, ids, err := w.advanceTx(tx, id, cur, step)
+			if err != nil {
+				return finishRefusal(cur.Phase, step.Next, err)
+			}
+			cur, effectIDs = next, append(effectIDs, ids...)
+		}
+		out = WorkV2View{Item: cur, EffectIDs: effectIDs}
+		if file != nil {
+			if k, ans, ok := file(out); ok {
+				return tx.CompleteReceipt(k, ans)
+			}
+		}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
+// finishRefusal names what Finish lacked where advanceTx says only that the
+// recorded evidence does not allow the move: which of the three notes, given
+// once to Finish, the step needed.
+func finishRefusal(from, to work.Phase, err error) error {
+	refusal, ok := work.AsRefusalV2(err)
+	if !ok || refusal.Code != "invalid_transition" {
+		return err
+	}
+	switch to {
+	case work.PhaseMerging:
+		return work.RefuseV2("verification_required",
+			"Moving "+string(from)+" to merging needs --verification: what was run to verify and what it showed.")
+	case work.PhaseDeploying:
+		return work.RefuseV2("landing_required",
+			"No landing is recorded for this item: no task bound to it has landed, and no --commit was given.")
+	case work.PhaseDone:
+		return work.RefuseV2("deployment_required",
+			"Closing needs --deployment (what was deployed, where, which version) or --no-deployment-reason, as this item's deployment policy says.")
+	}
+	return err
+}
+
+// BoundLandingV2 is one landed broker task bound to an item: what it landed
+// and where, as the broker recorded it.
+type BoundLandingV2 struct {
+	Task       string
+	Target     string
+	Commit     string
+	Repository string
+}
+
+// FinishFactsV2 is what the transport reads before Finish to spell a landing
+// the root did not type: the gate's authorized candidate, when the item has a
+// verification gate, and the landings of the tasks bound to it.
+type FinishFactsV2 struct {
+	Item work.ItemV2
+	// Candidate is the commit the current PASS or override authorized; empty
+	// when the item has no verification gate or no current authorization.
+	Candidate string
+	Landings  []BoundLandingV2
+}
+
+// FinishFacts reads FinishFactsV2. It writes nothing. A bound task that cannot
+// be decoded refuses with evidence_unknown, because the landing it might hold
+// cannot be told from no landing.
+func (w *WorkSystemV2) FinishFacts(ctx context.Context, id string) (FinishFactsV2, error) {
+	var out FinishFactsV2
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		item, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		out.Item = item
+		rows, err := tx.Tasks(id)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			r, err := orchestrator.Decode(row.Record)
+			if err != nil {
+				return work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
+			}
+			l := r.Landing
+			if l == nil || (l.State != orchestrator.LandingLanded && l.State != orchestrator.LandingIncorporated) {
+				continue
+			}
+			repo := l.Repo
+			if repo == "" && r.Worktree != nil {
+				repo = r.Worktree.Repository
+			}
+			out.Landings = append(out.Landings, BoundLandingV2{Task: r.ID, Target: l.Target, Commit: l.Commit, Repository: repo})
+		}
+		if item.VerifyGate {
+			a, err := tx.WorkGateAuthorization(item)
+			switch {
+			case err == nil:
+				out.Candidate = a.CandidateCommit
+			case !errors.Is(err, sql.ErrNoRows):
+				return err
 			}
 		}
 		return nil

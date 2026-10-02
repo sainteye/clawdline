@@ -154,8 +154,10 @@ func (b *Broker) detectLanding(parent context.Context, r Record) (bool, error) {
 	if under, err := b.Git.IsAncestor(ctx, repo, head.commit, w.Base); err != nil {
 		return false, errors.New("git could not compare its delivery with its base: " + err.Error())
 	} else if under {
-		// An empty delivery: nothing_to_land or abandoned, and not ours.
-		return false, nil
+		// An empty delivery: abandoned is a root's to say. nothing_to_land is
+		// ours only for a child that declared no writes (settleEmpty).
+		_, err := b.settleEmpty(ctx, r)
+		return false, err
 	}
 
 	target := r.Landing.Target
@@ -192,6 +194,51 @@ func (b *Broker) detectLanding(parent context.Context, r Record) (bool, error) {
 			return false, nil
 		}
 		return false, errors.New("the landing gate refused a merged delivery: " + err.Error())
+	}
+	return true, nil
+}
+
+// landingEmptyNote is the note an automatic nothing_to_land carries.
+const landingEmptyNote = "recorded by the broker: it declared no writes, its branch carries nothing past " +
+	"its base and its checkout holds no change"
+
+// settleEmpty records `nothing_to_land` for a child that had nothing to land,
+// and answers whether it did.
+//
+// Read on 2026-10-02: a read-only child (claims "") finished,
+// and its root was told to "commit in <worktree> before the sweep takes it, or
+// record abandoned" — for a checkout that held nothing, through a route no
+// command reaches. Whether there is anything to land is a question git
+// answers, so the broker asks it, through the route's own gate (land): the
+// gate refuses `wrote_to_repository` for a branch that carries a commit, a
+// checkout with a change in it, or either one it could not read, and every
+// refusal leaves the landing pending for a root.
+//
+// Only for a child that said it would write nothing — `--claims ""`, known
+// and empty. One that declared paths and wrote none of them may have failed
+// to do its work, and abandoned is the honest word for that, which is the
+// root's to choose. Only for a child that finished by itself, too: one that
+// timed out or was cancelled may still have a tab writing to its checkout.
+func (b *Broker) settleEmpty(ctx context.Context, r Record) (bool, error) {
+	if r.State != StateSuccess && r.State != StateFailure {
+		return false, nil
+	}
+	if r.Landing == nil || r.Landing.State != LandingPending || r.Landing.Target != "" || r.Worktree == nil {
+		return false, nil
+	}
+	if declared, known := r.DeclaredWrites(); !known || len(declared) > 0 {
+		return false, nil
+	}
+	_, err := b.land(ctx, r.ID, LandingRequest{State: string(LandingNothingToLand), Note: landingEmptyNote,
+		Machine: true})
+	if err != nil {
+		var ref Refusal
+		if errors.As(err, &ref) && (ref.Code == "wrote_to_repository" || ref.Code == "stale_write") {
+			// It wrote something, or could not be read, or somebody else
+			// settled it meanwhile: the record says which, for a root.
+			return false, nil
+		}
+		return false, errors.New("the landing gate refused nothing_to_land: " + err.Error())
 	}
 	return true, nil
 }

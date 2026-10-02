@@ -130,6 +130,14 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 				t.Errorf("%s: the feature-root part does not carry %q", lang, want)
 			}
 		}
+		// After `done` the item is unassigned and a completion report from
+		// the Session that closed it answers 409 not_item_owner (seen on five
+		// items, 2026-10-02), so the path reaches the report before `done`.
+		report := strings.Index(string(part), "--role completion_report")
+		done := strings.Index(string(part), "phase <item id> done")
+		if report < 0 || done < 0 || report > done {
+			t.Errorf("%s: the feature-root part reaches the completion report (at %d) after `done` (at %d)", lang, report, done)
+		}
 		roles, _ := Section(lang, "roles")
 		if !strings.Contains(string(roles), "`"+prefix+"feature-root`") {
 			t.Errorf("%s: the roles part does not send a Feature Root to %sfeature-root", lang, prefix)

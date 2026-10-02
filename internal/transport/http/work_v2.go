@@ -84,7 +84,8 @@ type workV2ItemWire struct {
 	// Session; absent for every other item.
 	ParentID string `json:"parent_id,omitempty"`
 	// ClaimedVia is the person's message the owning Session claimed the item
-	// on; absent when the person assigned it, or nobody holds it.
+	// on, or a Session assigned it to the owning new Session on (Assigned);
+	// absent when the person assigned it, or nobody holds it.
 	ClaimedVia        *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
 	CreatedAt         int64                  `json:"created_at"`
 	UpdatedAt         int64                  `json:"updated_at"`
@@ -115,6 +116,18 @@ type workV2CreatedViaWire struct {
 	// item carries no run, because the person's assignment of the Epic is its
 	// authority.
 	EpicID string `json:"epic_id,omitempty"`
+	// Assigned says the Session named by SessionID did not take the item
+	// itself but, on this message, handed it to a new Session opened as
+	// Persona (none when empty). Absent on a claim.
+	Assigned bool   `json:"assigned,omitempty"`
+	Persona  string `json:"persona,omitempty"`
+}
+
+// claimedViaWire is the wire of the person's message an assignment was made
+// on, as a claim or as a Session's assignment to a new Session.
+func claimedViaWire(via *work.CreatedViaV2) *workV2CreatedViaWire {
+	return &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt,
+		Assigned: via.Assigned, Persona: via.Persona}
 }
 
 type workV2ImageWire struct {
@@ -306,7 +319,8 @@ type workV2GitReader interface {
 func workV2PhaseInstruction(id string) string {
 	return "Move the item through its phases yourself as the work happens: `clawdline item phase " + id +
 		" implementing`, then verifying, merging (--verification), deploying (--commit --target --remote) and done " +
-		"(--deployment or --no-deployment-reason); `clawdline guide board` says what each one needs."
+		"(--deployment or --no-deployment-reason); once the work has landed, `clawdline item finish " + id +
+		"` takes it the rest of the way in one command. `clawdline guide board` says what each one needs."
 }
 
 // workV2StepsInstruction says when an owner breaks its item into steps, in
@@ -615,6 +629,208 @@ func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.
 	return landing, nil
 }
 
+// workV2FinishGit is what finishing reads of git: the landing proof's
+// questions, and which remote the target branch tracks.
+type workV2FinishGit interface {
+	workV2GitReader
+	UpstreamRemote(context.Context, string, string) (string, error)
+}
+
+// finishLandingAsk spells the landing a root did not type, from what the
+// daemon already holds, so that `item finish` after a merge needs no commit,
+// target or remote. Whatever the root did type wins. The result is still only
+// an ask: verifyWorkV2DirectLanding proves it against git, and Finish's gate
+// still checks the commit against the authorized candidate, so nothing here
+// can let a step through that typing the same values would not.
+//
+//   - commit: the candidate the current PASS or override authorized, on an
+//     item with a verification gate; otherwise the one commit the bound
+//     tasks' landings name.
+//   - target: the one branch the bound tasks' landings name.
+//   - remote: the remote that target branch tracks.
+//   - repository: the one repository the landings name, when it is not the
+//     item's own Project.
+//
+// It answers nil when no direct landing is needed: the item is already past
+// merging, or it has no gate and nothing was typed, so its bound tasks'
+// landings (which Finish reads itself) are the evidence. Two different
+// answers for one field are refused rather than chosen between.
+func finishLandingAsk(ctx context.Context, g workV2FinishGit, facts app.FinishFactsV2,
+	ask *workV2LandingRequest) (*workV2LandingRequest, string, *app.WorkError) {
+	switch facts.Item.Phase {
+	case work.PhaseImplementing, work.PhaseVerifying, work.PhaseMerging:
+	default:
+		return nil, "", nil
+	}
+	gated := facts.Item.VerifyGate
+	if !gated && ask == nil {
+		return nil, "", nil
+	}
+	out := workV2LandingRequest{}
+	if ask != nil {
+		out = *ask
+	}
+	commits, targets, repos := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, l := range facts.Landings {
+		if l.Commit != "" {
+			commits[l.Commit] = true
+		}
+		if l.Target != "" {
+			targets[l.Target] = true
+		}
+		if l.Repository != "" {
+			repos[l.Repository] = true
+		}
+	}
+	only := func(set map[string]bool) (string, int) {
+		if len(set) == 1 {
+			for v := range set {
+				return v, 1
+			}
+		}
+		return "", len(set)
+	}
+	conflict := func(code, message string) *app.WorkError {
+		return &app.WorkError{Status: http.StatusConflict, Code: code, Message: message}
+	}
+	if strings.TrimSpace(out.Commit) == "" {
+		if gated {
+			if facts.Candidate == "" {
+				return nil, "", conflict("verification_authorization_required",
+					"This cycle requires an independent PASS or reasoned override for its exact candidate and acceptance criteria before merging.")
+			}
+			out.Commit = facts.Candidate
+		} else {
+			commit, n := only(commits)
+			switch n {
+			case 0:
+				return nil, "", conflict("landing_required",
+					"No landing is recorded for this item: no task bound to it has landed, and no --commit was given.")
+			case 1:
+				out.Commit = commit
+			default:
+				return nil, "", conflict("landing_ambiguous",
+					"The tasks bound to this item landed different commits; name the one with --commit.")
+			}
+		}
+	}
+	if strings.TrimSpace(out.Target) == "" {
+		target, n := only(targets)
+		switch n {
+		case 0:
+			return nil, "", conflict("landing_target_unknown",
+				"No landed task bound to this item names its target branch; name it with --target.")
+		case 1:
+			out.Target = target
+		default:
+			return nil, "", conflict("landing_ambiguous",
+				"The tasks bound to this item landed on different branches; name the one with --target.")
+		}
+	}
+	repo := ""
+	if strings.TrimSpace(out.Project) == "" {
+		if r, n := only(repos); n == 1 && r != facts.Item.ProjectPath {
+			repo = r
+		} else if n > 1 {
+			return nil, "", conflict("landing_ambiguous",
+				"The tasks bound to this item landed in different repositories; name the Project with --landing-project.")
+		}
+	}
+	if strings.TrimSpace(out.Remote) == "" {
+		where := repo
+		if where == "" {
+			where = facts.Item.ProjectPath
+		}
+		remote, err := g.UpstreamRemote(ctx, where, out.Target)
+		if err != nil {
+			return nil, "", &app.WorkError{Status: http.StatusServiceUnavailable, Code: "landing_remote_unreadable",
+				Message: "Git could not say which remote " + out.Target + " tracks; name it with --remote."}
+		}
+		if remote == "" {
+			return nil, "", conflict("landing_remote_unknown",
+				"The branch "+out.Target+" tracks no remote; name the remote whose copy also holds the commit with --remote.")
+		}
+		out.Remote = remote
+	}
+	return &out, repo, nil
+}
+
+// agentFinishItem is POST /v1/work/v2/agent/items/<id>/finish: `item finish`.
+func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		ExpectedVersion    int64                 `json:"expected_version"`
+		SessionID          string                `json:"session_id"`
+		Verification       string                `json:"verification"`
+		Landing            *workV2LandingRequest `json:"landing"`
+		Deployment         string                `json:"deployment"`
+		NoDeploymentReason string                `json:"no_deployment_reason"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := func(err error) {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+	}
+	catalog := s.workV2Projects(r.Context())
+	item, err := s.workV2().Item(r.Context(), id)
+	if err != nil {
+		refuse(err)
+		return
+	}
+	facts, err := s.workV2().FinishFacts(r.Context(), id)
+	if err != nil {
+		refuse(err)
+		return
+	}
+	git := gitadapter.New()
+	ask, landedRepo, askErr := finishLandingAsk(r.Context(), git, facts, body.Landing)
+	if askErr != nil {
+		refuse(askErr)
+		return
+	}
+	repo := item.Item.ProjectPath
+	if landedRepo != "" {
+		repo = landedRepo
+	}
+	if ask != nil && strings.TrimSpace(ask.Project) != "" {
+		other, ok := catalog[strings.TrimSpace(ask.Project)]
+		if !ok {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			writeRefusal(w, http.StatusUnprocessableEntity, "landing_project_not_found",
+				"landing.project names no Project in the current catalog.")
+			return
+		}
+		repo = other.Path
+	}
+	landing, landingErr := verifyWorkV2DirectLanding(r.Context(), git, item, body.SessionID, repo, ask)
+	if landingErr != nil {
+		refuse(landingErr)
+		return
+	}
+	var answer []byte
+	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: body.ExpectedVersion,
+		SessionID: body.SessionID, Verification: body.Verification, Landing: landing, Deployment: body.Deployment,
+		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
+		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}},
+		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(catalog, v))
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	s.broker.RunEffects(r.Context(), changed.EffectIDs)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
+}
+
 type workV2ProjectCatalog map[string]workV2ProjectWire
 
 // workV2Projects takes the live Project reading once. Callers prepare this
@@ -684,7 +900,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		}
 	}
 	if claim != nil {
-		out.ClaimedVia = &workV2CreatedViaWire{Run: claim.Run, SessionID: claim.Session, At: claim.At, Excerpt: claim.Excerpt}
+		out.ClaimedVia = claimedViaWire(claim)
 	}
 	for _, a := range v.Assignments {
 		out.Assignments = append(out.Assignments, workV2AssignmentWire{ID: a.ID, Mode: a.Mode, SessionID: a.SessionID,
@@ -692,8 +908,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 			RootAssignment: a.RootAssignment, Failure: a.Failure, CreatedAt: a.CreatedAt.Unix(), UpdatedAt: a.UpdatedAt.Unix(),
 			Persona: a.Persona})
 		if via := a.ClaimedVia; via != nil && strings.HasPrefix(a.HumanActor, work.ActorViaSession) {
-			out.Assignments[len(out.Assignments)-1].ClaimedVia = &workV2CreatedViaWire{Run: via.Run,
-				SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
+			out.Assignments[len(out.Assignments)-1].ClaimedVia = claimedViaWire(via)
 		}
 	}
 	for _, d := range v.Documents {
@@ -1643,6 +1858,14 @@ func (s *Server) workV2ParentOf(ctx context.Context, item work.ItemV2) (work.Ite
 // assignment's transaction), and by a person when it is empty.
 func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string, expected int64,
 	mode, terminalID, assistant, model, personaID string, file app.WorkV2Filer) (app.WorkV2View, error) {
+	return s.assignWorkV2Via(ctx, id, actor, epicOwner, expected, mode, terminalID, assistant, model, personaID, nil, file)
+}
+
+// assignWorkV2Via is assignWorkV2By on the person's message when claim names
+// it (app.RunAssignment): a Session handing an ordinary item to a new
+// Session. Its checks run inside the assignment's transaction.
+func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner string, expected int64,
+	mode, terminalID, assistant, model, personaID string, claim *work.CreatedViaV2, file app.WorkV2Filer) (app.WorkV2View, error) {
 	if err := checkWorkV2Persona(mode, personaID); err != nil {
 		return app.WorkV2View{}, err
 	}
@@ -1677,7 +1900,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		}
 		assigned, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 			SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant), Actor: actor,
-			EpicOwner: epicOwner, CycleBaseCommit: cycleBase}, false, nil)
+			EpicOwner: epicOwner, Claim: claim, CycleBaseCommit: cycleBase}, false, nil)
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
@@ -1741,7 +1964,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 			}
 			return app.WorkV2View{}, err
 		}
-		if epicOwner != "" && !snapshot.AutoAssignEnabled {
+		if (epicOwner != "" || claim != nil) && !snapshot.AutoAssignEnabled {
 			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "persona_disabled_for_auto_assignment", Message: "This role is disabled for automatic assignment in the target Project."}
 		}
 	}
@@ -1778,7 +2001,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner,
-		Persona: personaID, GatePreview: &app.WorkV2GateSettings{
+		Claim: claim, Persona: personaID, GatePreview: &app.WorkV2GateSettings{
 			Planning: briefItem.PlanningGate, Verify: briefItem.VerifyGate,
 		}, CycleBaseCommit: cycleBase}, true, nil)
 	if err != nil {
@@ -2370,6 +2593,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		s.broker.RunEffects(r.Context(), changed.EffectIDs)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write(answer)
+		return
+	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "finish" && r.Method == http.MethodPost {
+		s.agentFinishItem(w, r, parts[1])
 		return
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) &&
@@ -3017,17 +3244,21 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 	_, _ = w.Write(b)
 }
 
-// agentAssignEpicChild is POST /v1/work/v2/agent/items/<child id>/assign: the
+// agentAssignEpicChild is POST /v1/work/v2/agent/items/<id>/assign: the
 // owner Session of an item's parent Epic (re)assigning that open child to a
 // Session, existing or new, through the same assignment a person's choice
 // makes. The owner check runs inside the assignment's transaction; an item
 // with no parent Epic is refused not_epic_child and stays the person's to
-// assign.
+// assign — unless the body names the person's message ({"via":{"run":…}}),
+// when it is agentAssignOnRun's.
 func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
 		ExpectedVersion int64  `json:"expected_version"`
 		SessionID       string `json:"session_id"`
 		workV2EpicAssignRequest
+		Via *struct {
+			Run string `json:"run"`
+		} `json:"via"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -3040,28 +3271,68 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 	if !ok {
 		return
 	}
-	refuse := func(err error) {
-		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
-		s.writeWorkV2Error(w, err)
-	}
+	refuse := s.relayRefuser(w, r, k)
 	if err := body.check(); err != nil {
 		refuse(err)
 		return
 	}
 	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
-	_, err := s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
-		body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona,
-		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(itemOf(v))
-			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
-		})
+	file := func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+		answer = workV2Answer(itemOf(v))
+		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+	}
+	var err error
+	if body.Via != nil {
+		err = s.agentAssignOnRun(r.Context(), id, body.SessionID, body.Via.Run, body.ExpectedVersion,
+			body.workV2EpicAssignRequest, file)
+	} else {
+		_, err = s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
+			body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona, file)
+	}
 	if err != nil {
 		refuse(err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+// agentAssignOnRun is a Session handing an ordinary unassigned Feature or
+// Issue to a new Session, opened with the persona it names, because the
+// person's message through Clawdline asked it to (app.RunAssignment). The
+// run is checked as a claim's is, and the Session must be live, not a child,
+// and working in the item's Project; the kind, the target, the item's holder
+// and the message's budget are checked inside the assignment's transaction.
+// Every refusal writes nothing.
+func (s *Server) agentAssignOnRun(ctx context.Context, id, sessionID, runID string, expected int64,
+	a workV2EpicAssignRequest, file app.WorkV2Filer) error {
+	if a.Mode != "new_session" {
+		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "new_session_only",
+			Message: "On the person's message a Session assigns an item only to a new Session; to take it itself, " +
+				"claim it. Nothing was assigned."}
+	}
+	run, sess, err := s.relaySession(ctx, runID, sessionID,
+		"A Session assigns an item that is not its Epic's child only on a person's message sent through Clawdline "+
+			"that asks for it; name its run as {\"via\":{\"run\":\"…\"}}. Without one, leave the item for the person to assign.",
+		"nothing was assigned")
+	if err != nil {
+		return err
+	}
+	item, err := s.workV2().Item(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !sessionInProject(sess, item.Item) {
+		return &app.WorkError{Status: http.StatusConflict, Code: "project_mismatch",
+			Message: "This Session is not working in that item's Project; nothing was assigned."}
+	}
+	claim, err := app.RunAssignment(*run, sess.ConversationID, a.Persona)
+	if err != nil {
+		return err
+	}
+	_, err = s.assignWorkV2Via(ctx, id, run.Actor(), "", expected, a.Mode, "", a.Assistant, a.Model, a.Persona, claim, file)
+	return err
 }
 
 // sessionInProject is whether a Session works in an item's Project, the check

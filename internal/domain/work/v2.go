@@ -197,13 +197,25 @@ func (i ItemV2) GateNeedsAcceptance() bool {
 // An item an Epic's owner Session broke out of its Epic carries no run: its
 // authority is the person's assignment of the Epic, so it names the Epic
 // instead and Run stays empty.
+//
+// On an assignment it is the person's message a Session acted on: a claim,
+// where Session took the item itself, or, with Assigned, Session handing an
+// ordinary item to a new Session opened as Persona (none when empty).
 type CreatedViaV2 struct {
-	Run     string `json:"run"`
-	Session string `json:"session_id"`
-	At      int64  `json:"at"`
-	Excerpt string `json:"excerpt,omitempty"`
-	Epic    string `json:"epic_id,omitempty"`
+	Run      string `json:"run"`
+	Session  string `json:"session_id"`
+	At       int64  `json:"at"`
+	Excerpt  string `json:"excerpt,omitempty"`
+	Epic     string `json:"epic_id,omitempty"`
+	Assigned bool   `json:"assigned,omitempty"`
+	Persona  string `json:"persona,omitempty"`
 }
+
+// SessionAssignable is whether a Session may hand an item of this kind to a
+// new Session on the person's message: an ordinary Feature or Issue. An Epic
+// is planned by whoever the person gives it to, and a Refactor or a Plan
+// stays in Planning.
+func SessionAssignable(k Kind) bool { return k == KindFeature || k == KindIssue }
 
 type AssignmentV2 struct {
 	ID             string

@@ -229,7 +229,8 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
 ```
 
-- `--work-id` 把 child 綁到項目上，它的 landing 就算是項目的。
+- `--work-id` 把 child 綁到項目上，它的 landing 就算是項目的。一個 child 做好幾張項目時就重複這個
+  旗標：第一張是 child 的工作線，landing 對每一張都算數。
 - 標題是一行、最多 60 字元，說完成後什麼會不一樣。任何冒號（`:` 或 `：`）都會被拒，因為它把觀察和
   解釋接在一起；以「使用者」或 "the user" 當主詞、或用 code 格式的識別字開頭，也會被拒。每一種都回
   `bad_task`，並以 `title: …` 說是哪一種。
@@ -241,10 +242,28 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 **5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
 整合交付，然後 `clawdline task ack <task id> <notice id>`。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
-列出還欠著的。只有 cherry-pick 或 `incorporated` 的交付才需要手動記錄（`clawdline guide landing`）。
+列出還欠著的。用 `--claims ""` 派出、什麼都沒寫的 child，broker 會自己記 `nothing_to_land`。其他情況用
+`clawdline task land <task id> <state>`（`clawdline guide landing`）。
 
-**6. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉，然後一次
-推進一個 phase：
+**6. 結案報告**：找出原因需要深入調查時（直接觀察就確認的修正不需要）。在 `done` 之前加入：項目一旦
+`done` 就沒有持有者，這時送報告會回 `409 not_item_owner`。
+
+```sh
+clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
+```
+
+寫給提出問題的人讀，用 Markdown，不放私密資料。
+
+**7. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉。child 的
+branch merge 之後，一個指令就把項目從目前的 phase 走到 `done`；commit、target 和 remote 從已記錄的
+landing 讀，你只要寫說明：
+
+```sh
+clawdline item finish <item id> --verification "what was run and what it showed" \
+  --deployment "what went live, where, which version"      # 或 --no-deployment-reason "…"
+```
+
+也可以一次推進一個 phase：
 
 ```sh
 clawdline item phase <item id> verifying
@@ -258,14 +277,6 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 `done` 依項目的部署政策帶 `--deployment` 或 `--no-deployment-reason`。本輪擷取了 verification 時，
 `verifying → merging` 需要 checker 的 PASS：進入 `verifying` 之前先讀 `clawdline guide zh-TW board` 的
 「本輪擷取的規劃與驗證 gate」。
-
-**7. 結案報告**：找出原因需要深入調查時（直接觀察就確認的修正不需要），在 `done` 之前：
-
-```sh
-clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
-```
-
-寫給提出問題的人讀，用 Markdown，不放私密資料。
 
 **8. 回報這個 turn**：最後一個動作是 `clawdline session report --summary "…"`（§7）。
 
@@ -315,7 +326,7 @@ owned child 是掛在你底下、範圍有限的 task。**彙整、整合和 lan
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--persona <id>] [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
+  [--persona <id>] [--work-id uuid …] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
 ```
 
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
@@ -463,11 +474,17 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 
 ## 6. Landing，以及另外三種工作
 
-**merge 了 child 的 branch 之後，什麼都不用再做**：broker 會自己記下 `landed`（見下）。手動送的
-landing 是給 merge 涵蓋不到的情況——cherry-pick、`incorporated` 的交付、`nothing_to_land`、`abandoned`。
-merge 之後再手動送一次是多餘的。
+**merge 了 child 的 branch 之後，什麼都不用再做**：broker 會自己記下 `landed`（見下）。宣告不寫入
+（`--claims ""`）、自己結束、branch 和 checkout 都沒留下東西的 child，broker 會在打完成通知之前自己記
+`nothing_to_land`。手動記的 landing 是給這兩者都涵蓋不到的情況——cherry-pick、`incorporated` 的交付、
+`nothing_to_land`、`abandoned`——而且是一行指令，帶 orchestrator token 送出：
 
-帶著 claims 的 child 回來、而你不會 merge 它時，**記下 landing 義務**：
+```
+clawdline task land <task id> <landed|incorporated|abandoned|nothing_to_land|pending> \
+  [--target <branch>] [--commit <sha>] [--carrier-task <task id>] [--note "…"]
+```
+
+它就是下面這條 route；script 可以帶 `X-Clawdline-Orchestrator` header 直接呼叫：
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
@@ -479,12 +496,12 @@ POST /v1/orchestrator/tasks/<id>/landing
 - **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
   自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
   是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
-- **完成通知會寫出 task 結束當下 branch 的狀態**，每一種只要求一件事。*branch 上什麼都沒 commit*：landing
-  要從那個 branch 證明，所以照現況永遠不可能記成 landed——趁 checkout 還在磁碟上，在它裡面、那個 branch
-  上 commit；sweep 把 checkout 收走之後，只剩 `abandoned` 和 `nothing_to_land` 可記。*branch 上有
-  commit*：把那個 branch 合併進 target，再用帶著它的 commit 記 landing。*讀不到*：不知道有沒有 commit——
-  先去看 branch 再記。*寫進共用 checkout*：用把那份工作帶上 target 的 commit 記 landing，或記
-  `abandoned`。
+- **完成通知會寫出 task 結束當下 branch 的狀態**，每一種只要求一件事，而且寫成指令。*branch 上什麼都沒
+  commit*：landing 要從那個 branch 證明，所以照現況永遠不可能記成 landed——趁 checkout 還在磁碟上，在它
+  裡面、那個 branch 上 commit，或執行 `clawdline task land <id> abandoned`。*branch 上有 commit*：把那個
+  branch 合併進 target；merge 會自己記 landing。*讀不到*：先去看 branch 再記。*寫進共用 checkout*：
+  `clawdline task land <id> landed` 帶上把那份工作帶上 target 的 commit，或記 `abandoned`。*它什麼都沒寫，
+  broker 已記 nothing_to_land*：只剩 ACK。
 - `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
   `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
   `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。
@@ -776,9 +793,27 @@ clawdline item claim <item id>
   `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 
-絕對不要主動認領項目——只認領使用者訊息指名的那一個——也不要用使用者的
+**把看板項目指派給使用者要的新 Session。** 使用者透過 Clawdline 傳來的訊息要你把某個尚未指派的 Feature
+或 Issue 交給一個新 Session——「幫 <item id> 開一個 security Session」——就指派它，一條指令：
+
+```
+clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--persona <id>]
+```
+
+- 項目不是任何 Epic 的子項目時，`item assign` 會跟 `item claim` 一樣讀這個對話最新的 run，除非用 `--run`
+  指定。它就是 `POST /v1/work/v2/agent/items/<id>/assign`，body 是 `{"expected_version", "session_id",
+  "mode": "new_session", "assistant"?, "model"?, "persona"?, "via": {"run"}}`，開出來的新 Session 跟使用者
+  自己在看板選「新 Session」開的一樣。
+- 卡片上會寫「Session 依你 HH:MM 的訊息指派」，引用他的原話，並標出新 Session 帶的角色。
+- 拒絕，每一種都什麼都不寫：`item claim` 的那些（`run_unknown`、`run_expired`、`run_other_session`、
+  `session_not_found`、`child_session`、`project_mismatch`、`item_assigned`、`item_terminal`、
+  `version_conflict`，以及 `run_claims_exhausted`：認領和指派共用一則訊息的五次）；`kind_person_assigns`
+  （只能是 Feature 或 Issue）；`new_session_only`（要自己接就用認領）；`unknown_persona`；
+  `persona_disabled_for_auto_assignment`（這個角色在該 Project 關掉了自動指派）。
+
+絕對不要主動認領或指派項目——只處理使用者訊息指名的那一個——也不要用使用者的
 `POST /v1/work/v2/items/<id>/assign`，那條會拒絕 Session（`session_cannot_create_item`）。Epic 的負責
-Session 用 `clawdline item assign` 指派的只有那個 Epic 自己的子項目（`clawdline guide epic`），其他一律不行。
+Session 也用 `clawdline item assign` 指派那個 Epic 自己的子項目（`clawdline guide epic`）。
 
 **提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
 
@@ -966,6 +1001,28 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `landing_target_unresolved`、`landing_not_on_target`、`landing_remote_unresolved`、
   `landing_not_published`，以及 `version_conflict`：重讀後再送。
 
+**一個指令收尾。** 工作 landing 之後，`clawdline item finish <item id>` 在同一個交易裡把項目從
+`implementing`、`verifying`、`merging` 或 `deploying` 走到 `done`：
+
+```
+POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "verification"?: "…",
+ "landing"?: {"commit"?, "target"?, "remote"?, "project"?},
+ "deployment"?: "…", "no_deployment_reason"?: "…"}
+```
+
+- 每一步都是 `item phase` 會走的那一步，過同樣的 gate，各寫一筆 `item.phase_changed`；任何一步被拒，
+  整個都拒，什麼都不寫。
+- landing 是讀出來的，不是打出來的：有 gate 的項目，commit 是 gate 授權的 candidate；沒有的話是綁定
+  child landing 的 commit；target 是那些 landing 記的 branch；remote 是那個 branch 追蹤的 remote。你給的
+  欄位優先，結果照 `item phase deploying` 的方式向 git 驗證。本輪擷取的 verification gate 仍然要 PASS：
+  有 gate 的項目從 `implementing` 收尾會被拒 `verification_candidate_required`，所以先在 candidate
+  worktree 用 `item phase` 進 `verifying`，等 PASS，再收尾。
+- 已經 `done` 的項目照原樣回覆、什麼都不寫，所以同一個 landing 看到兩次也不會再動。
+- 拒絕代碼另有 `verification_required`、`landing_required`、`deployment_required`（那一步缺的說明）、
+  `landing_target_unknown`、`landing_remote_unknown`、`landing_remote_unreadable`、
+  `landing_ambiguous`（用旗標指名）以及 `finish_not_started`（還在 `implementing` 之前）。
+
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
 steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，用
 `clawdline item step-done <item id> <step id>` 勾掉；它會讀版本，送出
@@ -1096,7 +1153,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   （上層不是 Epic）、`epic_not_planned`（Epic 還沒進 `implementing`：子項目要出自審查過的計畫）、
   `item_terminal`（Epic 已結束）、`child_kind_not_allowed`（只能是 `feature` 或 `issue`）、
   `epic_children_full`（一個 Epic 最多 32 個子項目，含已結束的）、`not_epic_child`（`item assign`
-  的對象不是任何 Epic 的子項目——那要由使用者指派）、`invalid_assignment`、`version_conflict`、
+  的對象不是任何 Epic 的子項目——那要由使用者指派，除非他的訊息要你指派：`clawdline guide board`）、`invalid_assignment`、`version_conflict`、
   `persona_not_applicable`（422：既有 Session 帶了角色）、`unknown_persona`（400：清單裡沒有這個 id）。
 - **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
   那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的
