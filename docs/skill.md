@@ -22,7 +22,7 @@ Three things replace it, and all three are this binary:
 | `clawdline skill install` / `uninstall` | Writes the stub to `~/.claude/skills/clawdline/SKILL.md`, and puts back what was there | `internal/adapters/skillfile/skillfile.go` |
 
 And a handful of **thin commands** a session runs instead of hand-built curl: `session report`,
-`dispatch`, `task ack`, `send`, `notify`, `landings`, `assistants`, `usage`
+`dispatch`, `task show`, `task wait`, `task ack`, `send`, `notify`, `landings`, `assistants`, `usage`
 (`cmd/clawdline/session.go`, `dispatch.go`, `task.go`, `relay.go`, `broker.go`, `usage.go`).
 
 ## The guide is compiled in
@@ -116,7 +116,9 @@ stdout when it said yes, `refused, <status> <code>: <message>` on stderr and exi
 | `clawdline session report --summary …` | `GET /v1/orchestrator/whoami`, then `POST /v1/orchestrator/sessions/<terminal>/complete` | The conversation comes from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; `--terminal` skips the lookup. The terminal id is escaped as one path segment |
 | `clawdline send --to <terminal> [text…]` | `POST /v1/orchestrator/messages` | Prints the `Idempotency-Key` before sending; `--key` retries the same message instead of typing it twice |
 | `clawdline dispatch --title … --claims … < brief` | `GET /v1/orchestrator/inventory`, then `POST /v1/orchestrator/tasks` | Writes `<task_root>/<id>/task.json` (guide §4) with a fresh id and a secret that is never printed or written there; one `stale_inventory` re-reads the inventory and resends once. Prints `dispatched <id> <state> [worktree <path>]` and one line per warning; `--json` prints the answer |
-| `clawdline task ack <id> <notice id>` | `POST /v1/orchestrator/tasks/<id>/completion/ack` | Prints one line |
+| `clawdline task show <id>` | `GET /v1/orchestrator/tasks/<id>`, then for a finished task with an open notice `POST …/completion/ack` | The compact view; reading it closes the notice. A refused ACK is one stderr line and exit 0 |
+| `clawdline task wait <id>… [--timeout 9m] [--any]` | `GET /v1/orchestrator/tasks/<id>` each poll (1 s backing off to 10 s), then the ACK as `task show` | Prints each finished task as `task show` and lists the ones still running. Exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read |
+| `clawdline task ack <id> <notice id>` | `POST /v1/orchestrator/tasks/<id>/completion/ack` | Prints one line; rarely needed now |
 | `clawdline notify --title … --body …` | `POST /v1/orchestrator/notify` | |
 | `clawdline landings`, `clawdline assistants` | `GET /v1/orchestrator/landings`, `…/assistants` | |
 | `clawdline usage [--session c \| --task id \| --item id]` | `GET /v1/usage/sessions/<conversation>`, `…/tasks/<id>`, `…/items/<id>` | The token ledger (`docs/token-ledger.md`). With no flag, the calling session, named as `session report` names it. Prints a header line (calls, peak context, cost), one line per category by cost — share, tokens, cost, `rules` marked as an upper bound — and the gaps; `--json` prints the answer |

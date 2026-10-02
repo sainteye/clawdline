@@ -284,6 +284,10 @@ internal/transport/http.workflowBodyLimit # admission: one command to the retire
 cmd/clawdline.brokerAnswerLimit # read: one daemon answer to a thin command (landings, assistants, send, notify, session report); the largest, landings, is tens of kilobytes
 cmd/clawdline.brokerTokenLimit # read: the orchestrator-token file the thin commands read, a few dozen bytes; the daemon's own read of it is internal/adapters/devices.tokenLimit
 cmd/clawdline.relayInputLimit # admission: the message `clawdline send` reads from stdin, at the daemon's 2 MiB body cap (limits N27); how many characters is the daemon's rule
+cmd/clawdline.waitIDLimit # admission: how many task ids one `clawdline task wait` follows, 32; more is a usage error (exit 2)
+cmd/clawdline.waitPollLimit # lane: the longest pause between `clawdline task wait` polls, 10 s; it starts at 1 s and doubles
+cmd/clawdline.waitReadLimit # retry: polls in a row `clawdline task wait` may fail to reach the daemon, 3, before it exits 4 (could not read)
+cmd/clawdline.waitTimeoutLimit # admission: the longest --timeout `clawdline task wait` accepts, 2 h; the default is 9 m, inside a 10-minute tool call
 cmd/clawdline.dispatchInstructionsLimit # admission: the brief `clawdline dispatch` reads from stdin or --instructions-file, refused before any task directory exists; it is the daemon's own internal/app/orchestrator.instructionsLimit, 16 KiB
 cmd/clawdline.runForeground:chan(2) # lane: the interrupt and terminate signals `clawdline heavy` passes on to the command it runs
 internal/adapters/skillfile.recordLimit # read: the skill install record, a few hundred bytes (docs/skill.md)
