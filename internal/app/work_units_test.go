@@ -360,10 +360,12 @@ func TestAFailedOrCancelledTaskGetsAnEndWithItsOutcome(t *testing.T) {
 func TestACursorThatCannotBeTakenIsMissingNotZero(t *testing.T) {
 	h, rec := newWorkHarness(t)
 	ctx := context.Background()
-	if err := rec.Record(ctx, WorkUnitEvent{Kind: WorkUnitItem, ID: "no-such-item", Cycle: "1", Edge: store.WorkCursorStart}); err == nil {
-		t.Fatal("a cursor of an item that is not there was taken")
+	// A step's cursor reads its item; an item that cannot be read fails it.
+	if err := rec.Record(ctx, WorkUnitEvent{Kind: WorkUnitStep, ID: "no-such-step", Item: "no-such-item", Cycle: "1",
+		Edge: store.WorkCursorStart}); err == nil {
+		t.Fatal("a cursor of a step whose item is not there was taken")
 	}
-	u := unitOf(t, h.units(), WorkUnitItem, "no-such-item")
+	u := unitOf(t, h.units(), WorkUnitStep, "no-such-step")
 	if !has(u.States, WorkCursorMissing) || u.CostKnown {
 		t.Fatalf("missing: %+v", u)
 	}

@@ -282,6 +282,10 @@ func (r *WorkUnitRecorder) markMissing(ctx context.Context, e WorkUnitEvent, cau
 		return
 	}
 	now := r.Ledger.now()
+	if e.At.IsZero() {
+		// An edge that failed before it was stamped is still found by time.
+		e.At = now
+	}
 	marker := store.WorkCursor{UnitKind: e.Kind, UnitID: e.ID, Cycle: e.Cycle, Edge: e.Edge, Session: e.Session,
 		At: e.At, TakenAt: now, Outcome: e.Outcome, State: store.WorkCursorMissing}
 	if _, err := r.Ledger.Store.AddWorkCursors(ctx, nil, []store.WorkCursor{marker}); err != nil {

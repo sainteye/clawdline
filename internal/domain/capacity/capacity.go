@@ -193,9 +193,9 @@ const (
 	SessionDirectTodos        = "session.direct_todos"
 	// The token ledger's work-unit cursors (docs/token-ledger.md "One unit of
 	// work", limits N72).
-	UsageWorkCursorRows    = "usage.work_cursor_rows"
-	UsageWorkCursorQueue   = "usage.work_cursor_queue"
-	UsageWorkUnitsInAnswer = "usage.work_units_per_answer"
+	UsageWorkCursorRows       = "usage.work_cursor_rows"
+	UsageWorkCursorQueue      = "usage.work_cursor_queue"
+	UsageWorkUnitsInAnswer    = "usage.work_units_per_answer"
 	HumanInterventionsOpen    = "session.human_interventions_open"
 	HumanInterventionsTotal   = "session.human_interventions_total"
 	HumanInterventionsRecent  = "session.human_interventions_recent"
