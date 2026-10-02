@@ -1166,13 +1166,21 @@ func (b *Broker) Settle(ctx context.Context, id string, state State, why string,
 // spawn_failed child's session to close — in the same transaction, and
 // answers their ids for the caller to run after the commit.
 func (b *Broker) settle(ctx context.Context, id string, state State, why string, result *taskdir.Result, effects ...store.Effect) (Record, []int64, error) {
+	return b.settleWith(ctx, id, state, why, result, nil, effects...)
+}
+
+// settleWith is settle with one more change to the record, made in the same
+// transaction after the settlement's own — the cancellation's caller and key
+// (cancel.go), which must not be written by a settlement that lost the race.
+func (b *Broker) settleWith(ctx context.Context, id string, state State, why string, result *taskdir.Result,
+	also func(*Record), effects ...store.Effect) (Record, []int64, error) {
 	now := b.now()
 	// What the delivery branch holds as the task ends, asked of git before the
 	// write right is taken (D08) and applied inside it only to the branch it
 	// was read from (D17, G17). What it carries past its base is asked in the
 	// same breath and kept on the landing, because this is the last moment
 	// anybody can act on the answer (LandingSettlement).
-	head, settled := b.settlement(ctx, id)
+	head, settled, commits := b.settlement(ctx, id)
 	// And, for an isolated child that declared it writes nothing, what its
 	// own branch and checkout show it wrote — read here, outside the write
 	// right, because a read-only child owes no landing unless they show one.
@@ -1234,9 +1242,13 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 				// Declared writes, or a checkout whose evidence was not
 				// read: a child that timed out or was cancelled may still
 				// be writing, and an unread checkout is not an empty one.
+				note := settlementNote(settlement)
+				if state == StateCancelled && settlement == SettlementCarried {
+					note = cancelledBranchNote(r.Worktree.Branch, commits)
+				}
 				r.Landing = &Landing{
 					State:      LandingPending,
-					Note:       settlementNote(settlement),
+					Note:       note,
 					Settlement: settlement,
 				}
 			}
@@ -1259,6 +1271,9 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 			if err := tx.PutLinger(l); err != nil {
 				return nil, err
 			}
+		}
+		if also != nil {
+			also(r)
 		}
 		b.forgetSecret(r.ID)
 		return effects, nil

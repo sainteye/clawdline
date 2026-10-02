@@ -154,9 +154,7 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 		return answer{}, err
 	}
 	req.Header.Set("X-Clawdline-Orchestrator", b.token)
-	if method == http.MethodPost &&
-		(path == "/v1/orchestrator/tasks" || strings.HasPrefix(path, "/v1/work/v2/agent/items/")) &&
-		os.Getenv(squadCapabilityEnv) != "" {
+	if sendsCapability(method, path) && os.Getenv(squadCapabilityEnv) != "" {
 		capability, err := readSquadCapability(os.Getenv(squadCapabilityEnv))
 		if err != nil {
 			return answer{}, err
@@ -183,6 +181,19 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 		return answer{}, fmt.Errorf("the daemon's answer was larger than %d bytes", brokerAnswerLimit)
 	}
 	return answer{Status: res.StatusCode, Body: b.mask(data)}, nil
+}
+
+// sendsCapability is whether a request names its Session by the squad
+// capability: dispatch, a Board agent item write, and a task cancel, where the
+// daemon holds the caller to being the task's root (orchestrator.CancelTask).
+func sendsCapability(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	if path == "/v1/orchestrator/tasks" || strings.HasPrefix(path, "/v1/work/v2/agent/items/") {
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/orchestrator/tasks/") && strings.HasSuffix(path, "/cancel")
 }
 
 // mask replaces the token wherever it appears. The daemon never sends it

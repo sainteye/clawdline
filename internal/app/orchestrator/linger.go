@@ -82,10 +82,17 @@ const (
 	// TabRuleLingerOff: `orchestrator_child_linger` is negative, and every
 	// finished unscheduled child is left open, a session of its own.
 	TabRuleLingerOff = "child_linger_off"
-	// TabRuleUnfinished: an unscheduled task that timed out or was cancelled
-	// is left open — its child may still be working, and a person may want to
-	// see why it did not finish.
+	// TabRuleUnfinished: an unscheduled task that timed out is left open —
+	// its child may still be working, and a person may want to see why it did
+	// not finish.
 	TabRuleUnfinished = "unfinished_left_open"
+	// TabRuleCancelled: a cancelled task's child is stopped at once, whatever
+	// else is set. Cancelling is its root's or the person's decision that the
+	// child should not go on (cancel.go), so its tab is closed by the effect
+	// the cancellation records (closeChild), not lingered: a child still
+	// mid-turn is never "at rest", and a linger would never close it. What it
+	// committed stays on its branch.
+	TabRuleCancelled = "cancelled_closed"
 	// The three a scheduled task's `close_tab` names, the Swift app's
 	// `scheduledCloseAt`: closed as soon as it may be, after a success only,
 	// after any end, or never.
@@ -181,6 +188,9 @@ func tabPolicy(r Record, end State, linger time.Duration) TabPlan {
 	if end == StateSpawnFailed {
 		return TabPlan{Rule: TabRuleSpawnFailed, Close: true}
 	}
+	if end == StateCancelled {
+		return TabPlan{Rule: TabRuleCancelled, Close: true}
+	}
 	if r.ScheduleID != "" {
 		switch r.scheduleCloseTab() {
 		case closeTabNever:
@@ -251,7 +261,7 @@ func TabPlanSentence(p TabPlan) string {
 // owes no linger.
 func (b *Broker) lingerFor(r Record, now time.Time) (store.Linger, bool) {
 	plan := tabPolicy(r, r.State, b.childLinger())
-	if !plan.Close || r.State == StateSpawnFailed || r.ChildTerminalID == "" || b.Launcher == nil {
+	if !plan.Close || r.State == StateSpawnFailed || r.State == StateCancelled || r.ChildTerminalID == "" || b.Launcher == nil {
 		return store.Linger{}, false
 	}
 	l := store.Linger{Task: r.ID, Backend: r.ChildBackend, Pane: r.ChildTerminalID,

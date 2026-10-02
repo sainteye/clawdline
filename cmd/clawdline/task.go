@@ -64,6 +64,9 @@ func taskCommand(args []string) {
 		case "land":
 			landCommand(args[1:])
 			return
+		case "cancel":
+			cancelCommand(args[1:])
+			return
 		case "gate-evidence":
 			gateEvidenceCommand(args[1:])
 			return
@@ -113,7 +116,12 @@ func taskUsage() {
 	fmt.Fprintln(os.Stderr, "       clawdline task wait [--port n] [--timeout 9m] [--any] <task id>...")
 	fmt.Fprintln(os.Stderr, "  waits until every task (--any: one) has finished, at most --timeout (default 9m, under a 10m tool call;")
 	fmt.Fprintln(os.Stderr, "  at most 2h), then shows each finished one as task show does and closes its notice;")
-	fmt.Fprintln(os.Stderr, "  exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read")
+	fmt.Fprintln(os.Stderr, "  exit 0 all succeeded, 1 one failed, 5 one was cancelled (and none failed otherwise), 3 timed out,")
+	fmt.Fprintln(os.Stderr, "  4 a task could not be read; 4 over 3 over 1 over 5")
+	fmt.Fprintln(os.Stderr, "       clawdline task cancel [--port n] [--conversation id] [--key k] --reason \"…\" <task id>")
+	fmt.Fprintln(os.Stderr, "  stops a child its root dispatched by mistake (wrong brief, wrong scope, duplicate): its tab is closed,")
+	fmt.Fprintln(os.Stderr, "  its claims released, and a branch with commits is kept as a pending landing; only its root Session")
+	fmt.Fprintln(os.Stderr, "  or the person may; the same cancel sent again answers the same success")
 	fmt.Fprintln(os.Stderr, "       clawdline task ack [--port n] <task id> <notice id>")
 	fmt.Fprintln(os.Stderr, "  acknowledges a completion notice by hand; rarely needed, since task show and task wait close it")
 	fmt.Fprintln(os.Stderr, "       clawdline task land [--port n] <task id> <landed|incorporated|abandoned|nothing_to_land|pending>")
@@ -860,6 +868,10 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 	switch l := t.Landing; {
 	case l == nil:
 		fmt.Fprintln(w, "landing:      none owed")
+	case t.State == contract.TaskStateCancelled && l.Settlement == contract.BrokerLandingSettlementBranchCarriesCommits:
+		// A cancelled child's landing says what became of its branch: kept,
+		// and how many commits are on it (orchestrator.cancelledBranchNote).
+		fmt.Fprintf(w, "landing:      %s (%s) — %s\n", l.State, l.Settlement, l.Note)
 	case l.Settlement != "":
 		fmt.Fprintf(w, "landing:      %s (%s)\n", l.State, l.Settlement)
 	default:

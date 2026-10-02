@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -77,6 +78,8 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 		s.brokerGateResult(w, r, id)
 	case action == "respawn" && r.Method == http.MethodPost:
 		s.brokerRespawn(w, r, id)
+	case action == "cancel" && r.Method == http.MethodPost:
+		s.brokerCancel(w, r, id)
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a task action")
 	}
@@ -382,6 +385,45 @@ func (s *Server) brokerRespawn(w http.ResponseWriter, r *http.Request, id string
 		RespawnOf:    out.From,
 		OriginalTask: out.Original,
 	})
+}
+
+// brokerCancel stops a child its root dispatched by mistake
+// (orchestrator.CancelTask). Two doors: a Session with the orchestrator token,
+// which the broker then holds to being the task's root, and the person's own
+// console — this machine's browser, or a paired device that may send.
+func (s *Server) brokerCancel(w http.ResponseWriter, r *http.Request, id string) {
+	var body contract.BrokerCancelRequest
+	dec := json.NewDecoder(io.LimitReader(r.Body, workBodyLimit))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusBadRequest, Code: "bad_request",
+			Message: "A cancel is {\"reason\": \"…\"}, with session_id from a Session that carries no squad capability."})
+		return
+	}
+	caller := orchestrator.CancelCaller{}
+	if machineAuthed(r) {
+		caller.Capability = strings.TrimSpace(r.Header.Get(squadSessionCapabilityHeader))
+		caller.SessionID = body.SessionID
+	} else {
+		v := accessOf(r).verdict
+		if !(v.Allowed && (v.Local || v.Caps.Has(auth.Send))) {
+			writeAuthRefusal(w, http.StatusForbidden, "forbidden", "This device may read, and not cancel a task.")
+			return
+		}
+		if body.SessionID != "" {
+			writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusBadRequest, Code: "bad_request",
+				Message: "session_id is how a Session names itself; a person cancels as themselves."})
+			return
+		}
+		caller.Person, caller.Principal = true, personPrincipal(r)
+	}
+	out, err := s.broker.CancelTask(r.Context(), id, body.Reason, r.Header.Get("Idempotency-Key"), caller)
+	if err != nil {
+		writeBrokerError(w, err)
+		return
+	}
+	writeJSON(w, contract.BrokerCancelResult{OK: true, Task: s.brokerTaskRow(r.Context(), out.Record),
+		Replayed: out.Replayed})
 }
 
 // brokerInflightForTask is the per-task form: the repository comes from the
