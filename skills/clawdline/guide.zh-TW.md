@@ -1119,10 +1119,14 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
    ```
    clawdline dispatch --kind plan_review --work-id <item id> --claims "" …
    ```
-3. 它以 success 結束後，記下它的審查，寫給使用者看——它發現了什麼、計畫因此改了什麼：
+3. 等 child 結束。帶 `--work-id` 派出、以 success 結束的審查 child，會自動把審查收據記到項目上，
+   成為 `plan_review` 文件；到 `GET /v1/work/v2/items/<id>` 的 `.documents` 確認。只有找不到時——
+   例如派出時沒帶 `--work-id`——才手動記錄：
    ```
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
+   同一個 task 再跑一次這個指令也沒關係：它會回覆已經存在的那份文件。想給使用者看計畫因此改了
+   什麼的簡短摘要，另寫一份 `other` 文件，不是第二份審查。
    Feature 的計畫在審查後修訂時，若仍在原審查的風險邊界內，於修訂計畫之後新增標題為
    `Review boundary assessment` 的 `other` 文件，JSON 寫
    `{"new_risk_boundary":false,"reason":"具體說明"}`。跨越新的或無法確認的邊界才派一次針對性複審。
@@ -1149,7 +1153,8 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
   （`plan_review_task_not_owned`）、有綁 line 的話就是這個項目（`plan_review_task_other_item`）、kind 是
   `plan_review`（`plan_review_task_wrong_kind`）、以 `success` 結束（`plan_review_task_unfinished`）、
   派出時間不早於最新的 plan（`plan_review_task_stale`）。還沒有 plan 就送審查，會被
-  `epic_plan_required` 拒絕。
+  `epic_plan_required` 拒絕。審查 child 自動記錄的文件也要通過同樣的檢查；同一個 task 重複寫入
+  不會產生第二份。
 - 本輪規劃 gate 開啟的 Epic 缺少已審查計畫時不能進入實作（`epic_plan_required` 或
   `epic_plan_review_required`）；使用者勾了「需要獨立審查」的 Feature 也一樣
   （`feature_plan_required` 或 `feature_plan_review_required`），沒勾的只需要驗收條件。有勾的 Feature

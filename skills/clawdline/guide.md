@@ -1300,11 +1300,16 @@ there is no Agent-side way to ask the daemon for one.
    ```
    clawdline dispatch --kind plan_review --work-id <item id> --claims "" …
    ```
-3. When it finishes with success, record its review, written for the person — what it found and
-   what the plan changed in response:
+3. Wait for the child to finish. A successful review child dispatched with `--work-id` records its
+   review receipt on the item as the `plan_review` document by itself; check `.documents` in
+   `GET /v1/work/v2/items/<id>`. Only if it is not there — for example, the child was dispatched
+   without `--work-id` — record it by hand:
    ```
    clawdline item doc <item id> --role plan_review --title "Plan review" --reference <task id> --body-file review.md
    ```
+   Running that command again for the same task is harmless: it answers the document already
+   there. A short summary for the person of what the plan changed in response is a separate
+   `other` document, not a second review.
    If a Feature plan changes after review, write an `other` document titled
    `Review boundary assessment` after the revised plan with JSON
    `{"new_risk_boundary":false,"reason":"..."}` only when the change stays inside the
@@ -1337,6 +1342,8 @@ are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and
   (`plan_review_task_other_item`), has kind `plan_review` (`plan_review_task_wrong_kind`), finished
   with `success` (`plan_review_task_unfinished`), and was dispatched no earlier than the latest plan
   (`plan_review_task_stale`). A review with no plan before it is refused `epic_plan_required`.
+  The automatic document from a review child passes the same checks, and a repeated write for the
+  same task is idempotent.
 - `clawdline item phase <item id> implementing` on a planning-on Epic is refused without its
   reviewed plan (`epic_plan_required` or `epic_plan_review_required`). A planning-on Feature the person checked
   Needs independent review on is refused the same way (`feature_plan_required` or
