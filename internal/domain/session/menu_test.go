@@ -342,3 +342,63 @@ func TestACutOffPickerNeedsItsKeyLineAndTheGate(t *testing.T) {
 		t.Fatalf("rows under a turn marker read as %+v", m.Options)
 	}
 }
+
+// Claude Code's /model picker (v2.1.287) draws an effort control under its
+// rows, "◐ Medium effort (default) ←/→ to adjust", and the half-moon at its
+// front is a glyph the spinner on a turn still being written also starts
+// with. Read as a turn, it made the rows above it scrollback: the picker was
+// never offered, so a phone had nothing to choose a model with.
+// `menu-model-picker` is a 120×50 pane, `menu-model-picker-small` an 80×24.
+func TestTheModelPickerIsRead(t *testing.T) {
+	m, ok := ReadMenu(fixture(t, "menu-model-picker.txt"), AssistantClaude, false)
+	if !ok {
+		t.Fatal("no menu on /model's picker")
+	}
+	want := "Default (recommended)|Opus 5.5 ✔|Fable 5.1|Sonnet 5.5|Haiku 4.5|Sonnet 5|Opus 5|Fable 5|Opus 4.8|Opus 4.7"
+	if got := labels(m); got != want {
+		t.Fatalf("labels %q", got)
+	}
+	if m.Selected == nil || *m.Selected != 2 || !m.Numbered || m.Submit != nil {
+		t.Fatalf("menu %+v", m)
+	}
+	// The second column is each row's description, and the list's overflow
+	// note is nobody's.
+	if got := m.Options[0].Detail; got != "Opus 5.5 · Best for everyday, complex tasks" {
+		t.Fatalf("detail %q", got)
+	}
+	if got := m.Options[9].Detail; got != "Best for everyday, complex tasks" {
+		t.Fatalf("last row's detail %q", got)
+	}
+	if m.Options[9].Answerable() {
+		t.Fatal("row 10 offered, but a keystroke carries one digit")
+	}
+	if !strings.HasPrefix(m.Question, "Select model") {
+		t.Fatalf("question %q", m.Question)
+	}
+
+	small, ok := ReadMenu(fixture(t, "menu-model-picker-small.txt"), AssistantClaude, false)
+	if !ok {
+		t.Fatal("no menu on /model's picker in an 80×24 pane")
+	}
+	if got := labels(small); got != "Default (recommended)|Opus 5.5 ✔|Fable 5.1" {
+		t.Fatalf("small labels %q", got)
+	}
+	if got := small.Options[1].Detail; got != "For complex work and everyday tasks" {
+		t.Fatalf("small detail %q", got)
+	}
+}
+
+// The control is exempt for being a control, not for its glyph: the same
+// half-moon heading a line of the session's own under the rows still makes
+// them scrollback.
+func TestASpinnerUnderTheModelRowsIsStillATurn(t *testing.T) {
+	screen := fixture(t, "menu-model-picker.txt")
+	control := "◐ Medium effort (default) ←/→ to adjust"
+	if !strings.Contains(screen, control) {
+		t.Fatal("fixture lost its effort control")
+	}
+	turn := strings.Replace(screen, control, "◐ Thinking… (3s · esc to interrupt)", 1)
+	if m, ok := ReadMenu(turn, AssistantClaude, false); ok {
+		t.Fatalf("rows over a spinner read as %+v", m.Options)
+	}
+}
