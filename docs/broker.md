@@ -77,6 +77,23 @@ current head, with a note saying the broker recorded it; whatever the route woul
 the exported `Land()`: a landing the root records says the root read the delivery and closes its completion notice, and
 the broker noticing a merge is not the root reading anything.
 
+**Asked at once by a Board item (`DetectLandingsFor`, 2026-10-02).** A minute is long for a root that has just merged
+and types `item finish`: until the beat's next look the finish was refused `landing_required`. So `item finish`, and
+`item phase … deploying`, first hand the tasks bound to the item whose landing is still pending to the same
+`detectLanding` — at most `landingDetectLimit` of them, each under `landingDetectTimeout` — and read the landings after
+it. The same gate decides, and the root's notice is left alone. A look that fails is not a refusal: the step answers from
+what is recorded, and a refusal for want of a landing ends with what the look found.
+
+**Root landings (`broker_root_landings`, 2026-10-02).** A Board item whose owning Session proved a commit itself
+(`item phase deploying --commit --target --remote [--landing-project]`) has no task to carry the landing. That proof used
+to live only as a copy inside the item's `item.phase_changed` payload — 233 of 238 entries into deploying, as the Board
+review (R3) counted them — a second truth beside the broker's records (D01). It is now one broker row, written in the same SQLite
+transaction as the phase change, keyed by item, repository, commit and target (the same four are the same row), and the
+event carries only its `landing_id`. Older events keep their `landing` copy and are read as `phase_event` rows; nothing
+is rewritten. `GET /v1/orchestrator/landings?work_id=<item>` and the item read list the same rows — bound tasks'
+`landed`/`incorporated` records, root rows and legacy copies — from one function (`internal/app/work_v2_landings.go`).
+One item keeps 64 root rows (`work.root_landings_per_item`); the next is refused `landings_full`.
+
 The target is the record's (D19). A pending landing opens without one, and the broker does **not** fill it with `HEAD`.
 It names one only when git proves there is a single candidate: among the local branches whose history holds the delivery
 head, leaving out the broker's own `clawdline/task/*` branches and every branch checked out in a linked worktree (an

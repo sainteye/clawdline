@@ -213,9 +213,9 @@ func (b *landingBoard) childTask(t *testing.T, repo, id string) string {
 		State: orchestrator.StateSuccess, CreatedAt: at, FinishedAt: at, Claims: []string{"child.txt"},
 		LeaseScope: orchestrator.LeaseWorktree, Isolation: orchestrator.IsolationWorktree, ProjectDir: repo,
 		Repository: repo, TimeoutMinutes: 240,
-		Root:       &orchestrator.RootRef{SessionID: b.p.s.ConversationID, Assistant: "codex"},
-		Worktree:   &orchestrator.Worktree{Repository: repo, Path: checkout, Branch: branch, Base: base, Head: head},
-		Landing:    &orchestrator.Landing{State: orchestrator.LandingPending}})
+		Root:     &orchestrator.RootRef{SessionID: b.p.s.ConversationID, Assistant: "codex"},
+		Worktree: &orchestrator.Worktree{Repository: repo, Path: checkout, Branch: branch, Base: base, Head: head},
+		Landing:  &orchestrator.Landing{State: orchestrator.LandingPending}})
 	if _, err := b.s.store.CreateBrokerTask(context.Background(), store.BrokerRow{ID: id, Project: repo,
 		Repository: repo, Assistant: "claude", State: "success", CreatedAt: at, SecretHash: "h", Record: record}, nil); err != nil {
 		t.Fatal(err)

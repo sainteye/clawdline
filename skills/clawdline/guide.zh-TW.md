@@ -60,7 +60,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
-| `clawdline landings` | 這台機器上所有還欠著的 landing |
+| `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
@@ -270,6 +270,7 @@ clawdline item phase <item id> verifying
 clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
+clawdline item phase <item id> deploying --no-landing-reason "why there is no code"    # work with no code
 clawdline item phase <item id> done --deployment "what went live, where, which version"
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
@@ -512,6 +513,13 @@ POST /v1/orchestrator/tasks/<id>/landing
 `clawdline landings`（`GET /v1/orchestrator/landings`）是整台機器上所有 pending 的 landing，每一筆都帶
 `ownership.status`。`unknown` 不代表「沒人負責」：它的意思是證據讀不到。`503 landings_incomplete` 表示
 有些列讀不到，而且不會拿一份比較短的清單來頂替。
+
+`clawdline landings --work-id <item id>`（`GET /v1/orchestrator/landings?work_id=<item id>`）則是一個
+看板項目所有**已記錄**的 landing：`{"work_id", "landings": [...], "at"}`，每一列帶 `id` 和 `source`——
+`task`（綁定 child 的 landed 或 incorporated 記錄，id 就是 task id）、`root`（`item phase deploying
+--commit` 寫下的記錄）或 `phase_event`（舊版 daemon 留在項目歷史裡的副本）。讀不到記錄的綁定 task 會是一列
+`state: "unknown"`，不會被省略。項目讀取帶的 `landings` 就是同樣這些列。項目不存在時回
+`404 work_not_found`。
 
 **兩個 root 要 landing 到同一份 checkout 時**，先取得 landing lease（§11）。
 
@@ -969,6 +977,7 @@ clawdline item phase <item id> verifying                     # 改動已經在�
 clawdline item phase <item id> merging --verification "跑了什麼、結果是什麼"
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin --landing-project <place id>
+clawdline item phase <item id> deploying --no-landing-reason "為什麼沒有程式碼要 land"
 clawdline item phase <item id> done --deployment "上線了什麼、在哪裡、哪個版本"
 clawdline item phase <item id> done --no-deployment-reason "為什麼不需要部署"
 ```
@@ -979,7 +988,7 @@ clawdline item phase <item id> done --no-deployment-reason "為什麼不需要�
 POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "next": "<phase>",
  "verification"?: "…", "landing"?: {"commit", "target", "remote", "project"?},
- "deployment"?: "…", "no_deployment_reason"?: "…"}
+ "no_landing_reason"?: "…", "deployment"?: "…", "no_deployment_reason"?: "…"}
 ```
 
 - 一次走一步：`assigned → implementing → verifying → merging → deploying → done`。`verifying` 可以
@@ -989,7 +998,14 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `landing` 指名一個 commit，daemon 要在 Project 的本機 `target` branch 和
   `refs/remotes/<remote>/<target>` 上都找得到它——先 push。工作落在別的 repository 時（後端項目、
   改動卻是前端的 commit），用 `landing.project`（`--landing-project`）指名那個 Project 在
-  `GET /v1/places` 的 id，daemon 就改在那裡找 commit，收據會記下是哪個 repository。`done` 要帶 `deployment` 或
+  `GET /v1/places` 的 id，daemon 就改在那裡找 commit——Project 目錄裡的巢狀 repository（`cloud/`）在這裡
+  算是它自己的 Project。證明會寫成 broker 的**root landing 記錄**，只寫一次：同一個項目、repository、
+  commit 和 target 再記一次，還是同一筆。項目歷史以 `landing_id` 指向它，`clawdline landings --work-id
+  <item id>` 也會列出它。進 `deploying` 之前，daemon 會立刻問 git 綁定 child 的 branch 是否已 merge，
+  所以剛剛做的 merge 不用等 broker 下一輪檢查就算數。沒有程式碼的工作改帶 `no_landing_reason`
+  （`--no-landing-reason`）取代 landing；跟 `landing` 一起送會被拒 `invalid_landing_evidence`，綁定
+  child 還欠 landing 時拒 `landing_owed`（並指名 task），綁定 child 已經 land 時拒 `landing_recorded`。
+  `done` 要帶 `deployment` 或
   `no_deployment_reason`，由項目的 `deployment_policy` 決定（`required` 只收 `deployment`，
   `not_required` 只收 `no_deployment_reason`，`agent_decides` 兩者皆可）。所有 step 都要先完成。
 - `done` 會釋放你的 assignment，項目移到這個 Session 的「最近完成」。需要結案報告時（見下文）
@@ -999,7 +1015,9 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `direct_landing_not_applicable`、`invalid_landing_evidence`、`landing_project_not_found`、
   `landing_commit_unresolved`、
   `landing_target_unresolved`、`landing_not_on_target`、`landing_remote_unresolved`、
-  `landing_not_published`，以及 `version_conflict`：重讀後再送。
+  `landing_not_published`、`landing_owed`、`landing_recorded`、`landings_full`（一個項目最多保留 64 筆
+  root landing），以及 `version_conflict`：重讀後再送。因為缺 landing 而被拒時，訊息最後會附上 broker
+  剛剛查到的情況（branch 還沒 merge、repository 讀不到）。
 
 **一個指令收尾。** 工作 landing 之後，`clawdline item finish <item id>` 在同一個交易裡把項目從
 `implementing`、`verifying`、`merging` 或 `deploying` 走到 `done`：
@@ -1007,7 +1025,7 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 ```
 POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "verification"?: "…",
- "landing"?: {"commit"?, "target"?, "remote"?, "project"?},
+ "landing"?: {"commit"?, "target"?, "remote"?, "project"?}, "no_landing_reason"?: "…",
  "deployment"?: "…", "no_deployment_reason"?: "…"}
 ```
 
@@ -1018,10 +1036,15 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
   欄位優先，結果照 `item phase deploying` 的方式向 git 驗證。本輪擷取的 verification gate 仍然要 PASS：
   有 gate 的項目從 `implementing` 收尾會被拒 `verification_candidate_required`，所以先在 candidate
   worktree 用 `item phase` 進 `verifying`，等 PASS，再收尾。
+- 剛剛 merge 的綁定 child branch，由收尾本身記成 landed：daemon 在讀 landing 之前先問 git，所以 merge
+  之後還回 `landing_required`，代表 branch 不在任何 target 上，拒絕訊息會說 broker 查到什麼。
+- 沒有程式碼的工作：`clawdline item finish <item id> --no-landing-reason "…" --no-deployment-reason "…"`，
+  規則跟 `item phase` 相同。
 - 已經 `done` 的項目照原樣回覆、什麼都不寫，所以同一個 landing 看到兩次也不會再動。
 - 拒絕代碼另有 `verification_required`、`landing_required`、`deployment_required`（那一步缺的說明）、
   `landing_target_unknown`、`landing_remote_unknown`、`landing_remote_unreadable`、
-  `landing_ambiguous`（用旗標指名）以及 `finish_not_started`（還在 `implementing` 之前）。
+  `landing_ambiguous`（用旗標指名）、`landing_owed`、`landing_recorded` 以及 `finish_not_started`（還在
+  `implementing` 之前）。
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
 steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，用

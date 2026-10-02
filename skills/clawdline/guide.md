@@ -65,7 +65,7 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
 | `clawdline assistants` | What each assistant's account has left |
-| `clawdline landings` | Every landing still owed on this machine |
+| `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
@@ -304,6 +304,7 @@ clawdline item phase <item id> verifying
 clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
+clawdline item phase <item id> deploying --no-landing-reason "why there is no code"    # work with no code
 clawdline item phase <item id> done --deployment "what went live, where, which version"
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
@@ -580,6 +581,14 @@ POST /v1/orchestrator/tasks/<id>/landing
 with an `ownership.status`. `unknown` is not "nobody": it means the evidence could not be read.
 `503 landings_incomplete` means some rows could not be read, and no shorter list is offered in
 their place.
+
+`clawdline landings --work-id <item id>` (`GET /v1/orchestrator/landings?work_id=<item id>`) is
+every landing **recorded** for one Board item instead: `{"work_id", "landings": [...], "at"}`, each
+row with its `id` and `source` — `task` (a bound child's landed or incorporated record; the id is
+the task id), `root` (the record `item phase deploying --commit` wrote) or `phase_event` (a copy an
+older daemon kept in the item's history). A bound task whose record cannot be read is a row with
+`state: "unknown"`, never left out. The item read carries the same rows as `landings`. An item that
+does not exist is `404 work_not_found`.
 
 **Two roots landing into one checkout** take a landing lease first (§11).
 
@@ -1133,6 +1142,7 @@ clawdline item phase <item id> verifying                     # the change exists
 clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin --landing-project <place id>
+clawdline item phase <item id> deploying --no-landing-reason "why there is no code to land"
 clawdline item phase <item id> done --deployment "what went live, where, which version"
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
@@ -1144,7 +1154,7 @@ and prints the item. It is
 POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "next": "<phase>",
  "verification"?: "…", "landing"?: {"commit", "target", "remote", "project"?},
- "deployment"?: "…", "no_deployment_reason"?: "…"}
+ "no_landing_reason"?: "…", "deployment"?: "…", "no_deployment_reason"?: "…"}
 ```
 
 - One step at a time: `assigned → implementing → verifying → merging → deploying → done`.
@@ -1154,8 +1164,16 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   landed, or `landing` naming a commit the daemon finds on both the Project's local `target` branch
   and `refs/remotes/<remote>/<target>` — push first. When the work landed in another repository
   (a backend item whose change was a frontend commit), `landing.project` (`--landing-project`)
-  names that Project's id from `GET /v1/places`, and the commit is looked for there instead; the
-  receipt records the repository. `done` needs `deployment` or
+  names that Project's id from `GET /v1/places`, and the commit is looked for there instead — a
+  nested repository inside the Project directory (`cloud/`) is its own Project here. The proof is
+  written as the broker's **root landing record**, once: the same item, repository, commit and
+  target recorded again is the same record. The item's history names it as `landing_id`, and
+  `clawdline landings --work-id <item id>` lists it. Before `deploying` the daemon asks git at once
+  whether a bound child's branch has been merged, so a merge made a moment ago counts without
+  waiting for the broker's next look. Work with no code takes `no_landing_reason`
+  (`--no-landing-reason`) instead of a landing; it is refused beside a `landing`
+  (`invalid_landing_evidence`), while a bound child still owes its landing (`landing_owed`, naming
+  the task), and beside a child that landed (`landing_recorded`). `done` needs `deployment` or
   `no_deployment_reason`; the item's `deployment_policy` decides which (`required` takes only
   `deployment`, `not_required` only `no_deployment_reason`, `agent_decides` either). Every step
   must be complete first.
@@ -1166,7 +1184,10 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `direct_landing_not_applicable`, `invalid_landing_evidence`, `landing_project_not_found`,
   `landing_commit_unresolved`,
   `landing_target_unresolved`, `landing_not_on_target`, `landing_remote_unresolved`,
-  `landing_not_published`, and `version_conflict`: reread and send again.
+  `landing_not_published`, `landing_owed`, `landing_recorded`, `landings_full` (the item keeps 64
+  root landings), and `version_conflict`: reread and send again. A refusal for want of a landing
+  ends with what the broker found when it looked just now (a branch not yet merged, a repository it
+  could not read).
 
 **Finishing in one command.** After the work has landed, `clawdline item finish <item id>` walks
 the item from `implementing`, `verifying`, `merging` or `deploying` to `done` in one transaction:
@@ -1174,7 +1195,7 @@ the item from `implementing`, `verifying`, `merging` or `deploying` to `done` in
 ```
 POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "verification"?: "…",
- "landing"?: {"commit"?, "target"?, "remote"?, "project"?},
+ "landing"?: {"commit"?, "target"?, "remote"?, "project"?}, "no_landing_reason"?: "…",
  "deployment"?: "…", "no_deployment_reason"?: "…"}
 ```
 
@@ -1186,12 +1207,17 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
   git as `item phase deploying` proves it. A captured verification gate still needs its PASS: from
   `implementing` a gated item is refused `verification_candidate_required`, so enter `verifying`
   with `item phase` from the candidate worktree, wait for the PASS, then finish.
+- A bound child whose branch was merged a moment ago is recorded landed by the finish itself: the
+  daemon asks git before it reads the landings, so `landing_required` right after a merge means the
+  branch is not on a target, and the refusal says what the broker found.
+- Work with no code: `clawdline item finish <item id> --no-landing-reason "…" --no-deployment-reason "…"`,
+  under the same rules as on `item phase`.
 - An item already `done` is answered as it stands and nothing is written, so the same landing seen
   twice moves nothing.
 - Refusals add `verification_required`, `landing_required`, `deployment_required` (the note that
   step lacked), `landing_target_unknown`, `landing_remote_unknown`, `landing_remote_unreadable`,
-  `landing_ambiguous` (name it with the flag) and `finish_not_started` (still before
-  `implementing`).
+  `landing_ambiguous` (name it with the flag), `landing_owed`, `landing_recorded` and
+  `finish_not_started` (still before `implementing`).
 
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
