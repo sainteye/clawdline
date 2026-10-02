@@ -486,13 +486,32 @@ func landingKey(l *Landing) string {
 	return string(l.State) + "\x00" + l.Target + "\x00" + l.Commit + "\x00" + l.CarrierTask + "\x00" + l.Note
 }
 
+// readOnlyEvidence answers, for an isolated task that declared `"claims": []`
+// and is ending by itself, whether it is one (readOnly) and what its own
+// branch and checkout show it wrote — empty when they show nothing, a sentence
+// when they show work or could not be read. A task that timed out or was
+// cancelled is not asked: its tab may still be writing (settleEmpty).
+func (b *Broker) readOnlyEvidence(ctx context.Context, id string, state State) (readOnly bool, wrote string) {
+	if state != StateSuccess && state != StateFailure {
+		return false, ""
+	}
+	r, _, err := b.Record(ctx, id)
+	if err != nil || r.Worktree == nil || r.State.Terminal() {
+		return false, ""
+	}
+	if declared, known := r.DeclaredWrites(); !known || len(declared) > 0 {
+		return false, ""
+	}
+	return true, b.nothingToLandRefusal(ctx, r)
+}
+
 // nothingToLandRefusal is the sentence that says a task did write something.
 // Empty means the claim is admitted.
 func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
-	// The lease, as in landingAdvice: an isolated task's branch answers this.
-	if n := len(r.Lease()); n > 0 {
-		return "this task declared " + strconv.Itoa(n) + " path(s) to write"
-	}
+	// A declared write set is a reservation, not a write: a shared task that
+	// named src/ and committed nothing may say so. What refuses is evidence —
+	// an isolated task's own branch and checkout, read below. The shared tree
+	// holds everybody's work, so nothing in it is this task's to count.
 	if r.Landing != nil && r.Landing.Target != "" {
 		return "its landing obligation already names the target " + r.Landing.Target
 	}
