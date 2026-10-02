@@ -75,7 +75,7 @@ func (w *WorkSystemV2) DecideWorkGate(ctx context.Context, itemID string,
 			if strings.TrimSpace(request.Direction) == "" {
 				return work.RefuseV2("direction_required", "Direction needs the concrete next action for the maker.")
 			}
-			next.Phase, next.Condition, next.UserAction = work.PhaseImplementing, work.ConditionBlocked, ""
+			next.Phase, next.Condition, next.UserAction, next.DecisionID = work.PhaseImplementing, work.ConditionBlocked, "", ""
 			if escalation.Candidate != nil {
 				if err := tx.AddWorkGateFeedback(store.WorkGateFeedback{ID: gateDeterministicID(escalation.ID + ":direction"),
 					ItemID: item.ID, RoundID: escalation.RoundID, SessionID: escalation.Candidate.OwnerSessionID,
@@ -92,7 +92,7 @@ func (w *WorkSystemV2) DecideWorkGate(ctx context.Context, itemID string,
 			}
 			prev := next
 			work.SetAcceptance(&next, request.AcceptanceCriteria)
-			next.Phase, next.Condition, next.UserAction = work.PhaseImplementing, "", ""
+			next.Phase, next.Condition, next.UserAction, next.DecisionID = work.PhaseImplementing, "", "", ""
 			if err := tx.InvalidateWorkV2VerificationAuthorization(prev, next, "escalation_acceptance_revised"); err != nil {
 				return err
 			}
@@ -104,8 +104,8 @@ func (w *WorkSystemV2) DecideWorkGate(ctx context.Context, itemID string,
 				request.TargetSessionID, request.SessionID, now); err != nil {
 				return err
 			}
-			next.OwnerSession, next.Phase, next.Condition, next.UserAction = request.TargetSessionID,
-				work.PhaseImplementing, "", ""
+			next.OwnerSession, next.Phase, next.Condition, next.UserAction, next.DecisionID = request.TargetSessionID,
+				work.PhaseImplementing, "", "", ""
 		case contract.WorkGateDecisionActionRetry:
 			if escalation.Candidate == nil || escalation.Candidate.Cycle != item.Cycle ||
 				escalation.Candidate.CriteriaVersion != item.AcceptanceVersion ||
@@ -132,7 +132,7 @@ func (w *WorkSystemV2) DecideWorkGate(ctx context.Context, itemID string,
 				item.CycleBaseCommit); err != nil {
 				return err
 			}
-			next.Phase, next.Condition, next.UserAction = work.PhaseVerifying, "", ""
+			next.Phase, next.Condition, next.UserAction, next.DecisionID = work.PhaseVerifying, "", "", ""
 			return tx.PutItem(item, next, "verification.escalation_resolved", request.SessionID,
 				payload(map[string]any{"action": action, "reason": request.Reason}))
 		case contract.WorkGateDecisionActionOverride:
@@ -158,12 +158,12 @@ func (w *WorkSystemV2) DecideWorkGate(ctx context.Context, itemID string,
 				Reason: request.Reason}, now); err != nil {
 				return err
 			}
-			next.Phase, next.Condition, next.UserAction = work.PhaseVerifying, "", ""
+			next.Phase, next.Condition, next.UserAction, next.DecisionID = work.PhaseVerifying, "", "", ""
 		case contract.WorkGateDecisionActionCancel:
 			if err := tx.ReleaseWorkGateOwner(item.ID, now); err != nil {
 				return err
 			}
-			next.Phase, next.Condition, next.UserAction, next.OwnerSession = work.PhaseCancelled, "", "", ""
+			next.Phase, next.Condition, next.UserAction, next.OwnerSession, next.DecisionID = work.PhaseCancelled, "", "", "", ""
 			next.ClosedAt = now
 		default:
 			return work.RefuseV2("verification_decision_invalid", "Unknown verification escalation decision.")
@@ -455,7 +455,7 @@ func (c *WorkGateCoordinator) technicalFailure(ctx context.Context, due store.Wo
 			return err
 		}
 		next := item
-		next.Condition, next.UserAction, next.UpdatedAt = work.ConditionBlocked, "", now
+		next.Condition, next.UserAction, next.UpdatedAt, next.DecisionID = work.ConditionBlocked, "", now, ""
 		if !live {
 			next.Condition = work.ConditionWaitingUser
 			next.UserAction = "Independent verification failed twice; choose retry, repair, reassign, override, or cancel."
@@ -510,7 +510,7 @@ func (c *WorkGateCoordinator) applyResult(ctx context.Context, due store.WorkGat
 		next.UpdatedAt = now
 		switch result.Verdict {
 		case contract.WorkGateVerdictPASS:
-			next.Condition, next.UserAction = "", ""
+			next.Condition, next.UserAction, next.DecisionID = "", "", ""
 			if err := tx.ResetWorkGateFailures(item); err != nil {
 				return err
 			}
@@ -537,7 +537,7 @@ func (c *WorkGateCoordinator) applyResult(ctx context.Context, due store.WorkGat
 					consecutive, owner, live, now); err != nil {
 					return err
 				}
-				next.Condition = work.ConditionBlocked
+				next.Condition, next.DecisionID = work.ConditionBlocked, ""
 				if !live {
 					next.Condition = work.ConditionWaitingUser
 					next.UserAction = "A parent owner or the person must decide the verification escalation."
@@ -639,8 +639,8 @@ func (c *WorkGateCoordinator) routeEscalations(ctx context.Context) error {
 					return err
 				}
 				next := item
-				next.Condition, next.UserAction, next.UpdatedAt = work.ConditionWaitingUser,
-					"The parent owner remained offline for 900 seconds; the person must decide.", now
+				next.Condition, next.UserAction, next.DecisionID, next.UpdatedAt = work.ConditionWaitingUser,
+					"The parent owner remained offline for 900 seconds; the person must decide.", "", now
 				if err := tx.PutItem(item, next, "verification.escalation_promoted", "verification-coordinator",
 					payload(map[string]any{"escalation_id": row.ID})); err != nil {
 					return err

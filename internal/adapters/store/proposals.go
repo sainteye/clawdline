@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS decisions (
   options        TEXT    NOT NULL CHECK (json_valid(options)),
   default_option TEXT    NOT NULL CHECK (default_option <> ''),
   blocking       INTEGER NOT NULL CHECK (blocking IN (0, 1)),
-  state          TEXT    NOT NULL CHECK (state IN ('open','answered','defaulted')),
+  state          TEXT    NOT NULL CHECK (state IN ('open','answered','defaulted','withdrawn')),
   answer         TEXT,
   answered_by    TEXT,
   answered_at    INTEGER,
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS decisions (
                    ('none','pending','sent','not_subscribed','over_budget','failed','unknown')),
   pushed_at      INTEGER,
   version        INTEGER NOT NULL DEFAULT 0,
-  CHECK ((state = 'open') = (answer IS NULL)),
+  CHECK ((state IN ('open','withdrawn')) = (answer IS NULL)),
   CHECK (blocking = 1 OR push = 'none')
 );
 CREATE INDEX IF NOT EXISTS decisions_state ON decisions(state, due_at);
@@ -158,7 +158,50 @@ func openParticipation(db *sql.DB) error {
 	if _, err := db.Exec(participationSchema); err != nil {
 		return err
 	}
-	return requireDecisionWorkIDs(db)
+	if err := requireDecisionWorkIDs(db); err != nil {
+		return err
+	}
+	return widenDecisionStates(db)
+}
+
+// widenDecisionStates adds `withdrawn` — a question its Session stopped
+// waiting on before anyone answered — to a decisions table written before it.
+// SQLite cannot alter a CHECK, so the table is rebuilt under the current
+// schema and every row is copied byte for byte. Expand-only: no row changes
+// state, and a daemon from before it still reads every row it wrote.
+func widenDecisionStates(db *sql.DB) error {
+	var ddl string
+	err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'decisions'`).Scan(&ddl)
+	if err == sql.ErrNoRows || (err == nil && strings.Contains(ddl, "'withdrawn'")) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	steps := []string{
+		`ALTER TABLE decisions RENAME TO decisions_before_withdrawn`,
+		`DROP INDEX IF EXISTS decisions_state`,
+		`DROP INDEX IF EXISTS decisions_work`,
+		`DROP INDEX IF EXISTS decisions_push`,
+		participationSchema,
+		`INSERT INTO decisions (id, session, work_id, task_id, project, question, options, default_option,
+			blocking, state, answer, answered_by, answered_at, created_at, due_at, push, pushed_at, version)
+		 SELECT id, session, work_id, task_id, project, question, options, default_option,
+			blocking, state, answer, answered_by, answered_at, created_at, due_at, push, pushed_at, version
+		 FROM decisions_before_withdrawn`,
+		`DROP TABLE decisions_before_withdrawn`,
+	}
+	for _, step := range steps {
+		if _, err := tx.Exec(step); err != nil {
+			return fmt.Errorf("decisions.state: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 // requireDecisionWorkIDs removes the last rows written before every question

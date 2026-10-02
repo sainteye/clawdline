@@ -72,8 +72,11 @@ type workV2ItemWire struct {
 	Phase              string            `json:"phase"`
 	Condition          *string           `json:"condition"`
 	UserAction         string            `json:"user_action"`
-	Area               string            `json:"area"`
-	DeploymentPolicy   string            `json:"deployment_policy"`
+	// DecisionID is the open decision a waiting_user points at; absent when
+	// the item waits on nothing, or on a user_action the daemon wrote.
+	DecisionID       string `json:"decision_id,omitempty"`
+	Area             string `json:"area"`
+	DeploymentPolicy string `json:"deployment_policy"`
 	// ReviewRequired is the person's "Needs independent review" switch; it
 	// is false on every item but a Feature the person checked.
 	ReviewRequired bool                  `json:"review_required"`
@@ -977,7 +980,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 	}
 	out := workV2ItemWire{ID: i.ID, Project: p, Kind: string(i.Kind), Title: i.Title, Description: i.Description,
 		AcceptanceCriteria: i.AcceptanceCriteria, AcceptanceVersion: i.AcceptanceVersion, AcceptanceDigest: i.AcceptanceDigest,
-		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, Area: i.Area(),
+		Phase: string(i.Phase), Condition: optionalString(string(i.Condition)), UserAction: i.UserAction, DecisionID: i.DecisionID, Area: i.Area(),
 		DeploymentPolicy: string(i.DeploymentPolicy), ReviewRequired: i.ReviewRequired, OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, GateSnapshotCycle: i.GateSnapshotCycle,
@@ -1700,6 +1703,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		AcceptanceCriteria *string `json:"acceptance_criteria"`
 		Condition          *string `json:"condition"`
 		UserAction         *string `json:"user_action"`
+		DecisionID         *string `json:"decision_id"`
 		// ReviewRequired is the person's alone; the app refuses it from a
 		// Session by name rather than as an unknown field.
 		ReviewRequired *bool  `json:"review_required"`
@@ -1737,7 +1741,7 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	var answer []byte
 	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
-		Condition: condition, UserAction: body.UserAction, ReviewRequired: body.ReviewRequired, Actor: actor,
+		Condition: condition, UserAction: body.UserAction, DecisionID: body.DecisionID, ReviewRequired: body.ReviewRequired, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 		answer = workV2Answer(itemOf(v))
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true

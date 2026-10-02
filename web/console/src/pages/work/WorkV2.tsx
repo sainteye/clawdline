@@ -29,7 +29,7 @@ import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
 import { decisionsForWorkItem, proposalsForProject } from "./board-attention.js"
-import { conditionWords, deploymentWords, needsPerson, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
+import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
 import {
   answerDecision,
   assignNewWorkV2,
@@ -585,8 +585,10 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
 }
 
 /** A person's answer is part of its item, immediately after the item's scope. */
-function WorkItemDecisions({ decisions, busy, run }: {
+function WorkItemDecisions({ decisions, waitingOn, busy, run }: {
   decisions: Decision[]
+  /** The decision the item's waiting_user points at, if any. */
+  waitingOn?: string
   busy: boolean
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
 }) {
@@ -595,8 +597,9 @@ function WorkItemDecisions({ decisions, busy, run }: {
     <div className="work-item-decisions-head"><strong>需要你決定</strong><span>{decisions.length}</span></div>
     {decisions.map((decision) => {
       const fallback = decision.options.find((option) => option.id === decision.default)?.label ?? decision.default
-      return <div className="work-item-decision" key={decision.id} data-decision-id={decision.id}>
-        <p className="work-item-decision-state">{decision.blocking ? "回答前，這個項目的工作暫停" : "這個問題不會暫停工作"}</p>
+      return <div className="work-item-decision" key={decision.id} data-decision-id={decision.id} id={`work-decision-${decision.id}`}>
+        <p className="work-item-decision-state">{decision.id === waitingOn ? "負責的 Session 正在等這個答案，回答後就會繼續"
+          : decision.blocking ? "回答前，這個項目的工作暫停" : "這個問題不會暫停工作"}</p>
         <h4>{decision.question}</h4>
         <p className="work-clock">到 {when(decision.due_at)} 還沒回答，就採用「{fallback}」</p>
         <div className="work-actions" role="group" aria-label={`回答「${decision.question}」`}>
@@ -651,11 +654,12 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
   const attentionDescriptionID = `work-card-${item.id}-attention`
   const conditionDescriptionID = `work-card-${item.id}-condition`
   const actionDescriptionID = `work-card-${item.id}-action`
+  const nextAction = nextActionWords(item, decisions)
   const progressDescriptionID = `work-card-${item.id}-progress`
   const deploymentDescriptionID = `work-card-${item.id}-deployment`
   const originDescriptionID = `work-card-${item.id}-origin`
   const describedBy = [gateShown && gateSnapshotDescriptionID, gateShown && gateDescriptionID,
-    item.condition && conditionDescriptionID, item.user_action && actionDescriptionID,
+    item.condition && conditionDescriptionID, nextAction && actionDescriptionID,
     activePhase && progressDescriptionID, item.phase === "done" && deploymentDescriptionID,
     attention && attentionDescriptionID, originSentence && originDescriptionID].filter(Boolean).join(" ") || undefined
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
@@ -670,7 +674,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
       <span className="work-card-summary-title">{item.title}</span>
       {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
       {item.condition && <span id={conditionDescriptionID} className="work-card-condition">{conditionWords(item)}</span>}
-      {item.user_action && <span id={actionDescriptionID} className="work-card-next-action">下一步：{item.user_action}</span>}
+      {nextAction && <span id={actionDescriptionID} className="work-card-next-action">{nextAction}</span>}
       <span className="work-card-summary-description">{item.description}</span>
       {activePhase && <span id={progressDescriptionID} className="work-card-progress">{phaseStayWords(item.phase_entered_at, nowSeconds)} · {ownerOnlineWords(item.owner_session, sessions)}</span>}
       {item.phase === "done" && <span id={deploymentDescriptionID} className="work-card-deployment">{deploymentWords(item)}</span>}
@@ -678,7 +682,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
         <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
-        <span className="work-card-open">{attention ? "查看下一步" : "查看完整內容"} <WorkIcon name="open" /></span>
+        <span className="work-card-open">{item.decision_id ? "回答問題" : attention ? "查看下一步" : "查看完整內容"} <WorkIcon name="open" /></span>
       </span>
       {originSentence && <span id={originDescriptionID} className="work-card-origin-sentence">{originSentence}</span>}
     </button>
@@ -858,7 +862,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     {!epic && <WorkGateAttention item={item}
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
       run={run} />}
-    <WorkItemDecisions decisions={decisions} busy={!!busy} run={run} />
+    <WorkItemDecisions decisions={decisions} waitingOn={item.decision_id} busy={!!busy} run={run} />
     {item.kind === "feature" && <ReviewRequiredField id={`work-review-required-${item.id}`} checked={item.review_required === true}
       disabled={!!busy || !!item.closed_at} busy={busy === `review-required-${item.id}`}
       onChange={(checked) => { clearFailure(); setReviewRequiredFailed(false)
@@ -866,7 +870,12 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     {reviewRequiredFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {epic && <EpicChildren item={item} sessions={sessions} />}
-    {item.user_action && <section className="work-user-action" aria-label="需要你做的事">
+    {item.decision_id ? <section className="work-user-action" aria-label="需要你做的事">
+      <strong>需要你做的事</strong>
+      <p>{nextActionWords(item, decisions)}{decisionsForWorkItem(decisions, item.id).some((d) => d.id === item.decision_id)
+        ? <> · <button type="button" className="chip" onClick={() =>
+          document.getElementById(`work-decision-${item.decision_id}`)?.scrollIntoView({ block: "nearest" })}>前往回答</button></> : null}</p>
+    </section> : item.user_action && <section className="work-user-action" aria-label="需要你做的事">
       <strong>需要你做的事</strong><p>{item.user_action}</p>
     </section>}
     {/* Choosing who does the work is what an unassigned card is for, so the

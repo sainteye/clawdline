@@ -577,6 +577,32 @@ func (w *WorkSystemV2) DeleteImage(ctx context.Context, id, imageID string, expe
 	return out, mapWorkV2Error(err)
 }
 
+// linkableDecision refuses a decision an item's waiting_user may not point
+// at: one that does not exist, that another Session asked, that is about
+// another item, or that is no longer open. Each is its own code, so the
+// Agent can tell "ask again" from "ask about this item".
+func linkableDecision(tx *store.WorkV2Tx, item work.ItemV2, id string) error {
+	d, err := tx.Decision(id)
+	if errors.Is(err, store.ErrNoDecision) {
+		return workV2Error(http.StatusNotFound, "decision_not_found",
+			"No decision has that decision_id; open one with POST /v1/orchestrator/decisions first.")
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case d.Session != item.OwnerSession:
+		return workV2Error(http.StatusConflict, "decision_other_session", "That decision was asked by another Session.")
+	case d.WorkID != item.ID:
+		return workV2Error(http.StatusConflict, "decision_other_item",
+			"That decision is about another Board item; open one with this item's work_id.")
+	case d.State != work.DecisionOpen:
+		return workV2Error(http.StatusConflict, "decision_not_open",
+			"That decision is "+string(d.State)+"; a closed question cannot be waited on. Open a new one.")
+	}
+	return nil
+}
+
 type EditWorkV2 struct {
 	ExpectedVersion    int64
 	Title              *string
@@ -584,6 +610,10 @@ type EditWorkV2 struct {
 	AcceptanceCriteria *string
 	Condition          *work.Condition
 	UserAction         *string
+	// DecisionID points waiting_user at an open decision the owning Session
+	// asked about this item (POST /v1/orchestrator/decisions). An Agent's
+	// waiting_user needs one; its answer, or its default, ends the wait.
+	DecisionID *string
 	// ReviewRequired sets the person's "Needs independent review" switch on a
 	// Feature. Like the deployment policy, the person may change it and the
 	// Agent may not.
@@ -658,7 +688,7 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			acceptanceChanged = work.SetAcceptance(&next, *c.AcceptanceCriteria)
 			if acceptanceChanged && prev.Phase == work.PhaseVerifying {
 				next.Phase = work.PhaseImplementing
-				next.Condition, next.UserAction = "", ""
+				next.Condition, next.UserAction, next.DecisionID = "", "", ""
 			}
 		}
 		if err := validateWorkV2Text(next.Title, next.Description); err != nil {
@@ -676,7 +706,7 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			}
 			next.Condition = *c.Condition
 			if next.Condition != work.ConditionWaitingUser {
-				next.UserAction = ""
+				next.UserAction, next.DecisionID = "", ""
 			}
 		}
 		if c.ReviewRequired != nil {
@@ -695,9 +725,29 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 				return work.RefuseV2("user_action_too_large", "The requested user action is at most 8 KiB.")
 			}
 		}
-		if c.Condition != nil || c.UserAction != nil {
+		if c.DecisionID != nil {
+			next.DecisionID = strings.TrimSpace(*c.DecisionID)
+			if next.DecisionID != "" {
+				if next.Condition != work.ConditionWaitingUser {
+					return work.RefuseV2("decision_requires_waiting_user", "A decision_id belongs to the waiting_user condition.")
+				}
+				if err := linkableDecision(tx, prev, next.DecisionID); err != nil {
+					return err
+				}
+				if c.UserAction == nil {
+					next.UserAction = ""
+				}
+			}
+		}
+		if c.Condition != nil || c.UserAction != nil || c.DecisionID != nil {
+			agentWait := !c.Person && next.Condition == work.ConditionWaitingUser
 			switch {
-			case next.Condition == work.ConditionWaitingUser && next.UserAction == "":
+			case agentWait && next.DecisionID == "" && (c.Condition != nil || next.UserAction != ""):
+				return workV2Error(http.StatusUnprocessableEntity, "waiting_user_requires_decision",
+					"An Agent waits on the person through a decision, not free text: open one with POST /v1/orchestrator/decisions "+
+						"(work_id of this item, 2 to 4 options, a default and a due), then edit this item with condition "+
+						"waiting_user and its decision_id.")
+			case next.Condition == work.ConditionWaitingUser && next.UserAction == "" && next.DecisionID == "":
 				return work.RefuseV2("user_action_required", "Say exactly what the person needs to do while waiting for them.")
 			case next.Condition != work.ConditionWaitingUser && next.UserAction != "":
 				return work.RefuseV2("user_action_requires_waiting_user", "A requested user action belongs to the waiting_user condition.")
@@ -715,6 +765,9 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			"acceptance_version": next.AcceptanceVersion, "acceptance_digest": next.AcceptanceDigest,
 			"verification_authorization_invalidated": acceptanceChanged,
 			"condition":                              c.Condition, "user_action": c.UserAction != nil}
+		if c.DecisionID != nil {
+			event["decision_id"] = next.DecisionID
+		}
 		if c.ReviewRequired != nil {
 			event["review_required"] = next.ReviewRequired
 		}
@@ -797,7 +850,7 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 			if err := tx.UpdateAssignment(a); err != nil {
 				return err
 			}
-			next.OwnerSession, next.Phase, next.Condition, next.UserAction = "", work.PhaseCreated, "", ""
+			next.OwnerSession, next.Phase, next.Condition, next.UserAction, next.DecisionID = "", work.PhaseCreated, "", "", ""
 		}
 		next.Kind = c.Kind
 		// The review switch is a Feature's alone; it does not follow the item
@@ -1022,7 +1075,7 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		} else {
 			next.OwnerSession = a.SessionID
 			next.Condition = ""
-			next.UserAction = ""
+			next.UserAction, next.DecisionID = "", ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
 			}
@@ -1105,7 +1158,7 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 		if c.Failure != "" {
 			pending.State, pending.Failure = "failed", c.Failure
 			if prev.UserAction == AssignmentDialogAction {
-				next.Condition, next.UserAction = "", ""
+				next.Condition, next.UserAction, next.DecisionID = "", "", ""
 			}
 			if prev.OwnerSession == "" {
 				next.Phase, next.Condition = work.PhaseCreated, work.ConditionAssignmentFailed
@@ -1126,7 +1179,7 @@ func (w *WorkSystemV2) FinishAssignment(ctx context.Context, workID string, c Fi
 				}
 			}
 			pending.State, pending.SessionID, pending.TerminalID = "active", c.SessionID, c.TerminalID
-			next.OwnerSession, next.Condition, next.UserAction = c.SessionID, "", ""
+			next.OwnerSession, next.Condition, next.UserAction, next.DecisionID = c.SessionID, "", "", ""
 			if prev.Phase == work.PhaseCreated || prev.Phase == work.PhaseAssigning {
 				next.Phase = work.PhaseAssigned
 			}
@@ -1204,7 +1257,7 @@ func (w *WorkSystemV2) AwaitAssignmentDialog(ctx context.Context, workID string,
 			return err
 		}
 		next := prev
-		next.Condition, next.UserAction, next.UpdatedAt = work.ConditionWaitingUser, AssignmentDialogAction, now
+		next.Condition, next.UserAction, next.UpdatedAt, next.DecisionID = work.ConditionWaitingUser, AssignmentDialogAction, now, ""
 		if err := tx.PutItem(prev, next, "assignment.awaiting_dialog", c.Actor, payload(map[string]any{
 			"assignment_id": pending.ID, "root_assignment_id": c.RootAssignment})); err != nil {
 			return err
@@ -1244,7 +1297,7 @@ func (w *WorkSystemV2) Unassign(ctx context.Context, id string, expected int64, 
 			return err
 		}
 		next := prev
-		next.OwnerSession, next.Condition, next.UserAction, next.UpdatedAt = "", work.ConditionOwnerRequired, "", now
+		next.OwnerSession, next.Condition, next.UserAction, next.UpdatedAt, next.DecisionID = "", work.ConditionOwnerRequired, "", now, ""
 		if err := tx.PutItem(prev, next, "item.unassigned", actor, payload(map[string]any{"assignment_id": a.ID})); err != nil {
 			return err
 		}
@@ -1467,7 +1520,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	}
 	now := w.now()
 	next := prev
-	next.Phase, next.Condition, next.UserAction, next.UpdatedAt = c.Next, "", "", now
+	next.Phase, next.Condition, next.UserAction, next.UpdatedAt, next.DecisionID = c.Next, "", "", now, ""
 	if c.Next == work.PhaseDone {
 		next.ClosedAt, next.OwnerSession = now, ""
 		a, err := tx.ActiveAssignment(id)
@@ -1740,7 +1793,7 @@ func (w *WorkSystemV2) Cancel(ctx context.Context, id string, expected int64, ac
 			}
 		}
 		next := prev
-		next.Phase, next.OwnerSession, next.Condition, next.UserAction = work.PhaseCancelled, "", "", ""
+		next.Phase, next.OwnerSession, next.Condition, next.UserAction, next.DecisionID = work.PhaseCancelled, "", "", "", ""
 		next.ClosedAt, next.UpdatedAt = now, now
 		if err := tx.PutItem(prev, next, "item.cancelled", actor, payload(map[string]string{"reason": reason})); err != nil {
 			return err
@@ -1803,7 +1856,7 @@ func (w *WorkSystemV2) Complete(ctx context.Context, id string, expected int64, 
 			}
 		}
 		next := prev
-		next.Phase, next.OwnerSession, next.Condition, next.UserAction = work.PhaseDone, "", "", ""
+		next.Phase, next.OwnerSession, next.Condition, next.UserAction, next.DecisionID = work.PhaseDone, "", "", "", ""
 		next.ClosedAt, next.UpdatedAt = now, now
 		if err := tx.PutItem(prev, next, workV2PersonCompletion, actor, payload(map[string]any{
 			"from": prev.Phase, "open_steps": open, "note": note})); err != nil {
@@ -1835,7 +1888,7 @@ func (w *WorkSystemV2) Reopen(ctx context.Context, id string, expected int64, ac
 			return work.RefuseV2("item_not_terminal", "Only completed or cancelled work is reopened.")
 		}
 		next := prev
-		next.Phase, next.Condition, next.UserAction, next.OwnerSession = work.PhaseCreated, work.ConditionOwnerRequired, "", ""
+		next.Phase, next.Condition, next.UserAction, next.OwnerSession, next.DecisionID = work.PhaseCreated, work.ConditionOwnerRequired, "", "", ""
 		next.ClosedAt, next.UpdatedAt, next.Cycle = time.Time{}, w.now(), prev.Cycle+1
 		next.GateSnapshotCycle, next.GateSnapshotAt, next.PlanningGate, next.VerifyGate = 0, time.Time{}, false, false
 		next.CycleBaseCommit = ""
@@ -1921,7 +1974,7 @@ func (w *WorkSystemV2) ReopenIncomplete(ctx context.Context, id string, c AgentR
 			return err
 		}
 		next := prev
-		next.Phase, next.Condition, next.UserAction = work.PhaseImplementing, "", ""
+		next.Phase, next.Condition, next.UserAction, next.DecisionID = work.PhaseImplementing, "", "", ""
 		next.OwnerSession, next.ClosedAt, next.UpdatedAt = c.SessionID, time.Time{}, now
 		next.Cycle = prev.Cycle + 1
 		// A completion correction is the same responsibility resumed immediately:

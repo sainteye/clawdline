@@ -121,7 +121,12 @@ type ItemV2 struct {
 	Phase              Phase
 	Condition          Condition
 	UserAction         string
-	DeploymentPolicy   DeploymentPolicy
+	// DecisionID is the open decision an Agent's waiting_user points at: the
+	// person answers it with one of its options, and its end clears the
+	// condition. Empty for every other condition, and for a waiting_user the
+	// daemon itself wrote with a UserAction.
+	DecisionID       string
+	DeploymentPolicy DeploymentPolicy
 	// ReviewRequired is the person's "Needs independent review" switch on a
 	// Feature. Only the person sets it, and the planning gate reads it live
 	// when the Feature asks to enter implementing; it is never captured in
@@ -381,6 +386,26 @@ type RefusalV2 struct {
 func (r RefusalV2) Error() string { return r.Code + ": " + r.Message }
 
 func RefuseV2(code, message string) error { return RefusalV2{Code: code, Message: message} }
+
+// LeaveDecision keeps an item's link to a decision only while the item still
+// waits on it: the same decision, condition waiting_user, the same owner,
+// and the item open. Otherwise the link is dropped from next — together with
+// a waiting_user that had nothing else to say — and the decision it pointed
+// at is answered, so its caller can withdraw it if it is still open.
+func LeaveDecision(prev ItemV2, next *ItemV2) string {
+	if next.Condition != ConditionWaitingUser || next.Phase.Terminal() || next.OwnerSession != prev.OwnerSession {
+		if next.DecisionID == prev.DecisionID || next.Condition != ConditionWaitingUser {
+			next.DecisionID = ""
+		}
+		if next.Condition == ConditionWaitingUser && next.DecisionID == "" && next.UserAction == "" {
+			next.Condition = ""
+		}
+	}
+	if prev.DecisionID == "" || prev.DecisionID == next.DecisionID {
+		return ""
+	}
+	return prev.DecisionID
+}
 
 func ValidateNewV2(i ItemV2) error {
 	switch {
