@@ -125,9 +125,7 @@ func dispatchCommand(args []string) {
 		dispatchUsage()
 	}
 	o.Claims, o.ClaimsGiven, o.Deliverables = claims.values, claims.set, deliverables.values
-	if len(works.values) > 0 {
-		o.WorkID, o.AlsoWorkIDs = works.values[0], works.values[1:]
-	}
+	o.setWorkIDs(works.values)
 	// The flags are judged before stdin is waited on or the token is read:
 	// a forgotten --title answers at once rather than after a brief.
 	if code := checkDispatchFlags(os.Stderr, o); code != 0 {
@@ -146,6 +144,14 @@ func dispatchCommand(args []string) {
 	os.Exit(dispatchTask(os.Stdout, os.Stderr, b, o, dispatchEnv{
 		getenv: os.Getenv, toplevel: gitToplevel, fresh: freshTask,
 	}))
+}
+
+// setWorkIDs reads every --work-id in order: the first is the task's line,
+// the rest the items the same child carries beside it.
+func (o *dispatchOptions) setWorkIDs(ids []string) {
+	if len(ids) > 0 {
+		o.WorkID, o.AlsoWorkIDs = ids[0], ids[1:]
+	}
 }
 
 func dispatchUsage() {

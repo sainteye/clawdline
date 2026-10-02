@@ -187,3 +187,76 @@ func TestADispatchMayNameABoardItem(t *testing.T) {
 		t.Fatal("the dispatch wrote a v1 item for a Board item")
 	}
 }
+
+// One child may carry several Board items: --work-id repeated. The first stays
+// the task's line; each of the rest is checked as work_id is, and the brief
+// keeps them for a respawn. A list the broker cannot keep whole is refused
+// whole, never trimmed.
+func TestADispatchMayCarrySeveralBoardItems(t *testing.T) {
+	b, ctx, clock := newTodoBroker(t)
+	project := t.TempDir()
+	put := func(id, path string, phase work.Phase) {
+		t.Helper()
+		now := clock.now()
+		it := work.ItemV2{ID: id, ProjectID: "p", ProjectPath: path, Kind: work.KindIssue, Title: "Issue",
+			Description: "Small.", Phase: phase, DeploymentPolicy: work.DeployAgentDecides, CreatedBy: "local",
+			CreatedAt: now, UpdatedAt: now, Cycle: 1, Version: 1}
+		if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error { return tx.CreateItem(it, "local", "{}") }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, second, third := "0b0a0000-0000-4000-8000-0000000003a1", "0b0a0000-0000-4000-8000-0000000003a2",
+		"0b0a0000-0000-4000-8000-0000000003a3"
+	elsewhere, closed, absent := "0b0a0000-0000-4000-8000-0000000003a4", "0b0a0000-0000-4000-8000-0000000003a5",
+		"0b0a0000-0000-4000-8000-0000000003a6"
+	put(first, project, work.PhaseAssigned)
+	put(second, project, work.PhaseImplementing)
+	put(third, project, work.PhaseAssigned)
+	put(elsewhere, t.TempDir(), work.PhaseAssigned)
+	put(closed, project, work.PhaseDone)
+	many := []string{}
+	for i := 0; i <= MaxAlsoWorkIDs; i++ {
+		many = append(many, "0b0a0000-0000-4000-8000-0000000004"+string(rune('0'+i))+"0")
+	}
+	for i, c := range []struct {
+		name string
+		work any
+		also any
+		code string
+	}{
+		{"another project's item", first, []string{elsewhere}, work.RefusedWorkOtherProject},
+		{"a closed item", first, []string{closed}, work.RefusedWorkClosed},
+		{"no such item", first, []string{absent}, "also_work_not_found"},
+		{"work_id again", first, []string{first}, "bad_task"},
+		{"twice", first, []string{second, second}, "bad_task"},
+		{"no work_id", nil, []string{second}, "bad_task"},
+		{"not a list", first, second, "bad_task"},
+		{"too many", first, many, "bad_task"},
+	} {
+		task := "d15a0000-0000-4000-8000-00000000030" + string(rune('0'+i))
+		writeBrief(t, b, task, project, map[string]any{"work_id": c.work, "also_work_ids": c.also})
+		if _, err := b.Dispatch(ctx, DispatchRequest{TaskID: task, Secret: w1Secret}); refusalCode(err) != c.code {
+			t.Fatalf("%s answered %v", c.name, err)
+		}
+	}
+	id := "d15a0000-0000-4000-8000-000000000310"
+	writeBrief(t, b, id, project, map[string]any{"work_id": first, "also_work_ids": []string{second, third}})
+	out, err := b.Dispatch(ctx, DispatchRequest{TaskID: id, Secret: w1Secret})
+	if err != nil {
+		t.Fatalf("a dispatch carrying three items: %v", err)
+	}
+	if out.Record.WorkID != first || len(out.Record.AlsoWorkIDs) != 2 || out.Record.AlsoWorkIDs[0] != second ||
+		out.Record.AlsoWorkIDs[1] != third || out.Record.Brief().AlsoWorkIDs[1] != third {
+		t.Fatalf("the task: %s + %v (brief %v)", out.Record.WorkID, out.Record.AlsoWorkIDs, out.Record.Brief().AlsoWorkIDs)
+	}
+	for _, item := range []string{first, second, third} {
+		var bound []store.BrokerRow
+		if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+			var err error
+			bound, err = tx.Tasks(item)
+			return err
+		}); err != nil || len(bound) != 1 || bound[0].ID != id {
+			t.Fatalf("tasks of %s: %d rows, %v", item, len(bound), err)
+		}
+	}
+}
