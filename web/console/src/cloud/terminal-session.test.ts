@@ -329,3 +329,45 @@ test("a machine terminal-forbidden receipt revokes a previously held lease", asy
   assert.equal(session.snapshot.canType, false)
   session.dispose()
 })
+
+// Offline fault injection on the session side: the receipt was opened, and
+// then either matched no pending request or never arrived at all.
+test("fault injection: a receipt for another request stops at pending_match", async () => {
+  const wire = new Wire()
+  wire.delayed.add("capture")
+  const observation = new TerminalObservation(() => {})
+  const session = new CloudTerminalSession(wire, "stable-tab", observation)
+  try {
+    await session.start()
+    const attaching = session.attach(terminalID)
+    void attaching.catch(() => undefined)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const stray = crypto.randomUUID()
+    wire.emit(wire.latest(), "termr", { v: 1, type: "terminal_receipt", request_id: stray,
+      connection: wire.latest(), operation: "capture", terminal_id: terminalID, status: "ok" })
+    const text = observation.text()
+    assert.match(text.split("\n")[1]!, /^stopped phase=pending_match stage=pending_miss code=request_unknown seq=\d+$/)
+    for (const secret of [stray, wire.latest(), terminalID]) assert.equal(text.includes(secret), false)
+    wire.releaseReplies()
+    await attaching
+  } finally { session.dispose() }
+})
+
+test("fault injection: a receipt that never arrives stops at receipt_timeout", async (t) => {
+  const wire = new Wire()
+  const observation = new TerminalObservation(() => {})
+  const session = new CloudTerminalSession(wire, "stable-tab", observation)
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    wire.delayed.add("history")
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const reading = session.history()
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    t.mock.timers.tick(10_000)
+    await assert.rejects(reading, /terminal_receipt_timeout/)
+    assert.match(observation.text().split("\n")[1]!, /^stopped phase=receipt_timeout stage=receipt_timeout code=- seq=\d+$/)
+    assert.match(observation.text(), /stage=request_pending phase=- conn=1 req=\d+ ch=- op=history/)
+  } finally { t.mock.timers.reset(); session.dispose() }
+})

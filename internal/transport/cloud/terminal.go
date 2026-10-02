@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"strconv"
@@ -39,6 +40,7 @@ const (
 	CloudTerminalHistoryReceiptBytesLimit     = 8 << 10
 	CloudTerminalHistoryLineBytesLimit        = 4 << 10
 	CloudTerminalHistoryCaptureBytesLimit     = 4 << 20
+	CloudTerminalObservationRowsLimit         = 128
 )
 
 // TerminalCapacity reports the terminal rail without exposing its keys or
@@ -135,6 +137,8 @@ type terminalConnection struct {
 	rekeyPending           bool
 	denied                 bool
 	deniedAt               time.Time
+	stageLines             int
+	receiptOps             map[uint64]string
 }
 
 func terminalReceiptSettleID(channel string, seq uint64) string {
@@ -146,6 +150,7 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	var failed *terminalConnection
 	var startRekey *terminalConnection
 	var retireOld *terminalConnection
+	var stage string
 	for _, connection := range l.terminalConnections {
 		if channel == "term/"+l.identity.MachineID+"/"+connection.viewer+"/"+connection.id && connection.framePending && connection.framePendingSeq == seq {
 			connection.framePending = false
@@ -155,6 +160,10 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 			break
 		}
 		if channel == terminalReceiptChannel(l.identity.MachineID, connection) {
+			if operation, ok := connection.receiptOps[seq]; ok {
+				delete(connection.receiptOps, seq)
+				stage = l.terminalStageLocked(connection, "receipt_settled", operation, string(kind))
+			}
 			if kind != adaptercloud.SettleDelivered {
 				failed = connection
 			} else if connection.rekeyReceiptPending && connection.rekeyReceiptSeq == seq {
@@ -180,6 +189,9 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	c := l.terminalRetireAfterReceipt[id]
 	delete(l.terminalRetireAfterReceipt, id)
 	l.terminalMu.Unlock()
+	if stage != "" {
+		l.logf("%s", stage)
+	}
 	if failed != nil {
 		l.closeTerminalConnection(failed)
 	}
@@ -805,11 +817,57 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 		}
 		c.receipts[receipt.RequestID] = data
 	}
+	stage := ""
+	if err == nil {
+		if c.receiptOps == nil {
+			c.receiptOps = map[uint64]string{}
+		}
+		if len(c.receiptOps) < CloudTerminalReceiptsLimit {
+			c.receiptOps[seq] = receipt.Operation
+		}
+		stage = l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status))
+	}
 	l.terminalMu.Unlock()
+	if stage != "" {
+		l.logf("%s", stage)
+	}
 	if err != nil {
 		l.logf("cloud terminal: %s receipt was not accepted for delivery: %v", receipt.Operation, err)
 	}
 	return err
+}
+
+// terminalStageLocked formats one content-free receipt stage, the daemon
+// half of the browser's timeline in terminal-observation.ts. It names only a
+// fixed stage, operation and outcome: no viewer, connection, request,
+// sequence, key or terminal text. A connection writes at most
+// CloudTerminalObservationRowsLimit of them, as the browser keeps at most that many.
+func (l *Link) terminalStageLocked(c *terminalConnection, stage, operation, outcome string) string {
+	if c.stageLines >= CloudTerminalObservationRowsLimit {
+		return ""
+	}
+	c.stageLines++
+	return fmt.Sprintf("cloud terminal stage n=%d stage=%s op=%s outcome=%s",
+		c.stageLines, stage, terminalStageWord(operation), terminalStageWord(outcome))
+}
+
+var terminalStageWordPattern = regexp.MustCompile(`^[a-z_]{1,48}$`)
+
+func terminalStageWord(word string) string {
+	if word == "" {
+		return "-"
+	}
+	if !terminalStageWordPattern.MatchString(word) {
+		return "unrecognized"
+	}
+	return word
+}
+
+func receiptStatus(status string) string {
+	if status == "ok" {
+		return "ok"
+	}
+	return "refused"
 }
 
 func terminalReceiptChannel(machine string, c *terminalConnection) string {
