@@ -36,6 +36,13 @@ def catalog_ids():
     return ids
 
 
+def catalog_sources():
+    source = (ROOT / "internal/domain/squad/builtin_skills.go").read_text()
+    rows = re.findall(r'^\t\{"([a-z-]+)", "[a-z-]+", .*"(https://github\.com/[^"]+)", "[^"]+"\},$', source, re.M)
+    require(len(rows) >= 12, "builtinSkillSpecs was not found")
+    return rows
+
+
 def valid_path(path):
     return (isinstance(path, str) and path and not path.startswith("/")
             and posixpath.normpath(path) == path and not path.startswith("../"))
@@ -46,6 +53,8 @@ def pinned_url(repo, commit, path):
 
 
 def local_references(content, path):
+    # A link inside a fenced example (a sample index, a template) names no file.
+    content = re.sub(r"^```.*?^```", "", content, flags=re.S | re.M)
     links = re.findall(r"\[[^\]]+\]\(([^)\s]+)\)", content)
     links += re.findall(r"`((?:references|assets|scripts)/[\w./-]+\.(?:md|py|sh|js|ts|json))`", content)
     found = set()
@@ -87,7 +96,7 @@ def validate(data):
             prefix = f"{rid}/{candidate.get('name', '?')}"
             require(candidate.get("fit_status") == "fits_bounded_task", f"{prefix}: bounded fit must be explicit")
             require(bool(candidate.get("fits")) and bool(candidate.get("limits")), f"{prefix}: fit and limits are required")
-            require(candidate.get("research_round") in (1, 2), f"{prefix}: research round is required")
+            require(candidate.get("research_round") in (1, 2, 3), f"{prefix}: research round is required")
             repo = candidate.get("source_repository")
             require(isinstance(repo, str) and REPO.fullmatch(repo), f"{prefix}: invalid source repository")
             commit = candidate.get("source_commit")
@@ -134,6 +143,11 @@ def validate(data):
             require(bool(role.get("zero_preview_reason")), f"{rid}: zero preview needs an explicit reason")
         else:
             require(role.get("zero_preview_reason") is None, f"{rid}: zero preview reason contradicts an eligible candidate")
+    by_role = {role["id"]: role for role in roles}
+    for persona, url in catalog_sources():
+        matches = [c for c in by_role.get(persona, {}).get("candidates", []) if c.get("skill_url") == url]
+        require(matches and matches[0]["preview"]["status"] == "eligible_for_manual_preview",
+                f"{persona}: the bundled skill's source {url} is not a reviewed candidate of this role")
     return count, preview_count
 
 
@@ -200,6 +214,7 @@ def self_test(data, fetch=None):
     rejected(lambda d: d["roles"][0]["candidates"][0].__setitem__("skill_url", d["roles"][0]["candidates"][0]["skill_url"].replace(d["roles"][0]["candidates"][0]["source_commit"], "main")), "floating URL")
     rejected(lambda d: d["roles"][0]["candidates"][0].__setitem__("license_url", "https://github.com/other/repo/blob/main/LICENSE"), "wrong license evidence")
     rejected(lambda d: d["roles"][0]["candidates"][0]["preview"].__setitem__("status", "eligible_for_manual_preview"), "open audit preview")
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "code-reviewer")["candidates"].pop(), "bundled skill missing from the ledger")
     if fetch is not None:
         rejected(lambda d: next(r for r in d["roles"] if r["id"] == "accessibility")["candidates"][0]["reference_audit"]["files"].pop(), "omitted real reference", online=True)
 
