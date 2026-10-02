@@ -92,8 +92,8 @@ func TestAChildThatWroteNothingIsRecordedNothingToLandBeforeItsNoticeIsTyped(t *
 	}
 }
 
-// ② The same without a root to tell: the beat records it.
-func TestTheBeatRecordsNothingToLandForAChildWithNoRoot(t *testing.T) {
+// ② The same without a root to tell: settlement records it before the beat.
+func TestSettlementRecordsNothingToLandForAChildWithNoRoot(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	repo := gitRepo(t)
 	id := "e8520000-0000-4000-8000-000000000002"
@@ -101,12 +101,12 @@ func TestTheBeatRecordsNothingToLandForAChildWithNoRoot(t *testing.T) {
 	if _, err := b.Settle(ctx, id, StateFailure, "could not", nil); err != nil {
 		t.Fatal(err)
 	}
-	if l := landingOf(t, b, ctx, id); l.State != LandingPending {
-		t.Fatalf("before the look: %s", l.State)
+	if l := landingOf(t, b, ctx, id); l.State != LandingNothingToLand {
+		t.Fatalf("at settlement: %s, want nothing_to_land", l.State)
 	}
 	b.detectLandings(ctx)
 	if l := landingOf(t, b, ctx, id); l.State != LandingNothingToLand {
-		t.Fatalf("after the look: %s, want nothing_to_land", l.State)
+		t.Fatalf("after the redundant look: %s, want nothing_to_land", l.State)
 	}
 	if said := b.landingDetect.said; said != 0 {
 		t.Errorf("the detector logged %d line(s): %v", said, b.landingDetect.logged)
