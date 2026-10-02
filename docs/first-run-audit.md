@@ -244,6 +244,15 @@ B03（tmux 不在 `PATH`）也會影響 U9 的 Mac app，但算在 U4。
 - **位置**：`next-strings.ts:209` → `CloudGate.tsx:841-846`、`:338`；`web/console/src/legacy/js/net/cloud-boot.js:289`
 - **應該**：說出要去哪裡移除舊裝置，附上連結，至少給一顆「重新檢查」。
 - **紅燈**：`data-cloud-screen="device_limit"` 的卡片裡，要至少有一個可以按的 `<button>` 或 `<a>`。今天一個都沒有。
+- **已修（2026-10-02，尚未上線）**：卡片改由 `web/console/src/cloud/DeviceLimitPanel.tsx`
+  畫，狀態由 `device-limit.ts` 的 `DeviceLimitRun` 驅動。它用還有效的登入票呼叫 `recoveryDevices()`，
+  列出每一台使用中的觀看裝置（名稱、種類、加入時間、上次登入）；每列有「移除」，先在卡片裡問一次
+  （不用瀏覽器的 `confirm()`），確定後呼叫 `revokeRecoveryDevice(id)`，成功就重跑 gate 的
+  `start()`，也就是再送一次 `POST /v1/auth/session`，不用重新整理就接著登入。讀取中、清單是空的、
+  讀取或移除失敗（附原因與「再試一次」）、登入票過期（改成「重新登入」）各有自己的字，而且每一種
+  狀態都至少有一顆按鈕。句子不再印帳號（那時還不知道），方案名稱缺值時不印 `current plan`，
+  上限缺值時不印 `?`。測試：`web/console/src/cloud/device-limit.test.ts`，用真的 `CloudViewerSession`
+  配假 control plane，驗證 `POST 409 → GET recovery → DELETE → POST 201` 的順序。
 
 #### B13〔讀碼〕hosted：機器沒開 Cloud 指令，送出之後才知道，說明也是錯的｜U3
 - **在哪**：打開一個 session，打字，送出。
@@ -928,4 +937,6 @@ B03（tmux 不在 `PATH`）也會影響 U9 的 Mac app，但算在 U4。
 
 ## 7. 已修好但尚未上線的項目（待檢視）
 
-沒有。這一輪只做盤點，沒有改任何產品程式碼；這份報告本身是唯一的變更。
+盤點那一輪沒有改任何產品程式碼。之後修好、還沒上線的：
+
+- B12（觀看裝置滿了是死路）：2026-10-02，見 B12 底下的「已修」。

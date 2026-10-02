@@ -20,6 +20,7 @@ import {
   type CloudMachine,
   type CloudSession,
   type CloudUpdate,
+  type RecoverableCloudSession,
 } from "./copied.js"
 import { CARRY_TABLE } from "./carry.js"
 import { afterForget, forgetMachine, honestyIsOurs, type ForgetOutcome } from "./forget.js"
@@ -37,6 +38,7 @@ import {
   resumePendingPairing,
 } from "./pair-pending.js"
 import { PairPanel, type PairRequest } from "./PairPanel.js"
+import { DeviceLimitPanel } from "./DeviceLimitPanel.js"
 import { readThroughRelay } from "./install.js"
 import { setTerminalHost } from "./terminal-host.js"
 import type { TerminalCloudClient } from "./terminal-transport.js"
@@ -74,9 +76,10 @@ import "./cloud.css"
  * Pairing a machine with this browser happens here too, where a machine this
  * browser cannot read is met: on its row, on a Devices card, on the door of a
  * browser that holds no key yet, and from a machine's own pairing link
- * (`pair.ts`, `PairPanel.tsx`). What the Swift console does at the same points
- * and this does not, yet — recovering a device slot — is said on the screen
- * where it would have happened rather than left as a dead end. Acting on the
+ * (`pair.ts`, `PairPanel.tsx`). So is freeing a viewer-device slot when the
+ * account has none left: the card lists the devices using them and removes one
+ * under the fresh login ticket, then signs in again (`device-limit.ts`,
+ * `DeviceLimitPanel.tsx`). Acting on the
  * machine — sending, answering, starting, ending — goes through the same seam
  * as reading it (`relay-writer.ts`).
  */
@@ -235,7 +238,7 @@ export function CloudGate({ declared }: { declared: string }) {
   const namesRef = useRef(names)
   namesRef.current = names
 
-  const session = useRef<CloudSession | null>(null)
+  const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
   const reader = useRef<RelayReader | null>(null)
@@ -1042,6 +1045,7 @@ export function CloudGate({ declared }: { declared: string }) {
           problem={problem}
           onChoose={choose}
           onRetry={start}
+          recovery={screen.at === "device_limit" ? session.current : null}
           asking={asking}
           forgetting={forgetting}
           forgotten={forgotten}
@@ -1071,6 +1075,8 @@ function GateCard(props: {
   problem: AccessProblem | null
   onChoose: (machine: CloudMachine) => void
   onRetry: () => void
+  /** The session that met the device limit, whose login ticket may still free a slot. */
+  recovery: RecoverableCloudSession | null
   asking: CloudMachine | null
   forgetting: boolean
   forgotten: readonly string[]
@@ -1088,7 +1094,7 @@ function GateCard(props: {
   pairing: Parameters<typeof PairPanel>[0] | null
   onPair: (machine: { id: string; name: string } | null) => void
 }) {
-  const { screen, who, machineList, problem, onChoose, onRetry } = props
+  const { screen, who, machineList, problem, onChoose, onRetry, recovery } = props
   const { asking, forgetting, forgotten, told, reading, onAsk, onForget, onLeave, onCloseMachinePicker } = props
   const { naming, renaming, renamed, onName, onRename, pairing, onPair } = props
   const mark = useRef<HTMLCanvasElement>(null)
@@ -1413,9 +1419,13 @@ function GateCard(props: {
         )
       case "device_limit":
         return (
-          <p className="fine">
-            {nextWord("cloudDeviceLimit", { account: who?.account ?? "", limit: screen.limit ?? "?", tier: screen.tier })}
-          </p>
+          <DeviceLimitPanel
+            session={recovery}
+            tier={screen.tier}
+            limit={screen.limit}
+            onContinue={onRetry}
+            signInLabel={T.webPlanSignIn}
+          />
         )
       case "retrying":
         return (
