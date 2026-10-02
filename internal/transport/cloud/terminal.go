@@ -147,8 +147,6 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 			connection.framePending = false
 			if kind != adaptercloud.SettleDelivered {
 				failed = connection
-			} else {
-				connection.unconfirmedDeadline = time.Time{}
 			}
 			break
 		}
@@ -778,6 +776,11 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 		c.watchReceiptPending = true
 		c.watchReceiptSeq = seq
 		c.watchReceiptDeadline = l.opts.Now().Add(CloudTerminalUnconfirmedSecondsLimit * time.Second)
+	}
+	// A later signed viewer request advances this opening handshake. Relay
+	// delivery of a frame cannot prove browser observation of this receipt.
+	if err == nil && receipt.Status == "ok" && (receipt.Operation == "open" || receipt.Operation == "read" || receipt.Operation == "rekey_connection") {
+		c.unconfirmedDeadline = l.opts.Now().Add(CloudTerminalUnconfirmedSecondsLimit * time.Second)
 	}
 	if err == nil && receipt.Status == "ok" && receipt.Operation == "rekey_connection" && c.rekeyPending {
 		c.rekeyReceiptPending = true
