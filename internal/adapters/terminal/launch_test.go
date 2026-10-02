@@ -84,4 +84,25 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 			t.Errorf("pane inherited %s", key)
 		}
 	}
+	if out, err := exec.Command(bin, "set-environment", "-t", "seed", "CLAUDE_CODE_SESSION_ID", "stale-session").CombinedOutput(); err != nil {
+		t.Fatalf("seed session identity: %v: %s", err, out)
+	}
+	windowOutput := filepath.Join(dir, "window-env")
+	launcher := Launcher{Tmux: &Tmux{Binary: bin}}
+	if _, err := launcher.NewTmuxWindow(ctx, dir, "env > "+windowOutput); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 1500; attempt++ {
+		data, err = os.ReadFile(windowOutput)
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "CLAUDE_CODE_SESSION_ID=") {
+		t.Fatal("new window inherited the existing session's assistant identity")
+	}
 }

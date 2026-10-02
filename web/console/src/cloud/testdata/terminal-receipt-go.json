@@ -1,0 +1,26 @@
+{
+  "content_key": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0A=",
+  "envelope": {
+    "ch": "termr/machine_test/viewer_test/dGVzdC1jb25uZWN0aW9uIQ",
+    "class": "ctl",
+    "ct": "hSN4n9PYNKNZJ2hAOkvoN/O/cHd3pqZK0UMIDLthQw/aDnp8panEBDQfvLOp+95osOp/jYk8v/E/ZnE1xRm8m2Ch4MRMj4mAdFCHwRgG1YQcTl/m86xHylR2jQEc84y9IOH2oScP9RXPzJCsTWAoq8kMyyacay/pr00c4/BDtEuI1aVL5A89Hh+b50rRwe2J92g0v1xltV9onFzuaCFztvB18feVuaFQu00inzHPh3wG70qu3tyGjQ/DrCgrGVH9bQg6qFEv6IAosw7nF/LpczPgkvI=",
+    "key_id": "rk-dGVzdC1jb25uZWN0aW9uIQ",
+    "nonce": "AQIDBAUGBwgJCgsM",
+    "sender": "machine_test",
+    "seq": 17,
+    "sig": "4FFJhX++Jhoy8571ZmjCteftjYOXkX3/GVuAT+RP4ImiIGVxvJPC51Vrw4ZA07OPOjD0573dxAKdrIqyHZc6BA==",
+    "ts": 1790928000000,
+    "v": 1
+  },
+  "plaintext": {
+    "v": 1,
+    "type": "terminal_receipt",
+    "request_id": "22222222-2222-4222-8222-222222222222",
+    "connection": "dGVzdC1jb25uZWN0aW9uIQ",
+    "operation": "capture",
+    "terminal_id": "trm_test",
+    "status": "ok",
+    "result": {}
+  },
+  "sender_key": "ebVWLo/mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ="
+}

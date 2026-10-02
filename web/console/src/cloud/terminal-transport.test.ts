@@ -3,6 +3,9 @@ import test from "node:test"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { TerminalChannelTransport, freshTerminalConnection, type TerminalCloudClient, type TerminalEnvelope } from "./terminal-transport.ts"
 import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
+// @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
+import { TerminalObservation } from "./terminal-observation.ts"
+import goReceipt from "./testdata/terminal-receipt-go.json" with { type: "json" }
 
 const machine = "machine_test"
 const viewer = "viewer_test"
@@ -13,6 +16,8 @@ async function fixture() {
   const events = new Set<(event: { type: string; channels?: string[]; code?: string; error?: { code?: string } }) => void>()
   const published: TerminalEnvelope[] = []
   const observed: unknown[] = []
+  const stages: Array<{ stage: string; code?: string; channel?: string }> = []
+  const observation = new TerminalObservation((row) => stages.push(row))
   let confirm = true
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: sender.privateKey, ready: true, retired: false,
@@ -26,7 +31,7 @@ async function fixture() {
     _receiveEnvelope: async () => undefined,
     events(fn) { events.add(fn); return () => { events.delete(fn) } },
   }
-  const adapter = new TerminalChannelTransport(client, machine)
+  const adapter = new TerminalChannelTransport(client, machine, observation)
   const fresh = freshTerminalConnection()
   const seen: unknown[] = []
   const seal = async (sequence: number, plaintext: unknown, kind: "term" | "termr" = "termr", key = fresh.key): Promise<TerminalEnvelope> => {
@@ -39,7 +44,7 @@ async function fixture() {
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", machineKey.privateKey, envelopeSigningBytes(envelope))))
     return envelope
   }
-  return { adapter, client, fresh, seen, published, observed, seal,
+  return { adapter, client, fresh, seen, published, observed, stages, seal,
     emitRelay: (event: { type: string; error?: { code?: string } }) => events.forEach((fn) => fn(event)),
     setConfirm: (value: boolean) => { confirm = value }, master }
 }
@@ -56,9 +61,52 @@ test("the no-cache receipt is subscribed before an outbound open can be publishe
   await subscribed
   await f.adapter.publishTerminal(request)
   assert.equal(f.published.length, 1)
+  assert.deepEqual(f.stages.map((row) => row.stage), ["subscription_confirmed", "request_sent"])
   assert.deepEqual(JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Bytes(f.published[0]!.nonce) },
     f.master, base64Bytes(f.published[0]!.ct)))), request)
   f.adapter.dispose()
+})
+
+test("a failed signed receipt records its exact receive stage without reaching the session", async () => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  const body = { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(), connection: f.fresh.connection,
+    operation: "capture", terminal_id: "trm_test", status: "ok" }
+  const valid = await f.seal(4, body)
+  const wrongKey = await f.seal(3, body, "termr", crypto.getRandomValues(new Uint8Array(32)))
+  await f.client._receiveEnvelope(wrongKey, false)
+  await f.client._receiveEnvelope(valid, false)
+  const receivedStages = f.stages.filter((row) => row.stage !== "subscription_confirmed")
+  assert.deepEqual(receivedStages.map((row) => row.stage),
+    ["raw_received", "envelope_rejected", "raw_received", "envelope_opened"])
+  assert.equal(receivedStages[1]?.code, "terminal_bad_key")
+  assert.equal(receivedStages[3]?.channel, "termr")
+  assert.equal(f.seen.length, 1)
+  f.adapter.dispose()
+})
+
+test("a Go-sealed terminal receipt passes the browser signature and AES checks", async () => {
+  // Produced with internal/domain/cloud.Seal using fixed synthetic key, seed and nonce.
+  const senderKey = await crypto.subtle.importKey("raw", base64Bytes(goReceipt.sender_key), "Ed25519", false, ["verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt"])
+  const events = new Set<(event: { type: string; channels?: string[] }) => void>()
+  const client: TerminalCloudClient = {
+    deviceID: viewer, devicePrivateKey: null, ready: true, retired: false,
+    nextSequence: async () => 1, socketSubscriptions: new Map(), subscriptionHolds: new Map(),
+    _outboundMachinePairing: async () => ({ masterKey, keyID: "ms-1", senderKey, senderID: machine }),
+    _send: () => undefined,
+    _sendSubscriptionFrame: (_type, channels) => queueMicrotask(() => events.forEach((fn) => fn({ type: "subscriptions", channels }))),
+    _receiveEnvelope: async () => undefined,
+    events(fn) { events.add(fn); return () => { events.delete(fn) } },
+  }
+  const adapter = new TerminalChannelTransport(client, machine)
+  const seen: unknown[] = []
+  const connection = goReceipt.plaintext.connection
+  await adapter.subscribeTerminal(connection, goReceipt.envelope.key_id, base64Bytes(goReceipt.content_key),
+    (event) => seen.push(event))
+  await client._receiveEnvelope(goReceipt.envelope, false)
+  assert.deepEqual((seen[0] as { plaintext: unknown }).plaintext, goReceipt.plaintext)
+  adapter.dispose()
 })
 
 test("the machine signature, viewer route, key and sequence all gate a receipt", async () => {

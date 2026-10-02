@@ -188,6 +188,25 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if !strings.HasPrefix(id, "%") {
 		return "", Failure{Message: "tmux returned no new pane id."}
 	}
+	sessionEnv, err := runTmux(ctx, bin, "show-environment", "-t", id)
+	if err != nil {
+		l.discard(ctx, bin, id)
+		return "", Failure{Message: "tmux could not inspect the new pane's environment: " + err.Error()}
+	}
+	var stale []string
+	for _, line := range strings.Split(sessionEnv, "\n") {
+		name, _, present := strings.Cut(line, "=")
+		if present && assistantIdentityKey(name) && shellVariableName(name) {
+			stale = append(stale, name)
+		}
+	}
+	if len(stale) > 0 {
+		command, err = typedLaunchLine("unset " + strings.Join(stale, " ") + "; " + command)
+		if err != nil {
+			l.discard(ctx, bin, id)
+			return "", err
+		}
+	}
 	// A pane this call made and could not start anything in is closed here,
 	// by the id tmux just gave it: nobody else holds that id, and a shell left
 	// open in a pane nobody recorded is the next spawn's failure (the Swift
@@ -320,6 +339,16 @@ func outsideTmux(env []string) []string {
 func assistantIdentityKey(key string) bool {
 	return key == "CLAUDECODE" || strings.HasPrefix(key, "CLAUDE_CODE_") ||
 		key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID"
+}
+
+func shellVariableName(name string) bool {
+	for _, r := range name {
+		if r == '_' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			continue
+		}
+		return false
+	}
+	return name != ""
 }
 
 // clearTmuxAssistantIdentity removes markers an existing server may already
