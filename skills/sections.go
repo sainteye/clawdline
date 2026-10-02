@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -57,6 +58,29 @@ var sections = []section{
 
 // ErrUnknownSection is a section name this build does not carry.
 var ErrUnknownSection = errors.New("no such section")
+var ErrUnknownRefusal = errors.New("no guide part for refusal code")
+var refusalCode = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// RefusedSection finds the part that explains a refusal. Earlier, specific
+// parts own a code even if the core or the final refusal summary mentions it.
+func RefusedSection(lang, code string) (string, []byte, error) {
+	if !refusalCode.MatchString(code) {
+		return "", nil, fmt.Errorf("%w %q", ErrUnknownRefusal, code)
+	}
+	_, parts, err := guideParts(lang)
+	if err != nil {
+		return "", nil, err
+	}
+	codePattern := regexp.MustCompile(`(^|[^a-z0-9_])` + code + `([^a-z0-9_]|$)`)
+	for _, name := range []string{"feature-root", "dispatch", "running", "landing", "schedule", "board", "epic", "send", "notify", "note", "coordination", "cloud", "project", "connect", "report", "roles", "refused"} {
+		for i, s := range sections {
+			if s.Name == name && codePattern.Match(parts[i]) {
+				return name, parts[i], nil
+			}
+		}
+	}
+	return "", nil, fmt.Errorf("%w %q", ErrUnknownRefusal, code)
+}
 
 // SectionNames lists every section, in the guide's order.
 func SectionNames() []string {

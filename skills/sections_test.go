@@ -3,9 +3,89 @@ package skills
 import (
 	"bytes"
 	"errors"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
+
+// Commands and flags are a language-neutral contract in the two guides.
+func TestGuideCommandsAndFlagsStayInSync(t *testing.T) {
+	command := regexp.MustCompile(`clawdline [a-z][a-z-]*(?: [a-z][a-z-]*)?`)
+	flag := regexp.MustCompile(`--[a-z][a-z-]*`)
+	collect := func(lang string) (commands, flags []string) {
+		guide, err := Guide(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		guide = []byte(strings.ReplaceAll(string(guide), "clawdline guide zh-TW", "clawdline guide"))
+		for _, spec := range []struct {
+			re  *regexp.Regexp
+			out *[]string
+		}{{command, &commands}, {flag, &flags}} {
+			seen := map[string]bool{}
+			for _, match := range spec.re.FindAllString(string(guide), -1) {
+				seen[match] = true
+			}
+			for match := range seen {
+				*spec.out = append(*spec.out, match)
+			}
+			sort.Strings(*spec.out)
+		}
+		return
+	}
+	ec, ef := collect("en")
+	zc, zf := collect("zh-TW")
+	if strings.Join(ec, "\n") != strings.Join(zc, "\n") {
+		t.Errorf("command/subcommand mismatch:\nen=%v\nzh-TW=%v", ec, zc)
+	}
+	if strings.Join(ef, "\n") != strings.Join(zf, "\n") {
+		t.Errorf("flag mismatch:\nen=%v\nzh-TW=%v", ef, zf)
+	}
+}
+
+func TestCoreCarriesCurlAuthenticationAndContentType(t *testing.T) {
+	for _, lang := range Topics() {
+		core, err := Core(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"orchestrator-token", "X-Clawdline-Orchestrator", "Content-Type: application/json", "--fail-with-body"} {
+			if !bytes.Contains(core, []byte(want)) {
+				t.Errorf("%s core missing %q", lang, want)
+			}
+		}
+	}
+}
+
+func TestRefusalCodesFindTheirOwningPart(t *testing.T) {
+	for _, lang := range Topics() {
+		for code, want := range map[string]string{"steps_incomplete": "feature-root", "unsupported_media_type": "cloud", "stale_inventory": "dispatch"} {
+			name, part, err := RefusedSection(lang, code)
+			if err != nil || name != want || !bytes.Contains(part, []byte(code)) {
+				t.Errorf("%s %s: part=%s err=%v", lang, code, name, err)
+			}
+		}
+	}
+	if _, _, err := RefusedSection("en", "missing_code_123"); !errors.Is(err, ErrUnknownRefusal) {
+		t.Errorf("unknown code: %v", err)
+	}
+}
+
+func TestGuideUsesOneOutwardNameForEachConcept(t *testing.T) {
+	for _, lang := range Topics() {
+		guide, err := Guide(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(guide)
+		for _, term := range []string{"**step**", "**writes**", "**assignment**", "**part**"} {
+			if !strings.Contains(text, term) {
+				t.Errorf("%s missing terminology %s", lang, term)
+			}
+		}
+	}
+}
 
 // Both guides cut into the same nineteen parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts

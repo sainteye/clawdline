@@ -6,7 +6,12 @@ build that printed this guide, and a test fails when one is not. Print it again 
 `clawdline guide` rather than trusting a copy; `clawdline guide zh-TW` is the same guide in
 Traditional Chinese. `clawdline guide` prints the core and names the other parts; print a part
 (`clawdline guide dispatch`) when you reach the work it covers, or `clawdline guide all` for
-everything.
+the full text. A named part starts with `guide-version: <sha256>`; pass `--since <hash>` to
+`clawdline guide <part>` to receive one `unchanged <hash>` line when that part is identical.
+Use `clawdline guide refused <code>` to print the part that explains a refusal.
+
+In this guide, **step** means one checklist entry on an item, **writes** means paths a task
+may change, **assignment** means who owns the work, and **part** means one named guide section.
 
 ## 0. If you learned Clawdline from the Swift app, read this first
 
@@ -90,6 +95,13 @@ ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_
 `transcript_unreadable` — never an empty total; an id nobody knows is 404 `unknown_session`,
 `unknown_task` or `unknown_item`. Whether the ledger is still reading is `usage` in
 `/v1/diagnostics`.
+
+**Curl to an orchestrator route.** Read `<state dir>/orchestrator-token` and send it in the
+`X-Clawdline-Orchestrator` header. Keep the token out of command arguments: use
+`DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"`, then
+`-H @<(printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")")`.
+Use `curl --fail-with-body`; every POST with a JSON body also needs
+`-H 'Content-Type: application/json'` (otherwise `415 unsupported_media_type`).
 
 ### Pair a Cloud browser
 

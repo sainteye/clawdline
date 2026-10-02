@@ -7,6 +7,13 @@
 少了一條，就會有測試失敗。要看請重新執行 `clawdline guide zh-TW`（英文版是 `clawdline guide`），
 不要相信手上的副本。`clawdline guide zh-TW` 只印每個 session 都需要的核心，並列出其他部分；做到某一
 部分的工作時再印那一部分（`clawdline guide zh-TW dispatch`），要全文用 `clawdline guide zh-TW all`。
+具名部分以 `guide-version: <sha256>` 開頭；再用 `clawdline guide zh-TW <part> --since <hash>`
+讀取時，內容未變只會回一行 `unchanged <hash>`。收到拒絕碼可執行
+`clawdline guide zh-TW refused <code>`，直接印出說明該拒絕的部分。
+這份指南統一稱項目清單的一列為 **step**、任務可改的路徑為 **writes**、工作歸屬為
+**assignment**、一段具名指南為 **part**。
+英文版對應指令是 `clawdline guide all`、`clawdline guide dispatch`、
+`clawdline guide feature-root` 和 `clawdline guide running`。
 
 ## 0. 如果你是從 Swift app 學會 Clawdline 的，先讀這段
 
@@ -83,6 +90,13 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原因：`not_yet_read`、`transcript_missing`
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
+
+**用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
+`X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
+`DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"`，再使用
+`-H @<(printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")")`。
+使用 `curl --fail-with-body`；帶 JSON body 的 POST 還要加
+`-H 'Content-Type: application/json'`（否則回 `415 unsupported_media_type`）。
 
 ### 配對一個 Cloud 瀏覽器
 
@@ -403,6 +417,7 @@ POST /v1/orchestrator/tasks
 
 body 從 stdin 送（`jq -n … | curl --data-binary @- -H 'Content-Type: application/json' …`），secret
 才不會出現在 argv 裡。
+使用 `clawdline dispatch --task-id <uuid>` 重送同一筆派工時，保留原本的 id 與內容。
 回應是 `{ok, task, warnings?}`。要讀 `warnings`：`claims_overlap`、`claims_missing`、
 `claims_ignored_for_worktree`、`dirty_worktree_base`。同一個 id 再 POST 一次，會回之前存下的 task 並帶
 `replayed: true`，所以重試是安全的。
@@ -935,7 +950,10 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規劃沿用一般 Merge 驗證；只開驗證會跳過規劃，
 但仍檢查固定候選提交；兩者皆關走一般流程。使用者不必在看板填寫驗收條件。受 gate 約束的項目若尚無
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
-寫入可觀察的 Markdown 條件。負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
+寫入可觀察的 Markdown 條件。若人明確要求修改已寫入的驗收條件，用
+`clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`；
+先用 `clawdline item steps <id>` 讀版本，並只根據該訊息提出的修改內容重寫完整文件。
+負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
 owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
 
 本輪驗證 gate 開啟時，先在已 commit、乾淨且登記過的 worktree 執行

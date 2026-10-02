@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -35,20 +36,29 @@ func guideCommand(args []string) {
 // `clawdline guide child` is the protocol every dispatched child follows,
 // which its CHILD.md points at instead of carrying (orchestrator.ChildGuide).
 func printGuide(stdout, stderr io.Writer, args []string) int {
-	const usage = "usage: clawdline guide [lang] [part|all] | clawdline guide child | clawdline guide -list | clawdline guide -sections"
+	const usage = "usage: clawdline guide [lang] [part|all|refused <code>] [--since <hash>] | clawdline guide child | clawdline guide -list | clawdline guide -sections"
+	var since string
+	if len(args) >= 2 && args[len(args)-2] == "--since" {
+		since = args[len(args)-1]
+		args = args[:len(args)-2]
+		if len(since) != 64 || strings.Trim(since, "0123456789abcdef") != "" {
+			fmt.Fprintln(stderr, usage)
+			return 2
+		}
+	}
 	switch {
-	case len(args) == 1 && args[0] == orchestrator.ChildGuideTopic:
+	case len(args) == 1 && args[0] == orchestrator.ChildGuideTopic && since == "":
 		fmt.Fprint(stdout, orchestrator.ChildGuide())
 		return 0
-	case len(args) > 2:
+	case len(args) > 3:
 		fmt.Fprintln(stderr, usage)
 		return 2
-	case len(args) == 1 && (args[0] == "-list" || args[0] == "--list"):
+	case len(args) == 1 && since == "" && (args[0] == "-list" || args[0] == "--list"):
 		for _, t := range skills.Topics() {
 			fmt.Fprintln(stdout, t)
 		}
 		return 0
-	case len(args) == 1 && (args[0] == "-sections" || args[0] == "--sections"):
+	case len(args) == 1 && since == "" && (args[0] == "-sections" || args[0] == "--sections"):
 		for _, name := range skills.SectionNames() {
 			fmt.Fprintln(stdout, name)
 		}
@@ -61,6 +71,16 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 		}
 	}
 	lang, part := "", ""
+	refused := false
+	code := ""
+	if len(args) == 2 && args[0] == "refused" {
+		refused, code, args = true, args[1], nil
+	} else if len(args) == 3 && args[1] == "refused" {
+		lang, refused, code, args = args[0], true, args[2], nil
+	} else if len(args) == 3 {
+		fmt.Fprintln(stderr, usage)
+		return 2
+	}
 	switch len(args) {
 	case 1:
 		if isLanguage(args[0]) {
@@ -73,10 +93,12 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 	}
 	var text []byte
 	var err error
-	switch part {
-	case "":
+	switch {
+	case refused:
+		_, text, err = skills.RefusedSection(lang, code)
+	case part == "":
 		text, err = skills.Core(lang)
-	case "all":
+	case part == "all":
 		text, err = skills.Guide(lang)
 	default:
 		text, err = skills.Section(lang, part)
@@ -84,6 +106,17 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 	if err != nil {
 		fmt.Fprintln(stderr, "clawdline guide:", err)
 		return 1
+	}
+	if part != "" || refused {
+		hash := fmt.Sprintf("%x", sha256.Sum256(text))
+		if since == hash {
+			fmt.Fprintf(stdout, "unchanged %s\n", hash)
+			return 0
+		}
+		fmt.Fprintf(stdout, "guide-version: %s\n", hash)
+	} else if since != "" {
+		fmt.Fprintln(stderr, usage)
+		return 2
 	}
 	_, _ = stdout.Write(text)
 	return 0

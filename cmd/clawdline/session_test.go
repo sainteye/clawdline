@@ -312,7 +312,7 @@ func TestGuidePrints(t *testing.T) {
 		t.Fatalf("all: exit %d, %d bytes against a core of %d", code, out.Len(), core)
 	}
 	out.Reset()
-	if code := printGuide(&out, &errs, []string{"zh-TW", "board"}); code != 0 || !strings.HasPrefix(out.String(), "## 10.") {
+	if code := printGuide(&out, &errs, []string{"zh-TW", "board"}); code != 0 || !strings.Contains(out.String(), "\n## 10.") {
 		t.Fatalf("zh-TW board: exit %d: %.20q", code, out.String())
 	}
 	out.Reset()
@@ -339,6 +339,30 @@ func TestGuidePrints(t *testing.T) {
 	if code := printGuide(&out, &errs, []string{"child"}); code != 0 ||
 		!strings.HasPrefix(out.String(), "# How a Clawdline child works") || !strings.Contains(out.String(), "result.json") {
 		t.Fatalf("child: exit %d: %.60q", code, out.String())
+	}
+}
+
+func TestGuideVersionAndRefusalLookup(t *testing.T) {
+	var out, errs bytes.Buffer
+	if code := printGuide(&out, &errs, []string{"refused", "steps_incomplete"}); code != 0 || !strings.Contains(out.String(), "## 2a.") {
+		t.Fatalf("refusal lookup: %d %q %q", code, out.String(), errs.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-TW", "board"}); code != 0 {
+		t.Fatal(code, errs.String())
+	}
+	first := strings.SplitN(out.String(), "\n", 2)[0]
+	if !strings.HasPrefix(first, "guide-version: ") {
+		t.Fatal(first)
+	}
+	hash := strings.TrimPrefix(first, "guide-version: ")
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-TW", "board", "--since", hash}); code != 0 || out.String() != "unchanged "+hash+"\n" {
+		t.Fatalf("since: %d %q %q", code, out.String(), errs.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"refused", "not_a_real_refusal"}); code != 1 || out.Len() != 0 {
+		t.Fatalf("unknown refusal: %d %q", code, out.String())
 	}
 }
 
