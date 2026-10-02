@@ -614,6 +614,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkStepsPerItem: func() capacity.Reading {
 			return s.workV2CapacityReading("steps_per_item")
 		},
+		capacity.WorkRootLandingsPerItem: func() capacity.Reading {
+			return s.workV2CapacityReading("root_landings_per_item")
+		},
 		capacity.SessionDirectTodos: func() capacity.Reading {
 			return s.workV2CapacityReading("direct_todos")
 		},

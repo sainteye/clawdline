@@ -2186,9 +2186,10 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
       UNION ALL SELECT SUM(byte_count) n FROM session_direct_todo_images GROUP BY todo_id)`,
 		"image_bytes_total": `SELECT COALESCE(SUM(byte_count),0) FROM (
       SELECT byte_count FROM work_v2_images UNION ALL SELECT byte_count FROM session_direct_todo_images)`,
-		"steps_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
-		"direct_todos":   `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
-		"proposals":      `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
+		"steps_per_item":         `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
+		"direct_todos":           `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
+		"proposals":              `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
+		"root_landings_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM broker_root_landings GROUP BY work_id)`,
 	}
 	for name, query := range queries {
 		var n int64

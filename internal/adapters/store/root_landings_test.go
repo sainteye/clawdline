@@ -55,4 +55,9 @@ func TestRootLandingsAreOneRowEachAndBounded(t *testing.T) {
 	if !kept {
 		t.Fatalf("the first landing is gone from %+v", rows)
 	}
+	// The capacity register reads the fullest item.
+	counts, err := s.WorkV2CapacityCounts(ctx)
+	if err != nil || counts["root_landings_per_item"] != WorkV2RootLandingLimit {
+		t.Fatalf("root landings per item = %d %v", counts["root_landings_per_item"], err)
+	}
 }

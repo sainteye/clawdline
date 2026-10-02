@@ -104,6 +104,9 @@ func newLandingBoard(t *testing.T) *landingBoard {
 	s.workV2().GateSettings = func(context.Context) (app.WorkV2GateSettings, error) {
 		return app.WorkV2GateSettings{}, nil
 	}
+	// The Project readers are kept per state directory; paneServer leaves it
+	// empty, the key every other pane test shares, so this fixture gets its own.
+	s.cfg.Dir = s.broker.Dir
 	s.projectReaders().places.Fixture = []string{project, nested}
 	b := &landingBoard{s: s, p: p, project: project, nested: nested}
 	projectID := ""
