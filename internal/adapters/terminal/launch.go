@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
@@ -113,6 +114,41 @@ func (l Launcher) NewTmuxWindow(ctx context.Context, cwd, command string) (strin
 func (l Launcher) NewTmuxSession(ctx context.Context, cwd, name, command string) (string, error) {
 	return l.openPane(ctx, []string{"new-session", "-d", "-s", name, "-P", "-F", "#{pane_id}"}, cwd, command,
 		"tmux would not start a server.")
+}
+
+// viewerOptions are the per-session options a tmux session shown in an iTerm2
+// tab is given: the wheel scrolls tmux's history in the tab, rather than
+// iTerm2's scrollback, which under an attached client holds only redraws.
+// Each is set on that one session with `set-option -t`; the person's global
+// options and every other session are left as they are.
+var viewerOptions = [][2]string{{"mouse", "on"}}
+
+// PrepareTmuxViewer sets the session called name up to be shown in a terminal
+// tab and answers the line that tab runs: `exec <tmux> attach -t '=name'`, the
+// absolute tmux this daemon runs, so the tab's shell finds it whatever its
+// PATH, and `exec`, so the tab closes when the session ends.
+//
+// An option that would not set is logged and is not a failure: the session
+// is as usable without it. No tmux to name is a failure, since the line would
+// attach to nothing.
+func (l Launcher) PrepareTmuxViewer(ctx context.Context, name string) (string, error) {
+	if name == "" {
+		return "", Failure{Message: "a viewer needs the name of the tmux session it shows."}
+	}
+	bin := l.binary()
+	if bin == "" {
+		return "", Failure{Message: "tmux is not installed."}
+	}
+	// `=name:` and not `=name`: `set-option -t` reads its target as a pane,
+	// and tmux 3.6a answered `-t =name` with "no such session" for a session
+	// that existed. The colon makes it the session's current pane, and `=`
+	// still matches the name exactly rather than as a prefix.
+	for _, o := range viewerOptions {
+		if _, err := runTmux(ctx, bin, "set-option", "-t", "="+name+":", o[0], o[1]); err != nil {
+			log.Printf("tmux: %s was not set to %s on session %s: %v", o[0], o[1], name, err)
+		}
+	}
+	return "exec " + projects.ShellQuoted(bin) + " attach -t " + projects.ShellQuoted("="+name), nil
 }
 
 // openPane is Tmux.openPane: make the pane with no command, so tmux gives it

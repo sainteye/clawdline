@@ -60,6 +60,9 @@ const ownWords = {
     settingsDefaultModelHint:
       "Used only when Clawdline opens a new session without another model choice. A child agent or one session may still choose its own model.",
     settingsProviderDefault: "Assistant default",
+    settingsITermNative: "iTerm2 (native tab)",
+    settingsSessionTerminalHint:
+      "A different question from where the hotkey works, above. Automatic uses iTerm2 while it is open and tmux while it is not. Choosing iTerm2 names iTerm2: when it is closed the start is refused, even with a tmux server running. With tmux installed, both open the session in its own tmux session and show it in an iTerm2 tab, so reading and typing never wait on iTerm2. iTerm2 (native tab) runs the session in the tab itself, as before. tmux always opens in a tmux server, even with iTerm2 open. The next session follows this; nothing needs restarting.",
   },
   "zh-Hant": {
     settingsRemoteHint:
@@ -99,6 +102,9 @@ const ownWords = {
     settingsDefaultModelHint:
       "只在 Clawdline 開新 session、而且沒有另外指定模型時套用；child agent 或單一 session 另外指定的模型仍然優先。",
     settingsProviderDefault: "由助理決定",
+    settingsITermNative: "iTerm2（原生分頁）",
+    settingsSessionTerminalHint:
+      "跟上面熱鍵在哪裡生效是兩回事。自動是 iTerm2 開著就用它、沒開就走 tmux；選 iTerm2 就是指名要 iTerm2，旁邊有跑著的 tmux server 也不算答案，iTerm2 關著就直接拒絕。有裝 tmux 的話，這兩種都會把 session 開在它自己的 tmux session 裡，再用一個 iTerm2 分頁顯示它，讀畫面和打字就不必等 iTerm2。iTerm2（原生分頁）則跟以前一樣，直接在分頁裡跑。選 tmux 則是就算 iTerm2 開著也一律開在 tmux server 裡。下一個開的 session 就會照這個走，不用重開 app。",
   },
 } as const
 
@@ -124,7 +130,10 @@ export const W = {
   settingsScopeGlobal: "所有 app",
   settingsScopeHint: "留空就是到處都能按，所以把最後一個移掉，上面那個開關就會自己打開——再把它關掉，清單就回來了。設定檔裡存的是 bundle id，自己手動編輯的清單一樣有效。",
   settingsSessionTerminal: "新 session 開在",
-  settingsSessionTerminalHint: "跟上面熱鍵在哪裡生效是兩回事。自動是 iTerm2 開著就用它、沒開就走 tmux；選 iTerm2 就是指名要 iTerm2，旁邊有跑著的 tmux server 也不算答案，iTerm2 關著就直接拒絕；選 tmux 則是就算 iTerm2 開著也一律開在 tmux server 裡。下一個開的 session 就會照這個走，不用重開 app。",
+  // This build's own since 2026-10-02 (ownWords): the Swift app's sentence did
+  // not have a viewer tab or a native one to tell apart.
+  settingsSessionTerminalHint: ownWord("settingsSessionTerminalHint"),
+  settingsITermNative: ownWord("settingsITermNative"),
   settingsScopeAdd: "加入 app……",
   settingsScopeChoose: "選擇其他 app……",
   settingsScopeRunning: "現在開著的",

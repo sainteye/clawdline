@@ -208,6 +208,11 @@ func TestSettingsRoute(t *testing.T) {
 	if rec.Code != http.StatusOK || snap.Hotkey == nil || *snap.Hotkey != "cmd+shift+k" || snap.ScopeApp == nil || *snap.ScopeApp != "" {
 		t.Fatalf("second write: %d %s", rec.Code, rec.Body)
 	}
+	// The way back to the native iTerm2 tab is a value the route takes.
+	rec, snap, _ = settingsCall(t, s, http.MethodPost, "application/json", `{"terminal":"iterm_native"}`)
+	if rec.Code != http.StatusOK || snap.Terminal == nil || *snap.Terminal != "iterm_native" {
+		t.Fatalf("iterm_native: %d %s", rec.Code, rec.Body)
+	}
 
 	// A file somebody broke by hand is refused and left as it was.
 	broken := []byte(`{"hotkey": "cmd+shift+k",`)

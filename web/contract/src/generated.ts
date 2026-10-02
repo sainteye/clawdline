@@ -6263,7 +6263,7 @@ export interface SettingsRequest {
   smart_notifications: boolean | null
 
   /**
-   * `auto`, `iterm` or `tmux`.
+   * `auto`, `iterm`, `iterm_native` or `tmux`.
    */
   terminal: string | null
 
@@ -6509,7 +6509,9 @@ export interface SettingsSnapshot {
   smart_notifications: boolean | null
 
   /**
-   * Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as
+   * Where a new session opens: `auto`, `iterm`, `iterm_native` or `tmux`. With tmux
+   * installed, `auto` and `iterm` run the session in tmux and show it in an iTerm2
+   * tab; `iterm_native` runs it in the tab itself. Not the same question as
    * scope_app.
    */
   terminal: string | null

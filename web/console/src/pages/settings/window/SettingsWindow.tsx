@@ -388,6 +388,7 @@ export function SettingsWindow() {
               options={[
                 { label: W.settingsAuto, value: "auto" },
                 { label: "iTerm2", value: "iterm" },
+                { label: W.settingsITermNative, value: "iterm_native" },
                 { label: "tmux", value: "tmux" },
               ]}
               onPick={pick("terminal")}

@@ -41,7 +41,7 @@
           "type": "string"
         },
         "terminal": {
-          "description": "Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as scope_app.",
+          "description": "Where a new session opens: `auto`, `iterm`, `iterm_native` or `tmux`. With tmux installed, `auto` and `iterm` run the session in tmux and show it in an iTerm2 tab; `iterm_native` runs it in the tab itself. Not the same question as scope_app.",
           "nullable": true,
           "type": "string"
         },
@@ -267,7 +267,7 @@
           "type": "string"
         },
         "terminal": {
-          "description": "`auto`, `iterm` or `tmux`.",
+          "description": "`auto`, `iterm`, `iterm_native` or `tmux`.",
           "nullable": true,
           "type": "string"
         },

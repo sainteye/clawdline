@@ -10,6 +10,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/tmuxview"
 )
 
 type preparedSquadLaunch struct {
@@ -85,6 +86,10 @@ func (s Starter) openSquadTerminal(ctx context.Context, place projects.Place, mo
 	case projects.PlanITerm:
 		result.ID, err = s.Launcher.NewITermTab(ctx, "cd "+projects.ShellQuoted(place.Path)+" && "+command)
 		result.Backend = "iterm"
+	case projects.PlanITermTmux:
+		var opened tmuxview.Opened
+		opened, err = tmuxview.Open(ctx, s.Launcher, place.Path, tmuxview.SessionName("session"), command)
+		result.ID, result.Backend, result.Attach = opened.PaneID, tmuxview.Backend, opened.Attach
 	case projects.PlanTmux:
 		result.ID, err = s.Launcher.NewTmuxWindow(ctx, place.Path, command)
 		result.Backend = "tmux"

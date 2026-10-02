@@ -5247,7 +5247,7 @@ type SettingsRequest struct {
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
 
-	// `auto`, `iterm` or `tmux`.
+	// `auto`, `iterm`, `iterm_native` or `tmux`.
 	Terminal *string `json:"terminal"`
 
 	// Whether future execution cycles capture independent verification. Null leaves
@@ -5402,7 +5402,9 @@ type SettingsSnapshot struct {
 	// Have a model write the sentence a notification carries.
 	SmartNotifications *bool `json:"smart_notifications"`
 
-	// Where a new session opens: `auto`, `iterm` or `tmux`. Not the same question as
+	// Where a new session opens: `auto`, `iterm`, `iterm_native` or `tmux`. With tmux
+	// installed, `auto` and `iterm` run the session in tmux and show it in an iTerm2
+	// tab; `iterm_native` runs it in the tab itself. Not the same question as
 	// scope_app.
 	Terminal *string `json:"terminal"`
 

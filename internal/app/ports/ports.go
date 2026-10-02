@@ -198,6 +198,9 @@ type Launcher interface {
 	// NewTmuxSession starts a server with a detached session named name, the
 	// same way. The answer is the pane id.
 	NewTmuxSession(ctx context.Context, cwd, name, command string) (string, error)
+	// PrepareTmuxViewer sets the session called name up to be shown in a tab
+	// and answers the line that tab runs to attach to it, and to nothing else.
+	PrepareTmuxViewer(ctx context.Context, name string) (string, error)
 	// CloseTmuxSession closes the session called name only while paneID is
 	// one of its panes, and answers whether it closed anything. The pane is
 	// the proof of ownership: a name alone is not.

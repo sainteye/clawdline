@@ -27,6 +27,9 @@ func (l oneTmuxPane) NewITermTab(context.Context, string) (string, error) {
 func (l oneTmuxPane) NewTmuxWindow(context.Context, string, string) (string, error) {
 	return l.pane, nil
 }
+func (l oneTmuxPane) PrepareTmuxViewer(context.Context, string) (string, error) {
+	return "", errors.New("no viewer")
+}
 func (l oneTmuxPane) NewTmuxSession(context.Context, string, string, string) (string, error) {
 	return l.pane, nil
 }
