@@ -60,7 +60,8 @@ test("a reported turn reads 本輪已回報 until an owned item awaits acceptanc
     acceptance,
   })
   assert.equal(sessionWorkLabel(reported({ state: "none" })), "本輪已回報")
-  assert.equal(sessionWorkLabel(reported(undefined)), "本輪已回報")
+  // A daemon that sends no answer has not said there is none.
+  assert.equal(sessionWorkLabel(reported(undefined)), "本輪已回報 · 讀不到是否有待驗收項目")
   assert.equal(sessionWorkLabel(reported({ state: "pending", work_id: "w", title: "Ship it", phase: "deploying", count: 1 })), "待驗收 · Ship it")
   assert.equal(sessionWorkLabel(reported({ state: "pending", work_id: "w", title: "Ship it", phase: "done", count: 3 })), "待驗收 · Ship it · 共 3 項")
   assert.equal(sessionWorkLabel(reported({ state: "unknown" })), "本輪已回報 · 讀不到是否有待驗收項目")

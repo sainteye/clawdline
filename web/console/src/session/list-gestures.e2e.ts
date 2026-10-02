@@ -195,6 +195,8 @@ function rows(): Row[] {
       })),
       row(BLOCKED, "Reported", blockedCloseability(), 200, reported({ state: "none" })),
       row(UNKNOWN, "Unreadable", unknownCloseability(), 100, reported({ state: "unknown" })),
+      // A daemon from before the field: a report with no answer is not an answer of none.
+      row(SPARE, "Older daemon", safeCloseability(), 50, reported(undefined)),
     ]
   }
   if (readingScenario.startsWith("status-")) {
@@ -2445,19 +2447,24 @@ test("a reported turn says awaiting acceptance only for an unopened deployed ite
     readingScenario = "acceptance"
     try {
       await tab.go("/")
-      await tab.until("the three reported rows arrive", (s) => s.order.length === 3)
+      await tab.until("the four reported rows arrive", (s) => s.order.length === 4)
       const measured = await tab.run(`(() => [...document.querySelectorAll("#rows > li.row")].map((li) => {
         const completion = li.querySelector(".session-work-completion")
         const copy = completion && completion.querySelector(".session-work-copy")
         const state = li.querySelector(".state")
         return {
+          id: li.dataset.id,
           acceptance: completion && completion.dataset.acceptance,
           text: copy && copy.textContent,
           fits: !!state && state.scrollWidth <= state.clientWidth,
         }
       }))()`)
-      const by = Object.fromEntries(measured.map((m: { acceptance: string }) => [m.acceptance, m]))
-      assert.deepEqual(Object.keys(by).sort(), ["none", "pending", "unknown"], JSON.stringify(measured))
+      type Seen = { id: string; acceptance: string; text: string; fits: boolean }
+      const of = (id: string) => (measured as Seen[]).find((m) => m.id === id) as Seen
+      const by = { pending: of(SAFE), none: of(BLOCKED), unknown: of(UNKNOWN), older: of(SPARE) }
+      assert.deepEqual([by.pending.acceptance, by.none.acceptance, by.unknown.acceptance, by.older.acceptance],
+        ["pending", "none", "unknown", "unknown"], JSON.stringify(measured))
+      assert.equal(by.older.text, by.unknown.text, "a report without the field reads as unread, not as none")
       assert.match(by.pending.text, /A deployed Board item/, "the awaiting item is named")
       assert.doesNotMatch(by.none.text, /A deployed Board item/, "a report with nothing awaiting names no item")
       assert.notEqual(by.unknown.text, by.none.text, "an unread Board is not shown as nothing awaiting")

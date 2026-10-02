@@ -397,7 +397,8 @@ export function owedBadgeHTML(s) {
  *  the server names a Board item of that Session that reached deploying or done and the person
  *  has not opened since: then it reads "awaiting acceptance" with that item's title. A Board the
  *  server could not read says so beside the report; it is never shown as nothing awaiting.
- *  `acceptance` is "pending", "none", "unknown", or "" when the receipt is not a Session's own. */
+ *  `acceptance` is "pending", "none", "unknown", or "" when the receipt is not a Session's own;
+ *  a Session's report without the field is "unknown", never "none". */
 export function sessionReceiptCopy(s, state) {
     var disposition = (s && s.disposition) || {};
     var own = disposition.scope === "session";
@@ -408,12 +409,14 @@ export function sessionReceiptCopy(s, state) {
         var more = acceptance.count > 1 ? " · " + fill(T.sessionWorkAwaitingMore, { n: acceptance.count }) : "";
         return { label: T.sessionWorkAwaitingAcceptance, detail: acceptance.title + more, acceptance: kind };
     }
-    if (kind === "pending") kind = "unknown";
+    // A pending answer that names nothing, or a Session's report with no answer at all (a
+    // daemon from before the field), is a reading that did not happen, not a reading of none.
+    if (own && kind !== "none") kind = "unknown";
     var label = state === "work_complete" ? T.sessionWorkComplete
         : own ? T.sessionWorkReported : T.sessionWorkMilestone;
     var detail = disposition.title || "";
     if (kind === "unknown") detail = (detail ? detail + " · " : "") + T.sessionWorkAcceptanceUnknown;
-    return { label: label, detail: detail, acceptance: own ? (kind || "none") : "" };
+    return { label: label, detail: detail, acceptance: kind };
 }
 
 /** Check glyphs are CSS strokes, not a platform emoji. The quiet states carry their meaning in

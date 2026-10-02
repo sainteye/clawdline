@@ -187,8 +187,10 @@ func TestReportedTurnSaysWhichBoardItemAwaitsAcceptance(t *testing.T) {
 		s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/items/"+item.ID+"/seen", body, ""))
 		return rec.Code, rec.Body.String()
 	}
-	if code, body := seen(`{"phase":"later"}`); code != http.StatusBadRequest {
-		t.Fatalf("an unnamed phase: %d %s", code, body)
+	for _, phase := range []string{"later", "implementing", "cancelled"} {
+		if code, body := seen(`{"phase":"` + phase + `"}`); code != http.StatusBadRequest {
+			t.Fatalf("a phase that awaits no acceptance (%s): %d %s", phase, code, body)
+		}
 	}
 	if code, body := seen(`{"phase":"done"}`); code != http.StatusOK || !strings.Contains(body, `"marked":false`) {
 		t.Fatalf("a view of another phase: %d %s", code, body)

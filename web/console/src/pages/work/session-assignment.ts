@@ -41,7 +41,8 @@ export function sessionWorkLabel(row: Pick<SessionRow, "work_state" | "dispositi
     return `待驗收 · ${acceptance.title}${(acceptance.count ?? 0) > 1 ? ` · 共 ${acceptance.count} 項` : ""}`
   }
   const said = row.work_state === "work_complete" ? sessionWorkStateName(row.work_state) : "本輪已回報"
-  return acceptance?.state === "unknown" || acceptance?.state === "pending" ? `${said} · 讀不到是否有待驗收項目` : said
+  // Only a reading of none is none: a missing field (an older daemon) is not.
+  return acceptance?.state === "none" ? said : `${said} · 讀不到是否有待驗收項目`
 }
 
 /** The phases in which an item waits for the person to look at what was delivered. */

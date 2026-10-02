@@ -1042,8 +1042,9 @@ func (s *Server) workV2Seen(w http.ResponseWriter, r *http.Request, id string) {
 	if _, ok := readWorkV2Body(w, r, &body); !ok {
 		return
 	}
-	if !work.Phase(body.Phase).Valid() {
-		writeRefusal(w, http.StatusBadRequest, "invalid_phase", "Say which phase the item was shown in.")
+	// Only the phases a Session card can show as awaiting acceptance take a receipt.
+	if phase := work.Phase(body.Phase); phase != work.PhaseDeploying && phase != work.PhaseDone {
+		writeRefusal(w, http.StatusBadRequest, "invalid_phase", "Only an item shown in deploying or done is marked seen.")
 		return
 	}
 	marked, err := s.store.MarkWorkV2PhaseSeen(r.Context(), id, work.Phase(body.Phase), time.Now())
