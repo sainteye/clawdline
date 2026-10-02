@@ -1,6 +1,8 @@
 package work
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -216,6 +218,14 @@ func TestPlanningGateUsesTheCapturedModeAndKind(t *testing.T) {
 	}
 	if got := code(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan))); got != "feature_plan_review_required" {
 		t.Fatalf("Feature without review = %s", got)
+	}
+	// A successful review child records itself (app.AddPlanReviewFromTask),
+	// so the refusal says to wait for it before it offers the manual command.
+	var waiting RefusalV2
+	if !errors.As(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan)), &waiting) ||
+		!strings.Contains(waiting.Message, "wait for that child to finish") ||
+		!strings.Contains(waiting.Message, "Only if it is not") {
+		t.Fatalf("review-required message does not say to wait for the child: %+v", waiting)
 	}
 	if got := code(PlanningGate(feature, PhaseImplementing,
 		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "feature_plan_review_required" {

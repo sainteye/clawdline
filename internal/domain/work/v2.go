@@ -491,7 +491,8 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 		(i.Kind == KindFeature && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
 		return RefuseV2(prefix+"_plan_review_required",
 			"Have an independent child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
-				"`), then record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
+				"`) and wait for that child to finish: a successful review is recorded on the item by itself. "+
+				"Only if it is not, record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
 	}
 	return nil
 }
