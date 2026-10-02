@@ -12,7 +12,7 @@ import type { TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
+import { CARRIED_READS, RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
 // The copied client's own failure constructor: what the machine's refusal really becomes.
 import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
 
@@ -1739,4 +1739,139 @@ test("squad settings carry per-field patches and package reads never gain write 
   assert.equal((await reader.fetch("/v1/squad-packages/adopt", post(adopt))).status, 400)
   assert.equal((await reader.fetch("/v1/squad/session-events", post({ skill_id: "x" }))).status, 501)
   assert.equal(client.calls.length, sent, "refused commands never reach the machine")
+})
+
+// Measured in a production browser: while the page's own relay socket was
+// renewing, `GET /v1/places` answered 503 `offline` (layer `browser`) for
+// minutes, because the writer carries that read and asked `connected()`, which
+// throws the moment the attached client is not ready. The reader's own machine
+// reads already waited for the client `keepConnected` attaches next; the reads
+// the writer carries now wait the same bound, and its writes still do not.
+type Pausable = FakeClient & { lifecycle?: (reason: string) => boolean | "hidden" }
+
+function pausedSeam(coming: boolean | "hidden", waitMs: number) {
+  const retired = new FakeClient() as Pausable
+  retired.ready = false
+  const demands: string[] = []
+  retired.lifecycle = (reason) => {
+    demands.push(reason)
+    return coming
+  }
+  const reader = new RelayReader("mac-a", { now: () => 1_000, reconnectWaitMs: waitMs })
+  const writer = new RelayWriter(reader.writeHost, { now: () => 1_000, requestID: () => "req-1" })
+  reader.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+  reader.attach(retired)
+  return { reader, retired, demands }
+}
+
+test("a carried read asked while the page's connection renews waits for the next client", async () => {
+  const { reader, retired, demands } = pausedSeam(true, 5_000)
+  const renewed = new FakeClient()
+  const asked = reader.fetch("/v1/places")
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  reader.attach(renewed)
+  const res = await asked
+  assert.equal(res.status, 200)
+  assert.ok(Array.isArray((await json(res)).places))
+  assert.deepEqual(demands, ["demand"], "the paused client is asked to reconnect")
+  assert.deepEqual(retired.calls, [], "nothing is sent through the retired client")
+  assert.deepEqual(renewed.calls, [["places", "mac-a"]])
+})
+
+test("a carried read nobody reconnects for is refused as reconnecting and retryable, not offline", async () => {
+  const { reader, retired } = pausedSeam(true, 20)
+  const started = Date.now()
+  const res = await reader.fetch("/v1/places")
+  assert.ok(Date.now() - started >= 15, "it waited the bound")
+  assert.equal(res.status, 503)
+  const body = await json<{ error: { code: string; message: string; layer: string; retryable: boolean; outcome: string } }>(res)
+  assert.equal(body.error.code, "cloud_reconnecting")
+  assert.equal(body.error.layer, "browser")
+  assert.equal(body.error.retryable, true)
+  assert.equal(body.error.outcome, "not_done")
+  assert.match(body.error.message, /renewing/)
+  assert.match(body.error.message, /machine was not asked/)
+  assert.deepEqual(retired.calls, [])
+})
+
+test("a carried read is refused as reconnecting at once when no client is coming", async () => {
+  const { reader, retired } = pausedSeam(false, 5_000)
+  const started = Date.now()
+  const res = await reader.fetch("/v1/places/p1/sessions/claude")
+  assert.ok(Date.now() - started < 1_000, "it did not wait")
+  assert.equal(res.status, 503)
+  const body = await json<{ error: { code: string; retryable: boolean; layer: string } }>(res)
+  assert.equal(body.error.code, "cloud_reconnecting")
+  assert.equal(body.error.retryable, true)
+  assert.equal(body.error.layer, "browser")
+  assert.deepEqual(retired.calls, [])
+})
+
+test("the caller's signal ends a carried read's wait for the connection", async () => {
+  const { reader, retired } = pausedSeam(true, 5_000)
+  const controller = new AbortController()
+  const started = Date.now()
+  const asked = reader.fetch("/v1/places", { signal: controller.signal })
+  setTimeout(() => controller.abort(), 5)
+  await assert.rejects(asked, (error: Error) => error.name === "AbortError")
+  assert.ok(Date.now() - started < 1_000, "it stopped waiting when asked to")
+  reader.attach(new FakeClient())
+  assert.deepEqual(retired.calls, [])
+})
+
+test("a write during the gap is refused at once and is never carried after the reconnect", async () => {
+  const { reader, retired, demands } = pausedSeam(true, 5_000)
+  const started = Date.now()
+  const res = await reader.fetch("/v1/sessions/s1/send", post({ text: "hi" }))
+  assert.ok(Date.now() - started < 1_000, "a write does not wait")
+  assert.equal(res.status, 503)
+  const body = await json(res)
+  assert.equal(body.error, "offline")
+  assert.equal(body.outcome, "not_done")
+  assert.deepEqual(demands, [], "a write does not ask the line to come back")
+
+  const renewed = new FakeClient()
+  renewed.rows = [row("s1")]
+  reader.attach(renewed)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.deepEqual(retired.calls, [])
+  assert.equal(renewed.calls.length, 0, "the refused send is not carried by the new client")
+
+  const sent = await reader.fetch("/v1/sessions/s1/send", post({ text: "again" }))
+  assert.equal(sent.status, 200, "a send with the line up is carried as before")
+  assert.equal(renewed.calls.filter(([name]) => name === "send").length, 1, "exactly the second press, once")
+})
+
+test("every read the writer carries is one it waits for, and no write is", () => {
+  const reads: [string, string][] = [
+    ["/v1/work/v2/images/a1", "work-v2-image"],
+    ["/v1/usage/compare-compaction", "usage-compare"],
+    ["/v1/usage/sessions/s1", "usage"],
+    ["/v1/capacity", "capacity"],
+    ["/v1/settings/default-models", "default-models"],
+    ["/v1/settings/work-gates", "work-gate-settings"],
+    ["/v1/sessions/restorable", "restorable"],
+    ["/v1/sessions/archived", "archived"],
+    ["/v1/machine/usage", "machine-usage"],
+    ["/v1/verifications", "verification-read"],
+    ["/v1/verifications/v1", "verification-read"],
+    ["/v1/places", "places"],
+    ["/v1/places/p1/sessions/claude", "past"],
+    ["/v1/artifacts/images/a1", "image"],
+    ["/v1/sessions/s1/info", "info"],
+    ["/v1/sessions/s1/git", "git"],
+    ["/v1/sessions/s1/git/diff", "git-diff"],
+    ["/v1/sessions/s1/screen", "screen"],
+    ["/v1/sessions/s1/documents", "documents"],
+    ["/v1/sessions/s1/documents/project/demo.md", "document"],
+  ]
+  for (const [path, op] of reads) {
+    const route = writeRoute("GET", path)
+    assert.equal(route?.op, op, path)
+    assert.ok(CARRIED_READS.has(route!.op), `${op} waits for the connection`)
+  }
+  assert.deepEqual([...CARRIED_READS].sort(), [...new Set(reads.map(([, op]) => op))].sort(), "the list is exactly the GET routes")
+  for (const [method, path] of [["POST", "/v1/sessions/s1/send"], ["POST", "/v1/places/p1/start"], ["POST", "/v1/verifications"]]) {
+    assert.ok(!CARRIED_READS.has(writeRoute(method, path)!.op), `${method} ${path} never waits`)
+  }
 })

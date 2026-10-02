@@ -454,6 +454,11 @@ export class RelayReader {
     return {
       machine: this.machine,
       connected: () => this.connected() as CloudWriteClient,
+      connectedFor: async (signal, word) => {
+        const client = await this.connectedFor(signal)
+        if (!client && signal?.aborted) throw new AbandonedRead(word)
+        return client as CloudWriteClient | null
+      },
       wrote: (session, outcome) => this.wrote(session, outcome),
       closed: (session) => this.closed(session),
       note: (row) => this.note(row.method, row.path, row.answer, row.code, row),
