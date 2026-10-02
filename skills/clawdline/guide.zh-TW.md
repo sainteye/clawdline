@@ -7,6 +7,12 @@
 少了一條，就會有測試失敗。要看請重新執行 `clawdline guide zh-TW`（英文版是 `clawdline guide`），
 不要相信手上的副本。`clawdline guide zh-TW` 只印每個 session 都需要的核心，並列出其他部分；做到某一
 部分的工作時再印那一部分（`clawdline guide zh-TW dispatch`），要全文用 `clawdline guide zh-TW all`。
+印出的內容（核心也一樣）第一行是 `guide-version: <sha256>`；同一個指令加上 `--since <hash>` 再執行，
+內容沒變時只印一行 `unchanged <hash>`。`clawdline guide zh-TW refused <code>` 印出說明該拒絕碼的
+部分；沒有任何部分提到它時，exit 1，stdout 不印任何東西。
+
+這份指南裡，項目清單的一列叫 **step**，task 可以改的路徑叫它的 **writes**，項目歸誰負責叫
+**指派**，這份指南可單獨印出的一段叫 **part**。
 
 ## 0. 如果你是從 Swift app 學會 Clawdline 的，先讀這段
 
@@ -83,6 +89,13 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原因：`not_yet_read`、`transcript_missing`
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
+
+**用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
+`X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
+`DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"`，再使用
+`-H @<(printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")")`。
+使用 `curl --fail-with-body`；帶 JSON body 的 POST 還要加
+`-H 'Content-Type: application/json'`（否則回 `415 unsupported_media_type`）。
 
 ### 配對一個 Cloud 瀏覽器
 
@@ -206,8 +219,8 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 帶著憑證，自己組 curl 打同一條路由會被拒絕。比較少見的工作只差一個 `clawdline guide <part>`；指引在
 最後。
 
-**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、使用者的
-「需要獨立審查」勾選、版本和 steps。你就從這份紀錄開始工作。
+**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
+驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選，以及 steps。你就從這份紀錄開始工作。
 
 **2. 替 Session 命名**（如果它是為這個項目開的）：讀完 objective 和 scope 之後執行一次
 `clawdline item name <item id> "<task name>"`。改的是 Session 名稱，不是項目標題。
@@ -285,7 +298,7 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 
 **比較少見的工作，各一個部分：** `clawdline guide zh-TW board`——提案、決策、待辦、重開已完成項目、
 等待使用者、gate 與所有 phase 拒絕；`clawdline guide zh-TW epic`——計畫、計畫審查、Epic 的子項目、
-persona；`clawdline guide zh-TW landing`——手動 landing、交接、Root assignment；
+persona；`clawdline guide zh-TW landing`——手動 landing、交接、Root 指派；
 `clawdline guide zh-TW running`——卡住的 child、leftover、respawn。
 
 ## 3. 派工之前：先讀已經存在的東西
@@ -300,7 +313,7 @@ GET /v1/orchestrator/inventory?project=<absolute repo path>[&claims=a,b]
 - 回 `generation`、`task_root` 和四個清單：`live`、`unlanded`、`droppable`、`unreadable`。每一列都帶著
   一個 daemon 會接受的 `do`。帶了 `claims` 時，每一筆 live 列都會標出它 `overlaps` 什麼。
 - **派工一定要帶 `generation`**（§4）。它是由各列 sealed 欄位算出來的 16 個 hex 字元；只要有一列開始、
-  結束或改了 claims，它就會變。
+  結束或改了 writes，它就會變。
 - **`task_root` 就是 `task.json` 要放的地方。** 這是這個 daemon 自己的欄位；Swift broker 沒有，因為它
   把 `/tmp/.clawdline` 寫死了。
 - `project` 不是某個 Git repository 裡的絕對路徑時，回 `400 bad_request`。
@@ -331,7 +344,7 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
 一次 `stale_inventory` 會重讀 inventory、再送一次。輸出是 `dispatched <id> <state> [worktree <path>]`，
-接著每個警告一行——daemon 給的，以及每個 claims 和你重疊的 live task。`--json` 改成印 daemon 的原始
+接著每個警告一行——daemon 給的，以及每個 writes 和你重疊的 live task。`--json` 改成印 daemon 的原始
 回答。被拒時在 stderr 印 `refused, <status> <code>: <message>` 並以 1 結束；每個 code 的意思見本節最後
 的表。root 是你的對話，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，否則用 `--conversation`；
 child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
@@ -340,7 +353,7 @@ child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預�
 
 `--persona <id>` 讓 child 以內建角色（persona）開啟（`task.json` 的 `persona`）；這個版本沒有的 id 會在
 本機就被拒絕。任何 kind 都不會自動套用角色，`plan_review` 也一樣：要審查員就自己寫 `code-reviewer`。
-角色是什麼、八個 id 各自的用途，見 §10 的 Epic 段落（`clawdline guide epic`）。
+這個 build 有哪些 id 看 `GET /v1/personas`；角色是什麼，見 §10 的 Epic 段落（`clawdline guide epic`）。
 
 它做的步驟如下，給沒有這個 binary 的呼叫者照著做：
 
@@ -359,7 +372,7 @@ secret。）
 
 **3. 寫 `<task_root>/<TASK_ID>/task.json`。** daemon 從這個檔案讀 brief，不是從 request 讀。收件時它先
 驗證，再用收下的內容重寫 `task.json`，並從同一筆紀錄寫出 child 的 `CHILD.md`——標題、instructions、
-claims、deliverables、kind 和 timeout 都在裡面——所以 child 讀到的 task 就是通過驗證的那一份，它不必再讀
+writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到的 task 就是通過驗證的那一份，它不必再讀
 `task.json`。
 
 | 欄位 | 規則 |
@@ -403,8 +416,10 @@ POST /v1/orchestrator/tasks
 
 body 從 stdin 送（`jq -n … | curl --data-binary @- -H 'Content-Type: application/json' …`），secret
 才不會出現在 argv 裡。
+使用 `clawdline dispatch --task-id <uuid>` 重送同一筆派工時，保留原本的 id 與內容。
 回應是 `{ok, task, warnings?}`。要讀 `warnings`：`claims_overlap`、`claims_missing`、
-`claims_ignored_for_worktree`、`dirty_worktree_base`。同一個 id 再 POST 一次，會回之前存下的 task 並帶
+`claims_ignored_for_worktree`、`dirty_worktree_base`，以及 `work_not_placed`（指定的項目還沒能移上看板；
+看板的定期掃描會在一個 tick 內補上）。同一個 id 再 POST 一次，會回之前存下的 task 並帶
 `replayed: true`，所以重試是安全的。
 
 分頁開不起來時仍然回 200，只是 `task.state: "spawn_failed"`。
@@ -415,18 +430,27 @@ task 最多兩次。
 
 | 狀態 | Code | 怎麼處理 |
 |---|---|---|
+| 409 | `task_unreadable` | 這個 id 的 task 存在但讀不出來；不要用同一個 id 重送 |
 | 422 | `bad_task` | 訊息會點出是哪個欄位。「No readable task.json under …」也是這一種——檢查 `task_root` |
 | 422 | `claims_required` | 補上 `claims` |
 | 422 | `root_session_required`、`root_assistant_required` | 補上 `root.session_id` 和 `root.assistant` |
 | 403 | `session_scope_mismatch` | 檢查 `root.project_dir` 是否存在，且與根 Session 的 Project 及角色快照相符。修正 brief 或 CLI；不要請使用者改 Project 設定。 |
 | 422 | `detached_route_required` | 你送了 `root.poll_only`；那是 detached automation（§6） |
 | **409** | **`stale_inventory`** | 你的 `generation` 沒帶或過期了。錯誤裡附著目前完整的 inventory：讀它、重新判斷，再用它的 `generation` 重送 |
+| 422 | `work_not_found`、`work_other_project`、`work_closed` | 你指定的 `work_id` 不存在、屬於別的 Project，或已經關閉 |
+| 422 | `also_work_not_found` | `also_work_ids` 裡有 id 不是看板項目；之後還會像 `work_id` 一樣逐一檢查 |
+| 503 | `store_unavailable` | 讀不到看板，無法檢查指定的項目；什麼都還沒開始，再送一次 |
 | 409 | `graph_*` | task-graph 的准入規則（`graph` 欄位） |
 | 409 | `no_child_capability` | 這個平台開不了 child；`missing` 會說缺什麼 |
+| 429 | `squad_launch_capacity` | 還在等 Session 身分的角色啟動太多；稍後再試 |
 | 429 | `rate_limited` | 十分鐘內派工次數太多 |
 | 422 / 409 | `root_unresolved`、`conversation_ambiguous` | 你的 conversation id 對不到任何活著的 session，或對到不只一個。把它修好；不要改走 detached |
+| 403 | `session_actor_required` | 以角色開啟的 root 必須從自己的 Session、帶它的 squad capability 派工 |
+| 403 | `session_scope_mismatch` | 這裡也會檢查：根 Session 的 Project 與它的角色快照不符 |
+| 503 | `squad_policy_unavailable` | 讀不到角色指派設定；什麼都還沒開始 |
+| 409 | `persona_disabled_for_auto_assignment` | 目標 Project 關閉了這個 persona 的自動指派 |
 | 429 | `over_capacity` | 你的 child 名額（預設 5 個）或整台機器的名額滿了；看 `retry_after` |
-| 409 | `workspace_busy` | 另一個 root 的 claims 跟你重疊；錯誤會點出擋住你的那個 task |
+| 409 | `workspace_busy` | 另一個 root 的 writes 跟你重疊；錯誤會點出擋住你的那個 task |
 | 409 | `worktree_unavailable` | 私有 checkout 建不起來 |
 | 429 | `terminal_busy` | 所有 terminal 寫入通道都在忙；`retry_after: 5` |
 
@@ -439,7 +463,7 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 - `clawdline task show <id>`——單一 task 和它的狀態（`GET /v1/orchestrator/tasks/<id>`）。`GET /v1/orchestrator/tasks` 列出全部
   （`?state=`、`?limit=` 最多 500）。
 - **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`。** 它的 `body` 只有一句：哪個 task、
-  怎麼結束、只屬於這次交付的事實（stalled、claims 已釋放、它的 branch、幾個 leftover），以及要執行的兩個
+  怎麼結束、只屬於這次交付的事實（stalled、writes 已釋放、它的 branch、幾個 leftover），以及要執行的兩個
   指令——先 `clawdline task show <id>`，再 `clawdline task ack <id> <notice_id>`。JSON 仍帶著 `state`、
   `result_path`、`outstanding`、`leftovers`、`notice_id` 和 `ack_path`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
   打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去：
@@ -488,11 +512,12 @@ clawdline task land <task id> <landed|incorporated|abandoned|nothing_to_land|pen
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
-{"state": "pending" | "landed" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "note": "…"}
+{"state": "pending" | "landed" | "incorporated" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "carrier_task": "<task id>", "note": "…"}
 ```
 
 - 只收這幾個 key，外加 `delivery`（收下但不使用）；其他 key 一律拒絕。`pending` 和 `abandoned` 接受
-  task secret 或 orchestrator token；`landed` 和 `nothing_to_land` 只接受 orchestrator token。
+  task secret 或 orchestrator token；`landed`、`incorporated` 和 `nothing_to_land` 只接受
+  orchestrator token。
 - **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
   自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
   是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
@@ -502,9 +527,13 @@ POST /v1/orchestrator/tasks/<id>/landing
   branch 合併進 target；merge 會自己記 landing。*讀不到*：先去看 branch 再記。*寫進共用 checkout*：
   `clawdline task land <id> landed` 帶上把那份工作帶上 target 的 commit，或記 `abandoned`。*它什麼都沒寫，
   broker 已記 nothing_to_land*：只剩 ACK。
-- `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
-  `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
-  `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。
+- `landed` 需要 `target` 和 `commit`；`incorporated` 需要 `target`、`commit` 和 `carrier_task`（以自己已查證的
+  landing 帶上這份交付的另一個 task）。兩者 daemon 都**會去 Git 裡查證**；查不過就回 `409 unverified_landing`，
+  `reason` 是下列之一：`commit_unresolved`、`target_unresolved`、`not_on_target`、`base_unknown`、
+  `predates_dispatch`、`delivery_unknown`、`nothing_delivered`、`not_the_delivery`，以及 `incorporated` 專有的
+  `carrier_required`、`carrier_is_delivery`、`carrier_unresolved`、`carrier_not_landed`、
+  `carrier_repository_mismatch`、`carrier_target_mismatch`、`carrier_commit_mismatch`、
+  `delivery_is_ancestor`。
 - task 其實有寫入 repository 時，`nothing_to_land` 會被 `409 wrote_to_repository` 拒絕。
 - 已經定案的 landing 不能再改：回 `409 invalid_transition`；要改成不同的值時回
   `409 landing_conflict`。
@@ -520,7 +549,7 @@ POST /v1/orchestrator/tasks/<id>/landing
 | 種類 | 路由 | 是什麼 |
 |---|---|---|
 | **Handoff** | `POST /v1/orchestrator/handoffs` | 把一條既有的工作線連同完整狀態，交給一個新的 session |
-| **Root assignment** | `POST /v1/orchestrator/root-assignments` | 為新功能開一個獨立負責的新 Root |
+| **Root 指派** | `POST /v1/orchestrator/root-assignments` | 為新功能開一個獨立負責的新 Root |
 | **Detached automation** | `POST /v1/orchestrator/detached-tasks` | 沒人看著、也沒有回報對象的工作 |
 
 **Handoff。** 先寫 `<state dir>/handoffs/<handoff_id>/handoff.md`（列表路由會回 `package_root`）。它應該
@@ -538,17 +567,17 @@ POST /v1/orchestrator/tasks/<id>/landing
 coordinator 角色時的 `succession_required`——這個 daemon 沒有 succession（`501`），所以那個 session
 沒辦法 handoff。
 
-**Root assignment。** `Idempotency-Key` header 必須等於 `request_id`：
+**Root 指派。** `Idempotency-Key` header 必須等於 `request_id`：
 
 ```
 {"request_id": "<uuid>", "assistant": "claude"|"codex", "model": "…", "project_dir": "/abs", "label": "…",
  "assignment": {"objective": "…", "scope": "…", "constraints": "…", "relevant_references": "…", "acceptance": "…"}}
 ```
 
-每個 assignment 欄位 1–8192 bytes，加起來最多 32 KiB。daemon 自己寫 brief、自己開 session。它**沒有
+每個指派欄位 1–8192 bytes，加起來最多 32 KiB。daemon 自己寫 brief、自己開 session。它**沒有
 parent、secret、timeout、result，也沒有 landing**：它結束時不會通知任何人，因為它不向任何人負責。
 拒絕：`bad_root_assignment`、`idempotency_mismatch`、`request_conflict`、`rate_limited`。絕對不要用
-child、detached task 或 handoff 假裝成 root assignment。
+child、detached task 或 handoff 假裝成 Root 指派。
 
 **Detached automation。** 跟派工（§4）一樣——`task.json` 放在 `task_root` 底下，再送
 `{"task_id", "secret", "inventory_generation"}`——但 brief 的 root 必須是
@@ -834,7 +863,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
   說為什麼現在值得做，`suggested_acceptance` 說完成後可以觀察到什麼。四欄都必填；不要拿未解釋的
   縮寫、內部識別碼、程式路徑或實作術語當成主要說明。看板會先顯示標題、來源與原因；使用者按
   **Explain／詳細說明**後才展開「會改什麼」與「完成後會看到什麼」。
-- **要提一個帶 TODO 清單的項目**，就在 `description` 裡寫兩列以上的頂層 Markdown 清單。使用者接受並
+- **要提一個帶 steps 的項目**，就在 `description` 裡寫兩列以上的頂層 Markdown 清單。使用者接受並
   指派這個項目時，每一列都會變成它的一個 `steps`（見下文）。
 - `201` 會回傳這筆待決提案。使用者在看板的 Agent 提案佇列裡接受、編輯或拒絕；在那之前它不會變成
   看板項目。拒絕：`invalid_proposal`、`proposal_too_large`、`project_not_found`、`proposals_full`。
@@ -864,14 +893,14 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 捏造、過期、屬於其他 Session 或早於問題的 run 都會具名拒絕。使用者直接在 terminal 打的字沒有 run，
 請他透過 Clawdline 回答，或由他自己在 console 操作。
 
-**你的待辦清單。** `GET /v1/orchestrator/sessions/<conversation id>/todos`——用 conversation id 指名，
+**你待收的 child。** `GET /v1/orchestrator/sessions/<conversation id>/todos`——用 conversation id 指名，
 不是 terminal id（否則回 `409 session_id_is_terminal`）。這些項目由 broker 根據 task 的事實開啟和關閉；
 你不需要寫任何東西。
 
 每個 turn 的邊界、宣告自己閒置之前，也要讀
 `GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
 Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦，`unacknowledged_completions` 是你還沒 ACK 就已經結束的 child（第 5 節）。這條
-pull 路徑讓工作中收到的分派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
+pull 路徑讓工作中收到的指派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
 下一件自己負責的工作，並用 `clawdline item steps <id>` 讀取完整內容（路由是 `GET /v1/work/v2/items/<id>`）。
 
 **使用者送來的待辦。** 訊息最後一行如果是
@@ -912,7 +941,7 @@ POST /v1/work/v2/agent/items/<id>/reopen     (Idempotency-Key required)
  "reason": "仍未完成的具體行為或驗收主張"}
 ```
 
-只有在對方明確指向你剛完成的項目時才使用。這條路由只接受最後由同一個 Session 釋放 assignment 的
+只有在對方明確指向你剛完成的項目時才使用。這條路由只接受最後由同一個 Session 釋放指派的
 `done` 項目；它不能推翻使用者的取消，也不能拿走另一個 Session 的完成項目。成功時會保留先前證據、以
 新 cycle 回到 `implementing`、恢復這個 Session 為 owner，並把原因寫入不可變的項目歷史。原因最多
 8 KiB。語意含糊的追問不構成修改看板的授權。
@@ -935,7 +964,11 @@ PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規劃沿用一般 Merge 驗證；只開驗證會跳過規劃，
 但仍檢查固定候選提交；兩者皆關走一般流程。使用者不必在看板填寫驗收條件。受 gate 約束的項目若尚無
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
-寫入可觀察的 Markdown 條件。負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
+寫入可觀察的 Markdown 條件。若人明確要求修改已寫入的驗收條件，用
+`clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`；
+項目版本是 `GET /v1/work/v2/items/<id>` 回應裡的 `.item.version`（`item steps` 只印驗收版本）；訊息的 run 從
+`GET /v1/orchestrator/sessions/<conversation>/run` 讀。只根據該訊息提出的修改內容重寫完整文件。
+負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
 owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
 
 本輪驗證 gate 開啟時，先在已 commit、乾淨且登記過的 worktree 執行
@@ -992,7 +1025,7 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `GET /v1/places` 的 id，daemon 就改在那裡找 commit，收據會記下是哪個 repository。`done` 要帶 `deployment` 或
   `no_deployment_reason`，由項目的 `deployment_policy` 決定（`required` 只收 `deployment`，
   `not_required` 只收 `no_deployment_reason`，`agent_decides` 兩者皆可）。所有 step 都要先完成。
-- `done` 會釋放你的 assignment，項目移到這個 Session 的「最近完成」。需要結案報告時（見下文）
+- `done` 會釋放你的指派，項目移到這個 Session 的「最近完成」。需要結案報告時（見下文）
   要在這之前加上。
 - 拒絕：`invalid_transition`（不是下一個 phase，或缺它要的證據）、`steps_incomplete`、
   `not_item_owner`、`item_unassigned`、`item_terminal`（要由人重開）、`evidence_unknown`、
@@ -1024,7 +1057,7 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
   `landing_ambiguous`（用旗標指名）以及 `finish_not_started`（還在 `implementing` 之前）。
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
-steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，用
+steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目清單上的一個 step，不是另一張看板項目。確認完成一列後，用
 `clawdline item step-done <item id> <step id>` 勾掉；它會讀版本，送出
 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"expected_version", "session_id"}`。版本衝突時再跑一次。
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
@@ -1122,7 +1155,7 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
   （`feature_plan_required` 或 `feature_plan_review_required`），沒勾的只需要驗收條件。有勾的 Feature
   修訂計畫後，還需要未跨新邊界的紀錄或一次新審查。規劃關閉的 Epic 可直接進入實作。
 
-**把 Epic 拆成子項目，再分派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
+**把 Epic 拆成子項目，再指派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入
 `implementing` 之後，如果其中某些部分交給其他 Session 做比較好，就在它底下建立 Feature 或 Issue 項目並指派：
 
@@ -1135,7 +1168,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 - terminal id 在 session 通訊錄 `GET /v1/orchestrator/sessions` 裡（`clawdline guide send`）；那個
   Session 必須在 Epic 的 Project 裡工作。也可以把子項目指派給自己；`--assign-new` 會開一個新 Session，
-  它的 Root Assignment 會寫明所屬的 Epic。沒給 `--assign` 旗標，子項目就留在未指派，等使用者指派。
+  它的 Root 指派會寫明所屬的 Epic。沒給 `--assign` 旗標，子項目就留在未指派，等使用者指派。
 - `item child` 會先讀 Epic 的版本，送出前印出 Idempotency-Key（`--key` 重試同一筆寫入），做完印出子項目。
   它就是 `POST /v1/work/v2/agent/items/<epic id>/children`，body 是 `{"expected_version", "session_id",
   "kind", "title", "description", "steps"?, "deployment_policy"?, "assign"?: {"mode": "existing_session",
@@ -1219,7 +1252,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 ## 11. 協調
 
-**整台機器的 coordinator（"Clawdfather"）。** 它在 daemon 管理的獨立機器工作區處理 Session 報告與受控機器作業，絕不修改任何 Project 的程式碼，包含 Clawdline。使用者明確要求工程工作時，先用 `clawdline item add --project … --assign-new` 建立目標 Project 的看板項目，再交給該 Project 的 Session；沒有建立項目的明確要求時，先送提案給使用者決定。接手的看板負責人負責子任務派工、驗證與落地。工作區是工作流程邊界，不是檔案系統沙盒。新綁定必須來自該工作區，既有綁定仍可讀取。請從控制台的 Clawdfather 入口開啟 Session，再以對話 ID 登記角色。產品邊界見 `docs/clawdfather-role.md`。
+**整台機器的 coordinator（"Clawdfather"）。** 它在 daemon 管理的獨立機器工作區處理 Session 報告與受控機器作業，絕不修改任何 Project 的程式碼，包含 Clawdline。使用者明確要求工程工作時，先用 `clawdline item add --project … --assign-new` 建立目標 Project 的看板項目，再交給該 Project 的 Session；沒有建立項目的明確要求時，先送提案給使用者決定。接手的看板負責人負責拆解、派工、驗證與落地。工作區是工作流程邊界，不是檔案系統沙盒。新綁定必須來自該工作區，既有綁定仍可讀取。請從控制台的 Clawdfather 入口開啟 Session，再以對話 ID 登記角色。產品邊界見 `docs/clawdfather-role.md`。
 在新 Session 裡執行 `clawdline coordinator bind`，用自己的對話 ID 登記；只有舊綁定已被證實離線時才會換綁，在線或讀不到狀態都會拒絕。
 `GET /v1/orchestrator/coordinator` 查看這個角色；
 `/coordinator/bearings` 是整台機器的概況（進行中的 task、pending 的 landing、還開著的 wait、dead letter、

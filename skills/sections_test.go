@@ -3,9 +3,206 @@ package skills
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
+
+// Commands and flags are a language-neutral contract: the two guides name the
+// same set of `clawdline <command> <subcommand>` and `--flag`. The language
+// argument is the one place they differ by design, so `clawdline guide zh-TW
+// x` counts as `clawdline guide x`.
+func TestGuideCommandsAndFlagsStayInSync(t *testing.T) {
+	ec, ef := commandsAndFlags(t, "en")
+	zc, zf := commandsAndFlags(t, "zh-TW")
+	if d := setDifference(ec, zc); d != "" {
+		t.Errorf("commands differ between en and zh-TW:\n%s", d)
+	}
+	if d := setDifference(ef, zf); d != "" {
+		t.Errorf("flags differ between en and zh-TW:\n%s", d)
+	}
+}
+
+var (
+	guideCommand  = regexp.MustCompile(`clawdline [a-z][a-z-]*(?: [a-z][a-z-]*)?`)
+	guideFlag     = regexp.MustCompile(`--[a-z][a-z-]*`)
+	guideLanguage = regexp.MustCompile(`clawdline guide (?:` + strings.Join(Topics(), "|") + `)\b ?`)
+)
+
+func commandsAndFlags(t *testing.T, lang string) (commands, flags map[string]bool) {
+	t.Helper()
+	guide, err := Guide(lang)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := guideLanguage.ReplaceAllString(string(guide), "clawdline guide ")
+	commands, flags = map[string]bool{}, map[string]bool{}
+	for _, m := range guideCommand.FindAllString(text, -1) {
+		commands[strings.TrimSuffix(m, " ")] = true
+	}
+	for _, m := range guideFlag.FindAllString(text, -1) {
+		flags[m] = true
+	}
+	return commands, flags
+}
+
+// setDifference says what only en has and what only zh-TW has, or "".
+func setDifference(en, zh map[string]bool) string {
+	var b strings.Builder
+	for _, side := range []struct {
+		name      string
+		have, not map[string]bool
+	}{{"only en", en, zh}, {"only zh-TW", zh, en}} {
+		var only []string
+		for k := range side.have {
+			if !side.not[k] {
+				only = append(only, k)
+			}
+		}
+		sort.Strings(only)
+		if len(only) > 0 {
+			fmt.Fprintf(&b, "  %s: %s\n", side.name, strings.Join(only, ", "))
+		}
+	}
+	return b.String()
+}
+
+// The core every session prints carries how to call an orchestrator route
+// with curl: the credential file, its header, and the content type.
+func TestCoreCarriesCurlAuthenticationAndContentType(t *testing.T) {
+	for _, lang := range Topics() {
+		core, err := Core(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"orchestrator-token", "X-Clawdline-Orchestrator", "Content-Type: application/json", "--fail-with-body"} {
+			if !bytes.Contains(core, []byte(want)) {
+				t.Errorf("%s core missing %q", lang, want)
+			}
+		}
+	}
+}
+
+// A few codes whose owner is known, the core counting like any other part.
+func TestRefusalCodesFindTheirOwningPart(t *testing.T) {
+	for _, lang := range Topics() {
+		for code, want := range map[string]string{
+			"steps_incomplete":       "feature-root",
+			"unsupported_media_type": "connect",
+			"stale_inventory":        "dispatch",
+		} {
+			name, part, err := RefusedSection(lang, code)
+			if err != nil || name != want || !bytes.Contains(part, []byte(code)) {
+				t.Errorf("%s %s: part=%s err=%v, want %s", lang, code, name, err, want)
+			}
+		}
+		for _, bad := range []string{"missing_code_123", "", "Stale_write", "a b"} {
+			if _, _, err := RefusedSection(lang, bad); !errors.Is(err, ErrUnknownRefusal) {
+				t.Errorf("%s %q: %v", lang, bad, err)
+			}
+		}
+	}
+}
+
+// Every code the refusal part names in backticks resolves to a part, and to
+// the same part in both languages. `error` and `retry_after` are the answer's
+// field names, which that part also backticks; they are not codes.
+func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
+	span := regexp.MustCompile("`(?:[0-9]{3} )?([a-z][a-z0-9_]*)`")
+	fields := map[string]bool{"error": true, "retry_after": true}
+	codes := map[string]bool{}
+	for _, lang := range Topics() {
+		part, err := Section(lang, "refused")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range span.FindAllSubmatch(part, -1) {
+			if !fields[string(m[1])] {
+				codes[string(m[1])] = true
+			}
+		}
+	}
+	if len(codes) < 4 {
+		t.Fatalf("found only %d codes in the refusal part: %v", len(codes), codes)
+	}
+	for code := range codes {
+		en, _, errEN := RefusedSection("en", code)
+		zh, _, errZH := RefusedSection("zh-TW", code)
+		if errEN != nil || errZH != nil || en != zh {
+			t.Errorf("%s: en=%q (%v) zh-TW=%q (%v)", code, en, errEN, zh, errZH)
+		}
+	}
+}
+
+// The guide calls each concept by one outward name: a checklist entry on an
+// item is a step, the paths a task may change are its writes, handing an item
+// to a Session is 指派 in zh-TW, and a printable piece of this guide is a part.
+// Each retired synonym below fails the test wherever it stands in prose.
+//
+// Code is not prose: fenced blocks and backticked spans are removed first,
+// because the `--claims` flag, the `claims_*` warnings, the "claims" JSON key,
+// `-sections` and the root-assignments route are contracts other code reads,
+// and they are not renamed here. The person's own words, quoted so a session
+// recognizes them, are the only other exception, listed per language.
+func TestGuideUsesOneOutwardNameForEachConcept(t *testing.T) {
+	banned := map[string][]string{
+		"en": {
+			`\bTODO\b`, `\bsub-?tasks?\b`, // step
+			`\bclaims\b`, `(?i)\bdeclared writes\b`, // writes
+			`(?i)\bsections?\b`, `(?i)\btopics?\b`, // part
+		},
+		"zh-TW": {
+			`TODO`, `子任務`, `待辦事項`, // step
+			`\bclaims\b`, `宣告的寫入`, // writes
+			`(?i)assignment`, `分派`, `分配`, // 指派
+			`章節`, `小節`, `(?i)\bsections?\b`, // part
+		},
+	}
+	quoted := map[string][]string{
+		"en":    {"TODO / 待辦 / 土度", "TODO: draft"},
+		"zh-TW": {"TODO／待辦／土度", "TODO：起草"},
+	}
+	for _, lang := range Topics() {
+		guide, err := Guide(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range proseLines(string(guide)) {
+			for _, q := range quoted[lang] {
+				line = strings.ReplaceAll(line, q, "")
+			}
+			for _, word := range banned[lang] {
+				if regexp.MustCompile(word).MatchString(line) {
+					t.Errorf("%s guide line %d uses retired %s: %s", lang, i+1, word, line)
+				}
+			}
+		}
+	}
+}
+
+var codeSpan = regexp.MustCompile("`[^`]*`")
+
+// proseLines is each line outside fenced blocks (indented ones included) with
+// its backticked spans removed; index i is line i+1, and code lines are "".
+func proseLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	fenced := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fenced = !fenced
+			lines[i] = ""
+			continue
+		}
+		if fenced {
+			lines[i] = ""
+		} else {
+			lines[i] = codeSpan.ReplaceAllString(line, "")
+		}
+	}
+	return lines
+}
 
 // Both guides cut into the same nineteen parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts

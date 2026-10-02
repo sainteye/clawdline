@@ -302,7 +302,7 @@ func TestTheTokenIsReadOnlyFromThisAppsDirectory(t *testing.T) {
 // The guide prints without a daemon, in either language, and lists itself.
 func TestGuidePrints(t *testing.T) {
 	var out, errs bytes.Buffer
-	if code := printGuide(&out, &errs, nil); code != 0 || !strings.HasPrefix(out.String(), "# Clawdline guide") ||
+	if code := printGuide(&out, &errs, nil); code != 0 || !strings.Contains(out.String(), "\n# Clawdline guide") ||
 		!strings.Contains(out.String(), "`clawdline guide dispatch`") {
 		t.Fatalf("exit %d: %.40q", code, out.String())
 	}
@@ -312,7 +312,7 @@ func TestGuidePrints(t *testing.T) {
 		t.Fatalf("all: exit %d, %d bytes against a core of %d", code, out.Len(), core)
 	}
 	out.Reset()
-	if code := printGuide(&out, &errs, []string{"zh-TW", "board"}); code != 0 || !strings.HasPrefix(out.String(), "## 10.") {
+	if code := printGuide(&out, &errs, []string{"zh-TW", "board"}); code != 0 || !strings.Contains(out.String(), "\n## 10.") {
 		t.Fatalf("zh-TW board: exit %d: %.20q", code, out.String())
 	}
 	out.Reset()
@@ -339,6 +339,49 @@ func TestGuidePrints(t *testing.T) {
 	if code := printGuide(&out, &errs, []string{"child"}); code != 0 ||
 		!strings.HasPrefix(out.String(), "# How a Clawdline child works") || !strings.Contains(out.String(), "result.json") {
 		t.Fatalf("child: exit %d: %.60q", code, out.String())
+	}
+}
+
+// Every guide text opens with its hash, the core as well as a part, and
+// --since that hash answers one line; a refusal code prints the part that
+// owns it, and an unknown one prints nothing on stdout.
+func TestGuideVersionAndRefusalLookup(t *testing.T) {
+	var out, errs bytes.Buffer
+	if code := printGuide(&out, &errs, []string{"refused", "steps_incomplete"}); code != 0 || !strings.Contains(out.String(), "\n## 2a.") {
+		t.Fatalf("refusal lookup: %d %q %q", code, out.String(), errs.String())
+	}
+	for _, args := range [][]string{nil, {"zh-TW"}, {"zh-TW", "board"}, {"all"}, {"refused", "steps_incomplete"}} {
+		out.Reset()
+		if code := printGuide(&out, &errs, args); code != 0 {
+			t.Fatal(args, code, errs.String())
+		}
+		first, rest, _ := strings.Cut(out.String(), "\n")
+		hash, ok := strings.CutPrefix(first, "guide-version: ")
+		if !ok || len(hash) != 64 || strings.HasPrefix(rest, "guide-version:") {
+			t.Fatalf("%v: first line %q", args, first)
+		}
+		out.Reset()
+		if code := printGuide(&out, &errs, append(append([]string{}, args...), "--since", hash)); code != 0 || out.String() != "unchanged "+hash+"\n" {
+			t.Fatalf("%v --since: %d %q %q", args, code, out.String(), errs.String())
+		}
+		out.Reset()
+		other := strings.Repeat("0", 64)
+		if code := printGuide(&out, &errs, append(append([]string{}, args...), "--since", other)); code != 0 || !strings.HasPrefix(out.String(), first+"\n") || out.String()[len(first)+1:] != rest {
+			t.Fatalf("%v --since another hash: %d %.80q", args, code, out.String())
+		}
+	}
+	for _, bad := range []string{"abc", strings.Repeat("G", 64)} {
+		out.Reset()
+		errs.Reset()
+		if code := printGuide(&out, &errs, []string{"board", "--since", bad}); code != 2 || out.Len() != 0 || !strings.HasPrefix(errs.String(), "usage:") {
+			t.Fatalf("malformed --since %q: %d %q %q", bad, code, out.String(), errs.String())
+		}
+	}
+	out.Reset()
+	errs.Reset()
+	if code := printGuide(&out, &errs, []string{"refused", "not_a_real_refusal"}); code != 1 || out.Len() != 0 ||
+		errs.String() != "clawdline guide: no guide part explains refusal code \"not_a_real_refusal\"\n" {
+		t.Fatalf("unknown refusal: %d %q %q", code, out.String(), errs.String())
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -57,6 +58,48 @@ var sections = []section{
 
 // ErrUnknownSection is a section name this build does not carry.
 var ErrUnknownSection = errors.New("no such section")
+
+// ErrUnknownRefusal is a code no part of the guide mentions.
+var ErrUnknownRefusal = errors.New("no guide part explains refusal code")
+
+var refusalCode = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// RefusedSection names the part that owns a refusal code, and returns it.
+//
+// The owner is the first part, in the guide's own order, that mentions the
+// code — core parts count like any other — so the answer is the same in both
+// languages as long as their parts say the same things in the same places,
+// which TestEveryRefusalCodeHasTheSameOwnerInBothLanguages holds them to.
+// Two parts are passed over in that walk: "swift" describes the retired app's
+// words, and "refused" is the summary every code may also appear in; the
+// summary owns a code only when no other part mentions it.
+func RefusedSection(lang, code string) (string, []byte, error) {
+	if !refusalCode.MatchString(code) {
+		return "", nil, fmt.Errorf("%w %q", ErrUnknownRefusal, code)
+	}
+	_, parts, err := guideParts(lang)
+	if err != nil {
+		return "", nil, err
+	}
+	mentions := regexp.MustCompile(`(^|[^a-z0-9_])` + code + `([^a-z0-9_]|$)`)
+	summary := -1
+	for i, s := range sections {
+		switch s.Name {
+		case "swift":
+			continue
+		case "refused":
+			summary = i
+			continue
+		}
+		if mentions.Match(parts[i]) {
+			return s.Name, parts[i], nil
+		}
+	}
+	if summary >= 0 && mentions.Match(parts[summary]) {
+		return sections[summary].Name, parts[summary], nil
+	}
+	return "", nil, fmt.Errorf("%w %q", ErrUnknownRefusal, code)
+}
 
 // SectionNames lists every section, in the guide's order.
 func SectionNames() []string {
