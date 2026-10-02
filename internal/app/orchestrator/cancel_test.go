@@ -272,8 +272,8 @@ func TestACancelNeedsAReasonOfBoundedLength(t *testing.T) {
 	id := "ca000000-0000-4000-8000-000000000007"
 	runningChild(t, b, ctx, id)
 	for reason, want := range map[string]string{
-		" \n\t ":                                   "reason_required",
-		strings.Repeat("x", CancelReasonLimit+1):   "reason_too_long",
+		" \n\t ":                                    "reason_required",
+		strings.Repeat("x", CancelReasonLimit+1):    "reason_too_long",
 		strings.Repeat("x ", CancelReasonLimit/2+1): "reason_too_long",
 	} {
 		_, err := b.CancelTask(ctx, id, reason, "k", asRoot())
