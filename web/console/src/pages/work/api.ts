@@ -118,6 +118,9 @@ export interface ProposalPage {
   next_cursor: string | null
 }
 
+/** `withdrawn`: the Session that asked stopped waiting before anyone answered. */
+export type DecisionState = "open" | "answered" | "defaulted" | "withdrawn"
+
 export interface Decision {
   id: string
   session_id: string
@@ -127,7 +130,7 @@ export interface Decision {
   options: { id: string; label: string }[]
   default: string
   blocking: boolean
-  state: string
+  state: DecisionState
   created_at: number
   due_at: number
 }
@@ -349,6 +352,8 @@ export interface WorkV2Item {
   phase: WorkV2Phase
   condition: string | null
   user_action: string
+  /** The open decision an Agent's waiting_user points at; absent otherwise. */
+  decision_id?: string
   area: "planning" | "unassigned" | WorkV2Phase
   deployment_policy: "required" | "not_required" | "agent_decides"
   /**

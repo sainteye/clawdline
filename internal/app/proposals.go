@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -57,6 +58,41 @@ type Participation struct {
 	// is a daemon with no broker: a proposal about a task still records, and
 	// a task still owed is bound when a broker next starts on the same store.
 	Bind func(ctx context.Context, task, workID, from string) error
+	// DecisionClosed tells the owning Session that the decision its item's
+	// waiting_user pointed at ended, after the write that cleared it
+	// committed. Best effort: the decision row and the item's event are the
+	// durable facts. Nil tells nobody.
+	DecisionClosed func(ctx context.Context, c DecisionClosure)
+}
+
+// DecisionClosure is a decision whose end cleared the waiting_user of the
+// Board item it was about: what the owning Session is told, and where.
+type DecisionClosure struct {
+	Decision work.Decision
+	ItemID   string
+	Title    string
+	// Owner is the item's active assignment when the decision ended; its
+	// terminal is where the notice goes.
+	Owner work.AssignmentV2
+}
+
+// Notice is the line typed to the owning Session: the option the person
+// chose, or the default that stood, by id and label.
+func (c DecisionClosure) Notice() string {
+	d := c.Decision
+	label := d.OptionLabel(d.Answer)
+	how := fmt.Sprintf("The person answered decision %s", d.ID)
+	if d.State == work.DecisionDefaulted {
+		how = fmt.Sprintf("Nobody answered decision %s by its due, so its default stands", d.ID)
+	}
+	return fmt.Sprintf("%s on Board item %s: %s. Answer: %q (option %s, %s). The item is no longer waiting_user; "+
+		"continue from this answer.", how, c.ItemID, c.Title, label, d.Answer, d.State)
+}
+
+func (p *Participation) tellClosed(ctx context.Context, c *DecisionClosure) {
+	if c != nil && p.DecisionClosed != nil {
+		p.DecisionClosed(context.WithoutCancel(ctx), *c)
+	}
 }
 
 // NewParticipation is the participation points on a board, with the default
@@ -1045,7 +1081,9 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 	}
 	now := p.now()
 	var out work.Decision
+	var closed *DecisionClosure
 	err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		closed = nil
 		prev, err := tx.Decision(id)
 		if err != nil {
 			return err
@@ -1064,7 +1102,7 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 		}
 		next.Version = prev.Version + 1
 		out = next
-		if err := p.decisionMove(tx, next, principal, via, now); err != nil {
+		if closed, err = p.decisionMove(tx, next, principal, via, now); err != nil {
 			return err
 		}
 		if file != nil {
@@ -1074,25 +1112,66 @@ func (p *Participation) AnswerDecision(ctx context.Context, id, option, actor, p
 		}
 		return nil
 	})
+	if err == nil {
+		p.tellClosed(ctx, closed)
+	}
 	return out, participationRefusal(err)
 }
 
-// decisionMove writes a closed decision's move on the open board item it is
-// about, if there is one.
+// decisionMove writes a closed decision's fact on the board item it is
+// about, in the transaction that closed it. On the current Board, an item
+// whose waiting_user points at this decision leaves the wait, and the event
+// records the answer: a crash can never leave a closed decision with its item
+// still waiting. On the v1 residue it is the item's newest move.
 func (p *Participation) decisionMove(tx *store.WorkTx, d work.Decision, principal string, via *work.Run,
-	now time.Time) error {
+	now time.Time) (*DecisionClosure, error) {
 	if d.WorkID == "" {
+		return nil, nil
+	}
+	var closed *DecisionClosure
+	err := tx.WorkV2(func(v *store.WorkV2Tx) error {
+		it, err := v.Item(d.WorkID)
+		if errors.Is(err, store.ErrNoWorkV2) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if it.DecisionID != d.ID || it.Condition != work.ConditionWaitingUser {
+			return nil
+		}
+		owner, err := v.ActiveAssignment(it.ID)
+		if err != nil {
+			return err
+		}
+		next := it
+		next.Condition, next.UserAction, next.DecisionID, next.UpdatedAt = "", "", "", now
+		event := map[string]any{"decision_id": d.ID, "state": d.State, "answer": d.Answer,
+			"label": d.OptionLabel(d.Answer), "answered_by": d.AnsweredBy}
+		if principal != "" {
+			event["principal"] = principal
+		}
+		if via != nil {
+			event["run"] = via.Evidence()
+		}
+		if err := v.PutItem(it, next, "decision.closed", d.AnsweredBy, payload(event)); err != nil {
+			return err
+		}
+		closed = &DecisionClosure{Decision: d, ItemID: it.ID, Title: it.Title, Owner: owner}
 		return nil
+	})
+	if err != nil || closed != nil {
+		return closed, err
 	}
 	it, err := tx.Item(d.WorkID)
 	if errors.Is(err, store.ErrNoWork) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if it.Place != work.PlaceBoard || !(it.State == work.ItemActive || it.State == work.ItemAwaitingClosure) {
-		return nil
+		return nil, nil
 	}
 	c := work.DecisionChange(d, it, now)
 	if principal != "" {
@@ -1101,7 +1180,7 @@ func (p *Participation) decisionMove(tx *store.WorkTx, d work.Decision, principa
 	if via != nil {
 		c.Evidence["run"] = via.Evidence()
 	}
-	return tx.Put(it, c.Apply(it, now), store.MoveOf(it.ID, c, now))
+	return nil, tx.Put(it, c.Apply(it, now), store.MoveOf(it.ID, c, now))
 }
 
 // DecisionPage is one read of the decisions.
@@ -1172,7 +1251,9 @@ func (p *Participation) Sweep(ctx context.Context) error {
 	owed, err := p.Board.Store.DueDecisions(ctx, now)
 	errs = append(errs, err)
 	for _, id := range owed {
-		errs = append(errs, p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+		var closed *DecisionClosure
+		err := p.Board.Store.WriteWork(ctx, func(tx *store.WorkTx) error {
+			closed = nil
 			prev, err := tx.Decision(id)
 			if err != nil {
 				return err
@@ -1184,8 +1265,14 @@ func (p *Participation) Sweep(ctx context.Context) error {
 			if err := tx.PutDecision(next, &prev, 0); err != nil {
 				return err
 			}
-			return p.decisionMove(tx, next, "", nil, now)
-		}))
+			next.Version = prev.Version + 1
+			closed, err = p.decisionMove(tx, next, "", nil, now)
+			return err
+		})
+		if err == nil {
+			p.tellClosed(ctx, closed)
+		}
+		errs = append(errs, err)
 	}
 	stale, err := p.Board.Store.StalePushes(ctx, now.Add(-stalePush))
 	errs = append(errs, err)

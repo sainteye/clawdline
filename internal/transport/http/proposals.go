@@ -74,6 +74,12 @@ func (s *Server) participation() *app.Participation {
 	if s.broker != nil {
 		p.Bind = s.broker.BindWork
 	}
+	// A decision whose end cleared its item's waiting_user is typed to the
+	// owning Session, as a moved item is told to its former owner: only when
+	// its terminal still holds that conversation and reads idle.
+	p.DecisionClosed = func(ctx context.Context, c app.DecisionClosure) {
+		s.tellFormerOwner(ctx, c.Owner, c.Notice())
+	}
 	got, _ := participationByServer.LoadOrStore(s, p)
 	return got.(*app.Participation)
 }
@@ -769,9 +775,9 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 			state = work.DecisionOpen
 		case "all":
 			state = ""
-		case work.DecisionOpen, work.DecisionAnswered, work.DecisionDefaulted:
+		case work.DecisionOpen, work.DecisionAnswered, work.DecisionDefaulted, work.DecisionWithdrawn:
 		default:
-			writeRefusal(w, http.StatusBadRequest, "invalid_state", "state is open, answered, defaulted or all.")
+			writeRefusal(w, http.StatusBadRequest, "invalid_state", "state is open, answered, defaulted, withdrawn or all.")
 			return
 		}
 		page, err := s.participation().DecisionList(r.Context(), state, q["session_id"], q["cursor"])
@@ -782,7 +788,8 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 		out := decisionListWire{OK: true, State: optionalString(string(state)), Counts: map[string]int64{},
 			Rows: []decisionWire{}, NextCursor: optionalString(page.Next), PageSize: app.WorkPageSize,
 			Source: s.participationSource()}
-		for _, st := range []work.DecisionState{work.DecisionOpen, work.DecisionAnswered, work.DecisionDefaulted} {
+		for _, st := range []work.DecisionState{work.DecisionOpen, work.DecisionAnswered, work.DecisionDefaulted,
+			work.DecisionWithdrawn} {
 			out.Counts[string(st)] = page.Counts[st]
 		}
 		for _, row := range page.Rows {

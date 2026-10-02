@@ -1097,18 +1097,28 @@ cycle in `implementing`, restores this Session as owner, and records the reason 
 history. The reason is at most 8 KiB. An ambiguous follow-up is not authority to change a Board
 item.
 
-When the owning Agent needs an action from the person, use the machine-authenticated route:
+When the owning Agent needs the person to act or choose, it asks a decision and waits on it.
+First open a decision about this item (`POST /v1/orchestrator/decisions` with this item's
+`work_id`, two to four options, a `default` and a due — for an action, options such as
+`{"id": "done", "label": "I've done it"}` and `{"id": "cannot", "label": "I can't"}`), then point
+the item at it on the machine-authenticated route:
 
 ```
 PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>",
- "condition": "waiting_user", "user_action": "The one concrete action the person must take"}
+ "condition": "waiting_user", "decision_id": "<the decision's id>"}
 ```
 
-`user_action` is at most 8 KiB and belongs only to `waiting_user`; omitting the concrete action or
-putting one on another condition is refused by name. When the wait ends, set `condition` to the
-empty string on the same route; the daemon clears `user_action` with it so the Board cannot retain
-a stale request.
+The decision must exist (`decision_not_found`), be this Session's (`decision_other_session`), be
+about this item (`decision_other_item`) and still be open (`decision_not_open`); `decision_id` on
+any other condition is `decision_requires_waiting_user`. A `waiting_user` without a decision is
+refused with `waiting_user_requires_decision`. The person answers on the Board card or in
+"Waiting on you"; when the decision is answered, or its default stands at the due, the daemon
+clears the item's `waiting_user` in the same write, records the answer on the item, and types the
+chosen option's id and label into this Session when it is idle. To stop waiting yourself, set
+`condition` to the empty string (or another condition) on the same route; the decision is then
+`withdrawn` and leaves "Waiting on you", and so does it when the item is released, reassigned,
+cancelled or done. Answering a withdrawn decision is refused with `decision_withdrawn`.
 
 **Captured planning and verification gates.** `planning_gate` defaults on and `verify_gate` off;
 `clawdline setting get|set planning_gate|verify_gate` accepts `on/off` or `true/false`. The first

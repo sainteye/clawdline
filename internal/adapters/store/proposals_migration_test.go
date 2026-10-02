@@ -135,3 +135,95 @@ VALUES ('again','session-a',?,'/p','No context','[]','yes',0,'open',40,50,'none'
 		}
 	}
 }
+
+// A decisions table written before `withdrawn` is rebuilt to accept it with
+// every row as it was; the answer rule still holds for the states that carry
+// one, and opening it again changes nothing.
+func TestAnOlderDecisionTableAcceptsWithdrawnAndKeepsItsRows(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, DBFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE decisions (
+  id             TEXT    PRIMARY KEY,
+  session        TEXT    NOT NULL CHECK (session <> ''),
+  work_id        TEXT    NOT NULL CHECK (work_id <> ''),
+  task_id        TEXT,
+  project        TEXT    NOT NULL DEFAULT '',
+  question       TEXT    NOT NULL CHECK (question <> ''),
+  options        TEXT    NOT NULL CHECK (json_valid(options)),
+  default_option TEXT    NOT NULL CHECK (default_option <> ''),
+  blocking       INTEGER NOT NULL CHECK (blocking IN (0, 1)),
+  state          TEXT    NOT NULL CHECK (state IN ('open','answered','defaulted')),
+  answer         TEXT,
+  answered_by    TEXT,
+  answered_at    INTEGER,
+  created_at     INTEGER NOT NULL,
+  due_at         INTEGER NOT NULL,
+  push           TEXT    NOT NULL CHECK (push IN
+                   ('none','pending','sent','not_subscribed','over_budget','failed','unknown')),
+  pushed_at      INTEGER,
+  version        INTEGER NOT NULL DEFAULT 0,
+  CHECK ((state = 'open') = (answer IS NULL)),
+  CHECK (blocking = 1 OR push = 'none')
+);
+INSERT INTO decisions
+  (id,session,work_id,project,question,options,default_option,blocking,state,answer,answered_by,
+   answered_at,created_at,due_at,push,version)
+VALUES
+  ('waiting','session-a','work-a','/p','Still open','[{"id":"yes","label":"Yes"}]','yes',0,
+   'open',NULL,NULL,NULL,10,20,'none',3),
+  ('kept','session-a','work-a','/p','Kept answer','[{"id":"yes","label":"Yes"}]','yes',0,
+   'answered','yes','person',30,12,22,'none',1);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE decisions SET state = 'withdrawn' WHERE id = 'waiting'`); err == nil {
+		t.Fatal("the older table already accepted withdrawn; this test proves nothing")
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for open := 0; open < 2; open++ {
+		st, err := Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := context.Background()
+		rows, err := st.Decisions(ctx, DecisionQuery{Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		byID := map[string]work.Decision{}
+		for _, r := range rows {
+			byID[r.ID] = r
+		}
+		if len(rows) != 2 || byID["kept"].Answer != "yes" || byID["kept"].State != work.DecisionAnswered ||
+			byID["waiting"].Version != int64(3+open) {
+			t.Fatalf("rows after opening %d: %+v", open+1, rows)
+		}
+		if open == 0 {
+			err = st.WriteWork(ctx, func(tx *WorkTx) error {
+				prev, err := tx.Decision("waiting")
+				if err != nil {
+					return err
+				}
+				next, ok := work.WithdrawDecision(prev, "session-a", time.Unix(40, 0))
+				if !ok {
+					t.Fatalf("an open decision was not withdrawable: %+v", prev)
+				}
+				return tx.PutDecision(next, &prev, 0)
+			})
+			if err != nil {
+				t.Fatalf("withdrawn on the migrated table: %v", err)
+			}
+			if _, err := st.db.Exec(`UPDATE decisions SET answer = NULL WHERE id = 'kept'`); err == nil {
+				t.Fatal("an answered decision without its answer was accepted")
+			}
+		} else if byID["waiting"].State != work.DecisionWithdrawn || byID["waiting"].Answer != "" {
+			t.Fatalf("withdrawn row after reopening: %+v", byID["waiting"])
+		}
+		st.Close()
+	}
+}

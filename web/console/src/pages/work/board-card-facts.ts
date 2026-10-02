@@ -16,8 +16,27 @@ export function conditionWords(item: { condition: WorkV2Item["condition"]; proje
   return item.condition ? CONDITIONS[item.condition] ?? "狀態待確認" : "正常"
 }
 
-export function needsPerson(item: Pick<WorkV2Item, "condition" | "user_action">, decisionCount: number): boolean {
-  return !!item.condition || !!item.user_action || decisionCount > 0
+export function needsPerson(item: Pick<WorkV2Item, "condition" | "user_action" | "decision_id">, decisionCount: number): boolean {
+  return !!item.condition || !!item.user_action || !!item.decision_id || decisionCount > 0
+}
+
+/**
+ * What the person is asked to do next on a card. An Agent's waiting_user
+ * points at a decision, and the card names that decision's question; its
+ * answer buttons are in the item's detail. When the decision is not among the
+ * open ones this read holds, the card says a question waits rather than
+ * showing nothing. A free-text action (the daemon's own waits, or one written
+ * before decisions) still reads as before.
+ */
+export function nextActionWords(
+  item: Pick<WorkV2Item, "user_action" | "decision_id">,
+  decisions: { id: string; question: string }[],
+): string {
+  if (item.decision_id) {
+    const decision = decisions.find((row) => row.id === item.decision_id)
+    return decision ? `等你決定：${decision.question}` : "等你回答一個問題"
+  }
+  return item.user_action ? `下一步：${item.user_action}` : ""
 }
 
 export function phaseStayWords(enteredAt: number | null | undefined, nowSeconds: number): string {

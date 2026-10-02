@@ -287,6 +287,15 @@ func (t *WorkTx) WorkV2Item(id string) (work.ItemV2, error) {
 	return scanWorkV2(t.tx.QueryRowContext(t.ctx, `SELECT `+workV2Columns+` FROM work_v2_items WHERE id = ?`, id))
 }
 
+// WorkV2 runs fn on the current Board inside this transaction: a decision's
+// end and the item that waited on it are one write (Participation.decisionMove).
+func (t *WorkTx) WorkV2(fn func(*WorkV2Tx) error) error {
+	v := &WorkV2Tx{ctx: t.ctx, tx: t.tx, s: t.s}
+	err := fn(v)
+	t.wrote += v.wrote
+	return err
+}
+
 // Tasks reads every broker task bound to a work item, as the transaction
 // sees them: the facts a change is decided from.
 func (t *WorkTx) Tasks(id string) ([]BrokerRow, error) {
