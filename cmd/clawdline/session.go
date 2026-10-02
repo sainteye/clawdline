@@ -29,6 +29,10 @@ import (
 var conversationEnv = []string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"}
 
 func sessionCommand(args []string) {
+	if len(args) > 0 && args[0] == "close" {
+		sessionCloseCommand(args[1:])
+		return
+	}
 	if len(args) == 0 || args[0] != "report" {
 		sessionUsage()
 	}
@@ -51,6 +55,8 @@ func sessionCommand(args []string) {
 func sessionUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline session report --summary <sentence> [--conversation id | --terminal id] [--port n]")
 	fmt.Fprintln(os.Stderr, "  records this session's finished turn: delivered, awaiting approval")
+	fmt.Fprintln(os.Stderr, "usage: clawdline session close [--dry-run] [--conversation id] [--terminal id] [--port n]")
+	fmt.Fprintln(os.Stderr, "  audits what this session (or a Feature Root its Epic opened) still owes, and closes it only when nothing is")
 	os.Exit(2)
 }
 
@@ -243,4 +249,137 @@ func conversationRefusal(err error, flag string) string {
 	return fmt.Sprintf("%v. Pass %s <the conversation id of the assistant running this command>, "+
 		"or run it without the other assistant's variable (for example `env -u CLAUDE_CODE_SESSION_ID clawdline …` from Codex).",
 		err, flag)
+}
+
+// `clawdline session close`: a finished Session closing itself, or an Epic
+// owner closing a Feature Root it opened. It reads the Session's closeability
+// first, prints every blocker with who moves it, and closes only a `safe`
+// one, naming the version it read so a Session that changed meanwhile is not
+// closed on an old answer. It never forces: the daemon refuses force from an
+// agent, and this command has no way to ask for it.
+
+func sessionCloseCommand(args []string) {
+	fs := flag.NewFlagSet("session close", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	dryRun := fs.Bool("dry-run", false, "audit only: print what the Session still owes, close nothing")
+	conversation := fs.String("conversation", "", "this assistant's conversation id (default: from the environment)")
+	terminal := fs.String("terminal", "", "the terminal to close (default: this Session's own)")
+	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		sessionUsage()
+	}
+	b, err := openBroker(*port)
+	if err != nil {
+		fail(err)
+	}
+	os.Exit(closeSession(os.Stdout, os.Stderr, b, *conversation, *terminal, *dryRun, os.Getenv))
+}
+
+// sessionCloseAudit is the daemon's closeability answer for an agent.
+type sessionCloseAudit struct {
+	TerminalID string `json:"terminal_id"`
+	State      string `json:"state"`
+	Version    string `json:"version"`
+	Authority  string `json:"authority"`
+	Reasons    []struct {
+		Code        string `json:"code"`
+		Kind        string `json:"kind"`
+		SubjectKind string `json:"subject_kind"`
+		SubjectID   string `json:"subject_id"`
+		Mover       struct {
+			Kind         string `json:"kind"`
+			Self         bool   `json:"self"`
+			PersonNeeded bool   `json:"person_needed"`
+			SessionID    string `json:"session_id"`
+		} `json:"mover"`
+	} `json:"reasons"`
+}
+
+// closeSession is the command, answering its exit status.
+func closeSession(stdout, stderr io.Writer, b *broker, conversation, terminal string, dryRun bool,
+	getenv func(string) string) int {
+	if conversation == "" {
+		var err error
+		if conversation, _, err = conversationFromEnv(getenv); err != nil {
+			fmt.Fprintf(stderr, "clawdline session close: %s Nothing was closed.\n", conversationRefusal(err, "--conversation"))
+			return 2
+		}
+	}
+	if conversation == "" {
+		fmt.Fprintf(stderr, "clawdline session close: cannot tell which conversation this is: none of %s is set. "+
+			"Pass --conversation <this assistant's conversation id>. Nothing was closed.\n",
+			strings.Join(conversationEnv, ", "))
+		return 2
+	}
+	if terminal == "" {
+		who, err := b.request(http.MethodGet, "/v1/orchestrator/whoami",
+			url.Values{"conversation_id": {conversation}}, nil, "")
+		if err != nil {
+			fmt.Fprintln(stderr, "clawdline session close:", err)
+			return 1
+		}
+		if !who.ok() {
+			return report(stdout, stderr, "session close (whoami)", who)
+		}
+		var id struct {
+			TerminalID string `json:"terminal_id"`
+		}
+		if json.Unmarshal(who.Body, &id) != nil || id.TerminalID == "" {
+			fmt.Fprintln(stderr, "clawdline session close: whoami answered without a terminal id. Nothing was closed.")
+			return 1
+		}
+		terminal = id.TerminalID
+	}
+	base := "/v1/work/v2/agent/sessions/" + url.PathEscape(terminal)
+	a, err := b.request(http.MethodGet, base+"/closeability", url.Values{"session_id": {conversation}}, nil, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline session close:", err)
+		return 1
+	}
+	if !a.ok() {
+		return report(stdout, stderr, "session close (closeability)", a)
+	}
+	var audit sessionCloseAudit
+	if json.Unmarshal(a.Body, &audit) != nil || audit.State == "" {
+		fmt.Fprintln(stderr, "clawdline session close: the closeability answer could not be read. Nothing was closed.")
+		return 1
+	}
+	printCloseAudit(stdout, audit)
+	if audit.State != "safe" {
+		fmt.Fprintf(stderr, "clawdline session close: %s is %s; nothing was closed.\n", terminal, audit.State)
+		return 1
+	}
+	if dryRun {
+		fmt.Fprintf(stdout, "%s is safe to close (dry run: nothing was closed).\n", terminal)
+		return 0
+	}
+	c, err := b.request(http.MethodPost, base+"/close", nil, map[string]string{
+		"session_id": conversation, "expected_closeability_version": audit.Version,
+	}, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline session close:", err)
+		return 1
+	}
+	return report(stdout, stderr, "session close", c)
+}
+
+// printCloseAudit names every blocker and who moves it.
+func printCloseAudit(w io.Writer, audit sessionCloseAudit) {
+	fmt.Fprintf(w, "%s: %s (closing as %s)\n", audit.TerminalID, audit.State, audit.Authority)
+	for _, r := range audit.Reasons {
+		mover := r.Mover.Kind
+		switch {
+		case r.Mover.Self:
+			mover = "this session"
+		case r.Mover.PersonNeeded:
+			mover = "the person"
+		case r.Mover.SessionID != "":
+			mover = "session " + r.Mover.SessionID
+		}
+		subject := ""
+		if r.SubjectID != "" {
+			subject = " " + strings.TrimSpace(r.SubjectKind+" "+r.SubjectID)
+		}
+		fmt.Fprintf(w, "  %s (%s)%s — moved by %s\n", r.Code, r.Kind, subject, mover)
+	}
 }

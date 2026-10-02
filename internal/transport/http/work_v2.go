@@ -2546,6 +2546,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		writeRefusal(w, http.StatusUnauthorized, "machine_required", "Only an authenticated Session may use this route.")
 		return
 	}
+	if len(parts) >= 1 && parts[0] == "sessions" {
+		s.agentSessions(w, r, parts)
+		return
+	}
 	if len(parts) == 1 && parts[0] == "human-interventions" && r.Method == http.MethodPost {
 		s.agentCreateHumanIntervention(w, r)
 		return

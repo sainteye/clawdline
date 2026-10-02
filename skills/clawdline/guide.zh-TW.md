@@ -58,6 +58,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 |---|---|
 | `clawdline guide [zh-TW]` | 這份指南。不需要 daemon |
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
+| `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
 | `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
@@ -292,7 +293,11 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 `verifying → merging` 需要 checker 的 PASS：進入 `verifying` 之前先讀 `clawdline guide zh-TW board` 的
 「本輪擷取的規劃與驗證 gate」。
 
-**8. 回報這個 turn**：最後一個動作是 `clawdline session report --summary "…"`（§7）。
+**8. 回報這個 turn**：`clawdline session report --summary "…"`（§7）。
+
+**9. 關閉自己的 Session**：項目 `done` 或 `cancelled` 後執行 `clawdline session close`。它會稽核你的
+task、landing、未確認的完成通知、待辦和自己名下未完成的看板項目，逐條印出阻礙與負責推動者，
+只有 closeability 是 `safe` 才關閉，而且絕不強制。`--dry-run` 只稽核不關閉。
 
 **被拒絕時。** `version_conflict`：同一個指令再跑一次，它會重讀版本。`steps_incomplete`：還有 step
 沒勾。其他代碼：先看 §12，再看涵蓋它的那個部分。
@@ -1284,13 +1289,14 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   下一位負責者。所有子項目都 `done` 或 `cancelled` 後才可宣告上層 Epic 完成；否則
   `epic_children_open` 會寫明還有幾個未結束。除了 Epic 的子項目，不要建立其他看板項目。
 - **子項目完成不等於獨立 Feature Root 的 Session 已關閉。** 對每個由 Epic `--assign-new` 開出的
-  Root，用 `GET /v1/sessions` 的 `epic_parent.epic_id` 核對所屬 Epic、Session 身分及
-  `closeability`；不要只靠標題或終端機排列猜測，也不要把 `clawdline session report` 當成關閉。
+  Root，用 `clawdline session close --dry-run --terminal <id>` 讀它的 `closeability`
+  （只有本 Epic 開出的 Root 才會回 `closing as epic_owner`）；不要只靠標題或終端機排列猜測，也不要把 `clawdline session report` 當成關閉。
   子項目 `done` 後立即請該 Root 負責人清點自己的未完成 task、landing、通知、待辦和工作樹，依
   `clawdline` 關閉流程完成報告。只有目前的 daemon 提供正式入口時才能建立關閉證明；已退役 Swift
   的路由不算可用入口。若證明或受保護的關閉操作尚未實作，記錄產品阻礙與下一位負責者，並保留
   Session。只有 `closeability.state=safe`、身分與
-  工作均可核對時，才經支援的 Session 關閉操作結束它，再重讀清單確認已消失；不要用
+  工作均可核對時，才用 `clawdline session close --terminal <id>` 結束它；它會先重讀清單，關掉之後再跑一次會回
+  `session_not_found`；不要用
   `clawdline close <terminal id>` 繞過判定。`blocked` 就追具名責任人完成義務，`unknown`
   （例如 `terminal_unreadable`）就保留 Session、記錄缺少的證據與下一位處理者；不可強制關閉、
   封存或宣稱清完。宣告 Epic 收尾前，逐一列出這些 Session 的關閉結果或具名阻礙；
