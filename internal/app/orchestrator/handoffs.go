@@ -716,6 +716,11 @@ func validateAssignment(req RootAssignmentRequest) error {
 
 // AssignmentBrief is the file a Feature Root is told to read first.
 //
+// Every brief ends in HOW TO WORK: the guide part that is its whole ordinary
+// path, and that investigation is delegated like implementation. Measured on
+// 2026-10-02, a Feature Root that read guide parts by hand and investigated in
+// its own context re-read what its children then rediscovered.
+//
 // With a persona, a PERSONA section names it and the file its definition is
 // in: the session was launched with that file already in its system prompt,
 // and the section says so where the rest of its brief is.
@@ -729,6 +734,7 @@ func AssignmentBrief(id string, a Assignment, persona, personaFile string) strin
 	} {
 		sb.WriteString(s.head + "\n" + strings.TrimSpace(s.body) + "\n\n")
 	}
+	sb.WriteString(AssignmentHowToWork + "\n\n")
 	if p, ok := personas.Known(persona); ok {
 		sb.WriteString("PERSONA\n" + p.Name.En + " (" + p.ID + "). Its definition is " + personaFile +
 			", which this session was launched with. It shapes how you work; it never overrides the " +
@@ -736,6 +742,16 @@ func AssignmentBrief(id string, a Assignment, persona, personaFile string) strin
 	}
 	return sb.String()
 }
+
+// AssignmentHowToWork is the section every Feature Root's brief carries
+// after its ACCEPTANCE, whoever opened it.
+const AssignmentHowToWork = "HOW TO WORK\n" +
+	"Print `clawdline guide feature-root` first: it is your ordinary path from reading the item to done, " +
+	"and it names the part to print for anything rarer. Delegate investigation as well as implementation: " +
+	"when you need to find something out, to fix it or to offer the person options, dispatch a child and keep " +
+	"only its conclusion. Each brief carries the facts you have already verified, each with its file:line or " +
+	"the command that showed it, so the child does not rediscover them. An investigation or Explore child's " +
+	"brief also states its stop condition and a turn limit."
 
 // AssignmentLine is the one line typed into the Feature Root. The five
 // sections are in the file it names rather than typed: a multi-line paste is

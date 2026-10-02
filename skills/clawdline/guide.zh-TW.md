@@ -39,15 +39,23 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 
 否則你是 **root**：一個有人正在跟你對話的一般 session。後面的內容都是寫給你的。
 
+如果訊息寫著 *"You are an independently owned Clawdline Feature Root …"*，或有看板項目指派給你，接著印出
+`clawdline guide zh-TW feature-root`：它是從讀項目到 `done` 的完整一般流程，比較少見的工作也會指出該印哪個部分。
+
 ## 2. 連上 daemon
 
 **有指令可以用，就用指令，不要自己組 curl。** 指令在自己的 process 裡讀憑證，所以憑證不會出現在命令列、
-`ps`、指令輸出，也不會出現在你的 transcript 裡。
+`ps`、指令輸出，也不會出現在你的 transcript 裡。自己組的 curl 沒帶這份憑證，會回 `401 unauthorized`
+（"This needs a paired device."）：缺的是憑證，不是權限。改用指令。
 
 | 指令 | 做什麼 |
 |---|---|
 | `clawdline guide [zh-TW]` | 這份指南。不需要 daemon |
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
+| `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
+| `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
+| `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
+| `clawdline heavy -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試（§11） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
@@ -192,6 +200,83 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 是哪一項並保留 unknown，絕不能把「沒有答案」回報成成功。最後列出完成的設定、刻意判定不適用的項目，
 以及 git 以外被修改的使用者檔案。
 
+## 2a. Feature Root 的一般流程
+
+一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令
+帶著憑證，自己組 curl 打同一條路由會被拒絕。比較少見的工作只差一個 `clawdline guide <part>`；指引在
+最後。
+
+**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、使用者的
+「需要獨立審查」勾選、版本和 steps。你就從這份紀錄開始工作。
+
+**2. 替 Session 命名**（如果它是為這個項目開的）：讀完 objective 和 scope 之後執行一次
+`clawdline item name <item id> "<task name>"`。改的是 Session 名稱，不是項目標題。
+
+**3. 開始實作之前。**
+
+- 本輪擷取了 planning 但沒有驗收標準：用 `clawdline item acceptance <item id> --body-file acceptance.md`
+  寫下可觀察的標準。
+- 勾了「需要獨立審查」，或它是 Epic：先走 `clawdline guide epic` 裡的審查計畫流程。沒勾：不寫計畫、
+  不派審查 child。
+- 工作分好幾段又沒有 steps：`clawdline item step-add <item id> "first" "second" …`（二到八個能各自
+  驗證的 step；單一修改不需要）。
+- 然後 `clawdline item phase <item id> implementing`。
+
+**4. 委派，調查也算。** 實作交給 child，調查也一樣——找原因，或是讀到足以給使用者選項。你留下的是
+結論，不是整份檔案內容；整合、合併與 landing 仍是你的。
+
+```sh
+clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
+```
+
+- `--work-id` 把 child 綁到項目上，它的 landing 就算是項目的。
+- 標題是一行、最多 60 字元，說完成後什麼會不一樣。任何冒號（`:` 或 `：`）都會被拒，因為它把觀察和
+  解釋接在一起；以「使用者」或 "the user" 當主詞、或用 code 格式的識別字開頭，也會被拒。每一種都回
+  `bad_task`，並以 `title: …` 說是哪一種。
+- brief 要自己就講得清楚。把你已經查證過的事實寫進去，每一條附上 `file:line` 或顯示它的指令，child
+  就不必重新找一次。
+- 調查或 Explore child 的 brief 還要寫明停止條件——回答了就結束任務的那個問題——以及 turn 上限。
+- 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-TW dispatch`。
+
+**5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
+整合交付，然後 `clawdline task ack <task id> <notice id>`。worktree child 的整合方式是**把它的 branch
+merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
+列出還欠著的。只有 cherry-pick 或 `incorporated` 的交付才需要手動記錄（`clawdline guide landing`）。
+
+**6. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉，然後一次
+推進一個 phase：
+
+```sh
+clawdline item phase <item id> verifying
+clawdline item phase <item id> merging --verification "what was run and what it showed"
+clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
+clawdline item phase <item id> done --deployment "what went live, where, which version"
+clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
+```
+
+`done` 依項目的部署政策帶 `--deployment` 或 `--no-deployment-reason`。本輪擷取了 verification 時，
+`verifying → merging` 需要 checker 的 PASS：進入 `verifying` 之前先讀 `clawdline guide zh-TW board` 的
+「本輪擷取的規劃與驗證 gate」。
+
+**7. 結案報告**：找出原因需要深入調查時（直接觀察就確認的修正不需要），在 `done` 之前：
+
+```sh
+clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
+```
+
+寫給提出問題的人讀，用 Markdown，不放私密資料。
+
+**8. 回報這個 turn**：最後一個動作是 `clawdline session report --summary "…"`（§7）。
+
+**被拒絕時。** `version_conflict`：同一個指令再跑一次，它會重讀版本。`steps_incomplete`：還有 step
+沒勾。其他代碼：先看 §12，再看涵蓋它的那個部分。
+
+**比較少見的工作，各一個部分：** `clawdline guide zh-TW board`——提案、決策、待辦、重開已完成項目、
+等待使用者、gate 與所有 phase 拒絕；`clawdline guide zh-TW epic`——計畫、計畫審查、Epic 的子項目、
+persona；`clawdline guide zh-TW landing`——手動 landing、交接、Root assignment；
+`clawdline guide zh-TW running`——卡住的 child、leftover、respawn。
+
 ## 3. 派工之前：先讀已經存在的東西
 
 別的 session 可能已經在做你要做的事，而且從共用的 working tree 上看不出來：一份已經完成、放在還沒
@@ -272,8 +357,8 @@ claims、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `task_id` | 同一個 id |
 | `assistant` | `claude` 或 `codex` |
 | `project_dir` | 一個已經存在的目錄的絕對路徑 |
-| `title` | 顯示在畫面上；超過 200 字元會被截掉 |
-| `instructions` | 必填，最多 16 KiB。內容必須自己就講得清楚：除此之外 child 什麼都不知道 |
+| `title` | 顯示在畫面上：一行、最多 60 字元，說完成後什麼會不一樣。冒號（`:` 或 `：`）、以 "the user" 當主詞、或用 code 格式的識別字開頭，會以 `bad_task`（`title: …`）拒絕 |
+| `instructions` | 必填，最多 16 KiB。內容必須自己就講得清楚：除此之外 child 什麼都不知道。寫進你已經查證過的事實，每一條附 `file:line` 或指令；調查 child 還要有停止條件與 turn 上限 |
 | `claims` | **必填**：最多 32 個 child 可以寫入的相對路徑。`[]` 表示它什麼都不寫，派工會帶一個警告（`claims_missing`） |
 | `isolation` | `none`（預設），或 `worktree`：在自己的 branch 上開一份私有 checkout |
 | `permission_mode` | `ask`、`edits` 或 `full` |
@@ -340,7 +425,7 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 計畫改變時可以送一則進度說明（`/progress`），最多可以推五則通知（`/notify`），最後寫好 `result.json`、
 執行 `clawdline task finish` 收尾。這些路由你不用呼叫。
 
-- `GET /v1/orchestrator/tasks/<id>`——單一 task 和它的狀態。`GET /v1/orchestrator/tasks` 列出全部
+- `clawdline task show <id>`——單一 task 和它的狀態（`GET /v1/orchestrator/tasks/<id>`）。`GET /v1/orchestrator/tasks` 列出全部
   （`?state=`、`?limit=` 最多 500）。
 - **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`。** 它的 `body` 只有一句：哪個 task、
   怎麼結束、只屬於這次交付的事實（stalled、claims 已釋放、它的 branch、幾個 leftover），以及要執行的兩個
@@ -378,7 +463,11 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 
 ## 6. Landing，以及另外三種工作
 
-帶著 claims 的 child 一回來，**就記下 landing 義務**：
+**merge 了 child 的 branch 之後，什麼都不用再做**：broker 會自己記下 `landed`（見下）。手動送的
+landing 是給 merge 涵蓋不到的情況——cherry-pick、`incorporated` 的交付、`nothing_to_land`、`abandoned`。
+merge 之後再手動送一次是多餘的。
+
+帶著 claims 的 child 回來、而你不會 merge 它時，**記下 landing 義務**：
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
@@ -748,7 +837,7 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 `GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
 Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦，`unacknowledged_completions` 是你還沒 ACK 就已經結束的 child（第 5 節）。這條
 pull 路徑讓工作中收到的分派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
-下一件自己負責的工作，並從 `GET /v1/work/v2/items/<id>` 讀取完整內容。
+下一件自己負責的工作，並用 `clawdline item steps <id>` 讀取完整內容（路由是 `GET /v1/work/v2/items/<id>`）。
 
 **使用者送來的待辦。** 訊息最後一行如果是
 `(Clawdline to-do <id>. When it is done: clawdline todo done <id>)`，那就是使用者從 Clawdline
@@ -878,9 +967,9 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `landing_not_published`，以及 `version_conflict`：重讀後再送。
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
-steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，以 machine authentication 和
-Idempotency-Key 呼叫 `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete`，body 是
-`{"expected_version": <item version>, "session_id": "<你的 conversation id>"}`。版本衝突時先重讀。
+steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，用
+`clawdline item step-done <item id> <step id>` 勾掉；它會讀版本，送出
+`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"expected_version", "session_id"}`。版本衝突時再跑一次。
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
 step 勾成完成。
 
@@ -906,16 +995,14 @@ POST /v1/work/v2/agent/items/<id>/steps     （必須帶 Idempotency-Key）
 
 如果 issue 或 incident 必須經過深入調查，才找出 root cause（根因），或必須排除多個看似合理的解法才
 確認真正修正，請在把項目推進 `done` 之前加入一份給使用者閱讀的結案報告。直接觀察就能確認的直觀修正
-不需要報告。使用帶 machine authentication 與 Idempotency-Key 的文件路由：
+不需要報告。把發生了什麼、root cause、修改內容、驗證方式，以及仍存在的邊界寫進一個檔案，然後：
 
 ```
-POST /v1/work/v2/agent/items/<id>/documents     (Idempotency-Key required)
-{"expected_version": <version>, "session_id": "<conversation id>",
- "role": "completion_report", "title": "結案報告",
- "body": "發生了什麼、root cause、修改內容、驗證方式，以及仍存在的邊界"}
+clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
 ```
 
-body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成原始 debug log，也不要放入私密資料。只有
+它替你送出 `POST /v1/work/v2/agent/items/<id>/documents`（欄位列在本節的 Epic 部分，
+`clawdline guide zh-TW epic`）。自己組的 curl 沒帶指令讀的憑證，打這條路由會回 `401 unauthorized`。body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成原始 debug log，也不要放入私密資料。只有
 尚未結案的 active owner 能加入；版本衝突時先重讀。結案報告是具名敘述，不取代驗證、landing 或部署
 證據；有報告時，它會留在已關閉的看板項目，並可從 Session 的「最近完成」列直接打開。
 

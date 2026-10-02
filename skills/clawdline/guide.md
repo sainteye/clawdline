@@ -42,16 +42,25 @@ If your first message said *"You are a Clawdline CHILD agent for task …"*, you
 
 Otherwise you are a **root**: an ordinary session a person is talking to. The rest is for you.
 
+If it said *"You are an independently owned Clawdline Feature Root …"*, or a Board item was assigned
+to you, print `clawdline guide feature-root` next: it is the whole ordinary path from reading the
+item to `done`, and it names the part to print for anything rarer.
+
 ## 2. Reaching the daemon
 
 **Use the commands, not hand-built curl, where one exists.** They read the credential inside their
 own process, so it never appears in a command line, in `ps`, in their output or in your
-transcript.
+transcript. A hand-built curl without that credential answers `401 unauthorized` ("This needs a
+paired device."): it is the credential that is missing, not a permission. Run the command instead.
 
 | Command | What it does |
 |---|---|
 | `clawdline guide [zh-TW]` | This guide. No daemon needed |
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
+| `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
+| `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
+| `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
+| `clawdline heavy -- <command…>` | Runs a build or test suite in the machine's one compile slot (§11) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
@@ -216,6 +225,92 @@ Project shows a fresh progress/deploy receipt. If a read is unavailable, malform
 which one and leave it unknown — never report absence as success. Finish by listing what was
 configured, what was intentionally not applicable, and any user-owned file changed outside git.
 
+## 2a. A Feature Root's ordinary path
+
+This is everything an ordinary Feature Root — a Session that owns one Board item — runs, in order.
+Every step is a command: the commands carry the credential, and a hand-built curl to the same route
+is refused. Anything rarer is one `clawdline guide <part>` away; the pointers are at the end.
+
+**1. Read the item.** `clawdline item steps <item id>` prints its kind, phase, acceptance criteria,
+captured gates, the person's Needs independent review switch, its version and its steps. That is
+the record you work from.
+
+**2. Name your Session**, if it was opened for this item:
+`clawdline item name <item id> "<task name>"`, once, after reading the objective and scope. It renames the Session, not the item.
+
+**3. Before implementing.**
+
+- Captured planning on and no acceptance criteria: write observable ones with
+  `clawdline item acceptance <item id> --body-file acceptance.md`.
+- Needs independent review checked, or an Epic: the reviewed-plan path in `clawdline guide epic`
+  comes first. Unchecked: no plan, no review child.
+- Multi-stage work with no steps: `clawdline item step-add <item id> "first" "second" …` (two to
+  eight steps you can verify one at a time; a single change takes none).
+- Then `clawdline item phase <item id> implementing`.
+
+**4. Delegate, investigation included.** Implementation goes to children, and so does
+investigation — finding a cause, or reading enough to offer the person options. You keep the
+conclusion, not the file dumps; you keep synthesis, integration and landing.
+
+```sh
+clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
+```
+
+- `--work-id` binds the child to the item, so its landing counts as the item's.
+- The title is one line of at most 60 characters saying what will be different. Any colon (`:` or
+  `：`) is refused, because it joins an observation to an explanation; so is "the user" as the
+  subject, or a title opening with a code-formatted identifier. Each answers `bad_task` with
+  `title: …` saying which.
+- The brief stands on its own. Put in it the facts you have already verified, each with its
+  `file:line` or the command that showed it, so the child does not rediscover them.
+- An investigation or Explore child's brief also states its stop condition — the question that,
+  once answered, ends the task — and a turn limit.
+- Read-only work is `--claims ""`. Every flag, and every refusal code, is in
+  `clawdline guide dispatch`.
+
+**5. When a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
+`clawdline task show <task id>`, integrate the delivery, then
+`clawdline task ack <task id> <notice id>`. Integrate a worktree child by **merging its branch** into the target. **The merge records the
+landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
+what is still owed. Only a cherry-pick or an `incorporated` delivery needs a hand record
+(`clawdline guide landing`).
+
+**6. Finish the item.** Complete each step once it is verified with
+`clawdline item step-done <item id> <step id>`, then advance one phase at a time:
+
+```sh
+clawdline item phase <item id> verifying
+clawdline item phase <item id> merging --verification "what was run and what it showed"
+clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
+clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
+clawdline item phase <item id> done --deployment "what went live, where, which version"
+clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
+```
+
+`done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. With
+captured verification on, `verifying → merging` needs a checker PASS: read "Captured planning and
+verification gates" in `clawdline guide board` before entering `verifying`.
+
+**7. Completion report**, when finding the cause took substantial investigation (a direct,
+observed fix needs none), before `done`:
+
+```sh
+clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
+```
+
+Write it for the person who reported the problem, in Markdown, with no private data.
+
+**8. Report the turn**: `clawdline session report --summary "…"` as your last action (§7).
+
+**When something is refused.** `version_conflict`: run the same command again; it rereads the
+version. `steps_incomplete`: a step is still open. Any other code: §12, then the part that covers
+it.
+
+**Rarer work, one part each:** `clawdline guide board` — proposals, decisions, to-dos, reopening a
+done item, waiting on the person, gates and every phase refusal; `clawdline guide epic` — plans,
+plan review, an Epic's child items, personas; `clawdline guide landing` — landing by hand,
+handoffs, Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.
+
 ## 3. Before you dispatch: read what is already there
 
 Another session's work may already be doing your job, and it is invisible from the shared tree: a
@@ -311,8 +406,8 @@ included — so the task the child reads is the one that was validated, and it d
 | `task_id` | the same id |
 | `assistant` | `claude` or `codex` |
 | `project_dir` | absolute path to an existing directory |
-| `title` | shown on screen; cut at 200 characters |
-| `instructions` | required, at most 16 KiB. They must stand on their own: the child knows nothing else |
+| `title` | shown on screen: one line of at most 60 characters saying what will be different. A colon (`:` or `：`), "the user" as the subject, or an opening code-formatted identifier is refused as `bad_task` (`title: …`) |
+| `instructions` | required, at most 16 KiB. They must stand on their own: the child knows nothing else. Carry the facts you already verified, each with its `file:line` or command; an investigation child also gets a stop condition and a turn limit |
 | `claims` | **required**: at most 32 relative paths the child may write. `[]` means it writes nothing and is warned about (`claims_missing`) |
 | `isolation` | `none` (default) or `worktree` for a private checkout on its own branch |
 | `permission_mode` | `ask`, `edits` or `full` |
@@ -384,8 +479,8 @@ The child signs for its briefing (`clawdline task accept`, which posts `/accepte
 notifications (`/notify`), and finishes by writing `result.json` and running `clawdline task finish`.
 You do not call those routes.
 
-- `GET /v1/orchestrator/tasks/<id>` — one task, with its state. `GET /v1/orchestrator/tasks` lists
-  them (`?state=`, `?limit=` up to 500).
+- `clawdline task show <id>` — one task, with its state (`GET /v1/orchestrator/tasks/<id>`).
+  `GET /v1/orchestrator/tasks` lists them (`?state=`, `?limit=` up to 500).
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
   is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
   released claims, its branch, how many leftovers) and the two commands to run —
@@ -428,7 +523,11 @@ You do not call those routes.
 
 ## 6. Landing, and the other three kinds of work
 
-**Record the landing obligation** as soon as a child with claims comes back:
+**After you merge a child's branch, do nothing more**: the broker records `landed` itself (below).
+A landing posted by hand is for what a merge does not cover — a cherry-pick, an `incorporated`
+delivery, `nothing_to_land`, `abandoned`. Posting one after a merge is unnecessary.
+
+**Record the landing obligation** when a child with claims comes back and you will not merge it:
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
@@ -867,7 +966,8 @@ person has given this Session, its `recent_items` are items this Session recentl
 `direct_todos` are quick requests, and its `unacknowledged_completions` are children of yours that
 finished without your ACK (section 5). This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
-next owned work and read its complete record at `GET /v1/work/v2/items/<id>`.
+next owned work and read its complete record with `clawdline item steps <id>` (the route is
+`GET /v1/work/v2/items/<id>`).
 
 **A to-do the person sent.** A message whose last line reads
 `(Clawdline to-do <id>. When it is done: clawdline todo done <id>)` is one of this Session's
@@ -1031,10 +1131,9 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
 its `--step` rows. Each step is an item-local TODO, not another Board item.
-Complete a verified step with an idempotent machine-authenticated request to
-`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete`, body
-`{"expected_version": <item version>, "session_id": "<your conversation id>"}`. Reread after a
-version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
+Complete a verified step with `clawdline item step-done <item id> <step id>`; it reads the version
+and sends `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` with
+`{"expected_version", "session_id"}`. Run it again after a version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
 open; Clawdline never checks one merely because the parent phase advanced.
 
 **Breaking your own item into steps.** When an item you own has no steps and the work is
@@ -1064,16 +1163,16 @@ show the person the stages of work you were given.
 When resolving an issue or incident required substantial investigation to discover the root cause
 or to distinguish the real fix from plausible alternatives, add a user-readable completion report
 before advancing the item to `done`. A straightforward, directly observed correction does not need
-one. Use the machine-authenticated, idempotent document route:
+one. Write what happened, the root cause, what changed, how it was verified and any remaining
+boundary into a file, then:
 
 ```
-POST /v1/work/v2/agent/items/<id>/documents     (Idempotency-Key required)
-{"expected_version": <version>, "session_id": "<conversation id>",
- "role": "completion_report", "title": "Completion report",
- "body": "What happened, the root cause, what changed, how it was verified, and any remaining boundary"}
+clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
 ```
 
-The body is Markdown, at most 64 KiB. Write for the person who reported the problem, not as a raw
+It sends `POST /v1/work/v2/agent/items/<id>/documents` for you (the Epic part of this section,
+`clawdline guide epic`, lists its fields). A hand-built curl to that route without the credential
+the command reads answers `401 unauthorized`. The body is Markdown, at most 64 KiB. Write for the person who reported the problem, not as a raw
 debug log, and keep private data out of it. The active owner must add it before the item becomes
 terminal; reread after a version conflict. A completion report is attributed narrative and never
 replaces verification, landing, or deployment evidence. When present, it remains on the closed

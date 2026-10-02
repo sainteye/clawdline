@@ -67,5 +67,9 @@ each.
 - **Root assignment**: a new, independently owned Root for a new feature. Never faked with a child,
   a detached task or a handoff.
 
+A **Feature Root** — a Root assignment, or a Session given a Board item — prints `BIN guide
+feature-root`: its whole ordinary path, from reading the item to done. It delegates investigation as
+well as implementation and keeps only the conclusion.
+
 A Clawdline **child** does not dispatch and does not send a turn receipt; it reports through the
 `result.json` its briefing describes.
