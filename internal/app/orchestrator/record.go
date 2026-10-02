@@ -448,8 +448,13 @@ type Record struct {
 	// not — a timeout, a tab that never opened. It is never dressed up as a
 	// Result: a result is what the child wrote, and one this broker wrote in
 	// its name is the second source of completion D15 removed.
-	Verdict string   `json:"verdict,omitempty"`
-	Landing *Landing `json:"landing,omitempty"`
+	Verdict string `json:"verdict,omitempty"`
+	// Cancellation is who cancelled the task and under which request key,
+	// present only on a task that ended `cancelled` (cancel.go). The reason
+	// is the Verdict; this is what lets a resent cancel be answered as the
+	// one that already succeeded rather than as a conflict.
+	Cancellation *Cancellation `json:"cancellation,omitempty"`
+	Landing      *Landing      `json:"landing,omitempty"`
 	// Notice is the completion envelope, read from its own ledger
 	// (store/broker_notices.go) and never written with the record. It is here
 	// so that a reader holds one task as one value; the only way it changes

@@ -36,7 +36,7 @@ differences are where people fall:
    is refused with `401 unauthorized`.
 5. **Things the Swift app had and this daemon does not:** durable-report promotion (answers
    `501 durable_report_promotion_unsupported`), coordinator succession (answers
-   `501 succession_unavailable`), a cancel route for tasks, and the brief fields `serialize`
+   `501 succession_unavailable`), and the brief fields `serialize`
    and `attach_session` (each refused by name as `bad_task`). `reasoning_effort` is supported:
    `high` or `xhigh`, on a `codex` task only.
 
@@ -76,7 +76,8 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
-| `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read (§5) |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one failed, 5 one was cancelled and none failed, 3 timed out, 4 a task could not be read; 4 over 3 over 1 over 5 (§5) |
+| `clawdline task cancel <task id> --reason "…"` | Stops a child you dispatched by mistake: its tab is closed, its writes and slot are released, a branch with commits is kept for you (§5) |
 | `clawdline task ack <task id> <notice id>` | Closes a completion notice by hand; rarely needed, since `task show` and `task wait` close it (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
@@ -509,6 +510,10 @@ A tab that fails to open still answers 200, with `task.state: "spawn_failed"`.
 `POST /v1/orchestrator/tasks/<id>/respawn` (orchestrator token) opens a copy with a new secret, at
 most twice per original.
 
+Dispatched the wrong child — the wrong brief, the wrong scope, or the same work twice? Do not wait
+for it to finish or time out while it holds a slot and its writes: `clawdline task cancel <id>
+--reason "…"` stops it now (§5).
+
 **Refusals you will meet**, in the order they are checked:
 
 | Status | Code | What to do |
@@ -583,7 +588,20 @@ You do not call those routes.
   "task_stalled"` instead of `task_finished`. Respawn it (`POST /v1/orchestrator/tasks/<id>/respawn`)
   or dispatch again, then ACK it. A child that is working, showing a menu or has signed is never
   typed at.
-- There is **no cancel route**. A task ends by finishing, failing or timing out.
+- **Cancel a child you dispatched by mistake** — the wrong brief, the wrong scope, a duplicate:
+  `clawdline task cancel <id> --reason "wrong brief"`
+  (`POST /v1/orchestrator/tasks/<id>/cancel`, `{"reason":"…"}`). The reason is required, at most 500
+  bytes. The task ends `cancelled` with the reason as its verdict, its tab is closed, its writes and
+  child slot are released, and you get one notice saying it was cancelled and why. **Commits are not
+  thrown away:** a child that committed keeps its branch and checkout, and its landing stays pending
+  with a note that says how many commits are on it; `task show` and `clawdline landings` show it.
+  Merge what you want of it, or record it with `clawdline task land <id> abandoned`. Only the root
+  Session that dispatched the task, or the person from the console, may cancel it; anyone else is
+  refused `403 not_task_root`, and a Session opened with a role must send its own capability
+  (`session_actor_required`; the command does that for you). A task that has already ended answers
+  `409 task_already_terminal` with its `state`; running the same cancel again answers the same success
+  with `replayed: true`. `clawdline task wait` exits 5 when a task it waited for was cancelled.
+  Otherwise a task ends by finishing, failing or timing out.
 - **A finished child is not landed code.** Its work sits in the shared tree or on its branch until
   you integrate it.
 

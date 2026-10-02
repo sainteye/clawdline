@@ -346,3 +346,5 @@ internal/app/cloudops.verificationCloudBodyLimit # admission: one verification w
 cmd/clawdline.webhookAnswerLimit # read: one Cloud answer to `clawdline webhook fire` (the trigger's 202 or refusal, one delivery status), a few hundred bytes; read to 64 KiB and the rest ignored
 cmd/clawdline.webhookURLFileLimit # read: the --url-file `clawdline webhook fire` reads the webhook URL from, one line of well under 1 KiB
 cmd/clawdline.workBaselineReadLimit # read: a frozen work baseline file, at most workSampleLimit samples of a few hundred bytes; a larger file is refused (limits N74)
+internal/app/orchestrator.CancelReasonLimit # admission: a task cancel's reason, 500 bytes after its whitespace is collapsed; longer is refused 422 reason_too_long, never cut (limits N75)
+internal/app/orchestrator.cancelKeyLimit # admission: a task cancel's Idempotency-Key, 200 characters as a board write's; longer is refused 400 bad_idempotency_key (limits N75)

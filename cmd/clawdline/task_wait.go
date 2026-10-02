@@ -25,10 +25,18 @@ import (
 // (closeNotice), so the ordinary path is one command.
 //
 // Exit status: 0 every task settled and succeeded; 1 a settled task did not
-// succeed; 3 the timeout came first (with --any: nothing settled; without: not
-// everything did — what did settle is still printed and closed); 2 a usage
-// mistake; 4 a task could not be read — no such task, the daemon did not
-// answer, or its answer could not be read. Unknown is not success.
+// succeed and was not cancelled; 5 a settled task was cancelled (`clawdline
+// task cancel`) and none failed otherwise; 3 the timeout came first (with
+// --any: nothing settled; without: not everything did — what did settle is
+// still printed and closed); 2 a usage mistake; 4 a task could not be read —
+// no such task, the daemon did not answer, or its answer could not be read.
+// Unknown is not success.
+//
+// When more than one applies the first in 4, 3, 1, 5 wins. A wait that could
+// not read a task, or did not see them all settle, is not an answer about
+// them; and a failure the root did not cause is news it must not miss behind
+// a cancel it made itself, which is why 1 is over 5. 5 is its own code so a
+// root's script can tell "I stopped it" from "it failed".
 
 const (
 	// waitIDLimit is how many tasks one wait follows. A root has a handful of
@@ -127,7 +135,7 @@ func waitTasks(stdout, stderr io.Writer, b *broker, opts waitOptions, clock wait
 	settled := map[string]contract.BrokerTask{}
 	last := map[string]contract.BrokerTask{}
 	misses := map[string]int{}
-	failed := false
+	failed, cancelled := false, false
 	pause := waitFirstPoll
 	for {
 		for _, id := range opts.ids {
@@ -154,7 +162,11 @@ func waitTasks(stdout, stderr io.Writer, b *broker, opts waitOptions, clock wait
 			}
 			writeTaskView(stdout, t)
 			closeNotice(stdout, stderr, b, "task wait", t, true)
-			if t.State != contract.TaskStateSuccess {
+			switch t.State {
+			case contract.TaskStateSuccess:
+			case contract.TaskStateCancelled:
+				cancelled = true
+			default:
 				failed = true
 			}
 		}
@@ -191,6 +203,8 @@ func waitTasks(stdout, stderr io.Writer, b *broker, opts waitOptions, clock wait
 		return 3
 	case failed:
 		return 1
+	case cancelled:
+		return 5
 	}
 	return 0
 }

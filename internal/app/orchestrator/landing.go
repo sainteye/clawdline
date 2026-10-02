@@ -74,27 +74,29 @@ func (b *Broker) deliveryHead(ctx context.Context, w *Worktree) branchHead {
 // settlement is what a task is settled with: the delivery head, and what the
 // branch carried past its base when it was read. Both are asked of git before
 // the settling write takes the write right (D08), and only for a live
-// isolated task, since a terminal one is not settled again.
-func (b *Broker) settlement(ctx context.Context, id string) (branchHead, LandingSettlement) {
+// isolated task, since a terminal one is not settled again. The count is how
+// many commits the branch carried past its base, 0 unless it carried any.
+func (b *Broker) settlement(ctx context.Context, id string) (branchHead, LandingSettlement, int) {
 	r, _, err := b.Record(ctx, id)
 	if err != nil || r.Worktree == nil || r.Worktree.Detached || r.State.Terminal() {
-		return branchHead{}, ""
+		return branchHead{}, "", 0
 	}
-	return b.deliveryHead(ctx, r.Worktree), b.branchSettlement(ctx, r.Worktree)
+	settled, commits := b.branchSettlement(ctx, r.Worktree)
+	return b.deliveryHead(ctx, r.Worktree), settled, commits
 }
 
 // branchSettlement asks git what a delivery branch carries past the commit it
 // was cut from. It is the same question `proveDelivery` asks a branch hours
 // later, put at the one moment the answer can still be acted on.
-func (b *Broker) branchSettlement(ctx context.Context, w *Worktree) LandingSettlement {
+func (b *Broker) branchSettlement(ctx context.Context, w *Worktree) (LandingSettlement, int) {
 	commits, known := b.Git.Commits(ctx, w.Repository, w.Base, w.Branch)
 	switch {
 	case !known:
-		return SettlementUnreadable
+		return SettlementUnreadable, 0
 	case commits == 0:
-		return SettlementEmpty
+		return SettlementEmpty, 0
 	}
-	return SettlementCarried
+	return SettlementCarried, commits
 }
 
 // Unverifiable reports whether a pending landing is one this ledger cannot
