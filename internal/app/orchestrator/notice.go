@@ -392,7 +392,7 @@ func (b *Broker) PumpNotices(ctx context.Context) int {
 			continue
 		}
 		r, _, err := b.Record(ctx, n.TaskID)
-		if err != nil || r.Notice == nil || r.Notice.ID != n.ID {
+		if err != nil || r.Notice == nil || r.Notice.ID != n.ID || !r.Notice.ObservedAt.IsZero() {
 			continue
 		}
 		tried++
@@ -433,6 +433,12 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		}
 		return b.spendAttempt(ctx, r.ID, seen, at, "root_missing",
 			"The root session is not on this machine right now.")
+	}
+	// A copy already typed may be one the root has read. If its own record
+	// says so, typing it again wakes a whole conversation to read a line it
+	// has (2026-10-02), and the sequence ends here instead.
+	if b.noticeInConversation(ctx, r.ID, seen, target, at) {
+		return false
 	}
 	// A root showing a chooser would have the notice typed into its menu.
 	// Waiting costs a pass; typing costs an answer nobody gave.
@@ -508,6 +514,46 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		n.NextRetryAt = at.Add(AckWaitDelay(n.Attempts))
 	})
 	b.observed.forgetDraft(seen.ID)
+	return true
+}
+
+// SeenInTranscript is how a notice is marked read when the root's own record
+// shows it handed to the model (noticeInConversation).
+const SeenInTranscript = "transcript"
+
+// noticeInConversation ends the resend of a delivered notice the root has
+// read, and answers whether it did.
+//
+// **Read is not handled.** Until 2026-10-02 the only thing that stopped the
+// resend was `clawdline task ack`, which the line asks for and which a root
+// reads as "I have dealt with this" — so it put the ACK off until it had
+// integrated the child, and every rung of the acknowledgement ladder typed the
+// same notice at it again, each one a turn over its whole context. What the
+// resend exists for is a root that never got the line, and the root's own
+// record answers that: the notice as a submitted turn, or as the queued line a
+// running turn took. That is recorded as ObservedAt, the notice stays
+// `delivered` and is never typed again; the ACK is still the receipt that
+// closes it, and the landing is still its own record, not implied by either.
+//
+// Only a delivered notice is asked about — one never typed cannot have been
+// read — and only a definite yes counts. A record that cannot be found or read
+// to the notice is "could not check", and the notice is typed again exactly as
+// it was before this rung existed: a lost wakeup costs more than a repeated one.
+func (b *Broker) noticeInConversation(ctx context.Context, taskID string, seen Notice, target session.Session, at time.Time) bool {
+	if b.NoticeRead == nil || seen.State != NoticeDelivered || seen.DeliveredAt.IsZero() {
+		return false
+	}
+	read, err := b.NoticeRead(ctx, target, seen.ID)
+	if err != nil || !read {
+		return false
+	}
+	b.moveNoticeWith(ctx, taskID, seen, "task.completion.observed",
+		map[string]any{"how": SeenInTranscript}, func(n *Notice) {
+			n.ObservedAt = at
+			n.NextRetryAt = zeroTime
+			n.LastError = nil
+		})
+	b.observed.forgetNotice(seen.ID)
 	return true
 }
 
@@ -649,7 +695,8 @@ func (b *Broker) retypeDeadLetters(ctx context.Context, now time.Time) {
 	read := false
 	for _, row := range rows {
 		n := noticeOf(row)
-		if n.State != NoticeDeadLetter || n.Attempts > AttemptLimit || now.Sub(n.DeadLetterAt) > maxRetypeAge {
+		if n.State != NoticeDeadLetter || n.Attempts > AttemptLimit || now.Sub(n.DeadLetterAt) > maxRetypeAge ||
+			!n.ObservedAt.IsZero() {
 			continue
 		}
 		if b.observed.deferredUntil(n.ID, now).After(now) {

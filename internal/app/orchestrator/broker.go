@@ -85,6 +85,11 @@ type Broker struct {
 	// because a new child's first screen may be a dialog, and a caret is not a
 	// composer — see composer.go for what that cost once.
 	Screen func(ctx context.Context, terminalID string) (string, bool)
+	// NoticeRead is whether a root session's own record shows a completion
+	// notice handed to its model (notice.go, noticeInConversation). An error
+	// is "could not check", and the notice is delivered again as it was
+	// before this existed. Nil on a daemon that reads no records.
+	NoticeRead func(ctx context.Context, root session.Session, noticeID string) (bool, error)
 	// Launcher opens the child's tab.
 	Launcher ports.Launcher
 	// TrustClaudeProject records a project folder as one Claude Code may work

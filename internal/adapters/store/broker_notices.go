@@ -160,10 +160,17 @@ func (s *Store) BrokerNotices(ctx context.Context) (map[string]BrokerNotice, err
 
 // DueBrokerNotices is every open envelope whose next attempt is due, oldest
 // deadline first, at most limit of them.
+//
+// One the root has read is not open, whatever its state says: observed_at is
+// set, with no ACK yet, when the root's own record shows the notice reached it
+// (orchestrator noticeInConversation), and its next_retry_at is 0 — which
+// without this clause would read as due on every pass. A row written before
+// that existed has observed_at 0 unless it was acknowledged, so it reads as
+// it always did.
 func (s *Store) DueBrokerNotices(ctx context.Context, now time.Time, limit int) ([]BrokerNotice, error) {
 	rows, err := s.rd.QueryContext(ctx,
 		`SELECT `+noticeColumns+` FROM broker_notices
-		 WHERE state IN ('pending', 'delivered') AND next_retry_at <= ?
+		 WHERE state IN ('pending', 'delivered') AND observed_at = 0 AND next_retry_at <= ?
 		 ORDER BY next_retry_at ASC, created_at ASC LIMIT ?`, now.Unix(), limit)
 	if err != nil {
 		return nil, err
@@ -252,7 +259,7 @@ func (s *Store) BrokerNoticeCounts(ctx context.Context) (NoticeCounts, error) {
 	rows.Close()
 	var oldest sql.NullInt64
 	if err := s.rd.QueryRowContext(ctx,
-		`SELECT MIN(created_at) FROM broker_notices WHERE state IN ('pending', 'delivered')`).Scan(&oldest); err != nil {
+		`SELECT MIN(created_at) FROM broker_notices WHERE state IN ('pending', 'delivered') AND observed_at = 0`).Scan(&oldest); err != nil {
 		return out, err
 	}
 	if oldest.Valid {

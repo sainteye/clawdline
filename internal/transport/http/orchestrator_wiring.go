@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -168,6 +169,17 @@ func newBroker(s *Server) *orchestrator.Broker {
 				}
 			}
 			return "", false
+		},
+		// Whether a delivered completion notice is already in the root's
+		// conversation, read from the root's own record by the same host that
+		// names sessions. A daemon whose identity port is not that host reads
+		// no records, and its notices are resent as before.
+		NoticeRead: func(ctx context.Context, root session.Session, noticeID string) (bool, error) {
+			h, ok := s.inventory.Identity.(*transcript.Host)
+			if !ok {
+				return false, transcript.ErrNoNoticeRecord
+			}
+			return h.NoticeRead(ctx, root, noticeID)
 		},
 		Launcher: terminal.NewLauncher(),
 		// The person decided that asking for a new Claude Code session in a
