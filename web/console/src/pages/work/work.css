@@ -853,11 +853,40 @@ button.work-epic-child:focus-visible { outline: 2px solid var(--work-epic); outl
 .work-epic-parent-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; }
 button.work-epic-parent-link { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--work-epic-ed); }
 .work-epic-parent-link code { font: 600 11px var(--mono); }
-/* A card reached through a family link takes focus so a keyboard or screen
-   reader continues from it; the ring marks where the page went, briefly. */
 .work-v2-card:focus { outline: none; }
-.work-v2-card[data-arrived] { outline: 2px solid var(--work-epic); outline-offset: 2px; }
+/* A child card names its Epic on a control of its own under the summary
+   button, never inside it, and opens the Epic's detail. */
+.work-card-parent { display: grid; gap: 4px; padding: 0 19px 12px; min-width: 0; }
+.work-card-parent-link {
+    display: inline-flex; flex-wrap: wrap; align-items: center; justify-self: start; gap: 2px 8px;
+    max-width: 100%; min-height: 32px; padding: 4px 9px; border: 1px solid var(--work-epic-ed); border-radius: 8px;
+    background: var(--work-epic-in); color: var(--work-epic); font: inherit; font-size: 12px; font-weight: 600;
+    line-height: 1.4; text-align: left; cursor: pointer;
+}
+.work-card-parent-link:hover { background: color-mix(in srgb, var(--work-epic) 14%, transparent); }
+.work-card-parent-link:focus-visible { outline: 2px solid var(--work-epic); outline-offset: 2px; }
+.work-card-parent-link[aria-busy="true"] { cursor: progress; opacity: .72; }
+.work-card-parent-title { min-width: 0; overflow-wrap: anywhere; }
+.work-card-parent-state { color: var(--dim); font: 600 11px/1.4 var(--mono); }
+.work-card-parent .work-note { margin: 0; }
+/* An Agent-made card: a text badge with a robot mark in its top row, and a
+   dashed top edge. The left edge stays the Epic's, so an Agent-made Epic
+   carries both without one hiding the other. */
+.work-card-origin {
+    display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px;
+    border: 1px dashed color-mix(in srgb, var(--dim) 60%, var(--line)); border-radius: 999px;
+    background: var(--card-hi); color: var(--dim); font: 600 11px/1.4 var(--mono); white-space: nowrap;
+}
+.work-card-origin-glyph { flex: none; }
+.work-summary-card[data-origin] { border-top: 2px dashed color-mix(in srgb, var(--dim) 55%, var(--line)); }
+.work-card-origin-sentence {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 @media (max-width: 560px) {
+    /* A thumb needs the parent line's whole 44px. */
+    .work-card-parent { padding: 0 16px 12px; }
+    .work-card-parent-link { min-height: 44px; }
     /* On a phone the phase and owner go under the title rather than squeezing it. */
     .work-epic-child { grid-template-columns: 16px minmax(0, 1fr); }
     .work-epic-child-meta { grid-column: 2; text-align: left; }

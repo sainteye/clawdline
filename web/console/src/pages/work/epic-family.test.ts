@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { WorkV2Item } from "./api.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, shortWorkID } from "./epic-family.ts"
+import { epicChildren, epicParent, epicProgress, epicProgressWords, MAX_PARENT_READS, missingParentIDs, needsFamilyList, readMissingParents, shortWorkID } from "./epic-family.ts"
 
 type Row = Pick<WorkV2Item, "id" | "kind" | "title" | "phase" | "parent_id">
 
@@ -44,4 +44,27 @@ test("the family list is read only when an Epic or a child is on the Board", () 
   assert.equal(needsFamilyList([row("a", "created"), row("b", "done", "")]), false)
   assert.equal(needsFamilyList([row("a", "created", undefined, "epic")]), true)
   assert.equal(needsFamilyList([row("a", "created", "epic")]), true)
+})
+
+test("missing parents are named once each, never one the family holds, and at most the bound", () => {
+  const known = [row("epic-a", "implementing", undefined, "epic")]
+  const items = [row("1", "created", "epic-a"), row("2", "created", "epic-b"), row("3", "created", "epic-b"),
+    row("4", "created", "epic-c"), row("5", "created"), row("6", "created", "")]
+  assert.deepEqual(missingParentIDs(items, known), ["epic-b", "epic-c"])
+  const many = Array.from({ length: MAX_PARENT_READS + 10 }, (_, index) => row(`c${index}`, "created", `p${index}`))
+  assert.equal(missingParentIDs(many, []).length, MAX_PARENT_READS)
+  assert.equal(MAX_PARENT_READS, 24)
+})
+
+test("each missing parent is read once, and one that fails is left out", async () => {
+  const reads: string[] = []
+  const items = [row("1", "created", "epic-b"), row("2", "created", "epic-b"), row("3", "created", "gone")]
+  const found = await readMissingParents(items, [], async (id: string) => {
+    reads.push(id)
+    if (id === "gone") throw new Error("not_found")
+    return row(id, "done", undefined, "epic")
+  })
+  assert.deepEqual(reads, ["epic-b", "gone"])
+  assert.deepEqual(found.map((item: Row) => item.id), ["epic-b"])
+  assert.deepEqual(await readMissingParents([row("1", "created")], [], async () => { throw new Error("never read") }), [])
 })

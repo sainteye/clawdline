@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { claimedViaLine, clockOf, createdViaLine } from "./words.ts"
+import { claimedViaLine, clockOf, createdViaLine, epicOwnerLine } from "./words.ts"
 
 const source = readFileSync(new URL("./WorkV2.tsx", import.meta.url), "utf8")
 const styles = readFileSync(new URL("./work.css", import.meta.url), "utf8")
@@ -44,4 +44,15 @@ test("a card its Session claimed on the person's message says so, in both langua
   assert.equal(claimedViaLine({ run: "", session_id: "", at: 0 }, "zh-Hant"), null)
   assert.match(source, /<ClaimedViaNote item=\{item\} \/>/)
   assert.match(source, /claimedViaLine\(item\.claimed_via\)/)
+})
+
+test("an item the Epic's owner Session split out says so in both languages, and the card draws it", () => {
+  const split = { run: "", session_id: "owner", at, epic_id: "epic-1" }
+  assert.equal(epicOwnerLine(split, "zh-Hant"), "由 Epic 的負責 Session 在 09:05 拆分建立")
+  assert.equal(epicOwnerLine(split, "en"), "Split out by the Epic's owner Session at 09:05")
+  assert.equal(epicOwnerLine(undefined, "zh-Hant"), "由 Epic 的負責 Session 拆分建立")
+  assert.equal(epicOwnerLine(null, "en"), "Split out by the Epic's owner Session")
+  // Without a run, the person's-message line still says nothing.
+  assert.equal(createdViaLine(split, "en"), null)
+  assert.match(source, /workOrigin\(item\.created_by\) === "epic_owner" \? epicOwnerLine\(item\.created_via\) : createdViaLine\(item\.created_via\)/)
 })
