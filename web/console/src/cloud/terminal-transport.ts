@@ -28,6 +28,8 @@ const names = ["v", "ch", "seq", "ts", "class", "key_id", "nonce", "ct", "sender
 const segment = /^[A-Za-z0-9_-]{1,128}$/
 const connectionID = /^[A-Za-z0-9_-]{22}$/
 function fail(code: string): Error { return Object.assign(new Error(code), { code }) }
+/** A bad envelope, with the narrower reason only the diagnostic timeline reads; the tab still sees `terminal_bad_envelope`. */
+function refused(diagnostic: string): Error { return Object.assign(fail("terminal_bad_envelope"), { diagnostic }) }
 export function completeTerminalFrame(frame: TerminalFrame | undefined): frame is TerminalFrame {
   return !!frame && typeof frame.rev === "string" && Number.isFinite(frame.at) &&
     Number.isSafeInteger(frame.cols) && frame.cols > 0 && Number.isSafeInteger(frame.rows) && frame.rows > 0 &&
@@ -168,10 +170,11 @@ export class TerminalChannelTransport {
     if (envelope.ch !== frame && envelope.ch !== receipt) throw fail("terminal_wrong_viewer")
     const kind = envelope.ch === frame ? "term" : "termr"
     if (Object.keys(envelope).length !== names.length || names.some((name) => !(name in envelope)) ||
-      envelope.v !== 1 || envelope.sender !== this.machine || envelope.key_id !== state.id ||
+      envelope.v !== 1 || envelope.sender !== this.machine ||
       envelope.class !== (envelope.ch === frame ? "stream" : "ctl") ||
-      !Number.isSafeInteger(envelope.seq) || envelope.seq <= state.lastSeq[kind] || state.inFlight.has(envelope.seq) ||
-      !Number.isSafeInteger(envelope.ts) || base64Bytes(envelope.nonce).length !== 12 || state.nonces.has(envelope.nonce)) throw fail("terminal_bad_envelope")
+      !Number.isSafeInteger(envelope.seq) || !Number.isSafeInteger(envelope.ts) || base64Bytes(envelope.nonce).length !== 12) throw fail("terminal_bad_envelope")
+    if (envelope.key_id !== state.id) throw refused("terminal_key_id_mismatch")
+    if (envelope.seq <= state.lastSeq[kind] || state.inFlight.has(envelope.seq) || state.nonces.has(envelope.nonce)) throw refused("terminal_out_of_order")
     state.inFlight.add(envelope.seq)
     try {
       const pairing = await this.pairing
@@ -179,7 +182,8 @@ export class TerminalChannelTransport {
         base64Bytes(envelope.sig), envelopeSigningBytes(envelope))) throw fail("terminal_bad_signature")
       const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Bytes(envelope.nonce) }, state.key, base64Bytes(envelope.ct))
       const plaintext = JSON.parse(dec.decode(clear))
-      if (this.keys.get(connection) !== state || envelope.seq <= state.lastSeq[kind] || state.nonces.has(envelope.nonce)) throw fail("terminal_bad_envelope")
+      if (this.keys.get(connection) !== state) throw refused("terminal_old_connection")
+      if (envelope.seq <= state.lastSeq[kind] || state.nonces.has(envelope.nonce)) throw refused("terminal_out_of_order")
       state.lastSeq[kind] = envelope.seq
       state.nonces.add(envelope.nonce)
       if (state.nonces.size > 256) state.nonces.delete(state.nonces.values().next().value!)
@@ -236,7 +240,7 @@ export class TerminalChannelTransport {
       listener({ envelope, plaintext, realign })
     }
     catch (error) {
-      const code = error instanceof Error ? error.message : "terminal_bad_envelope"
+      const code = error instanceof Error ? (error as Error & { diagnostic?: string }).diagnostic ?? error.message : "terminal_bad_envelope"
       this.observation?.record("envelope_rejected", { connection, channel, code })
       // An unauthenticated or obsolete envelope cannot change this tab's lease state.
     }

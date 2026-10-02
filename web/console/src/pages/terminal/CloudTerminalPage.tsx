@@ -16,6 +16,24 @@ import { holderWords, terminalShortID } from "./words.js"
 import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals } from "./cloud-view.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
+/** The page's content-free receipt timeline, readable and copyable where a terminal request failed. */
+function TerminalDiagnostics({ observation }: { observation: { current: TerminalObservation | null } }) {
+  const [text, setText] = useState("")
+  const [copied, setCopied] = useState("")
+  return <details className="terminal-diagnostics" onToggle={(event) => { if (event.currentTarget.open) { setText(observation.current?.text() ?? ""); setCopied("") } }}>
+    <summary>{nextWord("terminalDiagnostics")}</summary>
+    <p className="terminal-note">{nextWord("terminalDiagnosticsNote")}</p>
+    <button className="board-button" type="button" onClick={() => {
+      const next = observation.current?.text() ?? ""
+      setText(next)
+      void navigator.clipboard.writeText(next).then(() => setCopied(nextWord("terminalDiagnosticsCopied")),
+        () => setCopied(nextWord("terminalDiagnosticsCopyFailed")))
+    }}>{nextWord("terminalDiagnosticsCopy")}</button>
+    {copied && <span className="terminal-note" role="status"> {copied}</span>}
+    <pre className="terminal-diagnostics-text">{text}</pre>
+  </details>
+}
+
 function reason(error: unknown): string {
   const code = (error as { code?: string })?.code
   if (code === "terminal_history_line_too_large") return nextWord("terminalCloudHistoryLineTooLarge")
@@ -63,12 +81,14 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
   const lastRev = useRef("")
   const back = useRef<HTMLButtonElement>(null)
   const historyFocus = useRef<HTMLPreElement>(null)
+  const observed = useRef<TerminalObservation | null>(null)
   useEffect(() => watchTerminalHost(setHost), [])
 
   useEffect(() => {
     if (!shown || !host || !channelProject) return
     let live = true
     const observation = new TerminalObservation()
+    observed.current = observation
     const transport = new TerminalChannelTransport(host.client, host.machine, observation)
     const next = new CloudTerminalSession(transport, TAB, observation)
     const stop = next.subscribe((value) => live && setSnapshot(value))
@@ -206,7 +226,8 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
     {loading && <p className="terminal-note" role="status">{nextWord("terminalListLoading")}</p>}
     {error && <div><p className="terminal-note" role="alert">{accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) :
       error === "terminal_open_state_unknown" ? nextWord("terminalCloudOpenUnknown") : nextWord("terminalListFailed", { why: error })}</p>
-      {!accessError && <button className="board-button" type="button" disabled={!!busy} onClick={reloadList}>{nextWord("terminalCloudReloadList")}</button>}</div>}
+      {!accessError && <button className="board-button" type="button" disabled={!!busy} onClick={reloadList}>{nextWord("terminalCloudReloadList")}</button>}
+      <TerminalDiagnostics observation={observed} /></div>}
     {!loading && !error && rows.length === 0 && <p className="terminal-note">{nextWord("terminalListEmpty")}</p>}
     <ul className="terminal-rows">{rows.map((row) => <li key={row.id}>
       <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, row.id, from)}>
@@ -257,6 +278,7 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
             !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
       {error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline" && <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
+      <TerminalDiagnostics observation={observed} />
     </header>
     {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2>
       {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}

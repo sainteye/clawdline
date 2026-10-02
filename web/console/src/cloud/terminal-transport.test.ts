@@ -44,7 +44,7 @@ async function fixture() {
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", machineKey.privateKey, envelopeSigningBytes(envelope))))
     return envelope
   }
-  return { adapter, client, fresh, seen, published, observed, stages, seal,
+  return { adapter, client, fresh, seen, published, observed, stages, seal, observation, machineKey,
     emitRelay: (event: { type: string; error?: { code?: string } }) => events.forEach((fn) => fn(event)),
     setConfirm: (value: boolean) => { confirm = value }, master }
 }
@@ -196,4 +196,59 @@ test("a typed relay subscription refusal keeps its source code", async () => {
   await assert.rejects(subscribed, /forbidden/)
   assert.equal(f.seen.length, 0)
   f.adapter.dispose()
+})
+
+// Offline fault injection: a receipt the relay delivered, refused at a
+// distinct browser stage. Each case is read from the copyable text alone.
+const receiptFaults: Array<{ name: string; code: string; inject: (f: Awaited<ReturnType<typeof fixture>>, body: Record<string, unknown>) => Promise<void> }> = [
+  { name: "wrong content key", code: "terminal_bad_key", inject: async (f, body) => {
+    await f.client._receiveEnvelope(await f.seal(5, body, "termr", crypto.getRandomValues(new Uint8Array(32))), false) } },
+  { name: "wrong key id", code: "terminal_key_id_mismatch", inject: async (f, body) => {
+    await f.client._receiveEnvelope({ ...(await f.seal(5, body)), key_id: "rk-old" }, false) } },
+  { name: "out of order", code: "terminal_out_of_order", inject: async (f, body) => {
+    const later = await f.seal(6, { ...body, request_id: crypto.randomUUID() })
+    const earlier = await f.seal(5, body)
+    await f.client._receiveEnvelope(later, false)
+    await f.client._receiveEnvelope(earlier, false) } },
+  { name: "relay delivered, signature refused", code: "terminal_bad_signature", inject: async (f, body) => {
+    const envelope = await f.seal(5, body)
+    const other = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
+    envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", other.privateKey, envelopeSigningBytes(envelope))))
+    await f.client._receiveEnvelope(envelope, false) } },
+  { name: "relay delivered to a retired connection", code: "terminal_old_connection", inject: async (f, body) => {
+    const envelope = await f.seal(5, body)
+    f.adapter.unsubscribeTerminal(f.fresh.connection)
+    await f.client._receiveEnvelope(envelope, false) } },
+]
+for (const fault of receiptFaults) {
+  test(`fault injection: ${fault.name} stops at verify_decrypt with ${fault.code}`, async () => {
+    const f = await fixture()
+    await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+    const requestID = crypto.randomUUID()
+    const body = { v: 1, type: "terminal_receipt", request_id: requestID, connection: f.fresh.connection,
+      operation: "capture", terminal_id: "trm_test", status: "ok", result: { lines: ["secret screen"] } }
+    await fault.inject(f, body)
+    const text = f.observation.text()
+    assert.equal(text.split("\n")[1]!.replace(/ seq=\d+$/, ""), `stopped phase=verify_decrypt stage=envelope_rejected code=${fault.code}`)
+    assert.equal(f.seen.filter((event) => (event as { plaintext?: { request_id?: string } }).plaintext?.request_id === requestID).length, 0)
+    for (const secret of [f.fresh.connection, f.fresh.keyID, bytesBase64(f.fresh.key), requestID, machine, viewer, "secret screen", "trm_test"]) {
+      assert.equal(text.includes(secret), false, `diagnostics carry ${secret}`)
+    }
+    f.adapter.dispose()
+  })
+}
+
+test("a turned-off or broken timeline leaves receipt delivery and refusal unchanged", async () => {
+  for (const sink of [null, () => { throw new Error("sink failed") }]) {
+    const f = await fixture()
+    const quiet = new TerminalChannelTransport(f.client, machine, new TerminalObservation(sink))
+    const seen: unknown[] = []
+    await quiet.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => seen.push(event))
+    const body = { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(), connection: f.fresh.connection,
+      operation: "capture", terminal_id: "trm_test", status: "ok" }
+    await f.client._receiveEnvelope(await f.seal(5, body, "termr", crypto.getRandomValues(new Uint8Array(32))), false)
+    await f.client._receiveEnvelope(await f.seal(6, body), false)
+    assert.deepEqual(seen.map((event) => (event as { plaintext: unknown }).plaintext), [body])
+    quiet.dispose(); f.adapter.dispose()
+  }
 })
