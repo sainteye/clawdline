@@ -72,3 +72,37 @@ export function shortWorkID(id: string): string {
 export function needsFamilyList(items: readonly Pick<WorkV2Item, "kind" | "parent_id">[]): boolean {
   return items.some((item) => item.kind === "epic" || !!item.parent_id)
 }
+
+/**
+ * At most this many parents outside the family list are read one by one per
+ * Board load. The family list is one page, so on a large Project an Epic can
+ * fall outside it; past this many, a child names its Epic by short id.
+ */
+export const MAX_PARENT_READS = 24
+
+/** The parents `items` name that `known` does not hold, each once, at most `limit`. */
+export function missingParentIDs(items: readonly Pick<WorkV2Item, "parent_id">[], known: readonly Pick<WorkV2Item, "id">[],
+  limit = MAX_PARENT_READS): string[] {
+  const have = new Set(known.map((item) => item.id))
+  const missing: string[] = []
+  for (const item of items) {
+    const id = item.parent_id
+    if (!id || have.has(id)) continue
+    have.add(id)
+    missing.push(id)
+    if (missing.length >= limit) break
+  }
+  return missing
+}
+
+/**
+ * Reads the parents the family list lacks and returns the ones that answered.
+ * A parent whose read fails stays unnamed: the child shows its short id.
+ */
+export async function readMissingParents<T extends Pick<WorkV2Item, "id">>(items: readonly Pick<WorkV2Item, "parent_id">[],
+  known: readonly Pick<WorkV2Item, "id">[], read: (id: string) => Promise<T>, limit = MAX_PARENT_READS): Promise<T[]> {
+  const ids = missingParentIDs(items, known, limit)
+  if (!ids.length) return []
+  const answers = await Promise.allSettled(ids.map((id) => read(id)))
+  return answers.flatMap((answer) => answer.status === "fulfilled" ? [answer.value] : [])
+}
