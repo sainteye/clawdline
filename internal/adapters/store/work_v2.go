@@ -1350,6 +1350,26 @@ func (t *WorkV2Tx) PlanDocuments(workID string) ([]work.DocumentV2, error) {
 	return out, rows.Err()
 }
 
+// PlanReviewDocument is the plan_review an item already holds for one review
+// task, read inside the transaction that would otherwise add a second. The
+// earliest wins when an older store holds duplicates.
+func (t *WorkV2Tx) PlanReviewDocument(workID, reference string) (work.DocumentV2, bool, error) {
+	var d work.DocumentV2
+	var created, updated int64
+	err := t.tx.QueryRowContext(t.ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+    FROM work_v2_documents WHERE work_id=? AND role='plan_review' AND reference=? ORDER BY created_at,rowid LIMIT 1`,
+		workID, reference).Scan(&d.ID, &d.WorkID, &d.Role, &d.Title, &d.Body, &d.Reference, &d.Position,
+		&d.Version, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return work.DocumentV2{}, false, nil
+	}
+	if err != nil {
+		return work.DocumentV2{}, false, err
+	}
+	d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+	return d, true, nil
+}
+
 // BrokerTask reads one broker task inside a work transaction: the store has
 // one connection, so a read beside the transaction would wait on it forever.
 func (t *WorkV2Tx) BrokerTask(id string) (BrokerRow, error) {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -1907,11 +1909,37 @@ type AddDocumentV2 struct {
 func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocumentV2, file WorkV2Filer) (WorkV2View, error) {
 	var out WorkV2View
 	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		var err error
+		out, err = w.addDocument(tx, id, c, file)
+		return err
+	})
+	return out, mapWorkV2Error(err)
+}
+
+// addDocument is AddDocument inside its transaction, shared with the
+// plan_review a successful review child adds by itself.
+//
+// A plan_review naming a task the item already holds a plan_review for is a
+// retry, not a second review: it passes every check a first one would, then
+// answers the document already there and writes nothing. That is why its
+// expected version may be stale — the first attempt, or the automatic one,
+// already moved the item on — and why an Epic's review count cannot be
+// raised by sending one review twice.
+func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV2, file WorkV2Filer) (WorkV2View, error) {
+	var out WorkV2View
+	err := func() error {
 		prev, err := tx.Item(id)
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		var existing work.DocumentV2
+		retry := false
+		if c.Role == work.DocumentPlanReview {
+			if existing, retry, err = tx.PlanReviewDocument(id, strings.TrimSpace(c.Reference)); err != nil {
+				return err
+			}
+		}
+		if prev.Version != c.ExpectedVersion && !retry {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
@@ -1949,6 +1977,15 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 				return err
 			}
 		}
+		if retry {
+			out = WorkV2View{Item: prev, Documents: []work.DocumentV2{existing}}
+			if file != nil {
+				if k, a, ok := file(out); ok {
+					return tx.CompleteReceipt(k, a)
+				}
+			}
+			return nil
+		}
 		now := w.now()
 		doc := work.DocumentV2{ID: newWorkID(), WorkID: id, Role: c.Role, Title: c.Title, Body: c.Body,
 			Reference: c.Reference, Position: c.Position, Version: 1, CreatedAt: now, UpdatedAt: now}
@@ -1968,8 +2005,80 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 			}
 		}
 		return nil
+	}()
+	return out, err
+}
+
+// PlanReviewTitle is the title of the plan_review a review child adds by
+// itself; the verdict follows it when the receipt names one.
+const PlanReviewTitle = "Plan review"
+
+// AddPlanReviewFromTask records a finished plan_review child's review on the
+// item it was dispatched for, as the item's owner would with
+// `clawdline item doc --role plan_review --reference <task>`, and through the
+// same checks (checkPlanReviewTask). The body is the child's closed review
+// receipt (result.json `review`); a receipt larger than a document body is
+// left out and the reference alone stands, because the task record keeps the
+// whole receipt and a cut JSON body would be unreadable.
+//
+// It is safe to call more than once, and safe beside a manual `item doc` for
+// the same task: whichever comes second answers the document the first
+// wrote. Any refusal is typed (plan_review_task_*, *_plan_required,
+// not_item_owner, ...) and leaves the item unchanged, so the manual command
+// stays the way to record the review.
+func (w *WorkSystemV2) AddPlanReviewFromTask(ctx context.Context, taskID string) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		row, err := tx.BrokerTask(taskID)
+		if errors.Is(err, store.ErrNoTask) {
+			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_unknown",
+				"No readable task has that id.")
+		}
+		if err != nil {
+			return err
+		}
+		r, err := orchestrator.Decode(row.Record)
+		if err != nil {
+			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_unknown",
+				"That task's record is not readable.")
+		}
+		if r.WorkID == "" {
+			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_no_item",
+				"That review was dispatched on no item; record it with `clawdline item doc <item> --role plan_review --reference "+taskID+"`.")
+		}
+		if r.Root == nil {
+			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_not_owned",
+				"That task was not dispatched by a Session, so no item owner can be named for it.")
+		}
+		prev, err := tx.Item(r.WorkID)
+		if err != nil {
+			return err
+		}
+		title, body := planReviewDocument(r.Result)
+		out, err = w.addDocument(tx, r.WorkID, AddDocumentV2{ExpectedVersion: prev.Version, SessionID: r.Root.SessionID,
+			Role: work.DocumentPlanReview, Title: title, Body: body, Reference: taskID}, nil)
+		return err
 	})
 	return out, mapWorkV2Error(err)
+}
+
+// planReviewDocument is the title and body a review receipt becomes.
+func planReviewDocument(result *taskdir.Result) (string, string) {
+	if result == nil || len(result.Review) == 0 {
+		return PlanReviewTitle, ""
+	}
+	var review struct {
+		Verdict string `json:"verdict"`
+	}
+	title := PlanReviewTitle
+	if json.Unmarshal(result.Review, &review) == nil && review.Verdict != "" && len(review.Verdict) <= 64 {
+		title += ": " + review.Verdict
+	}
+	var body bytes.Buffer
+	if json.Indent(&body, result.Review, "", "  ") != nil || body.Len() > workV2DescriptionLimit {
+		return title, ""
+	}
+	return title, body.String()
 }
 
 // checkPlanReviewTask accepts a plan_review only when its reference is a
