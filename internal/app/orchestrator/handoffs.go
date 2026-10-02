@@ -657,6 +657,11 @@ type RootAssignmentRequest struct {
 	// for none. Omitted from the JSON when empty, so the digest of a request
 	// without one is the digest it had before the field existed.
 	Persona string `json:"persona,omitempty"`
+	// Handoff, when set, is a takeover of an in-flight Board item: the broker
+	// writes a handoff pack beside ASSIGNMENT.md and the brief points to it.
+	// It is in-process only, so neither the wire contract nor the digest of a
+	// request changes.
+	Handoff *HandoffInput `json:"-"`
 }
 
 // RootAssignment is one Feature Root as this broker keeps it. It carries no
@@ -782,6 +787,12 @@ func AssignmentBrief(id string, a Assignment, persona, personaFile string) strin
 	return sb.String()
 }
 
+// withHandoff puts the HANDOFF section before OBJECTIVE, so it is the first
+// thing the Feature Root reads after who it is.
+func withHandoff(brief, section string) string {
+	return strings.Replace(brief, "\nOBJECTIVE\n", "\n"+section+"OBJECTIVE\n", 1)
+}
+
 // AssignmentHowToWork is the section every Feature Root's brief carries
 // after its ACCEPTANCE, whoever opened it.
 const AssignmentHowToWork = "HOW TO WORK\n" +
@@ -871,6 +882,14 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
 	brief := AssignmentBrief(id, req.Assignment, req.Persona, personas.Path(b.Dir, req.Persona))
+	if req.Handoff != nil {
+		// The pack failing never fails the assignment; the brief says it failed.
+		pack, err := b.writeHandoffPack(ctx, dir, *req.Handoff)
+		if pack == "" {
+			pack = filepath.Join(dir, "handoff")
+		}
+		brief = withHandoff(brief, HandoffSection(pack, err))
+	}
 	if err := writeFileSync(a.BriefPath, []byte(brief)); err != nil {
 		b.refundDispatch()
 		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())

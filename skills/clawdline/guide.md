@@ -275,6 +275,15 @@ write prints `wrote …; item <id> is at version N` and the item's row; read the
 again with `item show`. Writes act on the item's current version unless you pass
 `--expected-version`.
 
+If your ASSIGNMENT.md has a **HANDOFF** heading, you are taking over an item another Session left
+mid-flight (reassigned in implementing, verifying, merging or deploying). Read the pack it names
+first, before planning. The daemon built it from its own records and git, without asking the
+previous owner: the tasks bound to the item and their results, commits not yet landed, each
+worktree's uncommitted changes saved as a patch with its sha256 and the `git apply` command that
+restores it on its base, the previous owner's last message (or why it could not be read), and the
+phase and open steps. The patches live beside ASSIGNMENT.md and outlast the worktrees. Continue
+from there; do not start over.
+
 **2. Name your Session**, if it was opened for this item:
 `clawdline item name <item id> "<task name>"`, once, after reading the objective and scope. It renames the Session, not the item.
 
