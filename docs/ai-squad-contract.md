@@ -141,14 +141,19 @@ silently omit attachments or add them to a shareable archive.
 Neither imported text nor a manifest may execute scripts, fetch URLs, send
 data, authorize a paid API, or override existing user and repository rules.
 Candidate research for all 42 built-ins is recorded separately from review
-and adoption. Following the person's 2026-09-29 integration request, 11
-reviewed candidates have Clawdline-specific, locally bundled adaptations in
-the built-in skill catalog and are enabled by default for their matching
-roles. The remaining 31 roles have no default skill. A global or Project
-override can reorder, disable, or remove a role's effective skills. No skill
-is shown as used merely because it is available; only a matching Session
-receipt can report a read, application, or failure. Older Session snapshots
-retain their original skills after this catalog change.
+and adoption. Following the person's 2026-09-29 integration request, 12
+reviewed candidates gained portable, locally bundled adaptations in the
+built-in skill catalog, enabled by default for their matching roles; a
+2026-10-02 round over four public skill collections added 11 more. 23 roles
+now have one default skill and the remaining 19 have none
+([decisions](persona-skill-decisions.md)). A global or Project override can
+reorder, disable, or remove a role's effective skills. A launch prompt lists
+each enabled skill with its name, purpose, and the skill's own quoted
+"Use this skill ..." sentence, and asks the role to compare the task with
+them before starting. No skill is shown as used merely because it is
+available; only a matching Session receipt can report a read, application,
+or failure. Older Session snapshots retain their original skills after a
+catalog change.
 
 Catalog metadata can be public. Complete definitions, handbooks, skill bodies,
 session snapshots, and private package data require an authorized local reader

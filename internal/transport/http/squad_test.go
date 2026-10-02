@@ -104,7 +104,7 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	status, raw := f.ask("GET", "/v1/squad/catalog", f.reader, "", "")
 	var catalog contract.SquadCatalog
 	if status != 200 || json.Unmarshal([]byte(raw), &catalog) != nil ||
-		len(catalog.Definitions) != 42 || len(catalog.Skills) != 12 {
+		len(catalog.Definitions) != 42 || len(catalog.Skills) != 23 {
 		t.Fatalf("private catalog = %d, %s", status, raw)
 	}
 	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")

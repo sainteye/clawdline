@@ -8,7 +8,7 @@ import (
 
 func TestSquadBuiltinsAndPolicy(t *testing.T) {
 	c := Builtins()
-	if len(c.Definitions) != 42 || len(c.Skills) != 12 {
+	if len(c.Definitions) != 42 || len(c.Skills) != 23 {
 		t.Fatalf("builtins: %d definitions, %d skills", len(c.Definitions), len(c.Skills))
 	}
 	wantSkill := map[string]bool{}
@@ -21,6 +21,14 @@ func TestSquadBuiltinsAndPolicy(t *testing.T) {
 			len(s.Digest) != 64 || s.Source == "" || s.License == "" || s.Content == "" ||
 			s.Icon.Accent == "" || len(s.Icon.Cells) != 7 || skills[s.SkillID].SkillID != "" {
 			t.Fatalf("incomplete or duplicate skill: %+v", s)
+		}
+		for _, install := range []string{"npx ", "npm install", "pip install", "/plugin ", "curl ", "brew install"} {
+			if strings.Contains(s.Content, install) {
+				t.Errorf("skill %s tells a role to install or fetch something: %q", s.SkillID, install)
+			}
+		}
+		if !strings.Contains(s.Content, "Use this skill") {
+			t.Errorf("skill %s has no sentence saying when it applies", s.SkillID)
 		}
 		for _, projectSpecific := range []string{"Clawdline", "CloudGate", "BUILD.json", "tools/heavy.sh"} {
 			if strings.Contains(s.Content, projectSpecific) {
