@@ -1313,6 +1313,57 @@ func (w *WorkSystemV2) Unassign(ctx context.Context, id string, expected int64, 
 	return out, mapWorkV2Error(err)
 }
 
+// ReleaseAtClose takes a closing Session off an item it had already asked the
+// person to deploy. The item keeps waiting_user and its link to the same open
+// decision (work.ReleaseAtClose); the person's answer then leaves it unassigned
+// for the Epic owner or the person to reassign. An item with no active owner
+// any more answers item_unassigned, so a repeated close is harmless; one that
+// no longer awaits the person to deploy is refused, and the close with it.
+func (w *WorkSystemV2) ReleaseAtClose(ctx context.Context, id string, expected int64, actor string) (WorkV2View, error) {
+	var out WorkV2View
+	err := w.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		prev, err := tx.Item(id)
+		if err != nil {
+			return err
+		}
+		if prev.Version != expected {
+			return store.ErrConflict
+		}
+		a, err := tx.ActiveAssignment(id)
+		if err != nil {
+			return err
+		}
+		if a.ID == "" {
+			return work.RefuseV2("item_unassigned", "This item has no active owner.")
+		}
+		if !prev.AwaitsPersonToDeploy() {
+			return work.RefuseV2("item_not_awaiting_deploy", "This item no longer waits on the person to deploy it.")
+		}
+		d, err := tx.Decision(prev.DecisionID)
+		if err != nil {
+			return err
+		}
+		if d.State != work.DecisionOpen {
+			return work.RefuseV2("item_not_awaiting_deploy", "The decision this item waits on is no longer open.")
+		}
+		now := w.now()
+		a.State, a.ReleasedAt, a.UpdatedAt = "released", now, now
+		if err := tx.UpdateAssignment(a); err != nil {
+			return err
+		}
+		next := work.ReleaseAtClose(prev, now)
+		if err := tx.PutItem(prev, next, "item.released_at_close", actor, payload(map[string]any{
+			"assignment_id": a.ID, "session_id": prev.OwnerSession, "decision_id": prev.DecisionID,
+			"note": "The Session that built this has closed; the deploy question stays open."})); err != nil {
+			return err
+		}
+		next.Version++
+		out = WorkV2View{Item: next}
+		return nil
+	})
+	return out, mapWorkV2Error(err)
+}
+
 type AdvanceWorkV2 struct {
 	ExpectedVersion int64
 	SessionID       string

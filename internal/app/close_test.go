@@ -227,3 +227,37 @@ func TestAForcedCloseReleasesUnstartedItemsFirstAndStopsWhenItCannot(t *testing.
 		t.Fatalf("the terminal was closed after the release failed: %v", h.calls)
 	}
 }
+
+// Every close, forced or not, first takes the session off the items whose
+// deploy it already put to the person; a release that failed leaves the
+// terminal open with the same typed refusal.
+func TestEveryCloseReleasesItemsAwaitingDeployFirstAndStopsWhenItCannot(t *testing.T) {
+	ctx := context.Background()
+	h := &closeHost{conversation: "conv-1"}
+	a := closeActions(h)
+	a.ReleaseAwaitingDeploy = func(_ context.Context, s session.Session) error {
+		h.calls = append(h.calls, "release:"+s.ConversationID)
+		return nil
+	}
+	for _, force := range []bool{false, true} {
+		h.calls = nil
+		if _, err := a.Close(ctx, "%1", force); err != nil {
+			t.Fatal(err)
+		}
+		if fmt.Sprint(h.calls) != "[release:conv-1 close]" {
+			t.Fatalf("force=%v: %v", force, h.calls)
+		}
+	}
+
+	h.calls = nil
+	failed := errors.New("version_conflict")
+	a.ReleaseAwaitingDeploy = func(context.Context, session.Session) error { return failed }
+	_, err := a.Close(ctx, "%1", false)
+	ref, ok := err.(Refusal)
+	if !ok || ref.Code != CloseReleaseFailed || !errors.Is(err, failed) {
+		t.Fatalf("a failed release: %v", err)
+	}
+	if len(h.calls) != 0 {
+		t.Fatalf("the terminal was closed after the release failed: %v", h.calls)
+	}
+}
