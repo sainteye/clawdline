@@ -55,7 +55,8 @@ The context is a stack of segments, each with a category and a size.
    its division is estimated.
 3. Each call pays cache writes for the new segments and cache reads for the old ones, pro rata to
    their sizes, plus its output, which is charged to what the call did: the category of the tool it
-   called, or **talk** when it called none.
+   called, or **talk** when it called none. A call that only waited is the exception: its whole bill
+   is **wait** ("Wait turns" below).
 4. A context that falls below 70% of the previous call's is a compaction: the old segments go, the
    base is kept at its proportions, and the rest is **compaction**.
 5. A subagent's whole bill is **delegate**.
@@ -70,6 +71,7 @@ Every category's sum equals the session's measured total; a test holds that on e
 | `protocol` | acts on the daemon: a curl to the daemon's port or with its token header, a `clawdline` subcommand, the `clawdline` skill, `CHILD.md`/`task.json`/`result.json`, the child's first message |
 | `rules` | reads `AGENTS.md`, `CLAUDE.md`, memory files, the dispatch policy, or runs a repository guard |
 | `impl` | reads, searches, edits, builds, tests, or runs git — the work |
+| `wait` | only waits on something already running: polls a command, sleeps, reads a background task's output ("Wait turns"). A call made of nothing but these is charged here whole |
 | `delegate` | spawns or messages a subagent (`Agent`, `Task`, `Workflow`, `SendMessage`) |
 | `harness` | the resident base outside the rule files, harness attachments, `ToolSearch` |
 | `talk` | the person's messages, and the assistant's replies and thinking with no tool |
@@ -85,6 +87,51 @@ it is shown.
 What this cannot see: rules and protocol also shape how long the assistant thinks and writes. That
 cost is inside `talk` and every category's output, indistinguishable by this method.
 
+### Wait turns
+
+An agent waiting on a long command often wakes every 20–30 seconds, asks whether it has finished, and
+goes back to waiting. Each such turn reads the whole context again: a token review over ten Board
+items found 520 such turns and 72.2M tokens — 29% of those items' Codex usage — spent by Codex agents
+polling a compile-slot queue, a dispatch or a test run, each rereading about 140k of context. Charged by rule 3 they were almost all **impl**, the
+category the context held, which made the work look far larger than it was.
+
+So a **wait turn** — a call that called at least one tool and whose every tool call waits — is
+charged whole to `wait`: its cache reads, cache writes, uncached input and output. Its context is not
+re-labelled: what it held stays what it was, and the wait's own small results and outputs join it as
+`wait`. A call that waits and also does something else is divided as rule 3 says, the wait's share
+of its output included.
+
+A tool call waits when it is, exactly:
+
+| Assistant | The call |
+|---|---|
+| Claude Code | `BashOutput`, `TaskOutput` (a background shell's or task's output), `Monitor` |
+| Claude Code, Codex | a shell command line whose every simple command is `sleep`, `echo`, `printf`, `true`, `:`, `cd`, `date`, or a `cat`/`tail`/`head` of a file no other category names — and at least one is `sleep`. A redirection to anything but `/dev/null` or another descriptor disqualifies it: `sleep 20; tail -5 build.log` waits, `sleep 1; echo done > flag` does not |
+| Codex | the `sleep` tool, `wait` (an exec cell), `wait_agent` (a subagent), a `write_stdin` whose `chars` is empty or absent (a poll of a running exec session) |
+| Codex | an `exec` script every one of whose `tools.*` calls is an empty `write_stdin` or an `exec_command` whose line waits by the row above |
+
+Deliberately not caught, so these stay where they were:
+
+- **Loops.** `until grep -q done log; do sleep 5; done` and `for i in …; do curl …; sleep 1; done`
+  are one turn however long they block, and their condition can do real work; they are `impl` (or
+  what their parts name).
+- **Polls that ask something.** `sleep 5; curl https://…/health`, `sleep 30; clawdline task show …`,
+  `gh run list` and an `aws ssm` status read are checks with an answer; they keep `impl`, `protocol`
+  or `board`.
+- **A protocol read after a sleep** (`sleep 2; cat …/result.json`) stays `protocol`: the most
+  specific part still names the line.
+- `ScheduleWakeup`, a turn that ends with no tool while a background task runs, and a `write_stdin`
+  that types anything (an interrupt included) — the last stays `other`.
+- A wrapped shell (`bash -lc "sleep 5"`) is classified by its inner line only as one part of the
+  outer one, so it stays `impl`.
+
+**Old readings.** The category rules carry a version (`transcript.LedgerClassificationVersion`, 2
+since wait turns). A stored reading of any assistant made under another version is read again from
+the start the next time a pass visits its transcript, so a transcript the ledger still reads is
+counted under one set of rules. A transcript last written before the look-back window is not
+visited, keeps its old totals, and has no `wait`: its waiting is still in `impl` or `other`. A
+stored reading without a `wait` key reads as nothing in `wait`, not as an error.
+
 ### What the reader settled
 
 `transcript.LedgerState` (`internal/adapters/transcript/ledger.go`, `ledger_codex.go`) settled what
@@ -98,7 +145,11 @@ the rules above left open:
   segment (a context a little smaller than the last) pays its writes pro rata to everything held.
 - **One call doing several things.** Its output is divided evenly among its tool calls' categories.
   One shell command with several parts takes its most specific part, in the order `board`,
-  `protocol`, `rules`, `impl`.
+  `protocol`, `rules`, `impl`, `wait`.
+- **When a call's input is charged.** A Claude call can span several rows, and whether it only
+  waited is known when its last row is read; so a call's input side is divided when its usage row is
+  read and charged when the call closes (an open call's is in the totals as it stands). A stored
+  state from before this has its open call's input in the totals already and is not charged again.
 - **A tool result with no known tool use** (a background task's, say) is **other**.
 - **Codex.** A `token_count` repeating the running total of the one before it is the same call and is
   counted once; one with no `info` is not a call. Input is `input_tokens` less `cached_input_tokens`,

@@ -25,6 +25,7 @@ const (
 	CategoryProtocol   Category = "protocol"
 	CategoryRules      Category = "rules"
 	CategoryImpl       Category = "impl"
+	CategoryWait       Category = "wait"
 	CategoryDelegate   Category = "delegate"
 	CategoryHarness    Category = "harness"
 	CategoryTalk       Category = "talk"
@@ -36,7 +37,7 @@ const (
 // matters more — the order every sum over them is taken, so that the same
 // transcript read twice gives the same floating-point totals.
 var Categories = []Category{
-	CategoryBoard, CategoryProtocol, CategoryRules, CategoryImpl, CategoryDelegate,
+	CategoryBoard, CategoryProtocol, CategoryRules, CategoryImpl, CategoryWait, CategoryDelegate,
 	CategoryHarness, CategoryTalk, CategoryCompaction, CategoryOther,
 }
 
@@ -218,14 +219,20 @@ type ledgerCall struct {
 	Output  int64  `json:"output"`
 	Actions Sizes  `json:"actions,omitempty"`
 	Above   bool   `json:"above,omitempty"`
+	// Input is the call's input side as openCall divided it, not yet in
+	// Spent: a call that only waited is charged whole to wait, and whether it
+	// did is known only once its last row is read. A state written before
+	// this field has its open call's input in Spent already.
+	Input map[Category]Tokens `json:"input,omitempty"`
 }
 
 // LedgerState is everything a ledger knows about one transcript, and all it
 // needs to go on reading it. It is plain data: it is kept as JSON between
 // passes, and a Feed from a state read back is a Feed from the state written.
 type LedgerState struct {
-	// ClassificationVersion lets the reader replay a Codex transcript after
-	// its category rules change. Zero is a reading made before versioning.
+	// ClassificationVersion lets the reader replay a transcript after its
+	// category rules change (LedgerClassificationVersion). Zero is a reading
+	// made before versioning.
 	ClassificationVersion int `json:"classification_version,omitempty"`
 	// Assistant is "claude" or "codex"; empty until the first record says.
 	Assistant string `json:"assistant,omitempty"`
@@ -460,6 +467,7 @@ func (s *LedgerState) Totals() (map[Category]Tokens, Tokens) {
 		if call == s.OpenSide {
 			weights = Sizes{CategoryDelegate: 1}
 		}
+		commitInput(spent, call, weights)
 		out := Tokens{Output: float64(call.Output)}
 		measured.Output += out.Output
 		charge(spent, actionWeights(weights), nil, out, call.Model)
@@ -468,6 +476,31 @@ func (s *LedgerState) Totals() (map[Category]Tokens, Tokens) {
 }
 
 // ---------- attribution ----------
+
+// waitOnly says a call did nothing but wait: it called at least one tool and
+// every tool it called waits (docs/token-ledger.md "Wait turns").
+func waitOnly(actions Sizes) bool {
+	return actions[CategoryWait] > 0 && actions[CategoryWait] == actions.sum()
+}
+
+// commitInput adds a call's input side to spent: as openCall divided it, or
+// all of it to wait when the call only waited.
+func commitInput(spent map[Category]Tokens, call *ledgerCall, actions Sizes) {
+	wait := waitOnly(actions)
+	for _, c := range Categories {
+		t, ok := call.Input[c]
+		if !ok {
+			continue
+		}
+		to := c
+		if wait {
+			to = CategoryWait
+		}
+		v := spent[to]
+		v.add(t)
+		spent[to] = v
+	}
+}
 
 func actionWeights(actions Sizes) Sizes {
 	if actions.sum() <= 0 {
@@ -532,12 +565,14 @@ func (s *LedgerState) pre() *Composition {
 	return s.Pre
 }
 
-// openCall charges one call's input side: cache reads to what the context
-// held, cache writes and uncached input to what is new in it.
-func (s *LedgerState) openCall(model string, input, write1h, write5m, read int64) bool {
+// openCall divides one call's input side: cache reads to what the context
+// held, cache writes and uncached input to what is new in it. The division is
+// answered, not charged: closeCall charges it once the call's actions are
+// known. False when the row is not a call.
+func (s *LedgerState) openCall(model string, input, write1h, write5m, read int64) (map[Category]Tokens, bool) {
 	ctx := input + write1h + write5m + read
 	if ctx <= 0 {
-		return false
+		return nil, false
 	}
 	s.Calls++
 	if model != "" && !strings.HasPrefix(model, "<") {
@@ -570,8 +605,9 @@ func (s *LedgerState) openCall(model string, input, write1h, write5m, read int64
 		// A little smaller: something was dropped from every part alike.
 		held = s.Segments.scaledTo(float64(ctx))
 	}
-	charged := s.charge(held, fresh, Tokens{CacheRead: float64(read)}, model)
-	charged.add(s.charge(fresh, held, Tokens{Input: float64(input), CacheWrite1h: float64(write1h),
+	divided := map[Category]Tokens{}
+	charged := charge(divided, held, fresh, Tokens{CacheRead: float64(read)}, model)
+	charged.add(charge(divided, fresh, held, Tokens{Input: float64(input), CacheWrite1h: float64(write1h),
 		CacheWrite5m: float64(write5m)}, model))
 
 	next := held.clone()
@@ -586,7 +622,7 @@ func (s *LedgerState) openCall(model string, input, write1h, write5m, read int64
 		s.CallsAbove++
 		s.Above.add(charged)
 	}
-	return true
+	return divided, true
 }
 
 // firstContext is the resident base: what arrived before the first call at
@@ -624,8 +660,13 @@ func (s *LedgerState) compacted(ctx int64) Sizes {
 	return base
 }
 
-// closeCall charges a call's output to what it did.
+// closeCall charges a call's input side and its output to what it did.
 func (s *LedgerState) closeCall(call *ledgerCall, weights Sizes) {
+	if s.Spent == nil {
+		s.Spent = map[Category]Tokens{}
+	}
+	commitInput(s.Spent, call, weights)
+	call.Input = nil
 	out := Tokens{Output: float64(call.Output)}
 	s.Measured.Output += out.Output
 	charged := s.charge(actionWeights(weights), nil, out, call.Model)
@@ -725,10 +766,11 @@ func (s *LedgerState) claudeLine(rec object) {
 			return
 		}
 		s.closeOpen()
-		call := &ledgerCall{ID: id, Model: model, Output: u.output}
-		if !s.openCall(model, u.input, u.write1h, u.write5m, u.read) {
+		divided, ok := s.openCall(model, u.input, u.write1h, u.write5m, u.read)
+		if !ok {
 			return
 		}
+		call := &ledgerCall{ID: id, Model: model, Output: u.output, Input: divided}
 		call.Above = s.PrevContext > aboveContext
 		s.Tools = nil
 		s.claudeActions(call, blocks)
@@ -1022,6 +1064,15 @@ func Classify(tool string, input json.RawMessage) Category {
 		return CategoryHarness
 	case "AskUserQuestion":
 		return CategoryTalk
+	case "BashOutput", "TaskOutput", "Monitor", "sleep", "wait", "wait_agent":
+		// Reading a background shell or task, watching for a condition, and
+		// Codex's sleep and its waits on an exec cell or a subagent.
+		return CategoryWait
+	case "write_stdin":
+		if emptyStdin(in) {
+			return CategoryWait
+		}
+		return CategoryOther
 	case "Skill":
 		if name, _ := in.str("skill"); name == "clawdline" || strings.HasPrefix(name, "clawdline:") {
 			return CategoryProtocol
@@ -1088,8 +1139,9 @@ func isShell(word string) bool {
 }
 
 // categoryRank orders what one command's parts can be: the most specific
-// part names the whole command.
-var categoryRank = map[Category]int{CategoryImpl: 1, CategoryRules: 2, CategoryProtocol: 3, CategoryBoard: 4}
+// part names the whole command. Waiting is the least: a command that waits
+// and also works is work.
+var categoryRank = map[Category]int{CategoryWait: 1, CategoryImpl: 2, CategoryRules: 3, CategoryProtocol: 4, CategoryBoard: 5}
 
 func stronger(a, b Category) Category {
 	if categoryRank[b] > categoryRank[a] {
@@ -1120,13 +1172,65 @@ func classifyPath(p string) Category {
 }
 
 // classifyCommand is what a shell command line does: each simple command is
-// classified by its verb, and the most specific names the line.
+// classified by its verb, and the most specific names the line. A line that
+// only sleeps and looks at what it waited on is wait.
 func classifyCommand(line string) Category {
+	segments := splitCommands(line)
+	if waitsOnly(segments) {
+		return CategoryWait
+	}
 	out := CategoryImpl
-	for _, segment := range splitCommands(line) {
+	for _, segment := range segments {
 		out = stronger(out, classifySimple(shellWords(segment)))
 	}
 	return out
+}
+
+// waitCompanions are what a waiting line may do beside sleeping: say
+// something, change directory, or read a file it is waiting on.
+var waitCompanions = map[string]bool{"echo": true, "printf": true, "true": true, ":": true, "cd": true,
+	"date": true, "cat": true, "tail": true, "head": true}
+
+// waitsOnly says a command line sleeps and does nothing else but print and
+// read a file (docs/token-ledger.md "Wait turns"): `sleep 30`,
+// `sleep 20; tail -5 build.log`. A redirection to anything but /dev/null or
+// another descriptor writes, so it is not waiting; neither is a loop, a curl,
+// or a read of a file another category names.
+func waitsOnly(segments []string) bool {
+	slept := false
+	for _, segment := range segments {
+		words := shellWords(segment)
+		if len(words) == 0 {
+			continue
+		}
+		for _, w := range words {
+			if i := strings.IndexByte(w, '>'); i >= 0 {
+				if target := strings.TrimLeft(w[i:], ">"); target != "/dev/null" && target != "&1" && target != "&2" {
+					return false
+				}
+			}
+		}
+		switch verb := words[0]; {
+		case verb == "sleep":
+			slept = true
+		case !waitCompanions[verb]:
+			return false
+		case readers[verb] && classifySimple(words) != CategoryImpl:
+			return false
+		}
+	}
+	return slept
+}
+
+// emptyStdin says a write_stdin call writes nothing: it only polls the
+// session for output.
+func emptyStdin(in object) bool {
+	raw, ok := in["chars"]
+	if !ok {
+		return true
+	}
+	chars, ok := rawString(raw)
+	return ok && chars == ""
 }
 
 var readers = map[string]bool{"cat": true, "head": true, "tail": true, "less": true, "more": true, "bat": true,

@@ -149,8 +149,18 @@ func TestUsageSessionAnswersItsBill(t *testing.T) {
 	if got.Calls != 12 || got.PeakContext != 150000 || got.Compactions != 1 || got.CallsAbove != 2 || !near(got.Above.Cost, 0.5) {
 		t.Fatalf("long-session numbers: %+v", got)
 	}
-	if len(got.Bill.Categories) != 9 || got.Bill.Categories[0].Name != contract.UsageCategoryNameBoard {
+	if len(got.Bill.Categories) != len(contract.UsageCategoryNameValues) || got.Bill.Categories[0].Name != contract.UsageCategoryNameBoard {
 		t.Fatalf("categories: %+v", got.Bill.Categories)
+	}
+	for i, c := range got.Bill.Categories {
+		if c.Name != contract.UsageCategoryNameValues[i] {
+			t.Errorf("category %d = %s, want %s: the ledger and the wire list them in one order", i, c.Name, contract.UsageCategoryNameValues[i])
+		}
+	}
+	// A reading stored before wait existed has no wait key: the bill still
+	// answers, with nothing in wait.
+	if w := category(t, got.Bill, contract.UsageCategoryNameWait); w.Tokens.Total != 0 {
+		t.Fatalf("wait from a reading that never had it: %+v", w)
 	}
 	if got.Bill.ShareOf != contract.UsageShareOfCost || !near(got.Bill.Total.Cost, 10) || !got.Bill.Total.CostKnown {
 		t.Fatalf("total: %+v", got.Bill)

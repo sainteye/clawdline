@@ -6,6 +6,9 @@
 # available memory, at a lower priority, and as the first thing the kernel
 # kills if memory still runs out (cmd/clawdline/heavy.go says why).
 #
+# Its exit status is the command's own, or 75 when `heavy`'s --max-wait passed
+# before the slot and memory were had and the command was not run.
+#
 # Sessions do not have `clawdline` on PATH, so this finds the installed one.
 # When there is none, or it predates `heavy`, the command runs directly and
 # this says so: a missing wrapper is never a reason not to build.

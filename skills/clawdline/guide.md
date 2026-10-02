@@ -99,6 +99,23 @@ ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_
 `unknown_task` or `unknown_item`. Whether the ledger is still reading is `usage` in
 `/v1/diagnostics`.
 
+**Waiting on a long command.** `clawdline heavy`, `clawdline dispatch` and a long test run print
+nothing while they wait, and end on their own. Wait for one with **one long wait**, not by
+checking it every few seconds: each check is a turn that rereads your whole context, and a token
+review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `heavy` runs.
+
+- **Claude Code:** one Bash call with a long `timeout` (up to `600000` ms), or `run_in_background`
+  and then nothing until its completion notification arrives. Not a loop of `sleep` and `tail`.
+- **Codex (codex-cli 0.157.1, code mode):** put `// @exec: {"yield_time_ms": 600000}` on the
+  first line of the `functions.exec` cell. After `exec_command` returns a session ID, await
+  `write_stdin` with empty `chars` and `yield_time_ms: 300000`; if it still runs, repeat inside
+  that same cell. Measured: the outer cell stayed open for 330 seconds with `600000`, while an
+  empty `write_stdin` waited up to 300 seconds. If the outer cell yields, use `wait` with a long
+  `yield_time_ms` to collect it.
+
+`clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
+command; a longer wait than your tool allows is a background run.
+
 **Curl to an orchestrator route.** Read `<state dir>/orchestrator-token` and send it in the
 `X-Clawdline-Orchestrator` header. Keep the token out of command arguments: use
 `DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"`, then
@@ -399,7 +416,9 @@ instead. A refusal is `refused, <status> <code>: <message>` on stderr and exit 1
 end of this part says what each code means. The root is your conversation, from
 `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; the child's assistant is
 yours unless `--assistant` says otherwise; the project is this directory's git top-level unless
-`--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. The secret is
+`--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. While the
+daemon opens the worktree and the child's tab it prints nothing; it is one request that answers
+when the child exists, so wait for it once (§2, "Waiting on a long command"). The secret is
 never in argv, in `task.json` or in what it prints, and the token is read as every thin command
 reads it.
 
@@ -1560,9 +1579,12 @@ checkout).
 `heavy_compile`, waits until the machine has memory available (a quarter of it, at most 1 GB, and
 no memory stall above 10%), runs the command at a lower priority — on Linux also as the first
 thing the kernel kills if memory runs out — renews the lease while it runs and releases it after. It keeps the
-command's exit status. It never refuses to build: no daemon, a refusal, or `--max-wait` (default
-30m) passed runs the command anyway with a sentence on stderr. A `heavy` inside a `heavy` runs
-directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
+command's exit status. It never refuses to build for a missing daemon or a refusal it does not
+know: it runs the command anyway with a sentence on stderr. When `--max-wait` (default 30m) passes
+before it has the slot and the memory, it gives up its place, does not run the command, and exits
+**75** — a code no command's own failure is mistaken for; run it again later. While it waits it
+prints one line when the wait starts and one when it ends, nothing in between: wait for it once,
+long (§2, "Waiting on a long command"). A `heavy` inside a `heavy` runs directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
 that has it, `tools/heavy.sh <command>` finds the binary for you.
 
 - `POST /v1/orchestrator/leases` —
