@@ -1010,7 +1010,7 @@ func (s *Store) WorkV2ActiveClaim(ctx context.Context, workID string) (*work.Cre
 	return a.ClaimedVia, err
 }
 
-// WorkV2Relations reads the four bounded relation sets shown on a page of
+// WorkV2Relations reads the bounded relation sets shown on a page of
 // Board cards. Each table is read once for the whole page; callers do not
 // multiply store round trips by the number of cards.
 type WorkV2Relations struct {
@@ -1018,12 +1018,22 @@ type WorkV2Relations struct {
 	Images    map[string][]work.ImageV2
 	Steps     map[string][]work.StepV2
 	Claims    map[string]*work.CreatedViaV2
+	Progress  map[string]WorkV2CardProgress
+}
+
+// WorkV2CardProgress is the latest phase transition's card-sized evidence.
+// It is read from append-only events rather than the item's edit timestamp.
+type WorkV2CardProgress struct {
+	PhaseEnteredAt     int64
+	DeploymentEvidence string
+	NoDeploymentReason string
 }
 
 func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Relations, error) {
 	out := WorkV2Relations{
 		Documents: map[string][]work.DocumentV2{}, Images: map[string][]work.ImageV2{},
 		Steps: map[string][]work.StepV2{}, Claims: map[string]*work.CreatedViaV2{},
+		Progress: map[string]WorkV2CardProgress{},
 	}
 	if err := reading(); err != nil {
 		return out, err
@@ -1036,6 +1046,11 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 		return out, err
 	}
 	ids := string(list)
+	progress, err := s.WorkV2CardProgress(ctx, workIDs)
+	if err != nil {
+		return out, err
+	}
+	out.Progress = progress
 
 	documents, err := s.rd.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
     FROM work_v2_documents WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
@@ -1135,6 +1150,49 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 		return out, err
 	}
 	return out, nil
+}
+
+// WorkV2CardProgress reads one latest phase event per item in a bounded page.
+func (s *Store) WorkV2CardProgress(ctx context.Context, workIDs []string) (map[string]WorkV2CardProgress, error) {
+	out := map[string]WorkV2CardProgress{}
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	if len(workIDs) == 0 {
+		return out, nil
+	}
+	list, err := json.Marshal(workIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.rd.QueryContext(ctx, `WITH latest AS (
+		SELECT work_id, MAX(seq) AS seq FROM work_v2_events
+		WHERE work_id IN (SELECT value FROM json_each(?)) AND kind='item.phase_changed'
+		GROUP BY work_id
+	)
+	SELECT e.work_id, e.at, e.payload FROM work_v2_events e
+	JOIN latest ON latest.seq=e.seq`, string(list))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, raw string
+		var at int64
+		if err := rows.Scan(&id, &at, &raw); err != nil {
+			return nil, err
+		}
+		var change struct {
+			Deployment         string `json:"deployment"`
+			NoDeploymentReason string `json:"no_deployment_reason"`
+		}
+		if err := json.Unmarshal([]byte(raw), &change); err != nil {
+			return nil, err
+		}
+		out[id] = WorkV2CardProgress{PhaseEnteredAt: at, DeploymentEvidence: change.Deployment,
+			NoDeploymentReason: change.NoDeploymentReason}
+	}
+	return out, rows.Err()
 }
 
 // WorkV2RootAssignmentsForSessions answers, for each of one assistant's
