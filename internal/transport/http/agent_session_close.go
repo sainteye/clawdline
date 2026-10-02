@@ -50,7 +50,9 @@ func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request, parts []s
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such Agent work-system route.")
 		return
 	}
-	terminal := parts[1]
+	// The route reads the escaped path (routePath), and a tmux pane's name
+	// `%84` arrives as `%2584`: the segment is a name, so it is decoded.
+	terminal := decodeSegment(parts[1])
 	switch {
 	case parts[2] == "closeability" && r.Method == http.MethodGet:
 		audit, refusal := s.agentAuditClose(r.Context(), r.URL.Query().Get("session_id"), terminal)

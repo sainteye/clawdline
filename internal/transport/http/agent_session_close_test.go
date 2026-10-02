@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -168,5 +169,23 @@ func TestAnAgentCloseWithUnreadableChildrenIsUnknown(t *testing.T) {
 		`{"session_id":"10000000-0000-4000-8000-000000000004"}`)
 	if status != http.StatusConflict || code != "closeability_unknown" {
 		t.Fatalf("a close on an unknown list: %d %s", status, code)
+	}
+}
+
+// A tmux pane is named `%84`, and the command escapes it to `%2584` in the
+// path. The route must read the name it was given, not its spelling: on
+// 2026-10-02 a Feature Root asking about its own pane `%84` was told its
+// Session was not on this machine.
+func TestAnAgentClosesAPaneWhoseNameNeedsEscaping(t *testing.T) {
+	s, p := ownTodoServer(t)
+	p.s.ID = "%84"
+	status, _, body := agentCloseCode(t, s, http.MethodGet,
+		"/v1/work/v2/agent/sessions/"+url.PathEscape("%84")+"/closeability?session_id=10000000-0000-4000-8000-000000000004", "")
+	if status != http.StatusOK {
+		t.Fatalf("closeability of an escaped pane: %d %s", status, body)
+	}
+	var audit agentCloseAudit
+	if err := json.Unmarshal(body, &audit); err != nil || audit.TerminalID != "%84" || audit.Authority != "self" {
+		t.Fatalf("audit: %s", body)
 	}
 }
