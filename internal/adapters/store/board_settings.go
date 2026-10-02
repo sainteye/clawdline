@@ -70,7 +70,7 @@ func (s *Store) BoardSettings(ctx context.Context) (BoardSettings, error) {
 	if err := reading(); err != nil {
 		return BoardSettings{}, err
 	}
-	return scanBoardSettings(s.db.QueryRowContext(ctx,
+	return scanBoardSettings(s.rd.QueryRowContext(ctx,
 		`SELECT `+boardSettingsColumns+` FROM board_settings WHERE id = 1`))
 }
 

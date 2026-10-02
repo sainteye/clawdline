@@ -434,7 +434,7 @@ func (s *Store) WorkItem(ctx context.Context, id string) (work.Item, error) {
 	if err := reading(); err != nil {
 		return work.Item{}, err
 	}
-	return scanWork(s.db.QueryRowContext(ctx, `SELECT `+workColumns+workFrom+` WHERE w.id = ?`, id))
+	return scanWork(s.rd.QueryRowContext(ctx, `SELECT `+workColumns+workFrom+` WHERE w.id = ?`, id))
 }
 
 // WorkBoard reads the board's items for a project (every project when it is
@@ -511,7 +511,7 @@ func (s *Store) BacklogCounts(ctx context.Context, project string) (map[work.Ite
 		q += ` WHERE w.project_id = ?`
 		args = append(args, project)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` GROUP BY k.state`, args...)
+	rows, err := s.rd.QueryContext(ctx, q+` GROUP BY k.state`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +533,7 @@ func (s *Store) WorkMoves(ctx context.Context, id string, after int64, limit int
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT seq, work_id, from_s, to_s, state, trigger, actor, evidence, at FROM moves
 		 WHERE work_id = ? AND seq > ? ORDER BY seq LIMIT ?`, id, after, limit)
 	if err != nil {
@@ -598,7 +598,7 @@ func (s *Store) WorkSweepCandidates(ctx context.Context) ([]string, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rd.QueryContext(ctx, `
 		SELECT work_id FROM board_items WHERE state IN ('active','awaiting_closure')
 		UNION
 		SELECT b.work_id FROM board_items b WHERE b.state = 'done' AND EXISTS (
@@ -630,12 +630,12 @@ func (s *Store) WorkOpenCount(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	var n int64
-	err := s.db.QueryRowContext(ctx, openCountQuery).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, openCountQuery).Scan(&n)
 	return n, err
 }
 
 func (s *Store) queryWork(ctx context.Context, query string, args ...any) ([]work.Item, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

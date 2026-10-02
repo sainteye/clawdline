@@ -161,7 +161,7 @@ func (s *Store) Todo(ctx context.Context, id string) (TodoRow, error) {
 	if err := reading(); err != nil {
 		return TodoRow{}, err
 	}
-	return scanTodo(s.db.QueryRowContext(ctx, `SELECT `+todoColumns+` FROM todos WHERE id = ?`, id))
+	return scanTodo(s.rd.QueryRowContext(ctx, `SELECT `+todoColumns+` FROM todos WHERE id = ?`, id))
 }
 
 // TodoQuery is one page of one owner's to-dos, newest first.
@@ -206,7 +206,7 @@ func (s *Store) TodoCounts(ctx context.Context, owner string) (map[work.TodoStat
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT state, COUNT(*) FROM todos WHERE owner_session = ? GROUP BY state`, owner)
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func (s *Store) TasksWithoutTodo(ctx context.Context, origin work.TodoOrigin) ([
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT t.id FROM broker_tasks t
 		 WHERE NOT EXISTS (SELECT 1 FROM todos d WHERE d.origin = ? AND d.task_id = t.id)
 		   AND json_valid(t.record)
@@ -271,7 +271,7 @@ func (s *Store) TasksWithoutTodo(ctx context.Context, origin work.TodoOrigin) ([
 }
 
 func (s *Store) queryTodos(ctx context.Context, query string, args ...any) ([]TodoRow, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

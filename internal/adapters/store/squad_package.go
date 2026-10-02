@@ -43,7 +43,7 @@ func (s *Store) SquadPackagePreviewUsage(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM squad_package_previews`).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM squad_package_previews`).Scan(&n)
 	return n, classify(err)
 }
 

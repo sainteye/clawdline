@@ -155,7 +155,7 @@ func (s *Store) Coordinator(ctx context.Context) (*coordinator.Record, Coordinat
 	if err := reading(); err != nil {
 		return nil, "", err
 	}
-	return scanCoordinator(s.db.QueryRowContext(ctx, coordinatorSelect))
+	return scanCoordinator(s.rd.QueryRowContext(ctx, coordinatorSelect))
 }
 
 const coordinatorSelect = `SELECT record_id, label, terminal_id, conversation_id, assistant, pid,
@@ -369,7 +369,7 @@ func (s *Store) Lease(ctx context.Context, resource, key string) (LeaseState, er
 	if err := reading(); err != nil {
 		return LeaseState{}, err
 	}
-	st, err := readLease(ctx, s.db, resource, key)
+	st, err := readLease(ctx, s.rd, resource, key)
 	return st, classify(err)
 }
 
@@ -378,7 +378,7 @@ func (s *Store) Leases(ctx context.Context) ([]LeaseState, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT resource, key FROM leases
+	rows, err := s.rd.QueryContext(ctx, `SELECT resource, key FROM leases
 	   UNION SELECT resource, key FROM lease_waiters ORDER BY 1, 2`)
 	if err != nil {
 		return nil, classify(err)
@@ -396,7 +396,7 @@ func (s *Store) Leases(ctx context.Context) ([]LeaseState, error) {
 	rows.Close()
 	out := make([]LeaseState, 0, len(keys))
 	for _, x := range keys {
-		st, err := readLease(ctx, s.db, x.r, x.k)
+		st, err := readLease(ctx, s.rd, x.r, x.k)
 		if err != nil {
 			return nil, classify(err)
 		}
@@ -514,7 +514,7 @@ func (s *Store) OpenWaits(ctx context.Context) ([]WaitRow, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	return openWaits(ctx, s.db)
+	return openWaits(ctx, s.rd)
 }
 
 func openWaits(ctx context.Context, q querier) ([]WaitRow, error) {
@@ -646,7 +646,7 @@ func (s *Store) OpenWaitCount(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM waits WHERE released_at = 0`).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM waits WHERE released_at = 0`).Scan(&n)
 	return n, classify(err)
 }
 
@@ -665,7 +665,7 @@ func (s *Store) CompletionNotices(ctx context.Context, since time.Time, all bool
 		q = `SELECT ` + noticeColumns + ` FROM broker_notices WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?`
 		args = []any{unixOrZeroTime(since), limit}
 	}
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rd.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, classify(err)
 	}

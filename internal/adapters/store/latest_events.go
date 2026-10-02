@@ -38,7 +38,7 @@ func (s *Store) LatestEvents(ctx context.Context, kind string, subjects []string
 		var e Event
 		var at int64
 		var payload string
-		err := s.db.QueryRowContext(ctx,
+		err := s.rd.QueryRowContext(ctx,
 			`SELECT seq, at, payload FROM events WHERE kind = ? AND subject = ? ORDER BY seq DESC LIMIT 1`,
 			kind, subject).Scan(&e.Seq, &at, &payload)
 		if err == sql.ErrNoRows {

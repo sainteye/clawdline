@@ -305,13 +305,13 @@ func (s *Store) BrokerTask(ctx context.Context, id string) (BrokerRow, error) {
 	if err := reading(); err != nil {
 		return BrokerRow{}, err
 	}
-	row, err := scanBroker(s.db.QueryRowContext(ctx,
+	row, err := scanBroker(s.rd.QueryRowContext(ctx,
 		`SELECT `+brokerColumns+` FROM broker_tasks WHERE id = ?`, id))
 	if err != nil {
 		return BrokerRow{}, err
 	}
 	s.reads.records.Add(1)
-	if row.Texts, err = s.readTexts(ctx, s.db, id); err != nil {
+	if row.Texts, err = s.readTexts(ctx, s.rd, id); err != nil {
 		return BrokerRow{}, err
 	}
 	return row, nil
@@ -394,7 +394,7 @@ func (s *Store) BrokerTasksOwingLanding(ctx context.Context) ([]BrokerRow, error
 }
 
 func (s *Store) queryBroker(ctx context.Context, query string, args ...any) ([]BrokerRow, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +431,7 @@ func (s *Store) BrokerTaskHeads(ctx context.Context) ([]BrokerHead, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id, project, repository, assistant, state, created_at, updated_at, version
 		 FROM broker_tasks ORDER BY created_at DESC, id DESC`)
 	if err != nil {
@@ -524,7 +524,7 @@ func (s *Store) HasBrokerNote(ctx context.Context, taskID, note string) (bool, e
 		return false, err
 	}
 	var n int
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM broker_notes WHERE task_id = ? AND note = ?`, taskID, note).Scan(&n)
 	return n > 0, err
 }
@@ -540,7 +540,7 @@ type BrokerNote struct {
 
 // BrokerNotes returns the newest `limit` notes for a task, oldest first.
 func (s *Store) BrokerNotes(ctx context.Context, taskID string, limit int) ([]BrokerNote, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id, task_id, at, note FROM (
 		   SELECT id, task_id, at, note FROM broker_notes WHERE task_id = ? ORDER BY id DESC LIMIT ?
 		 ) ORDER BY id ASC`, taskID, limit)
@@ -602,11 +602,11 @@ func (s *Store) RecordNotification(ctx context.Context, taskID, title, body stri
 // NotificationCounts reads the same two numbers without sending anything, for
 // the check that happens before the push is attempted.
 func (s *Store) NotificationCounts(ctx context.Context, taskID string) (perTask, perHour int, err error) {
-	if err = s.db.QueryRowContext(ctx,
+	if err = s.rd.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM broker_notifications WHERE task_id = ?`, taskID).Scan(&perTask); err != nil {
 		return 0, 0, err
 	}
-	err = s.db.QueryRowContext(ctx,
+	err = s.rd.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM broker_notifications WHERE at >= ?`,
 		time.Now().Add(-time.Hour).Unix()).Scan(&perHour)
 	return perTask, perHour, err

@@ -78,7 +78,7 @@ func (s *Store) Snippets(ctx context.Context) ([]snippet.Record, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id, title, body, scope, project, position, created_at, updated_at FROM snippets`)
 	if err != nil {
 		return nil, classify(err)
@@ -108,10 +108,10 @@ func (s *Store) SnippetCounts(ctx context.Context) (total int64, fullest int64, 
 	if err := reading(); err != nil {
 		return 0, 0, "", err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM snippets`).Scan(&total); err != nil {
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM snippets`).Scan(&total); err != nil {
 		return 0, 0, "", classify(err)
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT scope, project, COUNT(*) FROM snippets GROUP BY scope, project
 		 ORDER BY COUNT(*) DESC, scope, project LIMIT 1`)
 	if err != nil {
