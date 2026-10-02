@@ -71,7 +71,7 @@ func (w *WorkSystemV2) CreateEpicChild(ctx context.Context, n NewEpicChildV2) (W
 		if err != nil {
 			return err
 		}
-		if epic.Version != n.ExpectedVersion {
+		if !VersionHolds(n.ExpectedVersion, epic.Version) {
 			return store.ErrConflict
 		}
 		if err := work.EpicChildParent(epic, n.SessionID); err != nil {

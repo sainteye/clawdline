@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -498,7 +499,7 @@ func (w *WorkSystemV2) AddImage(ctx context.Context, id string, c AddImageV2, fi
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Phase.Terminal() {
@@ -633,7 +634,7 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if !c.Person && (prev.OwnerSession == "" || prev.OwnerSession != c.OwnerSession || prev.Phase.Terminal()) {
@@ -806,7 +807,7 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Phase.Terminal() {
@@ -984,7 +985,7 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Planning() {
@@ -1415,7 +1416,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		next, effectIDs, err := w.advanceTx(tx, id, prev, c)
@@ -1683,7 +1684,7 @@ func (w *WorkSystemV2) Finish(ctx context.Context, id string, c FinishWorkV2, fi
 			}
 			return nil
 		}
-		if cur.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, cur.Version) {
 			return store.ErrConflict
 		}
 		if _, ok := finishNext[cur.Phase]; !ok {
@@ -1985,7 +1986,7 @@ func (w *WorkSystemV2) ReopenIncomplete(ctx context.Context, id string, c AgentR
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Phase != work.PhaseDone {
@@ -2099,7 +2100,7 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 				return err
 			}
 		}
-		if prev.Version != c.ExpectedVersion && !retry {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) && !retry {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
@@ -2345,7 +2346,7 @@ func (w *WorkSystemV2) AddStep(ctx context.Context, id string, c AddStepV2, file
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
@@ -2387,7 +2388,7 @@ func (w *WorkSystemV2) CompleteStep(ctx context.Context, id, stepID, session str
 		if err != nil {
 			return err
 		}
-		if prev.Version != expected {
+		if !VersionHolds(expected, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != session || prev.Phase.Terminal() {
@@ -2542,7 +2543,7 @@ func (w *WorkSystemV2) AddDirectTodoImage(ctx context.Context, id string, c AddD
 		if prev.SessionID != c.SessionID {
 			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if !prev.Open() || !prev.SentAt.IsZero() {
@@ -2876,4 +2877,24 @@ func (w *WorkSystemV2) ResolveProposal(ctx context.Context, id, actor string, c 
 		return nil
 	})
 	return out, mapWorkV2Error(err)
+}
+
+// AnyVersion is the expected version an Agent route sends on when its caller
+// named none: the write acts on whatever version the item holds then. A
+// person's route never maps to it, so its version stays required.
+const AnyVersion int64 = math.MinInt64
+
+// VersionHolds says whether a write expecting expected may act on an item at
+// current. Every version the store issues is positive.
+func VersionHolds(expected, current int64) bool {
+	return expected == AnyVersion || expected == current
+}
+
+// AgentExpectedVersion maps an Agent route's optional expected_version: an
+// omitted or zero one is AnyVersion, a given one is still compared.
+func AgentExpectedVersion(v int64) int64 {
+	if v == 0 {
+		return AnyVersion
+	}
+	return v
 }

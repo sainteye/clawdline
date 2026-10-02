@@ -114,6 +114,10 @@ func main() {
 		itemCommand(os.Args[2:])
 	case "landings":
 		landingsCommand(os.Args[2:])
+	case "leases":
+		leasesCommand(os.Args[2:])
+	case "sessions":
+		sessionsCommand(os.Args[2:])
 	case "assistants":
 		readCommand("assistants", "/v1/orchestrator/assistants", os.Args[2:])
 	case "guide":
@@ -394,7 +398,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|coordinator|usage|heavy|verify|setting|dispatch|handoff|todo|note|item|send|notify|landings|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|coordinator|usage|heavy|verify|setting|dispatch|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
@@ -406,10 +410,11 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary")
 	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
 	fmt.Fprintln(os.Stderr, "  note create                   post a human intervention to one Session")
-	fmt.Fprintln(os.Stderr, "  item <add|claim|name|child|assign|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase")
+	fmt.Fprintln(os.Stderr, "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase")
 	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
 	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
 	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed (--work-id: every landing recorded for one item); what each assistant's account has left")
+	fmt.Fprintln(os.Stderr, "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send, wait or handoff can name")
 	fmt.Fprintln(os.Stderr, "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)")
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
 	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")

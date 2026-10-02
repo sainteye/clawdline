@@ -65,7 +65,7 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
-| `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
 | `clawdline heavy -- <command…>` | Runs a build or test suite in the machine's one compile slot (§11) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
@@ -73,6 +73,8 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
+| `clawdline leases [--json]` | Who holds the compile slot and each landing lease, and who waits behind them |
+| `clawdline sessions [--json]` | The Sessions a send, a wait or a handoff can name, with their state and task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
@@ -264,10 +266,14 @@ This is everything an ordinary Feature Root — a Session that owns one Board it
 Every step is a command: the commands carry the credential, and a hand-built curl to the same route
 is refused. Anything rarer is one `clawdline guide <part>` away; the pointers are at the end.
 
-**1. Read the item.** `clawdline item steps <item id>` prints its kind, phase, acceptance criteria,
+**1. Read the item.** `clawdline item show <item id>` prints its kind, phase, acceptance criteria,
 captured gates, the acceptance version (`acceptance vN`), for a Feature the person's Needs
-independent review switch, and its steps. That is
-the record you work from.
+independent review switch, its steps, and every document with its body. That is
+the record you work from. `clawdline item show <item id> --doc <doc id>` prints one document's
+body alone, to pipe into a file; `clawdline item steps <item id>` is the same record without the bodies. Every item
+write prints `wrote …; item <id> is at version N` and the item's row; read the steps and documents
+again with `item show`. Writes act on the item's current version unless you pass
+`--expected-version`.
 
 **2. Name your Session**, if it was opened for this item:
 `clawdline item name <item id> "<task name>"`, once, after reading the objective and scope. It renames the Session, not the item.
@@ -1104,8 +1110,8 @@ person has given this Session, its `recent_items` are items this Session recentl
 `direct_todos` are quick requests, and its `unacknowledged_completions` are children of yours that
 finished without your ACK (§5). This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
-next owned work and read its complete record with `clawdline item steps <id>` (the route is
-`GET /v1/work/v2/items/<id>`).
+next owned work and read its complete record, document bodies included, with
+`clawdline item show <id>`.
 
 **A to-do the person sent.** A message whose last line reads
 `(Clawdline to-do <id>. When it is done: clawdline todo done <id>)` is one of this Session's
@@ -1194,8 +1200,8 @@ after assignment and before the gated transition. The owning Session may fill an
 once. When the person explicitly tells this owning Root through Clawdline to revise this item's
 acceptance, write the complete replacement Markdown to a file and run
 `clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`.
-The item version is `.item.version` in `GET /v1/work/v2/items/<id>` (`item steps` prints only
-the acceptance version); read the message run from
+The item version is the `item version N` line `clawdline item show <id>` prints (`item steps`
+prints only the acceptance version); read the message run from
 `GET /v1/orchestrator/sessions/<conversation>/run`. The retained message excerpt must explicitly
 request an acceptance change; a prohibition, discussion, or bare question is not authorization.
 It may refer to the item by conversation context if this Root
@@ -1325,9 +1331,10 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
 its `--step` rows. Each step is a checklist entry on that item, not another Board item.
-Complete a verified step with `clawdline item step-done <item id> <step id>`; it reads the version
-and sends `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` with
-`{"expected_version", "session_id"}`. Run it again after a version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
+Complete a verified step with `clawdline item step-done <item id> <step id>`; it sends
+`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` with `{"session_id"}`. On the
+Agent routes `expected_version` is optional: omitted, the write acts on the current version; named
+(`--expected-version`), it is compared and a stale one answers `version_conflict`. A transition to `done` is refused with `steps_incomplete` while any step remains
 open; Clawdline never checks one merely because the parent phase advanced.
 
 **Breaking your own item into steps.** When an item you own has no steps and the work is

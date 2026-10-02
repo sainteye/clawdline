@@ -41,8 +41,9 @@ func TestItemNameSendsTheCurrentConversationAndReportsTheSavedName(t *testing.T)
 
 // `item add` reads this conversation's latest run, then posts the item with
 // its steps in the order given, under a key it prints before asking; the
-// created steps are printed with their ids, and nothing is written as a
-// Session to-do.
+// write's answer is printed as what was written and the item's head — never
+// its steps, which a write's answer does not carry — and nothing is written
+// as a Session to-do.
 func TestItemAddPostsThreeStepsInOrderUnderTheLatestRun(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
 		if r.Method == http.MethodGet {
@@ -91,10 +92,14 @@ func TestItemAddPostsThreeStepsInOrderUnderTheLatestRun(t *testing.T) {
 	for _, want := range []string{"item-1  Ship it  [feature, assigned, assigned to " + thinConversation + "]",
 		"acceptance v1 sha256:aaaaaaaa", "The release is visible.",
 		"gates cycle 1: planning=true verification=false", "needs independent review (set by the person): false",
-		"[ ] s1  draft", "[ ] s2  check", "[ ] s3  publish"} {
+		"wrote the item; item item-1 is at version 2", "steps and documents: clawdline item show item-1"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("stdout lacks %q:\n%s", want, out.String())
 		}
+	}
+	if strings.Contains(out.String(), "(no steps)") || strings.Contains(out.String(), "[ ] s1") ||
+		strings.Contains(string(r.Body), "expected_version") {
+		t.Fatalf("stdout %q, body %s", out.String(), r.Body)
 	}
 }
 
@@ -225,9 +230,9 @@ func TestItemAddSaysTheRefusal(t *testing.T) {
 	}
 }
 
-// `step-done` reads the item for its version and completes the step on the
-// Agent route; `steps` lists them.
-func TestItemStepsAndStepDoneUseTheItemsVersion(t *testing.T) {
+// `step-done` completes the step on the Agent route without reading the item
+// first, and sends no version unless one was given; `steps` lists them.
+func TestItemStepsAndStepDoneSendNoVersionUnlessGiven(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
 	env := envOf(map[string]string{"CODEX_THREAD_ID": thinConversation})
 	var out, errs bytes.Buffer
@@ -241,15 +246,15 @@ func TestItemStepsAndStepDoneUseTheItemsVersion(t *testing.T) {
 		t.Fatalf("step-done exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 3 || seen[1].Method != "GET" || seen[1].EscapedPath != "/v1/work/v2/items/item-1" {
+	if len(seen) != 2 || seen[0].Method != "GET" || seen[0].EscapedPath != "/v1/work/v2/items/item-1" {
 		t.Fatalf("requests = %+v", seen)
 	}
-	done := seen[2]
+	done := seen[1]
 	if done.Method != "POST" || done.EscapedPath != "/v1/work/v2/agent/items/item-1/steps/s2/complete" || done.Key == "" {
 		t.Fatalf("complete = %+v", done)
 	}
 	var body map[string]any
-	if err := json.Unmarshal(done.Body, &body); err != nil || body["expected_version"] != float64(2) ||
+	if err := json.Unmarshal(done.Body, &body); err != nil || body["expected_version"] != nil ||
 		body["session_id"] != thinConversation {
 		t.Fatalf("complete body = %s", done.Body)
 	}
@@ -265,8 +270,9 @@ func TestItemAddWithoutAConversationAsksNothing(t *testing.T) {
 	}
 }
 
-// `phase` reads the item for its version and posts the next phase with only
-// the evidence it was given, the landing as one object.
+// `phase` reads the item for its verification gate only and posts the next
+// phase with only the evidence it was given, the landing as one object, and
+// no version.
 func TestItemPhasePostsTheNextPhaseWithItsEvidence(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
 	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
@@ -289,9 +295,10 @@ func TestItemPhasePostsTheNextPhaseWithItsEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	landing, _ := body["landing"].(map[string]any)
-	if body["expected_version"] != float64(2) || body["session_id"] != thinConversation || body["next"] != "deploying" ||
+	_, versioned := body["expected_version"]
+	if versioned || body["session_id"] != thinConversation || body["next"] != "deploying" ||
 		landing["commit"] != "abc123" || landing["target"] != "main" || landing["remote"] != "origin" ||
-		landing["project"] != "p2" || len(body) != 4 {
+		landing["project"] != "p2" || len(body) != 3 {
 		t.Fatalf("phase body = %s", p.Body)
 	}
 }
@@ -330,8 +337,8 @@ func TestItemFlagsParseAfterThePositionalArguments(t *testing.T) {
 }
 
 // `step-add` posts one step per title, in the order given, each after a
-// fresh read of the item: the version it sends is the one it just read, and
-// each position lands after every step already there, so the daemon's
+// fresh read of the item for its positions, sending no version: each
+// position lands after every step already there, so the daemon's
 // position-then-id order keeps the given order. Each key is printed before
 // its write, and the item is printed with all its steps afterwards.
 func TestItemStepAddPostsEachTitleInOrderAfterTheExistingSteps(t *testing.T) {
@@ -371,7 +378,7 @@ func TestItemStepAddPostsEachTitleInOrderAfterTheExistingSteps(t *testing.T) {
 		t.Fatalf("requests:\n%s", strings.Join(methods, "\n"))
 	}
 	if len(posted) != 2 || posted[0]["title"] != "Wire the route" || posted[1]["title"] != "Guide it" ||
-		posted[0]["expected_version"] != float64(2) || posted[1]["expected_version"] != float64(3) ||
+		posted[0]["expected_version"] != nil || posted[1]["expected_version"] != nil ||
 		posted[0]["position"] != float64(5) || posted[1]["position"] != float64(6) ||
 		posted[0]["session_id"] != thinConversation || posted[1]["session_id"] != thinConversation {
 		t.Fatalf("posted = %v", posted)
@@ -412,10 +419,11 @@ func TestItemStepAddStopsAtARefusal(t *testing.T) {
 	}
 }
 
-// `item claim` reads this conversation's latest run and the item's version,
-// then claims the item on the Agent route under a key it prints first; the
-// body names only this conversation, never another Session or terminal.
-func TestItemClaimPostsTheLatestRunAndTheItemsVersion(t *testing.T) {
+// `item claim` reads this conversation's latest run — not the item — then
+// claims the item on the Agent route under a key it prints first, sending no
+// version; the body names only this conversation, never another Session or
+// terminal.
+func TestItemClaimPostsTheLatestRunAndNoVersion(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
 		if strings.HasSuffix(r.URL.Path, "/run") {
 			return 200, `{"ok":true,"run":{"id":"` + itemRun + `","session_id":"` + thinConversation + `"}}`
@@ -429,18 +437,17 @@ func TestItemClaimPostsTheLatestRunAndTheItemsVersion(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 3 || seen[0].EscapedPath != "/v1/orchestrator/sessions/"+thinConversation+"/run" ||
-		seen[1].Method != "GET" || seen[1].EscapedPath != "/v1/work/v2/items/item-1" {
+	if len(seen) != 2 || seen[0].EscapedPath != "/v1/orchestrator/sessions/"+thinConversation+"/run" {
 		t.Fatalf("requests = %+v", seen)
 	}
-	r := seen[2]
+	r := seen[1]
 	if r.Method != "POST" || r.EscapedPath != "/v1/work/v2/agent/items/item-1/claim" || !strings.HasPrefix(r.Key, "item-") ||
 		!strings.Contains(errs.String(), "Idempotency-Key: "+r.Key) {
 		t.Fatalf("claim = %+v, stderr %q", r, errs.String())
 	}
 	var body map[string]any
-	if err := json.Unmarshal(r.Body, &body); err != nil || len(body) != 3 || body["session_id"] != thinConversation ||
-		body["expected_version"] != float64(2) || body["via"].(map[string]any)["run"] != itemRun {
+	if err := json.Unmarshal(r.Body, &body); err != nil || len(body) != 2 || body["session_id"] != thinConversation ||
+		body["expected_version"] != nil || body["via"].(map[string]any)["run"] != itemRun {
 		t.Fatalf("body = %s", r.Body)
 	}
 	if !strings.Contains(out.String(), "item-1  Ship it  [feature, assigned, assigned to "+thinConversation+"]") {
@@ -457,7 +464,7 @@ func TestItemClaimUsesTheNamedRunOrClaimsNothing(t *testing.T) {
 		"claim-retry", envOf(nil)); code != 0 {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
-	if seen := s.requests(); len(seen) != 2 || seen[1].Key != "claim-retry" {
+	if seen := s.requests(); len(seen) != 1 || seen[0].Key != "claim-retry" {
 		t.Fatalf("requests = %+v", seen)
 	}
 
@@ -484,9 +491,9 @@ func TestItemClaimUsesTheNamedRunOrClaimsNothing(t *testing.T) {
 	}
 }
 
-// `item doc` reads the item for its version and last document position, then
-// posts the document after it, under a key it prints first; it needs a role
-// and a title before it asks anything.
+// `item doc` reads the item for its last document position, then posts the
+// document after it with no version, under a key it prints first; it needs a
+// role and a title before it asks anything.
 func TestItemDocPostsADocumentAfterTheLastOne(t *testing.T) {
 	const withDocs = `{"ok":true,"item":{"id":"item-1","title":"Big","kind":"epic","phase":"assigned",
  "owner_session":"` + thinConversation + `","version":5,"steps":[],"documents":[
@@ -513,12 +520,13 @@ func TestItemDocPostsADocumentAfterTheLastOne(t *testing.T) {
 	if err := json.Unmarshal(seen[1].Body, &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["expected_version"] != 5.0 || body["session_id"] != thinConversation || body["role"] != "plan_review" ||
+	if body["expected_version"] != nil || body["session_id"] != thinConversation || body["role"] != "plan_review" ||
 		body["title"] != "Plan review" || body["reference"] != "7e000000-0000-4000-8000-000000000001" ||
 		body["body"] != "It holds." || body["position"] != 4.0 {
 		t.Fatalf("body %v", body)
 	}
-	if !strings.Contains(out.String(), "doc d1  plan  Plan") {
+	if !strings.Contains(out.String(), "wrote the document; item item-1 is at version 5") ||
+		!strings.Contains(out.String(), "steps and documents: clawdline item show item-1") {
 		t.Fatalf("printed %q", out.String())
 	}
 
@@ -530,7 +538,9 @@ func TestItemDocPostsADocumentAfterTheLastOne(t *testing.T) {
 	}
 }
 
-func TestItemAcceptancePatchesTheOwnedItemWithItsCurrentVersion(t *testing.T) {
+// `item acceptance` patches the owned item without reading it first and
+// sends no version unless one was given.
+func TestItemAcceptancePatchesTheOwnedItemSendingNoVersionUnlessGiven(t *testing.T) {
 	const item = `{"ok":true,"item":{"id":"epic-1","title":"Epic","kind":"epic","phase":"assigned","version":3,"steps":[]}}`
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, item })
 	var out, errs bytes.Buffer
@@ -540,10 +550,10 @@ func TestItemAcceptancePatchesTheOwnedItemWithItsCurrentVersion(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 2 || seen[1].Method != http.MethodPatch ||
-		seen[1].EscapedPath != "/v1/work/v2/agent/items/epic-1/edit" ||
-		!strings.Contains(string(seen[1].Body), `"expected_version":3`) ||
-		!strings.Contains(string(seen[1].Body), `"acceptance_criteria":"- The result can be checked."`) {
+	if len(seen) != 1 || seen[0].Method != http.MethodPatch ||
+		seen[0].EscapedPath != "/v1/work/v2/agent/items/epic-1/edit" ||
+		strings.Contains(string(seen[0].Body), `"expected_version"`) ||
+		!strings.Contains(string(seen[0].Body), `"acceptance_criteria":"- The result can be checked."`) {
 		t.Fatalf("requests %+v", seen)
 	}
 }
@@ -570,11 +580,11 @@ func TestItemAcceptanceRevisionSendsStableVersionRunAndFileBytes(t *testing.T) {
 const epicItem = `{"ok":true,"item":{"id":"epic-1","title":"Big","kind":"epic","phase":"implementing",
  "owner_session":"` + thinConversation + `","version":7}}`
 
-// `item child` reads the Epic for its version and posts the child with its
-// kind, steps and the Session it is assigned to, under a printed key, to the
-// Epic's children route; no run is read, because the Epic's assignment is
-// the authority.
-func TestItemChildPostsTheChildUnderTheEpicsVersion(t *testing.T) {
+// `item child` posts the child with its kind, steps and the Session it is
+// assigned to, under a printed key, to the Epic's children route, without
+// reading the Epic and with no version; no run is read, because the Epic's
+// assignment is the authority.
+func TestItemChildPostsTheChildWithNoVersion(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
 		if r.Method == http.MethodGet {
 			return 200, epicItem
@@ -589,16 +599,16 @@ func TestItemChildPostsTheChildUnderTheEpicsVersion(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 2 || seen[0].Method != "GET" || seen[0].EscapedPath != "/v1/work/v2/items/epic-1" {
+	if len(seen) != 1 {
 		t.Fatalf("requests = %+v", seen)
 	}
-	r := seen[1]
+	r := seen[0]
 	if r.Method != "POST" || r.EscapedPath != "/v1/work/v2/agent/items/epic-1/children" ||
 		!strings.Contains(errs.String(), "Idempotency-Key: "+r.Key) {
 		t.Fatalf("create = %+v, stderr %q", r, errs.String())
 	}
 	var body struct {
-		ExpectedVersion    int64             `json:"expected_version"`
+		ExpectedVersion    *int64            `json:"expected_version"`
 		SessionID          string            `json:"session_id"`
 		Kind               string            `json:"kind"`
 		AcceptanceCriteria string            `json:"acceptance_criteria"`
@@ -606,13 +616,14 @@ func TestItemChildPostsTheChildUnderTheEpicsVersion(t *testing.T) {
 		Assign             map[string]string `json:"assign"`
 		Via                any               `json:"via"`
 	}
-	if err := json.Unmarshal(r.Body, &body); err != nil || body.ExpectedVersion != 7 || body.SessionID != thinConversation ||
+	if err := json.Unmarshal(r.Body, &body); err != nil || body.ExpectedVersion != nil || body.SessionID != thinConversation ||
 		body.Kind != "feature" || body.AcceptanceCriteria != "The part works." ||
 		strings.Join(body.Steps, "|") != "one|two" || body.Via != nil ||
 		body.Assign["mode"] != "existing_session" || body.Assign["terminal_id"] != "%9" {
 		t.Fatalf("body = %s", r.Body)
 	}
-	if !strings.Contains(out.String(), "child-1  Part  [feature, assigned, assigned to other]") {
+	if !strings.Contains(out.String(), "child-1  Part  [feature, assigned, assigned to other]") ||
+		!strings.Contains(out.String(), "wrote the child item; item child-1 is at version 2") {
 		t.Fatalf("stdout = %s", out.String())
 	}
 }
@@ -644,8 +655,9 @@ func TestItemChildSaysAnAssignmentThatFailed(t *testing.T) {
 	}
 }
 
-// `item assign` reads the child's version and posts the chosen Session to
-// its assign route; without a Session named it asks nothing.
+// `item assign` reads the child for its parent and posts the chosen Session
+// to its assign route with no version; without a Session named it asks
+// nothing.
 func TestItemAssignPostsTheChosenSession(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
 		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4,"parent_id":"epic-1"}}`
@@ -661,7 +673,7 @@ func TestItemAssignPostsTheChosenSession(t *testing.T) {
 	}
 	var body map[string]any
 	if err := json.Unmarshal(seen[1].Body, &body); err != nil || body["mode"] != "new_session" ||
-		body["assistant"] != "codex" || body["model"] != "m" || body["expected_version"] != float64(4) ||
+		body["assistant"] != "codex" || body["model"] != "m" || body["expected_version"] != nil ||
 		body["session_id"] != thinConversation {
 		t.Fatalf("body = %s", seen[1].Body)
 	}
@@ -697,11 +709,11 @@ func TestItemAssignOfAnOrdinaryItemGoesUnderThePersonsMessage(t *testing.T) {
 	var body struct {
 		Mode    string            `json:"mode"`
 		Persona string            `json:"persona"`
-		Version int64             `json:"expected_version"`
+		Version *int64            `json:"expected_version"`
 		Via     map[string]string `json:"via"`
 	}
 	if err := json.Unmarshal(seen[2].Body, &body); err != nil || body.Mode != "new_session" || body.Persona != "security" ||
-		body.Version != 3 || body.Via["run"] != itemRun {
+		body.Version != nil || body.Via["run"] != itemRun {
 		t.Fatalf("body = %s", seen[2].Body)
 	}
 
@@ -755,7 +767,7 @@ func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
 	var child struct {
 		Assign map[string]string `json:"assign"`
 	}
-	if seen := s.requests(); len(seen) != 2 || json.Unmarshal(seen[1].Body, &child) != nil ||
+	if seen := s.requests(); len(seen) != 1 || json.Unmarshal(seen[0].Body, &child) != nil ||
 		child.Assign["mode"] != "new_session" || child.Assign["persona"] != "backend" {
 		t.Fatalf("child body = %+v", seen)
 	}
@@ -794,8 +806,9 @@ func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
 	}
 }
 
-// `finish` reads the item for its version and posts only the notes it was
-// given; a landing flag travels alone, for the daemon to fill in the rest.
+// `finish` posts only the notes it was given, without reading the item and
+// with no version; a landing flag travels alone, for the daemon to fill in
+// the rest.
 func TestItemFinishPostsOnlyTheNotesItWasGiven(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
 	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
@@ -805,19 +818,19 @@ func TestItemFinishPostsOnlyTheNotesItWasGiven(t *testing.T) {
 		t.Fatalf("finish exit %d: %s", code, errs.String())
 	}
 	seen := s.requests()
-	if len(seen) != 2 || seen[0].Method != "GET" || seen[1].Method != "POST" ||
-		seen[1].EscapedPath != "/v1/work/v2/agent/items/item-1/finish" || seen[1].Key == "" {
+	if len(seen) != 1 || seen[0].Method != "POST" ||
+		seen[0].EscapedPath != "/v1/work/v2/agent/items/item-1/finish" || seen[0].Key == "" {
 		t.Fatalf("requests = %+v", seen)
 	}
 	var body map[string]any
-	if err := json.Unmarshal(seen[1].Body, &body); err != nil {
+	if err := json.Unmarshal(seen[0].Body, &body); err != nil {
 		t.Fatal(err)
 	}
 	landing, _ := body["landing"].(map[string]any)
-	if body["expected_version"] != float64(2) || body["session_id"] != thinConversation ||
+	if body["expected_version"] != nil || body["session_id"] != thinConversation ||
 		body["verification"] != "go test ./... passed" || body["deployment"] != "daemon rebuilt" ||
-		len(landing) != 1 || landing["remote"] != "upstream" || len(body) != 5 {
-		t.Fatalf("finish body = %s", seen[1].Body)
+		len(landing) != 1 || landing["remote"] != "upstream" || len(body) != 4 {
+		t.Fatalf("finish body = %s", seen[0].Body)
 	}
 
 	// With no landing flag, no landing is sent: the daemon reads it.
@@ -826,7 +839,7 @@ func TestItemFinishPostsOnlyTheNotesItWasGiven(t *testing.T) {
 	if code := sessionItem(&out, &errs, b, "finish", f, []string{"item-1"}, "", "", env); code != 0 {
 		t.Fatalf("finish exit %d: %s", code, errs.String())
 	}
-	if p := s.requests()[1]; strings.Contains(string(p.Body), "landing") || !strings.Contains(string(p.Body), `"no_deployment_reason":"library only"`) {
+	if p := s.requests()[0]; strings.Contains(string(p.Body), "landing") || !strings.Contains(string(p.Body), `"no_deployment_reason":"library only"`) {
 		t.Fatalf("finish body = %s", p.Body)
 	}
 }
@@ -843,5 +856,104 @@ func TestTheVerifyGateHintIsPrintedOnlyWhenTheGateIsOn(t *testing.T) {
 	}
 	if !strings.Contains(on.String(), "Captured planning and verification gates") {
 		t.Fatalf("a gated item did not print the gate hint:\n%s", on.String())
+	}
+}
+
+const itemWithBodies = `{"ok":true,"item":{"id":"item-1","title":"Big","kind":"epic","phase":"implementing",
+ "owner_session":"` + thinConversation + `","version":5,"steps":[{"id":"s1","title":"draft","done":true,"position":0}],
+ "documents":[
+ {"id":"d1","role":"plan","title":"Plan","body":"# Plan\nFirst do this.","position":0,"version":2},
+ {"id":"d2","role":"plan_review","title":"Review","body":"It holds.\n","reference":"task-9","position":1,"version":1}]}}`
+
+// `item show` reads the item once and prints what `steps` prints, then every
+// document's body under a header naming it, its role, title and version.
+func TestItemShowPrintsEveryDocumentsBody(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, itemWithBodies })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "show", itemFlags{}, []string{"item-1"}, "", "", envOf(nil)); code != 0 {
+		t.Fatalf("show exit %d: %s", code, errs.String())
+	}
+	if seen := s.requests(); len(seen) != 1 || seen[0].Method != "GET" || seen[0].EscapedPath != "/v1/work/v2/items/item-1" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	got := out.String()
+	for _, want := range []string{"item-1  Big  [epic, implementing, assigned to " + thinConversation + "]",
+		"[x] s1  draft", "doc d1  plan  Plan", "doc d2  plan_review  Review",
+		"===== doc d1  plan  Plan  (v2) =====\n# Plan\nFirst do this.\n",
+		"===== doc d2  plan_review  Review  (v1) =====\nreference: task-9\nIt holds.\n"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Index(got, "===== doc d1") > strings.Index(got, "===== doc d2") {
+		t.Fatalf("documents out of order:\n%s", got)
+	}
+}
+
+// With --doc, only that document's body is printed, raw, ending in one
+// newline; an id the item does not hold exits 1 naming it and the ids held.
+func TestItemShowWithADocPrintsOnlyThatBody(t *testing.T) {
+	_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, itemWithBodies })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "show", itemFlags{docID: "d1"}, []string{"item-1"}, "", "", envOf(nil)); code != 0 {
+		t.Fatalf("show --doc exit %d: %s", code, errs.String())
+	}
+	if out.String() != "# Plan\nFirst do this.\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+
+	out.Reset()
+	errs.Reset()
+	code := sessionItem(&out, &errs, b, "show", itemFlags{docID: "d9"}, []string{"item-1"}, "", "", envOf(nil))
+	if code != 1 || out.Len() != 0 || !strings.Contains(errs.String(), "no document d9") ||
+		!strings.Contains(errs.String(), "d1, d2") {
+		t.Fatalf("unknown doc: exit %d, stdout %q, stderr %q", code, out.String(), errs.String())
+	}
+}
+
+// A write's answer carries no steps, so its output says what was written and
+// the version the item is at, never "(no steps)".
+func TestItemWriteSaysWhatItWroteNotNoSteps(t *testing.T) {
+	const written = `{"ok":true,"item":{"id":"item-1","title":"Ship it","kind":"feature","phase":"verifying",
+ "owner_session":"` + thinConversation + `","version":9}}`
+	for _, tc := range []struct {
+		op   string
+		args []string
+		want string
+	}{
+		{"step-done", []string{"item-1", "s2"}, "wrote step s2 done; item item-1 is at version 9"},
+		{"phase", []string{"item-1", "deploying"}, "wrote phase deploying; item item-1 is at version 9"},
+	} {
+		_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, written })
+		var out, errs bytes.Buffer
+		if code := sessionItem(&out, &errs, b, tc.op, itemFlags{}, tc.args, thinConversation, "", envOf(nil)); code != 0 {
+			t.Fatalf("%s exit %d: %s", tc.op, code, errs.String())
+		}
+		if strings.Contains(out.String(), "(no steps)") || !strings.Contains(out.String(), tc.want) ||
+			!strings.Contains(out.String(), "steps and documents: clawdline item show item-1") {
+			t.Fatalf("%s stdout:\n%s", tc.op, out.String())
+		}
+	}
+}
+
+// A version given with --expected-version is sent as it is.
+func TestItemWriteSendsAGivenExpectedVersion(t *testing.T) {
+	for _, tc := range []struct {
+		op   string
+		args []string
+	}{
+		{"step-done", []string{"item-1", "s2"}},
+		{"finish", []string{"item-1"}},
+	} {
+		s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+		var out, errs bytes.Buffer
+		f := itemFlags{expectedVersion: 7, phase: phaseEvidence{verification: "ran it"}}
+		if code := sessionItem(&out, &errs, b, tc.op, f, tc.args, thinConversation, "", envOf(nil)); code != 0 {
+			t.Fatalf("%s exit %d: %s", tc.op, code, errs.String())
+		}
+		seen := s.requests()
+		if len(seen) != 1 || !strings.Contains(string(seen[0].Body), `"expected_version":7`) {
+			t.Fatalf("%s requests = %+v", tc.op, seen)
+		}
 	}
 }
