@@ -97,10 +97,13 @@ type noticeTask struct {
 // 2026-09-26 at 0.5–0.8% of a root's cost, before the root then read the
 // whole result.json anyway (2.1%). Now it says which task, how it ended, the
 // facts that are this delivery's alone — a stall, released claims, the state
-// of its branch, how many leftovers — and the two commands: `clawdline task
-// show` for the compact view, `clawdline task ack` to stop the retries. What
-// to do about a leftover or a landing is the guide's §5 and §6, read once
-// per session rather than typed once per child.
+// of its branch, how many leftovers — and the one command, `clawdline task
+// show` (or `task wait`), whose reading closes the notice. It used to name
+// `clawdline task ack` as a second step too; roots read that as "when I have
+// integrated it" and put it off, so since 2026-10-02 the read is the ACK
+// (cmd/clawdline closeNotice). What to do about a leftover or a landing is
+// the guide's §5 and §6, read once per session rather than typed once per
+// child.
 func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	short := r.ID
 	if len(short) > 8 {
@@ -127,7 +130,7 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	}
 	line += " — run clawdline task show " + r.ID
 	if noticeID != "" {
-		line += ", then clawdline task ack " + r.ID + " " + noticeID
+		line += "; reading it closes this notice"
 	}
 	return line
 }
@@ -558,15 +561,17 @@ const SeenInTranscript = "transcript"
 // read, and answers whether it did.
 //
 // **Read is not handled.** Until 2026-10-02 the only thing that stopped the
-// resend was `clawdline task ack`, which the line asks for and which a root
-// reads as "I have dealt with this" — so it put the ACK off until it had
+// resend was `clawdline task ack`, which the line then asked for and which a root
+// read as "I have dealt with this" — so it put the ACK off until it had
 // integrated the child, and every rung of the acknowledgement ladder typed the
 // same notice at it again, each one a turn over its whole context. What the
 // resend exists for is a root that never got the line, and the root's own
 // record answers that: the notice as a submitted turn, or as the queued line a
 // running turn took. That is recorded as ObservedAt, the notice stays
 // `delivered` and is never typed again; the ACK is still the receipt that
-// closes it, and the landing is still its own record, not implied by either.
+// closes it — sent now by `clawdline task show` or `task wait` once it has
+// printed the result — and the landing is still its own record, not implied
+// by either.
 //
 // Only a delivered notice is asked about — one never typed cannot have been
 // read — and only a definite yes counts. A record that cannot be found or read
@@ -904,7 +909,10 @@ const (
 //   - **A GET of the task.** It names nobody. The console's own polling, the
 //     Dashboard and any other holder of the machine token read that route, so
 //     counting it would let this daemon silence its own notices by looking at
-//     them.
+//     them. A root's `clawdline task show` and `task wait` are read
+//     deliberately, and close the notice by sending the ACK themselves after
+//     they have printed the result (cmd/clawdline closeNotice) — a receipt,
+//     not something this daemon infers from the GET.
 //   - **A transport success.** The rule this whole file is built on.
 //
 // Best effort, and never an error to its caller: the landing is the fact, and a

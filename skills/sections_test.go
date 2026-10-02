@@ -298,7 +298,7 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 		"--work-id <item id>",
 		"file:line",
 		"clawdline task show <task id>",
-		"clawdline task ack <task id> <notice id>",
+		"clawdline task wait <task id>",
 		"clawdline item step-done <item id> <step id>",
 		"clawdline item phase <item id> implementing",
 		"deploying --no-landing-reason",

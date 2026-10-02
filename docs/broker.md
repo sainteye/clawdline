@@ -46,7 +46,8 @@ hours later by asking. Three things changed:
   acknowledged, pending, delivered or dead, with task id, title, state, `result_path`, `notice_id`, `notice_state`,
   `last_error` and `ack_path`. A ledger that cannot be read says `unacknowledged_completions_unknown` rather than an
   empty list. `clawdline session report` prints them on stderr after the receipt, as it does open to-dos. An ACK
-  (the route, `clawdline task ack`, or a landing the root records) takes it off both.
+  (the route, `clawdline task show` or `task wait` after printing a finished task, `clawdline task ack`, or a
+  landing the root records) takes it off both. An auto-detected landing does not.
 - **A dead letter is typed once more when its root reads idle.** Idle is the one moment a line costs nothing: no
   menu, no turn to interrupt, an empty composer. The beat types it there once (`task.completion.retyped`; the attempt
   count past the limit is the durable mark it was spent), the notice stays a dead letter — no second push — and it is
