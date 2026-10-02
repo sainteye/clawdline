@@ -128,7 +128,7 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
       {toggle(
         "verify_gate",
         words("Independent verification gate", "獨立驗證 gate"),
-        words("Require an independent checker to pass the fixed Git candidate before merging.", "Merge 前必須由獨立 checker 對固定 Git 候選提交驗證通過。"),
+        words("Require an independent checker to pass the fixed Git candidate before merging.", "合併前必須由獨立 checker 對固定 Git 候選提交驗證通過。"),
       )}
       {current ? (
         <div className="settings-gate-mode" role="status" aria-live="polite">

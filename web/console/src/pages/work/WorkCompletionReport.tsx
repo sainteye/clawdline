@@ -15,7 +15,7 @@ export function completionReports(item: WorkV2Item): WorkV2Document[] {
 /** A durable, user-readable conclusion. It is narrative, not a substitute for lifecycle receipts. */
 export function WorkCompletionReports({ item, expanded = false }: { item: WorkV2Item; expanded?: boolean }) {
   return <WorkDocuments documents={completionReports(item)} label="結案報告" expanded={expanded}
-    authority={() => "Agent 調查結論 · 驗證、Merge 與部署證據另列於項目進度"} />
+    authority={() => "Agent 調查結論 · 驗證、合併與部署證據另列於項目進度"} />
 }
 
 const PLAN_TITLE: Partial<Record<WorkV2Document["role"], string>> = { plan: "計劃書", plan_review: "Child Review" }

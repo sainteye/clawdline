@@ -369,6 +369,9 @@ export interface WorkV2Item {
   created_at: number
   updated_at: number
   closed_at: number | null
+  phase_entered_at?: number | null
+  deployment_evidence?: string
+  no_deployment_reason?: string
   cycle: number
   version: number
   documents?: WorkV2Document[]

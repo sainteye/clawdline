@@ -75,14 +75,15 @@ func (w *WorkSystemV2) now() time.Time {
 }
 
 type WorkV2View struct {
-	Item        work.ItemV2
-	Assignments []work.AssignmentV2
-	Documents   []work.DocumentV2
-	Images      []work.ImageV2
-	Steps       []work.StepV2
-	Events      []work.EventV2
-	Gate        *contract.WorkGateDetailRead
-	GateCompact *contract.WorkGateCompactRead
+	Item         work.ItemV2
+	CardProgress store.WorkV2CardProgress
+	Assignments  []work.AssignmentV2
+	Documents    []work.DocumentV2
+	Images       []work.ImageV2
+	Steps        []work.StepV2
+	Events       []work.EventV2
+	Gate         *contract.WorkGateDetailRead
+	GateCompact  *contract.WorkGateCompactRead
 	// Claim is the person's message the owning Session claimed the item on,
 	// read for a page of items that carries no assignments; a view that
 	// carries them answers it from its active assignment instead.
@@ -333,12 +334,17 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
+	progress, err := w.Store.WorkV2CardProgress(ctx, []string{id})
+	if err != nil {
+		return WorkV2View{}, mapWorkV2Error(err)
+	}
 	gate, err := w.Store.WorkGateDetail(ctx, i)
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
 	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events,
-		Gate: &gate}, nil
+		CardProgress: progress[id],
+		Gate:         &gate}, nil
 }
 
 func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims bool) ([]WorkV2View, error) {
@@ -357,7 +363,8 @@ func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, inclu
 	out := make([]WorkV2View, 0, len(items))
 	for _, item := range items {
 		view := WorkV2View{Item: item, Documents: relations.Documents[item.ID], Images: relations.Images[item.ID],
-			Steps: relations.Steps[item.ID]}
+			CardProgress: relations.Progress[item.ID],
+			Steps:        relations.Steps[item.ID]}
 		if includeClaims {
 			view.Claim = relations.Claims[item.ID]
 		}
