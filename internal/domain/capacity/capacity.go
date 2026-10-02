@@ -272,6 +272,9 @@ const (
 	ITermStallCooldown     = "iterm.stall_cooldown_seconds"
 	ITermStallSectionBytes = "iterm.stall_section_bytes"
 	ITermStallStepSeconds  = "iterm.stall_step_seconds"
+	// How old one source's own answer may be and still vouch for its rows
+	// while a slower source holds the refresh.
+	CacheSourceAnswer = "cache.source_answer"
 	// The Project Timeline is a projection that stores nothing, so what is
 	// bounded is the read (limits §3.3).
 	TimelineEntries = "timeline.entries"
@@ -1321,6 +1324,20 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/terminal.stallStepLimit"},
+		},
+		{
+			// What each source said in the scan behind the held reading, and
+			// in the one running now (internal/app/inventory_reading.go). A
+			// drawing taken while iTerm2 holds the refresh keeps the rows of a
+			// source whose answer is complete, lists exactly those rows and is
+			// younger than this. At this age the answer expires and that
+			// source's rows read unverified, as every source's did before.
+			// Thirty seconds is the scan budget, the longest one refresh runs.
+			Name: CacheSourceAnswer, Class: Cache, Unit: Seconds,
+			Limit: 30, AtLimit: Expire,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/app.SourceAnswerAgeLimit"},
 		},
 		{
 			// The screens held between those captures, one per session the

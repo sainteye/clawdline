@@ -485,6 +485,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.ITermStallStepSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-step deadline; no retained wait"}
 		},
+		capacity.CacheSourceAnswer: func() capacity.Reading {
+			if s.readings == nil {
+				return capacity.Reading{Known: true, Note: "this server keeps no source answers"}
+			}
+			return s.readings.AnswerReading()
+		},
 		capacity.ScreensCaptureSlots: func() capacity.Reading {
 			if s.inventory.Held == nil {
 				return capacity.Reading{Known: true, Note: "this inventory takes no screen captures"}
