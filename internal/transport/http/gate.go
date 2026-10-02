@@ -825,8 +825,6 @@ func cleanPath(p string) string {
 	return c
 }
 
-// writeAuthRefusal sends the Swift app's error envelope, which is what its
-// page reads: `{"error":{"code","message","request_id"}}`.
 // unauthorizedMessage is the 401 every gate answers: no credential, or one
 // this daemon does not hold. A script on this machine reads the token file
 // the CLI reads (cmd/clawdline/broker.go machineToken); another device pairs.
@@ -835,6 +833,8 @@ const unauthorizedMessage = "No valid credential came with this request: the X-C
 	"the orchestrator-token file in Clawdline's directory, as every clawdline command does; a token from another " +
 	"directory or an older install is refused. See which directory and port the CLI uses: `clawdline doctor`."
 
+// writeAuthRefusal sends the Swift app's error envelope, which is what its
+// page reads: `{"error":{"code","message","request_id"}}`.
 func writeAuthRefusal(w http.ResponseWriter, status int, code, message string) {
 	writeAuthError(w, status, contract.AuthError{Code: code, Message: message})
 }
