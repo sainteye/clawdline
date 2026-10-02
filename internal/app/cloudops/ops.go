@@ -1568,6 +1568,15 @@ func init() {
 					Body: p.document, Header: asDevice()}
 			}},
 
+		// The person's read receipt for a deploying or done item; the local
+		// route judges `item.phase` and that a person, not an Agent, saw it.
+		op{name: "work.v2.seen",
+			decode: decodeWorkV2NamedDocument("id", "item"),
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/work/v2/items/" + segment(p.id) + "/seen",
+					Body: p.document, Header: asDevice()}
+			}},
+
 		op{name: "work.v2.image-create",
 			decode: decodeWorkV2NamedImageDocument,
 			route: func(p plan) LocalRequest {

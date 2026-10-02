@@ -193,6 +193,7 @@ export const CARRIED = {
   "work.v2.remind": "POST /v1/work/v2/items/{id}/remind",
   "work.v2.cancel": "POST /v1/work/v2/items/{id}/cancel",
   "work.v2.complete": "POST /v1/work/v2/items/{id}/complete",
+  "work.v2.seen": "POST /v1/work/v2/items/{id}/seen",
   "work.v2.create": "POST /v1/work/v2/items",
   "work.v2.edit": "PATCH /v1/work/v2/items/{id}",
   "work.v2.gate-export": "GET /v1/work/v2/items/{id}/gate-export",
