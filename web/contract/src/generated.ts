@@ -8264,13 +8264,14 @@ export type UsageCategoryName =
   | "protocol"
   | "rules"
   | "impl"
+  | "wait"
   | "delegate"
   | "harness"
   | "talk"
   | "compaction"
   | "other"
 
-export const UsageCategoryNameValues: readonly UsageCategoryName[] = ["board", "protocol", "rules", "impl", "delegate", "harness", "talk", "compaction", "other"] as const
+export const UsageCategoryNameValues: readonly UsageCategoryName[] = ["board", "protocol", "rules", "impl", "wait", "delegate", "harness", "talk", "compaction", "other"] as const
 
 /**
  * GET /v1/usage/compare-compaction?since=… (docs/token-ledger.md "Did compacting

@@ -7,7 +7,7 @@
     "UsageCategoryName": {
       "description": "What a token was spent on (docs/token-ledger.md \"Categories\").",
       "type": "string",
-      "enum": ["board", "protocol", "rules", "impl", "delegate", "harness", "talk", "compaction", "other"]
+      "enum": ["board", "protocol", "rules", "impl", "wait", "delegate", "harness", "talk", "compaction", "other"]
     },
     "UsageReason": {
       "description": "Why a reading is not current. `not_yet_read`: the ledger has no reading of it yet. `transcript_missing`: it was read before and its transcript is gone; the totals are that reading's. `transcript_unreadable`: its transcript is there and could not be read; the totals, if any, are from before.",

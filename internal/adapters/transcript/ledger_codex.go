@@ -6,9 +6,21 @@ import (
 	"strings"
 )
 
-var codexExecCommand = regexp.MustCompile(`tools\.exec_command\s*\(\s*\{\s*(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")`)
+var (
+	codexExecCommand = regexp.MustCompile(`tools\.exec_command\s*\(\s*\{\s*(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")`)
+	// codexToolCall is any tool an exec script calls; codexStdin is a
+	// write_stdin call's argument object, and codexChars a non-empty chars in it.
+	codexToolCall = regexp.MustCompile(`tools\.[A-Za-z_][A-Za-z0-9_]*\s*\(`)
+	codexStdin    = regexp.MustCompile(`tools\.write_stdin\s*\(\s*\{([^{}]*)\}`)
+	codexChars    = regexp.MustCompile(`\bchars\s*:`)
+	codexNoChars  = regexp.MustCompile(`\bchars\s*:\s*(?:""|'')\s*(?:,|$)`)
+)
 
-const CodexClassificationVersion = 1
+// LedgerClassificationVersion is the category rules' version. A stored
+// reading made under another one is read again from the start, so a
+// transcript the reader still visits is counted under one set of rules.
+// 2: wait turns (docs/token-ledger.md "Wait turns").
+const LedgerClassificationVersion = 2
 
 // The token ledger's Codex half. A rollout says a turn's usage once, in an
 // `event_msg` of type `token_count` written after the turn's own items: the
@@ -107,14 +119,30 @@ func (s *LedgerState) codexItem(kind string, item object) {
 
 // Current Codex rollouts wrap shell calls in a JavaScript exec tool. Inspect
 // only command arguments of actual exec_command calls, not strings that merely
-// mention a protocol command in a prompt or search result.
+// mention a protocol command in a prompt or search result. A script is wait
+// when every tool it calls waits: a write_stdin that writes nothing (a poll of
+// a running command) or an exec_command whose line only sleeps.
 func classifyCodexExec(script string) Category {
 	out := CategoryOther
+	waits := 0
 	for _, match := range codexExecCommand.FindAllStringSubmatch(script, -1) {
 		var command string
 		if json.Unmarshal([]byte(match[1]), &command) == nil {
-			out = stronger(out, classifyCommand(command))
+			c := classifyCommand(command)
+			if c == CategoryWait {
+				waits++
+				c = CategoryImpl
+			}
+			out = stronger(out, c)
 		}
+	}
+	for _, match := range codexStdin.FindAllStringSubmatch(script, -1) {
+		if args := match[1]; !codexChars.MatchString(args) || codexNoChars.MatchString(args) {
+			waits++
+		}
+	}
+	if waits > 0 && waits == len(codexToolCall.FindAllString(script, -1)) {
+		return CategoryWait
 	}
 	if out == CategoryOther && strings.Contains(script, "tools.apply_patch(") {
 		return CategoryImpl
@@ -146,10 +174,12 @@ func (s *LedgerState) codexTokens(payload object) {
 	actions := s.CodexActions
 	s.CodexActions = nil
 	s.Tools, s.CodexPending = s.CodexPending, nil
-	if !s.openCall(s.Model, input-cached, 0, 0, cached) {
+	divided, ok := s.openCall(s.Model, input-cached, 0, 0, cached)
+	if !ok {
 		return
 	}
-	s.Open = &ledgerCall{Model: s.Model, Output: output, Actions: actions, Above: s.PrevContext > aboveContext}
+	s.Open = &ledgerCall{Model: s.Model, Output: output, Actions: actions, Above: s.PrevContext > aboveContext,
+		Input: divided}
 	s.closeOpen()
 }
 
