@@ -76,11 +76,10 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 	case ask.Item != "":
 		kind, id = "items", ask.Item
 	case id == "":
-		for _, name := range conversationEnv {
-			if v := strings.TrimSpace(getenv(name)); v != "" {
-				id = v
-				break
-			}
+		var err error
+		if id, _, err = conversationFromEnv(getenv); err != nil {
+			fmt.Fprintf(stderr, "clawdline usage: %s\n", conversationRefusal(err, "--session"))
+			return 2
 		}
 		if id == "" {
 			fmt.Fprintf(stderr, "clawdline usage: cannot tell which conversation this is: none of %s is set. "+

@@ -24,7 +24,8 @@ import (
 // `--terminal` skips the lookup when the caller already knows the row.
 
 // conversationEnv are the variables that name this assistant's conversation,
-// in the order they are asked.
+// in the order they are asked. Read them through conversationFromEnv, which
+// refuses when two assistants' variables disagree.
 var conversationEnv = []string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"}
 
 func sessionCommand(args []string) {
@@ -64,11 +65,12 @@ func reportSession(stdout, stderr io.Writer, b *broker, summary, conversation, t
 		return 2
 	}
 	if conversation == "" {
-		for _, name := range conversationEnv {
-			if v := strings.TrimSpace(getenv(name)); v != "" {
-				conversation = v
-				break
-			}
+		var err error
+		// With --terminal the conversation only asks for the reminders, which
+		// are left out rather than asked for the wrong one.
+		if conversation, _, err = conversationFromEnv(getenv); err != nil && terminal == "" {
+			fmt.Fprintf(stderr, "clawdline session report: %s Nothing was reported.\n", conversationRefusal(err, "--conversation"))
+			return 2
 		}
 	}
 	if terminal == "" {
@@ -191,4 +193,54 @@ func remindOpenTodos(stderr io.Writer, body []byte) {
 		fmt.Fprintf(stderr, "  %s  %s\n", td.ID, td.Text)
 	}
 	fmt.Fprintln(stderr, "Complete each finished one with: clawdline todo done <id>")
+}
+
+// conversationFromEnv is this assistant's conversation from the environment
+// and the variable that named it. A process can carry another assistant's
+// variable too — a Codex started from a tmux whose global environment holds a
+// Claude Code session id — and the order of conversationEnv cannot say which
+// is the one running, so two assistants naming different conversations is an
+// error, never the first one asked. Empty, with no error, when none is set.
+func conversationFromEnv(getenv func(string) string) (id, name string, err error) {
+	var found []string
+	seen := map[string]string{} // assistant -> its conversation
+	for _, env := range conversationEnv {
+		v := strings.TrimSpace(getenv(env))
+		if v == "" {
+			continue
+		}
+		assistant := conversationAssistant[env]
+		if _, ok := seen[assistant]; ok {
+			continue
+		}
+		seen[assistant] = v
+		found = append(found, env+"="+v)
+		if id == "" {
+			id, name = v, env
+		} else if v != id {
+			err = twoConversationsError(found)
+		}
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return id, name, nil
+}
+
+// twoConversationsError lists the variables, as NAME=value, of two assistants
+// that name different conversations.
+type twoConversationsError []string
+
+func (e twoConversationsError) Error() string {
+	return "cannot tell which assistant is running this: " + strings.Join(e, " and ") +
+		" name different conversations, and one of them was inherited from another assistant"
+}
+
+// conversationRefusal is the sentence that says how to settle an ambiguous
+// environment: the command's own flag, or unsetting the other assistant's
+// variable.
+func conversationRefusal(err error, flag string) string {
+	return fmt.Sprintf("%v. Pass %s <the conversation id of the assistant running this command>, "+
+		"or run it without the other assistant's variable (for example `env -u CLAUDE_CODE_SESSION_ID clawdline …` from Codex).",
+		err, flag)
 }

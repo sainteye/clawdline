@@ -229,10 +229,10 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 
 	// The root: this conversation, and which assistant it is.
 	conversation, rootAssistant := strings.TrimSpace(o.Conversation), strings.TrimSpace(o.RootAssistant)
-	for _, name := range conversationEnv {
-		v := strings.TrimSpace(env.getenv(name))
-		if v == "" {
-			continue
+	if conversation == "" || rootAssistant == "" {
+		v, name, err := conversationFromEnv(env.getenv)
+		if err != nil {
+			return usage("%s", conversationRefusal(err, "--conversation"))
 		}
 		if conversation == "" {
 			conversation = v
@@ -240,7 +240,6 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		if rootAssistant == "" {
 			rootAssistant = conversationAssistant[name]
 		}
-		break
 	}
 	if conversation == "" {
 		return usage("cannot tell which conversation is dispatching: none of %s is set. "+

@@ -50,11 +50,10 @@ func bindCoordinator(stdout, stderr io.Writer, b *broker, conversation string, g
 func bindCoordinatorWithWait(stdout, stderr io.Writer, b *broker, conversation string, getenv func(string) string, wait func()) int {
 	conversation = strings.TrimSpace(conversation)
 	if conversation == "" {
-		for _, name := range conversationEnv {
-			if v := strings.TrimSpace(getenv(name)); v != "" {
-				conversation = v
-				break
-			}
+		var err error
+		if conversation, _, err = conversationFromEnv(getenv); err != nil {
+			fmt.Fprintf(stderr, "clawdline coordinator bind: %s No role was changed.\n", conversationRefusal(err, "--conversation"))
+			return 2
 		}
 	}
 	if conversation == "" {

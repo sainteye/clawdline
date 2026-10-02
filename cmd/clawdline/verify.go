@@ -174,14 +174,11 @@ func verifyID(args []string) (string, []string, bool) {
 }
 
 // conversationOf is the calling session's conversation, which a note is
-// signed with; empty when the command is not run by an assistant.
+// signed with; empty when the command is not run by an assistant, or when two
+// assistants' variables disagree and the note would be signed with a guess.
 func conversationOf(getenv func(string) string) string {
-	for _, name := range conversationEnv {
-		if v := strings.TrimSpace(getenv(name)); v != "" {
-			return v
-		}
-	}
-	return ""
+	v, _, _ := conversationFromEnv(getenv)
+	return v
 }
 
 // repeated is a flag that may be given more than once.
