@@ -71,8 +71,7 @@ func (b *Broker) childLinger() time.Duration {
 
 // The tab policy: what a task's end does to its child's tab, decided in one
 // place (tabPolicy) and named by one of these rules. The rule is readable
-// where it matters: CHILD.md states it for the task before it starts
-// (tabPolicyBrief), the task's own answer carries it as `tab`
+// where it matters: the task's own answer carries it as `tab`
 // (GET /v1/orchestrator/tasks/{id}) so that reading the child's files is not
 // the only way to know, the settlement's event carries the plan that applied,
 // and a close still owed is a row in the store.
@@ -137,13 +136,13 @@ var tabEndStates = []State{StateSuccess, StateFailure, StateTimeout, StateCancel
 // each way of ending does, and — once the task has ended — the rule that
 // applied and when the close it asks for falls due.
 //
-// One value, two readers, and that is the point. CHILD.md's section is
-// rendered from it before the work starts (tabPolicyBrief) and the task's
-// answer on the wire is projected from it (contract.BrokerTab, brokerTab):
-// neither is a description of the other, so there is no second description to
-// drift. What they could still both be is wrong together — a guard comparing
-// two texts never caught that either — and the only place that can be fixed is
-// tabPolicy's own table.
+// One value, and that is the point. The task's answer on the wire is
+// projected from it (contract.BrokerTab, brokerTab) and the settlement's event
+// carries the plan it chose: neither is a description of the other, so there
+// is no second description to drift. What they could still both be is wrong
+// together, and the only place that can be fixed is tabPolicy's own table.
+// CHILD.md no longer states it: the briefing a child copies from holds only
+// the work.
 type TabPolicy struct {
 	// Setting is `orchestrator_child_linger` or a schedule's `close_tab`, and
 	// Value is what it was set to: the linger's seconds, "-1" when it is off,
@@ -229,14 +228,13 @@ func tabPolicyOf(r Record, linger time.Duration) TabPolicy {
 }
 
 // TabPolicy is this task's tab policy under the linger this broker is running
-// with: what CHILD.md tells the child, and what GET /v1/orchestrator/tasks/{id}
-// answers, from the one value.
+// with: what GET /v1/orchestrator/tasks/{id} answers, from the one value.
 func (b *Broker) TabPolicy(r Record) TabPolicy {
 	return tabPolicyOf(r, b.childLinger())
 }
 
-// TabPlanSentence is one plan in words — the same words in CHILD.md and in
-// anything else that reads a plan back to a person.
+// TabPlanSentence is one plan in words — the same words in the task's answer
+// and in anything else that reads a plan back to a person.
 func TabPlanSentence(p TabPlan) string {
 	switch {
 	case p.Close && p.After > 0:
@@ -245,32 +243,6 @@ func TabPlanSentence(p TabPlan) string {
 		return "closed as soon as it is at rest"
 	}
 	return "left open"
-}
-
-// tabPolicyBrief is the policy as CHILD.md states it for one task: which rule,
-// and what each way of ending does to this tab. Every line of it is rendered
-// from tabPolicyOf, so the section cannot say something the task's answer does
-// not.
-func tabPolicyBrief(r Record, linger time.Duration) []string {
-	policy := tabPolicyOf(r, linger)
-	intro := "For this task the rule is "
-	switch {
-	case policy.Setting == TabSettingCloseTab:
-		intro += fmt.Sprintf("its schedule's `close_tab: %s`:", policy.Value)
-	case policy.Value == "-1":
-		intro += "`orchestrator_child_linger` = -1, which keeps every finished child open:"
-	default:
-		intro += fmt.Sprintf("`%s` = %s seconds:", policy.Setting, policy.Value)
-	}
-	lines := []string{intro, ""}
-	for i, e := range policy.Ends {
-		stop := ";"
-		if i == len(policy.Ends)-1 {
-			stop = "."
-		}
-		lines = append(lines, fmt.Sprintf("- %s: %s (`%s`)%s", e.End, TabPlanSentence(e.Plan), e.Plan.Rule, stop))
-	}
-	return lines
 }
 
 // lingerFor is the close a settlement owes its child's tab, if any: what

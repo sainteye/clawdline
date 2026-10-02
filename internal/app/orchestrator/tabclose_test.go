@@ -3,12 +3,15 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -222,38 +225,6 @@ func TestOneTasksTabPolicyNamesTheRuleThatApplied(t *testing.T) {
 	}
 }
 
-// CHILD.md and the task's answer are one description read twice, not two kept
-// in step: every line of the briefing's table is rendered from the policy
-// value, so a row cannot be in one and missing from the other, and the words
-// are the same words.
-func TestTheBriefIsRenderedFromTheTabPolicy(t *testing.T) {
-	records := map[string]Record{
-		"an ordinary task":      {},
-		"a scheduled task":      {ScheduleID: "5c000000-0000-4000-8000-000000000003", ScheduleCloseTab: closeTabNever},
-		"a task that has ended": {State: StateSuccess, FinishedAt: time.Unix(1000, 0)},
-	}
-	for name, r := range records {
-		for _, linger := range []time.Duration{3 * time.Minute, -1} {
-			p := tabPolicyOf(r, linger)
-			lines := tabPolicyBrief(r, linger)
-			if len(lines) != len(p.Ends)+2 {
-				t.Fatalf("%s: the brief has %d lines for %d ends", name, len(lines), len(p.Ends))
-			}
-			if !strings.Contains(lines[0], p.Value) {
-				t.Errorf("%s: the brief's opening %q does not carry %q", name, lines[0], p.Value)
-			}
-			for i, e := range p.Ends {
-				line := lines[i+2]
-				for _, want := range []string{string(e.End), "`" + e.Plan.Rule + "`", TabPlanSentence(e.Plan)} {
-					if !strings.Contains(line, want) {
-						t.Errorf("%s: the brief's %s line %q does not carry %q", name, e.End, line, want)
-					}
-				}
-			}
-		}
-	}
-}
-
 // An iTerm2 child is owed a close like a tmux one, and closed on a reading
 // whose iTerm2 half did not answer completely: the tab itself was seen, by its
 // id, at rest. The end time travels with the close, so a job in the tab is
@@ -442,26 +413,117 @@ func TestTheSettlementSaysWhatItDidToTheTab(t *testing.T) {
 	}
 }
 
-// CHILD.md states the rule before the work starts, for each way it can end.
-func TestTheBriefingSaysWhatTheEndDoesToTheTab(t *testing.T) {
+// CHILD.md no longer carries the tab policy: the task's answer (`tab`) and the
+// settlement's event say what an end does to the tab, and the briefing a child
+// copies from stays about the work.
+func TestTheBriefingSaysNothingAboutTheTab(t *testing.T) {
 	b, _ := newTestBroker(t)
 	b.ChildLinger = func() time.Duration { return 3 * time.Minute }
 	r := Record{ID: "7ab00040-0000-4000-8000-000000000040", Title: "t", TimeoutMinutes: 30}
-	brief := b.ChildBrief(r, "/tmp")
-	for _, want := range []string{
-		"## What happens to this tab when the task ends",
-		"`orchestrator_child_linger` = 180 seconds",
-		"- success: closed about 180 seconds after it ends (`child_linger`);",
-		"- timeout: left open (`unfinished_left_open`);",
-	} {
-		if !strings.Contains(brief, want) {
-			t.Errorf("CHILD.md does not say %q", want)
+	scheduled := r
+	scheduled.ScheduleID, scheduled.ScheduleTitle, scheduled.ScheduleCloseTab = "5c000000-0000-4000-8000-000000000003", "daily", "never"
+	for name, rec := range map[string]Record{"ordinary": r, "scheduled": scheduled} {
+		brief := b.ChildBrief(rec, "/tmp")
+		for _, absent := range []string{"What happens to this tab", "orchestrator_child_linger", "`child_linger`", "`close_tab: never`"} {
+			if strings.Contains(brief, absent) {
+				t.Errorf("%s CHILD.md still says %q", name, absent)
+			}
 		}
 	}
-	r.ScheduleID, r.ScheduleTitle, r.ScheduleCloseTab = "5c000000-0000-4000-8000-000000000003", "daily", "never"
-	brief = b.ChildBrief(r, "/tmp")
-	if !strings.Contains(brief, "`close_tab: never`") || !strings.Contains(brief, "- success: left open (`schedule_never`);") {
-		t.Errorf("a scheduled CHILD.md does not state its close_tab:\n%s", brief)
+}
+
+// briefResultSample is the result.json sample a CHILD.md shows, with only what
+// a child must fill in by itself filled in: the secret, the summary and the
+// time. Everything else is the template's own words.
+func briefResultSample(t *testing.T, brief string) string {
+	t.Helper()
+	_, rest, ok := strings.Cut(brief, "## Reporting")
+	if !ok {
+		t.Fatalf("CHILD.md has no Reporting section:\n%s", brief)
+	}
+	_, rest, ok = strings.Cut(rest, "```json\n")
+	if !ok {
+		t.Fatalf("the Reporting section has no JSON sample:\n%s", rest)
+	}
+	sample, _, ok := strings.Cut(rest, "```")
+	if !ok {
+		t.Fatalf("the JSON sample is not closed:\n%s", rest)
+	}
+	return strings.NewReplacer(
+		"<the TASK_SECRET value from your first message>", strings.Repeat("5e", 32),
+		"<one paragraph: what you did, or why it failed>", "done",
+		"<ISO8601 UTC>", "2026-10-02T00:00:00Z",
+	).Replace(sample)
+}
+
+// finishBriefSample finishes a task whose task.json is r's and whose
+// result.json.tmp is result, the way `clawdline task finish` does.
+func finishBriefSample(t *testing.T, r Record, result string) error {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), r.ID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := json.Marshal(map[string]any{"clawdline_protocol": 1, "task_id": r.ID, "kind": r.Kind, "title": r.Title})
+	if err := os.WriteFile(filepath.Join(dir, "task.json"), task, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "result.json.tmp"), []byte(result), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := taskdir.Finish(dir)
+	return err
+}
+
+// A child that copies CHILD.md's sample and fills in only its own identity
+// finishes on the first run: a review task's sample carries a closed review
+// receipt, and the verification row claims no run nobody made. A read-only
+// child that leaves verification out entirely finishes too.
+func TestTheBriefingsResultSampleFinishesFirstTime(t *testing.T) {
+	b, _ := newTestBroker(t)
+	for _, c := range []struct{ name, kind string }{{"review", "plan_review"}, {"ordinary", "custom"}} {
+		r := Record{ID: "7ab00041-0000-4000-8000-000000000041", Title: "t", Kind: c.kind, TimeoutMinutes: 30}
+		sample := briefResultSample(t, b.ChildBrief(r, "/tmp"))
+		if !strings.Contains(sample, `"last": "skipped"`) {
+			t.Errorf("%s: the sample claims a verification run:\n%s", c.name, sample)
+		}
+		if err := finishBriefSample(t, r, sample); err != nil {
+			t.Errorf("%s: the sample as CHILD.md shows it does not finish: %v\n%s", c.name, err, sample)
+		}
+		var kept []string
+		for _, line := range strings.Split(sample, "\n") {
+			if !strings.HasPrefix(line, ` "verification":`) {
+				kept = append(kept, line)
+			}
+		}
+		if readOnly := strings.Join(kept, "\n"); readOnly == sample {
+			t.Errorf("%s: the sample has no verification row to leave out", c.name)
+		} else if err := finishBriefSample(t, r, readOnly); err != nil {
+			t.Errorf("%s: the sample without verification does not finish: %v\n%s", c.name, err, readOnly)
+		}
+	}
+}
+
+// A review task's CHILD.md names the review receipt and every value it may
+// hold; any other task's says nothing of it.
+func TestOnlyAReviewBriefingNamesTheReviewReceipt(t *testing.T) {
+	b, _ := newTestBroker(t)
+	words := []string{`"review":`, "safe_to_land", "changes_required", "specification", "repository_invariants",
+		"runtime_failure_behavior", "`blocking`", "`important`", "`minor`"}
+	review := b.ChildBrief(Record{ID: "7ab00042-0000-4000-8000-000000000042", Title: "t", Kind: "plan_review", TimeoutMinutes: 30}, "/tmp")
+	plain := b.ChildBrief(Record{ID: "7ab00043-0000-4000-8000-000000000043", Title: "t", Kind: "custom", TimeoutMinutes: 30}, "/tmp")
+	for _, w := range words {
+		if !strings.Contains(review, w) {
+			t.Errorf("a review CHILD.md does not name %q", w)
+		}
+		if strings.Contains(plain, w) {
+			t.Errorf("an ordinary CHILD.md names %q", w)
+		}
+	}
+	for name, brief := range map[string]string{"review": review, "ordinary": plain} {
+		if strings.Contains(brief, "What happens to this tab") {
+			t.Errorf("the %s CHILD.md still states the tab policy", name)
+		}
 	}
 }
 

@@ -226,7 +226,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "finished_at": "<ISO8601 UTC>"}`)
 	w("```")
 	w("")
-	w(`- "status" is "failure" when you could not do it. ` + "`last` is `pass`, `fail` or `skipped`; `scope` is one line.")
+	w(`- "status" is "failure" when you could not do it. `+"`last` is `pass`, `fail` or `skipped`; `scope` is one line of at most %d characters.", taskdir.VerificationScopeLimit)
 	w("- `verification` is a placeholder. If you ran nothing, keep `skipped` or omit the field; never claim a pass.")
 	if reviewTask {
 		w("- A successful review needs `review`. Its verdict is `safe_to_land` or `changes_required`.")

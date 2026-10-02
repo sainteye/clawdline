@@ -447,8 +447,13 @@ func finishTask(stdout, stderr io.Writer, dir string, port int, collect bool, cl
 	switch {
 	case errors.As(err, &invalid):
 		// The old validator's line, word for word: a child that learned to
-		// read it keeps reading it.
-		fmt.Fprintln(stderr, invalid.Error())
+		// read it keeps reading it. Every further violation follows on its
+		// own line, so one correction pass can fix them all.
+		lines := strings.Split(invalid.Error(), "\n")
+		fmt.Fprintln(stderr, lines[0])
+		for _, more := range lines[1:] {
+			fmt.Fprintln(stderr, "  - "+more)
+		}
 		fmt.Fprintln(stderr, "Nothing was written. Correct result.json.tmp and run this again.")
 		return 1
 	case err != nil:
