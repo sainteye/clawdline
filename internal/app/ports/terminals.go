@@ -52,6 +52,9 @@ type OwnedTerminals interface {
 	// History is up to `lines` lines that scrolled off the top, followed by
 	// the visible screen. A larger ask is lowered to terminal.MaxHistoryLines.
 	History(ctx context.Context, id terminal.ID, lines int) ([]string, error)
+	// HistoryBounded has the same contents but refuses before retaining more
+	// than maxBytes of captured output. Cloud receipts use this narrower path.
+	HistoryBounded(ctx context.Context, id terminal.ID, lines, maxBytes int) ([]string, error)
 	// Changed wakes the caller when the terminal drew something. The channel
 	// holds one pending wake-up and coalesces the rest: it says "read a
 	// frame", never what changed. stop takes the subscription back and must

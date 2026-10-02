@@ -324,6 +324,21 @@ func (s *Service) History(ctx context.Context, p Principal, id terminal.ID, line
 	return s.host.History(ctx, id, lines)
 }
 
+// HistoryBounded limits captured bytes for a Cloud reply while preserving the
+// local History path's existing behavior.
+func (s *Service) HistoryBounded(ctx context.Context, p Principal, id terminal.ID, lines, maxBytes int) ([]string, error) {
+	if err := s.allowed(p); err != nil {
+		return nil, err
+	}
+	if lines <= 0 || lines > terminal.MaxHistoryLines {
+		lines = terminal.MaxHistoryLines
+	}
+	if maxBytes <= 0 {
+		return nil, terminal.Refuse(terminal.CodeInvalid, "history byte limit is invalid")
+	}
+	return s.host.HistoryBounded(ctx, id, lines, maxBytes)
+}
+
 // Control is the lease on id as it stands.
 func (s *Service) Control(id terminal.ID) Control {
 	s.mu.Lock()

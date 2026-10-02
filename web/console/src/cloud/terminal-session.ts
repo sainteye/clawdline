@@ -16,6 +16,7 @@ type Receipt = { v: 1; type: "terminal_receipt"; request_id: string; connection:
 type Frame = { v: 1; type: "terminal_frame"; terminal_id: string; connection: string; frame_seq: number;
   captured_at: number; frame: TerminalFrame }
 type Notice = { v: 1; type: "terminal_notice"; connection: string; code: string; machine_incarnation: string }
+export type CloudTerminalHistory = { lines: string[]; truncated: boolean; omitted_lines: number }
 export type CloudTerminalState = "opening" | "synchronizing" | "just_synced" | "live" | "stale" | "offline" | "revoked" | "unknown" | "closed"
 export interface CloudTerminalSnapshot {
   state: CloudTerminalState
@@ -289,11 +290,14 @@ export class CloudTerminalSession {
     await this.request("close", { terminal_id: this.terminal, client: this.client, epoch: this.epoch })
     this.set({ state: "closed" })
   }
-  async history(): Promise<string[]> {
+  async history(): Promise<CloudTerminalHistory> {
     const receipt = await this.request("history", { terminal_id: this.terminal, body: { lines: 2000 } })
     const lines = receipt.result?.lines
-    if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) throw fail("terminal_bad_receipt")
-    return lines
+    const truncated = receipt.result?.truncated
+    const omitted = receipt.result?.omitted_lines
+    if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string") || typeof truncated !== "boolean" ||
+      !Number.isSafeInteger(omitted) || (omitted as number) < 0 || truncated !== ((omitted as number) > 0)) throw fail("terminal_bad_receipt")
+    return { lines, truncated, omitted_lines: omitted as number }
   }
   private forgetLease(reason: string): void { this.epoch = null; this.inputUnknown = true; this.set({ control: null, state: "unknown", reason }) }
   private revoke(reason: string): void {

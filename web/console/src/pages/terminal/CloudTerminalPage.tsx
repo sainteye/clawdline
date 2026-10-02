@@ -6,7 +6,7 @@ import { nextWord } from "../../next-strings.js"
 import { watchTerminalHost, type TerminalHost } from "../../cloud/terminal-host.js"
 import { TerminalChannelTransport } from "../../cloud/terminal-transport.js"
 import { TerminalObservation } from "../../cloud/terminal-observation.js"
-import { CloudTerminalSession, type CloudTerminalSnapshot } from "../../cloud/terminal-session.js"
+import { CloudTerminalSession, type CloudTerminalSnapshot, type CloudTerminalHistory } from "../../cloud/terminal-session.js"
 import { frameBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
 import { openTerminalPage } from "./navigate.js"
@@ -16,7 +16,12 @@ import { holderWords, terminalShortID } from "./words.js"
 import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals } from "./cloud-view.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
-function reason(error: unknown): string { return (error as { code?: string })?.code ?? (error instanceof Error ? error.message : "cloud_failed") }
+function reason(error: unknown): string {
+  const code = (error as { code?: string })?.code
+  if (code === "terminal_history_line_too_large") return nextWord("terminalCloudHistoryLineTooLarge")
+  if (code === "terminal_history_too_large") return nextWord("terminalCloudHistoryTooLarge")
+  return code ?? (error instanceof Error ? error.message : "cloud_failed")
+}
 function stateWords(state: CloudTerminalSnapshot["state"]): string {
   switch (state) {
     case "opening": return nextWord("terminalConnecting")
@@ -47,7 +52,7 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState("")
-  const [history, setHistory] = useState<string[] | null>(null)
+  const [history, setHistory] = useState<CloudTerminalHistory | null>(null)
   const [reader, setReader] = useState(false)
   const [ctrl, setCtrl] = useState(false)
   const ctrlArmed = useRef(false)
@@ -253,7 +258,9 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
       {error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline" && <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
     </header>
-    {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2><pre ref={historyFocus} tabIndex={0}>{history.join("\n")}</pre></section>}
+    {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2>
+      {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}
+      <pre ref={historyFocus} tabIndex={0}>{history.lines.join("\n")}</pre></section>}
     <div className="terminal-scroll" hidden={history !== null}>{loading && <p className="terminal-note">{nextWord("terminalConnecting")}</p>}<div className="terminal-host" ref={screen} /></div>
     <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
       {KEY_ROW.map(([name, value, spoken]) =>

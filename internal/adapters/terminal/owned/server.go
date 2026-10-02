@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -160,6 +161,32 @@ func (s *Server) ready(ctx context.Context) error {
 // `-f` so that whichever call starts the server starts it with this
 // daemon's configuration.
 func (s *Server) call(ctx context.Context, stdin string, args ...string) (string, error) {
+	return s.callWithOutputLimit(ctx, stdin, 0, args...)
+}
+
+type boundedOutput struct {
+	data     bytes.Buffer
+	limit    int
+	exceeded bool
+}
+
+func (o *boundedOutput) Len() int       { return o.data.Len() }
+func (o *boundedOutput) Bytes() []byte  { return o.data.Bytes() }
+func (o *boundedOutput) String() string { return o.data.String() }
+
+func (o *boundedOutput) Write(p []byte) (int, error) {
+	if o.limit <= 0 || len(p) <= o.limit-o.Len() {
+		return o.data.Write(p)
+	}
+	remaining := o.limit - o.Len()
+	if remaining > 0 {
+		_, _ = o.data.Write(p[:remaining])
+	}
+	o.exceeded = true
+	return remaining, errors.New("terminal output exceeds byte limit")
+}
+
+func (s *Server) callWithOutputLimit(ctx context.Context, stdin string, maxBytes int, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	full := append([]string{"-S", s.sock, "-f", s.conf, "-u"}, args...)
@@ -170,11 +197,17 @@ func (s *Server) call(ctx context.Context, stdin string, args ...string) (string
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return string(out), classify(ctx, args[0], strings.TrimSpace(stderr.String()), err)
+	var output boundedOutput
+	output.limit = maxBytes
+	cmd.Stdout = &output
+	err := cmd.Run()
+	if output.exceeded {
+		return "", terminal.Refuse(terminal.CodeHistoryTooLarge, "history capture exceeds the Cloud byte limit")
 	}
-	return string(out), nil
+	if err != nil {
+		return output.String(), classify(ctx, args[0], strings.TrimSpace(stderr.String()), err)
+	}
+	return output.String(), nil
 }
 
 // classify is a failed call as a refusal: the terminal positively not there,
@@ -496,6 +529,17 @@ func (s *Server) Close(ctx context.Context, id terminal.ID) error {
 
 // History is up to `lines` lines of scrollback and then the visible screen.
 func (s *Server) History(ctx context.Context, id terminal.ID, lines int) ([]string, error) {
+	return s.history(ctx, id, lines, 0)
+}
+
+func (s *Server) HistoryBounded(ctx context.Context, id terminal.ID, lines, maxBytes int) ([]string, error) {
+	if maxBytes <= 0 {
+		return nil, terminal.Refuse(terminal.CodeInvalid, "history byte limit is invalid")
+	}
+	return s.history(ctx, id, lines, maxBytes)
+}
+
+func (s *Server) history(ctx context.Context, id terminal.ID, lines, maxBytes int) ([]string, error) {
 	if lines < 1 {
 		return nil, terminal.Refuse(terminal.CodeInvalid, fmt.Sprintf("%d lines of history", lines))
 	}
@@ -506,7 +550,7 @@ func (s *Server) History(ctx context.Context, id terminal.ID, lines int) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	out, err := s.call(ctx, "", "capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", target)
+	out, err := s.callWithOutputLimit(ctx, "", maxBytes, "capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", target)
 	if err != nil {
 		return nil, err
 	}

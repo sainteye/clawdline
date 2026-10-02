@@ -182,6 +182,10 @@ func (f *fakeTerms) History(_ context.Context, id terminal.ID, lines int) ([]str
 	return append([]string(nil), t.lines...), nil
 }
 
+func (f *fakeTerms) HistoryBounded(ctx context.Context, id terminal.ID, lines, maxBytes int) ([]string, error) {
+	return f.History(ctx, id, lines)
+}
+
 func (f *fakeTerms) Changed(_ context.Context, id terminal.ID) (<-chan struct{}, func(), error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
