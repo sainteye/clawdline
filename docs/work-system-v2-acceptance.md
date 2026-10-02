@@ -223,9 +223,13 @@ refused.
 ### WS2-L05 — Conditions preserve the phase
 
 At each nonterminal phase, setting `blocked` or `waiting_user` keeps the phase unchanged and makes
-both fields visible. `waiting_user` without a nonblank `user_action` is refused; the named action
-appears on the Board and in the owning Session's item-detail modal. Clearing the condition clears
-that action and restores the phase presentation. Broker-derived
+both fields visible. An Agent's `waiting_user` names an open decision it asked about the item
+(`decision_id`); without one it is refused (`waiting_user_requires_decision`). The decision's
+question appears on the Board card with its answer buttons; its answer or default clears the
+condition, and the Agent clearing the condition first withdraws it. A person's or the daemon's
+`waiting_user` names a nonblank `user_action` instead, which appears on the Board and in the owning
+Session's item-detail modal. Clearing the condition clears that action and restores the phase
+presentation. Broker-derived
 `owner_offline`/`evidence_unknown` cannot be cleared by cosmetic Agent text.
 
 ### WS2-L06 — Reopen starts another cycle

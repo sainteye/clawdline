@@ -236,7 +236,9 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 		"direct_todos",
 		`"reason"`,
 		"waiting_user",
-		"user_action",
+		"decision_id",
+		"waiting_user_requires_decision",
+		"decision_withdrawn",
 		"completion_report",
 		"root cause",
 	}
@@ -249,6 +251,11 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 			if !bytes.Contains(guide, []byte(want)) {
 				t.Errorf("guide %s does not explain deferred Board assignments with %q", topic, want)
 			}
+		}
+		// An Agent waits on a decision; the free-text action it used to
+		// write is refused, so no guide may still teach it.
+		if bytes.Contains(guide, []byte(`"user_action":`)) {
+			t.Errorf("guide %s still teaches an Agent to write a free-text user_action", topic)
 		}
 	}
 }

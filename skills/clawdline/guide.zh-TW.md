@@ -946,16 +946,24 @@ POST /v1/work/v2/agent/items/<id>/reopen     (Idempotency-Key required)
 新 cycle 回到 `implementing`、恢復這個 Session 為 owner，並把原因寫入不可變的項目歷史。原因最多
 8 KiB。語意含糊的追問不構成修改看板的授權。
 
-負責項目的 Agent 要等待使用者動作時，使用 machine-authenticated route：
+負責項目的 Agent 需要使用者動手或做選擇時，就開一個 decision 並等它。先開一個關於這個項目的 decision
+（`POST /v1/orchestrator/decisions`，帶這個項目的 `work_id`、二到四個選項、`default` 和期限；要使用者動手時，
+選項可以是 `{"id": "done", "label": "我做好了"}` 和 `{"id": "cannot", "label": "我沒辦法"}`），再用
+machine-authenticated route 讓項目指向它：
 
 ```
 PATCH /v1/work/v2/agent/items/<id>/edit     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>",
- "condition": "waiting_user", "user_action": "請使用者完成的單一具體動作"}
+ "condition": "waiting_user", "decision_id": "<the decision's id>"}
 ```
 
-`user_action` 最多 8 KiB，而且只屬於 `waiting_user`；缺少具體動作或在其他 condition 寫入都會被具名拒絕。
-不再等待時，用同一路由把 `condition` 設成空字串，daemon 會一起清掉 `user_action`，避免看板留下過期要求。
+decision 必須存在（`decision_not_found`）、是這個 Session 開的（`decision_other_session`）、關於這個項目
+（`decision_other_item`），而且還沒結束（`decision_not_open`）；在其他 condition 帶 `decision_id` 會得到
+`decision_requires_waiting_user`。沒有 decision 的 `waiting_user` 會以 `waiting_user_requires_decision` 拒絕。
+使用者在看板卡片或「等你決定」回答；decision 被回答，或到期由 default 生效時，daemon 會在同一筆寫入清掉項目的
+`waiting_user`、把答案記在項目上，並在這個 Session 閒置時把所選選項的 id 與 label 打進來。要自己停止等待，就用
+同一路由把 `condition` 設成空字串（或其他 condition）；decision 隨即變成 `withdrawn`、離開「等你決定」，項目被
+釋放、改派、取消或完成時也一樣。回答已 withdrawn 的 decision 會以 `decision_withdrawn` 拒絕。
 
 **本輪擷取的規劃與驗證 gate。** `planning_gate` 預設開、`verify_gate` 預設關；
 `clawdline setting get|set planning_gate|verify_gate` 接受 `on/off` 或 `true/false`。每輪第一次成功

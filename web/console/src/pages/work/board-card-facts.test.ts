@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { conditionWords, deploymentWords, needsPerson, ownerOnlineWords, phaseStayWords } from "./board-card-facts.ts"
+import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.ts"
 
 const project = { available: true } as const
 
@@ -32,4 +32,14 @@ test("closed cards show the first nonempty deployment line or its reason", () =>
   assert.equal(deploymentWords({ deployment_evidence: "\nCloud build 123\nmore", no_deployment_reason: "" }), "部署證據：Cloud build 123")
   assert.equal(deploymentWords({ deployment_evidence: "", no_deployment_reason: "No release needed\nmore" }), "未部署：No release needed")
   assert.equal(deploymentWords({}), "尚無部署說明")
+})
+
+test("a card waiting on a decision names its question, and an older free-text wait still reads", () => {
+  const question = { id: "d1", question: "Is the release window confirmed?" }
+  assert.equal(needsPerson({ condition: null, user_action: "", decision_id: "d1" }, 0), true)
+  assert.equal(nextActionWords({ user_action: "", decision_id: "d1" }, [question]), "等你決定：Is the release window confirmed?")
+  // A decision this read does not hold is a question that waits, not nothing.
+  assert.equal(nextActionWords({ user_action: "", decision_id: "d2" }, [question]), "等你回答一個問題")
+  assert.equal(nextActionWords({ user_action: "Confirm the window." }, []), "下一步：Confirm the window.")
+  assert.equal(nextActionWords({ user_action: "" }, [question]), "")
 })

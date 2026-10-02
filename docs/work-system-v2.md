@@ -281,11 +281,24 @@ losing the stage at which it is blocked.
 Only the owning Agent may set or clear an Agent condition. The broker derives `owner_offline` and
 `evidence_unknown` from typed readings without moving the main phase.
 
-`waiting_user` always names the requested action in `user_action`; setting the condition without
-that text is refused. The field is owner-written, is capped at 8 KiB, and is cleared atomically
-when the condition clears or the item changes phase, owner, or terminal state. Board cards and the
-assigned-item detail show the request as a first-class callout rather than asking the person to
-infer it from the description.
+An Agent's `waiting_user` points at a decision (`decision_id`): the owning Session first opens
+one about the item (`POST /v1/orchestrator/decisions`, two to four options, a default and a due),
+then sets the condition with its id. The edit checks the decision exists, was asked by this
+Session, is about this item and is still open, each refused by its own code; a `waiting_user` or a
+`user_action` from an Agent without a decision is refused with `waiting_user_requires_decision`.
+The decision's end is the wait's end: the person's answer, or its default at the due (the sweep),
+clears the condition in the same transaction as the decision row (`decision.closed` on the item
+records the option id, label and whether it was answered or defaulted), and the owning Session is
+typed that answer when its terminal is idle — best effort, after the commit. When the Session stops
+waiting first — it clears or replaces the condition, links another decision, or the item is
+released, reassigned, cancelled or done — the decision becomes `withdrawn` in that same write
+(`decision.withdrawn` on the item), leaves "Waiting on you", and a later answer is refused with
+`decision_withdrawn`. The Board card shows the decision's question and its answer buttons.
+
+The daemon's own waits still name a free-text `user_action` (an assignment's first dialog, a
+verification escalation nobody live can decide), as does a person's edit; an item that already
+carries one keeps showing it until its condition clears. The text is capped at 8 KiB and is
+cleared atomically when the condition clears or the item changes phase, owner, or terminal state.
 
 ### 6.3 Deployment policy
 

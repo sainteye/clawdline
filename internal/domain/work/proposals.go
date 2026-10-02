@@ -889,6 +889,11 @@ const (
 	DecisionOpen      DecisionState = "open"
 	DecisionAnswered  DecisionState = "answered"
 	DecisionDefaulted DecisionState = "defaulted"
+	// DecisionWithdrawn: the Session that asked stopped waiting on it — it
+	// cleared the item's waiting_user, or the item left it — before anyone
+	// answered. Nobody is waiting on the person any more, and an answer now
+	// would answer a question nobody is asking.
+	DecisionWithdrawn DecisionState = "withdrawn"
 )
 
 // PushState is what happened to a blocking decision's one push.
@@ -1027,6 +1032,10 @@ func optionID(s string) bool {
 // stood is closed: the session may have acted on it, and a later answer would
 // contradict what was done.
 func AnswerDecision(d Decision, option, actor string, now time.Time) (Decision, error) {
+	if d.State == DecisionWithdrawn {
+		return Decision{}, refuse(409, "decision_withdrawn",
+			"The Session that asked this withdrew it before it was answered; nobody is waiting on this answer.")
+	}
 	if d.State != DecisionOpen {
 		return Decision{}, refuse(409, "decision_closed", "This decision is closed (%s: %s).", d.State, d.Answer)
 	}
@@ -1050,6 +1059,28 @@ func DefaultDecision(d Decision, now time.Time) (Decision, bool) {
 	}
 	d.State, d.Answer, d.AnsweredBy, d.AnsweredAt = DecisionDefaulted, d.Default, ActorRule, now
 	return d, true
+}
+
+// WithdrawDecision is an open decision nobody waits on any more. It is not
+// an answer: Answer stays empty, and AnsweredBy and AnsweredAt say who
+// stopped waiting and when.
+func WithdrawDecision(d Decision, actor string, now time.Time) (Decision, bool) {
+	if d.State != DecisionOpen {
+		return d, false
+	}
+	d.State, d.Answer, d.AnsweredBy, d.AnsweredAt = DecisionWithdrawn, "", actor, now
+	return d, true
+}
+
+// OptionLabel is the label of one of the decision's options, or the id when
+// it names none.
+func (d Decision) OptionLabel(id string) string {
+	for _, o := range d.Options {
+		if o.ID == id {
+			return o.Label
+		}
+	}
+	return id
 }
 
 // DecisionChange is the move a closed decision writes on the board item it is

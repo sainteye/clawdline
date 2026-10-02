@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS work_v2_items (
   phase             TEXT NOT NULL CHECK (phase IN ('created','assigning','assigned','implementing','verifying','merging','deploying','done','cancelled')),
   condition         TEXT NOT NULL DEFAULT '' CHECK (condition IN ('','blocked','waiting_user','owner_required','owner_offline','evidence_unknown','assignment_failed','assigned_unnotified')),
   user_action       TEXT NOT NULL DEFAULT '',
+  decision_id       TEXT NOT NULL DEFAULT '',
   deployment_policy TEXT NOT NULL CHECK (deployment_policy IN ('required','not_required','agent_decides')),
   review_required   INTEGER NOT NULL DEFAULT 0 CHECK (review_required IN (0,1)),
   owner_session     TEXT NOT NULL DEFAULT '',
@@ -247,6 +248,9 @@ func openWorkV2(db *sql.DB) error {
 		// review_required is the person's "Needs independent review" switch on
 		// a Feature; every item written before it reads unchecked.
 		{"review_required", `ALTER TABLE work_v2_items ADD COLUMN review_required INTEGER NOT NULL DEFAULT 0 CHECK (review_required IN (0,1))`},
+		// decision_id is the open decision an Agent's waiting_user points at;
+		// every item written before it waits, if at all, on its user_action.
+		{"decision_id", `ALTER TABLE work_v2_items ADD COLUMN decision_id TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, column := range columns {
 		if has, err = hasColumn(db, "work_v2_items", column.name); err != nil {
@@ -488,13 +492,13 @@ const workV2Columns = `id, project_id, project_path, kind, title, description,
   acceptance_criteria, acceptance_version, acceptance_digest, phase, condition, user_action,
   deployment_policy, owner_session, created_by, created_at, updated_at, closed_at, cycle,
   gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate, cycle_base_commit, version, created_via, parent_id,
-  review_required`
+  review_required, decision_id`
 
 const workV2ItemColumns = `i.id, i.project_id, i.project_path, i.kind, i.title, i.description,
   i.acceptance_criteria, i.acceptance_version, i.acceptance_digest, i.phase, i.condition, i.user_action,
   i.deployment_policy, i.owner_session, i.created_by, i.created_at, i.updated_at, i.closed_at, i.cycle,
   i.gate_snapshot_cycle, i.gate_snapshot_at, i.planning_gate, i.verify_gate, i.cycle_base_commit, i.version, i.created_via, i.parent_id,
-  i.review_required`
+  i.review_required, i.decision_id`
 
 func scanWorkV2(sc scanner) (work.ItemV2, error) {
 	var i work.ItemV2
@@ -505,7 +509,7 @@ func scanWorkV2(sc scanner) (work.ItemV2, error) {
 		&i.AcceptanceCriteria, &i.AcceptanceVersion, &i.AcceptanceDigest, &i.Phase,
 		&i.Condition, &i.UserAction, &i.DeploymentPolicy, &i.OwnerSession, &i.CreatedBy, &created, &updated, &closed,
 		&i.Cycle, &i.GateSnapshotCycle, &gateAt, &i.PlanningGate, &i.VerifyGate, &i.CycleBaseCommit,
-		&i.Version, &via, &i.ParentID, &i.ReviewRequired)
+		&i.Version, &via, &i.ParentID, &i.ReviewRequired, &i.DecisionID)
 	if err == sql.ErrNoRows {
 		return work.ItemV2{}, ErrNoWorkV2
 	}
@@ -627,13 +631,13 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	      (id, project_id, project_path, kind, title, description, acceptance_criteria, acceptance_version,
 	       acceptance_digest, phase, condition, user_action, deployment_policy, owner_session, created_by,
 	       created_at, updated_at, closed_at, cycle, gate_snapshot_cycle, gate_snapshot_at, planning_gate, verify_gate,
-	       cycle_base_commit, version, created_via, parent_id, review_required)
-	      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	       cycle_base_commit, version, created_via, parent_id, review_required, decision_id)
+	      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.ID, i.ProjectID, i.ProjectPath, i.Kind, i.Title, i.Description, i.AcceptanceCriteria,
 		i.AcceptanceVersion, i.AcceptanceDigest, i.Phase, i.Condition,
 		i.UserAction, i.DeploymentPolicy, i.OwnerSession, i.CreatedBy, i.CreatedAt.Unix(), i.UpdatedAt.Unix(), i.Cycle,
 		i.GateSnapshotCycle, gateSnapshotUnix(i.GateSnapshotAt), i.PlanningGate, i.VerifyGate, i.CycleBaseCommit, i.Version,
-		createdViaColumn(i.CreatedVia), i.ParentID, i.ReviewRequired)
+		createdViaColumn(i.CreatedVia), i.ParentID, i.ReviewRequired, i.DecisionID)
 	if err != nil {
 		return err
 	}
@@ -673,14 +677,21 @@ func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, err
 	return found, err == nil, err
 }
 
+// PutItem writes one item change and its event. Every change passes through
+// here, so here is where an item that stops waiting on a decision — its
+// condition cleared or replaced, another decision linked, its owner changed,
+// the item closed — withdraws that decision in the same transaction
+// (work.LeaveDecision): a Session that no longer waits must not leave the
+// person a question in "Waiting on you".
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
+	left := work.LeaveDecision(prev, &next)
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
 	      description=?, acceptance_criteria=?, acceptance_version=?, acceptance_digest=?, phase=?, condition=?, user_action=?,
-	      deployment_policy=?, owner_session=?, updated_at=?, closed_at=?, cycle=?, gate_snapshot_cycle=?, gate_snapshot_at=?, planning_gate=?,
+	      decision_id=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?, cycle=?, gate_snapshot_cycle=?, gate_snapshot_at=?, planning_gate=?,
 	      verify_gate=?, cycle_base_commit=?, review_required=?, version=version+1 WHERE id=? AND version=?`,
 		next.ProjectID, next.ProjectPath, next.Kind, next.Title, next.Description, next.AcceptanceCriteria,
 		next.AcceptanceVersion, next.AcceptanceDigest, next.Phase, next.Condition,
-		next.UserAction, next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
+		next.UserAction, next.DecisionID, next.DeploymentPolicy, next.OwnerSession, next.UpdatedAt.Unix(), zeroOrUnix(next.ClosedAt), next.Cycle,
 		next.GateSnapshotCycle, gateSnapshotUnix(next.GateSnapshotAt), next.PlanningGate, next.VerifyGate,
 		next.CycleBaseCommit, next.ReviewRequired, prev.ID, prev.Version)
 	if err != nil {
@@ -698,8 +709,52 @@ func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) 
 			return err
 		}
 	}
-	return t.AppendEvent(work.EventV2{WorkID: prev.ID, Kind: kind, Actor: actor,
-		PreviousVersion: prev.Version, NextVersion: next.Version, Payload: payload, At: next.UpdatedAt})
+	if err := t.AppendEvent(work.EventV2{WorkID: prev.ID, Kind: kind, Actor: actor,
+		PreviousVersion: prev.Version, NextVersion: next.Version, Payload: payload, At: next.UpdatedAt}); err != nil {
+		return err
+	}
+	if left == "" {
+		return nil
+	}
+	return t.withdrawDecision(left, next, actor)
+}
+
+// withdrawDecision withdraws the decision an item stopped waiting on, if it
+// is still open, and records that on the item. A decision already answered,
+// defaulted or withdrawn — the usual case when its own end cleared the item —
+// is left as it is.
+func (t *WorkV2Tx) withdrawDecision(id string, item work.ItemV2, actor string) error {
+	p := t.participation()
+	defer func() { t.wrote += p.wrote }()
+	prev, err := p.Decision(id)
+	if errors.Is(err, ErrNoDecision) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	next, ok := work.WithdrawDecision(prev, actor, item.UpdatedAt)
+	if !ok {
+		return nil
+	}
+	if err := p.PutDecision(next, &prev, 0); err != nil {
+		return err
+	}
+	body, _ := json.Marshal(map[string]any{"decision_id": id, "state": next.State})
+	return t.AppendEvent(work.EventV2{WorkID: item.ID, Kind: "decision.withdrawn", Actor: actor,
+		PreviousVersion: item.Version, NextVersion: item.Version, Payload: string(body), At: item.UpdatedAt})
+}
+
+// participation is the decisions register as this transaction sees it: the
+// same SQL transaction, so a decision and the item that waits on it change
+// together or not at all.
+func (t *WorkV2Tx) participation() *WorkTx {
+	return &WorkTx{ctx: t.ctx, tx: t.tx, s: t.s}
+}
+
+// Decision reads one decision inside this item transaction.
+func (t *WorkV2Tx) Decision(id string) (work.Decision, error) {
+	return t.participation().Decision(id)
 }
 
 // enterPhase counts one more entry into a phase. Every phase change passes
