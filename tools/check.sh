@@ -3,8 +3,10 @@
 #
 # Every check AGENTS.md requires before a commit, in one command, ending with
 # one line per check and an exit code: 0 every check passed, 1 at least one
-# did not, 2 this script was called wrongly. A check that answers "could not
-# tell" (check-private.sh's 3, for one) is not a pass, so it counts as failed.
+# did not, 2 this script was called wrongly, 75 the compile slot or memory was
+# not had within heavy's --max-wait and nothing was checked (run it again). A
+# check that answers "could not tell" (check-private.sh's 3, for one) is not a
+# pass, so it counts as failed.
 #
 # Roots and children each used to write their own loop over the list in
 # AGENTS.md; this is that loop, kept beside the list so the two change
@@ -24,7 +26,7 @@ web=auto
 for arg in "$@"; do
   case "$arg" in
     --web) web=yes ;;
-    -h | --help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "usage: tools/check.sh [--web]" >&2; exit 2 ;;
   esac
 done

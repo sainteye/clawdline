@@ -6883,6 +6883,7 @@ const (
 	UsageCategoryNameProtocol   UsageCategoryName = "protocol"
 	UsageCategoryNameRules      UsageCategoryName = "rules"
 	UsageCategoryNameImpl       UsageCategoryName = "impl"
+	UsageCategoryNameWait       UsageCategoryName = "wait"
 	UsageCategoryNameDelegate   UsageCategoryName = "delegate"
 	UsageCategoryNameHarness    UsageCategoryName = "harness"
 	UsageCategoryNameTalk       UsageCategoryName = "talk"
@@ -6891,7 +6892,7 @@ const (
 )
 
 // UsageCategoryNameValues is every value the contract allows, in contract order.
-var UsageCategoryNameValues = []UsageCategoryName{UsageCategoryNameBoard, UsageCategoryNameProtocol, UsageCategoryNameRules, UsageCategoryNameImpl, UsageCategoryNameDelegate, UsageCategoryNameHarness, UsageCategoryNameTalk, UsageCategoryNameCompaction, UsageCategoryNameOther}
+var UsageCategoryNameValues = []UsageCategoryName{UsageCategoryNameBoard, UsageCategoryNameProtocol, UsageCategoryNameRules, UsageCategoryNameImpl, UsageCategoryNameWait, UsageCategoryNameDelegate, UsageCategoryNameHarness, UsageCategoryNameTalk, UsageCategoryNameCompaction, UsageCategoryNameOther}
 
 // GET /v1/usage/compare-compaction?since=… (docs/token-ledger.md "Did
 // compacting early pay"): the child tasks created in [`since`, `until`] (Unix

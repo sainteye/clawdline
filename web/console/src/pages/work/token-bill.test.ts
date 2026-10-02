@@ -14,7 +14,7 @@ const bill = readFileSync(new URL("./TokenBill.tsx", import.meta.url), "utf8")
 const todos = readFileSync(new URL("../../session/Todos.tsx", import.meta.url), "utf8")
 const words = readFileSync(new URL("./words.ts", import.meta.url), "utf8")
 
-const NAMES = ["board", "protocol", "rules", "impl", "delegate", "harness", "talk", "compaction", "other"]
+const NAMES = ["board", "protocol", "rules", "impl", "wait", "delegate", "harness", "talk", "compaction", "other"]
 
 function tokens(total: number, cost: number, known = true, unpriced = 0) {
   return { cache_read: 0, cache_write_1h: 0, cache_write_5m: 0, input: total, output: 0, total, cost, cost_known: known, unpriced }
@@ -48,6 +48,11 @@ test("a bill whose cost is not whole is named by its tokens, never by the priced
   assert.equal(cardLine(b), "1.2M tokens · impl 75% · talk 25%")
   assert.equal(moneyOf(b.total, "en"), "$2.00 + 1k unpriced tokens")
   assert.equal(moneyOf(tokens(5000, 0, false, 5000), "zh-Hant"), "5k tokens")
+})
+
+test("waiting is its own category on the card, not part of impl", () => {
+  const b = billOf({ impl: [300_000, 2], wait: [600_000, 4], talk: [100_000, 1] })
+  assert.equal(cardLine(b), "$7.00 · wait 57% · impl 29%")
 })
 
 test("a bill that counted nothing draws no line, so a card never says $0", () => {
@@ -138,6 +143,7 @@ test("the card and the session detail each draw the bill", () => {
   assert.match(bill, /const \[ref, seen\] = useSeen<HTMLDivElement>\(\)\n\s+const \{ reading \} = useUsage\(items, itemId, seen, version\)/)
   assert.match(bill, /useUsage\(sessions, conversation, open\)/)
   assert.match(bill, /usageRulesWhy/)
+  assert.match(bill, /c\.name === "wait" && c\.tokens\.total > 0\) &&\n\s+<p className="work-usage-note">wait · \{workWord\("usageWaitWhy"\)\}/)
   assert.match(bill, /<Composition composition=\{usage\.composition\} \/>/)
   assert.match(bill, /<Gaps gaps=\{usage\.gaps\} \/>/)
 })

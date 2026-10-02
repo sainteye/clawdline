@@ -62,9 +62,12 @@ tools/check-private.sh -history -new    # no commit behind it added one either
   it waits for the machine's one compile slot and for available memory, runs the command at a
   lower priority, and gives the slot back. On 2026-09-26 several sessions building at once on a
   2-core, 1.9 GB machine drove the load to 34 and every console read to 8-74 s, and Claude Code
-  killed a landing's checks twice for low memory. It never refuses to build: with no daemon, or
-  after `--max-wait`, it runs the command anyway and says so. Wrap the whole script once, not its
-  steps — a `heavy` inside a `heavy` runs directly.
+  killed a landing's checks twice for low memory. It never refuses to build for a missing daemon:
+  it runs the command anyway and says so. When `--max-wait` (default 30m) passes before it gets the
+  slot and memory, it does not run the command and exits 75 — run it again later. While it waits it
+  prints one line when the wait starts and one when it ends, so wait for it with one long wait (a
+  background run, or one call with a long timeout), not repeated short polls. Wrap the whole script
+  once, not its steps — a `heavy` inside a `heavy` runs directly.
 
 - A test that needs a Unix facility asks for it through a per-platform file
   (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
