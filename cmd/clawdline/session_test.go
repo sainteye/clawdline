@@ -335,6 +335,11 @@ func TestGuidePrints(t *testing.T) {
 	if code := printGuide(&out, &errs, []string{"fr"}); code != 1 {
 		t.Fatalf("unknown topic: exit %d", code)
 	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"child"}); code != 0 ||
+		!strings.HasPrefix(out.String(), "# How a Clawdline child works") || !strings.Contains(out.String(), "result.json") {
+		t.Fatalf("child: exit %d: %.60q", code, out.String())
+	}
 }
 
 // Install, install again, uninstall: each says what it did.

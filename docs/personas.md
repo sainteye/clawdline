@@ -141,6 +141,35 @@ alone. One that differs (an upgraded daemon's new text, or a hand edit) is repla
 temporary file and a rename. A session that is already running keeps the text it was launched
 with.
 
+### Carried once per launch
+
+A Session launched through a squad snapshot gets one prompt file (`squadfiles.PublishFor`), and it
+replaces the persona file rather than joining it (`projects.Admit`). That prompt opens with its own
+statement of what it never overrides, so the persona's preamble is dropped there and the persona is
+carried once; the persona text itself is unchanged. `CHILD.md` never carries the persona or the role
+skills: it is the task, and the system prompt is the role.
+
+The role skill section lists only skills that can apply to the task. A dispatched child passes its
+declared writes; a built-in skill whose "use this skill when" names a kind of code (Go concurrency,
+front-end components and design, `squad.SkillAppliesToWrites`) is left out of the prompt when every
+declared write is a file of another kind. It is still written into the launch and stays in the
+snapshot, so a receipt for it remains valid. Unknown is not "no": an interactive Session, a handoff,
+a task without declared writes, or a write that is a directory or a pattern lists every skill. With
+nothing to list the section is one line. The usage paragraph is said once, above a non-empty list,
+and each entry carries its version and file; source and digest stay in `snapshot.json`.
+
+Measured on 2026-10-02 with `TestTheFixedLaunchAdditionsAreMeasured`, for a one-word task:
+
+| Fixed text | Before | After |
+| --- | ---: | ---: |
+| `CHILD.md` | 8,664 bytes | 5,432 bytes |
+| `backend` prompt, task writes Go | 6,557 bytes | 5,798 bytes |
+| `backend` prompt, task writes only docs | 6,557 bytes | 5,063 bytes |
+| `seo` prompt (no role skill) | 6,004 bytes | 5,067 bytes |
+
+The protocol `CHILD.md` used to carry is `clawdline guide child` (`orchestrator.ChildGuide`, about
+6 KB), read once rather than on every call. The test holds each number under a bound just above it.
+
 ## How each assistant is given it
 
 `projects.Admit` takes `LaunchRequest.Persona` and `PersonaDir` and appends the persona's

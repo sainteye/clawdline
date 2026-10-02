@@ -81,12 +81,19 @@ func announce(title, language string) string {
 	return "Clawdline task received: " + title + " — starting now."
 }
 
-// ChildBrief is CHILD.md: the protocol, this machine's house rules, and the
-// exact commands that report.
+// ChildBrief is CHILD.md: this task, this machine's house rules, and the
+// exact commands that report, with nothing every child is told alike.
 //
 // It is generated rather than copied because three things in it are decided per
 // task — the directory, the checkout, and the timeout — and a briefing with a
 // placeholder in it is a briefing somebody has to interpret.
+//
+// The protocol every child shares, and the reason behind each command, is
+// `clawdline guide child` (ChildGuide). It used to be here, re-read on every
+// call of every child: in children's transcripts on 2026-10-02 this file was
+// about 4k tokens, 9-20% of the tool output they re-read. What stays is what
+// a child cannot do its work without: the task, the commands with this task's
+// paths in them, and the result.json contract.
 func (b *Broker) ChildBrief(r Record, cwd string) string {
 	dir := b.Tasks.Path(r.ID)
 	port := b.Port
@@ -115,25 +122,18 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	// protocol does not go and read it: it was 2.4 reads a session, for bytes
 	// this file already carries (measured on 2026-09-26).
 	w("%s/task.json holds the same; you need not read it.", dir)
+	w("The rules every child follows, and why each command below is shaped as it is, are printed by")
+	w("`%s`. Read them once before you start; this file holds only this task.", b.childGuideCommand())
 	w("")
-	w("## Language, and the first thing you say")
+	w("## The first thing you say")
 	w("")
-	w("Everything you say in this session, and the `summary` you write into result.json, is in the")
-	w("language the person watching this terminal reads. This briefing is in English only so that")
-	w("every assistant reads it the same way.")
-	w("")
-	w("Before you touch anything, say exactly this line, on its own:")
+	w("Speak, and write the `summary`, in the language of the person watching this terminal. First")
+	w("say exactly this line on its own, then one line on what you will do and where the output goes:")
 	w("")
 	w("%s", announce(r.Title, b.Language))
 	w("")
-	w("Then, once you have read the task, one more line saying in your own words what you are about")
-	w("to do and where the output will go.")
-	w("")
 	writeTask(w, r)
 	w("## Sign for this briefing, before you start the work")
-	w("")
-	w("Run this once: it is the only proof the briefing reached you, and when the broker cannot be")
-	w("reached it leaves the receipt in this task's directory for the broker to collect.")
 	w("")
 	w("```bash")
 	w("%s", b.acceptCommand(dir, port))
@@ -143,51 +143,30 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 		b.writeGateCheckerBrief(w, r, cwd, dir, port)
 		return s.String()
 	}
-	w("## Rules")
+	w("## Where and how long")
 	w("")
-	w("- Work inside %s. Put non-repository artifacts in %s/artifacts/.", cwd, dir)
-	w("- Put heavyweight temporary work — repository copies, build outputs, compiler indexes — in")
-	w("  %s/work/, not in your assistant's scratchpad. Everything there is deleted when the task", dir)
-	w("  ends, so copy anything worth keeping into `artifacts/` **before** writing `result.json`.")
-	w("- **You are the bottom of this tree: you cannot dispatch Clawdline tasks of your own.** When")
-	w("  part of this needs to run in parallel, use your own assistant's built-in subagents.")
-	w("- Do not read any task directory but your own.")
-	w("- Landing records belong to the root after delivery; a child does not call its own `/landing`.")
-	w("- Do not do work the task did not ask for.")
-	w("- You have %d minutes before the task is marked timed out, counted on the wall clock from", r.TimeoutMinutes)
-	w("  when this task was dispatched — not from when you read this.")
+	w("- Work inside %s. Keep artifacts in %s/artifacts/; put heavyweight temporary", cwd, dir)
+	w("  work in %s/work/, which is deleted when the task ends.", dir)
+	w("- You have %d minutes on the wall clock from dispatch; verification stops after %d minutes.", r.TimeoutMinutes, verification)
+	if r.Worktree != nil {
+		w("- A fresh checkout of commit `%s` on branch `%s`.", r.Worktree.Base, r.Worktree.Branch)
+		if r.Assistant == "claude" {
+			w("  **Commit early and often, on this branch only.** The branch is the delivery.")
+		} else {
+			w("  **Do not commit**: this sandbox cannot write the worktree's git metadata. The root commits.")
+		}
+		w("  Do not push, switch branches, rebase, merge, hard-reset, stash, or run any `git worktree` command.")
+	}
 	w("")
 
 	// The tab policy, stated before the work starts (linger.go): what this
 	// task's end will do to this tab is read here, not inferred later.
 	w("## What happens to this tab when the task ends")
 	w("")
-	w("The broker closes a finished child's tab by one rule, and only while the tab is still the one")
-	w("it opened, is at rest at its prompt, and nobody has used it since the task ended.")
 	for _, line := range tabPolicyBrief(r, b.childLinger()) {
 		w("%s", line)
 	}
 	w("")
-
-	if r.Worktree != nil {
-		w("## Your isolated checkout")
-		w("")
-		w("This is a fresh checkout of commit `%s` on branch `%s`.", r.Worktree.Base, r.Worktree.Branch)
-		w("Uncommitted files from the base repository are deliberately absent, and so is anything")
-		w("gitignore hides — dependencies, build caches, local environment files.")
-		w("")
-		if r.Assistant == "claude" {
-			w("**Commit early and often, on this branch only.** The branch is the delivery, and")
-			w("uncommitted changes can be lost when the checkout is cleaned.")
-		} else {
-			w("**Do not commit.** A linked worktree's git metadata lives outside what this sandbox may")
-			w("write, so every commit here fails on `index.lock`. Leave the changes in the working")
-			w("tree; the root commits them.")
-		}
-		w("Do not push, switch branches, rebase, merge, hard-reset, stash, or run any `git worktree`")
-		w("command.")
-		w("")
-	}
 
 	if local, hasBase := b.childPolicy(); local != "" || hasBase {
 		w("## What this machine says")
@@ -200,22 +179,15 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 			w("")
 		}
 		if hasBase {
-			w("How work is handed out here — whether to dispatch, how big a task is, when to arrange a")
-			w("review — is in %s. It is written for sessions that dispatch, and you", filepath.Join(b.Dir, PolicyBaseFile))
-			w("cannot; read it only if the task asks you to plan work for others.")
+			w("How work is handed out here is in %s; read it only if the task asks", filepath.Join(b.Dir, PolicyBaseFile))
+			w("you to plan work for others.")
 			w("")
 		}
 	}
 
-	w("## Verification budget")
+	w("## Telling the person, and a changed boundary")
 	w("")
-	w("Do the cheapest verification pass that materially reduces the risk of the whole delivery.")
-	w("Accumulate related edits first, then compile and run the relevant groups once near the end.")
-	w("Verification stops after one third of this task's timeout (%d minutes). At the limit, stop", verification)
-	w("and report the state reached in `result.json`.")
-	w("")
-
-	w("## Up to 5 timely notifications, when the user is waiting")
+	w("Up to 5 notifications, only when the person is waiting on you:")
 	w("")
 	w("```bash")
 	w("curl --fail-with-body -sS -X POST %s/notify \\", base)
@@ -224,16 +196,9 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(`  -d '{"title":"<at most 80 characters>","body":"<at most 500 characters>"}'`)
 	w("```")
 	w("")
-	w("**`--fail-with-body` is not decoration.** Plain `curl` exits 0 whatever the server says, so a")
-	w("`403` from a stale secret and a `200` look identical. With the flag the typed error prints and")
-	w("the command exits non-zero. Look at that status before you say you sent something.")
-	w("")
-
-	w("## Report only a material boundary change")
-	w("")
-	w("Do not echo a clear task back as a progress message and do not send heartbeats. Send")
-	w("one short note only when the write set, approach, dependency, risk or blocker materially")
-	w("differs from the briefing.")
+	w("One note only when the write set, approach, dependency, risk or blocker materially differs")
+	w("from this briefing. Without loopback, write the whole file %s/progress.json", dir)
+	w(`as {"task_secret": "<TASK_SECRET>", "note": "<the same sentence>"} instead.`)
 	w("")
 	w("```bash")
 	w("curl --fail-with-body -sS -X POST %s/progress \\", base)
@@ -242,18 +207,11 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(`  -d '{"note":"<one sentence, at most 300 characters>"}'`)
 	w("```")
 	w("")
-	w("If that `curl` cannot connect — some sandboxes have no loopback — write %s/progress.json", dir)
-	w("instead, replacing the whole file each time, and the broker collects it:")
-	w("")
-	w("```json")
-	w(`{"task_secret": "<the TASK_SECRET value from your first message>",`)
-	w(` "note": "<one sentence, at most 300 characters>"}`)
-	w("```")
-	w("")
 
 	w("## Reporting — this is the completion signal, do it exactly")
 	w("")
-	w("When the work is done, or has failed for good, first write %s/result.json.tmp:", dir)
+	w("When the work is done, or has failed for good, write %s/result.json.tmp", dir)
+	w("with your file-writing tool, not a shell command:")
 	w("")
 	w("```json")
 	w(`{"clawdline_protocol": 1,`)
@@ -269,37 +227,19 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "finished_at": "<ISO8601 UTC>"}`)
 	w("```")
 	w("")
-	w("`last` is `pass`, `fail` or `skipped`. `scope` names what you ran in one line of at most %d", taskdir.VerificationScopeLimit)
-	w("characters; the check refuses a longer one.")
+	w(`- "status" is "failure" when you could not do it. ` + "`last` is `pass`, `fail` or `skipped`; `scope` is one line.")
+	w("- `symbols` names what you introduced: functions, types, fields, string keys, test groups.")
+	w("- `leftovers`: It is optional and not a new obligation; at most %d entries.", work.LeftoversLimit)
+	w("  For each title: %s", work.OutcomeTitleGuide)
+	w("  Leave it out when you finished everything you were asked.")
 	w("")
-	w(`Use "status": "failure" when you could not do it. Then run this exact command. It checks the`)
-	w("file, puts it in place as `result.json` and asks the broker to collect it, with nothing but this")
-	w("daemon's own binary — no node, nothing else on your PATH:")
+	w("Then run this exact command. It checks the file and puts it in place as `result.json`; when the")
+	w("check fails it says why and writes nothing, so correct the tmp file and run it again. A non-zero")
+	w("exit means the work was not reported.")
 	w("")
 	w("```bash")
 	w("%s", b.finishCommand(dir, port))
 	w("```")
-	w("")
-	w("If the check fails it says why and writes nothing: correct the tmp file and run the same command")
-	w("again. `result.json` remains the only completion signal. Asking the broker to collect it now is a")
-	w("courtesy, so when the broker cannot be reached — some sandboxes have no loopback — the command")
-	w("still exits 0 and the work is already reported. A non-zero exit means it was not.")
-	w("")
-	w("**`symbols` is how your work is told apart from everybody else's.** List what you introduced:")
-	w("new functions and types, new fields, new string keys, the names of test groups you added.")
-	w("Names, not descriptions.")
-	w("")
-	w("**`leftovers` is the paragraph you were going to write anyway.** Your report ends in what you")
-	w("did not do and what your root has to pick up; put those lines here too, one entry each, at")
-	w("most %d. It is optional and it is not a new obligation: a result with no `leftovers` is a", work.LeftoversLimit)
-	w("complete delivery, and writing one does not make anything happen by itself. Your root reads")
-	w("them when it integrates and may put one to the person, who answers whether to register it.")
-	w("For each leftover title: %s", work.OutcomeTitleGuide)
-	w("Leave it out when you finished everything you were asked.")
-	w("")
-	w("**Write the tmp file with your file-writing tool, not with a shell command.** A shell line")
-	w("that builds JSON gets refused by command screening on its own shape, and that refusal is a")
-	w("prompt with no \"always allow\" on a tab nobody is watching.")
 	return s.String()
 }
 

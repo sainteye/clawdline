@@ -120,3 +120,40 @@ func TestTheCompletionNoticeIsShort(t *testing.T) {
 		t.Errorf("the body spends %d bytes of its own, want at most 330:\n%s", ours, body)
 	}
 }
+
+// CHILD.md carries this task and points at the protocol every child shares;
+// the protocol itself is `clawdline guide child`, read once instead of on
+// every call. The result.json contract stays, because a child that never
+// reads the guide must still be able to finish.
+func TestTheBriefingPointsAtTheSharedProtocolInsteadOfCarryingIt(t *testing.T) {
+	b := &Broker{Tasks: taskdir.New(t.TempDir()), Executable: "/opt/clawdline", Port: 7791}
+	r := briefTestRecord()
+	r.Persona = "backend"
+	brief := b.ChildBrief(r, "/p")
+	for _, want := range []string{"`'/opt/clawdline' guide child`", "result.json.tmp", `"clawdline_protocol": 1`,
+		"'/opt/clawdline' task finish --port 7791", "/progress", "/notify"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("CHILD.md does not carry %q", want)
+		}
+	}
+	guide := ChildGuide()
+	for _, shared := range []string{"is not decoration", "You are the bottom of this tree",
+		"command screening", "the paragraph you were going to write anyway", "Do the cheapest verification pass"} {
+		if strings.Contains(brief, shared) {
+			t.Errorf("CHILD.md still carries the shared protocol's %q", shared)
+		}
+		if !strings.Contains(guide, shared) {
+			t.Errorf("clawdline guide child does not carry %q", shared)
+		}
+	}
+	// A persona is the launch's system prompt; the briefing does not repeat it.
+	if strings.Contains(brief, "Clawdline persona") || strings.Contains(brief, "Backend Engineer") {
+		t.Error("CHILD.md carries the persona the system prompt already has")
+	}
+	// The guide is the same for every task: nothing of one is in it.
+	for _, particular := range []string{r.ID, "/opt/clawdline", "7791", "<TASK_SECRET>"} {
+		if strings.Contains(guide, particular) {
+			t.Errorf("clawdline guide child carries the task-particular %q", particular)
+		}
+	}
+}
