@@ -236,6 +236,27 @@ func TestTaskFinishRefusesAnInvalidResult(t *testing.T) {
 	}
 }
 
+// Every violation of one result is printed, the first on the old line and
+// each further one on its own, so a child corrects them in one pass.
+func TestTaskFinishPrintsEveryViolation(t *testing.T) {
+	result := strings.Replace(taskTestResult("<TASK_SECRET>"), `"status": "success"`, `"status": "done"`, 1)
+	if result == taskTestResult("<TASK_SECRET>") {
+		t.Fatal("the test result has no status to break")
+	}
+	dir := taskTestDir(t, result)
+	var out, errs bytes.Buffer
+	if code := finishTask(&out, &errs, dir, 0, false, http.DefaultClient); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	lines := strings.Split(errs.String(), "\n")
+	if lines[0] != "task result preflight: invalid — task_secret must be 64 lowercase hexadecimal characters" {
+		t.Fatalf("first line: %q", lines[0])
+	}
+	if len(lines) < 2 || lines[1] != "  - status must be success or failure" {
+		t.Fatalf("said: %s", errs.String())
+	}
+}
+
 // A task directory as the broker leaves it, with nothing written by the child.
 func acceptTestDir(t *testing.T) string {
 	t.Helper()

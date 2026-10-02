@@ -202,42 +202,43 @@ func ValidateResult(task, result map[string]any) string {
 	if !isOne(task["clawdline_protocol"]) || !isTaskID(task["task_id"]) {
 		return "task.json has no valid protocol identity"
 	}
+	var reasons []string
 	if !isOne(result["clawdline_protocol"]) {
-		return "clawdline_protocol must be 1"
+		reasons = append(reasons, "clawdline_protocol must be 1")
 	}
 	if !isTaskID(result["task_id"]) || result["task_id"] != task["task_id"] {
-		return "task_id must be a lowercase UUID matching task.json"
+		reasons = append(reasons, "task_id must be a lowercase UUID matching task.json")
 	}
 	if s, ok := result["task_secret"].(string); !ok || !taskSecretPattern.MatchString(s) {
-		return "task_secret must be 64 lowercase hexadecimal characters"
+		reasons = append(reasons, "task_secret must be 64 lowercase hexadecimal characters")
 	}
 	if s := result["status"]; s != "success" && s != "failure" {
-		return "status must be success or failure"
+		reasons = append(reasons, "status must be success or failure")
 	}
 	if task["kind"] == "verification_gate" {
-		return "a verification_gate must use clawdline task gate-result; ordinary result.json cannot finish it"
+		reasons = append(reasons, "a verification_gate must use clawdline task gate-result; ordinary result.json cannot finish it")
 	}
 	if _, present := result["gate_verdict"]; present {
-		return "gate_verdict is broker-authored and is not valid in an ordinary result.json"
+		reasons = append(reasons, "gate_verdict is broker-authored and is not valid in an ordinary result.json")
 	}
 	if row, present := result["verification"]; present {
-		if reason := validateVerification(row); reason != "" {
-			return reason
-		}
+		reasons = append(reasons, verificationReasons(row)...)
 	}
 	if rows, present := result["leftovers"]; present {
 		if reason := validateLeftovers(rows); reason != "" {
-			return reason
+			reasons = append(reasons, reason)
 		}
 	}
 	review, hasReview := result["review"]
 	if requiresReview(task) && result["status"] == "success" && !hasReview {
-		return "a successful review task requires a closed review receipt"
+		reasons = append(reasons, "a successful review task requires a closed review receipt")
 	}
 	if hasReview {
-		return validateReview(review)
+		if reason := validateReview(review); reason != "" {
+			reasons = append(reasons, reason)
+		}
 	}
-	return ""
+	return strings.Join(reasons, "\n")
 }
 
 var (
@@ -337,34 +338,34 @@ func onlyKeys(obj map[string]any, keys ...string) bool {
 // carry, in UTF-16 units — the old validator's limit, kept.
 const VerificationScopeLimit = 300
 
-// validateVerification names the one field that is wrong and, for the scope,
-// how long it was. The single sentence it replaced listed every rule at once
+// verificationReasons names each independent field that is wrong and, for the
+// scope, how long it was. The single sentence it replaced listed every rule at once
 // and called a 410-character scope "non-empty"; four of eight children
 // sampled on 2026-09-25 were refused by it on their first finish, and three of
 // them went reading this file or the binary to learn that the real rule was a
 // length.
-func validateVerification(row any) string {
+func verificationReasons(row any) []string {
 	v, ok := row.(map[string]any)
 	if !ok {
-		return "verification must be an object with runs, seconds, last and scope"
+		return []string{"verification must be an object with runs, seconds, last and scope"}
 	}
+	var reasons []string
 	if !nonNegativeInteger(v["runs"]) {
-		return "verification.runs must be a non-negative integer"
+		reasons = append(reasons, "verification.runs must be a non-negative integer")
 	}
 	if !nonNegativeInteger(v["seconds"]) {
-		return "verification.seconds must be a non-negative integer"
+		reasons = append(reasons, "verification.seconds must be a non-negative integer")
 	}
 	if !oneOf(v["last"], "pass", "fail", "skipped") {
-		return `verification.last must be "pass", "fail" or "skipped"`
+		reasons = append(reasons, `verification.last must be "pass", "fail" or "skipped"`)
 	}
 	s, ok := v["scope"].(string)
 	if !ok || strings.TrimSpace(s) == "" {
-		return "verification.scope must be a non-empty string"
+		reasons = append(reasons, "verification.scope must be a non-empty string")
+	} else if n := jsLength(s); n > VerificationScopeLimit {
+		reasons = append(reasons, fmt.Sprintf("verification.scope is %d characters; at most %d are allowed — shorten it", n, VerificationScopeLimit))
 	}
-	if n := jsLength(s); n > VerificationScopeLimit {
-		return fmt.Sprintf("verification.scope is %d characters; at most %d are allowed — shorten it", n, VerificationScopeLimit)
-	}
-	return ""
+	return reasons
 }
 
 // absentOrBounded is an optional string field: missing, or a string no longer

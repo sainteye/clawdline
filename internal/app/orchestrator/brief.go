@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
@@ -102,6 +103,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d/v1/orchestrator/tasks/%s", port, r.ID)
 	verification := r.TimeoutMinutes / 3
+	reviewTask := briefRequiresReview(r)
 
 	var s strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&s, format+"\n", args...) }
@@ -159,15 +161,6 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	}
 	w("")
 
-	// The tab policy, stated before the work starts (linger.go): what this
-	// task's end will do to this tab is read here, not inferred later.
-	w("## What happens to this tab when the task ends")
-	w("")
-	for _, line := range tabPolicyBrief(r, b.childLinger()) {
-		w("%s", line)
-	}
-	w("")
-
 	if local, hasBase := b.childPolicy(); local != "" || hasBase {
 		w("## What this machine says")
 		w("")
@@ -221,13 +214,26 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(` "summary": "<one paragraph: what you did, or why it failed>",`)
 	w(` "symbols": ["<every name your change introduced>", "..."],`)
 	w(` "artifacts": ["artifacts/<file>", "..."],`)
-	w(` "verification": {"runs": 1, "seconds": 0, "last": "pass", "scope": "<what you ran, at most %d characters>"},`, taskdir.VerificationScopeLimit)
+	w(` "verification": {"runs": 0, "seconds": 0, "last": "skipped", "scope": "No verification run"},`)
+	if reviewTask {
+		w(` "review": {"verdict": "safe_to_land", "axes": [`)
+		w(`   {"axis": "specification", "status": "pass", "findings": []},`)
+		w(`   {"axis": "repository_invariants", "status": "pass", "findings": []},`)
+		w(`   {"axis": "runtime_failure_behavior", "status": "pass", "findings": []}]},`)
+	}
 	w(` "leftovers": [{"title": "<one thing you did not do>", "why": "<why you did not>",`)
 	w(`               "suggested_acceptance": "<what would count as done>"}],`)
 	w(` "finished_at": "<ISO8601 UTC>"}`)
 	w("```")
 	w("")
-	w(`- "status" is "failure" when you could not do it. ` + "`last` is `pass`, `fail` or `skipped`; `scope` is one line.")
+	w(`- "status" is "failure" when you could not do it. `+"`last` is `pass`, `fail` or `skipped`; `scope` is one line of at most %d characters.", taskdir.VerificationScopeLimit)
+	w("- `verification` is a placeholder. If you ran nothing, keep `skipped` or omit the field; never claim a pass.")
+	if reviewTask {
+		w("- A successful review needs `review`. Its verdict is `safe_to_land` or `changes_required`.")
+		w("  Each of the three named axes has status `pass` with no findings, or `findings` with at least one.")
+		w("  A finding has id, severity (`blocking`, `important`, `minor`), summary and evidence strings.")
+		w("  Use `changes_required` when any axis has findings; otherwise use `safe_to_land`.")
+	}
 	w("- `symbols` names what you introduced: functions, types, fields, string keys, test groups.")
 	w("- `leftovers`: It is optional and not a new obligation; at most %d entries.", work.LeftoversLimit)
 	w("  For each title: %s", work.OutcomeTitleGuide)
@@ -241,6 +247,23 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("%s", b.finishCommand(dir, port))
 	w("```")
 	return s.String()
+}
+
+// Match the result preflight's review requirement, including graph review nodes.
+func briefRequiresReview(r Record) bool {
+	if r.Graph != nil {
+		if node, ok := r.Graph.node(r.Graph.CurrentNode); ok {
+			return node.Kind == "review"
+		}
+	}
+	for _, word := range strings.FieldsFunc(strings.ToLower(r.Kind), func(ch rune) bool {
+		return !unicode.IsLetter(ch) && !unicode.IsNumber(ch)
+	}) {
+		if word == "review" {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Broker) writeGateCheckerBrief(w func(string, ...any), r Record, cwd, dir string, port int) {
