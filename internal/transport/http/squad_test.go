@@ -187,6 +187,34 @@ func TestCodeReviewerLaunchReceivesPortableReviewSkill(t *testing.T) {
 	}
 }
 
+// A zero-based review child declares no writes, or only a report: its
+// launch still lists the review procedure, because that skill is about a
+// kind of work, not a kind of file.
+func TestZeroReviewLeadLaunchCarriesTheReviewSkillWhateverItWrites(t *testing.T) {
+	f := newSquadFixture(t)
+	snapshot, err := f.s.ResolveSquadLaunch(context.Background(), "zero-review-lead", "")
+	if err != nil || len(snapshot.Skills) != 1 || !snapshot.Skills[0].Enabled ||
+		snapshot.Skills[0].ID != "clawdline.skill.zero-based-review" ||
+		!strings.Contains(snapshot.Skills[0].Content, "if we designed this today, would it exist?") {
+		t.Fatalf("zero-review-lead launch = %+v, %v", snapshot.Skills, err)
+	}
+	document, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(document)
+	for name, claims := range map[string][]string{"interactive": nil, "review child": {}, "report only": {"docs/review.md"}} {
+		files, err := squadfiles.PublishFor(t.TempDir(), "ABCDEFGHIJKLMNOPQRSTUV", hex.EncodeToString(hash[:]), "test-capability", document, squadfiles.Task{Claims: claims})
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompt, err := os.ReadFile(files.PromptPath)
+		if err != nil || !strings.Contains(string(prompt), "`clawdline.skill.zero-based-review`") {
+			t.Errorf("%s: the launch prompt does not list the review skill: %v\n%s", name, err, prompt)
+		}
+	}
+}
+
 func TestSquadBuiltInSkillReachesNewSessionFiles(t *testing.T) {
 	f := newSquadFixture(t)
 	snapshot, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")
