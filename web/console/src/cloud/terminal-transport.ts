@@ -1,5 +1,6 @@
 import { base64Bytes, bytesBase64, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 import type { TerminalFrame } from "@clawdline/contract"
+import type { TerminalObservation } from "./terminal-observation.js"
 
 export interface TerminalEnvelope {
   v: number; ch: string; seq: number; ts: number; class: string; key_id: string
@@ -72,7 +73,8 @@ export class TerminalChannelTransport {
   private readonly waiting = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private readonly receiveTails = new Map<string, Promise<void>>()
 
-  constructor(private readonly client: TerminalCloudClient, private readonly machine: string) {
+  constructor(private readonly client: TerminalCloudClient, private readonly machine: string,
+    private readonly observation?: TerminalObservation) {
     if (!client.deviceID || !segment.test(client.deviceID)) throw fail("terminal_forbidden")
     this.viewer = client.deviceID
     this.pairing = client._outboundMachinePairing(machine)
@@ -105,6 +107,7 @@ export class TerminalChannelTransport {
       for (const ch of channels) this.client.socketSubscriptions.set(ch, Date.now())
       await confirmation
       this.confirmed.add(connection)
+      this.observation?.record("subscription_confirmed", { connection })
     } catch (error) {
       this.unsubscribeTerminal(connection)
       throw error
@@ -145,6 +148,8 @@ export class TerminalChannelTransport {
     this.sent.add(seq)
     try { this.client._send({ type: "publish", envelope }) }
     catch (error) { this.sent.delete(seq); throw error }
+    this.observation?.record("request_sent", { connection: request.connection,
+      requestID: request.request_id, operation: typeof request.operation === "string" ? request.operation : undefined })
     return { sender: this.viewer, seq } // Relay acceptance is not a machine receipt.
   }
 
@@ -202,15 +207,30 @@ export class TerminalChannelTransport {
   private async receiveOne(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
     const connection = envelope.ch.split("/")[3]
     const listener = this.listeners.get(connection)
-    if (!listener) return
+    const channel = envelope.ch.startsWith("termr/") ? "termr" : "term"
+    this.observation?.record("raw_received", { connection, channel })
+    if (!listener) {
+      this.observation?.record("envelope_rejected", { connection, channel, code: "terminal_old_connection" })
+      return
+    }
     try {
       const plaintext = await this.openTerminalEnvelope(envelope, connection)
+      const value = plaintext && typeof plaintext === "object" ? plaintext as Record<string, unknown> : null
+      if (value?.type === "terminal_receipt" || value?.type === "terminal_notice") {
+        this.observation?.record("envelope_opened", { connection, channel,
+          requestID: typeof value.request_id === "string" ? value.request_id : undefined,
+          operation: typeof value.operation === "string" ? value.operation : undefined })
+      } else if (value?.type === "terminal_frame" && !this.verifiedFrames.has(connection)) {
+        this.observation?.record("envelope_opened", { connection, channel })
+      }
       if (envelope.ch === route("term", this.machine, this.viewer, connection) && isCompleteFrame(plaintext, connection)) {
         this.verifiedFrames.set(connection, envelope.seq)
       }
       listener({ envelope, plaintext, realign })
     }
-    catch {
+    catch (error) {
+      const code = error instanceof Error ? error.message : "terminal_bad_envelope"
+      this.observation?.record("envelope_rejected", { connection, channel, code })
       // An unauthenticated or obsolete envelope cannot change this tab's lease state.
     }
   }

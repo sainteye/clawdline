@@ -4,6 +4,8 @@ import type { TerminalControl, TerminalFrame } from "@clawdline/contract"
 // @ts-expect-error -- the test runner bundles this source file directly.
 import { CloudTerminalSession, type TerminalWire } from "./terminal-session.ts"
 import type { TerminalChannelEvent, TerminalEnvelope } from "./terminal-transport.js"
+// @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
+import { TerminalObservation } from "./terminal-observation.ts"
 
 const terminalID = "trm_test"
 const machine = "machine_test"
@@ -68,6 +70,27 @@ class Wire implements TerminalWire {
       frame_seq: seq, captured_at: Date.now() / 1000, frame: frame(rev) })
   }
 }
+
+test("a signed receipt with a different request id is diagnosed and cannot settle capture", async () => {
+  const wire = new Wire()
+  wire.delayed.add("capture")
+  const stages: Array<{ stage: string; code?: string; operation?: string }> = []
+  const session = new CloudTerminalSession(wire, "stable-tab", new TerminalObservation((row) => stages.push(row)))
+  try {
+    await session.start()
+    const attaching = session.attach(terminalID)
+    void attaching.catch(() => undefined)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    wire.emit(wire.latest(), "termr", { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
+      connection: wire.latest(), operation: "capture", terminal_id: terminalID, status: "ok" })
+    assert.equal(stages.at(-1)?.stage, "pending_miss")
+    assert.equal(stages.at(-1)?.code, "request_unknown")
+    wire.releaseReplies()
+    await attaching
+    assert.deepEqual(stages.filter((row) => row.operation === "capture").map((row) => row.stage),
+      ["request_pending", "pending_miss", "pending_match", "session_settled"])
+  } finally { session.dispose() }
+})
 
 test("a receipt alone never enables input; first and later full frames have distinct states", async () => {
   const wire = new Wire()

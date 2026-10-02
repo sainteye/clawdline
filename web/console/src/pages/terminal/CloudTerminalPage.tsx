@@ -5,6 +5,7 @@ import type { FitAddon } from "@xterm/addon-fit"
 import { nextWord } from "../../next-strings.js"
 import { watchTerminalHost, type TerminalHost } from "../../cloud/terminal-host.js"
 import { TerminalChannelTransport } from "../../cloud/terminal-transport.js"
+import { TerminalObservation } from "../../cloud/terminal-observation.js"
 import { CloudTerminalSession, type CloudTerminalSnapshot } from "../../cloud/terminal-session.js"
 import { frameBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
@@ -57,8 +58,9 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   useEffect(() => {
     if (!shown || !host || !project) return
     let live = true
-    const transport = new TerminalChannelTransport(host.client, host.machine)
-    const next = new CloudTerminalSession(transport, TAB)
+    const observation = new TerminalObservation()
+    const transport = new TerminalChannelTransport(host.client, host.machine, observation)
+    const next = new CloudTerminalSession(transport, TAB, observation)
     const stop = next.subscribe((value) => live && setSnapshot(value))
     setSession(next); setSnapshot(empty); setLoading(true); setError(""); setMeta(null); setRows([])
     void (async () => {

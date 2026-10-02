@@ -1,6 +1,7 @@
 import type { TerminalControl, TerminalFrame } from "@clawdline/contract"
 import { bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
 import { completeTerminalFrame, freshTerminalConnection, type TerminalChannelEvent, type TerminalEnvelope } from "./terminal-transport.js"
+import type { TerminalObservation } from "./terminal-observation.js"
 
 export interface TerminalWire {
   subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void>
@@ -61,7 +62,8 @@ export class CloudTerminalSession {
   private tick: ReturnType<typeof setInterval> | null = null
   private s: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
 
-  constructor(private readonly transport: TerminalWire, clientID: string) {
+  constructor(private readonly transport: TerminalWire, clientID: string,
+    private readonly observation?: TerminalObservation) {
     this.client = clientID
   }
   get snapshot(): CloudTerminalSnapshot { return this.s }
@@ -151,18 +153,21 @@ export class CloudTerminalSession {
     if (!this.active && operation !== "open_connection" && operation !== "rekey_connection") throw fail("terminal_input_paused")
     if ((operation === "input" || operation === "paste") && !this.s.canType) throw fail("terminal_input_paused")
     const requestID = crypto.randomUUID()
+    const connection = this.connection
     const receipt = new Promise<Receipt>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestID)
+        this.observation?.record("receipt_timeout", { connection, requestID, operation })
         if (operation === "input" || operation === "paste") { this.inputUnknown = true; this.set({ state: "unknown", reason: "terminal_input_state_unknown" }) }
         reject(fail("terminal_receipt_timeout"))
       }, RECEIPT_MS)
-      this.pending.set(requestID, { operation, connection: this.connection,
+      this.pending.set(requestID, { operation, connection,
         terminal: typeof fields.terminal_id === "string" ? fields.terminal_id : null, resolve, reject, timer })
+      this.observation?.record("request_pending", { connection, requestID, operation })
     })
     try {
       await this.transport.publishTerminal({ v: 1, type: "terminal_request", request_id: requestID,
-        connection: this.connection, operation, ...fields })
+        connection, operation, ...fields })
       return await receipt
     } catch (error) {
       const pending = this.pending.get(requestID)
@@ -305,7 +310,15 @@ export class CloudTerminalSession {
       return
     }
     const value = event.plaintext as Receipt | Frame | Notice
-    if (value?.v !== 1 || value.connection !== this.connection) return
+    if (value?.v !== 1 || value.connection !== this.connection) {
+      if (value?.type === "terminal_receipt") this.observation?.record("pending_miss", {
+        connection: typeof value.connection === "string" ? value.connection : undefined,
+        requestID: typeof value.request_id === "string" ? value.request_id : undefined,
+        operation: typeof value.operation === "string" ? value.operation : undefined,
+        code: value.v !== 1 ? "version_mismatch" : "connection_mismatch",
+      })
+      return
+    }
     if (this.s.state === "revoked" && value.type !== "terminal_notice") return
     if (value.type === "terminal_notice") {
       if (!event.envelope.ch.startsWith("termr/") || !event.envelope.ch.endsWith("/" + this.connection) ||
@@ -313,11 +326,25 @@ export class CloudTerminalSession {
         !value.machine_incarnation || "request_id" in value) return
       this.revoke(value.machine_incarnation === this.incarnation ? "terminal_access_revoked" : "terminal_machine_restarted")
     } else if (value.type === "terminal_receipt") {
-      if (!event.envelope.ch.startsWith("termr/")) return
+      if (!event.envelope.ch.startsWith("termr/")) {
+        this.observation?.record("pending_miss", { connection: value.connection, requestID: value.request_id,
+          operation: value.operation, code: "channel_mismatch" })
+        return
+      }
       const pending = this.pending.get(value.request_id)
-      if (!pending || pending.connection !== value.connection || pending.operation !== value.operation ||
-        (pending.terminal && (value as Receipt & { terminal_id?: string }).terminal_id !== pending.terminal)) return
+      const mismatch = !pending ? "request_unknown" : pending.connection !== value.connection ? "connection_mismatch" :
+        pending.operation !== value.operation ? "operation_mismatch" :
+          pending.terminal && (value as Receipt & { terminal_id?: string }).terminal_id !== pending.terminal ? "terminal_mismatch" : ""
+      if (!pending || mismatch) {
+        this.observation?.record("pending_miss", { connection: value.connection, requestID: value.request_id,
+          operation: value.operation, code: mismatch })
+        return
+      }
+      this.observation?.record("pending_match", { connection: value.connection, requestID: value.request_id,
+        operation: value.operation })
       clearTimeout(pending.timer); this.pending.delete(value.request_id)
+      this.observation?.record("session_settled", { connection: value.connection, requestID: value.request_id,
+        operation: value.operation })
       if (value.status === "ok") pending.resolve(value)
       else {
         if (value.status === "unknown") this.forgetLease("terminal_input_state_unknown")
