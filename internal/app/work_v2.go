@@ -2046,16 +2046,14 @@ func (w *WorkSystemV2) AddPlanReviewFromTask(ctx context.Context, taskID string)
 			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_no_item",
 				"That review was dispatched on no item; record it with `clawdline item doc <item> --role plan_review --reference "+taskID+"`.")
 		}
-		if r.Root == nil {
-			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_not_owned",
-				"That task was not dispatched by a Session, so no item owner can be named for it.")
-		}
 		prev, err := tx.Item(r.WorkID)
 		if err != nil {
 			return err
 		}
+		// It writes as the item's owner, and checkPlanReviewTask then refuses
+		// a task that owner did not dispatch (plan_review_task_not_owned).
 		title, body := planReviewDocument(r.Result)
-		out, err = w.addDocument(tx, r.WorkID, AddDocumentV2{ExpectedVersion: prev.Version, SessionID: r.Root.SessionID,
+		out, err = w.addDocument(tx, r.WorkID, AddDocumentV2{ExpectedVersion: prev.Version, SessionID: prev.OwnerSession,
 			Role: work.DocumentPlanReview, Title: title, Body: body, Reference: taskID}, nil)
 		return err
 	})

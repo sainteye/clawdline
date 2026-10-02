@@ -2,9 +2,12 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
@@ -301,5 +304,151 @@ func TestAnEpicEntersImplementingOnlyAfterAReviewedPlan(t *testing.T) {
 	}
 	if err := advanceTo(w, &owned, work.PhaseImplementing); err != nil {
 		t.Fatalf("a reviewed Feature: %v", err)
+	}
+}
+
+// planReviewDocs is the item's plan_review documents by reference.
+func planReviewDocs(t *testing.T, w *WorkSystemV2, id string) map[string][]work.DocumentV2 {
+	t.Helper()
+	docs, err := w.Store.WorkV2Documents(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string][]work.DocumentV2{}
+	for _, d := range docs {
+		if d.Role == work.DocumentPlanReview {
+			out[d.Reference] = append(out[d.Reference], d)
+		}
+	}
+	return out
+}
+
+// A successful plan_review child on an item records its review receipt there
+// by itself, and the owner's later `item doc` for the same task — sent with
+// the version it read before the child finished — answers that document
+// instead of conflicting or adding a second review.
+func TestASuccessfulPlanReviewChildRecordsItsReviewOnItsItem(t *testing.T) {
+	w, clock := newEpicTest(t)
+	ctx := context.Background()
+	epic := assignedEpic(t, w)
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	stale := epic
+	review := reviewTask("7e000000-0000-4000-8000-000000000401", epic.Item.ID, clock.at)
+	receipt := `{"verdict":"safe_to_land","axes":[{"name":"correctness","status":"pass","findings":[]}]}`
+	review.Result = &taskdir.Result{Status: "success", Summary: "Reviewed", Review: json.RawMessage(receipt)}
+	putTask(t, w.Store, review)
+
+	auto, err := w.AddPlanReviewFromTask(ctx, review.ID)
+	if err != nil {
+		t.Fatalf("automatic plan_review: %v", err)
+	}
+	if len(auto.Documents) != 1 || auto.Documents[0].Title != "Plan review: safe_to_land" ||
+		!strings.Contains(auto.Documents[0].Body, `"verdict": "safe_to_land"`) || auto.Documents[0].Reference != review.ID {
+		t.Fatalf("automatic document: %+v", auto.Documents)
+	}
+	again, err := w.AddPlanReviewFromTask(ctx, review.ID)
+	if err != nil || again.Documents[0].ID != auto.Documents[0].ID || again.Item.Version != auto.Item.Version {
+		t.Fatalf("automatic retry: %+v %v", again, err)
+	}
+	if err := addDoc(w, &stale, work.DocumentPlanReview, review.ID); err != nil {
+		t.Fatalf("manual item doc after the automatic one: %v", err)
+	}
+	if stale.Item.Version != auto.Item.Version {
+		t.Fatalf("an idempotent manual add moved the item: %d -> %d", auto.Item.Version, stale.Item.Version)
+	}
+	if got := planReviewDocs(t, w, epic.Item.ID)[review.ID]; len(got) != 1 || got[0].ID != auto.Documents[0].ID {
+		t.Fatalf("plan_review documents for one task: %+v", got)
+	}
+	// A different reference with a stale version is still a conflict: only a
+	// retry of the same review is excused the version.
+	second := reviewTask("7e000000-0000-4000-8000-000000000402", epic.Item.ID, clock.at)
+	putTask(t, w.Store, second)
+	if err := addDoc(w, &WorkV2View{Item: epic.Item}, work.DocumentPlanReview, second.ID); err == nil {
+		t.Fatal("a new review with a stale version was accepted")
+	}
+}
+
+// The manual command first — the automatic add failed, or never ran because
+// the daemon stopped between settling the child and recording it — then
+// either retry is safe: a lost reply resent, or the automatic add arriving
+// late. A retry still runs every check, so a review a newer plan made stale
+// is refused rather than answered.
+func TestAPlanReviewRetriedAfterAPartialFailureIsRecordedOnce(t *testing.T) {
+	w, clock := newEpicTest(t)
+	ctx := context.Background()
+	epic := assignedEpic(t, w)
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	review := reviewTask("7e000000-0000-4000-8000-000000000501", epic.Item.ID, clock.at)
+	putTask(t, w.Store, review)
+	sent := epic
+	if err := addDoc(w, &epic, work.DocumentPlanReview, review.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := addDoc(w, &sent, work.DocumentPlanReview, review.ID); err != nil {
+		t.Fatalf("resent manual item doc: %v", err)
+	}
+	late, err := w.AddPlanReviewFromTask(ctx, review.ID)
+	if err != nil || late.Item.Version != epic.Item.Version {
+		t.Fatalf("late automatic add: %+v %v", late, err)
+	}
+	if got := planReviewDocs(t, w, epic.Item.ID)[review.ID]; len(got) != 1 || got[0].Title != work.DocumentPlanReview {
+		t.Fatalf("plan_review documents for one task: %+v", got)
+	}
+	clock.at = clock.at.Add(time.Minute)
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	refusedAsWork(t, addDoc(w, &sent, work.DocumentPlanReview, review.ID), "plan_review_task_stale")
+	_, err = w.AddPlanReviewFromTask(ctx, review.ID)
+	refusedAsWork(t, err, "plan_review_task_stale")
+}
+
+// The automatic add answers the same typed refusals as the manual command
+// and writes nothing when it refuses. A receipt too large for a document body
+// leaves the body out; the reference to the task still stands.
+func TestAnAutomaticPlanReviewRefusesAsTheManualOneDoes(t *testing.T) {
+	w, clock := newEpicTest(t)
+	ctx := context.Background()
+	epic := assignedEpic(t, w)
+	noPlan := reviewTask("7e000000-0000-4000-8000-000000000601", epic.Item.ID, clock.at)
+	putTask(t, w.Store, noPlan)
+	_, err := w.AddPlanReviewFromTask(ctx, noPlan.ID)
+	refusedAsWork(t, err, "epic_plan_required")
+	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		id, code string
+		change   func(r *orchestrator.Record)
+	}{
+		{"7e000000-0000-4000-8000-000000000602", "plan_review_task_not_owned", func(r *orchestrator.Record) { r.Root.SessionID = "session-b" }},
+		{"7e000000-0000-4000-8000-000000000603", "plan_review_task_not_owned", func(r *orchestrator.Record) { r.Root = nil }},
+		{"7e000000-0000-4000-8000-000000000604", "plan_review_task_wrong_kind", func(r *orchestrator.Record) { r.Kind = "custom" }},
+		{"7e000000-0000-4000-8000-000000000605", "plan_review_task_unfinished", func(r *orchestrator.Record) { r.State = orchestrator.StateFailure }},
+		{"7e000000-0000-4000-8000-000000000606", "plan_review_task_no_item", func(r *orchestrator.Record) { r.WorkID = "" }},
+	}
+	for _, c := range cases {
+		r := reviewTask(c.id, epic.Item.ID, clock.at)
+		c.change(&r)
+		putTask(t, w.Store, r)
+		_, err := w.AddPlanReviewFromTask(ctx, r.ID)
+		refusedAsWork(t, err, c.code)
+	}
+	_, err = w.AddPlanReviewFromTask(ctx, "7e000000-0000-4000-8000-00000000ffff")
+	refusedAsWork(t, err, "plan_review_task_unknown")
+	if got := planReviewDocs(t, w, epic.Item.ID); len(got) != 0 {
+		t.Fatalf("a refused automatic add wrote: %+v", got)
+	}
+	big := reviewTask("7e000000-0000-4000-8000-000000000607", epic.Item.ID, clock.at)
+	big.Result = &taskdir.Result{Status: "success", Review: json.RawMessage(`{"verdict":"changes_required","axes":["` +
+		strings.Repeat("x", 70<<10) + `"]}`)}
+	putTask(t, w.Store, big)
+	v, err := w.AddPlanReviewFromTask(ctx, big.ID)
+	if err != nil || v.Documents[0].Body != "" || v.Documents[0].Title != "Plan review: changes_required" {
+		t.Fatalf("oversized receipt: %+v %v", v.Documents, err)
 	}
 }
