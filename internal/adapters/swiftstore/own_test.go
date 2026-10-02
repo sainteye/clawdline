@@ -124,6 +124,16 @@ func TestOwnRecordsAloneDrawTheRow(t *testing.T) {
 	}
 }
 
+func TestAgentNamedBoardConversationOutranksTaskFromReusedTerminal(t *testing.T) {
+	live := Live{TerminalID: "%5", Assistant: "codex", ConversationID: "new-conversation"}
+	old := Task{ID: "old-task", State: "success", Title: "Old task title", ChildTerminal: strp("%5")}
+	snap := Snapshot{Orchestrator: Orchestrator{Tasks: []Task{old}}, BoardTitles: []BoardTitle{{Assistant: "codex", ConversationID: "new-conversation", Label: "New item name", AgentNamed: true}}}
+	got := snap.TitleOf(live, "", []Live{live})
+	if got.Orchestrator != "New item name" || !got.AgentNamedBoard {
+		t.Fatalf("reused terminal showed %+v instead of the new conversation name", got)
+	}
+}
+
 // A delivery the session reported here is its tick; one reported by another
 // conversation in the same terminal is not. A wait registered here parks the
 // waiter and is drawn on both rows.
