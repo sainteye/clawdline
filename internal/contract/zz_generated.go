@@ -7176,6 +7176,191 @@ type UsageTokens struct {
 	Unpriced float64 `json:"unpriced"`
 }
 
+// One stored cursor row, as it was written. `edge` is `start`, `end`,
+// `release`, `acquire`, `settled:end` or `settled:release`. A row with no
+// `session` is the unit's own marker: the edge happened, with its `outcome`
+// (the broker's terminal state, the item's closing phase, `step-done`) and a
+// `state` of `cursor_missing` when the cursor could not be taken; it has no
+// reading. `at` is when the edge happened and `taken_at` when the reading was
+// taken (Unix seconds). `state` is empty for a current reading, or one of
+// `not_yet_read`, `ledger_behind`, `transcript_missing`,
+// `transcript_unreadable`, `cursor_missing`, `settled`, `settled_after_growth`.
+type UsageWorkCursor struct {
+	At       int64             `json:"at"`
+	Cycle    string            `json:"cycle"`
+	Edge     string            `json:"edge"`
+	Outcome  string            `json:"outcome"`
+	Reading  *UsageWorkReading `json:"reading,omitempty"`
+	Seq      int64             `json:"seq"`
+	Session  string            `json:"session"`
+	State    string            `json:"state"`
+	TakenAt  int64             `json:"taken_at"`
+	UnitID   string            `json:"unit_id"`
+	UnitKind UsageWorkKind     `json:"unit_kind"`
+}
+
+// One transcript of a session, its own or a subagent's: how far the ledger had
+// read it and how it stood on disk when the cursor was taken (Unix seconds).
+// `seen` is false when the file was not found.
+type UsageWorkFile struct {
+	Conversation     string      `json:"conversation"`
+	FileModifiedAt   int64       `json:"file_modified_at"`
+	FileSize         int64       `json:"file_size"`
+	LedgerModifiedAt int64       `json:"ledger_modified_at"`
+	LedgerSize       int64       `json:"ledger_size"`
+	More             bool        `json:"more"`
+	Reason           UsageReason `json:"reason,omitempty"`
+	Seen             bool        `json:"seen"`
+}
+
+// A unit of work: a child `task` from admission to its terminal state, a Board
+// `item` from entering implementing to done or cancelled (one per cycle), or
+// one of its `step`s from the previous step's completion, or the item entering
+// implementing, to its own completion.
+type UsageWorkKind string
+
+const (
+	UsageWorkKindTask UsageWorkKind = "task"
+	UsageWorkKindItem UsageWorkKind = "item"
+	UsageWorkKindStep UsageWorkKind = "step"
+)
+
+// UsageWorkKindValues is every value the contract allows, in contract order.
+var UsageWorkKindValues = []UsageWorkKind{UsageWorkKindTask, UsageWorkKindItem, UsageWorkKindStep}
+
+// A model a reading names (the last one each transcript used), and whether it
+// has a price.
+type UsageWorkModel struct {
+	Model  string `json:"model"`
+	Priced bool   `json:"priced"`
+}
+
+// One session's cumulative ledger reading at a cursor: totals only. `present`
+// is false when the ledger had no row of it. `tokens` includes its subagents;
+// `calls` are its own and its subagents'; `peak_context` is its own. `behind`
+// says the ledger had not read one of its files as it was on disk.
+type UsageWorkReading struct {
+	Assistant   string           `json:"assistant,omitempty"`
+	Behind      bool             `json:"behind"`
+	Calls       int64            `json:"calls"`
+	Compactions int64            `json:"compactions"`
+	Files       []UsageWorkFile  `json:"files"`
+	Models      []UsageWorkModel `json:"models"`
+	More        bool             `json:"more"`
+	PeakContext int64            `json:"peak_context"`
+	Present     bool             `json:"present"`
+	ReadAt      int64            `json:"read_at"`
+	Reason      UsageReason      `json:"reason,omitempty"`
+	Tokens      UsageTokens      `json:"tokens"`
+}
+
+// One session's part of a unit. `counted` says its delta is in the unit's
+// totals. `peak_start` is null when it had no starting reading; `peak_rose`
+// says its peak context grew during the unit. A per-unit peak is not kept by
+// the ledger and is not given.
+type UsageWorkSession struct {
+	Calls        int64            `json:"calls"`
+	Compactions  int64            `json:"compactions"`
+	Conversation string           `json:"conversation"`
+	Counted      bool             `json:"counted"`
+	Delta        UsageWorkTokens  `json:"delta"`
+	Models       []UsageWorkModel `json:"models"`
+	PeakEnd      int64            `json:"peak_end"`
+	PeakRose     bool             `json:"peak_rose"`
+	PeakStart    *int64           `json:"peak_start"`
+	States       []UsageWorkState `json:"states"`
+}
+
+// Why part of a unit of work's delta is not a plain end minus start
+// (docs/token-ledger.md "One unit of work"). `not_yet_read`: the ledger had no
+// row of a session at a cursor; its delta is not counted. `transcript_missing`,
+// `transcript_unreadable`: the session's row said so at a cursor. `missing`: a
+// session the closed unit counts has no reading at one of its edges; not
+// counted. `ledger_behind`: at the end the ledger had not read the transcript
+// up to its size and modification time, so the delta is a lower bound until
+// settled. `settled`: a later reading caught up with exactly what the end
+// cursor saw and replaces it. `settled_after_growth`: the later reading caught
+// up only after the transcript grew, so it may hold work done after the unit
+// ended; it is not used as the end, except for a session the end cursor did not
+// see at all, where it is an upper bound. `session_handoff`: the item's owner
+// changed while it was open; the leaving session is measured to its release,
+// the arriving one from its acquisition. `started_inside`: a session with no
+// starting reading that joined an item after it started, counted from zero.
+// `mixed_models`: the unit's sessions name more than one model; `unpriced`: a
+// model has no price. Either makes the cost unknown and keeps the tokens.
+// `cursor_missing`: an edge's cursor could not be taken. `open`: the unit has
+// not ended. `no_session`: the unit ended with no session counted for it.
+type UsageWorkState string
+
+const (
+	UsageWorkStateNotYetRead           UsageWorkState = "not_yet_read"
+	UsageWorkStateTranscriptMissing    UsageWorkState = "transcript_missing"
+	UsageWorkStateTranscriptUnreadable UsageWorkState = "transcript_unreadable"
+	UsageWorkStateMissing              UsageWorkState = "missing"
+	UsageWorkStateLedgerBehind         UsageWorkState = "ledger_behind"
+	UsageWorkStateSettled              UsageWorkState = "settled"
+	UsageWorkStateSettledAfterGrowth   UsageWorkState = "settled_after_growth"
+	UsageWorkStateSessionHandoff       UsageWorkState = "session_handoff"
+	UsageWorkStateStartedInside        UsageWorkState = "started_inside"
+	UsageWorkStateMixedModels          UsageWorkState = "mixed_models"
+	UsageWorkStateUnpriced             UsageWorkState = "unpriced"
+	UsageWorkStateCursorMissing        UsageWorkState = "cursor_missing"
+	UsageWorkStateOpen                 UsageWorkState = "open"
+	UsageWorkStateNoSession            UsageWorkState = "no_session"
+)
+
+// UsageWorkStateValues is every value the contract allows, in contract order.
+var UsageWorkStateValues = []UsageWorkState{UsageWorkStateNotYetRead, UsageWorkStateTranscriptMissing, UsageWorkStateTranscriptUnreadable, UsageWorkStateMissing, UsageWorkStateLedgerBehind, UsageWorkStateSettled, UsageWorkStateSettledAfterGrowth, UsageWorkStateSessionHandoff, UsageWorkStateStartedInside, UsageWorkStateMixedModels, UsageWorkStateUnpriced, UsageWorkStateCursorMissing, UsageWorkStateOpen, UsageWorkStateNoSession}
+
+// A delta by part. There is no cost here on purpose: a unit's cost is on the
+// unit, null when it is not known.
+type UsageWorkTokens struct {
+	CacheRead    float64 `json:"cache_read"`
+	CacheWrite1h float64 `json:"cache_write_1h"`
+	CacheWrite5m float64 `json:"cache_write_5m"`
+	Input        float64 `json:"input"`
+	Output       float64 `json:"output"`
+	Total        float64 `json:"total"`
+
+	// The delta's tokens whose model has no price.
+	Unpriced float64 `json:"unpriced"`
+}
+
+// One unit cycle: what its counted sessions added between its cursors, and the
+// raw cursors. `started_at` and `ended_at` are Unix seconds, 0 when that edge
+// has no marker. `cost` is null unless `cost_known`: the unit ended, every
+// session was counted exactly, and one priced model is named.
+type UsageWorkUnit struct {
+	Calls       int64              `json:"calls"`
+	Compactions int64              `json:"compactions"`
+	Cost        *float64           `json:"cost"`
+	CostKnown   bool               `json:"cost_known"`
+	Cursors     []UsageWorkCursor  `json:"cursors"`
+	Cycle       string             `json:"cycle"`
+	EndedAt     int64              `json:"ended_at"`
+	ID          string             `json:"id"`
+	Kind        UsageWorkKind      `json:"kind"`
+	Models      []UsageWorkModel   `json:"models"`
+	Outcome     string             `json:"outcome"`
+	Sessions    []UsageWorkSession `json:"sessions"`
+	StartedAt   int64              `json:"started_at"`
+	States      []UsageWorkState   `json:"states"`
+	Tokens      UsageWorkTokens    `json:"tokens"`
+}
+
+// GET /v1/usage/work-units?since=… (docs/token-ledger.md "One unit of work"):
+// every unit with a cursor in [`since`, `until`] (Unix seconds), the most
+// recent first, each whole even when it started before `since`. `since` is
+// `<n>d`, `<n>h` or a Unix time, 14 days when absent. `truncated` says more
+// units were in the range than one answer reads (limits N72). Behind cursors
+// the ledger has caught up with are settled before the answer is read.
+type UsageWorkUnits struct {
+	Since     int64           `json:"since"`
+	Truncated bool            `json:"truncated"`
+	Units     []UsageWorkUnit `json:"units"`
+	Until     int64           `json:"until"`
+}
+
 // One record. Times are Unix seconds. `source` is absent when it has none;
 // `schedule_id` is empty when no schedule is linked. `closed_at` is 0 and
 // `close_reason` empty while it is open. `seed` names the record the daemon

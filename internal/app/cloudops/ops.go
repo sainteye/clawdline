@@ -2101,6 +2101,34 @@ func init() {
 				return out
 			}},
 
+		// What each unit of work added (docs/token-ledger.md "One unit of
+		// work"): the same one query field, `since`, as the comparison.
+		op{name: "usage.work-units", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"}, []string{"type", "session", "request", "since"}) {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				if _, named := b["since"]; named {
+					since, ok := b.str("since")
+					if !ok || !compareSince.MatchString(since) {
+						return plan{}, false
+					}
+					p.query = since
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				out := LocalRequest{Method: "GET", Path: "/v1/usage/work-units"}
+				if p.query != "" {
+					out.Query = map[string]string{"since": p.query}
+				}
+				return out
+			}},
+
 		// Things waiting to be verified (docs/verifications.md). The phone is
 		// where the person reads them, so every route crosses: two machine
 		// reads, and five commands that carry `X-Clawdline-Actor: device` for

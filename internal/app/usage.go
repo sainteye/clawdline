@@ -65,6 +65,9 @@ type UsageLedger struct {
 	Window    time.Duration
 	Now       func() time.Time
 	Log       func(format string, args ...any)
+	// AfterPass, when set, runs after every pass Run makes: the work-unit
+	// cursors whose ledger was behind are settled there (work_units.go).
+	AfterPass func(ctx context.Context)
 
 	mu sync.Mutex
 	// cursor is the key of the last transcript fed: the next pass starts
@@ -130,6 +133,9 @@ func (u *UsageLedger) Run(ctx context.Context) {
 		}
 		if ctx.Err() == nil {
 			u.record(pass, err)
+		}
+		if ctx.Err() == nil && u.AfterPass != nil {
+			u.AfterPass(ctx)
 		}
 		select {
 		case <-ctx.Done():

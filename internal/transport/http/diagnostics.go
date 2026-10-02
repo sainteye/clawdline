@@ -631,6 +631,19 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.HumanInterventionsTotal: func() capacity.Reading {
 			return s.humanInterventionCapacityReading(false)
 		},
+		capacity.UsageWorkCursorRows: func() capacity.Reading {
+			n, err := s.store.WorkCursorCount(context.Background())
+			if err != nil {
+				return capacity.Unmeasured(err.Error())
+			}
+			return capacity.Reading{Known: true, Used: n}
+		},
+		capacity.UsageWorkCursorQueue: func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.workUnits().Waiting())}
+		},
+		capacity.UsageWorkUnitsInAnswer: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read bound; the answer says truncated"}
+		},
 		capacity.HumanInterventionsRecent: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read recent-history window"}
 		},
