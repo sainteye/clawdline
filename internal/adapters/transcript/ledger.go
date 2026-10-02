@@ -224,6 +224,9 @@ type ledgerCall struct {
 // needs to go on reading it. It is plain data: it is kept as JSON between
 // passes, and a Feed from a state read back is a Feed from the state written.
 type LedgerState struct {
+	// ClassificationVersion lets the reader replay a Codex transcript after
+	// its category rules change. Zero is a reading made before versioning.
+	ClassificationVersion int `json:"classification_version,omitempty"`
 	// Assistant is "claude" or "codex"; empty until the first record says.
 	Assistant string `json:"assistant,omitempty"`
 

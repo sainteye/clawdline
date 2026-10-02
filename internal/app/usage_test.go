@@ -29,6 +29,47 @@ type usageHarness struct {
 	u     *UsageLedger
 }
 
+func TestCodexClassificationChangeReplaysStoredReading(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "codex.jsonl")
+	line := `{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c1","input":"await tools.exec_command({cmd:\"clawdline item steps 123\"});"}}` + "\n"
+	line += `{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":"item details"}}` + "\n"
+	line += `{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":20},"total_token_usage":{"total_tokens":120}}}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stat, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := usageFile{assistant: "codex", conversation: "c1", path: path, size: stat.Size(), modified: stat.ModTime()}
+	old := store.UsageRow{Assistant: "codex", Conversation: "c1", Path: path, Size: stat.Size(), ModifiedAt: stat.ModTime(), State: json.RawMessage(`{"offset":123,"spent":{"other":{"input":100}}}`)}
+	if !usageDue(f, old, true) {
+		t.Fatal("an old Codex classification was not due for replay")
+	}
+	u := &UsageLedger{}
+	row, reason, err := u.read(f, old, true, time.Now())
+	if err != nil || reason != "" {
+		t.Fatalf("replay: reason %q, error %v", reason, err)
+	}
+	var state transcript.LedgerState
+	if err := json.Unmarshal(row.State, &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.ClassificationVersion != transcript.CodexClassificationVersion {
+		t.Fatalf("classification version = %d", state.ClassificationVersion)
+	}
+	if usageDue(f, row, true) {
+		t.Fatal("unchanged transcript remained due after replay")
+	}
+	var spent map[transcript.Category]transcript.Tokens
+	if err := json.Unmarshal(row.Spent, &spent); err != nil {
+		t.Fatal(err)
+	}
+	if spent[transcript.CategoryBoard].Total() == 0 {
+		t.Fatalf("replayed board category is empty: %v", spent)
+	}
+}
+
 func newUsageHarness(t *testing.T) *usageHarness {
 	t.Helper()
 	h := &usageHarness{t: t, home: t.TempDir(), dir: t.TempDir()}
