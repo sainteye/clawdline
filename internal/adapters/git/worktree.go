@@ -87,6 +87,20 @@ func (g *Git) Merged(ctx context.Context, repo, branch, target string) (merged b
 	return ok, true
 }
 
+// UpstreamRemote is the remote a local branch tracks (`branch.<name>.remote`),
+// or "" when it tracks none or tracks another local branch. An error is "could
+// not ask", never "tracks none".
+func (g *Git) UpstreamRemote(ctx context.Context, repo, branch string) (string, error) {
+	out, err := g.run(ctx, repo, "for-each-ref", "--format=%(upstream:remotename)", "--end-of-options", "refs/heads/"+branch)
+	if err != nil {
+		return "", err
+	}
+	if out == "." {
+		return "", nil
+	}
+	return out, nil
+}
+
 // BranchesContaining names every local branch whose history holds commit,
 // without the `refs/heads/` prefix. An error is "could not ask", never "no
 // branch has it".
