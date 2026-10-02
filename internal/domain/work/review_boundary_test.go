@@ -14,7 +14,7 @@ func TestFeatureReviewFollowsThePersonsSwitch(t *testing.T) {
 		AcceptanceCriteria: "A visible result", DeploymentPolicy: DeployAgentDecides}
 	code := func(docs ...DocumentV2) string {
 		t.Helper()
-		err := PlanningGate(item, PhaseImplementing, docs)
+		err := PlanningGate(item, PhaseImplementing, docs, PlanReviewSummary{})
 		if err == nil {
 			return ""
 		}
@@ -58,7 +58,7 @@ func TestFeaturePlanRevisionNamesItsRiskBoundary(t *testing.T) {
 		Body: `{"new_risk_boundary":false,"reason":"Only test wording changed; deployment and access remain reviewed."}`}
 	check := func(want string, docs ...DocumentV2) {
 		t.Helper()
-		err := PlanningGate(item, PhaseImplementing, docs)
+		err := PlanningGate(item, PhaseImplementing, docs, PlanReviewSummary{})
 		got := ""
 		if err != nil {
 			r, ok := AsRefusalV2(err)

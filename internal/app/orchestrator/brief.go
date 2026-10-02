@@ -229,10 +229,12 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w(`- "status" is "failure" when you could not do it. `+"`last` is `pass`, `fail` or `skipped`; `scope` is one line of at most %d characters.", taskdir.VerificationScopeLimit)
 	w("- `verification` is a placeholder. If you ran nothing, keep `skipped` or omit the field; never claim a pass.")
 	if reviewTask {
-		w("- A successful review needs `review`. Its verdict is `safe_to_land` or `changes_required`.")
+		w("- A successful review needs `review`. Its verdict is `safe_to_land`, `proceed_with_findings` or `changes_required`.")
 		w("  Each of the three named axes has status `pass` with no findings, or `findings` with at least one.")
-		w("  A finding has id, severity (`blocking`, `important`, `minor`), summary and evidence strings.")
-		w("  Use `changes_required` when any axis has findings; otherwise use `safe_to_land`.")
+		w(`  A finding is {"id": "<slug>", "severity": "blocking", "summary": "<one line>", "evidence": ["<file:line or command output>"]}.`)
+		w("  `severity` is `blocking` (the work must not go on until it is fixed) or `non_blocking` (worth fixing, does not stop the work).")
+		w("  Use `safe_to_land` with no findings, `proceed_with_findings` when every finding is `non_blocking`,")
+		w("  and `changes_required` when any finding is `blocking`.")
 	}
 	w("- `symbols` names what you introduced: functions, types, fields, string keys, test groups.")
 	w("- `leftovers`: It is optional and not a new obligation; at most %d entries.", work.LeftoversLimit)

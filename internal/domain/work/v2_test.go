@@ -131,7 +131,7 @@ func TestEpicPlanGate(t *testing.T) {
 		{"back from verifying", ItemV2{Kind: KindEpic, Phase: PhaseVerifying}, PhaseImplementing, docs(), ""},
 	}
 	for _, c := range cases {
-		err := EpicPlanGate(c.item, c.next, c.plans)
+		err := EpicPlanGate(c.item, c.next, c.plans, PlanReviewSummary{})
 		got := ""
 		if r, ok := AsRefusalV2(err); ok {
 			got = r.Code
@@ -204,40 +204,40 @@ func TestPlanningGateUsesTheCapturedModeAndKind(t *testing.T) {
 		return ""
 	}
 	for _, kind := range []Kind{KindFeature, KindEpic} {
-		if got := code(PlanningGate(item(kind, false), PhaseImplementing, nil)); got != "" {
+		if got := code(PlanningGate(item(kind, false), PhaseImplementing, nil, PlanReviewSummary{})); got != "" {
 			t.Errorf("planning-off %s = %s", kind, got)
 		}
 	}
-	if got := code(PlanningGate(item(KindIssue, true), PhaseImplementing, nil)); got != "" {
+	if got := code(PlanningGate(item(KindIssue, true), PhaseImplementing, nil, PlanReviewSummary{})); got != "" {
 		t.Fatalf("Issue was gated: %s", got)
 	}
 	feature := item(KindFeature, true)
 	feature.ReviewRequired = true
-	if got := code(PlanningGate(feature, PhaseImplementing, nil)); got != "feature_plan_required" {
+	if got := code(PlanningGate(feature, PhaseImplementing, nil, PlanReviewSummary{})); got != "feature_plan_required" {
 		t.Fatalf("Feature without plan = %s", got)
 	}
-	if got := code(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan))); got != "feature_plan_review_required" {
+	if got := code(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan), PlanReviewSummary{})); got != "feature_plan_review_required" {
 		t.Fatalf("Feature without review = %s", got)
 	}
 	// A successful review child records itself (app.AddPlanReviewFromTask),
 	// so the refusal says to wait for it before it offers the manual command.
 	var waiting RefusalV2
-	if !errors.As(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan)), &waiting) ||
+	if !errors.As(PlanningGate(feature, PhaseImplementing, docs(DocumentPlan), PlanReviewSummary{}), &waiting) ||
 		!strings.Contains(waiting.Message, "wait for that child to finish") ||
 		!strings.Contains(waiting.Message, "Only if it is not") {
 		t.Fatalf("review-required message does not say to wait for the child: %+v", waiting)
 	}
 	if got := code(PlanningGate(feature, PhaseImplementing,
-		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "feature_plan_review_required" {
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan), PlanReviewSummary{})); got != "feature_plan_review_required" {
 		t.Fatalf("Feature revision without boundary evidence = %s", got)
 	}
 	epic := item(KindEpic, true)
 	if got := code(PlanningGate(epic, PhaseImplementing,
-		docs(DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "epic_plan_review_required" {
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan), PlanReviewSummary{})); got != "epic_plan_review_required" {
 		t.Fatalf("Epic accepted one stale review: %s", got)
 	}
 	if got := code(PlanningGate(epic, PhaseImplementing,
-		docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan))); got != "" {
+		docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan), PlanReviewSummary{})); got != "" {
 		t.Fatalf("Epic exceeded its two-review ceiling: %s", got)
 	}
 }

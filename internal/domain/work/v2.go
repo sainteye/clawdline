@@ -3,8 +3,10 @@ package work
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -449,7 +451,12 @@ func DocumentRoleApplies(i ItemV2, role string) error {
 // ReviewRequired switch, read live; otherwise its acceptance criteria are
 // enough. A reviewed Feature plan revised later needs an explicit
 // unchanged-boundary assessment or a fresh review.
-func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
+//
+// review is what the latest plan_review concluded, read by the caller from
+// the referenced task's receipt (ReadPlanReview). A review with a blocking
+// finding stops the item even when a review ran; one with only non-blocking
+// findings, or a legacy receipt with no severities, lets it through.
+func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSummary) error {
 	if i.Phase != PhaseAssigned || next != PhaseImplementing || i.Kind == KindIssue {
 		return nil
 	}
@@ -494,12 +501,143 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2) error {
 				"`) and wait for that child to finish: a successful review is recorded on the item by itself. "+
 				"Only if it is not, record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
 	}
-	return nil
+	return planReviewBlocking(i, prefix, lastPlan, lastReview, reviews, rounds, review)
 }
+
+// PlanReviewSummary is what the gate needs from the latest plan_review: the
+// summaries of its blocking findings. A legacy receipt — none readable, no
+// findings array, or a finding without a severity — has Legacy set and is
+// judged as before: only that a review ran counts.
+type PlanReviewSummary struct {
+	Legacy   bool
+	Blocking []string
+}
+
+// PlanReviewBlockingListed is how many blocking findings a refusal names;
+// the rest are counted ("and N more"), so a review with dozens of findings
+// cannot grow the message without bound.
+const PlanReviewBlockingListed = 8
+
+// SeverityBlocking is the one finding severity that stops a plan. The others
+// a receipt may carry (non_blocking, and the older important and minor) let
+// the plan proceed.
+const SeverityBlocking = "blocking"
+
+// ReadPlanReview reads a review receipt (result.json `review`) into what the
+// planning gate needs. It never fails: what it cannot read is a legacy
+// receipt, judged as before.
+func ReadPlanReview(raw []byte) PlanReviewSummary {
+	var review struct {
+		Axes []struct {
+			Findings *[]struct {
+				ID       string  `json:"id"`
+				Severity *string `json:"severity"`
+				Summary  string  `json:"summary"`
+			} `json:"findings"`
+		} `json:"axes"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &review) != nil || len(review.Axes) == 0 {
+		return PlanReviewSummary{Legacy: true}
+	}
+	var out PlanReviewSummary
+	for _, a := range review.Axes {
+		if a.Findings == nil {
+			return PlanReviewSummary{Legacy: true}
+		}
+		for _, f := range *a.Findings {
+			if f.Severity == nil {
+				return PlanReviewSummary{Legacy: true}
+			}
+			if *f.Severity != SeverityBlocking {
+				continue
+			}
+			title := strings.TrimSpace(f.Summary)
+			if title == "" {
+				title = f.ID
+			}
+			out.Blocking = append(out.Blocking, title)
+		}
+	}
+	return out
+}
+
+// PlanReviewDispatchGate is the planning gate on a dispatch bound to an item
+// with --work-id: while a Feature or Epic that must have its plan reviewed is
+// still assigned, and its latest review has a blocking finding, no work but a
+// new plan review is dispatched for it. Whether a review exists at all stays
+// the phase route's question.
+func PlanReviewDispatchGate(i ItemV2, kind string, plans []DocumentV2, review PlanReviewSummary) error {
+	if kind == DocumentPlanReview || i.Phase != PhaseAssigned || (i.Kind != KindEpic && i.Kind != KindFeature) ||
+		!i.HasGateSnapshot() || !i.PlanningGate || (i.Kind == KindFeature && !i.ReviewRequired) {
+		return nil
+	}
+	lastPlan, lastReview, reviews := -1, -1, 0
+	for n, d := range plans {
+		switch d.Role {
+		case DocumentPlan:
+			lastPlan = n
+		case DocumentPlanReview:
+			lastReview = n
+			reviews++
+		}
+	}
+	rounds, prefix := 1, "feature"
+	if i.Kind == KindEpic {
+		rounds, prefix = EpicPlanReviewRounds, "epic"
+	}
+	return planReviewBlocking(i, prefix, lastPlan, lastReview, reviews, rounds, review)
+}
+
+// planReviewBlocking refuses when the latest plan review has a blocking
+// finding that still stands. An Epic plan revised after that review, with a
+// round left, is waiting for its next review instead (the review-required
+// rule); otherwise the findings stand until a new review clears them.
+func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, rounds int, review PlanReviewSummary) error {
+	if lastReview < 0 || review.Legacy || len(review.Blocking) == 0 {
+		return nil
+	}
+	if i.Kind == KindEpic && lastPlan > lastReview && reviews < rounds {
+		return nil
+	}
+	listed := review.Blocking
+	if len(listed) > PlanReviewBlockingListed {
+		listed = listed[:PlanReviewBlockingListed]
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "The latest plan review has %d blocking finding(s): ", len(review.Blocking))
+	for n, t := range listed {
+		if n > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(strconv.Quote(t))
+	}
+	if more := len(review.Blocking) - len(listed); more > 0 {
+		fmt.Fprintf(&b, "; and %d more", more)
+	}
+	b.WriteString(". ")
+	if i.Kind == KindEpic && reviews >= rounds {
+		fmt.Fprintf(&b, "This Epic has used its %d plan reviews, so there are only two ways forward: the person overrides "+
+			"the planning gate (%s), or you revise the plan (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`) "+
+			"and the person raises the review limit for it. Ask the person; do not dispatch a third review on your own.",
+			rounds, PlanningGateOverride, i.ID)
+	} else {
+		fmt.Fprintf(&b, "Revise the plan (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`), then have "+
+			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --claims \"\"`); or the person overrides the "+
+			"planning gate (%s).", i.ID, i.ID, PlanningGateOverride)
+	}
+	return RefuseV2(prefix+"_plan_review_blocking", b.String())
+}
+
+// PlanningGateOverride names the override a refusal offers. It is the
+// person's, on the Board, and nothing here changes it: a Feature's Needs
+// independent review switch, or the captured planning_gate setting, which
+// takes effect for an item's next cycle.
+const PlanningGateOverride = "only the person can: uncheck the Feature's Needs independent review switch on the Board, " +
+	"or `clawdline setting set planning_gate off` before the item's next cycle"
 
 // EpicPlanGate remains as a source-compatible name for callers outside the
 // runtime path. New enforcement calls PlanningGate so Features are included.
-func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
+func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSummary) error {
 	if i.Kind != KindEpic {
 		return nil
 	}
@@ -512,7 +650,7 @@ func EpicPlanGate(i ItemV2, next Phase, plans []DocumentV2) error {
 			i.AcceptanceCriteria = "legacy Epic acceptance"
 		}
 	}
-	return PlanningGate(i, next, plans)
+	return PlanningGate(i, next, plans, review)
 }
 
 // EpicPlanReviewRounds is how many plan reviews the gate asks of an Epic at

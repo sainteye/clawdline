@@ -213,7 +213,10 @@ func (b *Broker) checkLineWork(ctx context.Context, r Record) error {
 		// A Board (v2) item is a line too: an Epic's owner dispatches the
 		// review of its plan with --work-id <item> (work-system.md).
 		if v2, v2err := b.Store.WorkV2Item(ctx, r.WorkID); v2err == nil {
-			return nameableV2(v2, r)
+			if err := nameableV2(v2, r); err != nil {
+				return err
+			}
+			return b.checkPlanReviewBlocking(ctx, v2, r)
 		} else if !errors.Is(v2err, store.ErrNoWorkV2) {
 			return refuse(http.StatusServiceUnavailable, "store_unavailable",
 				"The board could not be read, so the work item this dispatch names could not be checked; nothing was started.")
@@ -264,6 +267,48 @@ func (b *Broker) commitNamedWork(ctx context.Context, r Record) error {
 		now := b.now()
 		return tx.Put(it, c.Apply(it, now), store.MoveOf(it.ID, c, now))
 	})
+}
+
+// checkPlanReviewBlocking applies the planning gate's blocking-finding rule
+// to a dispatch bound to a Board item (work.PlanReviewDispatchGate): while the
+// item's latest plan review has a blocking finding, only a new plan review is
+// dispatched for it. A store that did not answer refuses, as above.
+func (b *Broker) checkPlanReviewBlocking(ctx context.Context, it work.ItemV2, r Record) error {
+	if r.Kind == work.DocumentPlanReview || it.Phase != work.PhaseAssigned {
+		return nil
+	}
+	unavailable := refuse(http.StatusServiceUnavailable, "store_unavailable",
+		"The board could not be read, so the plan review this dispatch's item stands on could not be checked; nothing was started.")
+	docs, err := b.Store.WorkV2Documents(ctx, it.ID)
+	if err != nil {
+		return unavailable
+	}
+	review := work.PlanReviewSummary{Legacy: true}
+	ref := ""
+	for _, d := range docs {
+		if d.Role == work.DocumentPlanReview {
+			ref = d.Reference
+		}
+	}
+	if ref != "" {
+		row, err := b.Store.BrokerTask(ctx, ref)
+		switch {
+		case errors.Is(err, store.ErrNoTask):
+		case err != nil:
+			return unavailable
+		default:
+			if rec, err := Decode(row.Record); err == nil && rec.Result != nil {
+				review = work.ReadPlanReview(rec.Result.Review)
+			}
+		}
+	}
+	var refusal work.RefusalV2
+	if err := work.PlanReviewDispatchGate(it, r.Kind, docs, review); errors.As(err, &refusal) {
+		return refuseWith(http.StatusUnprocessableEntity, refusal.Code, refusal.Message, map[string]any{"work_id": r.WorkID})
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 // nameableV2 is Nameable for a Board (v2) item: in this dispatch's Project and
