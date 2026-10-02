@@ -277,30 +277,38 @@ func (b *Broker) checkPlanReviewBlocking(ctx context.Context, it work.ItemV2, r 
 	if r.Kind == work.DocumentPlanReview || it.Phase != work.PhaseAssigned {
 		return nil
 	}
-	unavailable := refuse(http.StatusServiceUnavailable, "store_unavailable",
-		"The board could not be read, so the plan review this dispatch's item stands on could not be checked; nothing was started.")
-	docs, err := b.Store.WorkV2Documents(ctx, it.ID)
-	if err != nil {
-		return unavailable
-	}
+	// Read as the phase route reads it — plan documents in insertion order,
+	// the review task in the same transaction (the store has one connection).
+	var docs []work.DocumentV2
 	review := work.PlanReviewSummary{Legacy: true}
-	ref := ""
-	for _, d := range docs {
-		if d.Role == work.DocumentPlanReview {
-			ref = d.Reference
+	if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		var err error
+		if docs, err = tx.PlanDocuments(it.ID); err != nil {
+			return err
 		}
-	}
-	if ref != "" {
-		row, err := b.Store.BrokerTask(ctx, ref)
-		switch {
-		case errors.Is(err, store.ErrNoTask):
-		case err != nil:
-			return unavailable
-		default:
-			if rec, err := Decode(row.Record); err == nil && rec.Result != nil {
-				review = work.ReadPlanReview(rec.Result.Review)
+		ref := ""
+		for _, d := range docs {
+			if d.Role == work.DocumentPlanReview {
+				ref = d.Reference
 			}
 		}
+		if ref == "" {
+			return nil
+		}
+		row, err := tx.BrokerTask(ref)
+		if errors.Is(err, store.ErrNoTask) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if rec, err := Decode(row.Record); err == nil && rec.Result != nil {
+			review = work.ReadPlanReview(rec.Result.Review)
+		}
+		return nil
+	}); err != nil {
+		return refuse(http.StatusServiceUnavailable, "store_unavailable",
+			"The board could not be read, so the plan review this dispatch's item stands on could not be checked; nothing was started.")
 	}
 	var refusal work.RefusalV2
 	if err := work.PlanReviewDispatchGate(it, r.Kind, docs, review); errors.As(err, &refusal) {

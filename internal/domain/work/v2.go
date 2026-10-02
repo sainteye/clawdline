@@ -513,10 +513,10 @@ type PlanReviewSummary struct {
 	Blocking []string
 }
 
-// PlanReviewBlockingListed is how many blocking findings a refusal names;
+// PlanReviewBlockingListLimit is how many blocking findings a refusal names;
 // the rest are counted ("and N more"), so a review with dozens of findings
 // cannot grow the message without bound.
-const PlanReviewBlockingListed = 8
+const PlanReviewBlockingListLimit = 8
 
 // SeverityBlocking is the one finding severity that stops a plan. The others
 // a receipt may carry (non_blocking, and the older important and minor) let
@@ -600,8 +600,8 @@ func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, 
 		return nil
 	}
 	listed := review.Blocking
-	if len(listed) > PlanReviewBlockingListed {
-		listed = listed[:PlanReviewBlockingListed]
+	if len(listed) > PlanReviewBlockingListLimit {
+		listed = listed[:PlanReviewBlockingListLimit]
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "The latest plan review has %d blocking finding(s): ", len(review.Blocking))

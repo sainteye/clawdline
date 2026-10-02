@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -183,6 +184,16 @@ func TestAFinishRefusesWhatTheOldValidatorRefused(t *testing.T) {
 			"a passing axis has no findings and a findings axis has at least one"},
 		{"a finding with no evidence", plainTask("review"),
 			resultWith(strings.Replace(closedReview, `["a.go:1"]`, `[]`, 1)), "each review finding must use the exact"},
+		{"proceed_with_findings with a blocking finding", plainTask("review"),
+			resultWith(strings.Replace(strings.Replace(closedReview, "changes_required", "proceed_with_findings", 1), `"important"`, `"blocking"`, 1)),
+			"proceed_with_findings is for findings none of which is blocking"},
+		{"proceed_with_findings with no findings", plainTask("review"),
+			resultWith(`, "review": {"verdict": "proceed_with_findings", "axes": [
+ {"axis": "specification", "status": "pass", "findings": []},
+ {"axis": "repository_invariants", "status": "pass", "findings": []},
+ {"axis": "runtime_failure_behavior", "status": "pass", "findings": []}]}`), "review verdict must agree with its findings"},
+		{"a severity outside the vocabulary", plainTask("review"),
+			resultWith(strings.Replace(closedReview, `"important"`, `"critical"`, 1)), "each review finding must use the exact"},
 		{"a finding id that is not a slug", plainTask("review"),
 			resultWith(strings.Replace(closedReview, `"f-1"`, `"-f"`, 1)), "each review finding must use the exact"},
 	}
@@ -327,5 +338,27 @@ func TestLeftoversSurviveTheRoundTrip(t *testing.T) {
 	lo := got.Leftovers[0]
 	if lo.Title != "the flaky test" || lo.Why != "not mine to fix" || lo.Acceptance != "it passes twenty times" {
 		t.Fatalf("%+v", lo)
+	}
+}
+
+// The severities a review receipt may carry: blocking and non_blocking from the
+// current template, important and minor from the older one, read as
+// non-blocking. proceed_with_findings needs findings, none blocking;
+// changes_required stays legal for any findings.
+func TestReviewSeveritiesAndTheProceedVerdict(t *testing.T) {
+	cases := []struct{ name, verdict, severity string }{
+		{"non_blocking proceeds", "proceed_with_findings", "non_blocking"},
+		{"important still reads as non-blocking", "proceed_with_findings", "important"},
+		{"minor still reads as non-blocking", "proceed_with_findings", "minor"},
+		{"changes_required with a non-blocking finding", "changes_required", "non_blocking"},
+		{"changes_required with a blocking finding", "changes_required", "blocking"},
+	}
+	for _, c := range cases {
+		review := strings.Replace(strings.Replace(closedReview, "changes_required", c.verdict, 1),
+			`"important"`, strconv.Quote(c.severity), 1)
+		dir := finishDir(t, plainTask("review"), resultWith(review))
+		if _, err := Finish(dir); err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
 	}
 }

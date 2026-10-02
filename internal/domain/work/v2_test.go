@@ -2,6 +2,7 @@ package work
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -239,5 +240,131 @@ func TestPlanningGateUsesTheCapturedModeAndKind(t *testing.T) {
 	if got := code(PlanningGate(epic, PhaseImplementing,
 		docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan), PlanReviewSummary{})); got != "" {
 		t.Fatalf("Epic exceeded its two-review ceiling: %s", got)
+	}
+}
+
+func TestPlanningGateBlocksOnlyAReviewWithABlockingFinding(t *testing.T) {
+	docs := func(roles ...string) []DocumentV2 {
+		out := make([]DocumentV2, 0, len(roles))
+		for _, role := range roles {
+			out = append(out, DocumentV2{Role: role})
+		}
+		return out
+	}
+	gated := func(kind Kind) ItemV2 {
+		return ItemV2{ID: "w", Kind: kind, Phase: PhaseAssigned, Cycle: 1, GateSnapshotCycle: 1,
+			GateSnapshotAt: time.Unix(1, 0), PlanningGate: true, ReviewRequired: kind == KindFeature, AcceptanceCriteria: "It works."}
+	}
+	receipt := func(severities ...string) []byte {
+		var findings []string
+		for n, s := range severities {
+			sev := ""
+			if s != "-" {
+				sev = `"severity":` + strconv.Quote(s) + `,`
+			}
+			findings = append(findings, `{"id":"f`+strconv.Itoa(n)+`",`+sev+`"summary":"finding `+strconv.Itoa(n)+`","evidence":["x"]}`)
+		}
+		return []byte(`{"verdict":"x","axes":[{"axis":"specification","status":"findings","findings":[` +
+			strings.Join(findings, ",") + `]},{"axis":"repository_invariants","status":"pass","findings":[]},` +
+			`{"axis":"runtime_failure_behavior","status":"pass","findings":[]}]}`)
+	}
+	reviewed := docs(DocumentPlan, DocumentPlanReview)
+	cases := []struct {
+		name  string
+		item  ItemV2
+		plans []DocumentV2
+		raw   []byte
+		want  string
+	}{
+		{"zero findings", gated(KindFeature), reviewed, receipt(), ""},
+		{"only non-blocking", gated(KindFeature), reviewed, receipt("non_blocking", "minor", "important"), ""},
+		{"contains blocking", gated(KindFeature), reviewed, receipt("non_blocking", "blocking"), "feature_plan_review_blocking"},
+		{"epic contains blocking", gated(KindEpic), reviewed, receipt("blocking"), "epic_plan_review_blocking"},
+		{"legacy finding without severity", gated(KindFeature), reviewed, receipt("blocking", "-"), ""},
+		{"legacy unreadable receipt", gated(KindFeature), reviewed, nil, ""},
+		{"feature revised after a blocking review still waits for a review", gated(KindFeature),
+			docs(DocumentPlan, DocumentPlanReview, DocumentPlan), receipt("blocking"), "feature_plan_review_required"},
+		{"epic revised with a round left waits for its next review", gated(KindEpic),
+			docs(DocumentPlan, DocumentPlanReview, DocumentPlan), receipt("blocking"), "epic_plan_review_required"},
+		{"epic second round still blocking", gated(KindEpic),
+			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview), receipt("blocking"), "epic_plan_review_blocking"},
+		{"epic rounds used and plan revised after a blocking review", gated(KindEpic),
+			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan), receipt("blocking"), "epic_plan_review_blocking"},
+		{"epic second round non-blocking", gated(KindEpic),
+			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview), receipt("non_blocking"), ""},
+	}
+	for _, c := range cases {
+		err := PlanningGate(c.item, PhaseImplementing, c.plans, ReadPlanReview(c.raw))
+		got := ""
+		if refusal, ok := AsRefusalV2(err); ok {
+			got = refusal.Code
+		} else if err != nil {
+			t.Fatalf("%s: untyped %v", c.name, err)
+		}
+		if got != c.want {
+			t.Errorf("%s: code = %q, want %q (%v)", c.name, got, c.want, err)
+		}
+	}
+
+	err := PlanningGate(gated(KindFeature), PhaseImplementing, reviewed, ReadPlanReview(receipt("blocking", "non_blocking")))
+	refusal, _ := AsRefusalV2(err)
+	for _, want := range []string{`"finding 0"`, "clawdline dispatch --kind plan_review --work-id w", "--role plan", PlanningGateOverride} {
+		if !strings.Contains(refusal.Message, want) {
+			t.Errorf("blocking refusal does not say %q: %s", want, refusal.Message)
+		}
+	}
+	if strings.Contains(refusal.Message, `"finding 1"`) {
+		t.Errorf("blocking refusal lists a non-blocking finding: %s", refusal.Message)
+	}
+
+	err = PlanningGate(gated(KindEpic), PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview),
+		ReadPlanReview(receipt("blocking")))
+	refusal, _ = AsRefusalV2(err)
+	for _, want := range []string{"used its 2 plan reviews", "raises the review limit", PlanningGateOverride} {
+		if !strings.Contains(refusal.Message, want) {
+			t.Errorf("Epic limit refusal does not say %q: %s", want, refusal.Message)
+		}
+	}
+	if strings.Contains(refusal.Message, "dispatch --kind plan_review") {
+		t.Errorf("Epic limit refusal offers a third review: %s", refusal.Message)
+	}
+
+	many := make([]string, PlanReviewBlockingListLimit+3)
+	for n := range many {
+		many[n] = "blocking"
+	}
+	err = PlanningGate(gated(KindFeature), PhaseImplementing, reviewed, ReadPlanReview(receipt(many...)))
+	refusal, _ = AsRefusalV2(err)
+	if !strings.Contains(refusal.Message, "and 3 more") || strings.Contains(refusal.Message, `"finding 8"`) {
+		t.Errorf("a long blocking list is not bounded: %s", refusal.Message)
+	}
+}
+
+func TestPlanReviewDispatchGateLetsOnlyAReviewThroughABlockingPlan(t *testing.T) {
+	plans := []DocumentV2{{Role: DocumentPlan}, {Role: DocumentPlanReview}}
+	item := ItemV2{ID: "w", Kind: KindEpic, Phase: PhaseAssigned, Cycle: 1, GateSnapshotCycle: 1,
+		GateSnapshotAt: time.Unix(1, 0), PlanningGate: true, AcceptanceCriteria: "It works."}
+	blocking := PlanReviewSummary{Blocking: []string{"no rollback"}}
+	if refusal, ok := AsRefusalV2(PlanReviewDispatchGate(item, "custom", plans, blocking)); !ok || refusal.Code != "epic_plan_review_blocking" {
+		t.Fatalf("a dispatch past a blocking review was not refused")
+	}
+	if err := PlanReviewDispatchGate(item, DocumentPlanReview, plans, blocking); err != nil {
+		t.Fatalf("a new plan review was refused: %v", err)
+	}
+	if err := PlanReviewDispatchGate(item, "custom", plans, PlanReviewSummary{Blocking: nil}); err != nil {
+		t.Fatalf("a non-blocking review stopped a dispatch: %v", err)
+	}
+	if err := PlanReviewDispatchGate(item, "custom", plans, PlanReviewSummary{Legacy: true}); err != nil {
+		t.Fatalf("a legacy review stopped a dispatch: %v", err)
+	}
+	moved := item
+	moved.Phase = PhaseImplementing
+	if err := PlanReviewDispatchGate(moved, "custom", plans, blocking); err != nil {
+		t.Fatalf("an item already implementing was refused: %v", err)
+	}
+	feature := item
+	feature.Kind = KindFeature
+	if err := PlanReviewDispatchGate(feature, "custom", plans, blocking); err != nil {
+		t.Fatalf("a Feature without the review switch was refused: %v", err)
 	}
 }
