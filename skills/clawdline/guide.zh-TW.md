@@ -246,8 +246,8 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 每個項目寫入都會印出 `wrote …; item <id> is at version N` 和項目那一列；steps 與文件請再用 `item show` 讀。
 寫入一律作用在項目當下的版本，除非你帶 `--expected-version`。
 
-你的指派檔若有 **HANDOFF** 段，代表你在接手別的 Session 做到一半的項目（在 implementing、verifying、
-merging 或 deploying 時改派）。規劃之前先讀它指向的交接包。交接包是 daemon 用自己的紀錄和 git 產生的，
+你的指派檔若有 **HANDOFF** 段，代表你在接手別的 Session 做到一半的項目（開始 implementing 之後、
+done 之前改派）。規劃之前先讀它指向的交接包。交接包是 daemon 用自己的紀錄和 git 產生的，
 沒有去問原 owner：項目綁定的 task 與 result、還沒落地的 commit、每個 worktree 未 commit 的改動（存成 patch，
 附 sha256 和在 base 上還原用的 `git apply` 指令）、原 owner 最後一則訊息（讀不到時寫明原因），以及目前
 phase 與還沒完成的 steps。patch 放在指派檔旁邊，worktree 被清掉後仍在。從那裡接著做，不要從頭來。
