@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -34,6 +35,7 @@ const (
 	CloudTerminalRefusalsLimit                = 16
 	CloudTerminalRevocationRetireSecondsLimit = 3
 	CloudTerminalFrameHeartbeatSecondsLimit   = 3
+	CloudTerminalUnconfirmedSecondsLimit      = 15
 )
 
 // TerminalCapacity reports the terminal rail without exposing its keys or
@@ -65,7 +67,7 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		r.Used = int64(len(l.terminalRefusals))
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline,
 		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire,
-		capacity.CloudTerminalFrameHeartbeat:
+		capacity.CloudTerminalFrameHeartbeat, capacity.CloudTerminalUnconfirmed:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -104,33 +106,71 @@ type terminalReceipt struct {
 }
 
 type terminalConnection struct {
-	viewer, id, keyID string
-	key               domaincloud.ContentKey
-	expires           time.Time
-	terminalID        terminal.ID
-	client            string
-	frameSeq          uint64
-	publishedFrameSeq uint64
-	framePendingSeq   uint64
-	framePending      bool
-	watchCancel       context.CancelFunc
-	watchReady        chan struct{}
-	receipts          map[string][]byte
-	receiptOrder      []string
-	rekeyPending      bool
-	denied            bool
-	deniedAt          time.Time
+	viewer, id, keyID      string
+	key                    domaincloud.ContentKey
+	expires                time.Time
+	terminalID             terminal.ID
+	client                 string
+	frameSeq               uint64
+	publishedFrameSeq      uint64
+	framePendingSeq        uint64
+	framePending           bool
+	watchReceiptSeq        uint64
+	watchReceiptPending    bool
+	watchReceiptDeadline   time.Time
+	rekeyReceiptSeq        uint64
+	rekeyReceiptPending    bool
+	activateReceiptSeq     uint64
+	activateReceiptPending bool
+	activateOld            *terminalConnection
+	unconfirmedDeadline    time.Time
+	watchCancel            context.CancelFunc
+	watchReady             chan struct{}
+	receipts               map[string][]byte
+	receiptOrder           []string
+	rekeyPending           bool
+	denied                 bool
+	deniedAt               time.Time
 }
 
 func terminalReceiptSettleID(channel string, seq uint64) string {
 	return channel + "/" + strconv.FormatUint(seq, 10)
 }
 
-func (l *Link) terminalReceiptSettled(channel string, seq uint64) {
+func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercloud.SettleKind) {
 	l.terminalMu.Lock()
+	var failed *terminalConnection
+	var startRekey *terminalConnection
+	var retireOld *terminalConnection
 	for _, connection := range l.terminalConnections {
 		if channel == "term/"+l.identity.MachineID+"/"+connection.viewer+"/"+connection.id && connection.framePending && connection.framePendingSeq == seq {
 			connection.framePending = false
+			if kind != adaptercloud.SettleDelivered {
+				failed = connection
+			} else {
+				connection.unconfirmedDeadline = time.Time{}
+			}
+			break
+		}
+		if channel == terminalReceiptChannel(l.identity.MachineID, connection) {
+			if kind != adaptercloud.SettleDelivered {
+				failed = connection
+			} else if connection.rekeyReceiptPending && connection.rekeyReceiptSeq == seq {
+				connection.rekeyReceiptPending = false
+				startRekey = connection
+			} else if connection.activateReceiptPending && connection.activateReceiptSeq == seq {
+				connection.activateReceiptPending = false
+				connection.rekeyPending = false
+				retireOld = connection.activateOld
+				connection.activateOld = nil
+			} else if connection.watchReceiptPending && connection.watchReceiptSeq == seq {
+				connection.watchReceiptPending = false
+				connection.watchReceiptDeadline = time.Time{}
+				if connection.watchReady != nil {
+					close(connection.watchReady)
+					connection.watchReady = nil
+				}
+			}
 			break
 		}
 	}
@@ -138,9 +178,50 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64) {
 	c := l.terminalRetireAfterReceipt[id]
 	delete(l.terminalRetireAfterReceipt, id)
 	l.terminalMu.Unlock()
+	if failed != nil {
+		l.closeTerminalConnection(failed)
+	}
+	if startRekey != nil {
+		go l.startRekeyTerminalWatch(startRekey)
+	}
+	if retireOld != nil {
+		l.closeTerminalConnection(retireOld)
+	}
 	if c != nil {
 		l.closeTerminalConnection(c)
 	}
+}
+
+func (l *Link) startRekeyTerminalWatch(c *terminalConnection) {
+	svc, err := l.terminalService()
+	if err != nil {
+		l.closeTerminalConnection(c)
+		return
+	}
+	name, _ := l.PinnedTerminalViewer(c.viewer)
+	p := terminals.Principal{Device: c.viewer, Name: name, Cloud: true}
+	if err := svc.Allow(p); err != nil {
+		l.revokeRegisteredTerminal(context.Background(), c)
+		return
+	}
+	l.terminalMu.Lock()
+	id, client := c.terminalID, c.client
+	valid := l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c && !c.denied && c.expires.After(l.opts.Now())
+	l.terminalMu.Unlock()
+	if !valid || !id.Valid() {
+		l.closeTerminalConnection(c)
+		return
+	}
+	if err := l.watchTerminal(context.Background(), svc, p, c, id, client); err != nil {
+		l.closeTerminalConnection(c)
+		return
+	}
+	l.terminalMu.Lock()
+	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c && c.watchReady != nil {
+		close(c.watchReady)
+		c.watchReady = nil
+	}
+	l.terminalMu.Unlock()
 }
 
 func (l *Link) terminalMetadataAction(ctx context.Context, action string, c *terminalConnection) error {
@@ -302,7 +383,12 @@ func (l *Link) sweepTerminalConnections() {
 		l.terminalMu.Lock()
 		denied, deniedAt := c.denied, c.deniedAt
 		l.terminalMu.Unlock()
-		if !c.expires.After(l.opts.Now()) || (denied && !deniedAt.Add(CloudTerminalRevocationRetireSecondsLimit*time.Second).After(l.opts.Now())) {
+		l.terminalMu.Lock()
+		unconfirmedDeadline, watchReceiptDeadline := c.unconfirmedDeadline, c.watchReceiptDeadline
+		l.terminalMu.Unlock()
+		if !c.expires.After(l.opts.Now()) || (!unconfirmedDeadline.IsZero() && !unconfirmedDeadline.After(l.opts.Now())) ||
+			(!watchReceiptDeadline.IsZero() && !watchReceiptDeadline.After(l.opts.Now())) ||
+			(denied && !deniedAt.Add(CloudTerminalRevocationRetireSecondsLimit*time.Second).After(l.opts.Now())) {
 			l.closeTerminalConnection(c)
 		} else if !denied && (err != nil || svc.Allow(terminals.Principal{Device: c.viewer, Cloud: true}) != nil) {
 			l.revokeRegisteredTerminal(context.Background(), c)
@@ -461,6 +547,9 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 			Status: "refused", Error: string(terminal.CodeForbidden)})
 		return
 	}
+	l.terminalMu.Lock()
+	c.unconfirmedDeadline = time.Time{}
+	l.terminalMu.Unlock()
 	if previous := l.terminalReceipt(c, req.RequestID); previous != nil {
 		var original terminalReceipt
 		if json.Unmarshal(previous, &original) != nil || original.Operation != req.Operation || original.TerminalID != req.TerminalID {
@@ -471,8 +560,7 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 				Class: string(domaincloud.ClassCtl), Payload: bad, Key: c.key, KeyID: c.keyID})
 			return
 		}
-		_ = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
-			Class: string(domaincloud.ClassCtl), Payload: previous, Key: c.key, KeyID: c.keyID})
+		_ = l.sendTerminalReceipt(ctx, c, original)
 		return
 	}
 	if !l.terminalReceiptAvailable(c) {
@@ -500,17 +588,8 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 		}
 	}
 	publicationErr := l.sendTerminalReceipt(ctx, c, receipt)
-	if (req.Operation == "open" || req.Operation == "read" || req.Operation == "capture") && receipt.Status == "ok" {
-		if publicationErr != nil {
-			l.closeTerminalConnection(c)
-		} else {
-			l.terminalMu.Lock()
-			if c.watchReady != nil {
-				close(c.watchReady)
-				c.watchReady = nil
-			}
-			l.terminalMu.Unlock()
-		}
+	if (req.Operation == "open" || req.Operation == "read" || req.Operation == "capture") && receipt.Status == "ok" && publicationErr != nil {
+		l.closeTerminalConnection(c)
 	}
 	if (req.Operation == "open" || req.Operation == "read" || req.Operation == "capture") && receipt.Status != "ok" {
 		l.terminalMu.Lock()
@@ -520,20 +599,6 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 		}
 		l.terminalMu.Unlock()
 	}
-	if publicationErr == nil && req.Operation == "activate_connection" && receipt.Status == "ok" {
-		l.terminalMu.Lock()
-		c.rekeyPending = false
-		l.terminalMu.Unlock()
-		var body struct {
-			OldConnection string `json:"old_connection"`
-			FirstFrameSeq uint64 `json:"first_frame_seq"`
-		}
-		if strictTerminalBody(req.Body, &body) {
-			if old := l.getTerminalConnection(p.Device, body.OldConnection); old != nil {
-				l.closeTerminalConnection(old)
-			}
-		}
-	}
 }
 
 func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Service, p terminals.Principal, req terminalRequest) {
@@ -541,9 +606,20 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 	if err != nil {
 		return
 	}
+	preCode := ""
+	var old *terminalConnection
+	if req.Operation == "rekey_connection" {
+		old, preCode = l.terminalRekeySource(p.Device, req)
+	}
 	c := &terminalConnection{viewer: p.Device, id: req.Connection, keyID: req.KeyID, key: key,
 		expires: l.opts.Now().Add(CloudTerminalKeySecondsLimit * time.Second), receipts: map[string][]byte{},
-		rekeyPending: req.Operation == "rekey_connection"}
+		unconfirmedDeadline: l.opts.Now().Add(CloudTerminalUnconfirmedSecondsLimit * time.Second),
+		rekeyPending:        req.Operation == "rekey_connection"}
+	if preCode == "" && old != nil {
+		l.terminalMu.Lock()
+		c.terminalID, c.client = old.terminalID, old.client
+		l.terminalMu.Unlock()
+	}
 	if !l.TerminalViewerCloudCapable(p.Device) {
 		return
 	}
@@ -554,9 +630,12 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 	id := terminalConnectionID(p.Device, req.Connection)
 	if old := l.terminalConnections[id]; old != nil {
 		l.terminalMu.Unlock()
-		if old.keyID == c.keyID && bytes.Equal(old.key.Bytes(), c.key.Bytes()) {
+		if preCode == "" && !old.denied && old.keyID == c.keyID && bytes.Equal(old.key.Bytes(), c.key.Bytes()) {
 			l.sendTerminalReceipt(ctx, old, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
 				Connection: req.Connection, Operation: req.Operation, Status: "ok", Result: l.connectionResult(old)})
+		} else if old.keyID == c.keyID && bytes.Equal(old.key.Bytes(), c.key.Bytes()) {
+			l.sendTerminalReceipt(ctx, old, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+				Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: string(terminal.CodeInvalid)})
 		}
 		return
 	}
@@ -578,7 +657,7 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 		l.closeTerminalConnection(c)
 		return
 	}
-	code := ""
+	code := preCode
 	if !l.TerminalViewerAllowed(p.Device) {
 		code = string(terminal.CodeForbidden)
 	} else if svc == nil {
@@ -591,8 +670,30 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 			Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: code})
 		return
 	}
-	l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
-		Connection: req.Connection, Operation: req.Operation, Status: "ok", Result: l.connectionResult(c)})
+	if err := l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+		Connection: req.Connection, Operation: req.Operation, Status: "ok", Result: l.connectionResult(c)}); err != nil {
+		l.closeTerminalConnection(c)
+	}
+}
+
+func (l *Link) terminalRekeySource(viewer string, req terminalRequest) (*terminalConnection, string) {
+	var body struct {
+		OldConnection string `json:"old_connection"`
+	}
+	if !strictTerminalBody(req.Body, &body) || !validConnection(body.OldConnection) || body.OldConnection == req.Connection {
+		return nil, string(terminal.CodeInvalid)
+	}
+	old := l.getTerminalConnection(viewer, body.OldConnection)
+	if old == nil {
+		return nil, string(terminal.CodeInvalid)
+	}
+	l.terminalMu.Lock()
+	valid := !old.denied && old.terminalID.Valid() && old.expires.After(l.opts.Now())
+	l.terminalMu.Unlock()
+	if !valid {
+		return nil, string(terminal.CodeInvalid)
+	}
+	return old, ""
 }
 
 func (l *Link) connectionResult(c *terminalConnection) any {
@@ -667,11 +768,30 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 	if err != nil {
 		return err
 	}
-	if err = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
-		Class: string(domaincloud.ClassCtl), Payload: data, Key: c.key, KeyID: c.keyID}); err != nil {
-		l.logf("cloud terminal: %s receipt was not delivered: %v", receipt.Operation, err)
+	if l.relay == nil {
+		return ErrRelayNotReady
 	}
 	l.terminalMu.Lock()
+	seq, err := l.relay.PublishTracked(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
+		Class: string(domaincloud.ClassCtl), Payload: data, Key: c.key, KeyID: c.keyID})
+	if err == nil && receipt.Status == "ok" && (receipt.Operation == "open" || receipt.Operation == "read" || receipt.Operation == "capture") && c.watchReady != nil {
+		c.watchReceiptPending = true
+		c.watchReceiptSeq = seq
+		c.watchReceiptDeadline = l.opts.Now().Add(CloudTerminalUnconfirmedSecondsLimit * time.Second)
+	}
+	if err == nil && receipt.Status == "ok" && receipt.Operation == "rekey_connection" && c.rekeyPending {
+		c.rekeyReceiptPending = true
+		c.rekeyReceiptSeq = seq
+	}
+	if err == nil && receipt.Status == "ok" && receipt.Operation == "activate_connection" {
+		if result, ok := receipt.Result.(map[string]any); ok {
+			if oldID, ok := result["retired_connection"].(string); ok {
+				c.activateOld = l.terminalConnections[terminalConnectionID(c.viewer, oldID)]
+				c.activateReceiptSeq = seq
+				c.activateReceiptPending = true
+			}
+		}
+	}
 	if len(c.receiptOrder) < CloudTerminalReceiptsLimit {
 		if _, present := c.receipts[receipt.RequestID]; !present {
 			c.receiptOrder = append(c.receiptOrder, receipt.RequestID)
@@ -679,6 +799,9 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 		c.receipts[receipt.RequestID] = data
 	}
 	l.terminalMu.Unlock()
+	if err != nil {
+		l.logf("cloud terminal: %s receipt was not accepted for delivery: %v", receipt.Operation, err)
+	}
 	return err
 }
 
@@ -809,6 +932,13 @@ func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p 
 			}
 		}
 		unknown := control.Held && control.Holder.Device == p.Device && control.Client == req.Client && control.Unknown
+		if control.Held && control.Holder.Device == p.Device && control.Client == req.Client {
+			l.terminalMu.Lock()
+			if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c {
+				c.client = req.Client
+			}
+			l.terminalMu.Unlock()
+		}
 		return map[string]any{"machine_incarnation": l.machineIncarnation,
 			"control": cloudWireControl(control, p, req.Client), "input_state_unknown": unknown}, nil
 	case "input", "paste":
@@ -926,12 +1056,25 @@ func cloudWireFrame(frame terminal.Frame) contract.TerminalFrame {
 
 func (l *Link) watchTerminal(ctx context.Context, svc *terminals.Service, p terminals.Principal,
 	c *terminalConnection, id terminal.ID, client string) error {
+	if client == "" {
+		l.terminalMu.Lock()
+		if c.terminalID == id {
+			client = c.client
+		}
+		l.terminalMu.Unlock()
+	}
 	watch, err := svc.Watch(ctx, p, id, client)
 	if err != nil {
 		return err
 	}
 	watchCtx, cancel := context.WithCancel(context.Background())
 	l.terminalMu.Lock()
+	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c || c.denied {
+		l.terminalMu.Unlock()
+		watch.Stop()
+		cancel()
+		return context.Canceled
+	}
 	if c.watchCancel != nil {
 		c.watchCancel()
 	}

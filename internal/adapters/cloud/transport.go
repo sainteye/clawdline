@@ -53,8 +53,8 @@ type Options struct {
 	Inbound func(cloud.Envelope, []byte)
 	// OnDisconnect invalidates terminal connection registrations tied to this socket.
 	OnDisconnect func()
-	// OnSettled receives a correlated relay answer after the spool settles it.
-	OnSettled func(channel string, seq uint64)
+	// OnSettled receives the correlated relay outcome after the spool settles it.
+	OnSettled func(channel string, seq uint64, kind SettleKind)
 	// PublicKeyFor answers the pinned public key for a sender.
 	PublicKeyFor cloud.PublicKeyFor
 	// ContentKey opens an inbound envelope. A nil one means inbound envelopes
@@ -563,8 +563,8 @@ func (t *Transport) handleAck(data []byte) {
 		// far side has already claimed.
 		t.logf("cloud receipt ignored seq=%d ch=%s reason=already_settled", frame.Seq, frame.Ch)
 	}
-	if t.opts.OnSettled != nil {
-		t.opts.OnSettled(frame.Ch, frame.Seq)
+	if result != SettleResultLateIgnored && t.opts.OnSettled != nil {
+		t.opts.OnSettled(frame.Ch, frame.Seq, kind)
 	}
 }
 
@@ -579,10 +579,10 @@ func (t *Transport) handlePublishError(data []byte) {
 	if t.opts.Spool == nil {
 		return
 	}
-	if _, err := t.opts.Spool.Settle(frame.Seq, frame.Ch, SettlePeerError); err != nil {
+	if result, err := t.opts.Spool.Settle(frame.Seq, frame.Ch, SettlePeerError); err != nil {
 		t.logf("cloud could not settle a refusal seq=%d reason=%v", frame.Seq, err)
-	} else if t.opts.OnSettled != nil {
-		t.opts.OnSettled(frame.Ch, frame.Seq)
+	} else if result != SettleResultLateIgnored && t.opts.OnSettled != nil {
+		t.opts.OnSettled(frame.Ch, frame.Seq, SettlePeerError)
 	}
 }
 
