@@ -34,7 +34,7 @@ func (s *Store) UnstartedBoardItems(ctx context.Context, conversation string) ([
 	if conversation == "" {
 		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,version FROM work_v2_items
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,version FROM work_v2_items
 		WHERE owner_session=? AND `+unstartedBoardItem+` ORDER BY id`, conversation)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (s *Store) OpenSessionResponsibilities(ctx context.Context) ([]SessionRespo
 	}
 	out := []SessionResponsibility{}
 	for _, q := range queries {
-		rows, err := s.db.QueryContext(ctx, q.sql)
+		rows, err := s.rd.QueryContext(ctx, q.sql)
 		if err != nil {
 			return nil, err
 		}

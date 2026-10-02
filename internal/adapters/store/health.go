@@ -254,7 +254,7 @@ type Health struct {
 // store and a store with no tasks are different facts.
 func (s *Store) Health(ctx context.Context) Health {
 	var h Health
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM broker_tasks`).Scan(&h.Tasks); err != nil {
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM broker_tasks`).Scan(&h.Tasks); err != nil {
 		h.Err = err.Error()
 		return h
 	}
@@ -273,9 +273,9 @@ func (s *Store) EventCount(ctx context.Context, kind string) (int, error) {
 	var n int
 	var err error
 	if kind == "" {
-		err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events`).Scan(&n)
+		err = s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM events`).Scan(&n)
 	} else {
-		err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE kind = ?`, kind).Scan(&n)
+		err = s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE kind = ?`, kind).Scan(&n)
 	}
 	return n, err
 }

@@ -491,6 +491,17 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			}
 			return s.readings.AnswerReading()
 		},
+		// The store's read-only pool: connections in use now, and how often a
+		// reader has waited for one since the daemon opened it.
+		capacity.StoreReadConnections: func() capacity.Reading {
+			if s.store == nil {
+				return capacity.Reading{Known: true, Note: "this server has no store"}
+			}
+			pool := s.store.ReadPool()
+			return capacity.Reading{Known: true, Used: int64(pool.InUse),
+				Note: fmt.Sprintf("%d open; %d waits totalling %s", pool.OpenConnections,
+					pool.WaitCount, pool.WaitDuration.Round(time.Millisecond))}
+		},
 		capacity.ScreensCaptureSlots: func() capacity.Reading {
 			if s.inventory.Held == nil {
 				return capacity.Reading{Known: true, Note: "this inventory takes no screen captures"}

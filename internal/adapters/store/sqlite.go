@@ -27,7 +27,17 @@ import (
 )
 
 type Store struct {
+	// db is the one connection every write, and every read made inside a
+	// write, goes through; writers queue for it (D08, D25).
 	db *sql.DB
+	// rd is the read-only pool for reads made outside a write. WAL lets a
+	// reader see the last committed state while a writer holds db; before rd
+	// existed every read queued behind every write on db's one connection, so
+	// one slow commit (synchronous=FULL on a loaded disk) made every record
+	// read in a Session snapshot time out together and each row's work, title
+	// and attention turned unknown for that snapshot. query_only refuses a
+	// write here at the SQLite layer. Bounded by ReadConnectionsLimit.
+	rd *sql.DB
 	// stats is the account of this process's writes; see health.go.
 	stats *writeStats
 	// reads is what this handle has handed back to readers (G33).
@@ -238,14 +248,55 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, stats: newWriteStats(), owner: newOwner(), images: images}
+	rd, err := openReader(path)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	s := &Store{db: db, rd: rd, stats: newWriteStats(), owner: newOwner(), images: images}
 	if _, err := s.SweepReferenceImages(context.Background(), time.Now()); err != nil {
 		log.Printf("store: the reference-image sweep at open failed: %v", err)
 	}
 	return s, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+// ReadConnectionsLimit is how many read-only connections a handle keeps for
+// reads made outside a write. A reader past it waits for one to come free, on
+// its own context; writes never wait for a reader. Four covers the readers
+// that arrive together — a Session snapshot, the broker's beat, the capacity
+// beat and a console page — without holding a file handle per goroutine.
+const ReadConnectionsLimit = 4
+
+// openReader opens the read-only pool on the same file, after Open's writer
+// has created and migrated it. Each connection carries its own busy_timeout
+// and query_only, as the writer's settings ride on its DSN.
+func openReader(path string) (*sql.DB, error) {
+	rd, err := sql.Open("sqlite", path+"?_busy_timeout="+strconv.Itoa(busyTimeoutMS)+
+		"&_foreign_keys=1&_pragma=query_only(1)")
+	if err != nil {
+		return nil, err
+	}
+	rd.SetMaxOpenConns(ReadConnectionsLimit)
+	rd.SetMaxIdleConns(ReadConnectionsLimit)
+	if err := rd.Ping(); err != nil {
+		rd.Close()
+		return nil, classify(err)
+	}
+	return rd, nil
+}
+
+// ReadPool is the read-only pool's own account, for the capacity register:
+// how many of its connections are open and in use, and how often and how
+// long a reader has waited for one.
+func (s *Store) ReadPool() sql.DBStats { return s.rd.Stats() }
+
+func (s *Store) Close() error {
+	rerr := s.rd.Close()
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	return rerr
+}
 
 // Append records one thing that happened.
 //
@@ -271,7 +322,7 @@ func (s *Store) Append(ctx context.Context, e Event) error {
 func (s *Store) Counts(ctx context.Context) (events, tasks int, err error) {
 	q := func(sql string) (int, error) {
 		var n int
-		e := s.db.QueryRowContext(ctx, sql).Scan(&n)
+		e := s.rd.QueryRowContext(ctx, sql).Scan(&n)
 		return n, e
 	}
 	if events, err = q(`SELECT COUNT(*) FROM events`); err != nil {

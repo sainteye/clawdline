@@ -472,7 +472,7 @@ func (s *Store) Proposals(ctx context.Context, q ProposalQuery) ([]work.Proposal
 	}
 	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, q.Limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +493,7 @@ func (s *Store) ProposalRow(ctx context.Context, id string) (work.Proposal, erro
 	if err := reading(); err != nil {
 		return work.Proposal{}, err
 	}
-	return scanProposal(s.db.QueryRowContext(ctx, `SELECT `+proposalColumns+` FROM proposals WHERE id = ?`, id))
+	return scanProposal(s.rd.QueryRowContext(ctx, `SELECT `+proposalColumns+` FROM proposals WHERE id = ?`, id))
 }
 
 // ProposalTally is what /v1/diagnostics says about proposals, counted from
@@ -521,7 +521,7 @@ func (s *Store) ProposalTally(ctx context.Context) (ProposalTally, error) {
 	}
 	out := ProposalTally{ByState: map[work.ProposalState]int64{}}
 	var oldest sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT
+	if err := s.rd.QueryRowContext(ctx, `SELECT
 		COALESCE(SUM(ask = 1), 0), COALESCE(SUM(ask = 0), 0),
 		COALESCE(SUM(asked_inline_at IS NOT NULL), 0),
 		COALESCE(SUM(asked_inline_at IS NOT NULL AND ask = 0), 0),
@@ -532,7 +532,7 @@ func (s *Store) ProposalTally(ctx context.Context) (ProposalTally, error) {
 	if oldest.Valid {
 		out.OldestPending = time.Unix(oldest.Int64, 0)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM proposals GROUP BY state`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT state, COUNT(*) FROM proposals GROUP BY state`)
 	if err != nil {
 		return ProposalTally{}, err
 	}
@@ -572,7 +572,7 @@ func (s *Store) UnproposedLines(ctx context.Context, limit int) ([]UnproposedLin
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT t.work_id, MIN(t.task_id), MIN(t.owner_session), MIN(t.title),
+	rows, err := s.rd.QueryContext(ctx, `SELECT t.work_id, MIN(t.task_id), MIN(t.owner_session), MIN(t.title),
 		MIN(t.project) FROM todos t
 		WHERE t.state IN ('open','handed_off') AND t.work_id IS NOT NULL AND t.task_id IS NOT NULL
 		  AND NOT EXISTS (SELECT 1 FROM work w WHERE w.id = t.work_id)
@@ -633,7 +633,7 @@ func (s *Store) TodosOfWork(ctx context.Context, workID string) ([]work.Todo, er
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+todoColumns+` FROM todos WHERE work_id = ?`, workID)
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+todoColumns+` FROM todos WHERE work_id = ?`, workID)
 	if err != nil {
 		return nil, err
 	}
@@ -770,7 +770,7 @@ func (s *Store) Decisions(ctx context.Context, q DecisionQuery) ([]work.Decision
 	}
 	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, q.Limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +791,7 @@ func (s *Store) DecisionRow(ctx context.Context, id string) (work.Decision, erro
 	if err := reading(); err != nil {
 		return work.Decision{}, err
 	}
-	return scanDecision(s.db.QueryRowContext(ctx, `SELECT `+decisionColumns+` FROM decisions WHERE id = ?`, id))
+	return scanDecision(s.rd.QueryRowContext(ctx, `SELECT `+decisionColumns+` FROM decisions WHERE id = ?`, id))
 }
 
 // DecisionCounts is how many decisions are in each state.
@@ -799,7 +799,7 @@ func (s *Store) DecisionCounts(ctx context.Context) (map[work.DecisionState]int6
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM decisions GROUP BY state`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT state, COUNT(*) FROM decisions GROUP BY state`)
 	if err != nil {
 		return nil, err
 	}
@@ -832,7 +832,7 @@ func (s *Store) ids(ctx context.Context, query string, args ...any) ([]string, e
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -888,7 +888,7 @@ func (s *Store) HasDigest(ctx context.Context, key string) (bool, error) {
 		return false, err
 	}
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM digests WHERE key = ?`, key).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM digests WHERE key = ?`, key).Scan(&n)
 	return n > 0, err
 }
 
@@ -910,7 +910,7 @@ func (s *Store) Digests(ctx context.Context, kind work.DigestKind, beforeFrom in
 	}
 	query += ` ORDER BY from_at DESC, key DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -937,7 +937,7 @@ func (s *Store) DigestCount(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM digests`).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM digests`).Scan(&n)
 	return n, err
 }
 
@@ -954,11 +954,11 @@ func (s *Store) MovesBetween(ctx context.Context, from, to time.Time, limit int)
 		return nil, 0, err
 	}
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM moves WHERE at >= ? AND at < ?`,
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM moves WHERE at >= ? AND at < ?`,
 		from.Unix(), to.Unix()).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.seq, m.work_id, m.from_s, m.to_s, m.state, m.trigger, m.actor,
+	rows, err := s.rd.QueryContext(ctx, `SELECT m.seq, m.work_id, m.from_s, m.to_s, m.state, m.trigger, m.actor,
 		m.evidence, m.at, w.title FROM moves m JOIN work w ON w.id = m.work_id
 		WHERE m.at >= ? AND m.at < ? ORDER BY m.seq LIMIT ?`, from.Unix(), to.Unix(), limit)
 	if err != nil {
@@ -995,7 +995,7 @@ func (s *Store) ProposalsClosedBetween(ctx context.Context, state work.ProposalS
 	case work.ProposalWithdrawn:
 		column = "withdrawn_at"
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+proposalColumns+` FROM proposals WHERE state = ? AND `+column+
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+proposalColumns+` FROM proposals WHERE state = ? AND `+column+
 		` >= ? AND `+column+` < ? ORDER BY `+column+`, id LIMIT ?`, string(state), from.Unix(), to.Unix(), limit)
 	if err != nil {
 		return nil, err
@@ -1018,7 +1018,7 @@ func (s *Store) DecisionsClosedBetween(ctx context.Context, state work.DecisionS
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+decisionColumns+` FROM decisions WHERE state = ?
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+decisionColumns+` FROM decisions WHERE state = ?
 		AND answered_at >= ? AND answered_at < ? ORDER BY answered_at, id LIMIT ?`,
 		string(state), from.Unix(), to.Unix(), limit)
 	if err != nil {
@@ -1043,7 +1043,7 @@ func (s *Store) HandedOffTodos(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM todos WHERE state = 'handed_off'`).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM todos WHERE state = 'handed_off'`).Scan(&n)
 	return n, err
 }
 

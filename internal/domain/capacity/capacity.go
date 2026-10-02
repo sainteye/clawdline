@@ -260,7 +260,9 @@ const (
 	SnippetsScope = "snippets.scope"
 	// The screens the session list reads: how many captures may be in flight
 	// at once, and how many screens are held between them.
-	ScreensCaptureSlots   = "screens.capture_slots"
+	ScreensCaptureSlots = "screens.capture_slots"
+	// The store's read-only connections for reads made outside a write.
+	StoreReadConnections  = "store.read_connections"
 	CacheTerminalScreens  = "cache.terminal_screens"
 	CacheSessionInventory = "cache.session_inventory"
 	// An iTerm2 that stops answering Apple Events writes its own diagnosis:
@@ -1254,6 +1256,18 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.ScreenCaptureLimit"},
+		},
+		{
+			// The store's read-only connections (internal/adapters/store,
+			// sqlite.go openReader). Reads made outside a write use them, so
+			// they no longer queue behind the one write connection; past the
+			// limit a reader waits for one on its own context and is refused
+			// when that context ends. Writes never wait for a reader.
+			Name: StoreReadConnections, Class: Buffer, Unit: Rows,
+			Limit: 4, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.ReadConnectionsLimit"},
 		},
 		{
 			// The last complete per-terminal-source inventory kept across a

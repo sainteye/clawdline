@@ -31,7 +31,7 @@ func (s *Store) LatestEffects(ctx context.Context, kind string) ([]Effect, error
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT `+effectColumns+` FROM outbox WHERE id IN
 		   (SELECT MAX(id) FROM outbox WHERE kind = ? GROUP BY subject)
 		 ORDER BY subject ASC`, kind)

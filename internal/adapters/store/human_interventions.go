@@ -165,7 +165,7 @@ func (t *WorkV2Tx) PutHumanIntervention(prev, next work.HumanIntervention) error
 }
 
 func (s *Store) HumanInterventions(ctx context.Context, conversation string) ([]work.HumanIntervention, int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+humanInterventionColumns+` FROM human_interventions WHERE target_conversation=? AND resolved_at IS NULL ORDER BY created_at DESC,id LIMIT ?`, conversation, HumanInterventionsOpenLimit)
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+humanInterventionColumns+` FROM human_interventions WHERE target_conversation=? AND resolved_at IS NULL ORDER BY created_at DESC,id LIMIT ?`, conversation, HumanInterventionsOpenLimit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -183,7 +183,7 @@ func (s *Store) HumanInterventions(ctx context.Context, conversation string) ([]
 		return nil, 0, err
 	}
 	rows.Close()
-	rows, err = s.db.QueryContext(ctx, `SELECT `+humanInterventionColumns+` FROM human_interventions WHERE target_conversation=? AND resolved_at IS NOT NULL ORDER BY resolved_at DESC,id LIMIT ?`, conversation, HumanInterventionsRecentLimit)
+	rows, err = s.rd.QueryContext(ctx, `SELECT `+humanInterventionColumns+` FROM human_interventions WHERE target_conversation=? AND resolved_at IS NOT NULL ORDER BY resolved_at DESC,id LIMIT ?`, conversation, HumanInterventionsRecentLimit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -201,16 +201,16 @@ func (s *Store) HumanInterventions(ctx context.Context, conversation string) ([]
 	}
 	rows.Close()
 	var pruned int64
-	err = s.db.QueryRowContext(ctx, `SELECT pruned_resolved FROM human_interventions_retention WHERE singleton=1`).Scan(&pruned)
+	err = s.rd.QueryRowContext(ctx, `SELECT pruned_resolved FROM human_interventions_retention WHERE singleton=1`).Scan(&pruned)
 	return out, pruned, err
 }
 
 func (s *Store) HumanInterventionCapacityCounts(ctx context.Context) (int64, int64, error) {
 	var open, total int64
-	if err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM human_interventions WHERE resolved_at IS NULL GROUP BY target_conversation)`).Scan(&open); err != nil {
+	if err := s.rd.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM human_interventions WHERE resolved_at IS NULL GROUP BY target_conversation)`).Scan(&open); err != nil {
 		return 0, 0, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM human_interventions`).Scan(&total); err != nil {
+	if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM human_interventions`).Scan(&total); err != nil {
 		return 0, 0, err
 	}
 	return open, total, nil
@@ -220,7 +220,7 @@ func (s *Store) HumanInterventionCapacityCounts(ctx context.Context) (int64, int
 // A missing key means zero only when this query succeeded; callers must not
 // turn a failed read into an empty map.
 func (s *Store) OpenHumanInterventionCounts(ctx context.Context) (map[string]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT target_conversation,COUNT(*) FROM human_interventions WHERE resolved_at IS NULL GROUP BY target_conversation`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT target_conversation,COUNT(*) FROM human_interventions WHERE resolved_at IS NULL GROUP BY target_conversation`)
 	if err != nil {
 		return nil, err
 	}

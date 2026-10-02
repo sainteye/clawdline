@@ -183,7 +183,7 @@ func (s *Store) RecordSquadSkillEvent(ctx context.Context, capability string, ev
 
 func (s *Store) SquadEventHead(ctx context.Context) (int64, error) {
 	var head int64
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq),0) FROM squad_skill_events`).Scan(&head)
+	err := s.rd.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq),0) FROM squad_skill_events`).Scan(&head)
 	return head, classify(err)
 }
 
@@ -192,7 +192,7 @@ func (s *Store) SquadEventsAfter(ctx context.Context, after int64, pageRows int)
 	if after < 0 || pageRows < 1 || pageRows > MaxSquadEventPageRows {
 		return nil, false, ErrSquadEventInvalid
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT seq,receipt_id,snapshot_id,conversation_id,definition_id,scope_id,
+	rows, err := s.rd.QueryContext(ctx, `SELECT seq,receipt_id,snapshot_id,conversation_id,definition_id,scope_id,
 		skill_id,skill_version,status,failure_code,at FROM squad_skill_events
 		WHERE seq>? ORDER BY seq LIMIT ?`, after, pageRows+1)
 	if err != nil {

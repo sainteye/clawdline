@@ -60,7 +60,7 @@ func (s *Store) ReserveScheduleWebhookDelivery(ctx context.Context, fresh Schedu
 
 func (s *Store) ScheduleWebhookDelivery(ctx context.Context, id string) (ScheduleWebhookDelivery, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT body FROM schedule_webhook_deliveries WHERE delivery_id = ?`, id).Scan(&raw)
+	err := s.rd.QueryRowContext(ctx, `SELECT body FROM schedule_webhook_deliveries WHERE delivery_id = ?`, id).Scan(&raw)
 	if err != nil {
 		return ScheduleWebhookDelivery{}, err
 	}
@@ -89,7 +89,7 @@ func (s *Store) SaveScheduleWebhookDelivery(ctx context.Context, row ScheduleWeb
 }
 
 func (s *Store) ScheduleWebhookDeliveriesToResume(ctx context.Context) ([]ScheduleWebhookDelivery, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT body FROM schedule_webhook_deliveries
+	rows, err := s.rd.QueryContext(ctx, `SELECT body FROM schedule_webhook_deliveries
 		ORDER BY updated_at, delivery_id`)
 	if err != nil {
 		return nil, err
