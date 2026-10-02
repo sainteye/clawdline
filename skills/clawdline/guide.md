@@ -333,7 +333,10 @@ verification gates" in `clawdline guide board` before entering `verifying`.
 **9. Close your Session** once the item is `done` or `cancelled`: `clawdline session close`. It
 audits your tasks, landings, unacknowledged completion notices, to-dos and owned unfinished Board
 items, prints every blocker with who moves it, and closes only when closeability is `safe`; it never
-forces. `--dry-run` audits without closing.
+forces. `--dry-run` audits without closing. You run it inside your own turn, so when the only
+thing left is that turn (`terminal_working`), the close is scheduled and takes effect when this turn
+ends, if nothing else is owed by then: make `session close` the very last command, after
+`session report`, and type nothing after it. A daemon restart before then drops it; run it again.
 
 **When something is refused.** `version_conflict`: run the same command again; it rereads the
 version. `steps_incomplete`: a step is still open. Any other code: §12, then the part that covers

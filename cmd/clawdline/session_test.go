@@ -499,3 +499,55 @@ func TestConversationFromEnvTakesOneAssistantOrTheFlag(t *testing.T) {
 		t.Fatalf("requests = %+v", seen)
 	}
 }
+
+// A Session whose only blocker is its own turn: the dry run says a real run
+// would schedule, and the real run posts the close and says it waits for the
+// turn to end. Another blocker beside the turn still closes nothing.
+func TestSessionCloseDuringItsOwnTurnIsScheduled(t *testing.T) {
+	audit := func(extra string) string {
+		return `{"terminal_id":"%84","state":"blocked","version":"v1","authority":"self","reasons":[` +
+			`{"code":"terminal_working","kind":"obligation","subject_kind":"session","subject_id":"%84","mover":{"kind":"session","self":true}}` +
+			extra + `]}`
+	}
+	answer := func(a string) func(r *http.Request) (int, string) {
+		return func(r *http.Request) (int, string) {
+			if r.Method == http.MethodPost {
+				return http.StatusAccepted, `{"ok":true,"id":"%84","action":"close_scheduled"}`
+			}
+			return http.StatusOK, a
+		}
+	}
+	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+
+	s, b := newStandIn(t, answer(audit("")))
+	var out, errs bytes.Buffer
+	if code := closeSession(&out, &errs, b, "", "%84", true, env); code != 0 ||
+		!strings.Contains(out.String(), "would schedule") {
+		t.Fatalf("dry run: %d %q %q", code, out.String(), errs.String())
+	}
+	for _, r := range s.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatal("a dry run posted the close")
+		}
+	}
+
+	_, b = newStandIn(t, answer(audit("")))
+	out.Reset()
+	errs.Reset()
+	if code := closeSession(&out, &errs, b, "", "%84", false, env); code != 0 ||
+		!strings.Contains(out.String(), "close scheduled") || !strings.Contains(out.String(), "restart") {
+		t.Fatalf("real run: %d %q %q", code, out.String(), errs.String())
+	}
+
+	s, b = newStandIn(t, answer(audit(`,{"code":"board_item_open","kind":"obligation","subject_id":"w1","mover":{"kind":"session","self":true}}`)))
+	out.Reset()
+	errs.Reset()
+	if code := closeSession(&out, &errs, b, "", "%84", false, env); code != 1 {
+		t.Fatalf("another blocker: %d %q %q", code, out.String(), errs.String())
+	}
+	for _, r := range s.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatal("another blocker posted the close")
+		}
+	}
+}

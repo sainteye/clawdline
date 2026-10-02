@@ -303,3 +303,31 @@ vocabulary gives its absence none.
 3. **Shipped.** CAS-bound close route and UI badge.
 4. Idempotent targeted deep audit.
 5. Durable audit history only if operational evidence shows it is needed.
+
+## A Session's own close takes effect when its turn ends
+
+`clawdline session close` (`POST /v1/work/v2/agent/sessions/<terminal>/close`) is run by the agent
+from inside its own turn, so its terminal reads `working` and `terminal_working` (mover: this
+session) blocked it every time; observed 2026-10-02 against the daemon built from 37b403d8. Now,
+when the caller is the Session itself and that is the **only** reason, the route records the request
+and answers `202 {"ok":true,"action":"close_scheduled","id":"<terminal>"}` with a
+`session.close_scheduled` event. Any other blocker is still `close_blocked` with every reason; an
+unknown closeability is still refused; `force` is still refused; an Epic owner closing a Feature
+Root is never scheduled — it closes only an idle Session. `--dry-run` prints that the only thing
+left is this turn and exits 0.
+
+The broker's beat (`StartBroker`, every 5 s) sweeps the waiting requests
+(`internal/transport/http/agent_close_schedule.go`). Each pass re-runs the full agent audit
+(`agentAuditClose`: the list's closeability, unacknowledged completions, children and worktrees):
+
+- still only its turn: it keeps waiting;
+- `safe`: it closes through the same `Close(ctx, terminal, false)` as the immediate route and records
+  `session.closed`;
+- the pane holds another conversation, the Session is gone, or anything else blocks it: the request
+  is dropped with `session.close_schedule_dropped` naming why and the reasons;
+- the inventory did not complete: no answer either way, it waits.
+
+Bounds (limits N71): one request per terminal (a repeat answers the same 202 and adds nothing), 16
+waiting at once (the 17th is refused `429 close_schedule_full`), and 15 minutes of waiting, after
+which a still-working terminal's request is dropped `expired`. The requests live in memory: a daemon
+restart drops them, and the agent or the person runs the close again.

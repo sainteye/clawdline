@@ -345,7 +345,13 @@ func closeSession(stdout, stderr io.Writer, b *broker, conversation, terminal st
 		return 1
 	}
 	printCloseAudit(stdout, audit)
-	if audit.State != "safe" {
+	turn := audit.onlyThisTurn()
+	if turn && dryRun {
+		fmt.Fprintf(stdout, "%s: the only thing left is this turn; a real run would schedule the close for when "+
+			"the turn ends (dry run: nothing was scheduled).\n", terminal)
+		return 0
+	}
+	if audit.State != "safe" && !turn {
 		fmt.Fprintf(stderr, "clawdline session close: %s is %s; nothing was closed.\n", terminal, audit.State)
 		return 1
 	}
@@ -360,7 +366,26 @@ func closeSession(stdout, stderr io.Writer, b *broker, conversation, terminal st
 		fmt.Fprintln(stderr, "clawdline session close:", err)
 		return 1
 	}
+	if turn && c.Status == http.StatusAccepted {
+		fmt.Fprintf(stdout, "%s: close scheduled. It is carried out when this turn ends, if nothing else is owed by "+
+			"then; type nothing after this command. A daemon restart before then drops it: run it again.\n", terminal)
+		return 0
+	}
 	return report(stdout, stderr, "session close", c)
+}
+
+// onlyThisTurn is the daemon's own test (agent_close_schedule.go): a Session
+// closing itself whose one blocker is the turn it is running.
+func (audit sessionCloseAudit) onlyThisTurn() bool {
+	if audit.Authority != "self" || audit.State != "blocked" || len(audit.Reasons) == 0 {
+		return false
+	}
+	for _, r := range audit.Reasons {
+		if r.Code != "terminal_working" || r.SubjectID != audit.TerminalID {
+			return false
+		}
+	}
+	return true
 }
 
 // printCloseAudit names every blocker and who moves it.
