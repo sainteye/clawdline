@@ -815,7 +815,8 @@ type AssignWorkV2 struct {
 	Actor           string
 	AssignmentID    string
 	// Claim is the person's message a Session claims the item on
-	// (ClaimFromSession); nil for a person's own assignment.
+	// (ClaimFromSession), or, with Claim.Assigned, assigns it to a new
+	// Session on (RunAssignment); nil for a person's own assignment.
 	Claim *work.CreatedViaV2
 	// EpicOwner is the Session assigning a child of the Epic it owns
 	// (epic_children.go); empty for a person's own assignment. The owner
@@ -922,6 +923,11 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			return work.RefuseV2("item_terminal", "Reopen terminal work before assigning it.")
 		}
 		if c.Claim != nil {
+			if c.Claim.Assigned {
+				if err := runMayAssign(prev, c); err != nil {
+					return err
+				}
+			}
 			if err := claimable(tx, prev, c.Actor); err != nil {
 				return err
 			}
@@ -1016,7 +1022,10 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			fields["previous_session"] = old.SessionID
 		}
 		if c.Claim != nil {
-			fields["via_run"], fields["claimed"], fields["excerpt"] = c.Claim.Run, true, c.Claim.Excerpt
+			fields["via_run"], fields["claimed"], fields["excerpt"] = c.Claim.Run, !c.Claim.Assigned, c.Claim.Excerpt
+			if c.Claim.Assigned {
+				fields["assigned_by"], fields["persona"] = c.Claim.Session, c.Claim.Persona
+			}
 		}
 		if err := tx.PutItem(prev, next, "item.assigned", c.Actor, payload(fields)); err != nil {
 			return err

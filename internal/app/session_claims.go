@@ -70,7 +70,7 @@ func claimable(tx *store.WorkV2Tx, prev work.ItemV2, actor string) error {
 		return err
 	} else if claimed >= runClaimLimit {
 		return workV2Error(http.StatusTooManyRequests, "run_claims_exhausted",
-			fmt.Sprintf("That message has already had %d items claimed, as many as one message may; nothing was claimed. "+
+			fmt.Sprintf("That message has already had %d items claimed or assigned, as many as one message may; nothing was written. "+
 				"Ask the person to send another message if they want more.", runClaimLimit))
 	}
 	return nil

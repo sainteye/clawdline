@@ -648,7 +648,7 @@ func TestItemChildSaysAnAssignmentThatFailed(t *testing.T) {
 // its assign route; without a Session named it asks nothing.
 func TestItemAssignPostsTheChosenSession(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
-		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4}}`
+		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4,"parent_id":"epic-1"}}`
 	})
 	var out, errs bytes.Buffer
 	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, assistant: "codex", model: "m"}},
@@ -669,6 +669,69 @@ func TestItemAssignPostsTheChosenSession(t *testing.T) {
 	if code := sessionItem(&out, &errs, b, "assign", itemFlags{}, []string{"child-1"}, thinConversation, "", envOf(nil)); code != 2 ||
 		len(s.requests()) != 0 {
 		t.Fatalf("no Session named: exit %d, %d requests", code, len(s.requests()))
+	}
+}
+
+// `item assign --new` on an item that is no Epic's child goes under the
+// person's message: it reads this conversation's latest run (or --run) and
+// sends it as via.run. An existing Session is refused before anything is
+// asked, and so is a conversation with no run, before the assignment.
+func TestItemAssignOfAnOrdinaryItemGoesUnderThePersonsMessage(t *testing.T) {
+	ordinary := `{"ok":true,"item":{"id":"item-1","title":"Notes","kind":"feature","phase":"created","owner_session":null,"version":3}}`
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if strings.HasSuffix(r.URL.Path, "/run") {
+			return 200, `{"ok":true,"run":{"id":"` + itemRun + `","session_id":"` + thinConversation + `"}}`
+		}
+		return 200, ordinary
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, assistant: "claude", persona: "security"}},
+		[]string{"item-1"}, thinConversation, "k-run", envOf(nil)); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 3 || seen[1].EscapedPath != "/v1/orchestrator/sessions/"+thinConversation+"/run" ||
+		seen[2].EscapedPath != "/v1/work/v2/agent/items/item-1/assign" || seen[2].Key != "k-run" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	var body struct {
+		Mode    string            `json:"mode"`
+		Persona string            `json:"persona"`
+		Version int64             `json:"expected_version"`
+		Via     map[string]string `json:"via"`
+	}
+	if err := json.Unmarshal(seen[2].Body, &body); err != nil || body.Mode != "new_session" || body.Persona != "security" ||
+		body.Version != 3 || body.Via["run"] != itemRun {
+		t.Fatalf("body = %s", seen[2].Body)
+	}
+
+	s, b = newStandIn(t, func(r *http.Request) (int, string) { return 200, ordinary })
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{terminal: "%9"}},
+		[]string{"item-1"}, thinConversation, "", envOf(nil)); code != 2 || !strings.Contains(errs.String(), "item claim item-1") {
+		t.Fatalf("existing Session: exit %d: %s", code, errs.String())
+	}
+	for _, r := range s.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("an existing Session posted: %+v", r)
+		}
+	}
+
+	s, b = newStandIn(t, func(r *http.Request) (int, string) {
+		if strings.HasSuffix(r.URL.Path, "/run") {
+			return 404, `{"error":"no_run","detail":"no message"}`
+		}
+		return 200, ordinary
+	})
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true}},
+		[]string{"item-1"}, thinConversation, "", envOf(nil)); code == 0 || !strings.Contains(errs.String(), "Nothing was assigned.") {
+		t.Fatalf("no run: exit %d: %s", code, errs.String())
+	}
+	for _, r := range s.requests() {
+		if r.Method == http.MethodPost {
+			t.Fatalf("no run posted: %+v", r)
+		}
 	}
 }
 
@@ -698,7 +761,7 @@ func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
 	}
 
 	s, b = newStandIn(t, func(r *http.Request) (int, string) {
-		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4}}`
+		return 200, `{"ok":true,"item":{"id":"child-1","title":"Part","kind":"feature","phase":"assigned","owner_session":"x","version":4,"parent_id":"epic-1"}}`
 	})
 	if code := sessionItem(&out, &errs, b, "assign", itemFlags{assign: assignFlags{open: true, persona: "code-reviewer"}},
 		[]string{"child-1"}, thinConversation, "", envOf(nil)); code != 0 {
