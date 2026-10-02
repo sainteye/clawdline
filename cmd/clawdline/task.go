@@ -862,6 +862,11 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 		fmt.Fprintln(w, "landing:      none owed")
 	case l.Settlement != "":
 		fmt.Fprintf(w, "landing:      %s (%s)\n", l.State, l.Settlement)
+		// The completion notice says a merge records this by itself and
+		// leaves the other way to here.
+		if l.State == contract.BrokerLandingStatePending && l.Settlement == contract.BrokerLandingSettlementBranchCarriesCommits {
+			fmt.Fprintf(w, "              %s\n", orchestrator.CarriedByHand(t.ID))
+		}
 	default:
 		fmt.Fprintf(w, "landing:      %s\n", l.State)
 	}

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // The expectations here are the Swift app's, from Sources/Transcript.swift and
@@ -332,6 +334,62 @@ func TestAFinishedNoticeWithLeftoversIsANotice(t *testing.T) {
 		if page.Entries[i+1].Kind != KindUser {
 			t.Errorf("%s was read as a notice: %+v", why, page.Entries[i+1])
 		}
+	}
+}
+
+// Version 3 is the completion notice without what its sentence and command
+// already say, and the reminder typed instead of it once it has reached its
+// root. Both are notices; each keeps a closed key set of its own, and a
+// version 3 of any other kind is somebody's text.
+func TestVersion3CompletionNoticesAndRemindersAreNotices(t *testing.T) {
+	const id, notice = "a7000000-0000-4000-8000-000000000003", "a7000000-0000-4000-8000-00000000000b"
+	first := `<clawdline-notice>{"protocol":"clawdline.notice","version":3,"kind":"task_finished","task":{"id":"` + id +
+		`","title":"Board shows Epic children"},"state":"timeout","notice_id":"` + notice +
+		`","outstanding":2,"leftovers":1,"claims_released":true,"body":"task a7000000 finished: timeout — run clawdline task show ` +
+		id + `; that closes this notice"}</clawdline-notice>`
+	bare := `<clawdline-notice>{"protocol":"clawdline.notice","version":3,"kind":"task_stalled","task":{"id":"` + id +
+		`","title":"Board shows Epic children"},"state":"failure","notice_id":"` + notice + `","body":"stalled"}</clawdline-notice>`
+	reminder := `<clawdline-notice>{"protocol":"clawdline.notice","version":3,"kind":"task_reminder","task_id":"` + id +
+		`","notice_id":"` + notice + `","body":"task a7000000 is not acknowledged — run clawdline task show ` + id +
+		`; that closes this notice"}</clawdline-notice>`
+	path := writeRecord(t,
+		claudeRow("user", first),
+		claudeRow("user", bare),
+		claudeRow("user", reminder),
+		claudeRow("user", strings.Replace(first, `"outstanding":2`, `"result_path":"/tmp/r.json"`, 1)),
+		claudeRow("user", strings.Replace(reminder, `"task_id"`, `"task"`, 1)),
+		claudeRow("user", strings.Replace(reminder, `"notice_id":"`+notice+`"`, `"notice_id":"n-1"`, 1)),
+		claudeRow("user", strings.Replace(first, `"task_finished"`, `"workspace_overlap"`, 1)),
+	)
+	page, _ := ReadClaude(path, 10)
+	if len(page.Entries) != 7 {
+		t.Fatalf("%+v", page.Entries)
+	}
+	n := page.Entries[0]
+	if n.Kind != KindNotice || n.Notice.Task == nil || n.Notice.Task.ID != id || n.Notice.State != "timeout" ||
+		n.Notice.NoticeID != notice || n.Notice.Outstanding != 2 || n.Notice.Leftovers != 1 ||
+		!n.Notice.ClaimsReleased || !n.Notice.ChildMayStillWrite || n.Notice.ResultPath != "" {
+		t.Fatalf("first notice: %+v %+v", n, n.Notice)
+	}
+	if b := page.Entries[1]; b.Kind != KindNotice || b.Notice.Kind != "task_stalled" || b.Notice.Outstanding != 0 ||
+		b.Notice.ClaimsReleased {
+		t.Fatalf("a notice with no optional keys: %+v %+v", b, b.Notice)
+	}
+	r := page.Entries[2]
+	if r.Kind != KindNotice || r.Notice.Kind != "task_reminder" || r.Notice.Task == nil || r.Notice.Task.ID != id ||
+		r.Notice.NoticeID != notice || r.Text != r.Notice.Body {
+		t.Fatalf("reminder: %+v %+v", r, r.Notice)
+	}
+	for i, why := range []string{"a version 2 key in version 3", "a reminder with a task object",
+		"a notice id that is not one", "a version 3 of another kind"} {
+		if page.Entries[i+3].Kind != KindUser {
+			t.Errorf("%s was read as a notice: %+v", why, page.Entries[i+3])
+		}
+	}
+	// A reminder handed to the model is the root reading that notice, as the
+	// notice itself is.
+	if read, err := NoticeHanded(writeRecord(t, claudeRow("user", reminder)), session.AssistantClaude, notice); err != nil || !read {
+		t.Fatalf("a reminder in the record: read %v, %v", read, err)
 	}
 }
 

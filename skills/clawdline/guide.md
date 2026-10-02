@@ -549,10 +549,14 @@ You do not call those routes.
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
   is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
   released writes, its branch, how many leftovers) and the one command to run,
-  `clawdline task show <id>`, which closes the notice once it has printed the task. Its JSON still carries
-  `state`, `result_path`, `outstanding`, `leftovers`, `notice_id` and `ack_path`. It retries on a 5→300-second ladder, eight
-  times, until you acknowledge it — and never types while you are showing a menu. A menu does not
-  use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone:
+  `clawdline task show <id>`, which closes the notice once it has printed the task. Its JSON
+  (version 3) carries `task`, `state` and `notice_id`, and `outstanding`, `leftovers` and
+  `claims_released` only when they say something; the result is what `task show` prints. A line
+  that could not be typed is retried on a 5→300-second ladder. Once it is on your screen and you
+  have not read the task, it is not typed again whole: a short `task_reminder` line naming the
+  same command is, on a 2→30-minute ladder — eight typings in all, then it gives up. It never
+  types while you are showing a menu. A menu does not use up those eight: the line waits, for up
+  to 12 hours, and is typed once the menu is gone. The route `task show` sends:
 
   ```
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}

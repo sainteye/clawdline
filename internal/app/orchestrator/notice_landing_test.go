@@ -168,7 +168,7 @@ func TestEveryLandingANoticeNamesIsOneTheGateAccepts(t *testing.T) {
 
 	carried := deliveredTask(t, b, ctx, repo, "e8520000-0000-4000-8000-000000000007")
 	line := b.FinishedLine(carried, "n1")
-	if !strings.Contains(line, "the broker records the landing by itself") {
+	if !strings.Contains(line, "a merge records its landing by itself") {
 		t.Errorf("a committed delivery is not told the merge records itself:\n%s", line)
 	}
 	if strings.Contains(line, "then record the landing") {
@@ -192,10 +192,19 @@ func TestEveryLandingANoticeNamesIsOneTheGateAccepts(t *testing.T) {
 		{carried, map[string]string{"<branch>": "main", "<commit>": merged}},
 		{emptySettled, nil},
 	}
+	// A committed branch's hand-recorded landing is the line `task show`
+	// prints (CarriedByHand); the notice leaves it there.
+	if strings.Contains(line, "clawdline task land") {
+		t.Errorf("a committed delivery's notice still spells out the cherry-pick:\n%s", line)
+	}
 	for _, c := range cases {
-		named := landCommandPattern.FindAllStringSubmatch(b.FinishedLine(c.r, "n1"), -1)
+		said := b.FinishedLine(c.r, "n1")
+		if c.r.ID == carried.ID {
+			said = CarriedByHand(c.r.ID)
+		}
+		named := landCommandPattern.FindAllStringSubmatch(said, -1)
 		if len(named) == 0 {
-			t.Fatalf("task %s: the notice names no clawdline task land:\n%s", c.r.ID, b.FinishedLine(c.r, "n1"))
+			t.Fatalf("task %s: names no clawdline task land:\n%s", c.r.ID, said)
 		}
 		// The first named action is the one tried; the rest are alternatives
 		// to it and would be refused as another claim once it is recorded.
