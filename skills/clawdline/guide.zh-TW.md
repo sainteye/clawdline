@@ -92,6 +92,22 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
 
+**等一個跑很久的指令。** `clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
+跑完會自己結束。等它們要**一次等久一點**，不要每隔幾秒去看一次：每看一次就是一個 turn，要把整段
+context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種 turn（7,220 萬 token），大多花在排隊中的
+`heavy` 上。
+
+- **Claude Code：** 一次 Bash 呼叫，`timeout` 設長一點（最多 `600000` ms）；或用 `run_in_background`，
+  然後什麼都不做，等完成通知進來。不要用 `sleep` 加 `tail` 的迴圈。
+- **Codex（codex-cli 0.157.1，code mode）：** 在 `functions.exec` cell 第一行寫
+  `// @exec: {"yield_time_ms": 600000}`。`exec_command` 回 session ID 後，用 `write_stdin` 等待，
+  `chars` 留空、`yield_time_ms` 設 `300000`；若指令仍在跑，就在同一個 cell 內再等。實測外層設
+  `600000` 可持續 330 秒，空的 `write_stdin` 最多等 300 秒。外層 cell 若仍提早交還，就用設了長
+  `yield_time_ms` 的 `wait` 接著等。
+
+`clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
+允許的長，就放到背景跑。
+
 **用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
 `X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
 `DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"`，再使用
@@ -356,7 +372,8 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 回答。被拒時在 stderr 印 `refused, <status> <code>: <message>` 並以 1 結束；每個 code 的意思見本節最後
 的表。root 是你的對話，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，否則用 `--conversation`；
 child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
-`--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。secret 不會出現在 argv、`task.json` 或
+`--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。daemon 開 worktree 和 child 分頁的期間它什麼都不印；
+它是一個等到 child 建好才回答的請求，所以一次等完就好（§2「等一個跑很久的指令」）。secret 不會出現在 argv、`task.json` 或
 輸出裡，token 的讀法跟其他 thin command 一樣。
 
 `--persona <id>` 讓 child 以內建角色（persona）開啟（`task.json` 的 `persona`）；這個版本沒有的 id 會在
@@ -1333,7 +1350,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 **Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
 
-**編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。它從不拒絕執行：daemon 沒回應、被拒絕、或超過 `--max-wait`（預設 30 分鐘）都會照跑，並在 stderr 說明。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
+**編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。daemon 沒回應、或被它看不懂的理由拒絕時，它不會因此不編譯：照樣執行指令，並在 stderr 說明。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
 
 - `POST /v1/orchestrator/leases`——
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。

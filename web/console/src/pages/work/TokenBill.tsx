@@ -205,6 +205,8 @@ function BillTable({ bill }: { bill: UsageBill }) {
     </table>
     {bill.categories.some((c) => c.upper_bound && c.tokens.total > 0) &&
       <p className="work-usage-note">rules · {workWord("usageRulesWhy")}</p>}
+    {bill.categories.some((c) => c.name === "wait" && c.tokens.total > 0) &&
+      <p className="work-usage-note">wait · {workWord("usageWaitWhy")}</p>}
     {bill.share_of === "tokens" && <p className="work-usage-note">{workWord("usageShareOfTokens")}</p>}
   </>
 }

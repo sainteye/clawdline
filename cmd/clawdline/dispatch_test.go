@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -507,6 +508,41 @@ func TestDispatchNeverPrintsTheSecret(t *testing.T) {
 	}
 	if !strings.Contains(errs.String(), "warning overlap: live task other-task") {
 		t.Fatalf("the overlap warning did not go to stderr beside --json: %s", errs.String())
+	}
+}
+
+// The wait while the daemon opens the child's worktree and tab is one POST
+// that blocks until the daemon answers (internal/transport/http/orchestrator.go
+// brokerDispatch gives it up to three minutes). Nothing is printed and nothing
+// is asked in the meantime: an agent watching this command wakes on every line
+// it prints, so the only output is the final line and its warnings.
+func TestDispatchIsSilentWhileTheDaemonOpensTheWorktree(t *testing.T) {
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"0123456789abcdef"}}
+	s, b := w.daemon(t, func(int) (int, string) {
+		time.Sleep(1500 * time.Millisecond) // the worktree and the tab take a while
+		return 200, dispatchedAnswer("spawning")
+	})
+	var out, errs bytes.Buffer
+	code := dispatchTask(&out, &errs, b, testDispatchOptions(),
+		testDispatchEnv(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation}))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	if errs.Len() != 0 {
+		t.Fatalf("stderr while dispatching: %q", errs.String())
+	}
+	wantOut := "dispatched " + dispatchID + " spawning worktree /wt/" + dispatchID + "\n" +
+		"warning claims_ignored_for_worktree: claims are advisory in a worktree\n" +
+		`warning overlap: live task other-task (working) "Someone else" also claims a.go` + "\n"
+	if out.String() != wantOut {
+		t.Fatalf("stdout:\n%s\nwant:\n%s", out.String(), wantOut)
+	}
+	var asked []string
+	for _, r := range s.requests() {
+		asked = append(asked, r.Method+" "+r.EscapedPath)
+	}
+	if strings.Join(asked, ", ") != "GET /v1/orchestrator/inventory, POST /v1/orchestrator/tasks" {
+		t.Fatalf("asked %v; the wait is one POST, not a poll", asked)
 	}
 }
 

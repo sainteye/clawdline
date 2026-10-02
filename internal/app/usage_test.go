@@ -55,7 +55,7 @@ func TestCodexClassificationChangeReplaysStoredReading(t *testing.T) {
 	if err := json.Unmarshal(row.State, &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.ClassificationVersion != transcript.CodexClassificationVersion {
+	if state.ClassificationVersion != transcript.LedgerClassificationVersion {
 		t.Fatalf("classification version = %d", state.ClassificationVersion)
 	}
 	if usageDue(f, row, true) {
@@ -67,6 +67,42 @@ func TestCodexClassificationChangeReplaysStoredReading(t *testing.T) {
 	}
 	if spent[transcript.CategoryBoard].Total() == 0 {
 		t.Fatalf("replayed board category is empty: %v", spent)
+	}
+}
+
+// A Claude reading made before wait turns were counted is read again, as a
+// Codex one is: one transcript is never counted under two sets of rules.
+func TestClaudeClassificationChangeReplaysStoredReading(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	line := `{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"go build ./..."}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":1000,"output_tokens":10}}}` + "\n"
+	line += `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}` + "\n"
+	line += `{"type":"assistant","message":{"id":"m2","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"sleep 30"}}],"usage":{"input_tokens":1,"cache_read_input_tokens":1010,"cache_creation_input_tokens":5,"output_tokens":10}}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stat, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := usageFile{assistant: "claude", conversation: "c1", path: path, size: stat.Size(), modified: stat.ModTime()}
+	old := store.UsageRow{Assistant: "claude", Conversation: "c1", Path: path, Size: stat.Size(), ModifiedAt: stat.ModTime(),
+		State: json.RawMessage(fmt.Sprintf(`{"offset":%d,"spent":{"impl":{"cache_read":1010}}}`, stat.Size()))}
+	if !usageDue(f, old, true) {
+		t.Fatal("an old Claude classification was not due for replay")
+	}
+	row, reason, err := (&UsageLedger{}).read(f, old, true, time.Now())
+	if err != nil || reason != "" {
+		t.Fatalf("replay: reason %q, error %v", reason, err)
+	}
+	if usageDue(f, row, true) {
+		t.Fatal("unchanged transcript remained due after replay")
+	}
+	var spent map[transcript.Category]transcript.Tokens
+	if err := json.Unmarshal(row.Spent, &spent); err != nil {
+		t.Fatal(err)
+	}
+	if spent[transcript.CategoryWait].CacheRead != 1010 {
+		t.Fatalf("replayed wait = %+v; want the sleeping turn's reread", spent[transcript.CategoryWait])
 	}
 }
 

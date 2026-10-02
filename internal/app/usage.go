@@ -321,13 +321,11 @@ func usageDue(f usageFile, prev store.UsageRow, had bool) bool {
 	if !had {
 		return true
 	}
-	if f.assistant == "codex" {
-		var version struct {
-			ClassificationVersion int `json:"classification_version"`
-		}
-		if json.Unmarshal(prev.State, &version) != nil || version.ClassificationVersion != transcript.CodexClassificationVersion {
-			return true
-		}
+	var version struct {
+		ClassificationVersion int `json:"classification_version"`
+	}
+	if json.Unmarshal(prev.State, &version) != nil || version.ClassificationVersion != transcript.LedgerClassificationVersion {
+		return true
 	}
 	return prev.More || prev.Reason != "" || prev.Size != f.size || !prev.ModifiedAt.Equal(f.modified) ||
 		prev.Path != f.path
@@ -354,7 +352,9 @@ func (u *UsageLedger) read(f usageFile, prev store.UsageRow, had bool, now time.
 			state = transcript.LedgerState{}
 		}
 	}
-	if f.assistant == "codex" && state.ClassificationVersion != transcript.CodexClassificationVersion {
+	if state.ClassificationVersion != transcript.LedgerClassificationVersion {
+		// Read under other category rules: read again, so one transcript is
+		// never counted under two.
 		state = transcript.LedgerState{}
 	}
 	res, err := state.Feed(f.path)
@@ -369,9 +369,7 @@ func (u *UsageLedger) read(f usageFile, prev store.UsageRow, had bool, now time.
 		}
 		return row, row.Reason, err
 	}
-	if f.assistant == "codex" {
-		state.ClassificationVersion = transcript.CodexClassificationVersion
-	}
+	state.ClassificationVersion = transcript.LedgerClassificationVersion
 	spent, measured := state.Totals()
 	measured = pricedMeasured(spent, measured)
 	stateJSON, err := json.Marshal(&state)
