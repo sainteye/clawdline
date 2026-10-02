@@ -195,6 +195,13 @@
     display: -webkit-box; overflow: hidden; color: var(--dim); font-size: 13px; line-height: 1.55;
     white-space: pre-wrap; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
+.work-card-condition, .work-card-next-action, .work-card-progress, .work-card-deployment {
+    display: block; min-width: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.work-card-condition { color: var(--accent); font-weight: 650; }
+.work-card-next-action { color: var(--ink); white-space: pre-wrap; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.work-card-progress { color: var(--dim); }
+.work-card-deployment { color: var(--dim); display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .work-card-summary-foot { color: var(--faint); font: 11px/1.5 var(--mono); }
 .work-card-attention { color: var(--accent); font-weight: 650; }
 .work-card-open { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--dim); }

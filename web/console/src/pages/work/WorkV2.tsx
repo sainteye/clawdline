@@ -29,6 +29,7 @@ import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
 import { decisionsForWorkItem, proposalsForProject } from "./board-attention.js"
+import { conditionWords, deploymentWords, needsPerson, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
 import {
   answerDecision,
   assignNewWorkV2,
@@ -114,6 +115,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [detailError, setDetailError] = useState("")
   const [busy, setBusy] = useState("")
   const [failure, setFailure] = useState("")
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000))
   const loadGeneration = useRef(0)
   const loadedView = useRef("")
   const board = useRef<HTMLElement>(null)
@@ -211,6 +213,11 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     return () => window.clearTimeout(timer)
   }, [searchInput])
   useEffect(() => { if (shown) rearrange.current = true }, [shown])
+  useEffect(() => {
+    if (!shown) return
+    const timer = window.setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 60_000)
+    return () => window.clearInterval(timer)
+  }, [shown])
   useEffect(() => {
     if (!shown && !creating && !createdItem && !openedItem) return
     void load()
@@ -310,7 +317,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       </div>
     </header>
     <div className="work-wrap">
-      <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、Merge 與部署。</p>
+      <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、合併與部署。</p>
       <div className="work-filter-bar">
         <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
         <div className="work-filter-controls">
@@ -332,15 +339,15 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
-      <BoardRegion title="規劃區" items={planning} decisions={decisions} onOpen={openItem} />
-      <BoardRegion title="待指派" items={unassigned} decisions={decisions} onOpen={openItem} />
+      <BoardRegion title="規劃區" items={planning} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
+      <BoardRegion title="待指派" items={unassigned} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
-        items={visibleItems.filter((item) => item.area === phase && !item.closed_at)} decisions={decisions} onOpen={openItem} />)}
-      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} decisions={decisions} onOpen={openItem} />}
-      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} decisions={decisions} onOpen={openItem} />}
+        items={visibleItems.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />)}
+      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />}
+      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />}
       {done.length > 0 && status !== "done" && !search && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
         <div className="work-cards">{done.map((item) => <CompactWorkCard key={item.id} item={item}
-          decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />)}</div>
+          sessions={sessions} nowSeconds={nowSeconds} decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />)}</div>
       </details>}
       {loaded && !failure && visibleItems.length === 0 && <p className="work-empty work-filter-empty" role="status">
         {!showPlans && hiddenPlans > 0
@@ -591,16 +598,18 @@ function WorkItemDecisions({ decisions, busy, run }: {
   </section>
 }
 
-function BoardRegion({ title, items, decisions, onOpen }: {
+function BoardRegion({ title, items, sessions, nowSeconds, decisions, onOpen }: {
   title: string
   items: WorkV2Item[]
+  sessions: SessionRow[]
+  nowSeconds: number
   decisions: Decision[]
   onOpen: (item: WorkV2Item) => void
 }) {
   if (!items.length) return null
   return <section className="work-section"><div className="work-section-head"><h2>{title}</h2><span className="work-count">{items.length}</span></div>
     <div className="work-cards">{items.map((item) => <CompactWorkCard key={item.id} item={item}
-      decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => onOpen(item)} />)}</div>
+      sessions={sessions} nowSeconds={nowSeconds} decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => onOpen(item)} />)}</div>
   </section>
 }
 
@@ -609,14 +618,17 @@ function BoardRegion({ title, items, decisions, onOpen }: {
  * item's working surface. The one button avoids nested controls and gives a
  * keyboard and screen-reader user the same route into the shared detail modal.
  */
-function CompactWorkCard({ item, decisions, onOpen }: {
+function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
   item: WorkV2Item
+  sessions: SessionRow[]
+  nowSeconds: number
   decisions: Decision[]
   onOpen: () => void
 }) {
   const epic = isEpic(item)
   const gateShown = epicGateDetailShown(item)
-  const attention = decisions.length > 0 || !!item.user_action
+  const attention = needsPerson(item, decisions.length)
+  const activePhase = item.phase === "merging" || item.phase === "deploying"
   const family = useContext(EpicFamilyContext)
   const parent = epicParent(item, family.rows)
   // An Agent-made card carries a badge; its sentence is the summary button's
@@ -626,26 +638,36 @@ function CompactWorkCard({ item, decisions, onOpen }: {
   const gateDescriptionID = `work-card-${item.id}-gate`
   const gateSnapshotDescriptionID = `work-card-${item.id}-gate-snapshot`
   const attentionDescriptionID = `work-card-${item.id}-attention`
+  const conditionDescriptionID = `work-card-${item.id}-condition`
+  const actionDescriptionID = `work-card-${item.id}-action`
+  const progressDescriptionID = `work-card-${item.id}-progress`
+  const deploymentDescriptionID = `work-card-${item.id}-deployment`
   const originDescriptionID = `work-card-${item.id}-origin`
   const describedBy = [gateShown && gateSnapshotDescriptionID, gateShown && gateDescriptionID,
+    item.condition && conditionDescriptionID, item.user_action && actionDescriptionID,
+    activePhase && progressDescriptionID, item.phase === "done" && deploymentDescriptionID,
     attention && attentionDescriptionID, originSentence && originDescriptionID].filter(Boolean).join(" ") || undefined
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
     data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} data-origin={originSentence ? origin : undefined} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"
-      aria-label={`查看「${item.title}」的完整內容，${phaseName(item.phase)}`} aria-describedby={describedBy} onClick={onOpen}>
+      aria-label={`查看「${item.title}」${attention ? "的下一步" : "的完整內容"}，${phaseName(item.phase)}`} aria-describedby={describedBy} onClick={onOpen}>
       <span className="work-card-summary-top">
         <span className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></span>
         {originSentence && <span className="work-card-origin" title={originSentence}><AgentGlyph />{workWord("agentMadeBadge")}</span>}
         <span className={epic ? "work-state work-epic-label" : "work-state"}>{epic ? "EPIC · " : `${item.kind} · `}{phaseName(item.phase)}</span>
       </span>
       <span className="work-card-summary-title">{item.title}</span>
+      {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
+      {item.condition && <span id={conditionDescriptionID} className="work-card-condition">{conditionWords(item)}</span>}
+      {item.user_action && <span id={actionDescriptionID} className="work-card-next-action">下一步：{item.user_action}</span>}
       <span className="work-card-summary-description">{item.description}</span>
+      {activePhase && <span id={progressDescriptionID} className="work-card-progress">{phaseStayWords(item.phase_entered_at, nowSeconds)} · {ownerOnlineWords(item.owner_session, sessions)}</span>}
+      {item.phase === "done" && <span id={deploymentDescriptionID} className="work-card-deployment">{deploymentWords(item)}</span>}
       {gateShown && <><WorkGateLine item={item} id={gateDescriptionID} />
         <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
-        {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
-        <span className="work-card-open">查看完整內容 <WorkIcon name="open" /></span>
+        <span className="work-card-open">{attention ? "查看下一步" : "查看完整內容"} <WorkIcon name="open" /></span>
       </span>
       {originSentence && <span id={originDescriptionID} className="work-card-origin-sentence">{originSentence}</span>}
     </button>
@@ -923,7 +945,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       <small>{item.images?.length ?? 0} / 6</small>
     </div>}
     <ItemUsageCard itemId={item.id} version={item.version} />
-    <div className="work-meta"><span>{item.project.available ? (item.condition || "正常") : "project_unavailable"}</span>
+    <div className="work-meta"><span>{conditionWords(item)}</span>
       <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
       {owner ? <a className="work-session-link" href={sessionFragment(owner.id)}
         aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<WorkIcon name="open" /></a>
@@ -1130,7 +1152,7 @@ function SessionAssignmentDetail({ session, reading }: { session: SessionRow; re
     {reading?.loading && !page ? <p>正在讀取看板與 TODO…</p> : reading?.error ? <p className="work-note" role="alert">工作資訊讀取失敗：{reading.error}</p> : page ? <>
       <p>尚未完成：{counts?.board ?? 0} 個看板項目 · {counts?.todos ?? 0} 個 TODO</p>
       <SessionWorkList title="還在做" empty="目前沒有負責中的看板項目。" rows={page.assigned_items.map((item) => ({
-        id: item.id, title: item.title, meta: `${item.project.label} · ${phaseName(item.phase)}${item.condition ? ` · ${item.condition}` : ""}`,
+        id: item.id, title: item.title, meta: `${item.project.label} · ${phaseName(item.phase)}${item.condition ? ` · ${conditionWords(item)}` : ""}`,
       }))} />
       <SessionWorkList title="直接待辦" empty="目前沒有未完成的 TODO。" rows={page.direct_todos.map((todo) => ({
         id: todo.id, title: todo.text, meta: todo.read_at ? "已讀" : todo.sent_at ? "已傳送" : "尚未傳送",
@@ -1460,5 +1482,5 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
 }
 
 function phaseName(phase: string): string {
-  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "Merge 回 Git", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
+  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "合併", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
 }
