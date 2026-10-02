@@ -1452,7 +1452,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	if strings.TrimSpace(c.NoLandingReason) != "" {
 		if c.Next != work.PhaseDeploying {
 			return work.ItemV2{}, nil, work.RefuseV2("invalid_landing_evidence",
-				"--no-landing-reason is evidence for moving merging to deploying only.")
+				"--no-landing-reason is evidence for moving to deploying only.")
 		}
 		if err := work.NoLandingGate(c.NoLandingReason, c.Landing != nil, facts); err != nil {
 			return work.ItemV2{}, nil, err

@@ -315,8 +315,6 @@ clawdline item finish <item id> --verification "what was run and what it showed"
 Or advance one phase at a time:
 
 ```sh
-clawdline item phase <item id> verifying
-clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
 clawdline item phase <item id> deploying --no-landing-reason "why there is no code"    # work with no code
@@ -324,9 +322,9 @@ clawdline item phase <item id> done --deployment "what went live, where, which v
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
 
-`done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. With
-captured verification on, `verifying → merging` needs a checker PASS: read "Captured planning and
-verification gates" in `clawdline guide board` before entering `verifying`.
+`done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. When
+`clawdline item steps <item id>` prints a gate line, this item keeps the longer path that line
+points to.
 
 **8. Report the turn**: `clawdline session report --summary "…"` (§7).
 
@@ -1208,7 +1206,10 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 
 - One step at a time: `assigned → implementing → verifying → merging → deploying → done`.
   From `verifying` you may go back to `implementing`; from `merging`, back to `implementing` or
-  `verifying`. Nothing skips a phase, and `done` is reached only from `deploying`.
+  `verifying`. An item whose captured verify gate is off may also go from `implementing` straight
+  to `deploying` on its landing evidence (below), with `verification` optional; a gated item is
+  refused that step with `verification_gate_on` and walks the whole line. Nothing else skips a
+  phase, and `done` is reached only from `deploying`.
 - `merging` needs `verification`. `deploying` needs a landing: a broker child of this item that
   landed, or `landing` naming a commit the daemon finds on both the Project's local `target` branch
   and `refs/remotes/<remote>/<target>` — push first. When the work landed in another repository

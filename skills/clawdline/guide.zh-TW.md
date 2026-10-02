@@ -280,8 +280,6 @@ clawdline item finish <item id> --verification "what was run and what it showed"
 也可以一次推進一個 phase：
 
 ```sh
-clawdline item phase <item id> verifying
-clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying        # a landed --work-id child is the evidence
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin   # otherwise; push first
 clawdline item phase <item id> deploying --no-landing-reason "why there is no code"    # work with no code
@@ -289,9 +287,8 @@ clawdline item phase <item id> done --deployment "what went live, where, which v
 clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
 
-`done` 依項目的部署政策帶 `--deployment` 或 `--no-deployment-reason`。本輪擷取了 verification 時，
-`verifying → merging` 需要 checker 的 PASS：進入 `verifying` 之前先讀 `clawdline guide zh-TW board` 的
-「本輪擷取的規劃與驗證 gate」。
+`done` 依項目的部署政策帶 `--deployment` 或 `--no-deployment-reason`。`clawdline item steps <item id>`
+印出 gate 那一行時，這個項目走那一行指向的較長路徑。
 
 **8. 回報這個 turn**：`clawdline session report --summary "…"`（§7）。
 
@@ -1041,8 +1038,10 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
 ```
 
 - 一次走一步：`assigned → implementing → verifying → merging → deploying → done`。`verifying` 可以
-  退回 `implementing`；`merging` 可以退回 `implementing` 或 `verifying`。不能跳過任何一步，`done`
-  只能從 `deploying` 進入。
+  退回 `implementing`；`merging` 可以退回 `implementing` 或 `verifying`。本輪擷取的 verify gate 關著
+  的項目，也可以憑 landing 證據（見下）從 `implementing` 直接進 `deploying`，`verification` 可帶可不帶；
+  gate 開著的項目走這一步會被 `verification_gate_on` 拒絕，要走完整條線。除此之外不能跳過任何一步，
+  `done` 只能從 `deploying` 進入。
 - `merging` 要帶 `verification`。`deploying` 要有 landing：這個項目的 broker child 已經 land，或用
   `landing` 指名一個 commit，daemon 要在 Project 的本機 `target` branch 和
   `refs/remotes/<remote>/<target>` 上都找得到它——先 push。工作落在別的 repository 時（後端項目、

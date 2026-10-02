@@ -165,8 +165,8 @@ func itemCommand(args []string) {
 	var steps stringList
 	fs.Var(&steps, "step", "one step of the item, in order; repeat it for each step")
 	var ev phaseEvidence
-	fs.StringVar(&ev.verification, "verification", "", "for merging: what was run to verify and what it showed")
-	fs.StringVar(&ev.commit, "commit", "", "for deploying: the landed commit")
+	fs.StringVar(&ev.verification, "verification", "", "for merging, or deploying an ungated item: what was run to verify and what it showed")
+	fs.StringVar(&ev.commit, "commit", "", "for deploying (from merging, or from implementing when the verify gate is off): the landed commit")
 	fs.StringVar(&ev.target, "target", "", "for deploying: the local target branch the commit is on")
 	fs.StringVar(&ev.remote, "remote", "", "for deploying: the remote whose tracking target also holds it")
 	fs.StringVar(&ev.landingProject, "landing-project", "", "for deploying: the catalog Project whose repository holds the commit, when it is not the item's")

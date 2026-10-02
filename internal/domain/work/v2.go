@@ -789,7 +789,15 @@ func AgentTransition(i ItemV2, next Phase, hasVerification, hasLanding, hasDeplo
 	case PhaseAssigned:
 		ok = next == PhaseImplementing
 	case PhaseImplementing:
-		ok = next == PhaseVerifying
+		// An item whose captured verify gate is off has no verification
+		// candidate to authorize, so verifying and merging collapse into the
+		// one step that carries the landing evidence. Implementing ->
+		// verifying stays legal so an item already on the long line, or an
+		// Agent that walks it, is not stranded.
+		if next == PhaseDeploying && i.VerifyGate {
+			return RefuseV2("verification_gate_on", "This item's captured verify gate is on, so it must pass verifying and merging before deploying; see `clawdline guide board`, \"Captured planning and verification gates\".")
+		}
+		ok = next == PhaseVerifying || next == PhaseDeploying && hasLanding
 	case PhaseVerifying:
 		ok = next == PhaseImplementing || next == PhaseMerging && hasVerification
 	case PhaseMerging:
