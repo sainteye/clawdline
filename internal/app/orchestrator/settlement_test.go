@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -354,5 +356,79 @@ func TestAnUnlandedRowSaysWhichFactIsMissing(t *testing.T) {
 	}
 	if !strings.Contains(row.Why, "could not read its checkout") {
 		t.Errorf("the row does not name what is actually missing: %q", row.Why)
+	}
+}
+
+// A successful review's document write is owed by the settlement. The
+// handler sees the committed success; other kinds and outcomes owe nothing.
+func TestASuccessfulPlanReviewOnAnItemRecordsADocumentEffect(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	var handed []string
+	b.RecordPlanReview = func(ctx context.Context, taskID string) error {
+		row, err := b.Store.BrokerTask(ctx, taskID)
+		if err != nil || row.State != string(StateSuccess) {
+			t.Errorf("handed on before the settlement committed: %+v %v", row.State, err)
+		}
+		handed = append(handed, taskID)
+		return nil
+	}
+	task := func(id, kind, workID string) {
+		r := Record{Protocol: Protocol, ID: id, Assistant: "claude", Title: "review", Kind: kind, WorkID: workID,
+			State: StateBriefed, CreatedAt: time.Now(), ProjectDir: "/p", TimeoutMinutes: 30,
+			Root: &RootRef{SessionID: rootConversation, Assistant: "claude"}}
+		if err := b.save(ctx, r, HashSecret("s"), "task.briefed"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reviewed := "f0000000-0000-4000-8000-0000000007a1"
+	task(reviewed, "plan_review", "item-a")
+	task("f0000000-0000-4000-8000-0000000007a2", "plan_review", "item-a")
+	task("f0000000-0000-4000-8000-0000000007a3", "plan_review", "")
+	task("f0000000-0000-4000-8000-0000000007a4", "custom", "item-a")
+	if _, err := b.Settle(ctx, reviewed, StateSuccess, "", &taskdirResultForTest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Settle(ctx, reviewed, StateSuccess, "", &taskdirResultForTest); err == nil {
+		t.Fatal("a second settlement was accepted")
+	}
+	for _, other := range []struct {
+		id    string
+		state State
+	}{{"f0000000-0000-4000-8000-0000000007a2", StateFailure}, {"f0000000-0000-4000-8000-0000000007a3", StateSuccess},
+		{"f0000000-0000-4000-8000-0000000007a4", StateSuccess}} {
+		if _, err := b.Settle(ctx, other.id, other.state, "done", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(handed) != 1 || handed[0] != reviewed {
+		t.Fatalf("handed on %v, want only %s", handed, reviewed)
+	}
+}
+
+var taskdirResultForTest = taskdir.Result{Status: "success", Summary: "Reviewed",
+	Review: json.RawMessage(`{"verdict":"safe_to_land","axes":[]}`)}
+
+func TestAReviewDocumentEffectSurvivesTheGapAfterSettlement(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	id := "f0000000-0000-4000-8000-0000000007b1"
+	r := Record{Protocol: Protocol, ID: id, Assistant: "claude", Title: "review", Kind: "plan_review", WorkID: "item-a",
+		State: StateBriefed, CreatedAt: time.Now(), ProjectDir: "/p", TimeoutMinutes: 30,
+		Root: &RootRef{SessionID: rootConversation, Assistant: "claude"}}
+	if err := b.save(ctx, r, HashSecret("s"), "task.briefed"); err != nil {
+		t.Fatal(err)
+	}
+	called := 0
+	b.RecordPlanReview = func(context.Context, string) error { called++; return nil }
+	_, ids, err := b.settle(ctx, id, StateSuccess, "", &taskdirResultForTest)
+	if err != nil || len(ids) != 1 || called != 0 {
+		t.Fatalf("settlement must durably owe one effect before executing it: ids=%v called=%d err=%v", ids, called, err)
+	}
+	effects, err := b.Store.Effects(ctx, EffectPlanReviewDocument, id)
+	if err != nil || len(effects) != 1 || effects[0].State != store.EffectPending {
+		t.Fatalf("effect was not persisted with settlement: %+v %v", effects, err)
+	}
+	b.runRecorded(ctx, ids)
+	if called != 1 {
+		t.Fatalf("document handler ran %d times", called)
 	}
 }

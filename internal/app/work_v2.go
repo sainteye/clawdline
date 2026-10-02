@@ -2073,10 +2073,18 @@ func planReviewDocument(result *taskdir.Result) (string, string) {
 		title += ": " + review.Verdict
 	}
 	var body bytes.Buffer
-	if json.Indent(&body, result.Review, "", "  ") != nil || body.Len() > workV2DescriptionLimit {
-		return title, ""
+	if json.Indent(&body, result.Review, "", "  ") != nil {
+		body.Write(result.Review)
 	}
-	return title, body.String()
+	if body.Len() <= workV2DescriptionLimit {
+		return title, body.String()
+	}
+	const notice = "\n\n[Review receipt truncated; see the referenced task for the full review.]"
+	cut := workV2DescriptionLimit - len(notice)
+	for cut > 0 && !utf8.Valid(body.Bytes()[:cut]) {
+		cut--
+	}
+	return title, string(body.Bytes()[:cut]) + notice
 }
 
 // checkPlanReviewTask accepts a plan_review only when its reference is a

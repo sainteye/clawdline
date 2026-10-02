@@ -409,7 +409,7 @@ func TestAPlanReviewRetriedAfterAPartialFailureIsRecordedOnce(t *testing.T) {
 
 // The automatic add answers the same typed refusals as the manual command
 // and writes nothing when it refuses. A receipt too large for a document body
-// leaves the body out; the reference to the task still stands.
+// keeps a bounded excerpt and the reference to the full task receipt.
 func TestAnAutomaticPlanReviewRefusesAsTheManualOneDoes(t *testing.T) {
 	w, clock := newEpicTest(t)
 	ctx := context.Background()
@@ -448,7 +448,10 @@ func TestAnAutomaticPlanReviewRefusesAsTheManualOneDoes(t *testing.T) {
 		strings.Repeat("x", 70<<10) + `"]}`)}
 	putTask(t, w.Store, big)
 	v, err := w.AddPlanReviewFromTask(ctx, big.ID)
-	if err != nil || v.Documents[0].Body != "" || v.Documents[0].Title != "Plan review: changes_required" {
+	if err != nil || !strings.Contains(v.Documents[0].Body, "changes_required") ||
+		!strings.Contains(v.Documents[0].Body, "Review receipt truncated") ||
+		len(v.Documents[0].Body) > workV2DescriptionLimit ||
+		v.Documents[0].Title != "Plan review: changes_required" {
 		t.Fatalf("oversized receipt: %+v %v", v.Documents, err)
 	}
 }

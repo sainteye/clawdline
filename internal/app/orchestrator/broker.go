@@ -102,6 +102,10 @@ type Broker struct {
 	// whoever asked for it — a Board item's new Session — can settle its own
 	// side. Nil tells nobody.
 	RootAssignmentSettled func(ctx context.Context, a RootAssignment)
+	// RecordPlanReview handles the durable effect owed by a successful
+	// plan_review child on an item. It must be idempotent: recovery may run it
+	// again after the document was written but before the effect was settled.
+	RecordPlanReview func(ctx context.Context, taskID string) error
 	// ClaudeSetsLanguage is whether the person's own Claude Code settings
 	// already name a response language. When they do not, a Claude session this
 	// broker opens is given DisplayLanguage. Nil gives none, which only a test

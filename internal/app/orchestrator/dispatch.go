@@ -1155,7 +1155,10 @@ var errAlreadyTerminal = errors.New("already terminal")
 // of this function wrapped it in a Result, which is how a `/complete` body
 // came to stand in for the file (D15).
 func (b *Broker) Settle(ctx context.Context, id string, state State, why string, result *taskdir.Result) (Record, error) {
-	r, _, err := b.settle(ctx, id, state, why, result)
+	r, ids, err := b.settle(ctx, id, state, why, result)
+	if err == nil {
+		b.runRecorded(ctx, ids)
+	}
 	return r, err
 }
 
@@ -1181,6 +1184,9 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 	return b.mutateEvent(ctx, id, "task."+string(state), extra, func(tx *store.Tx, r *Record) ([]store.Effect, error) {
 		if r.State.Terminal() {
 			return nil, errAlreadyTerminal
+		}
+		if state == StateSuccess && r.Kind == "plan_review" && r.WorkID != "" {
+			effects = append(effects, store.Effect{Kind: EffectPlanReviewDocument, Subject: r.ID})
 		}
 		r.State = state
 		r.FinishedAt = now

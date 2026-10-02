@@ -62,6 +62,10 @@ const (
 	// (linger.go). It was run after the verdict with nothing recording that
 	// it was owed, so a crash in between left the tab open for good.
 	EffectCloseChild = "child.close"
+	// EffectPlanReviewDocument records a successful child review on its Board
+	// item. The intent is committed with the task settlement, then retried
+	// after a crash; the document write is idempotent by task reference.
+	EffectPlanReviewDocument = "plan_review.document"
 	// EffectMessage types one session's message into another's composer,
 	// and answers the request that asked for it (D03).
 	EffectMessage = "session.message"
@@ -197,9 +201,10 @@ type effectHandler struct {
 }
 
 var effectHandlers = map[string]effectHandler{
-	EffectWorktree:   {idempotent: true, run: runWorktree},
-	EffectCloseChild: {idempotent: true, run: runCloseChild},
-	EffectMessage:    {idempotent: false, run: runMessage},
+	EffectWorktree:           {idempotent: true, run: runWorktree},
+	EffectCloseChild:         {idempotent: true, run: runCloseChild},
+	EffectPlanReviewDocument: {idempotent: true, run: runPlanReviewDocument},
+	EffectMessage:            {idempotent: false, run: runMessage},
 	// A push cannot be asked afterwards whether it arrived, so a recovery
 	// never sends one a second time.
 	EffectDeadLetterPush:        {idempotent: false, run: runDeadLetterPush},
@@ -395,6 +400,17 @@ type worktreeEffect struct {
 	Branch     string `json:"branch"`
 	Base       string `json:"base"`
 	Detached   bool   `json:"detached,omitempty"`
+}
+
+func runPlanReviewDocument(ctx context.Context, b *Broker, e store.Effect) effectResult {
+	if b.RecordPlanReview == nil {
+		return effectResult{state: store.EffectFailed, outcome: "plan review document handler unavailable"}
+	}
+	if err := b.RecordPlanReview(ctx, e.Subject); err != nil {
+		log.Printf("orchestrator: task %s: plan review document could not be recorded: %v", e.Subject, err)
+		return effectResult{state: store.EffectFailed, outcome: err.Error(), err: err}
+	}
+	return effectResult{state: store.EffectDone, outcome: "plan review document recorded"}
 }
 
 // runWorktree makes the checkout, or finds it already made — the branch at

@@ -199,6 +199,10 @@ func newBroker(s *Server) *orchestrator.Broker {
 		RootAssignmentSettled: func(ctx context.Context, _ orchestrator.RootAssignment) {
 			go s.settleAwaitedAssignments(context.WithoutCancel(ctx))
 		},
+		RecordPlanReview: func(ctx context.Context, taskID string) error {
+			_, err := s.workV2().AddPlanReviewFromTask(ctx, taskID)
+			return err
+		},
 		// A Claude session this broker opens answers in Clawdline's language
 		// unless the person chose one in Claude Code (projects.ClaudeLanguage).
 		ClaudeSetsLanguage: claudeSetsLanguage,
