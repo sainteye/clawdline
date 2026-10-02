@@ -375,6 +375,7 @@ const (
 	CloudTerminalRefusals          = "cloud.terminal_refusals"
 	CloudTerminalRevocationRetire  = "cloud.terminal_revocation_retire_seconds"
 	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
+	CloudTerminalEarlyFrames       = "cloud.terminal_early_frames"
 	TerminalBodyBytes              = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
@@ -2053,6 +2054,14 @@ func Register() []Entry {
 			Limit: 3, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalFrameHeartbeatSecondsLimit"},
+		},
+		{
+			// A browser keeps only the newest verified complete frame that
+			// arrives before its terminal ID is known. This is a Console bound;
+			// daemon diagnostics publish the policy but cannot measure tab usage.
+			Name: CloudTerminalEarlyFrames, Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
 			// The terminal grants file. A larger one is not read, and then

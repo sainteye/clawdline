@@ -43,6 +43,9 @@ func (f *fill) write() {
 		// with it, and it reads afresh when it comes back.
 		f.used = 1
 		f.counters.Disconnected++
+	case Coalesce:
+		// The newest frame replaces the sole pending frame.
+		f.counters.Coalesced++
 	case Nothing:
 		f.used++
 	}
@@ -119,7 +122,7 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 					}
 				case 21:
 					acted := f.counters.Rotated + f.counters.Evicted + f.counters.Dropped + f.counters.Refused + f.counters.Expired +
-						f.counters.Disconnected
+						f.counters.Disconnected + f.counters.Coalesced
 					if e.AtLimit != Nothing && acted != 1 {
 						t.Fatalf("the 21st write did not %s once: %+v", e.AtLimit, f.counters)
 					}
@@ -192,7 +195,7 @@ func theSmallRow(t *testing.T, e Entry) {
 	now = now.Add(time.Minute)
 	st, events = tr.Observe(res, f.reading(), now)
 	acted := f.counters.Rotated + f.counters.Evicted + f.counters.Dropped + f.counters.Refused +
-		f.counters.Expired + f.counters.Disconnected
+		f.counters.Expired + f.counters.Disconnected + f.counters.Coalesced
 	if e.AtLimit != Nothing && acted != 1 {
 		t.Fatalf("the write past the limit did not %s once: %+v", e.AtLimit, f.counters)
 	}

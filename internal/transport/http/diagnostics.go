@@ -838,6 +838,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudTerminalRefusals:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRefusals) },
 		capacity.CloudTerminalRevocationRetire:  func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRevocationRetire) },
 		capacity.CloudTerminalFrameHeartbeat:    func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalFrameHeartbeat) },
+		capacity.CloudTerminalEarlyFrames: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console tab guard; daemon cannot measure live browser use"}
+		},
 		// C4: the Cloud line's outbound spool, both of its bounds.
 		capacity.CloudSpool: func() capacity.Reading {
 			rows, _ := s.spoolReadings()
