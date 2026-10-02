@@ -494,6 +494,13 @@ export const readWorkV2 = (projectID?: string, status: WorkV2Status = "open", se
   )
 export const readWorkV2Item = (id: string) =>
   call<{ ok: boolean; item: WorkV2Item }>(`/v1/work/v2/items/${id}`)
+/** The person opened this item while it showed `phase`; a Session card stops showing it as awaiting acceptance. */
+export const markWorkV2Seen = (id: string, phase: WorkV2Phase) =>
+  call<{ ok: boolean; marked: boolean }>(`/v1/work/v2/items/${id}/seen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phase }),
+  })
 export const readWorkV2Proposals = () => call<{ rows: WorkV2Proposal[]; truncated: boolean }>("/v1/work/v2/proposals?state=pending")
 export const resolveWorkV2Proposal = (id: string, decision: "accept" | "reject") =>
   mutate<unknown>(`/v1/work/v2/proposals/${id}/${decision}`, {})

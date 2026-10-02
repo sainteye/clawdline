@@ -107,6 +107,7 @@
       "properties": {
         "persona": { "description": "The built-in persona (GET /v1/personas) this session was launched as, read back from its process command line; absent for none, and absent on a row with no process reading.", "type": "string" },
         "activity": { "$ref": "#/$defs/SessionActivity" },
+        "acceptance": { "$ref": "#/$defs/SessionAcceptance" },
 		"attention_count": { "description": "Unresolved attention notes for this conversation. Zero is a successful empty reading; absent means the count or current unique session identity could not be established.", "type": "integer", "minimum": 0 },
 		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
 		"agents_reading": { "$ref": "#/$defs/SessionAgentReading" },
@@ -550,6 +551,20 @@
         "targetCommit": { "type": "string" },
         "taskId": { "type": "string" },
         "title": { "type": "string" }
+      }
+    },
+    "SessionAcceptance": {
+      "description": "Whether a Session that reported its turn (`disposition.scope` `session`) has a Board item the person has not opened since it reached deploying or done. Present only beside such a disposition. `pending` names the newest one; `none` is a successful reading that found none; `unknown` means the Board could not be read, and is never shown as none. A deploying item belongs to its owner; a done item to the Session whose assignment was released when it closed. Opening the item's detail (POST /v1/work/v2/items/{id}/seen) clears it until it enters that phase again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "type": "string", "enum": ["pending", "none", "unknown"] },
+        "work_id": { "type": "string" },
+        "title": { "type": "string" },
+        "phase": { "type": "string", "enum": ["deploying", "done"] },
+        "since": { "description": "Unix seconds: when the named item entered that phase.", "type": "integer" },
+        "count": { "description": "How many of this Session's items are waiting, the named one among them.", "type": "integer", "minimum": 1 }
       }
     },
     "WorkOwed": {

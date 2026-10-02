@@ -164,6 +164,20 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 		}
 	}
 
+	// One Board reading of what each conversation delivered and the person has
+	// not opened. Unreadable is carried to every row as unknown, never as none.
+	var pending map[string]store.PendingAcceptance
+	pendingErr := errBoardUnreadable
+	if s.store != nil {
+		ids := make([]string, 0, len(items))
+		for _, item := range items {
+			if item.ConversationID != "" {
+				ids = append(ids, item.ConversationID)
+			}
+		}
+		pending, pendingErr = s.store.WorkV2PendingAcceptanceForSessions(records, ids)
+	}
+
 	// This daemon's own tasks, waits, deliveries, handoffs and Feature Roots,
 	// in the Swift store's shape, so the one set of rules reads both
 	// (ownrecords.go). A source of ours that could not be read is evidence
@@ -219,6 +233,7 @@ func (s *Server) sessionsPayloadFrom(ctx context.Context, inv session.Inventory)
 			role:       role,
 			ownRole:    ownRole,
 			epicParent: epicParents[string(item.Assistant)+"\x00"+item.ConversationID],
+			acceptance: rowAcceptance(item.ConversationID, pending, pendingErr),
 		})
 		if attentionErr == nil && item.ConversationID != "" && conversationMatches[item.ConversationID] == 1 &&
 			row.Source != nil && row.Source.Freshness == contract.SourceFreshnessCurrent &&
@@ -431,6 +446,25 @@ type rowInput struct {
 	role       *coordinator.Record
 	ownRole    bool
 	epicParent store.EpicRootParent
+	// acceptance is shown only beside a Session's own delivery receipt.
+	acceptance *contract.SessionAcceptance
+}
+
+var errBoardUnreadable = errors.New("board store is not open")
+
+// rowAcceptance is one conversation's answer from the fleet's Board reading.
+// A row with no conversation id cannot own an item, which is unknown rather
+// than none: its delivery may well have one the reading could not name.
+func rowAcceptance(conversation string, pending map[string]store.PendingAcceptance, err error) *contract.SessionAcceptance {
+	if err != nil || conversation == "" {
+		return &contract.SessionAcceptance{State: "unknown"}
+	}
+	p, ok := pending[conversation]
+	if !ok {
+		return &contract.SessionAcceptance{State: "none"}
+	}
+	return &contract.SessionAcceptance{State: "pending", WorkID: p.WorkID, Title: p.Title,
+		Phase: string(p.Phase), Since: p.EnteredAt.Unix(), Count: p.Count}
 }
 
 // sessionRow renders one session in the shape the console reads.
@@ -517,6 +551,12 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 	// A Feature Root or a wait that was read is a fact whatever else could
 	// not be: they are drawn from the records there are, the daemon's own
 	// among them.
+	// Board items waiting for the person ride on a Session's own report: a
+	// task's delivery is accepted on its task, and a row with no report has
+	// nothing it is saying is ready.
+	if row.Disposition != nil && row.Disposition.Scope == "session" {
+		row.Acceptance = in.acceptance
+	}
 	row.RootAssignment = in.swift.RootAssignment(in.live)
 	if in.epicParent.OwnerSession != "" && in.epicParent.EpicID != "" {
 		row.EpicParent = &contract.EpicSessionParent{

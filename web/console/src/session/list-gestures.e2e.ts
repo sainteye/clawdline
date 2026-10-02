@@ -54,6 +54,7 @@ type ReadingScenario =
   | "status-one"
   | "status-two"
   | "status-three"
+  | "acceptance"
   | "machine-pending"
   | "machine-bound"
   | "machine-ranked"
@@ -179,6 +180,23 @@ function rows(): Row[] {
       epic_parent: { owner_session_id: "owner-conversation", epic_id: "epic-fixture" },
     }),
   ]
+  if (readingScenario === "acceptance") {
+    // One Session reported its turn with a Board item deployed and unopened,
+    // one with nothing awaiting, and one whose Board reading failed.
+    const reported = (acceptance: Row["acceptance"]): Row => ({
+      work_state: "milestone_complete",
+      disposition: { scope: "session", evidence: "authenticated_session_delivery", title: "Turn summary" },
+      acceptance,
+    })
+    return [
+      row(SAFE, "Awaiting", safeCloseability(), 300, reported({
+        state: "pending", work_id: "item-a", title: "A deployed Board item with a title long enough to need its ellipsis",
+        phase: "deploying", since: 1, count: 2,
+      })),
+      row(BLOCKED, "Reported", blockedCloseability(), 200, reported({ state: "none" })),
+      row(UNKNOWN, "Unreadable", unknownCloseability(), 100, reported({ state: "unknown" })),
+    ]
+  }
   if (readingScenario.startsWith("status-")) {
     const extra: Row = {
       work_state: "milestone_complete",
@@ -2421,6 +2439,34 @@ for (const [scenario, segments] of [
       }
     }))
 }
+
+test("a reported turn says awaiting acceptance only for an unopened deployed item, and unknown when unread", () =>
+  inTab(async (tab) => {
+    readingScenario = "acceptance"
+    try {
+      await tab.go("/")
+      await tab.until("the three reported rows arrive", (s) => s.order.length === 3)
+      const measured = await tab.run(`(() => [...document.querySelectorAll("#rows > li.row")].map((li) => {
+        const completion = li.querySelector(".session-work-completion")
+        const copy = completion && completion.querySelector(".session-work-copy")
+        const state = li.querySelector(".state")
+        return {
+          acceptance: completion && completion.dataset.acceptance,
+          text: copy && copy.textContent,
+          fits: !!state && state.scrollWidth <= state.clientWidth,
+        }
+      }))()`)
+      const by = Object.fromEntries(measured.map((m: { acceptance: string }) => [m.acceptance, m]))
+      assert.deepEqual(Object.keys(by).sort(), ["none", "pending", "unknown"], JSON.stringify(measured))
+      assert.match(by.pending.text, /A deployed Board item/, "the awaiting item is named")
+      assert.doesNotMatch(by.none.text, /A deployed Board item/, "a report with nothing awaiting names no item")
+      assert.notEqual(by.unknown.text, by.none.text, "an unread Board is not shown as nothing awaiting")
+      for (const m of measured) assert.ok(m.fits, "the receipt stays inside its 390px row: " + JSON.stringify(m))
+      await tab.shot("acceptance")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
 
 test("the first visible phone count has no separator and owns its ellipsis", () =>
   inTab(async (tab) => {

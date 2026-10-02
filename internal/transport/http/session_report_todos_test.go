@@ -3,17 +3,21 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // reportServer is a Server whose broker sees one live assistant Session.
@@ -123,5 +127,98 @@ func TestTurnReceiptSaysUnknownWhenTheToDosCannotBeRead(t *testing.T) {
 	answer := reportTurn(t, s, sess.ID)
 	if !answer.OpenTodosUnknown || len(answer.OpenTodos) != 0 {
 		t.Fatalf("unknown: %+v", answer)
+	}
+}
+
+// A reported turn carries whether one of the Session's Board items reached
+// deploying or done and waits for the person: none, then pending once its item
+// deploys, then none again once the person opens it in that phase.
+func TestReportedTurnSaysWhichBoardItemAwaitsAcceptance(t *testing.T) {
+	// A delivery is drawn only on the process that reported it, so this pane
+	// has a real process behind it: the test's own.
+	p := &pane{s: session.Session{ID: "pane-9", Backend: session.BackendTmux, Assistant: session.AssistantClaude,
+		ConversationID: "10000000-0000-4000-8000-000000000009", State: session.StateIdle, PID: os.Getpid()}}
+	s := paneServer(t, p)
+	s.broker.Live = func(context.Context) []session.Session { return []session.Session{p.s} }
+	s.swift = swiftstore.Open(t.TempDir()) // an absent retired store: this daemon's records decide
+	sess := p.s
+	ctx := context.Background()
+	acceptance := func() *contract.SessionAcceptance {
+		t.Helper()
+		for _, row := range s.sessionsPayload(ctx).Sessions {
+			if row.ID == sess.ID {
+				if row.Disposition == nil || row.Disposition.Scope != "session" {
+					t.Fatalf("no Session receipt on the row: %s %+v", row.WorkState, row.Disposition)
+				}
+				return row.Acceptance
+			}
+		}
+		t.Fatalf("no row for %s", sess.ID)
+		return nil
+	}
+	reportTurn(t, s, sess.ID)
+	if got := acceptance(); got == nil || got.State != "none" {
+		t.Fatalf("a report with no owned item: %+v", got)
+	}
+
+	at := time.Now().Add(-time.Minute).Truncate(time.Second)
+	item := work.ItemV2{ID: "10000000-0000-4000-8000-0000000000d1", ProjectID: "project-a", ProjectPath: "/project-a",
+		Kind: work.KindFeature, Title: "Ship the receipt", Description: "d", Phase: work.PhaseMerging,
+		DeploymentPolicy: work.DeployAgentDecides, OwnerSession: sess.ConversationID, CreatedBy: "local",
+		CreatedAt: at, UpdatedAt: at, Cycle: 1, Version: 1}
+	next := item
+	next.Phase, next.UpdatedAt = work.PhaseDeploying, at.Add(time.Second)
+	if err := s.store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		if err := tx.CreateItem(item, "local", `{}`); err != nil {
+			return err
+		}
+		return tx.PutItem(item, next, "item.phase_changed", sess.ConversationID, `{}`)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := acceptance()
+	if got == nil || got.State != "pending" || got.WorkID != item.ID || got.Title != "Ship the receipt" ||
+		got.Phase != "deploying" || got.Count != 1 || got.Since != next.UpdatedAt.Unix() {
+		t.Fatalf("deployed item: %+v", got)
+	}
+
+	seen := func(body string) (int, string) {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/items/"+item.ID+"/seen", body, ""))
+		return rec.Code, rec.Body.String()
+	}
+	if code, body := seen(`{"phase":"later"}`); code != http.StatusBadRequest {
+		t.Fatalf("an unnamed phase: %d %s", code, body)
+	}
+	if code, body := seen(`{"phase":"done"}`); code != http.StatusOK || !strings.Contains(body, `"marked":false`) {
+		t.Fatalf("a view of another phase: %d %s", code, body)
+	}
+	if got := acceptance(); got == nil || got.State != "pending" {
+		t.Fatalf("a stale view cleared it: %+v", got)
+	}
+	if code, body := seen(`{"phase":"deploying"}`); code != http.StatusOK || !strings.Contains(body, `"marked":true`) {
+		t.Fatalf("seen: %d %s", code, body)
+	}
+	if got := acceptance(); got == nil || got.State != "none" {
+		t.Fatalf("an opened item still awaits: %+v", got)
+	}
+	// A Session cannot mark the person's receipt.
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, w8Request(http.MethodPost, "/v1/work/v2/items/"+item.ID+"/seen", `{"phase":"deploying"}`, true, nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a Session marked it seen: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A Board that cannot be read is unknown on the row, never none.
+func TestUnreadBoardIsUnknownAcceptanceNotNone(t *testing.T) {
+	if got := rowAcceptance("conversation", nil, errors.New("closed")); got.State != "unknown" {
+		t.Fatalf("read error: %+v", got)
+	}
+	if got := rowAcceptance("", map[string]store.PendingAcceptance{}, nil); got.State != "unknown" {
+		t.Fatalf("no conversation id: %+v", got)
+	}
+	if got := rowAcceptance("conversation", map[string]store.PendingAcceptance{}, nil); got.State != "none" {
+		t.Fatalf("read and empty: %+v", got)
 	}
 }

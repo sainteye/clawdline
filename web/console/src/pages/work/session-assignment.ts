@@ -26,6 +26,29 @@ export function sessionWorkStateName(state: SessionRow["work_state"]): string {
   } as const)[state] ?? "工作狀況不明"
 }
 
+/**
+ * The work state as a Session card says it. A Session's own turn report reads
+ * 本輪已回報 unless the daemon names one of its Board items that reached
+ * deploying or done and the person has not opened since: then 待驗收 and that
+ * item. The rule is the legacy card's (`sessionReceiptCopy` in derive.js), so
+ * both lists say the same thing about the same row.
+ */
+export function sessionWorkLabel(row: Pick<SessionRow, "work_state" | "disposition" | "acceptance">): string {
+  const finished = row.work_state === "milestone_complete" || row.work_state === "work_complete"
+  if (!finished || row.disposition?.scope !== "session") return sessionWorkStateName(row.work_state)
+  const acceptance = row.acceptance
+  if (acceptance?.state === "pending" && acceptance.title) {
+    return `待驗收 · ${acceptance.title}${(acceptance.count ?? 0) > 1 ? ` · 共 ${acceptance.count} 項` : ""}`
+  }
+  const said = row.work_state === "work_complete" ? sessionWorkStateName(row.work_state) : "本輪已回報"
+  return acceptance?.state === "unknown" || acceptance?.state === "pending" ? `${said} · 讀不到是否有待驗收項目` : said
+}
+
+/** The phases in which an item waits for the person to look at what was delivered. */
+export function awaitsAcceptance(phase: string): boolean {
+  return phase === "deploying" || phase === "done"
+}
+
 export function sessionWorkCounts(page: SessionWorkV2): SessionWorkCounts {
   const board = page.assigned_items.length
   const todos = page.direct_todos.length + page.assigned_items.reduce(
