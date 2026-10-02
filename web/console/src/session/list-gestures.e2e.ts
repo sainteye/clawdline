@@ -2445,10 +2445,11 @@ for (const [scenario, segments] of [
 test("a reported turn says awaiting acceptance only for an unopened deployed item, and unknown when unread", () =>
   inTab(async (tab) => {
     readingScenario = "acceptance"
-    try {
-      await tab.go("/")
-      await tab.until("the four reported rows arrive", (s) => s.order.length === 4)
-      const measured = await tab.run(`(() => [...document.querySelectorAll("#rows > li.row")].map((li) => {
+    type Seen = { id: string; acceptance: string; text: string; fits: boolean }
+    const measure = async (): Promise<{ rows: Seen[]; pageFits: boolean; width: number }> => tab.run(`(() => ({
+      width: innerWidth,
+      pageFits: document.documentElement.scrollWidth <= innerWidth,
+      rows: [...document.querySelectorAll("#rows > li.row")].map((li) => {
         const completion = li.querySelector(".session-work-completion")
         const copy = completion && completion.querySelector(".session-work-copy")
         const state = li.querySelector(".state")
@@ -2458,18 +2459,34 @@ test("a reported turn says awaiting acceptance only for an unopened deployed ite
           text: copy && copy.textContent,
           fits: !!state && state.scrollWidth <= state.clientWidth,
         }
-      }))()`)
-      type Seen = { id: string; acceptance: string; text: string; fits: boolean }
-      const of = (id: string) => (measured as Seen[]).find((m) => m.id === id) as Seen
+      }),
+    }))()`)
+    const check = (measured: { rows: Seen[]; pageFits: boolean; width: number }) => {
+      const of = (id: string) => measured.rows.find((m) => m.id === id) as Seen
       const by = { pending: of(SAFE), none: of(BLOCKED), unknown: of(UNKNOWN), older: of(SPARE) }
       assert.deepEqual([by.pending.acceptance, by.none.acceptance, by.unknown.acceptance, by.older.acceptance],
         ["pending", "none", "unknown", "unknown"], JSON.stringify(measured))
-      assert.equal(by.older.text, by.unknown.text, "a report without the field reads as unread, not as none")
       assert.match(by.pending.text, /A deployed Board item/, "the awaiting item is named")
       assert.doesNotMatch(by.none.text, /A deployed Board item/, "a report with nothing awaiting names no item")
       assert.notEqual(by.unknown.text, by.none.text, "an unread Board is not shown as nothing awaiting")
-      for (const m of measured) assert.ok(m.fits, "the receipt stays inside its 390px row: " + JSON.stringify(m))
+      assert.equal(by.older.text, by.unknown.text, "a report without the field reads as unread, not as none")
+      assert.ok(measured.pageFits, `the page does not scroll sideways at ${measured.width}px`)
+      for (const m of measured.rows) assert.ok(m.fits, `the receipt stays inside its ${measured.width}px row: ` + JSON.stringify(m))
+    }
+    try {
+      await tab.go("/")
+      await tab.until("the four reported rows arrive", (s) => s.order.length === 4)
+      const phone = await measure()
+      assert.equal(phone.width, 390)
+      check(phone)
       await tab.shot("acceptance")
+      await tab.desktop()
+      await tab.go("/")
+      await tab.until("the four reported rows arrive on a desktop", (s) => s.order.length === 4)
+      const desktop = await measure()
+      assert.equal(desktop.width, 1280)
+      check(desktop)
+      await tab.shot("acceptance-desktop")
     } finally {
       readingScenario = "normal"
     }
