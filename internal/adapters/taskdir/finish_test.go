@@ -208,6 +208,54 @@ func TestAFinishRefusesWhatTheOldValidatorRefused(t *testing.T) {
 	}
 }
 
+func TestAFinishReportsIndependentViolationsBeforePublishing(t *testing.T) {
+	result := strings.Replace(resultWith(`, "verification": {"runs": -1, "seconds": -2, "last": "unknown", "scope": " "}, "leftovers": {}`),
+		`"task_secret": "`+finishSecret+`"`, `"task_secret": "bad"`, 1)
+	dir := finishDir(t, plainTask("plan_review"), result)
+	_, err := Finish(dir)
+	var invalid InvalidResult
+	if !errors.As(err, &invalid) {
+		t.Fatalf("finish answered %v", err)
+	}
+	for _, reason := range []string{
+		"task_secret must be 64 lowercase hexadecimal characters",
+		"verification.runs must be a non-negative integer",
+		"verification.seconds must be a non-negative integer",
+		`verification.last must be "pass", "fail" or "skipped"`,
+		"verification.scope must be a non-empty string",
+		"leftovers must be a list of at most 8 entries",
+		"a successful review task requires a closed review receipt",
+	} {
+		if !strings.Contains(invalid.Reason, reason) {
+			t.Errorf("missing %q in %q", reason, invalid.Reason)
+		}
+	}
+	if got := strings.Count(invalid.Reason, "\n"); got != 6 {
+		t.Errorf("got %d reason separators in %q", got, invalid.Reason)
+	}
+	for _, absent := range []string{"result.json", "result.json.ready"} {
+		if _, statErr := os.Stat(filepath.Join(dir, absent)); !os.IsNotExist(statErr) {
+			t.Errorf("a refused finish wrote %s", absent)
+		}
+	}
+	if body, readErr := os.ReadFile(filepath.Join(dir, "result.json.tmp")); readErr != nil || string(body) != result {
+		t.Fatalf("tmp was changed: %q, %v", body, readErr)
+	}
+}
+
+func TestValidPlanReviewAndReadOnlySkippedResultsFinishFirstTry(t *testing.T) {
+	for _, c := range []struct{ name, kind, extra string }{
+		{"plan review", "plan_review", closedReview},
+		{"read-only skipped", "custom", `, "verification": {"runs": 0, "seconds": 0, "last": "skipped", "scope": "Read-only review; no checks needed"}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := Finish(finishDir(t, plainTask(c.kind), resultWith(c.extra))); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 // What a child says it did not do passes the preflight when it is readable,
 // is absent without comment when there is none, and is refused by name when it
 // is there and wrong — the way `verification` is. The table's first row is the
