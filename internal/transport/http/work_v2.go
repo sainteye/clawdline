@@ -1497,6 +1497,17 @@ func readWorkV2BodyAtMost(w http.ResponseWriter, r *http.Request, into any, limi
 		writeRefusal(w, http.StatusBadRequest, "invalid_request", message)
 		return nil, false
 	}
+	// Every version the store issues is positive. A negative one is refused
+	// here, so no body can name app.AnyVersion and skip the comparison an
+	// omitted version on an Agent route deliberately skips.
+	var version struct {
+		ExpectedVersion *int64 `json:"expected_version"`
+	}
+	if json.Unmarshal(raw, &version) == nil && version.ExpectedVersion != nil && *version.ExpectedVersion < 0 {
+		writeRefusal(w, http.StatusBadRequest, "invalid_request",
+			"The body is not a valid work-system request: expected_version is a positive version, or omitted on an Agent route.")
+		return nil, false
+	}
 	return raw, true
 }
 

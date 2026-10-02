@@ -78,3 +78,26 @@ func TestAgentItemWritesTakeAnOptionalExpectedVersion(t *testing.T) {
 		t.Fatalf("person edit without a version = %v", err)
 	}
 }
+
+// Every version the store issues is positive, and app.AnyVersion is the most
+// negative int64: a body that names a negative expected_version is refused
+// before it reaches the store, so no route — a person's included — can name
+// AnyVersion and skip its comparison.
+func TestANegativeExpectedVersionIsRefused(t *testing.T) {
+	s, p, v := workV2AssignmentServer(t, session.StateWorking)
+	if _, err := s.assignWorkV2(context.Background(), v.Item.ID, "local", v.Item.Version,
+		"existing_session", p.s.ID, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	any := strconv.FormatInt(app.AnyVersion, 10)
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items/"+v.Item.ID+"/phase",
+		`{"expected_version":`+any+`,"session_id":"`+p.s.ConversationID+`","next":"implementing"}`, "neg-phase"))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("negative expected_version = %d %s", rec.Code, rec.Body)
+	}
+	read, err := s.workV2().Item(context.Background(), v.Item.ID)
+	if err != nil || read.Item.Phase == "implementing" {
+		t.Fatalf("the refused write moved the item: %v %v", read.Item.Phase, err)
+	}
+}
