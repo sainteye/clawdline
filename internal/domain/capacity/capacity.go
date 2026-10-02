@@ -392,10 +392,6 @@ const (
 	TerminalLaunchScripts   = "terminal.launch_scripts"
 	// The further Board items one dispatch carries beside its work_id.
 	DispatchAlsoWorkIDs = "dispatch.also_work_ids"
-	// The reason a cancelled task carries as its verdict, and the request key
-	// that answers its resend.
-	TaskCancelReasonBytes = "task.cancel_reason_bytes"
-	TaskCancelKeyBytes    = "task.cancel_key_bytes"
 	// A Session's own close, asked during its turn and carried out when the
 	// turn ends: how many may wait at once, how many per terminal, and how
 	// long one waits for its turn to end.
@@ -2193,26 +2189,6 @@ func Register() []Entry {
 			Limit: 7, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/orchestrator.MaxAlsoWorkIDs"},
-		},
-		{
-			// The reason a root or the person gives when cancelling a task,
-			// after its whitespace is collapsed. It becomes the verdict and a
-			// clause of the completion line typed into the root. A longer one
-			// is refused reason_too_long, never cut: the CLI refuses it first
-			// as a usage error.
-			Name: TaskCancelReasonBytes, Class: Buffer, Unit: Bytes,
-			Limit: 500, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/app/orchestrator.CancelReasonLimit"},
-		},
-		{
-			// The Idempotency-Key a cancel keeps on the record, which is
-			// what answers a resend as the cancel that already succeeded. A
-			// longer one is refused bad_idempotency_key, as a board write's is.
-			Name: TaskCancelKeyBytes, Class: Buffer, Unit: Bytes,
-			Limit: 200, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/app/orchestrator.cancelKeyLimit"},
 		},
 		{
 			// Closes Sessions asked for themselves while still working. They
