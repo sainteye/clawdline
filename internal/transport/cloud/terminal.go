@@ -36,6 +36,9 @@ const (
 	CloudTerminalRevocationRetireSecondsLimit = 3
 	CloudTerminalFrameHeartbeatSecondsLimit   = 3
 	CloudTerminalUnconfirmedSecondsLimit      = 15
+	CloudTerminalHistoryReceiptBytesLimit     = 8 << 10
+	CloudTerminalHistoryLineBytesLimit        = 4 << 10
+	CloudTerminalHistoryCaptureBytesLimit     = 4 << 20
 )
 
 // TerminalCapacity reports the terminal rail without exposing its keys or
@@ -67,7 +70,8 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		r.Used = int64(len(l.terminalRefusals))
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline,
 		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire,
-		capacity.CloudTerminalFrameHeartbeat, capacity.CloudTerminalUnconfirmed:
+		capacity.CloudTerminalFrameHeartbeat, capacity.CloudTerminalUnconfirmed,
+		capacity.CloudTerminalHistoryReceipt, capacity.CloudTerminalHistoryLine, capacity.CloudTerminalHistoryCapture:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -903,14 +907,14 @@ func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p 
 		if len(req.Body) > 0 && !strictTerminalBody(req.Body, &body) {
 			return nil, terminal.Refuse(terminal.CodeInvalid, "history body is invalid")
 		}
-		lines, err := svc.History(ctx, p, id, body.Lines)
+		lines, err := svc.HistoryBounded(ctx, p, id, body.Lines, CloudTerminalHistoryCaptureBytesLimit)
 		if err != nil {
 			return nil, err
 		}
 		if lines == nil {
 			lines = []string{}
 		}
-		return map[string]any{"lines": lines}, nil
+		return boundedCloudHistory(lines, req)
 	case "control":
 		if req.Client == "" {
 			return nil, terminal.Refuse(terminal.CodeInvalid, "control needs client")

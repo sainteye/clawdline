@@ -23,6 +23,7 @@ class Wire implements TerminalWire {
   inputResult: "ok" | "unknown" | "refused" = "ok"
   incarnation = "first-machine-start"
   lease = held
+  historyResult: Record<string, unknown> = { lines: [], truncated: false, omitted_lines: 0 }
   delayed = new Set<string>()
   replies: Array<() => void> = []
   async subscribeTerminal(connection: string, _keyID: string, _raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
@@ -46,7 +47,7 @@ class Wire implements TerminalWire {
         : operation === "control" && request.body === undefined ? { machine_incarnation: this.incarnation, control: this.lease, input_state_unknown: false }
           : operation === "control" ? { control: this.lease }
             : operation === "list" ? { terminals: [] }
-              : operation === "history" ? { lines: [] }
+              : operation === "history" ? this.historyResult
                 : operation === "input" ? { applied_through: request.seq, duplicate: false } : {}
     const reply = () => this.emit(connection, "termr", {
       v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
@@ -110,6 +111,21 @@ test("a receipt alone never enables input; first and later full frames have dist
   wire.frame(wire.latest(), 2, "later")
   assert.equal(session.snapshot.state, "live")
   session.dispose()
+})
+
+test("Cloud history preserves an explicit partial-result marker", async () => {
+  const wire = new Wire()
+  wire.historyResult = { lines: ["newest"], truncated: true, omitted_lines: 19 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    assert.deepEqual(await session.history(), { lines: ["newest"], truncated: true, omitted_lines: 19 })
+    wire.historyResult = { lines: ["newest"], truncated: false, omitted_lines: 19 }
+    await assert.rejects(() => session.history(), /terminal_bad_receipt/)
+  } finally {
+    session.dispose()
+  }
 })
 
 test("unchanged full frames keep an idle shell fresh and typable for 30 seconds", async () => {

@@ -378,6 +378,9 @@ const (
 	CloudTerminalEarlyFrames       = "cloud.terminal_early_frames"
 	CloudTerminalObservationRows   = "cloud.terminal_observation_rows"
 	CloudTerminalUnconfirmed       = "cloud.terminal_unconfirmed_seconds"
+	CloudTerminalHistoryReceipt    = "cloud.terminal_history_receipt_bytes"
+	CloudTerminalHistoryLine       = "cloud.terminal_history_line_bytes"
+	CloudTerminalHistoryCapture    = "cloud.terminal_history_capture_bytes"
 	TerminalBodyBytes              = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
@@ -2020,6 +2023,24 @@ func Register() []Entry {
 			Limit: 6<<20 + 4<<10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalRequestBytesLimit"},
+		},
+		{
+			Name: CloudTerminalHistoryReceipt, Class: Buffer, Unit: Bytes,
+			Limit: 8 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalHistoryReceiptBytesLimit"},
+		},
+		{
+			Name: CloudTerminalHistoryLine, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalHistoryLineBytesLimit"},
+		},
+		{
+			Name: CloudTerminalHistoryCapture, Class: Buffer, Unit: Bytes,
+			Limit: 4 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalHistoryCaptureBytesLimit"},
 		},
 		{
 			Name: CloudTerminalReceipts, Class: Idempotency, Unit: Rows,

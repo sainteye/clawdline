@@ -44,6 +44,9 @@ func (*Server) Close(context.Context, terminal.ID) error            { return uns
 func (*Server) History(context.Context, terminal.ID, int) ([]string, error) {
 	return nil, unsupported()
 }
+func (*Server) HistoryBounded(context.Context, terminal.ID, int, int) ([]string, error) {
+	return nil, unsupported()
+}
 
 // Changed has no signal to give, as NewPaneSignal has none on Windows.
 func (*Server) Changed(context.Context, terminal.ID) (<-chan struct{}, func(), error) {
