@@ -47,10 +47,21 @@ import (
 // **It fails open, on purpose.** docs/machine-resource-scheduling.md records a
 // lease that twice stopped a build from reaching its compiler — on the path
 // taken when the broker was not answering, which is the path after a crash,
-// exactly when somebody needs to rebuild. So a daemon that does not answer, a
-// refusal this command does not understand, or a wait longer than --max-wait
-// each run the command anyway and say so. Waiting is the point; refusing to
-// build never is.
+// exactly when somebody needs to rebuild. So a daemon that does not answer, or
+// a refusal this command does not understand, runs the command anyway and says
+// so. Waiting is the point; refusing to build never is.
+//
+// A wait longer than --max-wait is different: the machine is answering, and
+// busy. Running beside the holder anyway is the overlap this command exists
+// to prevent, so it leaves the line and exits with heavyExitTimedOut without
+// running the command — a code the caller can tell from the command's own
+// failure, and retry.
+//
+// **It is quiet while it waits.** An agent watching its output wakes on every
+// line, and a token review on 2026-10-01 counted at least 140 agent turns spent
+// reading "waiting for the compile slot: number N in line" as the number
+// moved. So a wait says one line when it starts and one when it ends, and
+// nothing in between.
 //
 // The command itself runs at a lower CPU priority, and on Linux as the first
 // thing the kernel's out-of-memory killer takes, ahead of the sessions a person
@@ -70,8 +81,13 @@ const heavyRenewEvery = 20 * time.Second
 const heavyPollEvery = 5 * time.Second
 
 // heavyDefaultWait is how long the slot and memory together are waited for
-// before running anyway.
+// before giving up with heavyExitTimedOut.
 const heavyDefaultWait = 30 * time.Minute
+
+// heavyExitTimedOut is the exit status when --max-wait passed before the slot
+// or the memory was had, and the command was not run: EX_TEMPFAIL from
+// sysexits.h, "try again later". Nothing else in this repository exits 75.
+const heavyExitTimedOut = 75
 
 // heavyPressureCeiling is the memory stall average (percent of the last ten
 // seconds some task waited on memory) above which a start waits. 10 is where
@@ -111,7 +127,7 @@ func heavyCommand(args []string) {
 	fs.SetOutput(io.Discard)
 	reason := fs.String("reason", "", "what this is, shown to whoever waits behind it")
 	minAvail := fs.String("min-available", "", "memory that must be available first, e.g. 1500M or 1G (default: a quarter of the machine, at most 1G)")
-	wait := fs.Duration("max-wait", heavyDefaultWait, "how long to wait for the slot and memory before running anyway")
+	wait := fs.Duration("max-wait", heavyDefaultWait, "how long to wait for the slot and memory; past it the command is not run and heavy exits 75")
 	noSlot := fs.Bool("no-slot", false, "check memory only; do not queue for the compile slot")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
@@ -146,11 +162,13 @@ func heavyCommand(args []string) {
 func heavyUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline heavy [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] -- <command> [args…]")
 	fmt.Fprintln(os.Stderr, "  waits for the machine's compile slot and for memory, then runs the command and gives the slot back")
+	fmt.Fprintln(os.Stderr, "  exits with the command's own status; 75 when --max-wait passed and the command was not run")
 	os.Exit(2)
 }
 
 // runHeavy is the whole command after its flags: the answer is the exit status
-// to leave with, which is the command's own whenever it ran.
+// to leave with, which is the command's own whenever it ran, and
+// heavyExitTimedOut when --max-wait passed first.
 func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 	say := func(format string, a ...any) { fmt.Fprintf(d.stderr, "clawdline heavy: "+format+"\n", a...) }
 	if held := d.getenv(heavyEnv); held != "" {
@@ -173,9 +191,14 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 		if at := swiftstore.ProcessStart(d.pid); !at.IsZero() {
 			req.ProcessStart = at.Unix()
 		}
-		slot.acquire(req, deadline, d)
+		if !slot.acquire(req, deadline, opts.wait, d) {
+			return heavyExitTimedOut
+		}
 	}
-	waitForMemory(opts, deadline, d, slot, say)
+	if !waitForMemory(opts, deadline, d, slot, say) {
+		slot.release()
+		return heavyExitTimedOut
+	}
 
 	stop := slot.keepAlive(d.renew)
 	code, err := d.run(argv, []string{heavyEnv + "=" + d.requestID})
@@ -193,45 +216,56 @@ type heavySlot struct {
 	held bool
 }
 
-func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, d heavyDeps) {
-	lastPosition := int64(-1)
+// acquire waits in line for the slot. It answers false only when --max-wait
+// passed first; the place in line is then given up and nothing is run. Every
+// other way out — granted, no daemon, a refusal — answers true.
+//
+// While queued it asks again every poll (the broker passes over a waiter that
+// stops asking), and says nothing: one line when it joins the line, one when
+// the slot is its own.
+func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait time.Duration, d heavyDeps) bool {
+	queued := false
+	since := d.now()
 	for {
 		a, err := s.b.request("POST", "/v1/orchestrator/leases", nil, req, "")
 		if err != nil {
 			s.say("the daemon did not answer (%v); running without the compile slot", err)
 			s.b = nil
-			return
+			return true
 		}
 		var reply contract.LeaseReply
 		_ = json.Unmarshal(a.Body, &reply)
 		switch {
 		case a.ok() && reply.State == "granted":
-			if lastPosition >= 0 {
-				s.say("the compile slot is ours")
+			if queued {
+				s.say("the compile slot is ours after %s; starting", d.now().Sub(since).Round(time.Second))
 			}
 			s.held = true
-			return
+			return true
 		case a.ok() && reply.State == "queued":
-			if reply.Position != lastPosition {
-				s.say("waiting for the compile slot: %s", queueSentence(reply))
-				lastPosition = reply.Position
+			if !queued {
+				s.say("waiting for the compile slot (%s); quiet until it is ours, or %s passes and this exits %d without running",
+					queueSentence(reply), wait, heavyExitTimedOut)
+				queued = true
 			}
 		case a.Status == 429:
 			// queue_full: the line is long, not closed.
-			if lastPosition != 0 {
-				s.say("the compile slot's queue is full; asking again")
-				lastPosition = 0
+			if !queued {
+				s.say("waiting for the compile slot (its queue is full); quiet until it is ours, or %s passes and this exits %d without running",
+					wait, heavyExitTimedOut)
+				queued = true
 			}
 		default:
 			code, message := a.refusal()
 			s.say("the compile slot was refused (%d %s: %s); running without it", a.Status, code, message)
 			s.b = nil
-			return
+			return true
 		}
 		if !d.now().Before(deadline) {
-			s.say("waited past --max-wait for the compile slot; running anyway beside its holder")
+			s.say("waited %s (--max-wait) for the compile slot without getting it; the command was not run (exit %d)",
+				wait, heavyExitTimedOut)
 			s.cancel()
-			return
+			return false
 		}
 		pause := d.poll
 		if r := time.Duration(reply.RetryAfterSeconds) * time.Second; r > pause {
@@ -305,34 +339,37 @@ func queueSentence(r contract.LeaseReply) string {
 }
 
 // waitForMemory holds the start until the machine has room, renewing the slot
-// while it waits so nobody else takes the memory it is waiting for.
-func waitForMemory(opts heavyOptions, deadline time.Time, d heavyDeps, slot *heavySlot, say func(string, ...any)) {
-	lastSaid := time.Time{}
+// while it waits so nobody else takes the memory it is waiting for. It answers
+// false only when --max-wait passed first. Like the slot, it says one line
+// when it starts waiting and one when the wait ends.
+func waitForMemory(opts heavyOptions, deadline time.Time, d heavyDeps, slot *heavySlot, say func(string, ...any)) bool {
+	waiting := false
 	lastRenew := d.now()
 	for {
 		s, err := d.sample()
 		if errors.Is(err, machineusage.ErrUnsupported) {
-			return
+			return true
 		}
 		if err != nil {
 			say("memory could not be read (%v); not waiting for it", err)
-			return
+			return true
 		}
 		ok, why := memoryRoom(s, opts.minAvailable)
 		if ok {
-			if !lastSaid.IsZero() {
+			if waiting {
 				say("memory is back; starting")
 			}
-			return
+			return true
 		}
 		now := d.now()
 		if !now.Before(deadline) {
-			say("waited past --max-wait for memory (%s); running anyway", why)
-			return
+			say("waited %s (--max-wait) for memory (%s); the command was not run (exit %d)", opts.wait, why, heavyExitTimedOut)
+			return false
 		}
-		if lastSaid.IsZero() || now.Sub(lastSaid) >= 30*time.Second {
-			say("waiting for memory: %s", why)
-			lastSaid = now
+		if !waiting {
+			say("waiting for memory: %s; quiet until it is back, or --max-wait passes and this exits %d without running",
+				why, heavyExitTimedOut)
+			waiting = true
 		}
 		if slot.b != nil && slot.held && now.Sub(lastRenew) >= d.renew {
 			_, _ = slot.b.request("POST", "/v1/orchestrator/leases/renew", nil, slot.owner("waiting for memory"), "")
