@@ -5411,6 +5411,32 @@ export interface SendRequest {
 }
 
 /**
+ * Whether a Session that reported its turn (`disposition.scope` `session`) has a
+ * Board item the person has not opened since it reached deploying or done. Present
+ * only beside such a disposition. `pending` names the newest one; `none` is a
+ * successful reading that found none; `unknown` means the Board could not be read,
+ * and is never shown as none. A deploying item belongs to its owner; a done item to
+ * the Session whose assignment was released when it closed. Opening the item's
+ * detail (POST /v1/work/v2/items/{id}/seen) clears it until it enters that phase
+ * again.
+ */
+export interface SessionAcceptance {
+  /**
+   * How many of this Session's items are waiting, the named one among them.
+   */
+  count?: number
+  phase?: string
+
+  /**
+   * Unix seconds: when the named item entered that phase.
+   */
+  since?: number
+  state: string
+  title?: string
+  work_id?: string
+}
+
+/**
  * When this session last moved, from this daemon rather than from whatever each
  * browser happened to have watched: the moment the session's own conversation
  * record last grew. That one file follows both halves of a turn — the assistant
@@ -5890,6 +5916,7 @@ export interface SessionModel {
  * invented; a reader that handles absence handles this too.
  */
 export interface SessionRow {
+  acceptance?: SessionAcceptance
   activity?: SessionActivity
 
   /**

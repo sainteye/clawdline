@@ -900,3 +900,137 @@ func TestTheExplicitV1ResetDoesNotTouchV2OrBrokerHistory(t *testing.T) {
 		t.Fatalf("broker history was touched: %d %v", tasks, err)
 	}
 }
+
+func TestPendingAcceptanceFollowsPhaseOccurrenceAndSeenReceipt(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	item := v2Item("10000000-0000-4000-8000-0000000000a1", at)
+	item.Title, item.OwnerSession, item.Phase = "Ship the receipt", "session-a", work.PhaseImplementing
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		if err := tx.CreateItem(item, "local", `{}`); err != nil {
+			return err
+		}
+		return tx.CreateAssignment(work.AssignmentV2{ID: "assignment-a1", WorkID: item.ID,
+			Mode: "existing_session", SessionID: "session-a", State: "active",
+			HumanActor: "local", CreatedAt: at, UpdatedAt: at})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	change := func(phase work.Phase, seconds int64) {
+		t.Helper()
+		prev, err := s.WorkV2Item(ctx, item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next := prev
+		next.Phase, next.UpdatedAt = phase, at.Add(time.Duration(seconds)*time.Second)
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+			if phase == work.PhaseDone {
+				next.ClosedAt, next.OwnerSession = next.UpdatedAt, ""
+				a, err := tx.ActiveAssignment(item.ID)
+				if err != nil {
+					return err
+				}
+				a.State, a.ReleasedAt, a.UpdatedAt = "released", next.UpdatedAt, next.UpdatedAt
+				if err := tx.UpdateAssignment(a); err != nil {
+					return err
+				}
+			}
+			return tx.PutItem(prev, next, "item.phase_changed", "session-a", `{}`)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pending := func() map[string]PendingAcceptance {
+		t.Helper()
+		got, err := s.WorkV2PendingAcceptanceForSessions(ctx, []string{"session-a", "session-b"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	if got := pending(); len(got) != 0 {
+		t.Fatalf("implementing is not waiting for acceptance: %+v", got)
+	}
+	change(work.PhaseDeploying, 10)
+	if got := pending()["session-a"]; got.WorkID != item.ID || got.Phase != work.PhaseDeploying ||
+		got.Title != "Ship the receipt" || got.Count != 1 || got.EnteredAt.Unix() != at.Unix()+10 {
+		t.Fatalf("deploying owner %+v", got)
+	}
+	if got := pending(); len(got) != 1 {
+		t.Fatalf("another Session was given the owner's item: %+v", got)
+	}
+	// A view of another phase than the item is in marks nothing.
+	if marked, err := s.MarkWorkV2PhaseSeen(ctx, item.ID, work.PhaseDone, at); err != nil || marked {
+		t.Fatalf("stale phase marked %v, %v", marked, err)
+	}
+	if marked, err := s.MarkWorkV2PhaseSeen(ctx, item.ID, work.PhaseDeploying, at); err != nil || !marked {
+		t.Fatalf("seen deploying %v, %v", marked, err)
+	}
+	if marked, err := s.MarkWorkV2PhaseSeen(ctx, item.ID, work.PhaseDeploying, at); err != nil || marked {
+		t.Fatalf("a second view is not a new receipt: %v, %v", marked, err)
+	}
+	if got := pending(); len(got) != 0 {
+		t.Fatalf("seen deploying still pending: %+v", got)
+	}
+	// Leaving and coming back is a new occurrence, seen by nobody yet.
+	change(work.PhaseImplementing, 20)
+	change(work.PhaseDeploying, 30)
+	if got := pending()["session-a"]; got.WorkID != item.ID || got.EnteredAt.Unix() != at.Unix()+30 {
+		t.Fatalf("re-entered deploying %+v", got)
+	}
+	// Done releases the owner; the Session whose assignment closed it keeps it.
+	change(work.PhaseDone, 40)
+	if got := pending()["session-a"]; got.WorkID != item.ID || got.Phase != work.PhaseDone {
+		t.Fatalf("done item %+v", got)
+	}
+	if marked, err := s.MarkWorkV2PhaseSeen(ctx, item.ID, work.PhaseDone, at); err != nil || !marked {
+		t.Fatalf("seen done %v, %v", marked, err)
+	}
+	if got := pending(); len(got) != 0 {
+		t.Fatalf("seen done still pending: %+v", got)
+	}
+}
+
+func TestPendingAcceptanceNamesTheNewestAndCountsTheRest(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	for n, title := range []string{"Older", "Newer"} {
+		i := v2Item(fmt.Sprintf("10000000-0000-4000-8000-0000000000b%d", n), at)
+		i.Title, i.OwnerSession, i.Phase = title, "session-a", work.PhaseMerging
+		next := i
+		next.Version, next.Phase, next.UpdatedAt = 1, work.PhaseDeploying, at.Add(time.Duration(n+1)*time.Minute)
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+			if err := tx.CreateItem(i, "local", `{}`); err != nil {
+				return err
+			}
+			return tx.PutItem(i, next, "item.phase_changed", "session-a", `{}`)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.WorkV2PendingAcceptanceForSessions(ctx, []string{"session-a"})
+	if err != nil || got["session-a"].Title != "Newer" || got["session-a"].Count != 2 {
+		t.Fatalf("pending %+v, %v", got, err)
+	}
+	// An item that has not changed phase since the receipts began is not raised.
+	legacy := v2Item("10000000-0000-4000-8000-0000000000c1", at)
+	legacy.OwnerSession, legacy.Phase = "session-c", work.PhaseDeploying
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateItem(legacy, "local", `{}`) }); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.WorkV2PendingAcceptanceForSessions(ctx, []string{"session-c"}); err != nil || len(got) != 0 {
+		t.Fatalf("legacy item raised %+v, %v", got, err)
+	}
+}

@@ -32,7 +32,7 @@
   "cssSource": "~/code/clawdline/Resources/web/app/css",
   "js": {
     "js/core/esc.js": "74964734afc56b08",
-    "js/core/i18n.js": "b696a20a1e811040",
+    "js/core/i18n.js": "ae72e5b30ec50b38",
     "js/core/state.js": "71c00aefabffdb8d",
     "js/core/dom.js": "72b6562e35b09177",
     "js/core/util.js": "8d830d9646260e74",
@@ -46,7 +46,7 @@
     "js/net/cloud-failure.js": "2f2409a848a0c79b",
     "js/session/selection.js": "8ddd312681b50047",
     "js/session/ui.js": "5b4ed1293afbea71",
-    "js/view/derive.js": "eba0131e486ca4cf",
+    "js/view/derive.js": "ca09a85556ca1aeb",
     "js/view/markdown.js": "1d6c074ba207f3e4",
     "js/view/board-workflow-record.js": "a6a475180fefe085",
     "js/view/project-mark.js": "b5459e2b72bc28b9",
@@ -87,7 +87,7 @@
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {
-    "public/strings/zh-Hant.json": "b5a69f32f85d05d1"
+    "public/strings/zh-Hant.json": "0567756877fa730f"
   },
   "stringsSource": "~/code/clawdline/Resources/web/strings",
   "inlined": {

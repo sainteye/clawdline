@@ -997,6 +997,8 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 			s.workV2GateDecision(w, r, parts[1], true)
 		} else if parts[2] == "images" {
 			s.workV2AddImage(w, r, parts[1])
+		} else if parts[2] == "seen" {
+			s.workV2Seen(w, r, parts[1])
 		} else if parts[2] == "persona-suggestion" {
 			s.workV2PersonaSuggestion(w, r, parts[1])
 		} else {
@@ -1019,6 +1021,38 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such work-system v2 route.")
 	}
+}
+
+// workV2Seen is the person's receipt for opening an item's detail: what a
+// Session card shows as waiting for acceptance stops waiting on every device.
+// The phase is the one the person was shown; a view that answers after the
+// item moved on marks nothing. It is idempotent by nature, so it takes no
+// Idempotency-Key, and a repeat is `marked: false`, not a refusal.
+func (s *Server) workV2Seen(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "An item is marked seen with POST.")
+		return
+	}
+	if _, ok := requirePersonWorkV2(w, r); !ok {
+		return
+	}
+	var body struct {
+		Phase string `json:"phase"`
+	}
+	if _, ok := readWorkV2Body(w, r, &body); !ok {
+		return
+	}
+	// Only the phases a Session card can show as awaiting acceptance take a receipt.
+	if phase := work.Phase(body.Phase); phase != work.PhaseDeploying && phase != work.PhaseDone {
+		writeRefusal(w, http.StatusBadRequest, "invalid_phase", "Only an item shown in deploying or done is marked seen.")
+		return
+	}
+	marked, err := s.store.MarkWorkV2PhaseSeen(r.Context(), id, work.Phase(body.Phase), time.Now())
+	if err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "marked": marked})
 }
 
 func (s *Server) workV2GateExport(w http.ResponseWriter, r *http.Request, id string) {
