@@ -380,6 +380,34 @@ func TestDispatchResendsOnceAfterAStaleInventory(t *testing.T) {
 	}
 }
 
+func TestDispatchExplicitConversationResolvesConflictingAssistantEnvironment(t *testing.T) {
+	w := &dispatchWorld{root: t.TempDir(), generations: []string{"aaaaaaaaaaaaaaaa"}}
+	s, b := w.daemon(t, func(int) (int, string) { return 200, dispatchedAnswer("spawning") })
+	o := testDispatchOptions()
+	o.Conversation = thinConversation
+	var out, errs bytes.Buffer
+	code := dispatchTask(&out, &errs, b, o, testDispatchEnv(bothAssistants))
+	if code != 0 {
+		t.Fatalf("explicit Codex conversation: exit %d: %s", code, errs.String())
+	}
+	if n := len(postBodies(s)); n != 1 {
+		t.Fatalf("posted %d times, want 1", n)
+	}
+	raw, err := os.ReadFile(filepath.Join(w.root, dispatchID, "task.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var task struct {
+		Root map[string]string `json:"root"`
+	}
+	if err := json.Unmarshal(raw, &task); err != nil {
+		t.Fatal(err)
+	}
+	if task.Root["assistant"] != "codex" {
+		t.Fatalf("root assistant = %q, want codex", task.Root["assistant"])
+	}
+}
+
 // A second stale answer is reported as the refusal it is, not chased; the
 // brief this command wrote is taken back.
 func TestDispatchReportsASecondStaleInventory(t *testing.T) {

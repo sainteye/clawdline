@@ -86,11 +86,10 @@ func relayMessage(stdout, stderr io.Writer, b *broker, to, from, text, key strin
 		return 2
 	}
 	if from == "" {
-		for _, name := range conversationEnv {
-			if v := strings.TrimSpace(getenv(name)); v != "" {
-				from = v
-				break
-			}
+		var err error
+		if from, _, err = conversationFromEnv(getenv); err != nil {
+			fmt.Fprintf(stderr, "clawdline send: %s Nothing was sent.\n", conversationRefusal(err, "--from"))
+			return 2
 		}
 	}
 	if from == "" {

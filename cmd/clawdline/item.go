@@ -499,11 +499,10 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		return 0
 	}
 	if conversation == "" {
-		for _, env := range conversationEnv {
-			if v := strings.TrimSpace(getenv(env)); v != "" {
-				conversation = v
-				break
-			}
+		var err error
+		if conversation, _, err = conversationFromEnv(getenv); err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was changed.\n", name, conversationRefusal(err, "--conversation"))
+			return 2
 		}
 	}
 	if conversation == "" {

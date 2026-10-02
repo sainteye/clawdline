@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 )
 
 // note create is the Agent's one-way entry to the person's attention panel.
@@ -61,11 +60,10 @@ func noteUsage() {
 
 func createNote(stdout, stderr io.Writer, b *broker, target, from string, raw []byte, key string, getenv func(string) string) int {
 	if from == "" {
-		for _, name := range conversationEnv {
-			if candidate := strings.TrimSpace(getenv(name)); candidate != "" {
-				from = candidate
-				break
-			}
+		var err error
+		if from, _, err = conversationFromEnv(getenv); err != nil {
+			fmt.Fprintf(stderr, "clawdline note create: %s Nothing was changed.\n", conversationRefusal(err, "--from"))
+			return 2
 		}
 	}
 	if from == "" {
