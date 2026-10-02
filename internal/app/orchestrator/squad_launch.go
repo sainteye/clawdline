@@ -59,7 +59,10 @@ type brokerSquadLaunch struct {
 	files  squadfiles.Files
 }
 
-func (b *Broker) prepareSquadLaunch(ctx context.Context, personaID, projectPath string) (brokerSquadLaunch, error) {
+// prepareSquadLaunch publishes a persona's launch files. claims are the
+// task's declared writes, nil when there is no task (a handoff), and decide
+// which role skills the prompt lists (squadfiles.PublishFor).
+func (b *Broker) prepareSquadLaunch(ctx context.Context, personaID, projectPath string, claims []string) (brokerSquadLaunch, error) {
 	if personaID == "" || b.ResolveSquadSnapshot == nil || b.Store == nil {
 		return brokerSquadLaunch{}, nil
 	}
@@ -71,7 +74,8 @@ func (b *Broker) prepareSquadLaunch(ctx context.Context, personaID, projectPath 
 	if err != nil {
 		return brokerSquadLaunch{}, err
 	}
-	files, err := squadfiles.Publish(b.Dir, launch.ID, launch.SnapshotID, launch.ActorCapability, document)
+	files, err := squadfiles.PublishFor(b.Dir, launch.ID, launch.SnapshotID, launch.ActorCapability, document,
+		squadfiles.Task{Claims: claims})
 	if err != nil {
 		_ = b.Store.FailSquadLaunch(ctx, launch.ID)
 		return brokerSquadLaunch{}, err

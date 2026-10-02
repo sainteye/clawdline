@@ -78,7 +78,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if err != nil {
 		return openedSession{}, err
 	}
-	prepared, err := b.prepareSquadLaunch(ctx, persona, cwd)
+	prepared, err := b.prepareSquadLaunch(ctx, persona, cwd, nil)
 	if err != nil {
 		return openedSession{}, err
 	}

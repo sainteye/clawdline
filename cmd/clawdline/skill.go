@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/skillfile"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/skills"
 )
@@ -31,9 +32,14 @@ func guideCommand(args []string) {
 // `clawdline guide [lang]` is the core and a list of the other parts;
 // `clawdline guide [lang] <part>` is one part; `clawdline guide [lang] all`
 // is the whole guide (skills/sections.go says why it is not the default).
+// `clawdline guide child` is the protocol every dispatched child follows,
+// which its CHILD.md points at instead of carrying (orchestrator.ChildGuide).
 func printGuide(stdout, stderr io.Writer, args []string) int {
-	const usage = "usage: clawdline guide [lang] [part|all] | clawdline guide -list | clawdline guide -sections"
+	const usage = "usage: clawdline guide [lang] [part|all] | clawdline guide child | clawdline guide -list | clawdline guide -sections"
 	switch {
+	case len(args) == 1 && args[0] == orchestrator.ChildGuideTopic:
+		fmt.Fprint(stdout, orchestrator.ChildGuide())
+		return 0
 	case len(args) > 2:
 		fmt.Fprintln(stderr, usage)
 		return 2

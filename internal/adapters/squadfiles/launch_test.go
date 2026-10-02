@@ -177,8 +177,8 @@ func TestPublishedPromptSaysWhenEachSkillApplies(t *testing.T) {
 		`When it applies, in the skill's words: "Use this skill when a change spans two files, e.g. a rename."`,
 		`When it applies, in the skill's words: "Use when the request mentions a release."`,
 		"`example.skill.purpose` (purpose-only) — Only a purpose",
-		"Before you start, compare the task with each skill below",
-		"record `applied`",
+		"Before you start, check each skill below against the task",
+		"then `applied`",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt is missing %q:\n%s", want, prompt)
@@ -194,5 +194,45 @@ func TestPublishedPromptSaysWhenEachSkillApplies(t *testing.T) {
 		if strings.Contains(line, "very very") && len([]rune(line)) > maxSkillWhenRunes+60 {
 			t.Errorf("when-line is not capped: %d runes", len([]rune(line)))
 		}
+	}
+}
+
+// A dispatched task's declared writes decide which role skills its prompt
+// lists. A skill about Go is not listed for a task that writes only Markdown;
+// it is still written and stays in the snapshot. With nothing listed the
+// section is one line, not the usage paragraph over an empty list.
+func TestPublishedPromptListsOnlySkillsThatApplyToTheDeclaredWrites(t *testing.T) {
+	document := json.RawMessage(`{"definition_id":"clawdline.persona.backend","scope_id":"global","definition":{"version":"1","body":"Role definition"},"skills":[` +
+		`{"id":"clawdline.skill.golang-concurrency","version":"1","enabled":true,"content":"Use this skill when a Go task changes goroutines.","source":"example","digest":"a"}]}`)
+	sum := sha256.Sum256(document)
+	publish := func(task Task) string {
+		t.Helper()
+		files, err := PublishFor(t.TempDir(), "abcdefghijklmnopqrstuv", hex.EncodeToString(sum[:]), "capability", document, task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries, err := os.ReadDir(filepath.Join(filepath.Dir(files.SnapshotPath), "skills"))
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("the skill file is not written whatever the prompt lists: %v, %v", entries, err)
+		}
+		body, err := os.ReadFile(files.PromptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+	for name, claims := range map[string][]string{"unknown": nil, "go": {"docs/a.md", "internal/x.go"}, "directory": {"internal/"}} {
+		if prompt := publish(Task{Claims: claims}); !strings.Contains(prompt, "`clawdline.skill.golang-concurrency`") ||
+			!strings.Contains(prompt, "check each skill below") {
+			t.Errorf("%s: the Go skill is not listed:\n%s", name, prompt)
+		}
+	}
+	prompt := publish(Task{Claims: []string{"docs/a.md", "README.md"}})
+	if strings.Contains(prompt, "`clawdline.skill.golang-concurrency`") || strings.Contains(prompt, "check each skill below") ||
+		!strings.Contains(prompt, "Role skills: none applies to this task's declared writes;") {
+		t.Errorf("a Markdown-only task is still given the Go skill or the usage paragraph:\n%s", prompt)
+	}
+	if strings.Count(prompt, "Role skills") != 1 {
+		t.Errorf("the pointer is not one line:\n%s", prompt)
 	}
 }

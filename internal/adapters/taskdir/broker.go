@@ -21,7 +21,8 @@ import (
 // files a child writes on the way out.
 //
 //	task.json          the brief, written once, 0600
-//	CHILD.md           the protocol the child is told to follow, 0600
+//	CHILD.md           the task and its commands; the shared protocol is
+//	                   `clawdline guide child`, 0600
 //	accepted.json      the child's signed receipt for its briefing, when it
 //	                   cannot reach loopback (D10)
 //	progress.json      a material boundary change, rewritten in place

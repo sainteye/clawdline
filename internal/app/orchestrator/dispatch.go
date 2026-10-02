@@ -680,7 +680,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		r.FinishedAt = b.now()
 		return r
 	}
-	prepared, err := b.prepareSquadLaunch(ctx, r.Persona, cwd)
+	prepared, err := b.prepareSquadLaunch(ctx, r.Persona, cwd, r.Claims)
 	if err != nil {
 		r.State = StateSpawnFailed
 		r.SpawnError = err.Error()

@@ -257,6 +257,14 @@ about 6% of its cost on protocol and a root about 10%. The parts cut, and where 
   (`brief.go`, `writeTask`). It was reading `task.json` after `CHILD.md`, 2.4 times a session on
   average (0.9% of its cost). `task.json` stays the daemon's source, rewritten from the admitted
   record at admission, and the briefing names it once as the copy the child need not read.
+- **The shared protocol is read once (2026-10-02).** Everything every child is told alike — the
+  rules, the verification budget, why `--fail-with-body`, what `symbols` and `leftovers` are for —
+  is `clawdline guide child` (`orchestrator.ChildGuide`), which `CHILD.md` names by the daemon's
+  own path. `CHILD.md` keeps the task, this task's paths, timeout, tab rule and house rules, the
+  accept, notify, progress and finish commands, and the `result.json` template, so a child that
+  never reads the guide can still finish. A one-word task's `CHILD.md` went from 8,664 to 5,432
+  bytes (`TestTheFixedLaunchAdditionsAreMeasured`; the launch prompt's share is in
+  `docs/personas.md`).
 - **Signing is one command.** `clawdline task accept <task dir>` posts `/accepted` with the task
   secret from `CLAWDLINE_TASK_SECRET` or stdin — never argv, never printed — and leaves
   `accepted.json` when the daemon cannot be reached, as `task finish` does for its result. The

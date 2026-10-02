@@ -4,6 +4,7 @@ import (
 	"embed"
 	"errors"
 	"io/fs"
+	"path"
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
@@ -107,4 +108,41 @@ func historicalBuiltinSkillByID(id string) (Skill, bool) {
 		return skill, true
 	}
 	return Skill{}, false
+}
+
+// webFiles are the extensions a front-end skill is about.
+var webFiles = []string{".css", ".html", ".js", ".jsx", ".scss", ".svelte", ".ts", ".tsx", ".vue"}
+
+// builtinSkillWrites are the file extensions a built-in skill is about, for
+// the skills whose own "use this skill when" names a kind of code. A skill
+// not named here is about a kind of work, not a kind of file, and applies
+// to whatever the task writes.
+var builtinSkillWrites = map[string][]string{
+	"clawdline.skill.golang-concurrency":       {".go"},
+	"clawdline.skill.frontend-component-build": webFiles,
+	"clawdline.skill.frontend-design":          webFiles,
+}
+
+// SkillAppliesToWrites answers whether a skill can apply to a task that
+// declared these writes. Unknown is not "no": nil claims, a claim with no
+// extension (a directory or a pattern), or a skill with no file signal all
+// answer true, so a skill is left out only when every declared write is a
+// file of a kind the skill is not about.
+func SkillAppliesToWrites(skillID string, claims []string) bool {
+	exts, ok := builtinSkillWrites[skillID]
+	if !ok || len(claims) == 0 {
+		return true
+	}
+	for _, claim := range claims {
+		ext := strings.ToLower(path.Ext(claim))
+		if ext == "" || strings.ContainsAny(ext, "*?[") {
+			return true
+		}
+		for _, e := range exts {
+			if e == ext {
+				return true
+			}
+		}
+	}
+	return false
 }
