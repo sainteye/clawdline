@@ -33,7 +33,7 @@ func TestPersonaSuggestionRunsOnlyAfterTheExplicitPressAndReplays(t *testing.T) 
 	s.suggestPersona = func(_ context.Context, request planner.PersonaRequest, provider string) (planner.PersonaSuggestion, error) {
 		runs++
 		if provider != "codex" || request.Kind != "feature" || request.Title != "Tidy the notes" ||
-			request.Description != "Tidy them." || len(request.Candidates) != 42 {
+			request.Description != "Tidy them." || len(request.Candidates) != 43 {
 			t.Fatalf("request=%+v provider=%q", request, provider)
 		}
 		return planner.PersonaSuggestion{Outcome: "recommend", PersonaID: "frontend"}, nil

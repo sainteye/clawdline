@@ -23,7 +23,9 @@ type builtinSkillSpec struct {
 	Persona, Name, ZhName, Purpose, ZhPurpose, Source, License string
 }
 
-// Each source is a reviewed, commit-pinned entry in docs/persona-skill-decisions.json.
+// Each source is a reviewed, commit-pinned entry in docs/persona-skill-decisions.json,
+// or persona.Original for a text written for Clawdline, which carries the
+// repository's own licence and is recorded there as an original skill.
 // The bundled text is a portable adaptation, not a remote file loaded during
 // a session. The current project's instructions still govern its use.
 var builtinSkillSpecs = []builtinSkillSpec{
@@ -49,6 +51,7 @@ var builtinSkillSpecs = []builtinSkillSpec{
 	{"feedback-synthesizer", "research-synthesis", "回饋與研究整理", "Synthesize feedback into decision-ready patterns", "把回饋整理成可支持決策的模式", "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/SKILL.md", "MIT"},
 	{"sprint-prioritizer", "opportunity-cost", "機會成本", "Weigh a commitment against its best alternative", "以最佳替代方案衡量每個投入", "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-opportunity-cost/SKILL.md", "MIT"},
 	{"performance", "binding-constraint", "找出真正瓶頸", "Measure, then improve the one binding constraint", "先量測，再改善唯一的關鍵瓶頸", "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-theory-of-constraints/SKILL.md", "MIT"},
+	{"zero-review-lead", "zero-based-review", "歸零審查", "Re-justify an existing design from zero with role reviewers", "以多角色從零重新檢驗既有設計", persona.Original, "MIT"},
 	{"architect", "decision-record", "架構決策紀錄", "Record a technical decision with its alternatives", "記錄技術決策及其替代方案", "https://github.com/affaan-m/ECC/blob/c05b2d6614f62f6db0047669aa4eefb223d478f9/skills/architecture-decision-records/SKILL.md", "MIT"},
 }
 

@@ -9,7 +9,8 @@
 //
 // The catalog is compiled in. Each persona is one Markdown file under
 // catalog/, adapted from github.com/msitarzewski/agency-agents (MIT, the
-// commit in Upstream); the upstream licence travels beside them. The files are
+// commit in Upstream) unless its source is Original; the upstream licence
+// travels beside them. The files are
 // parsed when the package loads, and TestTheCatalogLoads makes a malformed one
 // a failing test rather than something a running daemon finds out.
 //
@@ -46,6 +47,11 @@ const (
 	UpstreamLicense    = "MIT"
 )
 
+// Original is the source of a persona written for Clawdline rather than
+// adapted. Naming it, instead of an invented URL, keeps every source either a
+// pinned upstream file or plainly none.
+const Original = "original"
+
 // Order is the catalog in the order every list shows it. A file under
 // catalog/ that is not named here, or a name here with no file, is a catalog
 // that does not load.
@@ -71,6 +77,7 @@ var Order = []string{
 	"secrets",
 	"ui-designer", "ux-architect", "brand-guardian", "ui-finish-gate", "image-prompt",
 	"pricing", "customer-success", "support", "analytics", "devrel", "privacy",
+	"zero-review-lead",
 }
 
 // Teams are the closed set a persona belongs to, in the order the console's
@@ -116,7 +123,7 @@ type Persona struct {
 	// first (epic, feature, issue). A suggestion, never a default: nothing
 	// is given a persona nobody asked for.
 	SuggestedKinds []string
-	// Source is the upstream file this one was adapted from.
+	// Source is the upstream file this one was adapted from, or Original.
 	Source string
 	Icon   Icon
 	// Body is the Markdown after the frontmatter.
@@ -126,6 +133,9 @@ type Persona struct {
 // Text is what is written to disk and injected: the preamble, the body and
 // the attribution.
 func (p Persona) Text() string {
+	if p.Source == Original {
+		return Preamble + strings.TrimSpace(p.Body) + "\n\n---\nSource: original to Clawdline.\n"
+	}
 	return Preamble + strings.TrimSpace(p.Body) + "\n\n---\nAdapted from " + p.Source +
 		" (" + UpstreamLicense + " License).\n"
 }
@@ -311,7 +321,7 @@ func parse(raw string) (Persona, error) {
 	if !printableASCII(p.Name.En) {
 		return Persona{}, fmt.Errorf("name_en %q is not printable ASCII", p.Name.En)
 	}
-	if !strings.HasPrefix(p.Source, UpstreamRepository+"/blob/"+UpstreamCommit+"/") {
+	if p.Source != Original && !strings.HasPrefix(p.Source, UpstreamRepository+"/blob/"+UpstreamCommit+"/") {
 		return Persona{}, fmt.Errorf("source %q is not a file of %s at %s", p.Source, UpstreamRepository, UpstreamCommit)
 	}
 	suggested, err := list(fields["suggested_kinds"])

@@ -32,7 +32,7 @@ def catalog_ids():
     match = re.search(r"var Order = \[\]string\{(.*?)\n\}", source, re.S)
     require(match is not None, "persona.Order was not found")
     ids = re.findall(r'"([a-z]+(?:-[a-z]+)*)"', match.group(1))
-    require(len(ids) == 42 and len(set(ids)) == 42, "persona.Order must contain 42 unique IDs")
+    require(ids and len(set(ids)) == len(ids), "persona.Order must contain unique IDs")
     return ids
 
 
@@ -41,6 +41,12 @@ def catalog_sources():
     rows = re.findall(r'^\t\{"([a-z-]+)", "[a-z-]+", .*"(https://github\.com/[^"]+)", "[^"]+"\},$', source, re.M)
     require(len(rows) >= 12, "builtinSkillSpecs was not found")
     return rows
+
+
+def catalog_originals():
+    # A skill written for Clawdline names persona.Original instead of a URL.
+    source = (ROOT / "internal/domain/squad/builtin_skills.go").read_text()
+    return re.findall(r'^\t\{"([a-z-]+)", "([a-z-]+)", .*, persona\.Original, "[^"]+"\},$', source, re.M)
 
 
 def valid_path(path):
@@ -72,19 +78,30 @@ def local_references(content, path):
 
 def validate(data):
     ids = catalog_ids()
-    doc_ids = re.findall(r"^\| `([^`]+)` \|", (ROOT / "docs/personas.md").read_text(), re.M)
+    # Only a catalog row starts with an id; other tables there name files such as `CHILD.md`.
+    doc_ids = re.findall(r"^\| `([a-z]+(?:-[a-z]+)*)` \|", (ROOT / "docs/personas.md").read_text(), re.M)
     require(doc_ids == ids, "docs/personas.md does not follow persona.Order")
     require(data.get("schema_version") == 1, "unsupported schema_version")
     roles = data.get("roles")
     require(isinstance(roles, list), "roles must be a list")
     got = [role.get("id") for role in roles if isinstance(role, dict)]
-    require(len(got) == 42 and got == ids, "roles must match all 42 persona.Order IDs in order, once each")
+    require(got == ids, f"roles must match all {len(ids)} persona.Order IDs in order, once each")
     count = 0
     preview_count = 0
     for role in roles:
         rid = role["id"]
         candidates = role.get("candidates")
         require(isinstance(candidates, list), f"{rid}: candidates must be a list")
+        if role.get("conclusion") == "original_skill":
+            original = role.get("original_skill")
+            require(not candidates, f"{rid}: an original skill has no upstream candidates")
+            require(isinstance(original, dict) and bool(original.get("name")) and bool(original.get("why")),
+                    f"{rid}: an original skill needs its name and why no upstream text was used")
+            path = original.get("path")
+            require(path == f"internal/domain/squad/builtin_skills/{original['name']}.md" and (ROOT / path).is_file(),
+                    f"{rid}: the original skill's text is not at its bundled path")
+            require(role.get("zero_preview_reason") is None, f"{rid}: an original skill is not an upstream preview")
+            continue
         if not candidates:
             require(role.get("conclusion") == "no_suitable_candidate", f"{rid}: empty candidates need a no_suitable_candidate conclusion")
             require(bool(role.get("zero_preview_reason")), f"{rid}: zero candidates need a reason")
@@ -148,6 +165,10 @@ def validate(data):
         matches = [c for c in by_role.get(persona, {}).get("candidates", []) if c.get("skill_url") == url]
         require(matches and matches[0]["preview"]["status"] == "eligible_for_manual_preview",
                 f"{persona}: the bundled skill's source {url} is not a reviewed candidate of this role")
+    originals = catalog_originals()
+    recorded = {(role["id"], role["original_skill"]["name"]) for role in roles if role.get("conclusion") == "original_skill"}
+    require(set(originals) == recorded,
+            f"original skills in the catalog {sorted(originals)} do not match the ledger {sorted(recorded)}")
     return count, preview_count
 
 
@@ -215,6 +236,9 @@ def self_test(data, fetch=None):
     rejected(lambda d: d["roles"][0]["candidates"][0].__setitem__("license_url", "https://github.com/other/repo/blob/main/LICENSE"), "wrong license evidence")
     rejected(lambda d: d["roles"][0]["candidates"][0]["preview"].__setitem__("status", "eligible_for_manual_preview"), "open audit preview")
     rejected(lambda d: next(r for r in d["roles"] if r["id"] == "code-reviewer")["candidates"].pop(), "bundled skill missing from the ledger")
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "zero-review-lead").update(
+        conclusion="no_suitable_candidate", zero_preview_reason="dropped", original_skill=None), "original skill missing from the ledger")
+    rejected(lambda d: next(r for r in d["roles"] if r["id"] == "zero-review-lead")["original_skill"].__setitem__("name", "elsewhere"), "original skill at the wrong path")
     if fetch is not None:
         rejected(lambda d: next(r for r in d["roles"] if r["id"] == "accessibility")["candidates"][0]["reference_audit"]["files"].pop(), "omitted real reference", online=True)
 
@@ -232,7 +256,9 @@ def main():
         requests, fetch = verify_upstream(data)
     if args.self_test:
         self_test(data, fetch)
-    print(f"42/42 personas; {count} pinned candidates; {previews} manual previews; {requests} upstream file reads; valid")
+    ids = len(data["roles"])
+    originals = sum(role.get("conclusion") == "original_skill" for role in data["roles"])
+    print(f"{ids}/{ids} personas; {count} pinned candidates; {previews} manual previews; {originals} original skills; {requests} upstream file reads; valid")
 
 
 if __name__ == "__main__":

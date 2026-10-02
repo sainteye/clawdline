@@ -2344,6 +2344,19 @@
           }
         }
       ]
+    },
+    {
+      "id": "zero-review-lead",
+      "conclusion": "original_skill",
+      "zero_preview_reason": null,
+      "candidates": [],
+      "original_skill": {
+        "name": "zero-based-review",
+        "path": "internal/domain/squad/builtin_skills/zero-based-review.md",
+        "written_on": "2026-10-02",
+        "license": "MIT",
+        "why": "The persona and its procedure were written for Clawdline's review Epic: lenses chosen from this catalog, a shared fact pack, read-only reviewer children and the Epic plan_review. No upstream research round was run for it, so it has no pinned source; it carries the repository's own licence."
+      }
     }
   ]
 }
