@@ -74,6 +74,9 @@ func TestARootCancelsAChildItDispatchedByMistake(t *testing.T) {
 	if len(launcher.closed) != 1 || launcher.closed[0] != [2]string{"%9", ChildSessionName(id)} {
 		t.Fatalf("closed %v", launcher.closed)
 	}
+	if got := TabPlanSentence(tabPolicy(r, StateCancelled, LingerDefault)); got != "stopped and closed when it is cancelled" {
+		t.Errorf("the cancelled tab plan reads %q", got)
+	}
 	if _, owed := lingerOwed(t, b, ctx, id); owed {
 		t.Error("a cancelled tab is closed at once; no linger is owed")
 	}

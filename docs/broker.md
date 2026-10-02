@@ -227,7 +227,8 @@ The beat now watches for that shape and only that shape (`internal/app/orchestra
   `session-todos` `unacknowledged_completions` (with `kind`) until acknowledged. The child's tab
   is closed as every `spawn_failed` tab is.
 
-**Why it ends the task instead of marking it and leaving it running.** There is no cancel route,
+**Why it ends the task instead of marking it and leaving it running.** When this was decided there
+was no cancel route (there is one now, below, and it is a root's decision, not the broker's),
 and `/respawn` only takes a `spawn_failed` task, so a task left `spawning` with a mark on it would
 have given the root nothing to do but wait for the timeout. `spawn_failed` is also the true
 reading: nothing the child did was ever signed. A new task state was not added because every
@@ -238,6 +239,28 @@ side: a child that wakes after it was reported finds its task over (`/accepted` 
 
 A child showing a menu is not typed at by this path, and a child whose first screen was a dialog is
 not a stall candidate at all: it is waiting for a person (below).
+
+### Cancelling a child dispatched by mistake
+
+`POST /v1/orchestrator/tasks/<id>/cancel` `{"reason":"…"}` (`clawdline task cancel <id> --reason`,
+`internal/app/orchestrator/cancel.go`) settles a live task `cancelled` through the same `settle` a
+timeout takes: the reason (at most 500 bytes, whitespace collapsed) is the verdict, the landing and
+the root's notice are opened in the same transaction, and the child's tab is closed by a
+`child.close` outbox effect recorded there too — so a restart between the commit and the close
+runs the close then, once. The tab rule is `cancelled_closed`: no linger, because a child stopped
+mid-turn is never at rest. Its writes and child slot go with its live state. A branch that carries
+commits is kept and its pending landing's note says `branch … was kept and has N commit(s) to look
+at`; the notice line and `task show` repeat it.
+
+Who may: the task's root Session, named by its squad capability when it has one and otherwise by
+the `session_id` it sends — which is refused (`session_actor_required`) when the root's conversation
+does carry a capability, so naming a bound root's id cancels nothing — or the person through the
+console (local, or a paired device that may send). Anyone else is `403 not_task_root`, with the root
+named. A verification gate's task is `409 gate_task_not_cancellable`. An ended task is
+`409 task_already_terminal` with its `state`, except a resend under the Idempotency-Key that
+cancelled it, which answers the same success with `replayed: true`; the CLI derives that key from
+the task and the caller, so running the same cancel twice is one cancel. `clawdline task wait`
+exits 5 for a cancelled task when nothing else failed.
 
 ## A dialog is the person's (2026-09-26)
 

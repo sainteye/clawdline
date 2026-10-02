@@ -247,6 +247,8 @@ func (b *Broker) TabPolicy(r Record) TabPolicy {
 // and in anything else that reads a plan back to a person.
 func TabPlanSentence(p TabPlan) string {
 	switch {
+	case p.Rule == TabRuleCancelled:
+		return "stopped and closed when it is cancelled"
 	case p.Close && p.After > 0:
 		return fmt.Sprintf("closed about %d seconds after it ends", int64(p.After/time.Second))
 	case p.Close:

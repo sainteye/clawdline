@@ -33,7 +33,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
    會被 `401 unauthorized` 拒絕。
 5. **Swift app 有、這個 daemon 沒有的東西：** durable report 升級（回
    `501 durable_report_promotion_unsupported`）、coordinator succession（回
-   `501 succession_unavailable`）、task 的取消路由，以及 brief 欄位 `serialize`、
+   `501 succession_unavailable`），以及 brief 欄位 `serialize`、
    `attach_session`（兩個都會被點名拒絕，code 是 `bad_task`）。`reasoning_effort` 有支援：
    `high` 或 `xhigh`，而且只在 `codex` 的 task 上。
 
@@ -71,7 +71,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
-| `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個沒成功、3 逾時、4 有 task 讀不到（§5） |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個失敗、5 有一個被取消且沒有其他失敗、3 逾時、4 有 task 讀不到；優先順序 4、3、1、5（§5） |
+| `clawdline task cancel <task id> --reason "…"` | 停掉派錯的 child：關掉它的分頁、釋放它的寫入範圍與名額，有 commit 的 branch 會留給你（§5） |
 | `clawdline task ack <task id> <notice id>` | 手動關掉一則完成通知；`task show` 與 `task wait` 已經會關，很少需要（§5） |
 | `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
@@ -434,6 +435,9 @@ body 從 stdin 送（`jq -n … | curl --data-binary @- -H 'Content-Type: applic
 `POST /v1/orchestrator/tasks/<id>/respawn`（orchestrator token）會用新的 secret 開一份副本，每個原始
 task 最多兩次。
 
+派錯了 child——brief 寫錯、範圍錯了，或同一件事派了兩次？不要等它做完或逾時、一路佔著名額與寫入範圍：
+`clawdline task cancel <id> --reason "…"` 會立刻停掉它（§5）。
+
 **你會遇到的拒絕**，照檢查的順序排：
 
 | 狀態 | Code | 怎麼處理 |
@@ -501,7 +505,17 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
   `spawn_failed` 結束，verdict 寫明它 stalled，你收到的通知 `kind` 是 `task_stalled`，不是 `task_finished`。
   respawn 它（`POST /v1/orchestrator/tasks/<id>/respawn`）或重新派一次，然後 ACK。正在工作、正在顯示
   選單、或已經簽收的 child，絕不會被打字。
-- **沒有取消路由**。task 只會以完成、失敗或逾時結束。
+- **取消派錯的 child**——brief 寫錯、範圍錯了、重複派工：
+  `clawdline task cancel <id> --reason "wrong brief"`
+  （`POST /v1/orchestrator/tasks/<id>/cancel`，`{"reason":"…"}`）。reason 必填，最多 500 bytes。
+  task 會以 `cancelled` 結束、reason 成為它的 verdict，分頁會被關掉，寫入範圍與 child 名額會釋放，
+  你會收到一則說明它被取消與原因的通知。**commit 不會被丟掉：**已經 commit 的 child 會保留 branch
+  與 checkout，landing 維持 pending，附註寫明上面有幾個 commit；`task show` 與 `clawdline landings`
+  都看得到。要的部分就 merge，不要就用 `clawdline task land <id> abandoned` 記錄。只有派出這個 task
+  的 root Session，或使用者從 console，才能取消；其他人會被 `403 not_task_root` 拒絕，用角色開的
+  Session 必須送出自己的 capability（`session_actor_required`；指令會替你送）。已經結束的 task 回
+  `409 task_already_terminal` 並附上 `state`；同一個取消再跑一次，會回同樣的成功並帶 `replayed: true`。
+  `clawdline task wait` 等到的 task 被取消時 exit 5。除此之外，task 只會以完成、失敗或逾時結束。
 - **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
   branch 上。
 
