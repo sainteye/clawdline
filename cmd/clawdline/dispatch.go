@@ -229,16 +229,25 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 
 	// The root: this conversation, and which assistant it is.
 	conversation, rootAssistant := strings.TrimSpace(o.Conversation), strings.TrimSpace(o.RootAssistant)
-	if conversation == "" || rootAssistant == "" {
+	if conversation == "" {
 		v, name, err := conversationFromEnv(env.getenv)
 		if err != nil {
 			return usage("%s", conversationRefusal(err, "--conversation"))
 		}
-		if conversation == "" {
-			conversation = v
-		}
+		conversation = v
 		if rootAssistant == "" {
 			rootAssistant = conversationAssistant[name]
+		}
+	} else if rootAssistant == "" {
+		for _, name := range conversationEnv {
+			if strings.TrimSpace(env.getenv(name)) != conversation {
+				continue
+			}
+			assistant := conversationAssistant[name]
+			if rootAssistant != "" && rootAssistant != assistant {
+				return usage("conversation %s matches both assistants. Pass --root-assistant claude or codex.", conversation)
+			}
+			rootAssistant = assistant
 		}
 	}
 	if conversation == "" {
