@@ -700,7 +700,7 @@ func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, 
 			rounds, PlanningGateOverride, i.ID)
 	} else {
 		fmt.Fprintf(&b, "Revise the plan (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`), then have "+
-			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --claims \"\"`); or the person overrides the "+
+			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`); or the person overrides the "+
 			"planning gate (%s).", i.ID, i.ID, PlanningGateOverride)
 	}
 	return RefuseV2(prefix+"_plan_review_blocking", b.String())

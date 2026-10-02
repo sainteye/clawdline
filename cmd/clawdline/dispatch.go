@@ -158,7 +158,7 @@ func dispatchUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
 		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
 		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid …] [--task-id uuid] [--label l] "+
-		"[--instructions-file f | instructions on stdin] [--conversation id] [--port n] [--json]")
+		"[--instructions-file f | instructions on stdin] [--conversation id] [--root-assistant claude|codex] [--port n] [--json]")
 	fmt.Fprintln(os.Stderr, "  dispatches an owned child: writes task.json, reads the inventory, posts the task")
 	os.Exit(2)
 }

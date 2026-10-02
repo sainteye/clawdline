@@ -876,7 +876,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	}
 	if (op == "add" || op == "claim") && it.Kind == "epic" && it.OwnerSession != nil {
 		fmt.Fprintf(stdout, "This is an Epic: write its plan with `clawdline item doc %s --role plan --title Plan`, "+
-			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s`), record the review with "+
+			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`), record the review with "+
 			"`--role plan_review --reference <task id>`, then move it to implementing. `clawdline guide epic` says how.\n",
 			it.ID, it.ID)
 	}

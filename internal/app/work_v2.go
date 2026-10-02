@@ -2240,7 +2240,7 @@ func (w *WorkSystemV2) AddPlanReviewFromTask(ctx context.Context, taskID string)
 		}
 		if r.WorkID == "" {
 			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_no_item",
-				"That review was dispatched on no item; record it with `clawdline item doc <item> --role plan_review --reference "+taskID+"`.")
+				"That review was dispatched on no item; record it with `clawdline item doc <item id> --role plan_review --title \"Plan review\" --reference "+taskID+"`.")
 		}
 		prev, err := tx.Item(r.WorkID)
 		if err != nil {

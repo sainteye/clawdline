@@ -286,7 +286,7 @@ func (a answer) refusalExtras() []string {
 			} else if json.Unmarshal(fields[k], &text) != nil {
 				continue
 			}
-			remedy = k + ": " + oneLine(text)
+			remedy = k + ": " + flatLine(text)
 			continue
 		}
 		var v any
@@ -295,7 +295,7 @@ func (a answer) refusalExtras() []string {
 		}
 		switch v := v.(type) {
 		case string:
-			lines = append(lines, k+": "+oneLine(v))
+			lines = append(lines, k+": "+flatLine(v))
 		case float64, bool:
 			lines = append(lines, k+": "+strings.TrimSpace(string(fields[k])))
 		}
@@ -306,7 +306,7 @@ func (a answer) refusalExtras() []string {
 	return lines
 }
 
-// oneLine keeps a value to the one line it is printed on.
-func oneLine(s string) string {
+// flatLine keeps a value to the one line it is printed on, whole.
+func flatLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }

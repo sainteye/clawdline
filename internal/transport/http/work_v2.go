@@ -364,7 +364,7 @@ func workV2StepsInstruction(id string) string {
 func workV2EpicInstruction(id string) string {
 	return "This is an Epic: before any code, (1) plan it carefully and write the plan onto the item with " +
 		"`clawdline item doc " + id + " --role plan --title \"Plan\" --body-file <file>`; (2) dispatch a read-only child " +
-		"to review the plan critically with `clawdline dispatch --kind plan_review --work-id " + id + " --claims \"\"`; " +
+		"to review the plan critically with `clawdline dispatch --kind plan_review --work-id " + id + " --title \"Review the plan\" --claims \"\"`; " +
 		"(3) record its review with `clawdline item doc " + id + " --role plan_review --title \"Plan review\" " +
 		"--reference <task id> --body-file <file>` — what it found and what the plan changed — and if it found real " +
 		"problems, revise the plan (a new plan document) and have that reviewed again, at most twice in all; (4) break the work into steps with " +
@@ -382,7 +382,7 @@ func workV2EpicInstruction(id string) string {
 		"affected scenarios; repeat the comprehensive round only when the acceptance scope or integration boundary materially " +
 		"changes, and record why. Do not repeatedly send a verifier into the same blocker. During planning, decide whether " +
 		"the Epic changes a human-facing interface, user journey, or product policy. If it does, before merging dispatch an independent " +
-		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect`; " +
+		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --title \"UX review\" --claims \"\" --persona ux-architect`; " +
 		"brief it to inspect the integrated desktop and mobile experience, accessibility, workflow, and product fit, require evidence for " +
 		"each finding and tell it to mark unverified and say why when evidence is unavailable, then resolve every blocking finding. If the " +
 		"Epic has no such impact, record why in the plan instead of adding review ceremony. This specialist review complements rather than " +
