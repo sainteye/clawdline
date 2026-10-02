@@ -36,7 +36,7 @@ func TestThePersonaCatalogIsListedWithoutItsTexts(t *testing.T) {
 			t.Errorf("%s: no team", p.ID)
 		}
 		if p.ID != persona.IDs()[i] || p.Name.ZhHant == "" || p.Summary.En == "" || len(p.Icon.Cells) != 7 ||
-			!strings.Contains(p.Source, persona.UpstreamCommit) {
+			(p.Source != persona.Original && !strings.Contains(p.Source, persona.UpstreamCommit)) {
 			t.Errorf("%d: %+v", i, p)
 		}
 	}

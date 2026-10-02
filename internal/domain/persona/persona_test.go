@@ -148,6 +148,29 @@ func TestParseRefusesAMalformedFile(t *testing.T) {
 	}
 }
 
+// A persona written for Clawdline names Original as its source, not an
+// invented URL, and its text says so instead of crediting an upstream file.
+func TestAnOriginalPersonaNamesNoUpstream(t *testing.T) {
+	raw := "---\nid: x\nteams: [quality]\nname_en: X\nname_zh: 叉\nsummary_en: s\nsummary_zh: 說\nsuggested_kinds: []\n" +
+		"source: " + Original + "\n---\n# X\nbody\n"
+	p, err := parse(raw)
+	if err != nil {
+		t.Fatalf("an original persona is refused: %v", err)
+	}
+	if text := p.Text(); strings.Contains(text, "Adapted from") || !strings.HasSuffix(text, "---\nSource: original to Clawdline.\n") {
+		t.Errorf("an original persona's text ends %q", text[len(text)-60:])
+	}
+	for _, bad := range []string{"Original", "original work", "https://example.com/a.md"} {
+		if _, err := parse(strings.Replace(raw, "source: "+Original, "source: "+bad, 1)); err == nil {
+			t.Errorf("source %q accepted", bad)
+		}
+	}
+	lead, ok := Known("zero-review-lead")
+	if !ok || lead.Source != Original || strings.Join(lead.Teams, ",") != "product,quality" {
+		t.Errorf("zero-review-lead = %+v", lead)
+	}
+}
+
 func TestFromCommandLine(t *testing.T) {
 	architect, _ := Known("architect")
 	for _, c := range []struct{ command, want string }{

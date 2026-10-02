@@ -117,6 +117,22 @@ says it is not legal advice. None is suggested for a Board kind.
 | `devrel` | Developer Advocate | 開發者推廣 | business, marketing | [`specialized-developer-advocate.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/specialized-developer-advocate.md) |
 | `privacy` | Privacy & Compliance Officer | 隱私法遵官 | business, operations | [`data-privacy-officer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/data-privacy-officer.md) and `support-legal-compliance-checker.md` |
 
+One persona was written for Clawdline rather than adapted. `zero-review-lead` owns a review Epic
+that re-examines an existing feature or process from zero: it plans the role lenses, gives every
+read-only reviewer child the same fact pack, and turns their evidence into a target design and
+work items. Its source is `original` (`persona.Original`), so its text ends with
+`Source: original to Clawdline.` instead of an upstream credit, and the console shows no source
+link. It carries the original `zero-based-review` skill
+(`internal/domain/squad/builtin_skills/zero-based-review.md`), which applies whatever a task
+writes, because a review child writes nothing. It suggests itself for no Board kind: `architect`
+is the only persona that names `epic`, and the console offers a kind's default only when exactly
+one persona names it (`suggestedPersonaForKind`), so a second would take the default away from
+every Epic.
+
+| id | Name | 中文 | Teams | Source |
+| --- | --- | --- | --- | --- |
+| `zero-review-lead` | Zero-based Review Lead | 歸零審查召集人 | product, quality | original |
+
 `suggested_kinds` tells a picker which persona is the safe fallback for a Board item's kind when
 exactly one catalog entry names it. It only suggests a choice: no kind gives a persona to
 anything.
@@ -132,7 +148,7 @@ The text injected is `persona.Persona.Text()`, built from three parts:
    `CLAUDE.md`, `AGENTS.md` or any other project instruction file, the task brief, `CHILD.md`, or
    the Clawdline protocol. When any of them disagrees, they win.
 2. **The body** of the catalog file.
-3. **A source line** naming the upstream file and its licence.
+3. **A source line** naming the upstream file and its licence, or saying the text is original.
 
 The daemon writes each text to `<state dir>/personas/<id>.md` when it starts
 (`app.WritePersonaFiles`), with the upstream licence beside them as `LICENSE.agency-agents`. The
@@ -422,7 +438,7 @@ persona, the conversation is restored with none rather than not at all.
 The catalog holds at most **64** personas (`persona.MaxPersonas`). Each injected text is at most
 **8 KiB** (`persona.MaxPersonaBytes`), counting the preamble, the body and the source line. Both
 are registered as `personas.catalog` and `personas.text_bytes`, and `/v1/diagnostics.capacity`
-reports them. See docs/limits.md N52. The 42 shipped texts are 4–5 KiB each.
+reports them. See docs/limits.md N52. The 43 shipped texts are 3,782 to 5,149 bytes each (measured 2026-10-02).
 
 One explicit AI role-classification turn is at most **16 KiB** of encoded input
 (`personas.suggestion_context_bytes`). The closed catalog and item kind/title stay; the end of an
@@ -449,7 +465,8 @@ Collector's per-claim verdict with FAIL as the default; see `experiments/persona
 
 ## Attribution
 
-The texts are adapted from [agency-agents](https://github.com/msitarzewski/agency-agents) at commit
+Apart from `zero-review-lead`, which is original and under this repository's licence, the texts
+are adapted from [agency-agents](https://github.com/msitarzewski/agency-agents) at commit
 `053ddbbf392a1688fc7043d81529f47ef2cf86c8`, which is MIT-licensed:
 Copyright (c) 2025 AgentLand Contributors. Each persona's `source` names the upstream files it was
 adapted from. The licence is kept word for word in

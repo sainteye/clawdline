@@ -1177,6 +1177,8 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     `brand-guardian`（品牌一致性）、`ui-finish-gate`（上線前的畫面把關）、`image-prompt`（生圖提示詞）、
     `pricing`、`customer-success`、`support`（回覆草稿）、`analytics`（用真實資料回答）、`devrel`（跑得起來的
     範例）與 `privacy`（個資檢查；不是法律意見）。
+  - `zero-review-lead`——負責從零重新檢驗既有功能或流程的審查 Epic：規劃各角色審查面向，以同一份事實包派唯讀
+    審查 child，再把證據整理成目標設計；附帶的 skill 是 `zero-based-review`。
 - **Epic 會改變人看得到的體驗時，必須增加獨立 UX／產品審查。** 計畫要先判斷是否改到人看得到的介面、
   使用者旅程或產品政策。若有，進到 `merging` 前至少派一個唯讀專家 child；版面、互動與端到端產品流程預設用
   `ux-architect`：

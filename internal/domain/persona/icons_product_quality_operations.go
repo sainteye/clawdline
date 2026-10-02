@@ -5,7 +5,8 @@ package persona
 // greens, operations in slate with orange. The accessories: a flag, ranked
 // bars, a funnel, a trend line, sticky notes; a flask, a figure, a lightning
 // bolt, a plug, a snapshot; a pulse, pipeline chevrons, a siren, a coin stack
-// and a key.
+// and a key. The zero-based review lead is in product and quality, so its
+// yellow body wears a teal zero.
 var productQualityOperationsIcons = map[string]art{
 	"product-manager": {accent: 'B', palette: map[byte]string{'B': "#e8b923", 'o': ink, 'p': ink, 'R': "#e5484d"},
 		rows: [iconHeight]string{
@@ -154,6 +155,16 @@ var productQualityOperationsIcons = map[string]art{
 			".BBBBBB.",
 			".BoBBoB.",
 			".BBBBBB.",
+			".BBBBBB.",
+			"..B..B..",
+		}},
+	"zero-review-lead": {accent: 'B', palette: map[byte]string{'B': "#c9a227", 'o': ink, 'Z': "#2bb3a3"},
+		rows: [iconHeight]string{
+			"..ZZZZ..",
+			"..Z..Z..",
+			"..ZZZZ..",
+			".BBBBBB.",
+			".BoBBoB.",
 			".BBBBBB.",
 			"..B..B..",
 		}},

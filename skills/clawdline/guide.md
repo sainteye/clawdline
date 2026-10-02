@@ -1378,6 +1378,9 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
     before shipping), `image-prompt` (image-generation prompts), `pricing`, `customer-success`,
     `support` (drafted replies), `analytics` (answers from real data), `devrel` (samples that run)
     and `privacy` (personal-data checks; not legal advice).
+  - `zero-review-lead` — owns a review Epic that re-examines an existing feature or process from
+    zero: plans the role lenses, dispatches them as read-only reviewer children with one shared fact
+    pack, and turns their evidence into a target design; its skill is `zero-based-review`.
 - **Add an independent UX/product review when the Epic changes a person-facing experience.** In the
   plan, classify whether the Epic changes a human-facing interface, user journey, or product policy.
   If it does, before merging dispatch at least one read-only specialist child, using `ux-architect`
