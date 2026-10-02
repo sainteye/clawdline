@@ -62,9 +62,17 @@ func (i *ITerm) keyScript(ctx context.Context, args ...string) (map[string]any, 
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	kind, session := "keys", ""
+	if len(args) > 0 {
+		kind = args[0]
+	}
+	if len(args) > 1 {
+		session = args[1]
+	}
+	run := startOsascript(ctx, kind, session)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, osascriptFailure(ctx, stderr.String(), err, "iTerm2 did not do what it was asked.")
+		return nil, osascriptFailure(ctx, run, stderr.String(), err, "iTerm2 did not do what it was asked.")
 	}
 	var answer map[string]any
 	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {

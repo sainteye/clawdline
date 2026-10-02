@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os/exec"
 	"strings"
 	"sync"
@@ -311,7 +310,14 @@ func runITermList(ctx context.Context) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript")
 	cmd.Stdin = strings.NewReader(itermList)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
-	return cmd.Output()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	run := startOsascript(ctx, "list", "")
+	out, err := cmd.Output()
+	if err != nil {
+		run.failed(ctx, stderr.String(), err)
+	}
+	return out, err
 }
 
 func (i *ITerm) failedListing(now time.Time) {
@@ -445,7 +451,7 @@ var itermSendLimit = sendConfirm + 6*time.Second
 // on a current macOS, and iTerm2's own `write` does not bring the window
 // forward, which is the whole point.
 func (i *ITerm) Send(ctx context.Context, s session.Session, text string) error {
-	return itermCall(ctx, itermSendScript, itermSendLimit, s.ID, text)
+	return itermCall(ctx, "send", itermSendScript, itermSendLimit, s.ID, text)
 }
 
 // Open is not implemented for the iTerm backend yet.
@@ -546,7 +552,9 @@ func effect(ctx context.Context) (func(), error) {
 // `{ok, error}` answer. Its script budget starts after the lane is acquired;
 // waiting behind a bounded listing cannot consume the time needed to send.
 // A script that answered "not done" is a failure, never a quiet success.
-func itermCall(ctx context.Context, script string, limit time.Duration, args ...string) error {
+// kind names the script in a failure's log line; the first argument, when
+// there is one, is the session it is about.
+func itermCall(ctx context.Context, kind, script string, limit time.Duration, args ...string) error {
 	release, err := effect(ctx)
 	if err != nil {
 		return err
@@ -559,9 +567,14 @@ func itermCall(ctx context.Context, script string, limit time.Duration, args ...
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	session := ""
+	if len(args) > 0 {
+		session = args[0]
+	}
+	run := startOsascript(ctx, kind, session)
 	out, err := cmd.Output()
 	if err != nil {
-		return osascriptFailure(ctx, stderr.String(), err, "iTerm2 did not do what it was asked.")
+		return osascriptFailure(ctx, run, stderr.String(), err, "iTerm2 did not do what it was asked.")
 	}
 	return itermAnswer(out)
 }
@@ -578,17 +591,16 @@ func itermCall(ctx context.Context, script string, limit time.Duration, args ...
 //
 // It is never Unsent. A script that was killed or threw may have written
 // before it stopped, and only the script's own answer can say it did not.
-func osascriptFailure(ctx context.Context, stderr string, err error, sentence string) Failure {
+//
+// The log gets one line naming the run (osascriptRun.failed): its kind, its
+// session, how long it waited and why it stopped.
+func osascriptFailure(ctx context.Context, run osascriptRun, stderr string, err error, sentence string) Failure {
 	said := strings.TrimSpace(stderr)
 	// -1712 is errAETimeout and -1743 is a refused automation permission:
 	// both are something on the Mac's screen waiting for a person.
 	attention := strings.Contains(said, "-1712") || strings.Contains(said, "-1743") ||
 		ctx.Err() == context.DeadlineExceeded
-	if said != "" {
-		log.Printf("iterm: osascript refused: %s", said)
-	} else {
-		log.Printf("iterm: osascript failed: %v", err)
-	}
+	run.failed(ctx, stderr, err)
 	if ctx.Err() == context.DeadlineExceeded {
 		sentence = "iTerm2 did not answer in time."
 	}

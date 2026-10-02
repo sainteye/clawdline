@@ -455,7 +455,7 @@ func TestAnITermScriptFailureCarriesASentenceNotOsascriptsWords(t *testing.T) {
 		t.Skip("no osascript")
 	}
 	// Runs no Apple Event: it throws before it could reach any application.
-	err := itermCall(context.Background(), `function run(argv) { throw new Error("internal-detail-7731"); }`, 10*time.Second)
+	err := itermCall(context.Background(), "test", `function run(argv) { throw new Error("internal-detail-7731"); }`, 10*time.Second)
 	if err == nil {
 		t.Fatal("a script that threw answered success")
 	}
