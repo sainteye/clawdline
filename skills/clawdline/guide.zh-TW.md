@@ -800,7 +800,8 @@ echo "下次 release 前把 release notes 整理好。" | \
   （`clawdline item steps <item id>`、`clawdline item step-done <item id> <step id>`；做下去發現還少一步，就用
   `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。
   這樣接下的 Epic，進 implementing 之前要先走完 Epic 流程（見下文）。使用者之後才要你接下你先前建好、
-  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor、Plan 不論有沒有 `--assign-self`，
+  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor 是可執行的工作：改內部結構、不改外部行為，
+  可以指派、帶 steps，phase、gate 與審查開關都和 Feature 相同。Plan 不論有沒有 `--assign-self`，
   都以未指派狀態建在規劃區，不帶 steps（`planning_has_no_steps`）。
 - 已登記的 Clawdfather 是工程項目的例外：它不能擁有或修改 Project 程式碼。使用者的訊息明確要求新項目時，
   可以用 `clawdline item add --project <place id> --kind feature --title "…" --assign-new`（或
@@ -834,7 +835,7 @@ clawdline item claim <item id>
 - 拒絕，每一種都什麼都不寫：`run_unknown`、`run_expired`、`run_other_session`、`session_not_found`、
   `child_session`（同 `item add`）；`work_not_found`；`project_mismatch`（項目在你沒在工作的 Project）；
   `item_assigned`（已經有 Session，或正在為它開一個——只有使用者能把項目從一個 Session 移到另一個）；
-  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Refactor、Plan 留在規劃區；Epic 可以認領）；
+  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Plan 留在規劃區；Epic 和 Refactor 可以認領）；
   `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 

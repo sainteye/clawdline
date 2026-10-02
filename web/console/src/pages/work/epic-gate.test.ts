@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { WorkV2Document } from "./api.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { EPIC_GATE_HINT, FEATURE_GATE_HINT, epicGate, epicGateDetailShown, epicGateShown, epicPlanDocuments, isEpic, planGateHint, planReviewRequired } from "./epic-gate.ts"
+import { EPIC_GATE_HINT, FEATURE_GATE_HINT, epicGate, epicGateDetailShown, epicGateShown, epicPlanDocuments, featureLike, isEpic, planGateHint, planReviewRequired } from "./epic-gate.ts"
 
 function document(id: string, role: WorkV2Document["role"], created_at: number): WorkV2Document {
   return { id, role, created_at, title: id, body: id, reference: "", position: 0, version: 1 }
@@ -96,9 +96,12 @@ test("a Feature checked as needing independent review shows its plan and review 
   assert.equal(planGateHint({ kind: "epic" }), EPIC_GATE_HINT)
 })
 
-test("only a Feature's own checkbox matters: an Epic always needs plan review, an Issue never does", () => {
+test("only a Feature's or Refactor's own checkbox matters: an Epic always needs plan review, an Issue never does", () => {
   assert.equal(planReviewRequired({ kind: "epic", review_required: false }), true)
   assert.equal(planReviewRequired({ kind: "issue", review_required: true }), false)
-  assert.equal(planReviewRequired({ kind: "refactor", review_required: true }), false)
+  assert.equal(planReviewRequired({ kind: "refactor", review_required: true }), true)
+  assert.equal(planReviewRequired({ kind: "refactor", review_required: false }), false)
+  assert.equal(featureLike({ kind: "refactor" }), true)
+  assert.equal(featureLike({ kind: "plan" }), false)
   assert.equal(planReviewRequired({ kind: "plan", review_required: true }), false)
 })

@@ -900,8 +900,9 @@ echo "Clean up the release notes before the next release." | \
   assigned item (below). An Epic taken this way then follows the Epic procedure (below) before it
   may be implemented. If the person asks you to take an item you created unassigned later, use
   `clawdline item claim` (below).
-  A Refactor or Plan is created unassigned, in Planning, with or without `--assign-self`, and takes
-  no steps (`planning_has_no_steps`).
+  A Refactor is executable work that changes internal structure but not outward behaviour: it is
+  assigned, takes steps and follows a Feature's phases, gate and review switch. A Plan is created
+  unassigned, in Planning, with or without `--assign-self`, and takes no steps (`planning_has_no_steps`).
 - The registered Clawdfather is the exception for executable Project work: it never owns or edits
   Project code. When the person's message explicitly requests a new item, it may use
   `clawdline item add --project <place id> --kind feature --title "…" --assign-new` (or
@@ -950,7 +951,7 @@ clawdline item claim <item id>
   `session_not_found`, `child_session` (as for `item add`); `work_not_found`; `project_mismatch`
   (the item is in a Project you do not work in); `item_assigned` (it already has a Session, or one
   is being opened for it — only the person moves an item between Sessions); `item_terminal` (done or
-  cancelled); `planning_not_assignable` (a Refactor or Plan stays in Planning; an Epic can be claimed);
+  cancelled); `planning_not_assignable` (a Plan stays in Planning; an Epic or a Refactor can be claimed);
   `version_conflict` (it changed; run the command again); `run_claims_exhausted` (one message backs
   at most five uses).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
