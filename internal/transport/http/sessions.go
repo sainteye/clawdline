@@ -476,6 +476,13 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		MachineScope: projects.IsMachineWorkspace(s.cfg.Dir, item.CWD),
 	}
 	out := sessionRowWire{Menu: wireMenu(item)}
+	// Only a waiting row says whether its screen was read: it is what tells
+	// the card a terminal that is not answering from a dialog nothing
+	// recognised. Elsewhere it would flicker with the terminal's health and
+	// republish every row for nothing a reader looks at.
+	if item.State == session.StateWaiting {
+		row.ScreenReading = contract.SessionScreenReading(item.Screen)
+	}
 
 	// The records are usable when the Swift store was read or is known to
 	// hold nothing (absent, or switched off) and this daemon's own were read:

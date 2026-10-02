@@ -80,6 +80,7 @@ type menuWire struct {
 	Options  []menuOptionWire            `json:"options"`
 	Question string                      `json:"question,omitempty"`
 	Selected *int                        `json:"selected,omitempty"`
+	Source   string                      `json:"source,omitempty"`
 	Steps    []contract.SessionMenuStep  `json:"steps,omitempty"`
 	Submit   *contract.SessionMenuSubmit `json:"submit,omitempty"`
 }
@@ -99,7 +100,8 @@ func wireMenu(item session.Session) *menuWire {
 		return nil
 	}
 	m := item.Menu
-	out := &menuWire{Options: make([]menuOptionWire, 0, len(m.Options)), Question: m.Question, Selected: m.Selected}
+	out := &menuWire{Options: make([]menuOptionWire, 0, len(m.Options)), Question: m.Question, Selected: m.Selected,
+		Source: string(m.Source)}
 	for _, o := range m.Options {
 		out.Options = append(out.Options, menuOptionWire{
 			Can: o.Answerable(), Checked: o.Checked, Detail: o.Detail,

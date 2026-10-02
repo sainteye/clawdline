@@ -106,6 +106,8 @@ func StepsAbove(lines []string, firstOption int) []MenuStep {
 type AskedQuestion struct {
 	Text    string
 	Options []AskedOption
+	// Multi is the call's multiSelect: the rows tick and a button sends.
+	Multi bool
 }
 
 type AskedOption struct {

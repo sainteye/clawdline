@@ -33,6 +33,9 @@ type Menu struct {
 	// Steps is the picker's own tab bar when one call asks several questions.
 	// Empty for a lone question.
 	Steps []MenuStep
+	// Source is where the rows came from: empty for the screen, which is
+	// every menu but one (MenuFromTranscript).
+	Source MenuSource
 }
 
 type MenuOption struct {

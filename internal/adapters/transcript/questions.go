@@ -47,6 +47,7 @@ func askedQuestions(text string) ([]session.AskedQuestion, bool) {
 	}
 	var rows []struct {
 		Q string `json:"q"`
+		M bool   `json:"m"`
 		O []struct {
 			L string `json:"l"`
 			D string `json:"d"`
@@ -57,7 +58,7 @@ func askedQuestions(text string) ([]session.AskedQuestion, bool) {
 	}
 	out := make([]session.AskedQuestion, 0, len(rows))
 	for _, row := range rows {
-		q := session.AskedQuestion{Text: row.Q}
+		q := session.AskedQuestion{Text: row.Q, Multi: row.M}
 		for _, o := range row.O {
 			if o.L == "" {
 				continue

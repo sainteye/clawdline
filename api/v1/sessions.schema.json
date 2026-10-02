@@ -133,6 +133,7 @@
           "description": "When and how this row's terminal state was read. `current` was read this pass; `unverified` is the last complete row retained across a failed source reading; `missing` means that source has never answered or its retained answer crossed the cache.session_inventory honesty line. A retained state is a true statement about that earlier moment, never authority for an action now.",
           "$ref": "coordination.schema.json#/$defs/BearingsSource"
         },
+        "screen_reading": { "$ref": "#/$defs/SessionScreenReading" },
         "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
         "shells": { "description": "The commands this session left running in the background, newest first, at most six. Absent rather than empty when there are none, as the Swift app sends it; always absent for Codex, which keeps no record of them.", "type": "array", "items": { "$ref": "#/$defs/SessionShell" } },
         "state": { "$ref": "common.schema.json#/$defs/SessionState" },
@@ -209,10 +210,16 @@
       "properties": {
         "options": { "type": "array", "items": { "$ref": "#/$defs/SessionMenuOption" } },
         "question": { "description": "The prose above the rows, or the question as the call asked it. Absent when it could not be read.", "type": "string" },
-        "selected": { "description": "The number of the row the caret is on. Absent when it is on none of them — a multi-select's button can hold it.", "type": "integer" },
+        "selected": { "description": "The number of the row the caret is on. Absent when it is on none of them — a multi-select's button can hold it — and on a menu taken from the transcript, which cannot see the caret.", "type": "integer" },
+        "source": { "description": "Absent for a menu read from the screen. `transcript` is a menu put together from the session's open AskUserQuestion call because this reading had no screen: the rows and numbers are what that call draws, inferred rather than seen. A press is still checked against the screen before anything is typed.", "type": "string", "enum": ["transcript"] },
         "steps": { "description": "Where this question sits in a set of them, as the picker's tab bar draws it. Absent for a lone question.", "type": "array", "items": { "$ref": "#/$defs/SessionMenuStep" } },
         "submit": { "$ref": "#/$defs/SessionMenuSubmit" }
       }
+    },
+    "SessionScreenReading": {
+      "description": "Whether this reading had the waiting session's screen to look at. Present only on a waiting row. `read`: the screen was captured, so a waiting row with no menu is a dialog in a shape nothing recognised. `unavailable`: the terminal gave no screen up this time (it is not answering, or is busy), so nothing could be read from it at all.",
+      "type": "string",
+      "enum": ["read", "unavailable"]
     },
     "SessionMenuOption": {
       "description": "One row. `n` is the keystroke and not the position: the page sends that number to `POST /v1/sessions/{id}/key`, and renumbering would make a button answer a different question than its label says.",

@@ -4925,8 +4925,15 @@ type SessionMenu struct {
 	Question string `json:"question,omitempty"`
 
 	// The number of the row the caret is on. Absent when it is on none of them — a
-	// multi-select's button can hold it.
+	// multi-select's button can hold it — and on a menu taken from the transcript,
+	// which cannot see the caret.
 	Selected int64 `json:"selected,omitempty"`
+
+	// Absent for a menu read from the screen. `transcript` is a menu put together from
+	// the session's open AskUserQuestion call because this reading had no screen: the
+	// rows and numbers are what that call draws, inferred rather than seen. A press is
+	// still checked against the screen before anything is typed.
+	Source string `json:"source,omitempty"`
 
 	// Where this question sits in a set of them, as the picker's tab bar draws it.
 	// Absent for a lone question.
@@ -5036,6 +5043,7 @@ type SessionRow struct {
 	// process reading.
 	Persona        string                `json:"persona,omitempty"`
 	RootAssignment *RootAssignmentRecord `json:"root_assignment,omitempty"`
+	ScreenReading  SessionScreenReading  `json:"screen_reading,omitempty"`
 
 	// The assistant's own conversation id, when one was recovered from its command
 	// line.
@@ -5071,6 +5079,21 @@ type SessionRow struct {
 	WorkSince int64     `json:"work_since,omitempty"`
 	WorkState WorkState `json:"work_state"`
 }
+
+// Whether this reading had the waiting session's screen to look at. Present
+// only on a waiting row. `read`: the screen was captured, so a waiting row with
+// no menu is a dialog in a shape nothing recognised. `unavailable`: the
+// terminal gave no screen up this time (it is not answering, or is busy), so
+// nothing could be read from it at all.
+type SessionScreenReading string
+
+const (
+	SessionScreenReadingRead        SessionScreenReading = "read"
+	SessionScreenReadingUnavailable SessionScreenReading = "unavailable"
+)
+
+// SessionScreenReadingValues is every value the contract allows, in contract order.
+var SessionScreenReadingValues = []SessionScreenReading{SessionScreenReadingRead, SessionScreenReadingUnavailable}
 
 // One background command a session started and has not finished: its output
 // file has no ending written under it, and the session's transcript announced

@@ -211,6 +211,11 @@ type Session struct {
 	// could be read as one. Nil otherwise — including a waiting session whose
 	// dialog is drawn in a shape nothing here recognises.
 	Menu *Menu `json:"-"`
+	// Screen is whether this reading had a screen to look at: empty where
+	// none was asked for, ScreenUnavailable when the terminal did not give
+	// one up. A waiting row with no Menu is two different situations, and
+	// only one of them is a dialog nothing here recognises.
+	Screen ScreenReading `json:"-"`
 
 	// Shells are the commands this session left running in the background,
 	// newest first. Empty for most sessions, and always for Codex, which keeps

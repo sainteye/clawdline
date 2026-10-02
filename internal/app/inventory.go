@@ -308,8 +308,10 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 	unread := registry && s.State == session.StateUnknown
 	screen, ok := reader.Capture(ctx, s)
 	if !ok {
-		return s
+		s.Screen = session.ScreenUnavailable
+		return in.transcriptMenu(ctx, s)
 	}
+	s.Screen = session.ScreenRead
 	// A caret with no composer under it is a dialog whatever the registry
 	// says, and one drawn before the session has a registry entry at all —
 	// Claude Code's workspace-trust and bypass-permissions warnings — has no
@@ -339,6 +341,40 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 	if s.State == session.StateWorking {
 		s.Line = session.WorkingLine(screen, s.Assistant, 25)
 	}
+	return s
+}
+
+// transcriptMenu is the menu of a waiting row whose screen could not be read
+// this time, put together from the AskUserQuestion call its transcript says
+// is still open (session.MenuFromTranscript).
+//
+// On 2026-10-02 four Codex tabs opened at once left iTerm2 answering no Apple
+// Event for two minutes (`osascript failed: signal: killed`, the capture
+// slots full); a Claude session stopped on a question in that window was
+// shown as waiting with no buttons, though the parser read the same screen
+// whole once it could be captured. Only the registry's waiting opens this, as
+// it opens the flush-left caret: a transcript whose last entry is a question
+// is not by itself somebody being asked.
+func (in Inventory) transcriptMenu(ctx context.Context, s session.Session) session.Session {
+	if s.Evidence != session.EvidenceRegistry || s.State != session.StateWaiting {
+		return s
+	}
+	h, ok := in.Identity.(interface {
+		OpenQuestions(context.Context, session.Session) ([]session.AskedQuestion, bool)
+	})
+	if !ok {
+		return s
+	}
+	asked, ok := h.OpenQuestions(ctx, s)
+	if !ok {
+		return s
+	}
+	menu, ok := session.MenuFromTranscript(asked)
+	if !ok {
+		return s
+	}
+	s.Menu = &menu
+	s.Line = session.MenuRevision(menu)
 	return s
 }
 

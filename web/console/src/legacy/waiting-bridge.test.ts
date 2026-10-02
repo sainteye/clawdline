@@ -3,6 +3,8 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see `session/order.test.ts`.
 import { waitingHTML, type WaitingModel } from "./waiting-bridge.ts"
+// @ts-expect-error -- a `.ts` path, for node; see `session/order.test.ts`.
+import { nextWord } from "../next-strings.ts"
 
 const unread: WaitingModel = {
   folded: false,
@@ -49,4 +51,30 @@ test("a menu that was read draws its rows and no Esc", () => {
   })
   assert.match(html, /data-key="1"/)
   assert.doesNotMatch(html, /data-cancel/)
+})
+
+// On 2026-10-02 a terminal that answered nothing for two minutes left the card
+// saying Clawdline "could not read the choices from the screen", as though a
+// screen had been read and not understood. No screen at all is said as that.
+test("a waiting row with no screen says the terminal is not answering, not that the menu was unreadable", () => {
+  const blind = waitingHTML({ ...unread, screen: "unavailable" })
+  const read = waitingHTML({ ...unread, screen: "read" })
+  const said = (html: string) => [...html.matchAll(/<div class="say">(.*?)<\/div>/g)].map((m) => m[1]).join(" ")
+  assert.notEqual(said(blind), said(read))
+  assert.ok(!said(blind).includes(nextWord("menuUnreadSay")))
+  assert.ok(said(read).includes(nextWord("menuUnreadSay")))
+  // The way out stays the same either way.
+  assert.match(blind, /data-cancel="1">/)
+})
+
+test("choices taken from the conversation record say so above their buttons", () => {
+  const rows = [
+    { n: 1, label: "Tea", can: true, selected: false },
+    { n: 2, label: "Coffee", can: true, selected: false },
+  ] as WaitingModel["rows"]
+  const inferred = waitingHTML({ ...unread, rows, question: "Tea or coffee?", screen: "unavailable", inferred: true })
+  const seen = waitingHTML({ ...unread, rows, question: "Tea or coffee?", screen: "read" })
+  assert.match(inferred, /data-key="1"/)
+  assert.match(inferred, /data-source="transcript"/)
+  assert.doesNotMatch(seen, /data-source/)
 })
