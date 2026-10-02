@@ -165,7 +165,7 @@ internal/adapters/tunnel.lineLimit # read: one line of cloudflared's output; a l
 internal/adapters/tunnel.nameLimit # admission: a hand-edited remote_tunnel_name, refused by name past it
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
 internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
-internal/app/orchestrator.MilestoneSummaryLimit # admission: the most bytes a milestone handoff's summary may have; a longer one is a 422 bad_milestone_summary and nothing opens (limits N72)
+internal/app/orchestrator.MilestoneSummaryLimit # admission: the most bytes a milestone handoff's summary may have; a longer one is a 422 bad_milestone_summary and nothing opens (limits N75)
 internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter, spent on either ladder and never on a hold (limits N7: a dead letter is pushed once, W5, and counted in the Settings page's capacity block, C4)
 internal/app/orchestrator.maxAckWait # parameter: the longest this broker waits between two typings of one completion notice, and so the top rung of the delivered ladder; what it waits for is a root finishing a turn and answering, which asking again inside a minute does not help
 internal/app/orchestrator.maxChoosingHold # parameter: how long one completion notice is held, without spending an attempt, while its root shows something waiting to be answered; at it the notice goes to dead letter with the reason and the ceiling on it and the person is pushed; nothing accumulates (limits N7)
@@ -264,9 +264,10 @@ internal/app.waitingPushHourLimit # parameter: stopped sessions pushed per hour,
 internal/app.usagePassLimit # parameter: transcripts one token-ledger pass feeds, one Feed each; the rest are the next pass's, which starts after the last one fed, and a pass that meets it says so once until it clears (limits N43)
 internal/app.usageWindowLimit # parameter: how far back a token-ledger pass looks for written transcripts; an older one keeps its stored totals and is not visited until it is written again (limits N43)
 internal/app.compareTooFewLimit # parameter: the fewest child tasks a compaction-comparison group needs before a share or rate is shown; below it the group says too_few and every percentage is null (limits N44)
-internal/app.handoffComparableLimit # parameter: the fewest finished items each compared group of a handoff comparison needs before a saving is computed; below it the verdict is insufficient_evidence (limits N72)
-internal/app.handoffItemLimit # page: finished Board items one handoff comparison reads, newest first; past it the answer says truncated (limits N72)
+internal/app.handoffComparableLimit # parameter: the fewest finished items each compared group of a handoff comparison needs before a saving is computed; below it the verdict is insufficient_evidence (limits N75)
+internal/app.handoffItemLimit # page: finished Board items one handoff comparison reads, newest first; past it the answer says truncated (limits N75)
 internal/app.compareTaskLimit # page: child tasks one compaction comparison reads, newest first; past it the answer says truncated (limits N44)
+internal/app.workSampleLimit # page: child tasks one work-samples answer reads, newest first; past it the answer says truncated (limits N74)
 internal/app.compareExcludedLimit # page: excluded tasks one compaction comparison names; the count is always whole and excluded_truncated says so (limits N44)
 internal/app.compareSinceDaysLimit # admission: the longest range a compaction comparison's since may name in days; a longer one is a 400 (limits N44)
 internal/app.digestLineLimit # page: the lines one digest section lists; its total is always there
@@ -287,6 +288,10 @@ internal/transport/http.workflowBodyLimit # admission: one command to the retire
 cmd/clawdline.brokerAnswerLimit # read: one daemon answer to a thin command (landings, assistants, send, notify, session report); the largest, landings, is tens of kilobytes
 cmd/clawdline.brokerTokenLimit # read: the orchestrator-token file the thin commands read, a few dozen bytes; the daemon's own read of it is internal/adapters/devices.tokenLimit
 cmd/clawdline.relayInputLimit # admission: the message `clawdline send` reads from stdin, at the daemon's 2 MiB body cap (limits N27); how many characters is the daemon's rule
+cmd/clawdline.waitIDLimit # admission: how many task ids one `clawdline task wait` follows, 32; more is a usage error (exit 2) (limits N73)
+cmd/clawdline.waitPollLimit # lane: the longest pause between `clawdline task wait` polls, 10 s; it starts at 1 s and doubles (limits N73)
+cmd/clawdline.waitReadLimit # retry: polls in a row `clawdline task wait` may fail to reach the daemon, 3, before it exits 4 (could not read) (limits N73)
+cmd/clawdline.waitTimeoutLimit # admission: the longest --timeout `clawdline task wait` accepts, 2 h; the default is 9 m, inside a 10-minute tool call (limits N73)
 cmd/clawdline.dispatchInstructionsLimit # admission: the brief `clawdline dispatch` reads from stdin or --instructions-file, refused before any task directory exists; it is the daemon's own internal/app/orchestrator.instructionsLimit, 16 KiB
 cmd/clawdline.runForeground:chan(2) # lane: the interrupt and terminate signals `clawdline heavy` passes on to the command it runs
 internal/adapters/skillfile.recordLimit # read: the skill install record, a few hundred bytes (docs/skill.md)
@@ -343,3 +348,4 @@ internal/app.verificationAuthorLimit # admission: characters in the session name
 internal/app/cloudops.verificationCloudBodyLimit # admission: one verification word's sub-document, refused before it is routed; the fields inside it are bounded by internal/app (limits N45)
 cmd/clawdline.webhookAnswerLimit # read: one Cloud answer to `clawdline webhook fire` (the trigger's 202 or refusal, one delivery status), a few hundred bytes; read to 64 KiB and the rest ignored
 cmd/clawdline.webhookURLFileLimit # read: the --url-file `clawdline webhook fire` reads the webhook URL from, one line of well under 1 KiB
+cmd/clawdline.workBaselineReadLimit # read: a frozen work baseline file, at most workSampleLimit samples of a few hundred bytes; a larger file is refused (limits N74)

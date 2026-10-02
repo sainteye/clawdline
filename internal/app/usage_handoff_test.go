@@ -158,7 +158,7 @@ func deref(p *float64) any {
 	return *p
 }
 
-func units(group string, n int, cacheRead float64, reopened int, hours float64) []HandoffUnit {
+func handoffUnits(group string, n int, cacheRead float64, reopened int, hours float64) []HandoffUnit {
 	var out []HandoffUnit
 	for i := 0; i < n; i++ {
 		out = append(out, HandoffUnit{ItemID: group + string(rune('a'+i)), Group: group, CacheRead: cacheRead,
@@ -179,17 +179,17 @@ func TestTheHandoffVerdictNeedsTwentyItemsThirtyPercentAndItsGuardrails(t *testi
 		saving  float64
 		reason  string
 	}{
-		{"nineteen items", append(units(HandoffGroupSingle, 30, 100, 0, 10), units(HandoffGroupMilestone, 19, 10, 0, 10)...),
+		{"nineteen items", append(handoffUnits(HandoffGroupSingle, 30, 100, 0, 10), handoffUnits(HandoffGroupMilestone, 19, 10, 0, 10)...),
 			0, HandoffVerdictInsufficient, -1, "fewer than 20"},
-		{"thirty percent", append(units(HandoffGroupSingle, 20, 100, 0, 10), units(HandoffGroupMilestone, 20, 70, 0, 10)...),
+		{"thirty percent", append(handoffUnits(HandoffGroupSingle, 20, 100, 0, 10), handoffUnits(HandoffGroupMilestone, 20, 70, 0, 10)...),
 			0, HandoffVerdictRecommend, 0.30, ""},
-		{"twenty percent", append(units(HandoffGroupSingle, 20, 100, 0, 10), units(HandoffGroupMilestone, 20, 80, 0, 10)...),
+		{"twenty percent", append(handoffUnits(HandoffGroupSingle, 20, 100, 0, 10), handoffUnits(HandoffGroupMilestone, 20, 80, 0, 10)...),
 			0, HandoffVerdictBelowTarget, 0.20, "under 30%"},
-		{"more reopened", append(units(HandoffGroupSingle, 20, 100, 1, 10), units(HandoffGroupMilestone, 20, 50, 3, 10)...),
+		{"more reopened", append(handoffUnits(HandoffGroupSingle, 20, 100, 1, 10), handoffUnits(HandoffGroupMilestone, 20, 50, 3, 10)...),
 			0, HandoffVerdictGuardrail, 0.50, "reopened"},
-		{"slower", append(units(HandoffGroupSingle, 20, 100, 0, 10), units(HandoffGroupMilestone, 20, 50, 0, 12)...),
+		{"slower", append(handoffUnits(HandoffGroupSingle, 20, 100, 0, 10), handoffUnits(HandoffGroupMilestone, 20, 50, 0, 12)...),
 			0, HandoffVerdictGuardrail, 0.50, "longer"},
-		{"a handoff failed", append(units(HandoffGroupSingle, 20, 100, 0, 10), units(HandoffGroupMilestone, 20, 50, 0, 10)...),
+		{"a handoff failed", append(handoffUnits(HandoffGroupSingle, 20, 100, 0, 10), handoffUnits(HandoffGroupMilestone, 20, 50, 0, 10)...),
 			1, HandoffVerdictGuardrail, 0.50, "failed to open"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

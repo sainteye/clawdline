@@ -159,8 +159,8 @@ func remindUnacknowledgedCompletions(stderr io.Writer, b *broker, conversation s
 	}
 	fmt.Fprintln(stderr, len(answer.Completions), phrase)
 	for _, c := range answer.Completions {
-		fmt.Fprintf(stderr, "  %s  %s (%s; notice %s)  read %s\n", c.TaskID, c.Title, c.State, c.NoticeState, c.ResultPath)
-		fmt.Fprintf(stderr, "    then: clawdline task ack %s %s\n", c.TaskID, c.NoticeID)
+		fmt.Fprintf(stderr, "  %s  %s (%s; notice %s)\n", c.TaskID, c.Title, c.State, c.NoticeState)
+		fmt.Fprintf(stderr, "    then: clawdline task show %s (reading it closes the notice)\n", c.TaskID)
 	}
 }
 

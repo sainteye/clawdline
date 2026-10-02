@@ -15,15 +15,26 @@ func TestV2KindsAndAreas(t *testing.T) {
 		}
 	}
 	if !KindFeature.Executable() || !KindIssue.Executable() || !KindEpic.Executable() ||
-		KindRefactor.Executable() || KindPlan.Executable() {
+		!KindRefactor.Executable() || KindPlan.Executable() {
 		t.Fatal("the executable boundary changed")
+	}
+	if !KindFeature.FeatureLike() || !KindRefactor.FeatureLike() || KindIssue.FeatureLike() ||
+		KindEpic.FeatureLike() || KindPlan.FeatureLike() {
+		t.Fatal("the Feature-like kinds changed")
+	}
+	if !SessionAssignable(KindRefactor) || SessionAssignable(KindPlan) {
+		t.Fatal("a Refactor is assignable from a Session and a Plan is not")
+	}
+	if ReviewRequiredApplies(KindRefactor, true) != nil {
+		t.Fatal("a Refactor takes the review switch as a Feature does")
 	}
 	cases := []struct {
 		item ItemV2
 		want string
 	}{
 		{ItemV2{Kind: KindPlan, Phase: PhaseCreated}, "planning"},
-		{ItemV2{Kind: KindRefactor, Phase: PhaseCreated}, "planning"},
+		{ItemV2{Kind: KindRefactor, Phase: PhaseCreated}, "unassigned"},
+		{ItemV2{Kind: KindRefactor, Phase: PhaseAssigned, OwnerSession: "session-a"}, "assigned"},
 		{ItemV2{Kind: KindEpic, Phase: PhaseCreated}, "unassigned"},
 		{ItemV2{Kind: KindEpic, Phase: PhaseImplementing, OwnerSession: "session-a"}, "implementing"},
 		{ItemV2{Kind: KindFeature, Phase: PhaseImplementing}, "unassigned"},
@@ -179,7 +190,10 @@ func TestPlanRolesApplyToAFeatureOrEpic(t *testing.T) {
 		if DocumentRoleApplies(ItemV2{Kind: KindFeature}, role) != nil {
 			t.Fatalf("%s refused on a Feature", role)
 		}
-		for _, k := range []Kind{KindIssue, KindRefactor, KindPlan} {
+		if DocumentRoleApplies(ItemV2{Kind: KindRefactor}, role) != nil {
+			t.Fatalf("%s refused on a Refactor", role)
+		}
+		for _, k := range []Kind{KindIssue, KindPlan} {
 			if r, ok := AsRefusalV2(DocumentRoleApplies(ItemV2{Kind: k}, role)); !ok || r.Code != "document_role_not_applicable" {
 				t.Fatalf("%s on a %s: %v", role, k, r)
 			}

@@ -416,6 +416,9 @@ type WorkV2Tx struct {
 	// added is the picture files this transaction wrote, dropped the ones
 	// whose rows it deleted (work_v2_image_files.go settles both).
 	added, dropped []imageRef
+	// changes is the items and steps this transaction changed, told to the
+	// Board's observer once it commits (work_cursors.go).
+	changes []WorkV2Change
 }
 
 func (s *Store) WriteWorkV2(ctx context.Context, fn func(*WorkV2Tx) error) error {
@@ -428,6 +431,9 @@ func (s *Store) WriteWorkV2(ctx context.Context, fn func(*WorkV2Tx) error) error
 		return t.wrote, nil
 	})
 	s.settleImageFiles(ctx, t, err)
+	if err == nil && t != nil {
+		s.toldWorkV2(t.changes)
+	}
 	return err
 }
 
@@ -621,10 +627,10 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	if i.AcceptanceVersion == 0 || i.AcceptanceDigest == "" {
 		work.SetAcceptance(&i, i.AcceptanceCriteria)
 	}
-	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic')`
+	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic','refactor')`
 	limit, full := int64(WorkV2OpenLimit), ErrWorkV2Full
 	if i.Planning() {
-		where, limit, full = `kind IN ('refactor','plan') AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
+		where, limit, full = `kind = 'plan' AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
 	}
 	if n, err := t.count(where); err != nil {
 		return err
@@ -741,6 +747,7 @@ func (t *WorkV2Tx) putItem(prev, next work.ItemV2, kind, actor, payload string, 
 	}
 	t.wrote++
 	next.Version = prev.Version + 1
+	t.changes = append(t.changes, WorkV2Change{Prev: prev, Next: next})
 	if prev.Phase != next.Phase {
 		if err := t.enterPhase(prev.ID, next.Phase, next.UpdatedAt); err != nil {
 			return err
@@ -1796,6 +1803,7 @@ func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 		return ErrConflict
 	}
 	t.wrote++
+	t.changes = append(t.changes, WorkV2Change{Step: true, PrevStep: prev, NextStep: next})
 	return nil
 }
 
@@ -2263,7 +2271,7 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
 	out := map[string]int64{}
 	queries := map[string]string{
 		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('refactor','plan') AND closed_at IS NULL`,
+		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind = 'plan' AND closed_at IS NULL`,
 		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
 		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
 		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (

@@ -100,11 +100,13 @@ The closed kind vocabulary is:
 | `feature` | Unassigned | yes | A user-visible capability or coherent product change |
 | `issue` | Unassigned | yes | A defect or bounded problem to correct |
 | `epic` | Unassigned | yes, behind a plan-and-review gate (§6.4) | A large body of work its owner plans, has reviewed, and then executes in steps |
-| `refactor` | Planning | no | A planned structural improvement, not yet execution work |
+| `refactor` | Unassigned | yes, exactly as a Feature (§6.4) | An internal structural improvement that leaves outward behaviour unchanged |
 | `plan` | Planning | no | A saved plan or investigation direction |
 
-Planning items (Refactor and Plan) are retained and editable but do not acquire an owner or enter
-the execution lifecycle in v2.0. Epic was a planning kind until 2026-09-27; it became executable
+Planning items (Plan) are retained and editable but do not acquire an owner or enter the
+execution lifecycle in v2.0. Refactor was a planning kind until 2026-10-02; it became executable
+then and follows every Feature rule — steps, acceptance, documents, the planning gate and the
+person's Needs independent review switch. Epic was a planning kind until 2026-09-27; it became executable
 then, and Epics already in a store simply appear in Unassigned — nothing was migrated. An Epic's
 owner creates linked Feature/Issue items under it (§6.5); nothing silently mutates a planning item
 into executable work.
@@ -320,8 +322,8 @@ Whether a Feature is independently reviewed is the person's decision, not the Ag
 carries a `review_required` switch, shown as **Needs independent review**, which defaults off. Like
 the deployment policy, the person sets it on create or later; the Agent may not. A Session's
 create route does not take the field, and a Session's edit route refuses it with
-`review_required_person_only`. It belongs to a Feature only: `true` on any other kind is refused
-with `review_required_not_applicable`, and converting a Feature to another kind clears it. The
+`review_required_person_only`. It belongs to a Feature or a Refactor only: `true` on any other kind
+is refused with `review_required_not_applicable`, and converting either to another kind clears it. The
 gate reads it live when the Feature asks to enter `implementing`; it is not part of the captured
 gate snapshot.
 
@@ -622,16 +624,16 @@ run named), is within the one-day relay window (`run_expired`), and was said to 
 (`run_other_session`); the conversation is a live, non-child Session (`session_not_found`,
 `child_session`); the Project is in the catalog (`project_not_found`); an executable item is in the
 Project the Session works in (`project_mismatch`, except the registered machine steward's delegation path); the usual title and description rules; at most
-128 explicit steps (`too_many_steps`), none on a planning kind, Refactor or Plan (`planning_has_no_steps`); and one
+128 explicit steps (`too_many_steps`), none on a planning kind, a Plan (`planning_has_no_steps`); and one
 run backs at most five created items, open or closed (`run_items_exhausted`, capacity row
 `run.created_items`).
 
 One transaction writes the item with `created_by = user_via_session:<run>` and an `item.created`
-event carrying `via_run` and `session_id`. For Feature, Issue and Epic it also writes its steps:
+event carrying `via_run` and `session_id`. For Feature, Refactor, Issue and Epic it also writes its steps:
 the explicit `steps` in order, or — when there are none — the description's two or more top-level
 list rows exactly as a person's assignment seeds them. Explicit steps replace that seeding, and a
-later assignment seeds nothing when steps exist, so no step is written twice. Refactor and Plan
-are created unassigned in Planning, as a person's would be.
+later assignment seeds nothing when steps exist, so no step is written twice. A Plan is created
+unassigned in Planning, as a person's would be.
 
 *(Amended 2026-09-30.)* The executable item is created **unassigned**, in `created`, where an
 unassigned item of its kind waits on the Board, and the answer says `assignment_state:
@@ -645,8 +647,8 @@ Session's terminal: it asked. `self` is its own mode rather than `existing_sessi
 caller's terminal id because the daemon already knows the caller, so a terminal id could only
 disagree with it, and because the assignment then commits with the item instead of in a second,
 separately failing request; `self` takes no other field (`invalid_assignment`). A Session asked
-later to take an item it created uses §7.2's claim. Refactor and Plan stay unassigned with or
-without `self`.
+later to take an item it created uses §7.2's claim. A Plan stays unassigned with or without
+`self`.
 
 The registered Clawdfather is the narrow exception for executable items: it works outside every
 Project and never owns or edits Project code. On a person's explicit Clawdline message it first
@@ -693,7 +695,7 @@ There is no field naming a Session or terminal: the item goes to the Session the
 and only to it. The run and Session are checked exactly as §7.1 checks them (`run_unknown`,
 `run_expired`, `run_other_session`, `session_not_found`, `child_session`), then the item: it exists
 (`work_not_found`), is in the Project the Session works in (`project_mismatch`, the person's
-`existing_session` check), is not a planning kind, Refactor or Plan (`planning_not_assignable`) or finished
+`existing_session` check), is not a planning kind, a Plan (`planning_not_assignable`) or finished
 (`item_terminal`), has not changed (`version_conflict`), and has no Session and none being opened
 for it (`item_assigned` — a person may move an item between Sessions, a Session may only take one
 nobody holds). One run backs at most five claims, active or released (`run_claims_exhausted`,

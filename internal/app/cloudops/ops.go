@@ -229,7 +229,9 @@ type plan struct {
 	namesTyped                     bool
 	project, item, audience, entry string
 	status, query                  string
-	environment, category, cursor  string
+	// until is the work samples' end, a Unix time; query holds their since.
+	until                         string
+	environment, category, cursor string
 	// kind is a digest's daily-or-weekly, named rather than folded into `id`.
 	kind   string
 	images []string
@@ -2101,6 +2103,79 @@ func init() {
 				return out
 			}},
 
+		// What each unit of work added (docs/token-ledger.md "One unit of
+		// work"): the same one query field, `since`, as the comparison.
+		op{name: "usage.work-units", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"}, []string{"type", "session", "request", "since"}) {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				if _, named := b["since"]; named {
+					since, ok := b.str("since")
+					if !ok || !compareSince.MatchString(since) {
+						return plan{}, false
+					}
+					p.query = since
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				out := LocalRequest{Method: "GET", Path: "/v1/usage/work-units"}
+				if p.query != "" {
+					out.Query = map[string]string{"since": p.query}
+				}
+				return out
+			}},
+
+		// The raw samples a before/after report is folded from
+		// (docs/token-ledger.md "Did a change make one unit of work
+		// cheaper"): the local route's own question, with its two query
+		// fields, `since` as the comparison spells it and `until` a Unix
+		// time, taken exactly as the route takes them and nothing else.
+		op{name: "usage.work-samples", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.hasOneOf([]string{"type", "session", "request"}, []string{"type", "session", "request", "since"},
+					[]string{"type", "session", "request", "until"}, []string{"type", "session", "request", "since", "until"}) {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				if !ok {
+					return plan{}, false
+				}
+				if _, named := b["since"]; named {
+					since, ok := b.str("since")
+					if !ok || !compareSince.MatchString(since) {
+						return plan{}, false
+					}
+					p.query = since
+				}
+				if _, named := b["until"]; named {
+					until, ok := b.str("until")
+					if !ok || !workUntil.MatchString(until) {
+						return plan{}, false
+					}
+					p.until = until
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				out := LocalRequest{Method: "GET", Path: "/v1/usage/work-samples"}
+				if p.query != "" || p.until != "" {
+					out.Query = map[string]string{}
+				}
+				if p.query != "" {
+					out.Query["since"] = p.query
+				}
+				if p.until != "" {
+					out.Query["until"] = p.until
+				}
+				return out
+			}},
+
 		// Things waiting to be verified (docs/verifications.md). The phone is
 		// where the person reads them, so every route crosses: two machine
 		// reads, and five commands that carry `X-Clawdline-Actor: device` for
@@ -3414,6 +3489,10 @@ func usageRead(word, kind string) op {
 // does not take — `0d`, more than ten years — with its own `bad_request`;
 // this only keeps anything that is not a number and a unit off its query.
 var compareSince = regexp.MustCompile(`^[0-9]{1,12}[dh]?$`)
+
+// workUntil is the spelling of the work samples' `until`: a Unix time in
+// seconds. The route refuses one that is not after since.
+var workUntil = regexp.MustCompile(`^[0-9]{1,12}$`)
 
 // verificationID is app.VerificationIDShape, spelled a second time for the
 // reason usageID is: letters, digits and dashes, at most 64.

@@ -120,7 +120,7 @@ func TestASessionsAssignmentWithoutAMessageOrBeyondItIsRefusedByName(t *testing.
 	s, p, project := sessionItemServer(t)
 	item := personItem(t, s, project, "feature", "person-item")
 	epic := personItem(t, s, project, "epic", "person-epic")
-	refactor := personItem(t, s, project, "refactor", "person-refactor")
+	plan := personItem(t, s, project, "plan", "person-plan")
 	mine := issueTestRun(t, s, p, "open a new Session for it")
 	other, err := s.runs().Issue(context.Background(), session.Session{ID: "pane-9",
 		ConversationID: "10000000-0000-4000-8000-000000000009"}, "local", "not to you")
@@ -145,7 +145,7 @@ func TestASessionsAssignmentWithoutAMessageOrBeyondItIsRefusedByName(t *testing.
 			map[string]any{"mode": "existing_session", "terminal_id": p.s.ID, "persona": ""}),
 			http.StatusUnprocessableEntity, "new_session_only"},
 		{"an Epic", epic.ID, runAssignBody(me, mine, epic.Version, nil), http.StatusUnprocessableEntity, "kind_person_assigns"},
-		{"a Refactor", refactor.ID, runAssignBody(me, mine, refactor.Version, nil), http.StatusConflict, "planning_not_assignable"},
+		{"a Plan", plan.ID, runAssignBody(me, mine, plan.Version, nil), http.StatusConflict, "planning_not_assignable"},
 		{"an unknown persona", item.ID, runAssignBody(me, mine, item.Version, map[string]any{"persona": "wizard"}),
 			http.StatusBadRequest, "unknown_persona"},
 		{"a stale version", item.ID, runAssignBody(me, mine, item.Version+3, nil), http.StatusConflict, "version_conflict"},
@@ -155,7 +155,7 @@ func TestASessionsAssignmentWithoutAMessageOrBeyondItIsRefusedByName(t *testing.
 			t.Errorf("%s: %d %s", c.name, rec.Code, rec.Body)
 		}
 	}
-	for _, id := range []string{item.ID, epic.ID, refactor.ID} {
+	for _, id := range []string{item.ID, epic.ID, plan.ID} {
 		if got := readItem(t, s, id); got.OwnerSession != nil || len(got.Assignments) != 0 {
 			t.Fatalf("a refusal assigned %s: %+v", id, got)
 		}

@@ -147,10 +147,6 @@ func TestEveryCommandACompletionNoticeNamesRuns(t *testing.T) {
 				if len(words) != 1 || words[0] != id {
 					t.Errorf("%s: %q is not `task show <task id>`", name, m[0])
 				}
-			case "ack":
-				if len(words) != 2 || words[0] != id {
-					t.Errorf("%s: %q is not `task ack <task id> <notice id>`", name, m[0])
-				}
 			case "land":
 				lands++
 				inv, err := landArgs(words)

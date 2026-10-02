@@ -165,16 +165,16 @@ func TestSessionReportSaysNothingOrUnknownAboutToDos(t *testing.T) {
 }
 
 // A child that finished while this root was busy — its line never typed, or
-// typed and given up on — is said after the receipt, with what to read and the
-// ACK that ends it; unreadable is said as unknown, and the exit is still 0.
+// typed and given up on — is said after the receipt, with the read that ends
+// it; unreadable is said as unknown, and the exit is still 0.
 func TestSessionReportSaysAChildFinishedUnacknowledged(t *testing.T) {
 	for _, c := range []struct{ name, todos, want string }{
 		{"one", `{"ok":true,"direct_todos":[],"unacknowledged_completions":[{"task_id":"c6f3-1",` +
 			`"title":"the relay reconnects","state":"success","result_path":"/t/c6f3-1/result.json",` +
 			`"notice_id":"n-1","notice_state":"dead_letter","ack_path":"/v1/orchestrator/tasks/c6f3-1/completion/ack"}]}`,
 			"1 child task of this Session finished and is not acknowledged:\n" +
-				"  c6f3-1  the relay reconnects (success; notice dead_letter)  read /t/c6f3-1/result.json\n" +
-				"    then: clawdline task ack c6f3-1 n-1\n"},
+				"  c6f3-1  the relay reconnects (success; notice dead_letter)\n" +
+				"    then: clawdline task show c6f3-1 (reading it closes the notice)\n"},
 		{"none", `{"ok":true,"unacknowledged_completions":[]}`, ""},
 		{"unknown", `{"ok":true,"unacknowledged_completions":[],"unacknowledged_completions_unknown":true}`,
 			"Whether a child of this Session finished without being acknowledged could not be read.\n"},

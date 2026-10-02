@@ -71,7 +71,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
-| `clawdline task ack <task id> <notice id>` | ACK 一則 child 完成通知（§5） |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個沒成功、3 逾時、4 有 task 讀不到（§5） |
+| `clawdline task ack <task id> <notice id>` | 手動關掉一則完成通知；`task show` 與 `task wait` 已經會關，很少需要（§5） |
 | `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 從任何一台機器透過 Cloud webhook 啟動一個排程，並等它的結果；exit code 說明它怎麼結束（「排程」一節）。不需要 daemon |
@@ -90,6 +91,22 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原因：`not_yet_read`、`transcript_missing`
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
+
+**等一個跑很久的指令。** `clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
+跑完會自己結束。等它們要**一次等久一點**，不要每隔幾秒去看一次：每看一次就是一個 turn，要把整段
+context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種 turn（7,220 萬 token），大多花在排隊中的
+`heavy` 上。
+
+- **Claude Code：** 一次 Bash 呼叫，`timeout` 設長一點（最多 `600000` ms）；或用 `run_in_background`，
+  然後什麼都不做，等完成通知進來。不要用 `sleep` 加 `tail` 的迴圈。
+- **Codex（codex-cli 0.157.1，code mode）：** 在 `functions.exec` cell 第一行寫
+  `// @exec: {"yield_time_ms": 600000}`。`exec_command` 回 session ID 後，用 `write_stdin` 等待，
+  `chars` 留空、`yield_time_ms` 設 `300000`；若指令仍在跑，就在同一個 cell 內再等。實測外層設
+  `600000` 可持續 330 秒，空的 `write_stdin` 最多等 300 秒。外層 cell 若仍提早交還，就用設了長
+  `yield_time_ms` 的 `wait` 接著等。
+
+`clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
+允許的長，就放到背景跑。
 
 **用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
 `X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
@@ -254,7 +271,8 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-TW dispatch`。
 
 **5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
-整合交付，然後 `clawdline task ack <task id> <notice id>`。worktree child 的整合方式是**把它的 branch
+再整合交付；讀了就會關掉通知，不必另外 ACK。想直接等 child 做完，就執行
+`clawdline task wait <task id>…`（預設 `--timeout 9m`，`--any` 等第一個）。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
 列出還欠著的。用 `--claims ""` 派出、什麼都沒寫的 child，broker 會自己記 `nothing_to_land`。其他情況用
 `clawdline task land <task id> <state>`（`clawdline guide landing`）。
@@ -354,7 +372,8 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 回答。被拒時在 stderr 印 `refused, <status> <code>: <message>` 並以 1 結束；每個 code 的意思見本節最後
 的表。root 是你的對話，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，否則用 `--conversation`；
 child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
-`--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。secret 不會出現在 argv、`task.json` 或
+`--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。daemon 開 worktree 和 child 分頁的期間它什麼都不印；
+它是一個等到 child 建好才回答的請求，所以一次等完就好（§2「等一個跑很久的指令」）。secret 不會出現在 argv、`task.json` 或
 輸出裡，token 的讀法跟其他 thin command 一樣。
 
 `--persona <id>` 讓 child 以內建角色（persona）開啟（`task.json` 的 `persona`）；這個版本沒有的 id 會在
@@ -469,8 +488,8 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
 - `clawdline task show <id>`——單一 task 和它的狀態（`GET /v1/orchestrator/tasks/<id>`）。`GET /v1/orchestrator/tasks` 列出全部
   （`?state=`、`?limit=` 最多 500）。
 - **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`。** 它的 `body` 只有一句：哪個 task、
-  怎麼結束、只屬於這次交付的事實（stalled、writes 已釋放、它的 branch、幾個 leftover），以及要執行的兩個
-  指令——先 `clawdline task show <id>`，再 `clawdline task ack <id> <notice_id>`。JSON 仍帶著 `state`、
+  怎麼結束、只屬於這次交付的事實（stalled、writes 已釋放、它的 branch、幾個 leftover），以及要執行的那一個
+  指令 `clawdline task show <id>`，它印出 task 之後就會關掉通知。JSON 仍帶著 `state`、
   `result_path`、`outstanding`、`leftovers`、`notice_id` 和 `ack_path`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
   打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去：
 
@@ -478,14 +497,15 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  `clawdline task ack <id> <notice_id>` 會送出它，並印一行結果。第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
+  `clawdline task show <id>` 與 `clawdline task wait <id>…` 印出已結束的 task 之後會送出它；
+  `clawdline task ack <id> <notice_id>` 是手動送出，並印一行結果。第二次 ACK 會回 `changed: false`。還沒 ACK 的通知列在 `GET /v1/orchestrator/completions`；
   `POST /v1/orchestrator/completions/reconcile` 會把它們重新排上。已經放棄的通知，會在你的 session 下一次
   閒置時再打一次。
 - **就算你沒看到那一行，也會知道。** 你每個 turn 邊界都會讀的
   `GET /v1/work/v2/agent/session-todos/<conversation id>` 會列出 `unacknowledged_completions`：每一個已經
   結束、你還沒 ACK 的 child，附 `task_id`、`title`、`state`、`kind`、`result_path`、`notice_id` 和 `ack_path`，不管它的
   通知還在重送還是已經放棄。`clawdline session report` 在收據之後也會印出來。每一筆都先執行
-  `clawdline task show <id>`、整合，然後 ACK；ACK 之後兩邊都不會再列。`task show` 會完整印出 summary，
+  `clawdline task show <id>`，再整合；讀了就是 ACK，兩邊都不會再列。`task show` 會完整印出 summary，
   省略的部分只給數量；`--json` 是 daemon 的完整回應，包括 symbols 與 artifacts。只有不夠用時才去讀
   `result.json` 本身。
 - **交付裡列了 leftovers**（child 說它沒做的事），本身不會觸發任何事。`task show` 會列出它們的標題。要把
@@ -806,7 +826,8 @@ echo "下次 release 前把 release notes 整理好。" | \
   （`clawdline item steps <item id>`、`clawdline item step-done <item id> <step id>`；做下去發現還少一步，就用
   `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。
   這樣接下的 Epic，進 implementing 之前要先走完 Epic 流程（見下文）。使用者之後才要你接下你先前建好、
-  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor、Plan 不論有沒有 `--assign-self`，
+  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor 是可執行的工作：改內部結構、不改外部行為，
+  可以指派、帶 steps，phase、gate 與審查開關都和 Feature 相同。Plan 不論有沒有 `--assign-self`，
   都以未指派狀態建在規劃區，不帶 steps（`planning_has_no_steps`）。
 - 已登記的 Clawdfather 是工程項目的例外：它不能擁有或修改 Project 程式碼。使用者的訊息明確要求新項目時，
   可以用 `clawdline item add --project <place id> --kind feature --title "…" --assign-new`（或
@@ -840,7 +861,7 @@ clawdline item claim <item id>
 - 拒絕，每一種都什麼都不寫：`run_unknown`、`run_expired`、`run_other_session`、`session_not_found`、
   `child_session`（同 `item add`）；`work_not_found`；`project_mismatch`（項目在你沒在工作的 Project）；
   `item_assigned`（已經有 Session，或正在為它開一個——只有使用者能把項目從一個 Session 移到另一個）；
-  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Refactor、Plan 留在規劃區；Epic 可以認領）；
+  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Plan 留在規劃區；Epic 和 Refactor 可以認領）；
   `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 
@@ -1339,7 +1360,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 **Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
 
-**編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。它從不拒絕執行：daemon 沒回應、被拒絕、或超過 `--max-wait`（預設 30 分鐘）都會照跑，並在 stderr 說明。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
+**編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。daemon 沒回應、或被它看不懂的理由拒絕時，它不會因此不編譯：照樣執行指令，並在 stderr 說明。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
 
 - `POST /v1/orchestrator/leases`——
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。

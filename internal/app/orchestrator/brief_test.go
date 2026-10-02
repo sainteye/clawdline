@@ -103,13 +103,13 @@ func TestTheCompletionNoticeIsShort(t *testing.T) {
 		}
 	}
 	body, _ := fields["body"].(string)
-	for _, want := range []string{"clawdline task show " + r.ID, "clawdline task ack " + r.ID + " " + r.Notice.ID,
+	for _, want := range []string{"clawdline task show " + r.ID, "reading it closes this notice",
 		"3 leftover", "nothing is committed", r.Worktree.Path} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the body does not say %q:\n%s", want, body)
 		}
 	}
-	for _, gone := range []string{"result.json", "/v1/orchestrator/proposals", "/completion/ack"} {
+	for _, gone := range []string{"result.json", "/v1/orchestrator/proposals", "/completion/ack", "task ack"} {
 		if strings.Contains(body, gone) {
 			t.Errorf("the body still spells out %q:\n%s", gone, body)
 		}

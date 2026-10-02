@@ -76,7 +76,8 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
-| `clawdline task ack <task id> <notice id>` | Acknowledges a child's completion notice (§5) |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read (§5) |
+| `clawdline task ack <task id> <notice id>` | Closes a completion notice by hand; rarely needed, since `task show` and `task wait` close it (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
@@ -97,6 +98,23 @@ ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_
 `transcript_unreadable` — never an empty total; an id nobody knows is 404 `unknown_session`,
 `unknown_task` or `unknown_item`. Whether the ledger is still reading is `usage` in
 `/v1/diagnostics`.
+
+**Waiting on a long command.** `clawdline heavy`, `clawdline dispatch` and a long test run print
+nothing while they wait, and end on their own. Wait for one with **one long wait**, not by
+checking it every few seconds: each check is a turn that rereads your whole context, and a token
+review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `heavy` runs.
+
+- **Claude Code:** one Bash call with a long `timeout` (up to `600000` ms), or `run_in_background`
+  and then nothing until its completion notification arrives. Not a loop of `sleep` and `tail`.
+- **Codex (codex-cli 0.157.1, code mode):** put `// @exec: {"yield_time_ms": 600000}` on the
+  first line of the `functions.exec` cell. After `exec_command` returns a session ID, await
+  `write_stdin` with empty `chars` and `yield_time_ms: 300000`; if it still runs, repeat inside
+  that same cell. Measured: the outer cell stayed open for 330 seconds with `600000`, while an
+  empty `write_stdin` waited up to 300 seconds. If the outer cell yields, use `wait` with a long
+  `yield_time_ms` to collect it.
+
+`clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
+command; a longer wait than your tool allows is a background run.
 
 **Curl to an orchestrator route.** Read `<state dir>/orchestrator-token` and send it in the
 `X-Clawdline-Orchestrator` header. Keep the token out of command arguments: use
@@ -285,8 +303,9 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
   `clawdline guide dispatch`.
 
 **5. When a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
-`clawdline task show <task id>`, integrate the delivery, then
-`clawdline task ack <task id> <notice id>`. Integrate a worktree child by **merging its branch** into the target. **The merge records the
+`clawdline task show <task id>`, then integrate the delivery; reading it closes the notice, so there
+is no separate ACK. To block until your children finish instead, run
+`clawdline task wait <task id>…` (default `--timeout 9m`, `--any` for the first one). Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
 what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
 `nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
@@ -397,7 +416,9 @@ instead. A refusal is `refused, <status> <code>: <message>` on stderr and exit 1
 end of this part says what each code means. The root is your conversation, from
 `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; the child's assistant is
 yours unless `--assistant` says otherwise; the project is this directory's git top-level unless
-`--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. The secret is
+`--project-dir` says otherwise. `--claims ""` declares a child that writes nothing. While the
+daemon opens the worktree and the child's tab it prints nothing; it is one request that answers
+when the child exists, so wait for it once (§2, "Waiting on a long command"). The secret is
 never in argv, in `task.json` or in what it prints, and the token is read as every thin command
 reads it.
 
@@ -527,8 +548,8 @@ You do not call those routes.
   `GET /v1/orchestrator/tasks` lists them (`?state=`, `?limit=` up to 500).
 - **When it finishes, the daemon types a `<clawdline-notice>` line into your composer.** Its `body`
   is one short sentence: the task, how it ended, the facts that are this delivery's alone (a stall,
-  released writes, its branch, how many leftovers) and the two commands to run —
-  `clawdline task show <id>`, then `clawdline task ack <id> <notice_id>`. Its JSON still carries
+  released writes, its branch, how many leftovers) and the one command to run,
+  `clawdline task show <id>`, which closes the notice once it has printed the task. Its JSON still carries
   `state`, `result_path`, `outstanding`, `leftovers`, `notice_id` and `ack_path`. It retries on a 5→300-second ladder, eight
   times, until you acknowledge it — and never types while you are showing a menu. A menu does not
   use up those eight: the line waits, for up to 12 hours, and is typed once the menu is gone:
@@ -537,7 +558,8 @@ You do not call those routes.
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}
   ```
 
-  `clawdline task ack <id> <notice_id>` sends it and prints one line. A second ACK answers
+  `clawdline task show <id>` and `clawdline task wait <id>…` send it for a finished task after printing it;
+  `clawdline task ack <id> <notice_id>` sends it by hand and prints one line. A second ACK answers
   `changed: false`. Unacknowledged notices are listed at
   `GET /v1/orchestrator/completions`; `POST /v1/orchestrator/completions/reconcile` re-arms them.
   A notice that gave up is typed once more the next time your session is idle.
@@ -546,7 +568,7 @@ You do not call those routes.
   lists `unacknowledged_completions` — each child of yours that finished and that you have not
   acknowledged, with `task_id`, `title`, `state`, `kind`, `result_path`, `notice_id` and `ack_path`, whether
   its notice is still pending or gave up. `clawdline session report` prints them after its receipt.
-  For each: `clawdline task show <id>`, integrate it, then ACK it; the ACK takes it off both lists.
+  For each: `clawdline task show <id>`, then integrate it; the read is the ACK and takes it off both lists.
   `task show` prints the summary whole and counts what it leaves out; `--json` is the daemon's whole
   answer, symbols and artifacts included. Read `result.json` itself only when that is not enough.
 - **A delivery that names leftovers** — things the child says it did not do — changes nothing by
@@ -909,8 +931,9 @@ echo "Clean up the release notes before the next release." | \
   assigned item (below). An Epic taken this way then follows the Epic procedure (below) before it
   may be implemented. If the person asks you to take an item you created unassigned later, use
   `clawdline item claim` (below).
-  A Refactor or Plan is created unassigned, in Planning, with or without `--assign-self`, and takes
-  no steps (`planning_has_no_steps`).
+  A Refactor is executable work that changes internal structure but not outward behaviour: it is
+  assigned, takes steps and follows a Feature's phases, gate and review switch. A Plan is created
+  unassigned, in Planning, with or without `--assign-self`, and takes no steps (`planning_has_no_steps`).
 - The registered Clawdfather is the exception for executable Project work: it never owns or edits
   Project code. When the person's message explicitly requests a new item, it may use
   `clawdline item add --project <place id> --kind feature --title "…" --assign-new` (or
@@ -959,7 +982,7 @@ clawdline item claim <item id>
   `session_not_found`, `child_session` (as for `item add`); `work_not_found`; `project_mismatch`
   (the item is in a Project you do not work in); `item_assigned` (it already has a Session, or one
   is being opened for it — only the person moves an item between Sessions); `item_terminal` (done or
-  cancelled); `planning_not_assignable` (a Refactor or Plan stays in Planning; an Epic can be claimed);
+  cancelled); `planning_not_assignable` (a Plan stays in Planning; an Epic or a Refactor can be claimed);
   `version_conflict` (it changed; run the command again); `run_claims_exhausted` (one message backs
   at most five uses).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
@@ -1569,9 +1592,12 @@ checkout).
 `heavy_compile`, waits until the machine has memory available (a quarter of it, at most 1 GB, and
 no memory stall above 10%), runs the command at a lower priority — on Linux also as the first
 thing the kernel kills if memory runs out — renews the lease while it runs and releases it after. It keeps the
-command's exit status. It never refuses to build: no daemon, a refusal, or `--max-wait` (default
-30m) passed runs the command anyway with a sentence on stderr. A `heavy` inside a `heavy` runs
-directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
+command's exit status. It never refuses to build for a missing daemon or a refusal it does not
+know: it runs the command anyway with a sentence on stderr. When `--max-wait` (default 30m) passes
+before it has the slot and the memory, it gives up its place, does not run the command, and exits
+**75** — a code no command's own failure is mistaken for; run it again later. While it waits it
+prints one line when the wait starts and one when it ends, nothing in between: wait for it once,
+long (§2, "Waiting on a long command"). A `heavy` inside a `heavy` runs directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
 that has it, `tools/heavy.sh <command>` finds the binary for you.
 
 - `POST /v1/orchestrator/leases` —

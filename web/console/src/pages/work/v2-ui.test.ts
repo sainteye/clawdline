@@ -453,10 +453,10 @@ test("a Session opens its Board item as the Board's own card, with the same cont
   assert.match(source, /<WorkCard item=\{item\}[^>]*reportsExpanded=\{!created\}/)
 })
 
-test("a Feature carries the person's Needs independent review checkbox on create and on its card", () => {
-  assert.match(source, /\.\.\.\(kind === "feature" \? \{ review_required: reviewRequired \} : \{\}\)/)
-  assert.match(source, /\{kind === "feature" && <ReviewRequiredField id="work-new-review-required"/)
-  assert.match(source, /\{item\.kind === "feature" && <ReviewRequiredField id=\{`work-review-required-\$\{item\.id\}`\} checked=\{item\.review_required === true\}/)
+test("a Feature or Refactor carries the person's Needs independent review checkbox on create and on its card", () => {
+  assert.match(source, /\.\.\.\(featureLike\(\{ kind \}\) \? \{ review_required: reviewRequired \} : \{\}\)/)
+  assert.match(source, /\{featureLike\(\{ kind \}\) && <ReviewRequiredField id="work-new-review-required"/)
+  assert.match(source, /\{featureLike\(item\) && <ReviewRequiredField id=\{`work-review-required-\$\{item\.id\}`\} checked=\{item\.review_required === true\}/)
   assert.match(source, /setWorkV2ReviewRequired\(item, checked\)/)
   assert.match(source, /workWord\("reviewRequiredLabel"\)/)
   assert.match(source, /workWord\("reviewRequiredHint"\)/)

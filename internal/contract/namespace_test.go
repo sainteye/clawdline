@@ -70,14 +70,18 @@ var sessionFields = map[string]string{
 	// The token ledger names an item's owner by the conversation its rows
 	// are keyed by (app.ForItem).
 	"usage#UsageItemOwner.session": conversation,
+	// A work-unit cursor's session is a ledger row's conversation; empty on
+	// the unit's own marker row.
+	"usage#UsageWorkCursor.session": conversation,
 	// A note's author when a session writes it: the calling conversation
 	// (`clawdline verify note` reads it from conversationEnv).
 	"verifications#VerificationNoteCreate.session":         conversation,
 	"work-gates#WorkGateCandidateReceipt.owner_session_id": conversation,
 	"work-gates#WorkGateDecisionRequest.session_id":        conversation,
 	"work-gates#WorkGateDecisionRequest.target_session_id": conversation,
-	// W6: a handoff's sender, resolved like a dispatch's root.
+	// W6: a handoff's sender, resolved like a dispatch's root, and its receiver.
 	"handover#BrokerHandoff.from_session":        conversation,
+	"handover#BrokerHandoff.receiver_session":    conversation,
 	"handover#BrokerHandoffRequest.from_session": conversation,
 
 	// The known exceptions. Each one holds a terminal id, or either, under a

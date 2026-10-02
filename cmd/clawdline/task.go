@@ -58,6 +58,9 @@ func taskCommand(args []string) {
 		case "show":
 			showCommand(args[1:])
 			return
+		case "wait":
+			waitCommand(args[1:])
+			return
 		case "land":
 			landCommand(args[1:])
 			return
@@ -104,10 +107,15 @@ func taskUsage() {
 	fmt.Fprintln(os.Stderr, "  signs for a child's briefing, with the secret from "+orchestrator.AcceptSecretEnv+" or stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline task finish [--port n] [--no-collect] <task dir>")
 	fmt.Fprintln(os.Stderr, "  validates <task dir>/result.json.tmp and publishes it as result.json, then asks the broker to collect it")
-	fmt.Fprintln(os.Stderr, "       clawdline task ack [--port n] <task id> <notice id>")
-	fmt.Fprintln(os.Stderr, "  acknowledges a child's completion notice, so the daemon stops typing it into this session")
 	fmt.Fprintln(os.Stderr, "       clawdline task show [--port n] [--json] <task id>")
-	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout")
+	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout;")
+	fmt.Fprintln(os.Stderr, "  reading a finished one closes its completion notice")
+	fmt.Fprintln(os.Stderr, "       clawdline task wait [--port n] [--timeout 9m] [--any] <task id>...")
+	fmt.Fprintln(os.Stderr, "  waits until every task (--any: one) has finished, at most --timeout (default 9m, under a 10m tool call;")
+	fmt.Fprintln(os.Stderr, "  at most 2h), then shows each finished one as task show does and closes its notice;")
+	fmt.Fprintln(os.Stderr, "  exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read")
+	fmt.Fprintln(os.Stderr, "       clawdline task ack [--port n] <task id> <notice id>")
+	fmt.Fprintln(os.Stderr, "  acknowledges a completion notice by hand; rarely needed, since task show and task wait close it")
 	fmt.Fprintln(os.Stderr, "       clawdline task land [--port n] <task id> <landed|incorporated|abandoned|nothing_to_land|pending>")
 	fmt.Fprintln(os.Stderr, "                           [--target b] [--commit c] [--carrier-task id] [--note t]")
 	fmt.Fprintln(os.Stderr, "  records a child's landing by hand, with the orchestrator token; a merge into its target records itself")
@@ -760,16 +768,68 @@ func showTask(stdout, stderr io.Writer, b *broker, id string, asJSON bool) int {
 		fmt.Fprintln(stderr, "clawdline task show:", err)
 		return 1
 	}
-	if !a.ok() || asJSON {
+	if !a.ok() {
 		return report(stdout, stderr, "task show", a)
 	}
 	var got contract.BrokerTaskEnvelope
-	if err := json.Unmarshal(a.Body, &got); err != nil {
+	err = json.Unmarshal(a.Body, &got)
+	if asJSON {
+		code := report(stdout, stderr, "task show", a)
+		if err == nil {
+			closeNotice(stdout, stderr, b, "task show", got.Task, false)
+		}
+		return code
+	}
+	if err != nil {
 		fmt.Fprintln(stderr, "clawdline task show: the daemon's answer could not be read:", err)
 		return 1
 	}
 	writeTaskView(stdout, got.Task)
+	closeNotice(stdout, stderr, b, "task show", got.Task, true)
 	return 0
+}
+
+// closeNotice acknowledges a finished task's completion notice once its result
+// has been printed, through the same route `task ack` uses.
+//
+// A root runs `task show` and `task wait` on purpose, to read what the child
+// delivered, and that is the reading the notice exists to get: until
+// 2026-10-02 the line also asked for a separate `task ack`, which roots put off
+// until they had integrated the child, and the daemon kept typing the notice
+// at them meanwhile. The daemon's own GET still closes nothing — the console
+// polls it (notice.go, NoticeSeen); it is this command, after it has printed,
+// that sends the ACK.
+//
+// A task that has not finished has no notice to close, and one already
+// acknowledged is left alone. A refused ACK is one line on stderr and does not
+// change the exit status: the read succeeded, and the notice stays open for
+// the daemon to type again, which is what it did before. line adds one line to
+// the compact view saying the notice was closed.
+func closeNotice(stdout, stderr io.Writer, b *broker, name string, t contract.BrokerTask, line bool) bool {
+	n := t.CompletionDelivery
+	if !orchestrator.State(t.State).Terminal() || n == nil || n.NoticeID == "" ||
+		n.State == contract.BrokerNoticeStateAcknowledged {
+		return false
+	}
+	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(t.ID)+"/completion/ack", nil,
+		map[string]string{"notice_id": n.NoticeID}, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "clawdline %s: the completion notice %s of %s was not closed: %v\n", name, n.NoticeID, t.ID, err)
+		return false
+	}
+	if !a.ok() {
+		code, message := a.refusal()
+		if code == "" {
+			code, message = strconv.Itoa(a.Status), strings.TrimSpace(string(a.Body))
+		}
+		fmt.Fprintf(stderr, "clawdline %s: the completion notice %s of %s was not closed: refused, %s: %s\n",
+			name, n.NoticeID, t.ID, code, message)
+		return false
+	}
+	if line {
+		fmt.Fprintln(stdout, "notice:       closed (read)")
+	}
+	return true
 }
 
 // writeTaskView is the compact view. Each line says what it does not know

@@ -127,6 +127,38 @@ func TestBothGuidesNameTheSameRoutes(t *testing.T) {
 	}
 }
 
+func TestBothGuidesKeepLongCommandWaitAdvice(t *testing.T) {
+	for _, topic := range Topics() {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parts := strings.SplitN(string(guide), "- **Claude Code", 2)
+		if len(parts) != 2 {
+			t.Errorf("guide %s lost Claude Code wait advice", topic)
+			continue
+		}
+		bullets := strings.SplitN(parts[1], "- **Codex", 2)
+		if len(bullets) != 2 {
+			t.Errorf("guide %s lost Codex wait advice", topic)
+			continue
+		}
+		for _, check := range []struct {
+			text  string
+			wants []string
+		}{
+			{bullets[0], []string{"timeout", "600000", "run_in_background"}},
+			{strings.SplitN(bullets[1], "\n\n", 2)[0], []string{"codex-cli 0.157.1", "// @exec:", "yield_time_ms", "write_stdin", "300000", "600000"}},
+		} {
+			for _, want := range check.wants {
+				if !strings.Contains(check.text, want) {
+					t.Errorf("guide %s lost long-command wait advice %q", topic, want)
+				}
+			}
+		}
+	}
+}
+
 // The default is English, the list is fixed, and an unknown topic is refused
 // by name.
 func TestTopics(t *testing.T) {

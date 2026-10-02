@@ -814,10 +814,10 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 		}
 		if prev.Kind == work.KindPlan {
 			if !c.Kind.Executable() {
-				return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, or issue.")
+				return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, refactor, or issue.")
 			}
-		} else if (prev.Kind != work.KindEpic && prev.Kind != work.KindFeature) || c.Kind != work.KindPlan {
-			return work.RefuseV2("conversion_kind_invalid", "Convert an epic or feature to a Plan, or a Plan to executable work.")
+		} else if (prev.Kind != work.KindEpic && !prev.Kind.FeatureLike()) || c.Kind != work.KindPlan {
+			return work.RefuseV2("conversion_kind_invalid", "Convert an epic, feature, or refactor to a Plan, or a Plan to executable work.")
 		}
 		if (prev.Phase != work.PhaseCreated && prev.Phase != work.PhaseAssigned) || prev.ParentID != "" {
 			return work.RefuseV2("item_not_convertible", "Only a top-level item that has not entered implementation can be converted.")
@@ -853,9 +853,9 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 			next.OwnerSession, next.Phase, next.Condition, next.UserAction, next.DecisionID = "", work.PhaseCreated, "", "", ""
 		}
 		next.Kind = c.Kind
-		// The review switch is a Feature's alone; it does not follow the item
-		// into another kind.
-		if next.Kind != work.KindFeature {
+		// The review switch is a Feature's or Refactor's alone; it does not
+		// follow the item into another kind.
+		if !next.Kind.FeatureLike() {
 			next.ReviewRequired = false
 		}
 		next.UpdatedAt = w.now()
@@ -988,7 +988,7 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 			return store.ErrConflict
 		}
 		if prev.Planning() {
-			return work.RefuseV2("planning_not_assignable", "Refactor and Plan stay in Planning.")
+			return work.RefuseV2("planning_not_assignable", "A Plan stays in Planning; convert it to executable work first.")
 		}
 		if prev.Phase.Terminal() {
 			return work.RefuseV2("item_terminal", "Reopen terminal work before assigning it.")
@@ -1492,7 +1492,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	if c.Next == work.PhaseVerifying && prev.GateNeedsAcceptance() && strings.TrimSpace(prev.AcceptanceCriteria) == "" {
 		return work.ItemV2{}, nil, work.RefuseV2("acceptance_required", "Write acceptance criteria before verification begins.")
 	}
-	if prev.Kind == work.KindEpic || prev.Kind == work.KindFeature {
+	if prev.Kind == work.KindEpic || prev.Kind.FeatureLike() {
 		plans, err := tx.PlanDocuments(id)
 		if err != nil {
 			return work.ItemV2{}, nil, err

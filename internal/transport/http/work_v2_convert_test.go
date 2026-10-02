@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/app"
@@ -58,9 +59,17 @@ func TestAPlanConversionNamesInvalidTargets(t *testing.T) {
 	}
 	rec := httptest.NewRecorder()
 	s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/items/"+plan.Item.ID+"/convert",
-		fmt.Sprintf(`{"expected_version":%d,"kind":"refactor"}`, plan.Item.Version), "convert-plan-refactor"))
+		fmt.Sprintf(`{"expected_version":%d,"kind":"plan"}`, plan.Item.Version), "convert-plan-plan"))
 	if rec.Code != http.StatusConflict || codeOf(t, rec) != "conversion_kind_not_executable" {
 		t.Fatalf("invalid target: %d %s", rec.Code, rec.Body)
+	}
+	// A Refactor is executable work, so a Plan becomes one and leaves Planning.
+	rec = httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodPost, "/v1/work/v2/items/"+plan.Item.ID+"/convert",
+		fmt.Sprintf(`{"expected_version":%d,"kind":"refactor"}`, plan.Item.Version), "convert-plan-refactor"))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"kind":"refactor"`) ||
+		!strings.Contains(rec.Body.String(), `"area":"unassigned"`) {
+		t.Fatalf("plan to refactor: %d %s", rec.Code, rec.Body)
 	}
 }
 

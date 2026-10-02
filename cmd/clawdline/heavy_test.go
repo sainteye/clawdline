@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -102,8 +103,9 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 		switch r.URL.Path {
 		case "/v1/orchestrator/leases":
 			asks++
-			if asks == 1 {
-				return 200, `{"ok":true,"state":"queued","position":1,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":{"holder":"other: go test ./...","lease_id":"l1","acquired_at":1,"held_seconds":40,"liveness":"alive"},"queue":[]}}`
+			if asks <= 2 {
+				// The line moves while this one waits: number 2, then 1.
+				return 200, `{"ok":true,"state":"queued","position":` + strconv.Itoa(3-asks) + `,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":{"holder":"other: go test ./...","lease_id":"l1","acquired_at":1,"held_seconds":40,"liveness":"alive"},"queue":[]}}`
 			}
 			return 200, `{"ok":true,"state":"granted","lease_id":"l2","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
 		case "/v1/orchestrator/leases/renew", "/v1/orchestrator/leases/release":
@@ -125,8 +127,8 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 		t.Fatalf("the command's environment %v", got)
 	}
 	p := paths(s)
-	if len(p) < 4 || p[0] != "/v1/orchestrator/leases" || p[1] != "/v1/orchestrator/leases" ||
-		p[2] != "/v1/orchestrator/leases/renew" || p[len(p)-1] != "/v1/orchestrator/leases/release" {
+	if len(p) < 5 || p[0] != "/v1/orchestrator/leases" || p[1] != "/v1/orchestrator/leases" || p[2] != "/v1/orchestrator/leases" ||
+		p[3] != "/v1/orchestrator/leases/renew" || p[len(p)-1] != "/v1/orchestrator/leases/release" {
 		t.Fatalf("asked %v", p)
 	}
 	var first map[string]any
@@ -140,12 +142,20 @@ func TestAHeavyCommandWaitsForTheSlotThenRunsAndGivesItBack(t *testing.T) {
 	if s.requests()[0].Token != thinToken {
 		t.Fatal("the ask did not carry the orchestrator token")
 	}
-	if len(h.slept) != 1 || h.slept[0] != 5*time.Second {
-		t.Fatalf("slept %v, wanted one retry_after", h.slept)
+	if len(h.slept) != 2 || h.slept[0] != 5*time.Second {
+		t.Fatalf("slept %v, wanted two retry_afters", h.slept)
 	}
-	if !strings.Contains(h.stderr.String(), "number 1 in line, held by other: go test ./...") {
+	// One line when it joins the line and one when the slot is its own: a
+	// moving place in line is not news worth waking an agent for.
+	lines := stderrLines(h)
+	if len(lines) != 2 || !strings.Contains(lines[0], "number 2 in line, held by other: go test ./...") ||
+		!strings.Contains(lines[1], "the compile slot is ours after 10s") {
 		t.Fatalf("stderr %q", h.stderr.String())
 	}
+}
+
+func stderrLines(h *heavyHarness) []string {
+	return strings.Split(strings.TrimSuffix(h.stderr.String(), "\n"), "\n")
 }
 
 // A daemon that does not answer is no reason not to build: the command runs,
@@ -182,17 +192,27 @@ func TestAnUnknownRefusalRunsWithoutTheSlot(t *testing.T) {
 }
 
 // A line that does not move within --max-wait is left, politely, and the
-// command runs beside the holder.
-func TestALineLongerThanMaxWaitIsLeftAndTheCommandRuns(t *testing.T) {
+// command is not run: running beside the holder is the overlap heavy exists to
+// prevent. The exit status is heavyExitTimedOut, which no command's own
+// failure is mistaken for, and the wait said two lines in all.
+func TestALineLongerThanMaxWaitIsLeftAndTheCommandIsNotRun(t *testing.T) {
+	asks := 0
 	s, b := newStandIn(t, func(r *http.Request) (int, string) {
 		if r.URL.Path == "/v1/orchestrator/leases" {
-			return 200, `{"ok":true,"state":"queued","position":2,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+			asks++
+			if asks == 2 {
+				return 429, `{"error":{"code":"queue_full","message":"full"}}`
+			}
+			return 200, `{"ok":true,"state":"queued","position":` + strconv.Itoa(asks) + `,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
 		}
 		return 200, `{"ok":true,"state":"cancelled","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
 	})
-	h := &heavyHarness{}
-	if code := runHeavy(heavyOptions{wait: 12 * time.Second}, []string{"make"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
+	h := &heavyHarness{exit: 0}
+	if code := runHeavy(heavyOptions{wait: 12 * time.Second}, []string{"make"}, h.deps(b, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
+	}
+	if heavyExitTimedOut != 75 {
+		t.Fatalf("the timeout's exit status is %d; callers are told 75", heavyExitTimedOut)
 	}
 	p := paths(s)
 	if p[len(p)-1] != "/v1/orchestrator/leases/cancel" {
@@ -203,7 +223,36 @@ func TestALineLongerThanMaxWaitIsLeftAndTheCommandRuns(t *testing.T) {
 			t.Fatalf("a slot never held was renewed or released: %v", p)
 		}
 	}
-	if !strings.Contains(h.stderr.String(), "running anyway") {
+	lines := stderrLines(h)
+	if len(lines) != 2 || !strings.Contains(lines[0], "waiting for the compile slot (number 1 in line)") ||
+		!strings.Contains(lines[1], "the command was not run (exit 75)") {
+		t.Fatalf("stderr %q", h.stderr.String())
+	}
+}
+
+// A queue that is full when heavy first asks is a wait like any other: one
+// line, then quiet.
+func TestAFullQueueIsOneLineToo(t *testing.T) {
+	asks := 0
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/v1/orchestrator/leases" {
+			asks++
+			switch {
+			case asks <= 3:
+				return 429, `{"error":{"code":"queue_full","message":"full"}}`
+			case asks <= 5:
+				return 200, `{"ok":true,"state":"queued","position":` + strconv.Itoa(40-asks) + `,"retry_after_seconds":5,"lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+			}
+			return 200, `{"ok":true,"state":"granted","lease_id":"l2","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+		}
+		return 200, `{"ok":true,"state":"renewed","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+	})
+	h := &heavyHarness{}
+	if code := runHeavy(heavyOptions{wait: time.Hour}, []string{"make"}, h.deps(b, nil)); code != 0 || len(h.ran) != 1 {
+		t.Fatalf("exit %d ran %v", code, h.ran)
+	}
+	lines := stderrLines(h)
+	if len(lines) != 2 || !strings.Contains(lines[0], "its queue is full") || !strings.Contains(lines[1], "the compile slot is ours") {
 		t.Fatalf("stderr %q", h.stderr.String())
 	}
 }
@@ -226,24 +275,47 @@ func TestAHeavyCommandWaitsForMemory(t *testing.T) {
 	if len(h.slept) != 2 {
 		t.Fatalf("slept %v", h.slept)
 	}
-	out := h.stderr.String()
-	if !strings.Contains(out, "waiting for memory: 300 MB available, 1024 MB wanted") || !strings.Contains(out, "memory is back") {
-		t.Fatalf("stderr %q", out)
+	lines := stderrLines(h)
+	if len(lines) != 2 || !strings.Contains(lines[0], "waiting for memory: 300 MB available, 1024 MB wanted") || !strings.Contains(lines[1], "memory is back") {
+		t.Fatalf("stderr %q", h.stderr.String())
 	}
 }
 
-// Memory that never comes back is waited for until --max-wait, then the
-// command runs anyway.
+// Memory that never comes back is waited for until --max-wait, quietly, and
+// then the command is not run: the same exit status as a slot never had, since
+// both share the one deadline.
 func TestMemoryThatNeverComesBackIsWaitedForOnlyUntilMaxWait(t *testing.T) {
 	short := func() (machineusage.Sample, error) {
 		return machineusage.Sample{MemTotal: 4 << 30, MemAvailable: 100 << 20}, nil
 	}
 	h := &heavyHarness{samples: []func() (machineusage.Sample, error){short}}
-	if code := runHeavy(heavyOptions{wait: time.Minute, noSlot: true}, []string{"make"}, h.deps(nil, nil)); code != 0 || len(h.ran) != 1 {
+	if code := runHeavy(heavyOptions{wait: 2 * time.Minute, noSlot: true}, []string{"make"}, h.deps(nil, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
 		t.Fatalf("exit %d ran %v", code, h.ran)
 	}
-	if len(h.slept) != 12 || !strings.Contains(h.stderr.String(), "waited past --max-wait for memory") {
+	lines := stderrLines(h)
+	if len(h.slept) != 24 || len(lines) != 2 || !strings.Contains(lines[0], "waiting for memory") ||
+		!strings.Contains(lines[1], "the command was not run (exit 75)") {
 		t.Fatalf("slept %d times; stderr %q", len(h.slept), h.stderr.String())
+	}
+}
+
+// A slot already granted is given back when memory never comes: nobody else
+// waits behind a command that will not run.
+func TestASlotIsGivenBackWhenMemoryTimesOut(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/v1/orchestrator/leases" {
+			return 200, `{"ok":true,"state":"granted","lease_id":"l2","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+		}
+		return 200, `{"ok":true,"state":"released","lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+	})
+	h := &heavyHarness{samples: []func() (machineusage.Sample, error){func() (machineusage.Sample, error) {
+		return machineusage.Sample{MemTotal: 4 << 30, MemAvailable: 100 << 20}, nil
+	}}}
+	if code := runHeavy(heavyOptions{wait: time.Minute}, []string{"make"}, h.deps(b, nil)); code != heavyExitTimedOut || len(h.ran) != 0 {
+		t.Fatalf("exit %d ran %v", code, h.ran)
+	}
+	if p := paths(s); p[len(p)-1] != "/v1/orchestrator/leases/release" {
+		t.Fatalf("asked %v", p)
 	}
 }
 

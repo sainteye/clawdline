@@ -168,9 +168,15 @@ export const CARRIED = {
   // Whether compacting early paid (docs/token-ledger.md "Did compacting early
   // pay"): a machine read with its one query field.
   "usage.compare-compaction": "GET /v1/usage/compare-compaction[?since=]",
+  // The raw samples a before/after report is folded from (docs/token-ledger.md
+  // "Did a change make one unit of work cheaper"): a machine read with its two
+  // query fields. No page asks it yet; `clawdline usage --work-report` does.
+  "usage.work-samples": "GET /v1/usage/work-samples[?since=&until=]",
   "usage.item": "GET /v1/usage/items/{id}",
   "usage.session": "GET /v1/usage/sessions/{conversation}",
   "usage.task": "GET /v1/usage/tasks/{id}",
+  // What each unit of work added (docs/token-ledger.md "One unit of work").
+  "usage.work-units": "GET /v1/usage/work-units[?since=]",
   // Things waiting to be verified (`pages/verify.tsx`, docs/verifications.md):
   // the phone is where the person reads them, so every route crosses. Two
   // machine reads and five commands, each with its body as the route reads it.

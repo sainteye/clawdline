@@ -55,7 +55,8 @@ The context is a stack of segments, each with a category and a size.
    its division is estimated.
 3. Each call pays cache writes for the new segments and cache reads for the old ones, pro rata to
    their sizes, plus its output, which is charged to what the call did: the category of the tool it
-   called, or **talk** when it called none.
+   called, or **talk** when it called none. A call that only waited is the exception: its whole bill
+   is **wait** ("Wait turns" below).
 4. A context that falls below 70% of the previous call's is a compaction: the old segments go, the
    base is kept at its proportions, and the rest is **compaction**.
 5. A subagent's whole bill is **delegate**.
@@ -70,6 +71,7 @@ Every category's sum equals the session's measured total; a test holds that on e
 | `protocol` | acts on the daemon: a curl to the daemon's port or with its token header, a `clawdline` subcommand, the `clawdline` skill, `CHILD.md`/`task.json`/`result.json`, the child's first message |
 | `rules` | reads `AGENTS.md`, `CLAUDE.md`, memory files, the dispatch policy, or runs a repository guard |
 | `impl` | reads, searches, edits, builds, tests, or runs git — the work |
+| `wait` | only waits on something already running: polls a command, sleeps, reads a background task's output ("Wait turns"). A call made of nothing but these is charged here whole |
 | `delegate` | spawns or messages a subagent (`Agent`, `Task`, `Workflow`, `SendMessage`) |
 | `harness` | the resident base outside the rule files, harness attachments, `ToolSearch` |
 | `talk` | the person's messages, and the assistant's replies and thinking with no tool |
@@ -85,6 +87,51 @@ it is shown.
 What this cannot see: rules and protocol also shape how long the assistant thinks and writes. That
 cost is inside `talk` and every category's output, indistinguishable by this method.
 
+### Wait turns
+
+An agent waiting on a long command often wakes every 20–30 seconds, asks whether it has finished, and
+goes back to waiting. Each such turn reads the whole context again: a token review over ten Board
+items found 520 such turns and 72.2M tokens — 29% of those items' Codex usage — spent by Codex agents
+polling a compile-slot queue, a dispatch or a test run, each rereading about 140k of context. Charged by rule 3 they were almost all **impl**, the
+category the context held, which made the work look far larger than it was.
+
+So a **wait turn** — a call that called at least one tool and whose every tool call waits — is
+charged whole to `wait`: its cache reads, cache writes, uncached input and output. Its context is not
+re-labelled: what it held stays what it was, and the wait's own small results and outputs join it as
+`wait`. A call that waits and also does something else is divided as rule 3 says, the wait's share
+of its output included.
+
+A tool call waits when it is, exactly:
+
+| Assistant | The call |
+|---|---|
+| Claude Code | `BashOutput`, `TaskOutput` (a background shell's or task's output), `Monitor` |
+| Claude Code, Codex | a shell command line whose every simple command is `sleep`, `echo`, `printf`, `true`, `:`, `cd`, `date`, or a `cat`/`tail`/`head` of a file no other category names — and at least one is `sleep`. A redirection to anything but `/dev/null` or another descriptor disqualifies it: `sleep 20; tail -5 build.log` waits, `sleep 1; echo done > flag` does not |
+| Codex | the `sleep` tool, `wait` (an exec cell), `wait_agent` (a subagent), a `write_stdin` whose `chars` is empty or absent (a poll of a running exec session) |
+| Codex | an `exec` script every one of whose `tools.*` calls is an empty `write_stdin` or an `exec_command` whose line waits by the row above |
+
+Deliberately not caught, so these stay where they were:
+
+- **Loops.** `until grep -q done log; do sleep 5; done` and `for i in …; do curl …; sleep 1; done`
+  are one turn however long they block, and their condition can do real work; they are `impl` (or
+  what their parts name).
+- **Polls that ask something.** `sleep 5; curl https://…/health`, `sleep 30; clawdline task show …`,
+  `gh run list` and an `aws ssm` status read are checks with an answer; they keep `impl`, `protocol`
+  or `board`.
+- **A protocol read after a sleep** (`sleep 2; cat …/result.json`) stays `protocol`: the most
+  specific part still names the line.
+- `ScheduleWakeup`, a turn that ends with no tool while a background task runs, and a `write_stdin`
+  that types anything (an interrupt included) — the last stays `other`.
+- A wrapped shell (`bash -lc "sleep 5"`) is classified by its inner line only as one part of the
+  outer one, so it stays `impl`.
+
+**Old readings.** The category rules carry a version (`transcript.LedgerClassificationVersion`, 2
+since wait turns). A stored reading of any assistant made under another version is read again from
+the start the next time a pass visits its transcript, so a transcript the ledger still reads is
+counted under one set of rules. A transcript last written before the look-back window is not
+visited, keeps its old totals, and has no `wait`: its waiting is still in `impl` or `other`. A
+stored reading without a `wait` key reads as nothing in `wait`, not as an error.
+
 ### What the reader settled
 
 `transcript.LedgerState` (`internal/adapters/transcript/ledger.go`, `ledger_codex.go`) settled what
@@ -98,7 +145,11 @@ the rules above left open:
   segment (a context a little smaller than the last) pays its writes pro rata to everything held.
 - **One call doing several things.** Its output is divided evenly among its tool calls' categories.
   One shell command with several parts takes its most specific part, in the order `board`,
-  `protocol`, `rules`, `impl`.
+  `protocol`, `rules`, `impl`, `wait`.
+- **When a call's input is charged.** A Claude call can span several rows, and whether it only
+  waited is known when its last row is read; so a call's input side is divided when its usage row is
+  read and charged when the call closes (an open call's is in the totals as it stands). A stored
+  state from before this has its open call's input in the totals already and is not charged again.
 - **A tool result with no known tool use** (a background task's, say) is **other**.
 - **Codex.** A `token_count` repeating the running total of the one before it is the same call and is
   counted once; one with no `info` is not a call. Input is `input_tokens` less `cached_input_tokens`,
@@ -224,6 +275,56 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
 - Later: the Board card's cost line, and the Swift ledger's Project/Feature analytics migrated onto
   these rows.
 
+## One unit of work
+
+A long owner Session's bill is every call it ever made: one Epic owner measured on 2026-10-02 showed
+4,031 calls and about 560M tokens, 551M of them cache reads. That is not what one piece of its work
+cost. So each unit of work leaves a **cursor** at its edges — every session counted for it, with
+that session's *cumulative* ledger reading at that moment — and a unit's cost is end minus start,
+per session, summed. The cumulative answers above keep their meaning.
+
+- **The units.** A child task from the broker's admission (`Broker.create`) to its terminal state
+  — success, failure, timeout, cancelled, spawn_failed (`Broker.settle`) — with that state as its
+  outcome. A Board item from entering `implementing` to `done` or `cancelled`, one unit per
+  `cycle`, so a reopened item is new rows rather than an overwrite. A step of an item, from the
+  previous step's completion or the item entering implementing to its own `step-done`.
+- **Which sessions.** A task's are the transcripts whose first message names it (`ForTask`); an
+  item's, and a step's, its owner sessions and their dispatched tasks' sessions (`ForItem`). A
+  reading is the session's measured tokens by part, its subagents' included, with calls,
+  compactions, its own peak context, the model each transcript last used and whether it has a price,
+  `read_at`, `more`, the row's reason, and each file's size and modification time beside what the
+  ledger had read. Totals only: no prompt, tool input, terminal output or transcript text.
+- **Where.** `usage_work_cursors` (`internal/adapters/store/work_cursors.go`), append-only: one row
+  per unit, cycle, edge and session, and a marker row per edge. The first one wins, so a replayed
+  dispatch, a settlement posted twice or a phase set twice adds nothing, and a replayed start
+  cannot give a session that joined later a starting reading it never had.
+- **Off the caller's path.** The broker and the Board (`Store.ObserveWorkV2`, told after each Board
+  write commits) only queue the edge; a worker reads the ledger and writes the rows in the order
+  they were posted. A cursor that cannot be taken is logged once and leaves a `cursor_missing`
+  marker; dispatch and phase changes never wait on it or fail with it (limits N73).
+- **States, never a silent zero.** `not_yet_read`: the ledger had no row of a session at a cursor;
+  its delta is not counted. `missing`: a closed unit has no reading of a session at one edge.
+  `ledger_behind`: the end found the ledger short of the transcript, so the delta is a lower bound;
+  after each ledger pass, and before every answer, a caught-up reading is recorded beside it as
+  `settled:end` — `settled` when it is exactly what the end saw, `settled_after_growth` when the
+  transcript had grown since and may hold later work. A task that ended before the ledger found its
+  child at all gets the later reading as an upper bound. `session_handoff`: the item's owner changed
+  mid-unit; the leaving session is read at release and measured to it, the arriving one from its
+  acquisition. `started_inside`: a session with no starting reading that joined an item later,
+  counted from zero (a task's sessions always begin after its admission, so for a task this is
+  not a state). `mixed_models` and `unpriced` (a Codex model): the tokens stay, the cost is `null`
+  — never zero, never the priced part presented as the whole. Peak context is not additive: each
+  session has its peak at start and at end and whether it rose; no per-unit peak is made up.
+- **Reading it.** `GET /v1/usage/work-units?since=…` (`14d` by default; a phone asks it through
+  Cloud as `usage.work-units`) answers every unit with a cursor in the range, whole, the most recent
+  first: its raw cursors, each session's delta and states, the summed tokens by part, and a cost
+  only when the unit ended, every session was counted exactly and one priced model is named.
+  `app.UsageLedger.WorkUnits` is the same for a report built on it.
+- **What it cannot tell.** The model is each transcript's last one, so a session that switched and
+  switched back between two cursors looks unmixed. A session that owned an item, left and came back
+  twice within one cycle has only its first release and acquisition kept. Units that ended before
+  this was built have no cursors.
+
 ## Long-running sessions
 
 The largest lever measured is not a document but a session's age: context above 200k tokens was 42%
@@ -309,7 +410,7 @@ excluded tasks, with the count always whole (limits N44).
 `clawdline usage --compare-handoff [--since 14d] [--json]` (and `GET
 /v1/usage/compare-handoff?since=…`) compares finished work done by one long Root against work
 handed over at a milestone. A unit is a Feature, Issue or Refactor that reached `done` in the range,
-read newest first, at most 300 (limits N72). Its group comes from its assignments: `single_root`
+read newest first, at most 300 (limits N75). Its group comes from its assignments: `single_root`
 when no assignment came from a handoff, `milestone_handoff` when one came from a milestone handoff,
 `plain_handoff` for any other handoff. Each owner Session's own cache reads and calls are shared
 equally among the finished items it owned, so a long Root's whole cost is spread over its work, and
@@ -331,3 +432,73 @@ median, computed only when both groups have 20 items; otherwise it is null and t
 Each answer gives its reasons, and `not_measured` names what the daemon has no record of — re-asks
 and re-reads by the receiver — rather than reporting them as zero. Anything short of
 `recommend_default` keeps handing over a Session's own choice.
+
+## Did a change make one unit of work cheaper
+
+A before/after report on what one unit of work spends, with a baseline frozen before the change so
+the comparison cannot drift with the ledger.
+
+```sh
+clawdline usage --freeze-baseline [--since 14d] [--out FILE]
+clawdline usage --work-report --baseline FILE [--since <t>] [--json]
+```
+
+The first writes the raw samples of the range (14 days before now unless `--since` says otherwise)
+to `FILE`, by default `<state dir>/usage-baselines/<date>.json` — under the daemon's own
+directory, never a repository — and refuses to write over a file already there. The file holds the
+definition version, the range, the generation time and one sample per unit. The second reads that
+file and the live ledger's samples since `--since` (default: the baseline's end), and folds both
+in the command with `app.FoldWorkReport`. Both read `GET /v1/usage/work-samples?since=…&until=…`
+(Cloud word `usage.work-samples`), which answers raw samples only: the report is always recomputed
+from raw records, and anyone holding the file can recompute it.
+
+**The unit.** A child task. Its sessions are fresh, so its bill (`ForTask`, subagents included) is
+that unit's own increment. An owner session's or a Root Assignment's bill is cumulative,
+everything that session ever did, so it is never a sample, and one long Epic can
+never carry a verdict. Board items will be units too once per-unit ledger cursors give their
+increments; they enter the same fold as samples of kind `item`.
+
+**Strata**, fixed at dispatch, before the outcome; units are compared only within one:
+
+| Stratum | What it is |
+|---|---|
+| work kind | The brief's `kind`; `unspecified` when it named none |
+| scope | The number of claims the brief declared: `0`, `1-3`, `4-10`, `>10`. Claims, not the timeout: a timeout is often a default nobody chose |
+| model | The model the bill's sessions ran on; `mixed` for several; else the record's; else `unknown` |
+| cross-end | The claims touch both `web/` and `internal/` or `cmd/` |
+
+**A sample's data state.** `complete`; `unpriced` (a model with no price — a Codex model — so the
+cost is unknown, never zero); `mixed_models`; `ledger_behind` (a session read only in part, not at
+all, missing or unreadable: the parts are a lower bound); `not_yet_read`. Only the first three are
+readable. An unreadable unit is counted in its group's units and `unreadable`, and nowhere else: it
+is never a unit with zero tokens.
+
+**Per group and period.** The *primary metric* is the median cache-read tokens of the successful,
+readable units, with an exact 95% order-statistic interval of the median: `[x(k), x(n−k+1)]` for
+the largest `k` whose binomial coverage is at least 95%. No resampling and no seed, so the same
+samples always give the same interval; under six units there is none. Secondary: the median total
+tokens, the share of the units' own calls made past 200k tokens of context, and the duration (from
+the record's creation to its finish) median and p75 by nearest rank. Guardrails, each a share of
+the units that ended: failure; redo (a respawn, or respawned by a unit in the same read); timeout
+or stalled.
+
+**Verdict per group.** `insufficient_evidence` when either period has fewer than 20 successful,
+readable units (limits N74). Otherwise `met` only when the cache-read median dropped by at least
+30%, the duration p75 rose by at most 10% (both decided exactly at the boundary), and no guardrail
+rate is higher than the baseline's; else `not_met`, naming each condition that failed. The overall
+verdict is `met` only when every group with enough evidence is met and at least one has enough;
+`insufficient_evidence` when none has; `not_met` naming the groups otherwise.
+
+**What it cannot tell.**
+
+- *Why.* Units are not assigned to periods at random; whatever else changed between the two
+  periods is in the difference. The report says what changed, never what caused it.
+- *Not recorded.* A missed handoff, a person rescuing a child by hand, and a deploy rollback are
+  recorded nowhere a unit can be tied to; the report names them under `not_recorded` rather than
+  showing zero.
+- *A respawn after the range.* `respawned` is seen only within one read; a retry created after the
+  range's end does not mark the unit it retried.
+
+A work-samples answer reads at most 2000 tasks, newest first, and says `truncated` past that
+(limits N74). A sample's fields are versioned by `definition_version`; a report refuses a baseline
+frozen under another version.
