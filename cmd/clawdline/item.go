@@ -920,6 +920,7 @@ func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
 		return 1
 	}
 	printItem(stdout, it)
+	fmt.Fprintf(stdout, "  item version %d\n", it.Version)
 	for _, d := range it.Documents {
 		fmt.Fprintf(stdout, "\n===== doc %s  %s  %s  (v%d) =====\n", d.ID, d.Role, d.Title, d.Version)
 		if d.Reference != "" {
