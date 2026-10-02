@@ -63,6 +63,7 @@ paired device."): it is the credential that is missing, not a permission. Run th
 |---|---|
 | `clawdline guide [zh-TW]` | This guide. No daemon needed |
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
+| `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
 | `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
@@ -327,7 +328,12 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 captured verification on, `verifying → merging` needs a checker PASS: read "Captured planning and
 verification gates" in `clawdline guide board` before entering `verifying`.
 
-**8. Report the turn**: `clawdline session report --summary "…"` as your last action (§7).
+**8. Report the turn**: `clawdline session report --summary "…"` (§7).
+
+**9. Close your Session** once the item is `done` or `cancelled`: `clawdline session close`. It
+audits your tasks, landings, unacknowledged completion notices, to-dos and owned unfinished Board
+items, prints every blocker with who moves it, and closes only when closeability is `safe`; it never
+forces. `--dry-run` audits without closing.
 
 **When something is refused.** `version_conflict`: run the same command again; it rereads the
 version. `steps_incomplete`: a step is still open. Any other code: §12, then the part that covers
@@ -1502,16 +1508,16 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   declare the parent Epic done until every child is `done` or `cancelled`: `epic_children_open`
   names how many remain. Create no Board item other than the Epic's children.
 - **A completed child does not close its independent Feature Root Session.** For every Root opened
-  by the Epic with `--assign-new`, use `GET /v1/sessions` and `epic_parent.epic_id` to verify its
-  Epic, identity, and `closeability`; do not infer ownership from a label or terminal position,
+  by the Epic with `--assign-new`, use `clawdline session close --dry-run --terminal <id>` (it answers
+  `closing as epic_owner` only for a Root this Epic opened) to read its `closeability`; do not infer ownership from a label or terminal position,
   and do not treat `clawdline session report` as closure. After the child reaches `done`, ask that
   Root's owner to audit its own tasks, landings, notices, to-dos, and worktree, then complete its
   close report. Obtain an attestation only through a route supported by the current daemon;
   the retired Swift closure route is not such a route. If that route or a guarded close is
   unavailable, record the product blocker and next owner, and retain the Session. Only when
   identity and work are verified and
-  `closeability.state=safe` may a supported Session close action end it; reread the inventory to
-  confirm it is gone. Do not bypass the guard with `clawdline close <terminal id>`. Follow up on
+  `closeability.state=safe` may `clawdline session close --terminal <id>` end it; it rereads the
+  inventory first, and a second run answers `session_not_found` once it is gone. Do not bypass the guard with `clawdline close <terminal id>`. Follow up on
   `blocked` with its named mover. For `unknown` (including `terminal_unreadable`), preserve the
   Session and record the missing evidence and next owner; do not force-close, archive, or claim it
   was cleared. Before declaring Epic coordination finished, enumerate each Root's close result or
