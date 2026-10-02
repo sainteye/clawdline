@@ -60,7 +60,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
-| `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
 | `clawdline heavy -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試（§11） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
@@ -68,6 +68,8 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
+| `clawdline leases [--json]` | 編譯名額與每個 landing lease 目前由誰持有、誰在後面排隊 |
+| `clawdline sessions [--json]` | 傳訊、等待或交接可以指名的 Session，附狀態與 task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
@@ -220,8 +222,11 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 帶著憑證，自己組 curl 打同一條路由會被拒絕。比較少見的工作只差一個 `clawdline guide <part>`；指引在
 最後。
 
-**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
-驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選，以及 steps。你就從這份紀錄開始工作。
+**1. 讀項目。** `clawdline item show <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
+驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選、steps，以及每份文件連同內文。你就從這份紀錄開始工作。
+`clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`clawdline item steps <item id>` 是同一份紀錄但不含內文。
+每個項目寫入都會印出 `wrote …; item <id> is at version N` 和項目那一列；steps 與文件請再用 `item show` 讀。
+寫入一律作用在項目當下的版本，除非你帶 `--expected-version`。
 
 **2. 替 Session 命名**（如果它是為這個項目開的）：讀完 objective 和 scope 之後執行一次
 `clawdline item name <item id> "<task name>"`。改的是 Session 名稱，不是項目標題。
@@ -917,7 +922,7 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 `GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
 Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦，`unacknowledged_completions` 是你還沒 ACK 就已經結束的 child（第 5 節）。這條
 pull 路徑讓工作中收到的指派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
-下一件自己負責的工作，並用 `clawdline item steps <id>` 讀取完整內容（路由是 `GET /v1/work/v2/items/<id>`）。
+下一件自己負責的工作，並用 `clawdline item show <id>` 讀取完整內容（含文件內文）。
 
 **使用者送來的待辦。** 訊息最後一行如果是
 `(Clawdline to-do <id>. When it is done: clawdline todo done <id>)`，那就是使用者從 Clawdline
@@ -990,7 +995,7 @@ Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
 寫入可觀察的 Markdown 條件。若人明確要求修改已寫入的驗收條件，用
 `clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`；
-項目版本是 `GET /v1/work/v2/items/<id>` 回應裡的 `.item.version`（`item steps` 只印驗收版本）；訊息的 run 從
+項目版本是 `clawdline item show <id>` 印出的 `item version N` 那一行（`item steps` 只印驗收版本）；訊息的 run 從
 `GET /v1/orchestrator/sessions/<conversation>/run` 讀。只根據該訊息提出的修改內容重寫完整文件。
 負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
 owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
@@ -1097,8 +1102,9 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
 steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目清單上的一個 step，不是另一張看板項目。確認完成一列後，用
-`clawdline item step-done <item id> <step id>` 勾掉；它會讀版本，送出
-`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"expected_version", "session_id"}`。版本衝突時再跑一次。
+`clawdline item step-done <item id> <step id>` 勾掉；它送出
+`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"session_id"}`。Agent 路由上的
+`expected_version` 可省略：省略時寫入作用在當下的版本；有帶（`--expected-version`）就會比對，過期的版本回 `version_conflict`。
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
 step 勾成完成。
 

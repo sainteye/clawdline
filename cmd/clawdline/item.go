@@ -51,6 +51,7 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 type itemFlags struct {
 	project, kind, title, description, acceptance, deploy, run string
 	expectedVersion                                            int64
+	docID                                                      string
 	steps                                                      []string
 	phase                                                      phaseEvidence
 	doc                                                        docFlags
@@ -149,7 +150,8 @@ func itemCommand(args []string) {
 	stepsFile := fs.String("steps-file", "", "a file holding the steps, one per non-empty line")
 	deploy := fs.String("deploy", "", "required, not_required or agent_decides (default agent_decides)")
 	run := fs.String("run", "", "the run of the person's message (default: this conversation's latest run)")
-	expectedVersion := fs.Int64("expected-version", 0, "the item's version before an acceptance revision; required for replay")
+	expectedVersion := fs.Int64("expected-version", 0, "the item's version the write expects; refused as version_conflict when it moved on (required for acceptance-revise)")
+	docID := fs.String("doc", "", "for show: print only this document's body, raw")
 	role := fs.String("role", "", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other")
 	reference := fs.String("reference", "", "for doc: a path in the Project, a URL, or for plan_review the review task's id")
 	bodyFile := fs.String("body-file", "", "for doc or acceptance: a file holding Markdown; - or absent reads stdin")
@@ -243,12 +245,15 @@ func itemCommand(args []string) {
 		rest = positional
 		f.assign = assign
 		f.run = *run
-	case "steps":
+	case "steps", "show":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item steps: takes one item id, got %d arguments\n", len(positional))
+			fmt.Fprintf(os.Stderr, "clawdline item %s: takes one item id, got %d arguments\n", op, len(positional))
 			itemUsage()
 		}
 		rest = positional
+		if op == "show" {
+			f.docID = strings.TrimSpace(*docID)
+		}
 	case "step-add":
 		if len(positional) < 1 {
 			fmt.Fprintln(os.Stderr, "clawdline item step-add: takes an item id and the steps' titles")
@@ -310,6 +315,9 @@ func itemCommand(args []string) {
 	default:
 		itemUsage()
 	}
+	if f.expectedVersion == 0 {
+		f.expectedVersion = *expectedVersion
+	}
 	b, err := openBroker(*port)
 	if err != nil {
 		fail(err)
@@ -352,6 +360,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <epic id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona id])")
 	fmt.Fprintln(os.Stderr, "                          [--run id] [--conversation id] [--key k] [--port n] <item id>")
+	fmt.Fprintln(os.Stderr, "       clawdline item show [--doc <doc id>] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
@@ -433,10 +442,13 @@ type itemWire struct {
 		Position int64  `json:"position"`
 	} `json:"steps"`
 	Documents []struct {
-		ID       string `json:"id"`
-		Role     string `json:"role"`
-		Title    string `json:"title"`
-		Position int64  `json:"position"`
+		ID        string `json:"id"`
+		Role      string `json:"role"`
+		Title     string `json:"title"`
+		Body      string `json:"body"`
+		Reference string `json:"reference"`
+		Position  int64  `json:"position"`
+		Version   int64  `json:"version"`
 	} `json:"documents"`
 }
 
@@ -450,7 +462,29 @@ func itemOf(a answer) (itemWire, bool) {
 	return got.Item, true
 }
 
+// printItem prints an item as the daemon's GET answers it, whole: an
+// empty step list there means the item has none. A write's answer carries
+// no steps or documents, so it is never printed through here (itemWrote).
 func printItem(w io.Writer, it itemWire) {
+	printItemHead(w, it)
+	if len(it.Steps) == 0 {
+		fmt.Fprintln(w, "  (no steps)")
+	}
+	for _, s := range it.Steps {
+		mark := " "
+		if s.Done {
+			mark = "x"
+		}
+		fmt.Fprintf(w, "  [%s] %s  %s\n", mark, s.ID, s.Title)
+	}
+	for _, d := range it.Documents {
+		fmt.Fprintf(w, "  doc %s  %s  %s\n", d.ID, d.Role, d.Title)
+	}
+}
+
+// printItemHead prints what every answer about an item carries: its row,
+// acceptance and gates, without steps or documents.
+func printItemHead(w io.Writer, it itemWire) {
 	owner := "unassigned"
 	if it.OwnerSession != nil && *it.OwnerSession != "" {
 		owner = "assigned to " + *it.OwnerSession
@@ -467,34 +501,19 @@ func printItem(w io.Writer, it itemWire) {
 		// implementing; the Agent follows it and never sets it.
 		fmt.Fprintf(w, "  needs independent review (set by the person): %t\n", it.ReviewRequired)
 	}
-	if len(it.Steps) == 0 {
-		fmt.Fprintln(w, "  (no steps)")
-	}
-	for _, s := range it.Steps {
-		mark := " "
-		if s.Done {
-			mark = "x"
-		}
-		fmt.Fprintf(w, "  [%s] %s  %s\n", mark, s.ID, s.Title)
-	}
-	for _, d := range it.Documents {
-		fmt.Fprintf(w, "  doc %s  %s  %s\n", d.ID, d.Role, d.Title)
-	}
 }
 
 // sessionItem is the command, answering its exit status.
 func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, args []string, conversation, key string,
 	getenv func(string) string) int {
 	name := "item " + op
-	if op == "steps" {
-		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(args[0]), nil, nil, "")
-		if err != nil {
-			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-			return 1
+	if op == "steps" || op == "show" {
+		it, code := readItem(stdout, stderr, b, name, strings.TrimSpace(args[0]))
+		if code != 0 {
+			return code
 		}
-		it, ok := itemOf(a)
-		if !a.ok() || !ok {
-			return report(stdout, stderr, name, a)
+		if op == "show" {
+			return itemShow(stdout, stderr, it, f.docID)
 		}
 		printItem(stdout, it)
 		return 0
@@ -578,11 +597,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was created.\n", name, why)
 			return 2
 		}
-		it, code := readItem(stdout, stderr, b, name, epicID)
-		if code != 0 {
-			return code
-		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "kind": f.kind,
+		body = map[string]any{"session_id": conversation, "kind": f.kind,
 			"title": f.title, "description": f.description, "acceptance_criteria": f.acceptance}
 		if steps := trimmedSteps(f.steps); len(steps) > 0 {
 			body["steps"] = steps
@@ -609,7 +624,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		if code != 0 {
 			return code
 		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
+		body = map[string]any{"session_id": conversation}
 		for k, v := range a {
 			body[k] = v
 		}
@@ -637,30 +652,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		if code != 0 {
 			return code
 		}
-		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
-		if err != nil {
-			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-			return 1
-		}
-		it, ok := itemOf(a)
-		if !a.ok() || !ok {
-			return report(stdout, stderr, name, a)
-		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation,
-			"via": map[string]string{"run": run}}
+		body = map[string]any{"session_id": conversation, "via": map[string]string{"run": run}}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/claim"
 	case "step-done":
 		itemID, stepID := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
-		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
-		if err != nil {
-			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-			return 1
-		}
-		it, ok := itemOf(a)
-		if !a.ok() || !ok {
-			return report(stdout, stderr, name, a)
-		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
+		body = map[string]any{"session_id": conversation}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/steps/" + url.PathEscape(stepID) + "/complete"
 	case "phase":
 		itemID, next := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
@@ -679,7 +675,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		if !a.ok() || !ok {
 			return report(stdout, stderr, name, a)
 		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "next": next}
+		// Read for the verification gate only; the write acts on the
+		// version the item holds then, unless --expected-version names one.
+		body = map[string]any{"session_id": conversation, "next": next}
 		if next == "verifying" && it.VerifyGate {
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -720,16 +718,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		// from the landing it already holds. A flag given here wins over what
 		// it would read.
 		itemID, ev := strings.TrimSpace(args[0]), f.phase
-		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
-		if err != nil {
-			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-			return 1
-		}
-		it, ok := itemOf(a)
-		if !a.ok() || !ok {
-			return report(stdout, stderr, name, a)
-		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
+		body = map[string]any{"session_id": conversation}
 		for k, v := range map[string]string{"verification": ev.verification, "deployment": ev.deployment,
 			"no_deployment_reason": ev.noDeployment, "no_landing_reason": ev.noLanding} {
 			if strings.TrimSpace(v) != "" {
@@ -769,7 +758,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 				position = doc.Position + 1
 			}
 		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation, "role": d.role,
+		body = map[string]any{"session_id": conversation, "role": d.role,
 			"title": d.title, "body": d.body, "reference": d.reference, "position": position}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/documents"
 	case "acceptance":
@@ -778,12 +767,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, "clawdline %s: provide non-empty Markdown with --body-file or stdin. Nothing was changed.\n", name)
 			return 2
 		}
-		it, code := readItem(stdout, stderr, b, name, itemID)
-		if code != 0 {
-			return code
-		}
-		body = map[string]any{"expected_version": it.Version, "session_id": conversation,
-			"acceptance_criteria": f.acceptance}
+		body = map[string]any{"session_id": conversation, "acceptance_criteria": f.acceptance}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/edit"
 	case "acceptance-revise":
 		itemID := strings.TrimSpace(args[0])
@@ -797,6 +781,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	default:
 		fmt.Fprintf(stderr, "clawdline item: no such action %q\n", op)
 		return 2
+	}
+	// The daemon compares a version only when one was named: a version read
+	// a moment ago and sent straight back protects nothing.
+	if f.expectedVersion > 0 {
+		body["expected_version"] = f.expectedVersion
 	}
 	if key == "" {
 		key = newKey("item")
@@ -818,7 +807,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	if !a.ok() || !ok {
 		return report(stdout, stderr, name, a)
 	}
-	printItem(stdout, it)
+	itemWrote(stdout, op, args, it)
 	if op == "acceptance-revise" {
 		var revision struct {
 			Source struct {
@@ -907,7 +896,64 @@ func itemName(stdout, stderr io.Writer, b *broker, args []string, conversation s
 	return 0
 }
 
-// readItem reads one item for its version before a write.
+// itemShow prints the item as `steps` does and every document's body after
+// it; with docID, only that document's body, raw, so it can be piped. An id
+// the item does not hold is refused with the ids it does.
+func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
+	if docID != "" {
+		ids := make([]string, 0, len(it.Documents))
+		for _, d := range it.Documents {
+			if d.ID == docID {
+				fmt.Fprint(stdout, d.Body)
+				if d.Body != "" && !strings.HasSuffix(d.Body, "\n") {
+					fmt.Fprintln(stdout)
+				}
+				return 0
+			}
+			ids = append(ids, d.ID)
+		}
+		held := "it holds no documents"
+		if len(ids) > 0 {
+			held = "its documents are " + strings.Join(ids, ", ")
+		}
+		fmt.Fprintf(stderr, "clawdline item show: item %s has no document %s; %s.\n", it.ID, docID, held)
+		return 1
+	}
+	printItem(stdout, it)
+	fmt.Fprintf(stdout, "  item version %d\n", it.Version)
+	for _, d := range it.Documents {
+		fmt.Fprintf(stdout, "\n===== doc %s  %s  %s  (v%d) =====\n", d.ID, d.Role, d.Title, d.Version)
+		if d.Reference != "" {
+			fmt.Fprintf(stdout, "reference: %s\n", d.Reference)
+		}
+		if d.Body != "" {
+			fmt.Fprint(stdout, d.Body)
+			if !strings.HasSuffix(d.Body, "\n") {
+				fmt.Fprintln(stdout)
+			}
+		}
+	}
+	return 0
+}
+
+// itemWrote says what a write did and prints the item row its answer
+// carries. That answer holds no steps or documents, so none are claimed
+// about: `item show` reads them.
+func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
+	what := map[string]string{"add": "the item", "child": "the child item", "assign": "the assignment",
+		"claim": "the claim", "finish": "the finish", "doc": "the document",
+		"acceptance": "the acceptance criteria", "acceptance-revise": "the acceptance revision"}[op]
+	if op == "step-done" && len(args) > 1 {
+		what = "step " + strings.TrimSpace(args[1]) + " done"
+	} else if op == "phase" && len(args) > 1 {
+		what = "phase " + strings.TrimSpace(args[1])
+	}
+	fmt.Fprintf(stdout, "wrote %s; item %s is at version %d\n", what, it.ID, it.Version)
+	printItemHead(stdout, it)
+	fmt.Fprintf(stdout, "  steps and documents: clawdline item show %s\n", it.ID)
+}
+
+// readItem reads one item whole, as the daemon's GET answers it.
 func readItem(stdout, stderr io.Writer, b *broker, name, id string) (itemWire, int) {
 	a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(id), nil, nil, "")
 	if err != nil {
@@ -1015,7 +1061,7 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 			k = newKey("item")
 		}
 		fmt.Fprintf(stderr, "Idempotency-Key: %s\n", k)
-		body := map[string]any{"expected_version": it.Version, "session_id": conversation, "title": title, "position": position}
+		body := map[string]any{"session_id": conversation, "title": title, "position": position}
 		a, err := b.request(http.MethodPost, "/v1/work/v2/agent/items/"+url.PathEscape(itemID)+"/steps", nil, body, k)
 		if err != nil {
 			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)

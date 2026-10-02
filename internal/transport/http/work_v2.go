@@ -916,7 +916,7 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	var answer []byte
-	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: body.ExpectedVersion,
+	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 		SessionID: body.SessionID, Verification: body.Verification, Landing: landing,
 		NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
@@ -1738,8 +1738,12 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		v := work.Condition(*body.Condition)
 		condition = &v
 	}
+	expected := body.ExpectedVersion
+	if !person {
+		expected = app.AgentExpectedVersion(expected)
+	}
 	var answer []byte
-	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
+	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: expected,
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		Condition: condition, UserAction: body.UserAction, DecisionID: body.DecisionID, ReviewRequired: body.ReviewRequired, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
@@ -2738,7 +2742,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}
 		}
 		var answer []byte
-		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
+		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
 			Landing: landing, NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 			NoDeploymentReason: body.NoDeploymentReason,
@@ -2788,11 +2792,11 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		var err error
 		if parts[2] == "documents" {
-			_, err = s.workV2().AddDocument(r.Context(), parts[1], app.AddDocumentV2{ExpectedVersion: body.ExpectedVersion,
+			_, err = s.workV2().AddDocument(r.Context(), parts[1], app.AddDocumentV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 				SessionID: body.SessionID, Role: body.Role, Title: body.Title, Body: body.Body,
 				Reference: body.Reference, Position: body.Position}, file)
 		} else {
-			_, err = s.workV2().AddStep(r.Context(), parts[1], app.AddStepV2{ExpectedVersion: body.ExpectedVersion,
+			_, err = s.workV2().AddStep(r.Context(), parts[1], app.AddStepV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 				SessionID: body.SessionID, Title: body.Title, Position: body.Position}, file)
 		}
 		if err != nil {
@@ -2821,7 +2825,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		itemOf := s.workV2ItemProjector(r.Context())
 		var answer []byte
-		_, err := s.workV2().CompleteStep(r.Context(), parts[1], parts[3], body.SessionID, body.ExpectedVersion,
+		_, err := s.workV2().CompleteStep(r.Context(), parts[1], parts[3], body.SessionID, app.AgentExpectedVersion(body.ExpectedVersion),
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(itemOf(v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -3286,7 +3290,7 @@ func (s *Server) agentClaimItem(w http.ResponseWriter, r *http.Request, id strin
 	}
 	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
-	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: body.ExpectedVersion,
+	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 		SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant)},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(itemOf(v))
@@ -3368,7 +3372,7 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 		}
 	}
 	created, err := s.workV2().CreateEpicChild(r.Context(), app.NewEpicChildV2{EpicID: epicID,
-		ExpectedVersion: body.ExpectedVersion, SessionID: body.SessionID, Kind: work.Kind(body.Kind), Title: body.Title,
+		ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion), SessionID: body.SessionID, Kind: work.Kind(body.Kind), Title: body.Title,
 		Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps})
 	if err != nil {
@@ -3445,11 +3449,12 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 	}
 	var err error
+	expected := app.AgentExpectedVersion(body.ExpectedVersion)
 	if body.Via != nil {
-		err = s.agentAssignOnRun(r.Context(), id, body.SessionID, body.Via.Run, body.ExpectedVersion,
+		err = s.agentAssignOnRun(r.Context(), id, body.SessionID, body.Via.Run, expected,
 			body.workV2EpicAssignRequest, file)
 	} else {
-		_, err = s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
+		_, err = s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, expected,
 			body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona, file)
 	}
 	if err != nil {
