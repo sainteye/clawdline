@@ -392,7 +392,13 @@ func RefuseV2(code, message string) error { return RefusalV2{Code: code, Message
 // and the item open. Otherwise the link is dropped from next — together with
 // a waiting_user that had nothing else to say — and the decision it pointed
 // at is answered, so its caller can withdraw it if it is still open.
+//
+// The one exception is ReleasedAtClose: a closing Session that had already
+// asked the person to deploy leaves the item, and the question stays.
 func LeaveDecision(prev ItemV2, next *ItemV2) string {
+	if ReleasedAtClose(prev, *next) {
+		return ""
+	}
 	if next.Condition != ConditionWaitingUser || next.Phase.Terminal() || next.OwnerSession != prev.OwnerSession {
 		if next.DecisionID == prev.DecisionID || next.Condition != ConditionWaitingUser {
 			next.DecisionID = ""
@@ -405,6 +411,34 @@ func LeaveDecision(prev ItemV2, next *ItemV2) string {
 		return ""
 	}
 	return prev.DecisionID
+}
+
+// AwaitsPersonToDeploy says the owning Session has already asked the person
+// to deploy this item: it is in deploying, waits on the person, and that wait
+// is a decision. Whether the decision is still open is the store's to read.
+// Such an item does not keep its Session from closing (docs/work-system.md,
+// "Closing a Session that owns Board items").
+func (i ItemV2) AwaitsPersonToDeploy() bool {
+	return i.Phase == PhaseDeploying && i.Condition == ConditionWaitingUser && i.DecisionID != "" &&
+		i.OwnerSession != ""
+}
+
+// ReleaseAtClose is the item a closing Session leaves after asking the person
+// to deploy it: no owner, and nothing else changed — still waiting_user, still
+// linked to the same open decision, which the person answers as before.
+func ReleaseAtClose(prev ItemV2, now time.Time) ItemV2 {
+	next := prev
+	next.OwnerSession, next.UpdatedAt = "", now
+	return next
+}
+
+// ReleasedAtClose recognises exactly the change ReleaseAtClose makes: an item
+// that awaited the person to deploy loses its owner and nothing else that
+// LeaveDecision reads. Every other owner change still drops the decision.
+func ReleasedAtClose(prev, next ItemV2) bool {
+	return prev.AwaitsPersonToDeploy() && next.OwnerSession == "" &&
+		next.Phase == prev.Phase && next.Condition == prev.Condition &&
+		next.DecisionID == prev.DecisionID && next.UserAction == prev.UserAction
 }
 
 func ValidateNewV2(i ItemV2) error {

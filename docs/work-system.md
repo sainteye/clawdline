@@ -55,6 +55,18 @@
 > way; a started item stays assigned. It is done inside the close rather than by the console calling
 > the unassign route per item because Clawdline Cloud carries no unassign command, and because each
 > unassign changes the closeability version the close is pinned to.
+>
+> **A deploy already put to the person does not block (2026-10-02).** An item in phase `deploying`
+> with condition `waiting_user` linked to a decision that is still open — the Session has asked the
+> person to deploy — is neither `board_item_open` nor `board_item_unstarted`; the one definition is
+> `deployingAwaitingPerson` in the same file. Every close, forced or not, first takes the Session off
+> each such item through `WorkSystemV2.ReleaseAtClose` (event `item.released_at_close`, in the
+> person's name): the owner is cleared and nothing else — the item keeps `waiting_user` and its link
+> to the same open decision (`work.ReleasedAtClose` is the one exception in `work.LeaveDecision`). A
+> release that fails closes nothing and answers 409 `close_release_failed`; an item already released
+> is skipped. When the person answers, the wait ends as usual and the item is left unassigned for the
+> Epic owner or the person to reassign. Every other deploying item still blocks: the Session takes it
+> to done first. No deployment policy value was added and no `user_action` is written.
 
 > 這一份講完整套工作系統：四個物件各在什麼情況下用、怎麼開始、怎麼推進、怎麼結束、達成什麼，
 > 以及哪些已經在跑、哪些只是設計。依據是本 repo `13d08ea` 的程式，加上 2026-09-19 對執行中的 daemon

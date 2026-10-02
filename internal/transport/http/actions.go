@@ -392,7 +392,8 @@ func (s *Server) actions() app.Actions {
 
 // closeActions is actions for a person's close: a forced one first takes the
 // session off the Board items it owns that nobody has started, through the
-// same operation the Board's own unassign route runs, in the person's name.
+// same operation the Board's own unassign route runs, in the person's name;
+// every one takes it off the items waiting on the person to deploy.
 func (s *Server) closeActions(r *http.Request) app.Actions {
 	a := s.actions()
 	if s.store == nil {
@@ -402,7 +403,32 @@ func (s *Server) closeActions(r *http.Request) app.Actions {
 	a.ReleaseUnstarted = func(ctx context.Context, sess session.Session) error {
 		return s.releaseUnstarted(ctx, sess.ConversationID, actor)
 	}
+	a.ReleaseAwaitingDeploy = func(ctx context.Context, sess session.Session) error {
+		return s.releaseAwaitingDeploy(ctx, sess.ConversationID, actor)
+	}
 	return a
+}
+
+// releaseAwaitingDeploy takes the conversation off every Board item it owns
+// that waits on the person to deploy it, keeping that decision open. An item
+// already released answers item_unassigned and is skipped, so a retried close
+// goes on from where the first stopped.
+func (s *Server) releaseAwaitingDeploy(ctx context.Context, conversation, actor string) error {
+	items, err := s.store.DeployingAwaitingPersonItems(ctx, conversation)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		_, err := s.workV2().ReleaseAtClose(ctx, item.ID, item.Version, actor)
+		var refused *app.WorkError
+		if errors.As(err, &refused) && refused.Code == "item_unassigned" {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("release board item %s: %w", item.ID, err)
+		}
+	}
+	return nil
 }
 
 // releaseUnstarted unassigns every unstarted Board item the conversation owns.

@@ -61,10 +61,16 @@ type Actions struct {
 	// It runs only once the person has seen those items listed and pressed
 	// close anyway. Nil releases nothing.
 	ReleaseUnstarted func(ctx context.Context, s session.Session) error
+	// ReleaseAwaitingDeploy takes the session off every Board item it owns
+	// whose deploy it already put to the person as a decision, before any
+	// close ends it, forced or not; the decision stays open
+	// (docs/work-system.md). Nil releases nothing.
+	ReleaseAwaitingDeploy func(ctx context.Context, s session.Session) error
 }
 
-// CloseReleaseFailed: a forced close could not take the session off its
-// unstarted Board items, so nothing was closed.
+// CloseReleaseFailed: a close could not take the session off the Board items
+// it releases (unstarted ones under force, ones awaiting the person to deploy
+// always), so nothing was closed.
 const CloseReleaseFailed = "close_release_failed"
 
 // laneWait is the longest a write waits for its terminal's turn.
@@ -672,6 +678,13 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 		if err := a.ReleaseUnstarted(ctx, s); err != nil {
 			return s, Refusal{Code: CloseReleaseFailed,
 				Detail: "the session could not be taken off its unstarted Board items, so it was not closed",
+				Cause:  err}
+		}
+	}
+	if a.ReleaseAwaitingDeploy != nil {
+		if err := a.ReleaseAwaitingDeploy(ctx, s); err != nil {
+			return s, Refusal{Code: CloseReleaseFailed,
+				Detail: "the session could not be taken off the Board items waiting on the person to deploy, so it was not closed",
 				Cause:  err}
 		}
 	}
