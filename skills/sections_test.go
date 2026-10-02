@@ -3,47 +3,74 @@ package skills
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 )
 
-// Commands and flags are a language-neutral contract in the two guides.
+// Commands and flags are a language-neutral contract: the two guides name the
+// same set of `clawdline <command> <subcommand>` and `--flag`. The language
+// argument is the one place they differ by design, so `clawdline guide zh-TW
+// x` counts as `clawdline guide x`.
 func TestGuideCommandsAndFlagsStayInSync(t *testing.T) {
-	command := regexp.MustCompile(`clawdline [a-z][a-z-]*(?: [a-z][a-z-]*)?`)
-	flag := regexp.MustCompile(`--[a-z][a-z-]*`)
-	collect := func(lang string) (commands, flags []string) {
-		guide, err := Guide(lang)
-		if err != nil {
-			t.Fatal(err)
-		}
-		guide = []byte(strings.ReplaceAll(string(guide), "clawdline guide zh-TW", "clawdline guide"))
-		for _, spec := range []struct {
-			re  *regexp.Regexp
-			out *[]string
-		}{{command, &commands}, {flag, &flags}} {
-			seen := map[string]bool{}
-			for _, match := range spec.re.FindAllString(string(guide), -1) {
-				seen[match] = true
-			}
-			for match := range seen {
-				*spec.out = append(*spec.out, match)
-			}
-			sort.Strings(*spec.out)
-		}
-		return
+	ec, ef := commandsAndFlags(t, "en")
+	zc, zf := commandsAndFlags(t, "zh-TW")
+	if d := setDifference(ec, zc); d != "" {
+		t.Errorf("commands differ between en and zh-TW:\n%s", d)
 	}
-	ec, ef := collect("en")
-	zc, zf := collect("zh-TW")
-	if strings.Join(ec, "\n") != strings.Join(zc, "\n") {
-		t.Errorf("command/subcommand mismatch:\nen=%v\nzh-TW=%v", ec, zc)
-	}
-	if strings.Join(ef, "\n") != strings.Join(zf, "\n") {
-		t.Errorf("flag mismatch:\nen=%v\nzh-TW=%v", ef, zf)
+	if d := setDifference(ef, zf); d != "" {
+		t.Errorf("flags differ between en and zh-TW:\n%s", d)
 	}
 }
 
+var (
+	guideCommand  = regexp.MustCompile(`clawdline [a-z][a-z-]*(?: [a-z][a-z-]*)?`)
+	guideFlag     = regexp.MustCompile(`--[a-z][a-z-]*`)
+	guideLanguage = regexp.MustCompile(`clawdline guide (?:` + strings.Join(Topics(), "|") + `)\b ?`)
+)
+
+func commandsAndFlags(t *testing.T, lang string) (commands, flags map[string]bool) {
+	t.Helper()
+	guide, err := Guide(lang)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := guideLanguage.ReplaceAllString(string(guide), "clawdline guide ")
+	commands, flags = map[string]bool{}, map[string]bool{}
+	for _, m := range guideCommand.FindAllString(text, -1) {
+		commands[strings.TrimSuffix(m, " ")] = true
+	}
+	for _, m := range guideFlag.FindAllString(text, -1) {
+		flags[m] = true
+	}
+	return commands, flags
+}
+
+// setDifference says what only en has and what only zh-TW has, or "".
+func setDifference(en, zh map[string]bool) string {
+	var b strings.Builder
+	for _, side := range []struct {
+		name      string
+		have, not map[string]bool
+	}{{"only en", en, zh}, {"only zh-TW", zh, en}} {
+		var only []string
+		for k := range side.have {
+			if !side.not[k] {
+				only = append(only, k)
+			}
+		}
+		sort.Strings(only)
+		if len(only) > 0 {
+			fmt.Fprintf(&b, "  %s: %s\n", side.name, strings.Join(only, ", "))
+		}
+	}
+	return b.String()
+}
+
+// The core every session prints carries how to call an orchestrator route
+// with curl: the credential file, its header, and the content type.
 func TestCoreCarriesCurlAuthenticationAndContentType(t *testing.T) {
 	for _, lang := range Topics() {
 		core, err := Core(lang)
@@ -58,17 +85,50 @@ func TestCoreCarriesCurlAuthenticationAndContentType(t *testing.T) {
 	}
 }
 
+// A few codes whose owner is known, the core counting like any other part.
 func TestRefusalCodesFindTheirOwningPart(t *testing.T) {
 	for _, lang := range Topics() {
-		for code, want := range map[string]string{"steps_incomplete": "feature-root", "unsupported_media_type": "cloud", "stale_inventory": "dispatch"} {
+		for code, want := range map[string]string{
+			"steps_incomplete":       "feature-root",
+			"unsupported_media_type": "connect",
+			"stale_inventory":        "dispatch",
+		} {
 			name, part, err := RefusedSection(lang, code)
 			if err != nil || name != want || !bytes.Contains(part, []byte(code)) {
-				t.Errorf("%s %s: part=%s err=%v", lang, code, name, err)
+				t.Errorf("%s %s: part=%s err=%v, want %s", lang, code, name, err, want)
+			}
+		}
+		for _, bad := range []string{"missing_code_123", "", "Stale_write", "a b"} {
+			if _, _, err := RefusedSection(lang, bad); !errors.Is(err, ErrUnknownRefusal) {
+				t.Errorf("%s %q: %v", lang, bad, err)
 			}
 		}
 	}
-	if _, _, err := RefusedSection("en", "missing_code_123"); !errors.Is(err, ErrUnknownRefusal) {
-		t.Errorf("unknown code: %v", err)
+}
+
+// Every code the refusal part names in backticks resolves to a part, and to
+// the same part in both languages.
+func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
+	span := regexp.MustCompile("`(?:[0-9]{3} )?([a-z][a-z0-9_]*)`")
+	codes := map[string]bool{}
+	for _, lang := range Topics() {
+		part, err := Section(lang, "refused")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range span.FindAllSubmatch(part, -1) {
+			codes[string(m[1])] = true
+		}
+	}
+	if len(codes) < 5 {
+		t.Fatalf("found only %d codes in the refusal part: %v", len(codes), codes)
+	}
+	for code := range codes {
+		en, _, errEN := RefusedSection("en", code)
+		zh, _, errZH := RefusedSection("zh-TW", code)
+		if errEN != nil || errZH != nil || en != zh {
+			t.Errorf("%s: en=%q (%v) zh-TW=%q (%v)", code, en, errEN, zh, errZH)
+		}
 	}
 }
 

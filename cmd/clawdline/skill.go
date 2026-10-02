@@ -107,17 +107,14 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 		fmt.Fprintln(stderr, "clawdline guide:", err)
 		return 1
 	}
-	if part != "" || refused {
-		hash := fmt.Sprintf("%x", sha256.Sum256(text))
-		if since == hash {
-			fmt.Fprintf(stdout, "unchanged %s\n", hash)
-			return 0
-		}
-		fmt.Fprintf(stdout, "guide-version: %s\n", hash)
-	} else if since != "" {
-		fmt.Fprintln(stderr, usage)
-		return 2
+	// Every printed guide text, the core included, opens with its own hash,
+	// so a session that rereads it can ask for one line instead of the text.
+	hash := fmt.Sprintf("%x", sha256.Sum256(text))
+	if since == hash {
+		fmt.Fprintf(stdout, "unchanged %s\n", hash)
+		return 0
 	}
+	fmt.Fprintf(stdout, "guide-version: %s\n", hash)
 	_, _ = stdout.Write(text)
 	return 0
 }
