@@ -8592,6 +8592,97 @@ export interface UsageTokens {
 }
 
 /**
+ * What the ledger can say about a unit's tokens. `complete`: a whole reading, every
+ * token priced. `unpriced`: a whole reading, part of it from a model with no price,
+ * so the cost is unknown (never zero). `mixed_models`: a whole reading of sessions
+ * on more than one model. `ledger_behind`: some session was read only in part, not
+ * at all, or its transcript went missing or unreadable, so the parts are a lower
+ * bound. `not_yet_read`: nothing of it is read; its parts are unknown, not zero.
+ * Only the first three are readable.
+ */
+export type UsageWorkData =
+    "complete"
+  | "unpriced"
+  | "mixed_models"
+  | "ledger_behind"
+  | "not_yet_read"
+
+export const UsageWorkDataValues: readonly UsageWorkData[] = ["complete", "unpriced", "mixed_models", "ledger_behind", "not_yet_read"] as const
+
+/**
+ * How a unit of work ended, from the broker's record. `stalled` is a child the
+ * broker ended as spawn_failed because it sat idle after its briefing, `lost` any
+ * other spawn_failed; `running` has not ended.
+ */
+export type UsageWorkEnding =
+    "success"
+  | "failure"
+  | "timeout"
+  | "cancelled"
+  | "stalled"
+  | "lost"
+  | "running"
+
+export const UsageWorkEndingValues: readonly UsageWorkEnding[] = ["success", "failure", "timeout", "cancelled", "stalled", "lost", "running"] as const
+
+/**
+ * One unit of work, raw (docs/token-ledger.md "Did a change make one unit of work
+ * cheaper"). `kind` is `task` (a child task, whose fresh sessions make its bill its
+ * own increment) or `item`. The strata are fixed at dispatch: `work_kind` (the
+ * brief's kind, `unspecified` when none), `scope` (the number of claims the brief
+ * declared: `0`, `1-3`, `4-10` or `>10`), `model` (the model the bill's sessions
+ * ran on, `mixed` for several, else the record's, else `unknown`) and `cross_end`
+ * (the claims touch both `web/` and `internal/` or `cmd/`). The token parts are the
+ * whole bill with its subagents; `calls` and `calls_above` are the sessions' own
+ * calls and those made past 200k tokens of context. `created_at` and `ended_at` are
+ * Unix seconds, `ended_at` 0 while running. `respawn` says the unit retried an
+ * earlier one, `respawned` that one in the same read retried it.
+ */
+export interface UsageWorkSample {
+  cache_read: number
+  cache_write: number
+  calls: number
+  calls_above: number
+  cost: number
+  cost_known: boolean
+  created_at: number
+  cross_end: boolean
+  data: UsageWorkData
+  duration_seconds: number
+  ended_at: number
+  ending: UsageWorkEnding
+  id: string
+  input: number
+  kind: string
+  model: string
+  output: number
+  respawn: boolean
+  respawned: boolean
+  scope: string
+  work_kind: string
+}
+
+/**
+ * GET /v1/usage/work-samples?since=…&until=… (docs/token-ledger.md "Did a
+ * change make one unit of work cheaper"): one raw sample per child task created in
+ * [`since`, `until`) (Unix seconds), newest first. `since` is `<n>d`, `<n>h` or a
+ * Unix time, 14 days when absent; `until` is a Unix time, now when absent.
+ * `definition_version` is what the fields mean; a report compares only samples of
+ * one version. `truncated` says the range held more tasks than one answer reads and
+ * only the newest are here. No owner session, Root Assignment or Board item bill is
+ * a sample: those are cumulative, not one unit's increment. The answer is the raw
+ * records a report is recomputed from; `clawdline usage --work-report` folds them.
+ */
+export interface UsageWorkSamples {
+  definition_version: number
+  generated_at: number
+  samples: UsageWorkSample[]
+  since: number
+  truncated: boolean
+  until: number
+}
+
+/**
  * One record. Times are Unix seconds. `source` is absent when it has none;
  * `schedule_id` is empty when no schedule is linked. `closed_at` is 0 and
  * `close_reason` empty while it is open. `seed` names the record the daemon planted

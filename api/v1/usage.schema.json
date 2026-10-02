@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "usage.schema.json",
   "title": "Token ledger",
-  "description": "GET /v1/usage/sessions/{conversation}, /v1/usage/tasks/{id} and /v1/usage/items/{id} (docs/token-ledger.md \"What a person and a session see\"): what a session, a child task or a Board item spent; GET /v1/usage/compare-compaction, the child tasks grouped by the compaction window they were launched with, by what each token was spent on. Read with a paired device or this machine's orchestrator token. Totals only: no prompt, tool input or transcript text is ever in an answer.",
+  "description": "GET /v1/usage/sessions/{conversation}, /v1/usage/tasks/{id} and /v1/usage/items/{id} (docs/token-ledger.md \"What a person and a session see\"): what a session, a child task or a Board item spent; GET /v1/usage/compare-compaction, the child tasks grouped by the compaction window they were launched with, by what each token was spent on; GET /v1/usage/work-samples, one raw sample per child task for a before/after report. Read with a paired device or this machine's orchestrator token. Totals only: no prompt, tool input or transcript text is ever in an answer.",
   "$defs": {
     "UsageCategoryName": {
       "description": "What a token was spent on (docs/token-ledger.md \"Categories\").",
@@ -251,6 +251,59 @@
         "excluded_truncated": { "type": "boolean" },
         "truncated": { "type": "boolean" },
         "not_recorded": { "type": "array", "items": { "$ref": "#/$defs/UsageCompareMissing" } }
+      }
+    },
+    "UsageWorkEnding": {
+      "description": "How a unit of work ended, from the broker's record. `stalled` is a child the broker ended as spawn_failed because it sat idle after its briefing, `lost` any other spawn_failed; `running` has not ended.",
+      "type": "string",
+      "enum": ["success", "failure", "timeout", "cancelled", "stalled", "lost", "running"]
+    },
+    "UsageWorkData": {
+      "description": "What the ledger can say about a unit's tokens. `complete`: a whole reading, every token priced. `unpriced`: a whole reading, part of it from a model with no price, so the cost is unknown (never zero). `mixed_models`: a whole reading of sessions on more than one model. `ledger_behind`: some session was read only in part, not at all, or its transcript went missing or unreadable, so the parts are a lower bound. `not_yet_read`: nothing of it is read; its parts are unknown, not zero. Only the first three are readable.",
+      "type": "string",
+      "enum": ["complete", "unpriced", "mixed_models", "ledger_behind", "not_yet_read"]
+    },
+    "UsageWorkSample": {
+      "description": "One unit of work, raw (docs/token-ledger.md \"Did a change make one unit of work cheaper\"). `kind` is `task` (a child task, whose fresh sessions make its bill its own increment) or `item`. The strata are fixed at dispatch: `work_kind` (the brief's kind, `unspecified` when none), `scope` (the number of claims the brief declared: `0`, `1-3`, `4-10` or `>10`), `model` (the model the bill's sessions ran on, `mixed` for several, else the record's, else `unknown`) and `cross_end` (the claims touch both `web/` and `internal/` or `cmd/`). The token parts are the whole bill with its subagents; `calls` and `calls_above` are the sessions' own calls and those made past 200k tokens of context. `created_at` and `ended_at` are Unix seconds, `ended_at` 0 while running. `respawn` says the unit retried an earlier one, `respawned` that one in the same read retried it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_read", "cache_write", "calls", "calls_above", "cost", "cost_known", "created_at", "cross_end", "data", "duration_seconds", "ended_at", "ending", "id", "input", "kind", "model", "output", "respawn", "respawned", "scope", "work_kind"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "type": "string" },
+        "work_kind": { "type": "string" },
+        "scope": { "type": "string" },
+        "model": { "type": "string" },
+        "cross_end": { "type": "boolean" },
+        "input": { "type": "number" },
+        "cache_write": { "type": "number" },
+        "cache_read": { "type": "number" },
+        "output": { "type": "number" },
+        "calls": { "type": "integer" },
+        "calls_above": { "type": "integer" },
+        "cost": { "type": "number" },
+        "cost_known": { "type": "boolean" },
+        "created_at": { "type": "integer" },
+        "ended_at": { "type": "integer" },
+        "duration_seconds": { "type": "integer" },
+        "ending": { "$ref": "#/$defs/UsageWorkEnding" },
+        "respawn": { "type": "boolean" },
+        "respawned": { "type": "boolean" },
+        "data": { "$ref": "#/$defs/UsageWorkData" }
+      }
+    },
+    "UsageWorkSamples": {
+      "description": "GET /v1/usage/work-samples?since=…&until=… (docs/token-ledger.md \"Did a change make one unit of work cheaper\"): one raw sample per child task created in [`since`, `until`) (Unix seconds), newest first. `since` is `<n>d`, `<n>h` or a Unix time, 14 days when absent; `until` is a Unix time, now when absent. `definition_version` is what the fields mean; a report compares only samples of one version. `truncated` says the range held more tasks than one answer reads and only the newest are here. No owner session, Root Assignment or Board item bill is a sample: those are cumulative, not one unit's increment. The answer is the raw records a report is recomputed from; `clawdline usage --work-report` folds them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["definition_version", "generated_at", "samples", "since", "truncated", "until"],
+      "properties": {
+        "definition_version": { "type": "integer" },
+        "since": { "type": "integer" },
+        "until": { "type": "integer" },
+        "generated_at": { "type": "integer" },
+        "truncated": { "type": "boolean" },
+        "samples": { "type": "array", "items": { "$ref": "#/$defs/UsageWorkSample" } }
       }
     },
     "UsageDiagnostics": {

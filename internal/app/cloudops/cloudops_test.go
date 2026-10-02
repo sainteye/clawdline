@@ -412,6 +412,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/usage/compare-compaction",
 		query: map[string]string{"since": "14d"},
 	}, {
+		word: "usage.work-samples",
+		body: map[string]any{"type": "usage.work-samples", "session": machine,
+			"request": "req-usage-work", "since": "14d", "until": "1790000000"},
+		session: machine, name: "read:req-usage-work",
+		method: "GET", path: "/v1/usage/work-samples",
+		query: map[string]string{"since": "14d", "until": "1790000000"},
+	}, {
 		// Things waiting to be verified: two reads on the machine's channel
 		// and five commands, each a device's press, each with its document
 		// handed to the route whole.
@@ -1723,7 +1730,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.v2.assign", "work.v2.persona-suggestion", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.seen", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.convert",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action",
-		"usage.session", "usage.task", "usage.item", "usage.compare-compaction",
+		"usage.session", "usage.task", "usage.item", "usage.compare-compaction", "usage.work-samples",
 		"verification.list", "verification.get", "verification.create", "verification.note",
 		"verification.criterion", "verification.close", "verification.delete"} {
 		if !implemented[word] {
@@ -2211,6 +2218,38 @@ func TestTheTokenBillCrossesOnlyWithAnIdTheLocalRouteWouldTake(t *testing.T) {
 	body, _ := answerOf(t, answer)["body"].(map[string]any)
 	if answer.Status != 200 || body["reason"] != "not_yet_read" {
 		t.Fatalf("the reason did not cross: %d %s", answer.Status, answer.Payload)
+	}
+}
+
+// TestTheWorkSamplesCrossWithOnlyTheFieldsTheRouteReads: no field asks for
+// the route's default range, a since and an until it could read cross as its
+// query, and anything else is refused before this machine is asked.
+func TestTheWorkSamplesCrossWithOnlyTheFieldsTheRouteReads(t *testing.T) {
+	word := "usage.work-samples"
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": word, "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Path != "/v1/usage/work-samples" || len(r.last().Query) != 0 {
+		t.Fatalf("no field: %+v, asked %+v", answer, r.seen)
+	}
+	r = &router{}
+	answer = Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": word, "session": MachineReplySession, "request": "req", "until": "1790000000"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Query["until"] != "1790000000" || r.last().Query["since"] != "" {
+		t.Fatalf("until alone: %+v, asked %+v", answer, r.seen)
+	}
+	for _, body := range []map[string]any{
+		{"type": word, "session": MachineReplySession, "request": "req", "until": "14d"},
+		{"type": word, "session": MachineReplySession, "request": "req", "until": ""},
+		{"type": word, "session": MachineReplySession, "request": "req", "until": 1790000000},
+		{"type": word, "session": MachineReplySession, "request": "req", "since": "14w"},
+		{"type": word, "session": MachineReplySession, "request": "req", "limit": 1},
+		{"type": word, "session": pane, "request": "req"},
+	} {
+		r := &router{}
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
+		}
 	}
 }
 

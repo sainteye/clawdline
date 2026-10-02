@@ -28,7 +28,12 @@ func usageCommand(args []string) {
 	task := fs.String("task", "", "a child task id")
 	item := fs.String("item", "", "a Board item id")
 	compare := fs.Bool("compare-compaction", false, "child tasks grouped by the compaction window they were launched with")
-	since := fs.String("since", "", "with --compare-compaction: `14d`, `36h` or a Unix time (default 14d)")
+	freeze := fs.Bool("freeze-baseline", false, "write the raw per-unit samples of a range to a file, as a baseline")
+	out := fs.String("out", "", "with --freeze-baseline: the file (default <state dir>/usage-baselines/<date>.json)")
+	workReport := fs.Bool("work-report", false, "compare a frozen baseline with the units since, by stratum")
+	baseline := fs.String("baseline", "", "with --work-report: the frozen baseline file")
+	since := fs.String("since", "", "with --compare-compaction or --freeze-baseline: `14d`, `36h` or a Unix time (default 14d); "+
+		"with --work-report: the trial's start (default the baseline's end)")
 	asJSON := fs.Bool("json", false, "print the daemon's answer as JSON")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
@@ -40,7 +45,15 @@ func usageCommand(args []string) {
 			named++
 		}
 	}
-	if named > 1 || (*compare && named > 0) || (*since != "" && !*compare) {
+	modes := 0
+	for _, on := range []bool{*compare, *freeze, *workReport} {
+		if on {
+			modes++
+		}
+	}
+	if named > 1 || modes > 1 || (modes > 0 && named > 0) || (*since != "" && modes == 0) ||
+		(*out != "" && !*freeze) || (*baseline != "" && !*workReport) || (*workReport && *baseline == "") ||
+		(*freeze && *asJSON) {
 		usageCommandUsage()
 	}
 	b, err := openBroker(*port)
@@ -50,6 +63,12 @@ func usageCommand(args []string) {
 	if *compare {
 		os.Exit(showCompactionComparison(os.Stdout, os.Stderr, b, *since, *asJSON))
 	}
+	if *freeze {
+		os.Exit(freezeWorkBaseline(os.Stdout, os.Stderr, b, *since, *out, time.Now()))
+	}
+	if *workReport {
+		os.Exit(showWorkReport(os.Stdout, os.Stderr, b, *baseline, *since, *asJSON))
+	}
 	os.Exit(showUsage(os.Stdout, os.Stderr, b, usageAsk{Session: *session, Task: *task, Item: *item, JSON: *asJSON}, os.Getenv))
 }
 
@@ -58,6 +77,10 @@ func usageCommandUsage() {
 	fmt.Fprintln(os.Stderr, "  what a session, a child task or a Board item spent, by category; this session's own by default")
 	fmt.Fprintln(os.Stderr, "       clawdline usage --compare-compaction [--since 14d] [--json] [--port n]")
 	fmt.Fprintln(os.Stderr, "  child tasks grouped by the compaction window they were launched with: what they cost and how they ended")
+	fmt.Fprintln(os.Stderr, "       clawdline usage --freeze-baseline [--since 14d] [--out FILE] [--port n]")
+	fmt.Fprintln(os.Stderr, "  write the raw per-unit samples of the range to a file outside any repository")
+	fmt.Fprintln(os.Stderr, "       clawdline usage --work-report --baseline FILE [--since t] [--json] [--port n]")
+	fmt.Fprintln(os.Stderr, "  the baseline beside the units since, by stratum, with a verdict per group")
 	os.Exit(2)
 }
 

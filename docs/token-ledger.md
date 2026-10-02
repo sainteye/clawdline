@@ -303,3 +303,73 @@ another name.
 
 An answer reads at most 500 tasks, newest first, and says `truncated` past that; it names at most 50
 excluded tasks, with the count always whole (limits N44).
+
+## Did a change make one unit of work cheaper
+
+A before/after report on what one unit of work spends, with a baseline frozen before the change so
+the comparison cannot drift with the ledger.
+
+```sh
+clawdline usage --freeze-baseline [--since 14d] [--out FILE]
+clawdline usage --work-report --baseline FILE [--since <t>] [--json]
+```
+
+The first writes the raw samples of the range (14 days before now unless `--since` says otherwise)
+to `FILE`, by default `<state dir>/usage-baselines/<date>.json` — under the daemon's own
+directory, never a repository — and refuses to write over a file already there. The file holds the
+definition version, the range, the generation time and one sample per unit. The second reads that
+file and the live ledger's samples since `--since` (default: the baseline's end), and folds both
+in the command with `app.FoldWorkReport`. Both read `GET /v1/usage/work-samples?since=…&until=…`
+(Cloud word `usage.work-samples`), which answers raw samples only: the report is always recomputed
+from raw records, and anyone holding the file can recompute it.
+
+**The unit.** A child task. Its sessions are fresh, so its bill (`ForTask`, subagents included) is
+that unit's own increment. An owner session's or a Root Assignment's bill is cumulative,
+everything that session ever did, so it is never a sample, and one long Epic can
+never carry a verdict. Board items will be units too once per-unit ledger cursors give their
+increments; they enter the same fold as samples of kind `item`.
+
+**Strata**, fixed at dispatch, before the outcome; units are compared only within one:
+
+| Stratum | What it is |
+|---|---|
+| work kind | The brief's `kind`; `unspecified` when it named none |
+| scope | The number of claims the brief declared: `0`, `1-3`, `4-10`, `>10`. Claims, not the timeout: a timeout is often a default nobody chose |
+| model | The model the bill's sessions ran on; `mixed` for several; else the record's; else `unknown` |
+| cross-end | The claims touch both `web/` and `internal/` or `cmd/` |
+
+**A sample's data state.** `complete`; `unpriced` (a model with no price — a Codex model — so the
+cost is unknown, never zero); `mixed_models`; `ledger_behind` (a session read only in part, not at
+all, missing or unreadable: the parts are a lower bound); `not_yet_read`. Only the first three are
+readable. An unreadable unit is counted in its group's units and `unreadable`, and nowhere else: it
+is never a unit with zero tokens.
+
+**Per group and period.** The *primary metric* is the median cache-read tokens of the successful,
+readable units, with an exact 95% order-statistic interval of the median: `[x(k), x(n−k+1)]` for
+the largest `k` whose binomial coverage is at least 95%. No resampling and no seed, so the same
+samples always give the same interval; under six units there is none. Secondary: the median total
+tokens, the share of the units' own calls made past 200k tokens of context, and the duration (from
+the record's creation to its finish) median and p75 by nearest rank. Guardrails, each a share of
+the units that ended: failure; redo (a respawn, or respawned by a unit in the same read); timeout
+or stalled.
+
+**Verdict per group.** `insufficient_evidence` when either period has fewer than 20 successful,
+readable units (limits N72). Otherwise `met` only when the cache-read median dropped by at least
+30%, the duration p75 rose by at most 10% (both decided exactly at the boundary), and no guardrail
+rate is higher than the baseline's; else `not_met`, naming each condition that failed. The overall
+verdict is `met` only when every group with enough evidence is met and at least one has enough;
+`insufficient_evidence` when none has; `not_met` naming the groups otherwise.
+
+**What it cannot tell.**
+
+- *Why.* Units are not assigned to periods at random; whatever else changed between the two
+  periods is in the difference. The report says what changed, never what caused it.
+- *Not recorded.* A missed handoff, a person rescuing a child by hand, and a deploy rollback are
+  recorded nowhere a unit can be tied to; the report names them under `not_recorded` rather than
+  showing zero.
+- *A respawn after the range.* `respawned` is seen only within one read; a retry created after the
+  range's end does not mark the unit it retried.
+
+A work-samples answer reads at most 2000 tasks, newest first, and says `truncated` past that
+(limits N72). A sample's fields are versioned by `definition_version`; a report refuses a baseline
+frozen under another version.
