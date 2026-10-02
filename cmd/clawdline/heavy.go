@@ -168,7 +168,7 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 		req := contract.LeaseRequest{
 			RequestID: d.requestID, Resource: contract.LeaseResourceHeavyCompile,
 			Holder: heavyHolder(argv), Reason: heavyReason(opts.reason, argv),
-			SessionID: firstEnv(d.getenv, conversationEnv), PID: int64(d.pid), Phase: "waiting",
+			SessionID: conversationOf(d.getenv), PID: int64(d.pid), Phase: "waiting",
 		}
 		if at := swiftstore.ProcessStart(d.pid); !at.IsZero() {
 			req.ProcessStart = at.Unix()
@@ -447,15 +447,6 @@ func clipBytes(s string, n int) string {
 		cut--
 	}
 	return s[:cut] + "…"
-}
-
-func firstEnv(getenv func(string) string, names []string) string {
-	for _, name := range names {
-		if v := strings.TrimSpace(getenv(name)); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // newUUID is a random lowercase version 4 UUID: the lease's proof of

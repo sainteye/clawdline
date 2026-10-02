@@ -363,3 +363,96 @@ func TestSkillInstallSaysEachStep(t *testing.T) {
 		t.Fatalf("the stub is still there: %v", err)
 	}
 }
+
+// bothAssistants is a Codex process whose environment also carries a Claude
+// Code conversation it inherited — a contaminated tmux global environment —
+// so the two variables name different conversations.
+var bothAssistants = map[string]string{
+	"CLAUDE_CODE_SESSION_ID": "c1a0de00-0000-4000-8000-000000000001",
+	"CODEX_THREAD_ID":        thinConversation,
+}
+
+// With both assistants' variables set, no command takes the first one it
+// asks: each refuses before asking the daemon anything, names both variables
+// and says which flag settles it.
+func TestEveryCommandRefusesWhenTwoAssistantsNameTheConversation(t *testing.T) {
+	env := envOf(bothAssistants)
+	cases := []struct {
+		name, flag string
+		run        func(stdout, stderr io.Writer, b *broker) int
+	}{
+		{"session report", "--conversation", func(o, e io.Writer, b *broker) int {
+			return reportSession(o, e, b, "Shipped it.", "", "", env)
+		}},
+		{"item name", "--conversation", func(o, e io.Writer, b *broker) int {
+			return sessionItem(o, e, b, "name", itemFlags{}, []string{"item-1", "A name"}, "", "", env)
+		}},
+		{"todo list", "--conversation", func(o, e io.Writer, b *broker) int {
+			return sessionTodo(o, e, b, "list", nil, "", "", env)
+		}},
+		{"send", "--from", func(o, e io.Writer, b *broker) int {
+			return relayMessage(o, e, b, "%3", "", "hello", "", env)
+		}},
+		{"usage", "--session", func(o, e io.Writer, b *broker) int {
+			return showUsage(o, e, b, usageAsk{}, env)
+		}},
+		{"note create", "--from", func(o, e io.Writer, b *broker) int {
+			return createNote(o, e, b, "target-terminal", "", []byte(`{"kind":"answer","title":"Choose"}`), "k", env)
+		}},
+		{"coordinator bind", "--conversation", func(o, e io.Writer, b *broker) int {
+			return bindCoordinatorWithWait(o, e, b, "", env, func() {})
+		}},
+		{"dispatch", "--conversation", func(o, e io.Writer, b *broker) int {
+			return dispatchTask(o, e, b, testDispatchOptions(), testDispatchEnv(bothAssistants))
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, `{"ok":true}` })
+			var out, errs bytes.Buffer
+			if code := tc.run(&out, &errs, b); code != 2 {
+				t.Fatalf("exit %d, want 2: %s", code, errs.String())
+			}
+			if seen := s.requests(); len(seen) != 0 {
+				t.Fatalf("asked the daemon %d times: %+v", len(seen), seen)
+			}
+			msg := errs.String()
+			for _, want := range []string{"CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", tc.flag} {
+				if !strings.Contains(msg, want) {
+					t.Fatalf("the refusal does not say %q: %s", want, msg)
+				}
+			}
+		})
+	}
+}
+
+// An explicit conversation settles it, and one assistant's variable alone is
+// still taken as before — with the assistant it belongs to.
+func TestConversationFromEnvTakesOneAssistantOrTheFlag(t *testing.T) {
+	if id, name, err := conversationFromEnv(envOf(map[string]string{"CODEX_THREAD_ID": "x"})); err != nil || id != "x" || name != "CODEX_THREAD_ID" {
+		t.Fatalf("codex alone = %q %q %v", id, name, err)
+	}
+	if id, name, err := conversationFromEnv(envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": "y"})); err != nil || id != "y" || name != "CLAUDE_CODE_SESSION_ID" {
+		t.Fatalf("claude alone = %q %q %v", id, name, err)
+	}
+	if id, _, err := conversationFromEnv(envOf(map[string]string{"CODEX_THREAD_ID": "x", "CODEX_SESSION_ID": "z"})); err != nil || id != "x" {
+		t.Fatalf("two codex variables = %q %v", id, err)
+	}
+	if id, _, err := conversationFromEnv(envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": "x", "CODEX_THREAD_ID": "x"})); err != nil || id != "x" {
+		t.Fatalf("both naming the same conversation = %q %v", id, err)
+	}
+	if _, _, err := conversationFromEnv(envOf(bothAssistants)); err == nil {
+		t.Fatal("two assistants were not refused")
+	}
+	if got := conversationOf(envOf(bothAssistants)); got != "" {
+		t.Fatalf("a note was signed with %q", got)
+	}
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, `{"ok":true,"todos":[]}` })
+	var out, errs bytes.Buffer
+	if code := sessionTodo(&out, &errs, b, "list", nil, thinConversation, "", envOf(bothAssistants)); code != 0 {
+		t.Fatalf("--conversation did not settle it: exit %d %s", code, errs.String())
+	}
+	if seen := s.requests(); len(seen) != 1 || !strings.Contains(seen[0].EscapedPath, thinConversation) {
+		t.Fatalf("requests = %+v", seen)
+	}
+}
