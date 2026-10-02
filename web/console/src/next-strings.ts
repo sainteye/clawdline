@@ -458,6 +458,10 @@ const words = {
     menuChooseAgain: "Choose again",
     menuUnreadSay:
       "Claude Code is showing a menu on that machine, and Clawdline could not read its choices from the screen.",
+    menuNoScreenSay:
+      "Claude Code is showing a menu on that machine, but its terminal is not answering right now, so Clawdline cannot see the screen.",
+    menuFromTranscript:
+      "The terminal is not answering right now, so these choices are taken from the conversation record rather than read from the screen. The screen is checked before anything is typed, and nothing is typed if it cannot be seen.",
     menuUnreadHow:
       "*Sending a message will not answer it.* Open the live screen to see what it asks, or cancel the menu (the same as pressing Esc there) and then say your answer in the message box.",
     menuCancel: "Cancel this menu (Esc)",
@@ -1126,6 +1130,9 @@ const words = {
     menuUnknown: "不知道剛才的選擇有沒有送到那台機器，等畫面更新。",
     menuChooseAgain: "重新選擇",
     menuUnreadSay: "Claude Code 正在那台機器上顯示一個選單，Clawdline 沒能從畫面讀出它的選項。",
+    menuNoScreenSay: "Claude Code 正在那台機器上顯示一個選單，但那個終端機現在沒有回應，Clawdline 看不到畫面。",
+    menuFromTranscript:
+      "終端機現在沒有回應，這些選項是照對話紀錄排出來的，不是從畫面讀到的。按下去之前會先對一次畫面，看不到畫面就不會打字。",
     menuUnreadHow:
       "*直接送訊息不會回答它。*打開即時畫面看它在問什麼，或取消這個選單（等於在那台機器上按 Esc），再用下面的輸入框說你的答案。",
     menuCancel: "取消這個選單（Esc）",
