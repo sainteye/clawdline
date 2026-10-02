@@ -251,7 +251,7 @@ is refused. Anything rarer is one `clawdline guide <part>` away; the pointers ar
 captured gates, the acceptance version (`acceptance vN`), for a Feature the person's Needs
 independent review switch, its steps, and every document with its body. That is
 the record you work from. `clawdline item show <item id> --doc <doc id>` prints one document's
-body alone, to pipe into a file; `item steps` is the same record without the bodies. Every item
+body alone, to pipe into a file; `clawdline item steps <item id>` is the same record without the bodies. Every item
 write prints `wrote …; item <id> is at version N` and the item's row; read the steps and documents
 again with `item show`. Writes act on the item's current version unless you pass
 `--expected-version`.

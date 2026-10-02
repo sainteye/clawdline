@@ -224,7 +224,7 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 
 **1. 讀項目。** `clawdline item show <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
 驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選、steps，以及每份文件連同內文。你就從這份紀錄開始工作。
-`clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`item steps` 是同一份紀錄但不含內文。
+`clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`clawdline item steps <item id>` 是同一份紀錄但不含內文。
 每個項目寫入都會印出 `wrote …; item <id> is at version N` 和項目那一列；steps 與文件請再用 `item show` 讀。
 寫入一律作用在項目當下的版本，除非你帶 `--expected-version`。
 
