@@ -436,6 +436,43 @@ func TestWorkV2StoresVersionedItemsAndAppendOnlyEvents(t *testing.T) {
 	}
 }
 
+func TestWorkV2CardProgressUsesPhaseEventInsteadOfLaterEdit(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	at := time.Unix(1_790_000_000, 0)
+	item := v2Item("10000000-0000-4000-8000-000000000002", at)
+	if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateItem(item, "local", `{}`) }); err != nil {
+		t.Fatal(err)
+	}
+	change := func(phase work.Phase, kind, payload string, seconds int64) {
+		t.Helper()
+		prev, err := s.WorkV2Item(ctx, item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next := prev
+		next.Phase, next.UpdatedAt = phase, at.Add(time.Duration(seconds)*time.Second)
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.PutItem(prev, next, kind, "owner", payload) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	change(work.PhaseMerging, "item.phase_changed", `{"to":"merging"}`, 10)
+	change(work.PhaseMerging, "item.edited", `{}`, 20)
+	progress, err := s.WorkV2CardProgress(ctx, []string{item.ID})
+	if err != nil || progress[item.ID].PhaseEnteredAt != at.Unix()+10 {
+		t.Fatalf("merge progress %+v, %v", progress, err)
+	}
+	change(work.PhaseDone, "item.phase_changed", `{"to":"done","deployment":"Cloud build 123\nmore"}`, 30)
+	progress, err = s.WorkV2CardProgress(ctx, []string{item.ID})
+	if err != nil || progress[item.ID].DeploymentEvidence != "Cloud build 123\nmore" || progress[item.ID].PhaseEnteredAt != at.Unix()+30 {
+		t.Fatalf("done progress %+v, %v", progress, err)
+	}
+}
+
 func TestWorkV2ListFiltersLifecycleAndSearchesTitleOrDescription(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

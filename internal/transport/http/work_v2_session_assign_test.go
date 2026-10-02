@@ -56,7 +56,7 @@ func TestASessionAssignsAnOrdinaryItemToANewPersonaSessionOnThePersonsMessage(t 
 		a.ClaimedVia.Session != p.s.ConversationID || a.ClaimedVia.Persona != "security" || a.ClaimedVia.Excerpt != words {
 		t.Fatalf("assignment: %+v via %+v", a, a.ClaimedVia)
 	}
-	if opened, err := s.broker.RootAssignmentByID(context.Background(), a.RootAssignment); err != nil || opened.Persona != "security" {
+	if opened, err := s.broker.RootAssignmentByID(context.Background(), a.RootAssignment); err != nil || opened.Persona != "security" || opened.Label != item.Title {
 		t.Fatalf("root assignment %q: %+v %v", a.RootAssignment, opened, err)
 	}
 	var assigned *work.EventV2

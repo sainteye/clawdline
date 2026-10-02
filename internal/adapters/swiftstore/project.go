@@ -533,7 +533,7 @@ func (s Snapshot) TitleOf(l Live, customTitle string, live []Live) Titles {
 	// in a tab nobody recorded, is found by the conversation behind it.
 	out.Orchestrator = s.orchestratorTitle(l.TerminalID, live)
 	board := s.boardTitle(l)
-	if out.Orchestrator == "" {
+	if board.AgentNamed || out.Orchestrator == "" {
 		out.Orchestrator = board.Label
 		out.AgentNamedBoard = board.AgentNamed
 	}

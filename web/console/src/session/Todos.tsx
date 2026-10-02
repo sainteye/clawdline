@@ -279,7 +279,7 @@ function ReferenceImage({ image, compact = false }: { image: WorkV2Image; compac
 }
 
 function phaseName(phase: string): string {
-  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "Merge", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
+  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "合併", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
 }
 
 function conditionName(condition: string): string {

@@ -86,22 +86,32 @@ type workV2ItemWire struct {
 	// ClaimedVia is the person's message the owning Session claimed the item
 	// on, or a Session assigned it to the owning new Session on (Assigned);
 	// absent when the person assigned it, or nobody holds it.
-	ClaimedVia        *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
-	CreatedAt         int64                  `json:"created_at"`
-	UpdatedAt         int64                  `json:"updated_at"`
-	ClosedAt          *int64                 `json:"closed_at"`
-	Cycle             int64                  `json:"cycle"`
-	GateSnapshotCycle int64                  `json:"gate_snapshot_cycle"`
-	GateSnapshotAt    *int64                 `json:"gate_snapshot_at"`
-	PlanningGate      bool                   `json:"planning_gate"`
-	VerifyGate        bool                   `json:"verify_gate"`
-	Verification      any                    `json:"verification,omitempty"`
-	Version           int64                  `json:"version"`
-	Assignments       []workV2AssignmentWire `json:"assignments,omitempty"`
-	Documents         []workV2DocumentWire   `json:"documents,omitempty"`
-	Images            []workV2ImageWire      `json:"images,omitempty"`
-	Steps             []workV2StepWire       `json:"steps,omitempty"`
-	Events            []workV2EventWire      `json:"events,omitempty"`
+	ClaimedVia         *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
+	CreatedAt          int64                  `json:"created_at"`
+	UpdatedAt          int64                  `json:"updated_at"`
+	ClosedAt           *int64                 `json:"closed_at"`
+	PhaseEnteredAt     *int64                 `json:"phase_entered_at"`
+	DeploymentEvidence string                 `json:"deployment_evidence,omitempty"`
+	NoDeploymentReason string                 `json:"no_deployment_reason,omitempty"`
+	Cycle              int64                  `json:"cycle"`
+	GateSnapshotCycle  int64                  `json:"gate_snapshot_cycle"`
+	GateSnapshotAt     *int64                 `json:"gate_snapshot_at"`
+	PlanningGate       bool                   `json:"planning_gate"`
+	VerifyGate         bool                   `json:"verify_gate"`
+	Verification       any                    `json:"verification,omitempty"`
+	Version            int64                  `json:"version"`
+	Assignments        []workV2AssignmentWire `json:"assignments,omitempty"`
+	Documents          []workV2DocumentWire   `json:"documents,omitempty"`
+	Images             []workV2ImageWire      `json:"images,omitempty"`
+	Steps              []workV2StepWire       `json:"steps,omitempty"`
+	Events             []workV2EventWire      `json:"events,omitempty"`
+}
+
+func optionalPositiveUnix(seconds int64) *int64 {
+	if seconds <= 0 {
+		return nil
+	}
+	return &seconds
 }
 
 // workV2CreatedViaWire is the person's message a Session created an item on:
@@ -881,6 +891,8 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		DeploymentPolicy: string(i.DeploymentPolicy), ReviewRequired: i.ReviewRequired, OwnerSession: optionalString(i.OwnerSession),
 		CreatedBy: i.CreatedBy, CreatedAt: i.CreatedAt.Unix(), UpdatedAt: i.UpdatedAt.Unix(),
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, GateSnapshotCycle: i.GateSnapshotCycle,
+		PhaseEnteredAt:     optionalPositiveUnix(v.CardProgress.PhaseEnteredAt),
+		DeploymentEvidence: v.CardProgress.DeploymentEvidence, NoDeploymentReason: v.CardProgress.NoDeploymentReason,
 		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
 		Version: i.Version, ParentID: i.ParentID}
 	if v.Gate != nil {
