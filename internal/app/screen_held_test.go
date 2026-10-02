@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -436,5 +437,73 @@ func TestITermOutageDoesNotAmplifyAcrossTwentyTabs(t *testing.T) {
 	t.Logf("60 one-second requests across 20 failing tabs: per-tab=%d Apple Events, per-source=%d", perTab, perSource)
 	if perTab < 50 || perSource > 5 {
 		t.Fatalf("failure amplification remained: per-tab=%d per-source=%d", perTab, perSource)
+	}
+}
+
+// changingTerminal answers every pane with whatever the machine shows now.
+type changingTerminal struct {
+	mu   sync.Mutex
+	show string
+}
+
+func (c *changingTerminal) Capture(context.Context, session.Session) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.show, true
+}
+
+// A row at the end of the list is refreshed like the rest of it. Every slot
+// used to go to whichever stale row asked first, and the list asks in one
+// order: on 2026-10-02 the front of twenty-six rows took both slots every
+// tick, a pane near the end kept the screen it had before its menu was drawn,
+// and the console said the menu's choices could not be read.
+func TestARowAtTheEndOfTheListIsRefreshedToo(t *testing.T) {
+	host := &changingTerminal{show: "prompt"}
+	h := NewHeldScreens(host)
+	now := time.Unix(2_000_000, 0)
+	h.now = func() time.Time { return now }
+	rows := make([]session.Session, 8)
+	for i := range rows {
+		rows[i] = session.Session{ID: "%" + strconv.Itoa(i), Backend: session.BackendTmux}
+	}
+	settle := func() {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			h.mu.Lock()
+			quiet := h.inflight == 0
+			h.mu.Unlock()
+			if quiet {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Fatal("capture did not finish")
+	}
+	pass := func() {
+		for _, row := range rows {
+			h.Capture(context.Background(), row)
+		}
+		settle()
+		now = now.Add(ScreenHeldTmux)
+	}
+	for i := 0; i < len(rows); i++ {
+		pass()
+	}
+	last := rows[len(rows)-1]
+	if text, ok := h.Capture(context.Background(), last); !ok || text != "prompt" {
+		t.Fatalf("the last row was never read: %q %v", text, ok)
+	}
+	settle()
+
+	host.mu.Lock()
+	host.show = "menu"
+	host.mu.Unlock()
+	// Two slots and eight rows due every pass: four passes reach every row.
+	for i := 0; i < len(rows); i++ {
+		pass()
+	}
+	if text, _ := h.Capture(context.Background(), last); text != "menu" {
+		t.Fatalf("after %d passes the last row still holds %q", len(rows), text)
 	}
 }
