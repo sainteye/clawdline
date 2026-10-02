@@ -399,7 +399,7 @@ func TestARequestedUserActionIsBoundedAndOnlyBelongsToWaitingUser(t *testing.T) 
 
 func TestPlanningNeverBecomesExecutableAndProposalNeedsOwnedEvidence(t *testing.T) {
 	w := newWorkV2Test(t)
-	planning := createWorkV2Test(t, w, work.KindRefactor)
+	planning := createWorkV2Test(t, w, work.KindPlan)
 	if _, err := w.Assign(context.Background(), planning.Item.ID, AssignWorkV2{ExpectedVersion: 1,
 		Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil); err == nil {
 		t.Fatal("planning item was assignable")

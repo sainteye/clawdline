@@ -862,7 +862,7 @@ func (t *WorkV2Tx) WorkGateCheckerPersona(item work.ItemV2) (string, error) {
 		return "code-reviewer", nil
 	case work.KindEpic:
 		return "reality-checker", nil
-	case work.KindFeature:
+	case work.KindFeature, work.KindRefactor:
 		var visual int64
 		err := t.tx.QueryRowContext(t.ctx, `SELECT
         (SELECT COUNT(*) FROM work_v2_images WHERE work_id=?) +

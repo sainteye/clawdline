@@ -18,7 +18,7 @@ import { WorkGateAttention, WorkGateDetail, WorkGateLine } from "./WorkGate.js"
 import { gateSnapshotText } from "./gate-status.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
-import { epicGate, epicGateDetailShown, epicGateShown, isEpic, planGateHint } from "./epic-gate.js"
+import { epicGate, epicGateDetailShown, epicGateShown, featureLike, isEpic, planGateHint } from "./epic-gate.js"
 import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, readMissingParents, shortWorkID, type EpicParent } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
@@ -81,13 +81,13 @@ import { visibleWorkItems } from "./plan-visibility.js"
 import { TerminalEntry } from "../terminal/TerminalEntry.js"
 
 const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
-const EXECUTABLE_KINDS: WorkV2ExecutableKind[] = ["feature", "issue", "epic"]
+const EXECUTABLE_KINDS: WorkV2ExecutableKind[] = ["feature", "issue", "epic", "refactor"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
 const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: string }> = {
   feature: { icon: "✦", label: "Feature", description: "加入一項使用者可以感受到的新能力" },
   issue: { icon: "!", label: "Issue", description: "修正錯誤、異常或不符合預期的行為" },
   epic: { icon: "◆", label: "Epic", description: "可指派的大型工作；指派時若啟用規劃 gate，Session 要先寫計劃書並經 Child Session review" },
-  refactor: { icon: "↻", label: "Refactor", description: "先放在規劃區的內部結構改善" },
+  refactor: { icon: "↻", label: "Refactor", description: "不改變外部行為的內部結構改善；和 Feature 一樣可以指派、寫步驟與驗收" },
   plan: { icon: "≡", label: "Plan", description: "先放在規劃區的研究或實作計畫" },
 }
 
@@ -784,7 +784,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   const epic = isEpic(item)
   const plan = item.kind === "plan"
   const convertible = !item.closed_at && (item.phase === "created" || item.phase === "assigned") && !item.parent_id &&
-    (plan || item.kind === "epic" || item.kind === "feature")
+    (plan || item.kind === "epic" || featureLike(item))
   const cardClass = epic ? "work-card work-v2-card work-epic-card"
     : plan ? "work-card work-v2-card work-plan-card" : "work-card work-v2-card"
   const conversionPanel = converting && convertible ? <section id={`work-convert-${item.id}`} className="work-plan-convert"
@@ -863,7 +863,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
       run={run} />}
     <WorkItemDecisions decisions={decisions} waitingOn={item.decision_id} busy={!!busy} run={run} />
-    {item.kind === "feature" && <ReviewRequiredField id={`work-review-required-${item.id}`} checked={item.review_required === true}
+    {featureLike(item) && <ReviewRequiredField id={`work-review-required-${item.id}`} checked={item.review_required === true}
       disabled={!!busy || !!item.closed_at} busy={busy === `review-required-${item.id}`}
       onChange={(checked) => { clearFailure(); setReviewRequiredFailed(false)
         void run(`review-required-${item.id}`, () => setWorkV2ReviewRequired(item, checked)).then((ok) => setReviewRequiredFailed(!ok)) }} />}
@@ -1478,7 +1478,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><form onSubmit={(e) => {
     e.preventDefault(); if (!ready) return
     const body = { project_id: projectID, kind, title: title.trim(), description: description.trim(), deployment_policy: "agent_decides" as const,
-      ...(kind === "feature" ? { review_required: reviewRequired } : {}) }
+      ...(featureLike({ kind }) ? { review_required: reviewRequired } : {}) }
     const decision = workV2CreateDecision(body, createDecision.current)
     createDecision.current = decision
     onCreate(body, images, decision.key)
@@ -1494,7 +1494,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     </div></fieldset>
     <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
     <VoiceTextarea label="描述" value={description} onValue={setDescription} />
-    {kind === "feature" && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
+    {featureLike({ kind }) && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
     <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>

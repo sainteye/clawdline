@@ -433,14 +433,19 @@ func workV2ParentNote(parent work.ItemV2) string {
 
 func workV2FeatureInstruction(item work.ItemV2) string {
 	id := item.ID
+	// A Refactor follows a Feature's planning rules; only the noun differs.
+	noun := "Feature"
+	if item.Kind == work.KindRefactor {
+		noun = "Refactor"
+	}
 	if !item.ReviewRequired {
-		return "This Feature's captured planning gate is on, and the person has not checked Needs independent review. " +
+		return "This " + noun + "'s captured planning gate is on, and the person has not checked Needs independent review. " +
 			"Concise acceptance criteria and focused tests suffice; move to implementing without writing a plan for review " +
 			"and do not dispatch a plan_review child. Do not record a risk assessment: whether a Feature is reviewed is the " +
 			"person's switch, read when the item asks to enter implementing. If the person checks it before then, the phase " +
 			"route asks for a plan and its review."
 	}
-	return "This Feature's captured planning gate is on, and the person checked Needs independent review. " +
+	return "This " + noun + "'s captured planning gate is on, and the person checked Needs independent review. " +
 		"Write a plan with `clawdline item doc " + id + " --role plan --title \"Plan\"`, have an independent `plan_review` " +
 		"child review it, and record the review before moving to implementing. " +
 		"After revising a reviewed plan, record an `other` document titled `Review boundary assessment` with " +
@@ -452,10 +457,10 @@ func workV2KindSteps(item work.ItemV2) string {
 	if item.Kind == work.KindEpic && item.PlanningGate {
 		return workV2EpicInstruction(item.ID)
 	}
-	if item.Kind == work.KindFeature && item.PlanningGate {
+	if item.Kind.FeatureLike() && item.PlanningGate {
 		return workV2FeatureInstruction(item) + " " + workV2StepsInstruction(item.ID)
 	}
-	if (item.Kind == work.KindEpic || item.Kind == work.KindFeature) && item.HasGateSnapshot() && !item.PlanningGate {
+	if (item.Kind == work.KindEpic || item.Kind.FeatureLike()) && item.HasGateSnapshot() && !item.PlanningGate {
 		return "This cycle captured planning_gate off, so no planning document or independent review is forced before implementing. " +
 			workV2StepsInstruction(item.ID)
 	}

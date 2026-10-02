@@ -323,7 +323,7 @@ async function mutate<T>(path: string, body: unknown, method = "POST"): Promise<
 }
 
 export type WorkV2Kind = "feature" | "issue" | "epic" | "refactor" | "plan"
-export type WorkV2ExecutableKind = Extract<WorkV2Kind, "feature" | "issue" | "epic">
+export type WorkV2ExecutableKind = Extract<WorkV2Kind, "feature" | "issue" | "epic" | "refactor">
 export type WorkV2Phase = "created" | "assigning" | "assigned" | "implementing" | "verifying" | "merging" | "deploying" | "done" | "cancelled"
 export type WorkV2Status = "open" | "done" | "all"
 

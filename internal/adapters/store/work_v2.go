@@ -621,10 +621,10 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	if i.AcceptanceVersion == 0 || i.AcceptanceDigest == "" {
 		work.SetAcceptance(&i, i.AcceptanceCriteria)
 	}
-	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic')`
+	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic','refactor')`
 	limit, full := int64(WorkV2OpenLimit), ErrWorkV2Full
 	if i.Planning() {
-		where, limit, full = `kind IN ('refactor','plan') AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
+		where, limit, full = `kind = 'plan' AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
 	}
 	if n, err := t.count(where); err != nil {
 		return err
@@ -2230,7 +2230,7 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
 	out := map[string]int64{}
 	queries := map[string]string{
 		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('refactor','plan') AND closed_at IS NULL`,
+		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind = 'plan' AND closed_at IS NULL`,
 		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
 		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
 		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (
