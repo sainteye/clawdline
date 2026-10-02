@@ -202,6 +202,13 @@ export interface WriteHost {
   readonly machine: string
   /** The client, or a throw coded `offline` when the line is not up. */
   connected(): CloudWriteClient
+  /**
+   * For a carried read: the connected client, or the next one `keepConnected`
+   * attaches within the reader's bound when the attached one says one is
+   * coming. Null when none does; rejects as an abandoned read when `signal`
+   * fires first, so the caller's own deadline still ends the wait.
+   */
+  connectedFor(signal: AbortSignal | null | undefined, word: string): Promise<CloudWriteClient | null>
   /** Something was just done to this session: its transcript is about to change. */
   wrote(session: string, outcome: "done" | "unknown" | "refused"): void
   /** The machine's terminal backend confirmed that this session was closed. */
@@ -397,6 +404,36 @@ const HTTP_STATUS: Readonly<Record<string, number>> = {
   cloud_machine_unsupported: 501,
   cloud_not_carried: 501,
 }
+
+/**
+ * The routes `writeRoute` parses from a GET: reads this file carries because
+ * they are asked under a session's identity or answered with bytes, not
+ * because they change anything. A read asked while this page's own Cloud
+ * connection is renewing waits for the next client as the reader's machine
+ * reads do (`WriteHost.connectedFor`); every other route is a write and is
+ * refused at once, so nothing pressed during the gap is sent after it.
+ */
+export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["op"]>([
+  "work-v2-image",
+  "usage-compare",
+  "usage",
+  "capacity",
+  "default-models",
+  "work-gate-settings",
+  "restorable",
+  "archived",
+  "machine-usage",
+  "verification-read",
+  "places",
+  "past",
+  "image",
+  "info",
+  "git",
+  "git-diff",
+  "screen",
+  "documents",
+  "document",
+])
 
 /** Parse a console route into the command it stands for, or null for one this file does not carry. */
 export function writeRoute(method: string, path: string): WriteRoute | null {
@@ -827,10 +864,31 @@ export class RelayWriter {
       })
     }
     let client: CloudWriteClient
-    try {
-      client = this.host.connected()
-    } catch (error) {
-      return this.refuse(route, method, path, started, spelling, error as CloudFailureLike)
+    if (method === "GET" && CARRIED_READS.has(route.op)) {
+      // A read waits out a renewal of this page's own connection, as the
+      // reader's machine reads do. Measured in a production browser: `GET
+      // /v1/places` answered `offline` for minutes while the relay socket
+      // renewed, with the machine online. An abandoned wait is thrown, not
+      // refused: a fetch whose signal fired rejects.
+      const next = await this.host.connectedFor(init?.signal, route.word)
+      if (!next) {
+        return this.refuse(route, method, path, started, spelling, {
+          code: "cloud_reconnecting",
+          message: "This page's own Cloud connection is renewing; the machine was not asked.",
+          status: 503,
+          layer: "browser",
+          retryable: true,
+        })
+      }
+      client = next
+    } else {
+      // A write is refused at once and never held for the next client: an
+      // envelope that was not sent now is not sent later by this seam.
+      try {
+        client = this.host.connected()
+      } catch (error) {
+        return this.refuse(route, method, path, started, spelling, error as CloudFailureLike)
+      }
     }
     try {
       const body = await this.carry(client, route, url, init)

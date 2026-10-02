@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react"
 import { nextWord } from "../next-strings.js"
 import { sessionsPageHash, terminalRouteFromHash, workPageHash, workProjectID, type TerminalRoute } from "../page-route.js"
 import { requestPage } from "../overlays/index.js"
-import { readProjectPlaces } from "./work/api.js"
+import { readProjectPlaces, type ProjectPlacePage } from "./work/api.js"
+import { watchTerminalHost, type TerminalHost } from "../cloud/terminal-host.js"
+import { CloudProjectReader, resolveCloudTerminalProject, type ProjectReadState } from "./terminal/cloud-project.js"
 import { hostedConsole } from "./terminal/api.js"
 import { TERMINAL_ROUTE, openTerminalPage } from "./terminal/navigate.js"
 import { TerminalProjectList } from "./terminal/TerminalProjectList.js"
@@ -22,7 +24,9 @@ import "./terminal/terminal.css"
  * to the board, as every address did before).
  *
  * The hosted branch uses its dedicated encrypted terminal channels. The local
- * branch keeps its existing fetch/SSE transport.
+ * branch keeps its existing fetch/SSE transport. The hosted address carries the
+ * Cloud Project id; the channel is asked by the machine-local one, resolved
+ * only for a listed row of the terminal host's own machine (cloud-project.ts).
  */
 
 function currentRoute(): TerminalRoute {
@@ -37,6 +41,9 @@ function TerminalPage({ shown }: { shown: boolean }) {
   const [again, setAgain] = useState(0)
   const title = useRef<HTMLHeadingElement>(null)
   const hosted = hostedConsole()
+  const [host, setHost] = useState<TerminalHost | null>(null)
+  const [cloud, setCloud] = useState<ProjectReadState<ProjectPlacePage>>({ state: "loading" })
+  const reader = useRef<CloudProjectReader<ProjectPlacePage> | null>(null)
 
   useEffect(() => {
     const read = () => setRoute(currentRoute())
@@ -49,8 +56,21 @@ function TerminalPage({ shown }: { shown: boolean }) {
     }
   }, [shown])
 
+  useEffect(() => (hosted ? watchTerminalHost(setHost) : undefined), [hosted])
+
+  // Hosted: read the Cloud list, retry on a bounded schedule, and read again at
+  // once when the terminal host comes back. A new route starts a new reader.
   useEffect(() => {
-    if (!route.project) return
+    if (!hosted || !route.project) return
+    const next = new CloudProjectReader(readProjectPlaces, setCloud)
+    reader.current = next
+    next.start()
+    return () => { next.dispose(); if (reader.current === next) reader.current = null }
+  }, [hosted, route.project])
+  useEffect(() => { reader.current?.host(host) }, [host, route.project])
+
+  useEffect(() => {
+    if (hosted || !route.project) return
     let live = true
     setPlace((was) => (was !== "loading" && was !== "failed" && was.asked === route.project ? was : "loading"))
     readProjectPlaces().then(
@@ -72,8 +92,16 @@ function TerminalPage({ shown }: { shown: boolean }) {
   }, [shown, route.terminal])
 
   const known = typeof place === "object" && place.asked === route.project ? place : null
-  const project = known?.id ?? ""
-  const name = known?.label || project || route.project
+  // The machine of the last terminal host: while this page's own Cloud line
+  // renews the host is absent, and the Project it was showing is still the
+  // same one, so its name (not the raw Cloud id) stays in the title.
+  const lastMachine = useRef("")
+  if (host) lastMachine.current = host.machine
+  const machine = host?.machine ?? lastMachine.current
+  const resolved = hosted && cloud.state === "ready" && machine ? resolveCloudTerminalProject(route.project, cloud.page.places, machine) : null
+  const found = resolved?.kind === "found" ? resolved : null
+  const project = hosted ? found?.page ?? "" : known?.id ?? ""
+  const name = (hosted ? found?.label : known?.label) || project || route.project
   const toProjects = route.from === "projects"
   const back = () => {
     if (route.from === "sessions") {
@@ -112,12 +140,17 @@ function TerminalPage({ shown }: { shown: boolean }) {
         <>
           <header className="board-head terminal-page-head">
             <h1 id="terminal-title" ref={title} tabIndex={-1}>{route.terminal ? nextWord("terminalEntryFor", { project: name }) : nextWord("terminalEntry")}</h1>
-            {!route.terminal && backButton}
+            {(!route.terminal || !host) && backButton}
           </header>
-          {place === "failed" ? <div className="terminal-note-row"><p className="terminal-note" role="alert">{nextWord("terminalProjectsFailed")}</p>
-              <button className="board-button" type="button" onClick={() => setAgain((n) => n + 1)}>{nextWord("terminalRetry")}</button></div>
-            : !known ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
-              : <CloudTerminalPage project={project} label={name} id={route.terminal} shown={shown} from={route.from} />}
+          {!route.project ? <p className="terminal-note" role="note">{nextWord("terminalCloudChooseProject")}</p>
+            : cloud.state === "failed" ? <div className="terminal-note-row">
+              <p className="terminal-note" role="alert">{cloud.temporary ? nextWord("terminalProjectsReconnecting") : nextWord("terminalProjectsFailedCode", { code: cloud.code })}
+                {" "}{cloud.retryInMs !== null ? nextWord("terminalProjectsRetryIn", { seconds: String(Math.round(cloud.retryInMs / 1000)) }) : nextWord("terminalProjectsRetryStopped")}</p>
+              <button className="board-button" type="button" onClick={() => reader.current?.retry()}>{nextWord("terminalRetry")}</button></div>
+            : cloud.state === "loading" ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
+              : !host ? <p className="terminal-note" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
+                : !found ? <p className="terminal-note" role="alert">{nextWord("terminalProjectUnknown")}</p>
+                  : <CloudTerminalPage project={found.page} channelProject={found.local} label={name} id={route.terminal} shown={shown} from={route.from} />}
         </>
       ) : route.terminal ? (
         <>

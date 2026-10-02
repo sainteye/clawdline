@@ -12,6 +12,7 @@ import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, withCtrl } from "./keys.js"
 import { holderWords, terminalShortID } from "./words.js"
+import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals } from "./cloud-view.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
 function reason(error: unknown): string { return (error as { code?: string })?.code ?? (error instanceof Error ? error.message : "cloud_failed") }
@@ -29,9 +30,13 @@ function stateWords(state: CloudTerminalSnapshot["state"]): string {
   }
 }
 
-/** Hosted-only terminal page. The local TerminalView and its fetch/SSE route remain untouched. */
-export function CloudTerminalPage({ project, label, id, shown, from }: {
-  project: string; label: string; id: string; shown: boolean; from: "" | "projects" | "work" | "sessions"
+/**
+ * Hosted-only terminal page. The local TerminalView and its fetch/SSE route remain untouched.
+ * `project` is the Cloud Project id the page address carries; `channelProject` is the same
+ * Project's machine-local id, the only one the machine's terminal channel knows (cloud-project.ts).
+ */
+export function CloudTerminalPage({ project, channelProject, label, id, shown, from }: {
+  project: string; channelProject: string; label: string; id: string; shown: boolean; from: "" | "projects" | "work" | "sessions"
 }) {
   const [host, setHost] = useState<TerminalHost | null>(null)
   const [session, setSession] = useState<CloudTerminalSession | null>(null)
@@ -55,7 +60,7 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
   useEffect(() => watchTerminalHost(setHost), [])
 
   useEffect(() => {
-    if (!shown || !host || !project) return
+    if (!shown || !host || !channelProject) return
     let live = true
     const transport = new TerminalChannelTransport(host.client, host.machine)
     const next = new CloudTerminalSession(transport, TAB)
@@ -63,21 +68,13 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     setSession(next); setSnapshot(empty); setLoading(true); setError(""); setMeta(null); setRows([])
     void (async () => {
       try {
-        await next.start()
-        if (id) {
-          const answer = await next.attach(id)
-          if (live) setMeta(answer.result as unknown as TerminalRow)
-        } else {
-          const answer = await next.request("list", { project_id: project, client: TAB })
-          const terminals = answer.result?.terminals
-          if (!Array.isArray(terminals)) throw new Error("terminal_bad_receipt")
-          if (live) setRows(terminals as TerminalRow[])
-        }
+        const begun = await beginCloudTerminal(next, channelProject, id, TAB)
+        if (live) { if ("meta" in begun) setMeta(begun.meta); else setRows(begun.rows) }
       } catch (e) { if (live) setError(reason(e)) }
       finally { if (live) setLoading(false) }
     })()
     return () => { live = false; stop(); next.dispose(); transport.dispose(); setSession(null) }
-  }, [host, project, id, shown])
+  }, [host, channelProject, id, shown])
 
   useEffect(() => {
     if (!id || !screen.current || !shown) return
@@ -157,17 +154,14 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     if (!session) return
     setLoading(true)
     try {
-      const answer = await session.request("list", { project_id: project, client: TAB })
-      const terminals = answer.result?.terminals
-      if (!Array.isArray(terminals)) throw new Error("terminal_bad_receipt")
-      setRows(terminals as TerminalRow[])
+      setRows(await listCloudTerminals(session, channelProject, TAB))
     } finally { setLoading(false) }
   })
   const openNew = () => void run("open", async () => {
     if (!session) return
     const size = firstSize()
     let answer
-    try { answer = await session.create(project, size.cols, size.rows) }
+    try { answer = await session.create(channelProject, size.cols, size.rows) }
     catch (error) {
       if (reason(error) === "terminal_receipt_timeout") throw Object.assign(new Error("terminal_open_state_unknown"), { code: "terminal_open_state_unknown" })
       throw error
@@ -196,9 +190,10 @@ export function CloudTerminalPage({ project, label, id, shown, from }: {
     (snapshot.control.holder?.name || snapshot.control.holder?.same_device)
       ? holderWords(snapshot.control.holder)
       : nextWord("terminalControlOtherDevice")
-  if (!host) return <p className="terminal-note" role="status">{nextWord("terminalCloudOffline")}</p>
-  if (!project) return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
-  if (!id) return <section className="terminal-wrap" aria-label={nextWord("terminalListTitle", { project: label })}>
+  const body = cloudTerminalBody(host, channelProject, id)
+  if (body === "offline" || !host) return <p className="terminal-note" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
+  if (body === "no_project") return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
+  if (body === "list") return <section className="terminal-wrap" aria-label={nextWord("terminalListTitle", { project: label })}>
     <div className="terminal-note-row"><h2>{nextWord("terminalListTitle", { project: label })}</h2>
       <button className="board-button" type="button" disabled={!!busy || loading || !!error} aria-busy={busy === "open"} onClick={openNew}>{nextWord("terminalOpenNew")}</button></div>
     {loading && <p className="terminal-note" role="status">{nextWord("terminalListLoading")}</p>}

@@ -131,7 +131,8 @@ test("Board lanes keep items folded until their accessible summary opens the sha
 
 test("the Board detail modal owns focus while open and returns it to its summary", () => {
   assert.match(source, /function useModalFocus/)
-  assert.match(source, /previous\.current\?\.isConnected[\s\S]*previous\.current\.focus\(\{ preventScroll: true \}\)/)
+  // The opener lives in a ModalReturn that successive detail dialogs share.
+  assert.match(source, /const opener = back\.opener[\s\S]*if \(opener\?\.isConnected\) opener\.focus\(\{ preventScroll: true \}\)/)
   assert.match(source, /event\.key !== "Tab"/)
   assert.match(source, /initialFocus\.current\?\.focus/)
   assert.match(app, /\[role="dialog"\]\[aria-modal="true"\]/)
@@ -417,7 +418,9 @@ test("an Epic lists its children with progress, and a child links back to its Ep
   assert.match(source, /shortWorkID\(parent\.id\)/)
   // Closed children are left out of the 進行中 list, so the family is read with every status.
   assert.match(source, /readWorkV2\(project \|\| undefined, "all"\)/)
-  assert.match(source, /#work \[data-work-id=/)
+  // A family link opens the other item's detail, by id, rather than scrolling
+  // to a Board card hidden behind the open dialog.
+  assert.doesNotMatch(source, /function showWorkCard|#work \[data-work-id=/)
   assert.match(styles, /\.work-epic-children \{/)
   assert.match(styles, /\.work-epic-parent \{[^}]*var\(--work-epic\)/)
 })
@@ -458,4 +461,48 @@ test("a Feature carries the person's Needs independent review checkbox on create
   assert.match(source, /workWord\("reviewRequiredLabel"\)/)
   assert.match(source, /workWord\("reviewRequiredHint"\)/)
   assert.doesNotMatch(source, /[Rr]isk assessment|風險評估/)
+})
+
+test("a child card names its Epic on its own control, outside the summary button", () => {
+  const card = source.slice(source.indexOf("function CompactWorkCard"), source.indexOf("function WorkCard("))
+  const summaryEnd = card.indexOf("</button>")
+  assert.ok(card.indexOf('className="work-card-summary"') < summaryEnd)
+  assert.ok(card.indexOf("<CardParentLine parent={parent} />") > summaryEnd, "the parent line is after the summary button closes")
+  assert.ok(card.indexOf("<CardParentLine parent={parent} />") < card.indexOf("</article>"), "and inside the card")
+  assert.match(source, /<button className="work-card-parent-link" type="button"/)
+  assert.match(source, /workWord\("cardEpicParent", \{ title \}\)/)
+  assert.match(styles, /\.work-card-parent-link:focus-visible \{[^}]*outline/)
+  assert.match(styles, /A thumb needs the parent line's whole 44px\.[\s\S]{0,120}\.work-card-parent-link \{ min-height: 44px; \}/)
+})
+
+test("an Agent-made card's badge sentence is part of its summary button's description", () => {
+  assert.match(source, /const originSentence = originLine\(item\)/)
+  assert.match(source, /attention && attentionDescriptionID, originSentence && originDescriptionID\]\.filter\(Boolean\)/)
+  assert.match(source, /<span id=\{originDescriptionID\} className="work-card-origin-sentence">\{originSentence\}<\/span>/)
+  assert.match(source, /<span className="work-card-origin" title=\{originSentence\}><AgentGlyph \/>\{workWord\("agentMadeBadge"\)\}<\/span>/)
+  // The Epic's left stripe stays the Epic's; the Agent cue is the top edge.
+  assert.match(styles, /\.work-summary-card\[data-origin\] \{ border-top: 2px dashed/)
+  assert.doesNotMatch(styles, /\[data-origin\][^{]*\{[^}]*inset 3px 0 0/)
+})
+
+test("family links open the other item by id, in both directions", () => {
+  assert.match(source, /const openWorkItemById = useCallback\(async \(id: string\): Promise<string> =>/)
+  assert.match(source, /if \(ticket !== openTicket\.current\) return ""/)
+  assert.match(source, /open: openWorkItemById/)
+  const parentLine = source.slice(source.indexOf("function EpicParentLine"), source.indexOf("function CardParentLine"))
+  assert.match(parentLine, /family\.open\(parent\.id\)/)
+  const children = source.slice(source.indexOf("function EpicChildren"), source.indexOf("function EpicParentLine"))
+  assert.match(children, /<button className="work-epic-child" type="button" onClick=\{\(\) => \{ setFailure\(""\); void family\.open\(child\.id\)/)
+  assert.match(source, /workWord\("openItemFailed", \{ reason: failure \}\)/)
+})
+
+test("opening another item from the detail dialog is a fresh dialog that returns focus to the first opener", () => {
+  assert.match(source, /<CreatedWorkModal item=\{openedItem\} created=\{false\} key=\{openedItem\.id\} back=\{detailReturn\.current\}/)
+  assert.match(source, /useModalFocus\(modal, initialFocus, back\)/)
+  assert.match(source, /if \(!back\.opener && document\.activeElement instanceof HTMLElement\) back\.opener = document\.activeElement/)
+  assert.match(source, /if \(back\.timer !== null\) \{ window\.clearTimeout\(back\.timer\); back\.timer = null \}/)
+})
+
+test("parents the family list lacks are read one by one, bounded, before the Board draws", () => {
+  assert.match(source, /readMissingParents\(listed, listed, async \(id\) => \(await readWorkV2Item\(id\)\)\.item\)/)
 })
