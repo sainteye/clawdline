@@ -1103,7 +1103,7 @@ test("the phone option exposes the legacy identity and state without a crown but
       const names = await tab.accessibilityOptions()
       const name = names.find((value) => value.includes("A very long Clawdfather session title")) ?? ""
       assert.match(name, /Clawdfather/)
-      assert.match(name, /還有 2 項未了結/)
+      assert.doesNotMatch(name, /項未了結/, "the list does not read closeability aloud")
       assert.equal(await tab.run(`document.querySelector('#rows > li.row .coordinator-mark')?.getAttribute('aria-hidden')`), "true")
       assert.equal(await tab.run(`document.querySelector('#rows > li.row .coordinator-mark')?.closest('button, [role=button]') !== null`), false)
     } finally {
@@ -2124,7 +2124,7 @@ test("the second press is what closes it, once, under a key a retry can be answe
       await list(tab)
       const open = await swipeOpen(tab, SAFE)
       assert.equal(open.actionKind, "safe", "the Go safe reading needs no retired attestation")
-      assert.match(open.rowState ?? "", /可以安全關閉/)
+      assert.doesNotMatch(open.rowState ?? "", /可以安全關閉/, "the confirmation, not the row, says it")
       await tab.press("li.row[data-swipe='open'] > .swipe-end")
       const asked = await tab.until("the confirmation has checked Board work", (s) => s.sheet !== null && s.confirmDisabled === false)
       assert.match(asked.sheetSay ?? "", /Clawdline 已確認這個 Session 可以安全關閉/)
@@ -2146,7 +2146,7 @@ test("a row with something still owed still uncovers the close action", () =>
     const open = await swipeOpen(tab, BLOCKED)
     assert.equal(open.actionKind, "blocked")
     assert.equal(open.action, "關閉 Session", "the cell says what pressing it does, not why the close is blocked")
-    assert.match(open.rowState ?? "", /還有 1 項未了結/, "the row itself keeps the live closeability status")
+    assert.doesNotMatch(open.rowState ?? "", /項未了結/, "closeability is stated in the confirmation, not on the row")
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
     const opened = await tab.until("the blocked confirmation is up", (s) => s.sheet !== null)
     const asked = await tab.until("the blocked confirmation has checked Session work", (s) =>
@@ -2191,7 +2191,7 @@ test("an unknown row keeps saying unknown while its swipe remains an action", ()
     const open = await swipeOpen(tab, UNKNOWN)
     assert.equal(open.actionKind, "unknown")
     assert.equal(open.action, "關閉 Session")
-    assert.match(open.rowState ?? "", /無法判斷能否關閉/, "unknown remains distinct from blocked on the row")
+    assert.doesNotMatch(open.rowState ?? "", /無法判斷能否關閉/, "closeability is stated in the confirmation, not on the row")
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
     const opened = await tab.until("the unknown confirmation is up", (s) => s.sheet !== null)
     const asked = await tab.until("the unknown confirmation has checked Session work", (s) =>
@@ -2204,7 +2204,7 @@ test("an unknown row keeps saying unknown while its swipe remains an action", ()
     await tab.shot("swipe-unknown")
   }))
 
-test("a brief inventory refresh keeps the last blocked badge and row height while close stays unknown", () =>
+test("a brief inventory refresh leaves the row without a closeability badge, at the same height, while close stays unknown", () =>
   inTab(async (tab) => {
     await list(tab)
     const measure = () => tab.run(`(() => {
@@ -2213,31 +2213,30 @@ test("a brief inventory refresh keeps the last blocked badge and row height whil
         height: row.getBoundingClientRect().height,
         top: row.getBoundingClientRect().top,
         state: row.querySelector(".state").textContent,
-        badge: row.querySelector(".session-closeability")?.dataset.closeability,
+        badge: row.querySelector(".session-closeability")?.dataset.closeability ?? null,
       }
     })()`)
     const before = await measure()
-    assert.equal(before.badge, "blocked")
+    assert.equal(before.badge, null, "the list draws no closeability badge")
     readingScenario = "refresh"
     try {
       pushSessions()
       await tab.until("the retained reading arrived", (s) => s.refreshing)
       const during = await measure()
-      assert.equal(during.badge, "blocked")
-      assert.match(during.state, /還有 1 項未了結/)
-      assert.doesNotMatch(during.state, /無法判斷能否關閉/)
+      assert.equal(during.badge, null)
+      assert.doesNotMatch(during.state, /項未了結|無法判斷能否關閉/)
       assert.equal(during.height, before.height)
       assert.equal(during.top, before.top)
       assert.equal((await tab.seen()).readingBanner, "", "a routine refresh does not add a list banner")
       const opened = await swipeOpen(tab, BLOCKED)
-      assert.equal(opened.actionKind, "unknown", "the visible badge does not authorize close")
+      assert.equal(opened.actionKind, "unknown", "a retained reading does not authorize close")
     } finally {
       readingScenario = "normal"
       pushSessions()
     }
   }))
 
-test("a safe row retains its last confirmed status while verification pauses", () =>
+test("a safe row says verification paused, not unknown, and close waits for a complete reading", () =>
   inTab(async (tab) => {
     await list(tab)
     readingScenario = "refresh"
@@ -2246,9 +2245,8 @@ test("a safe row retains its last confirmed status while verification pauses", (
       await tab.until("the retained reading arrived", (s) => s.refreshing)
       const open = await swipeOpen(tab, SAFE)
       assert.equal(open.actionKind, "unknown", "a prior safe answer cannot authorize close")
-      assert.match(open.rowState ?? "", /上次確認可安全關閉/)
       assert.match(open.rowState ?? "", /驗證暫停/)
-      assert.doesNotMatch(open.rowState ?? "", /無法判斷能否關閉/)
+      assert.doesNotMatch(open.rowState ?? "", /無法判斷能否關閉|可安全關閉/)
     } finally {
       readingScenario = "normal"
       pushSessions()
@@ -2264,7 +2262,7 @@ test("a session awaiting attestation explains that inside its named confirmation
     const open = await swipeOpen(tab, NEEDS_ATTESTATION)
     assert.equal(open.actionKind, "needs_attestation")
     assert.equal(open.action, "關閉 Session")
-    assert.match(open.rowState ?? "", /等這個 session 自己確認/)
+    assert.doesNotMatch(open.rowState ?? "", /等這個 session 自己確認/, "the confirmation, not the row, says it")
     await tab.press("li.row[data-swipe='open'] > .swipe-end")
     const asked = await tab.until("the attestation confirmation is up", (s) => s.sheet !== null)
     assert.equal(asked.sheet, "要關閉 Echo has not checked in 嗎？")
@@ -2368,10 +2366,11 @@ test("the densest phone row gives each segment a boundary and never widens the l
     }
   }))
 
+// Closeability is not a list axis, so "status-two" (delivery + closeability)
+// draws the same single segment as "status-one" and is not measured twice.
 for (const [scenario, segments] of [
   ["status-one", 1],
-  ["status-two", 2],
-  ["status-three", 3],
+  ["status-three", 2],
 ] as const) {
   test(`${segments} status segment${segments === 1 ? "" : "s"} share the 390x844 row without an internal hole`, () =>
     inTab(async (tab) => {

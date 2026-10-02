@@ -100,7 +100,6 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   }
 
   const notStarted = conversationNotStarted(row)
-  const closeable = L.closeability(row)
   const retained = retainedStateWords(row)
   const retainedSaid = retained
     ? `<span class="session-work-copy retained-reading" title="${L.escapeHTML(retained)}">${L.escapeHTML(retained)}</span>`
@@ -112,13 +111,14 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
   const attentionSaid = typeof attention === "number" && attention > 0
     ? `<span class="session-attention" aria-label="關注，待處理 ${attention} 筆便條"><span class="session-attention-dot" aria-hidden="true"></span>關注 · 待處理 ${attention}</span>`
     : ""
-  let workSaid = notStarted ? "" : L.workStateHTML(row)
-  // The batch banner owns the source failure. Once an earlier reading is old
-  // enough to deserve words, those words ride beside the normal state as the
-  // same quiet, single-line annotation used for work and closeability. A
-  // conversation that has not started says neither: there is nothing yet to
-  // have a state.
-  if (!notStarted && closeable.block) workSaid += L.closeabilityHTML(row)
+  // Closeability is not drawn in the list: a lock and "N still open" beside
+  // every row told the person nothing they act on there. The swipe's close
+  // confirmation states it, with its reasons, at the moment it matters. The
+  // batch banner owns the source failure; once an earlier reading is old
+  // enough to deserve words, they ride beside the normal state as a quiet,
+  // single-line annotation. A conversation that has not started says
+  // neither: there is nothing yet to have a state.
+  const workSaid = notStarted ? "" : L.workStateHTML(row)
 
   const waitShape = [
     ...waitingOn.map((wait) => [wait.id || "wait", wait.ownerLabel || wait.ownerSessionId || "", wait.releaseCondition || ""].join(":")),
@@ -137,7 +137,6 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     row.state +
     "+ws" +
     work.state +
-    (!notStarted && closeable.block ? "+cl" + L.closeabilityShape(row) : "") +
     (n ? "+sh" + n : "") +
     (waitShape ? "+cw" + waitShape : "") +
     (row.source ? "+src" + row.source.freshness + ":" + row.source.observed_at : "")
@@ -178,30 +177,17 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
  */
 function StateLine({ row, role }: { row: SessionRow; role: ReturnType<typeof rowPersonaLine> }) {
   const ref = useRef<HTMLDivElement>(null)
-  const lastCloseability = useRef<SessionRow["closeability"] | null>(null)
-  const inventoryOnly = row.closeability?.state === "unknown" &&
-    row.closeability.reasons?.some((reason) => reason.code === "session_inventory_stale") &&
-    row.closeability.reasons.every((reason) => reason.kind !== "evidence" || reason.code === "session_inventory_stale")
-  const prior = lastCloseability.current
-  const showPrior = row.source?.freshness === "unverified" && inventoryOnly &&
-    (prior?.state === "safe" || prior?.state === "blocked" || prior?.state === "needs_attestation")
-  const { html, shape } = stateLine(showPrior ? { ...row, closeability: prior } : row)
-  const confirmedSafe = showPrior && prior?.state === "safe"
-    ? `<span class="session-closeability retained-reading" data-closeability="safe">${sessionReadingChinese() ? "上次確認可安全關閉" : "Previously safe to close"}</span>`
-    : ""
+  const { html, shape } = stateLine(row)
   const roleHTML = role
     ? '<span class="persona-state" title="' + L.escapeHTML(role.title) + '">' +
       '<canvas class="persona-state-bot" width="0" height="0" aria-hidden="true"></canvas>' +
       '<span class="persona-state-name">' + L.escapeHTML(role.name) + "</span></span>"
     : ""
   useLayoutEffect(() => {
-    if (row.source?.freshness !== "unverified") lastCloseability.current = row.closeability
-  }, [row.closeability, row.source?.freshness])
-  useLayoutEffect(() => {
     L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
     if (role) L.paintIcon(ref.current?.querySelector<HTMLCanvasElement>("canvas.persona-state-bot") ?? null, role.persona.icon, 2)
   }, [html, role?.persona])
-  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html + confirmedSafe }} />
+  return <div className="state" ref={ref} data-shape={shape} dangerouslySetInnerHTML={{ __html: roleHTML + html }} />
 }
 
 /**
@@ -452,8 +438,8 @@ export function Row({
  * The action the uncovered control offers, with the row's closeability kept
  * only as state for diagnostics and tests.
  *
- * `StateLine` already draws the closeability badge beside the work state. The
- * control therefore says only what pressing it does: open the named close
+ * The list does not draw closeability. The control says only what pressing
+ * it does: open the named close
  * confirmation. That confirmation is where the complete reasons and the
  * second press live. `swipe.ts` holds the rule without importing the UI, so
  * `node --test` can guard it.
