@@ -1835,7 +1835,7 @@ test("a write during the gap is refused at once and is never carried after the r
   reader.attach(renewed)
   await new Promise((resolve) => setTimeout(resolve, 10))
   assert.deepEqual(retired.calls, [])
-  assert.deepEqual(renewed.calls, [], "the refused send is not carried by the new client")
+  assert.equal(renewed.calls.length, 0, "the refused send is not carried by the new client")
 
   const sent = await reader.fetch("/v1/sessions/s1/send", post({ text: "again" }))
   assert.equal(sent.status, 200, "a send with the line up is carried as before")
