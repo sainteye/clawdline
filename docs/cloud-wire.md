@@ -743,6 +743,12 @@ way `work.v2.cancel` does: `{type, session, request, id, item}` routed to
 `POST /v1/work/v2/items/<id>/complete` with the paired-device marker, `item` being
 `{expected_version, note?}`.
 
+As of 2026-10-02, `work.v2.seen` carries the person's read receipt for an item's deploying or
+done phase: `{type, session, request, id, item:{phase}}` routed to
+`POST /v1/work/v2/items/<id>/seen` with the paired-device marker, `phase` being `deploying` or
+`done`. The bridge passes `item` through unjudged; the local route checks the phase and that the
+actor is a person or device, and records which occurrence of that phase was seen.
+
 As of 2026-09-28, `work.v2.persona-suggestion` carries the explicit AI role-classification press as
 `{type, session, request, id, item:{expected_version}}` to
 `POST /v1/work/v2/items/<id>/persona-suggestion`. The request id remains its Idempotency-Key, and

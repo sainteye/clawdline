@@ -3,7 +3,7 @@ import test from "node:test"
 import type { SessionRow } from "@clawdline/contract"
 import type { SessionWorkV2 } from "./api.js"
 // @ts-expect-error -- a `.ts` path is required by Node's native type stripping.
-import { assignmentCandidates, assistantName, rememberAssistant, rememberedAssistant, sessionActivityName, sessionWorkCounts, sessionWorkStateName } from "./session-assignment.ts"
+import { assignmentCandidates, assistantName, awaitsAcceptance, rememberAssistant, rememberedAssistant, sessionActivityName, sessionWorkCounts, sessionWorkLabel, sessionWorkStateName } from "./session-assignment.ts"
 
 test("assignment choices distinguish live activity from unreadable state", () => {
   assert.equal(sessionActivityName("working"), "Working")
@@ -51,4 +51,33 @@ test("an owned item can be handed to any other Session in its Project, never bac
   const item = { project: { path: "/p" }, owner_session: "owner" }
   assert.deepEqual(assignmentCandidates(sessions, item).map((s) => s.id), ["%2"])
   assert.deepEqual(assignmentCandidates(sessions, { ...item, owner_session: null }).map((s) => s.id), ["%1", "%2"])
+})
+
+test("a reported turn reads 本輪已回報 until an owned item awaits acceptance, and says when the Board was unread", () => {
+  const reported = (acceptance?: SessionRow["acceptance"], work_state = "milestone_complete") => ({
+    work_state: work_state as SessionRow["work_state"],
+    disposition: { scope: "session", evidence: "authenticated_session_delivery", title: "summary" },
+    acceptance,
+  })
+  assert.equal(sessionWorkLabel(reported({ state: "none" })), "本輪已回報")
+  // A daemon that sends no answer has not said there is none.
+  assert.equal(sessionWorkLabel(reported(undefined)), "本輪已回報 · 讀不到是否有待驗收項目")
+  assert.equal(sessionWorkLabel(reported({ state: "pending", work_id: "w", title: "Ship it", phase: "deploying", count: 1 })), "待驗收 · Ship it")
+  assert.equal(sessionWorkLabel(reported({ state: "pending", work_id: "w", title: "Ship it", phase: "done", count: 3 })), "待驗收 · Ship it · 共 3 項")
+  assert.equal(sessionWorkLabel(reported({ state: "unknown" })), "本輪已回報 · 讀不到是否有待驗收項目")
+  // A pending answer that names nothing is not trusted as one.
+  assert.equal(sessionWorkLabel(reported({ state: "pending" })), "本輪已回報 · 讀不到是否有待驗收項目")
+  assert.equal(sessionWorkLabel(reported({ state: "none" }, "work_complete")), "工作已完成")
+  assert.equal(sessionWorkLabel(reported({ state: "pending", title: "Ship it" }, "work_complete")), "待驗收 · Ship it")
+  // A task's delivery and an unfinished Session keep their own words.
+  assert.equal(sessionWorkLabel({ work_state: "milestone_complete", disposition: { scope: "task", evidence: "authenticated_task_delivery", title: "t" },
+    acceptance: { state: "pending", title: "Ship it" } }), "待驗收")
+  assert.equal(sessionWorkLabel({ work_state: "working", acceptance: { state: "pending", title: "Ship it" } }), "執行中")
+})
+
+test("only deploying and done items wait for the person to look", () => {
+  assert.equal(awaitsAcceptance("deploying"), true)
+  assert.equal(awaitsAcceptance("done"), true)
+  assert.equal(awaitsAcceptance("verifying"), false)
+  assert.equal(awaitsAcceptance("cancelled"), false)
 })

@@ -4615,6 +4615,26 @@ type SendRequest struct {
 	Text   string   `json:"text,omitempty"`
 }
 
+// Whether a Session that reported its turn (`disposition.scope` `session`) has
+// a Board item the person has not opened since it reached deploying or done.
+// Present only beside such a disposition. `pending` names the newest one;
+// `none` is a successful reading that found none; `unknown` means the Board
+// could not be read, and is never shown as none. A deploying item belongs to
+// its owner; a done item to the Session whose assignment was released when it
+// closed. Opening the item's detail (POST /v1/work/v2/items/{id}/seen) clears
+// it until it enters that phase again.
+type SessionAcceptance struct {
+	// How many of this Session's items are waiting, the named one among them.
+	Count int64  `json:"count,omitempty"`
+	Phase string `json:"phase,omitempty"`
+
+	// Unix seconds: when the named item entered that phase.
+	Since  int64  `json:"since,omitempty"`
+	State  string `json:"state"`
+	Title  string `json:"title,omitempty"`
+	WorkID string `json:"work_id,omitempty"`
+}
+
 // When this session last moved, from this daemon rather than from whatever each
 // browser happened to have watched: the moment the session's own conversation
 // record last grew. That one file follows both halves of a turn — the
@@ -4990,7 +5010,8 @@ type SessionModel struct {
 // One assistant session. Fields that cannot be supported are absent rather than
 // invented; a reader that handles absence handles this too.
 type SessionRow struct {
-	Activity *SessionActivity `json:"activity,omitempty"`
+	Acceptance *SessionAcceptance `json:"acceptance,omitempty"`
+	Activity   *SessionActivity   `json:"activity,omitempty"`
 
 	// Provider-native background threads, newest running work first. Broker children
 	// stay in the task list and are joined with these in the console, so their durable

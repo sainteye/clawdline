@@ -41,6 +41,7 @@ import {
   deleteWorkV2,
   deleteWorkV2Image,
   editWorkV2,
+  markWorkV2Seen,
   setWorkV2ReviewRequired,
   readDecisions,
   readProjectPlaces,
@@ -65,12 +66,13 @@ import {
 import {
   assignmentCandidates,
   assistantName,
+  awaitsAcceptance,
   NEW_SESSION_ASSISTANTS,
   rememberAssistant,
   rememberedAssistant,
   sessionActivityName,
   sessionWorkCounts,
-  sessionWorkStateName,
+  sessionWorkLabel,
 } from "./session-assignment.js"
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
 import { claimedViaLine, createdViaLine, epicOwnerLine, originLine, workOrigin, workWord } from "./words.js"
@@ -246,6 +248,15 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     refreshDetail(item.id)
   }, [refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
+  // Opening an item that reached deploying or done is the person's receipt for
+  // it: its Session card stops saying 待驗收 on every device. The receipt rides
+  // along with the view; a failed one leaves the card as it was, and the next
+  // opening sends it again.
+  const seenPhase = openedItem && awaitsAcceptance(openedItem.phase) ? openedItem.phase : ""
+  useEffect(() => {
+    if (!openedItem?.id || !seenPhase) return
+    void markWorkV2Seen(openedItem.id, seenPhase).catch(() => undefined)
+  }, [openedItem?.id, seenPhase])
   const listedRows = useRef<WorkV2Item[]>([])
   listedRows.current = items.concat(family.rows)
   /**
@@ -1109,7 +1120,7 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
     <button className="work-session-trigger" type="button" aria-label="指派既有 Session" aria-haspopup="listbox"
       aria-expanded={open} autoFocus={autoFocus} onClick={() => setOpen((shown) => !shown)}>
       {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b><PersonaTag id={selected.persona} personas={personas} />
-        <small>{assistantName(selected.assistant)} · {sessionActivityName(selected.state)} · {sessionWorkStateName(selected.work_state)}</small></span></>
+        <small>{assistantName(selected.assistant)} · {sessionActivityName(selected.state)} · {sessionWorkLabel(selected)}</small></span></>
         : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>選擇既有 Session</span></>}
       <span className="work-project-chevron" aria-hidden="true">⌄</span>
     </button>
@@ -1133,7 +1144,7 @@ function SessionChoice({ session, reading, selected, onChoose }: {
   const personas = usePersonas()
   return <button className="work-session-option" type="button" role="option" aria-selected={selected} onClick={onChoose}>
     <SessionStateDot session={session} />
-    <span><b>{session.label || session.id}</b><PersonaTag id={session.persona} personas={personas} /><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</small></span>
+    <span><b>{session.label || session.id}</b><PersonaTag id={session.persona} personas={personas} /><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkLabel(session)}</small></span>
     <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.error ? "讀不到工作" : counts
       ? `${counts.board} 看板 · ${counts.todos} TODO` : "—"}</span>
   </button>
@@ -1147,7 +1158,7 @@ function SessionAssignmentDetail({ session, reading }: { session: SessionRow; re
   const page = reading?.page
   const counts = page ? sessionWorkCounts(page) : null
   return <section className="work-session-detail" aria-label={`${session.label || session.id} 的狀況`} aria-live="polite">
-    <div className="work-session-detail-head"><strong>Session 狀況</strong><span>{sessionActivityName(session.state)} · {sessionWorkStateName(session.work_state)}</span></div>
+    <div className="work-session-detail-head"><strong>Session 狀況</strong><span>{sessionActivityName(session.state)} · {sessionWorkLabel(session)}</span></div>
     {(session.line || session.work_note) && <p>{session.line || session.work_note}</p>}
     {reading?.loading && !page ? <p>正在讀取看板與 TODO…</p> : reading?.error ? <p className="work-note" role="alert">工作資訊讀取失敗：{reading.error}</p> : page ? <>
       <p>尚未完成：{counts?.board ?? 0} 個看板項目 · {counts?.todos ?? 0} 個 TODO</p>

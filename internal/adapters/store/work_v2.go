@@ -122,6 +122,14 @@ CREATE TABLE IF NOT EXISTS work_v2_events (
   at               INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS work_v2_events_item ON work_v2_events(work_id, seq);
+CREATE TABLE IF NOT EXISTS work_v2_phase_receipts (
+  work_id         TEXT PRIMARY KEY REFERENCES work_v2_items(id) ON DELETE CASCADE,
+  phase           TEXT NOT NULL,
+  occurrence      INTEGER NOT NULL,
+  entered_at      INTEGER NOT NULL,
+  seen_occurrence INTEGER NOT NULL DEFAULT 0,
+  seen_at         INTEGER
+);
 CREATE TRIGGER IF NOT EXISTS work_v2_events_no_update BEFORE UPDATE ON work_v2_events
   BEGIN SELECT RAISE(ABORT, 'work_v2_events_append_only'); END;
 CREATE TRIGGER IF NOT EXISTS work_v2_events_no_delete BEFORE DELETE ON work_v2_events
@@ -685,8 +693,124 @@ func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) 
 	}
 	t.wrote++
 	next.Version = prev.Version + 1
+	if prev.Phase != next.Phase {
+		if err := t.enterPhase(prev.ID, next.Phase, next.UpdatedAt); err != nil {
+			return err
+		}
+	}
 	return t.AppendEvent(work.EventV2{WorkID: prev.ID, Kind: kind, Actor: actor,
 		PreviousVersion: prev.Version, NextVersion: next.Version, Payload: payload, At: next.UpdatedAt})
+}
+
+// enterPhase counts one more entry into a phase. Every phase change passes
+// through PutItem, so the occurrence is the item's own count of phase entries:
+// a person who saw an item in deploying has not seen it after it went back to
+// implementing and came to deploying again. An item that has not changed
+// phase since this table existed has no row, and reads as nothing to accept:
+// a store upgraded under a long Board must not raise every finished item at once.
+func (t *WorkV2Tx) enterPhase(workID string, phase work.Phase, at time.Time) error {
+	if _, err := t.tx.ExecContext(t.ctx, `INSERT INTO work_v2_phase_receipts (work_id, phase, occurrence, entered_at)
+	      VALUES (?, ?, 1, ?)
+	      ON CONFLICT(work_id) DO UPDATE SET phase=excluded.phase, occurrence=occurrence+1, entered_at=excluded.entered_at`,
+		workID, phase, at.Unix()); err != nil {
+		return err
+	}
+	t.wrote++
+	return nil
+}
+
+// MarkWorkV2PhaseSeen records that the person opened an item while it showed
+// phase. Only the occurrence the item is in now is marked, and only when it is
+// still that phase: a view of deploying that answers after the item moved on
+// says nothing about the phase it moved to. It answers whether the receipt
+// was new; an already-seen, moved-on or never-entered occurrence is not an
+// error, because opening an item is not a request that can fail.
+func (s *Store) MarkWorkV2PhaseSeen(ctx context.Context, workID string, phase work.Phase, at time.Time) (bool, error) {
+	marked := false
+	err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		res, err := tx.tx.ExecContext(ctx, `UPDATE work_v2_phase_receipts SET seen_occurrence=occurrence, seen_at=?
+		  WHERE work_id=? AND phase=? AND seen_occurrence<occurrence
+		    AND EXISTS (SELECT 1 FROM work_v2_items i WHERE i.id=work_v2_phase_receipts.work_id AND i.phase=?)`,
+			at.Unix(), workID, phase, phase)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		tx.wrote += n
+		marked = n > 0
+		return nil
+	})
+	return marked, err
+}
+
+// PendingAcceptance is the newest Board item a Session delivered that the
+// person has not opened since it reached deploying or done, and how many such
+// items that Session has.
+type PendingAcceptance struct {
+	WorkID    string
+	Title     string
+	Phase     work.Phase
+	EnteredAt time.Time
+	Count     int64
+}
+
+// WorkV2PendingAcceptanceForSessions answers, for each conversation, the
+// item waiting for the person to look at it. A deploying item belongs to its
+// owner_session; a done item has released its owner, so it belongs to the
+// Session whose assignment was released when it closed, as in
+// CompletedWorkV2ForSession. A conversation with nothing pending is absent
+// from the answer; an error means none of them can be told apart from it.
+// The answer is one row per conversation whatever the Board holds.
+func (s *Store) WorkV2PendingAcceptanceForSessions(ctx context.Context, sessionIDs []string) (map[string]PendingAcceptance, error) {
+	if err := reading(); err != nil {
+		return nil, err
+	}
+	out := map[string]PendingAcceptance{}
+	ids := make([]string, 0, len(sessionIDs))
+	for _, id := range sessionIDs {
+		if strings.TrimSpace(id) != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	list, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
+	// SQLite takes the bare columns of an aggregate query from the row that
+	// gave MAX: the newest entry is the one named, the count covers the rest.
+	rows, err := s.rd.QueryContext(ctx, `SELECT owner, id, title, phase, MAX(entered_at), COUNT(*) FROM (
+		  SELECT i.owner_session AS owner, i.id, i.title, i.phase, r.entered_at
+		  FROM work_v2_items i JOIN work_v2_phase_receipts r ON r.work_id=i.id AND r.phase=i.phase
+		  WHERE i.phase='deploying' AND r.seen_occurrence<r.occurrence
+		    AND i.owner_session IN (SELECT value FROM json_each(?1))
+		  UNION ALL
+		  SELECT a.session_id AS owner, i.id, i.title, i.phase, r.entered_at
+		  FROM work_v2_items i JOIN work_v2_phase_receipts r ON r.work_id=i.id AND r.phase=i.phase
+		  JOIN work_v2_assignments a ON a.work_id=i.id AND a.state='released' AND a.released_at=i.closed_at
+		  WHERE i.phase='done' AND r.seen_occurrence<r.occurrence
+		    AND a.session_id IN (SELECT value FROM json_each(?1))
+		) GROUP BY owner`, string(list))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var owner string
+		var p PendingAcceptance
+		var entered int64
+		if err := rows.Scan(&owner, &p.WorkID, &p.Title, &p.Phase, &entered, &p.Count); err != nil {
+			return nil, err
+		}
+		p.EnteredAt = time.Unix(entered, 0)
+		out[owner] = p
+	}
+	return out, rows.Err()
 }
 
 // LatestEventOf returns the kind and actor of the newest event of one of the

@@ -96,6 +96,17 @@ is the failure this field exists to prevent.
   and opposite calls to action.
 - `disposition` — unchanged: the receipt behind a check state, evidence-typed, never accepted
   back as truth.
+- `acceptance` (Go daemon, 2026-10-02) — present only beside a Session's own turn report
+  (`disposition.scope` `session`). A report says **本輪已回報** ("turn reported"); it says
+  **待驗收 · <item title>** only when one of that Session's Board items reached `deploying` or
+  `done` and the person has not opened it since. A deploying item belongs to its owner; a done
+  item, whose owner is released on closing, to the Session whose assignment was released with it.
+  Opening the item's detail on the Board posts `POST /v1/work/v2/items/:id/seen` with the phase
+  shown, which the daemon stores (`work_v2_phase_receipts`), so every device stops showing it.
+  Each phase entry is a new occurrence: an item that leaves deploying and comes back is unseen
+  again. `state` is `pending`, `none`, or `unknown`; an unreadable Board is `unknown` and the row
+  says it could not tell, never that nothing awaits. A task's delivery keeps its own words, and
+  items that have not changed phase since the receipts began are not raised.
 
 ## Declaring: `POST /v1/orchestrator/sessions/:id/state`
 

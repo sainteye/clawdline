@@ -393,6 +393,32 @@ export function owedBadgeHTML(s) {
         sessionStatusGlyphHTML("📥", copy) + "</span>";
 }
 
+/** What a finished row's receipt says. A Session's own turn report reads "turn reported" unless
+ *  the server names a Board item of that Session that reached deploying or done and the person
+ *  has not opened since: then it reads "awaiting acceptance" with that item's title. A Board the
+ *  server could not read says so beside the report; it is never shown as nothing awaiting.
+ *  `acceptance` is "pending", "none", "unknown", or "" when the receipt is not a Session's own;
+ *  a Session's report without the field is "unknown", never "none". */
+export function sessionReceiptCopy(s, state) {
+    var disposition = (s && s.disposition) || {};
+    var own = disposition.scope === "session";
+    var acceptance = own && s.acceptance && typeof s.acceptance === "object" ? s.acceptance : null;
+    var kind = acceptance && (acceptance.state === "pending" || acceptance.state === "none" ||
+        acceptance.state === "unknown") ? acceptance.state : "";
+    if (kind === "pending" && acceptance.title) {
+        var more = acceptance.count > 1 ? " · " + fill(T.sessionWorkAwaitingMore, { n: acceptance.count }) : "";
+        return { label: T.sessionWorkAwaitingAcceptance, detail: acceptance.title + more, acceptance: kind };
+    }
+    // A pending answer that names nothing, or a Session's report with no answer at all (a
+    // daemon from before the field), is a reading that did not happen, not a reading of none.
+    if (own && kind !== "none") kind = "unknown";
+    var label = state === "work_complete" ? T.sessionWorkComplete
+        : own ? T.sessionWorkReported : T.sessionWorkMilestone;
+    var detail = disposition.title || "";
+    if (kind === "unknown") detail = (detail ? detail + " · " : "") + T.sessionWorkAcceptanceUnknown;
+    return { label: label, detail: detail, acceptance: kind };
+}
+
 /** Check glyphs are CSS strokes, not a platform emoji. The quiet states carry their meaning in
  *  an icon a phone can scan — except `unknown`, which is an absence, not a category: giving an
  *  absence a symbol is how needs_triage came to read as a demand, so it deliberately has none. */
@@ -400,9 +426,9 @@ export function sessionWorkStateHTML(s) {
     var projected = projectSessionWorkState(s);
     var said = "";
     if (projected.state === "milestone_complete" || projected.state === "work_complete") {
-        var label = projected.state === "work_complete"
-            ? T.sessionWorkComplete : T.sessionWorkMilestone;
-        var detail = s && s.disposition && s.disposition.title;
+        var receipt = sessionReceiptCopy(s, projected.state);
+        var label = receipt.label;
+        var detail = receipt.detail;
         var title = detail ? label + " · " + detail : label;
         var count = projected.state === "work_complete" ? 2 : 1;
         var checks = "";
@@ -413,7 +439,7 @@ export function sessionWorkStateHTML(s) {
         // so another independent axis (closeability, debt, or coordination) can only follow the
         // complete receipt and can never be inserted between its check and explanation.
         said = '<span class="session-work-completion" data-work-state="' + projected.state +
-            '"><span class="session-work-mark" role="img" aria-label="' + attr(title) +
+            '" data-acceptance="' + receipt.acceptance + '"><span class="session-work-mark" role="img" aria-label="' + attr(title) +
             '" title="' + attr(title) + '">' + checks + '</span><span class="session-work-copy"' +
             ' data-work-state="' + projected.state + '" aria-hidden="true">' + attr(title) +
             "</span></span>";
