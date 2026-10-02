@@ -315,6 +315,13 @@ const (
 	maxAckWait     = 30 * time.Minute
 	NoticeProtocol = "clawdline.notice"
 	NoticeVersion  = 2
+	// CompletionNoticeVersion is the version a task's completion notice and
+	// its reminder are typed with (notice.go). The waits and handoff receipts
+	// stay at NoticeVersion: only the completion notice changed shape.
+	CompletionNoticeVersion = 3
+	// ReminderKind is the `kind` of the short line typed instead of a
+	// completion notice that has already reached its root's screen.
+	ReminderKind = "task_reminder"
 )
 
 // RetryDelay is the wait before attempt n+1 when attempt n put nothing on the

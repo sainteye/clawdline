@@ -489,9 +489,11 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
   （`?state=`、`?limit=` 最多 500）。
 - **child 結束時，daemon 會在你的輸入框打一行 `<clawdline-notice>`。** 它的 `body` 只有一句：哪個 task、
   怎麼結束、只屬於這次交付的事實（stalled、writes 已釋放、它的 branch、幾個 leftover），以及要執行的那一個
-  指令 `clawdline task show <id>`，它印出 task 之後就會關掉通知。JSON 仍帶著 `state`、
-  `result_path`、`outstanding`、`leftovers`、`notice_id` 和 `ack_path`。它照 5→300 秒的階梯重試，一共八次，直到你 ACK 為止——而且你正在顯示選單時，它絕不
-  打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去：
+  指令 `clawdline task show <id>`，它印出 task 之後就會關掉通知。JSON（version 3）帶著 `task`、`state`、
+  `notice_id`，`outstanding`、`leftovers`、`claims_released` 只在有內容時才出現；結果看 `task show`。打不進去
+  的那一行照 5→300 秒的階梯重試。一旦已經打到你的畫面上、你還沒讀那個 task，就不會再整份重打，而是照 2→30
+  分鐘的階梯打一行短的 `task_reminder`，寫著同一個指令——全部加起來八次，之後放棄。你正在顯示選單時，它絕不
+  打字。選單不會用掉那八次：那一行會等，最多等 12 小時，選單一消失就打進去。`task show` 送的路由：
 
   ```
   POST /v1/orchestrator/tasks/<id>/completion/ack   {"notice_id": "…"}

@@ -385,7 +385,8 @@ func TestTaskShowIsTheCompactView(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{"success", "result.json collected", "Did the whole thing.\nOn two lines.",
 		"Roots read one line per child", "3 symbols", "2 runs, last pass: go test ./...",
-		"pending (branch_carries_commits)", "/w/x"} {
+		"pending (branch_carries_commits)", "/w/x",
+		"a cherry-pick is recorded with clawdline task land " + taskTestID + " landed --target <branch> --commit <commit>"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("task show does not say %q:\n%s", want, got)
 		}

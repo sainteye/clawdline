@@ -166,8 +166,9 @@ limitation rather than a guarantee of how long a picture lives.
 
 ## Orchestrator notices
 
-Notice writers use protocol `clawdline.notice`, wrapper `<clawdline-notice>`, and current writer
-version 2. Version 1 remains readable for stored transcripts. Version 2 has exactly five kinds:
+Notice writers use protocol `clawdline.notice` and wrapper `<clawdline-notice>`. The completion
+notice is written at version 3 and every other kind at version 2; versions 1 and 2 of
+`task_finished` remain readable for stored transcripts. Version 2 has exactly five kinds:
 
 | `kind` | Audience | Meaning | Important typed fields |
 |---|---|---|---|
@@ -176,6 +177,24 @@ version 2. Version 1 remains readable for stored transcripts. Version 2 has exac
 | `file_wait_request` | `owner` | A session is waiting for exact repository paths | `wait_id`, `repository`, `paths`, `waiter_session_id`, `reason`, `release_condition` |
 | `file_wait_release` | `waiter` | The owner released those paths | `wait_id`, `repository`, `paths`, optional `commit`, optional `note` |
 | `handoff_receipt` | `source` | A new root received the first line, or did not | `handoff_id`, optional `title`, `assistant`, `project_dir`, `state` |
+
+Version 3 is the completion notice alone, with what its `body` and its command already say taken
+out (`result_path`, `ack_path`, an `audience` that was always `root`, and the timeout flag said
+twice). It has three kinds, each with a closed key set:
+
+| `kind` | Meaning | Keys |
+|---|---|---|
+| `task_finished`, `task_stalled` | The first typing of one task's completion | `task`, `state`, `notice_id`, `body`; `outstanding`, `leftovers` only when above zero; `claims_released` only when a timeout released the claims (it stands for version 2's `child_may_still_write` too) |
+| `task_reminder` | Typed instead of the completion notice once that notice has reached the root's screen and is not yet acknowledged | `task_id`, `notice_id`, `body` |
+
+The `body` names one command, `clawdline task show <task id>`; once it has printed a finished task
+it sends that task's ACK, so reading the result closes the notice (`task wait` does the same). Which of the two is typed follows the notice's ledger row: no
+`transport_delivered_at` yet — the terminal refused it, the root was away, a hold — is the whole
+notice, since that is the first time the root reads it; after it, a reminder, also after a daemon
+restart. A reminder is a delivery, not an observation: it neither observes nor acknowledges
+anything, and it spends an attempt of the same eight. A reminder the root's own record shows handed
+to the model counts as reading that notice, as the notice itself does (`SeenInTranscript`). Its
+console card is drawn as a reminder of the same event, not as a second completion.
 
 `task_finished.state` is `success`, `failure`, `timeout`, `cancelled` or `spawn_failed`.
 `handoff_receipt.state` is `picked_up` or `first_line_failed`.

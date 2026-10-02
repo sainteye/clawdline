@@ -45,7 +45,7 @@ import (
 
 // needleRunes is how much of the end of the text is looked for on screen,
 // with whitespace removed so a wrapped line still matches. A briefing ends in
-// a 64-character secret and a notice in its ack path, so it is specific.
+// a 64-character secret and a notice in its own ids, so it is specific.
 const needleRunes = 24
 
 // screenLines is how far up from the bottom the input line is looked for.

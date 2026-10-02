@@ -246,3 +246,33 @@ func TestTaskShowClosesTheNotice(t *testing.T) {
 		})
 	}
 }
+
+// The ACK `task show` sends after printing is lost on the way — the connection
+// is cut. The read still succeeded, so the exit is 0; stderr says the notice was
+// not closed, and stdout does not say it was. The broker's side of the same
+// loss — the notice stays delivered and its ladder types a short reminder, not
+// the whole notice again — is orchestrator's TestALostAckLeavesTheNoticeOnItsLadder.
+func TestTaskShowWhoseAckIsLostSaysSo(t *testing.T) {
+	const id = taskTestID
+	posts := 0
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.Method == http.MethodPost {
+			posts++
+			panic(http.ErrAbortHandler)
+		}
+		return 200, waitTask(id, "success", "n-1")
+	})
+	var out, errs bytes.Buffer
+	if code := showTask(&out, &errs, b, id, false); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	if posts != 1 {
+		t.Fatalf("%d ACKs sent, want 1", posts)
+	}
+	if want := "clawdline task show: the completion notice n-1 of " + id + " was not closed: "; !strings.HasPrefix(errs.String(), want) {
+		t.Errorf("stderr %q, want it to start %q", errs.String(), want)
+	}
+	if strings.Contains(out.String(), "closed") {
+		t.Errorf("a lost ACK was said as closed:\n%s", out.String())
+	}
+}

@@ -54,6 +54,29 @@ hours later by asking. Three things changed:
   not typed again. Only dead letters at most `maxRetypeAge` (24 hours) old qualify; older ones wait for a person's
   `reconcile`.
 
+**A notice already on the root's screen is reminded, not retyped (`notice.go`, 2026-10-02).** Measured over the 14
+days before: a completion notice was a median 967 characters, 30% of completion events reached their root two or more
+times, and the number of copies a root saw was almost exactly the number of attempts — every rung of the
+acknowledgement ladder typed the whole notice again, and each copy was re-read on every later call of that
+conversation. Of 241 extra copies, 111 came before the root had reached the first, 69 after the root had run
+`task show` and not `task ack`, 23 after a daemon restart, 18 after an ACK that did not arrive.
+
+- **Version 3 of the completion notice** carries the task, its state, the notice id, the counts that are not zero and
+  one sentence; the result path, the ACK route and the doubled timeout flag went (`docs/messages.md`). For one record
+  measured on both versions, against version 2 as it already was once reading closed the notice: 777 → 416
+  characters for a plain success, 1,058 → 528 for a committed branch (the common case), 1,073 → 712 for an empty
+  one, 822 → 486 for a timeout. A committed branch's cherry-pick alternative moved to `task show`, which prints it
+  under the landing line.
+- **Reading closes it.** The sentence names only `clawdline task show <id>`, which sends the ACK once it has printed
+  a finished task, as `task wait` does; a refused or lost ACK is one stderr line and does not change the exit, and
+  the notice stays delivered, so its ladder goes on — with reminders. `clawdline task ack` still works on its own.
+- **A notice that has been delivered is followed by a reminder.** When the ledger row has `transport_delivered_at`,
+  what the next rung types is a `task_reminder` line of about 340 characters naming the same command, never the whole
+  notice again; the row survives a restart, so the choice does too. A notice that has never been delivered is typed
+  whole on every retry. Nothing else moved: delivered is still not observed, a reminder sets neither `observed_at`
+  nor the ACK, and the two ladders, the eight attempts, dead letter, the holds and `NoticeSeen` are as they were.
+  The failure-injection tests are in `notice_reminder_test.go`.
+
 ## Landing ledger 的字
 
 Landing 是 task 的終止狀態以外、唯一回答「這份交付後來怎麼了」的帳本。它目前有五個字：
