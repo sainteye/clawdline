@@ -208,15 +208,18 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 		h.evictLocked(now)
 	}
 	entry.backend = s.Backend
+	previous := entry.asked
 	entry.asked = now
 	stale := entry.at.IsZero() || now.Sub(entry.at) >= heldFor(s.Backend)
 	sourceQuiet := s.Backend == session.BackendITerm && now.Before(h.itermQuiet)
-	// An earlier row can become stale again before a later row has ever had
-	// its first capture. Give an eligible unread row the next free slot rather
-	// than refreshing the earlier rows forever in inventory order.
-	firstReadingOwed := !entry.at.IsZero() && h.unreadCaptureWaitingLocked(now, s.ID)
+	// The list asks its rows in one stable order, and a slot goes to whoever
+	// asks while it is free — so without this the rows at the front took
+	// every slot every tick and a row near the end was not captured again for
+	// as long as the daemon ran. A free slot is for the row that has waited
+	// longest, and this one waits while another is further overdue.
+	owed := stale && h.furtherOverdueLocked(now, s.ID, dueAt(entry), previous)
 	start := stale && !entry.capturing && !now.Before(entry.quietUntil) && !sourceQuiet &&
-		!firstReadingOwed && h.inflight < h.slots
+		!owed && h.inflight < h.slots
 	switch {
 	case start:
 		entry.capturing = true
@@ -227,7 +230,7 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 		// refresh is on its way.
 	case stale && (now.Before(entry.quietUntil) || sourceQuiet):
 		h.counts.Backoff++
-	case stale && firstReadingOwed:
+	case stale && owed:
 		// This is priority for another row, not a capture-slot refusal.
 	case stale:
 		h.counts.Refused++
@@ -249,19 +252,47 @@ func (h *HeldScreens) Capture(ctx context.Context, s session.Session) (string, b
 	return text, true
 }
 
-// unreadCaptureWaitingLocked counts only rows that were asked about recently
-// and can actually use a slot. A failed tab in backoff, or an iTerm source
-// outage, must not hold healthy rows behind an impossible first capture.
-func (h *HeldScreens) unreadCaptureWaitingLocked(now time.Time, except string) bool {
+// furtherOverdueLocked is whether another row can use the next free slot and
+// has waited longer for it than a row due at `due`: never read, or read
+// longer ago past its own freshness window.
+//
+// **On 2026-10-02 a Claude Code session stopped on an AskUserQuestion menu was
+// shown with no buttons for as long as the menu stood.** Twenty-six rows
+// shared two slots, a dozen iTerm2 tabs held them a capture at a time, and
+// the tmux rows at the front of the order took every slot that came free; a
+// probe of the live list counted one capture of that pane in thirty passes
+// and eleven of the first. Its one capture was from before the menu was
+// drawn, so the registry said waiting, the parser was handed a screen with
+// no menu on it, and the card said the choices could not be read.
+//
+// Only rows the list has asked about since `since` — this row's own previous
+// ask, which is the list's last pass — are counted, so a row that has left
+// the list holds the others back for one pass at most. A failed tab in
+// backoff, or an iTerm source outage, must not hold healthy rows behind an
+// impossible capture, and a row already captured since it was last asked
+// about is not waiting for anything.
+func (h *HeldScreens) furtherOverdueLocked(now time.Time, except string, due, since time.Time) bool {
 	for id, entry := range h.held {
-		if id == except || !entry.at.IsZero() || entry.asked.IsZero() || entry.capturing ||
-			now.Sub(entry.asked) > ScreenHeldIdle || now.Before(entry.quietUntil) ||
+		if id == except || entry.capturing || entry.asked.IsZero() || entry.asked.Before(since) ||
+			(!entry.at.IsZero() && !entry.asked.After(entry.at)) ||
+			now.Before(entry.quietUntil) ||
 			(entry.backend == session.BackendITerm && now.Before(h.itermQuiet)) {
 			continue
 		}
-		return true
+		if other := dueAt(entry); other.Before(due) && !now.Before(other) {
+			return true
+		}
 	}
 	return false
+}
+
+// dueAt is when a held screen stops being good: the zero time for one never
+// read, which is due before every screen that has been.
+func dueAt(entry *heldScreen) time.Time {
+	if entry.at.IsZero() {
+		return time.Time{}
+	}
+	return entry.at.Add(heldFor(entry.backend))
 }
 
 // heldFor is how long this backend's screen is good for.
