@@ -513,6 +513,30 @@ export interface BrokerBeatPanic {
   value: string
 }
 
+/**
+ * POST /v1/orchestrator/tasks/:id/cancel: stop a child its root dispatched by
+ * mistake (wrong brief, wrong scope, a duplicate). `reason` is required, at most
+ * 500 bytes once its whitespace is collapsed, and becomes the task's verdict.
+ * `session_id` is the calling Session's conversation id when it carries no squad
+ * capability; a capability, when sent, is what names the caller. The person's own
+ * console sends neither. The request carries an `Idempotency-Key` so a resend is
+ * answered, not refused.
+ */
+export interface BrokerCancelRequest {
+  reason: string
+  session_id?: string
+}
+
+/**
+ * The cancelled task. `replayed` is true when this answers a resend of a cancel
+ * that already succeeded under the same Idempotency-Key; nothing was settled again.
+ */
+export interface BrokerCancelResult {
+  ok: boolean
+  replayed?: boolean
+  task: BrokerTask
+}
+
 export interface BrokerChild {
   backend?: Backend
   terminalId: string
@@ -1689,10 +1713,11 @@ export interface BrokerTabEnd {
  * Which rule decides one task's child tab. `child_linger` closes a finished
  * unscheduled child `orchestrator_child_linger` after it ends; `child_linger_off`
  * is that setting negative, which keeps every finished child open;
- * `unfinished_left_open` is a timeout or a cancel, whose child may still be
- * working; the three `schedule_…` rules are a scheduled run's `close_tab`;
- * `spawn_failed` is a child that never started, closed at once whatever else is
- * set.
+ * `unfinished_left_open` is a timeout, whose child may still be working; the three
+ * `schedule_…` rules are a scheduled run's `close_tab`; `spawn_failed` is a child
+ * that never started, closed at once whatever else is set; `cancelled_closed` is a
+ * task its root or the person cancelled, whose child is stopped at once whatever
+ * else is set (its commits stay on its branch).
  */
 export type BrokerTabRule =
     "child_linger"
@@ -1702,8 +1727,9 @@ export type BrokerTabRule =
   | "schedule_always"
   | "schedule_never"
   | "spawn_failed"
+  | "cancelled_closed"
 
-export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed"] as const
+export const BrokerTabRuleValues: readonly BrokerTabRule[] = ["child_linger", "child_linger_off", "unfinished_left_open", "schedule_on_success", "schedule_always", "schedule_never", "spawn_failed", "cancelled_closed"] as const
 
 /**
  * One dispatched piece of work, as the console and a dispatching root read it.

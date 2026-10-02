@@ -659,7 +659,7 @@ differences, opened by `clawdline handoff --summary <file>` (which writes the pa
 route with `milestone: true`).
 
 **The summary is bounded.** It has exactly five `## ` sections — Goal, Verified decisions, Blockers,
-Evidence, Next step — and is at most 6 KiB (limits N75). Evidence holds links — paths, commits, ids,
+Evidence, Next step — and is at most 6 KiB (limits N76). Evidence holds links — paths, commits, ids,
 `clawdline` commands — never their contents, so the raw evidence stays where it was and is read on
 demand. A summary with a credential, with speaker-labelled or markup-labelled conversation lines,
 with a quoted or fenced block over 12 lines, with a missing, repeated, unknown or empty section, or

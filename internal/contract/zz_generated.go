@@ -438,6 +438,27 @@ type BrokerBeatPanic struct {
 	Value string `json:"value"`
 }
 
+// POST /v1/orchestrator/tasks/:id/cancel: stop a child its root dispatched by
+// mistake (wrong brief, wrong scope, a duplicate). `reason` is required, at
+// most 500 bytes once its whitespace is collapsed, and becomes the task's
+// verdict. `session_id` is the calling Session's conversation id when it
+// carries no squad capability; a capability, when sent, is what names the
+// caller. The person's own console sends neither. The request carries an
+// `Idempotency-Key` so a resend is answered, not refused.
+type BrokerCancelRequest struct {
+	Reason    string `json:"reason"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// The cancelled task. `replayed` is true when this answers a resend of a cancel
+// that already succeeded under the same Idempotency-Key; nothing was settled
+// again.
+type BrokerCancelResult struct {
+	OK       bool       `json:"ok"`
+	Replayed bool       `json:"replayed,omitempty"`
+	Task     BrokerTask `json:"task"`
+}
+
 type BrokerChild struct {
 	Backend    Backend `json:"backend,omitempty"`
 	TerminalID string  `json:"terminalId"`
@@ -1464,10 +1485,12 @@ type BrokerTabEnd struct {
 // Which rule decides one task's child tab. `child_linger` closes a finished
 // unscheduled child `orchestrator_child_linger` after it ends;
 // `child_linger_off` is that setting negative, which keeps every finished child
-// open; `unfinished_left_open` is a timeout or a cancel, whose child may still
-// be working; the three `schedule_…` rules are a scheduled run's `close_tab`;
+// open; `unfinished_left_open` is a timeout, whose child may still be working;
+// the three `schedule_…` rules are a scheduled run's `close_tab`;
 // `spawn_failed` is a child that never started, closed at once whatever else is
-// set.
+// set; `cancelled_closed` is a task its root or the person cancelled, whose
+// child is stopped at once whatever else is set (its commits stay on its
+// branch).
 type BrokerTabRule string
 
 const (
@@ -1478,10 +1501,11 @@ const (
 	BrokerTabRuleScheduleAlways     BrokerTabRule = "schedule_always"
 	BrokerTabRuleScheduleNever      BrokerTabRule = "schedule_never"
 	BrokerTabRuleSpawnFailed        BrokerTabRule = "spawn_failed"
+	BrokerTabRuleCancelledClosed    BrokerTabRule = "cancelled_closed"
 )
 
 // BrokerTabRuleValues is every value the contract allows, in contract order.
-var BrokerTabRuleValues = []BrokerTabRule{BrokerTabRuleChildLinger, BrokerTabRuleChildLingerOff, BrokerTabRuleUnfinishedLeftOpen, BrokerTabRuleScheduleOnSuccess, BrokerTabRuleScheduleAlways, BrokerTabRuleScheduleNever, BrokerTabRuleSpawnFailed}
+var BrokerTabRuleValues = []BrokerTabRule{BrokerTabRuleChildLinger, BrokerTabRuleChildLingerOff, BrokerTabRuleUnfinishedLeftOpen, BrokerTabRuleScheduleOnSuccess, BrokerTabRuleScheduleAlways, BrokerTabRuleScheduleNever, BrokerTabRuleSpawnFailed, BrokerTabRuleCancelledClosed}
 
 // One dispatched piece of work, as the console and a dispatching root read it.
 type BrokerTask struct {

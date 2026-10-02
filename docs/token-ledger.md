@@ -410,7 +410,7 @@ excluded tasks, with the count always whole (limits N44).
 `clawdline usage --compare-handoff [--since 14d] [--json]` (and `GET
 /v1/usage/compare-handoff?since=…`) compares finished work done by one long Root against work
 handed over at a milestone. A unit is a Feature, Issue or Refactor that reached `done` in the range,
-read newest first, at most 300 (limits N75). Its group comes from its assignments: `single_root`
+read newest first, at most 300 (limits N76). Its group comes from its assignments: `single_root`
 when no assignment came from a handoff, `milestone_handoff` when one came from a milestone handoff,
 `plain_handoff` for any other handoff. Each owner Session's own cache reads and calls are shared
 equally among the finished items it owned, so a long Root's whole cost is spread over its work, and

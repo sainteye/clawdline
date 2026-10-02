@@ -165,7 +165,7 @@ internal/adapters/tunnel.lineLimit # read: one line of cloudflared's output; a l
 internal/adapters/tunnel.nameLimit # admission: a hand-edited remote_tunnel_name, refused by name past it
 internal/app/cloudops.cloudEnvelopeCiphertextLimit # admission: one Cloud answer's ciphertext
 internal/app/orchestrator.(*Broker).SubscribeProgress:chan(64) # store: a progress subscriber's buffer (limits N19 buffer class, C3)
-internal/app/orchestrator.MilestoneSummaryLimit # admission: the most bytes a milestone handoff's summary may have; a longer one is a 422 bad_milestone_summary and nothing opens (limits N75)
+internal/app/orchestrator.MilestoneSummaryLimit # admission: the most bytes a milestone handoff's summary may have; a longer one is a 422 bad_milestone_summary and nothing opens (limits N76)
 internal/app/orchestrator.AttemptLimit # parameter: completion notice attempts before dead letter, spent on either ladder and never on a hold (limits N7: a dead letter is pushed once, W5, and counted in the Settings page's capacity block, C4)
 internal/app/orchestrator.maxAckWait # parameter: the longest this broker waits between two typings of one completion notice, and so the top rung of the delivered ladder; what it waits for is a root finishing a turn and answering, which asking again inside a minute does not help
 internal/app/orchestrator.maxChoosingHold # parameter: how long one completion notice is held, without spending an attempt, while its root shows something waiting to be answered; at it the notice goes to dead letter with the reason and the ceiling on it and the person is pushed; nothing accumulates (limits N7)
@@ -264,8 +264,8 @@ internal/app.waitingPushHourLimit # parameter: stopped sessions pushed per hour,
 internal/app.usagePassLimit # parameter: transcripts one token-ledger pass feeds, one Feed each; the rest are the next pass's, which starts after the last one fed, and a pass that meets it says so once until it clears (limits N43)
 internal/app.usageWindowLimit # parameter: how far back a token-ledger pass looks for written transcripts; an older one keeps its stored totals and is not visited until it is written again (limits N43)
 internal/app.compareTooFewLimit # parameter: the fewest child tasks a compaction-comparison group needs before a share or rate is shown; below it the group says too_few and every percentage is null (limits N44)
-internal/app.handoffComparableLimit # parameter: the fewest finished items each compared group of a handoff comparison needs before a saving is computed; below it the verdict is insufficient_evidence (limits N75)
-internal/app.handoffItemLimit # page: finished Board items one handoff comparison reads, newest first; past it the answer says truncated (limits N75)
+internal/app.handoffComparableLimit # parameter: the fewest finished items each compared group of a handoff comparison needs before a saving is computed; below it the verdict is insufficient_evidence (limits N76)
+internal/app.handoffItemLimit # page: finished Board items one handoff comparison reads, newest first; past it the answer says truncated (limits N76)
 internal/app.compareTaskLimit # page: child tasks one compaction comparison reads, newest first; past it the answer says truncated (limits N44)
 internal/app.workSampleLimit # page: child tasks one work-samples answer reads, newest first; past it the answer says truncated (limits N74)
 internal/app.compareExcludedLimit # page: excluded tasks one compaction comparison names; the count is always whole and excluded_truncated says so (limits N44)
@@ -349,3 +349,5 @@ internal/app/cloudops.verificationCloudBodyLimit # admission: one verification w
 cmd/clawdline.webhookAnswerLimit # read: one Cloud answer to `clawdline webhook fire` (the trigger's 202 or refusal, one delivery status), a few hundred bytes; read to 64 KiB and the rest ignored
 cmd/clawdline.webhookURLFileLimit # read: the --url-file `clawdline webhook fire` reads the webhook URL from, one line of well under 1 KiB
 cmd/clawdline.workBaselineReadLimit # read: a frozen work baseline file, at most workSampleLimit samples of a few hundred bytes; a larger file is refused (limits N74)
+internal/app/orchestrator.CancelReasonLimit # admission: a task cancel's reason, 500 bytes after its whitespace is collapsed; longer is refused 422 reason_too_long, never cut (limits N75)
+internal/app/orchestrator.cancelKeyLimit # admission: a task cancel's Idempotency-Key, 200 characters as a board write's; longer is refused 400 bad_idempotency_key (limits N75)
