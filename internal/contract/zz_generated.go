@@ -7199,6 +7199,44 @@ type UsageWorkCursor struct {
 	UnitKind UsageWorkKind     `json:"unit_kind"`
 }
 
+// What the ledger can say about a unit's tokens. `complete`: a whole reading,
+// every token priced. `unpriced`: a whole reading, part of it from a model with
+// no price, so the cost is unknown (never zero). `mixed_models`: a whole
+// reading of sessions on more than one model. `ledger_behind`: some session was
+// read only in part, not at all, or its transcript went missing or unreadable,
+// so the parts are a lower bound. `not_yet_read`: nothing of it is read; its
+// parts are unknown, not zero. Only the first three are readable.
+type UsageWorkData string
+
+const (
+	UsageWorkDataComplete     UsageWorkData = "complete"
+	UsageWorkDataUnpriced     UsageWorkData = "unpriced"
+	UsageWorkDataMixedModels  UsageWorkData = "mixed_models"
+	UsageWorkDataLedgerBehind UsageWorkData = "ledger_behind"
+	UsageWorkDataNotYetRead   UsageWorkData = "not_yet_read"
+)
+
+// UsageWorkDataValues is every value the contract allows, in contract order.
+var UsageWorkDataValues = []UsageWorkData{UsageWorkDataComplete, UsageWorkDataUnpriced, UsageWorkDataMixedModels, UsageWorkDataLedgerBehind, UsageWorkDataNotYetRead}
+
+// How a unit of work ended, from the broker's record. `stalled` is a child the
+// broker ended as spawn_failed because it sat idle after its briefing, `lost`
+// any other spawn_failed; `running` has not ended.
+type UsageWorkEnding string
+
+const (
+	UsageWorkEndingSuccess   UsageWorkEnding = "success"
+	UsageWorkEndingFailure   UsageWorkEnding = "failure"
+	UsageWorkEndingTimeout   UsageWorkEnding = "timeout"
+	UsageWorkEndingCancelled UsageWorkEnding = "cancelled"
+	UsageWorkEndingStalled   UsageWorkEnding = "stalled"
+	UsageWorkEndingLost      UsageWorkEnding = "lost"
+	UsageWorkEndingRunning   UsageWorkEnding = "running"
+)
+
+// UsageWorkEndingValues is every value the contract allows, in contract order.
+var UsageWorkEndingValues = []UsageWorkEnding{UsageWorkEndingSuccess, UsageWorkEndingFailure, UsageWorkEndingTimeout, UsageWorkEndingCancelled, UsageWorkEndingStalled, UsageWorkEndingLost, UsageWorkEndingRunning}
+
 // One transcript of a session, its own or a subagent's: how far the ledger had
 // read it and how it stood on disk when the cursor was taken (Unix seconds).
 // `seen` is false when the file was not found.
@@ -7252,6 +7290,61 @@ type UsageWorkReading struct {
 	ReadAt      int64            `json:"read_at"`
 	Reason      UsageReason      `json:"reason,omitempty"`
 	Tokens      UsageTokens      `json:"tokens"`
+}
+
+// One unit of work, raw (docs/token-ledger.md "Did a change make one unit of
+// work cheaper"). `kind` is `task` (a child task, whose fresh sessions make its
+// bill its own increment) or `item`. The strata are fixed at dispatch:
+// `work_kind` (the brief's kind, `unspecified` when none), `scope` (the number
+// of claims the brief declared: `0`, `1-3`, `4-10` or `>10`), `model` (the
+// model the bill's sessions ran on, `mixed` for several, else the record's,
+// else `unknown`) and `cross_end` (the claims touch both `web/` and `internal/`
+// or `cmd/`). The token parts are the whole bill with its subagents; `calls`
+// and `calls_above` are the sessions' own calls and those made past 200k tokens
+// of context. `created_at` and `ended_at` are Unix seconds, `ended_at` 0 while
+// running. `respawn` says the unit retried an earlier one, `respawned` that one
+// in the same read retried it.
+type UsageWorkSample struct {
+	CacheRead       float64         `json:"cache_read"`
+	CacheWrite      float64         `json:"cache_write"`
+	Calls           int64           `json:"calls"`
+	CallsAbove      int64           `json:"calls_above"`
+	Cost            float64         `json:"cost"`
+	CostKnown       bool            `json:"cost_known"`
+	CreatedAt       int64           `json:"created_at"`
+	CrossEnd        bool            `json:"cross_end"`
+	Data            UsageWorkData   `json:"data"`
+	DurationSeconds int64           `json:"duration_seconds"`
+	EndedAt         int64           `json:"ended_at"`
+	Ending          UsageWorkEnding `json:"ending"`
+	ID              string          `json:"id"`
+	Input           float64         `json:"input"`
+	Kind            string          `json:"kind"`
+	Model           string          `json:"model"`
+	Output          float64         `json:"output"`
+	Respawn         bool            `json:"respawn"`
+	Respawned       bool            `json:"respawned"`
+	Scope           string          `json:"scope"`
+	WorkKind        string          `json:"work_kind"`
+}
+
+// GET /v1/usage/work-samples?since=…&until=… (docs/token-ledger.md "Did a
+// change make one unit of work cheaper"): one raw sample per child task created
+// in [`since`, `until`) (Unix seconds), newest first. `since` is `<n>d`, `<n>h`
+// or a Unix time, 14 days when absent; `until` is a Unix time, now when absent.
+// `definition_version` is what the fields mean; a report compares only samples
+// of one version. `truncated` says the range held more tasks than one answer
+// reads and only the newest are here. No owner session, Root Assignment or
+// Board item bill is a sample: those are cumulative, not one unit's increment.
+// The answer is the raw records a report is recomputed from; `clawdline usage
+// --work-report` folds them.
+type UsageWorkSamples struct {
+	DefinitionVersion int64             `json:"definition_version"`
+	GeneratedAt       int64             `json:"generated_at"`
+	Samples           []UsageWorkSample `json:"samples"`
+	Since             int64             `json:"since"`
+	Truncated         bool              `json:"truncated"`
+	Until             int64             `json:"until"`
 }
 
 // One session's part of a unit. `counted` says its delta is in the unit's

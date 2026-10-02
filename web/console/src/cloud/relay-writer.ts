@@ -253,6 +253,7 @@ export type WriteRoute =
   | { op: "work-v2-image"; word: Carried<"work.v2.image">; artifact: string }
   | { op: "usage"; word: Carried<"usage.session" | "usage.task" | "usage.item">; id: string }
   | { op: "usage-compare"; word: Carried<"usage.compare-compaction" | "usage.work-units"> }
+  | { op: "usage-work-samples"; word: Carried<"usage.work-samples"> }
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "default-models"; word: Carried<"default-models"> }
   | { op: "default-models-update"; word: Carried<"default-models-update"> }
@@ -417,6 +418,7 @@ const HTTP_STATUS: Readonly<Record<string, number>> = {
 export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["op"]>([
   "work-v2-image",
   "usage-compare",
+  "usage-work-samples",
   "usage",
   "capacity",
   "default-models",
@@ -461,6 +463,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // What each unit of work added: the same one field, `since`.
     if (head === "usage" && a === "work-units" && segments.length === 2) {
       return { op: "usage-compare", word: "usage.work-units" }
+    }
+    if (head === "usage" && a === "work-samples" && segments.length === 2) {
+      return { op: "usage-work-samples", word: "usage.work-samples" }
     }
     if (head === "usage" && b && segments.length === 3) {
       const word = USAGE_WORD[a ?? ""]
@@ -822,6 +827,7 @@ function spellingOf(route: WriteRoute): Spelling {
     // (internal/transport/http/usage.go), and the bill's reader takes it.
     case "usage":
     case "usage-compare":
+    case "usage-work-samples":
     // `/v1/verifications*` refuses with `writeRefusal`, flat
     // (internal/transport/http/verify.go), and `pages/verify/api.ts` reads it.
     case "verification-read":
@@ -1292,6 +1298,22 @@ export class RelayWriter {
             throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
           }
           body.since = value
+        }
+        return client._machineRequest(this.host.machine, route.word, body, "read")
+      }
+      case "usage-work-samples": {
+        if (typeof client._machineRequest !== "function") {
+          throw failure("cloud_not_carried", route.word, 501)
+        }
+        // `since` and `until` are the route's two query fields and the
+        // word's two fields; anything else, or either twice, is refused by
+        // its own name here. The machine checks their spelling.
+        const body: { since?: string; until?: string } = {}
+        for (const [key, value] of url.searchParams) {
+          if ((key !== "since" && key !== "until") || key in body) {
+            throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: read it on the machine.`, 501)
+          }
+          body[key] = value
         }
         return client._machineRequest(this.host.machine, route.word, body, "read")
       }

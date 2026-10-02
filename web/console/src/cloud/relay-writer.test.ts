@@ -1427,6 +1427,27 @@ test("the compaction comparison crosses as its machine word, with since and noth
   assert.equal((await json(bad)).error, "bad_request")
 })
 
+test("the work samples cross as their machine word, with since, until and nothing else", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal(writeRoute("GET", "/v1/usage/work-samples")?.word, "usage.work-samples")
+  const plain = await reader.fetch("/v1/usage/work-samples")
+  assert.equal(plain.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "usage.work-samples", {}, "read"])
+  const ranged = await reader.fetch("/v1/usage/work-samples?since=1790000000&until=1791000000")
+  assert.equal(ranged.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "usage.work-samples", { since: "1790000000", until: "1791000000" }, "read"])
+
+  assert.equal(writeRoute("GET", "/v1/usage/work-samples/more"), null)
+  assert.equal(writeRoute("POST", "/v1/usage/work-samples"), null)
+
+  for (const path of ["/v1/usage/work-samples?limit=3", "/v1/usage/work-samples?until=1&until=2"]) {
+    const res = await reader.fetch(path)
+    assert.equal(res.status, 501, path)
+    assert.equal((await json(res)).error, "cloud_not_carried", path)
+  }
+})
+
 test("a verification crosses as its machine word, with the record's id and its body whole", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
@@ -1854,6 +1875,7 @@ test("every read the writer carries is one it waits for, and no write is", () =>
   const reads: [string, string][] = [
     ["/v1/work/v2/images/a1", "work-v2-image"],
     ["/v1/usage/compare-compaction", "usage-compare"],
+    ["/v1/usage/work-samples", "usage-work-samples"],
     ["/v1/usage/sessions/s1", "usage"],
     ["/v1/capacity", "capacity"],
     ["/v1/settings/default-models", "default-models"],

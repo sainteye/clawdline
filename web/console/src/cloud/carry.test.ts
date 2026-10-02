@@ -209,6 +209,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
     ["GET", "/v1/usage/work-units"],
+    ["GET", "/v1/usage/work-samples"],
     ["GET", "/v1/capacity"],
     ["GET", "/v1/settings/default-models"],
     ["POST", "/v1/settings/default-models"],
@@ -258,6 +259,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
   assert.ok("usage.work-units" in CARRIED)
+  assert.ok("usage.work-samples" in CARRIED)
   assert.ok("capacity" in CARRIED)
   assert.ok("default-models" in CARRIED)
   assert.ok("default-models-update" in CARRIED)
@@ -281,7 +283,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 128)
+  assert.equal(Object.keys(CARRIED).length, 129)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {
@@ -476,6 +478,7 @@ test("every path the token bill reads is carried, so a phone reads the bill too"
     named.add(m[1].replace(/\{[a-z]+\}/g, "x1"))
   }
   assert.ok(named.has("/v1/usage/compare-compaction"), "the contract scan found " + [...named].join(", "))
+  assert.ok(named.has("/v1/usage/work-samples"), "the contract scan found " + [...named].join(", "))
   assert.ok(named.size >= 4, "the contract scan found " + named.size + " usage routes; it has stopped reading the contract")
   for (const path of named) asked.push({ path, where: "api/v1/usage.schema.json" })
   for (const { path, where } of asked) {

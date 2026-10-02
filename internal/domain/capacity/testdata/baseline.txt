@@ -264,6 +264,7 @@ internal/app.usagePassLimit # parameter: transcripts one token-ledger pass feeds
 internal/app.usageWindowLimit # parameter: how far back a token-ledger pass looks for written transcripts; an older one keeps its stored totals and is not visited until it is written again (limits N43)
 internal/app.compareTooFewLimit # parameter: the fewest child tasks a compaction-comparison group needs before a share or rate is shown; below it the group says too_few and every percentage is null (limits N44)
 internal/app.compareTaskLimit # page: child tasks one compaction comparison reads, newest first; past it the answer says truncated (limits N44)
+internal/app.workSampleLimit # page: child tasks one work-samples answer reads, newest first; past it the answer says truncated (limits N74)
 internal/app.compareExcludedLimit # page: excluded tasks one compaction comparison names; the count is always whole and excluded_truncated says so (limits N44)
 internal/app.compareSinceDaysLimit # admission: the longest range a compaction comparison's since may name in days; a longer one is a 400 (limits N44)
 internal/app.digestLineLimit # page: the lines one digest section lists; its total is always there
@@ -344,3 +345,4 @@ internal/app.verificationAuthorLimit # admission: characters in the session name
 internal/app/cloudops.verificationCloudBodyLimit # admission: one verification word's sub-document, refused before it is routed; the fields inside it are bounded by internal/app (limits N45)
 cmd/clawdline.webhookAnswerLimit # read: one Cloud answer to `clawdline webhook fire` (the trigger's 202 or refusal, one delivery status), a few hundred bytes; read to 64 KiB and the rest ignored
 cmd/clawdline.webhookURLFileLimit # read: the --url-file `clawdline webhook fire` reads the webhook URL from, one line of well under 1 KiB
+cmd/clawdline.workBaselineReadLimit # read: a frozen work baseline file, at most workSampleLimit samples of a few hundred bytes; a larger file is refused (limits N74)
