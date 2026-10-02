@@ -90,9 +90,9 @@ cost is inside `talk` and every category's output, indistinguishable by this met
 ### Wait turns
 
 An agent waiting on a long command often wakes every 20–30 seconds, asks whether it has finished, and
-goes back to waiting. Each such turn reads the whole context again: measured on 2026-10-01, 520 turns
-and 72.2M tokens — 29% of a week's Codex usage over ten items — were Codex agents polling a
-compile-slot queue, a dispatch or a test run. Charged by rule 3 they were almost all **impl**, the
+goes back to waiting. Each such turn reads the whole context again: a token review over ten Board
+items found 520 such turns and 72.2M tokens — 29% of those items' Codex usage — spent by Codex agents
+polling a compile-slot queue, a dispatch or a test run, each rereading about 140k of context. Charged by rule 3 they were almost all **impl**, the
 category the context held, which made the work look far larger than it was.
 
 So a **wait turn** — a call that called at least one tool and whose every tool call waits — is
