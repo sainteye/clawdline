@@ -903,9 +903,10 @@ func Register() []Entry {
 		},
 		{
 			// The Board items one person's message may have a Session claim
-			// on it, mirroring run.created_items. Counted over every
-			// assignment claimed on that run, active or released; the sixth
-			// is refused run_claims_exhausted and nothing is written.
+			// on it, or assign to a new Session on it, mirroring
+			// run.created_items. Counted over every assignment made on that
+			// run, whatever its state; the sixth is refused
+			// run_claims_exhausted and nothing is written.
 			Name: RunClaimedItems, Class: Buffer, Unit: Rows,
 			Limit: 5, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

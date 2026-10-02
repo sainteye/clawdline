@@ -888,10 +888,31 @@ clawdline item claim <item id>
   at most five claims).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
 
-Never claim an item on your own initiative — only the one the person's message names — and never
-use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
-(`session_cannot_create_item`). An Epic's owner assigns the Epic's own children with
-`clawdline item assign` (`clawdline guide epic`), and nothing else.
+**Assign a Board item to a new Session the person asked for.** When the person's message through
+Clawdline asks you to hand a specific unassigned Feature or Issue to a new Session — *"open a
+security Session for <item id>"* — assign it; that is one command:
+
+```
+clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--persona <id>]
+```
+
+- On an item that is no Epic's child, `item assign` reads this conversation's latest run unless
+  `--run` names one, as `item claim` does. It is `POST /v1/work/v2/agent/items/<id>/assign` with
+  `{"expected_version", "session_id", "mode": "new_session", "assistant"?, "model"?, "persona"?,
+  "via": {"run"}}`, and opens the new Session the person's own "New Session" choice opens.
+- The card says "Assigned by a Session from your message at HH:MM", with their words quoted and
+  the persona the new Session runs as.
+- Refusals, each writing nothing: those of `item claim` (`run_unknown`, `run_expired`,
+  `run_other_session`, `session_not_found`, `child_session`, `project_mismatch`, `item_assigned`,
+  `item_terminal`, `version_conflict`, and `run_claims_exhausted`: claims and assignments share one
+  message's five); `kind_person_assigns` (only a Feature or an Issue); `new_session_only` (to take it
+  yourself, claim it); `unknown_persona`; `persona_disabled_for_auto_assignment` (the role is off for
+  automatic assignment in that Project).
+
+Never claim or assign an item on your own initiative — only the one the person's message names — and
+never use the person's `POST /v1/work/v2/items/<id>/assign`, which refuses a Session
+(`session_cannot_create_item`). An Epic's owner also assigns the Epic's own children with
+`clawdline item assign` (`clawdline guide epic`).
 
 **Name a new Session opened for a Board item.** After you read its objective and scope, choose a
 short name that describes your actual task and run `clawdline item name <item id> "<task name>"`.
@@ -1286,7 +1307,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   children come out of a reviewed plan), `item_terminal` (the Epic is finished),
   `child_kind_not_allowed` (only `feature` or `issue`), `epic_children_full` (an Epic holds at most
   32 children, open or closed), `not_epic_child` (`item assign` of an item that is no Epic's child —
-  the person assigns it), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422: a
+  the person assigns it, unless their message asks you to: `clawdline guide board`), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422: a
   persona with an existing Session) and `unknown_persona` (400: an id the catalog lacks).
 - **A persona** is a role a new Session is launched with: text added to its system prompt that makes
   it work the way that role works, for the whole conversation. It is only for a new Session

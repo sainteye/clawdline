@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/domain/work"
@@ -128,11 +129,55 @@ func (w *WorkSystemV2) CreateEpicChild(ctx context.Context, n NewEpicChildV2) (W
 func epicOwnerMayAssign(tx *store.WorkV2Tx, child work.ItemV2, session string) error {
 	if child.ParentID == "" {
 		return work.RefuseV2("not_epic_child",
-			"That item is not a child of an Epic; only the person assigns it.")
+			"That item is not a child of an Epic. A Session assigns it only on the person's message sent through "+
+				"Clawdline that asks for it, naming that message's run; otherwise the person assigns it.")
 	}
 	epic, err := tx.Item(child.ParentID)
 	if err != nil {
 		return err
 	}
 	return work.EpicChildParent(epic, session)
+}
+
+// A Session handing an ordinary item to a new Session on the person's word.
+//
+// Outside an Epic only the person assigns, with one exception that rests on
+// the same authority as a claim: the person's message, sent through
+// Clawdline to the assigning Session, that asks for it. The run is checked
+// as a claim's is (said to this Session, within RelayWindow), the item must
+// be an unassigned Feature or Issue in that Session's Project, the new
+// Session is the only target — an existing one is the person's choice, or its
+// own claim — and the assignment counts against the same per-message budget
+// as claims (runClaimLimit). The assignment records the message, the
+// assigning Session and the persona, so the Board says who asked for what.
+
+// RunAssignment is the provenance a Session's assignment of an ordinary item
+// to a new Session carries: the person's message, once checked as said to
+// session, and the persona the new Session opens as.
+func RunAssignment(run work.Run, session, persona string) (*work.CreatedViaV2, error) {
+	if err := work.RelayTo(run, session, time.Time{}); err != nil {
+		return nil, relayRefusal(err)
+	}
+	return &work.CreatedViaV2{Run: run.ID, Session: session, At: run.At.Unix(), Excerpt: run.Excerpt,
+		Assigned: true, Persona: persona}, nil
+}
+
+// runMayAssign is the check a Session's assignment on the person's message
+// makes inside the assignment's transaction, before the per-message budget
+// and the item's holder are read (claimable).
+func runMayAssign(prev work.ItemV2, c AssignWorkV2) error {
+	switch {
+	case !work.SessionAssignable(prev.Kind):
+		return workV2Error(http.StatusUnprocessableEntity, "kind_person_assigns",
+			"A Session assigns only a Feature or an Issue on the person's message; the person assigns this item "+
+				"from the Board. Nothing was assigned.")
+	case c.Mode != "new_session":
+		return workV2Error(http.StatusUnprocessableEntity, "new_session_only",
+			"On the person's message a Session assigns an item only to a new Session; to take it itself, claim it. "+
+				"Nothing was assigned.")
+	case c.Claim.Persona != c.Persona || c.Actor != work.ActorViaSession+c.Claim.Run:
+		return workV2Error(http.StatusUnprocessableEntity, "invalid_assignment",
+			"The assignment does not match the message it names. Nothing was assigned.")
+	}
+	return nil
 }

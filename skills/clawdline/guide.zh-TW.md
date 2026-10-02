@@ -776,9 +776,27 @@ clawdline item claim <item id>
   `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 
-絕對不要主動認領項目——只認領使用者訊息指名的那一個——也不要用使用者的
+**把看板項目指派給使用者要的新 Session。** 使用者透過 Clawdline 傳來的訊息要你把某個尚未指派的 Feature
+或 Issue 交給一個新 Session——「幫 <item id> 開一個 security Session」——就指派它，一條指令：
+
+```
+clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--persona <id>]
+```
+
+- 項目不是任何 Epic 的子項目時，`item assign` 會跟 `item claim` 一樣讀這個對話最新的 run，除非用 `--run`
+  指定。它就是 `POST /v1/work/v2/agent/items/<id>/assign`，body 是 `{"expected_version", "session_id",
+  "mode": "new_session", "assistant"?, "model"?, "persona"?, "via": {"run"}}`，開出來的新 Session 跟使用者
+  自己在看板選「新 Session」開的一樣。
+- 卡片上會寫「Session 依你 HH:MM 的訊息指派」，引用他的原話，並標出新 Session 帶的角色。
+- 拒絕，每一種都什麼都不寫：`item claim` 的那些（`run_unknown`、`run_expired`、`run_other_session`、
+  `session_not_found`、`child_session`、`project_mismatch`、`item_assigned`、`item_terminal`、
+  `version_conflict`，以及 `run_claims_exhausted`：認領和指派共用一則訊息的五次）；`kind_person_assigns`
+  （只能是 Feature 或 Issue）；`new_session_only`（要自己接就用認領）；`unknown_persona`；
+  `persona_disabled_for_auto_assignment`（這個角色在該 Project 關掉了自動指派）。
+
+絕對不要主動認領或指派項目——只處理使用者訊息指名的那一個——也不要用使用者的
 `POST /v1/work/v2/items/<id>/assign`，那條會拒絕 Session（`session_cannot_create_item`）。Epic 的負責
-Session 用 `clawdline item assign` 指派的只有那個 Epic 自己的子項目（`clawdline guide epic`），其他一律不行。
+Session 也用 `clawdline item assign` 指派那個 Epic 自己的子項目（`clawdline guide epic`）。
 
 **提議一個看板項目。** 看板上的 **Agent 提案**佇列只由這一條路由餵進去：
 
@@ -1096,7 +1114,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   （上層不是 Epic）、`epic_not_planned`（Epic 還沒進 `implementing`：子項目要出自審查過的計畫）、
   `item_terminal`（Epic 已結束）、`child_kind_not_allowed`（只能是 `feature` 或 `issue`）、
   `epic_children_full`（一個 Epic 最多 32 個子項目，含已結束的）、`not_epic_child`（`item assign`
-  的對象不是任何 Epic 的子項目——那要由使用者指派）、`invalid_assignment`、`version_conflict`、
+  的對象不是任何 Epic 的子項目——那要由使用者指派，除非他的訊息要你指派：`clawdline guide board`）、`invalid_assignment`、`version_conflict`、
   `persona_not_applicable`（422：既有 Session 帶了角色）、`unknown_persona`（400：清單裡沒有這個 id）。
 - **角色（persona）**是新 Session 開啟時帶著的一個角色：加進它 system prompt 的一段文字，讓它整段對話都照
   那個角色的方式做事。只用在新 Session（`--assign-new`、`--new`、`dispatch`）；既有 Session 維持開啟時的

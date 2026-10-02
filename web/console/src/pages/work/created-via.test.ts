@@ -43,7 +43,18 @@ test("a card its Session claimed on the person's message says so, in both langua
   assert.equal(claimedViaLine(undefined, "en"), null)
   assert.equal(claimedViaLine({ run: "", session_id: "", at: 0 }, "zh-Hant"), null)
   assert.match(source, /<ClaimedViaNote item=\{item\} \/>/)
-  assert.match(source, /claimedViaLine\(item\.claimed_via\)/)
+  assert.match(source, /claimedViaLine\(item\.claimed_via, undefined, persona \? personaName\(persona\) : undefined\)/)
+})
+
+test("a card a Session assigned to a new Session on the person's message names that and the persona", () => {
+  const assigned = { ...via, assigned: true, persona: "security" }
+  assert.equal(claimedViaLine(assigned, "en", "Security Engineer"),
+    "Assigned by a Session from your message at 09:05; the new Session runs as Security Engineer")
+  assert.equal(claimedViaLine(assigned, "zh-Hant", "資安工程師"), "Session 依你 09:05 的訊息指派，新 Session 的角色是資安工程師")
+  // The catalog not yet read still names the persona, by its id.
+  assert.equal(claimedViaLine(assigned, "en"), "Assigned by a Session from your message at 09:05; the new Session runs as security")
+  assert.equal(claimedViaLine({ ...via, assigned: true }, "zh-Hant"), "Session 依你 09:05 的訊息指派")
+  assert.match(source, /personaById\(personas, item\.claimed_via\?\.persona\)/)
 })
 
 test("an item the Epic's owner Session split out says so in both languages, and the card draws it", () => {

@@ -84,7 +84,8 @@ type workV2ItemWire struct {
 	// Session; absent for every other item.
 	ParentID string `json:"parent_id,omitempty"`
 	// ClaimedVia is the person's message the owning Session claimed the item
-	// on; absent when the person assigned it, or nobody holds it.
+	// on, or a Session assigned it to the owning new Session on (Assigned);
+	// absent when the person assigned it, or nobody holds it.
 	ClaimedVia        *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
 	CreatedAt         int64                  `json:"created_at"`
 	UpdatedAt         int64                  `json:"updated_at"`
@@ -115,6 +116,18 @@ type workV2CreatedViaWire struct {
 	// item carries no run, because the person's assignment of the Epic is its
 	// authority.
 	EpicID string `json:"epic_id,omitempty"`
+	// Assigned says the Session named by SessionID did not take the item
+	// itself but, on this message, handed it to a new Session opened as
+	// Persona (none when empty). Absent on a claim.
+	Assigned bool   `json:"assigned,omitempty"`
+	Persona  string `json:"persona,omitempty"`
+}
+
+// claimedViaWire is the wire of the person's message an assignment was made
+// on, as a claim or as a Session's assignment to a new Session.
+func claimedViaWire(via *work.CreatedViaV2) *workV2CreatedViaWire {
+	return &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt,
+		Assigned: via.Assigned, Persona: via.Persona}
 }
 
 type workV2ImageWire struct {
@@ -684,7 +697,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		}
 	}
 	if claim != nil {
-		out.ClaimedVia = &workV2CreatedViaWire{Run: claim.Run, SessionID: claim.Session, At: claim.At, Excerpt: claim.Excerpt}
+		out.ClaimedVia = claimedViaWire(claim)
 	}
 	for _, a := range v.Assignments {
 		out.Assignments = append(out.Assignments, workV2AssignmentWire{ID: a.ID, Mode: a.Mode, SessionID: a.SessionID,
@@ -692,8 +705,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 			RootAssignment: a.RootAssignment, Failure: a.Failure, CreatedAt: a.CreatedAt.Unix(), UpdatedAt: a.UpdatedAt.Unix(),
 			Persona: a.Persona})
 		if via := a.ClaimedVia; via != nil && strings.HasPrefix(a.HumanActor, work.ActorViaSession) {
-			out.Assignments[len(out.Assignments)-1].ClaimedVia = &workV2CreatedViaWire{Run: via.Run,
-				SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
+			out.Assignments[len(out.Assignments)-1].ClaimedVia = claimedViaWire(via)
 		}
 	}
 	for _, d := range v.Documents {
@@ -1643,6 +1655,14 @@ func (s *Server) workV2ParentOf(ctx context.Context, item work.ItemV2) (work.Ite
 // assignment's transaction), and by a person when it is empty.
 func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string, expected int64,
 	mode, terminalID, assistant, model, personaID string, file app.WorkV2Filer) (app.WorkV2View, error) {
+	return s.assignWorkV2Via(ctx, id, actor, epicOwner, expected, mode, terminalID, assistant, model, personaID, nil, file)
+}
+
+// assignWorkV2Via is assignWorkV2By on the person's message when claim names
+// it (app.RunAssignment): a Session handing an ordinary item to a new
+// Session. Its checks run inside the assignment's transaction.
+func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner string, expected int64,
+	mode, terminalID, assistant, model, personaID string, claim *work.CreatedViaV2, file app.WorkV2Filer) (app.WorkV2View, error) {
 	if err := checkWorkV2Persona(mode, personaID); err != nil {
 		return app.WorkV2View{}, err
 	}
@@ -1677,7 +1697,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 		}
 		assigned, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 			SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant), Actor: actor,
-			EpicOwner: epicOwner, CycleBaseCommit: cycleBase}, false, nil)
+			EpicOwner: epicOwner, Claim: claim, CycleBaseCommit: cycleBase}, false, nil)
 		if err != nil {
 			return app.WorkV2View{}, err
 		}
@@ -1741,7 +1761,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 			}
 			return app.WorkV2View{}, err
 		}
-		if epicOwner != "" && !snapshot.AutoAssignEnabled {
+		if (epicOwner != "" || claim != nil) && !snapshot.AutoAssignEnabled {
 			return app.WorkV2View{}, &app.WorkError{Status: http.StatusConflict, Code: "persona_disabled_for_auto_assignment", Message: "This role is disabled for automatic assignment in the target Project."}
 		}
 	}
@@ -1778,7 +1798,7 @@ func (s *Server) assignWorkV2By(ctx context.Context, id, actor, epicOwner string
 	assignmentID, requestID := newWorkV2UUID(), newWorkV2UUID()
 	pending, err := s.workV2().Assign(ctx, id, app.AssignWorkV2{ExpectedVersion: expected, Mode: mode,
 		Assistant: assistant, Model: model, Actor: actor, AssignmentID: assignmentID, EpicOwner: epicOwner,
-		Persona: personaID, GatePreview: &app.WorkV2GateSettings{
+		Claim: claim, Persona: personaID, GatePreview: &app.WorkV2GateSettings{
 			Planning: briefItem.PlanningGate, Verify: briefItem.VerifyGate,
 		}, CycleBaseCommit: cycleBase}, true, nil)
 	if err != nil {
@@ -3017,17 +3037,21 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 	_, _ = w.Write(b)
 }
 
-// agentAssignEpicChild is POST /v1/work/v2/agent/items/<child id>/assign: the
+// agentAssignEpicChild is POST /v1/work/v2/agent/items/<id>/assign: the
 // owner Session of an item's parent Epic (re)assigning that open child to a
 // Session, existing or new, through the same assignment a person's choice
 // makes. The owner check runs inside the assignment's transaction; an item
 // with no parent Epic is refused not_epic_child and stays the person's to
-// assign.
+// assign — unless the body names the person's message ({"via":{"run":…}}),
+// when it is agentAssignOnRun's.
 func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
 		ExpectedVersion int64  `json:"expected_version"`
 		SessionID       string `json:"session_id"`
 		workV2EpicAssignRequest
+		Via *struct {
+			Run string `json:"run"`
+		} `json:"via"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -3040,28 +3064,68 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 	if !ok {
 		return
 	}
-	refuse := func(err error) {
-		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
-		s.writeWorkV2Error(w, err)
-	}
+	refuse := s.relayRefuser(w, r, k)
 	if err := body.check(); err != nil {
 		refuse(err)
 		return
 	}
 	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
-	_, err := s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
-		body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona,
-		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
-			answer = workV2Answer(itemOf(v))
-			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
-		})
+	file := func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+		answer = workV2Answer(itemOf(v))
+		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+	}
+	var err error
+	if body.Via != nil {
+		err = s.agentAssignOnRun(r.Context(), id, body.SessionID, body.Via.Run, body.ExpectedVersion,
+			body.workV2EpicAssignRequest, file)
+	} else {
+		_, err = s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
+			body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona, file)
+	}
 	if err != nil {
 		refuse(err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+// agentAssignOnRun is a Session handing an ordinary unassigned Feature or
+// Issue to a new Session, opened with the persona it names, because the
+// person's message through Clawdline asked it to (app.RunAssignment). The
+// run is checked as a claim's is, and the Session must be live, not a child,
+// and working in the item's Project; the kind, the target, the item's holder
+// and the message's budget are checked inside the assignment's transaction.
+// Every refusal writes nothing.
+func (s *Server) agentAssignOnRun(ctx context.Context, id, sessionID, runID string, expected int64,
+	a workV2EpicAssignRequest, file app.WorkV2Filer) error {
+	if a.Mode != "new_session" {
+		return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "new_session_only",
+			Message: "On the person's message a Session assigns an item only to a new Session; to take it itself, " +
+				"claim it. Nothing was assigned."}
+	}
+	run, sess, err := s.relaySession(ctx, runID, sessionID,
+		"A Session assigns an item that is not its Epic's child only on a person's message sent through Clawdline "+
+			"that asks for it; name its run as {\"via\":{\"run\":\"…\"}}. Without one, leave the item for the person to assign.",
+		"nothing was assigned")
+	if err != nil {
+		return err
+	}
+	item, err := s.workV2().Item(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !sessionInProject(sess, item.Item) {
+		return &app.WorkError{Status: http.StatusConflict, Code: "project_mismatch",
+			Message: "This Session is not working in that item's Project; nothing was assigned."}
+	}
+	claim, err := app.RunAssignment(*run, sess.ConversationID, a.Persona)
+	if err != nil {
+		return err
+	}
+	_, err = s.assignWorkV2Via(ctx, id, run.Actor(), "", expected, a.Mode, "", a.Assistant, a.Model, a.Persona, claim, file)
+	return err
 }
 
 // sessionInProject is whether a Session works in an item's Project, the check

@@ -991,12 +991,15 @@ function CreatedViaNote({ item }: { item: WorkV2Item }) {
 }
 
 /**
- * Who took this item, when its Session claimed it on the person's message:
- * the same small line and quote as CreatedViaNote. An item the person
- * assigned shows nothing here.
+ * Who took this item, when its Session claimed it on the person's message, or
+ * which Session handed it to a new Session with which persona: the same small
+ * line and quote as CreatedViaNote. An item the person assigned shows nothing
+ * here.
  */
 function ClaimedViaNote({ item }: { item: WorkV2Item }) {
-  const line = claimedViaLine(item.claimed_via)
+  const personas = usePersonas()
+  const persona = personaById(personas, item.claimed_via?.persona)
+  const line = claimedViaLine(item.claimed_via, undefined, persona ? personaName(persona) : undefined)
   if (!line) return null
   const excerpt = item.claimed_via?.excerpt ?? ""
   if (!excerpt) return <p className="work-created-via">{line}</p>

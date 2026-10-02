@@ -33,7 +33,9 @@ import (
 // Epic owner's exception to "only on the person's word": the Session the
 // person assigned an Epic to breaks it, after its reviewed plan, into Feature
 // and Issue items and may assign each to a Session; `assign` hands such a
-// child to a Session afterwards (docs/work-system-v2.md §6.5).
+// child to a Session afterwards (docs/work-system-v2.md §6.5), and hands any
+// unassigned Feature or Issue to a new Session, with a persona, when the
+// person's message asks for it — under that message's run, as `claim`.
 //
 // A person's TODO list said together with a Board item is that item's steps:
 // pass them with --step. They are not this Session's own to-dos, which
@@ -239,6 +241,7 @@ func itemCommand(args []string) {
 		}
 		rest = positional
 		f.assign = assign
+		f.run = *run
 	case "steps":
 		if len(positional) != 1 {
 			fmt.Fprintf(os.Stderr, "clawdline item steps: takes one item id, got %d arguments\n", len(positional))
@@ -340,7 +343,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <epic id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona id])")
-	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <child item id>")
+	fmt.Fprintln(os.Stderr, "                          [--run id] [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
 	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
@@ -361,7 +364,9 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  name lets an assigned new Feature Root choose its own task name once, after reading the item;")
 	fmt.Fprintln(os.Stderr, "  child breaks an Epic this Session owns, after its reviewed plan (implementing or later), into a")
 	fmt.Fprintln(os.Stderr, "  feature or issue item, assigned to the Session in that terminal, to a new one, or to nobody yet;")
-	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`);")
+	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`),")
+	fmt.Fprintln(os.Stderr, "  or, only because the person's message through Clawdline asked for it, an unassigned Feature or Issue")
+	fmt.Fprintln(os.Stderr, "  to a new Session (--new), under that message's run; never on its own initiative;")
 	fmt.Fprintln(os.Stderr, "  --persona opens that new Session as a built-in persona (`GET /v1/personas` lists them); none by default;")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
 	fmt.Fprintln(os.Stderr, "  acceptance fills missing criteria once; acceptance-revise relays a person's explicit revision message;")
@@ -407,6 +412,7 @@ type itemWire struct {
 	PlanningGate       bool    `json:"planning_gate"`
 	VerifyGate         bool    `json:"verify_gate"`
 	ReviewRequired     bool    `json:"review_required"`
+	ParentID           string  `json:"parent_id"`
 	Steps              []struct {
 		ID       string `json:"id"`
 		Title    string `json:"title"`
@@ -594,6 +600,22 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
 		for k, v := range a {
 			body[k] = v
+		}
+		// An item that is no Epic's child goes to a new Session only on the
+		// person's message, under its run; an Epic's child on its owner's
+		// authority, unless --run names a message.
+		if it.ParentID == "" || strings.TrimSpace(f.run) != "" {
+			if !f.assign.open {
+				fmt.Fprintf(stderr, "clawdline %s: on the person's message a Session assigns an item only to a new Session (--new); "+
+					"to take it itself, use `clawdline item claim %s`. Nothing was changed.\n", name, itemID)
+				return 2
+			}
+			run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
+				"Nothing was assigned. Without a message sent through Clawdline asking for it, leave the item for the person to assign.")
+			if code != 0 {
+				return code
+			}
+			body["via"] = map[string]string{"run": run}
 		}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/assign"
 	case "claim":
