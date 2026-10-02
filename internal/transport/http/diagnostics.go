@@ -448,6 +448,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.SessionCloseScheduledSeconds: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-request clock"} },
 		capacity.TerminalLaunchScripts:        terminal.LaunchScriptsReading,
+		capacity.HandoffWorktrees:             func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPatchBytes:            func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPackBytes:             func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		// The screens the session list holds, and the captures it has in
 		// flight (internal/app/screen_held.go).
 		// An inventory with no held screens is a known zero, not an

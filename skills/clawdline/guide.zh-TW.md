@@ -223,6 +223,12 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 **1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
 驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選，以及 steps。你就從這份紀錄開始工作。
 
+你的指派檔若有 **HANDOFF** 段，代表你在接手別的 Session 做到一半的項目（在 implementing、verifying、
+merging 或 deploying 時改派）。規劃之前先讀它指向的交接包。交接包是 daemon 用自己的紀錄和 git 產生的，
+沒有去問原 owner：項目綁定的 task 與 result、還沒落地的 commit、每個 worktree 未 commit 的改動（存成 patch，
+附 sha256 和在 base 上還原用的 `git apply` 指令）、原 owner 最後一則訊息（讀不到時寫明原因），以及目前
+phase 與還沒完成的 steps。patch 放在指派檔旁邊，worktree 被清掉後仍在。從那裡接著做，不要從頭來。
+
 **2. 替 Session 命名**（如果它是為這個項目開的）：讀完 objective 和 scope 之後執行一次
 `clawdline item name <item id> "<task name>"`。改的是 Session 名稱，不是項目標題。
 
