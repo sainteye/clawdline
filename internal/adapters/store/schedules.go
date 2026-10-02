@@ -116,7 +116,7 @@ func fromUnix(n int64) time.Time {
 // by hand into the database — and those are exactly the rows that fired the
 // instant the clock ticked (docs/plan.md §3.2).
 func (s *Store) ScheduleFiles(ctx context.Context) ([]ScheduleFile, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT id, body, first_seen, last_fire, last_missed FROM schedule_files ORDER BY id ASC`)
 	if err != nil {
 		return nil, err
@@ -298,7 +298,7 @@ func (s *Store) ForgetScheduleRun(ctx context.Context, taskID string) error {
 // LegacyScheduleRows counts rows the retired interval model left behind.
 func (s *Store) LegacyScheduleRows(ctx context.Context) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schedules`).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM schedules`).Scan(&n)
 	return n, err
 }
 
@@ -322,7 +322,7 @@ func (s *Store) ScheduleRuns(ctx context.Context, scheduleID string) ([]Schedule
 		args = append(args, scheduleID)
 	}
 	q += ` ORDER BY r.created_at DESC, r.task_id DESC`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.rd.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +352,7 @@ var ErrBindingConflict = errors.New("binding_conflict")
 // ScheduleWebhook is the hook bound to a schedule, if any.
 func (s *Store) ScheduleWebhook(ctx context.Context, scheduleID string) (string, bool, error) {
 	var hook string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT hook_id FROM schedule_webhook_bindings WHERE schedule_id = ?`, scheduleID).Scan(&hook)
 	if err == sql.ErrNoRows {
 		return "", false, nil
@@ -368,7 +368,7 @@ func (s *Store) ScheduleWebhook(ctx context.Context, scheduleID string) (string,
 // schedule.
 func (s *Store) ScheduleForWebhook(ctx context.Context, hookID string) (string, bool, error) {
 	var scheduleID string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT schedule_id FROM schedule_webhook_bindings WHERE hook_id = ?`, hookID).Scan(&scheduleID)
 	if err == sql.ErrNoRows {
 		return "", false, nil
@@ -447,7 +447,7 @@ func (s *Store) BeginWebhookBind(ctx context.Context, requestID, digest string, 
 	var status sql.NullInt64
 	var code sql.NullString
 	var body []byte
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT digest, status, code, body FROM schedule_webhook_binds WHERE request_id = ?`, requestID).
 		Scan(&got, &status, &code, &body)
 	if err == sql.ErrNoRows {

@@ -317,7 +317,7 @@ func (s *Store) OwnOpenEffects(ctx context.Context) ([]Effect, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT `+effectColumns+` FROM outbox WHERE state IN ('pending', 'started') AND owner = ? ORDER BY id ASC`,
 		s.owner.String())
 	if err != nil {
@@ -347,7 +347,7 @@ func (s *Store) OutboxCounts(ctx context.Context) (OutboxCounts, error) {
 	if err := reading(); err != nil {
 		return out, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM outbox GROUP BY state`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT state, COUNT(*) FROM outbox GROUP BY state`)
 	if err != nil {
 		return out, err
 	}
@@ -373,7 +373,7 @@ func (s *Store) OutboxCounts(ctx context.Context) (OutboxCounts, error) {
 	}
 	rows.Close()
 	var oldest sql.NullInt64
-	if err := s.db.QueryRowContext(ctx,
+	if err := s.rd.QueryRowContext(ctx,
 		`SELECT MIN(created_at) FROM outbox WHERE state IN ('pending', 'started')`).Scan(&oldest); err != nil {
 		return out, err
 	}
@@ -389,7 +389,7 @@ func (s *Store) Effects(ctx context.Context, kind, subject string) ([]Effect, er
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT `+effectColumns+` FROM outbox WHERE kind = ? AND subject = ? ORDER BY id ASC`, kind, subject)
 	if err != nil {
 		return nil, err

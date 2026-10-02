@@ -217,7 +217,7 @@ func (s *Store) usageRows(ctx context.Context, where string, args ...any) ([]Usa
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+usageColumns+` FROM usage_transcripts `+where+
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+usageColumns+` FROM usage_transcripts `+where+
 		` ORDER BY assistant, conversation`, args...)
 	if err != nil {
 		return nil, classify(err)
@@ -257,7 +257,7 @@ func (s *Store) BrokerTasksDispatchedBy(ctx context.Context, session string, fro
 		query += ` AND created_at <= ?`
 		args = append(args, to.Unix())
 	}
-	rows, err := s.db.QueryContext(ctx, query+` ORDER BY created_at, id`, args...)
+	rows, err := s.rd.QueryContext(ctx, query+` ORDER BY created_at, id`, args...)
 	if err != nil {
 		return nil, classify(err)
 	}

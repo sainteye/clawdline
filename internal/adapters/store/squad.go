@@ -96,7 +96,7 @@ func (s *Store) SquadUsage(ctx context.Context) (SquadCounts, error) {
 		{`SELECT COUNT(*) FROM squad_settings`, &out.Settings},
 		{`SELECT (SELECT COUNT(*) FROM squad_receipts)+(SELECT COUNT(*) FROM squad_package_receipts)`, &out.Receipts},
 	} {
-		if err := s.db.QueryRowContext(ctx, item.query).Scan(item.into); err != nil {
+		if err := s.rd.QueryRowContext(ctx, item.query).Scan(item.into); err != nil {
 			return SquadCounts{}, classify(err)
 		}
 	}
@@ -109,7 +109,7 @@ func (s *Store) SquadSettings(ctx context.Context, scopeID string) ([]SquadSetti
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT definition_id,version,payload FROM squad_settings WHERE scope_id=? ORDER BY definition_id`, scopeID)
 	if err != nil {
 		return nil, classify(err)
@@ -135,7 +135,7 @@ func (s *Store) SquadScopes(ctx context.Context) ([]string, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT DISTINCT scope_id FROM squad_settings WHERE scope_id <> 'global' ORDER BY scope_id`)
 	if err != nil {
 		return nil, classify(err)
@@ -338,7 +338,7 @@ func (s *Store) SquadCatalogRows(ctx context.Context, history bool) (int64, []Sq
 		return 0, nil, err
 	}
 	var version int64
-	if err := s.db.QueryRowContext(ctx, `SELECT version FROM squad_catalog_state WHERE singleton=1`).Scan(&version); err != nil {
+	if err := s.rd.QueryRowContext(ctx, `SELECT version FROM squad_catalog_state WHERE singleton=1`).Scan(&version); err != nil {
 		return 0, nil, classify(err)
 	}
 	query := `SELECT e.kind,e.id,e.version,e.digest,e.payload FROM squad_entities e
@@ -347,7 +347,7 @@ func (s *Store) SquadCatalogRows(ctx context.Context, history bool) (int64, []Sq
 	if history {
 		query = `SELECT kind,id,version,digest,payload FROM squad_entities ORDER BY kind,id,version`
 	}
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.rd.QueryContext(ctx, query)
 	if err != nil {
 		return 0, nil, classify(err)
 	}
@@ -374,7 +374,7 @@ func (s *Store) SquadEntityVersion(ctx context.Context, kind, id, version string
 	}
 	var row SquadEntityRow
 	var payload string
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT digest,payload FROM squad_entities WHERE kind=? AND id=? AND version=?`,
 		kind, id, version).Scan(&row.Digest, &payload)
 	if errors.Is(err, sql.ErrNoRows) {

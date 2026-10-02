@@ -187,7 +187,7 @@ type WorkGateExport struct {
 // refuses rather than the total population across unrelated items.
 func (s *Store) WorkGateRoundDetailsPerItemCount(ctx context.Context) (int64, error) {
 	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (
+	err := s.rd.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (
       SELECT COUNT(*) n FROM work_v2_gate_rounds GROUP BY item_id)`).Scan(&n)
 	return n, err
 }
@@ -195,7 +195,7 @@ func (s *Store) WorkGateRoundDetailsPerItemCount(ctx context.Context) (int64, er
 // WorkGateRoundDetailsPerStoreCount is every retained verification round.
 func (s *Store) WorkGateRoundDetailsPerStoreCount(ctx context.Context) (int64, error) {
 	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_v2_gate_rounds`).Scan(&n)
+	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_v2_gate_rounds`).Scan(&n)
 	return n, err
 }
 
@@ -203,7 +203,7 @@ func (s *Store) WorkGateRoundDetailsPerStoreCount(ctx context.Context) (int64, e
 // one round. The initial task and its one bounded retry are both attempts.
 func (s *Store) WorkGateTasksPerRoundCount(ctx context.Context) (int64, error) {
 	var n int64
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (
+	err := s.rd.QueryRowContext(ctx, `SELECT COALESCE(MAX(n),0) FROM (
       SELECT COUNT(*) n FROM work_v2_gate_attempts GROUP BY round_id)`).Scan(&n)
 	return n, err
 }
@@ -379,7 +379,7 @@ func (s *Store) DueWorkGateAttempts(ctx context.Context, now time.Time, limit in
 	if limit <= 0 || limit > contract.WorkGateDueRowsPerPassLimit {
 		return nil, fmt.Errorf("verification due limit must be 1..%d", contract.WorkGateDueRowsPerPassLimit)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+workGateAttemptColumns+`
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+workGateAttemptColumns+`
     FROM work_v2_gate_attempts WHERE state IN ('queued','dispatching','running')
       AND (next_retry_at=0 OR next_retry_at<=?) ORDER BY next_retry_at,created_at,id LIMIT ?`, now.Unix(), limit)
 	if err != nil {
@@ -404,13 +404,13 @@ func (s *Store) DueWorkGateAttempts(ctx context.Context, now time.Time, limit in
 	out := make([]WorkGateDue, 0, len(attempts))
 	for _, a := range attempts {
 		var baseCommit string
-		r, err := scanWorkGateRound(s.db.QueryRowContext(ctx, `SELECT `+workGateRoundColumns+`
+		r, err := scanWorkGateRound(s.rd.QueryRowContext(ctx, `SELECT `+workGateRoundColumns+`
       FROM work_v2_gate_rounds WHERE id=?`, a.RoundID))
 		if err != nil {
 			return nil, err
 		}
 		r.Attempts = []contract.WorkGateAttempt{a}
-		if err := s.db.QueryRowContext(ctx, `SELECT base_commit FROM work_v2_gate_rounds WHERE id=?`, a.RoundID).Scan(&baseCommit); err != nil {
+		if err := s.rd.QueryRowContext(ctx, `SELECT base_commit FROM work_v2_gate_rounds WHERE id=?`, a.RoundID).Scan(&baseCommit); err != nil {
 			return nil, err
 		}
 		out = append(out, WorkGateDue{Round: r, Attempt: a, BaseCommit: baseCommit})
@@ -576,7 +576,7 @@ func (t *WorkV2Tx) OpenWorkGateEscalation(itemID string) (WorkGateEscalationReco
 }
 
 func (s *Store) OpenWorkGateEscalations(ctx context.Context) ([]WorkGateEscalationRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+workGateEscalationColumns+`
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+workGateEscalationColumns+`
     FROM work_v2_gate_escalations WHERE state<>'resolved' ORDER BY created_at,id`)
 	if err != nil {
 		return nil, err
@@ -687,7 +687,7 @@ func (s *Store) WorkGateCompactDetails(ctx context.Context, items []work.ItemV2)
 	}
 	list := string(rawIDs)
 
-	metrics, err := s.db.QueryContext(ctx, `SELECT item_id,rounds,fails,findings,overrides
+	metrics, err := s.rd.QueryContext(ctx, `SELECT item_id,rounds,fails,findings,overrides
     FROM work_v2_gate_metrics WHERE item_id IN (SELECT value FROM json_each(?))`, list)
 	if err != nil {
 		return nil, err
@@ -711,7 +711,7 @@ func (s *Store) WorkGateCompactDetails(ctx context.Context, items []work.ItemV2)
 		return nil, err
 	}
 
-	rounds, err := s.db.QueryContext(ctx, `SELECT r.id,r.item_id,r.state,json_extract(r.candidate,'$.commit'),
+	rounds, err := s.rd.QueryContext(ctx, `SELECT r.id,r.item_id,r.state,json_extract(r.candidate,'$.commit'),
       r.criteria_digest,r.created_at,COALESCE(r.finished_at,0),
       CASE WHEN json_valid(r.result) THEN COALESCE(json_extract(r.result,'$.verdict'),'') ELSE '' END
     FROM work_v2_gate_rounds r WHERE r.item_id IN (SELECT value FROM json_each(?))
@@ -741,7 +741,7 @@ func (s *Store) WorkGateCompactDetails(ctx context.Context, items []work.ItemV2)
 		return nil, err
 	}
 
-	escalations, err := s.db.QueryContext(ctx, `SELECT `+workGateEscalationColumns+`
+	escalations, err := s.rd.QueryContext(ctx, `SELECT `+workGateEscalationColumns+`
     FROM work_v2_gate_escalations WHERE item_id IN (SELECT value FROM json_each(?)) AND state<>'resolved'`, list)
 	if err != nil {
 		return nil, err
@@ -765,7 +765,7 @@ func (s *Store) WorkGateCompactDetails(ctx context.Context, items []work.ItemV2)
 		return nil, err
 	}
 
-	authorizations, err := s.db.QueryContext(ctx, `SELECT a.item_id,a.kind,a.reason,a.created_at
+	authorizations, err := s.rd.QueryContext(ctx, `SELECT a.item_id,a.kind,a.reason,a.created_at
     FROM work_v2_gate_authorizations a JOIN work_v2_items i ON i.id=a.item_id
     JOIN work_v2_gate_rounds r ON r.id=a.round_id AND r.item_id=a.item_id
     WHERE a.item_id IN (SELECT value FROM json_each(?)) AND a.invalidated_at IS NULL
@@ -922,7 +922,7 @@ func (s *Store) DueWorkGateFeedback(ctx context.Context, limit int) ([]WorkGateF
 	if limit <= 0 || limit > contract.WorkGateDueRowsPerPassLimit {
 		return nil, fmt.Errorf("verification feedback limit must be 1..%d", contract.WorkGateDueRowsPerPassLimit)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,item_id,round_id,session_id,body,state,created_at,updated_at
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,item_id,round_id,session_id,body,state,created_at,updated_at
     FROM work_v2_gate_feedback WHERE state IN ('accepted','executed') ORDER BY created_at,id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -943,7 +943,7 @@ func (s *Store) DueWorkGateFeedback(ctx context.Context, limit int) ([]WorkGateF
 }
 
 func (s *Store) WorkGateFeedbacks(ctx context.Context, itemID string) ([]WorkGateFeedback, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,item_id,round_id,session_id,body,state,created_at,updated_at
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,item_id,round_id,session_id,body,state,created_at,updated_at
     FROM work_v2_gate_feedback WHERE item_id=? ORDER BY created_at,id`, itemID)
 	if err != nil {
 		return nil, err
@@ -997,7 +997,7 @@ func (s *Store) WorkGateRecentRounds(ctx context.Context, itemID string, limit i
 	if limit <= 0 || limit > contract.WorkGateRecentRoundsPerItemReadLimit {
 		return nil, false, fmt.Errorf("verification history limit must be 1..%d", contract.WorkGateRecentRoundsPerItemReadLimit)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+workGateRoundColumns+` FROM work_v2_gate_rounds
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+workGateRoundColumns+` FROM work_v2_gate_rounds
     WHERE item_id=? ORDER BY created_at DESC,id DESC LIMIT ?`, itemID, limit+1)
 	if err != nil {
 		return nil, false, err
@@ -1083,7 +1083,7 @@ func (s *Store) WorkGateDetail(ctx context.Context, item work.ItemV2) (contract.
 		}
 		detail.Compact.LatestRound = &summary
 	}
-	row, err := scanWorkGateEscalation(s.db.QueryRowContext(ctx, `SELECT `+workGateEscalationColumns+`
+	row, err := scanWorkGateEscalation(s.rd.QueryRowContext(ctx, `SELECT `+workGateEscalationColumns+`
     FROM work_v2_gate_escalations WHERE item_id=? AND state<>'resolved'`, item.ID))
 	if err == nil {
 		if row.Candidate != nil {
@@ -1240,7 +1240,7 @@ func (s *Store) DueWorkGateCleanup(ctx context.Context, limit int) ([]string, er
 	if limit <= 0 || limit > contract.WorkGateDueRowsPerPassLimit {
 		return nil, fmt.Errorf("verification cleanup limit must be 1..%d", contract.WorkGateDueRowsPerPassLimit)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT task_id FROM work_v2_gate_cleanup
+	rows, err := s.rd.QueryContext(ctx, `SELECT task_id FROM work_v2_gate_cleanup
     WHERE state='accepted' ORDER BY created_at,task_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err

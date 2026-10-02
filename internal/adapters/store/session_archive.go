@@ -90,7 +90,7 @@ func (s *Store) ArchivedSessions(ctx context.Context) ([]ArchiveRow, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT conversation_id, assistant, cwd, place, title, persona, backend, archived_at
 		 FROM session_archive ORDER BY archived_at DESC, conversation_id`)
 	if err != nil {

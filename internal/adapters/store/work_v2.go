@@ -583,7 +583,7 @@ func (s *Store) WorkV2Item(ctx context.Context, id string) (work.ItemV2, error) 
 	if err := reading(); err != nil {
 		return work.ItemV2{}, err
 	}
-	return scanWorkV2(s.db.QueryRowContext(ctx, `SELECT `+workV2Columns+` FROM work_v2_items WHERE id = ?`, id))
+	return scanWorkV2(s.rd.QueryRowContext(ctx, `SELECT `+workV2Columns+` FROM work_v2_items WHERE id = ?`, id))
 }
 
 func (t *WorkV2Tx) count(where string, args ...any) (int64, error) {
@@ -776,7 +776,7 @@ func (s *Store) WorkV2ItemsPage(ctx context.Context, project, owner, status, sea
 	}
 	stmt += ` ORDER BY updated_at DESC, id DESC LIMIT ?`
 	args = append(args, limit+1)
-	items, err := queryWorkV2(ctx, s.db, stmt, args...)
+	items, err := queryWorkV2(ctx, s.rd, stmt, args...)
 	if len(items) > limit {
 		return items[:limit], true, err
 	}
@@ -794,7 +794,7 @@ func (s *Store) CompletedWorkV2ForSession(ctx context.Context, session string, l
 	if session == "" || limit <= 0 {
 		return nil, false, fmt.Errorf("session and work v2 limit are required")
 	}
-	rows, err := queryWorkV2(ctx, s.db, `SELECT `+workV2ItemColumns+` FROM work_v2_items i
+	rows, err := queryWorkV2(ctx, s.rd, `SELECT `+workV2ItemColumns+` FROM work_v2_items i
     WHERE i.phase='done' AND EXISTS (
       SELECT 1 FROM work_v2_assignments a
       WHERE a.work_id=i.id AND a.session_id=? AND a.state='released' AND a.released_at=i.closed_at
@@ -947,12 +947,12 @@ func (s *Store) WorkV2Assignment(ctx context.Context, id string) (work.Assignmen
 	if err := reading(); err != nil {
 		return work.AssignmentV2{}, err
 	}
-	return scanAssignmentV2(s.db.QueryRowContext(ctx, `SELECT `+assignmentV2Columns+`
+	return scanAssignmentV2(s.rd.QueryRowContext(ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE id=?`, id))
 }
 
 func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.AssignmentV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE work_id=? ORDER BY created_at, id`, workID)
 	if err != nil {
 		return nil, err
@@ -973,7 +973,7 @@ func (s *Store) WorkV2Assignments(ctx context.Context, workID string) ([]work.As
 // Feature Root that was opened and is waiting for a person to answer its first
 // screen. Pending rows are bounded by WorkV2AssignmentLimit.
 func (s *Store) WorkV2AwaitedAssignments(ctx context.Context) ([]work.AssignmentV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE state='assigning' AND root_assignment_id<>'' ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -993,7 +993,7 @@ func (s *Store) WorkV2AwaitedAssignments(ctx context.Context) ([]work.Assignment
 // WorkV2ActiveClaim is the person's message a Session claimed an item on,
 // when the item's active assignment is such a claim; nil otherwise.
 func (s *Store) WorkV2ActiveClaim(ctx context.Context, workID string) (*work.CreatedViaV2, error) {
-	a, err := scanAssignmentV2(s.db.QueryRowContext(ctx, `SELECT `+assignmentV2Columns+`
+	a, err := scanAssignmentV2(s.rd.QueryRowContext(ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE work_id=? AND state='active' AND claimed_via <> ''`, workID))
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -1028,7 +1028,7 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 	}
 	ids := string(list)
 
-	documents, err := s.db.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+	documents, err := s.rd.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
     FROM work_v2_documents WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
 	if err != nil {
 		return out, err
@@ -1052,7 +1052,7 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 		return out, err
 	}
 
-	images, err := s.db.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
+	images, err := s.rd.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
     FROM work_v2_images WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
 	if err != nil {
 		return out, err
@@ -1073,7 +1073,7 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 		return out, err
 	}
 
-	steps, err := s.db.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
+	steps, err := s.rd.QueryContext(ctx, `SELECT id,work_id,title,done,position,created_by,completed_by,created_at,completed_at,version
     FROM work_v2_steps WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,position,id`, ids)
 	if err != nil {
 		return out, err
@@ -1102,7 +1102,7 @@ func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Re
 		return out, err
 	}
 
-	claims, err := s.db.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
+	claims, err := s.rd.QueryContext(ctx, `SELECT `+assignmentV2Columns+`
     FROM work_v2_assignments WHERE work_id IN (SELECT value FROM json_each(?))
       AND state='active' AND claimed_via <> '' ORDER BY work_id,created_at,id`, ids)
 	if err != nil {
@@ -1154,7 +1154,7 @@ func (s *Store) WorkV2RootAssignmentsForSessions(ctx context.Context, projectPat
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT a.session_id, a.root_assignment_id
+	rows, err := s.rd.QueryContext(ctx, `SELECT a.session_id, a.root_assignment_id
 		FROM work_v2_assignments a JOIN work_v2_items i ON i.id=a.work_id
 		WHERE a.session_id IN (SELECT value FROM json_each(?)) AND a.assistant=? AND (?='' OR i.project_path=?)
 		  AND a.mode='new_session' AND a.root_assignment_id<>'' AND a.state IN ('active','released')
@@ -1196,7 +1196,7 @@ func (s *Store) WorkV2EpicRootParentsForSessions(ctx context.Context, assistant 
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT a.session_id, a.human_actor, i.parent_id
+	rows, err := s.rd.QueryContext(ctx, `SELECT a.session_id, a.human_actor, i.parent_id
 		FROM work_v2_assignments a JOIN work_v2_items i ON i.id=a.work_id
 		JOIN work_v2_items epic ON epic.id=i.parent_id AND epic.kind='epic' AND epic.project_id=i.project_id
 		WHERE a.session_id IN (SELECT value FROM json_each(?)) AND a.assistant=?
@@ -1224,7 +1224,7 @@ func (s *Store) WorkV2EpicRootParentsForSessions(ctx context.Context, assistant 
 }
 
 func (s *Store) WorkV2Events(ctx context.Context, workID string, after int64, limit int) ([]work.EventV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT seq, work_id, kind, actor, previous_version, next_version, payload, at
+	rows, err := s.rd.QueryContext(ctx, `SELECT seq, work_id, kind, actor, previous_version, next_version, payload, at
     FROM work_v2_events WHERE work_id=? AND seq>? ORDER BY seq LIMIT ?`, workID, after, limit)
 	if err != nil {
 		return nil, err
@@ -1290,7 +1290,7 @@ func (t *WorkV2Tx) BrokerTask(id string) (BrokerRow, error) {
 }
 
 func (s *Store) WorkV2Documents(ctx context.Context, workID string) ([]work.DocumentV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
     FROM work_v2_documents WHERE work_id=? ORDER BY position,id`, workID)
 	if err != nil {
 		return nil, err
@@ -1393,7 +1393,7 @@ func (t *WorkV2Tx) DeleteImage(id string) error {
 }
 
 func (s *Store) WorkV2Images(ctx context.Context, workID string) ([]work.ImageV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+workV2ImageColumns+`
     FROM work_v2_images WHERE work_id=? ORDER BY position,id`, workID)
 	if err != nil {
 		return nil, err
@@ -1484,7 +1484,7 @@ func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 }
 
 func (s *Store) WorkV2Steps(ctx context.Context, workID string) ([]work.StepV2, error) {
-	return queryWorkV2Steps(ctx, s.db, workID)
+	return queryWorkV2Steps(ctx, s.rd, workID)
 }
 
 func queryWorkV2Steps(ctx context.Context, q interface {
@@ -1624,7 +1624,7 @@ func scanDirectTodoImageV2(sc scanner) (work.DirectTodoImageV2, error) {
 const directTodoImageV2Columns = `id,todo_id,title,media_type,byte_count,width,height,position,created_by,created_at`
 
 func (s *Store) DirectTodoV2Images(ctx context.Context, todoID string) ([]work.DirectTodoImageV2, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`
     FROM session_direct_todo_images WHERE todo_id=? ORDER BY position,id`, todoID)
 	if err != nil {
 		return nil, err
@@ -1654,7 +1654,7 @@ func (s *Store) DirectTodoV2ImagePayloads(ctx context.Context, todoID string) ([
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`,sha256
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+directTodoImageV2Columns+`,sha256
     FROM session_direct_todo_images WHERE todo_id=? ORDER BY position,id`, todoID)
 	if err != nil {
 		return nil, err
@@ -1807,7 +1807,7 @@ func (s *Store) WorkV2Counts(ctx context.Context) (map[string]int64, error) {
 		"proposals": `SELECT COUNT(*) FROM work_v2_proposals`,
 	} {
 		var n int64
-		if err := s.db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+		if err := s.rd.QueryRowContext(ctx, q).Scan(&n); err != nil {
 			return nil, err
 		}
 		out[name] = n
@@ -1833,7 +1833,7 @@ func (s *Store) WorkV2ProjectCounts(ctx context.Context) (map[string]WorkV2Proje
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT project_path,COUNT(*),
+	rows, err := s.rd.QueryContext(ctx, `SELECT project_path,COUNT(*),
     SUM(CASE WHEN phase NOT IN ('done','cancelled') THEN 1 ELSE 0 END)
     FROM work_v2_items GROUP BY project_id`)
 	if err != nil {
@@ -1918,7 +1918,7 @@ func (s *Store) WorkV2Proposals(ctx context.Context, state string, limit int) ([
 	}
 	query += ` ORDER BY created_at,id LIMIT ?`
 	args = append(args, limit+1)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rd.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1966,7 +1966,7 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
 	}
 	for name, query := range queries {
 		var n int64
-		if err := s.db.QueryRowContext(ctx, query).Scan(&n); err != nil {
+		if err := s.rd.QueryRowContext(ctx, query).Scan(&n); err != nil {
 			return nil, err
 		}
 		out[name] = n
@@ -1981,14 +1981,14 @@ func (s *Store) WorkV1Counts(ctx context.Context) (map[string]int64, error) {
 	counts := map[string]int64{}
 	for _, table := range []string{"proposals", "decisions", "digests", "todos", "moves", "board_items", "backlog", "work"} {
 		var exists int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&exists); err != nil {
+		if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&exists); err != nil {
 			return nil, err
 		}
 		if exists == 0 {
 			continue
 		}
 		var n int64
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&n); err != nil {
+		if err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&n); err != nil {
 			return nil, err
 		}
 		counts[table] = n

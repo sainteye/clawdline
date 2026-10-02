@@ -213,7 +213,7 @@ func (s *Store) settleImageFiles(ctx context.Context, t *WorkV2Tx, err error) {
 	}
 	for _, r := range t.added {
 		var n int
-		if qerr := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM work_v2_images WHERE id=?) +
+		if qerr := s.rd.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM work_v2_images WHERE id=?) +
       (SELECT COUNT(*) FROM session_direct_todo_images WHERE id=?)`, r.id, r.id).Scan(&n); qerr != nil || n != 0 {
 			continue
 		}
@@ -226,7 +226,7 @@ func (s *Store) referenceImage(ctx context.Context, id string) (imageRef, int64,
 	var r imageRef
 	var byteCount int64
 	var sum string
-	err := s.db.QueryRowContext(ctx, `SELECT id,media_type,byte_count,sha256 FROM work_v2_images WHERE id=?
+	err := s.rd.QueryRowContext(ctx, `SELECT id,media_type,byte_count,sha256 FROM work_v2_images WHERE id=?
     UNION ALL SELECT id,media_type,byte_count,sha256 FROM session_direct_todo_images WHERE id=? LIMIT 1`, id, id).
 		Scan(&r.id, &r.mediaType, &byteCount, &sum)
 	if err == sql.ErrNoRows {
@@ -257,7 +257,7 @@ func (s *Store) SweepReferenceImages(ctx context.Context, now time.Time) (int, e
 		return 0, err
 	}
 	named := map[string]bool{}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,media_type FROM work_v2_images
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,media_type FROM work_v2_images
     UNION ALL SELECT id,media_type FROM session_direct_todo_images`)
 	if err != nil {
 		return 0, err

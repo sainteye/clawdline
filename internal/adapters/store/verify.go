@@ -144,7 +144,7 @@ func (s *Store) ScheduleIDs(ctx context.Context) ([]string, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM schedule_files ORDER BY id`)
+	rows, err := s.rd.QueryContext(ctx, `SELECT id FROM schedule_files ORDER BY id`)
 	if err != nil {
 		return nil, classify(err)
 	}
@@ -164,7 +164,7 @@ func (s *Store) Verifications(ctx context.Context) ([]Verification, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+verificationColumns+` FROM verifications
+	rows, err := s.rd.QueryContext(ctx, `SELECT `+verificationColumns+` FROM verifications
 		ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, due_at, created_at, id`)
 	if err != nil {
 		return nil, classify(err)
@@ -184,7 +184,7 @@ func (s *Store) Verifications(ctx context.Context) ([]Verification, error) {
 	}
 	rows.Close()
 	for i := range out {
-		if err := fillVerification(ctx, s.db, &out[i]); err != nil {
+		if err := fillVerification(ctx, s.rd, &out[i]); err != nil {
 			return nil, classify(err)
 		}
 	}
@@ -196,7 +196,7 @@ func (s *Store) Verification(ctx context.Context, id string) (Verification, bool
 	if err := reading(); err != nil {
 		return Verification{}, false, err
 	}
-	v, found, err := oneVerification(ctx, s.db, id)
+	v, found, err := oneVerification(ctx, s.rd, id)
 	return v, found, classify(err)
 }
 

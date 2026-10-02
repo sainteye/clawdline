@@ -279,7 +279,7 @@ func (s *Store) PreviousBoot(ctx context.Context, current string) (RestoreBoot, 
 	}
 	var b RestoreBoot
 	var first, last int64
-	err := s.db.QueryRowContext(ctx,
+	err := s.rd.QueryRowContext(ctx,
 		`SELECT boot_id, first_seen, last_seen FROM restore_boots WHERE boot_id != ?
 		 ORDER BY last_seen DESC, boot_id DESC LIMIT 1`, current).Scan(&b.ID, &first, &last)
 	if err == sql.ErrNoRows {
@@ -298,7 +298,7 @@ func (s *Store) RestoreRows(ctx context.Context, boot string) ([]RestoreRow, err
 	if err := reading(); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.rd.QueryContext(ctx,
 		`SELECT conversation_id, assistant, cwd, place, title, backend, persona, first_seen, last_seen,
 		        resolution, resolved_at, gone_at, closed_at
 		 FROM restore_sessions WHERE boot_id = ?
