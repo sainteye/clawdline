@@ -6,6 +6,8 @@ import { nextWord } from "../next-strings.js"
 import { machineSeenWord } from "../cloud/machine-seen.js"
 import sectionMarkup from "./devices/section.html?raw"
 import { SignedInBlock } from "./devices/SignedInBlock.js"
+import { CloudTerminalPermission } from "./devices/CloudTerminalPermission.js"
+import { useCloudAccount } from "../cloud/account-context.js"
 import "./devices-actions.css"
 
 /**
@@ -47,9 +49,11 @@ import "./devices-actions.css"
  * sees it.
  */
 function DevicesPageView({ shown }: { shown: boolean }) {
+  const cloudAccount = useCloudAccount()
   const page = useRef<DevicesPage | null>(null)
   const was = useRef(false)
   const [signedIn, setSignedIn] = useState<HTMLElement | null>(null)
+  const [cloudPermission, setCloudPermission] = useState<HTMLElement | null>(null)
 
   useLayoutEffect(() => {
     const shell = document.querySelector("#devices .devices-shell")
@@ -60,6 +64,17 @@ function DevicesPageView({ shown }: { shown: boolean }) {
     setSignedIn(node)
     return () => node.remove()
   }, [])
+
+  useLayoutEffect(() => {
+    if (!cloudAccount) return
+    const shell = document.querySelector("#devices .devices-shell")
+    if (!shell) return
+    const node = document.createElement("div")
+    node.id = "devices-cloud-terminal-permission"
+    shell.appendChild(node)
+    setCloudPermission(node)
+    return () => node.remove()
+  }, [cloudAccount?.apiOrigin, cloudAccount?.deviceID])
 
   useLayoutEffect(() => {
     if (!page.current) {
@@ -135,6 +150,7 @@ function DevicesPageView({ shown }: { shown: boolean }) {
         dangerouslySetInnerHTML={{ __html: sectionMarkup }}
       />
       {signedIn && createPortal(<SignedInBlock shown={shown} />, signedIn)}
+      {cloudPermission && createPortal(<CloudTerminalPermission shown={shown} />, cloudPermission)}
     </>
   )
 }

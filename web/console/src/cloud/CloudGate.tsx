@@ -43,6 +43,7 @@ import { readThroughRelay } from "./install.js"
 import { setTerminalHost } from "./terminal-host.js"
 import type { TerminalCloudClient } from "./terminal-transport.js"
 import { machineForAddress } from "./document-target.js"
+import { CloudAccountContext } from "./account-context.js"
 import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
@@ -1036,7 +1037,11 @@ export function CloudGate({ declared }: { declared: string }) {
   // drawn over it, as the door is over a local console (`door/Door.tsx`).
   return (
     <>
-      {chosen && <App aside={aside} />}
+      {chosen && who && transport.kind === "cloud" && (
+        <CloudAccountContext.Provider value={{ apiOrigin: transport.config.apiOrigin, deviceID: who.device }}>
+          <App aside={aside} />
+        </CloudAccountContext.Provider>
+      )}
       {words && (screen.at !== "console" || pairing) && (
         <GateCard
           screen={screen}
