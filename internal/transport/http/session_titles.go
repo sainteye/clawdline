@@ -60,9 +60,30 @@ func ownSessionTitles(v nextconfig.Values, now time.Time) []swiftstore.SessionTi
 	sort.SliceStable(kept, func(i, j int) bool {
 		return kept[i].UpdatedAt.Time().Before(kept[j].UpdatedAt.Time())
 	})
+	kept = newestPerConversation(kept)
 	limit := int(CapacityLimit(capacity.SessionTitleRows))
 	if limit >= 0 && len(kept) > limit {
 		kept = kept[len(kept)-limit:]
+	}
+	return kept
+}
+
+// newestPerConversation keeps one row per conversation, the last of rows
+// sorted oldest first, so the newer name wins. A row without a conversation is
+// a legacy terminal-addressed name and is kept as it is.
+func newestPerConversation(rows []swiftstore.SessionTitle) []swiftstore.SessionTitle {
+	last := map[string]int{}
+	for i, row := range rows {
+		if row.SessionID != nil && *row.SessionID != "" {
+			last[*row.SessionID] = i
+		}
+	}
+	kept := rows[:0]
+	for i, row := range rows {
+		if row.SessionID != nil && *row.SessionID != "" && last[*row.SessionID] != i {
+			continue
+		}
+		kept = append(kept, row)
 	}
 	return kept
 }
@@ -80,11 +101,14 @@ func (s *Server) withOwnSessionTitles(base swiftstore.Snapshot, now time.Time) s
 	return base
 }
 
+// sameSessionTitle keys a name by conversation. A terminal address decides
+// only when the row or the Session has no conversation, so a terminal reused by
+// another conversation leaves the first conversation's name alone.
 func sameSessionTitle(row swiftstore.SessionTitle, item session.Session) bool {
-	if row.TerminalID == item.ID {
-		return true
+	if item.ConversationID != "" && row.SessionID != nil && *row.SessionID != "" {
+		return *row.SessionID == item.ConversationID
 	}
-	return item.ConversationID != "" && row.SessionID != nil && *row.SessionID == item.ConversationID
+	return row.TerminalID == item.ID
 }
 
 // saveSessionTitle replaces every current address for this conversation in

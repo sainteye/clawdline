@@ -280,3 +280,79 @@ func TestAutoNamingFallsBackOnlyWhenAnAssistantCannotAnswer(t *testing.T) {
 		})
 	}
 }
+
+// A terminal reused by a second conversation keeps the first conversation's
+// name: the rows are keyed by conversation, and only a row without one falls
+// back to the terminal address.
+func TestSessionTitlesFollowConversationWhenTerminalIsReused(t *testing.T) {
+	first := session.Session{ID: "%1", ConversationID: "conv-first", Assistant: session.AssistantCodex}
+	second := session.Session{ID: "%1", ConversationID: "conv-second", Assistant: session.AssistantCodex}
+	s := paneServer(t, &pane{s: first})
+	s.cfg = config.Config{Dir: filepath.Join(t.TempDir(), "clawdline-next")}
+	now := time.Now()
+	if _, err := s.saveSessionTitle(first, "First name", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.saveSessionTitle(second, "Second name", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.saveSessionTitle(first, "First renamed", now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	v, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, row := range ownSessionTitles(v, now.Add(3*time.Second)) {
+		if row.SessionID == nil {
+			t.Fatalf("row without conversation: %+v", row)
+		}
+		if _, dup := got[*row.SessionID]; dup {
+			t.Fatalf("two rows for %s", *row.SessionID)
+		}
+		got[*row.SessionID] = row.Title
+	}
+	if len(got) != 2 || got["conv-first"] != "First renamed" || got["conv-second"] != "Second name" {
+		t.Fatalf("titles = %+v", got)
+	}
+
+	// A legacy row has no conversation and is still replaced by its terminal.
+	legacy := session.Session{ID: "%9", Assistant: session.AssistantCodex}
+	if _, err := s.saveSessionTitle(legacy, "Old", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.saveSessionTitle(legacy, "New", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = nextconfig.Open(s.cfg.Dir).Read()
+	var legacyTitles []string
+	for _, row := range ownSessionTitles(v, now.Add(3*time.Second)) {
+		if row.TerminalID == "%9" {
+			legacyTitles = append(legacyTitles, row.Title)
+		}
+	}
+	if len(legacyTitles) != 1 || legacyTitles[0] != "New" {
+		t.Fatalf("legacy rows = %v", legacyTitles)
+	}
+}
+
+// Rows written before conversations were the key may hold the same
+// conversation twice; reading them keeps only the newest.
+func TestDuplicateConversationTitleRowsKeepTheNewest(t *testing.T) {
+	now := time.Unix(2_000_000_000, 0)
+	older := swiftstore.Seconds(float64(now.Add(-2 * time.Hour).Unix()))
+	newer := swiftstore.Seconds(float64(now.Add(-time.Hour).Unix()))
+	conv := "conv-a"
+	rows := []swiftstore.SessionTitle{
+		{Title: "newer", TerminalID: "%2", SessionID: &conv, UpdatedAt: &newer},
+		{Title: "older", TerminalID: "%1", SessionID: &conv, UpdatedAt: &older},
+		{Title: "legacy", TerminalID: "%3", UpdatedAt: &older},
+	}
+	raw, _ := json.Marshal(rows)
+	v := nextconfig.Values{Exists: true, Raw: map[string]json.RawMessage{sessionTitlesKey: raw}}
+	got := ownSessionTitles(v, now)
+	if len(got) != 2 || got[0].Title != "legacy" || got[1].Title != "newer" {
+		t.Fatalf("rows = %+v", got)
+	}
+}
