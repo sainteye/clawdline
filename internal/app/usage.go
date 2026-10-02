@@ -315,6 +315,14 @@ func usageDue(f usageFile, prev store.UsageRow, had bool) bool {
 	if !had {
 		return true
 	}
+	if f.assistant == "codex" {
+		var version struct {
+			ClassificationVersion int `json:"classification_version"`
+		}
+		if json.Unmarshal(prev.State, &version) != nil || version.ClassificationVersion != transcript.CodexClassificationVersion {
+			return true
+		}
+	}
 	return prev.More || prev.Reason != "" || prev.Size != f.size || !prev.ModifiedAt.Equal(f.modified) ||
 		prev.Path != f.path
 }
@@ -340,6 +348,9 @@ func (u *UsageLedger) read(f usageFile, prev store.UsageRow, had bool, now time.
 			state = transcript.LedgerState{}
 		}
 	}
+	if f.assistant == "codex" && state.ClassificationVersion != transcript.CodexClassificationVersion {
+		state = transcript.LedgerState{}
+	}
 	res, err := state.Feed(f.path)
 	if err != nil {
 		if errors.Is(err, transcript.ErrNoRecord) {
@@ -351,6 +362,9 @@ func (u *UsageLedger) read(f usageFile, prev store.UsageRow, had bool, now time.
 			row.Reason = store.UsageNotYetRead
 		}
 		return row, row.Reason, err
+	}
+	if f.assistant == "codex" {
+		state.ClassificationVersion = transcript.CodexClassificationVersion
 	}
 	spent, measured := state.Totals()
 	measured = pricedMeasured(spent, measured)

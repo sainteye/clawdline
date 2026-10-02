@@ -2,8 +2,13 @@ package transcript
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 )
+
+var codexExecCommand = regexp.MustCompile(`tools\.exec_command\s*\(\s*\{\s*(?:cmd|command)\s*:\s*("(?:\\.|[^"\\])*")`)
+
+const CodexClassificationVersion = 1
 
 // The token ledger's Codex half. A rollout says a turn's usage once, in an
 // `event_msg` of type `token_count` written after the turn's own items: the
@@ -65,6 +70,10 @@ func (s *LedgerState) codexItem(kind string, item object) {
 		c := Classify(name, input)
 		if kind == "custom_tool_call" && name == "apply_patch" {
 			c = CategoryImpl
+		} else if kind == "custom_tool_call" && name == "exec" {
+			if script, ok := item.str("input"); ok {
+				c = classifyCodexExec(script)
+			}
 		}
 		if s.CodexActions == nil {
 			s.CodexActions = Sizes{}
@@ -94,6 +103,23 @@ func (s *LedgerState) codexItem(kind string, item object) {
 		}
 		s.arrive(c, resultTokens(out))
 	}
+}
+
+// Current Codex rollouts wrap shell calls in a JavaScript exec tool. Inspect
+// only command arguments of actual exec_command calls, not strings that merely
+// mention a protocol command in a prompt or search result.
+func classifyCodexExec(script string) Category {
+	out := CategoryOther
+	for _, match := range codexExecCommand.FindAllStringSubmatch(script, -1) {
+		var command string
+		if json.Unmarshal([]byte(match[1]), &command) == nil {
+			out = stronger(out, classifyCommand(command))
+		}
+	}
+	if out == CategoryOther && strings.Contains(script, "tools.apply_patch(") {
+		return CategoryImpl
+	}
+	return out
 }
 
 // codexTokens is one call. A `token_count` repeated with the same running

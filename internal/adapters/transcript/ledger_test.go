@@ -190,6 +190,26 @@ func TestACodexRolloutIsReadIntoCalls(t *testing.T) {
 	}
 }
 
+func TestCodexExecClassifiesNestedCommands(t *testing.T) {
+	cases := []struct {
+		script string
+		want   Category
+	}{
+		{`const r = await tools.exec_command({cmd:"clawdline guide feature-root"}); text(r.output);`, CategoryProtocol},
+		{`const r = await tools.exec_command({cmd:"clawdline item steps 123"}); text(r.output);`, CategoryBoard},
+		{`const r = await tools.exec_command({cmd:"cat /x/root-assignments/123/ASSIGNMENT.md"}); text(r.output);`, CategoryBoard},
+		{`await Promise.all([tools.exec_command({cmd:"go test ./..."}), tools.exec_command({cmd:"clawdline item steps 123"})]);`, CategoryBoard},
+		{`const note = "clawdline item steps 123"; await tools.exec_command({cmd:"go test ./..."});`, CategoryImpl},
+		{`await tools.apply_patch("*** Begin Patch");`, CategoryImpl},
+		{`text("clawdline item steps 123");`, CategoryOther},
+	}
+	for _, tc := range cases {
+		if got := classifyCodexExec(tc.script); got != tc.want {
+			t.Errorf("classifyCodexExec(%q) = %s, want %s", tc.script, got, tc.want)
+		}
+	}
+}
+
 // Feeding a file in two halves, the state kept as JSON between them, gives
 // exactly what feeding it once does — at every cut, mid-line included.
 func TestTwoHalvesAreOneFeed(t *testing.T) {
