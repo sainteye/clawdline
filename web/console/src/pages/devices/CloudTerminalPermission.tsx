@@ -121,7 +121,7 @@ export function CloudTerminalPermission({ shown }: { shown: boolean }) {
       </button>}
     </>}
     {(state.kind === "failed" || state.kind === "unknown") && <button ref={retryButton} className="device-start" type="button" disabled={busy} onClick={retry}>
-      {nextWord("terminalRetry")}
+      {nextWord("terminalPermissionReadAgain")}
     </button>}
   </section>
 }
