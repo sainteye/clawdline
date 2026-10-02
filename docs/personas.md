@@ -438,7 +438,7 @@ persona, the conversation is restored with none rather than not at all.
 The catalog holds at most **64** personas (`persona.MaxPersonas`). Each injected text is at most
 **8 KiB** (`persona.MaxPersonaBytes`), counting the preamble, the body and the source line. Both
 are registered as `personas.catalog` and `personas.text_bytes`, and `/v1/diagnostics.capacity`
-reports them. See docs/limits.md N52. The 43 shipped texts are 4–5 KiB each.
+reports them. See docs/limits.md N52. The 43 shipped texts are 3,782 to 5,149 bytes each (measured 2026-10-02).
 
 One explicit AI role-classification turn is at most **16 KiB** of encoded input
 (`personas.suggestion_context_bytes`). The closed catalog and item kind/title stay; the end of an
