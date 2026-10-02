@@ -110,6 +110,9 @@ type Brief struct {
 	// WorkID is the work item the dispatch named, kept in the file so a
 	// respawn — which copies this file — is the same work (D36).
 	WorkID string `json:"work_id,omitempty"`
+	// AlsoWorkIDs are the further work items the same dispatch carries, kept
+	// for a respawn as WorkID is.
+	AlsoWorkIDs []string `json:"also_work_ids,omitempty"`
 	// Graph is the task graph this task is a node of, kept in the file for the
 	// child's own validator — a review node owes a closed review receipt —
 	// and for a respawn, which copies this file.

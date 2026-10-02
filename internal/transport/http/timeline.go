@@ -319,6 +319,7 @@ func timelineEntry(rec orchestrator.Record) (contract.TimelineEntry, bool) {
 	}
 	if rec.WorkID != "" {
 		entry.BoardItemIds = append(entry.BoardItemIds, rec.WorkID)
+		entry.BoardItemIds = append(entry.BoardItemIds, rec.AlsoWorkIDs...)
 	}
 	if rec.Result != nil {
 		entry.Summary = cut(rec.Result.Summary, timelineSummaryLimit)

@@ -172,6 +172,40 @@ func (b *Broker) checkNamedWork(ctx context.Context, r Record) error {
 	if r.WorkID == "" || r.WorkFrom != work.WorkNamed {
 		return nil
 	}
+	if err := b.checkLineWork(ctx, r); err != nil {
+		return err
+	}
+	return b.checkAlsoWork(ctx, r)
+}
+
+// checkAlsoWork refuses a dispatch carrying a further item it cannot be
+// bound to. Each is a Board (v2) item, because only a Board item finds its
+// tasks by every id the task carries (store's WorkV2Tx.Tasks); the legacy
+// board reads work_id alone. Each is checked as work_id is: same Project, not
+// closed, and a store that did not answer refuses.
+func (b *Broker) checkAlsoWork(ctx context.Context, r Record) error {
+	for _, id := range r.AlsoWorkIDs {
+		v2, err := b.Store.WorkV2Item(ctx, id)
+		switch {
+		case errors.Is(err, store.ErrNoWorkV2):
+			return refuseWith(http.StatusUnprocessableEntity, "also_work_not_found",
+				"also_work_ids names "+id+", which is no Board item. Name Board items only, or dispatch it separately.",
+				map[string]any{"work_id": id})
+		case err != nil:
+			return refuse(http.StatusServiceUnavailable, "store_unavailable",
+				"The board could not be read, so the work items this dispatch names could not be checked; nothing was started.")
+		}
+		also := r
+		also.WorkID = id
+		if err := nameableV2(v2, also); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkLineWork is checkNamedWork for the task's own line, work_id.
+func (b *Broker) checkLineWork(ctx context.Context, r Record) error {
 	it, err := b.Store.WorkItem(ctx, r.WorkID)
 	found := true
 	switch {
