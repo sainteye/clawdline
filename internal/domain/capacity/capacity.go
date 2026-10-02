@@ -263,6 +263,15 @@ const (
 	ScreensCaptureSlots   = "screens.capture_slots"
 	CacheTerminalScreens  = "cache.terminal_screens"
 	CacheSessionInventory = "cache.session_inventory"
+	// An iTerm2 that stops answering Apple Events writes its own diagnosis:
+	// the failures held for it, the files kept, how often one is written,
+	// and what each of its steps may take (docs/limits.md N64).
+	ITermStallFailures     = "iterm.stall_failures"
+	ITermStallSaidBytes    = "iterm.stall_said_bytes"
+	ITermStallDiagnoses    = "iterm.stall_diagnoses"
+	ITermStallCooldown     = "iterm.stall_cooldown_seconds"
+	ITermStallSectionBytes = "iterm.stall_section_bytes"
+	ITermStallStepSeconds  = "iterm.stall_step_seconds"
 	// The Project Timeline is a projection that stores nothing, so what is
 	// bounded is the read (limits §3.3).
 	TimelineEntries = "timeline.entries"
@@ -1254,6 +1263,64 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/app.LastGoodInventoryAgeLimit"},
+		},
+		{
+			// The newest failed iTerm2 osascript runs, held for the next
+			// stall diagnosis (internal/adapters/terminal/stall.go). Past the
+			// limit the oldest is let go; every one of them is already a line
+			// in the log.
+			Name: ITermStallFailures, Class: Observation, Unit: Rows,
+			Limit: 32, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.stallFailuresLimit"},
+		},
+		{
+			// The end of what osascript wrote on stderr that one failure line
+			// carries. The end is kept: the Apple Event error number is there.
+			Name: ITermStallSaidBytes, Class: Observation, Unit: Bytes,
+			Limit: 512, AtLimit: EvictOldest,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.saidLimit"},
+		},
+		{
+			// The stall diagnoses kept in CLAWDLINE_NEXT_DIR/logs. After each
+			// one is written the oldest past the limit are removed.
+			Name: ITermStallDiagnoses, Class: DiagnosticLog, Unit: Rows,
+			Limit: 20, AtLimit: Rotate,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.stallDiagnosesLimit"},
+		},
+		{
+			// The least time between two stall diagnoses: one per episode,
+			// which has run 3 to 23 minutes. A run of timeouts inside it
+			// starts nothing; its failures are still logged one by one.
+			Name: ITermStallCooldown, Class: Buffer, Unit: Seconds,
+			Limit: 1800, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.stallCooldownLimit"},
+		},
+		{
+			// The most of one step's output a stall diagnosis carries. A
+			// two-second sample of iTerm2 measured 245 KB here; past the
+			// limit the rest is not written and the section says how much.
+			Name: ITermStallSectionBytes, Class: Buffer, Unit: Bytes,
+			Limit: 512 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.stallSectionLimit"},
+		},
+		{
+			// The longest one step of a stall diagnosis may take. A step past
+			// it is abandoned and recorded as timed out; the file goes on.
+			Name: ITermStallStepSeconds, Class: Buffer, Unit: Seconds,
+			Limit: 30, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/terminal.stallStepLimit"},
 		},
 		{
 			// The screens held between those captures, one per session the

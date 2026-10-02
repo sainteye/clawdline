@@ -117,9 +117,17 @@ func itermReveal(ctx context.Context, args ...string) (map[string]any, error) {
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
+	// Only `reveal` names a session; the others name a tty, a pane or nothing.
+	kind, session := "reveal", ""
+	if len(args) > 0 && args[0] != "reveal" {
+		kind = "reveal-" + args[0]
+	} else if len(args) > 1 {
+		session = args[1]
+	}
+	run := startOsascript(ctx, kind, session)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, osascriptFailure(ctx, stderr.String(), err, "iTerm2 would not show that session.")
+		return nil, osascriptFailure(ctx, run, stderr.String(), err, "iTerm2 would not show that session.")
 	}
 	var answer map[string]any
 	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {

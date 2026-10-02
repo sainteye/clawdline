@@ -35,5 +35,5 @@ func (i *ITerm) Type(ctx context.Context, s session.Session, text string) error 
 	if text == "" {
 		return nil
 	}
-	return itermCall(ctx, itermTypeScript, 6*time.Second, s.ID, text)
+	return itermCall(ctx, "type", itermTypeScript, 6*time.Second, s.ID, text)
 }

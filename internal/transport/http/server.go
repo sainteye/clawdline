@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/artifacts"
+	"github.com/sainteye/clawdline/internal/adapters/logs"
 	"github.com/sainteye/clawdline/internal/adapters/machineusage"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/adapters/process"
@@ -252,6 +253,15 @@ func New(cfg config.Config) (*Server, error) {
 			configurable.SetInventoryBackoff(inventoryBackoffFirst, inventoryBackoffMax)
 		}
 	}
+	// An iTerm2 that stops answering Apple Events writes one diagnosis into
+	// this daemon's own logs directory (docs/limits.md N64).
+	terminal.ConfigureITermStall(filepath.Join(cfg.Dir, logs.DirName), terminal.StallLimits{
+		Failures:     int(CapacityLimit(capacity.ITermStallFailures)),
+		Diagnoses:    int(CapacityLimit(capacity.ITermStallDiagnoses)),
+		Cooldown:     time.Duration(CapacityLimit(capacity.ITermStallCooldown)) * time.Second,
+		SectionBytes: int(CapacityLimit(capacity.ITermStallSectionBytes)),
+		Step:         time.Duration(CapacityLimit(capacity.ITermStallStepSeconds)) * time.Second,
+	})
 	srv.restore = srv.newSessionRestore()
 	srv.archive = srv.newSessionArchive()
 	srv.readings.Observe(srv.restore.Observe)

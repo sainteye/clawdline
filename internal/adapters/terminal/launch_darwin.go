@@ -81,9 +81,10 @@ func (l Launcher) NewITermTab(ctx context.Context, line string) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	run := startOsascript(ctx, "open", "")
 	out, stderr, err := itermOpenTab(ctx, line)
 	if err != nil {
-		return "", osascriptFailure(ctx, stderr, err, "iTerm2 would not open a tab.")
+		return "", osascriptFailure(ctx, run, stderr, err, "iTerm2 would not open a tab.")
 	}
 	var answer struct {
 		OK    bool   `json:"ok"`
@@ -168,7 +169,7 @@ const (
 // answered in 0.15 s, and one that ran past ten was waiting for a person —
 // which no longer limit cures.
 func closeITermByID(ctx context.Context, id string) error {
-	err := itermCall(ctx, itermCloseScript, 10*time.Second, id)
+	err := itermCall(ctx, "close", itermCloseScript, 10*time.Second, id)
 	var unsent Unsent
 	if err == nil || errors.As(err, &unsent) {
 		return err
@@ -252,8 +253,12 @@ func findITermSession(ctx context.Context, id string) (sighting, string) {
 	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-", id)
 	cmd.Stdin = strings.NewReader(itermFindScript)
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	run := startOsascript(ctx, "find", id)
 	out, err := cmd.Output()
 	if err != nil {
+		run.failed(ctx, stderr.String(), err)
 		return sightingUnknown, ""
 	}
 	return readSighting(out)
