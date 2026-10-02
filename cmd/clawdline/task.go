@@ -58,6 +58,9 @@ func taskCommand(args []string) {
 		case "show":
 			showCommand(args[1:])
 			return
+		case "land":
+			landCommand(args[1:])
+			return
 		case "gate-evidence":
 			gateEvidenceCommand(args[1:])
 			return
@@ -105,6 +108,9 @@ func taskUsage() {
 	fmt.Fprintln(os.Stderr, "  acknowledges a child's completion notice, so the daemon stops typing it into this session")
 	fmt.Fprintln(os.Stderr, "       clawdline task show [--port n] [--json] <task id>")
 	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout")
+	fmt.Fprintln(os.Stderr, "       clawdline task land [--port n] <task id> <landed|incorporated|abandoned|nothing_to_land|pending>")
+	fmt.Fprintln(os.Stderr, "                           [--target b] [--commit c] [--carrier-task id] [--note t]")
+	fmt.Fprintln(os.Stderr, "  records a child's landing by hand, with the orchestrator token; a merge into its target records itself")
 	fmt.Fprintln(os.Stderr, "       clawdline task gate-evidence --artifact id --media-type type [--port n] <task dir> <file>")
 	fmt.Fprintln(os.Stderr, "  streams one bounded verification artifact with the secret from "+orchestrator.AcceptSecretEnv)
 	fmt.Fprintln(os.Stderr, "       clawdline task gate-result [--port n] <task dir> <json file>")
@@ -325,6 +331,108 @@ func ackTask(stdout, stderr io.Writer, b *broker, id, notice string) int {
 	} else {
 		fmt.Fprintf(stdout, "acknowledged %s notice %s (already acknowledged)\n", id, got.NoticeID)
 	}
+	return 0
+}
+
+// `clawdline task land <task id> <state>`: a landing a root records by hand.
+//
+// A merge records itself (landing_detect.go), and a child that declared no
+// writes and wrote nothing is recorded nothing_to_land by the broker. What is
+// left — a cherry-pick, an `incorporated` delivery, `abandoned`, a shared
+// checkout's landing — used to be a raw POST whose credential the guide did
+// not name, and a root that sent it with the wrong one was refused
+// `forbidden` (2026-10-02). This sends it with the orchestrator token, which
+// every landing state accepts, and the completion notice names this line.
+type landInvocation struct {
+	port int
+	id   string
+	body map[string]string
+}
+
+// landArgs reads the command line. Flags may come before, between or after
+// the two words, because the notice puts them after.
+func landArgs(args []string) (landInvocation, error) {
+	fs := flag.NewFlagSet("task land", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
+	target := fs.String("target", "", "the branch the delivery landed on")
+	commit := fs.String("commit", "", "the commit on the target that carries the delivery")
+	carrier := fs.String("carrier-task", "", "for incorporated: the task whose verified landing carried this one")
+	note := fs.String("note", "", "what the record should say")
+	var words []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return landInvocation{}, err
+		}
+		args = fs.Args()
+		if len(args) == 0 {
+			break
+		}
+		words = append(words, args[0])
+		args = args[1:]
+	}
+	if len(words) != 2 {
+		return landInvocation{}, errors.New("a task id and a landing state are required")
+	}
+	id, state := strings.TrimSpace(words[0]), strings.TrimSpace(words[1])
+	if !orchestrator.IsTaskID(id) {
+		return landInvocation{}, fmt.Errorf("%q is not a task id", id)
+	}
+	switch orchestrator.LandingState(state) {
+	case orchestrator.LandingPending, orchestrator.LandingLanded, orchestrator.LandingIncorporated,
+		orchestrator.LandingAbandoned, orchestrator.LandingNothingToLand:
+	default:
+		return landInvocation{}, fmt.Errorf("%q is not a landing state: landed, incorporated, abandoned, "+
+			"nothing_to_land or pending", state)
+	}
+	body := map[string]string{"state": state}
+	for key, v := range map[string]string{"target": *target, "commit": *commit, "carrier_task": *carrier, "note": *note} {
+		if v = strings.TrimSpace(v); v != "" {
+			body[key] = v
+		}
+	}
+	return landInvocation{port: *port, id: id, body: body}, nil
+}
+
+func landCommand(args []string) {
+	inv, err := landArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline task land:", err)
+		taskUsage()
+	}
+	b, err := openBroker(inv.port)
+	if err != nil {
+		fail(err)
+	}
+	os.Exit(landTask(os.Stdout, os.Stderr, b, inv))
+}
+
+// landTask is the command, answering its exit status. The broker's refusal —
+// `unverified_landing` with its reason, `wrote_to_repository`,
+// `invalid_transition` — is printed as it came, code first.
+func landTask(stdout, stderr io.Writer, b *broker, inv landInvocation) int {
+	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(inv.id)+"/landing", nil, inv.body, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline task land:", err)
+		return 1
+	}
+	if !a.ok() {
+		return report(stdout, stderr, "task land", a)
+	}
+	var got contract.BrokerProgressResult
+	if json.Unmarshal(a.Body, &got) != nil || got.Task.Landing == nil {
+		fmt.Fprintln(stderr, "clawdline task land: the daemon answered without the landing it recorded")
+		return 1
+	}
+	l := got.Task.Landing
+	line := "recorded " + inv.id + " landing " + string(l.State)
+	if l.Target != "" {
+		line += " on " + l.Target
+	}
+	if l.Commit != "" {
+		line += " at " + l.Commit
+	}
+	fmt.Fprintln(stdout, line)
 	return 0
 }
 

@@ -115,8 +115,14 @@ func TestTheCompletionNoticeIsShort(t *testing.T) {
 		}
 	}
 	// The ceiling: the title and the checkout path are the task's, and the
-	// rest is ours. It was 1,000 bytes of ours before.
-	if ours := len(body) - len(r.Title) - len(r.Worktree.Path) - len(r.Worktree.Branch); ours > 330 {
+	// rest is ours. It was 1,000 bytes of ours before. The id inside the
+	// `clawdline task land` an empty branch is offered is the task's too: the
+	// line used to name an action without a command, which was shorter only
+	// because nobody could run it.
+	if !strings.Contains(body, "clawdline task land "+r.ID+" abandoned") {
+		t.Errorf("an empty branch is not offered the command that abandons it:\n%s", body)
+	}
+	if ours := len(body) - len(r.Title) - len(r.Worktree.Path) - len(r.Worktree.Branch) - len(r.ID); ours > 330 {
 		t.Errorf("the body spends %d bytes of its own, want at most 330:\n%s", ours, body)
 	}
 }

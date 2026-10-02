@@ -420,5 +420,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
 	fmt.Fprintln(os.Stderr, "  task ack <task id> <notice id>      acknowledge a child's completion notice, so it stops being typed")
 	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing")
+	fmt.Fprintln(os.Stderr, "  task land <task id> <state> [--target b --commit c]   record a landing a merge does not record by itself")
 	fmt.Fprintln(os.Stderr, "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   start a schedule through its webhook URL (from --url-file or CLAWDLINE_WEBHOOK_URL) and wait for its outcome; no daemon needed")
 }
