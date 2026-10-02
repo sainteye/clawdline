@@ -116,6 +116,9 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	if r.Landing != nil && r.Landing.State == LandingPending {
 		line += "; " + landingLine(r)
 	}
+	if r.Landing != nil && r.Landing.State == LandingNothingToLand && r.Landing.Note == landingEmptyNote {
+		line += "; it wrote nothing, and the broker recorded nothing_to_land"
+	}
 	// The moment this whole path exists for: a root integrating a child has
 	// just been told there is something it did not do. The count is here; the
 	// list is in `task show`, and what raising one costs is in the guide.
@@ -150,6 +153,14 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 // not bring the work back, and a daemon committing somebody's changes is an
 // irreversible act it has no standing to take (§2.3, the two paths
 // deliberately not taken).
+//
+// **Every action it names is a command that works** (2026-10-02). It said
+// "merge it, then record the landing" to a root whose merge the broker records
+// by itself (landing_detect.go); the root that did as told POSTed a landing by
+// hand and was refused. And "record abandoned" named a route no command
+// reached. So a merge is said to be enough, and anything a root still records
+// by hand is spelled as `clawdline task land`, which carries the orchestrator
+// token; landLine is the one place that spells it.
 func landingLine(r Record) string {
 	branch, path := "", ""
 	if r.Worktree != nil {
@@ -158,13 +169,27 @@ func landingLine(r Record) string {
 	switch r.Landing.Settlement {
 	case SettlementEmpty:
 		return "nothing is committed on branch " + branch + "; commit in " + path +
-			" before the sweep takes it, or record abandoned"
+			" before the sweep takes it, or " + LandCommand(r.ID, LandingAbandoned)
 	case SettlementCarried:
-		return "committed on branch " + branch + "; merge it, then record the landing"
+		return "committed on branch " + branch + "; merge it into its target and the broker records the " +
+			"landing by itself (a cherry-pick: " + LandCommand(r.ID, LandingLanded) + ")"
 	case SettlementUnreadable:
-		return "branch " + branch + " could not be read; look before recording the landing"
+		return "branch " + branch + " could not be read; look at it, then run " +
+			LandCommand(r.ID, LandingLanded) + " or " + LandCommand(r.ID, LandingAbandoned)
 	}
-	return "it wrote the shared checkout; record the landing, or abandoned"
+	return "it wrote the shared checkout; record the landing with " + LandCommand(r.ID, LandingLanded) +
+		", or run " + LandCommand(r.ID, LandingAbandoned)
+}
+
+// LandCommand is the `clawdline task land` line that records one landing
+// state by hand, with the placeholders a root fills in. It is exported for
+// the command's own test, which runs every line a notice names.
+func LandCommand(id string, state LandingState) string {
+	line := "clawdline task land " + id + " " + string(state)
+	if state == LandingLanded {
+		line += " --target <branch> --commit <commit>"
+	}
+	return line
 }
 
 // outstandingFor is how many other tasks of one root are still running: the
@@ -468,6 +493,14 @@ func (b *Broker) attemptNotice(ctx context.Context, r Record) bool {
 		// delivered queues behind whatever that is, which is how it gets read.
 		if !seen.DeliveredAt.IsZero() {
 			return b.holdNotice(ctx, r.ID, seen, at, holdQueued)
+		}
+	}
+	// A child with nothing to land is recorded so before the line is typed,
+	// and the line says that instead of asking a root to (settleEmpty). An
+	// error is the detector's to say: it asks again within the minute.
+	if settled, _ := b.settleEmpty(ctx, r); settled {
+		if now, _, err := b.Record(ctx, r.ID); err == nil {
+			r = now
 		}
 	}
 	wire, err := b.NoticeWire(ctx, r)
