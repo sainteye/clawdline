@@ -22,6 +22,7 @@ import {
 } from "../legacy/js/net/cloud-onboarding.js"
 import type { CloudReadClient } from "./relay-reader.js"
 import type { OpenedPairing, PendingOffer } from "./pair.js"
+import type { RecoverySession } from "./device-limit.js"
 
 /** A build's Cloud declaration, checked (`readCloudConfig`). */
 export interface CloudConfig {
@@ -135,10 +136,17 @@ export const cloudViewerDeviceMetadata = cloudViewerDeviceMetadataOriginal as (s
   name: string
 }
 
-export function newCloudSession(options: { config: CloudConfig; deviceKind: string; deviceName: string }): CloudSession {
+/**
+ * The session this console makes. Its recovery calls (`recoveryDevices`,
+ * `revokeRecoveryDevice`) answer only under the fresh login ticket, while the
+ * account is at its viewer-device limit (`device-limit.ts`).
+ */
+export type RecoverableCloudSession = CloudSession & RecoverySession
+
+export function newCloudSession(options: { config: CloudConfig; deviceKind: string; deviceName: string }): RecoverableCloudSession {
   // `handlers` is the Swift page's render seam (`net/handlers.js`, not copied):
   // this console draws from the client's events instead, so none is given.
-  return new CloudViewerSessionOriginal({ ...options, handlers: null }) as unknown as CloudSession
+  return new CloudViewerSessionOriginal({ ...options, handlers: null }) as unknown as RecoverableCloudSession
 }
 
 export const keepConnected = keepConnectedOriginal as (

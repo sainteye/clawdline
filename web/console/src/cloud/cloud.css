@@ -285,3 +285,24 @@
 .cloud-pair-ask .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .cloud-pair-ask .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
 #cloud-pair-start { margin-top: 14px; }
+
+/* The viewer-device limit (`DeviceLimitPanel.tsx`): the devices using the
+   account's slots, each with Remove and its in-card question. */
+.cloud-devices { list-style: none; margin: 14px 0 0 0; padding: 0; display: grid; gap: 8px; }
+.cloud-devices li {
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
+    padding: 10px 12px; background: var(--card-hi); border: 1px solid var(--line); border-radius: 10px;
+}
+.cloud-device-name { color: var(--ink); font-size: 14px; overflow-wrap: anywhere; }
+.cloud-device-facts { grid-column: 1; color: var(--dim); font-size: 12px; }
+.cloud-devices .cloud-device-remove { grid-column: 2; grid-row: 1 / span 2; padding: 6px 12px; }
+.cloud-devices .cloud-device-remove:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; border-color: #57362e; }
+.cloud-devices .cloud-device-remove:disabled { opacity: 0.4; cursor: default; }
+.cloud-devices > li > .say { grid-column: 2; grid-row: 1 / span 2; margin: 0; font-size: 12px; }
+.cloud-device-ask { grid-column: 1 / -1; }
+.cloud-device-ask .say { margin: 10px 0 0 0; color: var(--dim); font-size: 12.5px; line-height: 1.55; }
+.cloud-device-ask .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.cloud-device-ask .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.cloud-device-ask .confirm-go { border-color: #57362e; color: #e09985; }
+.cloud-device-ask .confirm-go:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; }
+.cloud-device-limit .go { margin-top: 14px; }
