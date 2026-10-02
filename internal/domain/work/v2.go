@@ -35,8 +35,13 @@ func (k Kind) Valid() bool {
 
 // Executable kinds are assigned to a Session and move through the execution
 // phases. An Epic is executable too, behind a plan-and-review gate
-// (EpicPlanGate); Refactor and Plan stay in Planning.
-func (k Kind) Executable() bool { return k == KindFeature || k == KindIssue || k == KindEpic }
+// (EpicPlanGate); only a Plan stays in Planning.
+func (k Kind) Executable() bool { return k.FeatureLike() || k == KindIssue || k == KindEpic }
+
+// FeatureLike kinds follow a Feature's rules: a Refactor is an internal
+// structural change that leaves outward behaviour alone, and it is assigned,
+// planned, gated and reviewed exactly as a Feature is.
+func (k Kind) FeatureLike() bool { return k == KindFeature || k == KindRefactor }
 
 type Phase string
 
@@ -194,7 +199,7 @@ func (i ItemV2) HasGateSnapshot() bool {
 // GateNeedsAcceptance says whether this item's captured gates require an
 // acceptance contract. Planning exempts Issues; verification does not.
 func (i ItemV2) GateNeedsAcceptance() bool {
-	return i.VerifyGate || i.PlanningGate && (i.Kind == KindFeature || i.Kind == KindEpic)
+	return i.VerifyGate || i.PlanningGate && (i.Kind.FeatureLike() || i.Kind == KindEpic)
 }
 
 // CreatedViaV2 is the provenance of an item a Session created because a
@@ -219,10 +224,10 @@ type CreatedViaV2 struct {
 }
 
 // SessionAssignable is whether a Session may hand an item of this kind to a
-// new Session on the person's message: an ordinary Feature or Issue. An Epic
-// is planned by whoever the person gives it to, and a Refactor or a Plan
-// stays in Planning.
-func SessionAssignable(k Kind) bool { return k == KindFeature || k == KindIssue }
+// new Session on the person's message: an ordinary Feature, Refactor or Issue.
+// An Epic is planned by whoever the person gives it to, and a Plan stays in
+// Planning.
+func SessionAssignable(k Kind) bool { return k.FeatureLike() || k == KindIssue }
 
 type AssignmentV2 struct {
 	ID             string
@@ -467,17 +472,17 @@ func ValidateNewV2(i ItemV2) error {
 }
 
 // ReviewRequiredApplies refuses the person's "Needs independent review"
-// switch on anything but a Feature: an Epic is always reviewed when planning
+// switch on anything but a Feature or Refactor: an Epic is always reviewed when planning
 // is on and an Issue never is, so the switch would say nothing there.
 func ReviewRequiredApplies(k Kind, required bool) error {
-	if required && k != KindFeature {
+	if required && !k.FeatureLike() {
 		return RefuseV2("review_required_not_applicable",
-			"Needs independent review is a Feature's switch; an Epic is always reviewed with planning on and an Issue is not.")
+			"Needs independent review is a Feature's or Refactor's switch; an Epic is always reviewed with planning on and an Issue is not.")
 	}
 	return nil
 }
 
-// Document roles. Plan and plan_review belong to a Feature or Epic: they are
+// Document roles. Plan and plan_review belong to a Feature, Refactor or Epic: they are
 // the record the kind-aware planning gate reads.
 const (
 	DocumentPlan       = "plan"
@@ -494,17 +499,18 @@ func DocumentRoleValid(role string) bool {
 	return false
 }
 
-// DocumentRoleApplies refuses a plan or plan_review on anything but a Feature
-// or Epic.
+// DocumentRoleApplies refuses a plan or plan_review on anything but a
+// Feature, Refactor or Epic.
 func DocumentRoleApplies(i ItemV2, role string) error {
-	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic && i.Kind != KindFeature {
+	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic && !i.Kind.FeatureLike() {
 		return RefuseV2("document_role_not_applicable",
-			"Plan and plan_review documents belong to a Feature or Epic; use spec or design for this item.")
+			"Plan and plan_review documents belong to a Feature, Refactor or Epic; use spec or design for this item.")
 	}
 	return nil
 }
 
-// PlanningGate is the rule a Feature or Epic crosses before implementing.
+// PlanningGate is the rule a Feature or Epic crosses before implementing; a
+// Refactor crosses it as a Feature does.
 // It reads only the current cycle snapshot, never the later global setting.
 // A Feature takes the reviewed-plan path only when the person checked its
 // ReviewRequired switch, read live; otherwise its acceptance criteria are
@@ -519,7 +525,7 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 	if i.Phase != PhaseAssigned || next != PhaseImplementing || i.Kind == KindIssue {
 		return nil
 	}
-	if i.Kind != KindEpic && i.Kind != KindFeature {
+	if i.Kind != KindEpic && !i.Kind.FeatureLike() {
 		return nil
 	}
 	if !i.HasGateSnapshot() {
@@ -531,7 +537,7 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 	if strings.TrimSpace(i.AcceptanceCriteria) == "" {
 		return RefuseV2("acceptance_required", "Write acceptance criteria before this item enters implementation.")
 	}
-	if i.Kind == KindFeature && !i.ReviewRequired {
+	if i.Kind.FeatureLike() && !i.ReviewRequired {
 		return nil
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0
@@ -554,7 +560,7 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 		return RefuseV2(prefix+"_plan_required",
 			"Write the item's plan first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
 	case lastReview < lastPlan && ((i.Kind == KindEpic && reviews < rounds) ||
-		(i.Kind == KindFeature && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
+		(i.Kind.FeatureLike() && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
 		return RefuseV2(prefix+"_plan_review_required",
 			"Have an independent child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
 				"`) and wait for that child to finish: a successful review is recorded on the item by itself. "+
@@ -626,8 +632,8 @@ func ReadPlanReview(raw []byte) PlanReviewSummary {
 // new plan review is dispatched for it. Whether a review exists at all stays
 // the phase route's question.
 func PlanReviewDispatchGate(i ItemV2, kind string, plans []DocumentV2, review PlanReviewSummary) error {
-	if kind == DocumentPlanReview || i.Phase != PhaseAssigned || (i.Kind != KindEpic && i.Kind != KindFeature) ||
-		!i.HasGateSnapshot() || !i.PlanningGate || (i.Kind == KindFeature && !i.ReviewRequired) {
+	if kind == DocumentPlanReview || i.Phase != PhaseAssigned || (i.Kind != KindEpic && !i.Kind.FeatureLike()) ||
+		!i.HasGateSnapshot() || !i.PlanningGate || (i.Kind.FeatureLike() && !i.ReviewRequired) {
 		return nil
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0

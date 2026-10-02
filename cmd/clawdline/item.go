@@ -867,7 +867,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			switch got.AssignmentState {
 			case "not_requested":
 				fmt.Fprintf(stderr, "Board item %s was created but not assigned. The person can assign it from the Board.\n", it.ID)
-				if f.assign.request() == nil && it.Kind != "refactor" && it.Kind != "plan" {
+				if f.assign.request() == nil && it.Kind != "plan" {
 					fmt.Fprintf(stderr, "When the person's message asks this Session to do it, take it with `clawdline item claim %s`.\n", it.ID)
 				}
 			case "awaiting_user":
