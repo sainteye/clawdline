@@ -59,6 +59,9 @@ type Server struct {
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
 	terminals                 []ports.TerminalHost
+	// closes is the Sessions' own closes waiting for their turn to end
+	// (agent_close_schedule.go).
+	closes closeSchedule
 	// facts holds the model and spend read out of each record, keyed on the
 	// file's size and time, so the status line's minute-by-minute read of an
 	// unchanged session opens nothing.

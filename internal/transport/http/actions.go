@@ -395,11 +395,16 @@ func (s *Server) actions() app.Actions {
 // same operation the Board's own unassign route runs, in the person's name;
 // every one takes it off the items waiting on the person to deploy.
 func (s *Server) closeActions(r *http.Request) app.Actions {
+	return s.closeActionsAs(personPrincipal(r))
+}
+
+// closeActionsAs is closeActions in a named principal's name: a close carried
+// out later, when the request that asked for it is gone.
+func (s *Server) closeActionsAs(actor string) app.Actions {
 	a := s.actions()
 	if s.store == nil {
 		return a
 	}
-	actor := personPrincipal(r)
 	a.ReleaseUnstarted = func(ctx context.Context, sess session.Session) error {
 		return s.releaseUnstarted(ctx, sess.ConversationID, actor)
 	}

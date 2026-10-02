@@ -83,6 +83,10 @@ func (s *Server) agentCloseSession(w http.ResponseWriter, r *http.Request, termi
 		writeRefusal(w, refusal.status, refusal.code, refusal.message)
 		return
 	}
+	if audit.Authority == "self" && onlyThisTurn(audit) {
+		s.scheduleOwnClose(w, r, body, audit)
+		return
+	}
 	switch {
 	case audit.State == string(contract.CloseabilityStateBlocked):
 		w.Header().Set("Content-Type", "application/json")
@@ -111,6 +115,31 @@ func (s *Server) agentCloseSession(w http.ResponseWriter, r *http.Request, termi
 		return
 	}
 	writeJSON(w, contract.ActionResult{OK: true, ID: terminal, Action: "closed"})
+}
+
+// scheduleOwnClose is a Session's close of itself while the one thing left is
+// the turn it is running: recorded, and carried out when that turn ends
+// (agent_close_schedule.go). An Epic owner closes only an idle Session and is
+// never scheduled.
+func (s *Server) scheduleOwnClose(w http.ResponseWriter, r *http.Request, body agentCloseRequest, audit agentCloseAudit) {
+	if body.ExpectedCloseabilityVersion != "" && body.ExpectedCloseabilityVersion != audit.Version {
+		writeRefusal(w, http.StatusConflict, "close_not_proven",
+			"The Session changed since it was read. Read its closeability again before closing.")
+		return
+	}
+	sc, added, err := s.closes.add(audit.TerminalID, body.SessionID, personPrincipal(r))
+	if err != nil {
+		writeRefusal(w, http.StatusTooManyRequests, "close_schedule_full",
+			"Too many Sessions are already waiting to close when their turn ends. Run the close again after this turn.")
+		return
+	}
+	if added {
+		s.recordCloseEvent(r.Context(), "session.close_scheduled", sc.Terminal,
+			map[string]any{"conversation": sc.Caller, "reasons": audit.Reasons})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(contract.ActionResult{OK: true, ID: sc.Terminal, Action: "close_scheduled"})
 }
 
 // agentAuditClose reads one Session's closeability from a fresh inventory,

@@ -392,6 +392,12 @@ const (
 	TerminalLaunchScripts   = "terminal.launch_scripts"
 	// The further Board items one dispatch carries beside its work_id.
 	DispatchAlsoWorkIDs = "dispatch.also_work_ids"
+	// A Session's own close, asked during its turn and carried out when the
+	// turn ends: how many may wait at once, how many per terminal, and how
+	// long one waits for its turn to end.
+	SessionCloseScheduled            = "session.close_scheduled"
+	SessionCloseScheduledPerTerminal = "session.close_scheduled_per_terminal"
+	SessionCloseScheduledSeconds     = "session.close_scheduled_seconds"
 )
 
 // Entry is one row of the register.
@@ -2180,6 +2186,32 @@ func Register() []Entry {
 			Limit: 7, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/orchestrator.MaxAlsoWorkIDs"},
+		},
+		{
+			// Closes Sessions asked for themselves while still working. They
+			// live in memory; a restart drops them. One past the cap is
+			// refused close_schedule_full and nothing is waiting for it.
+			Name: SessionCloseScheduled, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxScheduledCloses"},
+		},
+		{
+			// A repeat for the same terminal is the same request: it answers
+			// the same 202 and adds nothing.
+			Name: SessionCloseScheduledPerTerminal, Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxScheduledClosesPerTerminal"},
+		},
+		{
+			// A terminal still working this long after its close was asked
+			// for has its request dropped, with a session.close_schedule_dropped
+			// event; the agent can ask again.
+			Name: SessionCloseScheduledSeconds, Class: Cache, Unit: Seconds,
+			Limit: 900, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.maxScheduledCloseWait"},
 		},
 	}
 }

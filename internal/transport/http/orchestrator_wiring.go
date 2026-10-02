@@ -412,6 +412,9 @@ func (s *Server) StartBroker(ctx context.Context) {
 	go s.broker.Run(ctx, tick, func(p orchestrator.Pulse) {
 		s.beat.Store(&p)
 	})
+	// A Session's own close waiting for its turn to end, on the same beat;
+	// a pass with nothing waiting reads nothing.
+	go s.runScheduledCloses(ctx, tick)
 }
 
 // StartWorkGateCoordinator starts after StartBroker so every durable checker
