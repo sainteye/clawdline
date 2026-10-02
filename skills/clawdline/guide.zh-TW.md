@@ -580,6 +580,15 @@ POST /v1/orchestrator/tasks/<id>/landing
 coordinator 角色時的 `succession_required`——這個 daemon 沒有 succession（`501`），所以那個 session
 沒辦法 handoff。
 
+**里程碑換手。** 長時間運作的 Root 到了里程碑，用 `clawdline handoff --summary summary.md` 換手，之後的
+工作就不必每次呼叫都重讀之前的一切。摘要剛好五個 `## ` 段落——Goal、Verified decisions、Blockers、
+Evidence（要打開的路徑、commit、id 或 `clawdline` 指令，不是內容本身）、Next step——最多 6 KiB，不能有
+憑證或對話正文；`--check` 列出每個問題但不開任何東西，daemon 會以 `bad_milestone_summary` 拒絕同樣的
+問題。daemon 會在旁邊寫 `obligations.md`：你的 Board item（會移交，連同使用者還沒回答的 decision）
+以及你還在跑的 child、未 ACK 的通知、未落地的 landing（留在你這裡）。所以換手後繼續 ACK、落地那些，
+等 `clawdline session close` 顯示 `safe` 再關。換不換手由你決定：`clawdline usage --compare-handoff`
+說明這台機器上換手有沒有省到，從不強制。
+
 **Root 指派。** `Idempotency-Key` header 必須等於 `request_id`：
 
 ```

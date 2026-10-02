@@ -441,6 +441,18 @@ func ReleasedAtClose(prev, next ItemV2) bool {
 		next.DecisionID == prev.DecisionID && next.UserAction == prev.UserAction
 }
 
+// HandedOverWaiting recognises a handoff's owner change on an item that waits
+// on the person: a new owner, and nothing LeaveDecision reads changed. The
+// question was asked about the work, not about the Session that asked it, so
+// it goes with the work to the Session that continues it (docs/handoff.md,
+// "Milestone handoffs"); an answer is delivered to the item's owner.
+func HandedOverWaiting(prev, next ItemV2) bool {
+	return prev.DecisionID != "" && prev.Condition == ConditionWaitingUser && !prev.Phase.Terminal() &&
+		next.OwnerSession != "" && next.OwnerSession != prev.OwnerSession &&
+		next.Phase == prev.Phase && next.Condition == prev.Condition &&
+		next.DecisionID == prev.DecisionID && next.UserAction == prev.UserAction
+}
+
 func ValidateNewV2(i ItemV2) error {
 	switch {
 	case strings.TrimSpace(i.ProjectID) == "":

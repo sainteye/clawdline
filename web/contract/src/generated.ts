@@ -669,6 +669,12 @@ export const BrokerGraphNodeStateValues: readonly BrokerGraphNodeState[] = ["rea
  */
 export interface BrokerHandoff {
   assistant: string
+
+  /**
+   * The sender's child tasks obligations.md named: running, unacknowledged or owed
+   * a landing. They stay with the sender.
+   */
+  carried_tasks?: string[]
   coordinator_plain_handoff: boolean
   created: number
   delivered_at?: number
@@ -681,10 +687,20 @@ export interface BrokerHandoff {
   from_session: string
   from_terminal?: string
   handoff_id: string
+
+  /**
+   * The package passed the milestone summary check.
+   */
+  milestone?: boolean
   model?: string
   opened?: BrokerOpenedSession
   project_dir: string
   receipt?: string
+
+  /**
+   * The receiving Session's conversation, once it has one.
+   */
+  receiver_session?: string
   state: BrokerHandoffState
   title?: string
   type_attempted_at?: number
@@ -730,6 +746,14 @@ export interface BrokerHandoffRequest {
    * A lowercase UUID the sender chose; a resend with it is the same handoff.
    */
   handoff_id: string
+
+  /**
+   * handoff.md is a milestone summary: sections Goal, Verified decisions, Blockers,
+   * Evidence and Next step, at most 6 KiB, evidence as links, no credential or
+   * conversation text. It is checked before anything opens (`bad_milestone_summary`
+   * lists each problem), and the daemon writes obligations.md beside it.
+   */
+  milestone?: boolean
   model?: string
   project_dir: string
 
@@ -8423,6 +8447,81 @@ export interface UsageGap {
   id: string
   kind: string
   reason: UsageReason
+}
+
+/**
+ * GET /v1/usage/compare-handoff?since=… (docs/token-ledger.md "Did handing over
+ * pay"): the Features, Issues and Refactors finished in [`since`, `until`] (Unix
+ * seconds), grouped by whether a milestone handoff, an ordinary handoff or no
+ * handoff carried them. Each item's bill is its owner Sessions' own cache reads,
+ * each Session's shared equally among the finished items it owned in the range.
+ * `saving` is 1 - milestone/single median cache reads per item, null until both
+ * groups have `min_items`. `verdict` is `insufficient_evidence`, `below_target`
+ * (under `target`), `guardrail_failed` (`reasons` says which) or
+ * `recommend_default`; anything but the last leaves handing over a Session's own
+ * choice. `excluded_unowned` and `excluded_unread` count the items in no group and
+ * why; `not_measured` names what was asked about and is recorded nowhere.
+ */
+export interface UsageHandoffComparison {
+  /**
+   * Tasks those handoffs carried that, a day later, were still running or still
+   * owed a landing.
+   */
+  carried_unsettled: number
+
+  /**
+   * Items no Session's assignment names.
+   */
+  excluded_unowned: number
+
+  /**
+   * Items an owner Session of which the ledger has not read.
+   */
+  excluded_unread: number
+
+  /**
+   * Of those, the ones whose receiver never opened.
+   */
+  failed_handoffs: number
+  groups: UsageHandoffGroup[]
+
+  /**
+   * Milestone handoffs opened in the range.
+   */
+  milestone_handoffs: number
+  min_items: number
+  not_measured: string[]
+  reasons: string[]
+  saving: number | null
+  since: number
+  target: number
+  truncated: boolean
+  until: number
+  verdict: string
+}
+
+/**
+ * One group of a handoff comparison. The medians and the reopened share are null
+ * when the group has no item; `too_few` says it has fewer than the comparison's
+ * `min_items`.
+ */
+export interface UsageHandoffGroup {
+  /**
+   * Median owner-Session cache-read tokens per item.
+   */
+  cache_read_per_item: number | null
+  cache_read_total: number
+  calls_per_item: number | null
+
+  /**
+   * Median hours from the first owner's assignment to done.
+   */
+  elapsed_hours: number | null
+  items: number
+  name: string
+  reopened: number
+  reopened_share: number | null
+  too_few: boolean
 }
 
 /**

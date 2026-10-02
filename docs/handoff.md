@@ -650,6 +650,41 @@ Saying which one it is, out loud, is the sender's job and nobody else's.
 
 ---
 
+## Milestone handoffs
+
+A Root that keeps one conversation for a whole feature re-reads everything before its latest
+milestone on every call. A milestone handoff is the other way: at a milestone the Root writes a
+short summary and a fresh Session continues from it. It is the plain handoff above with three
+differences, opened by `clawdline handoff --summary <file>` (which writes the package and calls the
+route with `milestone: true`).
+
+**The summary is bounded.** It has exactly five `## ` sections — Goal, Verified decisions, Blockers,
+Evidence, Next step — and is at most 6 KiB (limits N72). Evidence holds links — paths, commits, ids,
+`clawdline` commands — never their contents, so the raw evidence stays where it was and is read on
+demand. A summary with a credential, with speaker-labelled or markup-labelled conversation lines,
+with a quoted or fenced block over 12 lines, with a missing, repeated, unknown or empty section, or
+with an Evidence section that links nothing is refused `422 bad_milestone_summary`, each problem
+named with its line; a credential is named, never echoed. `clawdline handoff --check` runs the same
+checks without opening anything.
+
+**The daemon writes what the sender still owes.** `obligations.md`, beside `handoff.md`, lists the
+sender's Board items, running child tasks, landings still owed and completions not yet
+acknowledged, each with the command that reads it, and the opening line tells the receiver to read
+it. The handoff record keeps the carried task ids and, once the receiver is known, its Session.
+
+**Only the Board moves.** The sender's Board items transfer to the receiver as for any handoff; an
+item waiting on the person moves *with* its open decision — the decision's Session changes and it
+stays open, so the person's pending answer is not lost. Children, their landings and their
+notices stay with the sender, which is why the sender is not closed by the handoff: it keeps
+acknowledging and landing them, and `clawdline session close` closes it once its audit reads
+`safe`. Until then it stays listed and traceable.
+
+Whether a milestone handoff is worth it is measured, not assumed:
+[`docs/token-ledger.md`](token-ledger.md#did-handing-over-pay). Until that comparison says
+`recommend_default`, handing over stays a Root's own choice.
+
+---
+
 ## The skill
 
 A session does not build this by hand. [`skills/clawdline/`](../skills/clawdline/) — the same skill

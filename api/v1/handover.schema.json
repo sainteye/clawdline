@@ -33,7 +33,8 @@
         "model": { "type": "string" },
         "title": { "description": "At most 200 characters.", "type": "string" },
         "from_session": { "description": "The sender's conversation id; it must be one live session on this machine.", "type": "string" },
-        "coordinator_plain_handoff": { "type": "boolean" }
+        "coordinator_plain_handoff": { "type": "boolean" },
+        "milestone": { "description": "handoff.md is a milestone summary: sections Goal, Verified decisions, Blockers, Evidence and Next step, at most 6 KiB, evidence as links, no credential or conversation text. It is checked before anything opens (`bad_milestone_summary` lists each problem), and the daemon writes obligations.md beside it.", "type": "boolean" }
       }
     },
     "BrokerHandoff": {
@@ -57,7 +58,10 @@
         "type_attempted_at": { "type": "integer" },
         "delivered_at": { "type": "integer" },
         "failure": { "type": "string" },
-        "receipt": { "type": "string" }
+        "receipt": { "type": "string" },
+        "milestone": { "description": "The package passed the milestone summary check.", "type": "boolean" },
+        "carried_tasks": { "description": "The sender's child tasks obligations.md named: running, unacknowledged or owed a landing. They stay with the sender.", "type": "array", "items": { "type": "string" } },
+        "receiver_session": { "description": "The receiving Session's conversation, once it has one.", "type": "string" }
       }
     },
     "BrokerHandoffResult": {

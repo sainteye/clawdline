@@ -688,7 +688,40 @@ func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, err
 // (work.LeaveDecision): a Session that no longer waits must not leave the
 // person a question in "Waiting on you".
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
-	left := work.LeaveDecision(prev, &next)
+	return t.putItem(prev, next, kind, actor, payload, true)
+}
+
+// HandOverItem is PutItem for a handoff's owner change. When the item waits
+// on the person (work.HandedOverWaiting), its decision goes with it: the link
+// stays, and the open decision is re-addressed to the new owner in the same
+// transaction instead of being withdrawn. Any other change is PutItem's.
+func (t *WorkV2Tx) HandOverItem(prev, next work.ItemV2, kind, actor, payload string) error {
+	if !work.HandedOverWaiting(prev, next) {
+		return t.PutItem(prev, next, kind, actor, payload)
+	}
+	if err := t.putItem(prev, next, kind, actor, payload, false); err != nil {
+		return err
+	}
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE decisions SET session = ?, version = version + 1
+	  WHERE id = ? AND session = ? AND state = 'open'`, next.OwnerSession, prev.DecisionID, prev.OwnerSession)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+	t.wrote++
+	body, _ := json.Marshal(map[string]any{"decision_id": prev.DecisionID, "from_session": prev.OwnerSession,
+		"to_session": next.OwnerSession})
+	return t.AppendEvent(work.EventV2{WorkID: prev.ID, Kind: "decision.handed_off", Actor: actor,
+		PreviousVersion: prev.Version + 1, NextVersion: prev.Version + 1, Payload: string(body), At: next.UpdatedAt})
+}
+
+func (t *WorkV2Tx) putItem(prev, next work.ItemV2, kind, actor, payload string, leave bool) error {
+	left := ""
+	if leave {
+		left = work.LeaveDecision(prev, &next)
+	}
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
 	      description=?, acceptance_criteria=?, acceptance_version=?, acceptance_digest=?, phase=?, condition=?, user_action=?,
 	      decision_id=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?, cycle=?, gate_snapshot_cycle=?, gate_snapshot_at=?, planning_gate=?,
@@ -2320,4 +2353,23 @@ func (s *Store) ResetWorkV1(ctx context.Context) (map[string]int64, error) {
 		return wrote, nil
 	})
 	return counts, err
+}
+
+// WorkV2DoneSince is every Feature, Issue and Refactor that reached done at
+// or after since, the newest first, at most limit; more says there were
+// others. Epics and Plans are left out: their work is their children's.
+func (s *Store) WorkV2DoneSince(ctx context.Context, since time.Time, limit int) ([]work.ItemV2, bool, error) {
+	if err := reading(); err != nil {
+		return nil, false, err
+	}
+	if limit <= 0 {
+		return nil, false, fmt.Errorf("work v2 limit is required")
+	}
+	items, err := queryWorkV2(ctx, s.rd, `SELECT `+workV2Columns+` FROM work_v2_items
+	  WHERE phase='done' AND closed_at >= ? AND kind IN ('feature','issue','refactor')
+	  ORDER BY closed_at DESC, id DESC LIMIT ?`, since.Unix(), limit+1)
+	if len(items) > limit {
+		return items[:limit], true, err
+	}
+	return items, false, err
 }

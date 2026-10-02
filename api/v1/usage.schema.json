@@ -253,6 +253,46 @@
         "not_recorded": { "type": "array", "items": { "$ref": "#/$defs/UsageCompareMissing" } }
       }
     },
+    "UsageHandoffComparison": {
+      "description": "GET /v1/usage/compare-handoff?since=… (docs/token-ledger.md \"Did handing over pay\"): the Features, Issues and Refactors finished in [`since`, `until`] (Unix seconds), grouped by whether a milestone handoff, an ordinary handoff or no handoff carried them. Each item's bill is its owner Sessions' own cache reads, each Session's shared equally among the finished items it owned in the range. `saving` is 1 - milestone/single median cache reads per item, null until both groups have `min_items`. `verdict` is `insufficient_evidence`, `below_target` (under `target`), `guardrail_failed` (`reasons` says which) or `recommend_default`; anything but the last leaves handing over a Session's own choice. `excluded_unowned` and `excluded_unread` count the items in no group and why; `not_measured` names what was asked about and is recorded nowhere.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["carried_unsettled", "excluded_unowned", "excluded_unread", "failed_handoffs", "groups", "milestone_handoffs", "min_items", "not_measured", "reasons", "since", "target", "truncated", "until", "verdict"],
+      "properties": {
+        "since": { "type": "integer" },
+        "until": { "type": "integer" },
+        "groups": { "type": "array", "items": { "$ref": "#/$defs/UsageHandoffGroup" } },
+        "excluded_unowned": { "description": "Items no Session's assignment names.", "type": "integer" },
+        "excluded_unread": { "description": "Items an owner Session of which the ledger has not read.", "type": "integer" },
+        "truncated": { "type": "boolean" },
+        "milestone_handoffs": { "description": "Milestone handoffs opened in the range.", "type": "integer" },
+        "failed_handoffs": { "description": "Of those, the ones whose receiver never opened.", "type": "integer" },
+        "carried_unsettled": { "description": "Tasks those handoffs carried that, a day later, were still running or still owed a landing.", "type": "integer" },
+        "saving": { "nullable": true, "type": "number" },
+        "target": { "type": "number" },
+        "min_items": { "type": "integer" },
+        "verdict": { "type": "string", "enum": ["insufficient_evidence", "below_target", "guardrail_failed", "recommend_default"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "not_measured": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "UsageHandoffGroup": {
+      "description": "One group of a handoff comparison. The medians and the reopened share are null when the group has no item; `too_few` says it has fewer than the comparison's `min_items`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_read_total", "items", "name", "reopened", "too_few"],
+      "properties": {
+        "name": { "type": "string", "enum": ["single_root", "milestone_handoff", "plain_handoff"] },
+        "items": { "type": "integer" },
+        "too_few": { "type": "boolean" },
+        "cache_read_per_item": { "description": "Median owner-Session cache-read tokens per item.", "nullable": true, "type": "number" },
+        "calls_per_item": { "nullable": true, "type": "number" },
+        "elapsed_hours": { "description": "Median hours from the first owner's assignment to done.", "nullable": true, "type": "number" },
+        "reopened_share": { "nullable": true, "type": "number" },
+        "reopened": { "type": "integer" },
+        "cache_read_total": { "type": "number" }
+      }
+    },
     "UsageDiagnostics": {
       "description": "/v1/diagnostics.usage: the token ledger's reading loop. `running` is false when it was never started (no home directory, or a daemon that does not read). `at` is when the last pass ended, absent before the first; `due`, `fed`, `missing` and `unreadable` are what that pass found and did, and `limited` says more were due than a pass reads. `stalled` says no pass has ended for `stall_after_seconds`, counted from the last one or from the start. It does not turn `ok` red: an unread ledger stops no work.",
       "type": "object",

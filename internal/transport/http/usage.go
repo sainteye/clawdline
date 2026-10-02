@@ -72,7 +72,8 @@ func (s *Server) usageDiagnostics() *contract.UsageDiagnostics {
 var usageID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$`)
 
 // usageRoute is GET /v1/usage/{sessions,tasks,items}/<id> (docs/token-ledger.md
-// "What a person and a session see") and GET /v1/usage/compare-compaction. The gate lets a paired device and this
+// "What a person and a session see"), GET /v1/usage/compare-compaction and
+// GET /v1/usage/compare-handoff. The gate lets a paired device and this
 // machine's orchestrator token through (machineScoped); both only read.
 func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -81,6 +82,10 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if routePath(r) == "/v1/usage/compare-compaction" {
 		s.usageCompareCompaction(w, r)
+		return
+	}
+	if routePath(r) == "/v1/usage/compare-handoff" {
+		s.usageCompareHandoff(w, r)
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(routePath(r), "/v1/usage/"), "/")
@@ -142,6 +147,48 @@ func (s *Server) usageCompareCompaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, usageComparison(got))
+}
+
+// usageCompareHandoff is GET /v1/usage/compare-handoff?since=…
+// (docs/token-ledger.md "Did handing over pay"): the items finished since
+// then, grouped by whether a milestone handoff carried them.
+func (s *Server) usageCompareHandoff(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for key, values := range q {
+		if key != "since" || len(values) != 1 {
+			writeRefusal(w, http.StatusBadRequest, "bad_request",
+				"The comparison reads one query field, since: `14d`, `36h` or a Unix time in seconds.")
+			return
+		}
+	}
+	got, err := s.usageLedger().CompareHandoffSince(r.Context(), q.Get("since"))
+	if errors.Is(err, app.ErrCompareSince) {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "since: "+err.Error()+".")
+		return
+	}
+	if err != nil {
+		usageStoreRefusal(w, err)
+		return
+	}
+	writeJSON(w, usageHandoffComparison(got))
+}
+
+func usageHandoffComparison(c app.HandoffComparison) contract.UsageHandoffComparison {
+	out := contract.UsageHandoffComparison{
+		Since: unixOrZero(c.Since), Until: unixOrZero(c.Until), Groups: []contract.UsageHandoffGroup{},
+		ExcludedUnowned: int64(c.Excluded["unowned"]), ExcludedUnread: int64(c.Excluded["unread"]),
+		Truncated: c.Truncated, MilestoneHandoffs: int64(c.MilestoneHandoffs), FailedHandoffs: int64(c.FailedHandoffs),
+		CarriedUnsettled: int64(c.CarriedUnsettled), Saving: c.Saving, Target: c.Target, MinItems: int64(c.MinItems),
+		Verdict: c.Verdict, Reasons: append([]string{}, c.Reasons...), NotMeasured: append([]string{}, c.NotMeasured...),
+	}
+	for _, g := range c.Groups {
+		out.Groups = append(out.Groups, contract.UsageHandoffGroup{
+			Name: g.Name, Items: int64(g.Items), TooFew: g.TooFew, CacheReadPerItem: g.CacheReadItem,
+			CallsPerItem: g.CallsItem, ElapsedHours: g.ElapsedHours, ReopenedShare: g.ReopenedShare,
+			Reopened: int64(g.ReopenedCount), CacheReadTotal: g.CacheReadTotal,
+		})
+	}
+	return out
 }
 
 func usageStoreRefusal(w http.ResponseWriter, err error) {

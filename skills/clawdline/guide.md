@@ -343,7 +343,7 @@ it.
 **Rarer work, one part each:** `clawdline guide board` — proposals, decisions, to-dos, reopening a
 done item, waiting on the person, gates and every phase refusal; `clawdline guide epic` — plans,
 plan review, an Epic's child items, personas; `clawdline guide landing` — landing by hand,
-handoffs, Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.
+handoffs (a long Root's milestone handoff too), Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.
 
 ## 3. Before you dispatch: read what is already there
 
@@ -657,6 +657,18 @@ that notice alone does not prove the Board transfer occurred. Refusals: `bad_tas
 empty `handoff.md` included), `sender_not_found`, `sender_ambiguous`, `rate_limited`,
 `terminal_busy`, and `succession_required` if you hold the machine coordinator role — succession is
 not available in this daemon (`501`), so that session cannot hand off.
+
+**Milestone handoff.** A long-running Root that has reached a milestone hands over with
+`clawdline handoff --summary summary.md`, so the work after it does not re-read everything before
+it on every call. The summary has exactly five `## ` headings — Goal, Verified decisions, Blockers,
+Evidence (paths, commits, ids or `clawdline` commands to open, not their contents), Next step — at
+most 6 KiB, with no credential and no conversation text; `--check` lists every problem without
+opening anything, and the daemon refuses the same ones as `bad_milestone_summary`. The daemon
+writes `obligations.md` beside it: your Board items (they move, a decision the person has not
+answered included) and your running children, unacknowledged notices and owed landings (they stay
+yours). So after handing over, keep acknowledging and landing those, then `clawdline session close`
+once it reads `safe`. Handing over is your choice: `clawdline usage --compare-handoff` says whether
+it has paid on this machine, and it is never forced.
 
 **Root assignment.** The `Idempotency-Key` header must equal `request_id`:
 

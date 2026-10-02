@@ -28,7 +28,8 @@ func usageCommand(args []string) {
 	task := fs.String("task", "", "a child task id")
 	item := fs.String("item", "", "a Board item id")
 	compare := fs.Bool("compare-compaction", false, "child tasks grouped by the compaction window they were launched with")
-	since := fs.String("since", "", "with --compare-compaction: `14d`, `36h` or a Unix time (default 14d)")
+	compareHandoff := fs.Bool("compare-handoff", false, "finished Board items grouped by whether a milestone handoff carried them")
+	since := fs.String("since", "", "with --compare-compaction or --compare-handoff: `14d`, `36h` or a Unix time (default 14d)")
 	asJSON := fs.Bool("json", false, "print the daemon's answer as JSON")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
@@ -40,7 +41,8 @@ func usageCommand(args []string) {
 			named++
 		}
 	}
-	if named > 1 || (*compare && named > 0) || (*since != "" && !*compare) {
+	if named > 1 || ((*compare || *compareHandoff) && named > 0) || (*compare && *compareHandoff) ||
+		(*since != "" && !*compare && !*compareHandoff) {
 		usageCommandUsage()
 	}
 	b, err := openBroker(*port)
@@ -50,6 +52,9 @@ func usageCommand(args []string) {
 	if *compare {
 		os.Exit(showCompactionComparison(os.Stdout, os.Stderr, b, *since, *asJSON))
 	}
+	if *compareHandoff {
+		os.Exit(showHandoffComparison(os.Stdout, os.Stderr, b, *since, *asJSON))
+	}
 	os.Exit(showUsage(os.Stdout, os.Stderr, b, usageAsk{Session: *session, Task: *task, Item: *item, JSON: *asJSON}, os.Getenv))
 }
 
@@ -58,6 +63,8 @@ func usageCommandUsage() {
 	fmt.Fprintln(os.Stderr, "  what a session, a child task or a Board item spent, by category; this session's own by default")
 	fmt.Fprintln(os.Stderr, "       clawdline usage --compare-compaction [--since 14d] [--json] [--port n]")
 	fmt.Fprintln(os.Stderr, "  child tasks grouped by the compaction window they were launched with: what they cost and how they ended")
+	fmt.Fprintln(os.Stderr, "       clawdline usage --compare-handoff [--since 14d] [--json] [--port n]")
+	fmt.Fprintln(os.Stderr, "  finished Board items grouped by whether a milestone handoff carried them: cache reads per item, and whether to make it the default")
 	os.Exit(2)
 }
 
@@ -330,4 +337,73 @@ func comparePercent(p *float64, tooFew bool) string {
 		return "—"
 	}
 	return fmt.Sprintf("%.0f%%", *p*100)
+}
+
+// showHandoffComparison is `usage --compare-handoff`: one GET to
+// /v1/usage/compare-handoff, a row per group, then the verdict and why
+// (docs/token-ledger.md "Did handing over pay").
+func showHandoffComparison(stdout, stderr io.Writer, b *broker, since string, asJSON bool) int {
+	path := "/v1/usage/compare-handoff"
+	if since != "" {
+		path += "?since=" + url.QueryEscape(since)
+	}
+	a, err := b.request(http.MethodGet, path, nil, nil, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline usage:", err)
+		return 1
+	}
+	if asJSON || !a.ok() {
+		return report(stdout, stderr, "usage", a)
+	}
+	var c contract.UsageHandoffComparison
+	if json.Unmarshal(a.Body, &c) != nil {
+		return unreadableUsage(stderr)
+	}
+	writeHandoffComparison(stdout, c)
+	return 0
+}
+
+func writeHandoffComparison(stdout io.Writer, c contract.UsageHandoffComparison) {
+	fmt.Fprintf(stdout, "Board items finished %s – %s, by whether a milestone handoff carried them\n",
+		time.Unix(c.Since, 0).UTC().Format("2006-01-02 15:04Z"), time.Unix(c.Until, 0).UTC().Format("2006-01-02 15:04Z"))
+	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(tw, "group\titems\tcache reads/item\tcalls/item\thours to done\treopened\t")
+	for _, g := range c.Groups {
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t\n", g.Name, g.Items, handoffNumber(g.CacheReadPerItem, usageCount),
+			handoffNumber(g.CallsPerItem, func(v float64) string { return fmt.Sprintf("%.0f", v) }),
+			handoffNumber(g.ElapsedHours, func(v float64) string { return fmt.Sprintf("%.1f", v) }),
+			comparePercent(g.ReopenedShare, false))
+	}
+	_ = tw.Flush()
+	fmt.Fprintln(stdout, "cache reads/item is the median of the owner Sessions' own cache reads, each Session's shared among the items it finished.")
+	fmt.Fprintf(stdout, "milestone handoffs: %d opened, %d failed to open, %d carried tasks unsettled a day later\n",
+		c.MilestoneHandoffs, c.FailedHandoffs, c.CarriedUnsettled)
+	if c.ExcludedUnowned+c.ExcludedUnread > 0 {
+		fmt.Fprintf(stdout, "excluded: %d with no owner Session, %d with an owner the ledger has not read\n", c.ExcludedUnowned, c.ExcludedUnread)
+	}
+	if c.Truncated {
+		fmt.Fprintln(stdout, "truncated: the range held more items than one answer reads; these are the newest")
+	}
+	saving := "not computed"
+	if c.Saving != nil {
+		saving = fmt.Sprintf("%.0f%%", *c.Saving*100)
+	}
+	fmt.Fprintf(stdout, "saving per item: %s (target %.0f%%, each group needs %d items)\n", saving, c.Target*100, c.MinItems)
+	fmt.Fprintf(stdout, "verdict: %s\n", c.Verdict)
+	for _, r := range c.Reasons {
+		fmt.Fprintf(stdout, "  %s\n", r)
+	}
+	if c.Verdict != "recommend_default" {
+		fmt.Fprintln(stdout, "handing over stays each Session's own choice: `clawdline handoff --summary <file>` at a milestone")
+	}
+	for _, m := range c.NotMeasured {
+		fmt.Fprintf(stdout, "not measured: %s\n", m)
+	}
+}
+
+func handoffNumber(v *float64, format func(float64) string) string {
+	if v == nil {
+		return "—"
+	}
+	return format(*v)
 }
