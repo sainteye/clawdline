@@ -98,9 +98,11 @@ context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種
 
 - **Claude Code：** 一次 Bash 呼叫，`timeout` 設長一點（最多 `600000` ms）；或用 `run_in_background`，
   然後什麼都不做，等完成通知進來。不要用 `sleep` 加 `tail` 的迴圈。
-- **Codex：** `exec_command` 回 `Process running with session ID …` 時，用一次 `write_stdin` 等：
-  `chars` 留空、`yield_time_ms` 設長一點。codex-cli 0.157.1 說空的 poll 會等 5000-300000 ms，所以填
-  `300000`。等它回來時指令還在跑，才再等一次——不要每 30 秒問一次。
+- **Codex（codex-cli 0.157.1，code mode）：** 在 `functions.exec` cell 第一行寫
+  `// @exec: {"yield_time_ms": 600000}`。`exec_command` 回 session ID 後，用 `write_stdin` 等待，
+  `chars` 留空、`yield_time_ms` 設 `300000`；若指令仍在跑，就在同一個 cell 內再等。實測外層設
+  `600000` 可持續 330 秒，空的 `write_stdin` 最多等 300 秒。外層 cell 若仍提早交還，就用設了長
+  `yield_time_ms` 的 `wait` 接著等。
 
 `clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
 允許的長，就放到背景跑。

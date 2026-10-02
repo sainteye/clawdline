@@ -105,10 +105,12 @@ review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `h
 
 - **Claude Code:** one Bash call with a long `timeout` (up to `600000` ms), or `run_in_background`
   and then nothing until its completion notification arrives. Not a loop of `sleep` and `tail`.
-- **Codex:** when `exec_command` answers `Process running with session ID …`, wait with one
-  `write_stdin` call with empty `chars` and a long `yield_time_ms`; codex-cli 0.157.1 describes an
-  empty poll as waiting 5000-300000 ms, so ask for `300000`. Poll again only when that returns with
-  the command still running — not every 30 seconds.
+- **Codex (codex-cli 0.157.1, code mode):** put `// @exec: {"yield_time_ms": 600000}` on the
+  first line of the `functions.exec` cell. After `exec_command` returns a session ID, await
+  `write_stdin` with empty `chars` and `yield_time_ms: 300000`; if it still runs, repeat inside
+  that same cell. Measured: the outer cell stayed open for 330 seconds with `600000`, while an
+  empty `write_stdin` waited up to 300 seconds. If the outer cell yields, use `wait` with a long
+  `yield_time_ms` to collect it.
 
 `clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
 command; a longer wait than your tool allows is a background run.
