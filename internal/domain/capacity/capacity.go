@@ -908,7 +908,7 @@ func Register() []Entry {
 			Name: WorkItemDescriptionBytes, Class: Evidence, Unit: Bytes,
 			Limit: 64 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Projects: true,
-			Sources: []string{"internal/app.workV2DescriptionLimit"},
+			Sources: []string{"internal/app.workV2DescriptionLimit", "cmd/clawdline.itemTextLimit"},
 		},
 		{
 			Name: WorkItemUserActionBytes, Class: Evidence, Unit: Bytes,

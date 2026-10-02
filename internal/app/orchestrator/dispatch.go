@@ -496,8 +496,9 @@ func (b *Broker) resolveRoot(ctx context.Context, root *RootRef) (string, error)
 	if !ok {
 		return "", err
 	}
-	const tail = " Resolve the interactive Root with GET /v1/orchestrator/whoami and resend with the " +
-		"current process-bound conversation id; do not downgrade owned work to detached polling."
+	const tail = " Resend from the Root's own terminal, where the conversation id is read from the environment, or " +
+		"name it: `clawdline dispatch --title <title> --claims <paths> --conversation <conversation id> " +
+		"--root-assistant <claude|codex>`. Do not downgrade owned work to detached polling."
 	if ref.Code == "conversation_ambiguous" {
 		return "", refuse(http.StatusConflict, "conversation_ambiguous",
 			"More than one live process of the declared assistant proves root.session_id; no owner was selected."+tail)

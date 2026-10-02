@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -235,5 +236,77 @@ func report(stdout, stderr io.Writer, name string, a answer) int {
 		return 1
 	}
 	fmt.Fprintf(stderr, "clawdline %s: refused, %d %s: %s\n", name, a.Status, code, message)
+	for _, line := range a.refusalExtras() {
+		fmt.Fprintln(stderr, line)
+	}
 	return 1
+}
+
+// refusalExtras is what a refusal carries besides its code and message, one
+// `key: value` line per scalar, sorted, and its remediation last: the
+// command a remedy offers, or why it offers none. Nested values other than
+// the remediation are left to `--json` readers.
+func (a answer) refusalExtras() []string {
+	var outer map[string]json.RawMessage
+	if json.Unmarshal(a.Body, &outer) != nil {
+		return nil
+	}
+	fields := map[string]json.RawMessage{}
+	skip := map[string]bool{"code": true, "message": true, "request_id": true}
+	if inner := outer["error"]; len(inner) > 0 && inner[0] == '{' {
+		if json.Unmarshal(inner, &fields) != nil {
+			return nil
+		}
+	} else {
+		fields = outer
+		skip = map[string]bool{"error": true, "detail": true}
+	}
+	var lines []string
+	var remedy string
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if skip[k] {
+			continue
+		}
+		if k == "remediation" || k == "remedy" {
+			var r struct {
+				Command string `json:"command"`
+				Because string `json:"because"`
+			}
+			var text string
+			if json.Unmarshal(fields[k], &r) == nil && (r.Command != "" || r.Because != "") {
+				text = r.Command
+				if text == "" {
+					text = r.Because
+				}
+			} else if json.Unmarshal(fields[k], &text) != nil {
+				continue
+			}
+			remedy = k + ": " + oneLine(text)
+			continue
+		}
+		var v any
+		if json.Unmarshal(fields[k], &v) != nil {
+			continue
+		}
+		switch v := v.(type) {
+		case string:
+			lines = append(lines, k+": "+oneLine(v))
+		case float64, bool:
+			lines = append(lines, k+": "+strings.TrimSpace(string(fields[k])))
+		}
+	}
+	if remedy != "" {
+		lines = append(lines, remedy)
+	}
+	return lines
+}
+
+// oneLine keeps a value to the one line it is printed on.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

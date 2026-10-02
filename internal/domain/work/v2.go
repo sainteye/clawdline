@@ -574,9 +574,10 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 	case lastReview < lastPlan && ((i.Kind == KindEpic && reviews < rounds) ||
 		(i.Kind.FeatureLike() && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
 		return RefuseV2(prefix+"_plan_review_required",
-			"Have an independent child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
-				"`) and wait for that child to finish: a successful review is recorded on the item by itself. "+
-				"Only if it is not, record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
+			"The latest plan has no independent review yet. Dispatch one: `clawdline dispatch --kind plan_review --work-id "+i.ID+
+				" --title \"Review the plan\" --claims \"\"` with the review brief on stdin, and wait for that child to finish: "+
+				"a successful review is recorded on the item by itself. Only if it is not, add it as a plan_review document "+
+				"whose reference is that task's id.")
 	}
 	return planReviewBlocking(i, prefix, lastPlan, lastReview, reviews, rounds, review)
 }
@@ -833,9 +834,107 @@ func AgentTransition(i ItemV2, next Phase, hasVerification, hasLanding, hasDeplo
 		}
 	}
 	if !ok {
-		return RefuseV2("invalid_transition", fmt.Sprintf("Cannot move %s to %s with the recorded evidence.", i.Phase, next))
+		return RefuseV2("invalid_transition", TransitionAdvice(i, next))
 	}
 	return nil
+}
+
+// phaseStep is one move AgentTransition allows out of a phase, and the
+// `item phase` flags that move needs; Flags is empty when it needs none.
+type phaseStep struct {
+	Next  Phase
+	Flags string
+}
+
+const (
+	landingFlags     = "--commit <sha> --target <branch> --remote <remote>"
+	landingNeed      = "--commit/--target/--remote or --no-landing-reason"
+	verificationFlag = `--verification "<what was run and what it showed>"`
+)
+
+// phaseSteps is AgentTransition's switch read the other way: every legal
+// next phase from i's phase, with the evidence it needs. A change to one is a
+// change to the other; TestTransitionAdviceMatchesAgentTransition holds them
+// together.
+func phaseSteps(i ItemV2) []phaseStep {
+	switch i.Phase {
+	case PhaseAssigned:
+		return []phaseStep{{Next: PhaseImplementing}}
+	case PhaseImplementing:
+		out := []phaseStep{{Next: PhaseVerifying}}
+		if !i.VerifyGate {
+			out = append(out, phaseStep{Next: PhaseDeploying, Flags: landingFlags})
+		}
+		return out
+	case PhaseVerifying:
+		return []phaseStep{{Next: PhaseMerging, Flags: verificationFlag}, {Next: PhaseImplementing}}
+	case PhaseMerging:
+		return []phaseStep{{Next: PhaseDeploying, Flags: landingFlags}, {Next: PhaseVerifying}, {Next: PhaseImplementing}}
+	case PhaseDeploying:
+		flags := `--deployment "<what was deployed, where>"`
+		if i.DeploymentPolicy == DeployNotRequired {
+			flags = `--no-deployment-reason "<why nothing deploys>"`
+		}
+		return []phaseStep{{Next: PhaseDone, Flags: flags}}
+	}
+	return nil
+}
+
+// evidenceNeed names the evidence a step needs in words a caller can match
+// against `item phase`'s flags.
+func evidenceNeed(i ItemV2, s phaseStep) string {
+	switch {
+	case s.Flags == landingFlags:
+		return landingNeed
+	case s.Flags == verificationFlag:
+		return "--verification"
+	case s.Next == PhaseDone && i.DeploymentPolicy == DeployRequired:
+		return "--deployment"
+	case s.Next == PhaseDone && i.DeploymentPolicy == DeployNotRequired:
+		return "--no-deployment-reason"
+	case s.Next == PhaseDone:
+		return "--deployment or --no-deployment-reason"
+	}
+	return ""
+}
+
+// TransitionAdvice is the invalid_transition message: why the move was
+// refused, the legal next phases from here, and one `item phase` command that
+// the daemon would take.
+func TransitionAdvice(i ItemV2, next Phase) string {
+	steps := phaseSteps(i)
+	var legal []string
+	pick := -1
+	for n, s := range steps {
+		word := string(s.Next)
+		if need := evidenceNeed(i, s); need != "" {
+			word += " (needs " + need + ")"
+		}
+		legal = append(legal, word)
+		if s.Next == next {
+			pick = n
+		}
+	}
+	msg := fmt.Sprintf("Cannot move %s to %s", i.Phase, next)
+	if pick >= 0 && evidenceNeed(i, steps[pick]) != "" {
+		msg += " without " + evidenceNeed(i, steps[pick]) + "."
+	} else if pick >= 0 {
+		msg += " with the recorded evidence."
+	} else {
+		msg += fmt.Sprintf(": %s is not a next phase from %s.", next, i.Phase)
+	}
+	if len(steps) == 0 {
+		return msg
+	}
+	msg += " From " + string(i.Phase) + " the legal next phases are " + strings.Join(legal, ", ") + "."
+	if pick < 0 {
+		pick = 0
+	}
+	cmd := "clawdline item phase " + i.ID + " " + string(steps[pick].Next)
+	if steps[pick].Flags != "" {
+		cmd += " " + steps[pick].Flags
+	}
+	return msg + " Run: `" + cmd + "`."
 }
 
 // NoLandingGate decides whether `--no-landing-reason` may stand in for a

@@ -398,8 +398,14 @@ func itemUsage() {
 	os.Exit(2)
 }
 
+// itemTextLimit bounds one description, acceptance text or document body the
+// CLI reads: the daemon's own limit for each (internal/app
+// workV2DescriptionLimit), so a text the daemon would refuse is refused here
+// before it is sent rather than after.
+const itemTextLimit = 64 << 10
+
 // readTextFrom reads a named file, or r when the name is empty or "-",
-// within the daemon's work-system body cap.
+// within the daemon's limit for one item text (itemTextLimit).
 func readTextFrom(name string, r io.Reader, what string) (string, error) {
 	if name != "" && name != "-" {
 		fh, err := os.Open(name)
@@ -409,12 +415,12 @@ func readTextFrom(name string, r io.Reader, what string) (string, error) {
 		defer fh.Close()
 		r = fh
 	}
-	data, err := io.ReadAll(io.LimitReader(r, todoInputLimit+1))
+	data, err := io.ReadAll(io.LimitReader(r, itemTextLimit+1))
 	if err != nil {
 		return "", err
 	}
-	if len(data) > todoInputLimit {
-		return "", fmt.Errorf("the %s is larger than %d bytes, the most the daemon reads", what, todoInputLimit)
+	if len(data) > itemTextLimit {
+		return "", fmt.Errorf("the %s is larger than %d bytes, the most the daemon keeps for one item text", what, itemTextLimit)
 	}
 	return string(data), nil
 }

@@ -103,6 +103,39 @@ type WorkV2View struct {
 type WorkV2Filer func(WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool)
 type TodoV2Filer func(work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool)
 
+// notItemOwner is the not_item_owner refusal: what was refused, why, and the
+// one command that shows who does own the item.
+func notItemOwner(action, id string) error {
+	return work.RefuseV2("not_item_owner", NotItemOwnerMessage(action, id))
+}
+
+// NotItemOwnerMessage is the not_item_owner text every route answers, so the
+// transport's own owner checks say the same thing.
+func NotItemOwnerMessage(action, id string) string {
+	return "Only the item's owning Session may " + action + " this item, and this request came from another " +
+		"Session, or the item is closed. See its owner and phase with `clawdline item show " + id + "`; if this " +
+		"Session is the owner, resend from its own terminal or with --conversation set to its conversation id."
+}
+
+// evidenceUnknown is the evidence_unknown refusal: a bound task whose record
+// cannot be decoded holds a landing that cannot be told from no landing.
+func evidenceUnknown(taskID string) error {
+	return work.RefuseV2("evidence_unknown", "Broker task "+taskID+", bound to this item, has a record that cannot "+
+		"be read, so its landing cannot be told from no landing and nothing was changed. Inspect it with "+
+		"`clawdline task show "+taskID+"`; the item moves once that record reads again.")
+}
+
+// unreadableTask is the id of the first bound task whose record does not
+// decode, for the refusal that names it.
+func unreadableTask(rows []store.BrokerRow) string {
+	for _, row := range rows {
+		if _, err := orchestrator.Decode(row.Record); err != nil {
+			return row.ID
+		}
+	}
+	return "<task id>"
+}
+
 func workV2Error(status int, code, message string) error {
 	return &WorkError{Status: status, Code: code, Message: message}
 }
@@ -638,7 +671,7 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 			return store.ErrConflict
 		}
 		if !c.Person && (prev.OwnerSession == "" || prev.OwnerSession != c.OwnerSession || prev.Phase.Terminal()) {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may edit this item.")
+			return notItemOwner("edit", id)
 		}
 		next := prev
 		if c.Title != nil {
@@ -1439,7 +1472,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 // so a step Finish takes is the step `item phase` would have taken.
 func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2, c AdvanceWorkV2) (work.ItemV2, []int64, error) {
 	if prev.OwnerSession != c.SessionID || c.SessionID == "" {
-		return work.ItemV2{}, nil, work.RefuseV2("not_item_owner", "Only the owning Session may advance this item.")
+		return work.ItemV2{}, nil, notItemOwner("advance", id)
 	}
 	rows, err := tx.Tasks(id)
 	if err != nil {
@@ -1447,7 +1480,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	}
 	facts, unknown := Facts(rows)
 	if unknown > 0 {
-		return work.ItemV2{}, nil, work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
+		return work.ItemV2{}, nil, evidenceUnknown(unreadableTask(rows))
 	}
 	hasLanding := c.Landing.complete()
 	if strings.TrimSpace(c.NoLandingReason) != "" {
@@ -1536,7 +1569,9 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 			candidate.Cycle != prev.Cycle || candidate.CriteriaVersion != prev.AcceptanceVersion ||
 			candidate.CriteriaDigest != prev.AcceptanceDigest || candidate.Commit == "" || candidate.Tree == "" {
 			return work.ItemV2{}, nil, work.RefuseV2("verification_candidate_required",
-				"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest.")
+				"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest; "+
+					"none matches. From the owning Session's worktree, with the candidate committed, run "+
+					"`clawdline item phase "+id+" verifying`: it registers the worktree, branch and HEAD commit itself.")
 		}
 		persona, err := tx.WorkGateCheckerPersona(prev)
 		if err != nil {
@@ -1790,7 +1825,7 @@ func (w *WorkSystemV2) FinishFacts(ctx context.Context, id string) (FinishFactsV
 		for _, row := range rows {
 			r, err := orchestrator.Decode(row.Record)
 			if err != nil {
-				return work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
+				return evidenceUnknown(row.ID)
 			}
 			l := r.Landing
 			if l != nil && l.State == orchestrator.LandingPending {
@@ -2104,7 +2139,7 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may add item documents.")
+			return notItemOwner("add documents to", id)
 		}
 		c.Title, c.Body, c.Reference = strings.TrimSpace(c.Title), strings.TrimSpace(c.Body), strings.TrimSpace(c.Reference)
 		if c.Title == "" || (c.Body == "" && c.Reference == "") {
@@ -2350,7 +2385,7 @@ func (w *WorkSystemV2) AddStep(ctx context.Context, id string, c AddStepV2, file
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may add item steps.")
+			return notItemOwner("add steps to", id)
 		}
 		c.Title = strings.TrimSpace(c.Title)
 		if c.Title == "" {
@@ -2392,7 +2427,7 @@ func (w *WorkSystemV2) CompleteStep(ctx context.Context, id, stepID, session str
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != session || prev.Phase.Terminal() {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may complete item steps.")
+			return notItemOwner("complete steps of", id)
 		}
 		step, err := tx.Step(stepID)
 		if err != nil || step.WorkID != id {

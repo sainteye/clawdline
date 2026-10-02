@@ -244,7 +244,9 @@ func verifyWorkV2Candidate(ctx context.Context, g *gitadapter.Git, item app.Work
 	if req == nil || strings.TrimSpace(req.Worktree) == "" || strings.TrimSpace(req.Branch) == "" ||
 		strings.TrimSpace(req.Commit) == "" {
 		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "verification_candidate_required",
-			Message: "Entering verification requires this Session's worktree, branch, and exact HEAD commit."}
+			Message: "Entering verification requires this Session's worktree, branch, and exact HEAD commit, and the " +
+				"request carried none. Run `clawdline item phase " + item.Item.ID + " verifying` from the owning " +
+				"Session's worktree: it sends all three itself."}
 	}
 	i := item.Item
 	if i.CycleBaseCommit == "" {
@@ -318,7 +320,7 @@ func verifyWorkV2Candidate(ctx context.Context, g *gitadapter.Git, item app.Work
 	active := workV2ActiveOwner(item)
 	if active.ID == "" || active.SessionID != sessionID {
 		return nil, &app.WorkError{Status: http.StatusConflict, Code: "not_item_owner",
-			Message: "Only the active owning assignment may register a verification candidate."}
+			Message: app.NotItemOwnerMessage("register a verification candidate for", i.ID)}
 	}
 	return &contract.WorkGateCandidateReceipt{Repository: filepath.Clean(i.ProjectPath), Worktree: filepath.Clean(worktree),
 		Branch: branch, Commit: commit, Tree: tree, AssignmentID: active.ID, OwnerSessionID: sessionID,
