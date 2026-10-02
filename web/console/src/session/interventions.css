@@ -40,6 +40,7 @@
 .human-intervention-detail { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; }
 .human-intervention-drafts { margin-top: 12px; }
 .human-intervention-drafts h4 { margin: 0; font-size: 12px; font-weight: 650; }
+.human-intervention-hint { margin: 2px 0 0; color: var(--muted, #777); font-size: 12px; }
 .human-intervention-option { display: block; width: 100%; min-height: 48px; margin-top: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: color-mix(in srgb, var(--card) 82%, var(--ink) 3%); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .human-intervention-option:hover { border-color: var(--accent); background: color-mix(in srgb, var(--card) 76%, var(--accent) 12%); }
 .human-intervention-option strong { display: block; margin-bottom: 5px; font-weight: 650; color: var(--accent); }
