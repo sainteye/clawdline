@@ -220,8 +220,8 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 帶著憑證，自己組 curl 打同一條路由會被拒絕。比較少見的工作只差一個 `clawdline guide <part>`；指引在
 最後。
 
-**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、使用者的
-「需要獨立審查」勾選、版本和 steps。你就從這份紀錄開始工作。
+**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
+驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選，以及 steps。你就從這份紀錄開始工作。
 
 **2. 替 Session 命名**（如果它是為這個項目開的）：讀完 objective 和 scope 之後執行一次
 `clawdline item name <item id> "<task name>"`。改的是 Session 名稱，不是項目標題。
@@ -354,7 +354,7 @@ child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預�
 
 `--persona <id>` 讓 child 以內建角色（persona）開啟（`task.json` 的 `persona`）；這個版本沒有的 id 會在
 本機就被拒絕。任何 kind 都不會自動套用角色，`plan_review` 也一樣：要審查員就自己寫 `code-reviewer`。
-角色是什麼、八個 id 各自的用途，見 §10 的 Epic 段落（`clawdline guide epic`）。
+這個 build 有哪些 id 看 `GET /v1/personas`；角色是什麼，見 §10 的 Epic 段落（`clawdline guide epic`）。
 
 它做的步驟如下，給沒有這個 binary 的呼叫者照著做：
 
@@ -419,7 +419,8 @@ body 從 stdin 送（`jq -n … | curl --data-binary @- -H 'Content-Type: applic
 才不會出現在 argv 裡。
 使用 `clawdline dispatch --task-id <uuid>` 重送同一筆派工時，保留原本的 id 與內容。
 回應是 `{ok, task, warnings?}`。要讀 `warnings`：`claims_overlap`、`claims_missing`、
-`claims_ignored_for_worktree`、`dirty_worktree_base`。同一個 id 再 POST 一次，會回之前存下的 task 並帶
+`claims_ignored_for_worktree`、`dirty_worktree_base`，以及 `work_not_placed`（指定的項目還沒能移上看板；
+看板的定期掃描會在一個 tick 內補上）。同一個 id 再 POST 一次，會回之前存下的 task 並帶
 `replayed: true`，所以重試是安全的。
 
 分頁開不起來時仍然回 200，只是 `task.state: "spawn_failed"`。
@@ -430,16 +431,25 @@ task 最多兩次。
 
 | 狀態 | Code | 怎麼處理 |
 |---|---|---|
+| 409 | `task_unreadable` | 這個 id 的 task 存在但讀不出來；不要用同一個 id 重送 |
 | 422 | `bad_task` | 訊息會點出是哪個欄位。「No readable task.json under …」也是這一種——檢查 `task_root` |
 | 422 | `claims_required` | 補上 `claims` |
 | 422 | `root_session_required`、`root_assistant_required` | 補上 `root.session_id` 和 `root.assistant` |
 | 403 | `session_scope_mismatch` | 檢查 `root.project_dir` 是否存在，且與根 Session 的 Project 及角色快照相符。修正 brief 或 CLI；不要請使用者改 Project 設定。 |
 | 422 | `detached_route_required` | 你送了 `root.poll_only`；那是 detached automation（§6） |
 | **409** | **`stale_inventory`** | 你的 `generation` 沒帶或過期了。錯誤裡附著目前完整的 inventory：讀它、重新判斷，再用它的 `generation` 重送 |
+| 422 | `work_not_found`、`work_other_project`、`work_closed` | 你指定的 `work_id` 不存在、屬於別的 Project，或已經關閉 |
+| 422 | `also_work_not_found` | `also_work_ids` 裡有 id 不是看板項目；之後還會像 `work_id` 一樣逐一檢查 |
+| 503 | `store_unavailable` | 讀不到看板，無法檢查指定的項目；什麼都還沒開始，再送一次 |
 | 409 | `graph_*` | task-graph 的准入規則（`graph` 欄位） |
 | 409 | `no_child_capability` | 這個平台開不了 child；`missing` 會說缺什麼 |
+| 429 | `squad_launch_capacity` | 還在等 Session 身分的角色啟動太多；稍後再試 |
 | 429 | `rate_limited` | 十分鐘內派工次數太多 |
 | 422 / 409 | `root_unresolved`、`conversation_ambiguous` | 你的 conversation id 對不到任何活著的 session，或對到不只一個。把它修好；不要改走 detached |
+| 403 | `session_actor_required` | 以角色開啟的 root 必須從自己的 Session、帶它的 squad capability 派工 |
+| 403 | `session_scope_mismatch` | 這裡也會檢查：根 Session 的 Project 與它的角色快照不符 |
+| 503 | `squad_policy_unavailable` | 讀不到角色指派設定；什麼都還沒開始 |
+| 409 | `persona_disabled_for_auto_assignment` | 目標 Project 關閉了這個 persona 的自動指派 |
 | 429 | `over_capacity` | 你的 child 名額（預設 5 個）或整台機器的名額滿了；看 `retry_after` |
 | 409 | `workspace_busy` | 另一個 root 的 claims 跟你重疊；錯誤會點出擋住你的那個 task |
 | 409 | `worktree_unavailable` | 私有 checkout 建不起來 |
@@ -503,11 +513,12 @@ clawdline task land <task id> <landed|incorporated|abandoned|nothing_to_land|pen
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
-{"state": "pending" | "landed" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "note": "…"}
+{"state": "pending" | "landed" | "incorporated" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "carrier_task": "<task id>", "note": "…"}
 ```
 
 - 只收這幾個 key，外加 `delivery`（收下但不使用）；其他 key 一律拒絕。`pending` 和 `abandoned` 接受
-  task secret 或 orchestrator token；`landed` 和 `nothing_to_land` 只接受 orchestrator token。
+  task secret 或 orchestrator token；`landed`、`incorporated` 和 `nothing_to_land` 只接受
+  orchestrator token。
 - **合併會自己記帳。** 已結束的 task 分支一旦合併進 target，broker 會在幾分鐘內用同一道 Git 查證
   自己記成 `landed`，commit 是 target 當下的 head。紀錄上沒有 target 時，只有主 checkout 的 branch
   是唯一含有這份交付的 branch 才會自己命名。cherry-pick、`incorporated` 與 `nothing_to_land` 仍由你記。
@@ -517,9 +528,13 @@ POST /v1/orchestrator/tasks/<id>/landing
   branch 合併進 target；merge 會自己記 landing。*讀不到*：先去看 branch 再記。*寫進共用 checkout*：
   `clawdline task land <id> landed` 帶上把那份工作帶上 target 的 commit，或記 `abandoned`。*它什麼都沒寫，
   broker 已記 nothing_to_land*：只剩 ACK。
-- `landed` 需要 `target` 和 `commit`，而且 daemon **會去 Git 裡查證**；查不過就回
-  `409 unverified_landing` 並附上 `reason`（`target_unresolved`、`commit_unresolved`、
-  `not_on_target`、`predates_dispatch`、`nothing_delivered`、`not_the_delivery`、…）。
+- `landed` 需要 `target` 和 `commit`；`incorporated` 需要 `target`、`commit` 和 `carrier_task`（以自己已查證的
+  landing 帶上這份交付的另一個 task）。兩者 daemon 都**會去 Git 裡查證**；查不過就回 `409 unverified_landing`，
+  `reason` 是下列之一：`commit_unresolved`、`target_unresolved`、`not_on_target`、`base_unknown`、
+  `predates_dispatch`、`delivery_unknown`、`nothing_delivered`、`not_the_delivery`，以及 `incorporated` 專有的
+  `carrier_required`、`carrier_is_delivery`、`carrier_unresolved`、`carrier_not_landed`、
+  `carrier_repository_mismatch`、`carrier_target_mismatch`、`carrier_commit_mismatch`、
+  `delivery_is_ancestor`。
 - task 其實有寫入 repository 時，`nothing_to_land` 會被 `409 wrote_to_repository` 拒絕。
 - 已經定案的 landing 不能再改：回 `409 invalid_transition`；要改成不同的值時回
   `409 landing_conflict`。
@@ -952,7 +967,8 @@ Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
 寫入可觀察的 Markdown 條件。若人明確要求修改已寫入的驗收條件，用
 `clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`；
-先用 `clawdline item steps <id>` 讀版本，並只根據該訊息提出的修改內容重寫完整文件。
+項目版本是 `GET /v1/work/v2/items/<id>` 回應裡的 `.item.version`（`item steps` 只印驗收版本）；訊息的 run 從
+`GET /v1/orchestrator/sessions/<conversation>/run` 讀。只根據該訊息提出的修改內容重寫完整文件。
 負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
 owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
 

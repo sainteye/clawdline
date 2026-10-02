@@ -244,7 +244,8 @@ Every step is a command: the commands carry the credential, and a hand-built cur
 is refused. Anything rarer is one `clawdline guide <part>` away; the pointers are at the end.
 
 **1. Read the item.** `clawdline item steps <item id>` prints its kind, phase, acceptance criteria,
-captured gates, the person's Needs independent review switch, its version and its steps. That is
+captured gates, the acceptance version (`acceptance vN`), for a Feature the person's Needs
+independent review switch, and its steps. That is
 the record you work from.
 
 **2. Name your Session**, if it was opened for this item:
@@ -401,7 +402,7 @@ refusal did not create a task and can also be retried after correcting its cause
 
 `--persona <id>` launches the child as a built-in persona (`persona` in `task.json`); an id this
 build lacks is refused locally. No kind gets one by default, `plan_review` included: name
-`code-reviewer` yourself when you want it. What a persona is, and the eight ids, are in the Epic
+`code-reviewer` yourself when you want it. `GET /v1/personas` lists the ids this build carries; what a persona is is in the Epic
 part of §10 (`clawdline guide epic`).
 
 The steps it takes, for a caller without the binary:
@@ -470,7 +471,8 @@ POST /v1/orchestrator/tasks
 Send the body through stdin (`jq -n … | curl --data-binary @- -H 'Content-Type: application/json' …`)
 so the secret stays out of argv.
 The answer is `{ok, task, warnings?}`. Read `warnings`: `claims_overlap`, `claims_missing`,
-`claims_ignored_for_worktree`, `dirty_worktree_base`. Posting the same id again answers the stored
+`claims_ignored_for_worktree`, `dirty_worktree_base`, and `work_not_placed` (the named item could
+not be moved onto the board yet; the board's sweep does it within a tick). Posting the same id again answers the stored
 task with `replayed: true`, so a retry is safe.
 
 A tab that fails to open still answers 200, with `task.state: "spawn_failed"`.
@@ -481,16 +483,25 @@ most twice per original.
 
 | Status | Code | What to do |
 |---|---|---|
+| 409 | `task_unreadable` | A task with this id is stored but cannot be read; do not resend under the same id |
 | 422 | `bad_task` | The message names the field. Includes "No readable task.json under …" — check `task_root` |
 | 422 | `claims_required` | Add `claims` |
 | 422 | `root_session_required`, `root_assistant_required` | Add `root.session_id` and `root.assistant` |
 | 403 | `session_scope_mismatch` | Check that `root.project_dir` is present and matches the root Session's Project and role snapshot. Correct the brief or CLI; do not ask the person to change Project settings. |
 | 422 | `detached_route_required` | You sent `root.poll_only`; that is detached automation (§6) |
 | **409** | **`stale_inventory`** | Your `generation` is missing or old. The whole current inventory is inside the error: read it, decide again, resend with its `generation` |
+| 422 | `work_not_found`, `work_other_project`, `work_closed` | The `work_id` you named is no item, another Project's, or closed |
+| 422 | `also_work_not_found` | An id in `also_work_ids` is no Board item; it is checked like `work_id` after that |
+| 503 | `store_unavailable` | The board could not be read to check the named item; nothing was started, send it again |
 | 409 | `graph_*` | A task-graph admission rule (the `graph` field) |
 | 409 | `no_child_capability` | This platform cannot open a child; `missing` says what |
+| 429 | `squad_launch_capacity` | Too many persona launches are still waiting for their Session; try again later |
 | 429 | `rate_limited` | Too many dispatches in ten minutes |
 | 422 / 409 | `root_unresolved`, `conversation_ambiguous` | Your conversation id matches no live session, or more than one. Fix it; do not switch to detached |
+| 403 | `session_actor_required` | A root opened with a role must dispatch with its own Session's squad capability, from that Session |
+| 403 | `session_scope_mismatch` | Also here: the root Session's Project does not match its role snapshot |
+| 503 | `squad_policy_unavailable` | The role assignment settings could not be read; nothing was started |
+| 409 | `persona_disabled_for_auto_assignment` | That persona is turned off for automatic assignment in the target Project |
 | 429 | `over_capacity` | Your child slots (default 5) or the machine's are full; `retry_after` |
 | 409 | `workspace_busy` | Another root's claims overlap; the error names the blocking task |
 | 409 | `worktree_unavailable` | The private checkout could not be made |
@@ -562,15 +573,20 @@ It is this route, which a script may call with the `X-Clawdline-Orchestrator` he
 
 ```
 POST /v1/orchestrator/tasks/<id>/landing
-{"state": "pending" | "landed" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "note": "…"}
+{"state": "pending" | "landed" | "incorporated" | "abandoned" | "nothing_to_land", "target": "<ref>", "commit": "<sha>", "carrier_task": "<task id>", "note": "…"}
 ```
 
 - Only these keys, plus `delivery`, which is accepted and not used; any other key is refused.
-  `pending` and `abandoned` accept the task secret or the orchestrator token; `landed` and
-  `nothing_to_land` accept the orchestrator token only.
-- `landed` needs `target` and `commit`, and the daemon **checks it in Git**; otherwise
-  `409 unverified_landing` with a `reason` (`target_unresolved`, `commit_unresolved`,
-  `not_on_target`, `predates_dispatch`, `nothing_delivered`, `not_the_delivery`, …).
+  `pending` and `abandoned` accept the task secret or the orchestrator token; `landed`,
+  `incorporated` and `nothing_to_land` accept the orchestrator token only.
+- `landed` needs `target` and `commit`; `incorporated` needs `target`, `commit` and
+  `carrier_task`, the other task whose verified landing carried this delivery. The daemon
+  **checks either in Git**; otherwise `409 unverified_landing` with one of these `reason`s:
+  `commit_unresolved`, `target_unresolved`, `not_on_target`, `base_unknown`, `predates_dispatch`,
+  `delivery_unknown`, `nothing_delivered`, `not_the_delivery`, and for `incorporated`
+  `carrier_required`, `carrier_is_delivery`, `carrier_unresolved`, `carrier_not_landed`,
+  `carrier_repository_mismatch`, `carrier_target_mismatch`, `carrier_commit_mismatch`,
+  `delivery_is_ancestor`.
 - `nothing_to_land` is refused with `409 wrote_to_repository` when the task did write.
 - A settled landing cannot change: `409 invalid_transition`, or `409 landing_conflict` for a
   different value.
@@ -1098,7 +1114,8 @@ after assignment and before the gated transition. The owning Session may fill an
 once. When the person explicitly tells this owning Root through Clawdline to revise this item's
 acceptance, write the complete replacement Markdown to a file and run
 `clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`.
-Read the item version with `clawdline item steps <id>` and the message run from
+The item version is `.item.version` in `GET /v1/work/v2/items/<id>` (`item steps` prints only
+the acceptance version); read the message run from
 `GET /v1/orchestrator/sessions/<conversation>/run`. The retained message excerpt must explicitly
 request an acceptance change; a prohibition, discussion, or bare question is not authorization.
 It may refer to the item by conversation context if this Root

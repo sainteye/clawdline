@@ -132,19 +132,72 @@ func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
 	}
 }
 
+// The guide calls each concept by one outward name: a checklist entry on an
+// item is a step, the paths a task may change are its writes, handing an item
+// to a Session is 指派 in zh-TW, and a printable piece of this guide is a part.
+// Each retired synonym below fails the test wherever it stands in prose.
+//
+// Code is not prose: fenced blocks and backticked spans are removed first,
+// because the `--claims` flag, the `claims_*` warnings, the "claims" JSON key,
+// `-sections` and the root-assignments route are contracts other code reads,
+// and they are not renamed here. The person's own words, quoted so a session
+// recognizes them, are the only other exception, listed per language.
 func TestGuideUsesOneOutwardNameForEachConcept(t *testing.T) {
+	banned := map[string][]string{
+		"en": {
+			`\bTODO\b`, `\bsub-?tasks?\b`, // step
+			`\bclaims\b`, `(?i)\bdeclared writes\b`, // writes
+			`(?i)\bsections?\b`, `(?i)\btopics?\b`, // part
+		},
+		"zh-TW": {
+			`TODO`, `子任務`, `待辦事項`, // step
+			`\bclaims\b`, `宣告的寫入`, // writes
+			`(?i)assignment`, `分派`, `分配`, // 指派
+			`章節`, `小節`, `(?i)\bsections?\b`, // part
+		},
+	}
+	quoted := map[string][]string{
+		"en":    {"TODO / 待辦 / 土度", "TODO: draft"},
+		"zh-TW": {"TODO／待辦／土度", "TODO：起草"},
+	}
 	for _, lang := range Topics() {
 		guide, err := Guide(lang)
 		if err != nil {
 			t.Fatal(err)
 		}
-		text := string(guide)
-		for _, term := range []string{"**step**", "**writes**", "**assignment**", "**part**"} {
-			if !strings.Contains(text, term) {
-				t.Errorf("%s missing terminology %s", lang, term)
+		for i, line := range proseLines(string(guide)) {
+			for _, q := range quoted[lang] {
+				line = strings.ReplaceAll(line, q, "")
+			}
+			for _, word := range banned[lang] {
+				if regexp.MustCompile(word).MatchString(line) {
+					t.Errorf("%s guide line %d uses retired %s: %s", lang, i+1, word, line)
+				}
 			}
 		}
 	}
+}
+
+var codeSpan = regexp.MustCompile("`[^`]*`")
+
+// proseLines is each line outside fenced blocks (indented ones included) with
+// its backticked spans removed; index i is line i+1, and code lines are "".
+func proseLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	fenced := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			fenced = !fenced
+			lines[i] = ""
+			continue
+		}
+		if fenced {
+			lines[i] = ""
+		} else {
+			lines[i] = codeSpan.ReplaceAllString(line, "")
+		}
+	}
+	return lines
 }
 
 // Both guides cut into the same nineteen parts, and the parts put back
