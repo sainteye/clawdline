@@ -35,6 +35,7 @@ func (s *Server) usageLedger() *app.UsageLedger {
 // directory there is nothing to read, and the daemon says so and goes on.
 func (s *Server) StartUsage(ctx context.Context) {
 	u := s.usageLedger()
+	s.startWorkUnits(ctx)
 	if u.Home == "" {
 		log.Printf("usage: no home directory; the token ledger is not read")
 		return
@@ -81,6 +82,14 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if routePath(r) == "/v1/usage/compare-compaction" {
 		s.usageCompareCompaction(w, r)
+		return
+	}
+	if routePath(r) == "/v1/usage/work-units" {
+		s.usageWorkUnits(w, r)
+		return
+	}
+	if routePath(r) == "/v1/usage/work-samples" {
+		s.usageWorkSamples(w, r)
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(routePath(r), "/v1/usage/"), "/")
@@ -142,6 +151,49 @@ func (s *Server) usageCompareCompaction(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, usageComparison(got))
+}
+
+// usageWorkSamples is GET /v1/usage/work-samples?since=…&until=…
+// (docs/token-ledger.md "Did a change make one unit of work cheaper"): one
+// raw sample per child task created in the range. The report is folded by
+// whoever asked, from these alone, so it can be recomputed from a frozen copy.
+func (s *Server) usageWorkSamples(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	for key, values := range q {
+		if (key != "since" && key != "until") || len(values) != 1 {
+			writeRefusal(w, http.StatusBadRequest, "bad_request",
+				"The work samples read two query fields: since (`14d`, `36h` or a Unix time) and until (a Unix time).")
+			return
+		}
+	}
+	u := s.usageLedger()
+	got, err := u.WorkSamplesSince(r.Context(), q.Get("since"), q.Get("until"))
+	if errors.Is(err, app.ErrCompareSince) || errors.Is(err, app.ErrWorkUntil) {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", err.Error()+".")
+		return
+	}
+	if err != nil {
+		usageStoreRefusal(w, err)
+		return
+	}
+	writeJSON(w, usageWorkSamples(got))
+}
+
+func usageWorkSamples(ws app.WorkSamples) contract.UsageWorkSamples {
+	out := contract.UsageWorkSamples{DefinitionVersion: int64(ws.DefinitionVersion), Since: unixOrZero(ws.Since),
+		Until: unixOrZero(ws.Until), GeneratedAt: unixOrZero(ws.GeneratedAt), Truncated: ws.Truncated,
+		Samples: make([]contract.UsageWorkSample, 0, len(ws.Samples))}
+	for _, s := range ws.Samples {
+		out.Samples = append(out.Samples, contract.UsageWorkSample{
+			Kind: s.Kind, ID: s.ID, WorkKind: s.WorkKind, Scope: s.Scope, Model: s.Model, CrossEnd: s.CrossEnd,
+			Input: s.Input, CacheWrite: s.CacheWrite, CacheRead: s.CacheRead, Output: s.Output,
+			Calls: s.Calls, CallsAbove: s.CallsAbove, Cost: s.Cost, CostKnown: s.CostKnown,
+			CreatedAt: unixOrZero(s.CreatedAt), EndedAt: unixOrZero(s.EndedAt), DurationSeconds: s.DurationSeconds,
+			Ending: contract.UsageWorkEnding(s.Ending), Respawn: s.Respawn, Respawned: s.Respawned,
+			Data: contract.UsageWorkData(s.Data),
+		})
+	}
+	return out
 }
 
 func usageStoreRefusal(w http.ResponseWriter, err error) {

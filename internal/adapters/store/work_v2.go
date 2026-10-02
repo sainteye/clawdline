@@ -416,6 +416,9 @@ type WorkV2Tx struct {
 	// added is the picture files this transaction wrote, dropped the ones
 	// whose rows it deleted (work_v2_image_files.go settles both).
 	added, dropped []imageRef
+	// changes is the items and steps this transaction changed, told to the
+	// Board's observer once it commits (work_cursors.go).
+	changes []WorkV2Change
 }
 
 func (s *Store) WriteWorkV2(ctx context.Context, fn func(*WorkV2Tx) error) error {
@@ -428,6 +431,9 @@ func (s *Store) WriteWorkV2(ctx context.Context, fn func(*WorkV2Tx) error) error
 		return t.wrote, nil
 	})
 	s.settleImageFiles(ctx, t, err)
+	if err == nil && t != nil {
+		s.toldWorkV2(t.changes)
+	}
 	return err
 }
 
@@ -708,6 +714,7 @@ func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) 
 	}
 	t.wrote++
 	next.Version = prev.Version + 1
+	t.changes = append(t.changes, WorkV2Change{Prev: prev, Next: next})
 	if prev.Phase != next.Phase {
 		if err := t.enterPhase(prev.ID, next.Phase, next.UpdatedAt); err != nil {
 			return err
@@ -1763,6 +1770,7 @@ func (t *WorkV2Tx) PutStep(prev, next work.StepV2) error {
 		return ErrConflict
 	}
 	t.wrote++
+	t.changes = append(t.changes, WorkV2Change{Step: true, PrevStep: prev, NextStep: next})
 	return nil
 }
 

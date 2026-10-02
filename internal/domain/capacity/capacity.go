@@ -191,6 +191,11 @@ const (
 	WorkStepsPerItem          = "work.steps_per_item"
 	WorkRootLandingsPerItem   = "work.root_landings_per_item"
 	SessionDirectTodos        = "session.direct_todos"
+	// The token ledger's work-unit cursors (docs/token-ledger.md "One unit of
+	// work", limits N73).
+	UsageWorkCursorRows       = "usage.work_cursor_rows"
+	UsageWorkCursorQueue      = "usage.work_cursor_queue"
+	UsageWorkUnitsInAnswer    = "usage.work_units_per_answer"
 	HumanInterventionsOpen    = "session.human_interventions_open"
 	HumanInterventionsTotal   = "session.human_interventions_total"
 	HumanInterventionsRecent  = "session.human_interventions_recent"
@@ -824,6 +829,33 @@ func Register() []Entry {
 			Limit: 2000, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/store.HumanInterventionsTotalLimit"},
+		},
+		{
+			// The work-unit cursors (store/work_cursors.go): a journal of
+			// readings, the oldest let go past the limit in the write that
+			// adds one. The ledger's own rows keep every session's
+			// cumulative totals; what goes is how an old unit was split.
+			Name: UsageWorkCursorRows, Class: Journal, Unit: Rows,
+			Limit: 50_000, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/store.WorkCursorRowLimit"},
+		},
+		{
+			// Edges posted by the broker and the Board, waiting for the
+			// cursor worker. Past the limit an edge is not read: it is
+			// recorded cursor_missing, which every report shows.
+			Name: UsageWorkCursorQueue, Class: Buffer, Unit: Rows,
+			Limit: 1024, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Log}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.workCursorQueueLimit"},
+		},
+		{
+			// Units one GET /v1/usage/work-units reads, the most recent
+			// first; the answer says truncated past it.
+			Name: UsageWorkUnitsInAnswer, Class: Observation, Unit: Rows,
+			Limit: 500, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app.workUnitAnswerLimit"},
 		},
 		{
 			Name: HumanInterventionsRecent, Class: Cache, Unit: Rows,
