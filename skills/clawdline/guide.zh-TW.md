@@ -229,7 +229,8 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
 ```
 
-- `--work-id` 把 child 綁到項目上，它的 landing 就算是項目的。
+- `--work-id` 把 child 綁到項目上，它的 landing 就算是項目的。一個 child 做好幾張項目時就重複這個
+  旗標：第一張是 child 的工作線，landing 對每一張都算數。
 - 標題是一行、最多 60 字元，說完成後什麼會不一樣。任何冒號（`:` 或 `：`）都會被拒，因為它把觀察和
   解釋接在一起；以「使用者」或 "the user" 當主詞、或用 code 格式的識別字開頭，也會被拒。每一種都回
   `bad_task`，並以 `title: …` 說是哪一種。
@@ -243,8 +244,16 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
 列出還欠著的。只有 cherry-pick 或 `incorporated` 的交付才需要手動記錄（`clawdline guide landing`）。
 
-**6. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉，然後一次
-推進一個 phase：
+**6. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉。child 的
+branch merge 之後，一個指令就把項目從目前的 phase 走到 `done`；commit、target 和 remote 從已記錄的
+landing 讀，你只要寫說明：
+
+```sh
+clawdline item finish <item id> --verification "what was run and what it showed" \
+  --deployment "what went live, where, which version"      # 或 --no-deployment-reason "…"
+```
+
+也可以一次推進一個 phase：
 
 ```sh
 clawdline item phase <item id> verifying
@@ -315,7 +324,7 @@ owned child 是掛在你底下、範圍有限的 task。**彙整、整合和 lan
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--persona <id>] [--work-id uuid] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
+  [--persona <id>] [--work-id uuid …] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
 ```
 
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
@@ -965,6 +974,28 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `landing_commit_unresolved`、
   `landing_target_unresolved`、`landing_not_on_target`、`landing_remote_unresolved`、
   `landing_not_published`，以及 `version_conflict`：重讀後再送。
+
+**一個指令收尾。** 工作 landing 之後，`clawdline item finish <item id>` 在同一個交易裡把項目從
+`implementing`、`verifying`、`merging` 或 `deploying` 走到 `done`：
+
+```
+POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "verification"?: "…",
+ "landing"?: {"commit"?, "target"?, "remote"?, "project"?},
+ "deployment"?: "…", "no_deployment_reason"?: "…"}
+```
+
+- 每一步都是 `item phase` 會走的那一步，過同樣的 gate，各寫一筆 `item.phase_changed`；任何一步被拒，
+  整個都拒，什麼都不寫。
+- landing 是讀出來的，不是打出來的：有 gate 的項目，commit 是 gate 授權的 candidate；沒有的話是綁定
+  child landing 的 commit；target 是那些 landing 記的 branch；remote 是那個 branch 追蹤的 remote。你給的
+  欄位優先，結果照 `item phase deploying` 的方式向 git 驗證。本輪擷取的 verification gate 仍然要 PASS：
+  有 gate 的項目從 `implementing` 收尾會被拒 `verification_candidate_required`，所以先在 candidate
+  worktree 用 `item phase` 進 `verifying`，等 PASS，再收尾。
+- 已經 `done` 的項目照原樣回覆、什麼都不寫，所以同一個 landing 看到兩次也不會再動。
+- 拒絕代碼另有 `verification_required`、`landing_required`、`deployment_required`（那一步缺的說明）、
+  `landing_target_unknown`、`landing_remote_unknown`、`landing_remote_unreadable`、
+  `landing_ambiguous`（用旗標指名）以及 `finish_not_started`（還在 `implementing` 之前）。
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
 steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目裡的 TODO，不是另一張看板項目。確認完成一列後，用
