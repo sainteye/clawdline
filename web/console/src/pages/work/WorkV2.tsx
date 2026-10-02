@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react"
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
@@ -19,7 +19,7 @@ import { gateSnapshotText } from "./gate-status.js"
 import { WorkSteps } from "./WorkSteps.js"
 import { WorkCompletionReports, WorkEpicPlanDocuments, WorkItemDocuments } from "./WorkCompletionReport.js"
 import { epicGate, epicGateDetailShown, epicGateShown, isEpic, planGateHint } from "./epic-gate.js"
-import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, shortWorkID } from "./epic-family.js"
+import { epicChildren, epicParent, epicProgress, epicProgressWords, needsFamilyList, readMissingParents, shortWorkID, type EpicParent } from "./epic-family.js"
 import { WorkIcon } from "./WorkIcon.js"
 import { MAX_REFERENCE_PICTURES, markedFile, PendingPictures, PictureMarkup } from "./ReferencePictures.js"
 import { useReferenceImage } from "./useReferenceImage.js"
@@ -72,7 +72,7 @@ import {
   sessionWorkStateName,
 } from "./session-assignment.js"
 import { workV2CreateDecision, type WorkV2CreateDecision } from "./create-decision.js"
-import { claimedViaLine, createdViaLine, workWord } from "./words.js"
+import { claimedViaLine, createdViaLine, epicOwnerLine, originLine, workOrigin, workWord } from "./words.js"
 import { appendWorkPage } from "./work-pages.js"
 import { visibleWorkItems } from "./plan-visibility.js"
 import { TerminalEntry } from "../terminal/TerminalEntry.js"
@@ -229,12 +229,40 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       .catch((error: unknown) => setDetailError(failureWords(error)))
       .finally(() => setDetailLoading(false))
   }, [])
+  // Every request to open an item takes a ticket; a read that answers after a
+  // later one was made is dropped rather than replacing what is now open.
+  const openTicket = useRef(0)
   const openItem = useCallback((item: WorkV2Item) => {
+    openTicket.current++
     setFailure("")
     setOpenedItem(item)
     refreshDetail(item.id)
   }, [refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
+  const listedRows = useRef<WorkV2Item[]>([])
+  listedRows.current = items.concat(family.rows)
+  /**
+   * Opens an item's detail by id: from the Board or family row when one is
+   * loaded, otherwise after reading it, and only when that read succeeds.
+   * Answers "" when it opened (or a later request took over) and the failure
+   * words otherwise, for the caller to show beside the link that was pressed.
+   */
+  const openWorkItemById = useCallback(async (id: string): Promise<string> => {
+    const ticket = ++openTicket.current
+    const listed = listedRows.current.find((row) => row.id === id)
+    if (listed) { openItem(listed); return "" }
+    try {
+      const answer = await readWorkV2Item(id)
+      if (ticket !== openTicket.current) return ""
+      setFailure(""); setDetailError(""); setOpenedItem(answer.item)
+      return ""
+    } catch (error) {
+      return ticket === openTicket.current ? failureWords(error) : ""
+    }
+  }, [openItem])
+  // The control that opened the detail dialog gets focus back when it closes,
+  // however many items were opened from inside it in between.
+  const detailReturn = useRef<ModalReturn>({ opener: null, timer: null })
 
   const run = async (key: string, task: () => Promise<unknown>, refreshInBackground = false) => {
     if (busy) return false
@@ -266,8 +294,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const unassigned = visibleItems.filter((item) => item.area === "unassigned" && !item.closed_at)
   const done = visibleItems.filter((item) => item.closed_at)
   const visibleProposals = proposalsForProject(proposals, project)
-  const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, onBoard: new Set(items.map((item) => item.id)) }),
-    [family, items])
+  const familyView = useMemo<EpicFamilyView>(() => ({ rows: family.rows, truncated: family.truncated, open: openWorkItemById }),
+    [family, openWorkItemById])
 
   return <EpicFamilyContext.Provider value={familyView}>
   <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title"
@@ -352,7 +380,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} decisions={decisionsForWorkItem(decisions, createdItem.id)} busy={busy} failure={failure}
       detailLoading={false} detailError="" retryDetail={() => void readWorkV2Item(createdItem.id).then((answer) => setCreatedItem(answer.item)).catch((error: unknown) => setFailure(failureWords(error)))}
       clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
-    {openedItem && <CreatedWorkModal item={openedItem} created={false} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} busy={busy} failure={failure}
+    {openedItem && <CreatedWorkModal item={openedItem} created={false} key={openedItem.id} back={detailReturn.current} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} busy={busy} failure={failure}
       detailLoading={detailLoading} detailError={detailError} retryDetail={() => refreshDetail(openedItem.id)}
       clearFailure={() => setFailure("")} run={run} onClose={() => setOpenedItem(null)} />}
   </EpicFamilyContext.Provider>
@@ -368,12 +396,20 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
 async function readEpicFamily(project: string, status: WorkV2Status, search: string,
   work: WorkV2Page): Promise<{ rows: WorkV2Item[]; truncated: boolean }> {
   if (!needsFamilyList(work.rows)) return { rows: [], truncated: false }
-  if (status === "all" && !search) return work
-  try {
-    return await readWorkV2(project || undefined, "all")
-  } catch {
-    return { rows: work.rows, truncated: true }
+  let family: { rows: WorkV2Item[]; truncated: boolean }
+  if (status === "all" && !search) family = work
+  else {
+    try {
+      family = await readWorkV2(project || undefined, "all")
+    } catch {
+      family = { rows: work.rows, truncated: true }
+    }
   }
+  // The family list is one page, so an Epic can be missing from it while its
+  // child is on the Board; those parents are read one by one, each once.
+  const listed = work.rows.concat(family.rows)
+  const parents = await readMissingParents(listed, listed, async (id) => (await readWorkV2Item(id)).item)
+  return parents.length ? { rows: family.rows.concat(parents), truncated: family.truncated } : family
 }
 
 /** The first page's lane and card geometry, using the Board's own surfaces. */
@@ -396,39 +432,17 @@ function BoardSkeleton() {
 interface EpicFamilyView {
   rows: WorkV2Item[]
   truncated: boolean
-  /** Items that have a card on the Board, which a family link can bring into view. */
-  onBoard: Set<string>
+  /** Opens another item's detail by id; answers the failure words, or "" once it opened. */
+  open: (id: string) => Promise<string>
 }
 
-const EpicFamilyContext = createContext<EpicFamilyView>({ rows: [], truncated: false, onBoard: new Set() })
-
-/**
- * Brings another card on the Board into view and moves focus to it, opening
- * the folded 已關閉 section when the card is inside it. Only the Board's own
- * cards are searched; a modal's copy of a card is not a place to go to.
- */
-function showWorkCard(id: string) {
-  const card = document.querySelector<HTMLElement>(`#work [data-work-id="${CSS.escape(id)}"]`)
-  if (!card) return
-  for (let fold = card.closest("details"); fold; fold = fold.parentElement?.closest("details") ?? null) fold.open = true
-  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  card.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" })
-  card.focus({ preventScroll: true })
-  card.setAttribute("data-arrived", "")
-  window.setTimeout(() => card.removeAttribute("data-arrived"), 1600)
-}
-
-/** A link to another card on the Board, or its words alone when that card is not shown. */
-function WorkCardLink({ id, onBoard, className, children }: { id: string; onBoard: boolean; className: string; children: ReactNode }) {
-  return onBoard
-    ? <button className={className} type="button" onClick={() => showWorkCard(id)}>{children}</button>
-    : <span className={className}>{children}</span>
-}
+const EpicFamilyContext = createContext<EpicFamilyView>({ rows: [], truncated: false, open: async () => "" })
 
 /** On an Epic: the items created under it, how far they have got, and who has each. */
 function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionRow[] }) {
   const family = useContext(EpicFamilyContext)
   const personas = usePersonas()
+  const [failure, setFailure] = useState("")
   const children = epicChildren(family.rows, item.id)
   if (!children.length) return null
   const progress = epicProgress(children)
@@ -447,25 +461,65 @@ function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionR
       const who = owner ? (owner.label || owner.id) : child.owner_session ? `Session ${child.owner_session.slice(0, 8)}` : "未指派"
       const ownerPersona = personaById(personas, owner?.persona)
       return <li key={child.id} data-phase={child.phase}>
-        <WorkCardLink id={child.id} onBoard={family.onBoard.has(child.id)} className="work-epic-child">
+        <button className="work-epic-child" type="button" onClick={() => { setFailure(""); void family.open(child.id).then(setFailure) }}>
           <span className="work-epic-child-kind" aria-label={KIND_META[child.kind].label} title={KIND_META[child.kind].label}>{KIND_META[child.kind].icon}</span>
           <span className="work-epic-child-title">{child.title}</span>
           <span className="work-epic-child-meta">{phaseName(child.phase)} · {ownerPersona
             ? <span className="work-owner-persona" title={personaTitle(ownerPersona)}><PersonaBot persona={ownerPersona} cellPx={2} className="persona-tag-bot" />{who}</span>
             : who}</span>
-        </WorkCardLink>
+        </button>
       </li>
     })}</ul>
+    {failure && <p className="work-note" role="alert">{workWord("openItemFailed", { reason: failure })}</p>}
   </section>
 }
 
 /** On a child: the Epic it was created under. */
 function EpicParentLine({ item }: { item: WorkV2Item }) {
   const family = useContext(EpicFamilyContext)
+  const [failure, setFailure] = useState("")
   const parent = epicParent(item, family.rows)
   if (!parent) return null
-  return <p className="work-epic-parent">屬於 Epic：<WorkCardLink id={parent.id} onBoard={family.onBoard.has(parent.id)} className="work-epic-parent-link">
-    {parent.title ? `〈${parent.title}〉` : <code>{shortWorkID(parent.id)}</code>}</WorkCardLink></p>
+  return <>
+    <p className="work-epic-parent">屬於 Epic：<button className="work-epic-parent-link" type="button"
+      onClick={() => { setFailure(""); void family.open(parent.id).then(setFailure) }}>
+      {parent.title ? `〈${parent.title}〉` : <code>{shortWorkID(parent.id)}</code>}</button></p>
+    {failure && <p className="work-note" role="alert">{workWord("openItemFailed", { reason: failure })}</p>}
+  </>
+}
+
+/**
+ * On a Board card: the Epic it belongs to, as its own control beside the
+ * card's summary button rather than inside it, opening the Epic's detail.
+ */
+function CardParentLine({ parent }: { parent: EpicParent }) {
+  const family = useContext(EpicFamilyContext)
+  const [opening, setOpening] = useState(false)
+  const [failure, setFailure] = useState("")
+  const title = parent.title || shortWorkID(parent.id)
+  const phase = family.rows.find((row) => row.id === parent.id)?.phase
+  const closed = phase === "done" ? workWord("epicParentDone") : phase === "cancelled" ? workWord("epicParentCancelled") : ""
+  return <div className="work-card-parent">
+    <button className="work-card-parent-link" type="button" aria-busy={opening || undefined}
+      aria-label={[workWord("cardEpicParentLabel", { title }), closed].filter(Boolean).join(" · ")}
+      onClick={() => {
+        setOpening(true); setFailure("")
+        void family.open(parent.id).then((words) => { setFailure(words); setOpening(false) })
+      }}>
+      <span className="work-card-parent-title">{workWord("cardEpicParent", { title })}</span>
+      {closed && <span className="work-card-parent-state">{closed}</span>}
+    </button>
+    {failure && <p className="work-note" role="alert">{workWord("openItemFailed", { reason: failure })}</p>}
+  </div>
+}
+
+/** A small robot head: the mark an Agent-made card's badge carries beside its words. */
+function AgentGlyph() {
+  return <svg className="work-card-origin-glyph" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+    <path d="M8 1.5v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <rect x="2.5" y="4" width="11" height="9" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="6" cy="8.5" r="1.2" fill="currentColor" /><circle cx="10" cy="8.5" r="1.2" fill="currentColor" />
+  </svg>
 }
 
 /**
@@ -563,17 +617,25 @@ function CompactWorkCard({ item, decisions, onOpen }: {
   const epic = isEpic(item)
   const gateShown = epicGateDetailShown(item)
   const attention = decisions.length > 0 || !!item.user_action
+  const family = useContext(EpicFamilyContext)
+  const parent = epicParent(item, family.rows)
+  // An Agent-made card carries a badge; its sentence is the summary button's
+  // description, since the button's own label is explicit.
+  const origin = workOrigin(item.created_by)
+  const originSentence = originLine(item)
   const gateDescriptionID = `work-card-${item.id}-gate`
   const gateSnapshotDescriptionID = `work-card-${item.id}-gate-snapshot`
   const attentionDescriptionID = `work-card-${item.id}-attention`
+  const originDescriptionID = `work-card-${item.id}-origin`
   const describedBy = [gateShown && gateSnapshotDescriptionID, gateShown && gateDescriptionID,
-    attention && attentionDescriptionID].filter(Boolean).join(" ") || undefined
+    attention && attentionDescriptionID, originSentence && originDescriptionID].filter(Boolean).join(" ") || undefined
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
-    data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
+    data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} data-origin={originSentence ? origin : undefined} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"
       aria-label={`查看「${item.title}」的完整內容，${phaseName(item.phase)}`} aria-describedby={describedBy} onClick={onOpen}>
       <span className="work-card-summary-top">
         <span className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></span>
+        {originSentence && <span className="work-card-origin" title={originSentence}><AgentGlyph />{workWord("agentMadeBadge")}</span>}
         <span className={epic ? "work-state work-epic-label" : "work-state"}>{epic ? "EPIC · " : `${item.kind} · `}{phaseName(item.phase)}</span>
       </span>
       <span className="work-card-summary-title">{item.title}</span>
@@ -585,7 +647,9 @@ function CompactWorkCard({ item, decisions, onOpen }: {
         {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
         <span className="work-card-open">查看完整內容 <WorkIcon name="open" /></span>
       </span>
+      {originSentence && <span id={originDescriptionID} className="work-card-origin-sentence">{originSentence}</span>}
     </button>
+    {parent && <CardParentLine parent={parent} />}
   </article>
 }
 
@@ -916,7 +980,7 @@ function personaAIError(error: unknown): string {
  * quoted when the line is opened. A person's own item shows nothing here.
  */
 function CreatedViaNote({ item }: { item: WorkV2Item }) {
-  const line = createdViaLine(item.created_via)
+  const line = workOrigin(item.created_by) === "epic_owner" ? epicOwnerLine(item.created_via) : createdViaLine(item.created_via)
   if (!line) return null
   const excerpt = item.created_via?.excerpt ?? ""
   if (!excerpt) return <p className="work-created-via">{line}</p>
@@ -1086,9 +1150,11 @@ function SessionWorkList({ title, empty, rows }: {
   </li>)}</ul> : <small>{empty}</small>}</div>
 }
 
-function CreatedWorkModal({ item, created = true, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, onClose }: {
+function CreatedWorkModal({ item, created = true, back, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, onClose }: {
   item: WorkV2Item
   created?: boolean
+  /** Shared by successive dialogs opened from one another, so focus returns to the first opener. */
+  back?: ModalReturn
   sessions: SessionRow[]
   decisions: Decision[]
   busy: string
@@ -1103,7 +1169,7 @@ function CreatedWorkModal({ item, created = true, sessions, decisions, busy, fai
   const modal = useRef<HTMLDivElement>(null)
   const initialFocus = useRef<HTMLButtonElement>(null)
   useModalDismiss(false, onClose)
-  useModalFocus(modal, initialFocus)
+  useModalFocus(modal, initialFocus, back)
   // Opened from a Session too, so it lives beside the app root, never inside
   // the fixed Session pane: a phone then keeps one scroll surface.
   return createPortal(<div ref={modal} tabIndex={-1} className={created ? "session-todo-modal work-created-modal" : "session-todo-modal work-created-modal work-item-detail-modal"}
@@ -1193,16 +1259,24 @@ function useModalDismiss(busy: boolean, onClose: () => void) {
   }, [busy, onClose])
 }
 
+/** Where focus goes back to when a dialog closes, and the pending move there. */
+interface ModalReturn {
+  opener: HTMLElement | null
+  timer: number | null
+}
+
 /** Keep the keyboard in the modal and put it back on the summary that opened it. */
-function useModalFocus(container: RefObject<HTMLDivElement | null>, initialFocus: RefObject<HTMLElement | null>) {
+function useModalFocus(container: RefObject<HTMLDivElement | null>, initialFocus: RefObject<HTMLElement | null>, shared?: ModalReturn) {
   // StrictMode runs an effect's setup/cleanup/setup sequence once in
   // development. Keep the opener across that rehearsal and cancel its false
-  // restoration when the second setup starts.
-  const previous = useRef<HTMLElement | null>(null)
-  const restoreTimer = useRef<number | null>(null)
-  if (!previous.current && document.activeElement instanceof HTMLElement) previous.current = document.activeElement
+  // restoration when the second setup starts. A dialog replaced by the next
+  // item's dialog is the same rehearsal: the new one cancels the restoration
+  // and keeps the first opener, because `shared` outlives both.
+  const own = useRef<ModalReturn>({ opener: null, timer: null })
+  const back = shared ?? own.current
+  if (!back.opener && document.activeElement instanceof HTMLElement) back.opener = document.activeElement
   useEffect(() => {
-    if (restoreTimer.current !== null) window.clearTimeout(restoreTimer.current)
+    if (back.timer !== null) { window.clearTimeout(back.timer); back.timer = null }
     initialFocus.current?.focus({ preventScroll: true })
     const keepFocus = (event: KeyboardEvent) => {
       if (event.key !== "Tab" || !container.current) return
@@ -1227,11 +1301,13 @@ function useModalFocus(container: RefObject<HTMLDivElement | null>, initialFocus
       document.removeEventListener("keydown", keepFocus)
       // React removes the portal after effect cleanup. Restore on the next
       // task so the disappearing close button cannot hand focus back to body.
-      restoreTimer.current = window.setTimeout(() => {
-        if (previous.current?.isConnected) previous.current.focus({ preventScroll: true })
+      back.timer = window.setTimeout(() => {
+        const opener = back.opener
+        back.timer = null; back.opener = null
+        if (opener?.isConnected) opener.focus({ preventScroll: true })
       }, 0)
     }
-  }, [container, initialFocus])
+  }, [container, initialFocus, back])
 }
 
 function WorkReferenceImage({ item, image, busy, run }: {

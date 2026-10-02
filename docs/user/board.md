@@ -62,6 +62,14 @@ that it is saved, then clear eligible old detail. The latest state and lifetime 
 Each card carries a **Token 帳單** (token bill): what the work cost so far
 ([usage.md](usage.md)).
 
+**Epics and who made a card.** A card split out of an Epic names it under its summary as
+**↑ Epic〈title〉**, with **已完成** or **已取消** when the Epic is closed; pressing it opens the
+Epic's detail, and each row under **子項目** in an Epic's detail opens that child the same way.
+A card a session made rather than you carries an **Agent 建立** badge and a dashed top edge:
+either a session created it from one of your messages (**Session 依你 HH:MM 的訊息建立**), or the
+Epic's owning session split it out of the Epic (**由 Epic 的負責 Session 拆分建立**). Your own
+items carry no badge.
+
 **Proposals.** A session can propose an item. **Agent 提案** uses plain language in a compact review
 row: what the session proposes, why it should be done, its Project and source. Press
 **Explain / 詳細說明** to reveal **會改什麼** (what changes) and **完成後會看到什麼** (the observable

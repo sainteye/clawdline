@@ -166,6 +166,15 @@ const words = {
     createdViaSession: "Created by the Session from your message at {time}",
     createdViaQuote: "Your message",
     claimedViaSession: "Claimed by the Session from your message at {time}",
+    createdBySession: "Created by the Session from your message",
+    createdByEpicOwner: "Split out by the Epic's owner Session",
+    createdByEpicOwnerAt: "Split out by the Epic's owner Session at {time}",
+    agentMadeBadge: "Agent-made",
+    cardEpicParent: "↑ Epic “{title}”",
+    cardEpicParentLabel: "Open the Epic “{title}” this item belongs to",
+    epicParentDone: "done",
+    epicParentCancelled: "cancelled",
+    openItemFailed: "Could not open that item: {reason}",
     documentSpec: "Specification",
     documentDesign: "Design",
     documentTest: "Test evidence",
@@ -364,6 +373,15 @@ const words = {
     createdViaSession: "Session 依你 {time} 的訊息建立",
     createdViaQuote: "你的訊息",
     claimedViaSession: "Session 依你 {time} 的訊息認領",
+    createdBySession: "Session 依你的訊息建立",
+    createdByEpicOwner: "由 Epic 的負責 Session 拆分建立",
+    createdByEpicOwnerAt: "由 Epic 的負責 Session 在 {time} 拆分建立",
+    agentMadeBadge: "Agent 建立",
+    cardEpicParent: "↑ Epic〈{title}〉",
+    cardEpicParentLabel: "開啟這個項目所屬的 Epic〈{title}〉",
+    epicParentDone: "已完成",
+    epicParentCancelled: "已取消",
+    openItemFailed: "打不開這個項目：{reason}",
     documentSpec: "規格文件",
     documentDesign: "設計文件",
     documentTest: "測試證據",
@@ -460,6 +478,8 @@ export interface CreatedVia {
   session_id: string
   at: number
   excerpt?: string
+  /** The Epic an item was split out of, when the Epic's owner Session created it. */
+  epic_id?: string
 }
 
 /** A Unix time as this browser's local HH:MM. */
@@ -484,4 +504,36 @@ export function createdViaLine(via: CreatedVia | null | undefined, lang: "en" | 
 export function claimedViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string | null {
   if (!via || !via.run || !via.at) return null
   return workWordIn(lang, "claimedViaSession", { time: clockOf(via.at) })
+}
+
+/**
+ * Who made an item, read from its `created_by` actor and never from whether
+ * `created_via` is present: a Session acting on the person's message, the
+ * Epic's owner Session splitting the Epic up, or the person themselves.
+ */
+export type WorkOrigin = "session" | "epic_owner" | "person"
+
+export function workOrigin(createdBy: string | undefined): WorkOrigin {
+  if (createdBy?.startsWith("user_via_session:")) return "session"
+  if (createdBy?.startsWith("epic_owner:")) return "epic_owner"
+  return "person"
+}
+
+/** The line an item the Epic's owner Session split out of the Epic carries. */
+export function epicOwnerLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string {
+  return via?.at ? workWordIn(lang, "createdByEpicOwnerAt", { time: clockOf(via.at) }) : workWordIn(lang, "createdByEpicOwner")
+}
+
+/**
+ * The sentence an Agent-made card's badge stands for, or null for an item the
+ * person made. A Session's item names the time of the person's message when
+ * the wire carries it.
+ */
+export function originLine(item: { created_by?: string; created_via?: CreatedVia }, lang: "en" | "zh-Hant" = language()): string | null {
+  switch (workOrigin(item.created_by)) {
+    case "session": return createdViaLine(item.created_via, lang) ??
+      (item.created_via?.at ? workWordIn(lang, "createdViaSession", { time: clockOf(item.created_via.at) }) : workWordIn(lang, "createdBySession"))
+    case "epic_owner": return epicOwnerLine(item.created_via, lang)
+    case "person": return null
+  }
 }
