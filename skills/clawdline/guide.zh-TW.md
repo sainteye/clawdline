@@ -52,7 +52,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 
 **有指令可以用，就用指令，不要自己組 curl。** 指令在自己的 process 裡讀憑證，所以憑證不會出現在命令列、
 `ps`、指令輸出，也不會出現在你的 transcript 裡。自己組的 curl 沒帶這份憑證，會回 `401 unauthorized`
-（"This needs a paired device."）：缺的是憑證，不是權限。改用指令。
+（"No valid credential came with this request …"）：缺的是憑證，不是權限。改用指令。
 
 | 指令 | 做什麼 |
 |---|---|
@@ -81,7 +81,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 從任何一台機器透過 Cloud webhook 啟動一個排程，並等它的結果；exit code 說明它怎麼結束（「排程」一節）。不需要 daemon |
 
 上面那些 orchestration 指令（`webhook fire` 除外）成功時會印出 daemon 回的 JSON；被拒絕時印出
-`refused, <status> <code>: <message>`，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
+`refused, <status> <code>: <message>`，接著每行一個 refusal 帶的純量 `key: value`，最後是 remediation，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
 `--port` 可以覆寫 port。
 
 `clawdline usage` 讀的是 token 帳本（repository 裡的 `docs/token-ledger.md`）：每個 token 花在什麼上面——
@@ -163,7 +163,7 @@ roster 與本機信任狀態；配對後要唯讀複查，也用這條。
 | Device token | `<state dir>/local-token`，或配對過的裝置自己的 token | `Authorization: Bearer` | console 的路由（`/v1/sessions/…`）。session 用不到 |
 
 把 orchestrator token 當成 `Bearer` 送，它會被拿去跟裝置比對，然後被拒絕。token 錯誤或沒帶時回
-`401 unauthorized`「This needs a paired device.」——字面上講的是裝置，真正的原因是 token。
+`401 unauthorized`，訊息直接說明：token 沒帶或不是這個 daemon 的，或裝置沒配對。`clawdline doctor` 會印出 CLI 讀的目錄與 port。
 
 **非用 curl 不可時**，別讓 token 出現在命令列上：
 
@@ -381,7 +381,7 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
 一次 `stale_inventory` 會重讀 inventory、再送一次。輸出是 `dispatched <id> <state> [worktree <path>]`，
 接著每個警告一行——daemon 給的，以及每個 writes 和你重疊的 live task。`--json` 改成印 daemon 的原始
-回答。被拒時在 stderr 印 `refused, <status> <code>: <message>` 並以 1 結束；每個 code 的意思見本節最後
+回答。被拒時在 stderr 印 `refused, <status> <code>: <message>`，再逐行印 extras 與 remediation，並以 1 結束；每個 code 的意思見本節最後
 的表。root 是你的對話，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，否則用 `--conversation`；
 child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
 `--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。daemon 開 worktree 和 child 分頁的期間它什麼都不印；

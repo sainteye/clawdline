@@ -56,8 +56,9 @@ item to `done`, and it names the part to print for anything rarer.
 
 **Use the commands, not hand-built curl, where one exists.** They read the credential inside their
 own process, so it never appears in a command line, in `ps`, in their output or in your
-transcript. A hand-built curl without that credential answers `401 unauthorized` ("This needs a
-paired device."): it is the credential that is missing, not a permission. Run the command instead.
+transcript. A hand-built curl without that credential answers `401 unauthorized` ("No valid
+credential came with this request …"): it is the credential that is missing, not a permission. Run
+the command instead.
 
 | Command | What it does |
 |---|---|
@@ -86,7 +87,8 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
 
 The orchestration commands above (not `webhook fire`) print the daemon's JSON on success; on a refusal they print
-`refused, <status> <code>: <message>` and exit 1. Cloud commands use their own human-readable
+`refused, <status> <code>: <message>`, then each scalar the refusal carries as `key: value`, one per
+line, and its remediation last, and exit 1. Cloud commands use their own human-readable
 success and error output. `--port` overrides the port.
 
 `clawdline usage` is the token ledger (`docs/token-ledger.md` in the repository): what each token was
@@ -177,8 +179,8 @@ person separately asked for that change.
 | Device token | `<state dir>/local-token`, or a paired device's | `Authorization: Bearer` | The console's routes (`/v1/sessions/…`). A session does not need it |
 
 The orchestrator token sent as `Bearer` is compared with devices and refused. A wrong or missing
-one gets `401 unauthorized` "This needs a paired device." — the wording is about devices, the
-cause is the token.
+one gets `401 unauthorized`, which says so: the token is missing or is not this daemon's, or the
+device is not paired. `clawdline doctor` prints the directory and port the CLI reads.
 
 **When you must use curl**, keep the token out of the command line:
 
@@ -428,7 +430,8 @@ It makes the id and the secret, reads the inventory for `generation` and `task_r
 `task.json`, posts the task, and on one `stale_inventory` reads the inventory again and resends
 once. It prints `dispatched <id> <state> [worktree <path>]`, then one line per warning — the
 daemon's, and each live task whose writes overlap yours. `--json` prints the daemon's answer
-instead. A refusal is `refused, <status> <code>: <message>` on stderr and exit 1; the table at the
+instead. A refusal is `refused, <status> <code>: <message>` on stderr, then its extras and remediation one
+line each, and exit 1; the table at the
 end of this part says what each code means. The root is your conversation, from
 `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; the child's assistant is
 yours unless `--assistant` says otherwise; the project is this directory's git top-level unless
