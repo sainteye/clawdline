@@ -235,6 +235,8 @@ const (
 	WorkGateDueRowsPerPass            = "work_gate_due_rows_per_pass"
 	WorkGateRetryBackoffSeconds       = "work_gate_retry_backoff_seconds"
 	WorkGateOwnerOfflineGraceSeconds  = "work_gate_owner_offline_grace_seconds"
+	// G6: a Root Assignment or handoff whose opening never finished.
+	OpeningStuckSeconds = "orchestrator.opening_stuck_seconds"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
 	DecisionsOpen = "decisions.open"
@@ -1070,6 +1072,18 @@ func Register() []Entry {
 			Limit: 900, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics, Notice}, EvictedBy: Daemon,
 			Sources: []string{"internal/contract.WorkGateOwnerOfflineGraceSecondsLimit"},
+		},
+		{
+			// A Root Assignment at terminal_opened, or a handoff at opening,
+			// lasts only while its opening request runs, which touches the
+			// row at least every 150 seconds. One unchanged for this long was
+			// left by a daemon that stopped mid-opening: the beat records it
+			// failed with terminal_open_timeout or handoff_open_timeout and
+			// an event of that name. Nothing is kept waiting at the limit.
+			Name: OpeningStuckSeconds, Class: Observation, Unit: Seconds,
+			Limit: 1800, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.OpeningStuckSecondsLimit"},
 		},
 		{
 			// Proposals waiting for a person's answer — the "to confirm"

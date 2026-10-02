@@ -72,6 +72,9 @@ type Pulse struct {
 	// HandoffBoards counts delivered handoffs whose receiver began a turn and
 	// whose captured Board responsibilities moved in the same transaction.
 	HandoffBoards int
+	// StuckOpenings is how many Root Assignments left at terminal_opened, or
+	// handoffs left at opening, this pass judged failed (stuck_opening.go).
+	StuckOpenings int
 	// StoreErr is why the pass could not read the store, when it could not.
 	// A pass that read nothing because it could not read is not a pass that
 	// found nothing, and the two must not look alike from outside.
@@ -184,6 +187,7 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	// (root_dialog.go).
 	p.RootDialogs = b.tendRootDialogs(ctx, rd)
 	p.HandoffBoards = b.tendHandoffBoards(ctx, rd)
+	p.StuckOpenings = b.failStuckOpenings(ctx)
 	p.Notices = b.PumpNotices(ctx)
 	// Finished children's tabs whose linger is over (linger.go), and — off
 	// the beat, when one is due — the reclamation sweep (reclaim.go).

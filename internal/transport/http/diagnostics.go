@@ -748,6 +748,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.WorkGateOwnerOfflineGraceSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-escalation observation ceiling; escalation time persists; no retained buffer exists for observation"}
 		},
+		capacity.OpeningStuckSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-row age ceiling; the row's updated time persists; no retained buffer"}
+		},
 		capacity.IntentRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},
