@@ -92,7 +92,13 @@ function TerminalPage({ shown }: { shown: boolean }) {
   }, [shown, route.terminal])
 
   const known = typeof place === "object" && place.asked === route.project ? place : null
-  const resolved = hosted && cloud.state === "ready" && host ? resolveCloudTerminalProject(route.project, cloud.page.places, host.machine) : null
+  // The machine of the last terminal host: while this page's own Cloud line
+  // renews the host is absent, and the Project it was showing is still the
+  // same one, so its name (not the raw Cloud id) stays in the title.
+  const lastMachine = useRef("")
+  if (host) lastMachine.current = host.machine
+  const machine = host?.machine ?? lastMachine.current
+  const resolved = hosted && cloud.state === "ready" && machine ? resolveCloudTerminalProject(route.project, cloud.page.places, machine) : null
   const found = resolved?.kind === "found" ? resolved : null
   const project = hosted ? found?.page ?? "" : known?.id ?? ""
   const name = (hosted ? found?.label : known?.label) || project || route.project
@@ -134,7 +140,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
         <>
           <header className="board-head terminal-page-head">
             <h1 id="terminal-title" ref={title} tabIndex={-1}>{route.terminal ? nextWord("terminalEntryFor", { project: name }) : nextWord("terminalEntry")}</h1>
-            {!route.terminal && backButton}
+            {(!route.terminal || !host) && backButton}
           </header>
           {!route.project ? <p className="terminal-note" role="note">{nextWord("terminalCloudChooseProject")}</p>
             : cloud.state === "failed" ? <div className="terminal-note-row">
@@ -142,7 +148,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
                 {" "}{cloud.retryInMs !== null ? nextWord("terminalProjectsRetryIn", { seconds: String(Math.round(cloud.retryInMs / 1000)) }) : nextWord("terminalProjectsRetryStopped")}</p>
               <button className="board-button" type="button" onClick={() => reader.current?.retry()}>{nextWord("terminalRetry")}</button></div>
             : cloud.state === "loading" ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
-              : !host ? <p className="terminal-note" role="status">{nextWord("terminalCloudOffline")}</p>
+              : !host ? <p className="terminal-note" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
                 : !found ? <p className="terminal-note" role="alert">{nextWord("terminalProjectUnknown")}</p>
                   : <CloudTerminalPage project={found.page} channelProject={found.local} label={name} id={route.terminal} shown={shown} from={route.from} />}
         </>

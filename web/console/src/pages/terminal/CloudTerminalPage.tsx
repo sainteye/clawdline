@@ -191,7 +191,7 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
       ? holderWords(snapshot.control.holder)
       : nextWord("terminalControlOtherDevice")
   const body = cloudTerminalBody(host, channelProject, id)
-  if (body === "offline" || !host) return <p className="terminal-note" role="status">{nextWord("terminalCloudOffline")}</p>
+  if (body === "offline" || !host) return <p className="terminal-note" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
   if (body === "no_project") return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
   if (body === "list") return <section className="terminal-wrap" aria-label={nextWord("terminalListTitle", { project: label })}>
     <div className="terminal-note-row"><h2>{nextWord("terminalListTitle", { project: label })}</h2>
