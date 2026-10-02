@@ -45,6 +45,17 @@ func realTermFixture(t *testing.T) *termFixture {
 	return newTermFixture(t, host)
 }
 
+// shellStartWait is how long a test waits for the first thing a shell answers.
+//
+// The terminal runs the person's own login shell (`$SHELL -l`), and the first
+// answer waits for that profile to load, which is the shell's time, not the
+// stream's. Measured on 2026-10-02 on a 14-core Mac with a load average of 110:
+// the first frame reached the stream 0.3-0.6 s after the test began, and `hi`
+// 2.4-4.1 s after it, against the 5 s TestARealTerminalThroughTheHandler used
+// to allow; idle, the whole test took 1.0-1.4 s. A passing run does not wait
+// any longer for the larger number.
+const shellStartWait = 30 * time.Second
+
 func frameHas(e sseEvent, want string) bool {
 	if e.name != "frame" {
 		return false
@@ -81,7 +92,7 @@ func TestARealTerminalThroughTheHandler(t *testing.T) {
 	if rec := f.input(term.ID, f.local, "a", c.Epoch, 1, "echo hi\r"); rec.Code != http.StatusOK {
 		t.Fatalf("input: %d %s", rec.Code, rec.Body)
 	}
-	stream.until(t, 5*time.Second, "a frame with hi", func(e sseEvent) bool { return frameHas(e, "hi") })
+	stream.until(t, shellStartWait, "a frame with hi", func(e sseEvent) bool { return frameHas(e, "hi") })
 	if rec := f.do(http.MethodDelete, "/v1/terminals/"+term.ID, f.local,
 		`{"epoch":`+strconv.FormatInt(c.Epoch, 10)+`,"client":"a"}`); rec.Code != http.StatusOK {
 		t.Fatalf("close: %d %s", rec.Code, rec.Body)
@@ -132,7 +143,7 @@ func shellEnds(t *testing.T, line string) {
 		t.Fatalf("input: %d %s", rec.Code, rec.Body)
 	}
 	for _, s := range streams {
-		s.until(t, 10*time.Second, "the shell's answer", func(e sseEvent) bool { return frameHas(e, "ready") })
+		s.until(t, shellStartWait, "the shell's answer", func(e sseEvent) bool { return frameHas(e, "ready") })
 	}
 	began := time.Now()
 	if rec := f.input(term.ID, f.local, "a", c.Epoch, 2, line); rec.Code != http.StatusOK {

@@ -37,7 +37,10 @@ git worktree add -f <scratch>/<name> HEAD
 
 ## Before anything is committed
 
-Every one of these, and every one green:
+Every one of these, and every one green. **`tools/check.sh` runs them all**, once inside
+`tools/heavy.sh`, the web pair only when `web/` changed since `main` (or with `--web`), and ends
+with one `PASS`/`FAIL` line per check and exit 0 only when every one passed. Run it rather than a
+loop of your own; when you add a check here, add it there too.
 
 ```sh
 gofmt -l internal cmd          # silent

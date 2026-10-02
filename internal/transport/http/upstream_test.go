@@ -6,11 +6,30 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/config"
 )
+
+// withoutInheritedNextEnv unsets every CLAWDLINE_NEXT_* variable for the rest
+// of the test and restores it afterwards. These tests read the default routing
+// decision, and every Session Clawdline opens carries
+// CLAWDLINE_NEXT_STANDALONE=1 and CLAWDLINE_NEXT_OWN_SESSIONS=1 into whatever
+// it runs: `go test ./...` typed in one answered 501 where forwarding was asked
+// for. Call it before the test sets the variables it means.
+func withoutInheritedNextEnv(t *testing.T) {
+	t.Helper()
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(name, "CLAWDLINE_NEXT_") {
+			t.Setenv(name, "") // registers the restore
+			_ = os.Unsetenv(name)
+		}
+	}
+}
 
 // upstreamFixture is a daemon built the way `clawdline serve` builds one, with
 // its own state directory and this machine's own token, so that what is being
@@ -55,6 +74,7 @@ func askUnowned(t *testing.T, h http.Handler, token string) *httptest.ResponseRe
 // answer, not the environment variable that used to have to be remembered to
 // get it: no `CLAWDLINE_NEXT_STANDALONE` is set anywhere below.
 func TestAnUnownedRouteNamesItself(t *testing.T) {
+	withoutInheritedNextEnv(t)
 	h, token := upstreamFixture(t, config.Load())
 
 	rec := askUnowned(t, h, token)
@@ -78,6 +98,7 @@ func TestAnUnownedRouteNamesItself(t *testing.T) {
 
 // The default carries no upstream at all, and `doctor` says so in words.
 func TestLoadedConfigHasNoUpstream(t *testing.T) {
+	withoutInheritedNextEnv(t)
 	t.Setenv(config.UpstreamPortEnv, "")
 	if port, ok := config.Load().Upstream(); ok {
 		t.Fatalf("the default config forwards to :%d; nothing is listening there and an unowned route would 502", port)
@@ -96,6 +117,7 @@ func TestLoadedConfigHasNoUpstream(t *testing.T) {
 // that failed. This is the other half of the flip: the scaffold was not removed,
 // it was moved behind a request.
 func TestForwardingIsOptInAndStillNamesTheHop(t *testing.T) {
+	withoutInheritedNextEnv(t)
 	// A port that is bound and then released: nothing is listening on it, and
 	// nothing else on this machine is claimed while the test runs.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -131,6 +153,7 @@ func TestForwardingIsOptInAndStillNamesTheHop(t *testing.T) {
 // forwarding was the default. It still means "never forward", so a script or a
 // bundle written before the flip keeps meaning what it meant.
 func TestStandaloneStillRefusesToForward(t *testing.T) {
+	withoutInheritedNextEnv(t)
 	t.Setenv(config.UpstreamPortEnv, "7717")
 	t.Setenv("CLAWDLINE_NEXT_STANDALONE", "1")
 	h, token := upstreamFixture(t, config.Load())
@@ -145,6 +168,7 @@ func TestStandaloneStillRefusesToForward(t *testing.T) {
 // list is the product, and `502 upstream_unreachable` was the answer a stock
 // Linux build gave for it.
 func TestSessionsAreOwnedWhenNothingIsBehindThisDaemon(t *testing.T) {
+	withoutInheritedNextEnv(t)
 	t.Setenv("CLAWDLINE_NEXT_OWN_SESSIONS", "")
 	h, token := upstreamFixture(t, config.Load())
 
