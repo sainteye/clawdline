@@ -450,6 +450,17 @@ func itemOf(a answer) (itemWire, bool) {
 	return got.Item, true
 }
 
+// verifyGateHint is printed only for an item whose captured verify gate is
+// on: such an item walks verifying and merging, which the guide's ordinary
+// path leaves out. Every command that prints an item shares it.
+const verifyGateHint = "  verify gate on: this item walks verifying and merging before deploying; read \"Captured planning and verification gates\" in `clawdline guide board`"
+
+func printVerifyGateHint(w io.Writer, it itemWire) {
+	if it.VerifyGate {
+		fmt.Fprintln(w, verifyGateHint)
+	}
+}
+
 func printItem(w io.Writer, it itemWire) {
 	owner := "unassigned"
 	if it.OwnerSession != nil && *it.OwnerSession != "" {
@@ -462,6 +473,7 @@ func printItem(w io.Writer, it itemWire) {
 	if it.GateSnapshotCycle > 0 {
 		fmt.Fprintf(w, "  gates cycle %d: planning=%t verification=%t\n", it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
 	}
+	printVerifyGateHint(w, it)
 	if it.Kind == "feature" {
 		// The person's switch, read when the Feature asks to enter
 		// implementing; the Agent follows it and never sets it.

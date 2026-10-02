@@ -1,13 +1,11 @@
 import type { WorkV2Phase } from "./api.js"
-import { WORK_MILESTONES, workMilestonesShown, workMilestoneStates } from "./work-milestones.js"
+import { workMilestones, workMilestonesShown } from "./work-milestones.js"
 import { WorkIcon } from "./WorkIcon.js"
 
-export function WorkMilestones({ phase }: { phase: WorkV2Phase }) {
+export function WorkMilestones({ phase, verifyGate }: { phase: WorkV2Phase; verifyGate: boolean }) {
   if (!workMilestonesShown(phase)) return null
-  const states = workMilestoneStates(phase)
   return <ol className="work-milestones" aria-label="項目進度">
-    {WORK_MILESTONES.map((label, index) => {
-      const state = states[index]
+    {workMilestones(phase, verifyGate).map(({ label, state }) => {
       return <li key={label} data-state={state}
         aria-label={`${label}：${state === "done" ? "已完成" : state === "current" ? "進行中" : "尚未完成"}`}>
         <WorkIcon name={state === "done" ? "check" : state === "current" ? "dot" : "circle"} />{label}

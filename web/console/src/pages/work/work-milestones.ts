@@ -36,3 +36,20 @@ export function workMilestoneStates(phase: WorkV2Phase): WorkMilestoneState[] {
   const current = CURRENT[phase]
   return WORK_MILESTONES.map((_, index) => index < completed ? "done" : index === current ? "current" : "pending")
 }
+
+export type WorkMilestone = { label: (typeof WORK_MILESTONES)[number]; state: WorkMilestoneState }
+
+const GATED_ONLY = new Set<string>(["驗證", "合併"])
+
+/**
+ * The milestones an item's own line has. With its captured verify gate off,
+ * implementing goes straight to deploying, so 驗證 and 合併 are not shown as
+ * empty slots — unless the item is standing in one of them, as an item that
+ * walked the long line before the gate was off still may.
+ */
+export function workMilestones(phase: WorkV2Phase, verifyGate: boolean): WorkMilestone[] {
+  const states = workMilestoneStates(phase)
+  const full = verifyGate || phase === "verifying" || phase === "merging"
+  return WORK_MILESTONES.map((label, index) => ({ label, state: states[index] }))
+    .filter((m) => full || !GATED_ONLY.has(m.label))
+}

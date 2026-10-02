@@ -830,3 +830,18 @@ func TestItemFinishPostsOnlyTheNotesItWasGiven(t *testing.T) {
 		t.Fatalf("finish body = %s", p.Body)
 	}
 }
+
+// The gate hint is printed for a gated item only.
+func TestTheVerifyGateHintIsPrintedOnlyWhenTheGateIsOn(t *testing.T) {
+	var off, on bytes.Buffer
+	it := itemWire{ID: "item-1", Title: "x", Kind: "issue", Phase: "implementing", GateSnapshotCycle: 1}
+	printItem(&off, it)
+	it.VerifyGate = true
+	printItem(&on, it)
+	if strings.Contains(off.String(), "Captured planning and verification gates") {
+		t.Fatalf("an ungated item printed the gate hint:\n%s", off.String())
+	}
+	if !strings.Contains(on.String(), "Captured planning and verification gates") {
+		t.Fatalf("a gated item did not print the gate hint:\n%s", on.String())
+	}
+}
