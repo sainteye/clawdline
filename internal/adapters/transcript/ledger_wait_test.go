@@ -61,7 +61,6 @@ func TestCodexExecIsWaitOnlyWhenEveryToolWaits(t *testing.T) {
 	}
 }
 
-
 func claudeCall(id string, read, write, output int, tools ...m) m {
 	content := []any{}
 	for _, t := range tools {
