@@ -418,8 +418,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  project <add|remove|list>    explicitly keep directories in the session-start list")
 	fmt.Fprintln(os.Stderr, "  task accept [--port n] <task dir>   a child signing for its briefing; secret from CLAWDLINE_TASK_SECRET or stdin")
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
-	fmt.Fprintln(os.Stderr, "  task ack <task id> <notice id>      acknowledge a child's completion notice, so it stops being typed")
-	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing")
+	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing; reading a finished one closes its notice")
+	fmt.Fprintln(os.Stderr, "  task wait <task id>… [--timeout 9m] [--any]   wait for children to finish, show each and close its notice; exit 0 ok, 1 failed, 3 timed out, 4 unreadable")
+	fmt.Fprintln(os.Stderr, "  task ack <task id> <notice id>      close a completion notice by hand; rarely needed")
 	fmt.Fprintln(os.Stderr, "  task land <task id> <state> [--target b --commit c]   record a landing a merge does not record by itself")
 	fmt.Fprintln(os.Stderr, "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   start a schedule through its webhook URL (from --url-file or CLAWDLINE_WEBHOOK_URL) and wait for its outcome; no daemon needed")
 }
