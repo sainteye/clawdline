@@ -275,7 +275,17 @@ landing by itself** within a few minutes: do not post a landing by hand. `clawdl
 what is still owed. Only a cherry-pick or an `incorporated` delivery needs a hand record
 (`clawdline guide landing`).
 
-**6. Finish the item.** Complete each step once it is verified with
+**6. Completion report**, when finding the cause took substantial investigation (a direct,
+observed fix needs none). Add it before `done`: once the item is done it is unassigned, and the
+report answers `409 not_item_owner`.
+
+```sh
+clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
+```
+
+Write it for the person who reported the problem, in Markdown, with no private data.
+
+**7. Finish the item.** Complete each step once it is verified with
 `clawdline item step-done <item id> <step id>`, then advance one phase at a time:
 
 ```sh
@@ -290,15 +300,6 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 `done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. With
 captured verification on, `verifying → merging` needs a checker PASS: read "Captured planning and
 verification gates" in `clawdline guide board` before entering `verifying`.
-
-**7. Completion report**, when finding the cause took substantial investigation (a direct,
-observed fix needs none), before `done`:
-
-```sh
-clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
-```
-
-Write it for the person who reported the problem, in Markdown, with no private data.
 
 **8. Report the turn**: `clawdline session report --summary "…"` as your last action (§7).
 
