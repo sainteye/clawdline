@@ -174,6 +174,9 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if cwd != "" {
 		args = append(args, "-c", cwd)
 	}
+	if err := clearTmuxAssistantIdentity(ctx, bin); err != nil {
+		return "", Failure{Message: err.Error()}
+	}
 	out, err := runTmux(ctx, bin, args...)
 	if err != nil {
 		if err.Error() == "" {
@@ -303,12 +306,43 @@ func runTmuxInput(ctx context.Context, bin, stdin string, args ...string) (strin
 func outsideTmux(env []string) []string {
 	out := env[:0:0]
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_PANE=") {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == "TMUX" || key == "TMUX_PANE" || assistantIdentityKey(key) {
 			continue
 		}
 		out = append(out, kv)
 	}
 	return out
+}
+
+// assistantIdentityKey names only the assistant process markers that must not
+// make a newly opened shell appear to belong to the daemon's assistant.
+func assistantIdentityKey(key string) bool {
+	return key == "CLAUDECODE" || strings.HasPrefix(key, "CLAUDE_CODE_") ||
+		key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID"
+}
+
+// clearTmuxAssistantIdentity removes markers an existing server may already
+// hold globally. Filtering only this client's environment cannot remove
+// variables that tmux copied when an earlier client started the server.
+func clearTmuxAssistantIdentity(ctx context.Context, bin string) error {
+	env, err := runTmux(ctx, bin, "show-environment", "-g")
+	if err != nil {
+		if NoServer(err.Error()) {
+			return nil
+		}
+		return err
+	}
+	for _, line := range strings.Split(env, "\n") {
+		key, _, present := strings.Cut(line, "=")
+		if !present || !assistantIdentityKey(key) {
+			continue
+		}
+		if _, err := runTmux(ctx, bin, "set-environment", "-gu", key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // FindTmux is the tmux this machine has: on the PATH, or failing that in the
