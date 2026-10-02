@@ -309,3 +309,44 @@ func TestTheBeatLooksForMergedDeliveries(t *testing.T) {
 		t.Fatalf("landing is %s after the pass", l.State)
 	}
 }
+
+// ⑨ Asked now for named tasks, the detector records a merged one at once,
+// says why an unmerged one is not, leaves the root's notice alone, and looks
+// at no more than one beat's worth.
+func TestDetectLandingsForLooksNowAtTheNamedTasksOnly(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	repo := gitRepo(t)
+	merged := deliveredTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000091")
+	unmerged := deliveredTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000092")
+	elsewhere := deliveredTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000093")
+	gitIn(t, repo, "merge", "-q", "--no-ff", "-m", "merge", merged.Worktree.Branch)
+	gitIn(t, repo, "merge", "-q", "--no-ff", "-m", "merge", elsewhere.Worktree.Branch)
+
+	found := b.DetectLandingsFor(ctx, []string{merged.ID, unmerged.ID})
+	if len(found) != 2 || !found[0].Landed || found[1].Landed || found[1].Reason == "" {
+		t.Fatalf("found = %+v", found)
+	}
+	if l := landingOf(t, b, ctx, merged.ID); l.State != LandingLanded || l.Note != landingDetectNote {
+		t.Fatalf("merged = %+v", l)
+	}
+	if l := landingOf(t, b, ctx, elsewhere.ID); l.State != LandingPending {
+		t.Fatalf("a task nobody named was settled: %+v", l)
+	}
+	if after, _, _ := b.Record(ctx, merged.ID); after.Notice != nil && after.Notice.State == NoticeAcknowledged {
+		t.Errorf("an immediate detection acknowledged the root's completion notice")
+	}
+	// Landed already: not detectable, nothing asked.
+	if again := b.DetectLandingsFor(ctx, []string{merged.ID}); len(again) != 0 {
+		t.Fatalf("a landed task was looked at again: %+v", again)
+	}
+	many := make([]string, 0, landingDetectLimit+4)
+	for n := 0; n < landingDetectLimit+4; n++ {
+		many = append(many, unmerged.ID)
+	}
+	if got := b.DetectLandingsFor(ctx, many); len(got) != landingDetectLimit {
+		t.Fatalf("looked at %d, want at most %d", len(got), landingDetectLimit)
+	}
+	if (&Broker{}).DetectLandingsFor(ctx, []string{merged.ID}) != nil {
+		t.Fatal("a broker without git looked")
+	}
+}

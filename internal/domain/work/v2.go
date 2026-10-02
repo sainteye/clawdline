@@ -615,6 +615,33 @@ func AgentTransition(i ItemV2, next Phase, hasVerification, hasLanding, hasDeplo
 	return nil
 }
 
+// NoLandingGate decides whether `--no-landing-reason` may stand in for a
+// landing on merging -> deploying: only for work that has no code to land.
+// A reason beside a direct landing is two answers to one question. A bound
+// task whose landing is still pending is code owed, and one that landed is
+// code that is not "none"; each is refused by name. Tasks that settled as
+// nothing_to_land or abandoned do not stand in its way.
+func NoLandingGate(reason string, directLanding bool, tasks []TaskFacts) error {
+	if strings.TrimSpace(reason) == "" {
+		return nil
+	}
+	if directLanding {
+		return RefuseV2("invalid_landing_evidence",
+			"Give either a landing (--commit) or --no-landing-reason, not both.")
+	}
+	for _, f := range tasks {
+		switch f.Landing {
+		case "pending":
+			return RefuseV2("landing_owed", fmt.Sprintf(
+				"Task %s bound to this item still owes its landing; land or abandon it before saying there is no code.", f.Task))
+		case "landed", "incorporated":
+			return RefuseV2("landing_recorded", fmt.Sprintf(
+				"Task %s bound to this item has landed code; --no-landing-reason does not apply.", f.Task))
+		}
+	}
+	return nil
+}
+
 func AsRefusalV2(err error) (RefusalV2, bool) {
 	var r RefusalV2
 	return r, errors.As(err, &r)

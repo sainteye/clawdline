@@ -3493,6 +3493,18 @@ export interface InventorySession {
 }
 
 /**
+ * GET /v1/orchestrator/landings?work_id=<item>: every landing recorded for one
+ * Board item — its bound tasks' and its root landings — the same rows the item
+ * read carries as `landings`. An item that does not exist is 404 `work_not_found`,
+ * not an empty list.
+ */
+export interface ItemLandingList {
+  at: number
+  landings: RecordedLanding[]
+  work_id: string
+}
+
+/**
  * One key for a session's menu: a digit "1"…"9" answers the row with that number,
  * "tab" and "shift+tab" are the only other keys, and "submit" presses a
  * multi-select's button, and "enter" presses Enter on a send that was typed and
@@ -4649,6 +4661,58 @@ export interface PushTestRequest {
 export interface PushUnsubscribeRequest {
   id: string
 }
+
+/**
+ * One landing recorded for a Board item, as the broker holds it. The item read and
+ * GET /v1/orchestrator/landings?work_id= answer the same rows from the same code.
+ * `state` is `landed` or `incorporated`, or `unknown` for a bound task whose record
+ * could not be read, which is never shown as no landing.
+ */
+export interface RecordedLanding {
+  commit?: string
+  id: string
+  recorded_at?: number
+
+  /**
+   * The remote whose copy of the target also held the commit; root landings only.
+   */
+  remote?: string
+  remote_commit?: string
+
+  /**
+   * The repository the commit is on: the item's Project or the other catalog
+   * Project the landing named.
+   */
+  repository?: string
+  source: RecordedLandingSource
+  state: string
+  target?: string
+
+  /**
+   * What the target branch named when the landing was proved.
+   */
+  target_commit?: string
+
+  /**
+   * The bound task, for `task`.
+   */
+  task_id?: string
+}
+
+/**
+ * Where a recorded landing of a Board item comes from. `task`: a bound broker
+ * task's landed or incorporated record; its id is the task id. `root`: a broker
+ * root landing row, written when the owning Session proved a commit with `item
+ * phase deploying --commit --target --remote` and no child task carried it.
+ * `phase_event`: a landing copy an older daemon wrote into the item's phase event
+ * before root landings had rows of their own; read, never rewritten.
+ */
+export type RecordedLandingSource =
+    "task"
+  | "root"
+  | "phase_event"
+
+export const RecordedLandingSourceValues: readonly RecordedLandingSource[] = ["task", "root", "phase_event"] as const
 
 /**
  * Every refusal on this daemon has this shape. A caller reads `error` as the code

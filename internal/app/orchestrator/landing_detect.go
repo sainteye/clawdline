@@ -312,3 +312,55 @@ func (b *Broker) sayOnce(id string, err error) {
 	s.said++
 	log.Printf("orchestrator: landing detection: task %s: %s", id, msg)
 }
+
+// LandingDetection is what one immediate look said about one task.
+type LandingDetection struct {
+	Task string
+	// Landed says the look recorded the task landed.
+	Landed bool
+	// Reason says why it did not, in words for the refusal a root reads:
+	// git could not answer, or the delivery is not on a target yet.
+	Reason string
+}
+
+// DetectLandingsFor asks git now, for the given tasks, the question the beat
+// asks once a minute (detectLandings): `item finish` and `item phase
+// deploying` right after a merge should not wait for the next look. Each
+// task goes through detectLanding, so whatever the beat would refuse this
+// refuses too, and like the beat it never closes the root's completion
+// notice (Land is not called). Only tasks the beat would look at are asked;
+// at most landingDetectLimit of them, each under landingDetectTimeout.
+//
+// A failed look is not a refusal: the caller goes on, and the step it takes
+// answers from what is recorded. The answer says what each look found, for
+// that refusal to repeat.
+func (b *Broker) DetectLandingsFor(ctx context.Context, ids []string) []LandingDetection {
+	if b == nil || b.Git == nil || b.Store == nil {
+		return nil
+	}
+	var out []LandingDetection
+	for _, id := range ids {
+		if len(out) >= landingDetectLimit || ctx.Err() != nil {
+			break
+		}
+		r, _, err := b.Record(ctx, id)
+		if err != nil {
+			out = append(out, LandingDetection{Task: id, Reason: "its record could not be read"})
+			continue
+		}
+		if !detectable(r) {
+			continue
+		}
+		ok, err := b.detectLanding(ctx, r)
+		b.sayOnce(r.ID, err)
+		d := LandingDetection{Task: r.ID, Landed: ok}
+		switch {
+		case err != nil:
+			d.Reason = err.Error()
+		case !ok:
+			d.Reason = "its delivery branch " + r.Worktree.Branch + " is not yet an ancestor of a target branch the broker can name"
+		}
+		out = append(out, d)
+	}
+	return out
+}

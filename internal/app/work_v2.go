@@ -90,6 +90,9 @@ type WorkV2View struct {
 	// read for a page of items that carries no assignments; a view that
 	// carries them answers it from its active assignment instead.
 	Claim *work.CreatedViaV2
+	// Landings is every landing recorded for the item (ItemLandings), read
+	// only for one item; nil on a page of items and on a write's answer.
+	Landings []ItemLandingV2
 	// EffectIDs are durable side effects recorded by this write. They are not
 	// part of the work-system response; the transport hands them to the shared
 	// outbox runner after the transaction commits.
@@ -132,6 +135,8 @@ func mapWorkV2Error(err error) error {
 		return workV2Error(http.StatusInsufficientStorage, "images_full", "This item already has six reference images.")
 	case errors.Is(err, store.ErrWorkV2ImageBytesFull):
 		return workV2Error(http.StatusInsufficientStorage, "image_bytes_full", "Reference-image storage is full; nothing was evicted.")
+	case errors.Is(err, store.ErrRootLandingsFull):
+		return workV2Error(http.StatusInsufficientStorage, "landings_full", "This item holds as many root landings as it keeps; nothing was evicted.")
 	case errors.Is(err, store.ErrWorkV2StepsFull):
 		return workV2Error(http.StatusInsufficientStorage, "steps_full", "This item holds as many subtasks as it keeps.")
 	case errors.Is(err, store.ErrWorkV2ProposalsFull):
@@ -344,9 +349,13 @@ func (w *WorkSystemV2) Item(ctx context.Context, id string) (WorkV2View, error) 
 	if err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
 	}
+	landings, err := w.readItemLandings(ctx, i)
+	if err != nil {
+		return WorkV2View{}, mapWorkV2Error(err)
+	}
 	return WorkV2View{Item: i, Assignments: a, Documents: d, Images: images, Steps: steps, Events: events,
-		CardProgress: progress[id],
-		Gate:         &gate}, nil
+		CardProgress: progress[id], Landings: landings,
+		Gate: &gate}, nil
 }
 
 func (w *WorkSystemV2) pageViews(ctx context.Context, items []work.ItemV2, includeClaims bool) ([]WorkV2View, error) {
@@ -1252,11 +1261,14 @@ func (w *WorkSystemV2) Unassign(ctx context.Context, id string, expected int64, 
 }
 
 type AdvanceWorkV2 struct {
-	ExpectedVersion    int64
-	SessionID          string
-	Next               work.Phase
-	Verification       string
-	Landing            *VerifiedLandingV2
+	ExpectedVersion int64
+	SessionID       string
+	Next            work.Phase
+	Verification    string
+	Landing         *VerifiedLandingV2
+	// NoLandingReason is why merging -> deploying rests on no landing at
+	// all: work with no code (work.NoLandingGate).
+	NoLandingReason    string
 	Deployment         string
 	NoDeploymentReason string
 	Actor              string
@@ -1333,6 +1345,16 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 		return work.ItemV2{}, nil, work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
 	}
 	hasLanding := c.Landing.complete()
+	if strings.TrimSpace(c.NoLandingReason) != "" {
+		if c.Next != work.PhaseDeploying {
+			return work.ItemV2{}, nil, work.RefuseV2("invalid_landing_evidence",
+				"--no-landing-reason is evidence for moving merging to deploying only.")
+		}
+		if err := work.NoLandingGate(c.NoLandingReason, c.Landing != nil, facts); err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		hasLanding = true
+	}
 	var landedTasks []string
 	for _, f := range facts {
 		if work.OutcomeOf(f) == work.OutcomeLanded {
@@ -1457,7 +1479,26 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	}
 	change := map[string]any{
 		"from": prev.Phase, "to": c.Next, "verification": c.Verification,
-		"landing": c.Landing, "deployment": c.Deployment, "no_deployment_reason": c.NoDeploymentReason}
+		"deployment": c.Deployment, "no_deployment_reason": c.NoDeploymentReason}
+	if c.Next == work.PhaseDeploying && c.Landing.complete() {
+		// The proof is the broker's record, written in this transaction; the
+		// event names it and keeps no copy (D01). Events written before this
+		// carry a `landing` copy instead, and are read as they are.
+		repo := c.Landing.Repository
+		if repo == "" {
+			repo = prev.ProjectPath
+		}
+		recorded, err := tx.RecordRootLanding(store.RootLanding{WorkID: id, SessionID: c.SessionID, Repository: repo,
+			Target: c.Landing.Target, Commit: c.Landing.Commit, TargetCommit: c.Landing.TargetCommit,
+			Remote: c.Landing.Remote, RemoteCommit: c.Landing.RemoteCommit, RecordedAt: now})
+		if err != nil {
+			return work.ItemV2{}, nil, err
+		}
+		change["landing_id"] = recorded.ID
+	}
+	if c.Next == work.PhaseDeploying && strings.TrimSpace(c.NoLandingReason) != "" {
+		change["no_landing_reason"] = c.NoLandingReason
+	}
 	if c.Next == work.PhaseDeploying && len(landedTasks) > 0 {
 		// The broker's landings this step rested on, so the item's own
 		// history says which merge moved it, whoever typed the command.
@@ -1491,6 +1532,7 @@ type FinishWorkV2 struct {
 	SessionID          string
 	Verification       string
 	Landing            *VerifiedLandingV2
+	NoLandingReason    string
 	Deployment         string
 	NoDeploymentReason string
 	Actor              string
@@ -1551,7 +1593,7 @@ func (w *WorkSystemV2) Finish(ctx context.Context, id string, c FinishWorkV2, fi
 			case work.PhaseMerging:
 				step.Verification = c.Verification
 			case work.PhaseDeploying:
-				step.Landing = c.Landing
+				step.Landing, step.NoLandingReason = c.Landing, c.NoLandingReason
 			case work.PhaseDone:
 				step.Deployment, step.NoDeploymentReason, step.Effects = c.Deployment, c.NoDeploymentReason, c.Effects
 			}
@@ -1585,14 +1627,18 @@ func finishRefusal(from, to work.Phase, err error) error {
 		return work.RefuseV2("verification_required",
 			"Moving "+string(from)+" to merging needs --verification: what was run to verify and what it showed.")
 	case work.PhaseDeploying:
-		return work.RefuseV2("landing_required",
-			"No landing is recorded for this item: no task bound to it has landed, and no --commit was given.")
+		return work.RefuseV2("landing_required", LandingRequiredMessage)
 	case work.PhaseDone:
 		return work.RefuseV2("deployment_required",
 			"Closing needs --deployment (what was deployed, where, which version) or --no-deployment-reason, as this item's deployment policy says.")
 	}
 	return err
 }
+
+// LandingRequiredMessage is what a step into deploying with no landing is
+// told, by Finish and by the transport that spells a landing for it.
+const LandingRequiredMessage = "No landing is recorded for this item: no task bound to it has landed, no --commit was given, " +
+	"and no --no-landing-reason says it has no code."
 
 // BoundLandingV2 is one landed broker task bound to an item: what it landed
 // and where, as the broker recorded it.
@@ -1612,6 +1658,9 @@ type FinishFactsV2 struct {
 	// when the item has no verification gate or no current authorization.
 	Candidate string
 	Landings  []BoundLandingV2
+	// Pending is the bound tasks whose landing is still pending: what the
+	// broker's detector may be asked about before the step is taken.
+	Pending []string
 }
 
 // FinishFacts reads FinishFactsV2. It writes nothing. A bound task that cannot
@@ -1635,6 +1684,9 @@ func (w *WorkSystemV2) FinishFacts(ctx context.Context, id string) (FinishFactsV
 				return work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
 			}
 			l := r.Landing
+			if l != nil && l.State == orchestrator.LandingPending {
+				out.Pending = append(out.Pending, r.ID)
+			}
 			if l == nil || (l.State != orchestrator.LandingLanded && l.State != orchestrator.LandingIncorporated) {
 				continue
 			}

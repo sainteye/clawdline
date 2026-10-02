@@ -710,6 +710,10 @@ func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
+	if r.URL.Query().Has("work_id") {
+		s.itemLandings(w, r.WithContext(ctx), r.URL.Query().Get("work_id"))
+		return
+	}
 	inv := s.reading(ctx)
 	snap := s.sessionsPayloadFrom(ctx, inv)
 	rd := orchestrator.LandingReading{Processes: inv.Sources["ps"]}
@@ -778,6 +782,26 @@ func (s *Server) brokerLandings(w http.ResponseWriter, r *http.Request) {
 				Evidence:          sources,
 			},
 		})
+	}
+	writeJSON(w, out)
+}
+
+// itemLandings is GET /v1/orchestrator/landings?work_id=<item>: every landing
+// recorded for one Board item, read by the same code and projected by the
+// same function as the item's own `landings`.
+func (s *Server) itemLandings(w http.ResponseWriter, r *http.Request, id string) {
+	if !workID(id) {
+		writeRefusal(w, http.StatusBadRequest, "invalid_work_id", "work_id names no Board item id.")
+		return
+	}
+	rows, err := s.workV2().ItemLandings(r.Context(), id)
+	if err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	out := contract.ItemLandingList{WorkID: id, Landings: recordedLandingsWire(rows), At: time.Now().Unix()}
+	if out.Landings == nil {
+		out.Landings = []contract.RecordedLanding{}
 	}
 	writeJSON(w, out)
 }

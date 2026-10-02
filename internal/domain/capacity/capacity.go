@@ -189,6 +189,7 @@ const (
 	WorkImageBytesTotal       = "work.image_bytes_total"
 	WorkImageRequestBodyBytes = "work.image_request_body_bytes"
 	WorkStepsPerItem          = "work.steps_per_item"
+	WorkRootLandingsPerItem   = "work.root_landings_per_item"
 	SessionDirectTodos        = "session.direct_todos"
 	HumanInterventionsOpen    = "session.human_interventions_open"
 	HumanInterventionsTotal   = "session.human_interventions_total"
@@ -786,6 +787,15 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2StepLimit"},
+		},
+		{
+			// The broker's root landing rows one Board item keeps, and the
+			// legacy landing copies its read lists (internal/adapters/store/root_landings.go).
+			Name: WorkRootLandingsPerItem, Class: Evidence, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/store.WorkV2RootLandingLimit"},
 		},
 		{
 			Name: SessionDirectTodos, Class: Evidence, Unit: Rows,

@@ -128,7 +128,7 @@ type docFlags struct {
 // phaseEvidence is what `item phase` carries to the daemon besides the next
 // phase; the daemon decides which of it the transition needs.
 type phaseEvidence struct {
-	verification, commit, target, remote, landingProject, deployment, noDeployment string
+	verification, commit, target, remote, landingProject, noLanding, deployment, noDeployment string
 }
 
 func itemCommand(args []string) {
@@ -170,6 +170,7 @@ func itemCommand(args []string) {
 	fs.StringVar(&ev.target, "target", "", "for deploying: the local target branch the commit is on")
 	fs.StringVar(&ev.remote, "remote", "", "for deploying: the remote whose tracking target also holds it")
 	fs.StringVar(&ev.landingProject, "landing-project", "", "for deploying: the catalog Project whose repository holds the commit, when it is not the item's")
+	fs.StringVar(&ev.noLanding, "no-landing-reason", "", "for deploying: why there is no code to land (instead of --commit)")
 	fs.StringVar(&ev.deployment, "deployment", "", "for done: what was deployed, where, which version")
 	fs.StringVar(&ev.noDeployment, "no-deployment-reason", "", "for done: why nothing needs deploying")
 	positional, err := parseInterspersed(fs, args[1:])
@@ -359,11 +360,11 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "                            [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "       clawdline item doc --role <role> --title <t> [--reference r] [--body-file f | stdin]")
 	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id]]")
+	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id] | --no-landing-reason t]")
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
 	fmt.Fprintln(os.Stderr, "       clawdline item finish [--verification t] (--deployment t | --no-deployment-reason t)")
-	fmt.Fprintln(os.Stderr, "                            [--commit c] [--target b] [--remote r] [--landing-project id]")
+	fmt.Fprintln(os.Stderr, "                            [--commit c] [--target b] [--remote r] [--landing-project id] [--no-landing-reason t]")
 	fmt.Fprintln(os.Stderr, "                            [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
 	fmt.Fprintln(os.Stderr, "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;")
@@ -699,7 +700,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["candidate"] = map[string]string{"worktree": cwd, "branch": branch, "commit": commit}
 		}
 		for k, v := range map[string]string{"verification": ev.verification, "deployment": ev.deployment,
-			"no_deployment_reason": ev.noDeployment} {
+			"no_deployment_reason": ev.noDeployment, "no_landing_reason": ev.noLanding} {
 			if strings.TrimSpace(v) != "" {
 				body[k] = v
 			}
@@ -730,7 +731,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		}
 		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
 		for k, v := range map[string]string{"verification": ev.verification, "deployment": ev.deployment,
-			"no_deployment_reason": ev.noDeployment} {
+			"no_deployment_reason": ev.noDeployment, "no_landing_reason": ev.noLanding} {
 			if strings.TrimSpace(v) != "" {
 				body[k] = v
 			}

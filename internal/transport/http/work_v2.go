@@ -86,25 +86,31 @@ type workV2ItemWire struct {
 	// ClaimedVia is the person's message the owning Session claimed the item
 	// on, or a Session assigned it to the owning new Session on (Assigned);
 	// absent when the person assigned it, or nobody holds it.
-	ClaimedVia         *workV2CreatedViaWire  `json:"claimed_via,omitempty"`
-	CreatedAt          int64                  `json:"created_at"`
-	UpdatedAt          int64                  `json:"updated_at"`
-	ClosedAt           *int64                 `json:"closed_at"`
-	PhaseEnteredAt     *int64                 `json:"phase_entered_at"`
-	DeploymentEvidence string                 `json:"deployment_evidence,omitempty"`
-	NoDeploymentReason string                 `json:"no_deployment_reason,omitempty"`
-	Cycle              int64                  `json:"cycle"`
-	GateSnapshotCycle  int64                  `json:"gate_snapshot_cycle"`
-	GateSnapshotAt     *int64                 `json:"gate_snapshot_at"`
-	PlanningGate       bool                   `json:"planning_gate"`
-	VerifyGate         bool                   `json:"verify_gate"`
-	Verification       any                    `json:"verification,omitempty"`
-	Version            int64                  `json:"version"`
-	Assignments        []workV2AssignmentWire `json:"assignments,omitempty"`
-	Documents          []workV2DocumentWire   `json:"documents,omitempty"`
-	Images             []workV2ImageWire      `json:"images,omitempty"`
-	Steps              []workV2StepWire       `json:"steps,omitempty"`
-	Events             []workV2EventWire      `json:"events,omitempty"`
+	ClaimedVia         *workV2CreatedViaWire `json:"claimed_via,omitempty"`
+	CreatedAt          int64                 `json:"created_at"`
+	UpdatedAt          int64                 `json:"updated_at"`
+	ClosedAt           *int64                `json:"closed_at"`
+	PhaseEnteredAt     *int64                `json:"phase_entered_at"`
+	DeploymentEvidence string                `json:"deployment_evidence,omitempty"`
+	NoDeploymentReason string                `json:"no_deployment_reason,omitempty"`
+	// NoLandingReason is why the latest entry into deploying rested on no
+	// landing; absent when it rested on one.
+	NoLandingReason string `json:"no_landing_reason,omitempty"`
+	// Landings is every landing recorded for the item, the rows
+	// GET /v1/orchestrator/landings?work_id= answers; on the one-item read.
+	Landings          []contract.RecordedLanding `json:"landings,omitempty"`
+	Cycle             int64                      `json:"cycle"`
+	GateSnapshotCycle int64                      `json:"gate_snapshot_cycle"`
+	GateSnapshotAt    *int64                     `json:"gate_snapshot_at"`
+	PlanningGate      bool                       `json:"planning_gate"`
+	VerifyGate        bool                       `json:"verify_gate"`
+	Verification      any                        `json:"verification,omitempty"`
+	Version           int64                      `json:"version"`
+	Assignments       []workV2AssignmentWire     `json:"assignments,omitempty"`
+	Documents         []workV2DocumentWire       `json:"documents,omitempty"`
+	Images            []workV2ImageWire          `json:"images,omitempty"`
+	Steps             []workV2StepWire           `json:"steps,omitempty"`
+	Events            []workV2EventWire          `json:"events,omitempty"`
 }
 
 func optionalPositiveUnix(seconds int64) *int64 {
@@ -714,8 +720,7 @@ func finishLandingAsk(ctx context.Context, g workV2FinishGit, facts app.FinishFa
 			commit, n := only(commits)
 			switch n {
 			case 0:
-				return nil, "", conflict("landing_required",
-					"No landing is recorded for this item: no task bound to it has landed, and no --commit was given.")
+				return nil, "", conflict("landing_required", app.LandingRequiredMessage)
 			case 1:
 				out.Commit = commit
 			default:
@@ -765,6 +770,80 @@ func finishLandingAsk(ctx context.Context, g workV2FinishGit, facts app.FinishFa
 	return &out, repo, nil
 }
 
+// noLandingWithLanding refuses --no-landing-reason sent beside a landing:
+// two answers to whether the work has code, before git is asked anything.
+func noLandingWithLanding(reason string, landing *workV2LandingRequest) *app.WorkError {
+	if strings.TrimSpace(reason) == "" || landing == nil {
+		return nil
+	}
+	if strings.TrimSpace(landing.Commit) == "" && strings.TrimSpace(landing.Target) == "" &&
+		strings.TrimSpace(landing.Remote) == "" && strings.TrimSpace(landing.Project) == "" {
+		return nil
+	}
+	return &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_landing_evidence",
+		Message: "Give either a landing (--commit) or --no-landing-reason, not both."}
+}
+
+// detectItemLandings asks the broker's detector, now, about every task bound
+// to the item whose landing is still pending, and answers the item's finish
+// facts as they stand after it — so a branch merged a moment ago counts
+// without waiting for the beat's next look. A look that fails changes
+// nothing; what it found is kept for the refusal the step may still give.
+func (s *Server) detectItemLandings(ctx context.Context, id string) (app.FinishFactsV2, []orchestrator.LandingDetection, error) {
+	facts, err := s.workV2().FinishFacts(ctx, id)
+	if err != nil || len(facts.Pending) == 0 {
+		return facts, nil, err
+	}
+	found := s.broker.DetectLandingsFor(ctx, facts.Pending)
+	for _, d := range found {
+		if d.Landed {
+			facts, err = s.workV2().FinishFacts(ctx, id)
+			break
+		}
+	}
+	return facts, found, err
+}
+
+// withDetections adds what the detector found to a refusal for want of a
+// landing, so the root reads why a merge it believes it made did not count.
+func withDetections(err error, found []orchestrator.LandingDetection) error {
+	var we *app.WorkError
+	if !errors.As(err, &we) || (we.Code != "landing_required" && we.Code != "invalid_transition") {
+		return err
+	}
+	var said []string
+	for _, d := range found {
+		if !d.Landed && d.Reason != "" {
+			said = append(said, "task "+d.Task+": "+d.Reason)
+		}
+	}
+	if len(said) == 0 {
+		return err
+	}
+	out := *we
+	out.Message = strings.TrimSpace(we.Message) + " The broker looked just now: " + strings.Join(said, "; ") + "."
+	return &out
+}
+
+// recordedLandingsWire is the one projection of an item's landings, for the
+// item read and the landings route alike.
+func recordedLandingsWire(in []app.ItemLandingV2) []contract.RecordedLanding {
+	if in == nil {
+		return nil
+	}
+	out := make([]contract.RecordedLanding, 0, len(in))
+	for _, l := range in {
+		row := contract.RecordedLanding{ID: l.ID, Source: contract.RecordedLandingSource(l.Source), TaskID: l.Task,
+			State: l.State, Repository: l.Repository, Target: l.Target, Commit: l.Commit, TargetCommit: l.TargetCommit,
+			Remote: l.Remote, RemoteCommit: l.RemoteCommit}
+		if !l.RecordedAt.IsZero() {
+			row.RecordedAt = l.RecordedAt.Unix()
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 // agentFinishItem is POST /v1/work/v2/agent/items/<id>/finish: `item finish`.
 func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
@@ -772,6 +851,7 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 		SessionID          string                `json:"session_id"`
 		Verification       string                `json:"verification"`
 		Landing            *workV2LandingRequest `json:"landing"`
+		NoLandingReason    string                `json:"no_landing_reason"`
 		Deployment         string                `json:"deployment"`
 		NoDeploymentReason string                `json:"no_deployment_reason"`
 	}
@@ -787,22 +867,31 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 		s.writeWorkV2Error(w, err)
 	}
+	if refusal := noLandingWithLanding(body.NoLandingReason, body.Landing); refusal != nil {
+		refuse(refusal)
+		return
+	}
 	catalog := s.workV2Projects(r.Context())
 	item, err := s.workV2().Item(r.Context(), id)
 	if err != nil {
 		refuse(err)
 		return
 	}
-	facts, err := s.workV2().FinishFacts(r.Context(), id)
+	facts, detections, err := s.detectItemLandings(r.Context(), id)
 	if err != nil {
 		refuse(err)
 		return
 	}
 	git := gitadapter.New()
-	ask, landedRepo, askErr := finishLandingAsk(r.Context(), git, facts, body.Landing)
-	if askErr != nil {
-		refuse(askErr)
-		return
+	var ask *workV2LandingRequest
+	landedRepo := ""
+	if strings.TrimSpace(body.NoLandingReason) == "" {
+		var askErr *app.WorkError
+		ask, landedRepo, askErr = finishLandingAsk(r.Context(), git, facts, body.Landing)
+		if askErr != nil {
+			refuse(withDetections(askErr, detections))
+			return
+		}
 	}
 	repo := item.Item.ProjectPath
 	if landedRepo != "" {
@@ -825,7 +914,8 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 	}
 	var answer []byte
 	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: body.ExpectedVersion,
-		SessionID: body.SessionID, Verification: body.Verification, Landing: landing, Deployment: body.Deployment,
+		SessionID: body.SessionID, Verification: body.Verification, Landing: landing,
+		NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
 		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
@@ -833,7 +923,7 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 		})
 	if err != nil {
-		refuse(err)
+		refuse(withDetections(err, detections))
 		return
 	}
 	s.broker.RunEffects(r.Context(), changed.EffectIDs)
@@ -893,6 +983,7 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 		ClosedAt: optionalUnix(i.ClosedAt), Cycle: i.Cycle, GateSnapshotCycle: i.GateSnapshotCycle,
 		PhaseEnteredAt:     optionalPositiveUnix(v.CardProgress.PhaseEnteredAt),
 		DeploymentEvidence: v.CardProgress.DeploymentEvidence, NoDeploymentReason: v.CardProgress.NoDeploymentReason,
+		NoLandingReason: v.CardProgress.NoLandingReason, Landings: recordedLandingsWire(v.Landings),
 		GateSnapshotAt: optionalUnix(i.GateSnapshotAt), PlanningGate: i.PlanningGate, VerifyGate: i.VerifyGate,
 		Version: i.Version, ParentID: i.ParentID}
 	if v.Gate != nil {
@@ -2570,6 +2661,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			Verification       string                  `json:"verification"`
 			Candidate          *workV2CandidateRequest `json:"candidate"`
 			Landing            *workV2LandingRequest   `json:"landing"`
+			NoLandingReason    string                  `json:"no_landing_reason"`
 			Deployment         string                  `json:"deployment"`
 			NoDeploymentReason string                  `json:"no_deployment_reason"`
 		}
@@ -2601,6 +2693,21 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			roundID = newWorkV2UUID()
 			attemptID = deterministicWorkGateID(roundID + ":attempt:0")
 		}
+		if refusal := noLandingWithLanding(body.NoLandingReason, body.Landing); refusal != nil {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			s.writeWorkV2Error(w, refusal)
+			return
+		}
+		var detections []orchestrator.LandingDetection
+		if work.Phase(body.Next) == work.PhaseDeploying {
+			// A merge made a moment ago is recorded now, not at the beat's
+			// next look (R6): the step below reads what this writes.
+			if _, detections, err = s.detectItemLandings(r.Context(), parts[1]); err != nil {
+				_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+				s.writeWorkV2Error(w, err)
+				return
+			}
+		}
 		repo := item.Item.ProjectPath
 		if body.Landing != nil && strings.TrimSpace(body.Landing.Project) != "" {
 			other, ok := catalog[strings.TrimSpace(body.Landing.Project)]
@@ -2625,15 +2732,16 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		var answer []byte
 		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
-			Landing: landing, Deployment: body.Deployment, NoDeploymentReason: body.NoDeploymentReason,
-			Actor: body.SessionID, Effects: effects, Candidate: candidate, RoundID: roundID, AttemptID: attemptID},
+			Landing: landing, NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
+			NoDeploymentReason: body.NoDeploymentReason,
+			Actor:              body.SessionID, Effects: effects, Candidate: candidate, RoundID: roundID, AttemptID: attemptID},
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(s.workV2ItemOf(catalog, v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 			})
 		if err != nil {
 			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
-			s.writeWorkV2Error(w, err)
+			s.writeWorkV2Error(w, withDetections(err, detections))
 			return
 		}
 		s.broker.RunEffects(r.Context(), changed.EffectIDs)

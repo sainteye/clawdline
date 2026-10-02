@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -30,6 +31,32 @@ func readCommand(name, path string, args []string) {
 		fail(err)
 	}
 	os.Exit(report(os.Stdout, os.Stderr, name, a))
+}
+
+// landingsCommand is GET /v1/orchestrator/landings: every landing still owed,
+// or with --work-id every landing recorded for one Board item.
+func landingsCommand(args []string) {
+	fs := flag.NewFlagSet("landings", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
+	workID := fs.String("work-id", "", "a Board item id: list the landings recorded for it")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: clawdline landings [--work-id id] [--port n]")
+		os.Exit(2)
+	}
+	path := "/v1/orchestrator/landings"
+	if id := strings.TrimSpace(*workID); id != "" {
+		path += "?work_id=" + url.QueryEscape(id)
+	}
+	b, err := openBroker(*port)
+	if err != nil {
+		fail(err)
+	}
+	a, err := b.request(http.MethodGet, path, nil, nil, "")
+	if err != nil {
+		fail(err)
+	}
+	os.Exit(report(os.Stdout, os.Stderr, "landings", a))
 }
 
 // relayInputLimit bounds what is read from stdin: the daemon's own body cap.

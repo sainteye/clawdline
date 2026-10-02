@@ -574,7 +574,11 @@ func (t *WorkV2Tx) ActiveOwnedItemCount(session string) (int64, error) {
 // child doing several items). The second half reads only the rows that carry
 // any (the partial index broker_tasks_also_work), not the whole table.
 func (t *WorkV2Tx) Tasks(id string) ([]BrokerRow, error) {
-	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+brokerColumns+` FROM broker_tasks
+	return queryWorkV2Tasks(t.ctx, t.tx, id)
+}
+
+func queryWorkV2Tasks(ctx context.Context, q querier, id string) ([]BrokerRow, error) {
+	rows, err := q.QueryContext(ctx, `SELECT `+brokerColumns+` FROM broker_tasks
 	  WHERE json_valid(record) AND json_extract(record, '$.work_id') = ?
 	  UNION
 	  SELECT `+brokerColumns+` FROM broker_tasks
@@ -1151,6 +1155,10 @@ type WorkV2CardProgress struct {
 	PhaseEnteredAt     int64
 	DeploymentEvidence string
 	NoDeploymentReason string
+	// NoLandingReason is why the item's latest entry into deploying rested on
+	// no landing (`--no-landing-reason`); empty when it rested on one. It is
+	// read from that entry, not the latest event, so it outlives done.
+	NoLandingReason string
 }
 
 func (s *Store) WorkV2Relations(ctx context.Context, workIDs []string) (WorkV2Relations, error) {
@@ -1293,17 +1301,24 @@ func (s *Store) WorkV2CardProgress(ctx context.Context, workIDs []string) (map[s
 		SELECT work_id, MAX(seq) AS seq FROM work_v2_events
 		WHERE work_id IN (SELECT value FROM json_each(?)) AND kind='item.phase_changed'
 		GROUP BY work_id
+	), deploying AS (
+		SELECT work_id, MAX(seq) AS seq FROM work_v2_events
+		WHERE work_id IN (SELECT value FROM json_each(?)) AND kind='item.phase_changed'
+		  AND json_valid(payload) AND json_extract(payload, '$.to')='deploying'
+		GROUP BY work_id
 	)
-	SELECT e.work_id, e.at, e.payload FROM work_v2_events e
-	JOIN latest ON latest.seq=e.seq`, string(list))
+	SELECT e.work_id, e.at, e.payload, COALESCE((SELECT json_extract(d.payload, '$.no_landing_reason')
+	  FROM work_v2_events d JOIN deploying ON deploying.seq=d.seq WHERE deploying.work_id=e.work_id), '')
+	FROM work_v2_events e
+	JOIN latest ON latest.seq=e.seq`, string(list), string(list))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, raw string
+		var id, raw, noLanding string
 		var at int64
-		if err := rows.Scan(&id, &at, &raw); err != nil {
+		if err := rows.Scan(&id, &at, &raw, &noLanding); err != nil {
 			return nil, err
 		}
 		var change struct {
@@ -1314,7 +1329,7 @@ func (s *Store) WorkV2CardProgress(ctx context.Context, workIDs []string) (map[s
 			return nil, err
 		}
 		out[id] = WorkV2CardProgress{PhaseEnteredAt: at, DeploymentEvidence: change.Deployment,
-			NoDeploymentReason: change.NoDeploymentReason}
+			NoDeploymentReason: change.NoDeploymentReason, NoLandingReason: noLanding}
 	}
 	return out, rows.Err()
 }
@@ -2171,9 +2186,10 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
       UNION ALL SELECT SUM(byte_count) n FROM session_direct_todo_images GROUP BY todo_id)`,
 		"image_bytes_total": `SELECT COALESCE(SUM(byte_count),0) FROM (
       SELECT byte_count FROM work_v2_images UNION ALL SELECT byte_count FROM session_direct_todo_images)`,
-		"steps_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
-		"direct_todos":   `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
-		"proposals":      `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
+		"steps_per_item":         `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_steps GROUP BY work_id)`,
+		"direct_todos":           `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM session_direct_todos WHERE completed_at IS NULL GROUP BY session_id)`,
+		"proposals":              `SELECT COUNT(*) FROM work_v2_proposals WHERE state='pending'`,
+		"root_landings_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM broker_root_landings GROUP BY work_id)`,
 	}
 	for name, query := range queries {
 		var n int64

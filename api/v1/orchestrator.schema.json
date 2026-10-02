@@ -853,6 +853,41 @@
         "at": { "type": "integer" }
       }
     },
+    "RecordedLandingSource": {
+      "description": "Where a recorded landing of a Board item comes from. `task`: a bound broker task's landed or incorporated record; its id is the task id. `root`: a broker root landing row, written when the owning Session proved a commit with `item phase deploying --commit --target --remote` and no child task carried it. `phase_event`: a landing copy an older daemon wrote into the item's phase event before root landings had rows of their own; read, never rewritten.",
+      "type": "string",
+      "enum": ["task", "root", "phase_event"]
+    },
+    "RecordedLanding": {
+      "description": "One landing recorded for a Board item, as the broker holds it. The item read and GET /v1/orchestrator/landings?work_id= answer the same rows from the same code. `state` is `landed` or `incorporated`, or `unknown` for a bound task whose record could not be read, which is never shown as no landing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "state"],
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "$ref": "#/$defs/RecordedLandingSource" },
+        "task_id": { "description": "The bound task, for `task`.", "type": "string" },
+        "state": { "type": "string" },
+        "repository": { "description": "The repository the commit is on: the item's Project or the other catalog Project the landing named.", "type": "string" },
+        "target": { "type": "string" },
+        "commit": { "type": "string" },
+        "target_commit": { "description": "What the target branch named when the landing was proved.", "type": "string" },
+        "remote": { "description": "The remote whose copy of the target also held the commit; root landings only.", "type": "string" },
+        "remote_commit": { "type": "string" },
+        "recorded_at": { "type": "integer" }
+      }
+    },
+    "ItemLandingList": {
+      "description": "GET /v1/orchestrator/landings?work_id=<item>: every landing recorded for one Board item — its bound tasks' and its root landings — the same rows the item read carries as `landings`. An item that does not exist is 404 `work_not_found`, not an empty list.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "work_id", "landings"],
+      "properties": {
+        "work_id": { "type": "string" },
+        "landings": { "type": "array", "items": { "$ref": "#/$defs/RecordedLanding" } },
+        "at": { "type": "integer" }
+      }
+    },
     "BrokerAddressRow": {
       "description": "One row of GET /v1/orchestrator/sessions, the address book a coordination wait, a relay or a handoff names sessions from: which assistant sessions there are, whether each can still be given work, what it is waiting on, and whether it can be ended. It is the paired-device session row with the screen taken out — no line, menu, shells, tty or conversation id — because the orchestrator token exists to dispatch work, not to read somebody's terminal. For the same reason `disposition.title` is always empty here: a completion summary is prose, and stays on the paired-device row. `taskId` is the task this tab was opened for, when this broker opened it.",
       "type": "object",
