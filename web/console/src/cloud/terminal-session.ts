@@ -1,6 +1,7 @@
 import type { TerminalControl, TerminalFrame } from "@clawdline/contract"
 import { bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
-import { completeTerminalFrame, freshTerminalConnection, type TerminalChannelEvent, type TerminalEnvelope } from "./terminal-transport.js"
+// @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in terminal-session.test.ts.
+import { completeTerminalFrame, freshTerminalConnection, type TerminalChannelEvent, type TerminalEnvelope } from "./terminal-transport.ts"
 
 export interface TerminalWire {
   subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void>
@@ -58,7 +59,12 @@ export class CloudTerminalSession {
   private tick: ReturnType<typeof setInterval> | null = null
   private s: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
 
-  constructor(private readonly transport: TerminalWire, clientID: string) {
+  // Declared fields rather than parameter properties: `node --test
+  // --experimental-strip-types` cannot run those, and this file's suite silently
+  // never ran because of it.
+  private readonly transport: TerminalWire
+  constructor(transport: TerminalWire, clientID: string) {
+    this.transport = transport
     this.client = clientID
   }
   get snapshot(): CloudTerminalSnapshot { return this.s }

@@ -70,7 +70,13 @@ export class TerminalChannelTransport {
   private readonly verifiedFrames = new Map<string, number>()
   private readonly waiting = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
 
-  constructor(private readonly client: TerminalCloudClient, private readonly machine: string) {
+  // Declared fields rather than parameter properties, so `node --test
+  // --experimental-strip-types` can load this file and its suite runs.
+  private readonly client: TerminalCloudClient
+  private readonly machine: string
+  constructor(client: TerminalCloudClient, machine: string) {
+    this.client = client
+    this.machine = machine
     if (!client.deviceID || !segment.test(client.deviceID)) throw fail("terminal_forbidden")
     this.viewer = client.deviceID
     this.pairing = client._outboundMachinePairing(machine)
