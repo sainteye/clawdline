@@ -1350,6 +1350,18 @@ are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and
   `feature_plan_review_required`); an unchecked one needs only its acceptance criteria. A revised
   plan on a checked Feature also needs unchanged-boundary evidence or another review.
   A planning-off Epic may enter implementing directly.
+- The gate reads the latest `plan_review`'s receipt from its review task. Each finding has a
+  `severity` of `blocking` or `non_blocking` (`important` and `minor`, from the older template,
+  count as non-blocking). The verdict is `safe_to_land` with no findings, `proceed_with_findings`
+  when every finding is `non_blocking`, and `changes_required` when any is `blocking`. A latest
+  review with a blocking finding refuses `item phase implementing` and any dispatch with
+  `--work-id` on the still-assigned item except `--kind plan_review`
+  (`epic_plan_review_blocking` or `feature_plan_review_blocking`); the refusal lists the blocking
+  findings and the next commands: revise the plan, then dispatch a new review. Only non-blocking
+  findings, or an older receipt whose findings carry no severity, let the item proceed. An Epic
+  whose two reviews are used and whose second still blocks goes on only by the person's override
+  (a Feature's Needs independent review switch, or `planning_gate` off for the next cycle) or by a
+  revised plan once the person raises the review limit; do not dispatch a third review yourself.
 
 **Break the Epic into child items, and hand them out.** This is the one exception to "a session
 creates a Board item only when the person's message tells it to" and to "only the person assigns

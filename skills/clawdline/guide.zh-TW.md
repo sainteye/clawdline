@@ -1159,6 +1159,16 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
   `epic_plan_review_required`）；使用者勾了「需要獨立審查」的 Feature 也一樣
   （`feature_plan_required` 或 `feature_plan_review_required`），沒勾的只需要驗收條件。有勾的 Feature
   修訂計畫後，還需要未跨新邊界的紀錄或一次新審查。規劃關閉的 Epic 可直接進入實作。
+- gate 從最新一份 `plan_review` 引用的審查 task 讀它的收據。每條 finding 都有 `severity`，值是
+  `blocking` 或 `non_blocking`（舊範本的 `important` 與 `minor` 視為 non-blocking）。verdict 在沒有
+  finding 時是 `safe_to_land`，全部 finding 都是 `non_blocking` 時是 `proceed_with_findings`，有任何
+  `blocking` 時是 `changes_required`。最新一份審查含 blocking finding 時，`item phase implementing`
+  會被拒絕，仍在 assigned 的項目上帶 `--work-id` 的 dispatch 除了 `--kind plan_review` 也會被拒絕
+  （`epic_plan_review_blocking` 或 `feature_plan_review_blocking`）；拒絕訊息列出 blocking finding
+  與下一步指令：修訂計畫，再派一次新審查。只有 non-blocking finding，或 finding 沒有 severity 的舊收據，
+  都可以繼續。兩輪審查已用完、第二輪仍有 blocking 的 Epic，只能靠使用者 override（Feature 的「需要
+  獨立審查」開關，或下一輪起把 `planning_gate` 關掉），或修訂計畫後由使用者放寬審查上限；不要自己
+  派第三次審查。
 
 **把 Epic 拆成子項目，再指派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入
