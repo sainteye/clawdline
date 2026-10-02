@@ -243,6 +243,7 @@ func New(cfg config.Config) (*Server, error) {
 	// One producer in front of it, so three loops are one scan.
 	srv.readings = app.NewInventoryReading(srv.inventory.Read, 0)
 	srv.readings.SetRetentionAge(CapacityLimit(capacity.CacheSessionInventory))
+	srv.readings.SetAnswerAge(CapacityLimit(capacity.CacheSourceAnswer))
 	inventoryBackoffMax := time.Duration(CapacityLimit(capacity.CacheSessionInventory)) * time.Second
 	inventoryBackoffFirst := min(app.ScreenBackoffFirst, inventoryBackoffMax)
 	for _, host := range srv.inventory.Terminals {

@@ -118,10 +118,15 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 
 	if in.Process != nil {
 		inv, _ := in.Process.Scan(ctx)
+		noteSourceAnswer(ctx, inv)
 		add(inv)
 	}
+	// Each source's answer is told to the reading as it arrives
+	// (InventoryReading.Fast), because the merge below waits for the slowest
+	// and a drawing in the meantime must not blame the ones that answered.
 	for _, t := range in.Terminals {
 		inv, _ := t.Inventory(ctx)
+		noteSourceAnswer(ctx, inv)
 		add(inv)
 	}
 

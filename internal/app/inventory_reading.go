@@ -68,6 +68,19 @@ const InventoryScanBudget = 30 * time.Second
 // retained answer expires and the source becomes genuinely unknown.
 const LastGoodInventoryAgeLimit = 2 * time.Minute
 
+// SourceAnswerAgeLimit is how old one source's own complete answer may be and
+// still let a drawing call that source's rows current while a refresh runs.
+//
+// A refresh waits on its slowest source, and iTerm2's list Apple Event may take
+// ten seconds before it is cut off. Before this, every reader that arrived
+// during that wait was told that every source was unverified — fifteen minutes
+// of `incomplete_sources=[iterm ps tmux]` on 2026-10-01, while the process
+// table and tmux answered in milliseconds every scan. Thirty seconds is the
+// scan budget: the longest one refresh may run, and so the most a source's
+// previous answer can have aged while the next one is on its way. Past it the
+// rows are unverified, exactly as before.
+const SourceAnswerAgeLimit = 30 * time.Second
+
 // InventoryCounts is how the readers were answered, for /v1/diagnostics. It is
 // the evidence for "one producer": Scans is how often this daemon actually
 // looked at the machine, and the other three are the readers that cost nothing.
@@ -93,6 +106,9 @@ type InventoryReading struct {
 	// retainFor is independently configurable from ttl: ttl avoids duplicate
 	// scans measured in seconds; this is the honesty line for a last good row.
 	retainFor time.Duration
+	// answerAge bounds how old a source's answer may be and still vouch for
+	// its rows while a refresh runs (SourceAnswerAgeLimit).
+	answerAge time.Duration
 
 	mu    sync.Mutex
 	held  session.Inventory
@@ -108,8 +124,14 @@ type InventoryReading struct {
 	// sooner when a later complete source reading confirms the absence.
 	forgotten map[string]forgottenSession
 	flight    *inventoryFlight
-	counts    InventoryCounts
-	expired   int64
+	// answers is what each source said in the scan that produced held, as
+	// it said it (sourceAnswer).
+	answers map[string]sourceAnswer
+	counts  InventoryCounts
+	expired int64
+	// answersExpired counts drawings in which a source's complete answer was
+	// too old to vouch for its rows (SourceAnswerAgeLimit).
+	answersExpired int64
 	// observers are shown every scan's raw reading after its readers have
 	// been answered (Observe).
 	observers []func(context.Context, session.Inventory)
@@ -133,6 +155,50 @@ type inventoryFlight struct {
 	done    chan struct{}
 	raw     session.Inventory
 	display session.Inventory
+	// started and answers are guarded by the reading's mutex: when the scan
+	// began, and what each source has said in it so far.
+	started time.Time
+	answers map[string]sourceAnswer
+}
+
+// sourceAnswer is what one source said in one scan, at the moment it said it.
+//
+// A scan merges its sources only once the slowest has answered, so the merged
+// reading cannot tell a reader that tmux answered completely nine seconds
+// before iTerm2 was cut off. This can. keys are the rows it listed, by the
+// key the merge joins them on (inventoryRowKey), so a drawing can check that
+// the rows it shows are exactly what the source answered.
+type sourceAnswer struct {
+	at       time.Time
+	complete bool
+	keys     map[string]bool
+}
+
+type sourceAnswersKey struct{}
+
+// noteSourceAnswer tells the scan in flight, if one is listening, what one source
+// just said. Inventory.Read calls it as each source answers.
+func noteSourceAnswer(ctx context.Context, inv session.Inventory) {
+	if record, ok := ctx.Value(sourceAnswersKey{}).(func(session.Inventory)); ok {
+		record(inv)
+	}
+}
+
+// recordAnswer keeps one source's answer on the flight. Two sources with one
+// name are one source, as in the merge: either failing makes it incomplete.
+func (r *InventoryReading) recordAnswer(flight *inventoryFlight, inv session.Inventory) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	answer, seen := flight.answers[inv.Provenance]
+	if !seen {
+		answer = sourceAnswer{complete: true, keys: map[string]bool{}}
+	}
+	answer.at = r.now()
+	answer.complete = answer.complete && inv.Complete
+	for _, row := range inv.Sessions {
+		answer.keys[inventoryRowKey(row)] = true
+	}
+	flight.answers[inv.Provenance] = answer
 }
 
 // NewInventoryReading wraps a reader. ttl of zero is InventoryTTL.
@@ -142,8 +208,8 @@ func NewInventoryReading(scan func(context.Context) session.Inventory, ttl time.
 	}
 	return &InventoryReading{
 		scan: scan, ttl: ttl, now: time.Now,
-		retainFor: LastGoodInventoryAgeLimit,
-		good:      map[string]sourceReading{}, forgotten: map[string]forgottenSession{},
+		retainFor: LastGoodInventoryAgeLimit, answerAge: SourceAnswerAgeLimit,
+		good: map[string]sourceReading{}, forgotten: map[string]forgottenSession{},
 	}
 }
 
@@ -194,6 +260,17 @@ func (r *InventoryReading) SetRetentionAge(seconds int64) {
 	r.mu.Unlock()
 }
 
+// SetAnswerAge applies the capacity register's seconds limit for
+// SourceAnswerAgeLimit. A nonpositive value keeps the shipped bound.
+func (r *InventoryReading) SetAnswerAge(seconds int64) {
+	if seconds <= 0 {
+		return
+	}
+	r.mu.Lock()
+	r.answerAge = time.Duration(seconds) * time.Second
+	r.mu.Unlock()
+}
+
 // Recent waits for a reading no older than the TTL. Fast is the lower-latency
 // drawing path; Within is for a consumer whose own clock is slower.
 func (r *InventoryReading) Recent(ctx context.Context) session.Inventory {
@@ -213,6 +290,15 @@ func (r *InventoryReading) Recent(ctx context.Context) session.Inventory {
 // put every viewer behind it. One scan refreshes the held reading in the
 // background; the prior rows are explicitly unverified until it finishes.
 // Expired rows are never returned. Fresh remains the path for decisions.
+//
+// **Unverified is per source, not per reading** (verifiedLocked). A refresh
+// waits on its slowest source, and the one that is slow is nearly always
+// iTerm2's list Apple Event; tmux and the process table answer it in
+// milliseconds. A source whose own answer — in this refresh, or in the one
+// that produced the held reading — is complete, recent and lists exactly the
+// rows being drawn keeps its rows current and its completeness. Only a source
+// that has not answered, answered incompletely, or listed rows the drawing
+// lacks is unverified, so it still proves no row gone.
 func (r *InventoryReading) Fast(ctx context.Context) session.Inventory {
 	r.mu.Lock()
 	if !r.holds {
@@ -235,33 +321,107 @@ func (r *InventoryReading) Fast(ctx context.Context) session.Inventory {
 	inv.Notes = append([]string(nil), inv.Notes...)
 	r.counts.Held++
 	retainFor := r.retainFor
+	verified := r.verifiedLocked(now)
 	r.mu.Unlock()
 
 	kept := inv.Sessions[:0]
 	oldest := now
+	unverified := false
 	for _, row := range inv.Sessions {
 		at := row.Observation.ObservedAt
 		if at.IsZero() || now.Sub(at) >= retainFor || now.Before(at) {
 			continue
 		}
-		row.Observation.Freshness = session.FreshnessUnverified
+		if !verified[rowSource(row)] || row.Observation.Freshness != session.FreshnessCurrent {
+			row.Observation.Freshness = session.FreshnessUnverified
+			unverified = true
+		}
 		kept = append(kept, row)
 		if at.Before(oldest) {
 			oldest = at
 		}
 	}
 	inv.Sessions = kept
-	inv.Complete = false
 	for source := range inv.Sources {
-		inv.Sources[source] = false
+		if !verified[source] {
+			inv.Sources[source] = false
+			unverified = true
+		}
 	}
+	inv.Complete = inv.Complete && len(inv.Sources) > 0 && !unverified
 	if len(kept) == 0 {
 		return unreadInventory()
 	}
-	inv.Observation = session.Observation{ObservedAt: oldest, Provenance: inv.Provenance,
-		Freshness: session.FreshnessUnverified}
-	inv.Notes = append(inv.Notes, "session inventory refresh is in progress; prior rows are unverified")
+	if unverified {
+		inv.Observation = session.Observation{ObservedAt: oldest, Provenance: inv.Provenance,
+			Freshness: session.FreshnessUnverified}
+		inv.Notes = append(inv.Notes, "session inventory refresh is in progress; "+
+			"rows from a source that has not answered it are unverified")
+	}
 	return inv
+}
+
+// verifiedLocked is which of the held reading's sources may still answer for
+// their rows while a refresh is pending: the source's newest answer is
+// complete, younger than answerAge, and lists exactly the rows the held
+// reading has from it.
+//
+// The newest answer is this refresh's when the source has given one. When it
+// has not, the answer behind the held reading stands in for it only while the
+// refresh is younger than the TTL — the same time a held reading stands in for
+// a new one (Recent). A source still silent past that is the stalled one, and
+// is unverified however recently it last answered.
+func (r *InventoryReading) verifiedLocked(now time.Time) map[string]bool {
+	out := map[string]bool{}
+	for source, complete := range r.held.Sources {
+		if !complete {
+			continue
+		}
+		var answer sourceAnswer
+		ok := false
+		if r.flight != nil {
+			answer, ok = r.flight.answers[source]
+			if !ok && now.Sub(r.flight.started) >= r.ttl {
+				continue
+			}
+		}
+		if !ok {
+			answer, ok = r.answers[source]
+		}
+		if !ok || !answer.complete {
+			continue
+		}
+		if age := now.Sub(answer.at); age < 0 || age >= r.answerAge {
+			r.answersExpired++
+			continue
+		}
+		if answer.vouchesFor(source, r.held.Sessions) {
+			out[source] = true
+		}
+	}
+	return out
+}
+
+// vouchesFor is whether this answer lists exactly the rows drawn from its
+// source: every row it listed is drawn, and every drawn row of its source was
+// listed. A row it listed that is not drawn would make its completeness a
+// claim that the missing row is gone; a drawn row it did not list is one it
+// has since stopped seeing. Either way it cannot answer for the drawing.
+func (a sourceAnswer) vouchesFor(source string, rows []session.Session) bool {
+	drawn := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		key := inventoryRowKey(row)
+		drawn[key] = true
+		if rowSource(row) == source && !a.keys[key] {
+			return false
+		}
+	}
+	for key := range a.keys {
+		if !drawn[key] {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneSources(src map[string]bool) map[string]bool {
@@ -345,7 +505,8 @@ func (r *InventoryReading) startLocked(ctx context.Context) *inventoryFlight {
 		r.counts.Joined++
 		return r.flight
 	}
-	flight := &inventoryFlight{done: make(chan struct{})}
+	flight := &inventoryFlight{done: make(chan struct{}), started: r.now(),
+		answers: map[string]sourceAnswer{}}
 	r.flight = flight
 	r.counts.Scans++
 	go r.run(ctx, flight)
@@ -356,8 +517,11 @@ func (r *InventoryReading) startLocked(ctx context.Context) *inventoryFlight {
 func (r *InventoryReading) run(ctx context.Context, flight *inventoryFlight) {
 	scan, cancel := context.WithTimeout(context.WithoutCancel(ctx), InventoryScanBudget)
 	defer cancel()
-	raw := r.scan(scan)
+	raw := r.scan(context.WithValue(scan, sourceAnswersKey{}, func(inv session.Inventory) {
+		r.recordAnswer(flight, inv)
+	}))
 	r.mu.Lock()
+	r.answers = flight.answers
 	observed := raw.ObservedAt
 	if observed.IsZero() {
 		observed = r.now()
@@ -395,8 +559,7 @@ func (r *InventoryReading) retainLocked(raw session.Inventory) session.Inventory
 	for n := range display.Sessions {
 		source := session.SourceFor(display.Sessions[n].Backend)
 		freshness := session.FreshnessCurrent
-		complete, known := raw.Sources[source]
-		if (source == "" && !raw.Complete) || (source != "" && (!known || !complete)) {
+		if !rowAnswered(raw, display.Sessions[n]) {
 			freshness = session.FreshnessMissing
 		}
 		display.Sessions[n].Observation = session.Observation{
@@ -464,6 +627,38 @@ func (r *InventoryReading) retainLocked(raw session.Inventory) session.Inventory
 		}
 	}
 	return display
+}
+
+// processSource is the process table's name in a reading's Sources. A row no
+// terminal backend owns was listed by it, under its tty.
+const processSource = "ps"
+
+// rowSource is the source that answers for one row: its terminal backend's,
+// or the process table's for a row only the process table saw.
+func rowSource(row session.Session) string {
+	if source := session.SourceFor(row.Backend); source != "" {
+		return source
+	}
+	if row.Backend == "" {
+		return processSource
+	}
+	return ""
+}
+
+// rowAnswered is whether the source that owns row answered completely in raw.
+//
+// A row only the process table listed is the process table's to answer for.
+// It used to fall back to the whole reading, so every such row read missing
+// for as long as iTerm2 could not be asked, although the process table had
+// just listed it. A reading with no process table in it (a hand-built one)
+// still has only the whole reading to answer.
+func rowAnswered(raw session.Inventory, row session.Session) bool {
+	source := rowSource(row)
+	complete, known := raw.Sources[source]
+	if source == "" || (source == processSource && !known) {
+		return raw.Complete
+	}
+	return known && complete
 }
 
 // withoutForgottenLocked applies a fact newer than an in-flight reading: a
@@ -569,6 +764,34 @@ func (r *InventoryReading) RetentionReading() capacity.Reading {
 	}
 	age := now.Sub(oldest)
 	if age > 0 {
+		reading.Used = int64(age / time.Second)
+	}
+	reading.OldestAt = oldest
+	return reading
+}
+
+// AnswerReading is the capacity row for SourceAnswerAgeLimit. Used is the
+// oldest answer behind the held reading; Expired counts the drawings in which
+// a complete answer was too old to vouch for its rows.
+func (r *InventoryReading) AnswerReading() capacity.Reading {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	reading := capacity.Reading{
+		Known: true, WindowSeconds: int64(r.answerAge / time.Second),
+		Counters: capacity.Counters{Expired: r.answersExpired},
+	}
+	if len(r.answers) == 0 {
+		reading.Note = "no scan has recorded its sources' answers yet"
+		return reading
+	}
+	now := r.now()
+	oldest := now
+	for _, answer := range r.answers {
+		if answer.at.Before(oldest) {
+			oldest = answer.at
+		}
+	}
+	if age := now.Sub(oldest); age > 0 {
 		reading.Used = int64(age / time.Second)
 	}
 	reading.OldestAt = oldest
