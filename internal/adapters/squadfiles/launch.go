@@ -32,6 +32,8 @@ type snapshotText struct {
 		ID      string            `json:"id"`
 		Version string            `json:"version"`
 		Enabled bool              `json:"enabled"`
+		Name    squad.Names       `json:"name"`
+		Purpose squad.Names       `json:"purpose"`
 		Content string            `json:"content"`
 		Folder  bool              `json:"folder"`
 		Files   []squad.SkillFile `json:"files"`
@@ -116,7 +118,7 @@ func Publish(stateDir, launchID, snapshotID, capability string, document json.Ra
 	if snapshot.Handbook.Text != "" {
 		prompt.WriteString("## Role handbook\n\n" + snapshot.Handbook.Text + "\n\n")
 	}
-	prompt.WriteString("## Available role skills\n\nRead a skill file when the task calls for it. A listed skill is available, not yet used. Report actual reads, applications, and failures with `clawdline squad skill-event --skill <id> --version <version> --status read|applied|failed`; use `--failure-code <code>` for a failed read or application. The command returns a durable receipt. If it cannot reach Clawdline, state that the use was not recorded.\n\n")
+	prompt.WriteString("## Available role skills\n\nBefore you start, compare the task with each skill below: its purpose and the line saying when it applies. When one fits, read its file and record `read`, use it, then record `applied`, or `failed` with `--failure-code <code>` if it could not be applied. A skill that does not fit the task needs no receipt. A listed skill is available, not yet used; only a receipt shows it was used. Record each with `clawdline squad skill-event --skill <id> --version <version> --status read|applied|failed`; the command returns a durable receipt. If it cannot reach Clawdline, state that the use was not recorded.\n\n")
 	count := 0
 	for _, skill := range snapshot.Skills {
 		if !skill.Enabled {
@@ -154,8 +156,19 @@ func Publish(stateDir, launchID, snapshotID, capability string, document json.Ra
 		if err := writePrivate(filepath.Join(stage, "skills", name), []byte(skill.Content)); err != nil {
 			return Files{}, err
 		}
-		fmt.Fprintf(&prompt, "%d. `%s` version `%s` — %s\n   File: `%s`\n   Source: %s; digest: %s\n",
-			count+1, skill.ID, skill.Version, skill.ID, filepath.Join(final, "skills", name), skill.Source, skill.Digest)
+		title := "`" + skill.ID + "`"
+		if skill.Name.En != "" {
+			title += " (" + oneLine(skill.Name.En) + ")"
+		}
+		if skill.Purpose.En != "" {
+			title += " — " + oneLine(skill.Purpose.En)
+		}
+		fmt.Fprintf(&prompt, "%d. %s\n", count+1, title)
+		if when := skillWhen(skill.Content); when != "" {
+			fmt.Fprintf(&prompt, "   When it applies, in the skill's words: %q\n", when)
+		}
+		fmt.Fprintf(&prompt, "   Version: `%s`\n   File: `%s`\n   Source: %s; digest: %s\n",
+			skill.Version, filepath.Join(final, "skills", name), skill.Source, skill.Digest)
 		count++
 	}
 	if count == 0 {
@@ -183,6 +196,70 @@ func Publish(stateDir, launchID, snapshotID, capability string, document json.Ra
 	}
 	return Files{PromptPath: filepath.Join(final, promptRel),
 		CapabilityPath: filepath.Join(final, "capability"), SnapshotPath: filepath.Join(final, "snapshot.json")}, nil
+}
+
+// maxSkillWhenRunes bounds the line a skill's own text contributes to the
+// launch prompt, so a long or hostile custom skill cannot fill it.
+const maxSkillWhenRunes = 240
+
+var useThisSkill = regexp.MustCompile(`(?i)\buse this skill\b`)
+
+// skillWhen finds the skill's own statement of when it applies: the first
+// sentence that begins "Use this skill", else a frontmatter description.
+// The purpose is already in the listing, so it is not repeated here.
+func skillWhen(content string) string {
+	body := content
+	description := ""
+	if rest, ok := strings.CutPrefix(content, "---\n"); ok {
+		if front, after, found := strings.Cut(rest, "\n---"); found {
+			body = after
+			for _, line := range strings.Split(front, "\n") {
+				if value, ok := strings.CutPrefix(line, "description:"); ok {
+					description = strings.Trim(strings.TrimSpace(value), `"'`)
+				}
+			}
+		}
+	}
+	text := oneLine(body)
+	if at := useThisSkill.FindStringIndex(text); at != nil {
+		return clip(firstSentence(text[at[0]:]))
+	}
+	if description != "" {
+		return clip(firstSentence(oneLine(description)))
+	}
+	return ""
+}
+
+func oneLine(value string) string { return strings.Join(strings.Fields(value), " ") }
+
+// firstSentence ends at a full stop followed by a space or the end, skipping
+// the common abbreviations that would otherwise cut a sentence short.
+func firstSentence(text string) string {
+	for i := 0; i < len(text); i++ {
+		if text[i] != '.' && !strings.HasPrefix(text[i:], "。") {
+			continue
+		}
+		if strings.HasPrefix(text[i:], "。") {
+			return text[:i+len("。")]
+		}
+		if i+1 < len(text) && text[i+1] != ' ' {
+			continue
+		}
+		before := strings.ToLower(text[max(0, i-4) : i+1])
+		if strings.HasSuffix(before, "e.g.") || strings.HasSuffix(before, "i.e.") || strings.HasSuffix(before, "etc.") || strings.HasSuffix(before, " vs.") {
+			continue
+		}
+		return text[:i+1]
+	}
+	return text
+}
+
+func clip(text string) string {
+	runes := []rune(text)
+	if len(runes) > maxSkillWhenRunes {
+		return string(runes[:maxSkillWhenRunes]) + "…"
+	}
+	return text
 }
 
 // RecordTerminal is the durable fallback if SQLite cannot record the opened
