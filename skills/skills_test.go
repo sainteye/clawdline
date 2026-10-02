@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
@@ -609,5 +610,26 @@ func TestEveryGuideExplainsPersonas(t *testing.T) {
 				t.Errorf("`clawdline guide epic` (%s) does not carry %q", topic, want)
 			}
 		}
+	}
+}
+
+// Every Feature Root's ASSIGNMENT.md sends it to the guide part this build
+// carries for its ordinary path, and says that investigation is delegated
+// too, with verified facts in the brief and a stop condition for an Explore
+// child. The part is named here, so renaming it turns this red.
+func TestTheRootAssignmentSendsAFeatureRootToItsGuidePart(t *testing.T) {
+	brief := orchestrator.AssignmentBrief("10000000-0000-4000-8000-000000000001", orchestrator.Assignment{
+		Objective: "o", Scope: "s", Constraints: "c", RelevantReferences: "r", Acceptance: "a"}, "", "")
+	if _, err := Section(DefaultTopic, "feature-root"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"HOW TO WORK", "`clawdline guide feature-root`", "Delegate investigation",
+		"keep only its conclusion", "file:line", "stop condition", "turn limit"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("ASSIGNMENT.md does not carry %q:\n%s", want, brief)
+		}
+	}
+	if strings.Index(brief, "HOW TO WORK") < strings.Index(brief, "ACCEPTANCE") {
+		t.Errorf("HOW TO WORK comes before ACCEPTANCE:\n%s", brief)
 	}
 }

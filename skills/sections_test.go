@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Both guides cut into the same seventeen parts, and the parts put back
+// Both guides cut into the same nineteen parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts
 // must not lose a sentence that printing it whole carried.
 func TestThePartsAreTheWholeGuide(t *testing.T) {
@@ -37,7 +37,7 @@ func TestThePartsAreTheWholeGuide(t *testing.T) {
 // the table is matched by order, so a heading added to one guide only would
 // shift every name after it.
 func TestBothGuidesHaveTheSameSections(t *testing.T) {
-	want := map[string]string{"swift": "## 0.", "roles": "## 1.", "connect": "## 2.", "inventory": "## 3.",
+	want := map[string]string{"swift": "## 0.", "roles": "## 1.", "connect": "## 2.", "feature-root": "## 2a.", "inventory": "## 3.",
 		"dispatch": "## 4.", "running": "## 5.", "landing": "## 6.", "report": "## 7.", "send": "## 8.",
 		"notify": "## 9.", "board": "## 10.", "coordination": "## 11.", "refused": "## 12.",
 		"cloud": "### ", "project": "### ", "schedule": "### "}
@@ -84,5 +84,55 @@ func TestTheCoreNamesEveryOtherPart(t *testing.T) {
 	}
 	if _, err := Section("en", "nope"); !errors.Is(err, ErrUnknownSection) {
 		t.Errorf("unknown part = %v", err)
+	}
+}
+
+// A Feature Root reads one short part for its ordinary lifecycle instead of
+// the board part. Measured on 2026-10-02, one Feature Root spent about a
+// quarter of its re-read tool output on guide text, most of it `guide board`'s
+// Proposal, Epic and gate-purge procedure it never used. The part stays at
+// most a third of the board part, carries every command of the ordinary path,
+// points at the rarer parts by name, and is reached from the core.
+func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
+	wants := []string{
+		"clawdline item steps <item id>",
+		"clawdline item name <item id>",
+		"clawdline dispatch --title",
+		"--work-id <item id>",
+		"file:line",
+		"clawdline task show <task id>",
+		"clawdline task ack <task id> <notice id>",
+		"clawdline item step-done <item id> <step id>",
+		"clawdline item phase <item id> implementing",
+		"clawdline item phase <item id> verifying",
+		"merging --verification",
+		"deploying --commit <sha> --target main --remote origin",
+		"done --deployment",
+		"--no-deployment-reason",
+		"clawdline item doc <item id> --role completion_report",
+		"clawdline session report --summary",
+	}
+	for _, lang := range Topics() {
+		part, err := Section(lang, "feature-root")
+		if err != nil {
+			t.Fatal(err)
+		}
+		board, _ := Section(lang, "board")
+		if len(part)*3 > len(board) {
+			t.Errorf("%s: the feature-root part is %d bytes, more than a third of board's %d", lang, len(part), len(board))
+		}
+		prefix := "clawdline guide "
+		if lang != DefaultTopic {
+			prefix += lang + " "
+		}
+		for _, want := range append(wants, prefix+"board", prefix+"epic", prefix+"landing", prefix+"dispatch") {
+			if !strings.Contains(string(part), want) {
+				t.Errorf("%s: the feature-root part does not carry %q", lang, want)
+			}
+		}
+		roles, _ := Section(lang, "roles")
+		if !strings.Contains(string(roles), "`"+prefix+"feature-root`") {
+			t.Errorf("%s: the roles part does not send a Feature Root to %sfeature-root", lang, prefix)
+		}
 	}
 }
