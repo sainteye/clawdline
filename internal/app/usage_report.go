@@ -56,11 +56,8 @@ const (
 	workDurationNum, workDurationDen   = 11, 10
 )
 
-// The kinds of unit a sample can be.
-const (
-	WorkUnitTask = "task"
-	WorkUnitItem = "item"
-)
+// The kinds of unit a sample can be are WorkUnitTask and WorkUnitItem
+// (work_units.go).
 
 // How a unit ended. Running has not ended yet.
 const (
