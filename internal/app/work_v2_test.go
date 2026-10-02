@@ -58,14 +58,19 @@ func TestDirectSessionLandingClosesAndRemainsInRecentHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The verified landing is retained as the broker's record, which the
+	// deploying event names by id.
+	if len(full.Landings) != 1 || full.Landings[0].Source != LandingSourceRoot || full.Landings[0].Commit != landing.Commit {
+		t.Fatalf("verified landing was not retained: %+v", full.Landings)
+	}
 	found := false
 	for _, event := range full.Events {
-		if event.Kind == "item.phase_changed" && strings.Contains(event.Payload, `"landing":{"commit":"`+landing.Commit) {
+		if event.Kind == "item.phase_changed" && strings.Contains(event.Payload, `"landing_id":"`+full.Landings[0].ID+`"`) {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("verified landing was not retained: %+v", full.Events)
+		t.Fatalf("the deploying event does not name the landing: %+v", full.Events)
 	}
 }
 
