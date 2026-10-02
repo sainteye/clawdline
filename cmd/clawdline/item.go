@@ -263,6 +263,13 @@ func itemCommand(args []string) {
 			}
 			rest = append(rest, lines...)
 		}
+	case "finish":
+		if len(positional) != 1 {
+			fmt.Fprintf(os.Stderr, "clawdline item finish: takes one item id, got %d arguments\n", len(positional))
+			itemUsage()
+		}
+		rest = positional
+		f.phase = ev
 	case "step-done", "phase":
 		if len(positional) != 2 {
 			fmt.Fprintf(os.Stderr, "clawdline item %s: takes an item id and one more argument, got %d arguments\n", op, len(positional))
@@ -355,6 +362,9 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id]]")
 	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
 	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
+	fmt.Fprintln(os.Stderr, "       clawdline item finish [--verification t] (--deployment t | --no-deployment-reason t)")
+	fmt.Fprintln(os.Stderr, "                            [--commit c] [--target b] [--remote r] [--landing-project id]")
+	fmt.Fprintln(os.Stderr, "                            [--conversation id] [--key k] [--port n] <item id>")
 	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
 	fmt.Fprintln(os.Stderr, "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;")
 	fmt.Fprintln(os.Stderr, "  it arrives unassigned, and its --step rows are the item's steps, not to-dos; --assign-self")
@@ -372,7 +382,9 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  acceptance fills missing criteria once; acceptance-revise relays a person's explicit revision message;")
 	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns; an Epic needs a plan, and a plan_review")
 	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
-	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence")
+	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence;")
+	fmt.Fprintln(os.Stderr, "  finish takes it from implementing onward to done in one step once its work has landed:")
+	fmt.Fprintln(os.Stderr, "  the commit, target and remote come from the recorded landing unless given, and every gate still applies")
 	os.Exit(2)
 }
 
@@ -701,6 +713,40 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			body["landing"] = l
 		}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/phase"
+	case "finish":
+		// The rest of the way in one command, once the work has landed: the
+		// daemon walks verifying, merging, deploying and done through the
+		// same gates `phase` meets, and reads the commit, target and remote
+		// from the landing it already holds. A flag given here wins over what
+		// it would read.
+		itemID, ev := strings.TrimSpace(args[0]), f.phase
+		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
+		if err != nil {
+			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
+			return 1
+		}
+		it, ok := itemOf(a)
+		if !a.ok() || !ok {
+			return report(stdout, stderr, name, a)
+		}
+		body = map[string]any{"expected_version": it.Version, "session_id": conversation}
+		for k, v := range map[string]string{"verification": ev.verification, "deployment": ev.deployment,
+			"no_deployment_reason": ev.noDeployment} {
+			if strings.TrimSpace(v) != "" {
+				body[k] = v
+			}
+		}
+		l := map[string]string{}
+		for k, v := range map[string]string{"commit": ev.commit, "target": ev.target, "remote": ev.remote,
+			"project": ev.landingProject} {
+			if strings.TrimSpace(v) != "" {
+				l[k] = v
+			}
+		}
+		if len(l) > 0 {
+			body["landing"] = l
+		}
+		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/finish"
 	case "doc":
 		itemID, d := strings.TrimSpace(args[0]), f.doc
 		if strings.TrimSpace(d.role) == "" || strings.TrimSpace(d.title) == "" {

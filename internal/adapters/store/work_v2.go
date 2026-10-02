@@ -561,9 +561,18 @@ func (t *WorkV2Tx) ActiveOwnedItemCount(session string) (int64, error) {
 	return t.count(`owner_session=? AND phase NOT IN ('done','cancelled')`, session)
 }
 
+// Tasks is every broker task bound to a Board item: the ones whose work_id
+// is the item, and the ones that carry it among their also_work_ids (one
+// child doing several items). The second half reads only the rows that carry
+// any (the partial index broker_tasks_also_work), not the whole table.
 func (t *WorkV2Tx) Tasks(id string) ([]BrokerRow, error) {
 	rows, err := t.tx.QueryContext(t.ctx, `SELECT `+brokerColumns+` FROM broker_tasks
-	  WHERE json_valid(record) AND json_extract(record, '$.work_id') = ? ORDER BY created_at,id`, id)
+	  WHERE json_valid(record) AND json_extract(record, '$.work_id') = ?
+	  UNION
+	  SELECT `+brokerColumns+` FROM broker_tasks
+	  WHERE json_valid(record) AND json_extract(record, '$.also_work_ids') IS NOT NULL
+	    AND EXISTS (SELECT 1 FROM json_each(record, '$.also_work_ids') WHERE value = ?)
+	  ORDER BY created_at,id`, id, id)
 	if err != nil {
 		return nil, err
 	}

@@ -256,7 +256,8 @@ conclusion, not the file dumps; you keep synthesis, integration and landing.
 clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
 ```
 
-- `--work-id` binds the child to the item, so its landing counts as the item's.
+- `--work-id` binds the child to the item, so its landing counts as the item's. Repeat it when one
+  child does several items: the first is the child's line, and the landing counts for every one.
 - The title is one line of at most 60 characters saying what will be different. Any colon (`:` or
   `：`) is refused, because it joins an observation to an explanation; so is "the user" as the
   subject, or a title opening with a code-formatted identifier. Each answers `bad_task` with
@@ -287,7 +288,16 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 Write it for the person who reported the problem, in Markdown, with no private data.
 
 **7. Finish the item.** Complete each step once it is verified with
-`clawdline item step-done <item id> <step id>`, then advance one phase at a time:
+`clawdline item step-done <item id> <step id>`. Once the child's branch is merged, one command
+takes the item from where it stands to `done`; the commit, target and remote come from the recorded
+landing, so you type only the notes:
+
+```sh
+clawdline item finish <item id> --verification "what was run and what it showed" \
+  --deployment "what went live, where, which version"      # or --no-deployment-reason "…"
+```
+
+Or advance one phase at a time:
 
 ```sh
 clawdline item phase <item id> verifying
@@ -354,7 +364,7 @@ An owned child is a bounded task under you. **You keep synthesis, integration an
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--persona <id>] [--work-id uuid] [--task-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
+  [--persona <id>] [--work-id uuid …] [--task-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
 ```
 
 It makes the id and the secret, reads the inventory for `generation` and `task_root`, writes
@@ -1157,6 +1167,31 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   `landing_commit_unresolved`,
   `landing_target_unresolved`, `landing_not_on_target`, `landing_remote_unresolved`,
   `landing_not_published`, and `version_conflict`: reread and send again.
+
+**Finishing in one command.** After the work has landed, `clawdline item finish <item id>` walks
+the item from `implementing`, `verifying`, `merging` or `deploying` to `done` in one transaction:
+
+```
+POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
+{"expected_version": <version>, "session_id": "<conversation id>", "verification"?: "…",
+ "landing"?: {"commit"?, "target"?, "remote"?, "project"?},
+ "deployment"?: "…", "no_deployment_reason"?: "…"}
+```
+
+- Each step is the one `item phase` takes, through the same gates, and writes its own
+  `item.phase_changed`; any step refused refuses the whole and nothing is written.
+- The landing is read, not typed: the commit is the gate's authorized candidate on a gated item,
+  otherwise the bound children's landed commit; the target is the branch their landings name; the
+  remote is the one that branch tracks. Any field you give wins, and the result is proved against
+  git as `item phase deploying` proves it. A captured verification gate still needs its PASS: from
+  `implementing` a gated item is refused `verification_candidate_required`, so enter `verifying`
+  with `item phase` from the candidate worktree, wait for the PASS, then finish.
+- An item already `done` is answered as it stands and nothing is written, so the same landing seen
+  twice moves nothing.
+- Refusals add `verification_required`, `landing_required`, `deployment_required` (the note that
+  step lacked), `landing_target_unknown`, `landing_remote_unknown`, `landing_remote_unreadable`,
+  `landing_ambiguous` (name it with the flag) and `finish_not_started` (still before
+  `implementing`).
 
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries

@@ -793,3 +793,40 @@ func TestItemPersonaGoesOnlyWithANewSession(t *testing.T) {
 		}
 	}
 }
+
+// `finish` reads the item for its version and posts only the notes it was
+// given; a landing flag travels alone, for the daemon to fill in the rest.
+func TestItemFinishPostsOnlyTheNotesItWasGiven(t *testing.T) {
+	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	env := envOf(map[string]string{"CLAUDE_CODE_SESSION_ID": thinConversation})
+	var out, errs bytes.Buffer
+	f := itemFlags{phase: phaseEvidence{verification: "go test ./... passed", deployment: "daemon rebuilt", remote: "upstream"}}
+	if code := sessionItem(&out, &errs, b, "finish", f, []string{"item-1"}, "", "", env); code != 0 {
+		t.Fatalf("finish exit %d: %s", code, errs.String())
+	}
+	seen := s.requests()
+	if len(seen) != 2 || seen[0].Method != "GET" || seen[1].Method != "POST" ||
+		seen[1].EscapedPath != "/v1/work/v2/agent/items/item-1/finish" || seen[1].Key == "" {
+		t.Fatalf("requests = %+v", seen)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(seen[1].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	landing, _ := body["landing"].(map[string]any)
+	if body["expected_version"] != float64(2) || body["session_id"] != thinConversation ||
+		body["verification"] != "go test ./... passed" || body["deployment"] != "daemon rebuilt" ||
+		len(landing) != 1 || landing["remote"] != "upstream" || len(body) != 5 {
+		t.Fatalf("finish body = %s", seen[1].Body)
+	}
+
+	// With no landing flag, no landing is sent: the daemon reads it.
+	s, b = newStandIn(t, func(r *http.Request) (int, string) { return 200, createdItem })
+	f = itemFlags{phase: phaseEvidence{noDeployment: "library only"}}
+	if code := sessionItem(&out, &errs, b, "finish", f, []string{"item-1"}, "", "", env); code != 0 {
+		t.Fatalf("finish exit %d: %s", code, errs.String())
+	}
+	if p := s.requests()[1]; strings.Contains(string(p.Body), "landing") || !strings.Contains(string(p.Body), `"no_deployment_reason":"library only"`) {
+		t.Fatalf("finish body = %s", p.Body)
+	}
+}

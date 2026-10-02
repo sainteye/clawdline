@@ -75,13 +75,16 @@ type dispatchOptions struct {
 	Title, ProjectDir, Assistant, Isolation, PermissionMode string
 	Kind, Model, WorkID, Label, Conversation, RootAssistant string
 	TaskID                                                  string
-	Persona                                                 string
-	Claims                                                  []string
-	ClaimsGiven                                             bool
-	Deliverables                                            []string
-	Timeout                                                 int
-	Instructions                                            string
-	JSON                                                    bool
+	// AlsoWorkIDs are the items after the first --work-id: the same child
+	// carries them, and its landing counts for each.
+	AlsoWorkIDs  []string
+	Persona      string
+	Claims       []string
+	ClaimsGiven  bool
+	Deliverables []string
+	Timeout      int
+	Instructions string
+	JSON         bool
 }
 
 // dispatchEnv is what the command takes from its surroundings, so that a test
@@ -98,7 +101,7 @@ func dispatchCommand(args []string) {
 	fs := flag.NewFlagSet("dispatch", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var o dispatchOptions
-	var claims, deliverables listFlag
+	var claims, deliverables, works listFlag
 	fs.StringVar(&o.Title, "title", "", "shown on screen; cut at 200 characters")
 	fs.Var(&claims, "claims", "the relative paths the child may write, comma-separated; repeatable")
 	fs.StringVar(&o.ProjectDir, "project-dir", "", "the repository (default: this directory's git top-level)")
@@ -110,7 +113,7 @@ func dispatchCommand(args []string) {
 	fs.Var(&deliverables, "deliverable", "a path the child delivers; repeatable")
 	fs.StringVar(&o.Model, "model", "", "optional model override")
 	fs.StringVar(&o.Persona, "persona", "", "a built-in persona to launch the child as (none by default)")
-	fs.StringVar(&o.WorkID, "work-id", "", "the board item this serves (a UUID)")
+	fs.Var(&works, "work-id", "the board item this serves (a UUID); repeat it, or separate with commas, for a child that carries several")
 	fs.StringVar(&o.TaskID, "task-id", "", "stable task UUID to reuse after an uncertain dispatch")
 	fs.StringVar(&o.Label, "label", "", "this root's label on screen")
 	instructionsFile := fs.String("instructions-file", "", "the brief (default: stdin)")
@@ -122,6 +125,7 @@ func dispatchCommand(args []string) {
 		dispatchUsage()
 	}
 	o.Claims, o.ClaimsGiven, o.Deliverables = claims.values, claims.set, deliverables.values
+	o.setWorkIDs(works.values)
 	// The flags are judged before stdin is waited on or the token is read:
 	// a forgotten --title answers at once rather than after a brief.
 	if code := checkDispatchFlags(os.Stderr, o); code != 0 {
@@ -142,10 +146,18 @@ func dispatchCommand(args []string) {
 	}))
 }
 
+// setWorkIDs reads every --work-id in order: the first is the task's line,
+// the rest the items the same child carries beside it.
+func (o *dispatchOptions) setWorkIDs(ids []string) {
+	if len(ids) > 0 {
+		o.WorkID, o.AlsoWorkIDs = ids[0], ids[1:]
+	}
+}
+
 func dispatchUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
 		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
-		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid] [--task-id uuid] [--label l] "+
+		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid …] [--task-id uuid] [--label l] "+
 		"[--instructions-file f | instructions on stdin] [--conversation id] [--port n] [--json]")
 	fmt.Fprintln(os.Stderr, "  dispatches an owned child: writes task.json, reads the inventory, posts the task")
 	os.Exit(2)
@@ -461,6 +473,9 @@ func taskFile(id string, o dispatchOptions, conversation, rootAssistant string) 
 	}
 	if o.WorkID != "" {
 		task["work_id"] = o.WorkID
+	}
+	if len(o.AlsoWorkIDs) > 0 {
+		task["also_work_ids"] = o.AlsoWorkIDs
 	}
 	return task
 }

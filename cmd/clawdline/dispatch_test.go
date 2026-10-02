@@ -576,3 +576,27 @@ func TestDispatchPersona(t *testing.T) {
 		t.Fatal("a refused persona was sent")
 	}
 }
+
+// --work-id repeated, or comma-separated, is one child carrying several items:
+// the first is work_id, the rest go to the brief as also_work_ids in order.
+func TestDispatchCarriesEveryWorkIDItWasGiven(t *testing.T) {
+	var works listFlag
+	for _, v := range []string{"045d4a26-0000-4000-8000-000000000001", "dfb8f28f-0000-4000-8000-000000000002,fa0e20b2-0000-4000-8000-000000000003"} {
+		if err := works.Set(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := testDispatchOptions()
+	o.setWorkIDs(works.values)
+	task := taskFile(dispatchID, o, thinConversation, "claude")
+	also, _ := json.Marshal(task["also_work_ids"])
+	if task["work_id"] != "045d4a26-0000-4000-8000-000000000001" ||
+		string(also) != `["dfb8f28f-0000-4000-8000-000000000002","fa0e20b2-0000-4000-8000-000000000003"]` {
+		t.Fatalf("work_id %v, also_work_ids %s", task["work_id"], also)
+	}
+	one := testDispatchOptions()
+	one.setWorkIDs([]string{"045d4a26-0000-4000-8000-000000000001"})
+	if _, ok := taskFile(dispatchID, one, thinConversation, "claude")["also_work_ids"]; ok {
+		t.Fatal("a single --work-id wrote also_work_ids")
+	}
+}

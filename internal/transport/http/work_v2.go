@@ -319,7 +319,8 @@ type workV2GitReader interface {
 func workV2PhaseInstruction(id string) string {
 	return "Move the item through its phases yourself as the work happens: `clawdline item phase " + id +
 		" implementing`, then verifying, merging (--verification), deploying (--commit --target --remote) and done " +
-		"(--deployment or --no-deployment-reason); `clawdline guide board` says what each one needs."
+		"(--deployment or --no-deployment-reason); once the work has landed, `clawdline item finish " + id +
+		"` takes it the rest of the way in one command. `clawdline guide board` says what each one needs."
 }
 
 // workV2StepsInstruction says when an owner breaks its item into steps, in
@@ -626,6 +627,208 @@ func verifyWorkV2DirectLanding(ctx context.Context, g workV2GitReader, item app.
 		landing.Repository = repo
 	}
 	return landing, nil
+}
+
+// workV2FinishGit is what finishing reads of git: the landing proof's
+// questions, and which remote the target branch tracks.
+type workV2FinishGit interface {
+	workV2GitReader
+	UpstreamRemote(context.Context, string, string) (string, error)
+}
+
+// finishLandingAsk spells the landing a root did not type, from what the
+// daemon already holds, so that `item finish` after a merge needs no commit,
+// target or remote. Whatever the root did type wins. The result is still only
+// an ask: verifyWorkV2DirectLanding proves it against git, and Finish's gate
+// still checks the commit against the authorized candidate, so nothing here
+// can let a step through that typing the same values would not.
+//
+//   - commit: the candidate the current PASS or override authorized, on an
+//     item with a verification gate; otherwise the one commit the bound
+//     tasks' landings name.
+//   - target: the one branch the bound tasks' landings name.
+//   - remote: the remote that target branch tracks.
+//   - repository: the one repository the landings name, when it is not the
+//     item's own Project.
+//
+// It answers nil when no direct landing is needed: the item is already past
+// merging, or it has no gate and nothing was typed, so its bound tasks'
+// landings (which Finish reads itself) are the evidence. Two different
+// answers for one field are refused rather than chosen between.
+func finishLandingAsk(ctx context.Context, g workV2FinishGit, facts app.FinishFactsV2,
+	ask *workV2LandingRequest) (*workV2LandingRequest, string, *app.WorkError) {
+	switch facts.Item.Phase {
+	case work.PhaseImplementing, work.PhaseVerifying, work.PhaseMerging:
+	default:
+		return nil, "", nil
+	}
+	gated := facts.Item.VerifyGate
+	if !gated && ask == nil {
+		return nil, "", nil
+	}
+	out := workV2LandingRequest{}
+	if ask != nil {
+		out = *ask
+	}
+	commits, targets, repos := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, l := range facts.Landings {
+		if l.Commit != "" {
+			commits[l.Commit] = true
+		}
+		if l.Target != "" {
+			targets[l.Target] = true
+		}
+		if l.Repository != "" {
+			repos[l.Repository] = true
+		}
+	}
+	only := func(set map[string]bool) (string, int) {
+		if len(set) == 1 {
+			for v := range set {
+				return v, 1
+			}
+		}
+		return "", len(set)
+	}
+	conflict := func(code, message string) *app.WorkError {
+		return &app.WorkError{Status: http.StatusConflict, Code: code, Message: message}
+	}
+	if strings.TrimSpace(out.Commit) == "" {
+		if gated {
+			if facts.Candidate == "" {
+				return nil, "", conflict("verification_authorization_required",
+					"This cycle requires an independent PASS or reasoned override for its exact candidate and acceptance criteria before merging.")
+			}
+			out.Commit = facts.Candidate
+		} else {
+			commit, n := only(commits)
+			switch n {
+			case 0:
+				return nil, "", conflict("landing_required",
+					"No landing is recorded for this item: no task bound to it has landed, and no --commit was given.")
+			case 1:
+				out.Commit = commit
+			default:
+				return nil, "", conflict("landing_ambiguous",
+					"The tasks bound to this item landed different commits; name the one with --commit.")
+			}
+		}
+	}
+	if strings.TrimSpace(out.Target) == "" {
+		target, n := only(targets)
+		switch n {
+		case 0:
+			return nil, "", conflict("landing_target_unknown",
+				"No landed task bound to this item names its target branch; name it with --target.")
+		case 1:
+			out.Target = target
+		default:
+			return nil, "", conflict("landing_ambiguous",
+				"The tasks bound to this item landed on different branches; name the one with --target.")
+		}
+	}
+	repo := ""
+	if strings.TrimSpace(out.Project) == "" {
+		if r, n := only(repos); n == 1 && r != facts.Item.ProjectPath {
+			repo = r
+		} else if n > 1 {
+			return nil, "", conflict("landing_ambiguous",
+				"The tasks bound to this item landed in different repositories; name the Project with --landing-project.")
+		}
+	}
+	if strings.TrimSpace(out.Remote) == "" {
+		where := repo
+		if where == "" {
+			where = facts.Item.ProjectPath
+		}
+		remote, err := g.UpstreamRemote(ctx, where, out.Target)
+		if err != nil {
+			return nil, "", &app.WorkError{Status: http.StatusServiceUnavailable, Code: "landing_remote_unreadable",
+				Message: "Git could not say which remote " + out.Target + " tracks; name it with --remote."}
+		}
+		if remote == "" {
+			return nil, "", conflict("landing_remote_unknown",
+				"The branch "+out.Target+" tracks no remote; name the remote whose copy also holds the commit with --remote.")
+		}
+		out.Remote = remote
+	}
+	return &out, repo, nil
+}
+
+// agentFinishItem is POST /v1/work/v2/agent/items/<id>/finish: `item finish`.
+func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		ExpectedVersion    int64                 `json:"expected_version"`
+		SessionID          string                `json:"session_id"`
+		Verification       string                `json:"verification"`
+		Landing            *workV2LandingRequest `json:"landing"`
+		Deployment         string                `json:"deployment"`
+		NoDeploymentReason string                `json:"no_deployment_reason"`
+	}
+	raw, ok := readWorkV2Body(w, r, &body)
+	if !ok {
+		return
+	}
+	k, ok := s.beginWorkV2Write(w, r, body.SessionID, raw)
+	if !ok {
+		return
+	}
+	refuse := func(err error) {
+		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+		s.writeWorkV2Error(w, err)
+	}
+	catalog := s.workV2Projects(r.Context())
+	item, err := s.workV2().Item(r.Context(), id)
+	if err != nil {
+		refuse(err)
+		return
+	}
+	facts, err := s.workV2().FinishFacts(r.Context(), id)
+	if err != nil {
+		refuse(err)
+		return
+	}
+	git := gitadapter.New()
+	ask, landedRepo, askErr := finishLandingAsk(r.Context(), git, facts, body.Landing)
+	if askErr != nil {
+		refuse(askErr)
+		return
+	}
+	repo := item.Item.ProjectPath
+	if landedRepo != "" {
+		repo = landedRepo
+	}
+	if ask != nil && strings.TrimSpace(ask.Project) != "" {
+		other, ok := catalog[strings.TrimSpace(ask.Project)]
+		if !ok {
+			_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
+			writeRefusal(w, http.StatusUnprocessableEntity, "landing_project_not_found",
+				"landing.project names no Project in the current catalog.")
+			return
+		}
+		repo = other.Path
+	}
+	landing, landingErr := verifyWorkV2DirectLanding(r.Context(), git, item, body.SessionID, repo, ask)
+	if landingErr != nil {
+		refuse(landingErr)
+		return
+	}
+	var answer []byte
+	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: body.ExpectedVersion,
+		SessionID: body.SessionID, Verification: body.Verification, Landing: landing, Deployment: body.Deployment,
+		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
+		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}},
+		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
+			answer = workV2Answer(s.workV2ItemOf(catalog, v))
+			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
+		})
+	if err != nil {
+		refuse(err)
+		return
+	}
+	s.broker.RunEffects(r.Context(), changed.EffectIDs)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(answer)
 }
 
 type workV2ProjectCatalog map[string]workV2ProjectWire
@@ -2390,6 +2593,10 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		s.broker.RunEffects(r.Context(), changed.EffectIDs)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write(answer)
+		return
+	}
+	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) && parts[2] == "finish" && r.Method == http.MethodPost {
+		s.agentFinishItem(w, r, parts[1])
 		return
 	}
 	if len(parts) == 3 && parts[0] == "items" && workID(parts[1]) &&
