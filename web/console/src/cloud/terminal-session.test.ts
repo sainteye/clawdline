@@ -21,6 +21,8 @@ class Wire implements TerminalWire {
   inputResult: "ok" | "unknown" | "refused" = "ok"
   incarnation = "first-machine-start"
   lease = held
+  delayed = new Set<string>()
+  replies: Array<() => void> = []
   async subscribeTerminal(connection: string, _keyID: string, _raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
     this.channels.set(connection, listener)
   }
@@ -28,8 +30,13 @@ class Wire implements TerminalWire {
   observeTerminalFrame(envelope: TerminalEnvelope): void { this.observed.push(envelope) }
   async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
     this.requests.push(request)
+    if ("previous_connection" in request) throw new Error("malformed_signed_request")
     const operation = request.operation as string
     const connection = request.connection as string
+    if (operation === "rekey_connection" &&
+      ((request.body as { old_connection?: unknown } | undefined)?.old_connection !== [...this.channels.keys()].at(-2))) {
+      throw new Error("rekey_old_connection_missing")
+    }
     const result = operation === "open_connection" || operation === "rekey_connection"
       ? { connection, key_id: request.key_id, expires_at: Date.now() / 1000 + 500, machine_incarnation: this.incarnation }
       : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control }
@@ -39,14 +46,17 @@ class Wire implements TerminalWire {
             : operation === "list" ? { terminals: [] }
               : operation === "history" ? { lines: [] }
                 : operation === "input" ? { applied_through: request.seq, duplicate: false } : {}
-    queueMicrotask(() => this.emit(connection, "termr", {
+    const reply = () => this.emit(connection, "termr", {
       v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
       ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
       status: operation === "input" ? this.inputResult : "ok", result,
       ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
-    }))
+    })
+    if (this.delayed.has(operation)) this.replies.push(reply)
+    else queueMicrotask(reply)
     return { sender: viewer, seq: this.requests.length }
   }
+  releaseReplies(): void { for (const reply of this.replies.splice(0)) reply() }
   emit(connection: string, kind: "term" | "termr", plaintext: unknown): void {
     const envelope = { v: 1, ch: `${kind}/${machine}/${viewer}/${connection}`, seq: 1, ts: Date.now(), class: kind === "term" ? "stream" : "ctl",
       key_id: "test", nonce: "", ct: "", sender: machine, sig: "" } satisfies TerminalEnvelope
@@ -106,6 +116,26 @@ test("unchanged full frames keep an idle shell fresh and typable for 30 seconds"
   }
 })
 
+test("an open frame arriving before its open receipt is applied only after terminal identity is known", async () => {
+  const wire = new Wire()
+  wire.delayed.add("open")
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    const opening = session.create("project", 80, 1)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(wire.requests.some((request) => request.operation === "open"), true)
+    wire.frame(wire.latest(), 1, "first")
+    wire.frame(wire.latest(), 2, "newest")
+    assert.equal(wire.observed.length, 0, "an unidentified frame cannot be acknowledged")
+    wire.releaseReplies()
+    await opening
+    assert.equal(session.snapshot.frame?.rev, "newest")
+    assert.equal(session.snapshot.state, "just_synced")
+    assert.equal(wire.observed.length, 1, "the early-frame buffer retains only the newest full frame")
+  } finally { session.dispose() }
+})
+
 test("rekey keeps the lease client and checks a read-only high-water mark before typing", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
@@ -117,6 +147,9 @@ test("rekey keeps the lease client and checks a read-only high-water mark before
   await session.start()
   const newConnection = wire.latest()
   assert.notEqual(newConnection, old)
+  const rekey = wire.requests.find((request) => request.operation === "rekey_connection")
+  assert.deepEqual(rekey?.body, { old_connection: old })
+  assert.equal(Object.hasOwn(rekey ?? {}, "previous_connection"), false)
   assert.equal(session.snapshot.canType, false, "new complete frame is still missing")
   assert.equal(wire.channels.has(old), true, "the old receipt channel stays until activation")
   const query = [...wire.requests].reverse().find((request) => request.operation === "control" && request.body === undefined)
@@ -128,6 +161,32 @@ test("rekey keeps the lease client and checks a read-only high-water mark before
   assert.equal(wire.requests.filter((request) => request.operation === "activate_connection").length, 1)
   assert.equal(session.snapshot.canType, true)
   session.dispose()
+})
+
+test("a rekey frame arriving before its receipt waits for lease proof and then activates", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const old = wire.latest()
+    wire.frame(old, 1, "old screen")
+    wire.delayed.add("rekey_connection")
+    const reconnect = session.start()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const current = wire.latest()
+    assert.notEqual(current, old)
+    wire.frame(current, 1, "new screen")
+    assert.equal(session.snapshot.canType, false)
+    assert.equal(wire.observed.length, 1, "the new frame waits for a verified rekey receipt")
+    wire.releaseReplies()
+    await reconnect
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(session.snapshot.frame?.rev, "new screen")
+    assert.equal(wire.observed.length, 2)
+    assert.equal(wire.requests.filter((request) => request.operation === "activate_connection").length, 1)
+    assert.equal(wire.channels.has(old), false)
+    assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
 })
 
 test("an unknown machine input result stops typing without resending the same effect", async () => {

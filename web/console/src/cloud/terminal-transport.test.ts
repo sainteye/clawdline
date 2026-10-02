@@ -75,6 +75,26 @@ test("the machine signature, viewer route, key and sequence all gate a receipt",
   f.adapter.dispose()
 })
 
+test("a frame delivered first cannot discard a lower-sequence receipt on the other channel", async () => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  const receipt = { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(), connection: f.fresh.connection,
+    operation: "capture", terminal_id: "trm_test", status: "ok" }
+  const terminalFrame = { v: 1, type: "terminal_frame", terminal_id: "trm_test", connection: f.fresh.connection,
+    frame_seq: 1, captured_at: Date.now() / 1000,
+    frame: { rev: "screen", at: Date.now() / 1000, cols: 80, rows: 1, lines: ["ready"],
+      cursor: { x: 0, y: 0, visible: true }, modes: { app_cursor: false, app_keypad: false, mouse_sgr: false,
+        alt: false, mouse: "none" } } }
+  const frameEnvelope = await f.seal(12, terminalFrame, "term")
+  const receiptEnvelope = await f.seal(11, receipt, "termr")
+  await f.client._receiveEnvelope(frameEnvelope, false)
+  await f.client._receiveEnvelope(receiptEnvelope, false)
+  assert.deepEqual(f.seen.map((event) => (event as { plaintext: { type: string } }).plaintext.type),
+    ["terminal_frame", "terminal_receipt"])
+  await assert.rejects(f.adapter.openTerminalEnvelope(receiptEnvelope, f.fresh.connection), /terminal_bad_envelope/)
+  f.adapter.dispose()
+})
+
 test("a verified term frame can be observed once on the authenticated socket", async () => {
   const f = await fixture()
   await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))

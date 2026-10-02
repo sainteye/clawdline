@@ -63,12 +63,14 @@ export class TerminalChannelTransport {
   private readonly pairing: Promise<{ masterKey: CryptoKey; keyID: string; senderKey: CryptoKey; senderID: string }>
   private readonly oldReceive: TerminalCloudClient["_receiveEnvelope"]
   private readonly stopEvents: () => void
-  private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: number; nonces: Set<string> }>()
+  private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: { term: number; termr: number };
+    inFlight: Set<number>; nonces: Set<string> }>()
   private readonly confirmed = new Set<string>()
   private readonly sent = new Set<number>()
   private readonly listeners = new Map<string, (event: TerminalChannelEvent) => void>()
   private readonly verifiedFrames = new Map<string, number>()
   private readonly waiting = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  private readonly receiveTails = new Map<string, Promise<void>>()
 
   // Declared fields rather than parameter properties, so `node --test
   // --experimental-strip-types` can load this file and its suite runs.
@@ -96,7 +98,7 @@ export class TerminalChannelTransport {
     if (!connectionID.test(connection) || !/^rk-[A-Za-z0-9_-]{22}$/.test(keyID) || raw.length !== 32) throw fail("terminal_invalid")
     if (!this.client.ready || this.client.retired) throw fail("cloud_reconnecting")
     const key = await crypto.subtle.importKey("raw", raw.slice().buffer as ArrayBuffer, "AES-GCM", false, ["decrypt"])
-    this.keys.set(connection, { id: keyID, key, lastSeq: -1, nonces: new Set() })
+    this.keys.set(connection, { id: keyID, key, lastSeq: { term: -1, termr: -1 }, inFlight: new Set(), nonces: new Set() })
     this.listeners.set(connection, listener)
     const channels = this.channels(connection)
     const confirmation = new Promise<void>((resolve, reject) => {
@@ -130,6 +132,7 @@ export class TerminalChannelTransport {
     this.keys.delete(connection)
     this.confirmed.delete(connection)
     this.verifiedFrames.delete(connection)
+    for (const channel of channels) this.receiveTails.delete(channel)
   }
 
   async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
@@ -157,23 +160,28 @@ export class TerminalChannelTransport {
     const frame = route("term", this.machine, this.viewer, connection)
     const receipt = route("termr", this.machine, this.viewer, connection)
     if (envelope.ch !== frame && envelope.ch !== receipt) throw fail("terminal_wrong_viewer")
+    const kind = envelope.ch === frame ? "term" : "termr"
     if (Object.keys(envelope).length !== names.length || names.some((name) => !(name in envelope)) ||
       envelope.v !== 1 || envelope.sender !== this.machine || envelope.key_id !== state.id ||
       envelope.class !== (envelope.ch === frame ? "stream" : "ctl") ||
-      !Number.isSafeInteger(envelope.seq) || envelope.seq <= state.lastSeq ||
+      !Number.isSafeInteger(envelope.seq) || envelope.seq <= state.lastSeq[kind] || state.inFlight.has(envelope.seq) ||
       !Number.isSafeInteger(envelope.ts) || base64Bytes(envelope.nonce).length !== 12 || state.nonces.has(envelope.nonce)) throw fail("terminal_bad_envelope")
-    const pairing = await this.pairing
-    if (pairing.senderID !== envelope.sender || !await crypto.subtle.verify("Ed25519", pairing.senderKey,
-      base64Bytes(envelope.sig), envelopeSigningBytes(envelope))) throw fail("terminal_bad_signature")
-    let plaintext: unknown
+    state.inFlight.add(envelope.seq)
     try {
+      const pairing = await this.pairing
+      if (pairing.senderID !== envelope.sender || !await crypto.subtle.verify("Ed25519", pairing.senderKey,
+        base64Bytes(envelope.sig), envelopeSigningBytes(envelope))) throw fail("terminal_bad_signature")
       const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Bytes(envelope.nonce) }, state.key, base64Bytes(envelope.ct))
-      plaintext = JSON.parse(dec.decode(clear))
-    } catch { throw fail("terminal_bad_key") }
-    state.lastSeq = envelope.seq
-    state.nonces.add(envelope.nonce)
-    if (state.nonces.size > 256) state.nonces.delete(state.nonces.values().next().value!)
-    return plaintext
+      const plaintext = JSON.parse(dec.decode(clear))
+      if (this.keys.get(connection) !== state || envelope.seq <= state.lastSeq[kind] || state.nonces.has(envelope.nonce)) throw fail("terminal_bad_envelope")
+      state.lastSeq[kind] = envelope.seq
+      state.nonces.add(envelope.nonce)
+      if (state.nonces.size > 256) state.nonces.delete(state.nonces.values().next().value!)
+      return plaintext
+    } catch (error) {
+      if ((error as Error).message === "terminal_bad_signature" || (error as Error).message === "terminal_bad_envelope") throw error
+      throw fail("terminal_bad_key")
+    } finally { state.inFlight.delete(envelope.seq) }
   }
 
   /** Releases relay fanout only after the terminal session accepted this verified full frame. */
@@ -188,7 +196,16 @@ export class TerminalChannelTransport {
   }
 
   private channels(connection: string): string[] { return [route("term", this.machine, this.viewer, connection), route("termr", this.machine, this.viewer, connection)] }
-  private async receive(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
+  private receive(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
+    // Relay delivery preserves order on one channel, but signature and AES work
+    // is async. Serialize only that channel; a term frame cannot delay termr.
+    const prior = this.receiveTails.get(envelope.ch) ?? Promise.resolve()
+    const next = prior.then(() => this.receiveOne(envelope, realign))
+    this.receiveTails.set(envelope.ch, next)
+    void next.then(() => { if (this.receiveTails.get(envelope.ch) === next) this.receiveTails.delete(envelope.ch) })
+    return next
+  }
+  private async receiveOne(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
     const connection = envelope.ch.split("/")[3]
     const listener = this.listeners.get(connection)
     if (!listener) return

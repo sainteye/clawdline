@@ -26,9 +26,11 @@ export interface CloudTerminalSnapshot {
 }
 type Pending = { operation: string; connection: string; terminal: string | null; resolve: (receipt: Receipt) => void; reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout> }
+type EarlyFrame = { value: Frame; envelope: TerminalEnvelope }
 const STALE_MS = 6_000
 const RECEIPT_MS = 10_000
 const KEY_MS = 10 * 60_000
+export const EARLY_FRAME_LIMIT = 1
 const fail = (code: string) => Object.assign(new Error(code), { code })
 
 /** One tab's lease state and one terminal's full-frame stream. No Cloud timeout resends input. */
@@ -55,6 +57,7 @@ export class CloudTerminalSession {
   private sendQueue: Promise<void> = Promise.resolve()
   private queuedBytes = 0
   private pending = new Map<string, Pending>()
+  private earlyFrames: EarlyFrame[] = []
   private listeners = new Set<(snapshot: CloudTerminalSnapshot) => void>()
   private tick: ReturnType<typeof setInterval> | null = null
   private s: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
@@ -94,6 +97,7 @@ export class CloudTerminalSession {
     const previousKeyID = this.keyID
     const previousIncarnation = this.incarnation
     const previousFrameSeq = this.frameSeq
+    this.earlyFrames = []
     if (previous) { this.retiringConnection = previous; this.rotationReady = false }
     this.active = false
     this.set({ state: previous ? "synchronizing" : "opening", canType: false, reason: "" })
@@ -102,7 +106,8 @@ export class CloudTerminalSession {
       this.connection = fresh.connection
       this.keyID = fresh.keyID
       const opened = await this.request(previous && Date.now() < previousExpiry ? "rekey_connection" : "open_connection", {
-        key_id: fresh.keyID, key: bytesBase64(fresh.key), ...(previous ? { previous_connection: previous } : {}),
+        key_id: fresh.keyID, key: bytesBase64(fresh.key),
+        ...(previous && Date.now() < previousExpiry ? { body: { old_connection: previous } } : {}),
       })
       fresh.key.fill(0)
       if (opened.result?.connection !== fresh.connection || opened.result?.key_id !== fresh.keyID ||
@@ -121,8 +126,9 @@ export class CloudTerminalSession {
         if (!sameMachine) this.forgetLease("terminal_machine_restarted")
         else await this.reconcileLease()
         this.rotationReady = true
-        this.maybeActivate()
       }
+      this.flushEarlyFrame()
+      this.maybeActivate()
       if (!this.tick) this.tick = setInterval(() => this.checkFreshness(), 1_000)
     } catch (error) {
       fresh.key.fill(0)
@@ -132,6 +138,7 @@ export class CloudTerminalSession {
       this.incarnation = previousIncarnation
       this.expiresAt = previousExpiry
       this.frameSeq = previousFrameSeq
+      this.earlyFrames = []
       this.retiringConnection = ""
       this.rotationReady = false
       this.active = this.s.state !== "revoked" && previousActive && Date.now() < previousExpiry
@@ -176,6 +183,7 @@ export class CloudTerminalSession {
 
   async attach(terminal: string): Promise<Receipt> {
     this.terminal = terminal
+    this.flushEarlyFrame()
     const result = await this.request("read", { terminal_id: terminal, client: this.client })
     const control = result.result?.control as TerminalControl | undefined
     if (control) this.set({ control })
@@ -187,6 +195,7 @@ export class CloudTerminalSession {
     const id = result.result?.id
     if (typeof id !== "string") throw fail("terminal_bad_receipt")
     this.terminal = id
+    this.flushEarlyFrame()
     const control = result.result?.control as TerminalControl | undefined
     if (control) this.set({ control })
     await this.request("capture", { terminal_id: id })
@@ -326,17 +335,33 @@ export class CloudTerminalSession {
         }
         pending.reject(fail(value.error ?? "terminal_forbidden"))
       }
-    } else if (value.type === "terminal_frame" && value.terminal_id === this.terminal &&
+    } else if (value.type === "terminal_frame" &&
       event.envelope.ch.startsWith("term/") &&
-      Number.isSafeInteger(value.frame_seq) && value.frame_seq > this.frameSeq &&
+      Number.isSafeInteger(value.frame_seq) && value.frame_seq > 0 &&
       typeof value.captured_at === "number" && Math.abs(Date.now() / 1000 - value.captured_at) <= STALE_MS / 1000 &&
       completeTerminalFrame(value.frame)) {
-      const first = this.frameSeq === 0
-      this.frameSeq = value.frame_seq
-      this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
-      this.transport.observeTerminalFrame(event.envelope)
-      this.maybeActivate()
+      if (!this.active || this.openingNew || !this.terminal) {
+        if (this.earlyFrames.length < EARLY_FRAME_LIMIT) this.earlyFrames.push({ value, envelope: event.envelope })
+        else if (value.frame_seq > this.earlyFrames[0].value.frame_seq) {
+          this.earlyFrames.splice(0, EARLY_FRAME_LIMIT, { value, envelope: event.envelope })
+        }
+      } else this.acceptFrame(value, event.envelope)
     }
+  }
+  private flushEarlyFrame(): void {
+    if (!this.active || !this.terminal || !this.earlyFrames.length) return
+    const early = this.earlyFrames.shift()!
+    this.acceptFrame(early.value, early.envelope)
+  }
+  private acceptFrame(value: Frame, envelope: TerminalEnvelope): void {
+    if (value.connection !== this.connection || value.terminal_id !== this.terminal ||
+      value.frame_seq <= this.frameSeq || Math.abs(Date.now() / 1000 - value.captured_at) > STALE_MS / 1000 ||
+      !completeTerminalFrame(value.frame)) return
+    const first = this.frameSeq === 0
+    this.frameSeq = value.frame_seq
+    this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
+    this.transport.observeTerminalFrame(envelope)
+    this.maybeActivate()
   }
   private maybeActivate(): void {
     if (!this.retiringConnection || !this.rotationReady || !this.frameSeq || this.activating ||
@@ -383,6 +408,7 @@ export class CloudTerminalSession {
     }
   }
   dispose(): void {
+    this.earlyFrames = []
     if (this.tick) clearInterval(this.tick)
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(fail("terminal_closed")) }
     this.pending.clear()
