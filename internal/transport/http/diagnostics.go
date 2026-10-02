@@ -261,6 +261,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.SkillSourceSummaryRunes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-discovered-skill name and description; clipped in each list"}
 		},
+		capacity.SquadLaunchSkillWhenRunes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-skill line quoted into each launch prompt; clipped at publish"}
+		},
 		capacity.SquadRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},

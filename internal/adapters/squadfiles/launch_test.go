@@ -154,3 +154,45 @@ func TestDisabledSkillStaysInSnapshotButNotInPublishedPromptOrFiles(t *testing.T
 		t.Fatalf("old launch changed = %d, %v", len(oldEntries), err)
 	}
 }
+
+func TestPublishedPromptSaysWhenEachSkillApplies(t *testing.T) {
+	long := strings.Repeat("very ", 80)
+	document := json.RawMessage(`{"definition_id":"clawdline.persona.backend","scope_id":"global","definition":{"version":"1","body":"Role definition"},"handbook":{"text":""},"skills":[` +
+		`{"id":"example.skill.sentence","version":"1","enabled":true,"name":{"en":"sentence-skill","zh-Hant":"句子"},"purpose":{"en":"Check a change","zh-Hant":"檢查"},"content":"# Title\n\nUse this skill when a change\nspans two files, e.g. a rename. Then do more.","source":"example","digest":"a"},` +
+		`{"id":"example.skill.frontmatter","version":"1","enabled":true,"name":{"en":"front"},"purpose":{"en":"Front purpose"},"content":"---\nname: front\ndescription: \"Use when the request mentions a release.\"\n---\n# Front\n\nBody.","source":"example","digest":"b"},` +
+		`{"id":"example.skill.purpose","version":"1","enabled":true,"name":{"en":"purpose-only"},"purpose":{"en":"Only a purpose"},"content":"# Nothing to extract\n\nDo the work.","source":"example","digest":"c"},` +
+		`{"id":"example.skill.long","version":"1","enabled":true,"content":"Use this skill when ` + long + `.","source":"example","digest":"d"}]}`)
+	sum := sha256.Sum256(document)
+	files, err := Publish(t.TempDir(), "abcdefghijklmnopqrstuv", hex.EncodeToString(sum[:]), "capability", document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(files.PromptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := string(body)
+	for _, want := range []string{
+		"`example.skill.sentence` (sentence-skill) — Check a change",
+		`When it applies, in the skill's words: "Use this skill when a change spans two files, e.g. a rename."`,
+		`When it applies, in the skill's words: "Use when the request mentions a release."`,
+		"`example.skill.purpose` (purpose-only) — Only a purpose",
+		"Before you start, compare the task with each skill below",
+		"record `applied`",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt is missing %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "— example.skill.sentence\n") || strings.Contains(prompt, "Then do more") {
+		t.Errorf("prompt repeats the ID as the description or copies past the first sentence:\n%s", prompt)
+	}
+	if strings.Count(prompt, "When it applies") != 3 {
+		t.Errorf("a skill with nothing to extract must not get a when-line:\n%s", prompt)
+	}
+	for _, line := range strings.Split(prompt, "\n") {
+		if strings.Contains(line, "very very") && len([]rune(line)) > maxSkillWhenRunes+60 {
+			t.Errorf("when-line is not capped: %d runes", len([]rune(line)))
+		}
+	}
+}

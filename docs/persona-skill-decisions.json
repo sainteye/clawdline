@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "purpose": "Public research decisions for the built-in persona catalog; no skill is installed or adopted by this document.",
-  "reviewed_on": "2026-09-29",
+  "reviewed_on": "2026-10-02",
   "preview_definition": "Eligible for a person to read the pinned entry and reviewed bundled references; this is not a Console capability or permission to execute the skill.",
   "roles": [
     {
       "id": "architect",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "The generic blueprint prompt can invent architecture unless every claim is checked against this repository.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "architecture-blueprint-generator",
@@ -32,6 +32,42 @@
           "preview": {
             "status": "blocked",
             "reason": "The generic blueprint prompt can invent architecture unless every claim is checked against this repository."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "architecture-decision-records",
+          "fit_status": "fits_bounded_task",
+          "fits": "Context, decision, alternatives with why-not, consequences and status for a significant technical choice.",
+          "limits": "Upstream assumes docs/adr/ and framework examples; the adaptation follows the project's own decision record and writes only with authorization.",
+          "research_round": 3,
+          "source_repository": "https://github.com/affaan-m/ECC",
+          "source_commit": "c05b2d6614f62f6db0047669aa4eefb223d478f9",
+          "skill_path": "skills/architecture-decision-records/SKILL.md",
+          "skill_url": "https://github.com/affaan-m/ECC/blob/c05b2d6614f62f6db0047669aa4eefb223d478f9/skills/architecture-decision-records/SKILL.md",
+          "skill_sha256": "263b20e81801aa5fa7e75eaec6c38345c0ac028ca0edbd67b1b9071c5fcbe11f",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/affaan-m/ECC/blob/c05b2d6614f62f6db0047669aa4eefb223d478f9/LICENSE",
+          "license_sha256": "326146379f01bb137c0a5d3c54770c1aa31076705c8b88a7f6b26a460f6221b2",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/architecture-decision-records/SKILL.md",
+                "url": "https://github.com/affaan-m/ECC/blob/c05b2d6614f62f6db0047669aa4eefb223d478f9/skills/architecture-decision-records/SKILL.md",
+                "sha256": "263b20e81801aa5fa7e75eaec6c38345c0ac028ca0edbd67b1b9071c5fcbe11f",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -165,7 +201,7 @@
     {
       "id": "minimal-change",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Does not enforce this project's smallest-sufficient-change boundary or release checks.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "systematic-debugging",
@@ -195,13 +231,49 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "ponytail",
+          "fit_status": "fits_bounded_task",
+          "fits": "Reuse-first ladder, root-cause over symptom, and no unrequested abstraction: enforces the smallest sufficient change.",
+          "limits": "Upstream relies on hooks, an MCP server and levels that can cut requested scope; only the ladder and its never-simplify-away limits are adopted, and its branded code comments and benchmark claims are dropped.",
+          "research_round": 3,
+          "source_repository": "https://github.com/DietrichGebert/ponytail",
+          "source_commit": "e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156",
+          "skill_path": "skills/ponytail/SKILL.md",
+          "skill_url": "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail/SKILL.md",
+          "skill_sha256": "1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/LICENSE",
+          "license_sha256": "fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/ponytail/SKILL.md",
+                "url": "https://github.com/DietrichGebert/ponytail/blob/e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156/skills/ponytail/SKILL.md",
+                "sha256": "1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
     {
       "id": "code-reviewer",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Routes to many other Go skills and a shell script; the full dependency graph is not cleared for preview.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "go-code-review",
@@ -252,13 +324,49 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "code-review",
+          "fit_status": "fits_bounded_task",
+          "fits": "Reviews a change on two separate axes: the project's own rules and the requested behavior.",
+          "limits": "Upstream setup tooling, tracker entries, published comments and parallel agents are not adopted; severity and evidence format stay with the role manual.",
+          "research_round": 3,
+          "source_repository": "https://github.com/mattpocock/skills",
+          "source_commit": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+          "skill_path": "skills/engineering/code-review/SKILL.md",
+          "skill_url": "https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md",
+          "skill_sha256": "47f4e52c21694def9c7c11cbfbf891ca35eac7a93e395797515be3c8a409ae50",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/LICENSE",
+          "license_sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/engineering/code-review/SKILL.md",
+                "url": "https://github.com/mattpocock/skills/blob/c55ee46073ed923f86ce59a5eb3b6d895095d1b7/skills/engineering/code-review/SKILL.md",
+                "sha256": "47f4e52c21694def9c7c11cbfbf891ca35eac7a93e395797515be3c8a409ae50",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Recorded on 2026-10-02 for the adaptation bundled on 2026-09-29, which the ledger had not listed; the entry has no local references."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-09-29."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
     {
       "id": "reality-checker",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Its verdict and build checks do not cover Clawdline's complete Epic journey and gate rules.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "qa-skill",
@@ -292,13 +400,49 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "verification-before-completion",
+          "fit_status": "fits_bounded_task",
+          "fits": "No completion claim without fresh evidence; delegated work is checked by its diff, not its success message.",
+          "limits": "A closing gate, not an evidence-collection method; upstream wording is adversarial and was neutralised.",
+          "research_round": 3,
+          "source_repository": "https://github.com/obra/superpowers",
+          "source_commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+          "skill_path": "skills/verification-before-completion/SKILL.md",
+          "skill_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/verification-before-completion/SKILL.md",
+          "skill_sha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/LICENSE",
+          "license_sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/verification-before-completion/SKILL.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/verification-before-completion/SKILL.md",
+                "sha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
     {
       "id": "security",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "security-review",
@@ -329,6 +473,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Its generic scanner does not encode Cloud identity, public-repo privacy, or local permission rules."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "thinking-red-team",
+          "fit_status": "fits_bounded_task",
+          "fits": "Authorization first, then findings only with a complete exploit path and a re-test; zero findings is valid.",
+          "limits": "Does not cover secret scanning or the project's own privacy guard; probing is limited to local or test environments.",
+          "research_round": 3,
+          "source_repository": "https://github.com/tjboudreaux/cc-thinking-skills",
+          "source_commit": "7b8fece345dfaa11773be7152ccd194589cb5437",
+          "skill_path": "skills/thinking-red-team/SKILL.md",
+          "skill_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-red-team/SKILL.md",
+          "skill_sha256": "f1654bd34e07b37059ac9ab099b635722a45ead513bdc70a0c4c6ef15f9e8908",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/LICENSE",
+          "license_sha256": "41f47abf7be896c870173738e108e902b49497807a2c8b040c8144bf7128f01c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/thinking-red-team/SKILL.md",
+                "url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-red-team/SKILL.md",
+                "sha256": "f1654bd34e07b37059ac9ab099b635722a45ead513bdc70a0c4c6ef15f9e8908",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -422,7 +602,7 @@
     {
       "id": "content-writer",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Product claims and connector assumptions require independent verification.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "draft-content",
@@ -449,6 +629,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Product claims and connector assumptions require independent verification."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "humanizer",
+          "fit_status": "fits_bounded_task",
+          "fits": "Final edit of public prose: removes machine-writing tells without adding facts.",
+          "limits": "English-centred word lists, dash and quote rules do not carry to other languages; the pattern list draws on a CC BY-SA Wikipedia page, so the adaptation restates it in its own words.",
+          "research_round": 3,
+          "source_repository": "https://github.com/blader/humanizer",
+          "source_commit": "225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8",
+          "skill_path": "SKILL.md",
+          "skill_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+          "skill_sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/LICENSE",
+          "license_sha256": "4ac4810254ab36d45419141aeb8e69bf50652cfafe5b2dab947d06d44e5cbf96",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "SKILL.md",
+                "url": "https://github.com/blader/humanizer/blob/225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8/SKILL.md",
+                "sha256": "0612f1dfb1672b0ea9b97e139bf1f06cabe98d8b27424fe8ff01e1fb4cc99cad",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -770,7 +986,7 @@
     {
       "id": "sprint-prioritizer",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Capacity must come from actual Board and team data; connector assumptions remain open.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "sprint-planning",
@@ -802,13 +1018,49 @@
             "status": "unverified",
             "evidence": null
           }
+        },
+        {
+          "name": "thinking-opportunity-cost",
+          "fit_status": "fits_bounded_task",
+          "fits": "Compares each commitment with its best alternative, including doing nothing, and decides on the difference.",
+          "limits": "One decision at a time, not a whole-backlog method; estimates must cite their source and the decision stays with the plan owner.",
+          "research_round": 3,
+          "source_repository": "https://github.com/tjboudreaux/cc-thinking-skills",
+          "source_commit": "7b8fece345dfaa11773be7152ccd194589cb5437",
+          "skill_path": "skills/thinking-opportunity-cost/SKILL.md",
+          "skill_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-opportunity-cost/SKILL.md",
+          "skill_sha256": "d6a83af92038d1430919370738a05efba329f70d49724d0702ac3e6e90c1c841",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/LICENSE",
+          "license_sha256": "41f47abf7be896c870173738e108e902b49497807a2c8b040c8144bf7128f01c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/thinking-opportunity-cost/SKILL.md",
+                "url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-opportunity-cost/SKILL.md",
+                "sha256": "d6a83af92038d1430919370738a05efba329f70d49724d0702ac3e6e90c1c841",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
         }
       ]
     },
     {
       "id": "feedback-synthesizer",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Must preserve sample size and contrary evidence; connector assumptions remain open.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "synthesize-research",
@@ -835,6 +1087,96 @@
           "preview": {
             "status": "blocked",
             "reason": "Must preserve sample size and contrary evidence; connector assumptions remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "discovery-research-synthesis",
+          "fit_status": "fits_bounded_task",
+          "fits": "Tag, cluster, name, implication, decision; thin patterns stay tentative and gaps are named.",
+          "limits": "Its suggestion to validate with participants becomes a proposal needing authorization; numeric rules of thumb are the author's, not measurements.",
+          "research_round": 3,
+          "source_repository": "https://github.com/rampstackco/claude-skills",
+          "source_commit": "3d4510a94a76ead80122c691b5c480f92f3fbe40",
+          "skill_path": "skills/discovery-research-synthesis/SKILL.md",
+          "skill_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/SKILL.md",
+          "skill_sha256": "9b8117216f510e167d3183860f2c3b8ef0d023c0819164e8e66def9dde150c2b",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/LICENSE",
+          "license_sha256": "7957f4b291988f21be7cb75637d2efb6edd0369a95d3814cac7ef931f7f10b7c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/discovery-research-synthesis/SKILL.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/SKILL.md",
+                "sha256": "9b8117216f510e167d3183860f2c3b8ef0d023c0819164e8e66def9dde150c2b",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/common-discovery-synthesis-failures.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/common-discovery-synthesis-failures.md",
+                "sha256": "443841c8b757f103e49f0887d95bcef7b1bee464378597bdab093d2f2a1204ee",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/from-pattern-to-product-implication.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/from-pattern-to-product-implication.md",
+                "sha256": "8e05d4063b81e291eaab9ce3cba0a6c74a359077d9c93850566fe1e5725ffc33",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/pattern-naming-patterns.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/pattern-naming-patterns.md",
+                "sha256": "ab31eef4afba854689fbb008f143c344361ffd2dd9e6967ce40dcf85936603a4",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/research-types-and-when-each-fits.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/research-types-and-when-each-fits.md",
+                "sha256": "0b3e9604fb84564be464329e1bc285b43d00af126809930aed30f8bf851b5afe",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/synthesis-review-and-validation.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/synthesis-review-and-validation.md",
+                "sha256": "f894a570aacf1bc7c6ff1a45e68d7336cfd73cbc1a5b7278fb8d916ab1c5522c",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/synthesis-sequence-walkthrough.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/synthesis-sequence-walkthrough.md",
+                "sha256": "c53392053544ccc01c0a155f3df4721cba522a0f680a657315d4822f66b68979",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/tagging-and-clustering-discipline.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/tagging-and-clustering-discipline.md",
+                "sha256": "9fdab28572262cb0fbcb05d1a88da6e7e7c05465a1907caaa540577346019f8b",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/when-to-gather-more-data.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/when-to-gather-more-data.md",
+                "sha256": "927f38ef709106541394198cbb32f0f081737b292a80ad34be12d3d4b7e3f0be",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/discovery-research-synthesis/references/writing-for-decisions-not-decks.md",
+                "url": "https://github.com/rampstackco/claude-skills/blob/3d4510a94a76ead80122c691b5c480f92f3fbe40/skills/discovery-research-synthesis/references/writing-for-decisions-not-decks.md",
+                "sha256": "66512c8e9d7ca6cc8ed55f24754afd462a798a6fe28509138a494a88a80f1ecc",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 9 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -933,7 +1275,7 @@
     {
       "id": "test-automation",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Bundled helper code and Cloud relay coverage are not cleared for preview.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "webapp-testing",
@@ -960,6 +1302,48 @@
           "preview": {
             "status": "blocked",
             "reason": "Bundled helper code and Cloud relay coverage are not cleared for preview."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "test-driven-development",
+          "fit_status": "fits_bounded_task",
+          "fits": "Each test names the break it catches, uses independently derived expectations, and is seen failing first.",
+          "limits": "Upstream's rule to delete code written before its test does not fit adding tests to existing code; the adaptation asks for a temporary revert instead.",
+          "research_round": 3,
+          "source_repository": "https://github.com/obra/superpowers",
+          "source_commit": "8ca22dba9a94f28898bbce59f2537ff4d87c747d",
+          "skill_path": "skills/test-driven-development/SKILL.md",
+          "skill_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/test-driven-development/SKILL.md",
+          "skill_sha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/LICENSE",
+          "license_sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/test-driven-development/SKILL.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/test-driven-development/SKILL.md",
+                "sha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
+                "review": "read_only_content_reviewed"
+              },
+              {
+                "path": "skills/test-driven-development/writing-good-tests.md",
+                "url": "https://github.com/obra/superpowers/blob/8ca22dba9a94f28898bbce59f2537ff4d87c747d/skills/test-driven-development/writing-good-tests.md",
+                "sha256": "51471c853306ff92ca8bb41dcaea05f31c0e46b03651f8f3c99754b7172f4ae1",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 1 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -1032,7 +1416,7 @@
     {
       "id": "performance",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Do not stress production; its k6 and Lighthouse examples need a local workload and reference review.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "performance-testing",
@@ -1059,6 +1443,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Do not stress production; its k6 and Lighthouse examples need a local workload and reference review."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "thinking-theory-of-constraints",
+          "fit_status": "fits_bounded_task",
+          "fits": "Measure a baseline, find the one binding stage, exploit before elevating, and remeasure.",
+          "limits": "A method, not a profiler; the adaptation adds the same-machine baseline and forbids load on production without authorization.",
+          "research_round": 3,
+          "source_repository": "https://github.com/tjboudreaux/cc-thinking-skills",
+          "source_commit": "7b8fece345dfaa11773be7152ccd194589cb5437",
+          "skill_path": "skills/thinking-theory-of-constraints/SKILL.md",
+          "skill_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-theory-of-constraints/SKILL.md",
+          "skill_sha256": "0a5c64afacbd2112b227cdd788497ed7c19fcfb35f74efce1adb4a18d893f7da",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/LICENSE",
+          "license_sha256": "41f47abf7be896c870173738e108e902b49497807a2c8b040c8144bf7128f01c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/thinking-theory-of-constraints/SKILL.md",
+                "url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-theory-of-constraints/SKILL.md",
+                "sha256": "0a5c64afacbd2112b227cdd788497ed7c19fcfb35f74efce1adb4a18d893f7da",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -1110,7 +1530,7 @@
     {
       "id": "evidence-collector",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "The large QA workflow assumes external tooling and does not by itself create Clawdline's exact claim-evidence package.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "testing",
@@ -1142,6 +1562,42 @@
           "preview": {
             "status": "blocked",
             "reason": "The large QA workflow assumes external tooling and does not by itself create Clawdline's exact claim-evidence package."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "thinking-map-territory",
+          "fit_status": "fits_bounded_task",
+          "fits": "Records each claim with its source and freshness against a direct observation and the resulting delta.",
+          "limits": "Settles claim-versus-behaviour only; capturing screenshots or logs remains the role's own method.",
+          "research_round": 3,
+          "source_repository": "https://github.com/tjboudreaux/cc-thinking-skills",
+          "source_commit": "7b8fece345dfaa11773be7152ccd194589cb5437",
+          "skill_path": "skills/thinking-map-territory/SKILL.md",
+          "skill_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-map-territory/SKILL.md",
+          "skill_sha256": "49692f7757be7a869d774dc95c6183fb42aa3d3be2a46080d8fa360fcb34cf49",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/LICENSE",
+          "license_sha256": "41f47abf7be896c870173738e108e902b49497807a2c8b040c8144bf7128f01c",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/thinking-map-territory/SKILL.md",
+                "url": "https://github.com/tjboudreaux/cc-thinking-skills/blob/7b8fece345dfaa11773be7152ccd194589cb5437/skills/thinking-map-territory/SKILL.md",
+                "sha256": "49692f7757be7a869d774dc95c6183fb42aa3d3be2a46080d8fa360fcb34cf49",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
@@ -1708,7 +2164,7 @@
     {
       "id": "support",
       "conclusion": "bounded_task_candidate",
-      "zero_preview_reason": "Must use current product facts and never send a response without authorization; connector assumptions remain open.",
+      "zero_preview_reason": null,
       "candidates": [
         {
           "name": "ticket-triage",
@@ -1735,6 +2191,42 @@
           "preview": {
             "status": "blocked",
             "reason": "Must use current product facts and never send a response without authorization; connector assumptions remain open."
+          },
+          "adoption": {
+            "status": "unverified",
+            "evidence": null
+          }
+        },
+        {
+          "name": "bug-from-user",
+          "fit_status": "fits_bounded_task",
+          "fits": "Turns a user's description into trigger, expected, actual and surface, with follow-up questions instead of guesses.",
+          "limits": "Produces a draft only; sending replies or filing tracker entries needs authorization.",
+          "research_round": 3,
+          "source_repository": "https://github.com/rockscy/solo-skills",
+          "source_commit": "80ec4cfc2ff8aee78243538a2aef999e16509bc3",
+          "skill_path": "skills/bug-from-user/SKILL.md",
+          "skill_url": "https://github.com/rockscy/solo-skills/blob/80ec4cfc2ff8aee78243538a2aef999e16509bc3/skills/bug-from-user/SKILL.md",
+          "skill_sha256": "10eb5b63649ec3e98534d1e9d916ac2c9eb832301b47b0ea93b9e2e394e14b02",
+          "license": "MIT",
+          "license_path": "LICENSE",
+          "license_url": "https://github.com/rockscy/solo-skills/blob/80ec4cfc2ff8aee78243538a2aef999e16509bc3/LICENSE",
+          "license_sha256": "f658ff73cef3269cf4f6b81fa4dcb3b59310dac470153c5c0b98e0b1251362f7",
+          "reference_audit": {
+            "status": "closed_for_manual_preview",
+            "files": [
+              {
+                "path": "skills/bug-from-user/SKILL.md",
+                "url": "https://github.com/rockscy/solo-skills/blob/80ec4cfc2ff8aee78243538a2aef999e16509bc3/skills/bug-from-user/SKILL.md",
+                "sha256": "10eb5b63649ec3e98534d1e9d916ac2c9eb832301b47b0ea93b9e2e394e14b02",
+                "review": "read_only_content_reviewed"
+              }
+            ],
+            "outcome": "Read-only review on 2026-10-02 of the entry and its 0 local reference(s); links inside fenced examples are not references. No script, hook or network step was adopted."
+          },
+          "preview": {
+            "status": "eligible_for_manual_preview",
+            "reason": "Reviewed for a portable bundled adaptation on 2026-10-02."
           },
           "adoption": {
             "status": "unverified",
