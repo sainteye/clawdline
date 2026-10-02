@@ -68,7 +68,8 @@ var menuCarets = runeSet("❯›▸▶")
 // menuBoxes are what a dialog's wall is drawn with, so `│ ❯ 1. Yes │` is a row.
 var menuBoxes = runeSet("│┃|▌▏╎┆┊")
 
-var horizontalRules = runeSet("─━═╌╍┄┅┈┉")
+// `▔` is the top edge Claude Code's /model picker draws over its title.
+var horizontalRules = runeSet("─━═╌╍┄┅┈┉▔")
 var boxJoints = runeSet("╭╮╰╯┌┐└┘├┤┬┴┼╞╡╪┏┓┗┛")
 
 // scrollArrows sit in the pointer's cell when a list runs past the window.
@@ -254,6 +255,7 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 		if detail != "" {
 			detail = withoutSidePanel(detail)
 		}
+		label, detail = secondColumn(label, detail)
 		options = append(options, MenuOption{
 			Number: row.number, Label: label, Detail: detail,
 			Selected: selected, Checked: checked,
@@ -267,7 +269,7 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 	// is printed below a dialog until it is answered.
 	if lastOptionLine >= 0 {
 		for _, c := range tail[lastOptionLine+1:] {
-			if isTurnMarker(c.element) {
+			if isTurnMarker(c.element) && !isPickerControl(c.element) {
 				return Menu{}, false
 			}
 		}
@@ -287,6 +289,38 @@ func readMenu(screen string, assistant Assistant, tailLines int, gate bool) (Men
 		menu.Submit = &MenuSubmit{Label: submit.label, Selected: submit.selected}
 	}
 	return menu, true
+}
+
+// isPickerControl is a line a picker draws under its rows to be adjusted
+// sideways: /model's "◐ Medium effort (default) ←/→ to adjust". Its half-moon
+// is also the spinner's, but a turn being written never offers ←/→.
+func isPickerControl(raw string) bool {
+	return strings.Contains(raw, "←/→")
+}
+
+// secondColumn splits a row drawn as a table — /model's
+// `1.  Default (recommended)  Opus 5.5 · Best for everyday, complex tasks` —
+// at its first run of two or more spaces: the words to the right are the row's
+// description, ahead of any drawn under it.
+func secondColumn(label, detail string) (string, string) {
+	i := strings.Index(label, "  ")
+	if i <= 0 {
+		return label, detail
+	}
+	right := trimSpaces(label[i:])
+	if right == "" {
+		return label, detail
+	}
+	if detail != "" {
+		right += " " + detail
+	}
+	return trimSpaces(label[:i]), right
+}
+
+// isOverflowNote is the line a list that runs past its window draws under
+// its last visible row, "… +9 models". It belongs to no row.
+func isOverflowNote(raw string) bool {
+	return strings.HasPrefix(dialogText(raw), "… +")
 }
 
 // askedAbove is whether what stands between a dialog's frame and its first row
@@ -720,7 +754,7 @@ func detailUnder(optionIndex int, lines []string, submitLine int) string {
 			break
 		}
 		raw := lines[index]
-		if _, ok := menuRow(raw); ok || isBoxRule(raw) || hasCaret(raw) {
+		if _, ok := menuRow(raw); ok || isBoxRule(raw) || hasCaret(raw) || isOverflowNote(raw) {
 			break
 		}
 		text := dialogText(raw)
@@ -822,8 +856,10 @@ func menuRow(raw string) (rowReading, bool) {
 	}
 	indented := i > 0
 	caret := false
-	if i < len(chars) && menuCarets[chars[i]] {
-		caret = true
+	// A scroll arrow in the caret's cell is a row with more of the list past
+	// it, not a selection: /model draws `↓ 10. Opus 4.7` at its window's foot.
+	if i < len(chars) && (menuCarets[chars[i]] || (indented && scrollArrows[chars[i]])) {
+		caret = menuCarets[chars[i]]
 		i++
 		for i < len(chars) && chars[i] == ' ' {
 			i++
