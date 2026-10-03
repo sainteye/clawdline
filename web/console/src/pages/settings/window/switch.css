@@ -1,5 +1,5 @@
 /* `Switch` (controls.tsx), wherever it is drawn: the settings window, and the
-   console's Devices page (terminal/TerminalGrant.tsx). It is loaded by the
+   console's settings page. It is loaded by the
    component, not by window.css, so both documents get the one shape; the
    window's `--sw-*` tokens win where they are set, and the fallbacks are the
    same values for the console, which is dark as the window is. */

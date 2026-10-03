@@ -20,6 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/terminal"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -36,10 +37,8 @@ import (
 //     without this a Cloud viewer would be judged as the machine itself.
 //  2. The gate's token, as every route: no token is 401.
 //  3. This machine's own token (`Verdict.Local`), or a paired device that is
-//     still paired and holds a terminal grant. Nothing else — not `send`,
-//     not `remote_write`, not the orchestrator token — reaches a terminal.
-//     Watching needs the grant as typing does; a grant holder types only
-//     while it holds the lease.
+//     still paired and may send. Read-only devices and the orchestrator token
+//     cannot use terminals. Typing still requires the control lease.
 
 // terminalState is what the terminal routes keep on the Server.
 type terminalState struct {
@@ -103,9 +102,8 @@ func (s *Server) terminalStats() (leases, streams int) {
 	return 0, 0
 }
 
-// terminalDiagnostics is what /v1/diagnostics says about terminals: above
-// all, whether the grants file could be read, which is the one reason a
-// granted device is refused that nobody could see from outside.
+// terminalDiagnostics keeps the legacy grants-file reading for older clients.
+// Its status no longer determines whether a paired sender may use terminals.
 func (s *Server) terminalDiagnostics() *contract.TerminalDiagnostics {
 	leases, streams := s.terminalStats()
 	out := &contract.TerminalDiagnostics{GrantsOK: true, Leases: int64(leases), Streams: int64(streams)}
@@ -125,20 +123,13 @@ func (s *Server) terminalDiagnostics() *contract.TerminalDiagnostics {
 
 // terminalAccess is whether p may still see and operate terminals. It is asked
 // when a lease or a stream begins, before every frame and beat, and whenever
-// the devices or the grants change.
+// the paired devices or Cloud roster change.
 func (s *Server) terminalAccess(p terminals.Principal) error {
 	g := s.gate()
 	if p.Cloud {
 		line := s.cloudTerminalLine()
 		if line == nil || !line.TerminalViewerAllowed(p.Device) {
 			return terminal.Refuse(terminal.CodeForbidden, "this Cloud device may no longer use terminals")
-		}
-		if g.grants == nil {
-			return terminal.Refuse(terminal.CodeForbidden, "the terminal grants could not be read")
-		}
-		granted, err := g.grants.Granted(p.Device)
-		if err != nil || !granted {
-			return terminal.Refuse(terminal.CodeForbidden, "this Cloud device has no readable terminal grant")
 		}
 		return nil
 	}
@@ -152,17 +143,9 @@ func (s *Server) terminalAccess(p terminals.Principal) error {
 	if p.Local && d.Local {
 		return nil
 	}
-	if g.grants == nil {
-		return terminal.Refuse(terminal.CodeForbidden, "the terminal grants could not be read")
-	}
-	granted, err := g.grants.Granted(p.Device)
-	if err != nil {
+	if !d.Caps.Has(auth.Send) {
 		return terminal.Refuse(terminal.CodeForbidden,
-			"the terminal grants could not be read, so no paired device may use a terminal")
-	}
-	if !granted {
-		return terminal.Refuse(terminal.CodeForbidden,
-			"this device has not been given access to this machine's terminals")
+			"this paired device may read but not send commands or use terminals")
 	}
 	return nil
 }
@@ -180,15 +163,15 @@ func (s *Server) CloudTerminalProject(ctx context.Context, id string) (string, b
 	return s.terminalProjectDir(ctx, id)
 }
 
-// CloudDropTerminalGrant runs only after a local Cloud pin revoke. It removes
-// the grant so re-pairing the same device requires a new local decision.
+// CloudDropTerminalGrant clears a legacy record after a pin revoke. The pin
+// itself is the authority, so an unreadable legacy file cannot block revoke.
 func (s *Server) CloudDropTerminalGrant(device string) error {
 	g := s.gate()
 	if g.grants == nil {
-		return errors.New("terminal grants are unavailable")
+		return nil
 	}
-	_, err := g.grants.Set(device, false, time.Now())
-	return err
+	_, _ = g.grants.Set(device, false, time.Now())
+	return nil
 }
 
 // terminalPrincipal is who is asking, or the refusal already written.
@@ -632,9 +615,8 @@ func writeTerminalRefusal(w http.ResponseWriter, err error, viewer *terminalView
 	_ = json.NewEncoder(w).Encode(out)
 }
 
-// terminalGrantRoute is POST /v1/auth/devices/{id}/terminal: this machine's
-// own token gives a paired device a terminal grant, or takes it away. Never
-// through Clawdline Cloud: a grant is a key to a shell.
+// terminalGrantRoute preserves the old local-only record for older clients.
+// This record no longer grants shell access; pairing and send permission do.
 func (g *gate) terminalGrantRoute(w http.ResponseWriter, r *http.Request, device string) {
 	if cloud.ViaCloud(r.Context()) {
 		writeTerminalRefusal(w, terminal.Refuse(terminal.CodeCloudNotSupported,

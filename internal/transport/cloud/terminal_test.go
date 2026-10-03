@@ -165,17 +165,17 @@ func TestTerminalAdmissionNeedsExactPinRosterCapabilityAndFreshRead(t *testing.T
 		settings: adaptercloud.Settings{Enabled: true}, pinned: pinned,
 		roster: adaptercloud.NewRoster(server.URL, "credential", time.Now)}
 	if !l.TerminalViewerAllowed("viewer") {
-		t.Fatal("exact pin and terminal_control were refused")
+		t.Fatal("exact pin and send_prompt were refused")
 	}
 	if l.TerminalViewerAllowed("another-viewer") {
 		t.Fatal("another viewer inherited the authorized viewer connection")
 	}
 	mu.Lock()
-	row.Caps = []string{SendCapability}
+	row.Caps = []string{"read_sessions"}
 	mu.Unlock()
 	l.terminalRosterAt = time.Time{}
 	if l.TerminalViewerAllowed("viewer") {
-		t.Fatal("send_prompt gained terminal access")
+		t.Fatal("read-only viewer gained terminal access")
 	}
 	mu.Lock()
 	row.Caps = []string{TerminalCapability}

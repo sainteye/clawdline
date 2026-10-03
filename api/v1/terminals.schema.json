@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "terminals.schema.json",
   "title": "Ordinary shells a person opens and types into on this machine",
-  "description": "The /v1/terminals routes (plan v3 §5). A terminal is an ordinary login shell on this daemon's own tmux server (internal/adapters/terminal/owned). Seeing one and typing into one are separate: every local HTTP route needs this machine's own token or a paired device that holds a terminal grant (POST /v1/auth/devices/{id}/terminal), and typing, pasting, resizing and closing also need the terminal's one control lease. Clawdline Cloud terminal traffic uses the separate encrypted termi/term/termr wire in docs/cloud-terminal-wire.md; it does not turn a Cloud Router request into a local HTTP terminal request. Those requests still answer `terminal_cloud_not_supported`. Every refusal is a TerminalRefusal whose `error` is a TerminalRefusalCode.",
+  "description": "The /v1/terminals routes (plan v3 §5). A terminal is an ordinary login shell on this daemon's own tmux server (internal/adapters/terminal/owned). Every local HTTP route needs this machine's own token or a paired device with send permission; typing, pasting, resizing and closing also need the terminal's one control lease. Clawdline Cloud terminal traffic uses the separate encrypted termi/term/termr wire in docs/cloud-terminal-wire.md; it does not turn a Cloud Router request into a local HTTP terminal request. Those requests still answer `terminal_cloud_not_supported`. Every refusal is a TerminalRefusal whose `error` is a TerminalRefusalCode.",
   "$defs": {
     "TerminalStatus": {
       "description": "Where a terminal is in its life. `exited` is a shell that ended on its own; `closed` is a terminal somebody closed, or one that is no longer there; `unreachable` is a server that did not answer, which is never a reason to call a terminal closed.",
@@ -264,7 +264,7 @@
       }
     },
     "TerminalGrantRequest": {
-      "description": "POST /v1/auth/devices/{id}/terminal. This machine's own token only, and never through Clawdline Cloud. A grant lets a paired device see terminals and ask for their control lease; pairing, a password sign-in and `remote_write` never give one, and revoking the device removes it.",
+      "description": "Legacy POST /v1/auth/devices/{id}/terminal. This machine's own token only, and never through Clawdline Cloud. The record remains readable for older clients, but terminal access now follows pairing and send permission; this grant does not change access.",
       "type": "object",
       "additionalProperties": false,
       "required": ["grant"],
@@ -288,7 +288,7 @@
       "additionalProperties": false,
       "required": ["grants_ok", "leases", "streams"],
       "properties": {
-        "grants_ok": { "description": "The terminal grants file could be read. When false every paired device is treated as ungranted; nothing else on this machine is affected.", "type": "boolean" },
+        "grants_ok": { "description": "The legacy terminal grants file could be read. It no longer controls terminal access.", "type": "boolean" },
         "grants_error": { "description": "Why the grants file could not be read.", "type": "string" },
         "leases": { "description": "Control leases held now.", "type": "integer" },
         "streams": { "description": "Terminal streams open now, of at most 16.", "type": "integer" }

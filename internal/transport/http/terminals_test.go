@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/terminals"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/terminal"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -33,7 +34,7 @@ func (s *cloudTerminalGrantStub) TerminalViewerAllowed(device string) bool {
 	return s.allowed && device == "cloud-viewer"
 }
 
-func TestCloudPinNeedsLocalGrantAndCloudRouterCannotWriteIt(t *testing.T) {
+func TestCloudPinAndSendPermissionNeedNoLocalGrant(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	stub := &cloudTerminalGrantStub{allowed: true}
 	SetCloudLine(f.dir, stub)
@@ -43,14 +44,8 @@ func TestCloudPinNeedsLocalGrantAndCloudRouterCannotWriteIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Allow(p); err == nil {
-		t.Fatal("a pin without a grant used a terminal")
-	}
-	if rec := f.do(http.MethodPost, "/v1/auth/devices/cloud-viewer/terminal", f.local, `{"grant":true}`); rec.Code != http.StatusOK {
-		t.Fatalf("local grant: %d %s", rec.Code, rec.Body)
-	}
 	if err := svc.Allow(p); err != nil {
-		t.Fatalf("pinned and locally granted viewer: %v", err)
+		t.Fatalf("pinned sender without a separate grant: %v", err)
 	}
 	router := cloud.Router{Handler: f.h, Authorize: cloud.LocalAuthorizer(f.local, f.machine)}
 	if got, err := router.Do(context.Background(), cloudops.LocalRequest{Method: http.MethodPost,
@@ -64,7 +59,7 @@ func TestCloudPinNeedsLocalGrantAndCloudRouterCannotWriteIt(t *testing.T) {
 	}
 }
 
-func TestQueuedTerminalInputRechecksGrantBeforeHostEffect(t *testing.T) {
+func TestQueuedTerminalInputRechecksSendBeforeHostEffect(t *testing.T) {
 	host := newFakeTerms()
 	f := newTermFixture(t, host)
 	term := f.open(f.local)
@@ -93,8 +88,8 @@ func TestQueuedTerminalInputRechecksGrantBeforeHostEffect(t *testing.T) {
 	if svc.Lanes().Stats().Admitted < 2 {
 		t.Fatal("the second input never entered the terminal lane")
 	}
-	if rec := f.do(http.MethodPost, "/v1/auth/devices/"+device+"/terminal", f.local, `{"grant":false}`); rec.Code != http.StatusOK {
-		t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
+	if _, err := f.s.gate().auth.SetCapabilities(device, auth.NewCaps(auth.Read)); err != nil {
+		t.Fatalf("remove send: %v", err)
 	}
 	<-first
 	if got := <-second; !strings.Contains(got, "terminal_forbidden") {
@@ -133,8 +128,8 @@ func TestRevocationDuringInitialCaptureNeverSendsFrame(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("capture did not begin")
 	}
-	if rec := f.do(http.MethodPost, "/v1/auth/devices/"+device+"/terminal", f.local, `{"grant":false}`); rec.Code != http.StatusOK {
-		t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
+	if _, err := f.s.gate().auth.SetCapabilities(device, auth.NewCaps(auth.Read)); err != nil {
+		t.Fatalf("remove send: %v", err)
 	}
 	close(host.frameRelease)
 	a := <-ready
@@ -156,9 +151,8 @@ func TestRevocationDuringInitialCaptureNeverSendsFrame(t *testing.T) {
 	}
 }
 
-// Acceptance 1: a paired device reaches a terminal only with a grant. Every
-// other key — `send`, `remote_write`, having paired at all — is refused.
-func TestADeviceWithoutAGrantIsForbiddenTerminals(t *testing.T) {
+// A paired sender inherits terminal access; pairing alone and remote_write do not.
+func TestAReadOnlyDeviceIsForbiddenTerminals(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	term := f.open(f.local)
 	srv := f.server()
@@ -326,14 +320,14 @@ func TestInputIsTypedOnceInOrderAndNeverGuessed(t *testing.T) {
 	}
 }
 
-// Acceptance 4: a device revoked, or its grant taken away, loses its stream
+// A device revoked, or its send permission removed, loses its stream
 // within a second and cannot type.
 func TestRevokingEndsTheStreamWithinASecond(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	term := f.open(f.local)
 	srv := f.server()
 
-	for _, how := range []string{"revoke the device", "take the grant away"} {
+	for _, how := range []string{"revoke the device", "remove send permission"} {
 		t.Run(how, func(t *testing.T) {
 			id, token := f.device("phone-"+strings.ReplaceAll(how, " ", "-"), true)
 			c, rec := f.control(term.ID, token, "p", "takeover")
@@ -350,7 +344,9 @@ func TestRevokingEndsTheStreamWithinASecond(t *testing.T) {
 					t.Fatalf("revoke: %d %s", rec.Code, rec.Body)
 				}
 			} else {
-				f.grant(id, false)
+				if _, err := f.s.gate().auth.SetCapabilities(id, auth.NewCaps(auth.Read)); err != nil {
+					t.Fatal(err)
+				}
 				want, wantCode = http.StatusForbidden, "terminal_forbidden"
 			}
 			ended, seen := stream.ended(t, time.Second)
@@ -367,12 +363,6 @@ func TestRevokingEndsTheStreamWithinASecond(t *testing.T) {
 				t.Fatal("the lease was not given up")
 			}
 		})
-	}
-	var grants map[string]any
-	data, _ := os.ReadFile(filepath.Join(f.s.gate().files.Dir(), devices.GrantsFile))
-	_ = json.Unmarshal(data, &grants)
-	if len(grants) != 0 {
-		t.Fatalf("grants left behind: %s", data)
 	}
 }
 
@@ -414,9 +404,8 @@ func TestCloudNeverReachesATerminal(t *testing.T) {
 	}
 }
 
-// Acceptance 7: a grants file nobody can read locks paired devices out of
-// terminals, and nothing else; diagnostics says why.
-func TestACorruptGrantsFileFailsClosedForTerminalsOnly(t *testing.T) {
+// Legacy grant corruption is reported but cannot remove a sender's access.
+func TestACorruptGrantsFileDoesNotChangeSendAuthority(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	_, token := f.device("phone", true)
 	if rec := f.do(http.MethodGet, "/v1/terminals", token, ""); rec.Code != http.StatusOK {
@@ -426,8 +415,8 @@ func TestACorruptGrantsFileFailsClosedForTerminalsOnly(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"not":"a grant"`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if rec := f.do(http.MethodGet, "/v1/terminals", token, ""); rec.Code != http.StatusForbidden || termCode(rec) != "terminal_forbidden" {
-		t.Fatalf("a paired device with the file broken: %d %s", rec.Code, rec.Body)
+	if rec := f.do(http.MethodGet, "/v1/terminals", token, ""); rec.Code != http.StatusOK {
+		t.Fatalf("a paired sender with the old file broken: %d %s", rec.Code, rec.Body)
 	}
 	if rec := f.do(http.MethodGet, "/v1/terminals", f.local, ""); rec.Code != http.StatusOK {
 		t.Fatalf("this machine's own token with the file broken: %d %s", rec.Code, rec.Body)

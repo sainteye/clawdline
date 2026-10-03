@@ -873,8 +873,8 @@ test("the keyboard reaches the header, goes into the terminal with Tab, and leav
 })
 
 /** A browser device of this machine's own, as `clawdline open --print` makes one: read-only, no terminal. */
-async function pairedDevice(): Promise<{ id: string; token: string }> {
-  const made = await api("/v1/auth/devices/browser", { method: "POST", body: JSON.stringify({ send: false }) })
+async function pairedDevice(send = false): Promise<{ id: string; token: string }> {
+  const made = await api("/v1/auth/devices/browser", { method: "POST", body: JSON.stringify({ send }) })
   return { id: made.id, token: made.token }
 }
 
@@ -888,13 +888,13 @@ async function deviceTab(device: { token: string }, phone = false): Promise<Tab>
 
 const grantOf = async (id: string) => (await api("/v1/auth/devices")).devices.find((d: { id: string }) => d.id === id)?.terminal === true
 
-test("Session terminal mode gives an ungranted device a reason and no open action", { skip }, async () => {
+test("Session terminal mode gives a read-only device a reason and no open action", { skip }, async () => {
   const device = await pairedDevice()
   const tab = await deviceTab(device, true)
   await tab.go("#page=sessions&mode=terminal")
   await tab.run(`new Promise((ok, fail) => {
     const end = setTimeout(() => fail(new Error("device refusal did not appear: " + document.body.innerText.slice(0, 500))), 6000)
-    const look = () => document.body.innerText.includes("這個裝置沒有使用這台機器終端的權限") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
+    const look = () => document.body.innerText.includes("唯讀裝置不能使用終端") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
     look()
   })`)
   assert.equal(await tab.run(`document.querySelector(".session-terminal-head button") === null`), true)
@@ -902,7 +902,7 @@ test("Session terminal mode gives an ungranted device a reason and no open actio
   await tab.press("#start-terminal-tab")
   await tab.run(`new Promise((ok, fail) => {
     const end = setTimeout(() => fail(new Error("start refusal did not appear")), 6000)
-    const look = () => document.querySelector("#start-say")?.textContent?.includes("沒有使用") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
+    const look = () => document.querySelector("#start-say")?.textContent?.includes("唯讀裝置不能使用終端") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50)
     look()
   })`)
   assert.equal(await tab.run(`document.querySelectorAll("#start-list .place").length`), 0)
@@ -923,59 +923,29 @@ test("hosted Session terminal entries explain their local-only limit", { skip: s
   await tab.shot("session-terminal-hosted")
 })
 
-test("a paired device's card asks by name before it gives a terminal, and takes it back at once", { skip }, async () => {
-  const device = await pairedDevice()
+test("device cards derive terminal access from send without a separate switch", { skip }, async () => {
+  const reader = await pairedDevice()
+  const sender = await pairedDevice(true)
   const tab = await Tab.open(browser)
   await tab.go("#page=devices")
-  const CARD = `[data-device="${device.id}"]`
-  const BOX = `document.querySelector(${JSON.stringify(CARD + " .terminal-grant input[type=checkbox]")})`
+  const card = (id: string) => `[data-device="${id}"]`
   await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("no 終端 switch on the device card")), 8000)
-    const look = () => ${BOX} && !${BOX}.disabled ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    const t = setTimeout(() => fail(new Error("device cards missing")), 8000)
+    const look = () => document.querySelector(${JSON.stringify(card(reader.id))}) && document.querySelector(${JSON.stringify(card(sender.id))})
+      ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  assert.equal(await tab.run(`${BOX}.checked`), false)
-  const caps = () => tab.run(`document.querySelector(${JSON.stringify(CARD + " .device-facts span")}).textContent`)
-  assert.equal(await caps(), "只能讀")
-  assert.match(await tab.run(`document.querySelector(${JSON.stringify(CARD + " .terminal-grant-help")}).textContent`), /不會給這個權限/)
-  await tab.run(`${BOX}.scrollIntoView({ block: "center" })`)
-  await tab.run(`${BOX}.click()`)
-  await tab.until("turning it on asks first", () => true)
-  const ask = await tab.run(`document.querySelector(${JSON.stringify(CARD + " .terminal-grant-ask p")})?.textContent ?? ""`)
-  assert.ok(ask.includes(device.id), "the confirmation names the device by its id, as two devices can share a name: " + ask)
-  assert.match(ask, /遠端寫入更大/, "and says it is more than remote writes")
-  assert.equal(await tab.focused(), "取消", "the focus is on Cancel")
-  await tab.shot("20a-devices-grant-confirm")
-  await tab.press(`${CARD} .terminal-grant-ask .device-start:not(.signed-in-danger)`)
-  await pause(300)
-  assert.equal(await tab.run(`${BOX}.checked`), false, "Cancel left the switch off")
-  assert.equal(await grantOf(device.id), false, "Cancel left the grant off on the machine")
-  await tab.run(`${BOX}.click()`)
-  await tab.until("asked again", () => true)
-  await tab.press(`${CARD} .terminal-grant-ask .signed-in-danger`)
-  await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("the switch did not turn on")), 8000)
-    const look = () => ${BOX}.checked ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
-    look()
-  })`)
-  assert.equal(await grantOf(device.id), true, "the machine holds what the switch says")
-  const shown = await caps()
-  assert.ok(!shown.includes("只能讀"), "no read-only label beside a terminal grant: " + shown)
-  assert.match(shown, /可開 shell/)
-  await tab.shot("20-devices-terminal-grant")
-  await tab.run(`${BOX}.click()`) // off: no question
-  await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("the switch did not turn off")), 8000)
-    const look = () => !${BOX}.checked ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
-    look()
-  })`)
-  assert.equal(await tab.run(`!!document.querySelector(${JSON.stringify(CARD + " .terminal-grant-ask")})`), false, "turning it off did not ask")
-  assert.equal(await grantOf(device.id), false)
-  await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  assert.match(await tab.run(`document.querySelector(${JSON.stringify(card(reader.id) + " .device-facts span")}).textContent`), /只能讀/)
+  assert.match(await tab.run(`document.querySelector(${JSON.stringify(card(sender.id) + " .device-facts span")}).textContent`), /可開 shell/)
+  assert.equal(await tab.run(`document.querySelectorAll(".terminal-grant").length`), 0)
+  assert.equal(await grantOf(sender.id), false, "a sender was not separately granted")
+  await tab.shot("20-devices-default-terminal")
+  await api(`/v1/auth/devices/${reader.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
+  await api(`/v1/auth/devices/${sender.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
   await tab.close()
 })
 
-test("a paired device without a terminal grant is told so, with no button that would fail the same way", { skip }, async () => {
+test("a read-only paired device is told why terminal input is unavailable, with no button that would fail the same way", { skip }, async () => {
   const device = await pairedDevice()
   const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
   opened.add(made.id)
@@ -987,27 +957,26 @@ test("a paired device without a terminal grant is told so, with no button that w
     look()
   })`)
   const said = await tab.run(`document.querySelector("#terminal .terminal-note[role=alert]").textContent`)
-  assert.match(said, /「裝置」頁開啟授權/, "the next step is named: " + said)
+  assert.match(said, /唯讀裝置不能使用終端/, "the send boundary is named: " + said)
   assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-open-new")`), false, "no 開新終端 to press into the same refusal")
   await tab.shot("21-unauthorised-device")
   await tab.run(`location.hash = ${JSON.stringify(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)}`)
-  await tab.until("the terminal itself refuses in words", (s) => /裝置」頁開啟授權/.test(s.status), 10_000)
+  await tab.until("the terminal itself refuses in words", (s) => /唯讀裝置不能使用終端/.test(s.status), 10_000)
   await tab.shot("21b-unauthorised-device-terminal")
   await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
   await tab.close()
 })
 
-test("a device whose grant is taken back while it watches is told, with the way back named", { skip }, async () => {
-  const device = await pairedDevice()
-  await api(`/v1/auth/devices/${device.id}/terminal`, { method: "POST", body: JSON.stringify({ grant: true }) })
+test("a sender whose send permission is removed while it watches is told", { skip }, async () => {
+  const device = await pairedDevice(true)
   const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
   opened.add(made.id)
   const tab = await deviceTab(device)
   await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
   await tab.until("the device sees the screen", (s) => prompted(s), 15_000)
-  await api(`/v1/auth/devices/${device.id}/terminal`, { method: "POST", body: JSON.stringify({ grant: false }) })
+  await api(`/v1/auth/devices/${device.id}/caps`, { method: "POST", body: JSON.stringify({ caps: ["read"] }) })
   const seen = await tab.until("the device is told its access was taken back", (s) => s.ended.includes("收回"), 12_000)
-  assert.match(seen.ended, /「裝置」頁重新開啟/, "the next step is named: " + seen.ended)
+  assert.match(seen.ended, /配對和傳送權限/, "the send boundary is named: " + seen.ended)
   assert.equal(await tab.run(`document.querySelector("#terminal .terminal-view").hasAttribute("data-ended")`), true, "the last frame is drawn as not live")
   await tab.shot("22-revoked-mid-stream")
   await api(`/v1/auth/devices/${device.id}/revoke`, { method: "POST", body: "{}" }).catch(() => {})
