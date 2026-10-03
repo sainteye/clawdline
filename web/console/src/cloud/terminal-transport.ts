@@ -15,6 +15,9 @@ export interface TerminalCloudClient {
   nextSequence(device: string): Promise<number>
   socketSubscriptions: Map<string, number>
   subscriptionHolds: Map<string, number>
+  pendingSubscriptions: Set<string>
+  subscriptionLimit: number
+  _trimSubscriptions(incoming: number, keep: string[]): void
   _outboundMachinePairing(machine: string): Promise<{ masterKey: CryptoKey; keyID: string; senderKey: CryptoKey; senderID: string }>
   _send(frame: unknown): void
   _sendSubscriptionFrame(type: string, channels: string[]): void
@@ -123,10 +126,28 @@ export class TerminalChannelTransport {
       const timer = setTimeout(() => { this.waiting.delete(connection); reject(fail("terminal_subscription_timeout")) }, 5_000)
       this.waiting.set(connection, { resolve, reject, timer })
     })
+    // A synchronous subscribe refusal still runs the cleanup path below.
+    // Observe that waiter's rejection even when we never reach `await`.
+    void confirmation.catch(() => undefined)
+    if (this.client.subscriptionHolds.size + channels.filter((ch) => !this.client.subscriptionHolds.has(ch)).length > this.client.subscriptionLimit) {
+      clearTimeout(this.waiting.get(connection)!.timer)
+      this.waiting.delete(connection)
+      this.listeners.delete(connection)
+      this.keys.delete(connection)
+      throw fail("cloud_read_busy")
+    }
     for (const ch of channels) this.client.subscriptionHolds.set(ch, (this.client.subscriptionHolds.get(ch) ?? 0) + 1)
     try {
+      // Legacy subscribe() validates only its session channel types. The
+      // terminal channels use the same socket capacity and idle eviction,
+      // then send their own typed relay subscription frame.
+      this.client._trimSubscriptions(channels.length, channels)
+      if (this.client.socketSubscriptions.size + channels.length > this.client.subscriptionLimit) throw fail("cloud_read_busy")
       this.client._sendSubscriptionFrame("subscribe", channels)
-      for (const ch of channels) this.client.socketSubscriptions.set(ch, Date.now())
+      for (const ch of channels) {
+        this.client.pendingSubscriptions.add(ch)
+        this.client.socketSubscriptions.set(ch, Date.now())
+      }
       await confirmation
       this.confirmed.add(connection)
       this.observation?.record("subscription_confirmed", { connection })
@@ -145,6 +166,7 @@ export class TerminalChannelTransport {
       if (n > 0) this.client.subscriptionHolds.set(ch, n)
       else this.client.subscriptionHolds.delete(ch)
       this.client.socketSubscriptions.delete(ch)
+      this.client.pendingSubscriptions.delete(ch)
     }
     if (this.client.ready && !this.client.retired) this.client._sendSubscriptionFrame("unsubscribe", channels)
     this.listeners.delete(connection)

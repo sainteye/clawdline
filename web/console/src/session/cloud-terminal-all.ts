@@ -22,9 +22,9 @@ export async function collectCloudTerminals(
   const rows: CloudTerminalRow[][] = Array.from({ length: machines.length }, () => [])
   const errors: CloudTerminalError[] = []
   let next = 0
-  // A small fixed number of terminal channels keeps an offline machine from
-  // holding up every other one and bounds the browser's encrypted fanout.
-  await Promise.all(Array.from({ length: Math.min(2, machines.length) }, async () => {
+  // Each terminal read holds two relay subscriptions. Read machines in order
+  // so the eight-channel socket does not have to hold two extra pairs at once.
+  await Promise.all(Array.from({ length: Math.min(1, machines.length) }, async () => {
     for (;;) {
       const index = next++
       if (index >= machines.length) return
