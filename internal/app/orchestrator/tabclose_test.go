@@ -131,7 +131,7 @@ func TestTheTabPolicyIsOneTable(t *testing.T) {
 		{"a success lingers", plain, StateSuccess, linger, TabPlan{TabRuleLinger, true, linger}},
 		{"a failure lingers", plain, StateFailure, linger, TabPlan{TabRuleLinger, true, linger}},
 		{"a timeout is left open", plain, StateTimeout, linger, TabPlan{TabRuleUnfinished, false, 0}},
-		{"a cancel is left open", plain, StateCancelled, linger, TabPlan{TabRuleUnfinished, false, 0}},
+		{"a cancel is closed at once", plain, StateCancelled, linger, TabPlan{TabRuleCancelled, true, 0}},
 		{"a negative linger keeps it", plain, StateSuccess, -1, TabPlan{TabRuleLingerOff, false, 0}},
 		{"a child that never started is closed", plain, StateSpawnFailed, -1, TabPlan{TabRuleSpawnFailed, true, 0}},
 		{"on_success after a success", sched("on_success"), StateSuccess, linger, TabPlan{TabRuleScheduleOnSuccess, true, 0}},
@@ -140,6 +140,7 @@ func TestTheTabPolicyIsOneTable(t *testing.T) {
 		{"always after a timeout", sched("always"), StateTimeout, linger, TabPlan{TabRuleScheduleAlways, true, 0}},
 		{"always after a failure", sched("always"), StateFailure, -1, TabPlan{TabRuleScheduleAlways, true, 0}},
 		{"never after a success", sched("never"), StateSuccess, linger, TabPlan{TabRuleScheduleNever, false, 0}},
+		{"a cancel closes even a never", sched("never"), StateCancelled, linger, TabPlan{TabRuleCancelled, true, 0}},
 	}
 	for _, c := range cases {
 		if got := tabPolicy(c.r, c.end, c.linger); got != c.want {

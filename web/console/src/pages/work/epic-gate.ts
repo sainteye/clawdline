@@ -18,7 +18,12 @@ export interface EpicGate {
 }
 
 export const EPIC_GATE_HINT = "本輪已啟用規劃 gate：Epic 要先寫計劃書、經 Child Session review，才能開始實作"
-export const FEATURE_GATE_HINT = "本輪已啟用規劃 gate，且這個 Feature 需要獨立審查：要先寫計劃書、經 Child Session review，才能開始實作"
+export const FEATURE_GATE_HINT = "本輪已啟用規劃 gate，且這個項目需要獨立審查：要先寫計劃書、經 Child Session review，才能開始實作"
+
+/** A Refactor follows a Feature's rules: the same phases, gate and review switch. */
+export function featureLike(item: Pick<WorkV2Item, "kind">): boolean {
+  return item.kind === "feature" || item.kind === "refactor"
+}
 
 export function isEpic(item: Pick<WorkV2Item, "kind">): boolean {
   return item.kind === "epic"
@@ -39,11 +44,12 @@ const BEFORE_IMPLEMENTING = new Set<WorkV2Item["phase"]>(["created", "assigning"
 
 /**
  * Whether a plan and its independent review stand between this item and
- * implementing, when planning is on: always for an Epic, for a Feature only
- * when the person checked "Needs independent review", never for anything else.
+ * implementing, when planning is on: always for an Epic, for a Feature or
+ * Refactor only when the person checked "Needs independent review", never for
+ * anything else.
  */
 export function planReviewRequired(item: Pick<WorkV2Item, "kind" | "review_required">): boolean {
-  return isEpic(item) || (item.kind === "feature" && item.review_required === true)
+  return isEpic(item) || (featureLike(item) && item.review_required === true)
 }
 
 /** Show the checklist only after an item that needs plan review has captured an enabled planning gate. */

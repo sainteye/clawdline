@@ -22,6 +22,7 @@ import (
 	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -243,7 +244,9 @@ func verifyWorkV2Candidate(ctx context.Context, g *gitadapter.Git, item app.Work
 	if req == nil || strings.TrimSpace(req.Worktree) == "" || strings.TrimSpace(req.Branch) == "" ||
 		strings.TrimSpace(req.Commit) == "" {
 		return nil, &app.WorkError{Status: http.StatusUnprocessableEntity, Code: "verification_candidate_required",
-			Message: "Entering verification requires this Session's worktree, branch, and exact HEAD commit."}
+			Message: "Entering verification requires this Session's worktree, branch, and exact HEAD commit, and the " +
+				"request carried none. Run `clawdline item phase " + item.Item.ID + " verifying` from the owning " +
+				"Session's worktree: it sends all three itself."}
 	}
 	i := item.Item
 	if i.CycleBaseCommit == "" {
@@ -317,7 +320,7 @@ func verifyWorkV2Candidate(ctx context.Context, g *gitadapter.Git, item app.Work
 	active := workV2ActiveOwner(item)
 	if active.ID == "" || active.SessionID != sessionID {
 		return nil, &app.WorkError{Status: http.StatusConflict, Code: "not_item_owner",
-			Message: "Only the active owning assignment may register a verification candidate."}
+			Message: app.NotItemOwnerMessage("register a verification candidate for", i.ID)}
 	}
 	return &contract.WorkGateCandidateReceipt{Repository: filepath.Clean(i.ProjectPath), Worktree: filepath.Clean(worktree),
 		Branch: branch, Commit: commit, Tree: tree, AssignmentID: active.ID, OwnerSessionID: sessionID,
@@ -361,7 +364,7 @@ func workV2StepsInstruction(id string) string {
 func workV2EpicInstruction(id string) string {
 	return "This is an Epic: before any code, (1) plan it carefully and write the plan onto the item with " +
 		"`clawdline item doc " + id + " --role plan --title \"Plan\" --body-file <file>`; (2) dispatch a read-only child " +
-		"to review the plan critically with `clawdline dispatch --kind plan_review --work-id " + id + " --claims \"\"`; " +
+		"to review the plan critically with `clawdline dispatch --kind plan_review --work-id " + id + " --title \"Review the plan\" --claims \"\"`; " +
 		"(3) record its review with `clawdline item doc " + id + " --role plan_review --title \"Plan review\" " +
 		"--reference <task id> --body-file <file>` — what it found and what the plan changed — and if it found real " +
 		"problems, revise the plan (a new plan document) and have that reviewed again, at most twice in all; (4) break the work into steps with " +
@@ -379,7 +382,7 @@ func workV2EpicInstruction(id string) string {
 		"affected scenarios; repeat the comprehensive round only when the acceptance scope or integration boundary materially " +
 		"changes, and record why. Do not repeatedly send a verifier into the same blocker. During planning, decide whether " +
 		"the Epic changes a human-facing interface, user journey, or product policy. If it does, before merging dispatch an independent " +
-		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect`; " +
+		"read-only UX/product reviewer with `clawdline dispatch --kind review --work-id " + id + " --title \"UX review\" --claims \"\" --persona ux-architect`; " +
 		"brief it to inspect the integrated desktop and mobile experience, accessibility, workflow, and product fit, require evidence for " +
 		"each finding and tell it to mark unverified and say why when evidence is unavailable, then resolve every blocking finding. If the " +
 		"Epic has no such impact, record why in the plan instead of adding review ceremony. This specialist review complements rather than " +
@@ -433,14 +436,19 @@ func workV2ParentNote(parent work.ItemV2) string {
 
 func workV2FeatureInstruction(item work.ItemV2) string {
 	id := item.ID
+	// A Refactor follows a Feature's planning rules; only the noun differs.
+	noun := "Feature"
+	if item.Kind == work.KindRefactor {
+		noun = "Refactor"
+	}
 	if !item.ReviewRequired {
-		return "This Feature's captured planning gate is on, and the person has not checked Needs independent review. " +
+		return "This " + noun + "'s captured planning gate is on, and the person has not checked Needs independent review. " +
 			"Concise acceptance criteria and focused tests suffice; move to implementing without writing a plan for review " +
 			"and do not dispatch a plan_review child. Do not record a risk assessment: whether a Feature is reviewed is the " +
 			"person's switch, read when the item asks to enter implementing. If the person checks it before then, the phase " +
 			"route asks for a plan and its review."
 	}
-	return "This Feature's captured planning gate is on, and the person checked Needs independent review. " +
+	return "This " + noun + "'s captured planning gate is on, and the person checked Needs independent review. " +
 		"Write a plan with `clawdline item doc " + id + " --role plan --title \"Plan\"`, have an independent `plan_review` " +
 		"child review it, and record the review before moving to implementing. " +
 		"After revising a reviewed plan, record an `other` document titled `Review boundary assessment` with " +
@@ -452,10 +460,10 @@ func workV2KindSteps(item work.ItemV2) string {
 	if item.Kind == work.KindEpic && item.PlanningGate {
 		return workV2EpicInstruction(item.ID)
 	}
-	if item.Kind == work.KindFeature && item.PlanningGate {
+	if item.Kind.FeatureLike() && item.PlanningGate {
 		return workV2FeatureInstruction(item) + " " + workV2StepsInstruction(item.ID)
 	}
-	if (item.Kind == work.KindEpic || item.Kind == work.KindFeature) && item.HasGateSnapshot() && !item.PlanningGate {
+	if (item.Kind == work.KindEpic || item.Kind.FeatureLike()) && item.HasGateSnapshot() && !item.PlanningGate {
 		return "This cycle captured planning_gate off, so no planning document or independent review is forced before implementing. " +
 			workV2StepsInstruction(item.ID)
 	}
@@ -510,6 +518,61 @@ func workV2TakeoverNote(phase work.Phase) string {
 	return fmt.Sprintf("Another Session owned it before and no longer does; the item is in phase %s, and its steps, "+
 		"documents and history are kept. Read them, and look for work the previous Session left in this Project "+
 		"(its branch or worktree) before starting over, then continue from where it stopped.", phase)
+}
+
+// workV2HandoffInput is what the Board adds to the handoff pack when an
+// in-flight item (implementing through deploying) is taken over by a new
+// Session; nil otherwise. It is read from the store and the previous owner's
+// transcript file only: the previous owner is never asked and never waited
+// on, so an owner stopped by its quota or gone altogether changes nothing
+// but what the pack can say about its last message.
+func (s *Server) workV2HandoffInput(ctx context.Context, item app.WorkV2View, previous work.AssignmentV2) *orchestrator.HandoffInput {
+	switch item.Item.Phase {
+	case work.PhaseImplementing, work.PhaseVerifying, work.PhaseMerging, work.PhaseDeploying:
+	default:
+		return nil
+	}
+	if previous.ID == "" {
+		return nil
+	}
+	in := &orchestrator.HandoffInput{ItemID: item.Item.ID, Title: item.Item.Title, Phase: string(item.Item.Phase),
+		PreviousSession: previous.SessionID}
+	for _, step := range item.Steps {
+		if !step.Done {
+			in.OpenSteps = append(in.OpenSteps, step.Title)
+		}
+	}
+	in.LastMessage, in.LastMessageUnread = s.lastAssistantMessage(ctx, previous)
+	return in
+}
+
+// lastAssistantMessage is the previous owner's last assistant message, or why
+// it could not be read.
+func (s *Server) lastAssistantMessage(ctx context.Context, previous work.AssignmentV2) (string, string) {
+	if previous.TerminalID == "" {
+		return "", "the assignment names no terminal"
+	}
+	sess, err := s.actions().Find(ctx, previous.TerminalID)
+	if err != nil {
+		return "", "its terminal " + previous.TerminalID + " is gone: " + err.Error()
+	}
+	if sess.ConversationID != previous.SessionID {
+		return "", "its terminal " + previous.TerminalID + " now holds another conversation"
+	}
+	page, err := s.sessionTail(sess)
+	if err != nil {
+		return "", "its transcript could not be read: " + err.Error()
+	}
+	last := ""
+	for _, entry := range page.Entries {
+		if entry.Kind == transcript.KindAssistant && strings.TrimSpace(entry.Text) != "" {
+			last = strings.TrimSpace(entry.Text)
+		}
+	}
+	if last == "" {
+		return "", "its transcript tail holds no assistant message"
+	}
+	return last, ""
 }
 
 // workV2ReleasedNotice is what the Session an item was moved away from is
@@ -916,7 +979,7 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	var answer []byte
-	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: body.ExpectedVersion,
+	changed, err := s.workV2().Finish(r.Context(), id, app.FinishWorkV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 		SessionID: body.SessionID, Verification: body.Verification, Landing: landing,
 		NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
@@ -1497,6 +1560,17 @@ func readWorkV2BodyAtMost(w http.ResponseWriter, r *http.Request, into any, limi
 		writeRefusal(w, http.StatusBadRequest, "invalid_request", message)
 		return nil, false
 	}
+	// Every version the store issues is positive. A negative one is refused
+	// here, so no body can name app.AnyVersion and skip the comparison an
+	// omitted version on an Agent route deliberately skips.
+	var version struct {
+		ExpectedVersion *int64 `json:"expected_version"`
+	}
+	if json.Unmarshal(raw, &version) == nil && version.ExpectedVersion != nil && *version.ExpectedVersion < 0 {
+		writeRefusal(w, http.StatusBadRequest, "invalid_request",
+			"The body is not a valid work-system request: expected_version is a positive version, or omitted on an Agent route.")
+		return nil, false
+	}
 	return raw, true
 }
 
@@ -1738,8 +1812,12 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		v := work.Condition(*body.Condition)
 		condition = &v
 	}
+	expected := body.ExpectedVersion
+	if !person {
+		expected = app.AgentExpectedVersion(expected)
+	}
 	var answer []byte
-	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: body.ExpectedVersion,
+	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: expected,
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		Condition: condition, UserAction: body.UserAction, DecisionID: body.DecisionID, ReviewRequired: body.ReviewRequired, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
@@ -2153,7 +2231,8 @@ func (s *Server) assignWorkV2Via(ctx context.Context, id, actor, epicOwner strin
 		Label: item.Item.Title, Assignment: orchestrator.Assignment{Objective: item.Item.Title,
 			Scope: scope, Constraints: workV2RootConstraints(item.Item.ID, item.Item.Kind),
 			RelevantReferences: references,
-			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem)}})
+			Acceptance:         workV2RootAssignmentAcceptanceForItem(briefItem)},
+		Handoff: s.workV2HandoffInput(ctx, item, previous)})
 	// Its first screen was a question only the person may answer: the
 	// assignment stays pending and the item asks them to answer it, and the
 	// broker's beat finishes it either way (settleAwaitedAssignments).
@@ -2738,7 +2817,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}
 		}
 		var answer []byte
-		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: body.ExpectedVersion,
+		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 			SessionID: body.SessionID, Next: work.Phase(body.Next), Verification: body.Verification,
 			Landing: landing, NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 			NoDeploymentReason: body.NoDeploymentReason,
@@ -2788,11 +2867,11 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		var err error
 		if parts[2] == "documents" {
-			_, err = s.workV2().AddDocument(r.Context(), parts[1], app.AddDocumentV2{ExpectedVersion: body.ExpectedVersion,
+			_, err = s.workV2().AddDocument(r.Context(), parts[1], app.AddDocumentV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 				SessionID: body.SessionID, Role: body.Role, Title: body.Title, Body: body.Body,
 				Reference: body.Reference, Position: body.Position}, file)
 		} else {
-			_, err = s.workV2().AddStep(r.Context(), parts[1], app.AddStepV2{ExpectedVersion: body.ExpectedVersion,
+			_, err = s.workV2().AddStep(r.Context(), parts[1], app.AddStepV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 				SessionID: body.SessionID, Title: body.Title, Position: body.Position}, file)
 		}
 		if err != nil {
@@ -2821,7 +2900,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		itemOf := s.workV2ItemProjector(r.Context())
 		var answer []byte
-		_, err := s.workV2().CompleteStep(r.Context(), parts[1], parts[3], body.SessionID, body.ExpectedVersion,
+		_, err := s.workV2().CompleteStep(r.Context(), parts[1], parts[3], body.SessionID, app.AgentExpectedVersion(body.ExpectedVersion),
 			func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 				answer = workV2Answer(itemOf(v))
 				return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -3286,7 +3365,7 @@ func (s *Server) agentClaimItem(w http.ResponseWriter, r *http.Request, id strin
 	}
 	itemOf := s.workV2ItemProjector(r.Context())
 	var answer []byte
-	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: body.ExpectedVersion,
+	_, err = s.workV2().ClaimFromSession(r.Context(), id, app.ClaimWorkV2{Run: *run, ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
 		SessionID: sess.ConversationID, TerminalID: sess.ID, Assistant: string(sess.Assistant)},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(itemOf(v))
@@ -3368,7 +3447,7 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 		}
 	}
 	created, err := s.workV2().CreateEpicChild(r.Context(), app.NewEpicChildV2{EpicID: epicID,
-		ExpectedVersion: body.ExpectedVersion, SessionID: body.SessionID, Kind: work.Kind(body.Kind), Title: body.Title,
+		ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion), SessionID: body.SessionID, Kind: work.Kind(body.Kind), Title: body.Title,
 		Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy), Steps: body.Steps})
 	if err != nil {
@@ -3445,11 +3524,12 @@ func (s *Server) agentAssignEpicChild(w http.ResponseWriter, r *http.Request, id
 		return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
 	}
 	var err error
+	expected := app.AgentExpectedVersion(body.ExpectedVersion)
 	if body.Via != nil {
-		err = s.agentAssignOnRun(r.Context(), id, body.SessionID, body.Via.Run, body.ExpectedVersion,
+		err = s.agentAssignOnRun(r.Context(), id, body.SessionID, body.Via.Run, expected,
 			body.workV2EpicAssignRequest, file)
 	} else {
-		_, err = s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, body.ExpectedVersion,
+		_, err = s.assignWorkV2By(r.Context(), id, work.EpicOwnerActor(body.SessionID), body.SessionID, expected,
 			body.Mode, body.TerminalID, body.Assistant, body.Model, body.Persona, file)
 	}
 	if err != nil {

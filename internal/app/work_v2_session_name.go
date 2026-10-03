@@ -30,7 +30,8 @@ func (w *WorkSystemV2) NameOwnedSession(ctx context.Context, itemID, sessionID, 
 		if item.OwnerSession != sessionID || assignment.SessionID != sessionID || assignment.Mode != "new_session" ||
 			assignment.RootAssignment == "" || assignment.TerminalID == "" || assignment.State != "active" {
 			return workV2Error(http.StatusConflict, "not_item_owner",
-				"Only the item's active new Session may name itself.")
+				"Only the item's active new Session may name itself, and this request came from another Session. "+
+					"See the item's owner with `clawdline item show "+itemID+"`.")
 		}
 		_, err = tx.UpdateOpened(store.TableRootAssignments, assignment.RootAssignment, func(opened store.Opened) (*store.Opened, []store.Event, error) {
 			if err := json.Unmarshal(opened.Record, &named); err != nil {

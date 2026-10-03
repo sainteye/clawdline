@@ -144,6 +144,17 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	if r.State == StateTimeout && len(r.Lease()) > 0 {
 		line += "; claims released, its tab may still be writing"
 	}
+	// A cancel names who decided it and why: the verdict is that sentence,
+	// and its tab was closed by the cancellation itself.
+	if r.State == StateCancelled {
+		if r.Verdict != "" {
+			line += " (" + r.Verdict + ")"
+		}
+		line += "; its tab was stopped"
+		if len(r.Lease()) > 0 {
+			line += " and its claims released"
+		}
+	}
 	if r.Stalled() {
 		line += "; it stalled before signing — respawn it or dispatch again"
 	}
@@ -206,6 +217,11 @@ func landingLine(r Record) string {
 	branch, path := "", ""
 	if r.Worktree != nil {
 		branch, path = r.Worktree.Branch, r.Worktree.Path
+	}
+	if r.State == StateCancelled && r.Landing.Settlement == SettlementCarried {
+		// What a cancelled child committed is not thrown away: the branch
+		// stays, and the note counts what is on it (cancelledBranchNote).
+		return r.Landing.Note + "; merge what you want of it, or " + LandCommand(r.ID, LandingAbandoned)
 	}
 	switch r.Landing.Settlement {
 	case SettlementEmpty:
@@ -287,7 +303,7 @@ func (b *Broker) NoticeWire(ctx context.Context, r Record) (string, error) {
 		NoticeID:  r.Notice.ID,
 		Outstand:  outstanding,
 		Leftovers: len(leftoversOf(r)),
-		Released:  r.State == StateTimeout && len(r.Lease()) > 0,
+		Released:  (r.State == StateTimeout || r.State == StateCancelled) && len(r.Lease()) > 0,
 		Body:      b.FinishedLine(r, r.Notice.ID),
 	})
 }

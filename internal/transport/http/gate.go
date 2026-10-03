@@ -294,7 +294,7 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 					"The device store could not be read, so nothing behind the gate is answered.")
 				return
 			}
-			writeAuthRefusal(w, http.StatusUnauthorized, "unauthorized", "This needs a paired device.")
+			writeAuthRefusal(w, http.StatusUnauthorized, "unauthorized", unauthorizedMessage)
 			return
 		}
 		// Reads are exempt from what follows: they are already gated by the
@@ -824,6 +824,14 @@ func cleanPath(p string) string {
 	}
 	return c
 }
+
+// unauthorizedMessage is the 401 every gate answers: no credential, or one
+// this daemon does not hold. A script on this machine reads the token file
+// the CLI reads (cmd/clawdline/broker.go machineToken); another device pairs.
+const unauthorizedMessage = "No valid credential came with this request: the X-Clawdline-Orchestrator token is " +
+	"missing or is not this daemon's, or the device is not paired. A script on this machine sends the contents of " +
+	"the orchestrator-token file in Clawdline's directory, as every clawdline command does; a token from another " +
+	"directory or an older install is refused. See which directory and port the CLI uses: `clawdline doctor`."
 
 // writeAuthRefusal sends the Swift app's error envelope, which is what its
 // page reads: `{"error":{"code","message","request_id"}}`.

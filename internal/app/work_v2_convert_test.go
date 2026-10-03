@@ -51,7 +51,7 @@ func TestAPlanConvertsOnceIntoExecutableWork(t *testing.T) {
 func TestAPlanOnlyConvertsIntoAnExecutableKind(t *testing.T) {
 	w := newWorkV2Test(t)
 	plan := createWorkV2Test(t, w, work.KindPlan)
-	for _, kind := range []work.Kind{work.KindPlan, work.KindRefactor, work.Kind("unknown")} {
+	for _, kind := range []work.Kind{work.KindPlan, work.Kind("unknown")} {
 		if _, err := w.ConvertKind(context.Background(), plan.Item.ID, ConvertKindV2{
 			ExpectedVersion: plan.Item.Version, Kind: kind, Actor: "local",
 		}, nil); err == nil || !strings.Contains(err.Error(), "conversion_kind_not_executable") {
@@ -61,7 +61,7 @@ func TestAPlanOnlyConvertsIntoAnExecutableKind(t *testing.T) {
 }
 
 func TestAnEpicOrFeatureCanBecomeAPlanBeforeImplementation(t *testing.T) {
-	for _, kind := range []work.Kind{work.KindEpic, work.KindFeature} {
+	for _, kind := range []work.Kind{work.KindEpic, work.KindFeature, work.KindRefactor} {
 		t.Run(string(kind), func(t *testing.T) {
 			w := newWorkV2Test(t)
 			created := createWorkV2Test(t, w, kind)

@@ -24,11 +24,23 @@ func (b *Broker) tendHandoffBoards(ctx context.Context, rd reading) int {
 	transferred := 0
 	for _, row := range rows {
 		h, err := decodeHandoff(row)
-		if err != nil || h.BoardTransferredAt != 0 || h.Opened == nil || len(h.BoardItems) == 0 {
+		if err != nil || h.Opened == nil {
 			continue
 		}
 		receiver, found := rd.session(h.Opened.TerminalID)
 		if !found || !receiver.IsAssistant() || receiver.ConversationID == "" || !receiver.Activity.Known() {
+			continue
+		}
+		if len(h.BoardItems) == 0 || h.BoardTransferredAt != 0 {
+			// A milestone handoff with no Board items still names its
+			// receiver, so the ledger can join the two Sessions.
+			if h.Milestone && h.Receiver == "" && receiver.ConversationID != h.FromSession {
+				if _, err := b.updateHandoff(ctx, h.ID, "handoff.receiver_bound", func(x *Handoff) {
+					x.Receiver = receiver.ConversationID
+				}); err != nil {
+					log.Printf("broker: record the receiver of handoff %s: %v", h.ID, err)
+				}
+			}
 			continue
 		}
 		if err := b.transferHandoffBoard(ctx, h, receiver.ConversationID); err != nil {
@@ -104,11 +116,12 @@ func (b *Broker) transferHandoffBoard(ctx context.Context, h Handoff, receiver s
 				payload, _ := json.Marshal(map[string]string{"handoff_id": current.ID,
 					"from_session": current.FromSession, "to_session": receiver,
 					"assignment_id": nextAssignment.ID})
-				if err := tx.PutItem(item, next, "assignment.handed_off", "handoff:"+current.ID, string(payload)); err != nil {
+				if err := tx.HandOverItem(item, next, "assignment.handed_off", "handoff:"+current.ID, string(payload)); err != nil {
 					return nil, nil, err
 				}
 			}
 			current.BoardTransferredAt = now.Unix()
+			current.Receiver = receiver
 			body, err := json.Marshal(current)
 			if err != nil {
 				return nil, nil, err

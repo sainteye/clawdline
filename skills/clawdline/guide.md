@@ -36,7 +36,7 @@ differences are where people fall:
    is refused with `401 unauthorized`.
 5. **Things the Swift app had and this daemon does not:** durable-report promotion (answers
    `501 durable_report_promotion_unsupported`), coordinator succession (answers
-   `501 succession_unavailable`), a cancel route for tasks, and the brief fields `serialize`
+   `501 succession_unavailable`), and the brief fields `serialize`
    and `attach_session` (each refused by name as `bad_task`). `reasoning_effort` is supported:
    `high` or `xhigh`, on a `codex` task only.
 
@@ -56,8 +56,9 @@ item to `done`, and it names the part to print for anything rarer.
 
 **Use the commands, not hand-built curl, where one exists.** They read the credential inside their
 own process, so it never appears in a command line, in `ps`, in their output or in your
-transcript. A hand-built curl without that credential answers `401 unauthorized` ("This needs a
-paired device."): it is the credential that is missing, not a permission. Run the command instead.
+transcript. A hand-built curl without that credential answers `401 unauthorized` ("No valid
+credential came with this request …"): it is the credential that is missing, not a permission. Run
+the command instead.
 
 | Command | What it does |
 |---|---|
@@ -65,7 +66,7 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
-| `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
 | `clawdline heavy -- <command…>` | Runs a build or test suite in the machine's one compile slot (§11) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
@@ -73,17 +74,21 @@ paired device."): it is the credential that is missing, not a permission. Run th
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
 | `clawdline assistants` | What each assistant's account has left |
 | `clawdline landings` | Every landing still owed on this machine; `--work-id <item id>`: every landing recorded for one Board item |
+| `clawdline leases [--json]` | Who holds the compile slot and each landing lease, and who waits behind them |
+| `clawdline sessions [--json]` | The Sessions a send, a wait or a handoff can name, with their state and task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | What a session, child task or Board item spent, by category; yours by default |
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
-| `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read (§5) |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one failed, 5 one was cancelled and none failed, 3 timed out, 4 a task could not be read; 4 over 3 over 1 over 5 (§5) |
+| `clawdline task cancel <task id> --reason "…"` | Stops a child you dispatched by mistake: its tab is closed, its writes and slot are released, a branch with commits is kept for you (§5) |
 | `clawdline task ack <task id> <notice id>` | Closes a completion notice by hand; rarely needed, since `task show` and `task wait` close it (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
 
 The orchestration commands above (not `webhook fire`) print the daemon's JSON on success; on a refusal they print
-`refused, <status> <code>: <message>` and exit 1. Cloud commands use their own human-readable
+`refused, <status> <code>: <message>`, then each scalar the refusal carries as `key: value`, one per
+line, and its remediation last, and exit 1. Cloud commands use their own human-readable
 success and error output. `--port` overrides the port.
 
 `clawdline usage` is the token ledger (`docs/token-ledger.md` in the repository): what each token was
@@ -174,8 +179,8 @@ person separately asked for that change.
 | Device token | `<state dir>/local-token`, or a paired device's | `Authorization: Bearer` | The console's routes (`/v1/sessions/…`). A session does not need it |
 
 The orchestrator token sent as `Bearer` is compared with devices and refused. A wrong or missing
-one gets `401 unauthorized` "This needs a paired device." — the wording is about devices, the
-cause is the token.
+one gets `401 unauthorized`, which says so: the token is missing or is not this daemon's, or the
+device is not paired. `clawdline doctor` prints the directory and port the CLI reads.
 
 **When you must use curl**, keep the token out of the command line:
 
@@ -263,10 +268,23 @@ This is everything an ordinary Feature Root — a Session that owns one Board it
 Every step is a command: the commands carry the credential, and a hand-built curl to the same route
 is refused. Anything rarer is one `clawdline guide <part>` away; the pointers are at the end.
 
-**1. Read the item.** `clawdline item steps <item id>` prints its kind, phase, acceptance criteria,
+**1. Read the item.** `clawdline item show <item id>` prints its kind, phase, acceptance criteria,
 captured gates, the acceptance version (`acceptance vN`), for a Feature the person's Needs
-independent review switch, and its steps. That is
-the record you work from.
+independent review switch, its steps, and every document with its body. That is
+the record you work from. `clawdline item show <item id> --doc <doc id>` prints one document's
+body alone, to pipe into a file; `clawdline item steps <item id>` is the same record without the bodies. Every item
+write prints `wrote …; item <id> is at version N` and the item's row; read the steps and documents
+again with `item show`. Writes act on the item's current version unless you pass
+`--expected-version`.
+
+If your ASSIGNMENT.md has a **HANDOFF** heading, you are taking over an item another Session left
+mid-flight (reassigned after implementing began, before done). Read the pack it names
+first, before planning. The daemon built it from its own records and git, without asking the
+previous owner: the tasks bound to the item and their results, commits not yet landed, each
+worktree's uncommitted changes saved as a patch with its sha256 and the `git apply` command that
+restores it on its base, the previous owner's last message (or why it could not be read), and the
+phase and open steps. The patches live beside ASSIGNMENT.md and outlast the worktrees. Continue
+from there; do not start over.
 
 **2. Name your Session**, if it was opened for this item:
 `clawdline item name <item id> "<task name>"`, once, after reading the objective and scope. It renames the Session, not the item.
@@ -362,7 +380,7 @@ it.
 **Rarer work, one part each:** `clawdline guide board` — proposals, decisions, to-dos, reopening a
 done item, waiting on the person, gates and every phase refusal; `clawdline guide epic` — plans,
 plan review, an Epic's child items, personas; `clawdline guide landing` — landing by hand,
-handoffs, Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.
+handoffs (a long Root's milestone handoff too), Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.
 
 ## 3. Before you dispatch: read what is already there
 
@@ -412,7 +430,8 @@ It makes the id and the secret, reads the inventory for `generation` and `task_r
 `task.json`, posts the task, and on one `stale_inventory` reads the inventory again and resends
 once. It prints `dispatched <id> <state> [worktree <path>]`, then one line per warning — the
 daemon's, and each live task whose writes overlap yours. `--json` prints the daemon's answer
-instead. A refusal is `refused, <status> <code>: <message>` on stderr and exit 1; the table at the
+instead. A refusal is `refused, <status> <code>: <message>` on stderr, then its extras and remediation one
+line each, and exit 1; the table at the
 end of this part says what each code means. The root is your conversation, from
 `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, else `--conversation`; the child's assistant is
 yours unless `--assistant` says otherwise; the project is this directory's git top-level unless
@@ -509,6 +528,10 @@ A tab that fails to open still answers 200, with `task.state: "spawn_failed"`.
 `POST /v1/orchestrator/tasks/<id>/respawn` (orchestrator token) opens a copy with a new secret, at
 most twice per original.
 
+Dispatched the wrong child — the wrong brief, the wrong scope, or the same work twice? Do not wait
+for it to finish or time out while it holds a slot and its writes: `clawdline task cancel <id>
+--reason "…"` stops it now (§5).
+
 **Refusals you will meet**, in the order they are checked:
 
 | Status | Code | What to do |
@@ -587,7 +610,20 @@ You do not call those routes.
   "task_stalled"` instead of `task_finished`. Respawn it (`POST /v1/orchestrator/tasks/<id>/respawn`)
   or dispatch again, then ACK it. A child that is working, showing a menu or has signed is never
   typed at.
-- There is **no cancel route**. A task ends by finishing, failing or timing out.
+- **Cancel a child you dispatched by mistake** — the wrong brief, the wrong scope, a duplicate:
+  `clawdline task cancel <id> --reason "wrong brief"`
+  (`POST /v1/orchestrator/tasks/<id>/cancel`, `{"reason":"…"}`). The reason is required, at most 500
+  bytes. The task ends `cancelled` with the reason as its verdict, its tab is closed, its writes and
+  child slot are released, and you get one notice saying it was cancelled and why. **Commits are not
+  thrown away:** a child that committed keeps its branch and checkout, and its landing stays pending
+  with a note that says how many commits are on it; `task show` and `clawdline landings` show it.
+  Merge what you want of it, or record it with `clawdline task land <id> abandoned`. Only the root
+  Session that dispatched the task, or the person from the console, may cancel it; anyone else is
+  refused `403 not_task_root`, and a Session opened with a role must send its own capability
+  (`session_actor_required`; the command does that for you). A task that has already ended answers
+  `409 task_already_terminal` with its `state`; running the same cancel again answers the same success
+  with `replayed: true`. `clawdline task wait` exits 5 when a task it waited for was cancelled.
+  Otherwise a task ends by finishing, failing or timing out.
 - **A finished child is not landed code.** Its work sits in the shared tree or on its branch until
   you integrate it.
 
@@ -683,6 +719,18 @@ that notice alone does not prove the Board transfer occurred. Refusals: `bad_tas
 empty `handoff.md` included), `sender_not_found`, `sender_ambiguous`, `rate_limited`,
 `terminal_busy`, and `succession_required` if you hold the machine coordinator role — succession is
 not available in this daemon (`501`), so that session cannot hand off.
+
+**Milestone handoff.** A long-running Root that has reached a milestone hands over with
+`clawdline handoff --summary summary.md`, so the work after it does not re-read everything before
+it on every call. The summary has exactly five `## ` headings — Goal, Verified decisions, Blockers,
+Evidence (paths, commits, ids or `clawdline` commands to open, not their contents), Next step — at
+most 6 KiB, with no credential and no conversation text; `--check` lists every problem without
+opening anything, and the daemon refuses the same ones as `bad_milestone_summary`. The daemon
+writes `obligations.md` beside it: your Board items (they move, a decision the person has not
+answered included) and your running children, unacknowledged notices and owed landings (they stay
+yours). So after handing over, keep acknowledging and landing those, then `clawdline session close`
+once it reads `safe`. Handing over is your choice: `clawdline usage --compare-handoff` says whether
+it has paid on this machine, and it is never forced.
 
 **Root assignment.** The `Idempotency-Key` header must equal `request_id`:
 
@@ -923,8 +971,9 @@ echo "Clean up the release notes before the next release." | \
   assigned item (below). An Epic taken this way then follows the Epic procedure (below) before it
   may be implemented. If the person asks you to take an item you created unassigned later, use
   `clawdline item claim` (below).
-  A Refactor or Plan is created unassigned, in Planning, with or without `--assign-self`, and takes
-  no steps (`planning_has_no_steps`).
+  A Refactor is executable work that changes internal structure but not outward behaviour: it is
+  assigned, takes steps and follows a Feature's phases, gate and review switch. A Plan is created
+  unassigned, in Planning, with or without `--assign-self`, and takes no steps (`planning_has_no_steps`).
 - The registered Clawdfather is the exception for executable Project work: it never owns or edits
   Project code. When the person's message explicitly requests a new item, it may use
   `clawdline item add --project <place id> --kind feature --title "…" --assign-new` (or
@@ -973,7 +1022,7 @@ clawdline item claim <item id>
   `session_not_found`, `child_session` (as for `item add`); `work_not_found`; `project_mismatch`
   (the item is in a Project you do not work in); `item_assigned` (it already has a Session, or one
   is being opened for it — only the person moves an item between Sessions); `item_terminal` (done or
-  cancelled); `planning_not_assignable` (a Refactor or Plan stays in Planning; an Epic can be claimed);
+  cancelled); `planning_not_assignable` (a Plan stays in Planning; an Epic or a Refactor can be claimed);
   `version_conflict` (it changed; run the command again); `run_claims_exhausted` (one message backs
   at most five uses).
 - **No run** answers `no_run` or `run_unknown`: leave the item for the person to assign.
@@ -1077,8 +1126,8 @@ person has given this Session, its `recent_items` are items this Session recentl
 `direct_todos` are quick requests, and its `unacknowledged_completions` are children of yours that
 finished without your ACK (§5). This pull is how an assignment made while you were working waits
 without interrupting the current turn. Finish the current turn, then take the assigned item as your
-next owned work and read its complete record with `clawdline item steps <id>` (the route is
-`GET /v1/work/v2/items/<id>`).
+next owned work and read its complete record, document bodies included, with
+`clawdline item show <id>`.
 
 **A to-do the person sent.** A message whose last line reads
 `(Clawdline to-do <id>. When it is done: clawdline todo done <id>)` is one of this Session's
@@ -1167,8 +1216,8 @@ after assignment and before the gated transition. The owning Session may fill an
 once. When the person explicitly tells this owning Root through Clawdline to revise this item's
 acceptance, write the complete replacement Markdown to a file and run
 `clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`.
-The item version is `.item.version` in `GET /v1/work/v2/items/<id>` (`item steps` prints only
-the acceptance version); read the message run from
+The item version is the `item version N` line `clawdline item show <id>` prints (`item steps`
+prints only the acceptance version); read the message run from
 `GET /v1/orchestrator/sessions/<conversation>/run`. The retained message excerpt must explicitly
 request an acceptance change; a prohibition, discussion, or bare question is not authorization.
 It may refer to the item by conversation context if this Root
@@ -1298,9 +1347,10 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 An assigned item may contain `steps`. A successful assignment can seed them from two or more top-level
 Markdown list rows in the description, and an item you created with `clawdline item add` carries
 its `--step` rows. Each step is a checklist entry on that item, not another Board item.
-Complete a verified step with `clawdline item step-done <item id> <step id>`; it reads the version
-and sends `POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` with
-`{"expected_version", "session_id"}`. Run it again after a version conflict. A transition to `done` is refused with `steps_incomplete` while any step remains
+Complete a verified step with `clawdline item step-done <item id> <step id>`; it sends
+`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` with `{"session_id"}`. On the
+Agent routes `expected_version` is optional: omitted, the write acts on the current version; named
+(`--expected-version`), it is compared and a stale one answers `version_conflict`. A transition to `done` is refused with `steps_incomplete` while any step remains
 open; Clawdline never checks one merely because the parent phase advanced.
 
 **Breaking your own item into steps.** When an item you own has no steps and the work is
@@ -1406,6 +1456,20 @@ Idempotency-Key (`--key` retries the same write) and prints the item. The body c
 `--body-file` or stdin. It is `POST /v1/work/v2/agent/items/<id>/documents` with
 `{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`; the roles
 are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and `plan_review`.
+
+To revise a document, write it again with the same `--role` and `--title`: the daemon replaces its
+body, reference and position, keeps its id, raises its version by one and records
+`document.revised`. The CLI says `added … at v1` or `revised … to vN`, and `clawdline item show`
+prints each document's `vN`. Sending the same text again changes nothing and answers the document
+as it is, so a retry is safe. The old text is not kept; use a different title to keep both.
+
+- `plan`, `plan_review` and the review boundary are never revised in place: each write adds a new
+  document, because the planning gate reads them in order and a review names the plan it read.
+- An item holds at most 32 documents, and a `completion_report` is not one of them: it always fits,
+  even on a full item. An item holds one `completion_report`; writing another, under any title,
+  revises it and takes the new title.
+- A 33rd document is refused with `documents_full` and nothing is written; the message names the
+  `clawdline item doc` command that revises an existing document instead.
 
 - `plan` and `plan_review` belong to an Epic or Feature (`document_role_not_applicable` for other kinds).
 - A `plan_review`'s `reference` is the task id of the Clawdline child that reviewed the plan. The

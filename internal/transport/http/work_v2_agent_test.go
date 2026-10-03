@@ -107,7 +107,7 @@ func TestAnEpicsOwnerBriefRequiresApplicableUXProductReview(t *testing.T) {
 		"reassignment":    workV2ReassignmentBrief(id, "Big", work.KindEpic, work.PhaseAssigned),
 	} {
 		for _, want := range []string{"human-facing interface", "product policy", "before merging",
-			"clawdline dispatch --kind review --work-id " + id + " --claims \"\" --persona ux-architect",
+			"clawdline dispatch --kind review --work-id " + id + " --title \"UX review\" --claims \"\" --persona ux-architect",
 			"mark unverified and say why"} {
 			if !strings.Contains(brief, want) {
 				t.Errorf("%s brief lacks %q:\n%s", name, want, brief)

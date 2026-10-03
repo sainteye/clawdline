@@ -33,7 +33,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
    會被 `401 unauthorized` 拒絕。
 5. **Swift app 有、這個 daemon 沒有的東西：** durable report 升級（回
    `501 durable_report_promotion_unsupported`）、coordinator succession（回
-   `501 succession_unavailable`）、task 的取消路由，以及 brief 欄位 `serialize`、
+   `501 succession_unavailable`），以及 brief 欄位 `serialize`、
    `attach_session`（兩個都會被點名拒絕，code 是 `bad_task`）。`reasoning_effort` 有支援：
    `high` 或 `xhigh`，而且只在 `codex` 的 task 上。
 
@@ -52,7 +52,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 
 **有指令可以用，就用指令，不要自己組 curl。** 指令在自己的 process 裡讀憑證，所以憑證不會出現在命令列、
 `ps`、指令輸出，也不會出現在你的 transcript 裡。自己組的 curl 沒帶這份憑證，會回 `401 unauthorized`
-（"This needs a paired device."）：缺的是憑證，不是權限。改用指令。
+（"No valid credential came with this request …"）：缺的是憑證，不是權限。改用指令。
 
 | 指令 | 做什麼 |
 |---|---|
@@ -60,7 +60,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
-| `clawdline item steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
 | `clawdline heavy -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試（§11） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
@@ -68,17 +68,20 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
 | `clawdline assistants` | 每個助理的帳號還剩多少額度 |
 | `clawdline landings` | 這台機器上所有還欠著的 landing；`--work-id <item id>`：一個看板項目所有已記錄的 landing |
+| `clawdline leases [--json]` | 編譯名額與每個 landing lease 目前由誰持有、誰在後面排隊 |
+| `clawdline sessions [--json]` | 傳訊、等待或交接可以指名的 Session，附狀態與 task |
 | `clawdline usage [--session <c> \| --task <id> \| --item <id>]` | 一個 session、child task 或 Board item 花了多少 token，依類別分；預設是你自己 |
 | `clawdline cloud pair [--offer <code>]` | 把一個 Cloud 瀏覽器與這台機器配對 |
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
-| `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個沒成功、3 逾時、4 有 task 讀不到（§5） |
+| `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個失敗、5 有一個被取消且沒有其他失敗、3 逾時、4 有 task 讀不到；優先順序 4、3、1、5（§5） |
+| `clawdline task cancel <task id> --reason "…"` | 停掉派錯的 child：關掉它的分頁、釋放它的寫入範圍與名額，有 commit 的 branch 會留給你（§5） |
 | `clawdline task ack <task id> <notice id>` | 手動關掉一則完成通知；`task show` 與 `task wait` 已經會關，很少需要（§5） |
 | `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 從任何一台機器透過 Cloud webhook 啟動一個排程，並等它的結果；exit code 說明它怎麼結束（「排程」一節）。不需要 daemon |
 
 上面那些 orchestration 指令（`webhook fire` 除外）成功時會印出 daemon 回的 JSON；被拒絕時印出
-`refused, <status> <code>: <message>`，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
+`refused, <status> <code>: <message>`，接著每行一個 refusal 帶的純量 `key: value`，最後是 remediation，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
 `--port` 可以覆寫 port。
 
 `clawdline usage` 讀的是 token 帳本（repository 裡的 `docs/token-ledger.md`）：每個 token 花在什麼上面——
@@ -160,7 +163,7 @@ roster 與本機信任狀態；配對後要唯讀複查，也用這條。
 | Device token | `<state dir>/local-token`，或配對過的裝置自己的 token | `Authorization: Bearer` | console 的路由（`/v1/sessions/…`）。session 用不到 |
 
 把 orchestrator token 當成 `Bearer` 送，它會被拿去跟裝置比對，然後被拒絕。token 錯誤或沒帶時回
-`401 unauthorized`「This needs a paired device.」——字面上講的是裝置，真正的原因是 token。
+`401 unauthorized`，訊息直接說明：token 沒帶或不是這個 daemon 的，或裝置沒配對。`clawdline doctor` 會印出 CLI 讀的目錄與 port。
 
 **非用 curl 不可時**，別讓 token 出現在命令列上：
 
@@ -237,8 +240,17 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 帶著憑證，自己組 curl 打同一條路由會被拒絕。比較少見的工作只差一個 `clawdline guide <part>`；指引在
 最後。
 
-**1. 讀項目。** `clawdline item steps <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
-驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選，以及 steps。你就從這份紀錄開始工作。
+**1. 讀項目。** `clawdline item show <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
+驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選、steps，以及每份文件連同內文。你就從這份紀錄開始工作。
+`clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`clawdline item steps <item id>` 是同一份紀錄但不含內文。
+每個項目寫入都會印出 `wrote …; item <id> is at version N` 和項目那一列；steps 與文件請再用 `item show` 讀。
+寫入一律作用在項目當下的版本，除非你帶 `--expected-version`。
+
+你的指派檔若有 **HANDOFF** 段，代表你在接手別的 Session 做到一半的項目（開始 implementing 之後、
+done 之前改派）。規劃之前先讀它指向的交接包。交接包是 daemon 用自己的紀錄和 git 產生的，
+沒有去問原 owner：項目綁定的 task 與 result、還沒落地的 commit、每個 worktree 未 commit 的改動（存成 patch，
+附 sha256 和在 base 上還原用的 `git apply` 指令）、原 owner 最後一則訊息（讀不到時寫明原因），以及目前
+phase 與還沒完成的 steps。patch 放在指派檔旁邊，worktree 被清掉後仍在。從那裡接著做，不要從頭來。
 
 **2. 替 Session 命名**（如果它是為這個項目開的）：讀完 objective 和 scope 之後執行一次
 `clawdline item name <item id> "<task name>"`。改的是 Session 名稱，不是項目標題。
@@ -369,7 +381,7 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
 一次 `stale_inventory` 會重讀 inventory、再送一次。輸出是 `dispatched <id> <state> [worktree <path>]`，
 接著每個警告一行——daemon 給的，以及每個 writes 和你重疊的 live task。`--json` 改成印 daemon 的原始
-回答。被拒時在 stderr 印 `refused, <status> <code>: <message>` 並以 1 結束；每個 code 的意思見本節最後
+回答。被拒時在 stderr 印 `refused, <status> <code>: <message>`，再逐行印 extras 與 remediation，並以 1 結束；每個 code 的意思見本節最後
 的表。root 是你的對話，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，否則用 `--conversation`；
 child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預設是目前目錄的 git top-level，
 `--project-dir` 可以改。`--claims ""` 表示這個 child 什麼都不寫。daemon 開 worktree 和 child 分頁的期間它什麼都不印；
@@ -451,6 +463,9 @@ body 從 stdin 送（`jq -n … | curl --data-binary @- -H 'Content-Type: applic
 `POST /v1/orchestrator/tasks/<id>/respawn`（orchestrator token）會用新的 secret 開一份副本，每個原始
 task 最多兩次。
 
+派錯了 child——brief 寫錯、範圍錯了，或同一件事派了兩次？不要等它做完或逾時、一路佔著名額與寫入範圍：
+`clawdline task cancel <id> --reason "…"` 會立刻停掉它（§5）。
+
 **你會遇到的拒絕**，照檢查的順序排：
 
 | 狀態 | Code | 怎麼處理 |
@@ -520,7 +535,17 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
   `spawn_failed` 結束，verdict 寫明它 stalled，你收到的通知 `kind` 是 `task_stalled`，不是 `task_finished`。
   respawn 它（`POST /v1/orchestrator/tasks/<id>/respawn`）或重新派一次，然後 ACK。正在工作、正在顯示
   選單、或已經簽收的 child，絕不會被打字。
-- **沒有取消路由**。task 只會以完成、失敗或逾時結束。
+- **取消派錯的 child**——brief 寫錯、範圍錯了、重複派工：
+  `clawdline task cancel <id> --reason "wrong brief"`
+  （`POST /v1/orchestrator/tasks/<id>/cancel`，`{"reason":"…"}`）。reason 必填，最多 500 bytes。
+  task 會以 `cancelled` 結束、reason 成為它的 verdict，分頁會被關掉，寫入範圍與 child 名額會釋放，
+  你會收到一則說明它被取消與原因的通知。**commit 不會被丟掉：**已經 commit 的 child 會保留 branch
+  與 checkout，landing 維持 pending，附註寫明上面有幾個 commit；`task show` 與 `clawdline landings`
+  都看得到。要的部分就 merge，不要就用 `clawdline task land <id> abandoned` 記錄。只有派出這個 task
+  的 root Session，或使用者從 console，才能取消；其他人會被 `403 not_task_root` 拒絕，用角色開的
+  Session 必須送出自己的 capability（`session_actor_required`；指令會替你送）。已經結束的 task 回
+  `409 task_already_terminal` 並附上 `state`；同一個取消再跑一次，會回同樣的成功並帶 `replayed: true`。
+  `clawdline task wait` 等到的 task 被取消時 exit 5。除此之外，task 只會以完成、失敗或逾時結束。
 - **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
   branch 上。
 
@@ -601,6 +626,15 @@ POST /v1/orchestrator/tasks/<id>/landing
 `sender_not_found`、`sender_ambiguous`、`rate_limited`、`terminal_busy`，以及你持有整台機器的
 coordinator 角色時的 `succession_required`——這個 daemon 沒有 succession（`501`），所以那個 session
 沒辦法 handoff。
+
+**里程碑換手。** 長時間運作的 Root 到了里程碑，用 `clawdline handoff --summary summary.md` 換手，之後的
+工作就不必每次呼叫都重讀之前的一切。摘要剛好五個 `## ` 段落——Goal、Verified decisions、Blockers、
+Evidence（要打開的路徑、commit、id 或 `clawdline` 指令，不是內容本身）、Next step——最多 6 KiB，不能有
+憑證或對話正文；`--check` 列出每個問題但不開任何東西，daemon 會以 `bad_milestone_summary` 拒絕同樣的
+問題。daemon 會在旁邊寫 `obligations.md`：你的 Board item（會移交，連同使用者還沒回答的 decision）
+以及你還在跑的 child、未 ACK 的通知、未落地的 landing（留在你這裡）。所以換手後繼續 ACK、落地那些，
+等 `clawdline session close` 顯示 `safe` 再關。換不換手由你決定：`clawdline usage --compare-handoff`
+說明這台機器上換手有沒有省到，從不強制。
 
 **Root 指派。** `Idempotency-Key` header 必須等於 `request_id`：
 
@@ -819,7 +853,8 @@ echo "下次 release 前把 release notes 整理好。" | \
   （`clawdline item steps <item id>`、`clawdline item step-done <item id> <step id>`；做下去發現還少一步，就用
   `clawdline item step-add` 補上），並像任何已指派項目一樣用 `clawdline item phase` 推進 phase（見下文）。
   這樣接下的 Epic，進 implementing 之前要先走完 Epic 流程（見下文）。使用者之後才要你接下你先前建好、
-  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor、Plan 不論有沒有 `--assign-self`，
+  未指派的項目，就用 `clawdline item claim`（見下文）。Refactor 是可執行的工作：改內部結構、不改外部行為，
+  可以指派、帶 steps，phase、gate 與審查開關都和 Feature 相同。Plan 不論有沒有 `--assign-self`，
   都以未指派狀態建在規劃區，不帶 steps（`planning_has_no_steps`）。
 - 已登記的 Clawdfather 是工程項目的例外：它不能擁有或修改 Project 程式碼。使用者的訊息明確要求新項目時，
   可以用 `clawdline item add --project <place id> --kind feature --title "…" --assign-new`（或
@@ -853,7 +888,7 @@ clawdline item claim <item id>
 - 拒絕，每一種都什麼都不寫：`run_unknown`、`run_expired`、`run_other_session`、`session_not_found`、
   `child_session`（同 `item add`）；`work_not_found`；`project_mismatch`（項目在你沒在工作的 Project）；
   `item_assigned`（已經有 Session，或正在為它開一個——只有使用者能把項目從一個 Session 移到另一個）；
-  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Refactor、Plan 留在規劃區；Epic 可以認領）；
+  `item_terminal`（已完成或已取消）；`planning_not_assignable`（Plan 留在規劃區；Epic 和 Refactor 可以認領）；
   `version_conflict`（項目變了，重跑一次指令）；`run_claims_exhausted`（一則訊息最多撐五次認領）。
 - **沒有 run** 會回 `no_run` 或 `run_unknown`：把項目留給使用者指派。
 
@@ -936,7 +971,7 @@ POST /v1/orchestrator/decisions     (Idempotency-Key required)
 `GET /v1/work/v2/agent/session-todos/<conversation id>`。其中的 `assigned_items` 是使用者交給這個
 Session 的看板項目，`recent_items` 是這個 Session 最近完成的項目，`direct_todos` 是快速交辦，`unacknowledged_completions` 是你還沒 ACK 就已經結束的 child（第 5 節）。這條
 pull 路徑讓工作中收到的指派先等著，不會打斷目前的 turn。完成目前的 turn 之後，把 assigned item 當成
-下一件自己負責的工作，並用 `clawdline item steps <id>` 讀取完整內容（路由是 `GET /v1/work/v2/items/<id>`）。
+下一件自己負責的工作，並用 `clawdline item show <id>` 讀取完整內容（含文件內文）。
 
 **使用者送來的待辦。** 訊息最後一行如果是
 `(Clawdline to-do <id>. When it is done: clawdline todo done <id>)`，那就是使用者從 Clawdline
@@ -1009,7 +1044,7 @@ Epic 也跳過強制計劃。兩者皆開會先規劃再獨立驗證；只開規
 驗收條件，負責 Session 在指派後、跨過 gate 前，用 `clawdline item acceptance <item id> --body-file <file>`
 寫入可觀察的 Markdown 條件。若人明確要求修改已寫入的驗收條件，用
 `clawdline item acceptance-revise <id> --run <message run> --expected-version <item version> --body-file <file>`；
-項目版本是 `GET /v1/work/v2/items/<id>` 回應裡的 `.item.version`（`item steps` 只印驗收版本）；訊息的 run 從
+項目版本是 `clawdline item show <id>` 印出的 `item version N` 那一行（`item steps` 只印驗收版本）；訊息的 run 從
 `GET /v1/orchestrator/sessions/<conversation>/run` 讀。只根據該訊息提出的修改內容重寫完整文件。
 負責 Session 只能首次補上空白內容；後續一般修訂由使用者處理，或由 Epic
 owner 依有理由的驗證升級決定修訂。進入 Merge 前改動驗收會使舊 PASS 與覆核失效；進入 Merge 後即鎖定。
@@ -1118,8 +1153,9 @@ POST /v1/work/v2/agent/items/<id>/finish    (Idempotency-Key required)
 
 已指派的項目可能帶有 `steps`。成功指派時，description 裡兩個以上的頂層 Markdown 列點可以自動成為
 steps，用 `clawdline item add` 建立的項目則帶著它的 `--step`；每一列都是父項目清單上的一個 step，不是另一張看板項目。確認完成一列後，用
-`clawdline item step-done <item id> <step id>` 勾掉；它會讀版本，送出
-`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"expected_version", "session_id"}`。版本衝突時再跑一次。
+`clawdline item step-done <item id> <step id>` 勾掉；它送出
+`POST /v1/work/v2/agent/items/<item-id>/steps/<step-id>/complete` 與 `{"session_id"}`。Agent 路由上的
+`expected_version` 可省略：省略時寫入作用在當下的版本；有帶（`--expected-version`）就會比對，過期的版本回 `version_conflict`。
 只要還有任何 step 未完成，`done` 轉換就會以 `steps_incomplete` 拒絕；父項目的 phase 前進不會偷偷把
 step 勾成完成。
 
@@ -1206,6 +1242,18 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
 `POST /v1/work/v2/agent/items/<id>/documents`，body 是
 `{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`；role 有
 `spec`、`design`、`test`、`deploy`、`completion_report`、`other`、`plan`、`plan_review`。
+
+要改版一份文件，就用同樣的 `--role` 和 `--title` 再寫一次：daemon 會取代它的內文、reference 和位置，
+保留同一個 id，版本號加一，並記下 `document.revised`。CLI 會印 `added … at v1` 或
+`revised … to vN`，`clawdline item show` 也會印出每份文件的 `vN`。內容一模一樣再送一次不會改任何東西，
+直接回答現有那份，所以可以放心重試。舊內文不會保留；兩版都要留，就換一個 title。
+
+- `plan`、`plan_review` 和 review boundary 不會原地改版：每寫一次就新增一份，因為 planning gate
+  依順序讀它們，審查紀錄也指向它讀過的那一版 plan。
+- 一個項目最多 32 份文件，`completion_report` 不算在內：就算項目滿了也一定寫得進去。每個項目只有一份
+  `completion_report`；再寫一份（不論 title）就是改版那一份，title 也換成新的。
+- 第 33 份文件會被拒絕（`documents_full`），什麼都不會寫入；訊息會附上一條改版現有文件的
+  `clawdline item doc` 指令。
 
 - `plan` 和 `plan_review` 只用在 Epic 或 Feature（其他種類回 `document_role_not_applicable`）。
 - `plan_review` 的 `reference` 是審查這份計畫的 Clawdline child 的 task id。daemon 只在這些條件都成立

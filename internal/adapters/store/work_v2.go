@@ -627,10 +627,10 @@ func (t *WorkV2Tx) CreateItem(i work.ItemV2, actor, payload string) error {
 	if i.AcceptanceVersion == 0 || i.AcceptanceDigest == "" {
 		work.SetAcceptance(&i, i.AcceptanceCriteria)
 	}
-	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic')`
+	where := `phase NOT IN ('done','cancelled') AND kind IN ('feature','issue','epic','refactor')`
 	limit, full := int64(WorkV2OpenLimit), ErrWorkV2Full
 	if i.Planning() {
-		where, limit, full = `kind IN ('refactor','plan') AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
+		where, limit, full = `kind = 'plan' AND phase NOT IN ('done','cancelled')`, WorkV2PlanningLimit, ErrPlanningV2Full
 	}
 	if n, err := t.count(where); err != nil {
 		return err
@@ -694,7 +694,40 @@ func (t *WorkV2Tx) PristineEquivalentItem(i work.ItemV2) (work.ItemV2, bool, err
 // (work.LeaveDecision): a Session that no longer waits must not leave the
 // person a question in "Waiting on you".
 func (t *WorkV2Tx) PutItem(prev, next work.ItemV2, kind, actor, payload string) error {
-	left := work.LeaveDecision(prev, &next)
+	return t.putItem(prev, next, kind, actor, payload, true)
+}
+
+// HandOverItem is PutItem for a handoff's owner change. When the item waits
+// on the person (work.HandedOverWaiting), its decision goes with it: the link
+// stays, and the open decision is re-addressed to the new owner in the same
+// transaction instead of being withdrawn. Any other change is PutItem's.
+func (t *WorkV2Tx) HandOverItem(prev, next work.ItemV2, kind, actor, payload string) error {
+	if !work.HandedOverWaiting(prev, next) {
+		return t.PutItem(prev, next, kind, actor, payload)
+	}
+	if err := t.putItem(prev, next, kind, actor, payload, false); err != nil {
+		return err
+	}
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE decisions SET session = ?, version = version + 1
+	  WHERE id = ? AND session = ? AND state = 'open'`, next.OwnerSession, prev.DecisionID, prev.OwnerSession)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+	t.wrote++
+	body, _ := json.Marshal(map[string]any{"decision_id": prev.DecisionID, "from_session": prev.OwnerSession,
+		"to_session": next.OwnerSession})
+	return t.AppendEvent(work.EventV2{WorkID: prev.ID, Kind: "decision.handed_off", Actor: actor,
+		PreviousVersion: prev.Version + 1, NextVersion: prev.Version + 1, Payload: string(body), At: next.UpdatedAt})
+}
+
+func (t *WorkV2Tx) putItem(prev, next work.ItemV2, kind, actor, payload string, leave bool) error {
+	left := ""
+	if leave {
+		left = work.LeaveDecision(prev, &next)
+	}
 	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_items SET project_id=?, project_path=?, kind=?, title=?,
 	      description=?, acceptance_criteria=?, acceptance_version=?, acceptance_digest=?, phase=?, condition=?, user_action=?,
 	      decision_id=?, deployment_policy=?, owner_session=?, updated_at=?, closed_at=?, cycle=?, gate_snapshot_cycle=?, gate_snapshot_at=?, planning_gate=?,
@@ -1511,9 +1544,20 @@ func (s *Store) WorkV2Events(ctx context.Context, workID string, after int64, li
 	return out, rows.Err()
 }
 
+// AddDocument inserts a new document. The limit counts every document but the
+// item's one completion_report, which always has its own place: a second one
+// is a revision (ReviseDocument), never a second row.
 func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 	var n int64
-	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_documents WHERE work_id=?`, d.WorkID).Scan(&n); err != nil {
+	if d.Role == work.DocumentCompletionReport {
+		if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_documents WHERE work_id=? AND role=?`,
+			d.WorkID, work.DocumentCompletionReport).Scan(&n); err != nil {
+			return err
+		} else if n >= 1 {
+			return ErrWorkV2DocsFull
+		}
+	} else if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_documents WHERE work_id=? AND role<>?`,
+		d.WorkID, work.DocumentCompletionReport).Scan(&n); err != nil {
 		return err
 	} else if n >= WorkV2DocumentLimit {
 		return ErrWorkV2DocsFull
@@ -1525,6 +1569,52 @@ func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 		t.wrote++
 	}
 	return err
+}
+
+// RevisableDocument is the document a write with this role and title would
+// revise in place: the item's completion_report whatever its title, otherwise
+// the one with the same role and title. The earliest wins when an older store
+// holds duplicates. The caller keeps plan, plan_review and the review
+// boundary away from it (work.DocumentRevisable).
+func (t *WorkV2Tx) RevisableDocument(workID, role, title string) (work.DocumentV2, bool, error) {
+	q, args := `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+    FROM work_v2_documents WHERE work_id=? AND role=? AND title=? ORDER BY created_at,rowid LIMIT 1`,
+		[]any{workID, role, title}
+	if role == work.DocumentCompletionReport {
+		q, args = `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+    FROM work_v2_documents WHERE work_id=? AND role=? ORDER BY created_at,rowid LIMIT 1`, []any{workID, role}
+	}
+	var d work.DocumentV2
+	var created, updated int64
+	err := t.tx.QueryRowContext(t.ctx, q, args...).Scan(&d.ID, &d.WorkID, &d.Role, &d.Title, &d.Body,
+		&d.Reference, &d.Position, &d.Version, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return work.DocumentV2{}, false, nil
+	}
+	if err != nil {
+		return work.DocumentV2{}, false, err
+	}
+	d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+	return d, true, nil
+}
+
+// ReviseDocument replaces one document's title, body, reference and position
+// and stores its new version, keeping its id and creation time. It never
+// counts against the limit: the row is already there.
+func (t *WorkV2Tx) ReviseDocument(d work.DocumentV2) error {
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_documents SET title=?,body=?,reference=?,position=?,
+    version=?,updated_at=? WHERE id=? AND work_id=?`, d.Title, d.Body, d.Reference, d.Position, d.Version,
+		d.UpdatedAt.Unix(), d.ID, d.WorkID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return ErrConflict
+	}
+	t.wrote++
+	return nil
 }
 
 // PlanDocuments includes the review boundary declarations in the same
@@ -2237,10 +2327,11 @@ func (s *Store) WorkV2Proposals(ctx context.Context, state string, limit int) ([
 func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, error) {
 	out := map[string]int64{}
 	queries := map[string]string{
-		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind IN ('refactor','plan') AND closed_at IS NULL`,
-		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
-		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
+		"open":        `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
+		"planning":    `SELECT COUNT(*) FROM work_v2_items WHERE kind = 'plan' AND closed_at IS NULL`,
+		"assignments": `SELECT COUNT(*) FROM work_v2_assignments`,
+		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents
+      WHERE role<>'completion_report' GROUP BY work_id)`,
 		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (
       SELECT COUNT(*) n FROM work_v2_images GROUP BY work_id
       UNION ALL SELECT COUNT(*) n FROM session_direct_todo_images GROUP BY todo_id)`,
@@ -2328,4 +2419,23 @@ func (s *Store) ResetWorkV1(ctx context.Context) (map[string]int64, error) {
 		return wrote, nil
 	})
 	return counts, err
+}
+
+// WorkV2DoneSince is every Feature, Issue and Refactor that reached done at
+// or after since, the newest first, at most limit; more says there were
+// others. Epics and Plans are left out: their work is their children's.
+func (s *Store) WorkV2DoneSince(ctx context.Context, since time.Time, limit int) ([]work.ItemV2, bool, error) {
+	if err := reading(); err != nil {
+		return nil, false, err
+	}
+	if limit <= 0 {
+		return nil, false, fmt.Errorf("work v2 limit is required")
+	}
+	items, err := queryWorkV2(ctx, s.rd, `SELECT `+workV2Columns+` FROM work_v2_items
+	  WHERE phase='done' AND closed_at >= ? AND kind IN ('feature','issue','refactor')
+	  ORDER BY closed_at DESC, id DESC LIMIT ?`, since.Unix(), limit+1)
+	if len(items) > limit {
+		return items[:limit], true, err
+	}
+	return items, false, err
 }

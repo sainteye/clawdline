@@ -100,6 +100,14 @@ func TestTaskWaitExits(t *testing.T) {
 			[]string{"--any", "--timeout", "5s", "a"}, 3, []string{"still running: a"}, 0},
 		{"unknown id", map[string][]string{"a": {"briefed"}},
 			[]string{"a", "nope"}, 4, nil, 0},
+		{"one cancelled", map[string][]string{"a": {"success"}, "b": {"briefed", "cancelled"}},
+			[]string{"a", "b"}, 5, []string{"did a", "did b"}, 2},
+		{"a failure is over a cancel", map[string][]string{"a": {"failure"}, "b": {"cancelled"}},
+			[]string{"a", "b"}, 1, []string{"did a", "did b"}, 2},
+		{"a timeout is over a cancel", map[string][]string{"a": {"cancelled"}, "b": {"briefed"}},
+			[]string{"--timeout", "30s", "a", "b"}, 3, []string{"did a", "still running: b"}, 1},
+		{"any on a cancel", map[string][]string{"a": {"briefed"}, "b": {"cancelled"}},
+			[]string{"--any", "a", "b"}, 5, []string{"did b", "still running: a"}, 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := &fakeTasks{states: c.states}

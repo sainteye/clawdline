@@ -438,6 +438,27 @@ type BrokerBeatPanic struct {
 	Value string `json:"value"`
 }
 
+// POST /v1/orchestrator/tasks/:id/cancel: stop a child its root dispatched by
+// mistake (wrong brief, wrong scope, a duplicate). `reason` is required, at
+// most 500 bytes once its whitespace is collapsed, and becomes the task's
+// verdict. `session_id` is the calling Session's conversation id when it
+// carries no squad capability; a capability, when sent, is what names the
+// caller. The person's own console sends neither. The request carries an
+// `Idempotency-Key` so a resend is answered, not refused.
+type BrokerCancelRequest struct {
+	Reason    string `json:"reason"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// The cancelled task. `replayed` is true when this answers a resend of a cancel
+// that already succeeded under the same Idempotency-Key; nothing was settled
+// again.
+type BrokerCancelResult struct {
+	OK       bool       `json:"ok"`
+	Replayed bool       `json:"replayed,omitempty"`
+	Task     BrokerTask `json:"task"`
+}
+
 type BrokerChild struct {
 	Backend    Backend `json:"backend,omitempty"`
 	TerminalID string  `json:"terminalId"`
@@ -583,24 +604,34 @@ var BrokerGraphNodeStateValues = []BrokerGraphNodeState{BrokerGraphNodeStateRead
 // why it is never typed twice; `receipt` is what the sender was told, once, as
 // a `handoff_receipt` notice.
 type BrokerHandoff struct {
-	Assistant               string `json:"assistant"`
-	CoordinatorPlainHandoff bool   `json:"coordinator_plain_handoff"`
-	Created                 int64  `json:"created"`
-	DeliveredAt             int64  `json:"delivered_at,omitempty"`
+	Assistant string `json:"assistant"`
+
+	// The sender's child tasks obligations.md named: running, unacknowledged or owed a
+	// landing. They stay with the sender.
+	CarriedTasks            []string `json:"carried_tasks,omitempty"`
+	CoordinatorPlainHandoff bool     `json:"coordinator_plain_handoff"`
+	Created                 int64    `json:"created"`
+	DeliveredAt             int64    `json:"delivered_at,omitempty"`
 
 	// The package's directory.
-	Dir             string               `json:"dir"`
-	Failure         string               `json:"failure,omitempty"`
-	FromSession     string               `json:"from_session"`
-	FromTerminal    string               `json:"from_terminal,omitempty"`
-	HandoffID       string               `json:"handoff_id"`
-	Model           string               `json:"model,omitempty"`
-	Opened          *BrokerOpenedSession `json:"opened,omitempty"`
-	ProjectDir      string               `json:"project_dir"`
-	Receipt         string               `json:"receipt,omitempty"`
-	State           BrokerHandoffState   `json:"state"`
-	Title           string               `json:"title,omitempty"`
-	TypeAttemptedAt int64                `json:"type_attempted_at,omitempty"`
+	Dir          string `json:"dir"`
+	Failure      string `json:"failure,omitempty"`
+	FromSession  string `json:"from_session"`
+	FromTerminal string `json:"from_terminal,omitempty"`
+	HandoffID    string `json:"handoff_id"`
+
+	// The package passed the milestone summary check.
+	Milestone  bool                 `json:"milestone,omitempty"`
+	Model      string               `json:"model,omitempty"`
+	Opened     *BrokerOpenedSession `json:"opened,omitempty"`
+	ProjectDir string               `json:"project_dir"`
+	Receipt    string               `json:"receipt,omitempty"`
+
+	// The receiving Session's conversation, once it has one.
+	ReceiverSession string             `json:"receiver_session,omitempty"`
+	State           BrokerHandoffState `json:"state"`
+	Title           string             `json:"title,omitempty"`
+	TypeAttemptedAt int64              `json:"type_attempted_at,omitempty"`
 }
 
 type BrokerHandoffEnvelope struct {
@@ -630,7 +661,13 @@ type BrokerHandoffRequest struct {
 	FromSession string `json:"from_session"`
 
 	// A lowercase UUID the sender chose; a resend with it is the same handoff.
-	HandoffID  string `json:"handoff_id"`
+	HandoffID string `json:"handoff_id"`
+
+	// handoff.md is a milestone summary: sections Goal, Verified decisions, Blockers,
+	// Evidence and Next step, at most 6 KiB, evidence as links, no credential or
+	// conversation text. It is checked before anything opens (`bad_milestone_summary`
+	// lists each problem), and the daemon writes obligations.md beside it.
+	Milestone  bool   `json:"milestone,omitempty"`
 	Model      string `json:"model,omitempty"`
 	ProjectDir string `json:"project_dir"`
 
@@ -1448,10 +1485,12 @@ type BrokerTabEnd struct {
 // Which rule decides one task's child tab. `child_linger` closes a finished
 // unscheduled child `orchestrator_child_linger` after it ends;
 // `child_linger_off` is that setting negative, which keeps every finished child
-// open; `unfinished_left_open` is a timeout or a cancel, whose child may still
-// be working; the three `schedule_…` rules are a scheduled run's `close_tab`;
+// open; `unfinished_left_open` is a timeout, whose child may still be working;
+// the three `schedule_…` rules are a scheduled run's `close_tab`;
 // `spawn_failed` is a child that never started, closed at once whatever else is
-// set.
+// set; `cancelled_closed` is a task its root or the person cancelled, whose
+// child is stopped at once whatever else is set (its commits stay on its
+// branch).
 type BrokerTabRule string
 
 const (
@@ -1462,10 +1501,11 @@ const (
 	BrokerTabRuleScheduleAlways     BrokerTabRule = "schedule_always"
 	BrokerTabRuleScheduleNever      BrokerTabRule = "schedule_never"
 	BrokerTabRuleSpawnFailed        BrokerTabRule = "spawn_failed"
+	BrokerTabRuleCancelledClosed    BrokerTabRule = "cancelled_closed"
 )
 
 // BrokerTabRuleValues is every value the contract allows, in contract order.
-var BrokerTabRuleValues = []BrokerTabRule{BrokerTabRuleChildLinger, BrokerTabRuleChildLingerOff, BrokerTabRuleUnfinishedLeftOpen, BrokerTabRuleScheduleOnSuccess, BrokerTabRuleScheduleAlways, BrokerTabRuleScheduleNever, BrokerTabRuleSpawnFailed}
+var BrokerTabRuleValues = []BrokerTabRule{BrokerTabRuleChildLinger, BrokerTabRuleChildLingerOff, BrokerTabRuleUnfinishedLeftOpen, BrokerTabRuleScheduleOnSuccess, BrokerTabRuleScheduleAlways, BrokerTabRuleScheduleNever, BrokerTabRuleSpawnFailed, BrokerTabRuleCancelledClosed}
 
 // One dispatched piece of work, as the console and a dispatching root read it.
 type BrokerTask struct {
@@ -7032,6 +7072,64 @@ type UsageGap struct {
 	ID      string      `json:"id"`
 	Kind    string      `json:"kind"`
 	Reason  UsageReason `json:"reason"`
+}
+
+// GET /v1/usage/compare-handoff?since=… (docs/token-ledger.md "Did handing
+// over pay"): the Features, Issues and Refactors finished in [`since`, `until`]
+// (Unix seconds), grouped by whether a milestone handoff, an ordinary handoff
+// or no handoff carried them. Each item's bill is its owner Sessions' own cache
+// reads, each Session's shared equally among the finished items it owned in the
+// range. `saving` is 1 - milestone/single median cache reads per item, null
+// until both groups have `min_items`. `verdict` is `insufficient_evidence`,
+// `below_target` (under `target`), `guardrail_failed` (`reasons` says which) or
+// `recommend_default`; anything but the last leaves handing over a Session's
+// own choice. `excluded_unowned` and `excluded_unread` count the items in no
+// group and why; `not_measured` names what was asked about and is recorded
+// nowhere.
+type UsageHandoffComparison struct {
+	// Tasks those handoffs carried that, a day later, were still running or still owed
+	// a landing.
+	CarriedUnsettled int64 `json:"carried_unsettled"`
+
+	// Items no Session's assignment names.
+	ExcludedUnowned int64 `json:"excluded_unowned"`
+
+	// Items an owner Session of which the ledger has not read.
+	ExcludedUnread int64 `json:"excluded_unread"`
+
+	// Of those, the ones whose receiver never opened.
+	FailedHandoffs int64               `json:"failed_handoffs"`
+	Groups         []UsageHandoffGroup `json:"groups"`
+
+	// Milestone handoffs opened in the range.
+	MilestoneHandoffs int64    `json:"milestone_handoffs"`
+	MinItems          int64    `json:"min_items"`
+	NotMeasured       []string `json:"not_measured"`
+	Reasons           []string `json:"reasons"`
+	Saving            *float64 `json:"saving"`
+	Since             int64    `json:"since"`
+	Target            float64  `json:"target"`
+	Truncated         bool     `json:"truncated"`
+	Until             int64    `json:"until"`
+	Verdict           string   `json:"verdict"`
+}
+
+// One group of a handoff comparison. The medians and the reopened share are
+// null when the group has no item; `too_few` says it has fewer than the
+// comparison's `min_items`.
+type UsageHandoffGroup struct {
+	// Median owner-Session cache-read tokens per item.
+	CacheReadPerItem *float64 `json:"cache_read_per_item"`
+	CacheReadTotal   float64  `json:"cache_read_total"`
+	CallsPerItem     *float64 `json:"calls_per_item"`
+
+	// Median hours from the first owner's assignment to done.
+	ElapsedHours  *float64 `json:"elapsed_hours"`
+	Items         int64    `json:"items"`
+	Name          string   `json:"name"`
+	Reopened      int64    `json:"reopened"`
+	ReopenedShare *float64 `json:"reopened_share"`
+	TooFew        bool     `json:"too_few"`
 }
 
 // GET /v1/usage/items/{id}: a Board item's bill — its owner sessions, whole,

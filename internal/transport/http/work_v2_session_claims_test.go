@@ -162,7 +162,7 @@ func TestThePersonsAssignRouteStillRefusesASession(t *testing.T) {
 func TestASessionsClaimIsRefusedByNameAndWritesNothing(t *testing.T) {
 	s, p, project := sessionItemServer(t)
 	item := personItem(t, s, project, "feature", "person-item")
-	refactor := personItem(t, s, project, "refactor", "person-refactor")
+	plan := personItem(t, s, project, "plan", "person-plan")
 	cancelled := personItem(t, s, project, "issue", "person-cancelled")
 	if _, err := s.workV2().Cancel(context.Background(), cancelled.ID, cancelled.Version, "person", "not needed", nil); err != nil {
 		t.Fatal(err)
@@ -197,7 +197,7 @@ func TestASessionsClaimIsRefusedByNameAndWritesNothing(t *testing.T) {
 		{"no live Session", item.ID, claimBody("10000000-0000-4000-8000-000000000999", mine, item.Version),
 			http.StatusNotFound, "session_not_found"},
 		{"another Project", elsewhere.ID, claimBody(me, mine, 1), http.StatusConflict, "project_mismatch"},
-		{"planning kind", refactor.ID, claimBody(me, mine, refactor.Version), http.StatusConflict, "planning_not_assignable"},
+		{"planning kind", plan.ID, claimBody(me, mine, plan.Version), http.StatusConflict, "planning_not_assignable"},
 		{"terminal item", cancelled.ID, claimBody(me, mine, cancelled.Version), http.StatusConflict, "item_terminal"},
 		{"stale version", item.ID, claimBody(me, mine, item.Version+7), http.StatusConflict, "version_conflict"},
 		{"no such item", "20000000-0000-4000-8000-0000000000ff", claimBody(me, mine, 1), http.StatusNotFound, "work_not_found"},
@@ -218,7 +218,7 @@ func TestASessionsClaimIsRefusedByNameAndWritesNothing(t *testing.T) {
 	if rec := claim(s, item.ID, claimBody(me, mine, item.Version), ""); rec.Code == http.StatusOK {
 		t.Fatalf("no key: %d %s", rec.Code, rec.Body)
 	}
-	for _, id := range []string{item.ID, refactor.ID, cancelled.ID} {
+	for _, id := range []string{item.ID, plan.ID, cancelled.ID} {
 		if got := readItem(t, s, id); got.OwnerSession != nil || len(got.Assignments) != 0 {
 			t.Fatalf("a refusal assigned %s: %+v", id, got)
 		}

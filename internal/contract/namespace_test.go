@@ -56,10 +56,13 @@ var sessionFields = map[string]string{
 	"coordination#Wait.ownerSessionId":                   conversation,
 	"coordination#CompletionRow.root_session_id":         conversation,
 
-	"orchestrator#BrokerRoot.session_id":   conversation,
-	"projects#PlaceResumed.session":        conversation,
-	"schedules#ScheduleRequest.session_id": conversation,
-	"sessions#SessionRow.sessionId":        conversation,
+	"orchestrator#BrokerRoot.session_id": conversation,
+	// The calling Session of a task cancel, named only when it carries no
+	// squad capability (orchestrator.CancelTask).
+	"orchestrator#BrokerCancelRequest.session_id": conversation,
+	"projects#PlaceResumed.session":               conversation,
+	"schedules#ScheduleRequest.session_id":        conversation,
+	"sessions#SessionRow.sessionId":               conversation,
 	// The Epic assignment actor records the owner's conversation at dispatch
 	// time, even when the child runs as an independent Root.
 	"sessions#EpicSessionParent.owner_session_id": conversation,
@@ -79,8 +82,9 @@ var sessionFields = map[string]string{
 	"work-gates#WorkGateCandidateReceipt.owner_session_id": conversation,
 	"work-gates#WorkGateDecisionRequest.session_id":        conversation,
 	"work-gates#WorkGateDecisionRequest.target_session_id": conversation,
-	// W6: a handoff's sender, resolved like a dispatch's root.
+	// W6: a handoff's sender, resolved like a dispatch's root, and its receiver.
 	"handover#BrokerHandoff.from_session":        conversation,
+	"handover#BrokerHandoff.receiver_session":    conversation,
 	"handover#BrokerHandoffRequest.from_session": conversation,
 
 	// The known exceptions. Each one holds a terminal id, or either, under a

@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -330,8 +331,10 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	}
 	if settled {
 		if prev.State != next.State {
-			return Record{}, refuse(http.StatusConflict, "invalid_transition",
-				"A settled obligation cannot move to another state; open a new task.")
+			return Record{}, refuse(http.StatusConflict, "invalid_transition", fmt.Sprintf(
+				"This landing is already settled as %s, and a settled landing does not move to another state; "+
+					"the record stands. To correct its commit or note, resend the same state: "+
+					"`clawdline task land %s %s --commit <sha> --note \"<why>\"`.", prev.State, r.ID, prev.State))
 		}
 		if (next.State == LandingLanded || next.State == LandingIncorporated) && next.Target != prev.Target {
 			return Record{}, refuseWith(http.StatusConflict, "landing_conflict",

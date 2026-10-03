@@ -105,8 +105,8 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 	}
 	if len(steps) > 0 && i.Planning() {
 		return WorkV2View{}, workV2Error(http.StatusUnprocessableEntity, "planning_has_no_steps",
-			"Refactor and Plan stay in Planning and carry no steps; nothing was created. "+
-				"Create a Feature, Issue or Epic for work with steps.")
+			"A Plan stays in Planning and carries no steps; nothing was created. "+
+				"Create a Feature, Refactor, Issue or Epic for work with steps.")
 	}
 	if !i.Planning() && !n.MachineTriage && n.SessionProject != i.ProjectPath {
 		return WorkV2View{}, workV2Error(http.StatusConflict, "project_mismatch",

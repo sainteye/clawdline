@@ -47,7 +47,7 @@ func (s *Server) handoffsRoute(w http.ResponseWriter, r *http.Request) {
 	case id == "" && r.Method == http.MethodPost:
 		var body orchestrator.HandoffRequest
 		if !decodeClosed(w, r, &body, "handoff_id", "project_dir", "assistant", "model", "title",
-			"from_session", "coordinator_plain_handoff") {
+			"from_session", "coordinator_plain_handoff", "milestone") {
 			return
 		}
 		// Opening a tab and waiting for its prompt outlives an impatient

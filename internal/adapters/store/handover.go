@@ -271,16 +271,19 @@ func (s *Store) ListOpenedIn(ctx context.Context, table, state string, limit int
 }
 
 // PendingBoardHandoffs reads only delivered handoffs whose captured Board
-// responsibilities have not moved. Completed history cannot crowd retries
-// out of the bounded beat page.
+// responsibilities have not moved, and milestone handoffs whose receiver is
+// not yet named. Completed history cannot crowd retries out of the bounded
+// beat page.
 func (s *Store) PendingBoardHandoffs(ctx context.Context, limit int) ([]Opened, error) {
 	if err := reading(); err != nil {
 		return nil, err
 	}
 	rows, err := s.rd.QueryContext(ctx, `SELECT id, state, record, created_at, updated_at
 	  FROM broker_handoffs WHERE state='delivered' AND json_valid(record)
-	  AND json_array_length(json_extract(record, '$.board_items')) > 0
-	  AND COALESCE(json_extract(record, '$.board_transferred_at'), 0) = 0
+	  AND ((json_array_length(json_extract(record, '$.board_items')) > 0
+	        AND COALESCE(json_extract(record, '$.board_transferred_at'), 0) = 0)
+	    OR (json_extract(record, '$.milestone') = 1
+	        AND COALESCE(json_extract(record, '$.receiver_session'), '') = ''))
 	  ORDER BY created_at DESC, id LIMIT ?`, limit)
 	if err != nil {
 		return nil, classify(err)

@@ -243,7 +243,7 @@ func signedIn(w http.ResponseWriter, r *http.Request, token string) {
 func requireLocal(w http.ResponseWriter, r *http.Request) bool {
 	v := accessOf(r).verdict
 	if !v.Allowed {
-		writeAuthRefusal(w, http.StatusUnauthorized, "unauthorized", "This needs a paired device.")
+		writeAuthRefusal(w, http.StatusUnauthorized, "unauthorized", unauthorizedMessage)
 		return false
 	}
 	if !v.Local {

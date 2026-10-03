@@ -97,15 +97,29 @@ func TestFeatureReviewFollowsThePersonsSwitch(t *testing.T) {
 	checked.Item = edited.Item
 	refusedAsWork(t, advanceTo(w, &checked, work.PhaseImplementing), "feature_plan_required")
 
+	// A Refactor follows the same switch.
+	plainRefactor := assign(createWorkV2Test(t, w, work.KindRefactor))
+	if err := advanceTo(w, &plainRefactor, work.PhaseImplementing); err != nil {
+		t.Fatalf("an unchecked Refactor was held: %v", err)
+	}
+	reviewedRefactor := assign(createWorkV2Test(t, w, work.KindRefactor))
+	edited, err = w.Edit(context.Background(), reviewedRefactor.Item.ID, EditWorkV2{ExpectedVersion: reviewedRefactor.Item.Version,
+		ReviewRequired: &yes, Actor: "local", Person: true}, nil)
+	if err != nil || !edited.Item.ReviewRequired {
+		t.Fatalf("the person's switch on a Refactor: %+v %v", edited.Item, err)
+	}
+	reviewedRefactor.Item = edited.Item
+	refusedAsWork(t, advanceTo(w, &reviewedRefactor, work.PhaseImplementing), "feature_plan_required")
+
 	issue := createWorkV2Test(t, w, work.KindIssue)
 	_, err = w.Edit(context.Background(), issue.Item.ID, EditWorkV2{ExpectedVersion: issue.Item.Version,
 		ReviewRequired: &yes, Actor: "local", Person: true}, nil)
 	refusedAsWork(t, err, "review_required_not_applicable")
 }
 
-// An Epic is assigned like a Feature and lands in its lifecycle lanes;
-// Refactor and Plan are still refused.
-func TestAnEpicIsAssignableAndRefactorAndPlanAreNot(t *testing.T) {
+// An Epic and a Refactor are assigned like a Feature and land in its
+// lifecycle lanes; a Plan is still refused.
+func TestAnEpicAndARefactorAreAssignableAndAPlanIsNot(t *testing.T) {
 	w, _ := newEpicTest(t)
 	epic := createWorkV2Test(t, w, work.KindEpic)
 	if epic.Item.Area() != "unassigned" {
@@ -116,16 +130,23 @@ func TestAnEpicIsAssignableAndRefactorAndPlanAreNot(t *testing.T) {
 		assigned.Item.Area() != "assigned" {
 		t.Fatalf("assigned Epic: %+v", assigned.Item)
 	}
-	for _, kind := range []work.Kind{work.KindRefactor, work.KindPlan} {
-		v := createWorkV2Test(t, w, kind)
-		_, err := w.Assign(context.Background(), v.Item.ID, AssignWorkV2{ExpectedVersion: v.Item.Version,
-			Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
-		refusedAsWork(t, err, "planning_not_assignable")
+	refactor := createWorkV2Test(t, w, work.KindRefactor)
+	if refactor.Item.Area() != "unassigned" {
+		t.Fatalf("a new Refactor is in %q, want unassigned", refactor.Item.Area())
 	}
+	owned, err := w.Assign(context.Background(), refactor.Item.ID, AssignWorkV2{ExpectedVersion: refactor.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", TerminalID: "terminal-a", Actor: "local"}, false, nil)
+	if err != nil || owned.Item.OwnerSession != "session-a" || owned.Item.Area() != "assigned" {
+		t.Fatalf("assigned Refactor: %+v %v", owned.Item, err)
+	}
+	plan := createWorkV2Test(t, w, work.KindPlan)
+	_, err = w.Assign(context.Background(), plan.Item.ID, AssignWorkV2{ExpectedVersion: plan.Item.Version,
+		Mode: "existing_session", SessionID: "session-a", Actor: "local"}, false, nil)
+	refusedAsWork(t, err, "planning_not_assignable")
 }
 
 // A Session's `item add --kind epic --assign-self` arrives assigned to it
-// with its steps, as a Feature does; a Refactor still takes none.
+// with its steps, as a Feature and a Refactor do; a Plan still takes none.
 func TestAnEpicFromASessionArrivesAssignedWithItsSteps(t *testing.T) {
 	w, _ := newEpicTest(t)
 	run := sessionItemRun(t, w, "conv-a")
@@ -138,7 +159,14 @@ func TestAnEpicFromASessionArrivesAssignedWithItsSteps(t *testing.T) {
 	if v.Item.OwnerSession != "conv-a" || v.Item.Phase != work.PhaseAssigned || len(v.Steps) != 2 {
 		t.Fatalf("Epic from a Session: %+v steps=%d", v.Item, len(v.Steps))
 	}
-	_, err = w.CreateFromSession(context.Background(), newSessionItem(run, work.KindRefactor, "r", "a"), nil)
+	r := newSessionItem(run, work.KindRefactor, "r", "a", "b")
+	r.AssignSelf = true
+	refactor, err := w.CreateFromSession(context.Background(), r, nil)
+	if err != nil || refactor.Item.OwnerSession != "conv-a" || refactor.Item.Phase != work.PhaseAssigned ||
+		len(refactor.Steps) != 2 {
+		t.Fatalf("Refactor from a Session: %+v steps=%d %v", refactor.Item, len(refactor.Steps), err)
+	}
+	_, err = w.CreateFromSession(context.Background(), newSessionItem(run, work.KindPlan, "p", "a"), nil)
 	refusedAsWork(t, err, "planning_has_no_steps")
 }
 

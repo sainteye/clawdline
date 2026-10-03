@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -154,9 +155,7 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 		return answer{}, err
 	}
 	req.Header.Set("X-Clawdline-Orchestrator", b.token)
-	if method == http.MethodPost &&
-		(path == "/v1/orchestrator/tasks" || strings.HasPrefix(path, "/v1/work/v2/agent/items/")) &&
-		os.Getenv(squadCapabilityEnv) != "" {
+	if sendsCapability(method, path) && os.Getenv(squadCapabilityEnv) != "" {
 		capability, err := readSquadCapability(os.Getenv(squadCapabilityEnv))
 		if err != nil {
 			return answer{}, err
@@ -183,6 +182,19 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 		return answer{}, fmt.Errorf("the daemon's answer was larger than %d bytes", brokerAnswerLimit)
 	}
 	return answer{Status: res.StatusCode, Body: b.mask(data)}, nil
+}
+
+// sendsCapability is whether a request names its Session by the squad
+// capability: dispatch, a Board agent item write, and a task cancel, where the
+// daemon holds the caller to being the task's root (orchestrator.CancelTask).
+func sendsCapability(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	if path == "/v1/orchestrator/tasks" || strings.HasPrefix(path, "/v1/work/v2/agent/items/") {
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/orchestrator/tasks/") && strings.HasSuffix(path, "/cancel")
 }
 
 // mask replaces the token wherever it appears. The daemon never sends it
@@ -224,5 +236,77 @@ func report(stdout, stderr io.Writer, name string, a answer) int {
 		return 1
 	}
 	fmt.Fprintf(stderr, "clawdline %s: refused, %d %s: %s\n", name, a.Status, code, message)
+	for _, line := range a.refusalExtras() {
+		fmt.Fprintln(stderr, line)
+	}
 	return 1
+}
+
+// refusalExtras is what a refusal carries besides its code and message, one
+// `key: value` line per scalar, sorted, and its remediation last: the
+// command a remedy offers, or why it offers none. Nested values other than
+// the remediation are left to `--json` readers.
+func (a answer) refusalExtras() []string {
+	var outer map[string]json.RawMessage
+	if json.Unmarshal(a.Body, &outer) != nil {
+		return nil
+	}
+	fields := map[string]json.RawMessage{}
+	skip := map[string]bool{"code": true, "message": true, "request_id": true}
+	if inner := outer["error"]; len(inner) > 0 && inner[0] == '{' {
+		if json.Unmarshal(inner, &fields) != nil {
+			return nil
+		}
+	} else {
+		fields = outer
+		skip = map[string]bool{"error": true, "detail": true}
+	}
+	var lines []string
+	var remedy string
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if skip[k] {
+			continue
+		}
+		if k == "remediation" || k == "remedy" {
+			var r struct {
+				Command string `json:"command"`
+				Because string `json:"because"`
+			}
+			var text string
+			if json.Unmarshal(fields[k], &r) == nil && (r.Command != "" || r.Because != "") {
+				text = r.Command
+				if text == "" {
+					text = r.Because
+				}
+			} else if json.Unmarshal(fields[k], &text) != nil {
+				continue
+			}
+			remedy = k + ": " + flatLine(text)
+			continue
+		}
+		var v any
+		if json.Unmarshal(fields[k], &v) != nil {
+			continue
+		}
+		switch v := v.(type) {
+		case string:
+			lines = append(lines, k+": "+flatLine(v))
+		case float64, bool:
+			lines = append(lines, k+": "+strings.TrimSpace(string(fields[k])))
+		}
+	}
+	if remedy != "" {
+		lines = append(lines, remedy)
+	}
+	return lines
+}
+
+// flatLine keeps a value to the one line it is printed on, whole.
+func flatLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }

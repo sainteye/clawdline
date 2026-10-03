@@ -253,6 +253,46 @@
         "not_recorded": { "type": "array", "items": { "$ref": "#/$defs/UsageCompareMissing" } }
       }
     },
+    "UsageHandoffComparison": {
+      "description": "GET /v1/usage/compare-handoff?since=… (docs/token-ledger.md \"Did handing over pay\"): the Features, Issues and Refactors finished in [`since`, `until`] (Unix seconds), grouped by whether a milestone handoff, an ordinary handoff or no handoff carried them. Each item's bill is its owner Sessions' own cache reads, each Session's shared equally among the finished items it owned in the range. `saving` is 1 - milestone/single median cache reads per item, null until both groups have `min_items`. `verdict` is `insufficient_evidence`, `below_target` (under `target`), `guardrail_failed` (`reasons` says which) or `recommend_default`; anything but the last leaves handing over a Session's own choice. `excluded_unowned` and `excluded_unread` count the items in no group and why; `not_measured` names what was asked about and is recorded nowhere.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["carried_unsettled", "excluded_unowned", "excluded_unread", "failed_handoffs", "groups", "milestone_handoffs", "min_items", "not_measured", "reasons", "since", "target", "truncated", "until", "verdict"],
+      "properties": {
+        "since": { "type": "integer" },
+        "until": { "type": "integer" },
+        "groups": { "type": "array", "items": { "$ref": "#/$defs/UsageHandoffGroup" } },
+        "excluded_unowned": { "description": "Items no Session's assignment names.", "type": "integer" },
+        "excluded_unread": { "description": "Items an owner Session of which the ledger has not read.", "type": "integer" },
+        "truncated": { "type": "boolean" },
+        "milestone_handoffs": { "description": "Milestone handoffs opened in the range.", "type": "integer" },
+        "failed_handoffs": { "description": "Of those, the ones whose receiver never opened.", "type": "integer" },
+        "carried_unsettled": { "description": "Tasks those handoffs carried that, a day later, were still running or still owed a landing.", "type": "integer" },
+        "saving": { "nullable": true, "type": "number" },
+        "target": { "type": "number" },
+        "min_items": { "type": "integer" },
+        "verdict": { "type": "string", "enum": ["insufficient_evidence", "below_target", "guardrail_failed", "recommend_default"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "not_measured": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "UsageHandoffGroup": {
+      "description": "One group of a handoff comparison. The medians and the reopened share are null when the group has no item; `too_few` says it has fewer than the comparison's `min_items`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_read_total", "items", "name", "reopened", "too_few"],
+      "properties": {
+        "name": { "type": "string", "enum": ["single_root", "milestone_handoff", "plain_handoff"] },
+        "items": { "type": "integer" },
+        "too_few": { "type": "boolean" },
+        "cache_read_per_item": { "description": "Median owner-Session cache-read tokens per item.", "nullable": true, "type": "number" },
+        "calls_per_item": { "nullable": true, "type": "number" },
+        "elapsed_hours": { "description": "Median hours from the first owner's assignment to done.", "nullable": true, "type": "number" },
+        "reopened_share": { "nullable": true, "type": "number" },
+        "reopened": { "type": "integer" },
+        "cache_read_total": { "type": "number" }
+      }
+    },
     "UsageWorkState": {
       "description": "Why part of a unit of work's delta is not a plain end minus start (docs/token-ledger.md \"One unit of work\"). `not_yet_read`: the ledger had no row of a session at a cursor; its delta is not counted. `transcript_missing`, `transcript_unreadable`: the session's row said so at a cursor. `missing`: a session the closed unit counts has no reading at one of its edges; not counted. `ledger_behind`: at the end the ledger had not read the transcript up to its size and modification time, so the delta is a lower bound until settled. `settled`: a later reading caught up with exactly what the end cursor saw and replaces it. `settled_after_growth`: the later reading caught up only after the transcript grew, so it may hold work done after the unit ended; it is not used as the end, except for a session the end cursor did not see at all, where it is an upper bound. `session_handoff`: the item's owner changed while it was open; the leaving session is measured to its release, the arriving one from its acquisition. `started_inside`: a session with no starting reading that joined an item after it started, counted from zero. `mixed_models`: the unit's sessions name more than one model; `unpriced`: a model has no price. Either makes the cost unknown and keeps the tokens. `cursor_missing`: an edge's cursor could not be taken. `open`: the unit has not ended. `no_session`: the unit ended with no session counted for it.",
       "type": "string",

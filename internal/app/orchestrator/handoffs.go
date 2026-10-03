@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -233,6 +234,9 @@ type HandoffRequest struct {
 	// sender is saying what it means, and a build that gains succession must
 	// not inherit a pile of handoffs that never said.
 	Plain *bool `json:"coordinator_plain_handoff"`
+	// Milestone says handoff.md is a milestone summary (milestone.go): it is
+	// checked before anything opens, and the daemon writes obligations.md.
+	Milestone *bool `json:"milestone,omitempty"`
 }
 
 // Handoff is one handoff as this broker keeps it.
@@ -264,6 +268,13 @@ type Handoff struct {
 	Failure         string `json:"failure,omitempty"`
 	// Receipt is what the sender was told, once.
 	Receipt string `json:"receipt,omitempty"`
+	// Milestone is a handoff whose package passed CheckMilestoneSummary.
+	Milestone bool `json:"milestone,omitempty"`
+	// Carried is the sender's child tasks obligations.md named: running,
+	// unacknowledged or owed a landing. They stay the sender's.
+	Carried []string `json:"carried_tasks,omitempty"`
+	// Receiver is the receiving Session's conversation, once it has one.
+	Receiver string `json:"receiver_session,omitempty"`
 }
 
 // Handoff limits, the Swift app's (OrchestratorHandoffSender.swift:42-98).
@@ -394,10 +405,26 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 				"from_session": from, "coordinator_plain_handoff": true}, "bad_task"))
 	}
 
+	milestone := req.Milestone != nil && *req.Milestone
+	if milestone {
+		data, err := readBounded(pkg, MilestoneSummaryLimit+1)
+		if err != nil {
+			return Handoff{}, false, badHandoff("The milestone summary " + pkg + " could not be read: " + err.Error())
+		}
+		if problems := CheckMilestoneSummary(data); len(problems) > 0 {
+			return Handoff{}, false, refuseWith(http.StatusUnprocessableEntity, "bad_milestone_summary",
+				fmt.Sprintf("%s is not a milestone summary (%d problems). It needs the sections %s, at most %d bytes, "+
+					"evidence as links, and no credential or conversation text. Fix it and send the same request again.",
+					pkg, len(problems), strings.Join(MilestoneSections, ", "), MilestoneSummaryLimit),
+				map[string]any{"package": pkg, "problems": problems})
+		}
+	}
+
 	now := b.now()
 	h := Handoff{
 		ID: req.ID, State: HandoffOpening, ProjectDir: project, Dir: dir, Title: title,
 		FromSession: from, FromTerm: sender.ID, Plain: true, Assistant: assistant, Model: model, CreatedAt: now.Unix(),
+		Milestone: milestone,
 	}
 	items, _, err := b.Store.WorkV2ItemsPage(ctx, "", from, "open", "", 0, "", store.WorkV2OpenLimit)
 	if err != nil {
@@ -407,6 +434,14 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 		if filepath.Clean(item.ProjectPath) == project {
 			h.BoardItems = append(h.BoardItems, item.ID)
 		}
+	}
+	if milestone {
+		obligations := b.gatherMilestoneObligations(ctx, from, h.BoardItems)
+		if err := writeMilestoneObligations(dir, renderMilestoneObligations(from, obligations)); err != nil {
+			return Handoff{}, false, refuse(http.StatusInternalServerError, "handoff_package_unwritable",
+				"obligations.md could not be written beside the summary; nothing was opened.")
+		}
+		h.Carried = obligations.Carried()
 	}
 	if err := b.createOpened(ctx, store.TableHandoffs, h.ID, h.State, h, "handoff.opening", now); err != nil {
 		if errors.Is(err, store.ErrOpenedExists) {
@@ -439,7 +474,11 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	}
 	h, _ = b.updateHandoff(ctx, h.ID, "handoff.opened", func(x *Handoff) { x.Opened = &opened })
 
-	typed := b.typeOnce(ctx, opened.TerminalID, assistant, HandoffLine(pkg), func() error {
+	line := HandoffLine(pkg)
+	if milestone {
+		line = MilestoneHandoffLine(dir)
+	}
+	typed := b.typeOnce(ctx, opened.TerminalID, assistant, line, func() error {
 		_, err := b.updateHandoff(ctx, h.ID, "handoff.typing", func(x *Handoff) { x.TypeAttemptedAt = b.now().Unix() })
 		return err
 	})
@@ -618,6 +657,11 @@ type RootAssignmentRequest struct {
 	// for none. Omitted from the JSON when empty, so the digest of a request
 	// without one is the digest it had before the field existed.
 	Persona string `json:"persona,omitempty"`
+	// Handoff, when set, is a takeover of an in-flight Board item: the broker
+	// writes a handoff pack beside ASSIGNMENT.md and the brief points to it.
+	// It is in-process only, so neither the wire contract nor the digest of a
+	// request changes.
+	Handoff *HandoffInput `json:"-"`
 }
 
 // RootAssignment is one Feature Root as this broker keeps it. It carries no
@@ -743,6 +787,12 @@ func AssignmentBrief(id string, a Assignment, persona, personaFile string) strin
 	return sb.String()
 }
 
+// withHandoff puts the HANDOFF section before OBJECTIVE, so it is the first
+// thing the Feature Root reads after who it is.
+func withHandoff(brief, section string) string {
+	return strings.Replace(brief, "\nOBJECTIVE\n", "\n"+section+"OBJECTIVE\n", 1)
+}
+
 // AssignmentHowToWork is the section every Feature Root's brief carries
 // after its ACCEPTANCE, whoever opened it.
 const AssignmentHowToWork = "HOW TO WORK\n" +
@@ -832,6 +882,14 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
 	brief := AssignmentBrief(id, req.Assignment, req.Persona, personas.Path(b.Dir, req.Persona))
+	if req.Handoff != nil {
+		// The pack failing never fails the assignment; the brief says it failed.
+		pack, err := b.writeHandoffPack(ctx, dir, *req.Handoff)
+		if pack == "" {
+			pack = filepath.Join(dir, "handoff")
+		}
+		brief = withHandoff(brief, HandoffSection(pack, err))
+	}
 	if err := writeFileSync(a.BriefPath, []byte(brief)); err != nil {
 		b.refundDispatch()
 		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())

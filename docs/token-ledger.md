@@ -405,6 +405,34 @@ another name.
 An answer reads at most 500 tasks, newest first, and says `truncated` past that; it names at most 50
 excluded tasks, with the count always whole (limits N44).
 
+### Did handing over pay
+
+`clawdline usage --compare-handoff [--since 14d] [--json]` (and `GET
+/v1/usage/compare-handoff?since=…`) compares finished work done by one long Root against work
+handed over at a milestone. A unit is a Feature, Issue or Refactor that reached `done` in the range,
+read newest first, at most 300 (limits N76). Its group comes from its assignments: `single_root`
+when no assignment came from a handoff, `milestone_handoff` when one came from a milestone handoff,
+`plain_handoff` for any other handoff. Each owner Session's own cache reads and calls are shared
+equally among the finished items it owned, so a long Root's whole cost is spread over its work, and
+a handed-over item carries a share of both sender and receiver. An item no Session owned, or whose
+owners the ledger has not read, is counted apart (`excluded_unowned`, `excluded_unread`), never as
+zero.
+
+Per group: items, median cache reads and calls per item, median hours from the first assignment to
+done, and how many were reopened. The saving is one minus the milestone median over the single-Root
+median, computed only when both groups have 20 items; otherwise it is null and the verdict is
+`insufficient_evidence`. The other verdicts:
+
+| Verdict | When |
+|---|---|
+| `below_target` | The saving is under 30% |
+| `guardrail_failed` | The saving reached 30% but a guardrail slipped: a larger share of milestone items reopened, their median time to done is more than 10% longer, a milestone handoff failed to open, or a task it carried is still running or unlanded 24 hours after the handoff |
+| `recommend_default` | The saving is at least 30% and every guardrail held |
+
+Each answer gives its reasons, and `not_measured` names what the daemon has no record of — re-asks
+and re-reads by the receiver — rather than reporting them as zero. Anything short of
+`recommend_default` keeps handing over a Session's own choice.
+
 ## Did a change make one unit of work cheaper
 
 A before/after report on what one unit of work spends, with a baseline frozen before the change so

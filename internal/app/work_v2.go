@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -102,6 +103,57 @@ type WorkV2View struct {
 type WorkV2Filer func(WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool)
 type TodoV2Filer func(work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer, bool)
 
+// notItemOwner is the not_item_owner refusal: what was refused, why, and the
+// one command that shows who does own the item.
+func notItemOwner(action, id string) error {
+	return work.RefuseV2("not_item_owner", NotItemOwnerMessage(action, id))
+}
+
+// NotItemOwnerMessage is the not_item_owner text every route answers, so the
+// transport's own owner checks say the same thing.
+func NotItemOwnerMessage(action, id string) string {
+	return "Only the item's owning Session may " + action + " this item, and this request came from another " +
+		"Session, or the item is closed. See its owner and phase with `clawdline item show " + id + "`; if this " +
+		"Session is the owner, resend from its own terminal or with --conversation set to its conversation id."
+}
+
+// evidenceUnknown is the evidence_unknown refusal: a bound task whose record
+// cannot be decoded holds a landing that cannot be told from no landing.
+func evidenceUnknown(taskID string) error {
+	return work.RefuseV2("evidence_unknown", "Broker task "+taskID+", bound to this item, has a record that cannot "+
+		"be read, so its landing cannot be told from no landing and nothing was changed. Inspect it with "+
+		"`clawdline task show "+taskID+"`; the item moves once that record reads again.")
+}
+
+// unreadableTask is the id of the first bound task whose record does not
+// decode, for the refusal that names it.
+func unreadableTask(rows []store.BrokerRow) string {
+	for _, row := range rows {
+		if _, err := orchestrator.Decode(row.Record); err != nil {
+			return row.ID
+		}
+	}
+	return "<task id>"
+}
+
+// documentsFull is the documents_full refusal: the limit, that nothing was
+// written, and how to write the same document without needing a new place.
+func documentsFull(id, role string) error {
+	return workV2Error(http.StatusInsufficientStorage, "documents_full", DocumentsFullMessage(id, role))
+}
+
+// DocumentsFullMessage names the per-item limit and the two writes it never
+// refuses. The refused title is new to the item, so the command quotes a
+// placeholder for one already there rather than a write that would be refused
+// again.
+func DocumentsFullMessage(id, role string) string {
+	return fmt.Sprintf("This item already holds %d documents, the most it keeps, so nothing was written. "+
+		"A completion_report is always accepted, and writing a document again with the role and title of one "+
+		"already on the item revises it in place instead of adding one. `clawdline item show %s` lists the "+
+		"documents; revise one with `clawdline item doc %s --role %s --title \"<its title>\" --body-file <file>`.",
+		store.WorkV2DocumentLimit, id, id, role)
+}
+
 func workV2Error(status int, code, message string) error {
 	return &WorkError{Status: status, Code: code, Message: message}
 }
@@ -130,7 +182,7 @@ func mapWorkV2Error(err error) error {
 	case errors.Is(err, store.ErrDirectTodoImageBytesFull):
 		return workV2Error(http.StatusInsufficientStorage, "image_bytes_full", "Session-to-do reference-image storage is full; nothing was evicted.")
 	case errors.Is(err, store.ErrWorkV2DocsFull):
-		return workV2Error(http.StatusInsufficientStorage, "documents_full", "This item holds as many documents as it keeps.")
+		return documentsFull("<item id>", "<role>")
 	case errors.Is(err, store.ErrWorkV2ImagesFull):
 		return workV2Error(http.StatusInsufficientStorage, "images_full", "This item already has six reference images.")
 	case errors.Is(err, store.ErrWorkV2ImageBytesFull):
@@ -498,7 +550,7 @@ func (w *WorkSystemV2) AddImage(ctx context.Context, id string, c AddImageV2, fi
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Phase.Terminal() {
@@ -633,11 +685,11 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if !c.Person && (prev.OwnerSession == "" || prev.OwnerSession != c.OwnerSession || prev.Phase.Terminal()) {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may edit this item.")
+			return notItemOwner("edit", id)
 		}
 		next := prev
 		if c.Title != nil {
@@ -806,7 +858,7 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Phase.Terminal() {
@@ -814,10 +866,10 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 		}
 		if prev.Kind == work.KindPlan {
 			if !c.Kind.Executable() {
-				return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, or issue.")
+				return work.RefuseV2("conversion_kind_not_executable", "Convert a Plan to an epic, feature, refactor, or issue.")
 			}
-		} else if (prev.Kind != work.KindEpic && prev.Kind != work.KindFeature) || c.Kind != work.KindPlan {
-			return work.RefuseV2("conversion_kind_invalid", "Convert an epic or feature to a Plan, or a Plan to executable work.")
+		} else if (prev.Kind != work.KindEpic && !prev.Kind.FeatureLike()) || c.Kind != work.KindPlan {
+			return work.RefuseV2("conversion_kind_invalid", "Convert an epic, feature, or refactor to a Plan, or a Plan to executable work.")
 		}
 		if (prev.Phase != work.PhaseCreated && prev.Phase != work.PhaseAssigned) || prev.ParentID != "" {
 			return work.RefuseV2("item_not_convertible", "Only a top-level item that has not entered implementation can be converted.")
@@ -853,9 +905,9 @@ func (w *WorkSystemV2) ConvertKind(ctx context.Context, id string, c ConvertKind
 			next.OwnerSession, next.Phase, next.Condition, next.UserAction, next.DecisionID = "", work.PhaseCreated, "", "", ""
 		}
 		next.Kind = c.Kind
-		// The review switch is a Feature's alone; it does not follow the item
-		// into another kind.
-		if next.Kind != work.KindFeature {
+		// The review switch is a Feature's or Refactor's alone; it does not
+		// follow the item into another kind.
+		if !next.Kind.FeatureLike() {
 			next.ReviewRequired = false
 		}
 		next.UpdatedAt = w.now()
@@ -984,11 +1036,11 @@ func (w *WorkSystemV2) Assign(ctx context.Context, id string, c AssignWorkV2, pe
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Planning() {
-			return work.RefuseV2("planning_not_assignable", "Refactor and Plan stay in Planning.")
+			return work.RefuseV2("planning_not_assignable", "A Plan stays in Planning; convert it to executable work first.")
 		}
 		if prev.Phase.Terminal() {
 			return work.RefuseV2("item_terminal", "Reopen terminal work before assigning it.")
@@ -1415,7 +1467,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		next, effectIDs, err := w.advanceTx(tx, id, prev, c)
@@ -1438,7 +1490,7 @@ func (w *WorkSystemV2) Advance(ctx context.Context, id string, c AdvanceWorkV2, 
 // so a step Finish takes is the step `item phase` would have taken.
 func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2, c AdvanceWorkV2) (work.ItemV2, []int64, error) {
 	if prev.OwnerSession != c.SessionID || c.SessionID == "" {
-		return work.ItemV2{}, nil, work.RefuseV2("not_item_owner", "Only the owning Session may advance this item.")
+		return work.ItemV2{}, nil, notItemOwner("advance", id)
 	}
 	rows, err := tx.Tasks(id)
 	if err != nil {
@@ -1446,7 +1498,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	}
 	facts, unknown := Facts(rows)
 	if unknown > 0 {
-		return work.ItemV2{}, nil, work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
+		return work.ItemV2{}, nil, evidenceUnknown(unreadableTask(rows))
 	}
 	hasLanding := c.Landing.complete()
 	if strings.TrimSpace(c.NoLandingReason) != "" {
@@ -1492,7 +1544,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 	if c.Next == work.PhaseVerifying && prev.GateNeedsAcceptance() && strings.TrimSpace(prev.AcceptanceCriteria) == "" {
 		return work.ItemV2{}, nil, work.RefuseV2("acceptance_required", "Write acceptance criteria before verification begins.")
 	}
-	if prev.Kind == work.KindEpic || prev.Kind == work.KindFeature {
+	if prev.Kind == work.KindEpic || prev.Kind.FeatureLike() {
 		plans, err := tx.PlanDocuments(id)
 		if err != nil {
 			return work.ItemV2{}, nil, err
@@ -1535,7 +1587,9 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 			candidate.Cycle != prev.Cycle || candidate.CriteriaVersion != prev.AcceptanceVersion ||
 			candidate.CriteriaDigest != prev.AcceptanceDigest || candidate.Commit == "" || candidate.Tree == "" {
 			return work.ItemV2{}, nil, work.RefuseV2("verification_candidate_required",
-				"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest.")
+				"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest; "+
+					"none matches. From the owning Session's worktree, with the candidate committed, run "+
+					"`clawdline item phase "+id+" verifying`: it registers the worktree, branch and HEAD commit itself.")
 		}
 		persona, err := tx.WorkGateCheckerPersona(prev)
 		if err != nil {
@@ -1683,7 +1737,7 @@ func (w *WorkSystemV2) Finish(ctx context.Context, id string, c FinishWorkV2, fi
 			}
 			return nil
 		}
-		if cur.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, cur.Version) {
 			return store.ErrConflict
 		}
 		if _, ok := finishNext[cur.Phase]; !ok {
@@ -1789,7 +1843,7 @@ func (w *WorkSystemV2) FinishFacts(ctx context.Context, id string) (FinishFactsV
 		for _, row := range rows {
 			r, err := orchestrator.Decode(row.Record)
 			if err != nil {
-				return work.RefuseV2("evidence_unknown", "A broker task bound to this item is unreadable.")
+				return evidenceUnknown(row.ID)
 			}
 			l := r.Landing
 			if l != nil && l.State == orchestrator.LandingPending {
@@ -1985,7 +2039,7 @@ func (w *WorkSystemV2) ReopenIncomplete(ctx context.Context, id string, c AgentR
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.Phase != work.PhaseDone {
@@ -2079,6 +2133,14 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 // addDocument is AddDocument inside its transaction, shared with the
 // plan_review a successful review child adds by itself.
 //
+// A document with the role and title of one the item already holds revises
+// it in place: same id, version one higher, event document.revised. The
+// item's completion_report is revised whatever the new title. Plan,
+// plan_review and the review boundary are always added
+// (work.DocumentRevisable). A revision whose title, body, reference and
+// position are already the stored ones is a retry, answered like the
+// plan_review one below.
+//
 // A plan_review naming a task the item already holds a plan_review for is a
 // retry, not a second review: it passes every check a first one would, then
 // answers the document already there and writes nothing. That is why its
@@ -2099,11 +2161,22 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 				return err
 			}
 		}
-		if prev.Version != c.ExpectedVersion && !retry {
+		var revising work.DocumentV2
+		revise := false
+		if title := strings.TrimSpace(c.Title); work.DocumentRevisable(c.Role, title) {
+			if revising, revise, err = tx.RevisableDocument(id, c.Role, title); err != nil {
+				return err
+			}
+			if revise && revising.Title == title && revising.Body == strings.TrimSpace(c.Body) &&
+				revising.Reference == strings.TrimSpace(c.Reference) && revising.Position == c.Position {
+				existing, retry, revise = revising, true, false
+			}
+		}
+		if !VersionHolds(c.ExpectedVersion, prev.Version) && !retry {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may add item documents.")
+			return notItemOwner("add documents to", id)
 		}
 		c.Title, c.Body, c.Reference = strings.TrimSpace(c.Title), strings.TrimSpace(c.Body), strings.TrimSpace(c.Reference)
 		if c.Title == "" || (c.Body == "" && c.Reference == "") {
@@ -2149,12 +2222,21 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 		now := w.now()
 		doc := work.DocumentV2{ID: newWorkID(), WorkID: id, Role: c.Role, Title: c.Title, Body: c.Body,
 			Reference: c.Reference, Position: c.Position, Version: 1, CreatedAt: now, UpdatedAt: now}
-		if err := tx.AddDocument(doc); err != nil {
+		kind, event := "document.added", map[string]any{"document_id": doc.ID, "role": doc.Role}
+		if revise {
+			doc.ID, doc.Version, doc.CreatedAt = revising.ID, revising.Version+1, revising.CreatedAt
+			kind, event = "document.revised", map[string]any{"document_id": doc.ID, "role": doc.Role, "version": doc.Version}
+			if err := tx.ReviseDocument(doc); err != nil {
+				return err
+			}
+		} else if err := tx.AddDocument(doc); errors.Is(err, store.ErrWorkV2DocsFull) {
+			return documentsFull(id, c.Role)
+		} else if err != nil {
 			return err
 		}
 		next := prev
 		next.UpdatedAt = now
-		if err := tx.PutItem(prev, next, "document.added", c.SessionID, payload(map[string]string{"document_id": doc.ID, "role": doc.Role})); err != nil {
+		if err := tx.PutItem(prev, next, kind, c.SessionID, payload(event)); err != nil {
 			return err
 		}
 		next.Version++
@@ -2204,7 +2286,7 @@ func (w *WorkSystemV2) AddPlanReviewFromTask(ctx context.Context, taskID string)
 		}
 		if r.WorkID == "" {
 			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_no_item",
-				"That review was dispatched on no item; record it with `clawdline item doc <item> --role plan_review --reference "+taskID+"`.")
+				"That review was dispatched on no item; record it with `clawdline item doc <item id> --role plan_review --title \"Plan review\" --reference "+taskID+"`.")
 		}
 		prev, err := tx.Item(r.WorkID)
 		if err != nil {
@@ -2345,11 +2427,11 @@ func (w *WorkSystemV2) AddStep(ctx context.Context, id string, c AddStepV2, file
 		if err != nil {
 			return err
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != c.SessionID || prev.Phase.Terminal() {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may add item steps.")
+			return notItemOwner("add steps to", id)
 		}
 		c.Title = strings.TrimSpace(c.Title)
 		if c.Title == "" {
@@ -2387,11 +2469,11 @@ func (w *WorkSystemV2) CompleteStep(ctx context.Context, id, stepID, session str
 		if err != nil {
 			return err
 		}
-		if prev.Version != expected {
+		if !VersionHolds(expected, prev.Version) {
 			return store.ErrConflict
 		}
 		if prev.OwnerSession == "" || prev.OwnerSession != session || prev.Phase.Terminal() {
-			return work.RefuseV2("not_item_owner", "Only the owning Session may complete item steps.")
+			return notItemOwner("complete steps of", id)
 		}
 		step, err := tx.Step(stepID)
 		if err != nil || step.WorkID != id {
@@ -2542,7 +2624,7 @@ func (w *WorkSystemV2) AddDirectTodoImage(ctx context.Context, id string, c AddD
 		if prev.SessionID != c.SessionID {
 			return work.RefuseV2("todo_session_mismatch", "That to-do belongs to another Session.")
 		}
-		if prev.Version != c.ExpectedVersion {
+		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict
 		}
 		if !prev.Open() || !prev.SentAt.IsZero() {
@@ -2876,4 +2958,24 @@ func (w *WorkSystemV2) ResolveProposal(ctx context.Context, id, actor string, c 
 		return nil
 	})
 	return out, mapWorkV2Error(err)
+}
+
+// AnyVersion is the expected version an Agent route sends on when its caller
+// named none: the write acts on whatever version the item holds then. A
+// person's route never maps to it, so its version stays required.
+const AnyVersion int64 = math.MinInt64
+
+// VersionHolds says whether a write expecting expected may act on an item at
+// current. Every version the store issues is positive.
+func VersionHolds(expected, current int64) bool {
+	return expected == AnyVersion || expected == current
+}
+
+// AgentExpectedVersion maps an Agent route's optional expected_version: an
+// omitted or zero one is AnyVersion, a given one is still compared.
+func AgentExpectedVersion(v int64) int64 {
+	if v == 0 {
+		return AnyVersion
+	}
+	return v
 }

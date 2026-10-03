@@ -35,8 +35,13 @@ func (k Kind) Valid() bool {
 
 // Executable kinds are assigned to a Session and move through the execution
 // phases. An Epic is executable too, behind a plan-and-review gate
-// (EpicPlanGate); Refactor and Plan stay in Planning.
-func (k Kind) Executable() bool { return k == KindFeature || k == KindIssue || k == KindEpic }
+// (EpicPlanGate); only a Plan stays in Planning.
+func (k Kind) Executable() bool { return k.FeatureLike() || k == KindIssue || k == KindEpic }
+
+// FeatureLike kinds follow a Feature's rules: a Refactor is an internal
+// structural change that leaves outward behaviour alone, and it is assigned,
+// planned, gated and reviewed exactly as a Feature is.
+func (k Kind) FeatureLike() bool { return k == KindFeature || k == KindRefactor }
 
 type Phase string
 
@@ -194,7 +199,7 @@ func (i ItemV2) HasGateSnapshot() bool {
 // GateNeedsAcceptance says whether this item's captured gates require an
 // acceptance contract. Planning exempts Issues; verification does not.
 func (i ItemV2) GateNeedsAcceptance() bool {
-	return i.VerifyGate || i.PlanningGate && (i.Kind == KindFeature || i.Kind == KindEpic)
+	return i.VerifyGate || i.PlanningGate && (i.Kind.FeatureLike() || i.Kind == KindEpic)
 }
 
 // CreatedViaV2 is the provenance of an item a Session created because a
@@ -219,10 +224,10 @@ type CreatedViaV2 struct {
 }
 
 // SessionAssignable is whether a Session may hand an item of this kind to a
-// new Session on the person's message: an ordinary Feature or Issue. An Epic
-// is planned by whoever the person gives it to, and a Refactor or a Plan
-// stays in Planning.
-func SessionAssignable(k Kind) bool { return k == KindFeature || k == KindIssue }
+// new Session on the person's message: an ordinary Feature, Refactor or Issue.
+// An Epic is planned by whoever the person gives it to, and a Plan stays in
+// Planning.
+func SessionAssignable(k Kind) bool { return k.FeatureLike() || k == KindIssue }
 
 type AssignmentV2 struct {
 	ID             string
@@ -441,6 +446,18 @@ func ReleasedAtClose(prev, next ItemV2) bool {
 		next.DecisionID == prev.DecisionID && next.UserAction == prev.UserAction
 }
 
+// HandedOverWaiting recognises a handoff's owner change on an item that waits
+// on the person: a new owner, and nothing LeaveDecision reads changed. The
+// question was asked about the work, not about the Session that asked it, so
+// it goes with the work to the Session that continues it (docs/handoff.md,
+// "Milestone handoffs"); an answer is delivered to the item's owner.
+func HandedOverWaiting(prev, next ItemV2) bool {
+	return prev.DecisionID != "" && prev.Condition == ConditionWaitingUser && !prev.Phase.Terminal() &&
+		next.OwnerSession != "" && next.OwnerSession != prev.OwnerSession &&
+		next.Phase == prev.Phase && next.Condition == prev.Condition &&
+		next.DecisionID == prev.DecisionID && next.UserAction == prev.UserAction
+}
+
 func ValidateNewV2(i ItemV2) error {
 	switch {
 	case strings.TrimSpace(i.ProjectID) == "":
@@ -467,44 +484,64 @@ func ValidateNewV2(i ItemV2) error {
 }
 
 // ReviewRequiredApplies refuses the person's "Needs independent review"
-// switch on anything but a Feature: an Epic is always reviewed when planning
+// switch on anything but a Feature or Refactor: an Epic is always reviewed when planning
 // is on and an Issue never is, so the switch would say nothing there.
 func ReviewRequiredApplies(k Kind, required bool) error {
-	if required && k != KindFeature {
+	if required && !k.FeatureLike() {
 		return RefuseV2("review_required_not_applicable",
-			"Needs independent review is a Feature's switch; an Epic is always reviewed with planning on and an Issue is not.")
+			"Needs independent review is a Feature's or Refactor's switch; an Epic is always reviewed with planning on and an Issue is not.")
 	}
 	return nil
 }
 
-// Document roles. Plan and plan_review belong to a Feature or Epic: they are
+// Document roles. Plan and plan_review belong to a Feature, Refactor or Epic: they are
 // the record the kind-aware planning gate reads.
 const (
 	DocumentPlan       = "plan"
 	DocumentPlanReview = "plan_review"
+	// DocumentCompletionReport is outside the per-item document limit, and an
+	// item holds at most one: writing another revises it.
+	DocumentCompletionReport = "completion_report"
 )
+
+// DocumentRevisable says whether writing a document with this role and title
+// again revises the one already there instead of adding another. Plan,
+// plan_review and the review boundary are always added: the planning gate
+// reads them in insertion order and a review names the plan it read, so
+// rewriting one in place would leave the review record pointing at text that
+// is gone.
+func DocumentRevisable(role, title string) bool {
+	switch {
+	case role == DocumentPlan, role == DocumentPlanReview:
+		return false
+	case role == "other" && title == ReviewBoundaryTitle:
+		return false
+	}
+	return true
+}
 
 // DocumentRoleValid says whether role is a document role at all, before it
 // is asked whether it fits the item's kind.
 func DocumentRoleValid(role string) bool {
 	switch role {
-	case "spec", "design", "test", "deploy", "completion_report", "other", DocumentPlan, DocumentPlanReview:
+	case "spec", "design", "test", "deploy", DocumentCompletionReport, "other", DocumentPlan, DocumentPlanReview:
 		return true
 	}
 	return false
 }
 
-// DocumentRoleApplies refuses a plan or plan_review on anything but a Feature
-// or Epic.
+// DocumentRoleApplies refuses a plan or plan_review on anything but a
+// Feature, Refactor or Epic.
 func DocumentRoleApplies(i ItemV2, role string) error {
-	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic && i.Kind != KindFeature {
+	if (role == DocumentPlan || role == DocumentPlanReview) && i.Kind != KindEpic && !i.Kind.FeatureLike() {
 		return RefuseV2("document_role_not_applicable",
-			"Plan and plan_review documents belong to a Feature or Epic; use spec or design for this item.")
+			"Plan and plan_review documents belong to a Feature, Refactor or Epic; use spec or design for this item.")
 	}
 	return nil
 }
 
-// PlanningGate is the rule a Feature or Epic crosses before implementing.
+// PlanningGate is the rule a Feature or Epic crosses before implementing; a
+// Refactor crosses it as a Feature does.
 // It reads only the current cycle snapshot, never the later global setting.
 // A Feature takes the reviewed-plan path only when the person checked its
 // ReviewRequired switch, read live; otherwise its acceptance criteria are
@@ -519,7 +556,7 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 	if i.Phase != PhaseAssigned || next != PhaseImplementing || i.Kind == KindIssue {
 		return nil
 	}
-	if i.Kind != KindEpic && i.Kind != KindFeature {
+	if i.Kind != KindEpic && !i.Kind.FeatureLike() {
 		return nil
 	}
 	if !i.HasGateSnapshot() {
@@ -531,7 +568,7 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 	if strings.TrimSpace(i.AcceptanceCriteria) == "" {
 		return RefuseV2("acceptance_required", "Write acceptance criteria before this item enters implementation.")
 	}
-	if i.Kind == KindFeature && !i.ReviewRequired {
+	if i.Kind.FeatureLike() && !i.ReviewRequired {
 		return nil
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0
@@ -554,11 +591,12 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 		return RefuseV2(prefix+"_plan_required",
 			"Write the item's plan first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
 	case lastReview < lastPlan && ((i.Kind == KindEpic && reviews < rounds) ||
-		(i.Kind == KindFeature && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
+		(i.Kind.FeatureLike() && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
 		return RefuseV2(prefix+"_plan_review_required",
-			"Have an independent child review the latest plan (`clawdline dispatch --kind plan_review --work-id "+i.ID+
-				"`) and wait for that child to finish: a successful review is recorded on the item by itself. "+
-				"Only if it is not, record it with `clawdline item doc "+i.ID+" --role plan_review --reference <task id>`.")
+			"The latest plan has no independent review yet. Dispatch one: `clawdline dispatch --kind plan_review --work-id "+i.ID+
+				" --title \"Review the plan\" --claims \"\"` with the review brief on stdin, and wait for that child to finish: "+
+				"a successful review is recorded on the item by itself. Only if it is not, add it as a plan_review document "+
+				"whose reference is that task's id.")
 	}
 	return planReviewBlocking(i, prefix, lastPlan, lastReview, reviews, rounds, review)
 }
@@ -626,8 +664,8 @@ func ReadPlanReview(raw []byte) PlanReviewSummary {
 // new plan review is dispatched for it. Whether a review exists at all stays
 // the phase route's question.
 func PlanReviewDispatchGate(i ItemV2, kind string, plans []DocumentV2, review PlanReviewSummary) error {
-	if kind == DocumentPlanReview || i.Phase != PhaseAssigned || (i.Kind != KindEpic && i.Kind != KindFeature) ||
-		!i.HasGateSnapshot() || !i.PlanningGate || (i.Kind == KindFeature && !i.ReviewRequired) {
+	if kind == DocumentPlanReview || i.Phase != PhaseAssigned || (i.Kind != KindEpic && !i.Kind.FeatureLike()) ||
+		!i.HasGateSnapshot() || !i.PlanningGate || (i.Kind.FeatureLike() && !i.ReviewRequired) {
 		return nil
 	}
 	lastPlan, lastReview, reviews := -1, -1, 0
@@ -681,7 +719,7 @@ func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, 
 			rounds, PlanningGateOverride, i.ID)
 	} else {
 		fmt.Fprintf(&b, "Revise the plan (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`), then have "+
-			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --claims \"\"`); or the person overrides the "+
+			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`); or the person overrides the "+
 			"planning gate (%s).", i.ID, i.ID, PlanningGateOverride)
 	}
 	return RefuseV2(prefix+"_plan_review_blocking", b.String())
@@ -815,9 +853,107 @@ func AgentTransition(i ItemV2, next Phase, hasVerification, hasLanding, hasDeplo
 		}
 	}
 	if !ok {
-		return RefuseV2("invalid_transition", fmt.Sprintf("Cannot move %s to %s with the recorded evidence.", i.Phase, next))
+		return RefuseV2("invalid_transition", TransitionAdvice(i, next))
 	}
 	return nil
+}
+
+// phaseStep is one move AgentTransition allows out of a phase, and the
+// `item phase` flags that move needs; Flags is empty when it needs none.
+type phaseStep struct {
+	Next  Phase
+	Flags string
+}
+
+const (
+	landingFlags     = "--commit <sha> --target <branch> --remote <remote>"
+	landingNeed      = "--commit/--target/--remote or --no-landing-reason"
+	verificationFlag = `--verification "<what was run and what it showed>"`
+)
+
+// phaseSteps is AgentTransition's switch read the other way: every legal
+// next phase from i's phase, with the evidence it needs. A change to one is a
+// change to the other; TestTransitionAdviceMatchesAgentTransition holds them
+// together.
+func phaseSteps(i ItemV2) []phaseStep {
+	switch i.Phase {
+	case PhaseAssigned:
+		return []phaseStep{{Next: PhaseImplementing}}
+	case PhaseImplementing:
+		out := []phaseStep{{Next: PhaseVerifying}}
+		if !i.VerifyGate {
+			out = append(out, phaseStep{Next: PhaseDeploying, Flags: landingFlags})
+		}
+		return out
+	case PhaseVerifying:
+		return []phaseStep{{Next: PhaseMerging, Flags: verificationFlag}, {Next: PhaseImplementing}}
+	case PhaseMerging:
+		return []phaseStep{{Next: PhaseDeploying, Flags: landingFlags}, {Next: PhaseVerifying}, {Next: PhaseImplementing}}
+	case PhaseDeploying:
+		flags := `--deployment "<what was deployed, where>"`
+		if i.DeploymentPolicy == DeployNotRequired {
+			flags = `--no-deployment-reason "<why nothing deploys>"`
+		}
+		return []phaseStep{{Next: PhaseDone, Flags: flags}}
+	}
+	return nil
+}
+
+// evidenceNeed names the evidence a step needs in words a caller can match
+// against `item phase`'s flags.
+func evidenceNeed(i ItemV2, s phaseStep) string {
+	switch {
+	case s.Flags == landingFlags:
+		return landingNeed
+	case s.Flags == verificationFlag:
+		return "--verification"
+	case s.Next == PhaseDone && i.DeploymentPolicy == DeployRequired:
+		return "--deployment"
+	case s.Next == PhaseDone && i.DeploymentPolicy == DeployNotRequired:
+		return "--no-deployment-reason"
+	case s.Next == PhaseDone:
+		return "--deployment or --no-deployment-reason"
+	}
+	return ""
+}
+
+// TransitionAdvice is the invalid_transition message: why the move was
+// refused, the legal next phases from here, and one `item phase` command that
+// the daemon would take.
+func TransitionAdvice(i ItemV2, next Phase) string {
+	steps := phaseSteps(i)
+	var legal []string
+	pick := -1
+	for n, s := range steps {
+		word := string(s.Next)
+		if need := evidenceNeed(i, s); need != "" {
+			word += " (needs " + need + ")"
+		}
+		legal = append(legal, word)
+		if s.Next == next {
+			pick = n
+		}
+	}
+	msg := fmt.Sprintf("Cannot move %s to %s", i.Phase, next)
+	if pick >= 0 && evidenceNeed(i, steps[pick]) != "" {
+		msg += " without " + evidenceNeed(i, steps[pick]) + "."
+	} else if pick >= 0 {
+		msg += " with the recorded evidence."
+	} else {
+		msg += fmt.Sprintf(": %s is not a next phase from %s.", next, i.Phase)
+	}
+	if len(steps) == 0 {
+		return msg
+	}
+	msg += " From " + string(i.Phase) + " the legal next phases are " + strings.Join(legal, ", ") + "."
+	if pick < 0 {
+		pick = 0
+	}
+	cmd := "clawdline item phase " + i.ID + " " + string(steps[pick].Next)
+	if steps[pick].Flags != "" {
+		cmd += " " + steps[pick].Flags
+	}
+	return msg + " Run: `" + cmd + "`."
 }
 
 // NoLandingGate decides whether `--no-landing-reason` may stand in for a
