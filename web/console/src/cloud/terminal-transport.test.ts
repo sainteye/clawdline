@@ -22,6 +22,16 @@ async function fixture() {
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: sender.privateKey, ready: true, retired: false,
     nextSequence: async () => 7, socketSubscriptions: new Map(), subscriptionHolds: new Map(),
+    pendingSubscriptions: new Set(), subscriptionLimit: 8,
+    _trimSubscriptions(incoming, keep) {
+      while (this.socketSubscriptions.size + incoming > this.subscriptionLimit) {
+        const idle = [...this.socketSubscriptions.keys()].find((ch) => !this.subscriptionHolds.has(ch) && !keep.includes(ch))
+        if (!idle) break
+        this.socketSubscriptions.delete(idle)
+        this.pendingSubscriptions.delete(idle)
+        this._sendSubscriptionFrame("unsubscribe", [idle])
+      }
+    },
     _outboundMachinePairing: async (id) => ({ masterKey: master, keyID: "ms-1", senderKey: machineKey.publicKey, senderID: id }),
     _send(frame) {
       if ((frame as { type?: string }).type === "publish") published.push((frame as { envelope: TerminalEnvelope }).envelope)
@@ -69,6 +79,25 @@ test("two machines sharing a Cloud client keep their receipts after either trans
   second.dispose()
 })
 
+test("terminal subscription makes room through the client instead of exceeding the relay limit", async () => {
+  const f = await fixture()
+  for (let i = 0; i < 8; i++) f.client.socketSubscriptions.set(`idle/${i}`, Date.now())
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  assert.equal(f.client.socketSubscriptions.size, 8)
+  assert.equal(f.client.socketSubscriptions.has("idle/0"), false)
+  assert.equal(f.client.socketSubscriptions.has("idle/1"), false)
+  f.adapter.dispose()
+})
+
+test("a full socket with held channels refuses before publishing a terminal request", async () => {
+  const f = await fixture()
+  for (let i = 0; i < 7; i++) f.client.subscriptionHolds.set(`held/${i}`, 1)
+  await assert.rejects(f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, () => undefined), /cloud_read_busy/)
+  assert.equal(f.client.socketSubscriptions.size, 0)
+  assert.equal(f.client.subscriptionHolds.size, 7)
+  f.adapter.dispose()
+})
+
 test("the no-cache receipt is subscribed before an outbound open can be published", async () => {
   const f = await fixture()
   f.setConfirm(false)
@@ -113,6 +142,8 @@ test("a Go-sealed terminal receipt passes the browser signature and AES checks",
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: null, ready: true, retired: false,
     nextSequence: async () => 1, socketSubscriptions: new Map(), subscriptionHolds: new Map(),
+    pendingSubscriptions: new Set(), subscriptionLimit: 8,
+    _trimSubscriptions() {},
     _outboundMachinePairing: async () => ({ masterKey, keyID: "ms-1", senderKey, senderID: machine }),
     _send: () => undefined,
     _sendSubscriptionFrame: (_type, channels) => queueMicrotask(() => events.forEach((fn) => fn({ type: "subscriptions", channels }))),
