@@ -3,7 +3,7 @@ import test, { mock } from "node:test"
 import { RefusalError, TransportError } from "@clawdline/core/refusal"
 import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { OneRead, readFailureReason, TODO_REFRESH_MS, todoHeaderState, watchTodoRefresh, type RefreshEnvironment } from "./todo-refresh.ts"
+import { isTransientReadFailure, OneRead, readFailureReason, readWithOneRetry, TODO_REFRESH_MS, todoHeaderState, TRANSIENT_READ_RETRY_MS, watchTodoRefresh, type RefreshEnvironment } from "./todo-refresh.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { sessionTodosReady } from "./readiness.ts"
 
@@ -163,4 +163,34 @@ test("the failure's reason names the refusal's code, or what the transport said 
   const lost = new TransportError("GET /v1/work/v2/session-todos/%251 did not complete", abandoned)
   assert.match(readFailureReason(lost), /did not complete \(cloud_read_abandoned: /)
   assert.equal(readFailureReason(new TransportError("x answered 502 with no refusal in it")), "x answered 502 with no refusal in it")
+})
+
+test("a transport failure or a full read lane is transient; any other refusal is not", () => {
+  assert.equal(isTransientReadFailure(new TransportError("GET x did not complete", new Error("cloud_reconnecting"))), true)
+  assert.equal(isTransientReadFailure(new RefusalError(503, { error: "cloud_ingress_busy", detail: "the read lane is full" })), true)
+  assert.equal(isTransientReadFailure(new RefusalError(404, { error: "session_not_found", detail: "no such terminal" })), false)
+  assert.equal(isTransientReadFailure(new Error("a bug")), false)
+})
+
+test("a transient failure followed by success never surfaces; a second one, or any other failure, does", async () => {
+  const waits: number[] = []
+  const wait = async (ms: number) => { waits.push(ms) }
+  const busy = new RefusalError(503, { error: "cloud_ingress_busy", detail: "the read lane is full" })
+  const reconnecting = new TransportError("GET x did not complete", new Error("cloud_reconnecting"))
+
+  let calls = 0
+  const healed = await readWithOneRetry(async () => { if (calls++ === 0) throw reconnecting; return "page" }, wait)
+  assert.equal(healed, "page")
+  assert.deepEqual(waits, [TRANSIENT_READ_RETRY_MS], "the retry did not wait before asking again")
+  assert.ok(TRANSIENT_READ_RETRY_MS >= 1_000 && TRANSIENT_READ_RETRY_MS <= 5_000, "the retry delay is not a few seconds")
+
+  calls = 0; waits.length = 0
+  await assert.rejects(readWithOneRetry(async () => { calls++; throw busy }, wait), busy)
+  assert.equal(calls, 2, "a transient failure was retried more than once, or not at all")
+
+  calls = 0; waits.length = 0
+  const missing = new RefusalError(404, { error: "session_not_found", detail: "no such terminal" })
+  await assert.rejects(readWithOneRetry(async () => { calls++; throw missing }, wait), missing)
+  assert.equal(calls, 1, "a definite refusal was retried")
+  assert.deepEqual(waits, [], "a definite refusal waited before showing")
 })

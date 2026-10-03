@@ -18,7 +18,7 @@ import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { useInterventions } from "./Interventions.js"
-import { OneRead, readFailureReason, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
+import { OneRead, readFailureReason, readWithOneRetry, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
 import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
 import { SessionUsage } from "../pages/work/TokenBill.js"
@@ -50,7 +50,8 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
     const mine = ++ticket.current
     setReading(true)
     try {
-      const next = await readSessionWorkV2(rowID, rowSessionID)
+      // A transient failure is asked again once before it is shown.
+      const next = await readWithOneRetry(() => readSessionWorkV2(rowID, rowSessionID))
       if (mine === ticket.current) { setPage(next); setReadFailure(null) }
     } catch (e) {
       // The last good page stays: a refresh that failed marks it, it does

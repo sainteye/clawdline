@@ -7,6 +7,7 @@ import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
+import { readWithOneRetry, watchTodoRefresh } from "./todo-refresh.js"
 import "./interventions.css"
 
 /** Keep the attention entry in the todo header while its panel stays independent. */
@@ -35,7 +36,8 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     setReading(true)
     const promise = (async () => {
       try {
-        const next = await readHumanInterventionsV2(target.conversation)
+        // A transient failure is asked again once before it is shown.
+        const next = await readWithOneRetry(() => readHumanInterventionsV2(target.conversation))
         if (mine === ticket.current && sameInterventionTarget(target, latest.current)) {
           setPage(next); setPageKey(targetKey); setReadError("")
         }
@@ -57,8 +59,10 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     setPage(null); setPageKey(""); setReadError(""); setActionError(""); setActionStatus(""); setBusy(""); setExpanded(false)
     if (!destination) return
     void load(destination)
-    const interval = window.setInterval(() => { void load(destination) }, 15000)
-    return () => { ticket.current++; window.clearInterval(interval) }
+    // Like the to-dos: ask again only while the page is visible, and at once
+    // when it comes back.
+    const stop = watchTodoRefresh(() => { void load(destination) })
+    return () => { ticket.current++; stop() }
   // Identity is an immutable machine / route Session / conversation tuple.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, load])

@@ -253,3 +253,11 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
     "only a first Send takes the accent; 再次 Send is a grey chip")
   assert.doesNotMatch(source, /own && <button|!own && <button/)
 })
+
+test("the Note polls only while visible, rereads on return, and both reads retry one transient failure", () => {
+  const note = readFileSync(new URL("./Interventions.tsx", import.meta.url), "utf8")
+  assert.doesNotMatch(note, /window\.setInterval\(/, "the Note polls a hidden page")
+  assert.match(note, /watchTodoRefresh\(\(\) => \{ void load\(destination\) \}\)/)
+  assert.match(note, /readWithOneRetry\(\(\) => readHumanInterventionsV2\(target\.conversation\)\)/)
+  assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkV2\(rowID, rowSessionID\)\)/)
+})

@@ -126,6 +126,42 @@ export function watchTodoRefresh(refresh: () => void, env: RefreshEnvironment = 
 }
 
 /**
+ * How long a read that failed transiently waits before its one retry. A phone
+ * that comes back after a minute hidden rebuilds its Cloud connection, and the
+ * first read in that window is refused while the rebuild finishes; a few
+ * seconds later the same read answers.
+ */
+export const TRANSIENT_READ_RETRY_MS = 3_000
+
+/**
+ * A failure that is likely gone a few seconds later: the transport did not
+ * deliver an answer (a Cloud connection rebuilding, a read that timed out),
+ * or the machine's read lane was full. Any other refusal is the machine's
+ * answer and is shown at once.
+ */
+export function isTransientReadFailure(error: unknown): boolean {
+  if (error instanceof TransportError) return true
+  return error instanceof RefusalError && error.code === "cloud_ingress_busy"
+}
+
+/**
+ * Read, and when that fails transiently, wait `TRANSIENT_READ_RETRY_MS` and
+ * read once more; the second failure, or any other, is thrown as it came.
+ */
+export async function readWithOneRetry<T>(
+  read: () => Promise<T>,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<T> {
+  try {
+    return await read()
+  } catch (error) {
+    if (!isTransientReadFailure(error)) throw error
+  }
+  await wait(TRANSIENT_READ_RETRY_MS)
+  return read()
+}
+
+/**
  * The reason a read failed, for the header's title and label: the refusal's
  * code, or what the transport said and what it said underneath. Never the
  * page's own sentence, which is shown beside it.
