@@ -1,4 +1,5 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
+import { fetchWithDeadline } from "./fetch-deadline.js"
 import type { PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession, WorkGateCompactRead, WorkGateDetailRead, WorkGateDecisionAction } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
@@ -219,15 +220,11 @@ export interface ProjectPlacePage {
 }
 
 async function call<T>(path: string, init: RequestInit = {}, timeoutMs = 15_000): Promise<T> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res: Response
   try {
-    res = await fetch(path, { credentials: "same-origin", ...init, signal: controller.signal })
+    res = await fetchWithDeadline(path, { credentials: "same-origin", ...init }, timeoutMs)
   } catch (cause) {
     throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
-  } finally {
-    clearTimeout(timer)
   }
   const text = await res.text()
   let parsed: unknown = null
@@ -260,7 +257,7 @@ export const readDigests = () => call<{ rows: Digest[] }>("/v1/work/digests?kind
 /** The machine's real project directory: existing places it recognizes, newest first (at most forty). */
 export const copyProjectIcon = (id: string, icon: unknown, expected: unknown) =>
   mutate<{ ok: boolean; icon: unknown }>(`/v1/projects/${encodeURIComponent(id)}/icon`, { icon, expected }, "PUT")
-export const readProjectPlaces = () => call<ProjectPlacePage>("/v1/places")
+export const readProjectPlaces = (machine?: string) => call<ProjectPlacePage>("/v1/places" + query({ machine }))
 /** Project settings sync (docs/project-sync.md), as internal/domain/projectsync spells it. */
 export interface SyncFile { path: string; sha256: string; size: number; content?: string }
 export interface SyncEntry { repo: string; clone_url: string; label: string; icon: unknown; files: SyncFile[]; withheld?: string[]; revision: string }
