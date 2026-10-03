@@ -136,6 +136,21 @@ func unreadableTask(rows []store.BrokerRow) string {
 	return "<task id>"
 }
 
+// documentsFull is the documents_full refusal: the limit, that nothing was
+// written, and how to write the same document without needing a new place.
+func documentsFull(id, role, title string) error {
+	return workV2Error(http.StatusInsufficientStorage, "documents_full", DocumentsFullMessage(id, role, title))
+}
+
+// DocumentsFullMessage names the per-item limit and the two writes it never
+// refuses.
+func DocumentsFullMessage(id, role, title string) string {
+	return fmt.Sprintf("This item already holds %d documents, the most it keeps, so nothing was written. "+
+		"A completion_report is always accepted, and writing a document again with the role and title of one "+
+		"already on the item revises it in place instead of adding one. Revise an existing document with "+
+		"`clawdline item doc %s --role %s --title %q --body-file <file>`.", store.WorkV2DocumentLimit, id, role, title)
+}
+
 func workV2Error(status int, code, message string) error {
 	return &WorkError{Status: status, Code: code, Message: message}
 }
@@ -164,7 +179,7 @@ func mapWorkV2Error(err error) error {
 	case errors.Is(err, store.ErrDirectTodoImageBytesFull):
 		return workV2Error(http.StatusInsufficientStorage, "image_bytes_full", "Session-to-do reference-image storage is full; nothing was evicted.")
 	case errors.Is(err, store.ErrWorkV2DocsFull):
-		return workV2Error(http.StatusInsufficientStorage, "documents_full", "This item holds as many documents as it keeps.")
+		return documentsFull("<item id>", "<role>", "<title>")
 	case errors.Is(err, store.ErrWorkV2ImagesFull):
 		return workV2Error(http.StatusInsufficientStorage, "images_full", "This item already has six reference images.")
 	case errors.Is(err, store.ErrWorkV2ImageBytesFull):
@@ -2115,6 +2130,14 @@ func (w *WorkSystemV2) AddDocument(ctx context.Context, id string, c AddDocument
 // addDocument is AddDocument inside its transaction, shared with the
 // plan_review a successful review child adds by itself.
 //
+// A document with the role and title of one the item already holds revises
+// it in place: same id, version one higher, event document.revised. The
+// item's completion_report is revised whatever the new title. Plan,
+// plan_review and the review boundary are always added
+// (work.DocumentRevisable). A revision whose title, body, reference and
+// position are already the stored ones is a retry, answered like the
+// plan_review one below.
+//
 // A plan_review naming a task the item already holds a plan_review for is a
 // retry, not a second review: it passes every check a first one would, then
 // answers the document already there and writes nothing. That is why its
@@ -2133,6 +2156,17 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 		if c.Role == work.DocumentPlanReview {
 			if existing, retry, err = tx.PlanReviewDocument(id, strings.TrimSpace(c.Reference)); err != nil {
 				return err
+			}
+		}
+		var revising work.DocumentV2
+		revise := false
+		if title := strings.TrimSpace(c.Title); work.DocumentRevisable(c.Role, title) {
+			if revising, revise, err = tx.RevisableDocument(id, c.Role, title); err != nil {
+				return err
+			}
+			if revise && revising.Title == title && revising.Body == strings.TrimSpace(c.Body) &&
+				revising.Reference == strings.TrimSpace(c.Reference) && revising.Position == c.Position {
+				existing, retry, revise = revising, true, false
 			}
 		}
 		if !VersionHolds(c.ExpectedVersion, prev.Version) && !retry {
@@ -2185,12 +2219,21 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 		now := w.now()
 		doc := work.DocumentV2{ID: newWorkID(), WorkID: id, Role: c.Role, Title: c.Title, Body: c.Body,
 			Reference: c.Reference, Position: c.Position, Version: 1, CreatedAt: now, UpdatedAt: now}
-		if err := tx.AddDocument(doc); err != nil {
+		kind, event := "document.added", map[string]any{"document_id": doc.ID, "role": doc.Role}
+		if revise {
+			doc.ID, doc.Version, doc.CreatedAt = revising.ID, revising.Version+1, revising.CreatedAt
+			kind, event = "document.revised", map[string]any{"document_id": doc.ID, "role": doc.Role, "version": doc.Version}
+			if err := tx.ReviseDocument(doc); err != nil {
+				return err
+			}
+		} else if err := tx.AddDocument(doc); errors.Is(err, store.ErrWorkV2DocsFull) {
+			return documentsFull(id, c.Role, c.Title)
+		} else if err != nil {
 			return err
 		}
 		next := prev
 		next.UpdatedAt = now
-		if err := tx.PutItem(prev, next, "document.added", c.SessionID, payload(map[string]string{"document_id": doc.ID, "role": doc.Role})); err != nil {
+		if err := tx.PutItem(prev, next, kind, c.SessionID, payload(event)); err != nil {
 			return err
 		}
 		next.Version++

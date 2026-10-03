@@ -754,9 +754,11 @@ func Register() []Entry {
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2AssignmentLimit"},
 		},
+		// Every document but the item's one completion_report, which always
+		// has its own place on top of these: an item holds at most 32+1.
 		{
 			Name: WorkDocumentsPerItem, Class: Evidence, Unit: Rows,
-			Limit: 64, AtLimit: Refuse,
+			Limit: 32, AtLimit: Refuse,
 			Told:      []Channel{Diagnostics, Sender, Health},
 			EvictedBy: Person,
 			Sources:   []string{"internal/adapters/store.WorkV2DocumentLimit"},

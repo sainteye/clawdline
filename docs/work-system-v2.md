@@ -153,6 +153,14 @@ An item may have ordered document references with a closed role: `spec`, `design
 elsewhere) — `plan` and `plan_review`, the record §6.4's gate reads. A document may carry Markdown content or a repository-relative path/URL with
 a summary. The system does not copy an entire repository document merely to show that it exists.
 
+Writing a document with the role and title of one the item already holds revises it in place: the
+body, reference and position are replaced, the id stays, the version rises by one and the item
+records `document.revised` (document id, role, version). An identical resend writes nothing.
+`plan`, `plan_review` and the review boundary are always added, never revised, because §6.4's gate
+reads them in insertion order. An item holds at most 32 documents besides its one
+`completion_report`, which always fits; a second `completion_report`, under any title, revises the
+first. A 33rd counted document is refused with `documents_full`.
+
 ### 5.3 Steps
 
 Item-local steps are a lightweight Agent aid:

@@ -1544,9 +1544,20 @@ func (s *Store) WorkV2Events(ctx context.Context, workID string, after int64, li
 	return out, rows.Err()
 }
 
+// AddDocument inserts a new document. The limit counts every document but the
+// item's one completion_report, which always has its own place: a second one
+// is a revision (ReviseDocument), never a second row.
 func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 	var n int64
-	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_documents WHERE work_id=?`, d.WorkID).Scan(&n); err != nil {
+	if d.Role == work.DocumentCompletionReport {
+		if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_documents WHERE work_id=? AND role=?`,
+			d.WorkID, work.DocumentCompletionReport).Scan(&n); err != nil {
+			return err
+		} else if n >= 1 {
+			return ErrWorkV2DocsFull
+		}
+	} else if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM work_v2_documents WHERE work_id=? AND role<>?`,
+		d.WorkID, work.DocumentCompletionReport).Scan(&n); err != nil {
 		return err
 	} else if n >= WorkV2DocumentLimit {
 		return ErrWorkV2DocsFull
@@ -1558,6 +1569,52 @@ func (t *WorkV2Tx) AddDocument(d work.DocumentV2) error {
 		t.wrote++
 	}
 	return err
+}
+
+// RevisableDocument is the document a write with this role and title would
+// revise in place: the item's completion_report whatever its title, otherwise
+// the one with the same role and title. The earliest wins when an older store
+// holds duplicates. The caller keeps plan, plan_review and the review
+// boundary away from it (work.DocumentRevisable).
+func (t *WorkV2Tx) RevisableDocument(workID, role, title string) (work.DocumentV2, bool, error) {
+	q, args := `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+    FROM work_v2_documents WHERE work_id=? AND role=? AND title=? ORDER BY created_at,rowid LIMIT 1`,
+		[]any{workID, role, title}
+	if role == work.DocumentCompletionReport {
+		q, args = `SELECT id,work_id,role,title,body,reference,position,version,created_at,updated_at
+    FROM work_v2_documents WHERE work_id=? AND role=? ORDER BY created_at,rowid LIMIT 1`, []any{workID, role}
+	}
+	var d work.DocumentV2
+	var created, updated int64
+	err := t.tx.QueryRowContext(t.ctx, q, args...).Scan(&d.ID, &d.WorkID, &d.Role, &d.Title, &d.Body,
+		&d.Reference, &d.Position, &d.Version, &created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return work.DocumentV2{}, false, nil
+	}
+	if err != nil {
+		return work.DocumentV2{}, false, err
+	}
+	d.CreatedAt, d.UpdatedAt = time.Unix(created, 0), time.Unix(updated, 0)
+	return d, true, nil
+}
+
+// ReviseDocument replaces one document's title, body, reference and position
+// and stores its new version, keeping its id and creation time. It never
+// counts against the limit: the row is already there.
+func (t *WorkV2Tx) ReviseDocument(d work.DocumentV2) error {
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE work_v2_documents SET title=?,body=?,reference=?,position=?,
+    version=?,updated_at=? WHERE id=? AND work_id=?`, d.Title, d.Body, d.Reference, d.Position, d.Version,
+		d.UpdatedAt.Unix(), d.ID, d.WorkID)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return ErrConflict
+	}
+	t.wrote++
+	return nil
 }
 
 // PlanDocuments includes the review boundary declarations in the same
@@ -2270,10 +2327,11 @@ func (s *Store) WorkV2Proposals(ctx context.Context, state string, limit int) ([
 func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, error) {
 	out := map[string]int64{}
 	queries := map[string]string{
-		"open":               `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
-		"planning":           `SELECT COUNT(*) FROM work_v2_items WHERE kind = 'plan' AND closed_at IS NULL`,
-		"assignments":        `SELECT COUNT(*) FROM work_v2_assignments`,
-		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents GROUP BY work_id)`,
+		"open":        `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
+		"planning":    `SELECT COUNT(*) FROM work_v2_items WHERE kind = 'plan' AND closed_at IS NULL`,
+		"assignments": `SELECT COUNT(*) FROM work_v2_assignments`,
+		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents
+      WHERE role<>'completion_report' GROUP BY work_id)`,
 		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (
       SELECT COUNT(*) n FROM work_v2_images GROUP BY work_id
       UNION ALL SELECT COUNT(*) n FROM session_direct_todo_images GROUP BY todo_id)`,

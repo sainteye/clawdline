@@ -1241,6 +1241,18 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
 `{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`；role 有
 `spec`、`design`、`test`、`deploy`、`completion_report`、`other`、`plan`、`plan_review`。
 
+要改版一份文件，就用同樣的 `--role` 和 `--title` 再寫一次：daemon 會取代它的內文、reference 和位置，
+保留同一個 id，版本號加一，並記下 `document.revised`。CLI 會印 `added … at v1` 或
+`revised … to vN`，`clawdline item show` 也會印出每份文件的 `vN`。內容一模一樣再送一次不會改任何東西，
+直接回答現有那份，所以可以放心重試。舊內文不會保留；兩版都要留，就換一個 title。
+
+- `plan`、`plan_review` 和 review boundary 不會原地改版：每寫一次就新增一份，因為 planning gate
+  依順序讀它們，審查紀錄也指向它讀過的那一版 plan。
+- 一個項目最多 32 份文件，`completion_report` 不算在內：就算項目滿了也一定寫得進去。每個項目只有一份
+  `completion_report`；再寫一份（不論 title）就是改版那一份，title 也換成新的。
+- 第 33 份文件會被拒絕（`documents_full`），什麼都不會寫入；訊息會附上一條改版現有文件的
+  `clawdline item doc` 指令。
+
 - `plan` 和 `plan_review` 只用在 Epic 或 Feature（其他種類回 `document_role_not_applicable`）。
 - `plan_review` 的 `reference` 是審查這份計畫的 Clawdline child 的 task id。daemon 只在這些條件都成立
   時接受：task 存在（`plan_review_task_unknown`）、是項目的 owner Session 派的
