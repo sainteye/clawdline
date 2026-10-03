@@ -436,12 +436,10 @@ func (a *Authority) ConfirmPairing(id, code string) (PairResult, error) {
 	}
 	next := a.copyDevices()
 	next[entry.ID] = Device{
-		ID:   entry.ID,
-		Name: entry.Name,
-		Hash: Hash(entry.token),
-		// Reading only. Sending is granted separately, because it is a
-		// different risk entirely.
-		Caps:     NewCaps(Read),
+		ID:       entry.ID,
+		Name:     entry.Name,
+		Hash:     Hash(entry.token),
+		Caps:     NewCaps(Read, Send),
 		Created:  now,
 		Approved: true,
 	}
@@ -723,7 +721,7 @@ func (a *Authority) Exchange(ctx context.Context, plain, deviceName string) (tok
 		a.store.Audit("password.fail", map[string]string{"device": name})
 		return "", false, nil
 	}
-	_, token, err = a.AddDevice(name, NewCaps(Read), false)
+	_, token, err = a.AddDevice(name, NewCaps(Read, Send), false)
 	if err != nil {
 		return "", false, err
 	}

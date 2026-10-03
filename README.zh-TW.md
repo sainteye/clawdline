@@ -69,7 +69,7 @@ CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 
 ```sh
 ./bin/clawdline doctor      # 版本、port、狀態目錄
-./bin/clawdline open        # 讓這個瀏覽器登入；加 --send 才能在 Session 裡打字
+./bin/clawdline open        # 讓這個瀏覽器登入，並可在 Session 裡傳送訊息
 ```
 
 接著在 tmux 裡執行 `claude` 或 `codex`，Session 就會出現在清單上。每一步與確認方法，請看

@@ -3958,10 +3958,10 @@ export interface PairingNotice {
 }
 
 /**
- * POST /v1/auth/password: a correct password mints a new read-only device. Ten
- * wrong passwords in a day, from everybody together, and the checks still under way
- * count toward the same ten; past it, 429 rate_limited before any hashing. `name`
- * is cut to forty characters before it is stored or audited.
+ * POST /v1/auth/password: a correct password mints a new device that can read and
+ * send. Ten wrong passwords in a day, from everybody together, and the checks still
+ * under way count toward the same ten; past it, 429 rate_limited before any
+ * hashing. `name` is cut to forty characters before it is stored or audited.
  */
 export interface PasswordRequest {
   name?: string

@@ -151,7 +151,7 @@ func TestRevocationDuringInitialCaptureNeverSendsFrame(t *testing.T) {
 	}
 }
 
-// A paired sender inherits terminal access; pairing alone and remote_write do not.
+// A paired sender inherits terminal access; a legacy read-only device does not.
 func TestAReadOnlyDeviceIsForbiddenTerminals(t *testing.T) {
 	f := newTermFixture(t, newFakeTerms())
 	term := f.open(f.local)
