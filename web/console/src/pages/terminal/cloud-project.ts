@@ -39,6 +39,11 @@ export function decodeCloudPlaceID(id: string): [string, string] | null {
   }
 }
 
+/** A wrapped Cloud Project keeps its own machine even while another console is selected. */
+export function cloudTerminalMachine(routeProject: string, selectedMachine: string): string {
+  return decodeCloudPlaceID(routeProject)?.[0] ?? selectedMachine
+}
+
 /** The route's Project resolved against the Cloud list, on the terminal host's machine. */
 export function resolveCloudTerminalProject(routeProject: string, places: readonly CloudPlaceRow[], machine: string): CloudTerminalProject {
   const wanted = routeProject.trim()

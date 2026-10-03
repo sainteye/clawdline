@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { CloudProjectReader, PROJECT_RETRY_MS, decodeCloudPlaceID, projectReadFailure, projectRetryDelay, resolveCloudTerminalProject } from "./cloud-project.ts"
+import { CloudProjectReader, PROJECT_RETRY_MS, cloudTerminalMachine, decodeCloudPlaceID, projectReadFailure, projectRetryDelay, resolveCloudTerminalProject } from "./cloud-project.ts"
 
 // The copied client's spelling (cloud-client.js `cloudPlaceID`), written out here
 // so the test checks the decoder against the encoder, not against itself.
@@ -31,6 +31,13 @@ test("a wrapped id of this machine gives the channel the machine-local id and ke
 
 test("a wrapped id of another machine is unknown here", () => {
   assert.deepEqual(resolveCloudTerminalProject(places[3].id, places, here), { kind: "unknown" })
+})
+
+test("a terminal route keeps the listed project's machine while another console is selected", () => {
+  assert.equal(cloudTerminalMachine(places[3].id, here), there)
+  assert.deepEqual(resolveCloudTerminalProject(places[3].id, places, cloudTerminalMachine(places[3].id, here)),
+    { kind: "found", page: places[3].id, local: "p-local-9", label: "Nine" })
+  assert.equal(cloudTerminalMachine("p-local-1", here), here)
 })
 
 test("a wrapped id that is not in the list is unknown, even when it decodes to this machine", () => {

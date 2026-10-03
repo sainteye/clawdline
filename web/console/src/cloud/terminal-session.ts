@@ -156,11 +156,12 @@ export class CloudTerminalSession {
     }
   }
 
-  async request(operation: string, fields: Record<string, unknown> = {}): Promise<Receipt> {
+  async request(operation: string, fields: Record<string, unknown> = {}, onRequestID?: (id: string) => void): Promise<Receipt> {
     if (!this.connection) throw fail("terminal_not_connected")
     if (!this.active && operation !== "open_connection" && operation !== "rekey_connection") throw fail("terminal_input_paused")
     if ((operation === "input" || operation === "paste") && !this.s.canType) throw fail("terminal_input_paused")
     const requestID = crypto.randomUUID()
+    onRequestID?.(requestID)
     const connection = this.connection
     const receipt = new Promise<Receipt>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -285,9 +286,9 @@ export class CloudTerminalSession {
     if (!this.s.canType || this.epoch === null) throw fail("not_controller")
     await this.request("resize", { terminal_id: this.terminal, client: this.client, epoch: this.epoch, body: { cols, rows } })
   }
-  async close(): Promise<void> {
+  async close(onRequestID?: (id: string) => void): Promise<void> {
     if (!this.s.canType || this.epoch === null) throw fail("not_controller")
-    await this.request("close", { terminal_id: this.terminal, client: this.client, epoch: this.epoch })
+    await this.request("close", { terminal_id: this.terminal, client: this.client, epoch: this.epoch }, onRequestID)
     this.set({ state: "closed" })
   }
   async history(): Promise<CloudTerminalHistory> {
@@ -365,7 +366,8 @@ export class CloudTerminalSession {
           this.inputUnknown = true
           this.set({ state: "unknown", reason: value.error ?? "terminal_input_paused" })
         }
-        pending.reject(fail(value.error ?? "terminal_forbidden"))
+        pending.reject(Object.assign(fail(value.error ?? (value.status === "unknown" ? "terminal_result_unknown" : "terminal_forbidden")),
+          { receiptStatus: value.status }))
       }
     } else if (value.type === "terminal_frame" &&
       event.envelope.ch.startsWith("term/") &&

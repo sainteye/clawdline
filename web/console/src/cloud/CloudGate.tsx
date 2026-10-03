@@ -40,7 +40,8 @@ import {
 import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { DeviceLimitPanel } from "./DeviceLimitPanel.js"
 import { readThroughRelay } from "./install.js"
-import { setTerminalHost, setTerminalHostChooser } from "./terminal-host.js"
+import { setTerminalHost } from "./terminal-host.js"
+import { clearTerminalCloseStates } from "./terminal-close-state.js"
 import type { TerminalCloudClient } from "./terminal-transport.js"
 import { machineForAddress } from "./document-target.js"
 import { CloudAccountContext } from "./account-context.js"
@@ -242,6 +243,7 @@ export function CloudGate({ declared }: { declared: string }) {
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  useEffect(() => clearTerminalCloseStates(), [who?.account])
   const reader = useRef<RelayReader | null>(null)
   const unlisten = useRef<(() => void) | null>(null)
   const recheck = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -604,17 +606,6 @@ export function CloudGate({ declared }: { declared: string }) {
   // that is gone leaves nothing behind for a card to press.
   const machinesRef = useRef(machines)
   machinesRef.current = machines
-  useEffect(() => {
-    setTerminalHostChooser((id) => {
-      const machine = machinesRef.current?.find((row) => row.id === id && row.selectable)
-      if (!machine) return false
-      // The terminal page writes its Cloud Project route in this turn; switch
-      // the selected machine after that address exists so a reload keeps it.
-      setTimeout(() => choose(machine), 0)
-      return true
-    })
-    return () => setTerminalHostChooser(null)
-  }, [choose])
   useEffect(() => {
     setMachinePairing((id) => {
       const known = machinesRef.current?.find((m) => m.id === id)

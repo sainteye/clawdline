@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { Terminal as TerminalRow } from "@clawdline/contract"
 import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
@@ -12,8 +12,11 @@ import { TAB } from "./tab.js"
 import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, withCtrl } from "./keys.js"
-import { holderWords, terminalShortID } from "./words.js"
+import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
 import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals } from "./cloud-view.js"
+import { sessionsPageHash } from "../../page-route.js"
+import { requestPage } from "../../overlays/index.js"
+import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
 /** The page's content-free receipt timeline, readable and copyable where a terminal request failed. */
@@ -59,8 +62,8 @@ function stateWords(state: CloudTerminalSnapshot["state"]): string {
  * `project` is the Cloud Project id the page address carries; `channelProject` is the same
  * Project's machine-local id, the only one the machine's terminal channel knows (cloud-project.ts).
  */
-export function CloudTerminalPage({ project, channelProject, label, id, shown, from }: {
-  project: string; channelProject: string; label: string; id: string; shown: boolean; from: "" | "projects" | "work" | "sessions"
+export function CloudTerminalPage({ project, channelProject, machine, label, id, shown, from }: {
+  project: string; channelProject: string; machine: string; label: string; id: string; shown: boolean; from: "" | "projects" | "work" | "sessions"
 }) {
   const [host, setHost] = useState<TerminalHost | null>(null)
   const [session, setSession] = useState<CloudTerminalSession | null>(null)
@@ -74,7 +77,13 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
   const [reader, setReader] = useState(false)
   const [ctrl, setCtrl] = useState(false)
   const ctrlArmed = useRef(false)
-  const [confirm, setConfirm] = useState<"takeover" | "close" | "reacquire" | null>(null)
+  const [confirm, setConfirm] = useState<"takeover" | "reacquire" | null>(null)
+  const [closeConfirm, setCloseConfirm] = useState(false)
+  const closeDialog = useRef<HTMLDialogElement>(null)
+  const closeOpener = useRef<HTMLButtonElement>(null)
+  const closeCancel = useRef<HTMLButtonElement>(null)
+  const closeMessage = useRef<HTMLParagraphElement>(null)
+  const closeRecord = useSyncExternalStore(watchTerminalClose, () => terminalCloseState(machine, id), () => null)
   const screen = useRef<HTMLDivElement>(null)
   const terminal = useRef<XTerm | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -83,13 +92,23 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
   const historyFocus = useRef<HTMLPreElement>(null)
   const observed = useRef<TerminalObservation | null>(null)
   useEffect(() => watchTerminalHost(setHost), [])
+  useEffect(() => {
+    const dialog = closeDialog.current
+    if (!dialog) return
+    if (closeConfirm && !dialog.open) { dialog.showModal(); closeCancel.current?.focus() }
+    if (!closeConfirm && dialog.open) dialog.close()
+  }, [closeConfirm])
+  useEffect(() => {
+    if (closeRecord)
+      closeMessage.current?.focus()
+  }, [closeRecord])
 
   useEffect(() => {
     if (!shown || !host || !channelProject) return
     let live = true
     const observation = new TerminalObservation()
     observed.current = observation
-    const transport = new TerminalChannelTransport(host.client, host.machine, observation)
+    const transport = new TerminalChannelTransport(host.client, machine, observation)
     const next = new CloudTerminalSession(transport, TAB, observation)
     const stop = next.subscribe((value) => live && setSnapshot(value))
     setSession(next); setSnapshot(empty); setLoading(true); setError(""); setMeta(null); setRows([])
@@ -97,11 +116,11 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
       try {
         const begun = await beginCloudTerminal(next, channelProject, id, TAB)
         if (live) { if ("meta" in begun) setMeta(begun.meta); else setRows(begun.rows) }
-      } catch (e) { if (live) setError(reason(e)) }
+      } catch (e) { if (live) { if (id && reason(e) === "terminal_closed") observeTerminalEnded(machine, id); setError(reason(e)) } }
       finally { if (live) setLoading(false) }
     })()
     return () => { live = false; stop(); next.dispose(); transport.dispose(); setSession(null) }
-  }, [host, channelProject, id, shown])
+  }, [host, machine, channelProject, id, shown])
 
   useEffect(() => {
     if (!id || !screen.current || !shown) return
@@ -197,7 +216,39 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
     if (typeof next !== "string") throw new Error("terminal_bad_receipt")
     openTerminalPage(project, next, from)
   })
-  const goBack = () => openTerminalPage(project, "", from)
+  const goBack = () => {
+    if (from !== "sessions") { openTerminalPage(project, "", from); return }
+    const address = sessionsPageHash(true)
+    try { window.history.replaceState(window.history.state, "", address) } catch { location.hash = address }
+    requestPage({ page: "sessions", hash: false })
+    window.dispatchEvent(new HashChangeEvent("hashchange"))
+  }
+  const submitClose = () => void run("close", async () => {
+    if (!session) return
+    setCloseConfirm(false)
+    let requestID = ""
+    try {
+      await session.close((request) => { requestID = request; beginTerminalClose(machine, id, request) })
+      if (requestID) settleTerminalClose(machine, id, requestID, "ok")
+      goBack()
+    } catch (failure) {
+      const code = reason(failure)
+      if (requestID) settleTerminalClose(machine, id, requestID,
+        (failure as { receiptStatus?: unknown })?.receiptStatus === "refused" && code !== "terminal_closed" ? "refused" : "unknown", code)
+      else setError(code)
+    }
+  })
+  const queryClose = () => void run("close-read", async () => {
+    if (!session) return
+    try {
+      const answer = await session.request("read", { terminal_id: id, client: TAB })
+      const status = (answer.result as { status?: unknown } | undefined)?.status
+      if (status === "closed") observeTerminalEnded(machine, id)
+    } catch (failure) {
+      if (reason(failure) === "terminal_closed") observeTerminalEnded(machine, id)
+      else throw failure
+    }
+  })
   const sendKey = (value: string) => {
     if (value === "ctrl") {
       ctrlArmed.current = !ctrlArmed.current
@@ -244,13 +295,14 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
       } else terminal.current?.focus()
     } }}>
     <header className="terminal-head">
-      <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord("terminalBack")}</button>
+      <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord(from === "sessions" ? "terminalBackSessions" : "terminalBack")}</button>
+        <button className="board-button" type="button" onClick={goBack}>{nextWord("terminalCloseView")}</button>
         <dl className="terminal-facts">
           <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
           <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl>
         <details className="terminal-more terminal-fact-more"><summary>{nextWord("terminalDetails")}</summary>
           <dl className="terminal-facts"><div><dt>{nextWord("terminalEntry")}</dt><dd>{terminalShortID(id)}</dd></div>
-            <div><dt>{nextWord("terminalMachine")}</dt><dd>{host.machine}</dd></div></dl>
+            <div><dt>{nextWord("terminalMachine")}</dt><dd>{machine}</dd></div></dl>
         </details></div>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
         {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || accessError || snapshot.state === "revoked"}
@@ -265,15 +317,36 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
         <details className="terminal-more terminal-action-more"><summary>{nextWord("terminalMoreActions")}</summary><div className="terminal-more-actions">
         <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("history", async () => setHistory(history ? null : await session!.history()))}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
         <button className="board-button" type="button" aria-pressed={reader} onClick={() => setReader((value) => !value)}>{nextWord("terminalReaderMode")}</button>
-        <button className="board-button" type="button" disabled={!snapshot.canType || !!busy} onClick={() => setConfirm("close")}>{nextWord("terminalClose")}</button>
         </div></details>
       </div>
-      {confirm && <div className="terminal-ask" role="group" aria-label={confirm === "close" ? nextWord("terminalClose") : nextWord("terminalTakeover")}>
-        <p>{confirm === "reacquire" ? nextWord("terminalCloudReacquireAsk") : nextWord(confirm === "close" ? "terminalCloseAsk" : "terminalTakeoverAsk", { holder })}</p>
+      <div className="terminal-end-action">
+        <button className="board-button terminal-danger" type="button" ref={closeOpener}
+          disabled={!snapshot.canType || !!busy || closeRecord?.status === "pending" || closeRecord?.status === "unknown" || closeRecord?.status === "ok" || closeRecord?.status === "ended"}
+          onClick={() => setCloseConfirm(true)}>{nextWord("terminalTerminateHost")}</button>
+        {!snapshot.canType && !closeRecord && <p className="terminal-note">{nextWord("terminalTerminateNeedsControl")}</p>}
+      </div>
+      <dialog ref={closeDialog} className="terminal-close-confirm" onCancel={() => { setCloseConfirm(false); closeOpener.current?.focus() }}
+        aria-label={nextWord("terminalTerminateHost")}>
+        <p>{nextWord("terminalTerminateAsk", { project: label, machine, id: terminalShortID(id) })}</p>
+        <button className="board-button" type="button" ref={closeCancel} onClick={() => { setCloseConfirm(false); closeOpener.current?.focus() }}>{nextWord("terminalCancel")}</button>
+        <button className="board-button terminal-danger" type="button" onClick={submitClose}>{nextWord("terminalTerminateHost")}</button>
+      </dialog>
+      {closeRecord && <div className="terminal-close-result">
+        <p ref={closeMessage} tabIndex={-1} role={closeRecord.status === "refused" ? "alert" : "status"}>
+          {nextWord(closeRecord.status === "pending" ? "terminalTerminatePending" :
+            closeRecord.status === "unknown" ? "terminalTerminateUnknown" :
+              closeRecord.status === "ended" ? "terminalTerminateEnded" :
+                closeRecord.status === "ok" ? "terminalTerminateSucceeded" : "terminalCloudError",
+            { code: terminalRefusalWords(closeRecord.error) })}
+        </p>
+        {closeRecord.status === "unknown" && <button className="board-button" type="button" disabled={!!busy} onClick={queryClose}>{nextWord("terminalTerminateQuery")}</button>}
+      </div>}
+      {confirm && <div className="terminal-ask" role="group" aria-label={nextWord("terminalTakeover")}>
+        <p>{confirm === "reacquire" ? nextWord("terminalCloudReacquireAsk") : nextWord("terminalTakeoverAsk", { holder })}</p>
         <button className="board-button terminal-danger" type="button" disabled={!!busy} onClick={() => void run(confirm, async () => {
-          if (confirm === "close") { await session!.close(); goBack() } else await session!.acquire(confirm === "reacquire" ? "acquire" : "takeover")
+          await session!.acquire(confirm === "reacquire" ? "acquire" : "takeover")
           setConfirm(null)
-        })}>{nextWord(confirm === "close" ? "terminalCloseConfirm" : confirm === "reacquire" ? "terminalCloudReacquire" : "terminalTakeoverConfirm")}</button>
+        })}>{nextWord(confirm === "reacquire" ? "terminalCloudReacquire" : "terminalTakeoverConfirm")}</button>
         <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
       </div>}
       <p className="terminal-status-line" role="status" aria-live="polite">{loading ? nextWord("terminalConnecting") :

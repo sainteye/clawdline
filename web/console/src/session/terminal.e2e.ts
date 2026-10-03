@@ -925,16 +925,12 @@ test("Session terminal mode gives a read-only device a reason and no open action
   await tab.shot("session-terminal-device-refused")
 })
 
-test("hosted Session terminal entries explain their local-only limit", { skip: skip || !hostedOrigin }, async () => {
+test("hosted Session terminal entries distinguish a missing Cloud line from an empty list", { skip: skip || !hostedOrigin }, async () => {
   const tab = await Tab.open(browser, true)
   const mark = tab.b.mark()
   await tab.go("#page=sessions&mode=terminal")
-  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("hosted note missing: " + JSON.stringify({ hash: location.hash, text: document.querySelector(".terminal-list-message")?.textContent, page: document.documentElement.dataset.page, body: document.body.innerText.slice(0, 150) }))), 5000); const look = () => document.querySelector(".terminal-list-message")?.textContent?.includes("本機") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
-  assert.equal(await tab.run(`document.querySelector(".session-terminal-head button") === null`), true)
-  await tab.press("#start-go")
-  await tab.press("#start-terminal-tab")
-  assert.equal(await tab.run(`document.querySelectorAll("#start-list .place").length`), 0)
-  assert.ok((await tab.run(`document.querySelector("#start-say")?.textContent ?? ""`)).includes("本機"))
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("hosted line state missing: " + JSON.stringify({ hash: location.hash, text: document.querySelector(".terminal-list-message")?.textContent, page: document.documentElement.dataset.page, body: document.body.innerText.slice(0, 150) }))), 5000); const look = () => document.querySelector(".terminal-list-message[role=status]")?.textContent?.includes("重新連線") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  assert.equal(await tab.run(`document.querySelector(".session-terminal-rows") === null`), true)
   assert.equal(tab.requests(mark, "/v1/terminals").length, 0)
   await tab.shot("session-terminal-hosted")
 })

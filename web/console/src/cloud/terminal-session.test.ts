@@ -21,6 +21,7 @@ class Wire implements TerminalWire {
   observed: TerminalEnvelope[] = []
   requests: Record<string, unknown>[] = []
   inputResult: "ok" | "unknown" | "refused" = "ok"
+  closeResult: "ok" | "unknown" = "ok"
   incarnation = "first-machine-start"
   lease = held
   historyResult: Record<string, unknown> = { lines: [], truncated: false, omitted_lines: 0 }
@@ -52,7 +53,7 @@ class Wire implements TerminalWire {
     const reply = () => this.emit(connection, "termr", {
       v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
       ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
-      status: operation === "input" ? this.inputResult : "ok", result,
+      status: operation === "input" ? this.inputResult : operation === "close" ? this.closeResult : "ok", result,
       ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
     })
     if (this.delayed.has(operation)) this.replies.push(reply)
@@ -71,6 +72,22 @@ class Wire implements TerminalWire {
       frame_seq: seq, captured_at: Date.now() / 1000, frame: frame(rev) })
   }
 }
+
+test("a close exposes its request id and an unknown receipt does not claim success", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.closeResult = "unknown"
+    let requestID = ""
+    await assert.rejects(() => session.close((id) => { requestID = id }), /terminal_result_unknown/)
+    assert.equal(requestID, wire.requests.find((request) => request.operation === "close")?.request_id)
+    assert.notEqual(session.snapshot.state, "closed")
+  } finally { session.dispose() }
+})
 
 test("a signed receipt with a different request id is diagnosed and cannot settle capture", async () => {
   const wire = new Wire()
