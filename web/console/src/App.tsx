@@ -215,7 +215,10 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   const [openId, setOpenState] = useState<string | null>(null)
   const [view, setViewState] = useState<"list" | "detail">("list")
   const [paneOpen, setPaneState] = useState(true)
-  const [filter, setFilterState] = useState("")
+  const [filter, setFilterState] = useState(() => {
+    const saved = (history.state as { terminalReturnFilter?: unknown } | null)?.terminalReturnFilter
+    return typeof saved === "string" && location.hash.includes("from=sessions") ? saved : ""
+  })
   const pageRef = useRef<Page>(page)
   const menuRef = useRef(menu)
   menuRef.current = menu
