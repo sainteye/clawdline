@@ -62,9 +62,13 @@ export function freshTerminalConnection(): { connection: string; keyID: string; 
 
 /** Adds only terminal channels to the existing authenticated socket, leaving the copied client intact. */
 export class TerminalChannelTransport {
+  private static receivers = new WeakMap<TerminalCloudClient, {
+    original: TerminalCloudClient["_receiveEnvelope"]
+    wrapper: TerminalCloudClient["_receiveEnvelope"]
+    adapters: Set<TerminalChannelTransport>
+  }>()
   private readonly viewer: string
   private readonly pairing: Promise<{ masterKey: CryptoKey; keyID: string; senderKey: CryptoKey; senderID: string }>
-  private readonly oldReceive: TerminalCloudClient["_receiveEnvelope"]
   private readonly stopEvents: () => void
   private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: { term: number; termr: number };
     inFlight: Set<number>; nonces: Set<string> }>()
@@ -87,14 +91,23 @@ export class TerminalChannelTransport {
     if (!client.deviceID || !segment.test(client.deviceID)) throw fail("terminal_forbidden")
     this.viewer = client.deviceID
     this.pairing = client._outboundMachinePairing(machine)
-    this.oldReceive = client._receiveEnvelope.bind(client)
-    client._receiveEnvelope = async (envelope, realign) => {
-      if (envelope?.ch?.startsWith("term/" ) || envelope?.ch?.startsWith("termr/")) {
-        await this.receive(envelope, realign)
-        return
+    let receiver = TerminalChannelTransport.receivers.get(client)
+    if (!receiver) {
+      const original = client._receiveEnvelope
+      const adapters = new Set<TerminalChannelTransport>()
+      const wrapper: TerminalCloudClient["_receiveEnvelope"] = async (envelope, realign) => {
+        if (envelope?.ch?.startsWith("term/") || envelope?.ch?.startsWith("termr/")) {
+          const owner = [...adapters].find((adapter) => adapter.receives(envelope)) ??
+            [...adapters].find((adapter) => adapter.matchesMachine(envelope))
+          if (owner) return owner.receive(envelope, realign)
+        }
+        return original.call(client, envelope, realign)
       }
-      return this.oldReceive(envelope, realign)
+      receiver = { original, wrapper, adapters }
+      TerminalChannelTransport.receivers.set(client, receiver)
+      client._receiveEnvelope = wrapper
     }
+    receiver.adapters.add(this)
     this.stopEvents = client.events((event) => this.relay(event))
   }
 
@@ -206,6 +219,15 @@ export class TerminalChannelTransport {
   }
 
   private channels(connection: string): string[] { return [route("term", this.machine, this.viewer, connection), route("termr", this.machine, this.viewer, connection)] }
+  private matchesMachine(envelope: TerminalEnvelope): boolean {
+    const parts = envelope.ch.split("/")
+    return parts.length === 4 && (parts[0] === "term" || parts[0] === "termr") &&
+      parts[1] === this.machine && parts[2] === this.viewer
+  }
+  private receives(envelope: TerminalEnvelope): boolean {
+    const connection = envelope.ch.split("/")[3]
+    return this.matchesMachine(envelope) && !!connection && this.listeners.has(connection)
+  }
   private receive(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
     // Relay delivery preserves order on one channel, but signature and AES work
     // is async. Serialize only that channel; a term frame cannot delay termr.
@@ -275,6 +297,11 @@ export class TerminalChannelTransport {
   dispose(): void {
     for (const connection of [...this.keys.keys()]) this.unsubscribeTerminal(connection)
     this.stopEvents()
-    this.client._receiveEnvelope = this.oldReceive
+    const receiver = TerminalChannelTransport.receivers.get(this.client)
+    receiver?.adapters.delete(this)
+    if (receiver && receiver.adapters.size === 0) {
+      if (this.client._receiveEnvelope === receiver.wrapper) this.client._receiveEnvelope = receiver.original
+      TerminalChannelTransport.receivers.delete(this.client)
+    }
   }
 }

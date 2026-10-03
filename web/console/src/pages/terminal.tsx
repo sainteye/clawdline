@@ -4,7 +4,7 @@ import { sessionsPageHash, terminalRouteFromHash, workPageHash, workProjectID, t
 import { requestPage } from "../overlays/index.js"
 import { readProjectPlaces, type ProjectPlacePage } from "./work/api.js"
 import { watchTerminalHost, type TerminalHost } from "../cloud/terminal-host.js"
-import { CloudProjectReader, resolveCloudTerminalProject, type ProjectReadState } from "./terminal/cloud-project.js"
+import { CloudProjectReader, cloudTerminalMachine, resolveCloudTerminalProject, type ProjectReadState } from "./terminal/cloud-project.js"
 import { hostedConsole } from "./terminal/api.js"
 import { TERMINAL_ROUTE, openTerminalPage } from "./terminal/navigate.js"
 import { TerminalProjectList } from "./terminal/TerminalProjectList.js"
@@ -98,7 +98,8 @@ function TerminalPage({ shown }: { shown: boolean }) {
   const lastMachine = useRef("")
   if (host) lastMachine.current = host.machine
   const machine = host?.machine ?? lastMachine.current
-  const resolved = hosted && cloud.state === "ready" && machine ? resolveCloudTerminalProject(route.project, cloud.page.places, machine) : null
+  const targetMachine = cloudTerminalMachine(route.project, machine)
+  const resolved = hosted && cloud.state === "ready" && targetMachine ? resolveCloudTerminalProject(route.project, cloud.page.places, targetMachine) : null
   const found = resolved?.kind === "found" ? resolved : null
   const project = hosted ? found?.page ?? "" : known?.id ?? ""
   const name = (hosted ? found?.label : known?.label) || project || route.project
@@ -150,7 +151,7 @@ function TerminalPage({ shown }: { shown: boolean }) {
             : cloud.state === "loading" ? <p className="terminal-note">{nextWord("terminalListLoading")}</p>
               : !host ? <p className="terminal-note" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
                 : !found ? <p className="terminal-note" role="alert">{nextWord("terminalProjectUnknown")}</p>
-                  : <CloudTerminalPage project={found.page} channelProject={found.local} label={name} id={route.terminal} shown={shown} from={route.from} />}
+                  : <CloudTerminalPage project={found.page} channelProject={found.local} machine={targetMachine} label={name} id={route.terminal} shown={shown} from={route.from} />}
         </>
       ) : route.terminal ? (
         <>

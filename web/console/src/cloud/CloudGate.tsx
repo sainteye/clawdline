@@ -41,6 +41,7 @@ import { PairPanel, type PairRequest } from "./PairPanel.js"
 import { DeviceLimitPanel } from "./DeviceLimitPanel.js"
 import { readThroughRelay } from "./install.js"
 import { setTerminalHost } from "./terminal-host.js"
+import { clearTerminalCloseStates } from "./terminal-close-state.js"
 import type { TerminalCloudClient } from "./terminal-transport.js"
 import { machineForAddress } from "./document-target.js"
 import { CloudAccountContext } from "./account-context.js"
@@ -242,6 +243,7 @@ export function CloudGate({ declared }: { declared: string }) {
   const session = useRef<RecoverableCloudSession | null>(null)
   const line = useRef<CloudConnection | null>(null)
   const client = useRef<CloudClientHandle | null>(null)
+  useEffect(() => clearTerminalCloseStates(), [who?.account])
   const reader = useRef<RelayReader | null>(null)
   const unlisten = useRef<(() => void) | null>(null)
   const recheck = useRef<ReturnType<typeof setTimeout> | null>(null)

@@ -11,6 +11,7 @@ import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords, unavailableWords } from "../pages/terminal/words.js"
 import { rowNames } from "../pages/terminal/TerminalProjectList.js"
 import { Start } from "./Start.js"
+import { CloudAllTerminalList } from "./CloudAllTerminalList.js"
 import "./terminal-list.css"
 
 function why(error: unknown): string {
@@ -149,10 +150,7 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
     requestAnimationFrame(() => closeOpener.current?.focus())
   }
 
-  if (hosted) return <div className="terminal-list-message" role="note">
-    <p>{nextWord("terminalCloudChooseProject")}</p>
-    <button type="button" onClick={() => Start.openTerminal()}>{nextWord("terminalOpenNew")}</button>
-  </div>
+  if (hosted) return <CloudAllTerminalList shown={shown} filter={filter} />
   if (blocked) return <p className="terminal-list-message" role="note">{blocked}</p>
   const names = rowNames(rows.map((row) => row.created))
   const q = filter.trim().toLocaleLowerCase()

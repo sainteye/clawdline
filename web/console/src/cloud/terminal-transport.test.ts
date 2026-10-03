@@ -22,7 +22,7 @@ async function fixture() {
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: sender.privateKey, ready: true, retired: false,
     nextSequence: async () => 7, socketSubscriptions: new Map(), subscriptionHolds: new Map(),
-    _outboundMachinePairing: async () => ({ masterKey: master, keyID: "ms-1", senderKey: machineKey.publicKey, senderID: machine }),
+    _outboundMachinePairing: async (id) => ({ masterKey: master, keyID: "ms-1", senderKey: machineKey.publicKey, senderID: id }),
     _send(frame) {
       if ((frame as { type?: string }).type === "publish") published.push((frame as { envelope: TerminalEnvelope }).envelope)
       if ((frame as { type?: string }).type === "terminal_frame_observed") observed.push(frame)
@@ -34,13 +34,14 @@ async function fixture() {
   const adapter = new TerminalChannelTransport(client, machine, observation)
   const fresh = freshTerminalConnection()
   const seen: unknown[] = []
-  const seal = async (sequence: number, plaintext: unknown, kind: "term" | "termr" = "termr", key = fresh.key): Promise<TerminalEnvelope> => {
+  const seal = async (sequence: number, plaintext: unknown, kind: "term" | "termr" = "termr", key = fresh.key,
+    connection = fresh.connection, keyID = fresh.keyID, targetMachine = machine): Promise<TerminalEnvelope> => {
     const nonce = crypto.getRandomValues(new Uint8Array(12))
     const imported = await crypto.subtle.importKey("raw", key.slice().buffer as ArrayBuffer, "AES-GCM", false, ["encrypt"])
     const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, imported, new TextEncoder().encode(JSON.stringify(plaintext)))
-    const envelope: TerminalEnvelope = { v: 1, ch: `${kind}/${machine}/${viewer}/${fresh.connection}`, seq: sequence,
-      ts: Date.now(), class: kind === "term" ? "stream" : "ctl", key_id: fresh.keyID, nonce: bytesBase64(nonce),
-      ct: bytesBase64(new Uint8Array(ct)), sender: machine, sig: "" }
+    const envelope: TerminalEnvelope = { v: 1, ch: `${kind}/${targetMachine}/${viewer}/${connection}`, seq: sequence,
+      ts: Date.now(), class: kind === "term" ? "stream" : "ctl", key_id: keyID, nonce: bytesBase64(nonce),
+      ct: bytesBase64(new Uint8Array(ct)), sender: targetMachine, sig: "" }
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", machineKey.privateKey, envelopeSigningBytes(envelope))))
     return envelope
   }
@@ -48,6 +49,25 @@ async function fixture() {
     emitRelay: (event: { type: string; error?: { code?: string } }) => events.forEach((fn) => fn(event)),
     setConfirm: (value: boolean) => { confirm = value }, master }
 }
+
+test("two machines sharing a Cloud client keep their receipts after either transport closes", async () => {
+  const f = await fixture()
+  const second = new TerminalChannelTransport(f.client, "machine_other")
+  const other = freshTerminalConnection()
+  const seenOther: unknown[] = []
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  await second.subscribeTerminal(other.connection, other.keyID, other.key, (event) => seenOther.push(event))
+  const body = (connection: string) => ({ v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
+    connection, operation: "list", status: "ok" })
+  await f.client._receiveEnvelope(await f.seal(1, body(f.fresh.connection)), false)
+  await f.client._receiveEnvelope(await f.seal(1, body(other.connection), "termr", other.key, other.connection, other.keyID, "machine_other"), false)
+  assert.equal(f.seen.length, 1)
+  assert.equal(seenOther.length, 1)
+  f.adapter.dispose()
+  await f.client._receiveEnvelope(await f.seal(2, body(other.connection), "termr", other.key, other.connection, other.keyID, "machine_other"), false)
+  assert.equal(seenOther.length, 2)
+  second.dispose()
+})
 
 test("the no-cache receipt is subscribed before an outbound open can be published", async () => {
   const f = await fixture()

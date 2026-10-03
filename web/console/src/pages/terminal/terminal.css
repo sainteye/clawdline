@@ -78,6 +78,15 @@
 .terminal-ask p { margin: 0; flex: 1 1 16em; font-size: 13px; line-height: 1.6; color: var(--ink); }
 /* The answer that acts, drawn apart from Cancel as the Devices page draws Revoke (`.signed-in-danger`). */
 .terminal-danger { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); font-weight: 600; }
+.terminal-end-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.terminal-end-action .board-button { min-height: 44px; }
+.terminal-end-action .terminal-note { margin: 0; }
+.terminal-close-result p { margin: 0; padding: 6px 0; }
+.terminal-close-result p[role="alert"] { color: var(--bad); }
+.terminal-close-confirm { width: min(90vw, 440px); padding: 20px; background: var(--card-hi); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; }
+.terminal-close-confirm::backdrop { background: #0008; }
+.terminal-close-confirm p { margin: 0 0 16px; line-height: 1.6; }
+.terminal-close-confirm button { min-height: 44px; margin-right: 8px; }
 .terminal-ended { margin: 0; padding: 8px 12px; border-left: 2px solid var(--warn); background: var(--card); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .terminal-ended p { margin: 0; }
 .terminal-ended-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
