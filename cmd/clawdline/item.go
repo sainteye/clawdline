@@ -968,9 +968,6 @@ func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
 	return 0
 }
 
-// itemWrote says what a write did and prints the item row its answer
-// carries. That answer holds no steps or documents, so none are claimed
-// about: `item show` reads them.
 // revisedDocument is the document on it that writing role and title would
 // revise, as the daemon chooses it (work.DocumentRevisable): the
 // completion_report whatever its title, otherwise the earliest with the same
@@ -1006,6 +1003,9 @@ func docWrote(stdout io.Writer, it itemWire, d docFlags, before int64) {
 	}
 }
 
+// itemWrote says what a write did and prints the item row its answer
+// carries. That answer holds no steps or documents, so none are claimed
+// about: `item show` reads them.
 func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
 	what := map[string]string{"add": "the item", "child": "the child item", "assign": "the assignment",
 		"claim": "the claim", "finish": "the finish", "doc": "the document",

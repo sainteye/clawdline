@@ -150,7 +150,7 @@ func TestOneDocumentPastTheLimitIsRefusedWithACommand(t *testing.T) {
 	if !errors.As(err, &refused) || refused.Code != "documents_full" || refused.Status != http.StatusInsufficientStorage {
 		t.Fatalf("33rd document: %v", err)
 	}
-	want := "`clawdline item doc " + v.Item.ID + " --role test --title \"Test plan\" --body-file <file>`"
+	want := "`clawdline item doc " + v.Item.ID + " --role test --title \"<its title>\" --body-file <file>`"
 	if !strings.Contains(refused.Message, want) || !strings.Contains(refused.Message, "nothing was written") {
 		t.Fatalf("message = %q", refused.Message)
 	}

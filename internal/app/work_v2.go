@@ -138,17 +138,20 @@ func unreadableTask(rows []store.BrokerRow) string {
 
 // documentsFull is the documents_full refusal: the limit, that nothing was
 // written, and how to write the same document without needing a new place.
-func documentsFull(id, role, title string) error {
-	return workV2Error(http.StatusInsufficientStorage, "documents_full", DocumentsFullMessage(id, role, title))
+func documentsFull(id, role string) error {
+	return workV2Error(http.StatusInsufficientStorage, "documents_full", DocumentsFullMessage(id, role))
 }
 
 // DocumentsFullMessage names the per-item limit and the two writes it never
-// refuses.
-func DocumentsFullMessage(id, role, title string) string {
+// refuses. The refused title is new to the item, so the command quotes a
+// placeholder for one already there rather than a write that would be refused
+// again.
+func DocumentsFullMessage(id, role string) string {
 	return fmt.Sprintf("This item already holds %d documents, the most it keeps, so nothing was written. "+
 		"A completion_report is always accepted, and writing a document again with the role and title of one "+
-		"already on the item revises it in place instead of adding one. Revise an existing document with "+
-		"`clawdline item doc %s --role %s --title %q --body-file <file>`.", store.WorkV2DocumentLimit, id, role, title)
+		"already on the item revises it in place instead of adding one. `clawdline item show %s` lists the "+
+		"documents; revise one with `clawdline item doc %s --role %s --title \"<its title>\" --body-file <file>`.",
+		store.WorkV2DocumentLimit, id, id, role)
 }
 
 func workV2Error(status int, code, message string) error {
@@ -179,7 +182,7 @@ func mapWorkV2Error(err error) error {
 	case errors.Is(err, store.ErrDirectTodoImageBytesFull):
 		return workV2Error(http.StatusInsufficientStorage, "image_bytes_full", "Session-to-do reference-image storage is full; nothing was evicted.")
 	case errors.Is(err, store.ErrWorkV2DocsFull):
-		return documentsFull("<item id>", "<role>", "<title>")
+		return documentsFull("<item id>", "<role>")
 	case errors.Is(err, store.ErrWorkV2ImagesFull):
 		return workV2Error(http.StatusInsufficientStorage, "images_full", "This item already has six reference images.")
 	case errors.Is(err, store.ErrWorkV2ImageBytesFull):
@@ -2227,7 +2230,7 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 				return err
 			}
 		} else if err := tx.AddDocument(doc); errors.Is(err, store.ErrWorkV2DocsFull) {
-			return documentsFull(id, c.Role, c.Title)
+			return documentsFull(id, c.Role)
 		} else if err != nil {
 			return err
 		}
