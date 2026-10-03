@@ -572,14 +572,18 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
         <div className="terminal-head-row">
           <button className="board-button" type="button" ref={backButton} onClick={onBack}>{nextWord("terminalBack")}</button>
           <dl className="terminal-facts">
-            <div><dt>{nextWord("terminalEntry")}</dt><dd title={id}>{nextWord("terminalIdentity", { id: terminalShortID(id) })}</dd></div>
-            <div><dt>{nextWord("terminalMachine")}</dt><dd className="terminal-machine">{machine || nextWord("devicesThisMachine")}</dd></div>
             <div data-tone={outOfDate ? "warn" : undefined}>
               <dt className="terminal-sr">{nextWord("terminalFresh", { time: "" }).trim()}</dt>
               <dd className="terminal-fresh">{fresh}</dd>
             </div>
             <div><dt>{nextWord("terminalControlLabel")}</dt><dd className="terminal-holder">{holderName}</dd></div>
           </dl>
+          <details className="terminal-more terminal-fact-more"><summary>{nextWord("terminalDetails")}</summary>
+            <dl className="terminal-facts">
+              <div><dt>{nextWord("terminalEntry")}</dt><dd title={id}>{nextWord("terminalIdentity", { id: terminalShortID(id) })}</dd></div>
+              <div><dt>{nextWord("terminalMachine")}</dt><dd className="terminal-machine">{machine || nextWord("devicesThisMachine")}</dd></div>
+            </dl>
+          </details>
         </div>
         <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
           {!holding && !someoneElse && (
@@ -600,6 +604,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
               {nextWord("terminalRelease")}
             </button>
           )}
+          <details className="terminal-more terminal-action-more"><summary>{nextWord("terminalMoreActions")}</summary><div className="terminal-more-actions">
           <button className="board-button" type="button" aria-pressed={history !== null}
             onClick={() => (history ? setHistory(null) : void showHistory())}>
             {history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}
@@ -613,6 +618,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
             onClick={() => (holding ? setAsking("close") : setSaid(nextWord("terminalCloseNeedsControl")))}>
             {nextWord("terminalClose")}
           </button>
+          </div></details>
           {inputState?.full && <span className="terminal-badge" role="alert">{nextWord("terminalInputFull")}</span>}
         </div>
         {asking === "takeover" && someoneElse && (
@@ -689,6 +695,9 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
         )}
         <div className="terminal-host" ref={host} data-meta-cols={meta?.cols} />
       </div>
+      <button className="terminal-keyboard board-button" type="button" disabled={!canType || loaded !== "ready" || history !== null}
+        title={!canType ? nextWord("terminalKeyboardPaused") : undefined}
+        onClick={() => term.current?.focus()}>{nextWord(canType ? "terminalShowKeyboard" : "terminalKeyboardPaused")}</button>
       <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
         {KEY_ROW.map(([label, value, name]) => (
           <button key={label} type="button" className="terminal-key"

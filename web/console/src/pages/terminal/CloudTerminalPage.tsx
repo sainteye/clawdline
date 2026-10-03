@@ -245,10 +245,13 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
     } }}>
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord("terminalBack")}</button>
-        <dl className="terminal-facts"><div><dt>{nextWord("terminalEntry")}</dt><dd>{terminalShortID(id)}</dd></div>
-          <div><dt>{nextWord("terminalMachine")}</dt><dd>{host.machine}</dd></div>
+        <dl className="terminal-facts">
           <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
-          <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl></div>
+          <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl>
+        <details className="terminal-more terminal-fact-more"><summary>{nextWord("terminalDetails")}</summary>
+          <dl className="terminal-facts"><div><dt>{nextWord("terminalEntry")}</dt><dd>{terminalShortID(id)}</dd></div>
+            <div><dt>{nextWord("terminalMachine")}</dt><dd>{host.machine}</dd></div></dl>
+        </details></div>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
         {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || accessError || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
@@ -259,9 +262,11 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
           onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
         {snapshot.control?.holder?.same_client && snapshot.hasLease && <button className="board-button" type="button" disabled={!!busy}
           onClick={() => void run("release", () => session!.release())}>{nextWord("terminalRelease")}</button>}
+        <details className="terminal-more terminal-action-more"><summary>{nextWord("terminalMoreActions")}</summary><div className="terminal-more-actions">
         <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("history", async () => setHistory(history ? null : await session!.history()))}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
         <button className="board-button" type="button" aria-pressed={reader} onClick={() => setReader((value) => !value)}>{nextWord("terminalReaderMode")}</button>
         <button className="board-button" type="button" disabled={!snapshot.canType || !!busy} onClick={() => setConfirm("close")}>{nextWord("terminalClose")}</button>
+        </div></details>
       </div>
       {confirm && <div className="terminal-ask" role="group" aria-label={confirm === "close" ? nextWord("terminalClose") : nextWord("terminalTakeover")}>
         <p>{confirm === "reacquire" ? nextWord("terminalCloudReacquireAsk") : nextWord(confirm === "close" ? "terminalCloseAsk" : "terminalTakeoverAsk", { holder })}</p>
@@ -284,6 +289,9 @@ export function CloudTerminalPage({ project, channelProject, label, id, shown, f
       {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}
       <pre ref={historyFocus} tabIndex={0}>{history.lines.join("\n")}</pre></section>}
     <div className="terminal-scroll" hidden={history !== null}>{loading && <p className="terminal-note">{nextWord("terminalConnecting")}</p>}<div className="terminal-host" ref={screen} /></div>
+    <button className="terminal-keyboard board-button" type="button" disabled={!snapshot.canType || history !== null}
+      title={!snapshot.canType ? nextWord("terminalKeyboardPaused") : undefined}
+      onClick={() => terminal.current?.focus()}>{nextWord(snapshot.canType ? "terminalShowKeyboard" : "terminalKeyboardPaused")}</button>
     <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
       {KEY_ROW.map(([name, value, spoken]) =>
         <button key={name} className="terminal-key" type="button" disabled={!snapshot.canType} aria-label={spoken ? nextWord(spoken) : undefined}
