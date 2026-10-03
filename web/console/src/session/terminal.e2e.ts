@@ -792,6 +792,22 @@ test("on a phone the special keys type through the same client and nothing is wi
   const tab = await Tab.open(browser, true)
   await tab.go(`#page=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`)
   let seen = await tab.until("the phone holds the terminal", (s) => s.holder === YOU && s.keys && prompted(s), 15_000)
+  const phone = await tab.run(`(() => {
+    const q = (selector) => document.querySelector("#terminal " + selector)
+    const screen = q(".terminal-scroll").getBoundingClientRect()
+    const page = q(".terminal-page-head")?.getBoundingClientRect()
+    const keyboard = q(".terminal-keyboard")
+    return { screenHeight: screen.height, headingHeight: page?.height ?? 0,
+      keyboardVisible: !!keyboard && getComputedStyle(keyboard).display !== "none",
+      keyboardDisabled: keyboard?.disabled, fresh: !!q(".terminal-fresh"),
+      holder: !!q(".terminal-holder"), details: !!q(".terminal-fact-more summary"),
+      actions: !!q(".terminal-action-more summary") }
+  })()`)
+  assert.ok(phone.screenHeight >= 300, "phone screen has useful height: " + JSON.stringify(phone))
+  assert.equal(phone.headingHeight, 0, "the single-terminal heading takes no phone height")
+  assert.ok(phone.keyboardVisible && !phone.keyboardDisabled && phone.fresh && phone.holder && phone.details && phone.actions, JSON.stringify(phone))
+  await tab.press("#terminal .terminal-keyboard")
+  assert.equal(await tab.run(`document.activeElement?.classList.contains("xterm-helper-textarea")`), true, "the keyboard button focuses xterm directly")
   await tab.focusTerminal()
   const sentFrom = tab.b.mark()
   await tab.line(String.raw`printf '\e[?1h'; cat -v`)

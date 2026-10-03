@@ -106,6 +106,11 @@
 }
 .terminal-history pre:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
+.terminal-more { display: contents; }
+.terminal-more > summary { display: none; }
+.terminal-more > .terminal-facts { display: flex; }
+.terminal-more-actions { display: contents; }
+.terminal-keyboard { display: none; }
 .terminal-keys { display: none; }
 
 @media (max-width: 899px) {
@@ -119,8 +124,28 @@
     }
     /* One terminal on a phone keeps its rows for the screen: the notes are on the list. */
     .terminal-view .terminal-session-note { display: none; }
+    .terminal-page[data-view="one"] .terminal-page-head { margin: 0; }
+    .terminal-one-title { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
     .terminal-head { gap: 4px; }
-    .terminal-facts { font-size: 12px; gap: 0 12px; }
+    .terminal-head-row { flex-wrap: nowrap; gap: 6px; }
+    .terminal-head-row > .board-button { flex: none; }
+    .terminal-facts { font-size: 12px; gap: 0 8px; line-height: 1.3; }
+    .terminal-head-row > .terminal-facts { flex: 1; flex-direction: column; overflow: hidden; }
+    .terminal-head-row > .terminal-facts > div { white-space: nowrap; overflow: hidden; }
+    .terminal-head-row > .terminal-facts dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .terminal-more { display: block; min-width: 0; }
+    .terminal-more > summary { display: list-item; cursor: pointer; font-size: 12px; color: var(--dim); }
+    .terminal-fact-more { flex: none; max-width: 30%; }
+    .terminal-fact-more > .terminal-facts { display: none; position: absolute; z-index: 2; right: 8px; left: 8px; margin-top: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+    .terminal-fact-more[open] > .terminal-facts { display: flex; }
+    .terminal-fact-more .terminal-facts { flex-direction: column; }
+    .terminal-actions { flex-wrap: wrap; }
+    .terminal-action-more { margin-left: auto; }
+    .terminal-action-more > summary { min-height: 40px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
+    .terminal-more-actions { display: none; position: absolute; z-index: 2; right: 8px; left: 8px; margin-top: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); flex-wrap: wrap; gap: 6px; }
+    .terminal-action-more[open] .terminal-more-actions { display: flex; }
+    .terminal-keyboard { display: block; flex: none; min-height: 40px; align-self: stretch; }
+    .terminal-keyboard[hidden] { display: none; }
     .terminal-keys {
         flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
     }
