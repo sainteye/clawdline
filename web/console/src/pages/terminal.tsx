@@ -44,6 +44,10 @@ function TerminalPage({ shown }: { shown: boolean }) {
   const [host, setHost] = useState<TerminalHost | null>(null)
   const [cloud, setCloud] = useState<ProjectReadState<ProjectPlacePage>>({ state: "loading" })
   const reader = useRef<CloudProjectReader<ProjectPlacePage> | null>(null)
+  const lastMachine = useRef("")
+  if (host) lastMachine.current = host.machine
+  const machine = host?.machine ?? lastMachine.current
+  const targetMachine = cloudTerminalMachine(route.project, machine)
 
   useEffect(() => {
     const read = () => setRoute(currentRoute())
@@ -61,12 +65,12 @@ function TerminalPage({ shown }: { shown: boolean }) {
   // Hosted: read the Cloud list, retry on a bounded schedule, and read again at
   // once when the terminal host comes back. A new route starts a new reader.
   useEffect(() => {
-    if (!hosted || !route.project) return
-    const next = new CloudProjectReader(readProjectPlaces, setCloud)
+    if (!hosted || !route.project || !targetMachine) return
+    const next = new CloudProjectReader(() => readProjectPlaces(targetMachine), setCloud)
     reader.current = next
     next.start()
     return () => { next.dispose(); if (reader.current === next) reader.current = null }
-  }, [hosted, route.project])
+  }, [hosted, route.project, targetMachine])
   useEffect(() => { reader.current?.host(host) }, [host, route.project])
 
   useEffect(() => {
@@ -95,10 +99,6 @@ function TerminalPage({ shown }: { shown: boolean }) {
   // The machine of the last terminal host: while this page's own Cloud line
   // renews the host is absent, and the Project it was showing is still the
   // same one, so its name (not the raw Cloud id) stays in the title.
-  const lastMachine = useRef("")
-  if (host) lastMachine.current = host.machine
-  const machine = host?.machine ?? lastMachine.current
-  const targetMachine = cloudTerminalMachine(route.project, machine)
   const resolved = hosted && cloud.state === "ready" && targetMachine ? resolveCloudTerminalProject(route.project, cloud.page.places, targetMachine) : null
   const found = resolved?.kind === "found" ? resolved : null
   const project = hosted ? found?.page ?? "" : known?.id ?? ""
