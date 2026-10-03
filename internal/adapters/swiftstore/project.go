@@ -636,8 +636,27 @@ func (s Snapshot) orchestratorTitle(terminalID string, live []Live) string {
 		}
 		found = a.Label
 	}
+	// A reused terminal id lends no task title to a session the task's
+	// recorded process contradicts; a task that recorded none still matches
+	// on the terminal alone.
+	taskAlive := func(t Task) bool {
+		if t.Assistant == "" && t.ChildPID == nil && t.ChildProcStart == nil && t.ChildSession == nil {
+			return true
+		}
+		for _, l := range live {
+			if l.TerminalID != terminalID ||
+				(t.Assistant != "" && t.Assistant != l.Assistant) ||
+				(t.ChildPID != nil && *t.ChildPID != l.PID) ||
+				(t.ChildProcStart != nil && !sameStart(t.ChildProcStart, l.ProcessStart)) ||
+				(t.ChildSession != nil && *t.ChildSession != l.ConversationID) {
+				continue
+			}
+			return true
+		}
+		return false
+	}
 	for _, t := range tasksOldestFirst(s.Tasks) {
-		if deref(t.ChildTerminal) != terminalID || t.AttachSession != nil {
+		if deref(t.ChildTerminal) != terminalID || t.AttachSession != nil || !taskAlive(t) {
 			continue
 		}
 		title := t.Title
