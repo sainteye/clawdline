@@ -417,7 +417,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send, wait or handoff can name")
 	fmt.Fprintln(os.Stderr, "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)")
 	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
-	fmt.Fprintln(os.Stderr, "  open [--send] [--print]   sign a browser on this machine in, with a device of its own")
+	fmt.Fprintln(os.Stderr, "  open [--print]   sign a browser in with permission to read and send")
 	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
 	fmt.Fprintln(os.Stderr, "  devices [revoke <id>]     the browsers and devices signed in to this machine directly; revoke one")
 	fmt.Fprintln(os.Stderr, "  tunnel [--json]           what the cloudflared tunnel is doing; remote_tunnel in the settings turns it on")

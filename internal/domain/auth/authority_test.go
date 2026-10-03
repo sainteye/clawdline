@@ -121,7 +121,7 @@ func TestFiveGuessesThenGone(t *testing.T) {
 	}
 }
 
-func TestRightCodePairsReadOnly(t *testing.T) {
+func TestRightCodePairsWithSend(t *testing.T) {
 	store := &memStore{}
 	a, _ := newAuthority(t, store)
 	p, _ := a.BeginPairing("")
@@ -134,7 +134,7 @@ func TestRightCodePairsReadOnly(t *testing.T) {
 		t.Fatalf("right code: %+v %v", r, err)
 	}
 	v := a.Verify(r.Token)
-	if !v.Allowed || v.Local || v.Caps.Has(Send) || !v.Caps.Has(Read) {
+	if !v.Allowed || v.Local || !v.Caps.Has(Send) || !v.Caps.Has(Read) {
 		t.Fatalf("verdict %+v", v)
 	}
 	devices := a.Devices()
@@ -314,7 +314,7 @@ func TestPassword(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("right password: %v", err)
 	}
-	if v := a.Verify(token); !v.Allowed || v.Caps.Has(Send) {
+	if v := a.Verify(token); !v.Allowed || !v.Caps.Has(Send) || !v.Caps.Has(Read) {
 		t.Fatalf("password device %+v", v)
 	}
 	joined := strings.Join(store.audit, "\n")

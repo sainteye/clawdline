@@ -700,7 +700,7 @@ not a feature, and personality cannot be ported to a screen with no notch. What 
 #### Linux: recommended, no shell
 
 WebKitGTK needs cgo, and cgo would break "one machine builds six platforms". `plan.md` §3 already says "WebKitGTK,
-**or just use the browser**" — the recommendation is the latter, and `clawdline open` has already done it: it issues a read-only device,
+**or just use the browser**" — the recommendation is the latter, and `clawdline open` has already done it: it issues a device that can read and send,
 carries the token in the fragment, exchanges it for a cookie at `/v1/auth/adopt`, and redirects to `/`.
 
 **The cost has to be listed plainly: this is a whole row of features that do not exist**:

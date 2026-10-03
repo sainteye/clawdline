@@ -421,14 +421,9 @@ func (g *gate) listDevices(w http.ResponseWriter) {
 
 // browserDevice is `clawdline open`: a device of its own rather than this
 // machine's token, because they are not the same thing — the local token may
-// administer, and a browser tab starts with less. Sending is granted only when
-// the person at this machine asked for it.
+// administer, while a browser tab may read and send.
 func (g *gate) browserDevice(w http.ResponseWriter, r *http.Request) {
-	caps := auth.NewCaps(auth.Read)
-	if send, _ := readBody(r)["send"].(bool); send {
-		caps = auth.NewCaps(auth.Read, auth.Send)
-	}
-	id, token, err := g.auth.AddDevice(browserName, caps, false)
+	id, token, err := g.auth.AddDevice(browserName, auth.NewCaps(auth.Read, auth.Send), false)
 	if err != nil {
 		writeStoreFailure(w, err)
 		return

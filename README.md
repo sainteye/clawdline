@@ -71,7 +71,7 @@ In another terminal:
 
 ```sh
 ./bin/clawdline doctor      # version, port, state directory
-./bin/clawdline open        # sign this browser in; --send lets it type into sessions
+./bin/clawdline open        # sign this browser in to read and send in sessions
 ```
 
 Then run `claude` or `codex` inside tmux, and the session appears in the list. Each step, with a

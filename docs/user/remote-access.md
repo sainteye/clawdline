@@ -72,23 +72,14 @@ Then:
 **Limits.** Asking to pair is limited to three requests every ten minutes, and five wrong codes end
 the attempt. **Undo:** set the tunnel to **關閉** (off), or `"remote_tunnel": "off"`.
 
-### Let paired devices send
+### Send from paired devices
 
-A device paired with a code can **read only** until you allow sending. The switch is
-**讓配對過的裝置寫進 session** (let paired devices write into a session) on the same **遠端**
-(Remote) tab, or `"remote_write": true` in `config.json`:
-
-- **On:** every paired device may send text, answer, and start or close sessions on this machine —
-  which runs code here, because that is what the assistant in the session does.
-- **Off** (the default): a device paired with a code reads only. A browser signed in with
-  `clawdline open --send` keeps the sending it was given when you opened it; one opened without
-  `--send` reads only.
-
-The daemon reads the switch at every request, so turning it off holds from the next request, with
-no restart. It does not govern Clawdline Cloud, which has its own switch (below).
-
-**Check:** with the switch off, a send from the phone is refused with `403`; turn it on and the
-same send goes through.
+New devices paired with a code, signed in with the password, or opened with `clawdline open`
+can read sessions and send prompts. Sending can run code on this machine through the assistant.
+The **讓配對過的裝置寫進 session** switch (`"remote_write": true` in `config.json`)
+continues to allow older devices that were issued read-only keys to send. Turning the switch off
+does not remove a device's own send permission. Revoke a device to remove its access.
+Clawdline Cloud has a separate machine command switch (below).
 
 ### See and revoke devices signed in directly
 

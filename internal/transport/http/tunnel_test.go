@@ -12,6 +12,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/auth"
 )
 
 // The tunnel's wiring: who may read it, and that it follows the devices — the
@@ -110,6 +111,9 @@ func TestTunnelFollowsTheDevices(t *testing.T) {
 	}
 	var browser contract.BrowserDevice
 	_ = json.Unmarshal(rec.Body.Bytes(), &browser)
+	if verdict := g.auth.Verify(browser.Token); !verdict.Allowed || !verdict.Caps.Has(auth.Read) || !verdict.Caps.Has(auth.Send) {
+		t.Fatalf("new browser cannot read and send: %+v", verdict)
+	}
 	st = waitState(contract.TunnelStateUp)
 	if st.URL != "https://quiet-lamp-river-stone.trycloudflare.com" || st.Mode != contract.TunnelModeQuick {
 		t.Fatalf("up: %+v", st)
