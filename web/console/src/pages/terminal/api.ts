@@ -2,7 +2,6 @@ import type {
   PlatformCapability,
   Terminal,
   TerminalDiagnostics,
-  TerminalGrant,
   TerminalHistory,
   TerminalHolder,
   TerminalList,
@@ -117,14 +116,7 @@ export function streamURL(id: string, tab: string): string {
   return client.url(`/v1/terminals/${encodeURIComponent(id)}/stream?client=${encodeURIComponent(tab)}`)
 }
 
-export function setTerminalGrant(device: string, grant: boolean): Promise<TerminalGrant> {
-  return call(`/v1/auth/devices/${encodeURIComponent(device)}/terminal`, {
-    method: "POST",
-    body: JSON.stringify({ grant }),
-  })
-}
-
-/** What this machine says about terminals: the platform capability, and the grants file. */
+/** What this machine says about terminals and platform capability. */
 export interface TerminalMachine {
   capability?: PlatformCapability
   terminals?: TerminalDiagnostics

@@ -255,7 +255,9 @@ type Link struct {
 	terminalRefusals           chan Inbound
 }
 
-const TerminalCapability = "terminal_control"
+// A paired viewer already trusted to send commands may also use terminals.
+// Read-only viewers never inherit shell access.
+const TerminalCapability = "send_prompt"
 
 const (
 	CloudTerminalRosterRefreshLimit  = 2
@@ -287,7 +289,7 @@ func (l *Link) PinnedTerminalViewer(device string) (string, bool) {
 
 // TerminalViewerAllowed is rechecked by terminal service before each effect
 // and frame. It requires a fresh Cloud roster, the exact locally pinned key,
-// and terminal_control. The terminal grant remains the service's final check.
+// and send_prompt. A read-only viewer cannot reach the terminal service.
 func (l *Link) TerminalViewerAllowed(device string) bool {
 	if !l.TerminalViewerCloudCapable(device) || l.pinned == nil {
 		return false

@@ -2,12 +2,10 @@ import { useEffect, useState } from "react"
 import type { PairedDevice } from "@clawdline/contract"
 import { nextWord, type NextWord } from "../../next-strings.js"
 import { readSignedIn, revokeDevice, signOutThisBrowser, type SignedIn } from "./signed-in.js"
-import { TerminalGrantSwitch, TerminalGrantsNote, useTerminalGrants } from "../terminal/TerminalGrant.js"
 
-/** What a device may do, as its card says it: a terminal grant is named, never left under "read only". */
-function capsWord(send: boolean, shell: boolean): NextWord {
-  if (shell) return send ? "signedInCapsSendTerminal" : "signedInCapsReadTerminal"
-  return send ? "signedInCapsSend" : "signedInCapsRead"
+/** A paired sender inherits terminal access; read-only devices do not. */
+function capsWord(send: boolean): NextWord {
+  return send ? "signedInCapsSendTerminal" : "signedInCapsRead"
 }
 
 function when(unix: number): string {
@@ -50,11 +48,6 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
     }
   }, [shown])
 
-  const grants = useTerminalGrants(shown && state?.kind === "list", state)
-  // What a switch turned since the list was read: the card's label says what the device can do now.
-  const [shells, setShells] = useState<Record<string, boolean>>({})
-  useEffect(() => setShells({}), [state])
-  const shell = (device: PairedDevice) => grants.kind === "readable" && (shells[device.id] ?? device.terminal === true)
 
   if (!state) return null
 
@@ -115,7 +108,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
         <div className="devices-rows">
           <p className="device-help signed-in-self">{nextWord("signedInThisWindow")}</p>
           {state.list.devices.length === 0 && <p className="devices-empty">{nextWord("signedInNone")}</p>}
-          <TerminalGrantsNote grants={grants} />
+          <p className="device-help">{nextWord("terminalDefaultLocalHelp")}</p>
           {state.list.devices.map((device) => (
             <article className="device-card" key={device.id} data-device={device.id}>
               <div className="device-card-heading">
@@ -123,7 +116,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
                 <code>{device.id}</code>
               </div>
               <div className="device-facts">
-                <span data-tone={shell(device) ? "warn" : undefined}>{nextWord(capsWord(device.caps.includes("send"), shell(device)))}</span>
+                <span data-tone={device.caps.includes("send") ? "warn" : undefined}>{nextWord(capsWord(device.caps.includes("send")))}</span>
                 <span>{nextWord("signedInSince", { time: when(device.created) })}</span>
                 <span>
                   {device.last_seen
@@ -131,8 +124,6 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
                     : nextWord("signedInNeverSeen")}
                 </span>
               </div>
-              <TerminalGrantSwitch device={device} grants={grants} onSaid={setSaid}
-                onChanged={(on) => setShells((was) => ({ ...was, [device.id]: on }))} />
               {asking === device.id ? (
                 <div className="signed-in-ask" role="group">
                   <p className="device-help">{nextWord("signedInRevokeAsk", { name: device.name, id: device.id })}</p>

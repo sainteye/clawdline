@@ -111,7 +111,7 @@ type Pairing struct {
 	Pinned     *adaptercloud.PinnedStore
 	Now        func() time.Time
 	Log        func(format string, args ...any)
-	// OnRevoke removes a local terminal grant and active Cloud connection
+	// OnRevoke clears a legacy grant record and the active Cloud connection
 	// after the pin has been refused. A failure is reported as partial revoke.
 	OnRevoke func(string) error
 

@@ -286,7 +286,7 @@
 }
 
 /* SwitchView is in switch.css, which controls.tsx loads with it: the console's
-   Devices page draws the same switch (terminal/TerminalGrant.tsx). */
+   Settings pages draw the same switch. */
 
 /* ChoicePopUp: sized to its contents, then clamped between 130 and 210. */
 .sw-popup {

@@ -100,7 +100,7 @@
         "id": { "type": "string" },
         "last_seen": { "description": "Unix seconds of the last request it made since the daemon started or last saved; absent when never.", "type": "integer" },
         "name": { "type": "string" },
-        "terminal": { "description": "This device holds a terminal grant (terminals.schema.json, POST /v1/auth/devices/{id}/terminal). Absent when it does not, and for every device while the grants file cannot be read.", "type": "boolean" }
+        "terminal": { "description": "Legacy terminal grant record for older clients. Access now follows pairing and send permission; this field does not grant or revoke terminal access.", "type": "boolean" }
       }
     },
     "DeviceList": {

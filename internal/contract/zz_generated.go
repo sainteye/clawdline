@@ -3386,9 +3386,8 @@ type PairedDevice struct {
 	LastSeen int64  `json:"last_seen,omitempty"`
 	Name     string `json:"name"`
 
-	// This device holds a terminal grant (terminals.schema.json, POST
-	// /v1/auth/devices/{id}/terminal). Absent when it does not, and for every device
-	// while the grants file cannot be read.
+	// Legacy terminal grant record for older clients. Access now follows pairing and
+	// send permission; this field does not grant or revoke terminal access.
 	Terminal bool `json:"terminal,omitempty"`
 }
 
@@ -6247,8 +6246,8 @@ type TerminalDiagnostics struct {
 	// Why the grants file could not be read.
 	GrantsError string `json:"grants_error,omitempty"`
 
-	// The terminal grants file could be read. When false every paired device is
-	// treated as ungranted; nothing else on this machine is affected.
+	// The legacy terminal grants file could be read. It no longer controls terminal
+	// access.
 	GrantsOK bool `json:"grants_ok"`
 
 	// Control leases held now.
@@ -6291,10 +6290,10 @@ type TerminalGrant struct {
 	GrantedAt int64 `json:"granted_at,omitempty"`
 }
 
-// POST /v1/auth/devices/{id}/terminal. This machine's own token only, and never
-// through Clawdline Cloud. A grant lets a paired device see terminals and ask
-// for their control lease; pairing, a password sign-in and `remote_write` never
-// give one, and revoking the device removes it.
+// Legacy POST /v1/auth/devices/{id}/terminal. This machine's own token only,
+// and never through Clawdline Cloud. The record remains readable for older
+// clients, but terminal access now follows pairing and send permission; this
+// grant does not change access.
 type TerminalGrantRequest struct {
 	Grant bool `json:"grant"`
 }

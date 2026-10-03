@@ -129,19 +129,12 @@ focus、git、image、places、resume、schedule、screen、shell、skills、sni
   `terminal_cloud_not_supported`. The machine answers those requests with its own token
   (`internal/transport/cloud/local.go`), so `Router.Do` marks them `viaCloud` and those routes
   reject them. Hosted terminal traffic instead uses dedicated signed, end-to-end encrypted
-  `termi`, `term`, and `termr` channels. The machine checks the Cloud principal and the local
-  terminal grant for every terminal operation; the relay cannot turn a generic machine request
+  `termi`, `term`, and `termr` channels. The machine checks the Cloud principal, its `send_prompt` capability and local pairing pin for every terminal operation; the relay cannot turn a generic machine request
   into terminal authority. See `docs/cloud-terminal-wire.md`.
 - **本機自己的 token** 直接可以。
-- **配對過的裝置要同時**：仍在裝置清單（`Holds`），而且在 `terminal-grants.json` 裡有一筆 grant。配對、
-  密碼登入、`send`、`remote_write` 都不給 grant；看畫面也要 grant；有 grant 的裝置在拿到控制租約之前只能看。
-  Grant 由本機 token 以 `POST /v1/auth/devices/{id}/terminal {grant}` 給或收回。
-- **Grant 刻意不寫進裝置檔**：`remote.json` 嚴格解碼，多一個不認得的 capability 會讓舊版 daemon（降版、
-  從備份還原）整份裝置檔讀不進來、所有路由 503。Grant 檔在旁邊、0600、整檔原子替換；讀不懂就「誰都沒有
-  grant」，只影響 terminal，`/v1/diagnostics.terminals` 寫出原因，而且在修好前不會被覆寫。
-- **撤銷立即生效**：裝置被撤銷、登出或 grant 被收回時，`auth.Authority` 發出「裝置或 grant 變了」的通知，
-  terminal 服務重新檢查所有租約與串流：失去資格的租約作廢，串流送出 `terminal_access_revoked` 後關閉
-  （實測 9–17 ms）。每一張 frame 與每 5 秒的 beat 之前也會再檢查一次，手動改檔也最多晚一個 beat。
+- **配對過且可傳送的裝置預設可用**：本機配對裝置須仍在裝置清單（`Holds`），且有 `send`；Cloud viewer 須有 `send_prompt` 且本機 pin 的公鑰與 roster 相符。唯讀、已撤銷、未配對或公鑰不符者皆被拒絕。不再要求獨立的 `terminal_control` 或本機終端 grant；看畫面仍須符合資格，打字另需控制租約。
+- **舊 grant 檔僅供相容**：`terminal-grants.json` 及本機 `POST /v1/auth/devices/{id}/terminal` 仍可供舊客戶端讀寫，但其值不再決定終端存取權。診斷會報告檔案是否可讀，不應把它解讀為終端可用狀態。
+- **撤銷立即生效**：裝置被撤銷、配對 pin 被撤銷，或 `send`／`send_prompt` 被收回時，服務重新檢查租約與串流；失去資格的租約作廢，串流送出 `terminal_access_revoked` 後關閉。每個效果和畫面也重新檢查。
 - **一次一個控制者**：租約 30 秒、每 10 秒續約；別人持有時 `acquire` 回 `terminal_controlled` 並說明是誰；
   `takeover` 換 epoch，原持有者的串流收到 `control`，下一次輸入回 `lease_superseded`。輸入在 terminal
   自己的 lane 裡先排隊、再判斷序號、再打字：重送回 `duplicate`、跳號回 `input_gap`，tmux 沒回答就把該租約

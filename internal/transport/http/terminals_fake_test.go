@@ -230,11 +230,14 @@ func newTermFixture(t *testing.T, host ports.OwnedTerminals) *termFixture {
 	return &termFixture{t: t, s: s, h: h, local: local, machine: machine, dir: s.cfg.Dir}
 }
 
-// device pairs a device and, when granted, gives it a terminal grant through
-// the route a person uses.
+// device pairs a reader or a sender. Senders inherit terminal access.
 func (f *termFixture) device(name string, granted bool) (id, token string) {
 	f.t.Helper()
-	id, token, err := f.s.gate().auth.AddDevice(name, auth.NewCaps(auth.Read), false)
+	caps := auth.NewCaps(auth.Read)
+	if granted {
+		caps = auth.NewCaps(auth.Read, auth.Send)
+	}
+	id, token, err := f.s.gate().auth.AddDevice(name, caps, false)
 	if err != nil {
 		f.t.Fatal(err)
 	}

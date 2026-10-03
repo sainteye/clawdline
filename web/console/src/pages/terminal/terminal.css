@@ -136,14 +136,4 @@
     .terminal-session-note { font-size: 11.5px; }
 }
 
-/* 終端 on a paired device's card (Devices page): the settings window's switch (switch.css). */
-.terminal-grant { margin: 10px 0; }
-.terminal-grant-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 44px; font-size: 13px; }
-.terminal-grant-row .sw-switch input:focus-visible + .sw-switch-track { outline: 3px solid var(--accent); outline-offset: 3px; }
-.terminal-grant[aria-busy="true"] .sw-switch input { cursor: progress; }
-.terminal-grant-name { font-weight: 600; }
-.terminal-grant-state { color: var(--dim); }
-.terminal-grant-help { margin: 2px 0 0; }
-.terminal-grant-ask { margin-top: 8px; }
 .signed-in .device-facts [data-tone="warn"] { color: var(--ink); border-color: var(--warn); }
-.terminal-grants-note { border-left: 2px solid var(--warn); padding-left: 10px; }
