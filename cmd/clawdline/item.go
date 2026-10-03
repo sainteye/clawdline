@@ -13,6 +13,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/squad"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 // `clawdline item`: a Board item a Session creates because the person told it
@@ -390,7 +391,8 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, "  --persona opens that new Session as a built-in persona (`GET /v1/personas` lists them); none by default;")
 	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
 	fmt.Fprintln(os.Stderr, "  acceptance fills missing criteria once; acceptance-revise relays a person's explicit revision message;")
-	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns; an Epic needs a plan, and a plan_review")
+	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns, or revises the one with the same --role and --title")
+	fmt.Fprintln(os.Stderr, "  (an item's one completion_report whatever its title; plan and plan_review are always added); an Epic needs a plan, and a plan_review")
 	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
 	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence;")
 	fmt.Fprintln(os.Stderr, "  finish takes it from implementing onward to done in one step once its work has landed:")
@@ -447,15 +449,17 @@ type itemWire struct {
 		Done     bool   `json:"done"`
 		Position int64  `json:"position"`
 	} `json:"steps"`
-	Documents []struct {
-		ID        string `json:"id"`
-		Role      string `json:"role"`
-		Title     string `json:"title"`
-		Body      string `json:"body"`
-		Reference string `json:"reference"`
-		Position  int64  `json:"position"`
-		Version   int64  `json:"version"`
-	} `json:"documents"`
+	Documents []itemDocWire `json:"documents"`
+}
+
+type itemDocWire struct {
+	ID        string `json:"id"`
+	Role      string `json:"role"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	Reference string `json:"reference"`
+	Position  int64  `json:"position"`
+	Version   int64  `json:"version"`
 }
 
 func itemOf(a answer) (itemWire, bool) {
@@ -495,7 +499,7 @@ func printItem(w io.Writer, it itemWire) {
 		fmt.Fprintf(w, "  [%s] %s  %s\n", mark, s.ID, s.Title)
 	}
 	for _, d := range it.Documents {
-		fmt.Fprintf(w, "  doc %s  %s  %s\n", d.ID, d.Role, d.Title)
+		fmt.Fprintf(w, "  doc %s  %s  %s  v%d\n", d.ID, d.Role, d.Title, d.Version)
 	}
 }
 
@@ -557,6 +561,8 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	}
 	var path string
 	var body map[string]any
+	// docBefore is the version of the document `doc` revises, zero when it adds one.
+	var docBefore int64
 	switch op {
 	case "add":
 		if strings.TrimSpace(f.project) == "" || strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
@@ -769,12 +775,17 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		if !a.ok() || !ok {
 			return report(stdout, stderr, name, a)
 		}
-		// After every document already there, as step-add places steps.
+		// After every document already there, as step-add places steps; a
+		// revision keeps the place of the document it revises, so sending the
+		// same text again is answered as a retry, not a new version.
 		position := int64(0)
 		for j, doc := range it.Documents {
 			if j == 0 || doc.Position >= position {
 				position = doc.Position + 1
 			}
+		}
+		if prior, ok := revisedDocument(it, d.role, d.title); ok {
+			position, docBefore = prior.Position, prior.Version
 		}
 		body = map[string]any{"session_id": conversation, "role": d.role,
 			"title": d.title, "body": d.body, "reference": d.reference, "position": position}
@@ -826,6 +837,9 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		return report(stdout, stderr, name, a)
 	}
 	itemWrote(stdout, op, args, it)
+	if op == "doc" {
+		docWrote(stdout, it, f.doc, docBefore)
+	}
 	if op == "acceptance-revise" {
 		var revision struct {
 			Source struct {
@@ -957,6 +971,41 @@ func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
 // itemWrote says what a write did and prints the item row its answer
 // carries. That answer holds no steps or documents, so none are claimed
 // about: `item show` reads them.
+// revisedDocument is the document on it that writing role and title would
+// revise, as the daemon chooses it (work.DocumentRevisable): the
+// completion_report whatever its title, otherwise the earliest with the same
+// role and title.
+func revisedDocument(it itemWire, role, title string) (itemDocWire, bool) {
+	role, title = strings.TrimSpace(role), strings.TrimSpace(title)
+	if !work.DocumentRevisable(role, title) {
+		return itemDocWire{}, false
+	}
+	for _, d := range it.Documents {
+		if d.Role == role && (d.Title == title || role == work.DocumentCompletionReport) {
+			return d, true
+		}
+	}
+	return itemDocWire{}, false
+}
+
+// docWrote says whether `item doc` added a document or revised one, and at
+// which version; before is the revised document's version read before the
+// write, zero when there was none.
+func docWrote(stdout io.Writer, it itemWire, d docFlags, before int64) {
+	got, ok := revisedDocument(it, d.role, d.title)
+	if !ok {
+		return
+	}
+	switch {
+	case before == 0:
+		fmt.Fprintf(stdout, "  added document %s (%s) at v%d\n", got.ID, got.Role, got.Version)
+	case got.Version == before:
+		fmt.Fprintf(stdout, "  document %s (%s) already held this text; nothing changed, still v%d\n", got.ID, got.Role, got.Version)
+	default:
+		fmt.Fprintf(stdout, "  revised document %s (%s) to v%d\n", got.ID, got.Role, got.Version)
+	}
+}
+
 func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
 	what := map[string]string{"add": "the item", "child": "the child item", "assign": "the assignment",
 		"claim": "the claim", "finish": "the finish", "doc": "the document",

@@ -1453,6 +1453,20 @@ Idempotency-Key (`--key` retries the same write) and prints the item. The body c
 `{"expected_version", "session_id", "role", "title", "body", "reference", "position"}`; the roles
 are `spec`, `design`, `test`, `deploy`, `completion_report`, `other`, `plan` and `plan_review`.
 
+To revise a document, write it again with the same `--role` and `--title`: the daemon replaces its
+body, reference and position, keeps its id, raises its version by one and records
+`document.revised`. The CLI says `added … at v1` or `revised … to vN`, and `clawdline item show`
+prints each document's `vN`. Sending the same text again changes nothing and answers the document
+as it is, so a retry is safe. The old text is not kept; use a different title to keep both.
+
+- `plan`, `plan_review` and the review boundary are never revised in place: each write adds a new
+  document, because the planning gate reads them in order and a review names the plan it read.
+- An item holds at most 32 documents, and a `completion_report` is not one of them: it always fits,
+  even on a full item. An item holds one `completion_report`; writing another, under any title,
+  revises it and takes the new title.
+- A 33rd document is refused with `documents_full` and nothing is written; the message names the
+  `clawdline item doc` command that revises an existing document instead.
+
 - `plan` and `plan_review` belong to an Epic or Feature (`document_role_not_applicable` for other kinds).
 - A `plan_review`'s `reference` is the task id of the Clawdline child that reviewed the plan. The
   daemon accepts it only when that task exists (`plan_review_task_unknown`), was dispatched by the

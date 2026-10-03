@@ -499,13 +499,32 @@ func ReviewRequiredApplies(k Kind, required bool) error {
 const (
 	DocumentPlan       = "plan"
 	DocumentPlanReview = "plan_review"
+	// DocumentCompletionReport is outside the per-item document limit, and an
+	// item holds at most one: writing another revises it.
+	DocumentCompletionReport = "completion_report"
 )
+
+// DocumentRevisable says whether writing a document with this role and title
+// again revises the one already there instead of adding another. Plan,
+// plan_review and the review boundary are always added: the planning gate
+// reads them in insertion order and a review names the plan it read, so
+// rewriting one in place would leave the review record pointing at text that
+// is gone.
+func DocumentRevisable(role, title string) bool {
+	switch {
+	case role == DocumentPlan, role == DocumentPlanReview:
+		return false
+	case role == "other" && title == ReviewBoundaryTitle:
+		return false
+	}
+	return true
+}
 
 // DocumentRoleValid says whether role is a document role at all, before it
 // is asked whether it fits the item's kind.
 func DocumentRoleValid(role string) bool {
 	switch role {
-	case "spec", "design", "test", "deploy", "completion_report", "other", DocumentPlan, DocumentPlanReview:
+	case "spec", "design", "test", "deploy", DocumentCompletionReport, "other", DocumentPlan, DocumentPlanReview:
 		return true
 	}
 	return false
