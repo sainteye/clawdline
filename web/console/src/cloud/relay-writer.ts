@@ -296,6 +296,7 @@ export type WriteRoute =
   | { op: "snippet-order"; word: Carried<"snippet-order"> }
   | { op: "worktree-refresh"; word: Carried<"project-worktree-lifecycle-refresh">; project: string }
   | { op: "work-v2-create"; word: Carried<"work.v2.create"> }
+  | { op: "work-decision-answer"; word: Carried<"work.decision-answer">; id: string }
   | { op: "work-v2-edit"; word: Carried<"work.v2.edit">; id: string }
   | { op: "work-v2-gate-decision"; word: Carried<"work.v2.gate-decision">; id: string }
   | { op: "work-v2-gate-purge"; word: Carried<"work.v2.gate-purge">; id: string }
@@ -606,6 +607,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     return null
   }
   if (head === "project-sync" && a === "mirror" && segments.length === 2) return { op: "project-mirror-apply", word: "project-mirror-apply" }
+  if (head === "work" && a === "decisions" && b && segments.length === 3 &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(b)) {
+    return { op: "work-decision-answer", word: "work.decision-answer", id: b }
+  }
   if (head === "work" && a === "v2") {
     if (b === "items" && segments.length === 3) return { op: "work-v2-create", word: "work.v2.create" }
     if (b === "items" && c && d === "gate-decision" && segments.length === 5) return { op: "work-v2-gate-decision", word: "work.v2.gate-decision", id: c }
@@ -1554,6 +1559,14 @@ export class RelayWriter {
           throw failure("cloud_project_machine_mismatch", "this Project belongs to another machine", 409)
         }
         return this.machineWorkV2(client, route.word, { item: { ...item, project_id: place.id } }, headerOf(init, "idempotency-key"))
+      }
+      case "work-decision-answer": {
+        const body = await bodyOf(init)
+        if (Object.keys(body).length !== 1 || typeof body.answer !== "string" ||
+            !body.answer.trim() || body.answer.length > 4096) {
+          throw failure("invalid_command", "A decision answer is required.", 400)
+        }
+        return this.machineWorkV2(client, route.word, { id: route.id, answer: body.answer }, headerOf(init, "idempotency-key"))
       }
       case "work-v2-edit": {
         return this.machineWorkV2(client, route.word, { id: route.id, item: await bodyOf(init) }, headerOf(init, "idempotency-key"))

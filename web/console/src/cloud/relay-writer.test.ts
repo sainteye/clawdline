@@ -778,6 +778,33 @@ test("a Work v2 create resolves the Cloud Project id and keeps the press id thro
   }, "action"])
 })
 
+test("a decision answer keeps its question and press id across Cloud", async () => {
+  const id = "10000000-0000-4000-8000-000000000001"
+  const path = `/v1/work/decisions/${id}`
+  assert.equal(writeRoute("POST", path)?.word, "work.decision-answer")
+  for (const invalid of ["../other", "INVALID", `${id}/resolve`, `${id}/extra`]) {
+    assert.equal(writeRoute("POST", `/v1/work/decisions/${invalid}`), null)
+  }
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const first = await reader.fetch(path, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-1" }))
+  assert.equal(first.status, 200)
+  const retry = await reader.fetch(path, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-1" }))
+  assert.equal(retry.status, 200)
+  assert.deepEqual(client.calls, [
+    ["_machineRequestAs", "press-decision-1", "mac-a", "work.decision-answer", { id, answer: "Proceed" }, "action"],
+    ["_machineRequestAs", "press-decision-1", "mac-a", "work.decision-answer", { id, answer: "Proceed" }, "action"],
+  ])
+  client.fail._machineRequestAs = failureFromMac({ code: "decision_already_answered", layer: "mac_route", message: "This decision was already answered." }, 409, REF)
+  const answered = await reader.fetch(path, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-2" }))
+  assert.equal(answered.status, 409)
+  assert.equal(((await json(answered)).error as { code: string }).code, "decision_already_answered")
+  client.fail._machineRequestAs = failureFromMac({ code: "store_unavailable", layer: "mac_route", message: "Try again." }, 503, REF)
+  const failed = await reader.fetch(path, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-3" }))
+  assert.equal(failed.status, 503)
+  assert.equal(((await json(failed)).error as { code: string }).code, "store_unavailable")
+})
+
 test("a refused Work v2 create settles as the route's flat refusal", async () => {
   const client = new FakeClient()
   client.fail._machineRequestAs = failureFromMac({

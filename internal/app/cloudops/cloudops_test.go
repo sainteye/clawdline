@@ -375,6 +375,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-decision",
 		method: "GET", path: "/v1/work/decisions/10000000-0000-4000-8000-000000000001",
 	}, {
+		word: "work.decision-answer",
+		body: map[string]any{"type": "work.decision-answer", "session": machine,
+			"request": "press-decision-1", "id": "10000000-0000-4000-8000-000000000001", "answer": "Proceed"},
+		session: machine, name: "action:press-decision-1",
+		method: "POST", path: "/v1/work/decisions/10000000-0000-4000-8000-000000000001",
+		body2: `{"answer":"Proceed"}`,
+	}, {
 		word: "work.digests",
 		body: map[string]any{"type": "work.digests", "session": machine,
 			"request": "req-work-digests", "kind": "daily"},
@@ -1828,6 +1835,35 @@ func TestWorkV2WritesArePersonActions(t *testing.T) {
 				t.Fatalf("%s carried the key %q, wanted the viewer request id", word, got)
 			}
 		})
+	}
+}
+
+func TestDecisionAnswerIsOneDeviceAction(t *testing.T) {
+	id := "10000000-0000-4000-8000-000000000001"
+	valid := map[string]any{"type": "work.decision-answer", "session": MachineReplySession,
+		"request": "press-1", "id": id, "answer": "Proceed"}
+	r := &router{}
+	if got := open(r).Handle(context.Background(), request(t, ClassCtl, valid)); !got.OK() {
+		t.Fatalf("decision answer refused: %+v", got)
+	}
+	if got := r.last(); got.Method != "POST" || got.Path != "/v1/work/decisions/"+id ||
+		got.Header[actorHeader] != actorDevice || got.Header["Idempotency-Key"] != "press-1" ||
+		string(got.Body) != `{"answer":"Proceed"}` {
+		t.Fatalf("decision answer route: %+v", got)
+	}
+	for _, change := range []func(map[string]any){
+		func(b map[string]any) { b["id"] = "../other" },
+		func(b map[string]any) { b["answer"] = " " },
+		func(b map[string]any) { b["extra"] = true },
+	} {
+		bad := make(map[string]any, len(valid)+1)
+		for k, v := range valid {
+			bad[k] = v
+		}
+		change(bad)
+		if got := open(&router{}).Handle(context.Background(), request(t, ClassCtl, bad)); got.OK() {
+			t.Fatalf("malformed decision answer accepted: %+v", bad)
+		}
 	}
 }
 
