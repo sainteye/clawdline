@@ -136,12 +136,12 @@ export const TRANSIENT_READ_RETRY_MS = 3_000
 /**
  * A failure that is likely gone a few seconds later: the transport did not
  * deliver an answer (a Cloud connection rebuilding, a read that timed out),
- * or the machine's read lane was full. Any other refusal is the machine's
- * answer and is shown at once.
+ * or a Cloud read lane was full. Any other refusal is the machine's answer
+ * and is shown at once.
  */
 export function isTransientReadFailure(error: unknown): boolean {
   if (error instanceof TransportError) return true
-  return error instanceof RefusalError && error.code === "cloud_ingress_busy"
+  return error instanceof RefusalError && (error.code === "cloud_ingress_busy" || error.code === "cloud_read_busy")
 }
 
 /**
