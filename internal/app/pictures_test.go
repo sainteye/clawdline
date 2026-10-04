@@ -175,18 +175,57 @@ func TestPicturesArePastedIntoClaudeInOrder(t *testing.T) {
 	}
 }
 
-// Codex is given the paths, after the words, in one ordinary send.
-func TestPicturesGoToCodexAsPaths(t *testing.T) {
+// Codex receives image paste events, including a prompt with no text.
+func TestPicturesArePastedIntoCodex(t *testing.T) {
 	a, host, lender, drops := pictureFixture(t, session.AssistantCodex)
-	if _, err := a.SendWithPictures(context.Background(), "%7", "看這個", []string{pngURL(t, 1, 1)}); err != nil {
-		t.Fatal(err)
+	for _, text := range []string{"看這個", ""} {
+		host.acts, lender.acts = nil, nil
+		if _, err := a.SendWithPictures(context.Background(), "%7", text, []string{pngURL(t, 1, 1)}); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{ctrlV, enter}
+		if text != "" {
+			want = append([]string{"type:" + text}, want...)
+		}
+		if strings.Join(host.acts, "|") != strings.Join(want, "|") {
+			t.Fatalf("acts %q", host.acts)
+		}
+		if strings.Join(lender.acts, ",") != "borrow,offer,giveback" {
+			t.Fatalf("pasteboard %q", lender.acts)
+		}
 	}
-	kept := files(t, drops)
-	if len(host.acts) != 1 || host.acts[0] != "send:看這個 "+filepath.Join(drops, kept[0]) {
-		t.Fatalf("acts %q", host.acts)
+	if len(files(t, drops)) != 2 {
+		t.Fatalf("kept %v", files(t, drops))
 	}
-	if len(lender.acts) != 0 {
-		t.Fatalf("the pasteboard was touched for Codex: %q", lender.acts)
+}
+
+func TestCodexPicturesRefuseWhenAttachmentIsUnavailable(t *testing.T) {
+	a, host, lender, drops := pictureFixture(t, session.AssistantCodex)
+	a.Pictures.Pasteboard = nil
+	_, err := a.SendWithPictures(context.Background(), "%7", "look", []string{pngURL(t, 1, 1)})
+	if ref, ok := err.(Refusal); !ok || ref.Code != "pictures_unavailable" {
+		t.Fatalf("err %v", err)
+	}
+	if len(host.acts) != 0 || len(files(t, drops)) != 0 {
+		t.Fatalf("acts %q files %v", host.acts, files(t, drops))
+	}
+	a.Pictures.Pasteboard = lender
+	lender.borrowErr = errors.New("clipboard busy")
+	_, err = a.SendWithPictures(context.Background(), "%7", "look", []string{pngURL(t, 1, 1)})
+	if ref, ok := err.(Refusal); !ok || ref.Code != "pictures_unavailable" {
+		t.Fatalf("err %v", err)
+	}
+	if len(host.acts) != 0 || len(files(t, drops)) != 0 {
+		t.Fatalf("acts %q files %v", host.acts, files(t, drops))
+	}
+	lender.borrowErr = nil
+	lender.refuse["*"] = true
+	_, err = a.SendWithPictures(context.Background(), "%7", "", []string{pngURL(t, 1, 1)})
+	if ref, ok := err.(Refusal); !ok || ref.Code != "send_failed" {
+		t.Fatalf("err %v", err)
+	}
+	if len(host.acts) != 0 || len(files(t, drops)) != 0 {
+		t.Fatalf("acts %q files %v", host.acts, files(t, drops))
 	}
 }
 
