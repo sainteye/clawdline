@@ -82,3 +82,19 @@ test("unexpected error text and operation values are redacted", () => {
   observation.record("envelope_rejected", { code: "secret: terminal contents", operation: "secret content" })
   assert.deepEqual(rows, [{ seq: 1, ms: 0, stage: "envelope_rejected", operation: "unrecognized", code: "terminal_receive_failed" }])
 })
+
+test("timings separate subscription, first frame, list and numbered input receipts", () => {
+  const observation = new TerminalObservation(() => {}, clock(1000, 1012, 1020, 1040, 1050, 1060, 1070, 1080, 1100, 1130))
+  observation.record("subscription_confirmed", { connection: "secret-connection" })
+  observation.record("request_sent", { requestID: "open-id", operation: "open_connection" })
+  observation.record("session_settled", { requestID: "open-id", operation: "open_connection" })
+  observation.record("request_sent", { requestID: "list-id", operation: "list" })
+  observation.record("session_settled", { requestID: "list-id", operation: "list" })
+  observation.record("frame_observed", { connection: "secret-connection", channel: "term" })
+  observation.record("request_sent", { requestID: "key-id", operation: "input" })
+  observation.record("session_settled", { requestID: "key-id", operation: "input" })
+  assert.deepEqual(observation.timings(), { subscriptionMs: 12, openReceiptMs: 20,
+    listReceiptMs: 10, firstFrameMs: 70, inputReceiptMaxMs: 20 })
+  assert.match(observation.text(), /timings subscription=12ms open_receipt=20ms first_frame=70ms list_receipt=10ms input_receipt_max=20ms/)
+  assert.equal(observation.text().includes("secret-connection"), false)
+})

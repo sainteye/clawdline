@@ -237,6 +237,7 @@ export class TerminalChannelTransport {
       this.verifiedFrames.get(connection) !== envelope.seq) throw fail("terminal_bad_envelope")
     this.client._send({ type: "terminal_frame_observed", machine: this.machine, viewer: this.viewer,
       connection, envelope_seq: envelope.seq })
+    this.observation?.record("frame_observed", { connection, channel: "term" })
     this.verifiedFrames.delete(connection)
   }
 
