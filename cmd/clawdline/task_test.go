@@ -406,3 +406,26 @@ func TestTaskShowIsTheCompactView(t *testing.T) {
 		t.Fatalf("--json: exit %d:\n%s", code, out.String())
 	}
 }
+
+func TestTaskShowMakesAnUncommittedPermissionFailureResumable(t *testing.T) {
+	task := `{"ok":true,"task":{"id":"` + taskTestID + `","title":"build blocked","state":"failure",` +
+		`"result":{"status":"failure","summary":"Implemented parser; build remains unverified; changes are uncommitted.",` +
+		`"artifacts":["internal/parser.go","internal/parser_test.go"],` +
+		`"verification":{"runs":1,"seconds":3,"last":"fail",` +
+		`"scope":"tools/check.sh: mkdir shared dependency cache: permission denied"}},` +
+		`"landing":{"state":"pending","settlement":"branch_empty"},` +
+		`"worktree":{"base":"b","branch":"clawdline/task/x","path":"/w/x","repository":"/r",` +
+		`"branch_exists":true,"commits":0,"dirty":true,"merged":false}}}`
+	_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, task })
+	var out, errs bytes.Buffer
+	if code := showTask(&out, &errs, b, taskTestID, false); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	for _, want := range []string{"state:        failure", "last fail: tools/check.sh: mkdir shared dependency cache: permission denied",
+		"rerun:", "changed file:  internal/parser.go", "changed file:  internal/parser_test.go",
+		"branch:       0 delivery commit(s)", "uncommitted:  true", "branch_empty", "/w/x"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in resumable handoff:\n%s", want, out.String())
+		}
+	}
+}

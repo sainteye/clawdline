@@ -228,6 +228,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("")
 	w(`- "status" is "failure" when you could not do it. `+"`last` is `pass`, `fail` or `skipped`; `scope` is one line of at most %d characters.", taskdir.VerificationScopeLimit)
 	w("- `verification` is a placeholder. If you ran nothing, keep `skipped` or omit the field; never claim a pass.")
+	w("- If a shared dependency directory is not writable, keep changes here; commit if possible. Report `status: failure`, `verification.last: fail`; put the command to rerun and error in `verification.scope`, changed source paths in `artifacts`, and unverified work and commit state in `summary`.")
 	if reviewTask {
 		w("- A successful review needs `review`. Its verdict is `safe_to_land`, `proceed_with_findings` or `changes_required`.")
 		w("  Each of the three named axes has status `pass` with no findings, or `findings` with at least one.")

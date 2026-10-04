@@ -859,10 +859,18 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 		if r.Verification != nil {
 			fmt.Fprintf(w, "verification: %d runs, last %s: %s\n", r.Verification.Runs, r.Verification.Last,
 				r.Verification.Scope)
+			if r.Verification.Last == "fail" {
+				fmt.Fprintln(w, "rerun:        resolve the failure, then rerun the check named above")
+			}
 		} else {
 			fmt.Fprintln(w, "verification: none reported")
 		}
 		fmt.Fprintf(w, "symbols:      %d symbols, %d artifacts (--json lists them)\n", len(r.Symbols), len(r.Artifacts))
+		if r.Status == "failure" {
+			for _, path := range r.Artifacts {
+				fmt.Fprintf(w, "changed file:  %s\n", path)
+			}
+		}
 	}
 
 	switch l := t.Landing; {
@@ -884,6 +892,16 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 	}
 	if wt := t.Worktree; wt != nil {
 		fmt.Fprintf(w, "worktree:     %s (branch %s)\n", wt.Path, wt.Branch)
+		if wt.Commits != nil {
+			fmt.Fprintf(w, "branch:       %d delivery commit(s)\n", *wt.Commits)
+		} else {
+			fmt.Fprintln(w, "branch:       commit count unknown")
+		}
+		if wt.Dirty != nil {
+			fmt.Fprintf(w, "uncommitted:  %t\n", *wt.Dirty)
+		} else {
+			fmt.Fprintln(w, "uncommitted:  unknown")
+		}
 	}
 
 	if r != nil && len(r.Leftovers) > 0 {

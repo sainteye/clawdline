@@ -169,3 +169,15 @@ func TestTheBriefingPointsAtTheSharedProtocolInsteadOfCarryingIt(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvironmentBlockedBuildKeepsAResumableFailureContract(t *testing.T) {
+	b := &Broker{Tasks: taskdir.New(t.TempDir()), Executable: "/opt/clawdline", Port: 7791}
+	brief := b.ChildBrief(briefTestRecord(), "/p")
+	for _, want := range []string{"shared dependency directory is not writable", "status: failure",
+		"verification.last: fail", "command to rerun", "changed source paths",
+		"commit state", "keep changes here"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("blocked build contract is missing %q", want)
+		}
+	}
+}
