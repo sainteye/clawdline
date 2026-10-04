@@ -18,6 +18,8 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import { CloudClient } from "../legacy/js/net/cloud-client.js"
 import { parseEnvelopeChannel } from "../legacy/js/net/cloud-crypto.js"
+// @ts-expect-error -- node runs the source TypeScript directly.
+import { RelayReader } from "./relay-reader.ts"
 
 const MACHINE = "mac-a"
 const REPLY = "t/" + MACHINE + "/__clawdline_machine__"
@@ -117,6 +119,103 @@ async function settled(client: any) {
 function read(client: any) {
   return client._machineRequest(MACHINE, "projects", {}, "read") as Promise<{ answered: string }>
 }
+
+test("aborted reads release eight distinct channels before another read publishes", async () => {
+  const relay = new Relay()
+  const client = await connected(relay)
+  client._publishCommand = () => new Promise(() => {})
+  try {
+    const controllers = Array.from({ length: 8 }, () => new AbortController())
+    const reads = controllers.map((controller, index) => client._read(
+      { machine: MACHINE, session: `held-${index}` }, "info", {}, "info.full", 10_000,
+      { signal: controller.signal },
+    ))
+    await settled(client)
+    assert.equal(client.subscriptionHolds.size, 8)
+    controllers.forEach((controller) => controller.abort())
+    await Promise.all(reads.map((pending: Promise<unknown>) => assert.rejects(pending, { name: "AbortError" })))
+    assert.equal(client.subscriptionHolds.size, 0)
+    const ninth = new AbortController()
+    const pending = client._read({ machine: MACHINE, session: "ninth" }, "info", {}, "info.full", 10_000,
+      { signal: ninth.signal })
+    await settled(client)
+    assert.equal(client.subscriptionHolds.size, 1)
+    ninth.abort()
+    await assert.rejects(pending, { name: "AbortError" })
+  } finally {
+    client.stop()
+  }
+})
+
+test("aborting one shared machine-channel read leaves the other holder intact", async () => {
+  const client = await connected(new Relay())
+  client._publishCommand = () => new Promise(() => {})
+  try {
+    const first = new AbortController()
+    const second = new AbortController()
+    const a = client._machineRequest(MACHINE, "work.v2.session-todos", {}, "read", 10_000, { signal: first.signal })
+    const b = client._machineRequest(MACHINE, "work.v2.human-interventions", {}, "read", 10_000, { signal: second.signal })
+    await settled(client)
+    assert.equal(client.subscriptionHolds.get(REPLY), 2)
+    first.abort()
+    await assert.rejects(a, { name: "AbortError" })
+    assert.equal(client.subscriptionHolds.get(REPLY), 1)
+    second.abort()
+    await assert.rejects(b, { name: "AbortError" })
+    assert.equal(client.subscriptionHolds.has(REPLY), false)
+  } finally {
+    client.stop()
+  }
+})
+
+test("one coalesced caller can abort while the remaining caller receives the answer", async () => {
+  const client = await connected(new Relay())
+  let answer: (() => void) | undefined
+  client._publishCommand = () => new Promise<void>((resolve) => { answer = resolve })
+  try {
+    const first = new AbortController()
+    const second = new AbortController()
+    const identity = { machine: MACHINE, session: "coalesced" }
+    const a = client._read(identity, "info", {}, "info.full", 10_000, { signal: first.signal })
+    const b = client._read(identity, "info", {}, "info.full", 10_000, { signal: second.signal })
+    await settled(client)
+    assert.equal(client.subscriptionHolds.size, 1)
+    first.abort()
+    await assert.rejects(a, { name: "AbortError" })
+    assert.equal(client.subscriptionHolds.size, 1)
+    client._settleRead([...client.readWaiters.keys()][0], { answered: true }, null)
+    assert.deepEqual(await b, { answered: true })
+    assert.equal(client.subscriptionHolds.size, 0)
+    answer?.()
+  } finally {
+    client.stop()
+  }
+})
+
+test("an aborted HTTP fetch releases its machine reply channel before a retry", async () => {
+  const client = await connected(new Relay())
+  client._publishCommand = () => new Promise(() => {})
+  const reader = new RelayReader(MACHINE)
+  reader.attach(client)
+  try {
+    const controller = new AbortController()
+    const pending = reader.fetch("/v1/work/v2/session-todos/%251", { signal: controller.signal })
+    await settled(client)
+    assert.equal(client.subscriptionHolds.get(REPLY), 1)
+    controller.abort()
+    await assert.rejects(pending, { name: "AbortError" })
+    assert.equal(client.subscriptionHolds.has(REPLY), false)
+    const retry = new AbortController()
+    const next = reader.fetch("/v1/work/v2/session-todos/%251", { signal: retry.signal })
+    await settled(client)
+    assert.equal(client.subscriptionHolds.get(REPLY), 1)
+    retry.abort()
+    await assert.rejects(next, { name: "AbortError" })
+    assert.equal(client.subscriptionHolds.has(REPLY), false)
+  } finally {
+    client.stop()
+  }
+})
 
 test("a channel the relay reports it no longer holds is subscribed again, and the read on it is answered", async () => {
   const relay = new Relay()
