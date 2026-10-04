@@ -139,7 +139,6 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
             {page.recent_items.map((item) => <SessionOwnedItem item={item} completed key={item.id} onOpen={() => openWorkItem(item)} />)}
           </section>}
           {page && hasDirect && <section className="session-todos-list" aria-label="直接待辦">
-            <p>直接交給這個 Session 的待辦。✓✓ 只表示已同步到 Session，尚未完成；需要時可以再次 Send。</p>
             {openDirect.map((todo) => (
               <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
                 onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
