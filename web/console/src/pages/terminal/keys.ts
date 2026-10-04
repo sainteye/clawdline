@@ -58,6 +58,24 @@ export function pasteRefusal(state: { holding: boolean; stale: boolean } | null)
   return null
 }
 
+/** Read only in a user gesture; recheck authority after the asynchronous clipboard read. */
+export async function readClipboardPaste(
+  clipboard: Pick<Clipboard, "readText"> | undefined,
+  refusal: () => NextWord | null,
+  send: (text: string) => void | Promise<void>,
+): Promise<NextWord | null> {
+  const before = refusal()
+  if (before) return before
+  if (!clipboard?.readText) return "terminalPasteReadFailed"
+  let text: string
+  try { text = await clipboard.readText() } catch { return "terminalPasteReadFailed" }
+  if (!text) return "terminalPasteEmpty"
+  const after = refusal()
+  if (after) return after
+  await send(text)
+  return null
+}
+
 /** How long a sentence the page said about an action stays in the status line. */
 export const SAID_MS = 8_000
 

@@ -17,7 +17,7 @@ import {
 } from "./api.js"
 import { frameBytes } from "./frame-writer.js"
 import { TerminalInputClient, type InputState } from "./input-client.js"
-import { KEY_ROW, StatusMessage, holderKey, isRegionKey, pasteRefusal, withCtrl } from "./keys.js"
+import { KEY_ROW, StatusMessage, holderKey, isRegionKey, pasteRefusal, readClipboardPaste, withCtrl } from "./keys.js"
 import { TAB } from "./tab.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
@@ -113,6 +113,8 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
   const [said, setSaidWords] = useState("")
   const [history, setHistory] = useState<History | null>(null)
   const [ctrl, setCtrl] = useState(false)
+  const pasteBusy = useRef(false)
+  const [pasting, setPasting] = useState(false)
   const [reader, setReader] = useState(false)
   const [machine, setMachine] = useState("")
   const [opening, setOpening] = useState(false)
@@ -557,6 +559,20 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
         : status === "unreachable" ? nextWord("terminalRefusalUnreachable") : ""
 
   const canType = holding && !stale && running
+  const pasteFromClipboard = async () => {
+    if (pasteBusy.current) return
+    pasteBusy.current = true
+    setPasting(true)
+    try {
+      const outcome = await readClipboardPaste(navigator.clipboard, () => {
+        if (!running || history !== null) return "terminalPasteUnavailable"
+        return pasteRefusal(input.current?.state ?? null)
+      }, text => {
+        if (!input.current?.paste(text)) setSaid(nextWord("terminalPasteUnavailable"))
+      })
+      if (outcome) setSaid(nextWord(outcome))
+    } finally { pasteBusy.current = false; setPasting(false) }
+  }
   const holderName = holderWords(holder)
 
   return (
@@ -699,6 +715,8 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
         title={!canType ? nextWord("terminalKeyboardPaused") : undefined}
         onClick={() => term.current?.focus()}>{nextWord(canType ? "terminalShowKeyboard" : "terminalKeyboardPaused")}</button>
       <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
+        <button className="terminal-key terminal-paste" type="button" disabled={!canType || pasting || history !== null}
+          aria-busy={pasting} onClick={() => void pasteFromClipboard()}>{nextWord("terminalPasteButton")}</button>
         {KEY_ROW.map(([label, value, name]) => (
           <button key={label} type="button" className="terminal-key"
             disabled={!canType}
