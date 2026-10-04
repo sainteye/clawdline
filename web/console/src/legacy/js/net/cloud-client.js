@@ -3335,6 +3335,7 @@ export class CloudClient {
                 retireUncertain: !!(readOptions && readOptions.retireUncertain) };
             self.readWaiters.set(key, waiters);
             self._watchReadAbort(key, waiters, waiter);
+            if (self.readWaiters.get(key) !== waiters) return;
             waiters.timer = self.setTimeout(function () {
                 if (self.readWaiters.get(key) !== waiters) return;
                 waiters.timer = null;
