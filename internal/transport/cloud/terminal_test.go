@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -27,6 +28,138 @@ const testConnection = "AAAAAAAAAAAAAAAAAAAAAA"
 const testKeyID = "rk-AQEBAQEBAQEBAQEBAQEBAQ"
 
 type stillCloudHost struct{ ports.OwnedTerminals }
+
+type blockingCloudListHost struct {
+	ports.OwnedTerminals
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (h *blockingCloudListHost) List(ctx context.Context) ([]terminal.Terminal, error) {
+	select {
+	case h.entered <- struct{}{}:
+	default:
+	}
+	select {
+	case <-h.release:
+		return nil, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestSlowCloudListDoesNotBlockInputAdmission(t *testing.T) {
+	spool, err := adaptercloud.NewSpool(adaptercloud.DefaultSpoolLimits(), nil, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := domaincloud.NewDeviceKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	master, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := domaincloud.NewContentKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &blockingCloudListHost{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	svc := terminals.New(host, func(terminals.Principal) error { return nil })
+	c := &terminalConnection{viewer: "viewer", id: testConnection, keyID: testKeyID, key: key,
+		expires: time.Now().Add(time.Minute), receipts: map[string][]byte{}}
+	l := &Link{identity: adaptercloud.Identity{MachineID: "machine"}, opts: LinkOptions{Now: time.Now,
+		TerminalService: func() (*terminals.Service, error) { return svc, nil }},
+		terminalConnections: map[string]*terminalConnection{terminalConnectionID("viewer", testConnection): c},
+		terminalRequests:    make(chan Inbound, CloudTerminalIngressLimit),
+		terminalLists:       make(chan Inbound, CloudTerminalListIngressLimit),
+		terminalRefusals:    make(chan Inbound, CloudTerminalRefusalsLimit)}
+	l.relay = &Relay{Transport: &adaptercloud.Transport{}, Spool: spool, MachineID: "machine", Signer: signer,
+		Secret: master, KeyID: adaptercloud.MasterKeyID}
+	request := func(operation, id string) Inbound {
+		data, err := json.Marshal(terminalRequest{V: 1, Type: "terminal_request", RequestID: id,
+			Connection: testConnection, Operation: operation, TerminalID: "invalid"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Inbound{Channel: "termi/machine/viewer", Class: string(domaincloud.ClassCtl), Sender: "viewer", Plaintext: data}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { l.runTerminal(ctx); close(done) }()
+	defer func() { close(host.release); cancel(); <-done }()
+	l.deliverTerminal(request("list", testRequestID))
+	select {
+	case <-host.entered:
+	case <-time.After(time.Second):
+		t.Fatal("list did not reach the blocking host")
+	}
+	for i := 0; i < CloudTerminalListIngressLimit; i++ {
+		l.deliverTerminal(request("list", fmt.Sprintf("12345678-1234-4123-8123-%012x", i+10)))
+	}
+	busyID := fmt.Sprintf("12345678-1234-4123-8123-%012x", 99)
+	l.deliverTerminal(request("list", busyID))
+	busyDeadline := time.After(500 * time.Millisecond)
+	for l.terminalReceipt(c, busyID) == nil {
+		select {
+		case <-busyDeadline:
+			t.Fatal("full list queue did not return a keyed busy receipt")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	var busy terminalReceipt
+	if err := json.Unmarshal(l.terminalReceipt(c, busyID), &busy); err != nil || busy.Error != string(terminal.CodeBusy) {
+		t.Fatalf("full list queue receipt: %+v, %v", busy, err)
+	}
+	start := time.Now()
+	inputID := fmt.Sprintf("12345678-1234-4123-8123-%012x", 2)
+	l.deliverTerminal(request("input", inputID))
+	deadline := time.After(500 * time.Millisecond)
+	for {
+		if raw := l.terminalReceipt(c, inputID); raw != nil {
+			var receipt terminalReceipt
+			if err := json.Unmarshal(raw, &receipt); err != nil {
+				t.Fatal(err)
+			}
+			if receipt.Operation != "input" || receipt.Status != "refused" || receipt.Error != string(terminal.CodeInvalid) {
+				t.Fatalf("unexpected input receipt: %+v", receipt)
+			}
+			if elapsed := time.Since(start); elapsed >= 500*time.Millisecond {
+				t.Fatalf("input waited %s behind list", elapsed)
+			} else {
+				t.Logf("input refusal completed in %s while the list host remained blocked", elapsed)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("input waited behind blocked list")
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
+func TestFullCloudListLaneStillAdmitsConnectionRequest(t *testing.T) {
+	l := &Link{identity: adaptercloud.Identity{MachineID: "machine"},
+		terminalRequests: make(chan Inbound, CloudTerminalIngressLimit),
+		terminalLists:    make(chan Inbound, CloudTerminalListIngressLimit),
+		terminalRefusals: make(chan Inbound, CloudTerminalRefusalsLimit)}
+	for i := 0; i < CloudTerminalListIngressLimit; i++ {
+		l.terminalLists <- Inbound{}
+	}
+	data, err := json.Marshal(terminalRequest{V: 1, Type: "terminal_request", RequestID: testRequestID,
+		Connection: testConnection, Operation: "open_connection"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.deliverTerminal(Inbound{Channel: "termi/machine/viewer", Class: string(domaincloud.ClassCtl),
+		Sender: "viewer", Plaintext: data})
+	if len(l.terminalRequests) != 1 || len(l.terminalRefusals) != 0 {
+		t.Fatalf("connection admission waited behind full list lane: stateful=%d refusals=%d",
+			len(l.terminalRequests), len(l.terminalRefusals))
+	}
+}
 
 func (*stillCloudHost) Frame(context.Context, terminal.ID) (terminal.Frame, error) {
 	return terminal.Frame{Rev: "still", At: time.Now(), Cols: 80, Rows: 24, Lines: []string{"$ "}}, nil

@@ -33,6 +33,7 @@ const (
 	CloudTerminalReceiptsLimit                = 64
 	CloudTerminalKeySecondsLimit              = 600
 	CloudTerminalIngressLimit                 = 16
+	CloudTerminalListIngressLimit             = 16
 	CloudTerminalRefusalsLimit                = 16
 	CloudTerminalRevocationRetireSecondsLimit = 3
 	CloudTerminalFrameHeartbeatSecondsLimit   = 3
@@ -68,6 +69,8 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		}
 	case capacity.CloudTerminalIngress:
 		r.Used = int64(len(l.terminalRequests))
+	case capacity.CloudTerminalListIngress:
+		r.Used = int64(len(l.terminalLists))
 	case capacity.CloudTerminalRefusals:
 		r.Used = int64(len(l.terminalRefusals))
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline,
@@ -133,6 +136,7 @@ type terminalConnection struct {
 	watchCancel            context.CancelFunc
 	watchReady             chan struct{}
 	receipts               map[string][]byte
+	pendingReceipts        map[string]bool
 	receiptOrder           []string
 	rekeyPending           bool
 	denied                 bool
@@ -336,8 +340,14 @@ func (l *Link) revokeRegisteredTerminal(ctx context.Context, c *terminalConnecti
 func terminalConnectionID(viewer, connection string) string { return viewer + "/" + connection }
 
 func (l *Link) deliverTerminal(in Inbound) {
+	lane := l.terminalRequests
+	if in.Channel == "termi/"+l.identity.MachineID+"/"+in.Sender && in.Class == string(domaincloud.ClassCtl) {
+		if req, err := decodeTerminalRequest(in.Plaintext); err == nil && req.Operation == "list" {
+			lane = l.terminalLists
+		}
+	}
 	select {
-	case l.terminalRequests <- in:
+	case lane <- in:
 	default:
 		select {
 		case l.terminalRefusals <- in:
@@ -349,6 +359,7 @@ func (l *Link) deliverTerminal(in Inbound) {
 
 func (l *Link) runTerminal(ctx context.Context) {
 	refusalDone := make(chan struct{})
+	listDone := make(chan struct{})
 	sweepDone := make(chan struct{})
 	go func() {
 		defer close(sweepDone)
@@ -364,6 +375,17 @@ func (l *Link) runTerminal(ctx context.Context) {
 		}
 	}()
 	go func() {
+		defer close(listDone)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case in := <-l.terminalLists:
+				l.handleTerminal(ctx, in)
+			}
+		}
+	}()
+	go func() {
 		defer close(refusalDone)
 		for {
 			select {
@@ -374,7 +396,7 @@ func (l *Link) runTerminal(ctx context.Context) {
 			}
 		}
 	}()
-	defer func() { <-refusalDone; <-sweepDone }()
+	defer func() { <-listDone; <-refusalDone; <-sweepDone }()
 	for {
 		select {
 		case <-ctx.Done():
@@ -583,6 +605,40 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 			Status: "refused", Error: string(terminal.CodeBusy)})
 		return
 	}
+	l.terminalMu.Lock()
+	if c.pendingReceipts == nil {
+		c.pendingReceipts = map[string]bool{}
+	}
+	if previous := c.receipts[req.RequestID]; previous != nil {
+		l.terminalMu.Unlock()
+		var original terminalReceipt
+		if json.Unmarshal(previous, &original) == nil && original.Operation == req.Operation && original.TerminalID == req.TerminalID {
+			_ = l.sendTerminalReceipt(ctx, c, original)
+		} else {
+			bad, _ := json.Marshal(terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+				Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
+				Status: "refused", Error: string(terminal.CodeInvalid)})
+			_ = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
+				Class: string(domaincloud.ClassCtl), Payload: bad, Key: c.key, KeyID: c.keyID})
+		}
+		return
+	}
+	if c.pendingReceipts[req.RequestID] {
+		l.terminalMu.Unlock()
+		busy, _ := json.Marshal(terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+			Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
+			Status: "refused", Error: string(terminal.CodeBusy)})
+		_ = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
+			Class: string(domaincloud.ClassCtl), Payload: busy, Key: c.key, KeyID: c.keyID})
+		return
+	}
+	c.pendingReceipts[req.RequestID] = true
+	l.terminalMu.Unlock()
+	defer func() {
+		l.terminalMu.Lock()
+		delete(c.pendingReceipts, req.RequestID)
+		l.terminalMu.Unlock()
+	}()
 	result, err := l.terminalOperation(ctx, svc, p, c, req)
 	receipt := terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
 		Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,

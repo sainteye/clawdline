@@ -252,6 +252,7 @@ type Link struct {
 	terminalMetadata           func(context.Context, string, *terminalConnection) error
 	machineIncarnation         string
 	terminalRequests           chan Inbound
+	terminalLists              chan Inbound
 	terminalRefusals           chan Inbound
 }
 
@@ -645,6 +646,7 @@ func (l *Link) Run(ctx context.Context) error {
 // runOnce holds one socket up until its context is done.
 func (l *Link) runOnce(ctx context.Context) error {
 	l.terminalRequests = make(chan Inbound, CloudTerminalIngressLimit)
+	l.terminalLists = make(chan Inbound, CloudTerminalListIngressLimit)
 	l.terminalRefusals = make(chan Inbound, CloudTerminalRefusalsLimit)
 	terminalCtx, stopTerminal := context.WithCancel(ctx)
 	terminalDone := make(chan struct{})
