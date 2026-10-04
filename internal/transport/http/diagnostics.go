@@ -765,6 +765,15 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.OpeningStuckSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row age ceiling; the row's updated time persists; no retained buffer"}
 		},
+		capacity.UpdateRefreshSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "refresh period of the update check; one answer is held, replaced only by a good new one"}
+		},
+		capacity.UpdateFetchTimeoutSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read timing ceiling for the cloud's BUILD.json; no retained buffer"}
+		},
+		capacity.UpdateBuildBodyBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on one BUILD.json body; no retained buffer"}
+		},
 		capacity.IntentRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},

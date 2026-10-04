@@ -40,7 +40,10 @@ go vet ./...
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -buildvcs=true -o "$stage/clawdline" ./cmd/clawdline
 ( cd web && npm ci --ignore-scripts && npm run check && npm run build )
 cp -R web/console/dist "$stage/dist"
-printf '{"stamp":"%s"}\n' "$commit" >"$stage/dist/BUILD.json"
+# committed_at lets a daemon say whether the cloud's build is later than its
+# own (docs/updates.md). Readers accept a BUILD.json without it.
+committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$commit")
+printf '{"stamp":"%s","committed_at":"%s"}\n' "$commit" "$committed_at" >"$stage/dist/BUILD.json"
 
 main=$(find "$stage/dist/assets" -maxdepth 1 -type f -name 'main-*.js' -print)
 [ "$(printf '%s\n' "$main" | sed '/^$/d' | wc -l)" -eq 1 ] || {
