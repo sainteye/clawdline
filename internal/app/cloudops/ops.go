@@ -1444,7 +1444,8 @@ func init() {
 
 		op{name: "work.v2.session-todos", read: true,
 			decode: func(b body) (plan, bool) {
-				if !b.has("type", "session", "request", "terminal") {
+				if !b.hasOneOf([]string{"type", "session", "request", "terminal"},
+					[]string{"type", "session", "request", "terminal", "summary"}) {
 					return plan{}, false
 				}
 				p, ok := machinePlan(b)
@@ -1453,10 +1454,20 @@ func init() {
 					return plan{}, false
 				}
 				p.target = terminal
+				if _, exists := b["summary"]; exists {
+					summary, valid := b.boolean("summary")
+					if !valid {
+						return plan{}, false
+					}
+					if summary {
+						p.kind = "1"
+					}
+				}
 				return p, true
 			},
 			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/work/v2/session-todos/" + segment(p.target)}
+				return LocalRequest{Method: "GET", Path: "/v1/work/v2/session-todos/" + segment(p.target),
+					Query: someOf(map[string]string{"summary": p.kind})}
 			}},
 		op{name: "work.v2.human-interventions", read: true,
 			decode: func(b body) (plan, bool) {

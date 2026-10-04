@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, type DirectTodoV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readSessionWorkSummaryV2, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
@@ -33,6 +33,7 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
   const [text, setText] = useState("")
   const [images, setImages] = useState<File[]>([])
   const [page, setPage] = useState<SessionWorkV2 | null>(null)
+  const [summary, setSummary] = useState<SessionWorkSummaryV2 | null>(null)
   const [failure, setFailure] = useState("")
   // A failed read is its own state, apart from a failed action: the header
   // shows it, and only a later successful read clears it.
@@ -41,6 +42,7 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
   const [busy, setBusy] = useState("")
   const ticket = useRef(0)
   const reader = useRef<OneRead | null>(null)
+  const expanded = useRef(false)
   const rowID = row?.id ?? ""
   const rowSessionID = row?.sessionId ?? ""
   const readReady = sessionTodosReady(row)
@@ -51,8 +53,17 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
     setReading(true)
     try {
       // A transient failure is asked again once before it is shown.
-      const next = await readWithOneRetry(() => readSessionWorkV2(rowID, rowSessionID))
-      if (mine === ticket.current) { setPage(next); setReadFailure(null) }
+      if (expanded.current) {
+        const next = await readWithOneRetry(() => readSessionWorkV2(rowID, rowSessionID))
+        if (mine === ticket.current) {
+          setPage(next)
+          setSummary({ ok: true, ...todoProgress(next, rowSessionID), truncated: next.truncated })
+          setReadFailure(null)
+        }
+      } else {
+        const next = await readWithOneRetry(() => readSessionWorkSummaryV2(rowID, rowSessionID))
+        if (mine === ticket.current) { setSummary(next); setReadFailure(null) }
+      }
     } catch (e) {
       // The last good page stays: a refresh that failed marks it, it does
       // not blank it.
@@ -67,7 +78,8 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
     // same Session. Key the answer to its stable id: otherwise every refresh
     // clears a good answer, flashes "loading", and asks the work API again.
     ticket.current += 1
-    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setFailure("")
+    expanded.current = false
+    setOpen(false); setAdding(false); setText(""); setImages([]); setPage(null); setSummary(null); setFailure("")
     setReadFailure(null); setReading(false)
     if (!readReady) return
     // One read in flight per Session; the page asks again every fifteen
@@ -99,7 +111,7 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
   const run = async (key: string, task: () => Promise<unknown>) => {
     if (busy) return false
     setBusy(key); setFailure("")
-    try { await task(); await refresh(true); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
+    try { await task(); expanded.current = true; await refresh(true); return true } catch (e) { setFailure(failureWords(e)); return false } finally { setBusy("") }
   }
 
   return (
@@ -108,19 +120,19 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
         onToggle={(ev) => {
           const next = (ev.currentTarget as HTMLDetailsElement).open
           setOpen(next)
-          // The first answer is already in flight when a Session opens. Once
-          // there is an answer, opening the fold is an explicit freshness ask.
+          expanded.current = next
           if (next) attention.close()
-          if (next && page !== null) void refresh()
+          if (next) void refresh(true)
         }}>
         <summary>
           <b>{workWord("todosTitle")}</b>
           <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
           {!readReady ? <span id="session-todos-count">{nextWord("sessionNotStartedShort")}</span>
+            : summary ? <TodoProgressSummary progress={summary} />
             : page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
             : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
-          {readReady && readFailure && <ReadFailure state={todoHeaderState(page !== null, true)} reason={readFailure.reason}
+          {readReady && readFailure && <ReadFailure state={todoHeaderState(summary !== null, true)} reason={readFailure.reason}
             retrying={reading} onRetry={() => { void refresh(true) }} />}
           {attention.head}
         </summary>

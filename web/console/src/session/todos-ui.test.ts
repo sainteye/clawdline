@@ -9,7 +9,7 @@ const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 test("fleet refreshes do not clear and reload the same Session todos", () => {
   assert.match(source, /const rowID = row\?\.id \?\? ""/)
   assert.match(source, /const rowSessionID = row\?\.sessionId \?\? ""/)
-  assert.match(source, /const load = useCallback[\s\S]*?readSessionWorkV2\(rowID, rowSessionID\)[\s\S]*?}, \[rowID, rowSessionID, readReady\]\)/)
+  assert.match(source, /const load = useCallback[\s\S]*?readSessionWorkSummaryV2\(rowID, rowSessionID\)[\s\S]*?}, \[rowID, rowSessionID, readReady\]\)/)
   assert.doesNotMatch(source, /}, \[row\]\)/)
   assert.doesNotMatch(source, /useEffect\(\(\) => \{ if \(open\) void load\(\) \}/)
 })
@@ -18,11 +18,13 @@ test("Session todo reads use durable conversation identity when it is available"
   const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
   assert.match(api, /conversationID \? `conversation:\$\{conversationID\}` : terminalID/)
   assert.match(source, /readSessionWorkV2\(rowID, rowSessionID\)/)
+  assert.match(source, /readSessionWorkSummaryV2\(rowID, rowSessionID\)/)
 })
 
 test("Session to-do and attention reads allow a response past the refresh interval", () => {
   const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
   assert.match(api, /readSessionWorkV2[\s\S]*?call<SessionWorkV2>\([^\n]*30_000\)/)
+  assert.match(api, /readSessionWorkSummaryV2[\s\S]*?call<SessionWorkSummaryV2>\([^\n]*15_000\)/)
   assert.match(api, /readHumanInterventionsV2[\s\S]*?call<HumanInterventionsV2>\([^\n]*30_000\)/)
 })
 
@@ -34,13 +36,13 @@ test("a Session with no first conversation does not report a to-do read failure"
 })
 
 test("opening an answered todo fold explicitly refreshes it once", () => {
-  assert.match(source, /if \(next && page !== null\) void refresh\(\)/)
+  assert.match(source, /if \(next\) void refresh\(true\)/)
 })
 
 test("a failed read is shown in the header, not as loading, and tapping it retries without toggling the fold", () => {
   // Loading only while there is no page and no failure.
   assert.match(source, /: !readFailure && <span id="session-todos-count">\{L\.strings\.webLoading\}<\/span>/)
-  assert.match(source, /\{readReady && readFailure && <ReadFailure state=\{todoHeaderState\(page !== null, true\)\} reason=\{readFailure\.reason\}/)
+  assert.match(source, /\{readReady && readFailure && <ReadFailure state=\{todoHeaderState\(summary !== null, true\)\} reason=\{readFailure\.reason\}/)
   assert.match(source, /retrying=\{reading\} onRetry=\{\(\) => \{ void refresh\(true\) \}\}/)
   assert.match(source, /className="session-todos-failed"[\s\S]*?title=\{tip\}[\s\S]*?onClick=\{\(ev\) => \{ ev\.preventDefault\(\); ev\.stopPropagation\(\); onRetry\(\) \}\}/)
   assert.match(source, /nextWord\("todosRetryTip", \{ reason \}\)/)
@@ -261,4 +263,5 @@ test("the Note polls only while visible, rereads on return, and both reads retry
   assert.match(note, /watchTodoRefresh\(\(\) => \{ void load\(destination\) \}\)/)
   assert.match(note, /readWithOneRetry\(\(\) => readHumanInterventionsV2\(target\.conversation\)\)/)
   assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkV2\(rowID, rowSessionID\)\)/)
+  assert.match(source, /readWithOneRetry\(\(\) => readSessionWorkSummaryV2\(rowID, rowSessionID\)\)/)
 })

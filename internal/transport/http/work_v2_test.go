@@ -7,8 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -76,6 +79,122 @@ func TestAgentItemWritesTakeAnOptionalExpectedVersion(t *testing.T) {
 	var we *app.WorkError
 	if !errors.As(err, &we) || we.Code != "version_conflict" {
 		t.Fatalf("person edit without a version = %v", err)
+	}
+}
+
+// A blocked Project registry models a stalled history/catalog dependency. The
+// folded summary must finish without consulting it, even with an assigned
+// item that would make the full answer project its Project.
+func TestSessionTodoSummaryIgnoresStalledProjectHistory(t *testing.T) {
+	s, p, item := workV2AssignmentServer(t, session.StateWorking)
+	if _, err := s.assignWorkV2(context.Background(), item.Item.ID, "local", item.Item.Version,
+		"existing_session", p.s.ID, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for index, actor := range []string{"device:phone", p.s.ConversationID, "device:phone"} {
+		todo, err := s.workV2().CreateDirectTodo(context.Background(), app.NewDirectTodoV2{
+			SessionID: p.s.ConversationID, Text: "Check the count", Actor: actor,
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 2 {
+			if _, err := s.workV2().CompleteDirectTodo(context.Background(), todo.ID, p.s.ConversationID,
+				p.s.ConversationID, false, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	blocked := make(chan struct{})
+	t.Cleanup(func() { close(blocked) })
+	s.projectReaders().places.Registered = func() ([]projects.RegisteredPlace, error) {
+		<-blocked
+		return nil, nil
+	}
+	answer := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, personWorkV2Request(http.MethodGet,
+			"/v1/work/v2/session-todos/conversation:"+p.s.ConversationID+"?summary=1", "", ""))
+		answer <- rec
+	}()
+	select {
+	case rec := <-answer:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("summary: %d %s", rec.Code, rec.Body)
+		}
+		var counts struct {
+			Done, Active, Waiting int
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &counts); err != nil || counts.Waiting != 2 || counts.Done != 1 || counts.Active != 1 {
+			t.Fatalf("counts = %+v: %v", counts, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("summary waited for Project history")
+	}
+}
+
+func TestSessionTodoSummaryRejectsUnknownModeByName(t *testing.T) {
+	s, p, _ := directTodoServer(t)
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, personWorkV2Request(http.MethodGet,
+		"/v1/work/v2/session-todos/conversation:"+p.s.ConversationID+"?summary=slow", "", ""))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"invalid_summary"`) {
+		t.Fatalf("summary mode: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestSessionTodoSummarySkipsStalledFullDependencies(t *testing.T) {
+	s, p, _ := directTodoServer(t)
+	for _, dependency := range []string{"project history", "images", "gate feedback"} {
+		t.Run(dependency, func(t *testing.T) {
+			blocked := make(chan struct{})
+			entered := make(chan struct{}, 2)
+			full := func() {
+				entered <- struct{}{}
+				<-blocked
+			}
+			fullDone := make(chan struct{})
+			defer func() { close(blocked); <-fullDone }()
+			go func() {
+				s.workV2SessionTodosRead(httptest.NewRecorder(), personWorkV2Request(http.MethodGet,
+					"/v1/work/v2/session-todos/conversation:"+p.s.ConversationID, "", ""), p.s.ConversationID, full)
+				close(fullDone)
+			}()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("full read did not reach the injected stall")
+			}
+			select {
+			case <-fullDone:
+				t.Fatal("full read did not stay stalled")
+			default:
+			}
+			answer := make(chan *httptest.ResponseRecorder, 1)
+			go func() {
+				rec := httptest.NewRecorder()
+				s.workV2SessionTodosRead(rec, personWorkV2Request(http.MethodGet,
+					"/v1/work/v2/session-todos/conversation:"+p.s.ConversationID+"?summary=1", "", ""),
+					p.s.ConversationID, full)
+				answer <- rec
+			}()
+			select {
+			case rec := <-answer:
+				if rec.Code != http.StatusOK {
+					t.Fatalf("summary: %d %s", rec.Code, rec.Body)
+				}
+			case <-time.After(time.Second):
+				t.Fatalf("summary entered stalled %s dependency", dependency)
+			}
+		})
+	}
+	called := false
+	s.workV2SessionTodosRead(httptest.NewRecorder(), personWorkV2Request(http.MethodGet,
+		"/v1/work/v2/session-todos/conversation:"+p.s.ConversationID, "", ""), p.s.ConversationID,
+		func() { called = true })
+	if !called {
+		t.Fatal("the expanded operation did not enter full details")
 	}
 }
 

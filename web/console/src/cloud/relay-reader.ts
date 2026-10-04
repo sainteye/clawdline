@@ -612,8 +612,10 @@ export class RelayReader {
       }
       const workTerminal = workV2SessionTodosTerminal(path)
       if (workTerminal) {
-        this.only(url, path)
-        return await this.machineRead(init?.signal, method, path, "work.v2.session-todos", { terminal: workTerminal })
+        const q = this.only(url, path, "summary")
+        if (q.summary && q.summary !== "1") return this.refuse(method, path, 400, "invalid_summary", "Summary must be 1.")
+        return await this.machineRead(init?.signal, method, path, "work.v2.session-todos",
+          { terminal: workTerminal, ...(q.summary ? { summary: true } : {}) })
       }
       const humanConversation = workV2HumanInterventionConversation(path)
       if (humanConversation) {
