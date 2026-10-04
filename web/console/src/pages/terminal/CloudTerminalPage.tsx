@@ -13,12 +13,13 @@ import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, withCtrl } from "./keys.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
-import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals } from "./cloud-view.js"
+import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals, reconnectCloudTerminal } from "./cloud-view.js"
 import { sessionsPageHash } from "../../page-route.js"
 import { requestPage } from "../../overlays/index.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
+const FIRST_FRAME_MS = 12_000
 /** The page's content-free receipt timeline, readable and copyable where a terminal request failed. */
 function TerminalDiagnostics({ observation }: { observation: { current: TerminalObservation | null } }) {
   const [text, setText] = useState("")
@@ -71,6 +72,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const [rows, setRows] = useState<TerminalRow[]>([])
   const [meta, setMeta] = useState<TerminalRow | null>(null)
   const [loading, setLoading] = useState(true)
+  const [firstFramePending, setFirstFramePending] = useState(true)
+  const [frameTimedOut, setFrameTimedOut] = useState(false)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState("")
   const [history, setHistory] = useState<CloudTerminalHistory | null>(null)
@@ -111,7 +114,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const transport = new TerminalChannelTransport(host.client, machine, observation)
     const next = new CloudTerminalSession(transport, TAB, observation)
     const stop = next.subscribe((value) => live && setSnapshot(value))
-    setSession(next); setSnapshot(empty); setLoading(true); setError(""); setMeta(null); setRows([])
+    setSession(next); setSnapshot(empty); setLoading(true); setFirstFramePending(!!id); setFrameTimedOut(false); setError(""); setMeta(null); setRows([])
     void (async () => {
       try {
         const begun = await beginCloudTerminal(next, channelProject, id, TAB)
@@ -121,6 +124,15 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     })()
     return () => { live = false; stop(); next.dispose(); transport.dispose(); setSession(null) }
   }, [host, machine, channelProject, id, shown])
+
+  useEffect(() => {
+    if (!id || !firstFramePending || snapshot.frame || error || !shown) return
+    const timer = setTimeout(() => { setFirstFramePending(false); setFrameTimedOut(true) }, FIRST_FRAME_MS)
+    return () => clearTimeout(timer)
+  }, [id, firstFramePending, snapshot.frame, error, shown, session])
+  useEffect(() => {
+    if (snapshot.frame) { setFirstFramePending(false); setFrameTimedOut(false) }
+  }, [snapshot.frame])
 
   useEffect(() => {
     if (!id || !screen.current || !shown) return
@@ -249,6 +261,11 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
       else throw failure
     }
   })
+  const reconnect = () => void run("reconnect", async () => {
+    if (!session) return
+    setFirstFramePending(true); setFrameTimedOut(false)
+    await reconnectCloudTerminal(session, id)
+  })
   const sendKey = (value: string) => {
     if (value === "ctrl") {
       ctrlArmed.current = !ctrlArmed.current
@@ -296,7 +313,6 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     } }}>
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord(from === "sessions" ? "terminalBackSessions" : "terminalBack")}</button>
-        <button className="board-button" type="button" onClick={goBack}>{nextWord("terminalCloseView")}</button>
         <dl className="terminal-facts">
           <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
           <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl>
@@ -311,19 +327,16 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         {!accessError && (snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
           onClick={() => setConfirm("reacquire")}>{nextWord("terminalCloudReacquire")}</button>}
         {(snapshot.state === "stale" || snapshot.state === "offline") && <button className="board-button" type="button" disabled={!!busy}
-          onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
+          onClick={reconnect}>{nextWord("terminalCloudReconnect")}</button>}
         {snapshot.control?.holder?.same_client && snapshot.hasLease && <button className="board-button" type="button" disabled={!!busy}
           onClick={() => void run("release", () => session!.release())}>{nextWord("terminalRelease")}</button>}
         <details className="terminal-more terminal-action-more"><summary>{nextWord("terminalMoreActions")}</summary><div className="terminal-more-actions">
         <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("history", async () => setHistory(history ? null : await session!.history()))}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
         <button className="board-button" type="button" aria-pressed={reader} onClick={() => setReader((value) => !value)}>{nextWord("terminalReaderMode")}</button>
-        </div></details>
-      </div>
-      <div className="terminal-end-action">
         <button className="board-button terminal-danger" type="button" ref={closeOpener}
           disabled={!snapshot.canType || !!busy || closeRecord?.status === "pending" || closeRecord?.status === "unknown" || closeRecord?.status === "ok" || closeRecord?.status === "ended"}
           onClick={() => setCloseConfirm(true)}>{nextWord("terminalTerminateHost")}</button>
-        {!snapshot.canType && !closeRecord && <p className="terminal-note">{nextWord("terminalTerminateNeedsControl")}</p>}
+        </div></details>
       </div>
       <dialog ref={closeDialog} className="terminal-close-confirm" onCancel={() => { setCloseConfirm(false); closeOpener.current?.focus() }}
         aria-label={nextWord("terminalTerminateHost")}>
@@ -349,19 +362,20 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         })}>{nextWord(confirm === "reacquire" ? "terminalCloudReacquire" : "terminalTakeoverConfirm")}</button>
         <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
       </div>}
-      <p className="terminal-status-line" role="status" aria-live="polite">{loading ? nextWord("terminalConnecting") :
+      <p className="terminal-status-line" role="status" aria-live="polite">{loading && !snapshot.frame ? nextWord("terminalConnecting") :
         error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
           snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
           snapshot.state === "revoked" ? nextWord("terminalCloudAccessRevoked") :
-            !snapshot.canType ? nextWord("terminalCloudInputPaused") : ""}</p>
-      {error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline" && <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("reconnect", () => session!.start())}>{nextWord("terminalCloudReconnect")}</button>}
+            frameTimedOut ? nextWord("terminalCloudStaleHelp") : firstFramePending ? nextWord("terminalCloudSyncing") :
+            !snapshot.canType ? snapshot.control?.held ? nextWord("terminalKeyboardPaused") : nextWord("terminalTerminateNeedsControl") : ""}</p>
+      {(frameTimedOut || (error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline")) && <button className="board-button" type="button" disabled={!!busy} onClick={reconnect}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
-      <TerminalDiagnostics observation={observed} />
+      {(error || frameTimedOut || snapshot.state === "unknown" || snapshot.state === "revoked") && <TerminalDiagnostics observation={observed} />}
     </header>
     {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2>
       {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}
       <pre ref={historyFocus} tabIndex={0}>{history.lines.join("\n")}</pre></section>}
-    <div className="terminal-scroll" hidden={history !== null}>{loading && <p className="terminal-note">{nextWord("terminalConnecting")}</p>}<div className="terminal-host" ref={screen} /></div>
+    <div className="terminal-scroll" hidden={history !== null}>{firstFramePending && !error && <p className="terminal-loading terminal-wait" role="status" aria-live="polite"><span className="terminal-wait-indicator" aria-hidden="true" />{nextWord("terminalCloudSyncing")}</p>}<div className="terminal-host" ref={screen} /></div>
     <button className="terminal-keyboard board-button" type="button" disabled={!snapshot.canType || history !== null}
       title={!snapshot.canType ? nextWord("terminalKeyboardPaused") : undefined}
       onClick={() => terminal.current?.focus()}>{nextWord(snapshot.canType ? "terminalShowKeyboard" : "terminalKeyboardPaused")}</button>
