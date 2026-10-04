@@ -68,8 +68,8 @@ each.
   a detached task or a handoff.
 
 A **Feature Root** — a Root assignment, or a Session given a Board item — prints `BIN guide
-feature-root`: its whole ordinary path, from reading the item to done. It delegates investigation as
-well as implementation and keeps only the conclusion.
+feature-root`: its whole ordinary path, from reading the item to done. It works in the owning
+Session by default and dispatches only for a concrete need.
 
 A Clawdline **child** does not dispatch and does not send a turn receipt; it reports through the
 `result.json` its briefing describes.

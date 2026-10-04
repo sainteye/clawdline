@@ -86,6 +86,17 @@ test("the assignment picker shows one compact AI suggestion action", () => {
   assert.doesNotMatch(styles, /\.work-persona-ai\s*\{/)
 })
 
+test("new Session assignment leaves the role empty until one is explicitly picked", () => {
+  assert.match(source, /const \[personaChoice, setPersonaChoice\] = useState\(""\)/)
+  assert.match(source, /const persona = personaById\(personas, personaChoice\)/)
+  assert.doesNotMatch(source, /suggestedPersonaForKind\(personas, item\.kind\)/)
+  assert.match(source, /<RoleRow[^>]*chosen=\{persona\?\.id \?\? ""\}/)
+  assert.match(source, /onPick=\{\(id\) => setPersonaChoice\(id\)\}/)
+  assert.match(source, /assignNewWorkV2\(item, assistant, persona\?\.id\)/)
+  assert.match(source, /onClick=\{\(\) => void askAIForPersona\(\)\}/)
+  assert.match(source, /if \(answer\.outcome === "recommend"\) \{[\s\S]*?setPersonaChoice\(picked\.id\)/)
+})
+
 test("an existing Session gets a confirmation only after selection", () => {
   assert.match(source, /\{terminal && <button className="chip on work-assignment-action"/)
   assert.doesNotMatch(styles, /\.work-assignment-action\s*\{[^}]*background:/)
