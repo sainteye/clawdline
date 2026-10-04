@@ -438,6 +438,8 @@ export interface SessionWorkV2 {
   assigned_items: WorkV2Item[]
   recent_items: WorkV2Item[]
   direct_todos: DirectTodoV2[]
+  open_decisions: Decision[]
+  decisions_error?: string | null
   truncated: boolean
 }
 
@@ -708,3 +710,6 @@ export const resolveProposal = (id: string, resolution: string, evidence: string
 
 export const answerDecision = (id: string, option: string) =>
   decide<unknown>(`/v1/work/decisions/${id}`, { answer: option })
+
+export const readDecision = (id: string) =>
+  call<{ ok: boolean; decision: Decision }>(`/v1/work/decisions/${id}`)

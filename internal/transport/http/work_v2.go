@@ -2438,14 +2438,36 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 				itemOf = s.workV2ItemProjector(r.Context())
 			}
 			assigned := make([]workV2ItemWire, 0, len(items))
+			assignedIDs := make(map[string]bool, len(items))
 			for _, item := range items {
 				assigned = append(assigned, itemOf(item))
+				assignedIDs[item.Item.ID] = true
+			}
+			decisions := make([]decisionWire, 0)
+			var decisionsError *string
+			if len(assignedIDs) > 0 {
+				decisionContext, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
+				rows, decisionErr := s.store.Decisions(decisionContext, store.DecisionQuery{
+					State: work.DecisionOpen, Session: conversation, Limit: app.WorkPageSize,
+				})
+				cancel()
+				if decisionErr != nil {
+					code := "decisions_unavailable"
+					decisionsError = &code
+				} else {
+					if len(rows) == app.WorkPageSize {
+						code := "decisions_truncated"
+						decisionsError = &code
+					}
+					decisions = assignedOpenDecisions(rows, assignedIDs, conversation)
+				}
 			}
 			completed := make([]workV2ItemWire, 0, len(recent))
 			for _, item := range recent {
 				completed = append(completed, itemOf(item))
 			}
 			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+				"open_decisions": decisions, "decisions_error": decisionsError,
 				"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
 		})
 		return
@@ -2620,6 +2642,16 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+func assignedOpenDecisions(rows []work.Decision, assignedIDs map[string]bool, conversation string) []decisionWire {
+	out := make([]decisionWire, 0)
+	for _, decision := range rows {
+		if assignedIDs[decision.WorkID] && decision.Session == conversation && decision.State == work.DecisionOpen {
+			out = append(out, decisionOf(decision))
+		}
+	}
+	return out
 }
 
 // workV2SessionTodosRead chooses the cheap header operation before entering

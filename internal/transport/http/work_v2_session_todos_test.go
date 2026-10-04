@@ -14,7 +14,25 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestSessionTodoDecisionsStayWithOpenAssignedItems(t *testing.T) {
+	rows := []work.Decision{
+		{ID: "one", Session: "session-a", WorkID: "item-a", State: work.DecisionOpen},
+		{ID: "other-session", Session: "session-b", WorkID: "item-a", State: work.DecisionOpen},
+		{ID: "other-item", Session: "session-a", WorkID: "item-b", State: work.DecisionOpen},
+		{ID: "answered", Session: "session-a", WorkID: "item-a", State: work.DecisionAnswered},
+		{ID: "withdrawn", Session: "session-a", WorkID: "item-a", State: work.DecisionWithdrawn},
+	}
+	got := assignedOpenDecisions(rows, map[string]bool{"item-a": true}, "session-a")
+	if len(got) != 1 || got[0].ID != "one" {
+		t.Fatalf("attached decisions: %+v", got)
+	}
+	if got := assignedOpenDecisions(rows, nil, "session-a"); len(got) != 0 {
+		t.Fatalf("unassigned decisions leaked: %+v", got)
+	}
+}
 
 // ownTodoServer is a daemon whose live registry holds one assistant Session,
 // the one a Session writing its own to-dos resolves to.

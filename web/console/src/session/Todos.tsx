@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { RefusalError } from "@clawdline/core"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
-import { addDirectTodoV2Image, createDirectTodoV2, directTodoActionV2, readSessionWorkV2, readSessionWorkSummaryV2, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
+import { addDirectTodoV2Image, answerDecision, createDirectTodoV2, directTodoActionV2, readDecision, readSessionWorkV2, readSessionWorkSummaryV2, type Decision, type DirectTodoV2, type SessionWorkSummaryV2, type SessionWorkV2, type WorkV2Image, type WorkV2Item } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
 import { WorkMilestones } from "../pages/work/WorkMilestones.js"
 import { WorkSteps } from "../pages/work/WorkSteps.js"
@@ -143,7 +144,8 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
           {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
             <p>這個 Session 尚未關閉的負責項目</p>
             {page.assigned_items.map((item) => (
-              <SessionOwnedItem item={item} key={item.id} onOpen={() => openWorkItem(item)} />
+              <SessionOwnedItem item={item} decisions={page.open_decisions?.filter((decision) => decision.work_id === item.id) ?? []}
+                decisionsError={page.decisions_error} key={item.id} onOpen={() => openWorkItem(item)} onAnswered={() => void refresh(true)} />
             ))}
           </section>}
           {page && hasRecent && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
@@ -216,8 +218,40 @@ function ReadFailure({ state, reason, retrying, onRetry }: {
   </button>
 }
 
-function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Item; completed?: boolean; onOpen: () => void }) {
+function SessionOwnedItem({ item, decisions = [], decisionsError, completed = false, onOpen, onAnswered }: {
+  item: WorkV2Item; decisions?: Decision[]; decisionsError?: string | null; completed?: boolean; onOpen: () => void; onAnswered?: () => void
+}) {
   const hasReport = completionReports(item).length > 0
+  const [pending, setPending] = useState("")
+  const [receipts, setReceipts] = useState<Record<string, string>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const answer = async (decision: Decision, option: { id: string; label: string }) => {
+    if (pending) return
+    setPending(decision.id); setErrors((current) => ({ ...current, [decision.id]: "" }))
+    try {
+      await answerDecision(decision.id, option.id)
+      setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` }))
+      onAnswered?.()
+    } catch (error) {
+      if (error instanceof RefusalError && error.code !== "request_in_progress") {
+        setErrors((current) => ({ ...current, [decision.id]: failureWords(error) }))
+      } else {
+        try {
+          const latest = (await readDecision(decision.id)).decision
+          if (latest.state === "answered" && latest.answer === option.id) {
+            setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` }))
+            onAnswered?.()
+          } else if (latest.state === "open") {
+            setErrors((current) => ({ ...current, [decision.id]: "回答尚未確認，請稍後再試。" }))
+          } else {
+            setErrors((current) => ({ ...current, [decision.id]: "決定狀態已變更，請查看項目詳情。" }))
+          }
+        } catch {
+          setErrors((current) => ({ ...current, [decision.id]: "送出結果尚未確認，請稍後查看決定。" }))
+        }
+      }
+    } finally { setPending("") }
+  }
   return <article className={`session-owned-item${completed ? " completed" : ""}`} data-phase={item.phase}>
     <button className="session-owned-summary" type="button" onClick={onOpen}
       aria-label={hasReport ? `開啟「${item.title}」的結案報告` : `查看「${item.title}」的項目詳情`}>
@@ -230,6 +264,17 @@ function SessionOwnedItem({ item, completed = false, onOpen }: { item: WorkV2Ite
         <span className="session-owned-open"><WorkIcon name="open" /></span>
       </span>
     </button>
+    {decisionsError && <p className="session-owned-decision-note">決定暫時無法載入，請稍後查看項目詳情。</p>}
+    {decisions.map((decision) => <section className="session-owned-decision" key={decision.id} aria-label="待回答的問題">
+      <p>{decision.question}</p>
+      {receipts[decision.id] ? <p role="status" className="session-owned-decision-receipt">{receipts[decision.id]}</p>
+        : <div className="session-owned-options">{decision.options.map((option) =>
+          <button type="button" key={option.id} disabled={!!pending} onClick={() => void answer(decision, option)}>
+            {pending === decision.id ? "送出中…" : option.label}</button>)}</div>}
+      {errors[decision.id] && <p role="alert" className="session-owned-decision-note">{errors[decision.id]}</p>}
+    </section>)}
+    {Object.entries(receipts).filter(([id]) => !decisions.some((decision) => decision.id === id)).map(([id, words]) =>
+      <p key={id} role="status" className="session-owned-decision-note">{words}</p>)}
     <WorkMilestones phase={item.phase} verifyGate={item.verify_gate} />
     <WorkSteps steps={item.steps} />
   </article>
