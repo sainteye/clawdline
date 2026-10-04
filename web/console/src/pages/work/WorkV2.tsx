@@ -28,7 +28,7 @@ import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
-import { decisionsForWorkItem, proposalsForProject } from "./board-attention.js"
+import { confirmDecisionAnswer, decisionsForWorkItem, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait } from "./board-attention.js"
 import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
 import {
   answerDecision,
@@ -119,6 +119,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [failure, setFailure] = useState("")
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000))
   const loadGeneration = useRef(0)
+  const answeredDecisionIDs = useRef(new Set<string>())
   const loadedView = useRef("")
   const board = useRef<HTMLElement>(null)
   // What is on screen keeps its place until the view is opened afresh, its
@@ -157,14 +158,14 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       rearrange.current = false
       const rows = arrangeWorkItems(work.rows, kept)
       arrangement.current = { view, places: workItemPlaces(rows) }
-      setItems(rows); setNextCursor(work.next_cursor); setFamily(relatives); setLoaded(true); setLoading(false)
+      setItems(rows.map((item) => [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, item))); setNextCursor(work.next_cursor); setFamily(relatives); setLoaded(true); setLoading(false)
       loadedView.current = requestedView
-      setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setDecisions(questions.rows); setFailure("")
-      setCreatedItem((current) => current ? (work.rows.find((item) => item.id === current.id) ?? current) : null)
+      setPlaces(projects.places); setSessions(live.sessions); setProposals(suggestions.rows); setDecisions(questions.rows.filter((row) => !answeredDecisionIDs.current.has(row.id))); setFailure("")
+      setCreatedItem((current) => current ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, work.rows.find((item) => item.id === current.id) ?? current) : null)
       setOpenedItem((current) => {
         if (!current) return null
         const listed = work.rows.find((item) => item.id === current.id)
-        return listed && listed.version !== current.version ? listed : current
+        return [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, listed && listed.version !== current.version ? listed : current)
       })
     } catch (e) {
       if (generation === loadGeneration.current) { setLoaded(true); setLoading(false); setFailure(failureWords(e)) }
@@ -183,7 +184,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
         const merged = appendWorkPage(current, page.rows)
         const rows = arrangeWorkItems(merged, arrangement.current?.places ?? null)
         arrangement.current = { view: `${project}\n${status}\n${search}`, places: workItemPlaces(rows) }
-        return rows
+        return rows.map((item) => [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, item))
       })
       setFamily((current) => ({ rows: appendWorkPage(current.rows, page.rows), truncated: !!page.next_cursor }))
       setNextCursor(page.next_cursor)
@@ -234,7 +235,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   }), [])
   const refreshDetail = useCallback((id: string) => {
     setDetailLoading(true); setDetailError("")
-    void readWorkV2Item(id).then((answer) => setOpenedItem((current) => current?.id === id ? answer.item : current))
+    void readWorkV2Item(id).then((answer) => setOpenedItem((current) => current?.id === id
+      ? [...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item) : current))
       .catch((error: unknown) => setDetailError(failureWords(error)))
       .finally(() => setDetailLoading(false))
   }, [])
@@ -244,7 +246,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const openItem = useCallback((item: WorkV2Item) => {
     openTicket.current++
     setFailure("")
-    setOpenedItem(item)
+    setOpenedItem([...answeredDecisionIDs.current].reduce(withoutAnsweredWait, item))
     refreshDetail(item.id)
   }, [refreshDetail])
   useEffect(() => onOpenWorkItem(openItem), [openItem])
@@ -272,7 +274,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     try {
       const answer = await readWorkV2Item(id)
       if (ticket !== openTicket.current) return ""
-      setFailure(""); setDetailError(""); setOpenedItem(answer.item)
+      setFailure(""); setDetailError(""); setOpenedItem([...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item))
       return ""
     } catch (error) {
       return ticket === openTicket.current ? failureWords(error) : ""
@@ -306,6 +308,14 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       if (succeeded && refreshInBackground) void load()
     }
   }
+  const answerWorkDecision = (decisionID: string, optionID: string) => run(decisionID,
+    () => confirmDecisionAnswer(() => answerDecision(decisionID, optionID), () => {
+      answeredDecisionIDs.current.add(decisionID)
+      setDecisions((current) => withoutAnsweredDecision(current, decisionID))
+      setItems((current) => current.map((item) => withoutAnsweredWait(item, decisionID)))
+      setCreatedItem((current) => current && withoutAnsweredWait(current, decisionID))
+      setOpenedItem((current) => current && withoutAnsweredWait(current, decisionID))
+    }))
   const visibleItems = visibleWorkItems(items, showPlans)
   const hiddenPlans = items.length - visibleItems.length
   const planning = visibleItems.filter((item) => item.area === "planning" && !item.closed_at)
@@ -396,11 +406,11 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       })
     }} />}
     {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} decisions={decisionsForWorkItem(decisions, createdItem.id)} busy={busy} failure={failure}
-      detailLoading={false} detailError="" retryDetail={() => void readWorkV2Item(createdItem.id).then((answer) => setCreatedItem(answer.item)).catch((error: unknown) => setFailure(failureWords(error)))}
-      clearFailure={() => setFailure("")} run={run} onClose={() => setCreatedItem(null)} />}
+      detailLoading={false} detailError="" retryDetail={() => void readWorkV2Item(createdItem.id).then((answer) => setCreatedItem([...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item))).catch((error: unknown) => setFailure(failureWords(error)))}
+      clearFailure={() => setFailure("")} run={run} answerWorkDecision={answerWorkDecision} onClose={() => setCreatedItem(null)} />}
     {openedItem && <CreatedWorkModal item={openedItem} created={false} key={openedItem.id} back={detailReturn.current} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} busy={busy} failure={failure}
       detailLoading={detailLoading} detailError={detailError} retryDetail={() => refreshDetail(openedItem.id)}
-      clearFailure={() => setFailure("")} run={run} onClose={() => setOpenedItem(null)} />}
+      clearFailure={() => setFailure("")} run={run} answerWorkDecision={answerWorkDecision} onClose={() => setOpenedItem(null)} />}
   </EpicFamilyContext.Provider>
 }
 
@@ -585,12 +595,12 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
 }
 
 /** A person's answer is part of its item, immediately after the item's scope. */
-function WorkItemDecisions({ decisions, waitingOn, busy, run }: {
+function WorkItemDecisions({ decisions, waitingOn, busy, answerWorkDecision }: {
   decisions: Decision[]
   /** The decision the item's waiting_user points at, if any. */
   waitingOn?: string
   busy: boolean
-  run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  answerWorkDecision: (decisionID: string, optionID: string) => Promise<boolean>
 }) {
   if (!decisions.length) return null
   return <section className="work-item-decisions" aria-label="這個項目需要你回答的問題">
@@ -605,7 +615,7 @@ function WorkItemDecisions({ decisions, waitingOn, busy, run }: {
         <div className="work-actions" role="group" aria-label={`回答「${decision.question}」`}>
           {decision.options.map((option) => <button key={option.id} type="button"
             className={option.id === decision.default ? "chip on" : "chip"} disabled={busy}
-            onClick={() => void run(decision.id, () => answerDecision(decision.id, option.id))}>{option.label}</button>)}
+            onClick={() => void answerWorkDecision(decision.id, option.id)}>{option.label}</button>)}
         </div>
       </div>
     })}
@@ -690,7 +700,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
   </article>
 }
 
-function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false, foldDescription = false }: {
+function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false, foldDescription = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   decisions: Decision[]
@@ -698,6 +708,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   failure: string
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>, refreshInBackground?: boolean) => Promise<boolean>
+  answerWorkDecision: (decisionID: string, optionID: string) => Promise<boolean>
   detailLoading: boolean
   detailError: string
   retryDetail: () => void
@@ -861,7 +872,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     {!epic && <WorkGateAttention item={item}
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
       run={run} />}
-    <WorkItemDecisions decisions={decisions} waitingOn={item.decision_id} busy={!!busy} run={run} />
+    <WorkItemDecisions decisions={decisions} waitingOn={item.decision_id} busy={!!busy} answerWorkDecision={answerWorkDecision} />
     {featureLike(item) && <ReviewRequiredField id={`work-review-required-${item.id}`} checked={item.review_required === true}
       disabled={!!busy || !!item.closed_at} busy={busy === `review-required-${item.id}`}
       onChange={(checked) => { clearFailure(); setReviewRequiredFailed(false)
@@ -1194,7 +1205,7 @@ function SessionWorkList({ title, empty, rows }: {
   </li>)}</ul> : <small>{empty}</small>}</div>
 }
 
-function CreatedWorkModal({ item, created = true, back, sessions, decisions, busy, failure, clearFailure, run, detailLoading, detailError, retryDetail, onClose }: {
+function CreatedWorkModal({ item, created = true, back, sessions, decisions, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, onClose }: {
   item: WorkV2Item
   created?: boolean
   /** Shared by successive dialogs opened from one another, so focus returns to the first opener. */
@@ -1205,6 +1216,7 @@ function CreatedWorkModal({ item, created = true, back, sessions, decisions, bus
   failure: string
   clearFailure: () => void
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
+  answerWorkDecision: (decisionID: string, optionID: string) => Promise<boolean>
   detailLoading: boolean
   detailError: string
   retryDetail: () => void
@@ -1224,7 +1236,7 @@ function CreatedWorkModal({ item, created = true, back, sessions, decisions, bus
         <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
         <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run}
+      <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
         detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
     </div>
   </div>, document.body)

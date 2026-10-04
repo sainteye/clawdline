@@ -135,7 +135,7 @@ test("Board lanes keep items folded until their accessible summary opens the sha
 	assert.match(source, /\.filter\(Boolean\)\.join\(" "\) \|\| undefined/)
 	assert.match(source, /id=\{attentionDescriptionID\}/)
 	assert.match(source, /本輪：\{gateSnapshotText\(/)
-  assert.match(source, /setOpenedItem\(item\)/)
+  assert.match(source, /setOpenedItem\(\[\.\.\.answeredDecisionIDs\.current\]\.reduce\(withoutAnsweredWait, item\)\)/)
   assert.match(source, /<CreatedWorkModal item=\{openedItem\} created=\{false\}/)
   assert.match(styles, /\.work-card-summary-description \{[^}]*-webkit-line-clamp:\s*2/)
 })
@@ -440,9 +440,17 @@ test("the Board puts each open question inside the item that explains it", () =>
   assert.match(source, /readDecisions\(\)/)
   assert.match(source, /decisionsForWorkItem\(decisions, item\.id\)/)
   assert.match(source, /<WorkItemDecisions decisions=\{decisions\}/)
-  assert.match(source, /answerDecision\(decision\.id, option\.id\)/)
+  assert.match(source, /answerWorkDecision\(decision\.id, option\.id\)/)
+  assert.match(source, /confirmDecisionAnswer\(\(\) => answerDecision\(decisionID, optionID\)/)
+  assert.match(source, /setDecisions\(\(current\) => withoutAnsweredDecision\(current, decisionID\)\)/)
   assert.doesNotMatch(source, /未連結的舊問題/)
   assert.match(styles, /\.work-item-decisions/)
+})
+
+test("go to answer targets the rendered decision and scrolls it into view", () => {
+  assert.match(source, /id=\{`work-decision-\$\{decision\.id\}`\}/)
+  assert.match(source, /document\.getElementById\(`work-decision-\$\{item\.decision_id\}`\)\?\.scrollIntoView\(\{ block: "nearest" \}\)/)
+  assert.match(source, /decisionsForWorkItem\(decisions, item\.id\)\.some\(\(d\) => d\.id === item\.decision_id\)/)
 })
 
 test("Agent proposals are compact review rows with labelled detail on demand", () => {
