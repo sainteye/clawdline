@@ -286,7 +286,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 133)
+  assert.equal(Object.keys(CARRIED).length, 134)
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
