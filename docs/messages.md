@@ -86,7 +86,7 @@ No reference contains image bytes, a source path, filename, URL, HTML or present
 `GET /v1/sessions/:id/transcript` as `artifacts`; attribution remains all-or-nothing because a
 malformed or extra field invalidates the entire v2 envelope. Authenticated clients derive the
 relative same-origin route `/v1/artifacts/images/:artifactId` from the opaque id; that retrieval
-URL is presentation state, never a stored public URL or part of the message. A live PNG is `200`, a known expired or pruned id
+URL is presentation state, never a stored public URL or part of the message. A live PNG or JPEG is `200`, a known expired or pruned id
 is typed `410 artifact_expired`, and an id the store never owned is typed
 `404 artifact_not_found`.
 
@@ -132,8 +132,9 @@ curl --fail-with-body -sS -X POST http://127.0.0.1:7727/v1/artifacts/images \
 The response has `ok: true` and an `artifacts` array. Use its returned marker verbatim; do not
 invent an id, add dimensions or wrap it in Markdown image syntax. The marker is resolved when the
 transcript is read, and Cloud carries the resulting image from the paired machine. The browser
-does not read the original local path. Use `clawdline guide send` again if the installed daemon's
-contract changes.
+does not read the original local path. Cloud accepts the stored image's `image/png` or `image/jpeg`
+media type; changing a JPEG filename to `.png` does not change its bytes or media type. Use
+`clawdline guide send` again if the installed daemon's contract changes.
 
 The spelling is exactly one, and it carries an id and nothing else:
 
