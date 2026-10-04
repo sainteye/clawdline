@@ -307,19 +307,23 @@ func TestTheInventoryMarkerTellsThePageItMayAskForTheRows(t *testing.T) {
 	marker := out.payload(t, "s/mac-01/"+InventorySessionID)
 	words, _ := marker["features"].([]any)
 	listed := false
+	initialListed := false
 	for _, word := range words {
 		listed = listed || word == "sessions.snapshot"
+		initialListed = initialListed || word == "sessions.snapshot.initial"
 	}
-	if !listed {
+	if !listed || !initialListed {
 		t.Fatalf("the marker's features are %v; a page will not ask for the rows", words)
 	}
 	descriptor := out.payload(t, "orch/mac-01")
 	commands, _ := descriptor["machine"].(map[string]any)["commands"].([]any)
 	listed = false
+	initialListed = false
 	for _, word := range commands {
 		listed = listed || word == "sessions.snapshot"
+		initialListed = initialListed || word == "sessions.snapshot.initial"
 	}
-	if !listed {
+	if !listed || !initialListed {
 		t.Fatal("the descriptor's commands leave the word out, and the page refuses to send a word not in them")
 	}
 }

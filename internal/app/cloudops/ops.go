@@ -2047,6 +2047,17 @@ func init() {
 				return machinePlan(b)
 			}},
 
+		// A first recovery is a separate word so a console deployed before its
+		// daemon never adds a field to sessions.snapshot that the older exact-key
+		// decoder must refuse. Only a machine advertising this word is asked it.
+		op{name: sessionsSnapshotInitialWord, read: true, sessions: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			}},
+
 		op{name: "board.items", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request", "project", "audience", "cursor", "limit") {

@@ -210,10 +210,13 @@ func AsksForSessions(plaintext []byte) bool {
 		return false
 	}
 	word, _ := parsed.str("type")
-	return word == sessionsSnapshotWord
+	return word == sessionsSnapshotWord || word == sessionsSnapshotInitialWord
 }
 
-const sessionsSnapshotWord = "sessions.snapshot"
+const (
+	sessionsSnapshotWord        = "sessions.snapshot"
+	sessionsSnapshotInitialWord = "sessions.snapshot.initial"
+)
 
 // IsRead reports whether this plaintext asks for an effect-free word, for a
 // transport that answers reads beside its ordered command lane: a read that
@@ -342,9 +345,13 @@ func (b Bridge) stateSessions(ctx context.Context, cmd Command, parsed body, p p
 		return b.publish(cmd, p, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This machine does not know that Cloud command."}, nil)
 	}
-	first := true // An older viewer sends no attempt bit.
-	if value, present := parsed["initial"]; present {
-		first = value.(bool)
+	word, _ := parsed.str("type")
+	first := word == sessionsSnapshotInitialWord
+	if word == sessionsSnapshotWord {
+		first = true // An older viewer sends no attempt bit.
+		if value, present := parsed["initial"]; present {
+			first = value.(bool)
+		}
 	}
 	var stated SessionsStated
 	var refusal *Refusal
