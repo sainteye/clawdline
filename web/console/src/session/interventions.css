@@ -31,6 +31,7 @@
 .human-intervention-title { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
 .human-intervention-title h3 { margin: 0; font: inherit; font-size: 14px; font-weight: 650; }
 .human-intervention-stage { display: block; margin-top: 3px; color: var(--muted, #777); font-size: 11px; }
+.human-intervention-created { display: block; margin-top: 2px; color: var(--muted, #777); font-size: 11px; line-height: 1.35; font-variant-numeric: tabular-nums; }
 .human-intervention-type { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; color: var(--dim); font-size: 11px; }
 .human-intervention-type .work-icon, .human-intervention-document .work-icon { width: 14px; height: 14px; }
 .human-intervention-source, .human-intervention-reason { color: var(--muted, #777); font-size: 12px; }
