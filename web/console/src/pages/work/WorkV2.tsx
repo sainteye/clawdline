@@ -7,7 +7,7 @@ import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js
 import { sessionFragment } from "../../session/address.js"
 import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
-import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, suggestedPersonaForKind, switchTeam } from "../../personas.js"
+import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
@@ -707,12 +707,11 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
 }) {
   const [terminal, setTerminal] = useState("")
   const [assistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
-  // The catalog's unique kind default is selected until the person chooses.
-  // Item words never change the role; "" explicitly chooses no role.
+  // A new Session has no role until the person chooses one or asks AI.
   const personas = usePersonas()
-  const [personaChoice, setPersonaChoice] = useState<string | null>(null)
+  const [personaChoice, setPersonaChoice] = useState("")
   const [team, setTeam] = useState(rememberedTeam)
-  const persona = personaChoice === null ? suggestedPersonaForKind(personas, item.kind) : personaById(personas, personaChoice)
+  const persona = personaById(personas, personaChoice)
   const [aiSuggestion, setAISuggestion] = useState<Awaited<ReturnType<typeof suggestPersonaWorkV2>> | null>(null)
   const [aiSuggestionBusy, setAISuggestionBusy] = useState(false)
   const [aiSuggestionFailure, setAISuggestionFailure] = useState("")
@@ -720,7 +719,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
   itemVersion.current = item.version
   const aiPersona = aiSuggestion?.outcome === "recommend" ? personaById(personas, aiSuggestion.persona_id) : null
   const aiSuggestionID = `work-persona-ai-${item.id}`
-  const aiSuggestionOverridden = !!aiPersona && personaChoice !== null && personaChoice !== aiPersona.id
+  const aiSuggestionOverridden = !!aiPersona && personaChoice !== aiPersona.id
   useEffect(() => {
     setAISuggestion(null)
     setAISuggestionFailure("")
