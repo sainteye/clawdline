@@ -243,7 +243,7 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 **1. 讀項目。** `clawdline item show <item id>` 印出它的種類、phase、驗收標準、本輪擷取的 gate、
 驗收版本（`acceptance vN`）、Feature 另有使用者的「需要獨立審查」勾選、steps，以及每份文件連同內文。你就從這份紀錄開始工作。
 `clawdline item show <item id> --doc <doc id>` 只印一份文件的內文，可直接導到檔案；`clawdline item steps <item id>` 是同一份紀錄但不含內文。
-每個項目寫入都會印出 `wrote …; item <id> is at version N` 和項目那一列；steps 與文件請再用 `item show` 讀。
+每個項目寫入都會印出 `wrote …; item <id> is at version N`、精簡摘要及 `item show` 提示；完整驗收、steps 與文件請用 `item show` 讀。
 寫入一律作用在項目當下的版本，除非你帶 `--expected-version`。
 
 你的指派檔若有 **HANDOFF** 段，代表你在接手別的 Session 做到一半的項目（開始 implementing 之後、
@@ -1169,7 +1169,7 @@ clawdline item step-add <item id> "接上 route" "補一個測試" "寫進 guide
 ```
 
 標題直接當參數給，或從 stdin 一行一個（空行略過）。指令每加一個標題前都會重讀項目，寫入前先印出
-Idempotency-Key，最後印出項目和它所有的 steps。每個標題就是一次只有 owner 能送的請求：
+Idempotency-Key，最後印出精簡回執及 `item show` 提示。每個標題就是一次只有 owner 能送的請求：
 
 ```
 POST /v1/work/v2/agent/items/<id>/steps     （必須帶 Idempotency-Key）

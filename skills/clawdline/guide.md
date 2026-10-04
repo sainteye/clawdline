@@ -273,8 +273,8 @@ captured gates, the acceptance version (`acceptance vN`), for a Feature the pers
 independent review switch, its steps, and every document with its body. That is
 the record you work from. `clawdline item show <item id> --doc <doc id>` prints one document's
 body alone, to pipe into a file; `clawdline item steps <item id>` is the same record without the bodies. Every item
-write prints `wrote …; item <id> is at version N` and the item's row; read the steps and documents
-again with `item show`. Writes act on the item's current version unless you pass
+write prints `wrote …; item <id> is at version N`, a short item summary, and an `item show`
+hint. Read the full acceptance, steps, and documents with `item show`. Writes act on the item's current version unless you pass
 `--expected-version`.
 
 If your ASSIGNMENT.md has a **HANDOFF** heading, you are taking over an item another Session left
@@ -1367,7 +1367,7 @@ clawdline item step-add <item id> "Wire the route" "Cover it with a test" "Say i
 ```
 
 Titles are arguments, or one per non-empty stdin line. The command rereads the item before each
-title, prints each Idempotency-Key before its write, and prints the item with all its steps. It is
+title, prints each Idempotency-Key before its write, and prints a short receipt with an `item show` hint. It is
 one owner-only request per title,
 
 ```

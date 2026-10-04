@@ -1016,8 +1016,28 @@ func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
 		what = "phase " + strings.TrimSpace(args[1])
 	}
 	fmt.Fprintf(stdout, "wrote %s; item %s is at version %d\n", what, it.ID, it.Version)
-	printItemHead(stdout, it)
+	printItemWriteHead(stdout, it)
 	fmt.Fprintf(stdout, "  steps and documents: clawdline item show %s\n", it.ID)
+}
+
+// printItemWriteHead keeps write receipts small even when a response carries
+// the complete acceptance contract. Explicit reads retain the full text.
+func printItemWriteHead(w io.Writer, it itemWire) {
+	owner := "unassigned"
+	if it.OwnerSession != nil && *it.OwnerSession != "" {
+		owner = "assigned to " + *it.OwnerSession
+	}
+	fmt.Fprintf(w, "%s  %s  [%s, %s, %s]\n", it.ID, it.Title, it.Kind, it.Phase, owner)
+	if it.AcceptanceCriteria != "" {
+		fmt.Fprintf(w, "  acceptance v%d sha256:%s; full text: clawdline item show %s\n", it.AcceptanceVersion, it.AcceptanceDigest, it.ID)
+	}
+	if it.GateSnapshotCycle > 0 {
+		fmt.Fprintf(w, "  gates cycle %d: planning=%t verification=%t\n", it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
+	}
+	printVerifyGateHint(w, it)
+	if it.Kind == "feature" {
+		fmt.Fprintf(w, "  needs independent review (set by the person): %t\n", it.ReviewRequired)
+	}
 }
 
 // readItem reads one item whole, as the daemon's GET answers it.
@@ -1146,6 +1166,8 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 	if code != 0 {
 		return code
 	}
-	printItem(stdout, it)
+	fmt.Fprintf(stdout, "wrote %d step(s); item %s is at version %d\n", len(titles), it.ID, it.Version)
+	printItemWriteHead(stdout, it)
+	fmt.Fprintf(stdout, "  steps and documents: clawdline item show %s\n", it.ID)
 	return 0
 }
