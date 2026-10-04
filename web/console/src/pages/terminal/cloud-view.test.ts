@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { beginCloudTerminal, cloudTerminalBody, type CloudTerminalStarter } from "./cloud-view.ts"
+import { beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
 
 // `cloud/terminal-session.ts` uses constructor parameter properties, which
 // Node's strip-types runner refuses, so the start path is driven through a fake
@@ -52,4 +52,10 @@ test("a new session after a host change reads or lists, and never sends open or 
     assert.ok(!after.operations.includes("paste"), after.operations.join(","))
   }
   assert.deepEqual(before.operations, ["open_connection", "open", "input"], "nothing was added to the old session")
+})
+
+test("reconnect reads and captures again without replaying open or input", async () => {
+  const session = new CountingSession()
+  await reconnectCloudTerminal(session, "trm_one")
+  assert.deepEqual(session.operations, ["open_connection", "read", "capture"])
 })

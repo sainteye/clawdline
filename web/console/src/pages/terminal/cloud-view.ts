@@ -32,6 +32,12 @@ export async function beginCloudTerminal(session: CloudTerminalStarter, channelP
   return { rows: await listCloudTerminals(session, channelProject, tab) }
 }
 
+/** Reconnect the displayed terminal without repeating a create or input request. */
+export async function reconnectCloudTerminal(session: CloudTerminalStarter, id: string): Promise<void> {
+  await session.start()
+  await session.attach(id)
+}
+
 /** The Project's terminals, asked on the machine's channel by its machine-local Project id. */
 export async function listCloudTerminals(session: Pick<CloudTerminalStarter, "request">, channelProject: string, tab: string): Promise<TerminalRow[]> {
   const answer = await session.request("list", { project_id: channelProject, client: tab })
