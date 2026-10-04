@@ -653,17 +653,16 @@ func TestEveryGuideExplainsPersonas(t *testing.T) {
 }
 
 // Every Feature Root's ASSIGNMENT.md sends it to the guide part this build
-// carries for its ordinary path, and says that investigation is delegated
-// too, with verified facts in the brief and a stop condition for an Explore
-// child. The part is named here, so renaming it turns this red.
+// carries for its ordinary path. Direct work is the default; a child needs
+// a concrete reason and, for investigation, a bounded brief.
 func TestTheRootAssignmentSendsAFeatureRootToItsGuidePart(t *testing.T) {
 	brief := orchestrator.AssignmentBrief("10000000-0000-4000-8000-000000000001", orchestrator.Assignment{
 		Objective: "o", Scope: "s", Constraints: "c", RelevantReferences: "r", Acceptance: "a"}, "", "")
 	if _, err := Section(DefaultTopic, "feature-root"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"HOW TO WORK", "`clawdline guide feature-root`", "Delegate investigation",
-		"keep only its conclusion", "file:line", "stop condition", "turn limit"} {
+	for _, want := range []string{"HOW TO WORK", "`clawdline guide feature-root`", "By default, this Session investigates",
+		"Dispatch a child only for a concrete need", "file:line", "stop condition", "turn limit"} {
 		if !strings.Contains(brief, want) {
 			t.Errorf("ASSIGNMENT.md does not carry %q:\n%s", want, brief)
 		}

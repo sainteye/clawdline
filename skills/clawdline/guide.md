@@ -299,9 +299,12 @@ from there; do not start over.
   eight steps you can verify one at a time; a single change takes none).
 - Then `clawdline item phase <item id> implementing`.
 
-**4. Delegate, investigation included.** Implementation goes to children, and so does
-investigation — finding a cause, or reading enough to offer the person options. You keep the
-conclusion, not the file dumps; you keep synthesis, integration and landing.
+**4. Work in this Session by default.** Investigate, implement, verify and land the Feature
+yourself. Dispatch only when a concrete need makes a separate Session useful: genuinely independent
+parallel work, different tools or permissions, or required independent review. Say why before
+dispatching; a routine investigation or implementation alone is not a reason.
+
+When dispatch is needed, keep synthesis, integration and landing here:
 
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
@@ -320,7 +323,7 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - Read-only work is `--claims ""`. Every flag, and every refusal code, is in
   `clawdline guide dispatch`.
 
-**5. When a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
+**5. If a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
 `clawdline task show <task id>`, then integrate the delivery; reading it closes the notice, so there
 is no separate ACK. To block until your children finish instead, run
 `clawdline task wait <task id>…` (default `--timeout 9m`, `--any` for the first one). Integrate a worktree child by **merging its branch** into the target. **The merge records the
@@ -340,13 +343,14 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 Write it for the person who reported the problem, in Markdown, with no private data.
 
 **7. Finish the item.** Complete each step once it is verified with
-`clawdline item step-done <item id> <step id>`. Once the child's branch is merged, one command
-takes the item from where it stands to `done`; the commit, target and remote come from the recorded
-landing, so you type only the notes:
+`clawdline item step-done <item id> <step id>`. Commit and push direct work from a disposable
+worktree; merge a child's branch when one was used. Once landed, one command takes the item to
+`done`. A child's recorded landing supplies commit, target and remote; direct work names them:
 
 ```sh
 clawdline item finish <item id> --verification "what was run and what it showed" \
-  --deployment "what went live, where, which version"      # or --no-deployment-reason "…"
+  --commit <sha> --target main --remote origin \
+  --deployment "what went live, where, which version"      # omit landing flags for a landed child
 ```
 
 Or advance one phase at a time:

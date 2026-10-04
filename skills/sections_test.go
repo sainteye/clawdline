@@ -326,6 +326,19 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 				t.Errorf("%s: the feature-root part does not carry %q", lang, want)
 			}
 		}
+		if lang == DefaultTopic {
+			for _, want := range []string{"Work in this Session by default", "Dispatch only when a concrete need", "--commit <sha> --target main --remote origin"} {
+				if !strings.Contains(string(part), want) {
+					t.Errorf("%s: direct Feature path lacks %q", lang, want)
+				}
+			}
+		} else {
+			for _, want := range []string{"預設由本 Session 完成", "只有具體需要", "--commit <sha> --target main --remote origin"} {
+				if !strings.Contains(string(part), want) {
+					t.Errorf("%s: direct Feature path lacks %q", lang, want)
+				}
+			}
+		}
 		// With the verify gate off, implementing goes straight to deploying;
 		// the gated line lives in board and `item steps` points there.
 		for _, gone := range []string{"verifying", "`merging`", " merging ", "verification gate", "驗證 gate"} {
