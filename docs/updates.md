@@ -54,9 +54,18 @@ keeps the last good latest and says what failed in `error`. The bounds are the c
 
 This is the shape a release built before `committed_at` existed answers: its BUILD.json has
 only a stamp, so the two commits differ and neither is known to be later. Once both sides carry
-`committed_at` the state is `update_available` or `ahead`. `reason` appears with `unknown`; `error` while the most recent read failed. The route is not yet
-carried over Clawdline Cloud to the phone: that needs the console's relay word for it in `web/`, a
-separate task together with the console's notice.
+`committed_at` the state is `update_available` or `ahead`. `reason` appears with `unknown`; `error` while the most recent read failed. Clawdline Cloud
+carries the route as the parameterless machine read `update`, so a phone asks the same question
+the local console does.
+
+## The console's notice
+
+The Settings page reads `/v1/update` once when the console mounts and then no more often than
+every ten minutes (`web/console/src/machine/UpdateNotice.tsx`). Only `update_available` and
+`differs` show anything: one quiet line naming the running and latest stamps (eight characters
+each) and that `clawdline update --apply` brings this machine up to date. `current`, `ahead`,
+`unknown`, and a read that is refused or fails — a daemon predating the route answers 404, an
+older one over Cloud `unknown_command` — show nothing.
 
 ## The CLI
 

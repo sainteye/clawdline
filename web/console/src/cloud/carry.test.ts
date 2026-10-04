@@ -216,6 +216,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/settings/work-gates"],
     ["POST", "/v1/settings/work-gates"],
     ["GET", "/v1/machine/usage"],
+    ["GET", "/v1/update"],
     ["GET", "/v1/verifications"],
     ["GET", "/v1/verifications/v1"],
     ["POST", "/v1/verifications"],
@@ -251,7 +252,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   // the single-schedule read, the versioned webhook-binding write, Git's per-file diff, icon copying and the
   // copied client's reconnect ask for every Session row, the token bill's three usage reads, the menu's stop and the
   // compaction comparison, the seven verification words, the Settings page's capacity read, two default-model words and two work-gate words, the three words that
-  // offer back the sessions a reboot took away, the live screen, and the machine dashboard's read. Keep the count beside the catalog so
+  // offer back the sessions a reboot took away, the live screen, the machine dashboard's read, and the update notice's read. Keep the count beside the catalog so
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
@@ -267,6 +268,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("work-gate-settings" in CARRIED)
   assert.ok("work-gate-settings-update" in CARRIED)
   assert.ok("machine-usage" in CARRIED)
+  assert.ok("update" in CARRIED)
   assert.ok("verification.delete" in CARRIED)
   assert.ok("restore-sessions" in CARRIED)
   assert.ok("screen" in CARRIED)
@@ -284,7 +286,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 131)
+  assert.equal(Object.keys(CARRIED).length, 133)
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {

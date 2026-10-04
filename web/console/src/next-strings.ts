@@ -496,6 +496,10 @@ const words = {
     menuTicked: "Ticked. Nothing is sent until you press Submit.",
     newBuild: "A newer Clawdline is being served. This page is still the older one.",
     newBuildReload: "Reload",
+    machineUpdateAvailable:
+      "This machine runs {running}; the latest build is {latest}. Run clawdline update --apply on this machine to bring it up to date.",
+    machineUpdateDiffers:
+      "This machine runs {running}, which differs from the latest build {latest}. Run clawdline update --apply on this machine to bring it up to date.",
     menuMoved: "The question changed before the answer landed, so nothing was typed. Read the new question and choose again.",
     menuUnverified: "This machine cannot check which question an answer is for over Clawdline Cloud, so menus are answered on the machine itself.",
     // The Links sheet says which kind of nothing it found. The copied catalog
@@ -1233,6 +1237,8 @@ const words = {
     menuTicked: "已打勾。要按 Submit 才會送出。",
     newBuild: "已經有新版的 Clawdline，這個頁面還是舊的那一份。",
     newBuildReload: "重新載入",
+    machineUpdateAvailable: "這台機器執行的是 {running}，最新版本是 {latest}。在這台機器上執行 clawdline update --apply 即可更新到最新。",
+    machineUpdateDiffers: "這台機器執行的是 {running}，與最新版本 {latest} 不同。在這台機器上執行 clawdline update --apply 即可更新到最新。",
     menuMoved: "送到之前題目已經換了，所以什麼都沒打。請看清楚新的題目再選。",
     menuUnverified: "這台機器經由 Clawdline Cloud 還無法確認答案對應哪一題，請直接到那台機器上作答。",
     linksNotRepository: "這裡不是 git repository，所以沒有東西可以對應到一次 workflow 執行。這份清單上其他項目都讀到了。",

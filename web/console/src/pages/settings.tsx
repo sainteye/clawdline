@@ -15,6 +15,7 @@ import { legacyState } from "../legacy/overlay-bridge.js"
 import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
+import { UpdateNotice } from "../machine/UpdateNotice.js"
 import { DefaultModelsBlock } from "./settings/DefaultModelsBlock.js"
 import { GateSettingsBlock } from "./settings/GateSettingsBlock.js"
 import { nextWord } from "../next-strings.js"
@@ -395,6 +396,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
           </button>
           <p className="say" id="settings-timeline-status" role="status"></p>
         </div>
+        <UpdateNotice />
         <CapacityBlock shown={shown} />
         <div className="foot">
           <span id="settings-version" style={entered ? { cursor: "pointer" } : undefined} onClick={pressVersion}>

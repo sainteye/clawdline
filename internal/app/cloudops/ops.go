@@ -1961,6 +1961,21 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/machine/usage"}
 			}},
 
+		// Whether this machine trails the cloud's latest build
+		// (docs/updates.md): machine-wide and parameterless, as the local
+		// route is; a read, since the route answers from the last background
+		// check and writes nothing.
+		op{name: "update", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/update"}
+			}},
+
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "agent", "limit") {
