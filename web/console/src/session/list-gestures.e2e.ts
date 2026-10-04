@@ -64,6 +64,8 @@ type ReadingScenario =
   | "safe-cleared"
   | "session-gap"
 let readingScenario: ReadingScenario = "normal"
+let inlineDecisionFixture = false
+let inlineDecisionAnswers = 0
 let sessionGap = false
 let sessionGapComplete = false
 
@@ -441,6 +443,11 @@ function daemon(): Server {
     if (path === "/v1/work/decisions" && req.method === "GET") {
       return json(res, 200, { counts: {}, rows: [], next_cursor: null })
     }
+    if (path === "/v1/work/decisions/decision-fixture" && req.method === "POST") {
+      inlineDecisionAnswers++
+      setTimeout(() => json(res, 200, { ok: true, decision: { state: "answered", answer: "yes" } }), 1000)
+      return
+    }
     if (path === "/v1/work/v2/items/work-fixture" && req.method === "GET") return json(res, 200, {
       ok: true,
       item: {
@@ -545,7 +552,8 @@ function daemon(): Server {
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
       const sessionID = decodeURIComponent(sessionWork[1])
-      const assigned = sessionID === SAFE && readingScenario !== "safe-cleared"
+      const ownsSafe = sessionID === SAFE || (inlineDecisionFixture && sessionID === "conversation:conversation-" + SAFE)
+      const assigned = ownsSafe && readingScenario !== "safe-cleared"
         ? [{
             id: "work-fixture",
             project: { id: "project-fixture", label: "Clawdline", path: "/tmp/fixture", icon: null, available: true },
@@ -553,7 +561,8 @@ function daemon(): Server {
             title: "Finish the release receipt",
             description: "Publish the verified receipt after the production check passes.",
             phase: "merging",
-            condition: "waiting_user",
+            condition: inlineDecisionFixture && inlineDecisionAnswers > 0 ? null : "waiting_user",
+            decision_id: inlineDecisionFixture && inlineDecisionAnswers === 0 ? "decision-fixture" : null,
             user_action: "Confirm the production release window.",
             area: "merging",
             deployment_policy: "agent_decides",
@@ -622,7 +631,13 @@ function daemon(): Server {
             }],
           }]
         : []
-      return json(res, 200, { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct, truncated: false })
+      const openDecisions = inlineDecisionFixture && ownsSafe && inlineDecisionAnswers === 0
+        ? [{ id: "decision-fixture", work_id: "work-fixture", session_id: "conversation-" + SAFE,
+          question: "Should the release proceed?", options: [{ id: "yes", label: "Proceed" }, { id: "later", label: "Later" }],
+          default: "later", blocking: true, state: "open", created_at: 1, due_at: 9999999999 }]
+        : []
+      return json(res, 200, { ok: true, assigned_items: assigned, recent_items: recent, direct_todos: direct,
+        open_decisions: openDecisions, decisions_error: null, truncated: false })
     }
     if (path === "/v1/orchestrator/tasks") {
       const tasks = readingScenario === "session-gap"
@@ -1790,6 +1805,55 @@ test("the Session todo add icon is geometrically centered on a phone", () =>
     assert.ok(session.dx <= 0.5 && session.dy <= 0.5,
       `Session todo add icon was off center by ${JSON.stringify(session)}`)
     await tab.shot("session-todo-add-centered")
+  }))
+
+test("a phone answers the question directly on its Session todo card with a visible receipt", () =>
+  inTab(async (tab) => {
+    inlineDecisionFixture = true
+    inlineDecisionAnswers = 0
+    try {
+      await tab.go("/#session=" + encodeURIComponent(SAFE))
+      const target = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const fold = document.querySelector('.session-todos')
+          if (fold && !fold.open) fold.querySelector('summary')?.click()
+          const question = document.querySelector('.session-owned-decision')
+          const button = [...(question?.querySelectorAll('button') || [])].find((node) => node.textContent?.includes('Proceed'))
+          if (button) {
+            button.scrollIntoView({ block: 'center' })
+            const rect = button.getBoundingClientRect()
+            return resolve({ x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2),
+              text: question?.textContent || '', width: rect.width, viewport: innerWidth })
+          }
+          if (Date.now() >= deadline) return reject(new Error('inline decision did not appear: ' + (document.body.textContent || '').slice(0, 700)))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.match(target.text, /Should the release proceed/)
+      assert.ok(target.width <= target.viewport)
+      await tab.shot("session-inline-decision-question")
+      await tab.tap(target.x, target.y)
+      const pending = await tab.run(`document.querySelector('.session-owned-decision')?.textContent || ''`)
+      assert.match(pending, /正在送出.*Proceed/)
+      const receipt = await tab.run(`new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000
+        const read = () => {
+          const text = document.querySelector('.session-owned-item')?.textContent || ''
+          if (text.includes('已回答：Proceed')) return resolve(text)
+          if (Date.now() >= deadline) return reject(new Error('answer receipt did not appear: ' + text))
+          setTimeout(read, 25)
+        }
+        read()
+      })`)
+      assert.match(receipt, /已回答：Proceed/)
+      assert.equal(inlineDecisionAnswers, 1)
+      await tab.shot("session-inline-decision-receipt")
+    } finally {
+      inlineDecisionFixture = false
+      inlineDecisionAnswers = 0
+    }
   }))
 
 test("an assigned Board item opens its detail and requested action on a phone", () =>

@@ -659,6 +659,14 @@ export class RelayReader {
         return await this.machineRead(init?.signal, method, path, "work.v2.human-interventions", { terminal: humanConversation })
       }
       const workItem = workV2ItemID(path)
+      if (path.startsWith("/v1/work/decisions/")) {
+        this.only(url, path)
+        const id = path.slice("/v1/work/decisions/".length)
+        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id)) {
+          return this.refuse(method, path, 404, "not_found", "No such decision route.")
+        }
+        return await this.machineRead(init?.signal, method, path, "work.decision", { id })
+      }
       if (path.startsWith("/v1/squad/definitions/")) {
         const q = this.only(url, path, "version")
         const id = decodeURIComponent(path.slice("/v1/squad/definitions/".length))

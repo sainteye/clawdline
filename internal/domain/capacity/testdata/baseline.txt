@@ -351,3 +351,4 @@ cmd/clawdline.webhookURLFileLimit # read: the --url-file `clawdline webhook fire
 cmd/clawdline.workBaselineReadLimit # read: a frozen work baseline file, at most workSampleLimit samples of a few hundred bytes; a larger file is refused (limits N74)
 internal/app/orchestrator.CancelReasonLimit # admission: a task cancel's reason, 500 bytes after its whitespace is collapsed; longer is refused 422 reason_too_long, never cut (limits N75)
 internal/app/orchestrator.cancelKeyLimit # admission: a task cancel's Idempotency-Key, 200 characters as a board write's; longer is refused 400 bad_idempotency_key (limits N75)
+internal/transport/http.sessionTodoDecisionReadMillisecondsLimit # parameter: an optional decision projection waits at most 300 ms; on timeout the Session todo answer still returns with decisions_unavailable, and no capacity accumulates

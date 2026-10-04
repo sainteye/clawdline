@@ -132,6 +132,7 @@ export interface Decision {
   default: string
   blocking: boolean
   state: DecisionState
+  answer?: string | null
   created_at: number
   due_at: number
 }
@@ -253,6 +254,7 @@ export const readBacklog = (project?: string, cursor?: string) =>
   call<BacklogPage>("/v1/work/backlog" + query({ project, cursor }))
 export const readProposals = (project?: string) => call<ProposalPage>("/v1/work/proposals" + query({ project }))
 export const readDecisions = () => call<DecisionPage>("/v1/work/decisions")
+export const readDecision = (id: string) => call<{ decision: Decision }>(`/v1/work/decisions/${encodeURIComponent(id)}`)
 export const readDigests = () => call<{ rows: Digest[] }>("/v1/work/digests?kind=daily")
 /** The machine's real project directory: existing places it recognizes, newest first (at most forty). */
 export const copyProjectIcon = (id: string, icon: unknown, expected: unknown) =>
@@ -436,6 +438,8 @@ export interface SessionWorkV2 {
   assigned_items: WorkV2Item[]
   recent_items: WorkV2Item[]
   direct_todos: DirectTodoV2[]
+  open_decisions: Decision[]
+  decisions_error?: string | null
   truncated: boolean
 }
 

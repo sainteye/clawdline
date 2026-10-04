@@ -12,6 +12,13 @@ export async function confirmDecisionAnswer(answer: () => Promise<unknown>, conf
   confirmed()
 }
 
+export type DecisionAnswerStatus = { phase: "pending" | "confirmed" | "retry" | "rejected"; option: string; label: string; message?: string; workID: string; question: string }
+
+/** Only an answer for the selected option proves this submission succeeded. */
+export function matchingDecisionAnswer(decision: { state: string; answer?: string | null }, option: string): boolean {
+  return decision.state === "answered" && decision.answer === option
+}
+
 export function withoutAnsweredDecision<T extends { id: string }>(rows: T[], decisionID: string): T[] {
   return rows.filter((row) => row.id !== decisionID)
 }
