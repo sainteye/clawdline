@@ -710,6 +710,3 @@ export const resolveProposal = (id: string, resolution: string, evidence: string
 
 export const answerDecision = (id: string, option: string) =>
   decide<unknown>(`/v1/work/decisions/${id}`, { answer: option })
-
-export const readDecision = (id: string) =>
-  call<{ ok: boolean; decision: Decision }>(`/v1/work/decisions/${id}`)

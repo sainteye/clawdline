@@ -222,12 +222,15 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
   item: WorkV2Item; decisions?: Decision[]; decisionsError?: string | null; completed?: boolean; onOpen: () => void; onAnswered?: () => void
 }) {
   const hasReport = completionReports(item).length > 0
-  const [pending, setPending] = useState("")
+  const submitting = useRef(false)
+  const [pending, setPending] = useState<{ decision: string; option: string; label: string } | null>(null)
   const [receipts, setReceipts] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const answer = async (decision: Decision, option: { id: string; label: string }) => {
-    if (pending) return
-    setPending(decision.id); setErrors((current) => ({ ...current, [decision.id]: "" }))
+    if (submitting.current || receipts[decision.id]) return
+    submitting.current = true
+    setPending({ decision: decision.id, option: option.id, label: option.label })
+    setErrors((current) => ({ ...current, [decision.id]: "" }))
     try {
       await answerDecision(decision.id, option.id)
       setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` }))
@@ -250,27 +253,31 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
           setErrors((current) => ({ ...current, [decision.id]: "送出結果尚未確認，請稍後查看決定。" }))
         }
       }
-    } finally { setPending("") }
+    } finally { submitting.current = false; setPending(null) }
   }
   return <article className={`session-owned-item${completed ? " completed" : ""}`} data-phase={item.phase}>
     <button className="session-owned-summary" type="button" onClick={onOpen}
       aria-label={hasReport ? `開啟「${item.title}」的結案報告` : `查看「${item.title}」的項目詳情`}>
       <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
       <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? `已完成 ${when(item.closed_at)}` : phaseName(item.phase)}
-        {item.condition ? <span className="session-work-condition"> · {conditionName(item.condition)}</span> : null}</small>
+        {item.condition ? <span className="session-work-condition"> · {item.decision_id && receipts[item.decision_id] ? "已收到回答" : conditionName(item.condition)}</span> : null}</small>
         {hasReport && <em className="session-owned-report">結案報告</em>}</span>
       <span className="session-owned-state">
         {completed && <span className="session-owned-complete" role="img" aria-label="已完成"><WorkIcon name="check" /></span>}
         <span className="session-owned-open"><WorkIcon name="open" /></span>
       </span>
     </button>
-    {decisionsError && <p className="session-owned-decision-note">決定暫時無法載入，請稍後查看項目詳情。</p>}
+    {decisionsError && item.condition === "waiting_user" && item.decision_id && !receipts[item.decision_id] &&
+      <p className="session-owned-decision-note">決定暫時無法載入，請稍後查看項目詳情。</p>}
     {decisions.map((decision) => <section className="session-owned-decision" key={decision.id} aria-label="待回答的問題">
       <p>{decision.question}</p>
       {receipts[decision.id] ? <p role="status" className="session-owned-decision-receipt">{receipts[decision.id]}</p>
         : <div className="session-owned-options">{decision.options.map((option) =>
-          <button type="button" key={option.id} disabled={!!pending} onClick={() => void answer(decision, option)}>
-            {pending === decision.id ? "送出中…" : option.label}</button>)}</div>}
+          <button type="button" key={option.id} disabled={!!pending}
+            aria-busy={pending?.decision === decision.id && pending.option === option.id}
+            onClick={() => void answer(decision, option)}>
+            {pending?.decision === decision.id && pending.option === option.id ? "送出中…" : option.label}</button>)}</div>}
+      {pending?.decision === decision.id && <p role="status" className="session-owned-decision-note">正在送出「{pending.label}」…</p>}
       {errors[decision.id] && <p role="alert" className="session-owned-decision-note">{errors[decision.id]}</p>}
     </section>)}
     {Object.entries(receipts).filter(([id]) => !decisions.some((decision) => decision.id === id)).map(([id, words]) =>

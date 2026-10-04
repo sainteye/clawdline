@@ -2443,25 +2443,7 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 				assigned = append(assigned, itemOf(item))
 				assignedIDs[item.Item.ID] = true
 			}
-			decisions := make([]decisionWire, 0)
-			var decisionsError *string
-			if len(assignedIDs) > 0 {
-				decisionContext, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
-				rows, decisionErr := s.store.Decisions(decisionContext, store.DecisionQuery{
-					State: work.DecisionOpen, Session: conversation, Limit: app.WorkPageSize,
-				})
-				cancel()
-				if decisionErr != nil {
-					code := "decisions_unavailable"
-					decisionsError = &code
-				} else {
-					if len(rows) == app.WorkPageSize {
-						code := "decisions_truncated"
-						decisionsError = &code
-					}
-					decisions = assignedOpenDecisions(rows, assignedIDs, conversation)
-				}
-			}
+			decisions, decisionsError := readSessionTodoDecisions(r.Context(), assignedIDs, conversation, s.store.Decisions)
 			completed := make([]workV2ItemWire, 0, len(recent))
 			for _, item := range recent {
 				completed = append(completed, itemOf(item))
@@ -2642,6 +2624,32 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+// sessionTodoDecisionReadMillisecondsLimit bounds optional question projection.
+const sessionTodoDecisionReadMillisecondsLimit = 300
+
+// Decision context is optional. A stalled or failed lookup must leave the
+// already projected todo list available with a typed missing-context hint.
+func readSessionTodoDecisions(ctx context.Context, assignedIDs map[string]bool, conversation string,
+	read func(context.Context, store.DecisionQuery) ([]work.Decision, error)) ([]decisionWire, *string) {
+	if len(assignedIDs) == 0 {
+		return []decisionWire{}, nil
+	}
+	decisionContext, cancel := context.WithTimeout(ctx, time.Duration(sessionTodoDecisionReadMillisecondsLimit)*time.Millisecond)
+	defer cancel()
+	rows, err := read(decisionContext, store.DecisionQuery{
+		State: work.DecisionOpen, Session: conversation, Limit: app.WorkPageSize,
+	})
+	if err != nil {
+		code := "decisions_unavailable"
+		return []decisionWire{}, &code
+	}
+	if len(rows) == app.WorkPageSize {
+		code := "decisions_truncated"
+		return assignedOpenDecisions(rows, assignedIDs, conversation), &code
+	}
+	return assignedOpenDecisions(rows, assignedIDs, conversation), nil
 }
 
 func assignedOpenDecisions(rows []work.Decision, assignedIDs map[string]bool, conversation string) []decisionWire {

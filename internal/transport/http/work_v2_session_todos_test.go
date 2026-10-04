@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,34 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
+
+func TestSessionTodoQuestionLookupCannotHoldTheTodoList(t *testing.T) {
+	assigned := map[string]bool{"item-a": true}
+	started := time.Now()
+	rows, code := readSessionTodoDecisions(context.Background(), assigned, "session-a",
+		func(ctx context.Context, q store.DecisionQuery) ([]work.Decision, error) {
+			if q.Session != "session-a" || q.State != work.DecisionOpen {
+				t.Fatalf("wrong question scope: %+v", q)
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+	if len(rows) != 0 || code == nil || *code != "decisions_unavailable" {
+		t.Fatalf("stalled optional lookup: rows=%d code=%v", len(rows), code)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("optional lookup held the todo response for %s", elapsed)
+	}
+	called := false
+	rows, code = readSessionTodoDecisions(context.Background(), nil, "session-a",
+		func(context.Context, store.DecisionQuery) ([]work.Decision, error) {
+			called = true
+			return nil, errors.New("unexpected read")
+		})
+	if called || len(rows) != 0 || code != nil {
+		t.Fatalf("an empty assigned list queried decisions: called=%v code=%v", called, code)
+	}
+}
 
 func TestSessionTodoDecisionsStayWithOpenAssignedItems(t *testing.T) {
 	rows := []work.Decision{
