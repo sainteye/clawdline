@@ -1801,6 +1801,7 @@ export class CloudClient {
         var entry = { state: "pending", code: null, attempt: attempt, expected: null, timer: null };
         this._setSessionRecovery(machine, entry);
         var extra = this._holdsOrchestrator(machine) ? {} : { orchestrator: true };
+        extra.initial = attempt === 1;
         this._machineRequest(machine, SESSION_SNAPSHOT_COMMAND, extra, "read", this.sessionSnapshotTimeoutMs,
             { probe: false }).then(function (body) {
             if (self.sessionRecovery.get(machine) !== entry) return;

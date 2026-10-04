@@ -562,6 +562,7 @@ func (l *Link) wire() error {
 	// `sessions.snapshot` is answered by the publisher, which is the only
 	// thing that can put the rows back on their channels.
 	l.service.Bridge.Sessions = l.publisher.Snapshot
+	l.service.Bridge.SessionsFor = l.publisher.SnapshotFrom
 	return nil
 }
 
