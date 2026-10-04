@@ -31,3 +31,25 @@ test("unknown projects remain visible but cannot route to another project's term
   assert.equal(result.rows[0]?.project, "")
   assert.equal(result.rows[0]?.terminal.id, "a")
 })
+
+test("slow and failed machines publish bounded progressive results", async () => {
+  const machines = ["a", "b", "c"].map((id) => ({ id, name: id }))
+  const waiting = new Map<string, { resolve: (value: Terminal[]) => void; reject: (error: Error) => void }>()
+  const snapshots: string[][] = []
+  const result = collectCloudTerminals(machines, [], [], (machine) => new Promise<Terminal[]>((resolve, reject) => {
+    waiting.set(machine, { resolve, reject })
+  }), (progress) => snapshots.push(progress.rows.map((row) => row.machine)))
+  await Promise.resolve()
+  assert.deepEqual([...waiting.keys()], ["a", "b"])
+  waiting.get("b")!.resolve([terminal("two", "p")])
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(snapshots, [["b"]])
+  assert.deepEqual([...waiting.keys()], ["a", "b", "c"])
+  waiting.get("c")!.reject(Object.assign(new Error("offline"), { code: "machine_offline" }))
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(snapshots, [["b"], ["b"]])
+  waiting.get("a")!.resolve([terminal("one", "p")])
+  const final = await result
+  assert.deepEqual(final.rows.map((row) => row.machine), ["a", "b"])
+  assert.deepEqual(final.errors, [{ machine: "c", code: "machine_offline" }])
+})
