@@ -1,7 +1,25 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { SAID_MS, StatusMessage, holderKey, isRegionKey, pasteRefusal, withCtrl } from "./keys.ts"
+import { SAID_MS, StatusMessage, holderKey, isRegionKey, pasteRefusal, readClipboardPaste, withCtrl } from "./keys.ts"
+
+test("clipboard paste reports empty, denied, and lost control without sending", async () => {
+  const sent: string[] = []
+  const send = (text: string) => { sent.push(text) }
+  assert.equal(await readClipboardPaste(undefined, () => null, send), "terminalPasteReadFailed")
+  assert.equal(await readClipboardPaste({ readText: async () => "" }, () => null, send), "terminalPasteEmpty")
+  assert.equal(await readClipboardPaste({ readText: async () => { throw Error("denied") } }, () => null, send), "terminalPasteReadFailed")
+  let resolve!: (value: string) => void
+  let allowed = true
+  const pending = readClipboardPaste({ readText: () => new Promise<string>(done => { resolve = done }) },
+    () => allowed ? null : "terminalPasteStale", send)
+  allowed = false
+  resolve("hello")
+  assert.equal(await pending, "terminalPasteStale")
+  assert.deepEqual(sent, [])
+  assert.equal(await readClipboardPaste({ readText: async () => "hello" }, () => null, send), null)
+  assert.deepEqual(sent, ["hello"])
+})
 
 const key = (k: string, mods: Partial<{ altKey: boolean; ctrlKey: boolean; metaKey: boolean }> = {}) =>
   ({ key: k, altKey: false, ctrlKey: false, metaKey: false, ...mods })

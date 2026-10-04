@@ -11,7 +11,7 @@ import { frameBytes, frameDeltaBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
 import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
-import { KEY_ROW, bindTerminalKeyboard, isRegionKey, withCtrl } from "./keys.js"
+import { KEY_ROW, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtrl } from "./keys.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
 import { beginCloudTerminal, cloudTerminalBody, listCloudTerminals, reconnectCloudTerminal } from "./cloud-view.js"
 import { sessionsPageHash } from "../../page-route.js"
@@ -79,6 +79,9 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const [history, setHistory] = useState<CloudTerminalHistory | null>(null)
   const [reader, setReader] = useState(false)
   const [ctrl, setCtrl] = useState(false)
+  const [pasteMessage, setPasteMessage] = useState("")
+  const [pasting, setPasting] = useState(false)
+  const pasteBusy = useRef(false)
   const ctrlArmed = useRef(false)
   const [confirm, setConfirm] = useState<"takeover" | "reacquire" | null>(null)
   const [closeConfirm, setCloseConfirm] = useState(false)
@@ -281,6 +284,17 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     void session?.input(new TextEncoder().encode(out)).catch((e) => setError(reason(e)))
     terminal.current?.focus()
   }
+  const pasteFromClipboard = async () => {
+    if (pasteBusy.current) return
+    pasteBusy.current = true; setPasting(true); setPasteMessage("")
+    try {
+      const outcome = await readClipboardPaste(navigator.clipboard,
+        () => session?.snapshot.canType && !history ? null : "terminalPasteUnavailable",
+        text => session!.paste(text))
+      if (outcome) setPasteMessage(nextWord(outcome))
+    } catch (failure) { setError(reason(failure)) }
+    finally { pasteBusy.current = false; setPasting(false) }
+  }
   const status = stateWords(snapshot.state)
   const accessError = error === "forbidden" || error === "terminal_forbidden" || error === "terminal_access_revoked"
   const holder = !snapshot.control?.held ? nextWord("terminalControlNobody") :
@@ -383,9 +397,12 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
       title={!snapshot.canType ? nextWord("terminalKeyboardPaused") : undefined}
       onClick={() => terminal.current?.focus()}>{nextWord(snapshot.canType ? "terminalShowKeyboard" : "terminalKeyboardPaused")}</button>
     <div className="terminal-keys" role="group" aria-label={nextWord("terminalKeys")} hidden={history !== null}>
+      <button className="terminal-key terminal-paste" type="button" disabled={!snapshot.canType || pasting || history !== null}
+        aria-busy={pasting} onClick={() => void pasteFromClipboard()}>{nextWord("terminalPasteButton")}</button>
       {KEY_ROW.map(([name, value, spoken]) =>
         <button key={name} className="terminal-key" type="button" disabled={!snapshot.canType} aria-label={spoken ? nextWord(spoken) : undefined}
           aria-pressed={value === "ctrl" ? ctrl : undefined} onPointerDown={(event) => event.preventDefault()} onClick={() => sendKey(value)}>{name}</button>)}
     </div>
+    {pasteMessage && <p className="terminal-note" role="status">{pasteMessage}</p>}
   </div>
 }

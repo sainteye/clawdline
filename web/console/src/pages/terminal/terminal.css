@@ -162,7 +162,7 @@
     .terminal-keyboard { display: block; flex: none; min-height: 40px; align-self: stretch; }
     .terminal-keyboard[hidden] { display: none; }
     .terminal-keys {
-        flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
+        flex: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px;
     }
     .terminal-keys[hidden] { display: none; }
     .terminal-key {
@@ -172,6 +172,7 @@
     .terminal-key[aria-pressed="true"] { background: var(--accent-in); border-color: var(--accent); }
     .terminal-key:disabled { opacity: .45; }
     .terminal-key:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .terminal-paste { font-family: inherit; font-size: 12px; font-weight: 600; }
     .terminal-close { margin-left: 0; }
     .terminal-session-note { font-size: 11.5px; }
 }
