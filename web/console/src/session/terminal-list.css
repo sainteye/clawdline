@@ -1,12 +1,13 @@
-.session-terminal-list { padding: 12px; }
+.session-terminal-list { padding: clamp(12px, 3vw, 20px); max-width: 900px; margin-inline: auto; }
 .session-terminal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .session-terminal-head h2 { margin: 0; font-size: 15px; }
+.session-terminal-head p { margin: 3px 0 0; color: var(--dim); font-size: 12px; }
 .session-terminal-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .session-terminal-filters label { display: grid; gap: 3px; min-width: 120px; color: var(--dim); font-size: 12px; }
 .session-terminal-filters select { min-height: 44px; max-width: min(80vw, 240px); border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
 .session-terminal-head button, .session-terminal-close { border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); padding: 8px; }
 .session-terminal-rows { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.session-terminal-rows li { display: flex; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.session-terminal-rows li { display: flex; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; }
 .session-terminal-card { flex: 1; min-width: 0; display: flex; gap: 10px; text-align: left; padding: 12px; color: var(--ink); }
 .session-terminal-list button { min-height: 44px; }
 .session-terminal-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -16,6 +17,15 @@
 .session-terminal-icon { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 7px; background: var(--accent-in); display: grid; place-items: center; }
 .session-terminal-close { align-self: center; margin-right: 8px; }
 .terminal-list-message { padding: 12px; color: var(--dim); }
+.terminal-list-message button { margin-left: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); padding: 7px 10px; }
+.terminal-list-progress { display: flex; align-items: center; gap: 10px; }
+.terminal-list-spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: terminal-list-spin .8s linear infinite; }
+.terminal-list-skeleton { display: grid; gap: 8px; margin-bottom: 12px; }
+.terminal-list-skeleton span { height: 86px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); opacity: .65; animation: terminal-list-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes terminal-list-spin { to { transform: rotate(360deg); } }
+@keyframes terminal-list-pulse { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .terminal-list-spinner, .terminal-list-skeleton span { animation: none; } }
+@media (max-width: 480px) { .session-terminal-filters label { flex: 1 1 140px; } .session-terminal-filters select { width: 100%; max-width: none; } .session-terminal-rows li { flex-wrap: wrap; } .session-terminal-close { margin: 0 8px 8px auto; } }
 .session-terminal-confirm { width: min(90vw, 400px); padding: 20px; background: var(--card-hi); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; }
 .session-terminal-confirm::backdrop { background: #0008; }
 .session-terminal-confirm button { margin-right: 8px; padding: 8px 12px; border-radius: 8px; background: var(--card); color: var(--ink); }

@@ -38,6 +38,7 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
   const [routeError, setRouteError] = useState("")
   const [machineFilter, setMachineFilter] = useState("")
   const [projectFilter, setProjectFilter] = useState("")
+  const [refresh, setRefresh] = useState(0)
   useSyncExternalStore(watchTerminalClose, terminalCloseRevision, () => 0)
   const latestClose = recentTerminalCloseStates()[0]
   const generation = useRef(0)
@@ -46,33 +47,39 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
 
   useEffect(() => watchTerminalHost(setHost), [])
   useEffect(() => onScheduleFleet(() => setFleet(scheduleFleet())), [])
-  useEffect(() => {
-    if (!shown) return
-    let live = true
-    void readProjectPlaces().then((page) => { if (live) { setPlaces(page.places); setProjectError("") } },
-      (error) => { if (live) setProjectError(error instanceof Error ? error.message : "project_list_failed") })
-    return () => { live = false }
-  }, [shown, host])
-
   const fleetKey = JSON.stringify(fleet?.machines.map((machine) => [machine.id, machine.name]) ?? [])
   const reload = useCallback(async () => {
-    if (!host || !fleet || !places) return
+    if (!host || !fleet) return
     const mine = ++generation.current
     setLoading(true)
+    setErrors([])
+    setProjectError("")
     try {
+      let nextPlaces = places ?? []
+      try {
+        const page = await readProjectPlaces()
+        if (mine !== generation.current) return
+        nextPlaces = page.places
+        setPlaces(page.places)
+      } catch (error) {
+        if (mine !== generation.current) return
+        setProjectError(error instanceof Error ? error.message : "project_list_failed")
+      }
       const machines = fleet.machines.map((machine) => ({ id: machine.id, name: machine.name }))
-      const next = await collectCloudTerminals(machines, places, currentRows.current,
-        (machine) => readMachine(host, machine))
+      const next = await collectCloudTerminals(machines, nextPlaces, currentRows.current,
+        (machine) => readMachine(host, machine),
+        (progress) => { if (mine === generation.current) { setRows(progress.rows); setErrors(progress.errors) } })
       if (mine === generation.current) { setRows(next.rows); setErrors(next.errors) }
     } finally {
       if (mine === generation.current) setLoading(false)
     }
-  }, [host, fleetKey, places])
+  }, [host, fleetKey, refresh])
   useEffect(() => {
     if (!shown) return
     void reload()
     return () => { ++generation.current }
   }, [shown, reload])
+  const retry = () => setRefresh((value) => value + 1)
 
   const query = filter.trim().toLocaleLowerCase()
   const projectOptions = [...new Map(rows.filter((row) => row.project).map((row) => [row.project, row.projectName])).entries()]
@@ -89,8 +96,8 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
 
   if (!host) return <p className="terminal-list-message" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
   return <div className="session-terminal-list" aria-busy={loading ? "true" : undefined}>
-    <div className="session-terminal-head"><h2>{nextWord("terminalListMode")} · {nextWord("terminalListCount", { n: matching.length })}</h2>
-      <button type="button" onClick={() => void reload()} disabled={loading}>{nextWord("terminalCloudReloadList")}</button></div>
+    <div className="session-terminal-head"><div><h2>{nextWord("terminalListMode")}</h2><p>{loading && !rows.length ? nextWord("terminalAllChecking") : nextWord("terminalListCount", { n: matching.length })}</p></div>
+      <button type="button" onClick={retry} disabled={loading}>{nextWord("terminalCloudReloadList")}</button></div>
     <div className="session-terminal-filters">
       <label>{nextWord("terminalFilterMachine")}
         <select value={machineFilter} onChange={(event) => setMachineFilter(event.target.value)}>
@@ -105,7 +112,7 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
         </select>
       </label>
     </div>
-    {projectError && <p className="terminal-list-message" role="alert">{nextWord("terminalProjectsFailedCode", { code: projectError })}</p>}
+    {projectError && <div className="terminal-list-message" role="alert">{nextWord("terminalProjectsFailedCode", { code: projectError })} <button type="button" onClick={retry}>{nextWord("terminalAllRetry")}</button></div>}
     {routeError && <p className="terminal-list-message" role="alert">{routeError}</p>}
     {latestClose && <p className="terminal-list-message" role="status">
       {nextWord("terminalIdentity", { id: terminalShortID(latestClose.terminal) })} · {nextWord(latestClose.status === "ok" ? "terminalTerminateSucceeded" :
@@ -114,8 +121,9 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
         { code: terminalRefusalWords(latestClose.error) })}</p>}
     {errors.map((error) => <p className="terminal-list-message" role="alert" key={error.machine}>
       {nextWord("terminalAllMachineFailed", { machine: fleet?.machines.find((machine) => machine.id === error.machine)?.name ?? error.machine,
-        why: error.code })}</p>)}
-    {loading && !rows.length && <p className="terminal-list-message" role="status">{nextWord("terminalListLoading")}</p>}
+        why: error.code })} <button type="button" onClick={retry} disabled={loading}>{nextWord("terminalAllRetry")}</button></p>)}
+    {loading && <p className="terminal-list-message terminal-list-progress" role="status"><span className="terminal-list-spinner" aria-hidden="true" />{nextWord("terminalListLoading")}</p>}
+    {loading && !rows.length && <div className="terminal-list-skeleton" aria-hidden="true"><span /><span /></div>}
     {!loading && !projectError && !matching.length && (query || machineFilter || projectFilter) &&
       <p className="terminal-list-message">{nextWord("terminalAllEmptyFilter")}</p>}
     {!loading && !projectError && !errors.length && !matching.length && !query && !machineFilter && !projectFilter &&
