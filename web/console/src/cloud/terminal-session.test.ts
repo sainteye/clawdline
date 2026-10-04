@@ -528,3 +528,25 @@ test("a correlated relay refusal settles the list immediately and leaves the con
     assert.equal(session.reusable, true)
   } finally { session.dispose() }
 })
+
+test("a rate-limited capture cannot undo a successful read or block later verified typing", async () => {
+  const wire = new Wire()
+  wire.delayed.add("capture")
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    const attaching = session.attach(terminalID)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const first = wire.requests.filter((item) => item.operation === "capture").at(-1)!
+    wire.channels.get(wire.latest())?.({ error: "rate_limited", requestID: first.request_id as string })
+    await attaching
+    assert.equal(session.reusable, true)
+    const acquiring = session.acquire("acquire")
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const second = wire.requests.filter((item) => item.operation === "capture").at(-1)!
+    wire.channels.get(wire.latest())?.({ error: "rate_limited", requestID: second.request_id as string })
+    await acquiring
+    wire.frame(wire.latest(), 1, "ready")
+    assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
+})

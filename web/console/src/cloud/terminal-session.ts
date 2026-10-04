@@ -218,6 +218,13 @@ export class CloudTerminalSession {
     return issued.receipt
   }
 
+  private async captureOrStream(terminal: string): Promise<void> {
+    try { await this.request("capture", { terminal_id: terminal }) }
+    catch (error) {
+      if ((error as { code?: unknown })?.code !== "rate_limited") throw error
+    }
+  }
+
   async attach(terminal: string, reset = true): Promise<Receipt> {
     if (reset || this.terminal !== terminal) {
       this.terminal = ""
@@ -229,7 +236,10 @@ export class CloudTerminalSession {
     this.flushEarlyFrame()
     const [result] = await Promise.all([
       this.request("read", { terminal_id: terminal, client: this.client }),
-      this.request("capture", { terminal_id: terminal }),
+      // A read already starts the screen watch. If the relay's short grant
+      // refuses this extra capture, its next verified frame still arrives on
+      // the held channel; the viewer must retain the successful read/control.
+      this.captureOrStream(terminal),
     ])
     const control = result.result?.control as TerminalControl | undefined
     if (control) this.set({ control })
@@ -246,7 +256,7 @@ export class CloudTerminalSession {
     this.flushEarlyFrame()
     const control = result.result?.control as TerminalControl | undefined
     if (control) this.set({ control })
-    await this.request("capture", { terminal_id: id })
+    await this.captureOrStream(id)
     return result
   }
   async acquire(action: "acquire" | "takeover"): Promise<void> {
@@ -260,7 +270,7 @@ export class CloudTerminalSession {
     this.lastRenew = Date.now()
     this.frameSeq = 0
     this.set({ control, frame: null, state: "synchronizing", reason: "" })
-    await this.request("capture", { terminal_id: this.terminal })
+    await this.captureOrStream(this.terminal)
   }
   async reconcileLease(): Promise<void> {
     if (this.epoch === null || !this.terminal) return
@@ -368,7 +378,7 @@ export class CloudTerminalSession {
           clearTimeout(pending.timer)
           this.pending.delete(event.requestID)
           pending.reject(fail(event.error))
-          if (pending.operation === "list" && event.error === "rate_limited") return
+          if (["list", "read", "capture", "history"].includes(pending.operation) && event.error === "rate_limited") return
         }
       }
       this.inputUnknown = true
