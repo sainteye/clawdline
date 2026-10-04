@@ -2,10 +2,41 @@ package projects
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLaunchClearsInheritedSquadCapabilityAndSetsOnlyItsOwn(t *testing.T) {
+	t.Setenv("CLAWDLINE_SQUAD_CAPABILITY_FILE", "/stale")
+	for _, assistant := range []string{AssistantClaude, AssistantCodex} {
+		launch, err := Admit(LaunchRequest{ProjectRoot: "/project", Assistant: assistant})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			name, command, want string
+		}{
+			{"ordinary", launch.ShellCommand(), ""},
+			{"role", launch.ShellCommandWithEnv([]string{"CLAWDLINE_SQUAD_CAPABILITY_FILE='/own'"}), "/own"},
+		} {
+			t.Run(assistant+"/"+tc.name, func(t *testing.T) {
+				prefix, _, ok := strings.Cut(tc.command, " "+assistant)
+				if !ok {
+					t.Fatalf("missing assistant in %q", tc.command)
+				}
+				out, err := exec.Command("sh", "-c", prefix+" sh -c 'printf %s \"${CLAWDLINE_SQUAD_CAPABILITY_FILE-}\"'").Output()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(out) != tc.want {
+					t.Fatalf("capability = %q, want %q", out, tc.want)
+				}
+			})
+		}
+	}
+}
 
 // The line a new terminal is typed is the one thing on the start route a
 // person's machine executes, so its exact spelling is pinned here.
@@ -19,7 +50,7 @@ func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
 	}
 	want := "cd '/tmp/it'\\''s here' && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_CHILD_SESSION " +
 		"-u CLAUDE_PID -u CLAUDE_CODE_MESSAGING_SOCKET -u CLAUDE_CODE_MESSAGING_TOKEN " +
-		"-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT " + pathEnv + " claude"
+		"-u CLAUDE_CODE_BRIDGE_SESSION_ID -u CLAUDE_EFFORT -u AI_AGENT -u CLAWDLINE_SQUAD_CAPABILITY_FILE " + pathEnv + " claude"
 	if got := l.ShellLine(); got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}
@@ -29,7 +60,7 @@ func TestLaunchLineIsTheSwiftAppsLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got, want := r.ShellCommand(), "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX "+
-		"-u CODEX_SANDBOX_NETWORK_DISABLED "+pathEnv+" codex resume 0f1e0000-0000-4000-8000-000000000001 --model opus"; got != want {
+		"-u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE "+pathEnv+" codex resume 0f1e0000-0000-4000-8000-000000000001 --model opus"; got != want {
 		t.Fatalf("resume first\n got %q\nwant %q", got, want)
 	}
 }
@@ -245,7 +276,7 @@ func TestLaunchCarriesTheCodexReasoningEffort(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX " +
-		"-u CODEX_SANDBOX_NETWORK_DISABLED " + pathEnv + " codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
+		"-u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE " + pathEnv + " codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh"
 	if got := l.ShellCommand(); got != want {
 		t.Fatalf("line\n got %q\nwant %q", got, want)
 	}

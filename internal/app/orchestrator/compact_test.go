@@ -19,6 +19,31 @@ import (
 
 func windowOf(n int64) func() int64 { return func() int64 { return n } }
 
+func TestEnvPrefixClearsInheritedSquadCapabilityBeforeLaunchValue(t *testing.T) {
+	for _, assistant := range []string{projects.AssistantClaude, projects.AssistantCodex} {
+		prefix := envPrefix(assistant, []string{"CLAWDLINE_SQUAD_CAPABILITY_FILE='/own'"})
+		clear := strings.Index(prefix, "-u CLAWDLINE_SQUAD_CAPABILITY_FILE")
+		set := strings.Index(prefix, "CLAWDLINE_SQUAD_CAPABILITY_FILE='/own'")
+		if clear < 0 || set < clear {
+			t.Errorf("%s launch does not clear the old capability before setting its own: %q", assistant, prefix)
+		}
+	}
+}
+
+func TestRoleChildCommandKeepsItsOwnCapability(t *testing.T) {
+	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: "/project", Assistant: projects.AssistantCodex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := shellCommandWithExecutable(launch, Record{}, "/tasks", "/project", "",
+		"CLAWDLINE_SQUAD_CAPABILITY_FILE='/own'")
+	clear := strings.Index(command, "-u CLAWDLINE_SQUAD_CAPABILITY_FILE")
+	set := strings.Index(command, "CLAWDLINE_SQUAD_CAPABILITY_FILE='/own'")
+	if clear < 0 || set < clear {
+		t.Fatalf("role child capability must follow inherited cleanup: %q", command)
+	}
+}
+
 // dispatchWith sends one brief through the whole dispatch, with the child's
 // tab answering as assistant's composer does, and answers the record and the
 // line its tab was opened with.
