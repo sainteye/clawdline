@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,6 +79,26 @@ func TestRejectedCloudFrameRetiresConnectionInsteadOfRetrying(t *testing.T) {
 	}
 	if spool.NextSequence() != before {
 		t.Fatal("rejected frame was retried")
+	}
+}
+
+func TestPendingCloudFrameRequestsRetryInsteadOfDroppingNewScreen(t *testing.T) {
+	l, _, c, svc, _ := terminalLifecycleFixture(t)
+	p := terminals.Principal{Device: c.viewer, Cloud: true}
+	first := terminal.Frame{Rev: "first", At: time.Now(), Lines: []string{"first"}}
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, first); err != nil {
+		t.Fatal(err)
+	}
+	second := terminal.Frame{Rev: "second", At: time.Now(), Lines: []string{"second"}}
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, second); !errors.Is(err, terminals.ErrFrameDeferred) {
+		t.Fatalf("pending frame outcome = %v", err)
+	}
+	l.terminalReceiptSettled("term/machine/viewer/"+c.id, c.framePendingSeq, adaptercloud.SettleDelivered)
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, second); err != nil {
+		t.Fatal(err)
+	}
+	if c.publishedFrameSeq != 2 {
+		t.Fatalf("latest frame sequence = %d", c.publishedFrameSeq)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -61,9 +62,10 @@ func TestTerminalFramesWaitForRelaySettlementAndKeepNewestCapture(t *testing.T) 
 	svc := terminals.New(nil, func(terminals.Principal) error { return nil })
 	p := terminals.Principal{Device: "viewer", Cloud: true}
 	first := time.Now().Add(-4 * time.Second)
-	for _, at := range []time.Time{first, first.Add(time.Second), first.Add(2 * time.Second)} {
-		if err := l.sendTerminalFrame(context.Background(), svc, p, c, id, terminal.Frame{Rev: "still", At: at, Lines: []string{"$ "}}); err != nil {
-			t.Fatal(err)
+	for index, at := range []time.Time{first, first.Add(time.Second), first.Add(2 * time.Second)} {
+		err := l.sendTerminalFrame(context.Background(), svc, p, c, id, terminal.Frame{Rev: "still", At: at, Lines: []string{"$ "}})
+		if index == 0 && err != nil || index > 0 && !errors.Is(err, terminals.ErrFrameDeferred) {
+			t.Fatalf("frame %d: %v", index, err)
 		}
 	}
 	if _, ok := spool.Row(1); ok {

@@ -57,6 +57,7 @@ export class CloudTerminalSession {
   private lastRenew = 0
   private renewing = false
   private sendQueue: Promise<void> = Promise.resolve()
+  private inFlightInput: Promise<void>[] = []
   private queuedBytes = 0
   private pending = new Map<string, Pending>()
   private earlyFrames: EarlyFrame[] = []
@@ -156,7 +157,7 @@ export class CloudTerminalSession {
     }
   }
 
-  async request(operation: string, fields: Record<string, unknown> = {}, onRequestID?: (id: string) => void): Promise<Receipt> {
+  private issueRequest(operation: string, fields: Record<string, unknown> = {}, onRequestID?: (id: string) => void): { sent: Promise<void>; receipt: Promise<Receipt> } {
     if (!this.connection) throw fail("terminal_not_connected")
     if (!this.active && operation !== "open_connection" && operation !== "rekey_connection") throw fail("terminal_input_paused")
     if ((operation === "input" || operation === "paste") && !this.s.canType) throw fail("terminal_input_paused")
@@ -174,19 +175,27 @@ export class CloudTerminalSession {
         terminal: typeof fields.terminal_id === "string" ? fields.terminal_id : null, resolve, reject, timer })
       this.observation?.record("request_pending", { connection, requestID, operation })
     })
-    try {
-      await this.transport.publishTerminal({ v: 1, type: "terminal_request", request_id: requestID,
+    const sent = this.transport.publishTerminal({ v: 1, type: "terminal_request", request_id: requestID,
         connection, operation, ...fields })
-      return await receipt
-    } catch (error) {
+      .then(() => undefined, (error) => {
       const pending = this.pending.get(requestID)
-      if (pending) { clearTimeout(pending.timer); this.pending.delete(requestID) }
+      if (pending) { clearTimeout(pending.timer); this.pending.delete(requestID); pending.reject(error instanceof Error ? error : fail("terminal_send_failed")) }
       if (pending && (operation === "input" || operation === "paste")) {
         this.inputUnknown = true
         this.set({ state: "unknown", reason: "terminal_input_state_unknown" })
       }
       throw error
-    }
+      })
+    // A publication failure rejects both paths; the caller may still be
+    // awaiting `sent` when the receipt promise is rejected.
+    void receipt.catch(() => undefined)
+    return { sent, receipt }
+  }
+
+  async request(operation: string, fields: Record<string, unknown> = {}, onRequestID?: (id: string) => void): Promise<Receipt> {
+    const issued = this.issueRequest(operation, fields, onRequestID)
+    await issued.sent
+    return issued.receipt
   }
 
   async attach(terminal: string): Promise<Receipt> {
@@ -244,31 +253,38 @@ export class CloudTerminalSession {
   input(data: Uint8Array): Promise<void> {
     if (data.length > 4096 || this.queuedBytes + data.length > 65536) return Promise.reject(fail("input_too_large"))
     this.queuedBytes += data.length
-    const result = this.sendQueue.then(() => this.inputNow(data)).finally(() => { this.queuedBytes -= data.length })
-    this.sendQueue = result.catch(() => undefined)
-    return result
-  }
-  private async inputNow(data: Uint8Array): Promise<void> {
-    if (!this.s.canType || this.epoch === null) throw fail("terminal_input_paused")
-    const seq = this.nextSeq
-    const receipt = await this.request("input", { terminal_id: this.terminal, client: this.client,
-      epoch: this.epoch, seq, body: { data: bytesBase64(data) } })
-    this.applied(receipt, seq)
+    return this.queueInput("input", { data: bytesBase64(data) }, data.length)
   }
   paste(text: string): Promise<void> {
     const size = new TextEncoder().encode(text).length
     if (size > 65536 || this.queuedBytes + size > 65536) return Promise.reject(fail("input_too_large"))
     this.queuedBytes += size
-    const result = this.sendQueue.then(() => this.pasteNow(text)).finally(() => { this.queuedBytes -= size })
-    this.sendQueue = result.catch(() => undefined)
-    return result
+    return this.queueInput("paste", { text }, size)
   }
-  private async pasteNow(text: string): Promise<void> {
-    if (!this.s.canType || this.epoch === null) throw fail("terminal_input_paused")
-    const seq = this.nextSeq
-    const receipt = await this.request("paste", { terminal_id: this.terminal, client: this.client,
-      epoch: this.epoch, seq, body: { text } })
-    this.applied(receipt, seq)
+  private queueInput(operation: "input" | "paste", body: Record<string, unknown>, size: number): Promise<void> {
+    let settle!: (error?: unknown) => void
+    const result = new Promise<void>((resolve, reject) => { settle = (error) => error ? reject(error) : resolve() })
+    const send = this.sendQueue.then(async () => {
+      // Bound unacknowledged inputs while allowing several keystrokes to cross
+      // a high-latency link without a full receipt round trip between them.
+      if (this.inFlightInput.length >= 4) await this.inFlightInput[0]!.catch(() => undefined)
+      if (!this.s.canType || this.epoch === null) throw fail("terminal_input_paused")
+      const seq = this.nextSeq++
+      const issued = this.issueRequest(operation, { terminal_id: this.terminal, client: this.client,
+        epoch: this.epoch, seq, body })
+      const settled = issued.receipt.then((receipt) => {
+        try { this.applied(receipt, seq); settle() } catch (error) { settle(error) }
+      }, settle)
+      this.inFlightInput.push(settled)
+      void settled.finally(() => {
+        const at = this.inFlightInput.indexOf(settled)
+        if (at >= 0) this.inFlightInput.splice(at, 1)
+      })
+      await issued.sent
+    })
+    this.sendQueue = send.catch(() => undefined)
+    void send.catch(settle)
+    return result.finally(() => { this.queuedBytes -= size })
   }
   private applied(receipt: Receipt, seq: number): void {
     if (receipt.result?.applied_through !== seq) {

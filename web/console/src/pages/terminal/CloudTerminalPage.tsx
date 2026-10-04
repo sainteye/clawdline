@@ -7,7 +7,7 @@ import { watchTerminalHost, type TerminalHost } from "../../cloud/terminal-host.
 import { TerminalChannelTransport } from "../../cloud/terminal-transport.js"
 import { TerminalObservation } from "../../cloud/terminal-observation.js"
 import { CloudTerminalSession, type CloudTerminalSnapshot, type CloudTerminalHistory } from "../../cloud/terminal-session.js"
-import { frameBytes } from "./frame-writer.js"
+import { frameBytes, frameDeltaBytes } from "./frame-writer.js"
 import { TAB } from "./tab.js"
 import { openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
@@ -91,6 +91,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const terminal = useRef<XTerm | null>(null)
   const fit = useRef<FitAddon | null>(null)
   const lastRev = useRef("")
+  const drawnFrame = useRef<CloudTerminalSnapshot["frame"]>(null)
   const back = useRef<HTMLButtonElement>(null)
   const historyFocus = useRef<HTMLPreElement>(null)
   const observed = useRef<TerminalObservation | null>(null)
@@ -160,7 +161,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         fit.current = addon
         term.options.disableStdin = !session?.snapshot.canType
         const current = session?.snapshot.frame
-        if (current) { term.resize(current.cols, current.rows); term.write(frameBytes(current)); lastRev.current = current.rev }
+        if (current) { term.resize(current.cols, current.rows); term.write(frameBytes(current)); lastRev.current = current.rev; drawnFrame.current = current }
       } catch (e) { if (!cancelled) setError(reason(e)) }
     })()
     const element = screen.current
@@ -172,7 +173,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const unbindKeys = bindTerminalKeyboard(element, () => back.current?.focus())
     element.addEventListener("paste", paste, true)
     return () => { cancelled = true; element.removeEventListener("paste", paste, true); unbindKeys()
-      terminal.current?.dispose(); terminal.current = null; fit.current = null; lastRev.current = "" }
+      terminal.current?.dispose(); terminal.current = null; fit.current = null; lastRev.current = ""; drawnFrame.current = null }
   }, [id, shown, session, label])
 
   useEffect(() => {
@@ -181,7 +182,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     if (!term || !frame || frame.rev === lastRev.current) return
     lastRev.current = frame.rev
     if (term.cols !== frame.cols || term.rows !== frame.rows) term.resize(frame.cols, frame.rows)
-    term.write(frameBytes(frame))
+    term.write(frameDeltaBytes(drawnFrame.current, frame))
+    drawnFrame.current = frame
   }, [snapshot.frame])
   useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = !snapshot.canType }, [snapshot.canType])
   useEffect(() => { if (terminal.current) terminal.current.options.screenReaderMode = reader }, [reader])
