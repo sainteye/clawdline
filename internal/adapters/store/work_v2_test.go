@@ -706,6 +706,53 @@ func TestDirectTodoReadMarksOnlyItsSessionAndDeleteRemovesText(t *testing.T) {
 	}
 }
 
+func TestDirectTodoReadDoesNotQueueBehindHeldWriter(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	created := time.Unix(1_790_000_000, 0)
+	for _, row := range []work.DirectTodoV2{
+		{ID: "first", SessionID: "session-a", Text: "first", CreatedBy: "local", CreatedAt: created, Version: 1},
+		{ID: "second", SessionID: "session-a", Text: "second", CreatedBy: "local", CreatedAt: created.Add(time.Second), Version: 1},
+	} {
+		if err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error { return tx.CreateDirectTodo(row) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	holding := make(chan struct{})
+	release := make(chan struct{})
+	wrote := make(chan error, 1)
+	go func() {
+		wrote <- s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+			close(holding)
+			<-release
+			return nil
+		})
+	}()
+	<-holding
+	defer func() {
+		close(release)
+		if err := <-wrote; err != nil {
+			t.Errorf("held writer: %v", err)
+		}
+	}()
+
+	readCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	rows, truncated, err := s.DirectTodosV2(readCtx, "session-a", false, false, 1)
+	if err != nil || !truncated || len(rows) != 1 || rows[0].ID != "first" || !rows[0].ReadAt.IsZero() || rows[0].Version != 1 {
+		t.Fatalf("read behind writer: rows=%+v truncated=%v err=%v", rows, truncated, err)
+	}
+	markCtx, cancelMark := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancelMark()
+	if _, _, err := s.DirectTodosV2(markCtx, "session-a", false, true, 1); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("mark-read bypassed held writer: %v", err)
+	}
+}
+
 func TestPersonTodoReadKeepsCompletedRowsAfterOpenRows(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {
