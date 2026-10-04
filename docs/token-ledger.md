@@ -125,8 +125,8 @@ Deliberately not caught, so these stay where they were:
 - A wrapped shell (`bash -lc "sleep 5"`) is classified by its inner line only as one part of the
   outer one, so it stays `impl`.
 
-**Old readings.** The category rules carry a version (`transcript.LedgerClassificationVersion`, 2
-since wait turns). A stored reading of any assistant made under another version is read again from
+**Old readings.** The category rules carry a version (`transcript.LedgerClassificationVersion`, 3
+since counting wait calls; version 2 introduced wait turns). A stored reading of any assistant made under another version is read again from
 the start the next time a pass visits its transcript, so a transcript the ledger still reads is
 counted under one set of rules. A transcript last written before the look-back window is not
 visited, keeps its old totals, and has no `wait`: its waiting is still in `impl` or `other`. A
@@ -240,10 +240,13 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
 - `clawdline usage [--session <conversation> | --task <id> | --item <id>] [--json]`
   (`cmd/clawdline/usage.go`): with no flag, the calling session, named by `CLAUDE_CODE_SESSION_ID` or
   `CODEX_THREAD_ID` as `session report` names it. One header line — calls, peak context, cost, and for
-  a session its calls above 200k and its compactions — then one line per category that spent
+  a session its wait calls, calls above 200k and compactions — then one line per category that spent
   anything, by cost (by tokens when the cost is not whole): name, share, tokens, cost, with `rules`
   marked `(upper bound)`; then one line per gap. `--json` prints the daemon's answer. A refusal prints
   `refused, <status> <code>: <message>` and exits 1, as every thin command does.
+  A wait call is a model call whose every tool action only waited. Compare the wait-call count
+  for the same test scenario before and after changing the wait path; polls inside one tool call
+  do not cause another model call.
 - `GET /v1/usage/sessions/<conversation>`, `GET /v1/usage/tasks/<task id>`,
   `GET /v1/usage/items/<item id>` (`internal/transport/http/usage.go`, typed in
   `api/v1/usage.schema.json`): read with a paired device or this machine's orchestrator token, as the

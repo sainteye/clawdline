@@ -135,6 +135,9 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 			return unreadableUsage(stderr)
 		}
 		head = usageHead("session "+s.Conversation, s.Reason, s.Calls, s.PeakContext, s.Bill)
+		if s.ReadAt != 0 {
+			head += fmt.Sprintf(", %d wait calls", s.WaitCalls)
+		}
 		if s.CallsAbove > 0 {
 			head += fmt.Sprintf(", %d calls above 200k context (%s)", s.CallsAbove, usageCost(s.Above))
 		}

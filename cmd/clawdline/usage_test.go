@@ -37,7 +37,7 @@ func TestUsageReportsTheCallingSessionByDefault(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 	want := []string{
-		"session " + thinConversation + ": 12 calls, peak context 150.0k, $10.00, 2 calls above 200k context ($0.50), 1 compactions",
+		"session " + thinConversation + ": 12 calls, peak context 150.0k, $10.00, 0 wait calls, 2 calls above 200k context ($0.50), 1 compactions",
 		"  impl        80.0% of cost     1.20M tokens  $8.00",
 		"  rules       20.0% of cost    300.0k tokens  $2.00  (upper bound)",
 		"gap: subagent agent-1 transcript_unreadable (an earlier reading counted)",

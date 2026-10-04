@@ -414,7 +414,7 @@ func usageSession(s app.SessionUsage, window windowOf) contract.UsageSession {
 		Conversation: s.Conversation, Assistant: s.Assistant, TaskID: s.TaskID, RootAssignment: s.RootAssignment,
 		Reason: contract.UsageReason(s.Reason), ReadAt: unixOrZero(s.ReadAt), More: s.More,
 		Bill: usageBill(s.Totals), Calls: s.Calls, PeakContext: s.PeakContext, Compactions: s.Compactions,
-		CallsAbove: s.CallsAbove, Above: usageTokens(s.Above),
+		CallsAbove: s.CallsAbove, WaitCalls: s.WaitCalls, Above: usageTokens(s.Above),
 		Subagents: []contract.UsageSubagent{}, Gaps: usageGaps(s.Gaps),
 		AutoCompactWindow: window(s.TaskID, s.RootAssignment),
 	}

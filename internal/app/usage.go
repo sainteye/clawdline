@@ -584,6 +584,7 @@ type SessionUsage struct {
 	Totals UsageTotals `json:"totals"`
 	// The session's own calls; its subagents' are in Subagents.
 	Calls       int64                   `json:"calls"`
+	WaitCalls   int64                   `json:"wait_calls"`
 	Compactions int64                   `json:"compactions"`
 	PeakContext int64                   `json:"peak_context"`
 	CallsAbove  int64                   `json:"calls_above"`
@@ -670,7 +671,7 @@ func FoldSession(conversation string, own []store.UsageRow, subagents []store.Us
 		out.Assistant, out.TaskID, out.RootAssignment = r.Assistant, r.TaskID, r.RootAssignment
 		out.Reason, out.ReadAt, out.More = rowReason(r), r.ReadAt, r.More
 		out.Totals.add(UsageTotals{Categories: spent, Measured: measured})
-		out.Calls, out.Compactions, out.PeakContext = state.Calls, state.Compactions, state.PeakContext
+		out.Calls, out.WaitCalls, out.Compactions, out.PeakContext = state.Calls, state.WaitCalls, state.Compactions, state.PeakContext
 		out.CallsAbove, out.Above, out.Composition = state.CallsAbove, state.Above, state.Composition
 		if out.Reason != "" {
 			out.Gaps = append(out.Gaps, UsageGap{Kind: "session", ID: conversation, Reason: out.Reason, Counted: !r.ReadAt.IsZero()})
