@@ -19,6 +19,7 @@ async function fixture() {
   const stages: Array<{ stage: string; code?: string; channel?: string }> = []
   const observation = new TerminalObservation((row) => stages.push(row))
   let confirm = true
+  let rejectDelta = false
   const client: TerminalCloudClient = {
     deviceID: viewer, devicePrivateKey: sender.privateKey, ready: true, retired: false,
     nextSequence: async () => 7, socketSubscriptions: new Map(), subscriptionHolds: new Map(),
@@ -37,7 +38,11 @@ async function fixture() {
       if ((frame as { type?: string }).type === "publish") published.push((frame as { envelope: TerminalEnvelope }).envelope)
       if ((frame as { type?: string }).type === "terminal_frame_observed") observed.push(frame)
     },
-    _sendSubscriptionFrame(_type, channels) { if (confirm) queueMicrotask(() => events.forEach((fn) => fn({ type: "subscriptions", channels }))) },
+    _sendSubscriptionFrame(_type, channels) {
+      if (rejectDelta && channels[0]?.startsWith("termd/"))
+        queueMicrotask(() => events.forEach((fn) => fn({ type: "error", code: "invalid_channel" })))
+      else if (confirm) queueMicrotask(() => events.forEach((fn) => fn({ type: "subscriptions", channels })))
+    },
     _receiveEnvelope: async () => undefined,
     events(fn) { events.add(fn); return () => { events.delete(fn) } },
   }
@@ -57,8 +62,22 @@ async function fixture() {
   }
   return { adapter, client, fresh, seen, published, observed, stages, seal, observation, machineKey,
     emitRelay: (event: { type: string; error?: { code?: string } }) => events.forEach((fn) => fn(event)),
-    setConfirm: (value: boolean) => { confirm = value }, master }
+    setConfirm: (value: boolean) => { confirm = value },
+    setRejectDelta: (value: boolean) => { rejectDelta = value }, master }
 }
+
+test("an old relay rejects only optional delta and leaves the full-frame connection usable", async () => {
+  const f = await fixture()
+  f.setRejectDelta(true)
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  assert.equal(f.adapter.deltaAvailable(f.fresh.connection), false)
+  assert.equal(f.seen.length, 0)
+  assert.equal(f.client.subscriptionHolds.size, 2)
+  await f.adapter.publishTerminal({ v: 1, type: "terminal_request", request_id: crypto.randomUUID(),
+    connection: f.fresh.connection, operation: "open_connection" })
+  assert.equal(f.published.length, 1)
+  f.adapter.dispose()
+})
 
 test("two machines sharing a Cloud client keep their receipts after either transport closes", async () => {
   const f = await fixture()

@@ -51,7 +51,7 @@ function isCompleteFrame(value: unknown, connection: string): boolean {
     typeof frame.terminal_id === "string" && Number.isSafeInteger(frame.frame_seq) &&
     typeof frame.captured_at === "number" && Number.isFinite(frame.captured_at) && completeTerminalFrame(frame.frame)
 }
-function route(kind: "termi" | "term" | "termr", machine: string, viewer: string, connection?: string): string {
+function route(kind: "termi" | "term" | "termr" | "termd", machine: string, viewer: string, connection?: string): string {
   if (!segment.test(machine) || !segment.test(viewer) || (connection && !connectionID.test(connection))) throw fail("terminal_invalid")
   const value = `${kind}/${machine}/${viewer}${connection ? "/" + connection : ""}`
   if (value.length > 300) throw fail("terminal_invalid")
@@ -73,9 +73,11 @@ export class TerminalChannelTransport {
   private readonly viewer: string
   private readonly pairing: Promise<{ masterKey: CryptoKey; keyID: string; senderKey: CryptoKey; senderID: string }>
   private readonly stopEvents: () => void
-  private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: { term: number; termr: number };
+  private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: { term: number; termr: number; termd: number };
     inFlight: Set<number>; nonces: Set<string> }>()
   private readonly confirmed = new Set<string>()
+  private readonly deltaConfirmed = new Set<string>()
+  private readonly deltaWaiting = new Map<string, () => void>()
   private readonly sent = new Set<number>()
   private readonly listeners = new Map<string, (event: TerminalChannelEvent) => void>()
   private readonly verifiedFrames = new Map<string, number>()
@@ -99,7 +101,7 @@ export class TerminalChannelTransport {
       const original = client._receiveEnvelope
       const adapters = new Set<TerminalChannelTransport>()
       const wrapper: TerminalCloudClient["_receiveEnvelope"] = async (envelope, realign) => {
-        if (envelope?.ch?.startsWith("term/") || envelope?.ch?.startsWith("termr/")) {
+        if (envelope?.ch?.startsWith("term/") || envelope?.ch?.startsWith("termr/") || envelope?.ch?.startsWith("termd/")) {
           const owner = [...adapters].find((adapter) => adapter.receives(envelope)) ??
             [...adapters].find((adapter) => adapter.matchesMachine(envelope))
           if (owner) return owner.receive(envelope, realign)
@@ -119,7 +121,7 @@ export class TerminalChannelTransport {
     if (!connectionID.test(connection) || !/^rk-[A-Za-z0-9_-]{22}$/.test(keyID) || raw.length !== 32) throw fail("terminal_invalid")
     if (!this.client.ready || this.client.retired) throw fail("cloud_reconnecting")
     const key = await crypto.subtle.importKey("raw", raw.slice().buffer as ArrayBuffer, "AES-GCM", false, ["decrypt"])
-    this.keys.set(connection, { id: keyID, key, lastSeq: { term: -1, termr: -1 }, inFlight: new Set(), nonces: new Set() })
+    this.keys.set(connection, { id: keyID, key, lastSeq: { term: -1, termr: -1, termd: -1 }, inFlight: new Set(), nonces: new Set() })
     this.listeners.set(connection, listener)
     const channels = this.channels(connection)
     const confirmation = new Promise<void>((resolve, reject) => {
@@ -151,6 +153,12 @@ export class TerminalChannelTransport {
       await confirmation
       this.confirmed.add(connection)
       this.observation?.record("subscription_confirmed", { connection })
+      if (this.tryDeltaSubscription(connection) && !this.deltaConfirmed.has(connection)) {
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(() => { this.deltaWaiting.delete(connection); resolve() }, 150)
+          this.deltaWaiting.set(connection, () => { clearTimeout(timer); this.deltaWaiting.delete(connection); resolve() })
+        })
+      }
     } catch (error) {
       this.unsubscribeTerminal(connection)
       throw error
@@ -158,7 +166,8 @@ export class TerminalChannelTransport {
   }
 
   unsubscribeTerminal(connection: string): void {
-    const channels = this.channels(connection)
+    const delta = route("termd", this.machine, this.viewer, connection)
+    const channels = [...this.channels(connection), ...(this.client.subscriptionHolds.has(delta) ? [delta] : [])]
     const waiter = this.waiting.get(connection)
     if (waiter) { clearTimeout(waiter.timer); this.waiting.delete(connection); waiter.reject(fail("cloud_reconnecting")) }
     for (const ch of channels) {
@@ -172,8 +181,30 @@ export class TerminalChannelTransport {
     this.listeners.delete(connection)
     this.keys.delete(connection)
     this.confirmed.delete(connection)
+    this.deltaConfirmed.delete(connection)
+    this.deltaWaiting.get(connection)?.()
     this.verifiedFrames.delete(connection)
     for (const channel of channels) this.receiveTails.delete(channel)
+  }
+
+  deltaAvailable(connection: string): boolean { return this.deltaConfirmed.has(connection) }
+
+  private tryDeltaSubscription(connection: string): boolean {
+    const ch = route("termd", this.machine, this.viewer, connection)
+    if (this.client.subscriptionHolds.size >= this.client.subscriptionLimit ||
+      this.client.socketSubscriptions.size >= this.client.subscriptionLimit) return false
+    try {
+      this.client.subscriptionHolds.set(ch, 1)
+      this.client.pendingSubscriptions.add(ch)
+      this.client.socketSubscriptions.set(ch, Date.now())
+      this.client._sendSubscriptionFrame("subscribe", [ch])
+      return true
+    } catch {
+      this.client.subscriptionHolds.delete(ch)
+      this.client.pendingSubscriptions.delete(ch)
+      this.client.socketSubscriptions.delete(ch)
+      return false
+    }
   }
 
   async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
@@ -202,11 +233,13 @@ export class TerminalChannelTransport {
     if (!state || !this.listeners.has(connection)) throw fail("terminal_old_connection")
     const frame = route("term", this.machine, this.viewer, connection)
     const receipt = route("termr", this.machine, this.viewer, connection)
-    if (envelope.ch !== frame && envelope.ch !== receipt) throw fail("terminal_wrong_viewer")
-    const kind = envelope.ch === frame ? "term" : "termr"
+    const delta = route("termd", this.machine, this.viewer, connection)
+    if (envelope.ch !== frame && envelope.ch !== receipt && envelope.ch !== delta) throw fail("terminal_wrong_viewer")
+    if (envelope.ch === delta && !this.deltaConfirmed.has(connection)) throw fail("terminal_bad_envelope")
+    const kind = envelope.ch === frame ? "term" : envelope.ch === receipt ? "termr" : "termd"
     if (Object.keys(envelope).length !== names.length || names.some((name) => !(name in envelope)) ||
       envelope.v !== 1 || envelope.sender !== this.machine ||
-      envelope.class !== (envelope.ch === frame ? "stream" : "ctl") ||
+      envelope.class !== (envelope.ch === receipt ? "ctl" : "stream") ||
       !Number.isSafeInteger(envelope.seq) || !Number.isSafeInteger(envelope.ts) || base64Bytes(envelope.nonce).length !== 12) throw fail("terminal_bad_envelope")
     if (envelope.key_id !== state.id) throw refused("terminal_key_id_mismatch")
     if (envelope.seq <= state.lastSeq[kind] || state.inFlight.has(envelope.seq) || state.nonces.has(envelope.nonce)) throw refused("terminal_out_of_order")
@@ -233,18 +266,18 @@ export class TerminalChannelTransport {
   observeTerminalFrame(envelope: TerminalEnvelope): void {
     const connection = envelope.ch.split("/")[3]
     if (!this.client.ready || this.client.retired || !this.confirmed.has(connection) ||
-      envelope.ch !== route("term", this.machine, this.viewer, connection) ||
+      ![route("term", this.machine, this.viewer, connection), route("termd", this.machine, this.viewer, connection)].includes(envelope.ch) ||
       this.verifiedFrames.get(connection) !== envelope.seq) throw fail("terminal_bad_envelope")
     this.client._send({ type: "terminal_frame_observed", machine: this.machine, viewer: this.viewer,
       connection, envelope_seq: envelope.seq })
-    this.observation?.record("frame_observed", { connection, channel: "term" })
+    this.observation?.record("frame_observed", { connection, channel: envelope.ch.startsWith("termd/") ? undefined : "term" })
     this.verifiedFrames.delete(connection)
   }
 
   private channels(connection: string): string[] { return [route("term", this.machine, this.viewer, connection), route("termr", this.machine, this.viewer, connection)] }
   private matchesMachine(envelope: TerminalEnvelope): boolean {
     const parts = envelope.ch.split("/")
-    return parts.length === 4 && (parts[0] === "term" || parts[0] === "termr") &&
+    return parts.length === 4 && (parts[0] === "term" || parts[0] === "termr" || parts[0] === "termd") &&
       parts[1] === this.machine && parts[2] === this.viewer
   }
   private receives(envelope: TerminalEnvelope): boolean {
@@ -263,7 +296,7 @@ export class TerminalChannelTransport {
   private async receiveOne(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
     const connection = envelope.ch.split("/")[3]
     const listener = this.listeners.get(connection)
-    const channel = envelope.ch.startsWith("termr/") ? "termr" : "term"
+    const channel = envelope.ch.startsWith("termr/") ? "termr" : envelope.ch.startsWith("termd/") ? undefined : "term"
     this.observation?.record("raw_received", { connection, channel })
     if (!listener) {
       this.observation?.record("envelope_rejected", { connection, channel, code: "terminal_old_connection" })
@@ -279,7 +312,8 @@ export class TerminalChannelTransport {
       } else if (value?.type === "terminal_frame" && !this.verifiedFrames.has(connection)) {
         this.observation?.record("envelope_opened", { connection, channel })
       }
-      if (envelope.ch === route("term", this.machine, this.viewer, connection) && isCompleteFrame(plaintext, connection)) {
+      if ((envelope.ch === route("term", this.machine, this.viewer, connection) && isCompleteFrame(plaintext, connection)) ||
+        (envelope.ch === route("termd", this.machine, this.viewer, connection) && value?.type === "terminal_frame_delta")) {
         this.verifiedFrames.set(connection, envelope.seq)
       }
       listener({ envelope, plaintext, realign })
@@ -292,6 +326,18 @@ export class TerminalChannelTransport {
   }
   private relay(event: RelayEvent): void {
     const code = event.code ?? event.error?.code ?? "relay_error"
+    if (event.type === "error" && (code === "invalid_channel" || code === "unsupported_channel" || code === "cloud_read_busy" || code === "too_many_subscriptions")) {
+      for (const connection of this.confirmed) {
+        const delta = route("termd", this.machine, this.viewer, connection)
+        if (this.client.pendingSubscriptions.has(delta) && (!event.ch || event.ch === delta)) {
+          this.client.pendingSubscriptions.delete(delta)
+          this.client.socketSubscriptions.delete(delta)
+          this.client.subscriptionHolds.delete(delta)
+          this.deltaWaiting.get(connection)?.()
+          return
+        }
+      }
+    }
     if (event.type === "error" && (code === "forbidden" || code === "terminal_forbidden") && this.waiting.size) {
       for (const [connection, waiter] of this.waiting) {
         clearTimeout(waiter.timer)
@@ -301,6 +347,13 @@ export class TerminalChannelTransport {
       return
     }
     if (event.type === "subscriptions" && event.channels) {
+      for (const connection of this.confirmed) {
+        const delta = route("termd", this.machine, this.viewer, connection)
+        if (event.channels.includes(delta)) {
+          this.deltaConfirmed.add(connection); this.client.pendingSubscriptions.delete(delta)
+          this.deltaWaiting.get(connection)?.()
+        }
+      }
       for (const [connection, waiter] of this.waiting) {
         if (this.channels(connection).every((ch) => event.channels!.includes(ch))) {
           clearTimeout(waiter.timer); this.waiting.delete(connection); waiter.resolve()

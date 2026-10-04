@@ -6,6 +6,8 @@ import { CloudTerminalSession, type TerminalWire } from "./terminal-session.ts"
 import type { TerminalChannelEvent, TerminalEnvelope } from "./terminal-transport.js"
 // @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
 import { TerminalObservation } from "./terminal-observation.ts"
+// @ts-expect-error -- focused runner bundles the TypeScript source.
+import { terminalScreenHash } from "./terminal-delta.ts"
 
 const terminalID = "trm_test"
 const machine = "machine_test"
@@ -24,6 +26,8 @@ class Wire implements TerminalWire {
   closeResult: "ok" | "unknown" = "ok"
   incarnation = "first-machine-start"
   lease = held
+  deltaSubscribed = false
+  deltaMachine = false
   historyResult: Record<string, unknown> = { lines: [], truncated: false, omitted_lines: 0 }
   delayed = new Set<string>()
   replies: Array<() => void> = []
@@ -31,6 +35,7 @@ class Wire implements TerminalWire {
     this.channels.set(connection, listener)
   }
   unsubscribeTerminal(connection: string): void { this.channels.delete(connection) }
+  deltaAvailable(): boolean { return this.deltaSubscribed }
   observeTerminalFrame(envelope: TerminalEnvelope): void { this.observed.push(envelope) }
   async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
     this.requests.push(request)
@@ -42,7 +47,8 @@ class Wire implements TerminalWire {
       throw new Error("rekey_old_connection_missing")
     }
     const result = operation === "open_connection" || operation === "rekey_connection"
-      ? { connection, key_id: request.key_id, expires_at: Date.now() / 1000 + 500, machine_incarnation: this.incarnation }
+      ? { connection, key_id: request.key_id, expires_at: Date.now() / 1000 + 500, machine_incarnation: this.incarnation,
+          ...(this.deltaMachine && (request.body as { frame_delta_v1?: boolean })?.frame_delta_v1 ? { frame_delta_v1: true } : {}) }
       : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control }
         : operation === "activate_connection" ? { connection, retired_connection: (request.body as { old_connection: string }).old_connection }
         : operation === "control" && request.body === undefined ? { machine_incarnation: this.incarnation, control: this.lease, input_state_unknown: false }
@@ -61,8 +67,8 @@ class Wire implements TerminalWire {
     return { sender: viewer, seq: this.requests.length }
   }
   releaseReplies(): void { for (const reply of this.replies.splice(0)) reply() }
-  emit(connection: string, kind: "term" | "termr", plaintext: unknown): void {
-    const envelope = { v: 1, ch: `${kind}/${machine}/${viewer}/${connection}`, seq: 1, ts: Date.now(), class: kind === "term" ? "stream" : "ctl",
+  emit(connection: string, kind: "term" | "termr" | "termd", plaintext: unknown): void {
+    const envelope = { v: 1, ch: `${kind}/${machine}/${viewer}/${connection}`, seq: 1, ts: Date.now(), class: kind === "termr" ? "ctl" : "stream",
       key_id: "test", nonce: "", ct: "", sender: machine, sig: "" } satisfies TerminalEnvelope
     this.channels.get(connection)?.({ envelope, plaintext, realign: false })
   }
@@ -72,6 +78,51 @@ class Wire implements TerminalWire {
       frame_seq: seq, captured_at: Date.now() / 1000, frame: frame(rev) })
   }
 }
+
+test("delta capability requires both relay and machine confirmation", async () => {
+  for (const [relay, machineCap] of [[false, false], [true, false], [true, true]]) {
+    const wire = new Wire()
+    wire.deltaSubscribed = relay; wire.deltaMachine = machineCap
+    const session = new CloudTerminalSession(wire, "stable-tab")
+    try {
+      await session.start()
+      const open = wire.requests.find((request) => request.operation === "open_connection")!
+      assert.equal((open.body as { frame_delta_v1?: boolean } | undefined)?.frame_delta_v1, relay ? true : undefined)
+      await session.attach(terminalID)
+      wire.frame(wire.latest(), 1, "first")
+      const at = Date.now() / 1000
+      wire.emit(wire.latest(), "termd", { v: 1, type: "terminal_frame_delta", terminal_id: terminalID,
+        connection: wire.latest(), frame_seq: 2, base_seq: 1, base_rev: "first", captured_at: at,
+        rev: "second", at, cols: 80, rows: 1, dead: false, cursor: frame("second").cursor,
+        modes: frame("second").modes, changed_rows: [{ row: 0, line: "second" }],
+        screen_hash: await terminalScreenHash(["second"]) })
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      assert.equal(session.snapshot.frame?.rev, relay && machineCap ? "second" : "first")
+    } finally { session.dispose() }
+  }
+})
+
+test("a corrupt delta discards the connection and never replays input", async () => {
+  const wire = new Wire()
+  wire.deltaSubscribed = true; wire.deltaMachine = true
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const old = wire.latest()
+    wire.frame(old, 1, "first")
+    const at = Date.now() / 1000
+    wire.emit(old, "termd", { v: 1, type: "terminal_frame_delta", terminal_id: terminalID,
+      connection: old, frame_seq: 2, base_seq: 1, base_rev: "first", captured_at: at,
+      rev: "second", at, cols: 80, rows: 1, dead: false, cursor: frame("second").cursor,
+      modes: frame("second").modes, changed_rows: [{ row: 0, line: "second" }], screen_hash: "0".repeat(64) })
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    assert.notEqual(wire.latest(), old)
+    assert.equal(session.snapshot.canType, false)
+    assert.equal(wire.requests.filter((request) => request.operation === "input" || request.operation === "paste").length, 0)
+    wire.frame(wire.latest(), 1, "restored")
+    assert.equal(session.snapshot.frame?.rev, "restored")
+  } finally { session.dispose() }
+})
 
 test("an authorized connection remains reusable for repeated reads until revoked", async () => {
   const wire = new Wire()

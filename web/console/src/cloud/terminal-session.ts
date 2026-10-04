@@ -3,18 +3,22 @@ import { bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in terminal-session.test.ts.
 import { completeTerminalFrame, freshTerminalConnection, type TerminalChannelEvent, type TerminalEnvelope } from "./terminal-transport.ts"
 import type { TerminalObservation } from "./terminal-observation.js"
+// @ts-expect-error -- Node's strip-types runner loads this module directly.
+import { reconstructTerminalDelta, type TerminalDelta } from "./terminal-delta.ts"
 
 export interface TerminalWire {
   subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void>
   unsubscribeTerminal(connection: string): void
   publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }>
   observeTerminalFrame(envelope: TerminalEnvelope): void
+  deltaAvailable?(connection: string): boolean
 }
 
 type Receipt = { v: 1; type: "terminal_receipt"; request_id: string; connection: string; operation: string;
   status: "ok" | "refused" | "unknown"; result?: Record<string, unknown>; error?: string }
 type Frame = { v: 1; type: "terminal_frame"; terminal_id: string; connection: string; frame_seq: number;
   captured_at: number; frame: TerminalFrame }
+type DeltaFrame = TerminalDelta
 type Notice = { v: 1; type: "terminal_notice"; connection: string; code: string; machine_incarnation: string }
 export type CloudTerminalHistory = { lines: string[]; truncated: boolean; omitted_lines: number }
 export type CloudTerminalState = "opening" | "synchronizing" | "just_synced" | "live" | "stale" | "offline" | "revoked" | "unknown" | "closed"
@@ -44,6 +48,8 @@ export class CloudTerminalSession {
   private incarnation = ""
   private terminal = ""
   private frameSeq = 0
+  private deltaEnabled = false
+  private deltaChecking = false
   private confirmed = 0
   private epoch: number | null = null
   private nextSeq = 1
@@ -114,11 +120,15 @@ export class CloudTerminalSession {
     this.set({ state: previous ? "synchronizing" : "opening", canType: false, reason: "" })
     try {
       await this.transport.subscribeTerminal(fresh.connection, fresh.keyID, fresh.key, (event) => this.event(event))
+      const requestDelta = this.transport.deltaAvailable?.(fresh.connection) === true
       this.connection = fresh.connection
       this.keyID = fresh.keyID
       const opened = await this.request(previous && Date.now() < previousExpiry ? "rekey_connection" : "open_connection", {
         key_id: fresh.keyID, key: bytesBase64(fresh.key),
-        ...(previous && Date.now() < previousExpiry ? { body: { old_connection: previous } } : {}),
+        ...(previous && Date.now() < previousExpiry || requestDelta ? {
+          body: { ...(previous && Date.now() < previousExpiry ? { old_connection: previous } : {}),
+            ...(requestDelta ? { frame_delta_v1: true } : {}) },
+        } : {}),
       })
       fresh.key.fill(0)
       if (opened.result?.connection !== fresh.connection || opened.result?.key_id !== fresh.keyID ||
@@ -130,6 +140,7 @@ export class CloudTerminalSession {
       this.incarnation = opened.result.machine_incarnation
       this.expiresAt = opened.result.expires_at * 1000
       this.frameSeq = 0
+      this.deltaEnabled = requestDelta && opened.result.frame_delta_v1 === true
       this.active = true
       this.connectionUnknown = false
       this.rotationAttempted = false
@@ -150,6 +161,7 @@ export class CloudTerminalSession {
       this.incarnation = previousIncarnation
       this.expiresAt = previousExpiry
       this.frameSeq = previousFrameSeq
+      this.deltaEnabled = false
       this.earlyFrames = []
       this.retiringConnection = ""
       this.rotationReady = false
@@ -356,7 +368,7 @@ export class CloudTerminalSession {
       else this.set({ state: "unknown", reason: event.error })
       return
     }
-    const value = event.plaintext as Receipt | Frame | Notice
+    const value = event.plaintext as Receipt | Frame | DeltaFrame | Notice
     if (value?.v !== 1 || value.connection !== this.connection) {
       if (value?.type === "terminal_receipt") this.observation?.record("pending_miss", {
         connection: typeof value.connection === "string" ? value.connection : undefined,
@@ -404,6 +416,8 @@ export class CloudTerminalSession {
         pending.reject(Object.assign(fail(value.error ?? (value.status === "unknown" ? "terminal_result_unknown" : "terminal_forbidden")),
           { receiptStatus: value.status }))
       }
+    } else if (value.type === "terminal_frame_delta" && event.envelope.ch.startsWith("termd/")) {
+      void this.acceptDelta(value as DeltaFrame, event.envelope)
     } else if (value.type === "terminal_frame" &&
       event.envelope.ch.startsWith("term/") &&
       Number.isSafeInteger(value.frame_seq) && value.frame_seq > 0 &&
@@ -431,6 +445,33 @@ export class CloudTerminalSession {
     this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
     this.transport.observeTerminalFrame(envelope)
     this.maybeActivate()
+  }
+  private async acceptDelta(value: DeltaFrame, envelope: TerminalEnvelope): Promise<void> {
+    if (!this.deltaEnabled || !this.active || this.openingNew || !this.terminal || this.deltaChecking) return
+    this.deltaChecking = true
+    const connection = this.connection
+    const terminal = this.terminal
+    const baseSeq = this.frameSeq
+    const base = this.s.frame
+    this.set({ state: "synchronizing" })
+    try {
+      if (!base || baseSeq === 0) throw fail("terminal_delta_mismatch")
+      const frame = await reconstructTerminalDelta(base, baseSeq, value, connection, terminal)
+      if (connection !== this.connection || terminal !== this.terminal || baseSeq !== this.frameSeq) return
+      this.frameSeq = value.frame_seq
+      this.set({ frame, state: frame.dead ? "closed" : "live", reason: "" })
+      this.transport.observeTerminalFrame(envelope)
+    } catch {
+      if (connection !== this.connection) return
+      this.inputUnknown = true
+      this.active = false
+      this.frameSeq = 0
+      this.deltaEnabled = false
+      this.transport.unsubscribeTerminal(connection)
+      this.connection = ""
+      this.set({ frame: null, state: "synchronizing", reason: "terminal_delta_mismatch" })
+      void this.start().catch(() => this.set({ state: "unknown", reason: "terminal_delta_mismatch" }))
+    } finally { this.deltaChecking = false }
   }
   private maybeActivate(): void {
     if (!this.retiringConnection || !this.rotationReady || !this.frameSeq || this.activating ||
