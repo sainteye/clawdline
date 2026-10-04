@@ -2000,6 +2000,19 @@ export interface BrowserRequest {
 }
 
 /**
+ * One build: the commit it was built from and, when its BUILD.json said so, that
+ * commit's committer time (RFC3339 UTC). An older BUILD.json has no time.
+ */
+export interface BuildStamp {
+  committed_at?: string
+
+  /**
+   * The full commit hash, or empty when it is not known.
+   */
+  stamp: string
+}
+
+/**
  * `none`: nothing is refused, removed or rotated; the limit is only reported. No
  * class allows it, so a row that does it has a `deviation`.
  */
@@ -8279,6 +8292,53 @@ export interface TunnelStatus {
    * state is up.
    */
   url?: string
+}
+
+/**
+ * How this machine's build stands against the cloud's latest (docs/updates.md).
+ * `current`: the same commit. `update_available`: the cloud's commit is later.
+ * `ahead`: this machine's is later. `differs`: the commits differ and a commit time
+ * is missing on one side. `unknown`: no comparison could be made; `reason` says
+ * why.
+ */
+export type UpdateState =
+    "current"
+  | "update_available"
+  | "ahead"
+  | "differs"
+  | "unknown"
+
+export const UpdateStateValues: readonly UpdateState[] = ["current", "update_available", "ahead", "differs", "unknown"] as const
+
+/**
+ * GET /v1/update: whether this machine trails the cloud's latest build. Answered
+ * from the daemon's last background check; a request never waits on the network. A
+ * failed check keeps the last good `latest` and says what failed in `error`.
+ */
+export interface UpdateStatus {
+  /**
+   * When the last successful check read the cloud's BUILD.json (RFC3339 UTC).
+   * Absent before the first success.
+   */
+  checked_at?: string
+
+  /**
+   * What the most recent check said when it failed after the last success.
+   */
+  error?: string
+  latest: BuildStamp
+
+  /**
+   * Why the state is `unknown`.
+   */
+  reason?: string
+  running: BuildStamp
+
+  /**
+   * The BUILD.json this daemon asks.
+   */
+  source_url: string
+  state: UpdateState
 }
 
 /**
