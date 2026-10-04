@@ -368,6 +368,12 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-work-decisions",
 		method: "GET", path: "/v1/work/decisions",
 	}, {
+		word: "work.decision",
+		body: map[string]any{"type": "work.decision", "session": machine,
+			"request": "req-work-decision", "id": "10000000-0000-4000-8000-000000000001"},
+		session: machine, name: "read:req-work-decision",
+		method: "GET", path: "/v1/work/decisions/10000000-0000-4000-8000-000000000001",
+	}, {
 		word: "work.digests",
 		body: map[string]any{"type": "work.digests", "session": machine,
 			"request": "req-work-digests", "kind": "daily"},
@@ -1280,6 +1286,11 @@ func TestAMalformedBodyIsRefusedWhereItSafelyNames(t *testing.T) {
 		code      string
 		published bool
 	}{{
+		name: "a decision read must name a work-shaped id",
+		body: map[string]any{"type": "work.decision", "session": MachineReplySession,
+			"request": "req", "id": "../other"},
+		code: "malformed_read", published: true,
+	}, {
 		name: "a read with an extra field is a different word",
 		body: map[string]any{"type": "git", "session": pane, "limit": 10},
 		code: "malformed_read",
@@ -1731,7 +1742,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "personas",
-		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.digests",
+		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
 		"work.v2.assign", "work.v2.persona-suggestion", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.seen", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
