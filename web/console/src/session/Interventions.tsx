@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { humanInterventionActionV2, readHumanInterventionsV2, type HumanInterventionV2, type HumanInterventionsV2 } from "../pages/work/api.js"
-import { failureWords } from "../pages/work/shared.js"
+import { failureWords, when } from "../pages/work/shared.js"
 import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
@@ -206,7 +206,7 @@ function InterventionCard({ note, disabled, sending, onAction, onReply }: {
   const fromAnotherSession = note.source_conversation !== note.target_conversation
   const isReading = note.kind === "read" || note.kind === "report"
   return <article className="human-intervention-card" data-intervention-id={note.id} tabIndex={-1} aria-label={note.title}>
-    <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? "已處理" : "待處理"}</span></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? "請閱讀" : note.kind === "answer" ? "請回覆" : "請處理"}</span></div>
+    <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? "已處理" : "待處理"}</span><time className="human-intervention-created" dateTime={new Date(note.created_at * 1000).toISOString()}>送達 {when(note.created_at)}</time></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? "請閱讀" : note.kind === "answer" ? "請回覆" : "請處理"}</span></div>
     {fromAnotherSession && <p className="human-intervention-source">來自 {note.source_label || "其他 Session"}</p>}
     <p>{note.summary}</p>
     <p><b>需要你做：</b>{note.action}</p>
