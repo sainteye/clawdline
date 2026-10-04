@@ -110,6 +110,22 @@ test("a signed receipt with a different request id is diagnosed and cannot settl
   } finally { session.dispose() }
 })
 
+test("a slow read does not hold back the capture request or first frame", async () => {
+  const wire = new Wire()
+  wire.delayed.add("read")
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    const attaching = session.attach(terminalID)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(wire.requests.slice(-2).map((request) => request.operation), ["read", "capture"])
+    wire.frame(wire.latest(), 1, "early screen")
+    assert.equal(session.snapshot.frame?.rev, "early screen")
+    wire.releaseReplies()
+    await attaching
+  } finally { session.dispose() }
+})
+
 test("a receipt alone never enables input; first and later full frames have distinct states", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")

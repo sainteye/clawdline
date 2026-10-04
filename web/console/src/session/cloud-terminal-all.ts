@@ -16,23 +16,25 @@ export interface CloudTerminalError { machine: string; code: string }
 
 /** A failed machine retains only its own prior rows, clearly marked stale. */
 export async function collectCloudTerminals(
-  machines: readonly CloudTerminalMachine[], places: readonly CloudPlaceRow[], previous: readonly CloudTerminalRow[],
+  machines: readonly CloudTerminalMachine[], places: readonly CloudPlaceRow[] | Promise<readonly CloudPlaceRow[]>, previous: readonly CloudTerminalRow[],
   read: (machine: string) => Promise<Terminal[]>,
+  onProgress?: (result: { rows: CloudTerminalRow[]; errors: CloudTerminalError[] }) => void,
 ): Promise<{ rows: CloudTerminalRow[]; errors: CloudTerminalError[] }> {
   const rows: CloudTerminalRow[][] = Array.from({ length: machines.length }, () => [])
   const errors: CloudTerminalError[] = []
   let next = 0
-  // Each terminal read holds two relay subscriptions. Read machines in order
-  // so the eight-channel socket does not have to hold two extra pairs at once.
-  await Promise.all(Array.from({ length: Math.min(1, machines.length) }, async () => {
+  // Each read holds two relay subscriptions. Two concurrent reads leave half
+  // the eight-channel socket available to other terminal activity.
+  await Promise.all(Array.from({ length: Math.min(2, machines.length) }, async () => {
     for (;;) {
       const index = next++
       if (index >= machines.length) return
       const machine = machines[index]!
       try {
         const terminals = await read(machine.id)
+        const namedPlaces = await places
         rows[index] = terminals.filter((terminal) => terminal.status === "running").map((terminal) => {
-          const place = places.find((candidate) => {
+          const place = namedPlaces.find((candidate) => {
             const pair = decodeCloudPlaceID(candidate.id)
             return pair?.[0] === machine.id && pair[1] === terminal.project_id
           })
@@ -45,6 +47,7 @@ export async function collectCloudTerminals(
           error instanceof Error && error.message ? error.message : "terminal_list_failed" })
         rows[index] = previous.filter((row) => row.machine === machine.id).map((row) => ({ ...row, stale: true }))
       }
+      onProgress?.({ rows: rows.flat(), errors: [...errors] })
     }
   }))
   return { rows: rows.flat(), errors }
