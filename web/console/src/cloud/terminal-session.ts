@@ -192,10 +192,12 @@ export class CloudTerminalSession {
   async attach(terminal: string): Promise<Receipt> {
     this.terminal = terminal
     this.flushEarlyFrame()
-    const result = await this.request("read", { terminal_id: terminal, client: this.client })
+    const [result] = await Promise.all([
+      this.request("read", { terminal_id: terminal, client: this.client }),
+      this.request("capture", { terminal_id: terminal }),
+    ])
     const control = result.result?.control as TerminalControl | undefined
     if (control) this.set({ control })
-    await this.request("capture", { terminal_id: terminal })
     return result
   }
   async create(project: string, cols: number, rows: number): Promise<Receipt> {

@@ -105,6 +105,10 @@
 .terminal-host { height: 100%; padding: 6px; box-sizing: border-box; }
 .terminal-view:not([data-holding]) .terminal-host { width: max-content; min-width: 100%; }
 .terminal-loading { position: absolute; inset: 12px auto auto 12px; margin: 0; }
+.terminal-wait { display: flex; align-items: center; gap: 10px; z-index: 1; padding: 8px 10px; border-radius: 8px; background: var(--card); color: var(--ink); font-size: 13px; }
+.terminal-wait-indicator { width: 14px; height: 14px; flex: none; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: terminal-wait-spin .85s linear infinite; }
+@keyframes terminal-wait-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .terminal-wait-indicator { animation: none; border-color: var(--accent); } }
 
 .terminal-history { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .terminal-history h2 { margin: 0; font-size: 14px; font-weight: 600; }
