@@ -28,24 +28,22 @@ prefixes such as `[a0939bac clawdline-fa]` and headings made from `===` have no 
 
 ## Session message
 
-`POST /v1/orchestrator/messages` is the machine-token-only session-to-session route. Its closed
-request body is:
+`POST /v1/orchestrator/messages` is the machine-token-only session-to-session route. Its supported
+request fields are:
 
 ```json
 {
   "from_session": "c6000001-0000-4000-8000-000000000001",
   "to_session": "c6000002-0000-4000-8000-000000000002",
-  "text": "The correction is in the same round.\n\n## Status\n\nThe task is still running.",
-  "images": [{"path":"/Users/you/Desktop/current-state.png"}]
+  "text": "The correction is in the same round.\n\n## Status\n\nThe task is still running."
 }
 ```
 
-`images` is optional and contains 1…6 closed objects with exactly one `path`. A path must be a
-normalized absolute local path; URL strings, relative or dot-segment paths, extra fields,
-directories, unreadable files and unsupported bytes are refused. Clawdline does not fetch remote
-content and does not trust a filename extension or claimed MIME type. It bounds each source and
-decoded raster, decodes it, re-encodes it as PNG, and copies it into the Clawdline-owned artifact
-store before terminal delivery. `text` may be empty only when `images` is non-empty.
+The current route and `clawdline send` deliver **text only** (at most 100,000 characters). Do not
+put `images` in this request: the Go handler decodes only `from_session`, `to_session` and `text`,
+so an extra `images` field is silently ignored. A successful send receipt does not mean the picture
+was stored or shown. To show the person a picture from the speaking session, use the image marker
+flow below. Read `clawdline guide send` for the installed daemon's current wire contract.
 
 `from_session` may be the source's exact terminal-neutral id or its current process-bound
 conversation id. `to_session` is the exact terminal-neutral id. Clawdline resolves both against
@@ -74,8 +72,9 @@ Version 1 has one kind, `session_message`, and exactly the fields shown above. U
 unknown or missing fields, partial wrappers, prose around a wrapper, and quoted lookalikes are not
 partly interpreted. Their bytes stay visible under the role they originally had.
 
-An image message uses version 2 and adds exactly one top-level field, `artifacts`, containing 1…6
-closed references:
+Older image messages can still appear in transcripts as version 2 envelopes with one top-level
+`artifacts` field containing 1…6 closed references. This is a read format for existing messages,
+not a way to send a new picture through `POST /v1/orchestrator/messages`:
 
 ```json
 {"id":"c6000003-0000-4000-8000-000000000003","media_type":"image/png",
@@ -113,7 +112,28 @@ would be handing itself a new instruction, and `POST /v1/orchestrator/messages` 
 What replaces it keeps Clawdline reading transcripts and writing none. `POST /v1/artifacts/images`
 stores the bytes through the same owned store and answers with the same reference plus a ready-made
 `marker`; the session pastes that marker into the reply it was already writing, its own CLI records
-that turn, and the transcript reader resolves the marker when it reads that turn back.
+that turn, and the transcript reader resolves the marker when it reads that turn back. The request
+body has **only** `images`, with 1…6 local files, each as an object with exactly one absolute
+`path`. Each file must be a plain file no larger than 12 MiB or 12,000 px on a side. A local path
+printed in the reply is not a phone-readable picture.
+
+For one screenshot, call the local daemon and keep the orchestrator token out of the command line
+and transcript. Substitute the actual absolute path; then copy the returned `artifacts[0].marker`
+into the **assistant reply in that same Session**, outside a code fence:
+
+```sh
+DIR="${CLAWDLINE_NEXT_DIR:-$HOME/.config/clawdline-next}"
+curl --fail-with-body -sS -X POST http://127.0.0.1:7727/v1/artifacts/images \
+  -H @<(printf 'X-Clawdline-Orchestrator: %s\n' "$(cat "$DIR/orchestrator-token")") \
+  -H 'Content-Type: application/json' \
+  --data '{"images":[{"path":"/absolute/path/to/screenshot.png"}]}'
+```
+
+The response has `ok: true` and an `artifacts` array. Use its returned marker verbatim; do not
+invent an id, add dimensions or wrap it in Markdown image syntax. The marker is resolved when the
+transcript is read, and Cloud carries the resulting image from the paired machine. The browser
+does not read the original local path. Use `clawdline guide send` again if the installed daemon's
+contract changes.
 
 The spelling is exactly one, and it carries an id and nothing else:
 
