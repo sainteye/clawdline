@@ -322,12 +322,10 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 
 **8. 回報這個 turn**：`clawdline session report --summary "…"`（§7）。
 
-**9. 關閉自己的 Session**：項目 `done` 或 `cancelled` 後執行 `clawdline session close`。它會稽核你的
-task、landing、未確認的完成通知、待辦和自己名下未完成的看板項目，逐條印出阻礙與負責推動者，
-只有 closeability 是 `safe` 才關閉，而且絕不強制。`--dry-run` 只稽核不關閉。你是在自己的 turn 裡執行它，
-所以只剩這個 turn（`terminal_working`）時，關閉會排定在這個 turn 結束時生效（那時若沒有其他欠的事）：
-`session close` 要是最後一個指令，放在 `session report` 之後，之後什麼都不要再打。daemon 在那之前重啟會
-丟掉這個排程，再跑一次即可。
+**9. 保留負責項目的 Session**：看板項目完成或取消，只會解除它的指派，不會結束原本負責的 Session。
+執行 `session report` 後，讓這個 Session 保持開啟，以便處理後續工作。不要只因項目到達 `done` 或
+`cancelled` 就執行 `clawdline session close`。使用者之後可以明確要求關閉。Agent 派出的 child 則由
+broker 在任務結束後，依 `clawdline guide child` 的 child 分頁規則另外關閉。
 
 **被拒絕時。** `version_conflict`：同一個指令再跑一次，它會重讀版本。`steps_incomplete`：還有 step
 沒勾。其他代碼：先看 §12，再看涵蓋它的那個部分。
