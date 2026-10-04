@@ -3663,7 +3663,14 @@ export class CloudClient {
      */
     subscribe(channels) {
         if (!Array.isArray(channels) || !channels.length) throw new TypeError("subscribe needs channels");
-        channels.forEach(function (channel) { parseEnvelopeChannel(channel); });
+        channels.forEach(function (channel) {
+            // Terminal replies share this socket and subscription reconciliation with
+            // session channels, although terminal envelopes have a separate decoder.
+            // A lost terminal channel must be valid on the resend path too.
+            if (/^termd?\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{22}$/.test(channel)
+                || /^termr\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9_-]{22}$/.test(channel)) return;
+            parseEnvelopeChannel(channel);
+        });
         var at = this.now();
         var fresh = [];
         channels.forEach((channel) => {

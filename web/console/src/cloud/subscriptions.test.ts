@@ -235,6 +235,27 @@ test("a channel the relay reports it no longer holds is subscribed again, and th
   }
 })
 
+test("a terminal channel lost during another subscription answer is restored without breaking the socket", async () => {
+  const relay = new Relay()
+  const client = await connected(relay)
+  const terminal = "term/mac-a/viewer-1/abcdefghijklmnopqrstuv"
+  try {
+    client.subscriptionHolds.set(terminal, 1)
+    client.pendingSubscriptions.add(terminal)
+    client.socketSubscriptions.set(terminal, Date.now())
+    client._sendSubscriptionFrame("subscribe", [terminal])
+    await settled(client)
+    relay.lose = (frame) => frame.type === "subscribe" && frame.channels!.includes(SESSION) ? [terminal] : []
+    client.subscribe([SESSION])
+    await settled(client)
+    assert.equal(relay.subscribesFor(terminal), 2)
+    assert.ok(relay.holds.includes(terminal))
+    assert.equal(client.lastRelayError, null)
+  } finally {
+    client.stop()
+  }
+})
+
 test("a subscribe the relay refuses is not recorded as held: its read fails with the relay's word and the next read subscribes again", async () => {
   const relay = new Relay()
   const client = await connected(relay)
