@@ -25,7 +25,6 @@ var (
 	ErrSquadSnapshotTooLarge  = errors.New("squad_snapshot_too_large")
 	ErrSquadLaunchUnknown     = errors.New("squad_launch_unknown")
 	ErrSquadLaunchConflict    = errors.New("squad_launch_conflict")
-	ErrSquadLaunchCapacity    = errors.New("squad_launch_capacity")
 	ErrSquadConversationTaken = errors.New("squad_conversation_taken")
 )
 
@@ -165,9 +164,6 @@ func (s *Store) PrepareSquadLaunch(ctx context.Context, document json.RawMessage
 		return SquadLaunch{}, classify(err)
 	}
 	defer tx.Rollback()
-	if err := checkSquadLaunchCapacity(ctx, tx); err != nil {
-		return SquadLaunch{}, err
-	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO squad_snapshots(id,document,created_at)
 		VALUES(?,?,?) ON CONFLICT(id) DO NOTHING`, snapshotID, []byte(document), now); err != nil {
 		return SquadLaunch{}, classify(err)
@@ -199,9 +195,6 @@ func (s *Store) PrepareSquadResume(ctx context.Context, conversationID string) (
 		return SquadLaunch{}, classify(err)
 	}
 	defer tx.Rollback()
-	if err := checkSquadLaunchCapacity(ctx, tx); err != nil {
-		return SquadLaunch{}, err
-	}
 	var snapshotID string
 	err = tx.QueryRowContext(ctx, `SELECT snapshot_id FROM squad_launches
 		WHERE conversation_id=? AND state='bound' ORDER BY created_at,id LIMIT 1`, conversationID).Scan(&snapshotID)
@@ -221,17 +214,6 @@ func (s *Store) PrepareSquadResume(ctx context.Context, conversationID string) (
 		return SquadLaunch{}, classify(err)
 	}
 	return SquadLaunch{ID: launchID, SnapshotID: snapshotID, ActorCapability: capability}, nil
-}
-
-func checkSquadLaunchCapacity(ctx context.Context, tx *sql.Tx) error {
-	var pending int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM squad_launches WHERE state='pending'`).Scan(&pending); err != nil {
-		return classify(err)
-	}
-	if pending >= MaxSquadRecoveryRows {
-		return ErrSquadLaunchCapacity
-	}
-	return nil
 }
 
 // RecordSquadTerminal makes the first successful terminal creation durable.
@@ -449,11 +431,19 @@ func (s *Store) FailSquadLaunch(ctx context.Context, launchID string) error {
 type PendingSquadLaunch struct {
 	ID         string
 	TerminalID string
+	CreatedAt  int64
 }
 
 func (s *Store) PendingSquadLaunches(ctx context.Context) ([]PendingSquadLaunch, error) {
-	rows, err := s.rd.QueryContext(ctx, `SELECT id,terminal_id FROM squad_launches
-		WHERE state='pending' ORDER BY created_at,id LIMIT ?`, MaxSquadRecoveryRows)
+	return s.PendingSquadLaunchesAfter(ctx, 0, "")
+}
+
+// PendingSquadLaunchesAfter reads one bounded page. The cursor is taken from
+// the last row of the preceding page, even if that launch remains pending.
+func (s *Store) PendingSquadLaunchesAfter(ctx context.Context, createdAt int64, id string) ([]PendingSquadLaunch, error) {
+	rows, err := s.rd.QueryContext(ctx, `SELECT id,terminal_id,created_at FROM squad_launches
+		WHERE state='pending' AND (created_at > ? OR (created_at = ? AND id > ?))
+		ORDER BY created_at,id LIMIT ?`, createdAt, createdAt, id, MaxSquadRecoveryRows)
 	if err != nil {
 		return nil, classify(err)
 	}
@@ -461,16 +451,10 @@ func (s *Store) PendingSquadLaunches(ctx context.Context) ([]PendingSquadLaunch,
 	var pending []PendingSquadLaunch
 	for rows.Next() {
 		var item PendingSquadLaunch
-		if err := rows.Scan(&item.ID, &item.TerminalID); err != nil {
+		if err := rows.Scan(&item.ID, &item.TerminalID, &item.CreatedAt); err != nil {
 			return nil, classify(err)
 		}
 		pending = append(pending, item)
 	}
 	return pending, classify(rows.Err())
-}
-
-func (s *Store) SquadPendingLaunchCount(ctx context.Context) (int64, error) {
-	var count int64
-	err := s.rd.QueryRowContext(ctx, `SELECT COUNT(*) FROM squad_launches WHERE state='pending'`).Scan(&count)
-	return count, classify(err)
 }

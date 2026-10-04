@@ -213,14 +213,7 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-persona Console guard; no retained measurement"}
 		},
 		capacity.SquadRecoveryRows: func() capacity.Reading {
-			if s.store == nil {
-				return capacity.Reading{Known: true, Note: "no store attached"}
-			}
-			used, err := s.store.SquadPendingLaunchCount(context.Background())
-			if err != nil {
-				return capacity.Reading{Err: err.Error()}
-			}
-			return capacity.Reading{Known: true, Used: used, Note: "pending immutable squad launch intents"}
+			return capacity.Reading{Known: true, Note: "bounded recovery page; later pending intents continue on following pages"}
 		},
 		capacity.SquadEventIDBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-event idempotency key; refused above the limit"}

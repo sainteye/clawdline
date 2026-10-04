@@ -358,7 +358,7 @@ const (
 	SquadPackagePreviewAge       = "squadpackage.preview_age"
 	SquadSnapshotBytes           = "squad.snapshot_bytes"
 	SquadConsoleActiveSkillBytes = "squad.console_active_skill_bytes"
-	SquadRecoveryRows            = "squad.pending_launches"
+	SquadRecoveryRows            = "squad.recovery_page_rows"
 	SquadEventIDBytes            = "squad.event_id_bytes"
 	SquadEventPageRows           = "squad.event_page_rows"
 	SquadEventBodyBytes          = "squad.event_body_bytes"
@@ -1857,12 +1857,12 @@ func Register() []Entry {
 			Sources: []string{"internal/domain/squad.MaxSquadConsoleActiveSkillBytes"},
 		},
 		{
-			// Pending squad launch intents that one inventory pass can recover.
-			// At capacity, new launches refuse instead of starving later rows.
-			Name: SquadRecoveryRows, Class: Evidence, Unit: Rows,
+			// One recovery query reads this many pending launch intents. Later
+			// pages continue from a cursor instead of refusing new Sessions.
+			Name: SquadRecoveryRows, Class: Buffer, Unit: Rows,
 			Limit: 256, AtLimit: Refuse,
-			Told:      []Channel{Diagnostics, Sender, Health},
-			EvictedBy: Person,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/store.MaxSquadRecoveryRows"},
 		},
 		{

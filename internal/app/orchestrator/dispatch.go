@@ -190,16 +190,6 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 	if err := b.checkChildCapability(ctx); err != nil {
 		return Dispatched{}, err
 	}
-	if record.Persona != "" && b.ResolveSquadSnapshot != nil {
-		pending, err := b.Store.SquadPendingLaunchCount(ctx)
-		if err != nil {
-			return Dispatched{}, err
-		}
-		if pending >= store.MaxSquadRecoveryRows {
-			return Dispatched{}, refuse(http.StatusTooManyRequests, "squad_launch_capacity",
-				"Too many squad launches are awaiting Session identity on this machine.")
-		}
-	}
 	if err := b.admitDispatch(); err != nil {
 		return Dispatched{}, err
 	}

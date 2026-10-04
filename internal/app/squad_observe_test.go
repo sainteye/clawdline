@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -69,6 +70,39 @@ func TestSquadObservationRecoversFromUniqueProcessWithoutTerminalReceipt(t *test
 	}
 	if actor, ok, err := st.AuthenticateSquadActor(ctx, launch.ActorCapability); err != nil || !ok || actor.TerminalID != "terminal-a" {
 		t.Fatalf("unrecovered actor = %+v, %t, %v", actor, ok, err)
+	}
+}
+
+func TestSquadObservationReachesLaunchAfterFullRecoveryPage(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	document := json.RawMessage(`{"definition_id":"clawdline.persona.architect","scope_id":"project-test"}`)
+	var last store.SquadLaunch
+	for i := 0; i < store.MaxSquadRecoveryRows; i++ {
+		last, err = st.PrepareSquadLaunch(ctx, document)
+		if err != nil {
+			t.Fatalf("launch %d: %v", i, err)
+		}
+	}
+	time.Sleep(time.Until(time.Unix(time.Now().Unix()+1, 0)))
+	last, err = st.PrepareSquadLaunch(ctx, document)
+	if err != nil {
+		t.Fatalf("later launch: %v", err)
+	}
+	// The first page remains pending. Its rows must not hide a later live Session.
+	inv := session.Inventory{Sessions: []session.Session{{ID: "terminal-later", Assistant: session.AssistantCodex,
+		ConversationID: "conversation-later", SquadLaunchID: last.ID}}}
+	if err := ReconcileSquadLaunches(ctx, st, dir, inv); err != nil {
+		t.Fatal(err)
+	}
+	if actor, ok, err := st.AuthenticateSquadActor(ctx, last.ActorCapability); err != nil || !ok ||
+		actor.TerminalID != "terminal-later" || actor.ConversationID != "conversation-later" {
+		t.Fatalf("later actor = %+v, %t, %v", actor, ok, err)
 	}
 }
 

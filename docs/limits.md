@@ -745,10 +745,10 @@ metadata, never the ZIP bytes or private text. Adoption reuploads and revalidate
 ### N59: squad launch snapshots and skill receipts
 
 `squad.snapshot_bytes` refuses an immutable launch document larger than 1 MiB before storing or
-publishing it. `squad.pending_launches` refuses a new launch when 256 intents still await terminal
-or conversation identity; the same 256-row bound limits each recovery scan. Neither bound evicts a
-snapshot or abandons a pending launch. The sender receives a typed refusal and both rows appear
-in `/v1/diagnostics.capacity`.
+publishing it. `squad.recovery_page_rows` reads at most 256 pending intents in one recovery query,
+then follows a cursor to later pages. Pending launches do not refuse new Sessions at that count.
+Recovery does not evict a snapshot or abandon a pending launch. The page bound appears in
+`/v1/diagnostics.capacity`.
 
 The Console's add-skill flow refuses when enabled skill content for one role would exceed
 512 KiB (`squad.console_active_skill_bytes`). This conservative, person-visible bound leaves

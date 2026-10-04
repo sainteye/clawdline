@@ -59,10 +59,6 @@ func (s Starter) prepareSquadLaunch(ctx context.Context, projectPath, personaID,
 		}
 	}
 	if err != nil {
-		if errors.Is(err, store.ErrSquadLaunchCapacity) {
-			return preparedSquadLaunch{}, StartRefusal{Status: http.StatusTooManyRequests,
-				Code: "squad_launch_capacity", Message: "Too many squad launches are waiting for Session identity; check this machine's diagnostics."}
-		}
 		if errors.Is(err, store.ErrSquadSnapshotTooLarge) {
 			return preparedSquadLaunch{}, StartRefusal{Status: http.StatusRequestEntityTooLarge,
 				Code: "squad_snapshot_too_large", Message: "The role, handbook, and skill snapshot exceeds this machine's limit."}
