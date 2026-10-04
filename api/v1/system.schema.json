@@ -4,6 +4,36 @@
   "title": "The daemon itself",
   "description": "Routes that describe this process rather than the work it carries.",
   "$defs": {
+    "UpdateState": {
+      "description": "How this machine's build stands against the cloud's latest (docs/updates.md). `current`: the same commit. `update_available`: the cloud's commit is later. `ahead`: this machine's is later. `differs`: the commits differ and a commit time is missing on one side. `unknown`: no comparison could be made; `reason` says why.",
+      "type": "string",
+      "enum": ["current", "update_available", "ahead", "differs", "unknown"]
+    },
+    "BuildStamp": {
+      "description": "One build: the commit it was built from and, when its BUILD.json said so, that commit's committer time (RFC3339 UTC). An older BUILD.json has no time.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stamp"],
+      "properties": {
+        "stamp": { "description": "The full commit hash, or empty when it is not known.", "type": "string" },
+        "committed_at": { "type": "string" }
+      }
+    },
+    "UpdateStatus": {
+      "description": "GET /v1/update: whether this machine trails the cloud's latest build. Answered from the daemon's last background check; a request never waits on the network. A failed check keeps the last good `latest` and says what failed in `error`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "running", "latest", "source_url"],
+      "properties": {
+        "state": { "$ref": "#/$defs/UpdateState" },
+        "reason": { "description": "Why the state is `unknown`.", "type": "string" },
+        "running": { "$ref": "#/$defs/BuildStamp" },
+        "latest": { "$ref": "#/$defs/BuildStamp" },
+        "checked_at": { "description": "When the last successful check read the cloud's BUILD.json (RFC3339 UTC). Absent before the first success.", "type": "string" },
+        "error": { "description": "What the most recent check said when it failed after the last success.", "type": "string" },
+        "source_url": { "description": "The BUILD.json this daemon asks.", "type": "string" }
+      }
+    },
     "SchedulerPulse": {
       "description": "What the clock says about its own last pass. A pass that fired nothing and a scheduler that stopped are both silence from outside, so the clock reports itself the way a scan does.",
       "type": "object",

@@ -64,6 +64,10 @@ git merge --ff-only origin/main
 tools/deploy-linux-user.sh
 ```
 
+Whether this machine trails the cloud's latest build is `clawdline update`; `clawdline update
+--apply` deploys that build with `tools/deploy-linux-user.sh --rev <stamp>` without moving the
+checkout's HEAD ([updates.md](updates.md)).
+
 The deploy builds from a disposable checkout, leaves the running version alone when a check fails,
 atomically switches `~/.local/share/clawdline-next/current`, restarts only the daemon, checks both
 `GET /` and the authenticated `BUILD.json`, and restores the previous release if either check fails.

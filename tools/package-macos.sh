@@ -110,6 +110,11 @@ else
 fi
 if [ -d "$WEB" ]; then
   cp -R "$WEB" "$BUILD/Contents/Resources/web"
+  # Which commit this bundle is, and when it was committed, so its daemon can
+  # say whether the cloud's build is later (docs/updates.md).
+  stamp=$(git rev-parse HEAD)
+  committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$stamp")
+  printf '{"stamp":"%s","committed_at":"%s"}\n' "$stamp" "$committed_at" >"$BUILD/Contents/Resources/web/BUILD.json"
 else
   echo "error: no console at $WEB; refusing to ship an app with nothing to show" >&2
   exit 1

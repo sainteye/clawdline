@@ -69,6 +69,7 @@ Some historical design and migration records remain in Traditional Chinese.
 | [publishing.md](publishing.md) | Public operations guide | English | CI coverage, the guarded development remote, the filtered publication path, and when GitHub status becomes visible |
 | [project-sync.md](project-sync.md) | Public design note | English | A project's name, icon and untracked skills owned by one machine and mirrored read-only on others: identity by git origin, what is never copied, Cloud and file transport |
 | [cloud.md](cloud.md) | Public design note | English | The current Go daemon's Cloud components, trust boundary, pairing, requests and hosted-console verification limits |
+| [updates.md](updates.md) | Public design note | English | Whether this machine trails the cloud's latest build, `clawdline update`, dev sync, and the not-built auto-update design |
 | [squad-packages.md](squad-packages.md) | Public design note | English | Offline squad ZIP format, contribution example, validation, preview, adoption and private export boundaries |
 | [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
 

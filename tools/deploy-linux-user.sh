@@ -2,23 +2,36 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: tools/deploy-linux-user.sh [--stage-only]" >&2
+  echo "usage: tools/deploy-linux-user.sh [--stage-only] [--rev <commit>]" >&2
   exit 2
 }
 
+# --rev builds that commit instead of HEAD. The build already runs in an
+# ephemeral checkout at the commit, so the shared checkout's HEAD never moves;
+# `clawdline update --apply` uses it to deploy the cloud's latest stamp
+# (docs/updates.md).
 stage_only=0
-case "${1:-}" in
-  "") ;;
-  --stage-only) stage_only=1 ;;
-  *) usage ;;
-esac
-[ "$#" -le 1 ] || usage
+rev=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --stage-only) stage_only=1; shift ;;
+    --rev) [ "$#" -ge 2 ] && [ -n "$2" ] || usage; rev=$2; shift 2 ;;
+    *) usage ;;
+  esac
+done
 [ "$(uname -s)" = Linux ] || { echo "this deploy path is Linux-only" >&2; exit 2; }
 [ "$(id -u)" -ne 0 ] || { echo "run the daily deploy as the service user, not root" >&2; exit 2; }
 
 root=$(git rev-parse --show-toplevel)
 cd "$root"
-commit=$(git rev-parse HEAD)
+if [ -n "$rev" ]; then
+  commit=$(git rev-parse --verify --quiet "$rev^{commit}") || {
+    echo "not a commit in this checkout: $rev (run git fetch origin main first)" >&2
+    exit 2
+  }
+else
+  commit=$(git rev-parse HEAD)
+fi
 data_root=${XDG_DATA_HOME:-$HOME/.local/share}/clawdline-next
 release=$data_root/releases/$commit
 mkdir -p "$data_root/releases"
