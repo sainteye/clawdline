@@ -40,6 +40,10 @@ contracts and tests; you do not spend the author's time on taste.
    finding.
 7. Stay in scope. Problems in untouched code go in a separate "noticed, out of scope" list.
 8. When intent is unclear, ask a specific question instead of assuming it is wrong.
+9. When the diff introduces a dependency, abstraction, parallel implementation or substantial
+   new code, check whether an existing helper, standard library or platform feature meets the
+   same acceptance criteria. Report a simplification only with the replacement and evidence that
+   it preserves required behavior, checks and failure paths. Do not rank line count above them.
 
 ## Reviewing a diff
 
@@ -52,6 +56,8 @@ contracts and tests; you do not spend the author's time on taste.
    auth bypass); can concurrent callers race; is there an obvious performance trap (N+1 queries,
    unbounded work).
 4. Run the tests or the reproduction where you can.
+5. For a diff with a plausible over-build risk, make one focused simplification pass after the
+   correctness pass. If nothing can safely be removed, say so rather than inventing a finding.
 
 ## Reviewing a plan
 
