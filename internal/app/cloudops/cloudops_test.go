@@ -752,6 +752,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-usage",
 		method: "GET", path: "/v1/machine/usage",
 	}, {
+		// Whether this machine trails the cloud's latest build: machine-wide
+		// and parameterless, as the local route is.
+		word:    "update",
+		body:    map[string]any{"type": "update", "session": machine, "request": "req-update"},
+		session: machine, name: "read:req-update",
+		method: "GET", path: "/v1/update",
+	}, {
 		// The built-in personas a start may name: machine-wide and
 		// parameterless, as the local route is.
 		word:    "personas",
@@ -1754,7 +1761,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "personas",
+		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "update", "personas",
 		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
@@ -2548,6 +2555,32 @@ func TestTheMachineUsageReadCrossesWithNothingButItsName(t *testing.T) {
 		"type": "machine-usage", "session": MachineReplySession, "request": "req"}))
 	if answer.Status != 501 || answer.Code != "machine_usage_unsupported" {
 		t.Fatalf("answered %d/%q, wanted 501/machine_usage_unsupported", answer.Status, answer.Code)
+	}
+}
+
+func TestTheUpdateReadCrossesWithNothingButItsName(t *testing.T) {
+	r := &router{}
+	answer := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl,
+		map[string]any{"type": "update", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 200 || len(r.seen) != 1 || r.last().Method != "GET" || r.last().Path != "/v1/update" || len(r.last().Query) != 0 {
+		t.Fatalf("answered %+v, asked %+v", answer, r.seen)
+	}
+	for _, body := range []map[string]any{
+		{"type": "update", "session": MachineReplySession, "request": "req", "apply": true},
+		{"type": "update", "session": pane, "request": "req"},
+		{"type": "update", "session": MachineReplySession},
+	} {
+		r := &router{}
+		if answer := open(r).Handle(context.Background(), request(t, ClassCtl, body)); answer.Code != "malformed_read" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, answer, r.seen)
+		}
+	}
+	// A daemon predating the route answers 404; the phone hears that, not a 200.
+	missing := &router{status: 404, body: `{"error":"not_found","detail":"no route"}`}
+	answer = open(missing).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "update", "session": MachineReplySession, "request": "req"}))
+	if answer.Status != 404 {
+		t.Fatalf("answered %d/%q, wanted 404", answer.Status, answer.Code)
 	}
 }
 

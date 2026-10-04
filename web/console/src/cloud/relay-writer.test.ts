@@ -1764,6 +1764,28 @@ test("the machine dashboard crosses as its machine word, with no field of its ow
   assert.equal((await json<{ error: { code: string } }>(bad)).error.code, "machine_usage_unsupported")
 })
 
+test("the update read crosses as its machine word, with no field of its own", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal(writeRoute("GET", "/v1/update")?.word, "update")
+  const read = await reader.fetch("/v1/update")
+  assert.equal(read.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "update", {}, "read"])
+
+  assert.equal(writeRoute("GET", "/v1/update/1"), null)
+  assert.equal(writeRoute("POST", "/v1/update"), null)
+
+  const extra = await reader.fetch("/v1/update?apply=1")
+  assert.equal(extra.status, 501)
+  assert.equal((await json<{ error: { code: string } }>(extra)).error.code, "cloud_not_carried")
+
+  // A machine whose daemon predates the word says so with its own code.
+  client.fail._machineRequest = refusal("unknown_command", { status: 501, layer: "mac_route", message: "update" })
+  const old = await reader.fetch("/v1/update")
+  assert.equal(old.status, 501)
+  assert.equal((await json<{ error: { code: string } }>(old)).error.code, "unknown_command")
+})
+
 test("squad settings carry per-field patches and package reads never gain write authority", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
@@ -1910,6 +1932,7 @@ test("every read the writer carries is one it waits for, and no write is", () =>
     ["/v1/sessions/restorable", "restorable"],
     ["/v1/sessions/archived", "archived"],
     ["/v1/machine/usage", "machine-usage"],
+    ["/v1/update", "update"],
     ["/v1/verifications", "verification-read"],
     ["/v1/verifications/v1", "verification-read"],
     ["/v1/places", "places"],
