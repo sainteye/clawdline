@@ -146,6 +146,7 @@ export class TerminalChannelTransport {
       this.client._trimSubscriptions(channels.length, channels)
       if (this.client.socketSubscriptions.size + channels.length > this.client.subscriptionLimit) throw fail("cloud_read_busy")
       this.client._sendSubscriptionFrame("subscribe", channels)
+      this.observation?.record("subscription_sent", { connection })
       for (const ch of channels) {
         this.client.pendingSubscriptions.add(ch)
         this.client.socketSubscriptions.set(ch, Date.now())
@@ -160,6 +161,8 @@ export class TerminalChannelTransport {
         })
       }
     } catch (error) {
+      this.observation?.record("subscription_refused", { connection,
+        code: error instanceof Error ? (error as Error & { code?: string }).code ?? error.message : "unknown" })
       this.unsubscribeTerminal(connection)
       throw error
     }
@@ -326,6 +329,9 @@ export class TerminalChannelTransport {
   }
   private relay(event: RelayEvent): void {
     const code = event.code ?? event.error?.code ?? "relay_error"
+    if (event.type === "error" && this.waiting.size) {
+      for (const connection of this.waiting.keys()) this.observation?.record("relay_error", { connection, code })
+    }
     if (event.type === "error" && (code === "invalid_channel" || code === "unsupported_channel" || code === "cloud_read_busy" || code === "too_many_subscriptions")) {
       for (const connection of this.confirmed) {
         const delta = route("termd", this.machine, this.viewer, connection)

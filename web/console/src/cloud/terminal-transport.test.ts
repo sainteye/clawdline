@@ -129,7 +129,7 @@ test("the no-cache receipt is subscribed before an outbound open can be publishe
   await subscribed
   await f.adapter.publishTerminal(request)
   assert.equal(f.published.length, 1)
-  assert.deepEqual(f.stages.map((row) => row.stage), ["subscription_confirmed", "request_sent"])
+  assert.deepEqual(f.stages.map((row) => row.stage), ["subscription_sent", "subscription_confirmed", "request_sent"])
   assert.deepEqual(JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Bytes(f.published[0]!.nonce) },
     f.master, base64Bytes(f.published[0]!.ct)))), request)
   f.adapter.dispose()
@@ -144,7 +144,7 @@ test("a failed signed receipt records its exact receive stage without reaching t
   const wrongKey = await f.seal(3, body, "termr", crypto.getRandomValues(new Uint8Array(32)))
   await f.client._receiveEnvelope(wrongKey, false)
   await f.client._receiveEnvelope(valid, false)
-  const receivedStages = f.stages.filter((row) => row.stage !== "subscription_confirmed")
+  const receivedStages = f.stages.filter((row) => row.stage !== "subscription_sent" && row.stage !== "subscription_confirmed")
   assert.deepEqual(receivedStages.map((row) => row.stage),
     ["raw_received", "envelope_rejected", "raw_received", "envelope_opened"])
   assert.equal(receivedStages[1]?.code, "terminal_bad_key")
@@ -277,6 +277,10 @@ test("a retracted terminal subscription reports the relay budget refusal promptl
   f.client.socketSubscriptions.delete(channel)
   f.emitRelay({ type: "error", error: { code: "terminal_budget_exhausted" } })
   await assert.rejects(subscribed, /terminal_budget_exhausted/)
+  assert.deepEqual(f.stages.map((row) => [row.stage, row.code ?? ""]), [
+    ["subscription_sent", ""], ["relay_error", "terminal_budget_exhausted"],
+    ["subscription_refused", "terminal_budget_exhausted"],
+  ])
   f.adapter.dispose()
 })
 

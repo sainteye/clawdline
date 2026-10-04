@@ -4,6 +4,7 @@ import { readProjectPlaces, type ProjectPlace } from "../pages/work/api.js"
 import { terminalHost, watchTerminalHost, type TerminalHost } from "../cloud/terminal-host.js"
 import { scheduleFleet, onScheduleFleet, type ScheduleFleet } from "../cloud/schedule-machines.js"
 import { acquireTerminalConnection } from "../cloud/terminal-connection-owner.js"
+import { TerminalObservation } from "../cloud/terminal-observation.js"
 import { openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords } from "../pages/terminal/words.js"
@@ -12,7 +13,7 @@ import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, w
 import { openMachinePairing } from "../legacy/devices-bridge.js"
 
 async function readMachine(host: TerminalHost, machine: string): Promise<import("@clawdline/contract").Terminal[]> {
-  const { session, release } = await acquireTerminalConnection(host, machine, TAB)
+  const { session, release } = await acquireTerminalConnection(host, machine, TAB, new TerminalObservation())
   try {
     const answer = await session.request("list", { client: TAB })
     const rows = answer.result?.terminals
