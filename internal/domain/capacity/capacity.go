@@ -387,6 +387,8 @@ const (
 	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
 	CloudTerminalEarlyFrames       = "cloud.terminal_early_frames"
 	CloudTerminalObservationRows   = "cloud.terminal_observation_rows"
+	CloudHeaderReadDiagnosticRows  = "cloud.header_read_diagnostic_rows"
+	CloudHeaderReadDiagnosticAge   = "cloud.header_read_diagnostic_seconds"
 	CloudTerminalUnconfirmed       = "cloud.terminal_unconfirmed_seconds"
 	CloudTerminalHistoryReceipt    = "cloud.terminal_history_receipt_bytes"
 	CloudTerminalHistoryLine       = "cloud.terminal_history_line_bytes"
@@ -2184,6 +2186,19 @@ func Register() []Entry {
 			Deviation: "Browser console entries cannot be evicted; later diagnostic stages are omitted after 128 without affecting terminal delivery.",
 			Told:      []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalObservationRowsLimit"},
+		},
+		{
+			// A Console tab retains only content-free Session header read
+			// stages. The daemon publishes the browser policy but cannot inspect
+			// another device's sessionStorage.
+			Name: CloudHeaderReadDiagnosticRows, Class: Observation, Unit: Rows,
+			Limit: 24, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			Name: CloudHeaderReadDiagnosticAge, Class: Cache, Unit: Seconds,
+			Limit: 3600, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
 			Name: CloudTerminalUnconfirmed, Class: Cache, Unit: Seconds,

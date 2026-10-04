@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import type { CapacityEntry, CapacityPanel } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
+import { headerReadDiagnostics } from "../../cloud/relay-reader.js"
 import {
   bySeverity,
   counters,
@@ -46,6 +47,18 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
   const [panel, setPanel] = useState<CapacityPanel | null>(null)
   const [failure, setFailure] = useState("")
   const [all, setAll] = useState(false)
+  const [diagnosticStatus, setDiagnosticStatus] = useState("")
+
+  const copyHeaderDiagnostics = async () => {
+    const rows = headerReadDiagnostics()
+    if (!rows.length) { setDiagnosticStatus(words("No recent header reads recorded", "近期沒有標題讀取紀錄")); return }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(rows, null, 2))
+      setDiagnosticStatus(words("Anonymous read stages copied", "已複製匿名讀取停點"))
+    } catch {
+      setDiagnosticStatus(words("Could not copy; check clipboard access", "無法複製，請檢查剪貼簿權限"))
+    }
+  }
 
   useEffect(() => {
     if (!shown) return
@@ -77,6 +90,12 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
   return (
     <div className="block settings-capacity" id="settings-capacity">
       <b id="settings-capacity-title">{words("Capacity", "容量")}</b>
+      <div className="row">
+        <button className="chip" type="button" onClick={() => void copyHeaderDiagnostics()}>
+          {words("Copy recent Session read diagnostics", "複製近期 Session 讀取診斷")}
+        </button>
+        <span role="status">{diagnosticStatus}</span>
+      </div>
       <p className="say" id="settings-capacity-say">
         {panel
           ? summary(rows)

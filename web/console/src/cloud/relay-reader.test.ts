@@ -7,7 +7,52 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { RelayReader, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
+import { RelayReader, headerReadDiagnostics, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
+
+test("Session header trail distinguishes started, observed, canceled, unavailable and reconnect without identifiers", async () => {
+  const saved = globalThis.sessionStorage
+  const entries = new Map<string, string>()
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: {
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => { entries.set(key, value) },
+  } })
+  try {
+    const clock = { t: 100000 }
+    const client = new FakeClient()
+    const r = reader(client, clock)
+    await r.fetch("/v1/work/v2/session-todos/private-id")
+    assert.deepEqual(headerReadDiagnostics(clock.t).map((row) => row.stage), ["ask_started", "answer_observed"])
+    client.readAnswer = async () => { throw Object.assign(new Error("private payload"), { code: "cloud_read_timeout" }) }
+    await assert.rejects(r.fetch("/v1/work/v2/session-todos/private-id"))
+    assert.deepEqual(headerReadDiagnostics(clock.t).slice(-2).map((row) => [row.stage, row.code]),
+      [["ask_started", "none"], ["read_failed", "cloud_read_timeout"]])
+    let release: (value: unknown) => void = () => {}
+    client.readAnswer = () => new Promise((resolve) => { release = resolve })
+    const controller = new AbortController()
+    const pending = r.fetch("/v1/work/v2/human-interventions/conversation%3A10000000-0000-4000-8000-000000000002", { signal: controller.signal })
+    await Promise.resolve()
+    controller.abort()
+    await assert.rejects(pending, { name: "AbortError" })
+    release({})
+    const offline = new RelayReader("mac-a", { now: () => clock.t })
+    await offline.fetch("/v1/work/v2/session-todos/private-id")
+    const renewed = new FakeClient()
+    renewed.ready = false
+    Object.assign(renewed, { lifecycle: () => true })
+    const waiting = new RelayReader("mac-a", { now: () => clock.t, reconnectWaitMs: 100 })
+    waiting.attach(renewed)
+    const next = waiting.fetch("/v1/work/v2/session-todos/private-id")
+    waiting.attach(new FakeClient())
+    await next
+    const trail = headerReadDiagnostics(clock.t)
+    assert.ok(trail.some((row) => row.stage === "caller_canceled"))
+    assert.ok(trail.some((row) => row.stage === "connection_unavailable"))
+    assert.equal(trail.at(-1)?.stage, "answer_observed")
+    assert.doesNotMatch(JSON.stringify(trail), /private-id|mac-a|sender|payload/)
+  } finally {
+    Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: saved })
+  }
+})
 
 class FakeClient implements CloudReadClient {
   ready = true
