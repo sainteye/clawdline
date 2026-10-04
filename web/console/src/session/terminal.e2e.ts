@@ -388,6 +388,7 @@ test("Session list opens terminals, remembers its mode, filters, and closes one"
     { label: "Claude Code sessions", pressed: "false", icon: true },
     { label: "終端", pressed: "true", icon: true },
   ], "both views have persistent icon choices with the current view selected")
+  assert.equal(await tab.run(`(() => { const group = document.querySelector(".session-mode-tabs"); if (!group) return false; const [sessions, terminals] = group.children; return group.children.length === 2 && parseFloat(getComputedStyle(group).borderTopWidth) > 0 && Math.abs(sessions.getBoundingClientRect().right - terminals.getBoundingClientRect().left) < 1 })()`), true, "the two choices share one bordered tab group")
   await tab.press(".session-mode-choice:first-child")
   assert.equal(await tab.run(`location.hash`), "#page=sessions")
   assert.equal(await tab.run(`document.querySelector(".session-mode-choice:first-child")?.getAttribute("aria-pressed")`), "true")
