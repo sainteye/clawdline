@@ -255,6 +255,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   // a merge that adds a word cannot quietly leave this assertion behind.
   assert.ok("agent" in CARRIED)
   assert.ok("sessions.snapshot" in CARRIED)
+  assert.ok("sessions.snapshot.initial" in CARRIED)
   assert.ok("usage.item" in CARRIED)
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
@@ -283,7 +284,15 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 129)
+  assert.equal(Object.keys(CARRIED).length, 131)
+})
+
+test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
+  const source = readFileSync(resolve(console_, "src/legacy/js/net/cloud-client.js"), "utf8")
+  assert.match(source, /SESSION_SNAPSHOT_INITIAL_COMMAND = "sessions\.snapshot\.initial"/)
+  assert.match(source, /_machineImplements\(machine, SESSION_SNAPSHOT_INITIAL_COMMAND\) === "yes"/)
+  assert.match(source, /var command = initial \? SESSION_SNAPSHOT_INITIAL_COMMAND : SESSION_SNAPSHOT_COMMAND/)
+  assert.doesNotMatch(source, /extra\.initial\s*=/)
 })
 
 test("every route the table says is answered here is answered here, with no word behind it", async () => {

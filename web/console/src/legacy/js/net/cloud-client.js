@@ -114,6 +114,8 @@ const SESSION_INVENTORY_LIMIT = 512;
  * once per client, and shows that machine as waiting rather than empty until the rows are in.
  */
 const SESSION_SNAPSHOT_COMMAND = "sessions.snapshot";
+/** A first recovery may bypass one restatement window, only on a machine that advertises it. */
+const SESSION_SNAPSHOT_INITIAL_COMMAND = "sessions.snapshot.initial";
 /** The word a Mac lists when it can answer for one audience of one Project, paged. */
 const BOARD_ITEMS_READ = "board.items";
 /**
@@ -1800,9 +1802,11 @@ export class CloudClient {
         var self = this;
         var entry = { state: "pending", code: null, attempt: attempt, expected: null, timer: null };
         this._setSessionRecovery(machine, entry);
+        var initial = attempt === 1 &&
+            this._machineImplements(machine, SESSION_SNAPSHOT_INITIAL_COMMAND) === "yes";
+        var command = initial ? SESSION_SNAPSHOT_INITIAL_COMMAND : SESSION_SNAPSHOT_COMMAND;
         var extra = this._holdsOrchestrator(machine) ? {} : { orchestrator: true };
-        extra.initial = attempt === 1;
-        this._machineRequest(machine, SESSION_SNAPSHOT_COMMAND, extra, "read", this.sessionSnapshotTimeoutMs,
+        this._machineRequest(machine, command, extra, "read", this.sessionSnapshotTimeoutMs,
             { probe: false }).then(function (body) {
             if (self.sessionRecovery.get(machine) !== entry) return;
             var ids = body && Array.isArray(body.sessions) ? body.sessions : [];
