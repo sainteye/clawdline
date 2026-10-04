@@ -240,7 +240,7 @@ func (r *Relay) PublishTracked(ctx context.Context, out Outbound) (uint64, error
 		class = classes[0]
 	}
 	key, keyID := r.Secret, r.keyID()
-	if strings.HasPrefix(out.Channel, "term/") || strings.HasPrefix(out.Channel, "termr/") {
+	if strings.HasPrefix(out.Channel, "term/") || strings.HasPrefix(out.Channel, "termd/") || strings.HasPrefix(out.Channel, "termr/") {
 		if !out.Key.Valid() || !strings.HasPrefix(out.KeyID, "rk-") {
 			return 0, errors.New("a terminal answer needs its connection key")
 		}

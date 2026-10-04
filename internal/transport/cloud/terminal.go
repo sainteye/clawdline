@@ -7,7 +7,10 @@ package cloud
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,34 +118,42 @@ type terminalReceipt struct {
 }
 
 type terminalConnection struct {
-	viewer, id, keyID      string
-	key                    domaincloud.ContentKey
-	expires                time.Time
-	terminalID             terminal.ID
-	client                 string
-	frameSeq               uint64
-	publishedFrameSeq      uint64
-	framePendingSeq        uint64
-	framePending           bool
-	watchReceiptSeq        uint64
-	watchReceiptPending    bool
-	watchReceiptDeadline   time.Time
-	rekeyReceiptSeq        uint64
-	rekeyReceiptPending    bool
-	activateReceiptSeq     uint64
-	activateReceiptPending bool
-	activateOld            *terminalConnection
-	unconfirmedDeadline    time.Time
-	watchCancel            context.CancelFunc
-	watchReady             chan struct{}
-	receipts               map[string][]byte
-	pendingReceipts        map[string]bool
-	receiptOrder           []string
-	rekeyPending           bool
-	denied                 bool
-	deniedAt               time.Time
-	stageLines             int
-	receiptOps             map[uint64]string
+	viewer, id, keyID        string
+	key                      domaincloud.ContentKey
+	expires                  time.Time
+	terminalID               terminal.ID
+	client                   string
+	frameSeq                 uint64
+	publishedFrameSeq        uint64
+	framePendingSeq          uint64
+	framePending             bool
+	frameDeltaV1             bool
+	frameBase                *terminal.Frame
+	frameBaseSeq             uint64
+	frameBaseTerminalID      terminal.ID
+	frameCandidate           *terminal.Frame
+	frameCandidateSeq        uint64
+	frameCandidateTerminalID terminal.ID
+	framePendingChannel      string
+	watchReceiptSeq          uint64
+	watchReceiptPending      bool
+	watchReceiptDeadline     time.Time
+	rekeyReceiptSeq          uint64
+	rekeyReceiptPending      bool
+	activateReceiptSeq       uint64
+	activateReceiptPending   bool
+	activateOld              *terminalConnection
+	unconfirmedDeadline      time.Time
+	watchCancel              context.CancelFunc
+	watchReady               chan struct{}
+	receipts                 map[string][]byte
+	pendingReceipts          map[string]bool
+	receiptOrder             []string
+	rekeyPending             bool
+	denied                   bool
+	deniedAt                 time.Time
+	stageLines               int
+	receiptOps               map[uint64]string
 }
 
 func terminalReceiptSettleID(channel string, seq uint64) string {
@@ -156,11 +167,17 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	var retireOld *terminalConnection
 	var stage string
 	for _, connection := range l.terminalConnections {
-		if channel == "term/"+l.identity.MachineID+"/"+connection.viewer+"/"+connection.id && connection.framePending && connection.framePendingSeq == seq {
+		if channel == connection.framePendingChannel && connection.framePending && connection.framePendingSeq == seq {
 			connection.framePending = false
 			if kind != adaptercloud.SettleDelivered {
 				failed = connection
+			} else {
+				connection.frameBase = connection.frameCandidate
+				connection.frameBaseSeq = connection.frameCandidateSeq
+				connection.frameBaseTerminalID = connection.frameCandidateTerminalID
 			}
+			connection.frameCandidate = nil
+			connection.framePendingChannel = ""
 			break
 		}
 		if channel == terminalReceiptChannel(l.identity.MachineID, connection) {
@@ -262,6 +279,8 @@ func (l *Link) refuseRegisteredTerminal(ctx context.Context, c *terminalConnecti
 		return
 	}
 	c.denied = true
+	c.frameBase = nil
+	c.frameCandidate = nil
 	if c.deniedAt.IsZero() {
 		c.deniedAt = l.opts.Now()
 	}
@@ -306,6 +325,8 @@ func (l *Link) revokeRegisteredTerminal(ctx context.Context, c *terminalConnecti
 		return
 	}
 	c.denied = true
+	c.frameBase = nil
+	c.frameCandidate = nil
 	c.deniedAt = l.opts.Now()
 	if c.watchCancel != nil {
 		c.watchCancel()
@@ -458,6 +479,8 @@ func (l *Link) closeAllTerminalConnections() {
 	l.terminalMu.Lock()
 	retired := make([]*terminalConnection, 0, len(l.terminalConnections))
 	for id, c := range l.terminalConnections {
+		c.frameBase = nil
+		c.frameCandidate = nil
 		if c.watchCancel != nil {
 			c.watchCancel()
 		}
@@ -693,6 +716,22 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 		expires: l.opts.Now().Add(CloudTerminalKeySecondsLimit * time.Second), receipts: map[string][]byte{},
 		unconfirmedDeadline: l.opts.Now().Add(CloudTerminalUnconfirmedSecondsLimit * time.Second),
 		rekeyPending:        req.Operation == "rekey_connection"}
+	if req.Operation == "open_connection" {
+		var body struct {
+			FrameDeltaV1 bool `json:"frame_delta_v1"`
+		}
+		if len(req.Body) == 0 || strictTerminalBody(req.Body, &body) {
+			c.frameDeltaV1 = body.FrameDeltaV1
+		}
+	} else {
+		var body struct {
+			OldConnection string `json:"old_connection"`
+			FrameDeltaV1  bool   `json:"frame_delta_v1"`
+		}
+		if strictTerminalBody(req.Body, &body) {
+			c.frameDeltaV1 = body.FrameDeltaV1
+		}
+	}
 	if preCode == "" && old != nil {
 		l.terminalMu.Lock()
 		c.terminalID, c.client = old.terminalID, old.client
@@ -757,6 +796,7 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 func (l *Link) terminalRekeySource(viewer string, req terminalRequest) (*terminalConnection, string) {
 	var body struct {
 		OldConnection string `json:"old_connection"`
+		FrameDeltaV1  bool   `json:"frame_delta_v1"`
 	}
 	if !strictTerminalBody(req.Body, &body) || !validConnection(body.OldConnection) || body.OldConnection == req.Connection {
 		return nil, string(terminal.CodeInvalid)
@@ -775,8 +815,12 @@ func (l *Link) terminalRekeySource(viewer string, req terminalRequest) (*termina
 }
 
 func (l *Link) connectionResult(c *terminalConnection) any {
-	return map[string]any{"connection": c.id, "key_id": c.keyID,
+	result := map[string]any{"connection": c.id, "key_id": c.keyID,
 		"expires_at": float64(c.expires.UnixMilli()) / 1000, "machine_incarnation": l.machineIncarnation}
+	if c.frameDeltaV1 {
+		result["frame_delta_v1"] = true
+	}
+	return result
 }
 
 func (l *Link) getTerminalConnection(viewer, connection string) *terminalConnection {
@@ -799,6 +843,8 @@ func (l *Link) closeTerminalConnection(c *terminalConnection) {
 	l.terminalMu.Lock()
 	removed := false
 	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c {
+		c.frameBase = nil
+		c.frameCandidate = nil
 		delete(l.terminalConnections, terminalConnectionID(c.viewer, c.id))
 		removed = true
 		for id, pending := range l.terminalRetireAfterReceipt {
@@ -1191,6 +1237,58 @@ func cloudWireFrame(frame terminal.Frame) contract.TerminalFrame {
 			Mouse: mouse, MouseSgr: frame.Modes.MouseSGR, Alt: frame.Modes.Alt}}
 }
 
+type terminalChangedRow struct {
+	Row  int    `json:"row"`
+	Line string `json:"line"`
+}
+
+// terminalScreenHash commits to the exact UTF-8 line sequence, including empty rows.
+func terminalScreenHash(lines []string) (string, bool) {
+	if uint64(len(lines)) > uint64(^uint32(0)) {
+		return "", false
+	}
+	h := sha256.New()
+	var size [4]byte
+	binary.BigEndian.PutUint32(size[:], uint32(len(lines)))
+	_, _ = h.Write(size[:])
+	for _, line := range lines {
+		if uint64(len(line)) > uint64(^uint32(0)) {
+			return "", false
+		}
+		binary.BigEndian.PutUint32(size[:], uint32(len(line)))
+		_, _ = h.Write(size[:])
+		_, _ = h.Write([]byte(line))
+	}
+	return hex.EncodeToString(h.Sum(nil)), true
+}
+
+func terminalDeltaPayload(id terminal.ID, c *terminalConnection, seq uint64, frame terminal.Frame) ([]byte, bool) {
+	base := c.frameBase
+	if base == nil || !c.frameDeltaV1 || base.Cols != frame.Cols || base.Rows != frame.Rows ||
+		base.Modes.Alt != frame.Modes.Alt || len(base.Lines) != len(frame.Lines) || c.frameBaseSeq == 0 ||
+		c.frameBaseTerminalID != id ||
+		frame.At.Sub(base.At) >= CloudTerminalFrameHeartbeatSecondsLimit*time.Second {
+		return nil, false
+	}
+	hash, ok := terminalScreenHash(frame.Lines)
+	if !ok {
+		return nil, false
+	}
+	changed := make([]terminalChangedRow, 0)
+	for row, line := range frame.Lines {
+		if line != base.Lines[row] {
+			changed = append(changed, terminalChangedRow{Row: row, Line: line})
+		}
+	}
+	wire := cloudWireFrame(frame)
+	payload, err := json.Marshal(map[string]any{"v": 1, "type": "terminal_frame_delta", "terminal_id": string(id),
+		"connection": c.id, "frame_seq": seq, "base_seq": c.frameBaseSeq, "base_rev": base.Rev,
+		"captured_at": wire.At, "rev": wire.Rev, "at": wire.At, "cols": wire.Cols, "rows": wire.Rows,
+		"dead": wire.Dead, "cursor": wire.Cursor, "modes": wire.Modes,
+		"changed_rows": changed, "screen_hash": hash})
+	return payload, err == nil
+}
+
 func (l *Link) watchTerminal(ctx context.Context, svc *terminals.Service, p terminals.Principal,
 	c *terminalConnection, id terminal.ID, client string) error {
 	if client == "" {
@@ -1253,12 +1351,19 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 	}
 	c.frameSeq++
 	seq := c.frameSeq
+	deltaState := terminalConnection{id: c.id, frameDeltaV1: c.frameDeltaV1,
+		frameBase: c.frameBase, frameBaseSeq: c.frameBaseSeq, frameBaseTerminalID: c.frameBaseTerminalID}
 	l.terminalMu.Unlock()
 	payload, err := json.Marshal(map[string]any{"v": 1, "type": "terminal_frame",
 		"terminal_id": string(id), "connection": c.id, "frame_seq": seq,
 		"captured_at": float64(frame.At.UnixMilli()) / 1000, "frame": cloudWireFrame(frame)})
 	if err != nil {
 		return err
+	}
+	channel := "term/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id
+	if delta, ok := terminalDeltaPayload(id, &deltaState, seq, frame); ok && len(delta) < len(payload) {
+		payload = delta
+		channel = "termd/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id
 	}
 	if err := svc.Allow(p); err != nil {
 		l.revokeRegisteredTerminal(ctx, c)
@@ -1277,11 +1382,27 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 		l.terminalMu.Unlock()
 		return ErrRelayNotReady
 	}
-	envelopeSeq, err := l.relay.PublishTracked(ctx, Outbound{Channel: "term/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id,
+	envelopeSeq, err := l.relay.PublishTracked(ctx, Outbound{Channel: channel,
 		Class: string(domaincloud.ClassStream), Payload: payload, Key: c.key, KeyID: c.keyID})
+	if err != nil && strings.HasPrefix(channel, "termd/") {
+		// An older relay or channel vocabulary cannot accept deltas. Reissue the
+		// current complete screen so the viewer remains synchronized.
+		payload, _ = json.Marshal(map[string]any{"v": 1, "type": "terminal_frame",
+			"terminal_id": string(id), "connection": c.id, "frame_seq": seq,
+			"captured_at": float64(frame.At.UnixMilli()) / 1000, "frame": cloudWireFrame(frame)})
+		channel = "term/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id
+		envelopeSeq, err = l.relay.PublishTracked(ctx, Outbound{Channel: channel,
+			Class: string(domaincloud.ClassStream), Payload: payload, Key: c.key, KeyID: c.keyID})
+	}
 	if err == nil {
 		c.framePending = true
 		c.framePendingSeq = envelopeSeq
+		c.framePendingChannel = channel
+		candidate := frame
+		candidate.Lines = append([]string(nil), frame.Lines...)
+		c.frameCandidate = &candidate
+		c.frameCandidateSeq = seq
+		c.frameCandidateTerminalID = id
 		c.publishedFrameSeq = seq
 	}
 	l.terminalMu.Unlock()
