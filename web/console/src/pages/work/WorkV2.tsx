@@ -28,7 +28,7 @@ import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
-import { confirmDecisionAnswer, decisionsForWorkItem, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait } from "./board-attention.js"
+import { confirmDecisionAnswer, decisionsForWorkItem, matchingDecisionAnswer, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait, type DecisionAnswerStatus } from "./board-attention.js"
 import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
 import {
   answerDecision,
@@ -44,6 +44,7 @@ import {
   markWorkV2Seen,
   setWorkV2ReviewRequired,
   readDecisions,
+  readDecision,
   readProjectPlaces,
   readSessionWorkV2,
   readSessionsForWorkV2,
@@ -120,6 +121,8 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000))
   const loadGeneration = useRef(0)
   const answeredDecisionIDs = useRef(new Set<string>())
+  const submittingDecisionIDs = useRef(new Set<string>())
+  const [decisionAnswers, setDecisionAnswers] = useState<Record<string, DecisionAnswerStatus>>({})
   const loadedView = useRef("")
   const board = useRef<HTMLElement>(null)
   // What is on screen keeps its place until the view is opened afresh, its
@@ -308,14 +311,43 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       if (succeeded && refreshInBackground) void load()
     }
   }
-  const answerWorkDecision = (decisionID: string, optionID: string) => run(decisionID,
-    () => confirmDecisionAnswer(() => answerDecision(decisionID, optionID), () => {
+  const answerWorkDecision = async (decisionID: string, optionID: string): Promise<boolean> => {
+    if (submittingDecisionIDs.current.has(decisionID) || answeredDecisionIDs.current.has(decisionID)) return false
+    const decision = decisions.find((row) => row.id === decisionID)
+    const option = decision?.options.find((row) => row.id === optionID)
+    if (!decision || !option) return false
+    submittingDecisionIDs.current.add(decisionID)
+    const base = { option: optionID, label: option.label, workID: decision.work_id ?? "", question: decision.question }
+    setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "pending" } }))
+    const confirmed = () => {
       answeredDecisionIDs.current.add(decisionID)
+      setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "confirmed" } }))
       setDecisions((current) => withoutAnsweredDecision(current, decisionID))
       setItems((current) => current.map((item) => withoutAnsweredWait(item, decisionID)))
       setCreatedItem((current) => current && withoutAnsweredWait(current, decisionID))
       setOpenedItem((current) => current && withoutAnsweredWait(current, decisionID))
-    }))
+    }
+    try {
+      await confirmDecisionAnswer(() => answerDecision(decisionID, optionID), confirmed)
+      void load()
+      return true
+    } catch (error) {
+      if (!(error instanceof RefusalError) || error.code === "request_in_progress") {
+        try {
+          const observed = (await readDecision(decisionID)).decision
+          if (matchingDecisionAnswer(observed, optionID)) { confirmed(); void load(); return true }
+          if (observed.state === "answered") {
+            setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: "這題已收到另一個選項的回答，請重新整理查看。" } }))
+            return false
+          }
+        } catch { /* A failed read cannot prove whether the POST arrived. */ }
+        setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "retry", message: "尚未確認回答是否送達；請重試或重新整理查看。" } }))
+      } else {
+        setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: `回答未被接受：${failureWords(error)}` } }))
+      }
+      return false
+    } finally { submittingDecisionIDs.current.delete(decisionID) }
+  }
   const visibleItems = visibleWorkItems(items, showPlans)
   const hiddenPlans = items.length - visibleItems.length
   const planning = visibleItems.filter((item) => item.area === "planning" && !item.closed_at)
@@ -405,10 +437,10 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
         setCreatedItem(created)
       })
     }} />}
-    {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} decisions={decisionsForWorkItem(decisions, createdItem.id)} busy={busy} failure={failure}
+    {createdItem && <CreatedWorkModal item={createdItem} sessions={sessions} decisions={decisionsForWorkItem(decisions, createdItem.id)} decisionAnswers={decisionAnswers} busy={busy} failure={failure}
       detailLoading={false} detailError="" retryDetail={() => void readWorkV2Item(createdItem.id).then((answer) => setCreatedItem([...answeredDecisionIDs.current].reduce(withoutAnsweredWait, answer.item))).catch((error: unknown) => setFailure(failureWords(error)))}
       clearFailure={() => setFailure("")} run={run} answerWorkDecision={answerWorkDecision} onClose={() => setCreatedItem(null)} />}
-    {openedItem && <CreatedWorkModal item={openedItem} created={false} key={openedItem.id} back={detailReturn.current} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} busy={busy} failure={failure}
+    {openedItem && <CreatedWorkModal item={openedItem} created={false} key={openedItem.id} back={detailReturn.current} sessions={sessions} decisions={decisionsForWorkItem(decisions, openedItem.id)} decisionAnswers={decisionAnswers} busy={busy} failure={failure}
       detailLoading={detailLoading} detailError={detailError} retryDetail={() => refreshDetail(openedItem.id)}
       clearFailure={() => setFailure("")} run={run} answerWorkDecision={answerWorkDecision} onClose={() => setOpenedItem(null)} />}
   </EpicFamilyContext.Provider>
@@ -595,18 +627,24 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
 }
 
 /** A person's answer is part of its item, immediately after the item's scope. */
-function WorkItemDecisions({ decisions, waitingOn, busy, answerWorkDecision }: {
+function WorkItemDecisions({ decisions, decisionAnswers, waitingOn, busy, answerWorkDecision }: {
   decisions: Decision[]
+  decisionAnswers: Record<string, DecisionAnswerStatus>
   /** The decision the item's waiting_user points at, if any. */
   waitingOn?: string
   busy: boolean
   answerWorkDecision: (decisionID: string, optionID: string) => Promise<boolean>
 }) {
-  if (!decisions.length) return null
+  const receipts = Object.entries(decisionAnswers).filter(([id, status]) => status.phase === "confirmed" && !decisions.some((decision) => decision.id === id))
+  if (!decisions.length && !receipts.length) return null
   return <section className="work-item-decisions" aria-label="這個項目需要你回答的問題">
-    <div className="work-item-decisions-head"><strong>需要你決定</strong><span>{decisions.length}</span></div>
+    <div className="work-item-decisions-head"><strong>{decisions.length ? "需要你決定" : "回答結果"}</strong><span>{decisions.length || ""}</span></div>
+    {receipts.map(([id, receipt]) => <div className="work-item-decision" key={id} id={`work-decision-${id}`}>
+      <h4>{receipt.question}</h4><p className="work-decision-feedback" role="status" aria-live="polite">已收到回答：「{receipt.label}」</p>
+    </div>)}
     {decisions.map((decision) => {
       const fallback = decision.options.find((option) => option.id === decision.default)?.label ?? decision.default
+      const feedback = decisionAnswers[decision.id]
       return <div className="work-item-decision" key={decision.id} data-decision-id={decision.id} id={`work-decision-${decision.id}`}>
         <p className="work-item-decision-state">{decision.id === waitingOn ? "負責的 Session 正在等這個答案，回答後就會繼續"
           : decision.blocking ? "回答前，這個項目的工作暫停" : "這個問題不會暫停工作"}</p>
@@ -614,9 +652,13 @@ function WorkItemDecisions({ decisions, waitingOn, busy, answerWorkDecision }: {
         <p className="work-clock">到 {when(decision.due_at)} 還沒回答，就採用「{fallback}」</p>
         <div className="work-actions" role="group" aria-label={`回答「${decision.question}」`}>
           {decision.options.map((option) => <button key={option.id} type="button"
-            className={option.id === decision.default ? "chip on" : "chip"} disabled={busy}
+            className="chip" disabled={busy || feedback?.phase === "pending"}
+            aria-pressed={feedback?.option === option.id && feedback.phase === "pending"}
             onClick={() => void answerWorkDecision(decision.id, option.id)}>{option.label}</button>)}
         </div>
+        {feedback && <p className={`work-decision-feedback ${feedback.phase}`} role={feedback.phase === "rejected" ? "alert" : "status"} aria-live="polite">
+          {feedback.phase === "pending" ? `正在送出「${feedback.label}」…` : feedback.message}
+        </p>}
       </div>
     })}
   </section>
@@ -700,10 +742,11 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
   </article>
 }
 
-function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false, foldDescription = false }: {
+function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, focusAssignment = false, reportsExpanded = false, foldDescription = false }: {
   item: WorkV2Item
   sessions: SessionRow[]
   decisions: Decision[]
+  decisionAnswers: Record<string, DecisionAnswerStatus>
   busy: string
   failure: string
   clearFailure: () => void
@@ -872,7 +915,7 @@ function WorkCard({ item, sessions, decisions, busy, failure, clearFailure, run,
     {!epic && <WorkGateAttention item={item}
       sessions={sessions.filter((session) => !!session.sessionId).map((session) => ({ id: session.sessionId || "", label: session.label || session.sessionId || "Session" }))}
       run={run} />}
-    <WorkItemDecisions decisions={decisions} waitingOn={item.decision_id} busy={!!busy} answerWorkDecision={answerWorkDecision} />
+    <WorkItemDecisions decisions={decisions} decisionAnswers={Object.fromEntries(Object.entries(decisionAnswers).filter(([, answer]) => answer.workID === item.id))} waitingOn={item.decision_id} busy={!!busy} answerWorkDecision={answerWorkDecision} />
     {featureLike(item) && <ReviewRequiredField id={`work-review-required-${item.id}`} checked={item.review_required === true}
       disabled={!!busy || !!item.closed_at} busy={busy === `review-required-${item.id}`}
       onChange={(checked) => { clearFailure(); setReviewRequiredFailed(false)
@@ -1205,13 +1248,14 @@ function SessionWorkList({ title, empty, rows }: {
   </li>)}</ul> : <small>{empty}</small>}</div>
 }
 
-function CreatedWorkModal({ item, created = true, back, sessions, decisions, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, onClose }: {
+function CreatedWorkModal({ item, created = true, back, sessions, decisions, decisionAnswers, busy, failure, clearFailure, run, answerWorkDecision, detailLoading, detailError, retryDetail, onClose }: {
   item: WorkV2Item
   created?: boolean
   /** Shared by successive dialogs opened from one another, so focus returns to the first opener. */
   back?: ModalReturn
   sessions: SessionRow[]
   decisions: Decision[]
+  decisionAnswers: Record<string, DecisionAnswerStatus>
   busy: string
   failure: string
   clearFailure: () => void
@@ -1236,7 +1280,7 @@ function CreatedWorkModal({ item, created = true, back, sessions, decisions, bus
         <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
         <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <WorkCard item={item} sessions={sessions} decisions={decisions} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
+      <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
         detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
     </div>
   </div>, document.body)

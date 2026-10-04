@@ -441,10 +441,23 @@ test("the Board puts each open question inside the item that explains it", () =>
   assert.match(source, /decisionsForWorkItem\(decisions, item\.id\)/)
   assert.match(source, /<WorkItemDecisions decisions=\{decisions\}/)
   assert.match(source, /answerWorkDecision\(decision\.id, option\.id\)/)
-  assert.match(source, /confirmDecisionAnswer\(\(\) => answerDecision\(decisionID, optionID\)/)
+  assert.match(source, /confirmDecisionAnswer\(\(\) => answerDecision\(decisionID, optionID\), confirmed\)/)
   assert.match(source, /setDecisions\(\(current\) => withoutAnsweredDecision\(current, decisionID\)\)/)
   assert.doesNotMatch(source, /未連結的舊問題/)
   assert.match(styles, /\.work-item-decisions/)
+})
+
+test("decision answer reports pending, confirmation, refusal, and uncertain transport inside its card", () => {
+  assert.match(source, /submittingDecisionIDs\.current\.has\(decisionID\)/)
+  assert.match(source, /phase: "pending"/)
+  assert.match(source, /正在送出「\$\{feedback\.label\}」/)
+  assert.match(source, /phase: "confirmed"/)
+  assert.match(source, /已收到回答：「\{receipt\.label\}」/)
+  assert.match(source, /readDecision\(decisionID\)/)
+  assert.match(source, /matchingDecisionAnswer\(observed, optionID\)/)
+  assert.match(source, /phase: "rejected"/)
+  assert.match(source, /phase: "retry"/)
+  assert.match(source, /role=\{feedback\.phase === "rejected" \? "alert" : "status"\}/)
 })
 
 test("go to answer targets the rendered decision and scrolls it into view", () => {
