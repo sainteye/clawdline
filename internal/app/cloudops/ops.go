@@ -2018,11 +2018,18 @@ func init() {
 		op{name: sessionsSnapshotWord, read: true, sessions: true,
 			decode: func(b body) (plan, bool) {
 				if !b.hasOneOf([]string{"type", "session", "request"},
-					[]string{"type", "session", "request", "orchestrator"}) {
+					[]string{"type", "session", "request", "orchestrator"},
+					[]string{"type", "session", "request", "initial"},
+					[]string{"type", "session", "request", "orchestrator", "initial"}) {
 					return plan{}, false
 				}
 				if value, present := b["orchestrator"]; present {
 					if asked, ok := value.(bool); !ok || !asked {
+						return plan{}, false
+					}
+				}
+				if value, present := b["initial"]; present {
+					if _, ok := value.(bool); !ok {
 						return plan{}, false
 					}
 				}

@@ -192,6 +192,9 @@ type Bridge struct {
 	// Nil answers that word `unknown_command`, which the hosted console
 	// learns from and stops asking this machine.
 	Sessions func(ctx context.Context) (SessionsStated, *Refusal)
+	// SessionsFor carries the authenticated sender and first-attempt bit to
+	// the publisher. Sessions remains for callers using the older bridge seam.
+	SessionsFor func(ctx context.Context, sender string, first bool) (SessionsStated, *Refusal)
 }
 
 // AsksForSessions reports whether this plaintext is a `sessions.snapshot`
@@ -315,7 +318,7 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 			Message: "This Cloud read is malformed."})
 	}
 	if o.sessions {
-		return b.stateSessions(ctx, cmd, plan)
+		return b.stateSessions(ctx, cmd, parsed, plan)
 	}
 	if o.route == nil {
 		// A word this vocabulary knows and this daemon cannot answer. The body
@@ -334,12 +337,22 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 // their way. The rows travel on their own `s/` channels, ahead of this answer
 // on the same socket, so a page that reads the ids here and finds a row
 // missing is looking at a row that was lost, not one still to come.
-func (b Bridge) stateSessions(ctx context.Context, cmd Command, p plan) Answer {
-	if b.Sessions == nil {
+func (b Bridge) stateSessions(ctx context.Context, cmd Command, parsed body, p plan) Answer {
+	if b.Sessions == nil && b.SessionsFor == nil {
 		return b.publish(cmd, p, Refusal{Status: 400, Code: "unknown_command",
 			Message: "This machine does not know that Cloud command."}, nil)
 	}
-	stated, refusal := b.Sessions(ctx)
+	first := true // An older viewer sends no attempt bit.
+	if value, present := parsed["initial"]; present {
+		first = value.(bool)
+	}
+	var stated SessionsStated
+	var refusal *Refusal
+	if b.SessionsFor != nil {
+		stated, refusal = b.SessionsFor(ctx, cmd.Sender, first)
+	} else {
+		stated, refusal = b.Sessions(ctx)
+	}
 	if refusal != nil {
 		return b.publish(cmd, p, *refusal, nil)
 	}

@@ -165,10 +165,13 @@ type Publisher struct {
 	// Run when one arrives; stated is when the last re-statement went out,
 	// because one machine states its rows at most once per SnapshotInterval
 	// however many viewers ask. running is whether Run is up to answer them.
-	asks    []chan snapshotResult
-	wake    chan struct{}
-	stated  time.Time
-	running bool
+	asks          []chan snapshotResult
+	wake          chan struct{}
+	stated        time.Time
+	running       bool
+	urgent        bool
+	stating       bool
+	firstBySender map[string]time.Time
 }
 
 // heldRow is one published row: the identity it was compared by and the bytes
@@ -272,7 +275,7 @@ func (p *Publisher) Run(ctx context.Context) error {
 			if !p.asked() {
 				continue
 			}
-			if wait := p.windowLeft(); wait > 0 {
+			if wait := p.windowLeft(); wait > 0 && !p.urgentAsk() {
 				// Inside the window the ask waits for the next pass rather
 				// than buying a second one: however many viewers ask, one
 				// machine states its rows at most once per interval.
@@ -305,6 +308,13 @@ func (p *Publisher) Run(ctx context.Context) error {
 // Called on the Cloud service's goroutine; the pass itself runs on Run's, so
 // the skip memory keeps a single owner.
 func (p *Publisher) Snapshot(ctx context.Context) (cloudops.SessionsStated, *cloudops.Refusal) {
+	return p.SnapshotFrom(ctx, "", true)
+}
+
+// SnapshotFrom lets a viewer's first recovery start a complete pass now. The
+// sender is authenticated by the transport; one sender cannot buy another
+// immediate pass inside the same window by repeating the first flag.
+func (p *Publisher) SnapshotFrom(ctx context.Context, sender string, first bool) (cloudops.SessionsStated, *cloudops.Refusal) {
 	answer := make(chan snapshotResult, 1)
 	p.mu.Lock()
 	if !p.running {
@@ -319,12 +329,35 @@ func (p *Publisher) Snapshot(ctx context.Context) (cloudops.SessionsStated, *clo
 			Detail:  map[string]any{"limit": SessionSnapshotWaitersLimit, "retry_after": 5}}
 	}
 	p.asks = append(p.asks, answer)
+	if first && !p.stating {
+		for viewer, last := range p.firstBySender {
+			if p.now().Sub(last) >= p.interval() {
+				delete(p.firstBySender, viewer)
+			}
+		}
+		last := p.firstBySender[sender]
+		if last.IsZero() && len(p.firstBySender) < SessionSnapshotWaitersLimit {
+			p.firstBySender[sender] = p.now()
+			p.urgent = true
+		}
+	}
 	p.mu.Unlock()
 	p.nudge()
 	select {
 	case result := <-answer:
 		return result.stated, result.refusal
 	case <-ctx.Done():
+		p.mu.Lock()
+		for i, waiting := range p.asks {
+			if waiting == answer {
+				p.asks = append(p.asks[:i], p.asks[i+1:]...)
+				break
+			}
+		}
+		if len(p.asks) == 0 {
+			p.urgent = false
+		}
+		p.mu.Unlock()
 		return cloudops.SessionsStated{}, &cloudops.Refusal{Status: 503, Code: "cloud_reconnecting",
 			Message: "This machine's Cloud line went down before its Sessions were stated."}
 	}
@@ -336,6 +369,8 @@ func (p *Publisher) restatePass(ctx context.Context) {
 	p.mu.Lock()
 	asks := p.asks
 	p.asks = nil
+	p.urgent = false
+	p.stating = true
 	p.stated = p.now()
 	p.mu.Unlock()
 	p.published = map[string][32]byte{}
@@ -355,6 +390,9 @@ func (p *Publisher) restatePass(ctx context.Context) {
 	for _, answer := range asks {
 		answer <- result
 	}
+	p.mu.Lock()
+	p.stating = false
+	p.mu.Unlock()
 }
 
 // open marks Run as up and returns the channel that wakes it.
@@ -364,6 +402,9 @@ func (p *Publisher) open() <-chan struct{} {
 	p.wake = make(chan struct{}, 1)
 	p.running = true
 	p.stated = time.Time{}
+	p.firstBySender = map[string]time.Time{}
+	p.urgent = false
+	p.stating = false
 	return p.wake
 }
 
@@ -399,6 +440,19 @@ func (p *Publisher) asked() bool {
 	return len(p.asks) > 0
 }
 
+func (p *Publisher) urgentAsk() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.urgent && len(p.asks) > 0
+}
+
+func (p *Publisher) interval() time.Duration {
+	if p.Every > 0 {
+		return p.Every
+	}
+	return SnapshotInterval
+}
+
 func (p *Publisher) windowOpen() bool { return p.windowLeft() <= 0 }
 
 // windowLeft is how long until the next re-statement may go out.
@@ -426,6 +480,7 @@ func (p *Publisher) Pass(ctx context.Context) { _, _, _ = p.pass(ctx) }
 // It answers the inventory it stated and the reading behind it, or false when
 // this machine's own list could not be read and nothing about Sessions went out.
 func (p *Publisher) pass(ctx context.Context) ([]string, sessionReading, bool) {
+	p.unsent = 0
 	if p.takeRestate() {
 		// A viewer this machine has not stated its channels to is out there.
 		// What it holds is not this machine's to guess, so the skip's memory
@@ -646,6 +701,11 @@ func (p *Publisher) publishSessions(ctx context.Context, reading sessionReading,
 				delete(p.held, id)
 			}
 		}
+		return
+	}
+	if p.unsent > 0 {
+		// A marker cannot name a row the relay refused. The next pass
+		// retries the forgotten publication and then states the marker.
 		return
 	}
 	// The set about to be stated is what a viewer will hold, so it is what the

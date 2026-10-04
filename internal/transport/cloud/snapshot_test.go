@@ -153,6 +153,110 @@ func TestTwoAsksInsideOneWindowShareTheWire(t *testing.T) {
 	}
 }
 
+// A first recovery from another authenticated viewer need not wait for the
+// prior viewer's window. A retry from the same viewer still does.
+func TestFirstRecoveryFromAnotherViewerStartsInsideWindow(t *testing.T) {
+	out := &collector{}
+	publisher := newPublisher(&fixedRouter{body: completeScan}, out)
+	publisher.Every = time.Hour
+	at := time.Unix(1_700_000_000, 0)
+	publisher.Now = func() time.Time { return at }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { _ = publisher.Run(ctx); close(done) }()
+	waitFor(t, "first pass", func() bool { return len(out.channels()) == 3 })
+	out.reset()
+	answer := make(chan *cloudops.Refusal, 1)
+	go func() { _, refusal := publisher.SnapshotFrom(ctx, "viewer-02", true); answer <- refusal }()
+	select {
+	case refusal := <-answer:
+		if refusal != nil {
+			t.Fatalf("first recovery refused: %+v", refusal)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("first recovery waited for the restatement window")
+	}
+	if got := len(out.channels()); got != 3 {
+		t.Fatalf("stated %d envelopes, want 3", got)
+	}
+	cancel()
+	<-done
+}
+
+func TestRepeatedRecoveryCannotBuyAnotherImmediatePass(t *testing.T) {
+	out := &collector{}
+	publisher := newPublisher(&fixedRouter{body: completeScan}, out)
+	publisher.Every = time.Hour
+	at := time.Unix(1_700_000_000, 0)
+	publisher.Now = func() time.Time { return at }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { _ = publisher.Run(ctx); close(done) }()
+	waitFor(t, "first pass", func() bool { return len(out.channels()) == 3 })
+	if _, refusal := publisher.SnapshotFrom(ctx, "viewer-01", true); refusal != nil {
+		t.Fatalf("first recovery refused: %+v", refusal)
+	}
+	out.reset()
+	retryCtx, stopRetry := context.WithCancel(ctx)
+	retryDone := make(chan *cloudops.Refusal, 1)
+	go func() { _, refusal := publisher.SnapshotFrom(retryCtx, "viewer-01", true); retryDone <- refusal }()
+	waitFor(t, "queued repeated ask", func() bool { return publisher.asked() })
+	select {
+	case refusal := <-retryDone:
+		t.Fatalf("repeated ask ended early: %+v", refusal)
+	default:
+	}
+	if got := len(out.channels()); got != 0 {
+		t.Fatalf("repeated ask sent %d envelopes", got)
+	}
+	stopRetry()
+	if refusal := <-retryDone; refusal == nil || refusal.Code != "cloud_reconnecting" {
+		t.Fatalf("canceled ask answered %+v", refusal)
+	}
+	if publisher.asked() {
+		t.Fatal("canceled ask still occupies a waiter slot")
+	}
+	cancel()
+	<-done
+}
+
+func TestImmediateRecoveryReportsARowRejectedByTheRelay(t *testing.T) {
+	out := &collector{}
+	publisher := newPublisher(&fixedRouter{body: completeScan}, out)
+	publisher.Every = time.Hour
+	at := time.Unix(1_700_000_000, 0)
+	publisher.Now = func() time.Time { return at }
+	reject := make(chan struct{})
+	publisher.Publish = func(ctx context.Context, outbound Outbound) error {
+		select {
+		case <-reject:
+			if outbound.Channel == "s/mac-01/%2519" {
+				return errors.New("spool full")
+			}
+		default:
+		}
+		return out.publish(ctx, outbound)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { _ = publisher.Run(ctx); close(done) }()
+	waitFor(t, "first pass", func() bool { return len(out.channels()) == 3 })
+	out.reset()
+	close(reject)
+	_, refusal := publisher.SnapshotFrom(ctx, "viewer-02", true)
+	if refusal == nil || refusal.Code != "reading_busy" {
+		t.Fatalf("rejected row answered %+v", refusal)
+	}
+	if channels := out.channels(); holds(channels, "s/mac-01/"+InventorySessionID) {
+		t.Fatalf("rejected row was named by a marker: %v", channels)
+	}
+	cancel()
+	<-done
+}
+
 // An id carried while its own source is unreadable is named by the marker, so
 // a re-statement has to send its row too: a page that holds nothing would
 // otherwise wait on a Session it was never given, for as long as iTerm2 stays
