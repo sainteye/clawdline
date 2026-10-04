@@ -24,7 +24,7 @@ export interface TerminalCloudClient {
   _receiveEnvelope(envelope: TerminalEnvelope, realign: boolean): Promise<unknown>
   events(listener: (event: RelayEvent) => void): () => void
 }
-export type TerminalChannelEvent = { envelope: TerminalEnvelope; plaintext: unknown; realign: boolean } | { error: string }
+export type TerminalChannelEvent = { envelope: TerminalEnvelope; plaintext: unknown; realign: boolean } | { error: string; requestID?: string }
 const enc = new TextEncoder()
 const dec = new TextDecoder("utf-8", { fatal: true })
 const names = ["v", "ch", "seq", "ts", "class", "key_id", "nonce", "ct", "sender", "sig"]
@@ -78,7 +78,7 @@ export class TerminalChannelTransport {
   private readonly confirmed = new Set<string>()
   private readonly deltaConfirmed = new Set<string>()
   private readonly deltaWaiting = new Map<string, () => void>()
-  private readonly sent = new Set<number>()
+  private readonly sent = new Map<number, { connection: string; requestID: string; operation: string }>()
   private readonly listeners = new Map<string, (event: TerminalChannelEvent) => void>()
   private readonly verifiedFrames = new Map<string, number>()
   private readonly waiting = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
@@ -223,7 +223,8 @@ export class TerminalChannelTransport {
     const envelope: TerminalEnvelope = { v: 1, ch: route("termi", this.machine, this.viewer), seq, ts: Date.now(), class: "ctl",
       key_id: pairing.keyID, nonce: bytesBase64(nonce), ct: bytesBase64(new Uint8Array(ct)), sender: this.viewer, sig: "" }
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", this.client.devicePrivateKey, envelopeSigningBytes(envelope))))
-    this.sent.add(seq)
+    this.sent.set(seq, { connection: request.connection, requestID: request.request_id,
+      operation: typeof request.operation === "string" ? request.operation : "" })
     try { this.client._send({ type: "publish", envelope }) }
     catch (error) { this.sent.delete(seq); throw error }
     this.observation?.record("request_sent", { connection: request.connection,
@@ -371,15 +372,21 @@ export class TerminalChannelTransport {
         }
       }
     }
-    const ours = event.ch === route("termi", this.machine, this.viewer) &&
-      typeof event.seq === "number" && this.sent.has(event.seq)
-    if (ours) this.sent.delete(event.seq!)
-    if (event.type === "publish_error" && ours)
-      for (const listener of this.listeners.values()) listener({ error: code })
+    const sent = event.ch === route("termi", this.machine, this.viewer) && typeof event.seq === "number"
+      ? this.sent.get(event.seq) : undefined
+    if (sent) this.sent.delete(event.seq!)
+    if (event.type === "publish_error" && sent) {
+      this.observation?.record("publish_refused", { connection: sent.connection, requestID: sent.requestID,
+        operation: sent.operation, code })
+      this.listeners.get(sent.connection)?.({ error: code, requestID: sent.requestID })
+    }
     if (event.type === "error")
       for (const [connection, listener] of this.listeners) if (affects(connection)) listener({ error: code })
-    if (event.type === "ack" && ours && (event.status === "machine_offline" || event.status === "machine_stale")) {
-      for (const listener of this.listeners.values()) listener({ error: event.status })
+    if (event.type === "ack" && sent) {
+      this.observation?.record("relay_ack", { connection: sent.connection, requestID: sent.requestID,
+        operation: sent.operation, code: event.status ?? "unknown" })
+      if (event.status === "machine_offline" || event.status === "machine_stale")
+        this.listeners.get(sent.connection)?.({ error: event.status, requestID: sent.requestID })
     }
   }
   dispose(): void {

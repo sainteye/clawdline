@@ -2,7 +2,24 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { Terminal } from "@clawdline/contract"
 // @ts-expect-error -- Node strips TypeScript for this focused test.
-import { collectCloudTerminals } from "./cloud-terminal-all.ts"
+import { collectCloudTerminals, readCloudTerminalList } from "./cloud-terminal-all.ts"
+
+test("a relay grant refusal retries one list read after renewal without retrying other errors", async () => {
+  let calls = 0
+  const pauses: number[] = []
+  const answer = await readCloudTerminalList(async () => {
+    if (++calls === 1) throw Object.assign(new Error("rate_limited"), { code: "rate_limited" })
+    return "rows"
+  }, async (ms) => { pauses.push(ms) })
+  assert.equal(answer, "rows")
+  assert.equal(calls, 2)
+  assert.deepEqual(pauses, [2_100])
+  await assert.rejects(readCloudTerminalList(async () => {
+    calls++
+    throw Object.assign(new Error("forbidden"), { code: "forbidden" })
+  }, async () => { throw new Error("must not pause") }), /forbidden/)
+  assert.equal(calls, 3)
+})
 
 const terminal = (id: string, project_id: string): Terminal => ({ id, project_id, created: 1, dir: "/work",
   cols: 80, rows: 24, status: "running", control: { held: false, epoch: 0 } }) as Terminal

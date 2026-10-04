@@ -61,7 +61,8 @@ async function fixture() {
     return envelope
   }
   return { adapter, client, fresh, seen, published, observed, stages, seal, observation, machineKey,
-    emitRelay: (event: { type: string; error?: { code?: string; subscriptionChannels?: string[] } }) => events.forEach((fn) => fn(event)),
+    emitRelay: (event: { type: string; ch?: string; seq?: number; code?: string; status?: string;
+      error?: { code?: string; subscriptionChannels?: string[] } }) => events.forEach((fn) => fn(event)),
     setConfirm: (value: boolean) => { confirm = value },
     setRejectDelta: (value: boolean) => { rejectDelta = value }, master }
 }
@@ -298,6 +299,18 @@ test("a retracted terminal subscription reports the relay budget refusal promptl
     ["subscription_sent", ""], ["relay_error", "terminal_budget_exhausted"],
     ["subscription_refused", "terminal_budget_exhausted"],
   ])
+  f.adapter.dispose()
+})
+
+test("a relay publish refusal identifies only its pending terminal request", async () => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  const requestID = crypto.randomUUID()
+  await f.adapter.publishTerminal({ v: 1, type: "terminal_request", request_id: requestID,
+    connection: f.fresh.connection, operation: "list" })
+  f.emitRelay({ type: "publish_error", ch: `termi/${machine}/${viewer}`, seq: 7, code: "rate_limited" })
+  assert.deepEqual(f.seen, [{ error: "rate_limited", requestID }])
+  assert.ok(f.stages.some((row) => row.stage === "publish_refused" && row.code === "rate_limited"))
   f.adapter.dispose()
 })
 

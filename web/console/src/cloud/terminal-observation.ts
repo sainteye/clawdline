@@ -1,5 +1,5 @@
 /** A bounded, content-free browser timeline for one terminal page instance. */
-export type TerminalStage = "subscription_sent" | "subscription_confirmed" | "subscription_refused" | "relay_error" | "request_pending" | "request_sent" |
+export type TerminalStage = "subscription_sent" | "subscription_confirmed" | "subscription_refused" | "relay_error" | "request_pending" | "request_sent" | "relay_ack" | "publish_refused" |
   "raw_received" | "envelope_opened" | "envelope_rejected" |
   "pending_match" | "pending_miss" | "session_settled" | "receipt_timeout" | "frame_observed"
 export type TerminalObservationRow = {
@@ -15,18 +15,18 @@ export type TerminalObservationRow = {
   code?: string
 }
 /** Where a receipt stopped, in the order a receipt passes through the browser. */
-export type TerminalPhase = "ciphertext" | "verify_decrypt" | "pending_match" | "session_accept" | "receipt_timeout"
+export type TerminalPhase = "relay_publish" | "ciphertext" | "verify_decrypt" | "pending_match" | "session_accept" | "receipt_timeout"
 
 export const TERMINAL_OBSERVATION_ROWS = 128
 
 const phases: Record<TerminalStage, TerminalPhase | null> = {
   subscription_sent: null, subscription_confirmed: null, subscription_refused: null, relay_error: null,
-  request_pending: null, request_sent: null,
+  request_pending: null, request_sent: null, relay_ack: null, publish_refused: "relay_publish",
   raw_received: "ciphertext", envelope_opened: "verify_decrypt", envelope_rejected: "verify_decrypt",
   pending_match: "pending_match", pending_miss: "pending_match", session_settled: "session_accept",
   receipt_timeout: "receipt_timeout", frame_observed: null,
 }
-const failures = new Set<TerminalStage>(["envelope_rejected", "pending_miss", "receipt_timeout"])
+const failures = new Set<TerminalStage>(["publish_refused", "envelope_rejected", "pending_miss", "receipt_timeout"])
 
 /** One row as a single line with its fields always in the same order, so a console that shows objects as `Object` still shows every field. */
 export function terminalStageLine(row: TerminalObservationRow): string {

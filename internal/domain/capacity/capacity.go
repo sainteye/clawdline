@@ -391,6 +391,7 @@ const (
 	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
 	CloudTerminalEarlyFrames       = "cloud.terminal_early_frames"
 	CloudTerminalObservationRows   = "cloud.terminal_observation_rows"
+	CloudTerminalListRetry         = "cloud.terminal_list_retries"
 	CloudHeaderReadDiagnosticRows  = "cloud.header_read_diagnostic_rows"
 	CloudHeaderReadDiagnosticAge   = "cloud.header_read_diagnostic_seconds"
 	CloudTerminalUnconfirmed       = "cloud.terminal_unconfirmed_seconds"
@@ -2215,6 +2216,13 @@ func Register() []Entry {
 			Deviation: "Browser console entries cannot be evicted; later diagnostic stages are omitted after 128 without affecting terminal delivery.",
 			Told:      []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalObservationRowsLimit"},
+		},
+		{
+			// A browser retries a rate-limited terminal list read once after
+			// the relay's short authority grant renews. It never retries input.
+			Name: CloudTerminalListRetry, Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
 			// A Console tab retains only content-free Session header read

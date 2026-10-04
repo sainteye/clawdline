@@ -14,6 +14,17 @@ export interface CloudTerminalRow {
 }
 export interface CloudTerminalError { machine: string; code: string }
 
+/** One bounded read retry after the relay's two-second terminal grant renews. */
+export async function readCloudTerminalList<T>(read: () => Promise<T>,
+  pause: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))): Promise<T> {
+  try { return await read() }
+  catch (error) {
+    if ((error as { code?: unknown })?.code !== "rate_limited") throw error
+    await pause(2_100)
+    return read()
+  }
+}
+
 /** A failed machine retains only its own prior rows, clearly marked stale. */
 export async function collectCloudTerminals(
   machines: readonly CloudTerminalMachine[], places: readonly CloudPlaceRow[] | Promise<readonly CloudPlaceRow[]>, previous: readonly CloudTerminalRow[],

@@ -8,14 +8,14 @@ import { TerminalObservation } from "../cloud/terminal-observation.js"
 import { openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords } from "../pages/terminal/words.js"
-import { collectCloudTerminals, type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
+import { collectCloudTerminals, readCloudTerminalList, type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
 import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, watchTerminalClose } from "../cloud/terminal-close-state.js"
 import { openMachinePairing } from "../legacy/devices-bridge.js"
 
 async function readMachine(host: TerminalHost, machine: string): Promise<import("@clawdline/contract").Terminal[]> {
   const { session, release } = await acquireTerminalConnection(host, machine, TAB, new TerminalObservation())
   try {
-    const answer = await session.request("list", { client: TAB })
+    const answer = await readCloudTerminalList(() => session.request("list", { client: TAB }))
     const rows = answer.result?.terminals
     if (!Array.isArray(rows)) throw Object.assign(new Error("terminal_bad_receipt"), { code: "terminal_bad_receipt" })
     return rows as import("@clawdline/contract").Terminal[]

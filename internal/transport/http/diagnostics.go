@@ -880,6 +880,9 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudTerminalObservationRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console page diagnostic guard; daemon cannot measure live browser use"}
 		},
+		capacity.CloudTerminalListRetry: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console terminal list guard; daemon cannot measure live browser retries"}
+		},
 		capacity.CloudHeaderReadDiagnosticRows: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab policy; daemon cannot measure another device's sessionStorage"}
 		},

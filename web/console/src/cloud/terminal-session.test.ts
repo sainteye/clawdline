@@ -513,3 +513,18 @@ test("fault injection: a receipt that never arrives stops at receipt_timeout", a
     assert.match(observation.text(), /stage=request_pending phase=- conn=1 req=\d+ ch=- op=history/)
   } finally { t.mock.timers.reset(); session.dispose() }
 })
+
+test("a correlated relay refusal settles the list immediately and leaves the connection reusable", async () => {
+  const wire = new Wire()
+  wire.delayed.add("list")
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    const reading = session.request("list", { client: "stable-tab" })
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    const request = wire.requests.find((item) => item.operation === "list")!
+    wire.channels.get(wire.latest())?.({ error: "rate_limited", requestID: request.request_id as string })
+    await assert.rejects(reading, /rate_limited/)
+    assert.equal(session.reusable, true)
+  } finally { session.dispose() }
+})

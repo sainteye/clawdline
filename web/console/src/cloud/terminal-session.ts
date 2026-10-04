@@ -362,6 +362,15 @@ export class CloudTerminalSession {
   private event(event: TerminalChannelEvent): void {
     if ("error" in event) {
       if (this.s.state === "revoked") return
+      if (event.requestID) {
+        const pending = this.pending.get(event.requestID)
+        if (pending) {
+          clearTimeout(pending.timer)
+          this.pending.delete(event.requestID)
+          pending.reject(fail(event.error))
+          if (pending.operation === "list" && event.error === "rate_limited") return
+        }
+      }
       this.inputUnknown = true
       if (event.error === "machine_offline" || event.error === "machine_stale") this.set({ state: "offline", reason: event.error })
       else if (event.error.includes("revoked") || event.error === "terminal_forbidden" || event.error === "forbidden") this.revoke(event.error)
