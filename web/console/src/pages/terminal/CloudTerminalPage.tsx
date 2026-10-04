@@ -4,7 +4,7 @@ import type { Terminal as XTerm } from "@xterm/xterm"
 import type { FitAddon } from "@xterm/addon-fit"
 import { nextWord } from "../../next-strings.js"
 import { watchTerminalHost, type TerminalHost } from "../../cloud/terminal-host.js"
-import { TerminalChannelTransport } from "../../cloud/terminal-transport.js"
+import { acquireTerminalConnection } from "../../cloud/terminal-connection-owner.js"
 import { TerminalObservation } from "../../cloud/terminal-observation.js"
 import { CloudTerminalSession, type CloudTerminalSnapshot, type CloudTerminalHistory } from "../../cloud/terminal-session.js"
 import { frameBytes, frameDeltaBytes } from "./frame-writer.js"
@@ -114,19 +114,24 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     if (!shown || !host || !channelProject) return
     let live = true
     const observation = new TerminalObservation()
-    observed.current = observation
-    const transport = new TerminalChannelTransport(host.client, machine, observation)
-    const next = new CloudTerminalSession(transport, TAB, observation)
-    const stop = next.subscribe((value) => live && setSnapshot(value))
-    setSession(next); setSnapshot(empty); setLoading(true); setFirstFramePending(!!id); setFrameTimedOut(false); setError(""); setMeta(null); setRows([])
+    let release: (() => void) | null = null
+    let stop: (() => void) | null = null
+    setSnapshot(empty); setLoading(true); setFirstFramePending(!!id); setFrameTimedOut(false); setError(""); setMeta(null); setRows([])
     void (async () => {
       try {
-        const begun = await beginCloudTerminal(next, channelProject, id, TAB)
+        const lease = await acquireTerminalConnection(host, machine, TAB, observation)
+        if (!live) { lease.release(); return }
+        release = lease.release
+        observed.current = lease.observation
+        const next = lease.session
+        stop = next.subscribe((value) => live && setSnapshot(value))
+        setSession(next)
+        const begun = await beginCloudTerminal(next, channelProject, id, TAB, true)
         if (live) { if ("meta" in begun) setMeta(begun.meta); else setRows(begun.rows) }
       } catch (e) { if (live) { if (id && reason(e) === "terminal_closed") observeTerminalEnded(machine, id); setError(reason(e)) } }
       finally { if (live) setLoading(false) }
     })()
-    return () => { live = false; stop(); next.dispose(); transport.dispose(); setSession(null) }
+    return () => { live = false; stop?.(); release?.(); setSession(null) }
   }, [host, machine, channelProject, id, shown])
 
   useEffect(() => {

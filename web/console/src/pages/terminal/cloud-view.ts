@@ -12,7 +12,7 @@ export function cloudTerminalBody(host: unknown, channelProject: string, id: str
 /** The part of a Cloud terminal session a fresh start uses. */
 export interface CloudTerminalStarter {
   start(): Promise<void>
-  attach(terminal: string): Promise<{ result?: Record<string, unknown> }>
+  attach(terminal: string, reset?: boolean): Promise<{ result?: Record<string, unknown> }>
   request(operation: string, fields?: Record<string, unknown>): Promise<{ result?: Record<string, unknown> }>
 }
 
@@ -22,9 +22,9 @@ export interface CloudTerminalStarter {
  * never sends `open` or `input`; those leave only from a person's own action,
  * so one sent before a reconnect is never sent again by it.
  */
-export async function beginCloudTerminal(session: CloudTerminalStarter, channelProject: string, id: string, tab: string):
+export async function beginCloudTerminal(session: CloudTerminalStarter, channelProject: string, id: string, tab: string, started = false):
   Promise<{ meta: TerminalRow } | { rows: TerminalRow[] }> {
-  await session.start()
+  if (!started) await session.start()
   if (id) {
     const answer = await session.attach(id)
     return { meta: answer.result as unknown as TerminalRow }
@@ -35,7 +35,7 @@ export async function beginCloudTerminal(session: CloudTerminalStarter, channelP
 /** Reconnect the displayed terminal without repeating a create or input request. */
 export async function reconnectCloudTerminal(session: CloudTerminalStarter, id: string): Promise<void> {
   await session.start()
-  await session.attach(id)
+  await session.attach(id, false)
 }
 
 /** The Project's terminals, asked on the machine's channel by its machine-local Project id. */

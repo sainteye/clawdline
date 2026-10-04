@@ -48,6 +48,7 @@ export class CloudTerminalSession {
   private epoch: number | null = null
   private nextSeq = 1
   private inputUnknown = false
+  private connectionUnknown = false
   private active = false
   private openingNew = false
   private rotationAttempted = false
@@ -76,6 +77,11 @@ export class CloudTerminalSession {
     this.client = clientID
   }
   get snapshot(): CloudTerminalSnapshot { return this.s }
+  /** A retained connection may serve another read while its key and identity are valid. */
+  get reusable(): boolean { return this.active && !this.openingNew && !this.retiringConnection &&
+    !this.inputUnknown && !this.connectionUnknown && this.s.state !== "revoked" && this.s.state !== "unknown" && this.s.state !== "offline" &&
+    Date.now() < this.expiresAt - 60_000 }
+  get releasable(): boolean { return this.active && !this.openingNew && !!this.connection && this.s.state !== "revoked" && Date.now() < this.expiresAt }
   subscribe(listener: (snapshot: CloudTerminalSnapshot) => void): () => void {
     this.listeners.add(listener); listener(this.s)
     return () => this.listeners.delete(listener)
@@ -125,6 +131,7 @@ export class CloudTerminalSession {
       this.expiresAt = opened.result.expires_at * 1000
       this.frameSeq = 0
       this.active = true
+      this.connectionUnknown = false
       this.rotationAttempted = false
       this.set({ state: "synchronizing", frame: null })
       if (previous) {
@@ -169,6 +176,7 @@ export class CloudTerminalSession {
         this.pending.delete(requestID)
         this.observation?.record("receipt_timeout", { connection, requestID, operation })
         if (operation === "input" || operation === "paste") { this.inputUnknown = true; this.set({ state: "unknown", reason: "terminal_input_state_unknown" }) }
+        else if (operation !== "release_connection") { this.connectionUnknown = true; this.set({ state: "unknown", reason: "terminal_receipt_timeout" }) }
         reject(fail("terminal_receipt_timeout"))
       }, RECEIPT_MS)
       this.pending.set(requestID, { operation, connection,
@@ -198,7 +206,13 @@ export class CloudTerminalSession {
     return issued.receipt
   }
 
-  async attach(terminal: string): Promise<Receipt> {
+  async attach(terminal: string, reset = true): Promise<Receipt> {
+    if (reset || this.terminal !== terminal) {
+      this.terminal = ""
+      this.epoch = null
+      this.frameSeq = 0
+      this.set({ frame: null, control: null, state: "synchronizing", reason: "" })
+    }
     this.terminal = terminal
     this.flushEarlyFrame()
     const [result] = await Promise.all([
@@ -213,6 +227,9 @@ export class CloudTerminalSession {
     const result = await this.request("open", { project_id: project, body: { cols, rows } })
     const id = result.result?.id
     if (typeof id !== "string") throw fail("terminal_bad_receipt")
+    this.epoch = null
+    this.frameSeq = 0
+    this.set({ frame: null, control: null, state: "synchronizing", reason: "" })
     this.terminal = id
     this.flushEarlyFrame()
     const control = result.result?.control as TerminalControl | undefined
@@ -451,7 +468,7 @@ export class CloudTerminalSession {
         .catch(() => this.forgetLease("terminal_input_state_unknown"))
         .finally(() => { this.renewing = false })
     }
-    if (this.connection && !this.openingNew && !this.rotationAttempted && this.expiresAt - Date.now() < 60_000 && Date.now() < this.expiresAt) {
+    if (this.connection && this.terminal && !this.openingNew && !this.rotationAttempted && this.expiresAt - Date.now() < 60_000 && Date.now() < this.expiresAt) {
       this.rotationAttempted = true
       void this.start().catch(() => undefined)
     }
