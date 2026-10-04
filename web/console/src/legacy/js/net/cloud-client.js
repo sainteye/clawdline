@@ -253,15 +253,15 @@ function cloudPlaceID(machine, place) {
 /**
  * The bytes of one picture, checked before anything renders them.
  *
- * `media_type` is pinned rather than trusted: the store only ever writes PNG, and a blob URL
- * built from whatever a payload claimed would be a second, quieter place to decide what a
- * document is. `byte_count` is checked against the bytes it counts because base64 that decodes
- * to the wrong length is a truncated answer, and a truncated PNG renders as the broken-image
- * icon this whole path exists to remove.
+ * `media_type` is pinned to the store's two output formats rather than trusted: screenshots
+ * stay PNG and opaque photographs stay JPEG. A blob URL built from any payload claim would be
+ * a second, quieter place to decide what a document is. `byte_count` is checked against the
+ * bytes it counts because a truncated answer renders as the broken-image icon this path removes.
  */
 function imageAnswerBytes(id, body) {
     if (!body || typeof body !== "object" || Array.isArray(body) || body.id !== id ||
-        body.media_type !== "image/png" || typeof body.data !== "string" || !body.data) {
+        (body.media_type !== "image/png" && body.media_type !== "image/jpeg") ||
+        typeof body.data !== "string" || !body.data) {
         throw cloudError("bad_payload", "the image answer is not this image");
     }
     var bytes;
