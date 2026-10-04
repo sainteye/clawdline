@@ -861,6 +861,7 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudTerminalReceipts:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceipts) },
 		capacity.CloudTerminalKeySeconds:        func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalKeySeconds) },
 		capacity.CloudTerminalIngress:           func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalIngress) },
+		capacity.CloudTerminalListIngress:       func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalListIngress) },
 		capacity.CloudTerminalRefusals:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRefusals) },
 		capacity.CloudTerminalRevocationRetire:  func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRevocationRetire) },
 		capacity.CloudTerminalFrameHeartbeat:    func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalFrameHeartbeat) },

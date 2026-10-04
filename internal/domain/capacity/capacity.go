@@ -381,6 +381,7 @@ const (
 	CloudTerminalReceipts          = "cloud.terminal_receipts"
 	CloudTerminalKeySeconds        = "cloud.terminal_key_seconds"
 	CloudTerminalIngress           = "cloud.terminal_ingress"
+	CloudTerminalListIngress       = "cloud.terminal_list_ingress"
 	CloudTerminalRefusals          = "cloud.terminal_refusals"
 	CloudTerminalRevocationRetire  = "cloud.terminal_revocation_retire_seconds"
 	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
@@ -2139,6 +2140,12 @@ func Register() []Entry {
 			Limit: 16, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalIngressLimit", "internal/transport/cloud.(*Link).runOnce:chan(CloudTerminalIngressLimit)"},
+		},
+		{
+			Name: CloudTerminalListIngress, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalListIngressLimit", "internal/transport/cloud.(*Link).runOnce:chan(CloudTerminalListIngressLimit)"},
 		},
 		{
 			Name: CloudTerminalRefusals, Class: Buffer, Unit: Rows,
