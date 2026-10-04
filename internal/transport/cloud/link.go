@@ -289,17 +289,15 @@ func (l *Link) PinnedTerminalViewer(device string) (string, bool) {
 }
 
 // TerminalViewerAllowed is rechecked by terminal service before each effect
-// and frame. It requires a fresh Cloud roster, the exact locally pinned key,
-// and send_prompt. A read-only viewer cannot reach the terminal service.
+// and frame. It uses the same locally revoked, pin-first sender key as Cloud
+// commands, plus a fresh roster with the matching key and send_prompt.
+// A read-only viewer cannot reach the terminal service.
 func (l *Link) TerminalViewerAllowed(device string) bool {
-	if !l.TerminalViewerCloudCapable(device) || l.pinned == nil {
+	if !l.TerminalViewerCloudCapable(device) {
 		return false
 	}
-	pin, ok, err := l.pinned.PublicKeyFor(device)
-	if err != nil || !ok {
-		return false
-	}
-	if refused, err := l.pinned.Refused(device); err != nil || refused {
+	senderKey, ok := l.publicKeyFor(device)
+	if !ok {
 		return false
 	}
 	for _, row := range l.roster.Devices() {
@@ -307,8 +305,8 @@ func (l *Link) TerminalViewerAllowed(device string) bool {
 			!hasAny(row.Caps, TerminalCapability) {
 			continue
 		}
-		key, err := base64.StdEncoding.DecodeString(row.PublicKey)
-		return err == nil && bytes.Equal(key, pin)
+		rosterKey, err := base64.StdEncoding.DecodeString(row.PublicKey)
+		return err == nil && bytes.Equal(rosterKey, senderKey)
 	}
 	return false
 }

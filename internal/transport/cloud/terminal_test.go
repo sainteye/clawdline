@@ -354,7 +354,7 @@ func TestTerminalRequestRejectsForgedShapeAndKey(t *testing.T) {
 	}
 }
 
-func TestTerminalAdmissionNeedsExactPinRosterCapabilityAndFreshRead(t *testing.T) {
+func TestTerminalAdmissionUsesCommandKeyRosterCapabilityAndFreshRead(t *testing.T) {
 	dir := t.TempDir()
 	file := nextconfig.Open(dir)
 	if _, err := file.Set(map[string]any{adaptercloud.KeyEnabled: true, adaptercloud.KeyCommands: true}); err != nil {
@@ -412,6 +412,24 @@ func TestTerminalAdmissionNeedsExactPinRosterCapabilityAndFreshRead(t *testing.T
 	l.terminalRosterAt = time.Time{}
 	if l.TerminalViewerAllowed("viewer") {
 		t.Fatal("failed roster refresh kept terminal authority")
+	}
+	mu.Lock()
+	failed = false
+	row.PublicKey = base64.StdEncoding.EncodeToString(pub)
+	mu.Unlock()
+	legacy := &Link{opts: LinkOptions{Now: time.Now}, file: file,
+		settings: adaptercloud.Settings{Enabled: true},
+		pinned:   adaptercloud.NewPinnedStore(filepath.Join(dir, "legacy-pins")),
+		roster:   adaptercloud.NewRoster(server.URL, "credential", time.Now)}
+	if !legacy.TerminalViewerAllowed("viewer") {
+		t.Fatal("a roster-only viewer that can send commands was refused terminal access")
+	}
+	if revoked, err := pinned.Revoke("viewer", time.Now()); err != nil || !revoked {
+		t.Fatalf("revoke pinned viewer: changed=%v err=%v", revoked, err)
+	}
+	l.terminalRosterAt = time.Time{}
+	if l.TerminalViewerAllowed("viewer") {
+		t.Fatal("local revocation did not beat the roster fallback")
 	}
 }
 
@@ -556,7 +574,7 @@ func TestLocalGrantRefusalRegistersBeforeReceiptAndRetiresAfterSettlement(t *tes
 	}
 }
 
-func TestMissingLocalPinGetsEncryptedForbiddenAfterCloudRegistration(t *testing.T) {
+func TestRosterOnlyCommandSenderGetsEncryptedTerminalConnectionReceipt(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -596,16 +614,16 @@ func TestMissingLocalPinGetsEncryptedForbiddenAfterCloudRegistration(t *testing.
 		}
 		return nil
 	}
-	svc := terminals.New(nil, func(terminals.Principal) error { return nil }) // a permissive grant must not bypass the pin
+	svc := terminals.New(nil, func(terminals.Principal) error { return nil })
 	l.openTerminalConnection(context.Background(), svc, terminals.Principal{Device: "viewer", Cloud: true},
 		terminalRequest{RequestID: testRequestID, Operation: "open_connection", Connection: testConnection,
 			KeyID: testKeyID, Key: base64.StdEncoding.EncodeToString(key.Bytes())})
 	if !registered {
-		t.Fatal("missing local pin was refused before keyed receipt could be delivered")
+		t.Fatal("roster-only sender was refused before keyed receipt could be delivered")
 	}
 	row, ok := spool.Row(0)
 	if !ok {
-		t.Fatal("missing-pin refusal was not queued")
+		t.Fatal("roster-only connection receipt was not queued")
 	}
 	env, err := domaincloud.DecodeEnvelope(row.Sealed)
 	if err != nil {
@@ -619,8 +637,8 @@ func TestMissingLocalPinGetsEncryptedForbiddenAfterCloudRegistration(t *testing.
 	if err := json.Unmarshal(plain, &receipt); err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Status != "refused" || receipt.Error != string(terminal.CodeForbidden) {
-		t.Fatalf("missing pin: %+v", receipt)
+	if receipt.Status != "ok" || receipt.Error != "" {
+		t.Fatalf("roster-only sender: %+v", receipt)
 	}
 }
 
