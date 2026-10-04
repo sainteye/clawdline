@@ -90,14 +90,14 @@ func TestItemAddPostsThreeStepsInOrderUnderTheLatestRun(t *testing.T) {
 		t.Fatalf("body = %s", r.Body)
 	}
 	for _, want := range []string{"item-1  Ship it  [feature, assigned, assigned to " + thinConversation + "]",
-		"acceptance v1 sha256:aaaaaaaa", "The release is visible.",
+		"acceptance v1 sha256:aaaaaaaa", "full text: clawdline item show item-1",
 		"gates cycle 1: planning=true verification=false", "needs independent review (set by the person): false",
 		"wrote the item; item item-1 is at version 2", "steps and documents: clawdline item show item-1"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("stdout lacks %q:\n%s", want, out.String())
 		}
 	}
-	if strings.Contains(out.String(), "(no steps)") || strings.Contains(out.String(), "[ ] s1") ||
+	if strings.Contains(out.String(), "The release is visible.") || strings.Contains(out.String(), "(no steps)") || strings.Contains(out.String(), "[ ] s1") ||
 		strings.Contains(string(r.Body), "expected_version") {
 		t.Fatalf("stdout %q, body %s", out.String(), r.Body)
 	}
@@ -340,7 +340,7 @@ func TestItemFlagsParseAfterThePositionalArguments(t *testing.T) {
 // fresh read of the item for its positions, sending no version: each
 // position lands after every step already there, so the daemon's
 // position-then-id order keeps the given order. Each key is printed before
-// its write, and the item is printed with all its steps afterwards.
+// its write, and the receipt points to item show for the complete steps.
 func TestItemStepAddPostsEachTitleInOrderAfterTheExistingSteps(t *testing.T) {
 	version, steps := 2, []string{`{"id":"s1","title":"draft","done":true,"position":0}`,
 		`{"id":"s2","title":"check","done":false,"position":4}`}
@@ -388,10 +388,13 @@ func TestItemStepAddPostsEachTitleInOrderAfterTheExistingSteps(t *testing.T) {
 		!strings.Contains(errs.String(), "Idempotency-Key: "+seen[3].Key) {
 		t.Fatalf("keys %q %q, stderr %q", seen[1].Key, seen[3].Key, errs.String())
 	}
-	for _, line := range []string{"[x] s1  draft", "[ ] s2  check", "[ ] s3  Wire the route", "[ ] s4  Guide it"} {
+	for _, line := range []string{"wrote 2 step(s); item item-1 is at version 4", "steps and documents: clawdline item show item-1"} {
 		if !strings.Contains(out.String(), line) {
 			t.Fatalf("stdout lacks %q:\n%s", line, out.String())
 		}
+	}
+	if strings.Contains(out.String(), "[ ] s3") {
+		t.Fatalf("step-add reprinted steps: %s", out.String())
 	}
 }
 
@@ -933,6 +936,43 @@ func TestItemWriteSaysWhatItWroteNotNoSteps(t *testing.T) {
 			!strings.Contains(out.String(), "steps and documents: clawdline item show item-1") {
 			t.Fatalf("%s stdout:\n%s", tc.op, out.String())
 		}
+	}
+}
+
+func TestItemWritesKeepAcceptanceOutOfReceipts(t *testing.T) {
+	const criteria = "A long acceptance paragraph that belongs in an explicit read."
+	const written = `{"ok":true,"item":{"id":"item-1","title":"Ship it","kind":"feature","phase":"verifying",` +
+		`"owner_session":"` + thinConversation + `","version":9,"acceptance_criteria":"` + criteria + `",` +
+		`"acceptance_version":3,"acceptance_digest":"abcd"}}`
+	for _, tc := range []struct {
+		op   string
+		args []string
+		f    itemFlags
+	}{
+		{"acceptance", []string{"item-1"}, itemFlags{acceptance: criteria}},
+		{"step-done", []string{"item-1", "s2"}, itemFlags{}},
+		{"phase", []string{"item-1", "verifying"}, itemFlags{}},
+		{"finish", []string{"item-1"}, itemFlags{}},
+	} {
+		_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, written })
+		var out, errs bytes.Buffer
+		if code := sessionItem(&out, &errs, b, tc.op, tc.f, tc.args, thinConversation, "", envOf(nil)); code != 0 {
+			t.Fatalf("%s exit %d: %s", tc.op, code, errs.String())
+		}
+		got := out.String()
+		for _, want := range []string{"item item-1 is at version 9", "[feature, verifying,", "acceptance v3 sha256:abcd", "clawdline item show item-1"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s lacks %q: %s", tc.op, want, got)
+			}
+		}
+		if strings.Contains(got, criteria) {
+			t.Fatalf("%s reprinted acceptance: %s", tc.op, got)
+		}
+	}
+	_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, written })
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "show", itemFlags{}, []string{"item-1"}, "", "", envOf(nil)); code != 0 || !strings.Contains(out.String(), criteria) {
+		t.Fatalf("show exit %d, stdout %q, stderr %q", code, out.String(), errs.String())
 	}
 }
 
