@@ -2124,20 +2124,22 @@ func (t *WorkV2Tx) DeleteDirectTodo(id, session string) (bool, error) {
 func (s *Store) DirectTodosV2(ctx context.Context, session string, includeCompleted bool, markRead bool, limit int) ([]work.DirectTodoV2, bool, error) {
 	var out []work.DirectTodoV2
 	var truncated bool
-	err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
-		stmt := `SELECT ` + directTodoV2Columns + ` FROM session_direct_todos WHERE session_id=?`
-		if !includeCompleted {
-			stmt += ` AND completed_at IS NULL`
-			stmt += ` ORDER BY created_at,rowid LIMIT ?`
-		} else {
-			// Open work remains the actionable prefix in creation order. Completed
-			// rows follow newest first so the bounded person view keeps the most
-			// useful confirmations without hiding an old open row.
-			stmt += ` ORDER BY completed_at IS NOT NULL,
+	stmt := `SELECT ` + directTodoV2Columns + ` FROM session_direct_todos WHERE session_id=?`
+	if !includeCompleted {
+		stmt += ` AND completed_at IS NULL`
+		stmt += ` ORDER BY created_at,rowid LIMIT ?`
+	} else {
+		// Open work remains the actionable prefix in creation order. Completed
+		// rows follow newest first so the bounded person view keeps the most
+		// useful confirmations without hiding an old open row.
+		stmt += ` ORDER BY completed_at IS NOT NULL,
         CASE WHEN completed_at IS NULL THEN created_at END,
         CASE WHEN completed_at IS NOT NULL THEN completed_at END DESC,rowid LIMIT ?`
-		}
-		rows, err := tx.tx.QueryContext(ctx, stmt, session, limit+1)
+	}
+	read := func(q interface {
+		QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	}) error {
+		rows, err := q.QueryContext(ctx, stmt, session, limit+1)
 		if err != nil {
 			return err
 		}
@@ -2155,8 +2157,15 @@ func (s *Store) DirectTodosV2(ctx context.Context, session string, includeComple
 		if len(out) > limit {
 			out, truncated = out[:limit], true
 		}
-		if !markRead {
-			return nil
+		return nil
+	}
+	if !markRead {
+		err := read(s.rd)
+		return out, truncated, err
+	}
+	err := s.WriteWorkV2(ctx, func(tx *WorkV2Tx) error {
+		if err := read(tx.tx); err != nil {
+			return err
 		}
 		now := time.Now().Unix()
 		res, err := tx.tx.ExecContext(ctx, `UPDATE session_direct_todos SET read_at=?,version=version+1
