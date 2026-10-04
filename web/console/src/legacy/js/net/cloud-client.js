@@ -811,8 +811,10 @@ export class CloudClient {
             this.trail.relayError(relayCode);
             // `malformed_envelope` is only ever a publish's; every other refusal on an open socket
             // answers the oldest subscription frame still waiting, if there is one.
-            if (relayCode !== "malformed_envelope") this._subscriptionRefused(relayCode);
-            throw failureFromRelay(relayCode, { message: "the relay refused a frame" });
+            var refusedChannels = relayCode !== "malformed_envelope" ? this._subscriptionRefused(relayCode) : [];
+            var refusal = failureFromRelay(relayCode, { message: "the relay refused a frame" });
+            refusal.subscriptionChannels = refusedChannels;
+            throw refusal;
         }
         throw cloudError("bad_frame", "unknown relay frame type");
     }
@@ -3781,10 +3783,10 @@ export class CloudClient {
      */
     _subscriptionRefused(code) {
         var refused = this.subscriptionFrames.shift();
-        if (!refused || refused.type !== "subscribe") return;
+        if (!refused || refused.type !== "subscribe") return [];
         var coming = this._subscribesInFlight();
         var retracted = refused.channels.filter(function (channel) { return !coming.has(channel); });
-        if (!retracted.length) return;
+        if (!retracted.length) return [];
         retracted.forEach((channel) => this.socketSubscriptions.delete(channel));
         var failure = failureFromRelay(code, { message: "the relay refused this subscription" });
         Array.from(this.readWaiters.entries()).forEach((entry) => {
@@ -3792,6 +3794,7 @@ export class CloudClient {
                 this._settleRead(entry[0], null, failure);
             }
         });
+        return retracted;
     }
 
     /** A read on `channel` settled: one fewer holder, and its idle time counts from now. */

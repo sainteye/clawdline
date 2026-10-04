@@ -6,7 +6,7 @@ export interface TerminalEnvelope {
   v: number; ch: string; seq: number; ts: number; class: string; key_id: string
   nonce: string; ct: string; sender: string; sig: string
 }
-type RelayEvent = { type: string; channels?: string[]; code?: string; error?: { code?: string }; status?: string; ch?: string; seq?: number }
+type RelayEvent = { type: string; channels?: string[]; code?: string; error?: { code?: string; subscriptionChannels?: string[] }; status?: string; ch?: string; seq?: number }
 export interface TerminalCloudClient {
   deviceID: string | null
   devicePrivateKey: CryptoKey | null
@@ -329,9 +329,11 @@ export class TerminalChannelTransport {
   }
   private relay(event: RelayEvent): void {
     const code = event.code ?? event.error?.code ?? "relay_error"
-    if (event.type === "error" && this.waiting.size) {
-      for (const connection of this.waiting.keys()) this.observation?.record("relay_error", { connection, code })
-    }
+    const refused = event.error?.subscriptionChannels ?? []
+    const socketFailed = code === "socket_error" || code === "cloud_reconnecting"
+    const affects = (connection: string) => socketFailed || this.channels(connection).some((ch) => refused.includes(ch))
+    if (event.type === "error" && this.waiting.size)
+      for (const connection of this.waiting.keys()) if (affects(connection)) this.observation?.record("relay_error", { connection, code })
     if (event.type === "error" && (code === "invalid_channel" || code === "unsupported_channel" || code === "cloud_read_busy" || code === "too_many_subscriptions")) {
       for (const connection of this.confirmed) {
         const delta = route("termd", this.machine, this.viewer, connection)
@@ -346,12 +348,9 @@ export class TerminalChannelTransport {
     }
     if (event.type === "error" && this.waiting.size) {
       for (const [connection, waiter] of this.waiting) {
-        // The shared Cloud client retracts the channels belonging to a refused
-        // subscribe before it emits this error. Match that evidence instead of
-        // guessing from a short list of refusal codes: a budget refusal must
-        // reach the caller as itself, not as a five-second timeout.
-        if (code !== "forbidden" && code !== "terminal_forbidden" &&
-          this.channels(connection).every((ch) => this.client.socketSubscriptions.has(ch))) continue
+        // Other channels share this socket. A refusal for one of them cannot
+        // deny this terminal's receipt subscription.
+        if (!affects(connection)) continue
         clearTimeout(waiter.timer)
         this.waiting.delete(connection)
         waiter.reject(fail(code))
@@ -375,9 +374,10 @@ export class TerminalChannelTransport {
     const ours = event.ch === route("termi", this.machine, this.viewer) &&
       typeof event.seq === "number" && this.sent.has(event.seq)
     if (ours) this.sent.delete(event.seq!)
-    if ((event.type === "publish_error" && ours) || event.type === "error") {
+    if (event.type === "publish_error" && ours)
       for (const listener of this.listeners.values()) listener({ error: code })
-    }
+    if (event.type === "error")
+      for (const [connection, listener] of this.listeners) if (affects(connection)) listener({ error: code })
     if (event.type === "ack" && ours && (event.status === "machine_offline" || event.status === "machine_stale")) {
       for (const listener of this.listeners.values()) listener({ error: event.status })
     }

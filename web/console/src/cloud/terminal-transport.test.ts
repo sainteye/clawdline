@@ -13,7 +13,7 @@ async function fixture() {
   const master = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   const sender = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
   const machineKey = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
-  const events = new Set<(event: { type: string; channels?: string[]; code?: string; error?: { code?: string } }) => void>()
+  const events = new Set<(event: { type: string; channels?: string[]; code?: string; error?: { code?: string; subscriptionChannels?: string[] } }) => void>()
   const published: TerminalEnvelope[] = []
   const observed: unknown[] = []
   const stages: Array<{ stage: string; code?: string; channel?: string }> = []
@@ -61,7 +61,7 @@ async function fixture() {
     return envelope
   }
   return { adapter, client, fresh, seen, published, observed, stages, seal, observation, machineKey,
-    emitRelay: (event: { type: string; error?: { code?: string } }) => events.forEach((fn) => fn(event)),
+    emitRelay: (event: { type: string; error?: { code?: string; subscriptionChannels?: string[] } }) => events.forEach((fn) => fn(event)),
     setConfirm: (value: boolean) => { confirm = value },
     setRejectDelta: (value: boolean) => { rejectDelta = value }, master }
 }
@@ -262,9 +262,26 @@ test("a typed relay subscription refusal keeps its source code", async () => {
   f.setConfirm(false)
   const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
-  f.emitRelay({ type: "error", error: { code: "forbidden" } })
+  f.emitRelay({ type: "error", error: { code: "forbidden", subscriptionChannels: [
+    `term/${machine}/${viewer}/${f.fresh.connection}`] } })
   await assert.rejects(subscribed, /forbidden/)
   assert.equal(f.seen.length, 0)
+  f.adapter.dispose()
+})
+
+test("a forbidden error for another shared socket channel does not deny a terminal subscription", async () => {
+  const f = await fixture()
+  f.setConfirm(false)
+  const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, () => undefined)
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  f.emitRelay({ type: "error", error: { code: "forbidden", subscriptionChannels: ["t/other/session"] } })
+  f.setConfirm(true)
+  f.client._sendSubscriptionFrame("subscribe", [
+    `term/${machine}/${viewer}/${f.fresh.connection}`,
+    `termr/${machine}/${viewer}/${f.fresh.connection}`,
+  ])
+  await subscribed
+  assert.deepEqual(f.stages.filter((row) => row.stage === "relay_error"), [])
   f.adapter.dispose()
 })
 
@@ -275,7 +292,7 @@ test("a retracted terminal subscription reports the relay budget refusal promptl
   await new Promise<void>((resolve) => setTimeout(resolve, 0))
   const channel = `term/${machine}/${viewer}/${f.fresh.connection}`
   f.client.socketSubscriptions.delete(channel)
-  f.emitRelay({ type: "error", error: { code: "terminal_budget_exhausted" } })
+  f.emitRelay({ type: "error", error: { code: "terminal_budget_exhausted", subscriptionChannels: [channel] } })
   await assert.rejects(subscribed, /terminal_budget_exhausted/)
   assert.deepEqual(f.stages.map((row) => [row.stage, row.code ?? ""]), [
     ["subscription_sent", ""], ["relay_error", "terminal_budget_exhausted"],
