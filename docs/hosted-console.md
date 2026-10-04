@@ -38,8 +38,15 @@ VITE_HOSTED_CONSOLE='{"v":1,"app_origin":"https://app.clawdline.com","api_origin
 ```
 
 The three endpoints are the production ones in `internal/adapters/cloud/settings.go`. Write a
-`BUILD.json` into `console/dist` carrying the commit sha as `stamp`, so a deploy can be identified
-afterwards — but see below for what it does and does not prove.
+`BUILD.json` into `console/dist` carrying the commit sha as `stamp` and its committer time as
+`committed_at`, so a deploy can be identified afterwards and every daemon can tell whether it trails
+this build ([updates.md](updates.md)) — but see below for what it does and does not prove.
+
+```sh
+stamp=$(git rev-parse HEAD)
+committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$stamp")
+printf '{"stamp":"%s","committed_at":"%s"}\n' "$stamp" "$committed_at" >console/dist/BUILD.json
+```
 
 ## Deploy
 

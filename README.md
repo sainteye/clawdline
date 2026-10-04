@@ -99,6 +99,7 @@ Getting going
 - [macOS, Linux and Windows](docs/user/platforms.md) — the native app, a `systemd --user` service,
   what Windows can do
 - [Troubleshooting](docs/user/troubleshooting.md)
+- [Updates](docs/updates.md) — whether this machine trails the cloud's latest build, `clawdline update`
 
 Everyday use
 

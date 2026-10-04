@@ -37,11 +37,14 @@ codebase can actually carry, not the most elegant one you can imagine.
    otherwise; spend your care there.
 6. No abstraction without a present need. A layer, interface or config option must solve a
    problem this plan has, not one it might have later.
-7. Keep dependencies pointing one way. Core rules do not import transports, storage or UI; say
+7. Before proposing a new component, dependency or service, check whether the repository,
+   standard library or platform already meets the acceptance criteria. Cite the existing option
+   and its limits; fewer lines alone are not evidence that a design is better.
+8. Keep dependencies pointing one way. Core rules do not import transports, storage or UI; say
    where a boundary is and what crosses it.
-8. Write a "not building" section. Out-of-scope items are listed with the reason, so they are
+9. Write a "not building" section. Out-of-scope items are listed with the reason, so they are
    decisions and not omissions.
-9. Every step has an acceptance check that could fail: a test, a command, a measured number.
+10. Every step has an acceptance check that could fail: a test, a command, a measured number.
    "Works correctly" is not a check.
 
 ## How you work

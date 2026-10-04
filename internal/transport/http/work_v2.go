@@ -2438,14 +2438,18 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 				itemOf = s.workV2ItemProjector(r.Context())
 			}
 			assigned := make([]workV2ItemWire, 0, len(items))
+			assignedIDs := make(map[string]bool, len(items))
 			for _, item := range items {
 				assigned = append(assigned, itemOf(item))
+				assignedIDs[item.Item.ID] = true
 			}
+			decisions, decisionsError := readSessionTodoDecisions(r.Context(), assignedIDs, conversation, s.store.Decisions)
 			completed := make([]workV2ItemWire, 0, len(recent))
 			for _, item := range recent {
 				completed = append(completed, itemOf(item))
 			}
 			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+				"open_decisions": decisions, "decisions_error": decisionsError,
 				"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
 		})
 		return
@@ -2620,6 +2624,42 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+// sessionTodoDecisionReadMillisecondsLimit bounds optional question projection.
+const sessionTodoDecisionReadMillisecondsLimit = 300
+
+// Decision context is optional. A stalled or failed lookup must leave the
+// already projected todo list available with a typed missing-context hint.
+func readSessionTodoDecisions(ctx context.Context, assignedIDs map[string]bool, conversation string,
+	read func(context.Context, store.DecisionQuery) ([]work.Decision, error)) ([]decisionWire, *string) {
+	if len(assignedIDs) == 0 {
+		return []decisionWire{}, nil
+	}
+	decisionContext, cancel := context.WithTimeout(ctx, time.Duration(sessionTodoDecisionReadMillisecondsLimit)*time.Millisecond)
+	defer cancel()
+	rows, err := read(decisionContext, store.DecisionQuery{
+		State: work.DecisionOpen, Session: conversation, Limit: app.WorkPageSize,
+	})
+	if err != nil {
+		code := "decisions_unavailable"
+		return []decisionWire{}, &code
+	}
+	if len(rows) == app.WorkPageSize {
+		code := "decisions_truncated"
+		return assignedOpenDecisions(rows, assignedIDs, conversation), &code
+	}
+	return assignedOpenDecisions(rows, assignedIDs, conversation), nil
+}
+
+func assignedOpenDecisions(rows []work.Decision, assignedIDs map[string]bool, conversation string) []decisionWire {
+	out := make([]decisionWire, 0)
+	for _, decision := range rows {
+		if assignedIDs[decision.WorkID] && decision.Session == conversation && decision.State == work.DecisionOpen {
+			out = append(out, decisionOf(decision))
+		}
+	}
+	return out
 }
 
 // workV2SessionTodosRead chooses the cheap header operation before entering

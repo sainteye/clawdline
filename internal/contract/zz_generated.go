@@ -1718,6 +1718,15 @@ type BrowserRequest struct {
 	Send bool `json:"send,omitempty"`
 }
 
+// One build: the commit it was built from and, when its BUILD.json said so,
+// that commit's committer time (RFC3339 UTC). An older BUILD.json has no time.
+type BuildStamp struct {
+	CommittedAt string `json:"committed_at,omitempty"`
+
+	// The full commit hash, or empty when it is not known.
+	Stamp string `json:"stamp"`
+}
+
 // `none`: nothing is refused, removed or rotated; the limit is only reported.
 // No class allows it, so a row that does it has a `deviation`.
 type CapacityAction string
@@ -6893,6 +6902,46 @@ type TunnelStatus struct {
 	// The address, once a connection to Cloudflare's edge is registered. Present when
 	// state is up.
 	URL string `json:"url,omitempty"`
+}
+
+// How this machine's build stands against the cloud's latest (docs/updates.md).
+// `current`: the same commit. `update_available`: the cloud's commit is later.
+// `ahead`: this machine's is later. `differs`: the commits differ and a commit
+// time is missing on one side. `unknown`: no comparison could be made; `reason`
+// says why.
+type UpdateState string
+
+const (
+	UpdateStateCurrent         UpdateState = "current"
+	UpdateStateUpdateAvailable UpdateState = "update_available"
+	UpdateStateAhead           UpdateState = "ahead"
+	UpdateStateDiffers         UpdateState = "differs"
+	UpdateStateUnknown         UpdateState = "unknown"
+)
+
+// UpdateStateValues is every value the contract allows, in contract order.
+var UpdateStateValues = []UpdateState{UpdateStateCurrent, UpdateStateUpdateAvailable, UpdateStateAhead, UpdateStateDiffers, UpdateStateUnknown}
+
+// GET /v1/update: whether this machine trails the cloud's latest build.
+// Answered from the daemon's last background check; a request never waits on
+// the network. A failed check keeps the last good `latest` and says what failed
+// in `error`.
+type UpdateStatus struct {
+	// When the last successful check read the cloud's BUILD.json (RFC3339 UTC). Absent
+	// before the first success.
+	CheckedAt string `json:"checked_at,omitempty"`
+
+	// What the most recent check said when it failed after the last success.
+	Error  string     `json:"error,omitempty"`
+	Latest BuildStamp `json:"latest"`
+
+	// Why the state is `unknown`.
+	Reason  string     `json:"reason,omitempty"`
+	Running BuildStamp `json:"running"`
+
+	// The BUILD.json this daemon asks.
+	SourceURL string      `json:"source_url"`
+	State     UpdateState `json:"state"`
 }
 
 // What some sessions spent: every category in the ledger's order, each with its

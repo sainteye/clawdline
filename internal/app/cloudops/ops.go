@@ -1302,6 +1302,22 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/decisions"}
 			}},
+		op{name: "work.decision", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id") {
+					return plan{}, false
+				}
+				p, ok := machinePlan(b)
+				id, valid := b.nonEmpty("id")
+				if !ok || !valid || !isTaskID(id) {
+					return plan{}, false
+				}
+				p.id = id
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/work/decisions/" + p.id}
+			}},
 
 		op{name: "work.digests", read: true,
 			decode: func(b body) (plan, bool) {

@@ -847,6 +847,7 @@ const CARRIED_READS: [string, string, Record<string, unknown>][] = [
   ["/v1/work/backlog?project=%2Fp&cursor=c2", "work.backlog", { project: "/p", cursor: "c2" }],
   ["/v1/work/proposals?project=%2Fp", "work.proposals", { project: "/p" }],
   ["/v1/work/decisions", "work.decisions", {}],
+  ["/v1/work/decisions/10000000-0000-4000-8000-000000000001", "work.decision", { id: "10000000-0000-4000-8000-000000000001" }],
   ["/v1/work/digests?kind=daily", "work.digests", { kind: "daily" }],
   ["/v1/work/v2/items", "work.v2.items", { project: "" }],
   ["/v1/work/v2/items?status=open", "work.v2.search", { project: "", status: "open", query: "" }],
@@ -966,6 +967,20 @@ test("a query field no word carries is refused by name, never quietly dropped", 
   assert.equal(refusal.error, "cloud_not_carried")
   assert.match(refusal.detail, /section=/)
   assert.equal(client.reads.length, 0, "the machine was asked a question it could not have been told")
+})
+
+test("a single decision read refuses malformed paths before asking the machine", async () => {
+  const client = new FakeClient()
+  const r = reader(client, { t: 1000 })
+  for (const path of [
+    "/v1/work/decisions/not-a-uuid",
+    "/v1/work/decisions/10000000-0000-4000-8000-000000000001/answer",
+    "/v1/work/decisions/10000000-0000-4000-8000-000000000001?state=all",
+  ]) {
+    const res = await r.fetch(path)
+    assert.ok(res.status >= 400, path)
+  }
+  assert.equal(client.reads.length, 0)
 })
 
 test("a client with no generic read refuses each word by name rather than throwing", async () => {

@@ -38,6 +38,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/adapters/updatecheck"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
@@ -125,7 +126,11 @@ type Server struct {
 	// usage keeps the previous reading of this machine's CPU and memory, so
 	// the dashboard's shares are measured between two (machine_usage.go).
 	usageOnce sync.Once
-	usage     *machineusage.Sampler
+	// update is the update check behind GET /v1/update (update.go), made on
+	// first use; StartScheduler starts its background refresh.
+	update     *updatecheck.Checker
+	updateOnce sync.Once
+	usage      *machineusage.Sampler
 	// beat is the broker's account of its last pass, read by /v1/diagnostics.
 	beat atomic.Pointer[orchestrator.Pulse]
 	// pulse is the scheduler's own account of its last pass, read by
@@ -356,6 +361,9 @@ func (s *Server) Handler() http.Handler {
 	// The dashboard behind the session counts: this machine's CPU and memory and
 	// each session's share (machine_usage.go). Any paired device, as /v1/capacity.
 	mux.HandleFunc("/v1/machine/usage", s.machineUsageRoute)
+	// Whether this machine trails the cloud's latest build (update.go). Any
+	// paired device, as /v1/capacity.
+	mux.HandleFunc("/v1/update", s.updateRoute)
 	// What the line to app.clawdline.com is doing (cloud.go). This machine's
 	// own token only.
 	mux.HandleFunc("/v1/cloud/status", s.cloudStatusRoute)
@@ -667,6 +675,9 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	log.Printf("scheduler ticking every %s", tick)
 	// Reference-image files no row names: swept at Open, then on this clock.
 	go s.store.SweepReferenceImagesEvery(ctx, store.ReferenceImageSweepIntervalLimit)
+	// Whether this machine trails the cloud's latest build: read now and on
+	// its own clock, so GET /v1/update never waits on the network.
+	go s.updateChecker().Run(ctx)
 }
 
 // schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The

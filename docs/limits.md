@@ -249,6 +249,9 @@ answer to who may let anything go.
 | `work_gate_due_rows_per_pass` | 20 | observation / rows | gate coordinator | continue the next supervised pass from a stable cursor; no due row is dropped | diagnostics / daemon |
 | `work_gate_retry_backoff_seconds` | 300 seconds | cache / seconds | gate coordinator | expire/cap the delay so the queued row becomes due and visible | diagnostics / daemon |
 | `work_gate_owner_offline_grace_seconds` | 900 seconds | observation / seconds | gate coordinator | expire the stale live-owner observation, atomically promote to the person, notify once | diagnostics, notice / daemon |
+| `update.refresh_seconds` | 1800 seconds | observation / seconds | update check | read the cloud's BUILD.json again; the old answer is replaced only by a good new one ([updates.md](updates.md)) | diagnostics / daemon |
+| `update.fetch_timeout_seconds` | 10 seconds | observation / seconds | update check | abandon the read and show its error beside the last good answer | diagnostics / daemon |
+| `update.build_body_bytes` | 4096 bytes | buffer / bytes | update check | refuse the body as not a BUILD.json | diagnostics / daemon |
 
 另外兩件跟「誰會知道」直接相關的：`plan.md` §3.2 與 `cross-platform.md` 還寫 `scheduler` 在 `/v1/health`，實際已經在
 `/v1/diagnostics`；`git/changes.go:80-82` 的註解說「every file read goes through an `io.LimitReader`」，至少 6 處不是

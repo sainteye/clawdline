@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { confirmDecisionAnswer, decisionsForWorkItem, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait } from "./board-attention.ts"
+import { confirmDecisionAnswer, decisionsForWorkItem, matchingDecisionAnswer, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait } from "./board-attention.ts"
 
 test("questions stay with the Board item that gives them context", () => {
   const rows = [
@@ -33,4 +33,10 @@ test("an uncertain answer leaves the choice and wait available for retry", async
   let confirmed = false
   await assert.rejects(confirmDecisionAnswer(async () => { throw new Error("network") }, () => { confirmed = true }), /network/)
   assert.equal(confirmed, false)
+})
+
+test("reconciliation accepts only the selected answer", () => {
+  assert.equal(matchingDecisionAnswer({ state: "answered", answer: "selected" }, "selected"), true)
+  assert.equal(matchingDecisionAnswer({ state: "answered", answer: "other" }, "selected"), false)
+  assert.equal(matchingDecisionAnswer({ state: "open", answer: null }, "selected"), false)
 })
