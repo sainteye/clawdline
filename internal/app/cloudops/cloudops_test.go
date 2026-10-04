@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -993,6 +994,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body: map[string]any{"type": "sessions.snapshot", "session": machine,
 			"request": "req-rows"},
 		session: machine, name: "read:req-rows", code: "unknown_command", status: 400,
+	}, {
+		word: "sessions.snapshot.initial",
+		body: map[string]any{"type": "sessions.snapshot.initial", "session": machine,
+			"request": "req-initial-rows"},
+		session: machine, name: "read:req-initial-rows", code: "unknown_command", status: 400,
 	}, {
 		word: "schedule",
 		body: map[string]any{"type": "schedule", "session": machine, "request": "req-schedule",
@@ -2081,14 +2087,16 @@ func TestBoardItemsRoutesTheWholeQuery(t *testing.T) {
 // `orchestrator: true` beside the three keys. It is a read: the write switch,
 // off here, does not gate it.
 func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
-	asked := 0
-	bridge := Bridge{MachineID: "mac-01", Sessions: func(context.Context) (SessionsStated, *Refusal) {
-		asked++
+	var firsts []bool
+	bridge := Bridge{MachineID: "mac-01", SessionsFor: func(_ context.Context, _ string, first bool) (SessionsStated, *Refusal) {
+		firsts = append(firsts, first)
 		return SessionsStated{IDs: []string{"%19", "GUID-2"}, Complete: true}, nil
 	}}
 	for _, body := range []map[string]any{
 		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1"},
 		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "orchestrator": true},
+		{"type": "sessions.snapshot", "session": MachineReplySession, "request": "req-1", "initial": false},
+		{"type": "sessions.snapshot.initial", "session": MachineReplySession, "request": "req-1"},
 	} {
 		answer := bridge.Handle(context.Background(), request(t, ClassCtl, body))
 		if answer.Session != MachineReplySession || answer.Name != "read:req-1" || !answer.OK() {
@@ -2100,8 +2108,8 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 			t.Fatalf("the answer said %s", got)
 		}
 	}
-	if asked != 2 {
-		t.Fatalf("the publisher was asked %d times, wanted 2", asked)
+	if !reflect.DeepEqual(firsts, []bool{true, true, false, true}) {
+		t.Fatalf("the publisher saw first attempts %v", firsts)
 	}
 
 	// A body this word does not have is malformed, and the publisher is not
@@ -2116,8 +2124,8 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 			t.Fatalf("%v answered %q, wanted malformed_read", body, answer.Code)
 		}
 	}
-	if asked != 2 {
-		t.Fatalf("a malformed request asked the publisher (%d)", asked)
+	if len(firsts) != 4 {
+		t.Fatalf("a malformed request asked the publisher (%d)", len(firsts))
 	}
 
 	// The publisher's refusal crosses as itself.
@@ -2133,6 +2141,9 @@ func TestSessionsSnapshotAnswersTheIdsThePublisherStated(t *testing.T) {
 
 	if !AsksForSessions([]byte(`{"type":"sessions.snapshot","session":"__clawdline_machine__","request":"r"}`)) {
 		t.Fatal("AsksForSessions missed the word")
+	}
+	if !AsksForSessions([]byte(`{"type":"sessions.snapshot.initial","session":"__clawdline_machine__","request":"r"}`)) {
+		t.Fatal("AsksForSessions missed the initial word")
 	}
 	for _, other := range []string{`{"type":"send","text":"sessions.snapshot"}`, `not json sessions.snapshot`, `{"type":"info"}`} {
 		if AsksForSessions([]byte(other)) {

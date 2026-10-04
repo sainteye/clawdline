@@ -154,6 +154,7 @@ export const CARRIED = {
   // opened after a relay eviction is sent every row rather than whichever
   // changed.
   "sessions.snapshot": "cloud-client.js _recoverSessions (on connect)",
+  "sessions.snapshot.initial": "cloud-client.js first _recoverSessions attempt (when advertised)",
   "smart-title": "POST /v1/sessions/{id}/smart-title",
   "snippet-create": "POST /v1/snippets",
   "snippet-delete": "DELETE /v1/snippets/{id}",

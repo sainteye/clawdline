@@ -61,7 +61,7 @@ const SnapshotInterval = 5 * time.Second
 // FeatureWords is `CloudAppBridge.swift:1436`'s `cloudFeatures`: the words a
 // newer machine answers that an older one does not. A page sends such a word only
 // to a machine that listed it.
-var FeatureWords = []string{"sessions.snapshot", "board.items"}
+var FeatureWords = []string{"sessions.snapshot", "sessions.snapshot.initial", "board.items"}
 
 // Features is the subset of those this daemon can actually answer.
 //
