@@ -335,6 +335,42 @@ export interface SeamRow {
   ref?: string
 }
 
+/** Content-free stages of the two Session header reads, retained for one hour. */
+export interface HeaderReadDiagnostic {
+  at: number
+  operation: "todos" | "attention"
+  stage: "connection_unavailable" | "ask_started" | "answer_observed" | "caller_canceled" | "read_failed"
+  code: string
+  elapsed: "<1s" | "1-5s" | "5-15s" | ">15s"
+}
+
+const HEADER_DIAGNOSTIC_KEY = "clawdline.header-read-diagnostics.v1"
+const HEADER_DIAGNOSTIC_LIMIT = 24
+const HEADER_DIAGNOSTIC_AGE_MS = 60 * 60 * 1000
+const HEADER_CODES = new Set(["cloud_reconnecting", "cloud_not_carried", "cloud_read_abandoned", "offline", "cloud_failed", "cloud_read_unavailable", "cloud_read_timeout", "cloud_read_settled", "socket_error", "cloud_starting"])
+
+/** Revalidate stored data on every read, so malformed or older records cannot be copied. */
+export function headerReadDiagnostics(now = Date.now()): HeaderReadDiagnostic[] {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(HEADER_DIAGNOSTIC_KEY) || "[]") as unknown
+    if (!Array.isArray(raw)) return []
+    return raw.filter((row): row is HeaderReadDiagnostic => {
+      if (!row || typeof row !== "object") return false
+      const r = row as Record<string, unknown>
+      return Number.isFinite(r.at) && typeof r.at === "number" && r.at <= now && r.at > now - HEADER_DIAGNOSTIC_AGE_MS
+        && (r.operation === "todos" || r.operation === "attention")
+        && ["connection_unavailable", "ask_started", "answer_observed", "caller_canceled", "read_failed"].includes(String(r.stage))
+        && typeof r.code === "string" && (r.code === "none" || r.code === "other" || HEADER_CODES.has(r.code))
+        && ["<1s", "1-5s", "5-15s", ">15s"].includes(String(r.elapsed))
+    }).slice(-HEADER_DIAGNOSTIC_LIMIT).map((r) => ({ at: r.at, operation: r.operation, stage: r.stage, code: r.code, elapsed: r.elapsed }))
+  } catch { return [] }
+}
+
+function recordHeaderRead(row: HeaderReadDiagnostic): void {
+  try { sessionStorage.setItem(HEADER_DIAGNOSTIC_KEY, JSON.stringify([...headerReadDiagnostics(row.at), row].slice(-HEADER_DIAGNOSTIC_LIMIT))) }
+  catch { /* storage can be disabled without changing a read */ }
+}
+
 export interface RelayReaderOptions {
   now?: () => number
   /** The interface's words for `GET /v1/strings`; the build's static catalog. */
@@ -1273,8 +1309,17 @@ export class RelayReader {
     body: Record<string, unknown>,
     machine: string = this.machine,
   ): Promise<Response> {
+    const operation = word === "work.v2.session-todos" ? "todos" : word === "work.v2.human-interventions" ? "attention" : null
+    const started = this.now()
+    const mark = (stage: HeaderReadDiagnostic["stage"], code = "none") => {
+      if (!operation) return
+      const ms = Math.max(0, this.now() - started)
+      recordHeaderRead({ at: this.now(), operation, stage, code: HEADER_CODES.has(code) || code === "none" ? code : "other",
+        elapsed: ms < 1000 ? "<1s" : ms < 5000 ? "1-5s" : ms < 15000 ? "5-15s" : ">15s" })
+    }
     const client = await this.connectedFor(signal)
     if (!client) {
+      mark(signal?.aborted ? "caller_canceled" : "connection_unavailable", signal?.aborted ? "cloud_read_abandoned" : "cloud_reconnecting")
       if (signal?.aborted) throw new NotConnected()
       // Not `offline`: that is `jsonFetch`'s word for a network that failed,
       // and it put "is it still running on the machine?" under a machine that
@@ -1284,6 +1329,7 @@ export class RelayReader {
         "This page's Cloud connection is renewing or paused; the machine was not asked.")
     }
     if (typeof client._machineRequest !== "function") {
+      mark("read_failed", "cloud_not_carried")
       // A copied client older than the generic. Named rather than thrown:
       // this is the page refusing itself, and it says which word it is about.
       return this.refuse(method, path, 501, "cloud_not_carried",
@@ -1294,10 +1340,25 @@ export class RelayReader {
     // fifteen-second bound (`pages/work/api.ts`) silently became the copied
     // client's sixty-second read timeout plus its ten-second status probe:
     // a Session's to-do fold said "loading" for over a minute per try.
-    const answer = await abandonable(client._machineRequest(machine, word, body, "read", undefined,
-      signal ? { signal } : undefined), signal, word)
-    this.note(method, path, "relay", undefined, { word })
-    return json(200, answer)
+    if (signal?.aborted) {
+      mark("caller_canceled", "cloud_read_abandoned")
+      throw new AbandonedRead(word)
+    }
+    let asked: Promise<unknown>
+    try {
+      asked = client._machineRequest(machine, word, body, "read", undefined, signal ? { signal } : undefined)
+      // This proves the browser invoked its Cloud client, not that the
+      // relay or machine accepted the request.
+      mark("ask_started")
+      const answer = await abandonable(asked, signal, word)
+      mark("answer_observed")
+      this.note(method, path, "relay", undefined, { word })
+      return json(200, answer)
+    } catch (error) {
+      if (error instanceof AbandonedRead || signal?.aborted) mark("caller_canceled", "cloud_read_abandoned")
+      else mark("read_failed", failureCode(error))
+      throw error
+    }
   }
 
   /**
