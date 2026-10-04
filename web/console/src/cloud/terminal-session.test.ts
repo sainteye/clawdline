@@ -73,6 +73,21 @@ class Wire implements TerminalWire {
   }
 }
 
+test("an authorized connection remains reusable for repeated reads until revoked", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    assert.equal(session.reusable, false)
+    await session.start()
+    assert.equal(session.reusable, true)
+    await session.request("list", { client: "stable-tab" })
+    await session.request("list", { client: "stable-tab" })
+    assert.equal(wire.requests.filter((request) => request.operation === "open_connection").length, 1)
+    wire.channels.get(wire.latest())?.({ error: "terminal_access_revoked" })
+    assert.equal(session.reusable, false)
+  } finally { session.dispose() }
+})
+
 test("a close exposes its request id and an unknown receipt does not claim success", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
@@ -442,6 +457,7 @@ test("fault injection: a receipt that never arrives stops at receipt_timeout", a
     await new Promise<void>((resolve) => queueMicrotask(resolve))
     t.mock.timers.tick(10_000)
     await assert.rejects(reading, /terminal_receipt_timeout/)
+    assert.equal(session.reusable, false)
     assert.match(observation.text().split("\n")[1]!, /^stopped phase=receipt_timeout stage=receipt_timeout code=- seq=\d+$/)
     assert.match(observation.text(), /stage=request_pending phase=- conn=1 req=\d+ ch=- op=history/)
   } finally { t.mock.timers.reset(); session.dispose() }

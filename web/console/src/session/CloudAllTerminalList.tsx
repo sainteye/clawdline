@@ -3,8 +3,7 @@ import { nextWord } from "../next-strings.js"
 import { readProjectPlaces, type ProjectPlace } from "../pages/work/api.js"
 import { terminalHost, watchTerminalHost, type TerminalHost } from "../cloud/terminal-host.js"
 import { scheduleFleet, onScheduleFleet, type ScheduleFleet } from "../cloud/schedule-machines.js"
-import { TerminalChannelTransport } from "../cloud/terminal-transport.js"
-import { CloudTerminalSession } from "../cloud/terminal-session.js"
+import { acquireTerminalConnection } from "../cloud/terminal-connection-owner.js"
 import { openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords } from "../pages/terminal/words.js"
@@ -12,21 +11,14 @@ import { collectCloudTerminals, type CloudTerminalRow, type CloudTerminalError }
 import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, watchTerminalClose } from "../cloud/terminal-close-state.js"
 
 async function readMachine(host: TerminalHost, machine: string): Promise<import("@clawdline/contract").Terminal[]> {
-  const transport = new TerminalChannelTransport(host.client, machine)
-  const session = new CloudTerminalSession(transport, TAB)
+  const { session, release } = await acquireTerminalConnection(host, machine, TAB)
   try {
-    await session.start()
     const answer = await session.request("list", { client: TAB })
     const rows = answer.result?.terminals
     if (!Array.isArray(rows)) throw Object.assign(new Error("terminal_bad_receipt"), { code: "terminal_bad_receipt" })
     return rows as import("@clawdline/contract").Terminal[]
   } finally {
-    // A read-only list still registers a machine-side connection. Release it
-    // without delaying the visible list by another relay round trip.
-    void session.request("release_connection").catch(() => undefined).finally(() => {
-      session.dispose()
-      transport.dispose()
-    })
+    release()
   }
 }
 
