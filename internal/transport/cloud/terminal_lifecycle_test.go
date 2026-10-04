@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,6 +78,43 @@ func TestRejectedCloudFrameRetiresConnectionInsteadOfRetrying(t *testing.T) {
 	}
 	if spool.NextSequence() != before {
 		t.Fatal("rejected frame was retried")
+	}
+}
+
+func TestReleasedListConnectionRetiresAfterReceiptSettles(t *testing.T) {
+	l, _, c, svc, retired := terminalLifecycleFixture(t)
+	result, err := l.terminalOperation(context.Background(), svc, terminals.Principal{Device: c.viewer, Cloud: true}, c,
+		terminalRequest{Operation: "release_connection"})
+	if err != nil || result == nil {
+		t.Fatalf("release operation: %v, %v", result, err)
+	}
+	if err := l.sendTerminalReceipt(context.Background(), c, terminalReceipt{V: 1, Type: "terminal_receipt",
+		RequestID: testRequestID, Connection: c.id, Operation: "release_connection", Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if l.getTerminalConnection(c.viewer, c.id) == nil {
+		t.Fatal("connection retired before release receipt settled")
+	}
+	var settled string
+	for id := range l.terminalRetireAfterReceipt {
+		settled = id
+	}
+	if settled == "" {
+		t.Fatal("release receipt was not tracked for retirement")
+	}
+	const channel = "termr/machine/viewer/"
+	seq, err := strconv.ParseUint(strings.TrimPrefix(settled, channel+c.id+"/"), 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.terminalReceiptSettled(channel+c.id, seq, adaptercloud.SettleDelivered)
+	if l.getTerminalConnection(c.viewer, c.id) != nil {
+		t.Fatal("released connection still consumes a viewer slot")
+	}
+	select {
+	case <-retired:
+	case <-time.After(time.Second):
+		t.Fatal("relay registration was not retired")
 	}
 }
 
