@@ -3312,21 +3312,29 @@ export class CloudClient {
         var key = readKey(identity, answer);
         var self = this;
         return new Promise(function (resolve, reject) {
+            var signal = readOptions && readOptions.signal;
+            if (signal && signal.aborted) {
+                reject(self._abortedRead());
+                return;
+            }
+            var waiter = { resolve: resolve, reject: reject, signal: signal, aborted: null };
             var waiters = self.readWaiters.get(key);
             if (waiters) {
-                waiters.waiting.push({ resolve: resolve, reject: reject });
+                waiters.waiting.push(waiter);
+                self._watchReadAbort(key, waiters, waiter);
                 return;
             }
             // Before a waiter, a subscription or a sequence: the relay said a moment ago that this
             // machine is not connected, and asking again now would only hear that again.
             var offline = self._offlineRefusal(identity.machine);
             if (offline) { reject(offline); return; }
-            waiters = { waiting: [{ resolve: resolve, reject: reject }], timer: null, ref: null,
+            waiters = { waiting: [waiter], timer: null, ref: null,
                 machine: identity.machine, type: type, request: extra && typeof extra.request === "string"
                     ? extra.request : null,
                 action: /^action:/.test(answer), channel: null,
                 retireUncertain: !!(readOptions && readOptions.retireUncertain) };
             self.readWaiters.set(key, waiters);
+            self._watchReadAbort(key, waiters, waiter);
             waiters.timer = self.setTimeout(function () {
                 if (self.readWaiters.get(key) !== waiters) return;
                 waiters.timer = null;
@@ -3352,8 +3360,32 @@ export class CloudClient {
                         Object.assign({ session: identity.session }, extra), "ctl",
                         { key: key, waiters: waiters });
                 })
-                .catch(function (error) { self._settleRead(key, null, error); });
+                .catch(function (error) {
+                    if (self.readWaiters.get(key) === waiters) self._settleRead(key, null, error);
+                });
         });
+    }
+
+    _abortedRead() {
+        var error = cloudError("cloud_read_abandoned", "this page stopped waiting for the read");
+        error.name = "AbortError";
+        return error;
+    }
+
+    _watchReadAbort(key, waiters, waiter) {
+        if (!waiter.signal) return;
+        var self = this;
+        waiter.aborted = function () {
+            if (self.readWaiters.get(key) !== waiters) return;
+            var index = waiters.waiting.indexOf(waiter);
+            if (index < 0) return;
+            waiters.waiting.splice(index, 1);
+            waiter.signal.removeEventListener("abort", waiter.aborted);
+            waiter.reject(self._abortedRead());
+            if (!waiters.waiting.length) self._settleRead(key, null, self._abortedRead());
+        };
+        waiter.signal.addEventListener("abort", waiter.aborted, { once: true });
+        if (waiter.signal.aborted) waiter.aborted();
     }
 
     /**
@@ -3421,6 +3453,7 @@ export class CloudClient {
             this.trail.step(ref, "observed");
         }
         waiters.waiting.forEach(function (waiter) {
+            if (waiter.signal && waiter.aborted) waiter.signal.removeEventListener("abort", waiter.aborted);
             if (error) waiter.reject(error); else waiter.resolve(body);
         });
     }

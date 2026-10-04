@@ -241,7 +241,7 @@ export interface CloudReadClient {
    * Optional for the reason `pushKey` is: a client without it is refused by
    * name rather than throwing where nobody is catching.
    */
-  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number): Promise<unknown>
+  _machineRequest?(machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number, readOptions?: { signal?: AbortSignal }): Promise<unknown>
   /** Resolve a Cloud-safe Project picker id to the machine-local Project id it names. */
   _place?(value: unknown): { machine: string; id: string; path: string }
 }
@@ -1292,7 +1292,8 @@ export class RelayReader {
     // fifteen-second bound (`pages/work/api.ts`) silently became the copied
     // client's sixty-second read timeout plus its ten-second status probe:
     // a Session's to-do fold said "loading" for over a minute per try.
-    const answer = await abandonable(client._machineRequest(machine, word, body, "read"), signal, word)
+    const answer = await abandonable(client._machineRequest(machine, word, body, "read", undefined,
+      signal ? { signal } : undefined), signal, word)
     this.note(method, path, "relay", undefined, { word })
     return json(200, answer)
   }
