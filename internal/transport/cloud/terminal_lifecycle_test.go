@@ -82,6 +82,35 @@ func TestRejectedCloudFrameRetiresConnectionInsteadOfRetrying(t *testing.T) {
 	}
 }
 
+func TestRateLimitedCloudFrameKeepsConnectionForNewestScreen(t *testing.T) {
+	l, _, c, svc, retired := terminalLifecycleFixture(t)
+	p := terminals.Principal{Device: c.viewer, Cloud: true}
+	first := terminal.Frame{Rev: "first", At: time.Now(), Lines: []string{"first"}}
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, first); err != nil {
+		t.Fatal(err)
+	}
+	channel, seq := c.framePendingChannel, c.framePendingSeq
+	l.terminalReceiptSettled(channel, seq, adaptercloud.SettleRateLimited)
+	if l.getTerminalConnection(c.viewer, c.id) != c {
+		t.Fatal("temporary frame limit retired connection")
+	}
+	if c.framePending || c.frameCandidate != nil || c.frameBase != nil {
+		t.Fatal("rejected frame remained pending or became delta base")
+	}
+	select {
+	case <-retired:
+		t.Fatal("temporary frame limit retired registration")
+	default:
+	}
+	newest := terminal.Frame{Rev: "newest", At: time.Now(), Lines: []string{"newest"}}
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, newest); err != nil {
+		t.Fatal(err)
+	}
+	if !c.framePending || c.framePendingSeq == seq {
+		t.Fatal("newest screen was not sent")
+	}
+}
+
 func TestPendingCloudFrameRequestsRetryInsteadOfDroppingNewScreen(t *testing.T) {
 	l, _, c, svc, _ := terminalLifecycleFixture(t)
 	p := terminals.Principal{Device: c.viewer, Cloud: true}

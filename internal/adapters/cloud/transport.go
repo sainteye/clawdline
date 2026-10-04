@@ -579,10 +579,14 @@ func (t *Transport) handlePublishError(data []byte) {
 	if t.opts.Spool == nil {
 		return
 	}
-	if result, err := t.opts.Spool.Settle(frame.Seq, frame.Ch, SettlePeerError); err != nil {
+	kind := SettlePeerError
+	if frame.Code == "rate_limited" {
+		kind = SettleRateLimited
+	}
+	if result, err := t.opts.Spool.Settle(frame.Seq, frame.Ch, kind); err != nil {
 		t.logf("cloud could not settle a refusal seq=%d reason=%v", frame.Seq, err)
 	} else if result != SettleResultLateIgnored && t.opts.OnSettled != nil {
-		t.opts.OnSettled(frame.Ch, frame.Seq, SettlePeerError)
+		t.opts.OnSettled(frame.Ch, frame.Seq, kind)
 	}
 }
 

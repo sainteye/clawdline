@@ -308,6 +308,8 @@ const (
 	SettleViewerOffline SettleKind = "viewer_offline"
 	// SettlePeerError is a `publish_error`, or an `ack` with a refused status.
 	SettlePeerError SettleKind = "peer_error"
+	// SettleRateLimited is a temporary relay refusal; the latest screen may be sent again.
+	SettleRateLimited SettleKind = "rate_limited"
 )
 
 // SettleResult is what settling did.
@@ -742,7 +744,7 @@ func (s *Spool) Settle(seq uint64, fullChannel string, kind SettleKind) (SettleR
 	// (`CloudOutboundSpool.swift:934-945`).
 	row.Sealed = nil
 	row.Tombstoned = s.now()
-	if kind == SettlePeerError {
+	if kind == SettlePeerError || kind == SettleRateLimited {
 		row.State = SpoolRejected
 		return SettleResultRejected, nil
 	}
