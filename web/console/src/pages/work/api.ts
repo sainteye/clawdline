@@ -439,6 +439,14 @@ export interface SessionWorkV2 {
   truncated: boolean
 }
 
+export interface SessionWorkSummaryV2 {
+  ok: boolean
+  done: number
+  active: number
+  waiting: number
+  truncated: boolean
+}
+
 export interface HumanInterventionV2 {
   id: string
   source_conversation: string
@@ -627,6 +635,10 @@ export const deleteWorkV2Image = (item: WorkV2Item, imageID: string) =>
 export const readSessionWorkV2 = (terminalID: string, conversationID = "") => {
   const target = conversationID ? `conversation:${conversationID}` : terminalID
   return call<SessionWorkV2>(`/v1/work/v2/session-todos/${encodeURIComponent(target)}`, {}, 30_000)
+}
+export const readSessionWorkSummaryV2 = (terminalID: string, conversationID = "") => {
+  const target = conversationID ? `conversation:${conversationID}` : terminalID
+  return call<SessionWorkSummaryV2>(`/v1/work/v2/session-todos/${encodeURIComponent(target)}?summary=1`, {}, 15_000)
 }
 export const readHumanInterventionsV2 = (conversationID: string) =>
   call<HumanInterventionsV2>(`/v1/work/v2/human-interventions/${encodeURIComponent(`conversation:${conversationID}`)}`, {}, 30_000)

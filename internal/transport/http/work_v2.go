@@ -2404,48 +2404,50 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 		conversation = sess.ConversationID
 	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
-		rows, truncated, err := s.workV2().DirectTodos(r.Context(), conversation, true, false)
-		if err != nil {
-			s.writeWorkV2Error(w, err)
-			return
-		}
-		items, itemTruncated, err := s.workV2().List(r.Context(), "", conversation, "open", "")
-		if err != nil {
-			s.writeWorkV2Error(w, err)
-			return
-		}
-		if err := s.store.ObserveWorkGateFeedback(r.Context(), conversation, time.Now().UTC().Truncate(time.Second)); err != nil {
-			s.writeWorkV2Error(w, err)
-			return
-		}
-		recent, recentTruncated, err := s.workV2().RecentlyCompleted(r.Context(), conversation)
-		if err != nil {
-			s.writeWorkV2Error(w, err)
-			return
-		}
-		todos := make([]directTodoV2Wire, 0, len(rows))
-		for _, td := range rows {
-			images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
-			if imageErr != nil {
-				s.writeWorkV2Error(w, imageErr)
+		s.workV2SessionTodosRead(w, r, conversation, func() {
+			rows, truncated, err := s.workV2().DirectTodos(r.Context(), conversation, true, false)
+			if err != nil {
+				s.writeWorkV2Error(w, err)
 				return
 			}
-			todos = append(todos, directTodoWire(td, images))
-		}
-		itemOf := func(v app.WorkV2View) workV2ItemWire { return s.workV2ItemOf(nil, v) }
-		if len(items)+len(recent) > 0 {
-			itemOf = s.workV2ItemProjector(r.Context())
-		}
-		assigned := make([]workV2ItemWire, 0, len(items))
-		for _, item := range items {
-			assigned = append(assigned, itemOf(item))
-		}
-		completed := make([]workV2ItemWire, 0, len(recent))
-		for _, item := range recent {
-			completed = append(completed, itemOf(item))
-		}
-		writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
-			"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
+			items, itemTruncated, err := s.workV2().List(r.Context(), "", conversation, "open", "")
+			if err != nil {
+				s.writeWorkV2Error(w, err)
+				return
+			}
+			if err := s.store.ObserveWorkGateFeedback(r.Context(), conversation, time.Now().UTC().Truncate(time.Second)); err != nil {
+				s.writeWorkV2Error(w, err)
+				return
+			}
+			recent, recentTruncated, err := s.workV2().RecentlyCompleted(r.Context(), conversation)
+			if err != nil {
+				s.writeWorkV2Error(w, err)
+				return
+			}
+			todos := make([]directTodoV2Wire, 0, len(rows))
+			for _, td := range rows {
+				images, imageErr := s.workV2().DirectTodoImages(r.Context(), td.ID)
+				if imageErr != nil {
+					s.writeWorkV2Error(w, imageErr)
+					return
+				}
+				todos = append(todos, directTodoWire(td, images))
+			}
+			itemOf := func(v app.WorkV2View) workV2ItemWire { return s.workV2ItemOf(nil, v) }
+			if len(items)+len(recent) > 0 {
+				itemOf = s.workV2ItemProjector(r.Context())
+			}
+			assigned := make([]workV2ItemWire, 0, len(items))
+			for _, item := range items {
+				assigned = append(assigned, itemOf(item))
+			}
+			completed := make([]workV2ItemWire, 0, len(recent))
+			for _, item := range recent {
+				completed = append(completed, itemOf(item))
+			}
+			writeJSON(w, map[string]any{"ok": true, "assigned_items": assigned, "recent_items": completed,
+				"direct_todos": todos, "truncated": truncated || itemTruncated || recentTruncated})
+		})
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodPost {
@@ -2618,6 +2620,63 @@ func (s *Server) workV2SessionTodos(w http.ResponseWriter, r *http.Request, part
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(answer)
+}
+
+// workV2SessionTodosRead chooses the cheap header operation before entering
+// any full-detail dependency. The callback also keeps this boundary directly
+// testable with stalled full-detail work.
+func (s *Server) workV2SessionTodosRead(w http.ResponseWriter, r *http.Request, conversation string, full func()) {
+	if values, present := r.URL.Query()["summary"]; present {
+		if len(values) != 1 || values[0] != "1" {
+			writeRefusal(w, http.StatusBadRequest, "invalid_summary", "Summary must be 1.")
+			return
+		}
+		s.workV2SessionTodosSummary(w, r, conversation)
+		return
+	}
+	full()
+}
+
+// workV2SessionTodosSummary uses only bounded rows needed for the folded
+// header. In particular it never projects Projects or loads item relations,
+// images, or gate feedback. Its counts have the same page bounds as the full
+// Session answer, including the recently completed prefix.
+func (s *Server) workV2SessionTodosSummary(w http.ResponseWriter, r *http.Request, conversation string) {
+	todos, todoTruncated, err := s.workV2().DirectTodos(r.Context(), conversation, true, false)
+	if err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	assigned, assignedTruncated, err := s.store.WorkV2Items(r.Context(), "", conversation, "open", "", app.WorkV2PageSize)
+	if err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	recent, recentTruncated, err := s.store.CompletedWorkV2ForSession(r.Context(), conversation, app.WorkV2PageSize)
+	if err != nil {
+		s.writeWorkV2Error(w, err)
+		return
+	}
+	done, active, waiting := len(recent), 0, 0
+	for _, item := range assigned {
+		switch item.Phase {
+		case work.PhaseImplementing, work.PhaseVerifying, work.PhaseMerging, work.PhaseDeploying:
+			active++
+		default:
+			waiting++
+		}
+	}
+	for _, todo := range todos {
+		if !todo.CompletedAt.IsZero() {
+			done++
+		} else if !todo.ReadAt.IsZero() || todo.CreatedBy == conversation {
+			active++
+		} else {
+			waiting++
+		}
+	}
+	writeJSON(w, map[string]any{"ok": true, "done": done, "active": active, "waiting": waiting,
+		"truncated": todoTruncated || assignedTruncated || recentTruncated})
 }
 
 func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []string) {
