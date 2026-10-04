@@ -111,7 +111,7 @@ func TestTheLineACodexChildIsTypedCarriesTheEffort(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := shellCommand(launch, r, "/tmp/tasks", "/work/app")
-	want := "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED " +
+	want := "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED -u CLAWDLINE_SQUAD_CAPABILITY_FILE " +
 		projects.ClawdlinePathEnv() + " codex --model gpt-5.6-sol --config model_reasoning_effort=xhigh --add-dir '/tmp/tasks' " +
 		"--ask-for-approval never --sandbox workspace-write " +
 		`-c 'projects={"/work/app"={trust_level="trusted"}}' -c check_for_update_on_startup=false`

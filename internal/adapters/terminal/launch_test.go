@@ -14,7 +14,7 @@ func TestOutsideTmuxRemovesAssistantIdentity(t *testing.T) {
 	env := []string{
 		"HOME=/tmp", "TMUX=socket", "TMUX_PANE=%1", "CLAUDE_CODE_SESSION_ID=claude",
 		"CLAUDECODE=1", "CLAUDE_CODE_ENTRYPOINT=cli", "CODEX_THREAD_ID=thread",
-		"CODEX_SESSION_ID=session", "CODEX_CI=1", "PATH=/bin",
+		"CODEX_SESSION_ID=session", "CODEX_CI=1", "CLAWDLINE_SQUAD_CAPABILITY_FILE=/stale", "PATH=/bin",
 	}
 	got := outsideTmux(env)
 	want := []string{"HOME=/tmp", "CODEX_CI=1", "PATH=/bin"}
@@ -36,7 +36,7 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 	t.Setenv("TMUX_TMPDIR", dir)
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")
-	for _, key := range []string{"CLAUDE_CODE_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID", "CODEX_SESSION_ID"} {
+	for _, key := range []string{"CLAUDE_CODE_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAWDLINE_SQUAD_CAPABILITY_FILE"} {
 		t.Setenv(key, "leaked")
 	}
 	defer exec.Command(bin, "kill-server").Run()
@@ -55,7 +55,7 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 		}
 	}
 	// A server may have been started by an older daemon or an assistant.
-	for _, key := range []string{"CLAUDE_CODE_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID", "CODEX_SESSION_ID"} {
+	for _, key := range []string{"CLAUDE_CODE_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAWDLINE_SQUAD_CAPABILITY_FILE"} {
 		if out, err := exec.Command(bin, "set-environment", "-g", key, "leaked").CombinedOutput(); err != nil {
 			t.Fatalf("seed %s: %v: %s", key, err, out)
 		}
@@ -87,6 +87,9 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 	if out, err := exec.Command(bin, "set-environment", "-t", "seed", "CLAUDE_CODE_SESSION_ID", "stale-session").CombinedOutput(); err != nil {
 		t.Fatalf("seed session identity: %v: %s", err, out)
 	}
+	if out, err := exec.Command(bin, "set-environment", "-t", "seed", "CLAWDLINE_SQUAD_CAPABILITY_FILE", "/stale").CombinedOutput(); err != nil {
+		t.Fatalf("seed session capability: %v: %s", err, out)
+	}
 	windowOutput := filepath.Join(dir, "window-env")
 	launcher := Launcher{Tmux: &Tmux{Binary: bin}}
 	if _, err := launcher.NewTmuxWindow(ctx, dir, "env > "+windowOutput); err != nil {
@@ -104,5 +107,8 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 	}
 	if strings.Contains(string(data), "CLAUDE_CODE_SESSION_ID=") {
 		t.Fatal("new window inherited the existing session's assistant identity")
+	}
+	if strings.Contains(string(data), "CLAWDLINE_SQUAD_CAPABILITY_FILE=") {
+		t.Fatal("new window inherited the existing session's squad capability")
 	}
 }

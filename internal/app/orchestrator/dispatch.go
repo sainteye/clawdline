@@ -710,10 +710,11 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		}
 	}
 	r.AutoCompactWindow = b.autoCompactFor(r.Assistant, r.AutoCompactRequested)
-	command := shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable())
+	var launchEnv []string
 	if prepared.files.PromptPath != "" {
-		command = "env " + prepared.files.PrivateEnv() + " " + command
+		launchEnv = append(launchEnv, prepared.files.PrivateEnv())
 	}
+	command := shellCommandWithExecutable(launch, r, b.Tasks.Dir, cwd, b.taskExecutable(), launchEnv...)
 	line := "cd " + projects.ShellQuoted(cwd) + " && " + command
 
 	// The same decision the dispatch was admitted on (capability.go), read
@@ -837,7 +838,7 @@ func shellCommand(l projects.Launch, r Record, taskRoot, cwd string) string {
 	return shellCommandWithExecutable(l, r, taskRoot, cwd, "")
 }
 
-func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string) string {
+func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, taskExecutable string, launchEnv ...string) string {
 	args := append([]string{}, l.Arguments...)
 	if r.Gate == nil {
 		args = append(args, "--add-dir", projects.ShellQuoted(taskRoot))
@@ -866,6 +867,7 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 			q("npm_config_cache", filepath.Join(root, "cache", "npm")),
 			q("CARGO_TARGET_DIR", filepath.Join(root, "build")))
 	}
+	set = append(set, launchEnv...)
 	return envPrefix(l.Assistant, set) + strings.Join(append([]string{l.Assistant}, args...), " ")
 }
 

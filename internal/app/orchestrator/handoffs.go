@@ -114,11 +114,12 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	// A session this broker opens is started with the machine's compaction
 	// window, as a child is; nobody's task names one here.
 	window := b.autoCompactFor(launch.Assistant, nil)
-	command := envPrefix(launch.Assistant, autoCompactEnv(window)) +
-		strings.Join(append([]string{launch.Assistant}, args...), " ")
+	set := autoCompactEnv(window)
 	if prepared.files.PromptPath != "" {
-		command = "env " + prepared.files.PrivateEnv() + " " + command
+		set = append(set, prepared.files.PrivateEnv())
 	}
+	command := envPrefix(launch.Assistant, set) +
+		strings.Join(append([]string{launch.Assistant}, args...), " ")
 
 	if b.Lanes != nil {
 		release, err := b.Lanes.Acquire(ctx, "open:"+name)

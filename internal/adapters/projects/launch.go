@@ -116,14 +116,15 @@ func ShellQuoted(value string) string {
 // terminal may have inherited from whatever launched it, and a new session must
 // not be handed.
 func InheritedIdentityKeys(assistant string) []string {
+	const squadCapability = "CLAWDLINE_SQUAD_CAPABILITY_FILE"
 	switch assistant {
 	case AssistantClaude:
 		return []string{"CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_CHILD_SESSION",
 			"CLAUDE_PID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
-			"CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_EFFORT", "AI_AGENT"}
+			"CLAUDE_CODE_BRIDGE_SESSION_ID", "CLAUDE_EFFORT", "AI_AGENT", squadCapability}
 	case AssistantCodex:
 		return []string{"CODEX_THREAD_ID", "CODEX_SESSION_ID",
-			"CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED"}
+			"CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", squadCapability}
 	}
 	return nil
 }
@@ -375,13 +376,18 @@ func ClawdlinePathEnv() string {
 // ShellCommand is ProviderLaunchPlan.shellCommand: `env -u …` first, so the
 // program runs as its own process with nothing in front of it in `ps`.
 func (l Launch) ShellCommand() string {
+	return l.ShellCommandWithEnv(nil)
+}
+
+// ShellCommandWithEnv applies launch-owned values after inherited identity is cleared.
+func (l Launch) ShellCommandWithEnv(set []string) string {
 	prefix := ""
 	if keys := InheritedIdentityKeys(l.Assistant); len(keys) > 0 {
 		parts := make([]string, len(keys))
 		for i, k := range keys {
 			parts[i] = "-u " + k
 		}
-		prefix = "env " + strings.Join(parts, " ") + " "
+		prefix = "env " + strings.Join(append(parts, set...), " ") + " "
 	}
 	return prefix + ClawdlinePathEnv() + " " + strings.Join(append([]string{l.Assistant}, l.Arguments...), " ")
 }
