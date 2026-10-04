@@ -51,6 +51,7 @@ type ReadingScenario =
   | "ninety"
   | "expired"
   | "worst"
+  | "live-crowded"
   | "status-one"
   | "status-two"
   | "status-three"
@@ -241,6 +242,14 @@ function rows(): Row[] {
       }),
     ]
   }
+  if (readingScenario === "live-crowded") {
+    return [row(RETAINED, "A working session with another live status", blockedCloseability(), 500, {
+      state: "working",
+      work_state: "working",
+      line: "Gitifying every package in the repository (1m 53s · downloading dependencies)",
+      shells: [{ id: "shell-1", at: 1, doing: "Building" }],
+    })]
+  }
   if (readingScenario === "five" || readingScenario === "ninety") {
     const age = readingScenario === "five" ? 5 : 90
     return [
@@ -297,7 +306,7 @@ const streams = new Set<ServerResponse>()
 function snapshot() {
   generation++
   const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
-  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "epic" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
+  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "live-crowded" || readingScenario === "epic" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
     ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
     : readingScenario === "expired"
       ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
@@ -2386,7 +2395,7 @@ test("the densest phone row gives each segment a boundary and never widens the l
     }
   }))
 
-test("a working row shows its live line when the state rail has room and keeps the spinner when crowded", () =>
+test("a phone working row shows live text unless another state segment crowds it", () =>
   inTab(async (tab) => {
     readingScenario = "worst"
     try {
@@ -2403,11 +2412,18 @@ test("a working row shows its live line when the state rail has room and keeps t
           width: state.getBoundingClientRect().width,
         }
       })()`)
-      const narrow = await measure()
-      assert.ok(narrow.width < 390, "the phone state rail is crowded")
-      assert.equal(narrow.visible, false)
-      assert.equal(narrow.spinner, true)
-      assert.match(narrow.text, /^Gitifying every package/)
+      const sparse = await measure()
+      assert.ok(sparse.width < 390, "the phone state rail is narrow")
+      assert.equal(sparse.visible, true, "a working phone row shows its live text")
+      assert.equal(sparse.spinner, true)
+      assert.match(sparse.text, /^Gitifying every package/)
+
+      readingScenario = "live-crowded"
+      await tab.go("/")
+      await tab.until("the crowded working row arrives", (s) => s.order.join() === RETAINED)
+      const crowded = await measure()
+      assert.equal(crowded.visible, false, "the shell status takes priority on a crowded phone row")
+      assert.equal(crowded.spinner, true)
 
       await tab.desktop()
       const wide = await measure()
