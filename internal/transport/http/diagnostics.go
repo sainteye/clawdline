@@ -595,7 +595,7 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 			return s.workV2CapacityReading("assignments")
 		},
 		capacity.WorkDocumentsPerItem: func() capacity.Reading {
-			return s.workV2CapacityReading("documents_per_item")
+			return s.workV2DocumentCapacityReading()
 		},
 		capacity.WorkImagesPerItem: func() capacity.Reading {
 			return s.workV2CapacityReading("images_per_item")
@@ -984,6 +984,45 @@ func (s *Server) workV2CapacityReading(name string) capacity.Reading {
 		return capacity.Unmeasured(err.Error())
 	}
 	return capacity.Reading{Known: true, Used: counts[name]}
+}
+
+func (s *Server) workV2DocumentCapacityReading() capacity.Reading {
+	counts, err := s.store.WorkV2CapacityCounts(context.Background())
+	if err != nil {
+		return capacity.Unmeasured(err.Error())
+	}
+	r := capacity.Reading{Known: true, Used: counts["documents_per_item"]}
+	for _, group := range []struct {
+		closed bool
+		count  int64
+		label  string
+	}{
+		{false, r.Used, "Writable items at the document limit"},
+		{true, counts["closed_documents_per_item"], "Closed items retained at the document limit"},
+	} {
+		if group.count < store.WorkV2DocumentLimit {
+			continue
+		}
+		ids, err := s.store.WorkV2ItemsAtDocumentLimit(context.Background(), group.closed)
+		if err != nil {
+			return capacity.Unmeasured(err.Error())
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		more := ""
+		if len(ids) > 3 {
+			ids, more = ids[:3], ", and more"
+		}
+		if r.Note != "" {
+			r.Note += "; "
+		}
+		r.Note += group.label + ": " + strings.Join(ids, ", ") + more
+	}
+	if r.Used >= store.WorkV2DocumentLimit {
+		r.Note += ". Revise an existing document or split distinct work into another item."
+	}
+	return r
 }
 
 func (s *Server) humanInterventionCapacityReading(open bool) capacity.Reading {

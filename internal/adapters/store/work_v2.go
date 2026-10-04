@@ -2330,8 +2330,10 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
 		"open":        `SELECT COUNT(*) FROM work_v2_items WHERE closed_at IS NULL`,
 		"planning":    `SELECT COUNT(*) FROM work_v2_items WHERE kind = 'plan' AND closed_at IS NULL`,
 		"assignments": `SELECT COUNT(*) FROM work_v2_assignments`,
-		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents
-      WHERE role<>'completion_report' GROUP BY work_id)`,
+		"documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents d
+      JOIN work_v2_items i ON i.id=d.work_id WHERE d.role<>'completion_report' AND i.closed_at IS NULL GROUP BY d.work_id)`,
+		"closed_documents_per_item": `SELECT COALESCE(MAX(n),0) FROM (SELECT COUNT(*) n FROM work_v2_documents d
+      JOIN work_v2_items i ON i.id=d.work_id WHERE d.role<>'completion_report' AND i.closed_at IS NOT NULL GROUP BY d.work_id)`,
 		"images_per_item": `SELECT COALESCE(MAX(n),0) FROM (
       SELECT COUNT(*) n FROM work_v2_images GROUP BY work_id
       UNION ALL SELECT COUNT(*) n FROM session_direct_todo_images GROUP BY todo_id)`,
@@ -2355,6 +2357,33 @@ func (s *Store) WorkV2CapacityCounts(ctx context.Context) (map[string]int64, err
 		out[name] = n
 	}
 	return out, nil
+}
+
+// WorkV2ItemsAtDocumentLimit identifies the items behind a full document
+// reading. Closed items remain visible for diagnosis, but cannot exhaust the
+// capacity for an item that can still receive documents.
+func (s *Store) WorkV2ItemsAtDocumentLimit(ctx context.Context, closed bool) ([]string, error) {
+	condition := "i.closed_at IS NULL"
+	if closed {
+		condition = "i.closed_at IS NOT NULL"
+	}
+	rows, err := s.rd.QueryContext(ctx, `SELECT i.id FROM work_v2_items i
+      JOIN work_v2_documents d ON d.work_id=i.id
+      WHERE d.role<>'completion_report' AND `+condition+`
+      GROUP BY i.id HAVING COUNT(*) >= ? ORDER BY i.id LIMIT 4`, WorkV2DocumentLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ResetWorkV1 deletes only the daemon's v1 work-system tables. It is never

@@ -402,6 +402,16 @@ Since 2026-09-26 the pictures' bytes are files under `reference-images/` in the 
 BLOBs in `clawdline.sqlite3`; the rows keep each picture's metadata and sha256, and the byte readings
 above are the rows' `byte_count`, which a read proves against the file (N48).
 
+`work.documents_per_item` measures the fullest item that can still receive
+documents. Its diagnostic note identifies writable items at the 32-document
+limit and closed items that retain 32 documents. Closed items do not make the
+machine's health `capacity_exhausted`: their documents remain evidence, but
+no new document can be added to a closed item. A writable item at the limit
+still refuses a new ordinary document with `documents_full`; its one
+`completion_report` has a separate slot. Revise an existing document when
+updating the same material, or split genuinely distinct work into another
+item. Neither action silently removes retained evidence.
+
 ### 4.2 資料分類：什麼絕不能丟、什麼可以摘要後丟、什麼可以直接丟
 
 | 類別 | 例子 | 可以丟嗎 | 到頂時 |

@@ -3,6 +3,8 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -196,6 +198,74 @@ func entry(t *testing.T, d contract.CapacityDiagnostics, name string) contract.C
 	}
 	t.Fatalf("no %s in %+v", name, d.Entries)
 	return contract.CapacityEntry{}
+}
+
+func TestClosedDocumentLimitDoesNotKeepMachineHealthRed(t *testing.T) {
+	s := capacityServer(t)
+	ctx := context.Background()
+	at := time.Unix(1_790_600_000, 0)
+	item := work.ItemV2{ID: "10000000-0000-4000-8000-000000000081", ProjectID: "p", ProjectPath: "/p",
+		Kind: work.KindEpic, Title: "Historical evidence", Description: "Keep the documents",
+		Phase: work.PhaseImplementing, DeploymentPolicy: work.DeployAgentDecides,
+		CreatedBy: "local", CreatedAt: at, UpdatedAt: at, Cycle: 1, Version: 1}
+	if err := s.store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		if err := tx.CreateItem(item, "local", `{}`); err != nil {
+			return err
+		}
+		for n := 0; n < store.WorkV2DocumentLimit; n++ {
+			d := work.DocumentV2{ID: fmt.Sprintf("20000000-0000-4000-8000-%012d", n+1),
+				WorkID: item.ID, Role: "other", Title: fmt.Sprintf("Evidence %d", n+1),
+				Body: "Retained evidence", Position: int64(n + 1), Version: 1, CreatedAt: at, UpdatedAt: at}
+			if err := tx.AddDocument(d); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		return tx.AddDocument(work.DocumentV2{ID: "20000000-0000-4000-8000-000000000099", WorkID: item.ID,
+			Role: "other", Title: "One too many", Body: "must be refused", Position: 33,
+			Version: 1, CreatedAt: at, UpdatedAt: at})
+	}); !errors.Is(err, store.ErrWorkV2DocsFull) {
+		t.Fatalf("new document at the limit = %v", err)
+	}
+	if err := s.store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		return tx.AddDocument(work.DocumentV2{ID: "20000000-0000-4000-8000-000000000100", WorkID: item.ID,
+			Role: work.DocumentCompletionReport, Title: "Completion", Body: "retained separately", Position: 33,
+			Version: 1, CreatedAt: at, UpdatedAt: at})
+	}); err != nil {
+		t.Fatalf("completion report at the ordinary document limit: %v", err)
+	}
+	measure := s.capacityMeasures()[capacity.WorkDocumentsPerItem]
+	active := measure()
+	if active.Used != store.WorkV2DocumentLimit || !strings.Contains(active.Note, item.ID) {
+		t.Fatalf("active document reading = %+v", active)
+	}
+	fakeBeat(t, s, map[string]capacity.Reading{capacity.WorkDocumentsPerItem: active}, nil)
+	if h := healthOf(t, s); h.OK || h.Reason != contract.HealthReasonCapacityExhausted {
+		t.Fatalf("active item at limit did not alarm: %+v", h)
+	}
+
+	closed := item
+	closed.Phase, closed.ClosedAt, closed.UpdatedAt, closed.Version = work.PhaseDone, at.Add(time.Second), at.Add(time.Second), 2
+	if err := s.store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		return tx.PutItem(item, closed, "item.phase_changed", "local", `{}`)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reading := measure()
+	if reading.Used != 0 || !strings.Contains(reading.Note, "Closed items retained") || !strings.Contains(reading.Note, item.ID) {
+		t.Fatalf("closed document reading = %+v", reading)
+	}
+	fakeBeat(t, s, map[string]capacity.Reading{capacity.WorkDocumentsPerItem: reading}, nil)
+	if h := healthOf(t, s); !h.OK {
+		t.Fatalf("closed item kept machine health red: %+v", h)
+	}
+	if e := entry(t, func() contract.CapacityDiagnostics { d, _ := s.capacityDiagnostics(); return d }(), capacity.WorkDocumentsPerItem); !strings.Contains(e.Note, item.ID) {
+		t.Fatalf("diagnostics lost the closed item: %+v", e)
+	}
 }
 
 // Full is not one behaviour. Evidence that is full turns the open health route
