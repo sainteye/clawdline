@@ -48,6 +48,10 @@ func TestSquadStartAndResumeUseOriginalImmutablePrompt(t *testing.T) {
 	if firstPath == "" || !strings.Contains(term.command, "CLAWDLINE_SQUAD_CAPABILITY_FILE=") {
 		t.Fatalf("snapshot launch command = %s", term.command)
 	}
+	if clear := strings.Index(term.command, "-u CLAWDLINE_SQUAD_CAPABILITY_FILE"); clear < 0 ||
+		strings.Index(term.command, "CLAWDLINE_SQUAD_CAPABILITY_FILE=") < clear {
+		t.Fatalf("role capability must be set after stale capability is cleared: %s", term.command)
+	}
 	firstPrompt, err := os.ReadFile(firstPath)
 	if err != nil || !strings.Contains(string(firstPrompt), roleBody) || !strings.Contains(string(firstPrompt), "One convention") {
 		t.Fatalf("first prompt = %q, %v", firstPrompt, err)

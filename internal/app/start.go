@@ -145,7 +145,8 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 				return Started{}, err
 			}
 			launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)
-			return s.openSquadTerminal(ctx, place, model, plan, prepared, launch.ShellCommand())
+			return s.openSquadTerminal(ctx, place, model, plan, prepared,
+				launch.ShellCommandWithEnv([]string{prepared.files.PrivateEnv()}))
 		}
 	}
 	launch.Arguments = append(launch.Arguments, projects.UpdateCheckArgs(assistant)...)

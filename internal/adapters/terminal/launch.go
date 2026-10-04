@@ -338,7 +338,8 @@ func outsideTmux(env []string) []string {
 // make a newly opened shell appear to belong to the daemon's assistant.
 func assistantIdentityKey(key string) bool {
 	return key == "CLAUDECODE" || strings.HasPrefix(key, "CLAUDE_CODE_") ||
-		key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID"
+		key == "CODEX_THREAD_ID" || key == "CODEX_SESSION_ID" ||
+		key == "CLAWDLINE_SQUAD_CAPABILITY_FILE"
 }
 
 func shellVariableName(name string) bool {

@@ -75,7 +75,7 @@ func (s Starter) prepareSquadLaunch(ctx context.Context, projectPath, personaID,
 
 func (s Starter) openSquadTerminal(ctx context.Context, place projects.Place, model string,
 	plan projects.PlanKind, prepared preparedSquadLaunch, providerCommand string) (Started, error) {
-	command := "env " + prepared.files.PrivateEnv() + " " + providerCommand
+	command := providerCommand
 	var result Started
 	var err error
 	switch plan {
