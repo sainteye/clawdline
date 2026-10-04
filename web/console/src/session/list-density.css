@@ -26,10 +26,10 @@
   min-width: 0;
 }
 
-/* The phone list gives its state rail to badges; the desktop list can
- * ellipsise the live sentence beside the spinner. */
+/* A phone still has room for a live sentence when it is the only state copy.
+ * Other status segments take priority when they share this narrow rail. */
 @media (max-width: 600px) {
-  .row .state > .session-live-line {
+  .row .state:has(> .session-live-line ~ *, > .persona-state) > .session-live-line {
     display: none;
   }
 }
