@@ -118,6 +118,23 @@ review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `h
   empty `write_stdin` waited up to 300 seconds. If the outer cell yields, use `wait` with a long
   `yield_time_ms` to collect it.
 
+  Use one cell for a child wait or a build. Replace only the command; keep the
+  session polling inside the cell so a normal 30-second `exec_command` return
+  does not wake the agent to issue the same wait again:
+
+  ```js
+  // @exec: {"yield_time_ms": 600000}
+  let r = await tools.exec_command({cmd: "clawdline task wait --timeout 9m TASK_ID", yield_time_ms: 30000});
+  while (r.session_id) {
+    r = await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000});
+  }
+  text(r.output);
+  text(`exit ${r.exit_code}`);
+  ```
+
+  For a build, replace the command with `tools/heavy.sh …` and retain its
+  exit code: 75 means the compile-slot or memory wait expired before the build ran.
+
 `clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
 command; a longer wait than your tool allows is a background run.
 

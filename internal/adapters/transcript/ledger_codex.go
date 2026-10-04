@@ -20,7 +20,8 @@ var (
 // reading made under another one is read again from the start, so a
 // transcript the reader still visits is counted under one set of rules.
 // 2: wait turns (docs/token-ledger.md "Wait turns").
-const LedgerClassificationVersion = 2
+// 3: the number of calls spent only waiting.
+const LedgerClassificationVersion = 3
 
 // The token ledger's Codex half. A rollout says a turn's usage once, in an
 // `event_msg` of type `token_count` written after the turn's own items: the

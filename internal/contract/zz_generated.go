@@ -7185,11 +7185,12 @@ var UsageReasonValues = []UsageReason{UsageReasonNotYetRead, UsageReasonTranscri
 // GET /v1/usage/sessions/{conversation}: one session's bill, its subagents
 // folded into `delegate`. A session with `reason` has no current reading:
 // `not_yet_read` has no totals at all, and the other two carry the last
-// reading's. `calls`, `peak_context`, `compactions`, `calls_above` and `above`
-// are the session's own calls; a subagent's calls are on its row. `above` is
-// what the calls made with more than 200k tokens of context cost. `read_at` is
-// Unix seconds, 0 when never read; `more` says the last pass stopped before the
-// transcript's end.
+// reading's. `calls`, `wait_calls`, `peak_context`, `compactions`,
+// `calls_above` and `above` are the session's own calls; a subagent's calls are
+// on its row. `wait_calls` counts model calls whose every tool action only
+// waited. `above` is what the calls made with more than 200k tokens of context
+// cost. `read_at` is Unix seconds, 0 when never read; `more` says the last pass
+// stopped before the transcript's end.
 type UsageSession struct {
 	Above     UsageTokens `json:"above"`
 	Assistant string      `json:"assistant,omitempty"`
@@ -7216,7 +7217,8 @@ type UsageSession struct {
 	Subagents      []UsageSubagent `json:"subagents"`
 
 	// The child task this session's first message names.
-	TaskID string `json:"task_id,omitempty"`
+	TaskID    string `json:"task_id,omitempty"`
+	WaitCalls int64  `json:"wait_calls"`
 }
 
 // What every category's `share` is a share of: `cost` when the whole cost is

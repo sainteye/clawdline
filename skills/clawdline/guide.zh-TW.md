@@ -108,6 +108,22 @@ context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種
   `600000` 可持續 330 秒，空的 `write_stdin` 最多等 300 秒。外層 cell 若仍提早交還，就用設了長
   `yield_time_ms` 的 `wait` 接著等。
 
+  等 child 或建置時使用一個 cell，只替換指令。把 session 的後續等待留在同一個 cell，
+  一般的 30 秒 `exec_command` 回傳就不會喚醒代理重新發起同一段等待：
+
+  ```js
+  // @exec: {"yield_time_ms": 600000}
+  let r = await tools.exec_command({cmd: "clawdline task wait --timeout 9m TASK_ID", yield_time_ms: 30000});
+  while (r.session_id) {
+    r = await tools.write_stdin({session_id: r.session_id, chars: "", yield_time_ms: 300000});
+  }
+  text(r.output);
+  text(`exit ${r.exit_code}`);
+  ```
+
+  建置時把指令換成 `tools/heavy.sh …`，並保留退出碼；75 代表編譯額度或記憶體的等待逾時，
+  建置尚未執行。
+
 `clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
 允許的長，就放到背景跑。
 

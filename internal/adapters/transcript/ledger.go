@@ -252,6 +252,7 @@ type LedgerState struct {
 
 	Model          string `json:"model,omitempty"`
 	Calls          int64  `json:"calls"`
+	WaitCalls      int64  `json:"wait_calls,omitempty"`
 	SidechainCalls int64  `json:"sidechain_calls,omitempty"`
 	Compactions    int64  `json:"compactions,omitempty"`
 	PeakContext    int64  `json:"peak_context"`
@@ -662,6 +663,9 @@ func (s *LedgerState) compacted(ctx int64) Sizes {
 
 // closeCall charges a call's input side and its output to what it did.
 func (s *LedgerState) closeCall(call *ledgerCall, weights Sizes) {
+	if waitOnly(weights) {
+		s.WaitCalls++
+	}
 	if s.Spent == nil {
 		s.Spent = map[Category]Tokens{}
 	}

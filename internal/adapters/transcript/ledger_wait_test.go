@@ -95,6 +95,9 @@ func TestAClaudeTurnThatOnlyWaitsIsWaitWhole(t *testing.T) {
 		toolResult("t5", "package x"),
 	)
 	s := feedAll(t, path)
+	if s.WaitCalls != 2 {
+		t.Errorf("wait calls = %d, want 2", s.WaitCalls)
+	}
 	spent, measured := s.Totals()
 	wait := spent[CategoryWait]
 	// m2 and m3 whole; of m4's reread only the share the waits' own small
@@ -219,6 +222,9 @@ func TestACodexPollingTurnIsWaitWhole(t *testing.T) {
 		tokens(140_200, 140_150, 30, 560_570),
 	)
 	s := feedAll(t, path)
+	if s.WaitCalls != 2 {
+		t.Errorf("wait calls = %d, want 2", s.WaitCalls)
+	}
 	spent, measured := s.Totals()
 	if want, got := 140_000.0+140_100, spent[CategoryWait].CacheRead; got < want || got > want+500 {
 		t.Errorf("wait cache read = %v, want %v and the polls' small share of the patch turn", got, want)
@@ -231,5 +237,17 @@ func TestACodexPollingTurnIsWaitWhole(t *testing.T) {
 	}
 	if sum := sumSpent(spent); !near(sum.Total(), measured.Total()) {
 		t.Errorf("categories sum to %v, measured %v", sum.Total(), measured.Total())
+	}
+	// The same build observed through one long exec cell has one model call
+	// total, rather than separate polling calls that reread its context.
+	long := feedAll(t, writeRecord(t,
+		m{"type": "turn_context", "payload": m{"type": "turn_context", "model": "gpt-example"}},
+		exec("c1", `let r=await tools.exec_command({cmd:"go test ./...",yield_time_ms:30000});while(r.session_id){r=await tools.write_stdin({session_id:r.session_id,chars:"",yield_time_ms:300000});}text(r.output);`),
+		tokens(140_000, 0, 50, 140_050),
+		output("c1", "ok"),
+	))
+	if s.WaitCalls != 2 || long.WaitCalls != 0 || s.Calls-long.Calls != 3 {
+		t.Errorf("same build: polling %d calls (%d wait), long cell %d calls (%d wait)",
+			s.Calls, s.WaitCalls, long.Calls, long.WaitCalls)
 	}
 }
