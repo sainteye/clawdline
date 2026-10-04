@@ -268,6 +268,18 @@ test("a typed relay subscription refusal keeps its source code", async () => {
   f.adapter.dispose()
 })
 
+test("a retracted terminal subscription reports the relay budget refusal promptly", async () => {
+  const f = await fixture()
+  f.setConfirm(false)
+  const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, () => undefined)
+  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  const channel = `term/${machine}/${viewer}/${f.fresh.connection}`
+  f.client.socketSubscriptions.delete(channel)
+  f.emitRelay({ type: "error", error: { code: "terminal_budget_exhausted" } })
+  await assert.rejects(subscribed, /terminal_budget_exhausted/)
+  f.adapter.dispose()
+})
+
 // Offline fault injection: a receipt the relay delivered, refused at a
 // distinct browser stage. Each case is read from the copyable text alone.
 const receiptFaults: Array<{ name: string; code: string; inject: (f: Awaited<ReturnType<typeof fixture>>, body: Record<string, unknown>) => Promise<void> }> = [

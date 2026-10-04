@@ -338,8 +338,14 @@ export class TerminalChannelTransport {
         }
       }
     }
-    if (event.type === "error" && (code === "forbidden" || code === "terminal_forbidden") && this.waiting.size) {
+    if (event.type === "error" && this.waiting.size) {
       for (const [connection, waiter] of this.waiting) {
+        // The shared Cloud client retracts the channels belonging to a refused
+        // subscribe before it emits this error. Match that evidence instead of
+        // guessing from a short list of refusal codes: a budget refusal must
+        // reach the caller as itself, not as a five-second timeout.
+        if (code !== "forbidden" && code !== "terminal_forbidden" &&
+          this.channels(connection).every((ch) => this.client.socketSubscriptions.has(ch))) continue
         clearTimeout(waiter.timer)
         this.waiting.delete(connection)
         waiter.reject(fail(code))
