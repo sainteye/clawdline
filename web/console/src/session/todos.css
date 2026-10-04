@@ -7,3 +7,10 @@
 }
 .session-todos-failed[data-state="stale"] { border-color: var(--line); }
 .session-todos-failed:disabled { opacity: 0.6; cursor: progress; }
+.session-owned-decision { margin: 10px 0 8px 27px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.session-owned-decision p { margin: 0 0 8px; overflow-wrap: anywhere; color: var(--ink); }
+.session-owned-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.session-owned-options button { max-width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); text-align: left; overflow-wrap: anywhere; }
+.session-owned-options button:disabled { opacity: .6; }
+.session-owned-decision-note { margin: 8px 0 0 27px; color: var(--accent); overflow-wrap: anywhere; }
+.session-owned-decision .session-owned-decision-receipt { color: var(--ok); }

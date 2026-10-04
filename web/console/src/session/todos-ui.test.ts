@@ -6,6 +6,17 @@ import { addedBySession } from "./todo-author.ts"
 
 const source = readFileSync(new URL("./Todos.tsx", import.meta.url), "utf8")
 
+test("owned item questions render beside the summary and verify uncertain answers", () => {
+  const api = readFileSync(new URL("../pages/work/api.ts", import.meta.url), "utf8")
+  assert.match(source, /decisions=\{page\.open_decisions\?\.filter/)
+  assert.match(source, /<\/button>\s*\{decisionsError/)
+  assert.match(source, /decision\.options\.map/)
+  assert.match(source, /await answerDecision\(decision\.id, option\.id\)/)
+  assert.match(source, /await readDecision\(decision\.id\)/)
+  assert.match(source, /latest\.state === "answered" && latest\.answer === option\.id/)
+  assert.match(api, /export const readDecision =/)
+})
+
 test("fleet refreshes do not clear and reload the same Session todos", () => {
   assert.match(source, /const rowID = row\?\.id \?\? ""/)
   assert.match(source, /const rowSessionID = row\?\.sessionId \?\? ""/)
