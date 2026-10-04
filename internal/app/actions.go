@@ -364,7 +364,7 @@ func beforeTheFirstByte(err error) error {
 	return r
 }
 
-// Pictures is where a send puts its pictures and how it lends them to Claude Code.
+// Pictures is where a send puts its pictures and how it lends them to an assistant.
 type Pictures struct {
 	Drops      *artifacts.Drops
 	Pasteboard PictureLender
@@ -412,9 +412,9 @@ const pasteboardQueue = 4
 // Each picture arrives as a `data:` URL, is drawn and written out again as PNG
 // (artifacts.Normalize) and saved in the drop cache. Into a Claude Code session
 // each one is then lent to the pasteboard and pasted with Ctrl-V, so it arrives
-// as `[Image #1]`; anywhere else — Codex, a platform with no pasteboard, a
-// pasteboard that would not take it — the assistant is given the file's path,
-// which is plainer and never wrong. A picture that cannot be decoded is left
+// as `[Image #1]`. Codex also accepts image paste events; when its clipboard
+// path is unavailable, the send refuses rather than claim a text path was an
+// attachment. Claude Code can still receive a path as a fallback. A picture that cannot be decoded is left
 // out; a message none of whose pictures can be is refused.
 //
 // A nil error means the bytes reached the tty, as for Send. Files that never
@@ -504,9 +504,12 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	keys, canKey := h.(ports.KeyHost)
 	typer, canType := h.(typist)
 	lender := a.Pictures.Pasteboard
-	// Claude Code specifically: `[Image #1]` is its convention, and in a shell
-	// Ctrl-V is readline's quoted-insert.
-	if s.Assistant != session.AssistantClaude || lender == nil || !lender.Available() || !canKey || !canType {
+	// Both supported assistants accept a clipboard image on Ctrl-V. A shell
+	// treats that byte as readline's quoted-insert, so unknown targets use paths.
+	if s.Assistant == session.AssistantCodex && (lender == nil || !lender.Available() || !canKey || !canType) {
+		return "", Refusal{Code: "pictures_unavailable", Detail: "Codex image attachment needs a pasteboard and terminal keystrokes"}
+	}
+	if s.Assistant != session.AssistantClaude && s.Assistant != session.AssistantCodex || lender == nil || !lender.Available() || !canKey || !canType {
 		return byPath()
 	}
 
@@ -533,6 +536,9 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	defer cancel()
 	borrowed, err := lender.Borrow(work)
 	if err != nil {
+		if s.Assistant == session.AssistantCodex {
+			return "", Refusal{Code: "pictures_unavailable", Detail: "Codex image attachment could not borrow the pasteboard: " + err.Error()}
+		}
 		log.Printf("send: the pasteboard could not be borrowed, sending paths: %v", err)
 		return sendPaths()
 	}
@@ -553,6 +559,9 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	asPath := 0
 	for _, p := range paths {
 		if err := lender.Offer(work, borrowed, p); err != nil {
+			if s.Assistant == session.AssistantCodex {
+				return "", Refusal{Code: "send_failed", Detail: "Codex image attachment could not load the picture: " + err.Error()}
+			}
 			// Its bytes would not load. The path still works and is only plainer.
 			asPath++
 			words := quotedPath(p)
