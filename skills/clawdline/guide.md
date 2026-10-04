@@ -365,13 +365,12 @@ points to.
 
 **8. Report the turn**: `clawdline session report --summary "…"` (§7).
 
-**9. Close your Session** once the item is `done` or `cancelled`: `clawdline session close`. It
-audits your tasks, landings, unacknowledged completion notices, to-dos and owned unfinished Board
-items, prints every blocker with who moves it, and closes only when closeability is `safe`; it never
-forces. `--dry-run` audits without closing. You run it inside your own turn, so when the only
-thing left is that turn (`terminal_working`), the close is scheduled and takes effect when this turn
-ends, if nothing else is owed by then: make `session close` the very last command, after
-`session report`, and type nothing after it. A daemon restart before then drops it; run it again.
+**9. Leave the owning Session open.** Completing or cancelling a Board item releases its assignment;
+it does not end the Session that owned it. After `session report`, leave the Session available for
+follow-up work. Do not run `clawdline session close` merely because the item reached `done` or
+`cancelled`. A person may explicitly ask to close the Session later. The broker separately closes
+an agent-dispatched child's tab after that child's task ends, under the child-tab rule in
+`clawdline guide child`.
 
 **When something is refused.** `version_conflict`: run the same command again; it rereads the
 version. `steps_incomplete`: a step is still open. Any other code: §12, then the part that covers
