@@ -53,3 +53,17 @@ test("slow and failed machines publish bounded progressive results", async () =>
   assert.deepEqual(final.rows.map((row) => row.machine), ["a", "b"])
   assert.deepEqual(final.errors, [{ machine: "c", code: "machine_offline" }])
 })
+
+test("machine reads begin while Project names are still loading", async () => {
+  let releasePlaces!: (places: { id: string; label: string }[]) => void
+  const places = new Promise<{ id: string; label: string }[]>((resolve) => { releasePlaces = resolve })
+  const started: string[] = []
+  const result = collectCloudTerminals([{ id: "mac", name: "Desk" }], places, [], async (machine) => {
+    started.push(machine)
+    return [terminal("a", "one")]
+  })
+  await Promise.resolve()
+  assert.deepEqual(started, ["mac"])
+  releasePlaces([{ id: cloudID("mac", "one"), label: "One" }])
+  assert.equal((await result).rows[0]?.projectName, "One")
+})

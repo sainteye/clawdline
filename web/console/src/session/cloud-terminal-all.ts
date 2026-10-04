@@ -16,7 +16,7 @@ export interface CloudTerminalError { machine: string; code: string }
 
 /** A failed machine retains only its own prior rows, clearly marked stale. */
 export async function collectCloudTerminals(
-  machines: readonly CloudTerminalMachine[], places: readonly CloudPlaceRow[], previous: readonly CloudTerminalRow[],
+  machines: readonly CloudTerminalMachine[], places: readonly CloudPlaceRow[] | Promise<readonly CloudPlaceRow[]>, previous: readonly CloudTerminalRow[],
   read: (machine: string) => Promise<Terminal[]>,
   onProgress?: (result: { rows: CloudTerminalRow[]; errors: CloudTerminalError[] }) => void,
 ): Promise<{ rows: CloudTerminalRow[]; errors: CloudTerminalError[] }> {
@@ -32,8 +32,9 @@ export async function collectCloudTerminals(
       const machine = machines[index]!
       try {
         const terminals = await read(machine.id)
+        const namedPlaces = await places
         rows[index] = terminals.filter((terminal) => terminal.status === "running").map((terminal) => {
-          const place = places.find((candidate) => {
+          const place = namedPlaces.find((candidate) => {
             const pair = decodeCloudPlaceID(candidate.id)
             return pair?.[0] === machine.id && pair[1] === terminal.project_id
           })

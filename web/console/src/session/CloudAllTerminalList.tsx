@@ -30,7 +30,7 @@ async function readMachine(host: TerminalHost, machine: string): Promise<import(
 export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter: string }) {
   const [host, setHost] = useState<TerminalHost | null>(terminalHost)
   const [fleet, setFleet] = useState<ScheduleFleet | null>(scheduleFleet)
-  const [places, setPlaces] = useState<ProjectPlace[] | null>(null)
+  const places = useRef<ProjectPlace[]>([])
   const [rows, setRows] = useState<CloudTerminalRow[]>([])
   const [errors, setErrors] = useState<CloudTerminalError[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,16 +55,15 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
     setErrors([])
     setProjectError("")
     try {
-      let nextPlaces = places ?? []
-      try {
-        const page = await readProjectPlaces()
-        if (mine !== generation.current) return
-        nextPlaces = page.places
-        setPlaces(page.places)
-      } catch (error) {
-        if (mine !== generation.current) return
-        setProjectError(error instanceof Error ? error.message : "project_list_failed")
-      }
+      // Start machine reads while the Project directory is in flight. Its
+      // names are needed to route a row, but not to ask a machine for rows.
+      const nextPlaces = readProjectPlaces().then((page) => {
+        if (mine === generation.current) places.current = page.places
+        return page.places
+      }, (error) => {
+        if (mine === generation.current) setProjectError(error instanceof Error ? error.message : "project_list_failed")
+        return places.current
+      })
       const machines = fleet.machines.map((machine) => ({ id: machine.id, name: machine.name }))
       const next = await collectCloudTerminals(machines, nextPlaces, currentRows.current,
         (machine) => readMachine(host, machine),

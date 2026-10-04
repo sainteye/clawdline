@@ -126,10 +126,10 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   }, [host, machine, channelProject, id, shown])
 
   useEffect(() => {
-    if (!id || !firstFramePending || snapshot.frame || error || !shown) return
+    if (!id || loading || !firstFramePending || snapshot.frame || error || !shown) return
     const timer = setTimeout(() => { setFirstFramePending(false); setFrameTimedOut(true) }, FIRST_FRAME_MS)
     return () => clearTimeout(timer)
-  }, [id, firstFramePending, snapshot.frame, error, shown, session])
+  }, [id, loading, firstFramePending, snapshot.frame, error, shown, session])
   useEffect(() => {
     if (snapshot.frame) { setFirstFramePending(false); setFrameTimedOut(false) }
   }, [snapshot.frame])
@@ -263,7 +263,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   })
   const reconnect = () => void run("reconnect", async () => {
     if (!session) return
-    setFirstFramePending(true); setFrameTimedOut(false)
+    setFirstFramePending(!snapshot.frame); setFrameTimedOut(false)
     await reconnectCloudTerminal(session, id)
   })
   const sendKey = (value: string) => {
@@ -313,6 +313,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     } }}>
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord(from === "sessions" ? "terminalBackSessions" : "terminalBack")}</button>
+        <strong className="terminal-context" title={label}>{label}</strong>
         <dl className="terminal-facts">
           <div><dt>{nextWord("terminalFresh", { time: "" }).trim()}</dt><dd className="terminal-fresh">{status}</dd></div>
           <div><dt>{nextWord("terminalControlLabel")}</dt><dd>{holder}</dd></div></dl>
@@ -320,6 +321,12 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
           <dl className="terminal-facts"><div><dt>{nextWord("terminalEntry")}</dt><dd>{terminalShortID(id)}</dd></div>
             <div><dt>{nextWord("terminalMachine")}</dt><dd>{machine}</dd></div></dl>
         </details></div>
+      <p className="terminal-status-line" role="status" aria-live="polite">{loading && !snapshot.frame ? nextWord("terminalConnecting") :
+        error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
+          snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
+          snapshot.state === "revoked" ? nextWord("terminalCloudAccessRevoked") :
+            frameTimedOut ? nextWord("terminalCloudStaleHelp") : firstFramePending ? "" :
+            !snapshot.canType ? snapshot.control?.held ? nextWord("terminalKeyboardPaused") : nextWord("terminalTerminateNeedsControl") : ""}</p>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
         {!snapshot.control?.holder?.same_client && <button className="board-button" type="button" disabled={!!busy || loading || accessError || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
@@ -362,12 +369,6 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         })}>{nextWord(confirm === "reacquire" ? "terminalCloudReacquire" : "terminalTakeoverConfirm")}</button>
         <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
       </div>}
-      <p className="terminal-status-line" role="status" aria-live="polite">{loading && !snapshot.frame ? nextWord("terminalConnecting") :
-        error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
-          snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
-          snapshot.state === "revoked" ? nextWord("terminalCloudAccessRevoked") :
-            frameTimedOut ? nextWord("terminalCloudStaleHelp") : firstFramePending ? nextWord("terminalCloudSyncing") :
-            !snapshot.canType ? snapshot.control?.held ? nextWord("terminalKeyboardPaused") : nextWord("terminalTerminateNeedsControl") : ""}</p>
       {(frameTimedOut || (error && !accessError && snapshot.state !== "stale" && snapshot.state !== "offline")) && <button className="board-button" type="button" disabled={!!busy} onClick={reconnect}>{nextWord("terminalCloudReconnect")}</button>}
       {meta && meta.status !== "running" && <p role="alert">{nextWord("terminalExited")}</p>}
       {(error || frameTimedOut || snapshot.state === "unknown" || snapshot.state === "revoked") && <TerminalDiagnostics observation={observed} />}
