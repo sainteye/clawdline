@@ -239,6 +239,92 @@ func TestTerminalFramesWaitForRelaySettlementAndKeepNewestCapture(t *testing.T) 
 	}
 }
 
+func TestTerminalDeltaUsesOnlyObservedCompleteBase(t *testing.T) {
+	l, _, c, svc, _ := terminalLifecycleFixture(t)
+	c.frameDeltaV1 = true
+	p := terminals.Principal{Device: c.viewer, Cloud: true}
+	base := terminal.Frame{Rev: "base", At: time.Now(), Cols: 80, Rows: 3,
+		Lines: []string{strings.Repeat("a", 80), strings.Repeat("b", 80), strings.Repeat("c", 80)}}
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, base); err != nil {
+		t.Fatal(err)
+	}
+	if c.frameBase != nil || c.frameCandidate == nil || c.framePendingChannel != "term/machine/viewer/"+c.id {
+		t.Fatal("first frame did not remain a pending complete candidate")
+	}
+	newest := base
+	newest.Rev = "newest"
+	newest.Lines = append([]string(nil), base.Lines...)
+	newest.Lines[1] = strings.Repeat("z", 80)
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, newest); !errors.Is(err, terminals.ErrFrameDeferred) {
+		t.Fatalf("first deferred change: %v", err)
+	}
+	newest.Lines[1] = strings.Repeat("y", 80)
+	if err := l.sendTerminalFrame(context.Background(), svc, p, c, c.terminalID, newest); !errors.Is(err, terminals.ErrFrameDeferred) {
+		t.Fatalf("second deferred change: %v", err)
+	}
+	l.terminalReceiptSettled(c.framePendingChannel, c.framePendingSeq, adaptercloud.SettleDelivered)
+	if c.frameBase == nil || c.frameBase.Rev != "base" {
+		t.Fatal("delivered candidate did not become base")
+	}
+	delta, ok := terminalDeltaPayload(c.terminalID, c, 2, newest)
+	if !ok {
+		t.Fatal("eligible single-row change did not make a delta")
+	}
+	var got struct {
+		BaseSeq     uint64               `json:"base_seq"`
+		BaseRev     string               `json:"base_rev"`
+		ChangedRows []terminalChangedRow `json:"changed_rows"`
+		ScreenHash  string               `json:"screen_hash"`
+	}
+	if err := json.Unmarshal(delta, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseSeq != 1 || got.BaseRev != "base" || len(got.ChangedRows) != 1 || got.ChangedRows[0].Row != 1 || got.ChangedRows[0].Line != newest.Lines[1] {
+		t.Fatalf("wrong newest row delta: %+v", got)
+	}
+	hash, _ := terminalScreenHash(newest.Lines)
+	if got.ScreenHash != hash {
+		t.Fatal("screen hash mismatch")
+	}
+	full, _ := json.Marshal(map[string]any{"v": 1, "type": "terminal_frame", "terminal_id": string(c.terminalID), "connection": c.id, "frame_seq": 2, "captured_at": float64(newest.At.UnixMilli()) / 1000, "frame": cloudWireFrame(newest)})
+	if len(delta) >= len(full) {
+		t.Fatalf("delta %d is not smaller than full frame %d", len(delta), len(full))
+	}
+	resized := newest
+	resized.Cols++
+	if _, ok := terminalDeltaPayload(c.terminalID, c, 2, resized); ok {
+		t.Fatal("resize accepted as delta")
+	}
+	alt := newest
+	alt.Modes.Alt = true
+	if _, ok := terminalDeltaPayload(c.terminalID, c, 2, alt); ok {
+		t.Fatal("alt transition accepted as delta")
+	}
+	if _, ok := terminalDeltaPayload(terminal.ID("another-terminal"), c, 2, newest); ok {
+		t.Fatal("another terminal reused the prior terminal's screen base")
+	}
+	c.frameDeltaV1 = false
+	if _, ok := terminalDeltaPayload(c.terminalID, c, 2, newest); ok {
+		t.Fatal("old viewer accepted a delta")
+	}
+}
+
+func TestTerminalDeltaRejectedSettlementNeverPromotesCandidate(t *testing.T) {
+	l, _, c, svc, _ := terminalLifecycleFixture(t)
+	c.frameDeltaV1 = true
+	frame := terminal.Frame{Rev: "first", At: time.Now(), Cols: 80, Rows: 1, Lines: []string{"first"}}
+	if err := l.sendTerminalFrame(context.Background(), svc, terminals.Principal{Device: c.viewer, Cloud: true}, c, c.terminalID, frame); err != nil {
+		t.Fatal(err)
+	}
+	l.terminalReceiptSettled(c.framePendingChannel, c.framePendingSeq, adaptercloud.SettlePeerError)
+	if c.frameBase != nil || c.frameCandidate != nil {
+		t.Fatal("failed settlement retained a screen base")
+	}
+	if l.getTerminalConnection(c.viewer, c.id) != nil {
+		t.Fatal("failed settlement left connection active")
+	}
+}
+
 var testRequestID = strings.Join([]string{"12345678", "1234", "4123", "8123", "123456789abc"}, "-")
 
 func TestTerminalRequestRejectsForgedShapeAndKey(t *testing.T) {
