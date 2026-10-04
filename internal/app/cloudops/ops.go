@@ -1318,6 +1318,26 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/work/decisions/" + p.id}
 			}},
+		op{name: "work.decision-answer",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request", "id", "answer") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				id, valid := b.nonEmpty("id")
+				answer, answerOK := b.nonEmpty("answer")
+				if !ok || p.request == "" || !valid || !isTaskID(id) || !answerOK ||
+					strings.TrimSpace(answer) == "" || len(answer) > 4096 || !printable(answer) {
+					return plan{}, false
+				}
+				p.id, p.text = id, answer
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				payload, _ := json.Marshal(map[string]string{"answer": p.text})
+				return LocalRequest{Method: "POST", Path: "/v1/work/decisions/" + p.id,
+					Body: payload, Header: asDevice()}
+			}},
 
 		op{name: "work.digests", read: true,
 			decode: func(b body) (plan, bool) {
