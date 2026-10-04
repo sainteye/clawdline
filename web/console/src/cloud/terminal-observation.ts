@@ -1,7 +1,7 @@
 /** A bounded, content-free browser timeline for one terminal page instance. */
 export type TerminalStage = "subscription_confirmed" | "request_pending" | "request_sent" |
   "raw_received" | "envelope_opened" | "envelope_rejected" |
-  "pending_match" | "pending_miss" | "session_settled" | "receipt_timeout"
+  "pending_match" | "pending_miss" | "session_settled" | "receipt_timeout" | "frame_observed"
 export type TerminalObservationRow = {
   /** This page's own count, 1 to 128. */
   seq: number
@@ -23,7 +23,7 @@ const phases: Record<TerminalStage, TerminalPhase | null> = {
   subscription_confirmed: null, request_pending: null, request_sent: null,
   raw_received: "ciphertext", envelope_opened: "verify_decrypt", envelope_rejected: "verify_decrypt",
   pending_match: "pending_match", pending_miss: "pending_match", session_settled: "session_accept",
-  receipt_timeout: "receipt_timeout",
+  receipt_timeout: "receipt_timeout", frame_observed: null,
 }
 const failures = new Set<TerminalStage>(["envelope_rejected", "pending_miss", "receipt_timeout"])
 
@@ -73,11 +73,36 @@ export class TerminalObservation {
     return row ? { phase: phases[row.stage]!, row } : null
   }
 
+  /** Durations from this page's monotonic clock; absent means the stage was not observed. */
+  timings(): { subscriptionMs?: number; openReceiptMs?: number; firstFrameMs?: number; listReceiptMs?: number; inputReceiptMaxMs?: number } {
+    const result: { subscriptionMs?: number; openReceiptMs?: number; firstFrameMs?: number; listReceiptMs?: number; inputReceiptMaxMs?: number } = {}
+    result.subscriptionMs = this.rows.find((row) => row.stage === "subscription_confirmed")?.ms
+    result.firstFrameMs = this.rows.find((row) => row.stage === "frame_observed")?.ms
+    const sent = new Map<number, TerminalObservationRow>()
+    for (const row of this.rows) {
+      if (row.stage === "request_sent" && row.request) sent.set(row.request, row)
+      if (row.stage !== "session_settled" || !row.request) continue
+      const start = sent.get(row.request)
+      if (!start) continue
+      const elapsed = row.ms - start.ms
+      if (row.operation === "open_connection" && result.openReceiptMs === undefined) result.openReceiptMs = elapsed
+      if (row.operation === "list" && result.listReceiptMs === undefined) result.listReceiptMs = elapsed
+      if ((row.operation === "input" || row.operation === "paste") &&
+        (result.inputReceiptMaxMs === undefined || elapsed > result.inputReceiptMaxMs)) result.inputReceiptMaxMs = elapsed
+    }
+    return result
+  }
+
   /** The whole timeline as text a person can copy: fixed fields, no terminal contents, keys or real identifiers. */
   text(): string {
     const stopped = this.stopped()
+    const timing = this.timings()
     const head = [`cloud terminal diagnostics started=${this.startedAt} rows=${this.rows.length}/${TERMINAL_OBSERVATION_ROWS}`,
       stopped ? `stopped phase=${stopped.phase} stage=${stopped.row.stage} code=${stopped.row.code ?? "-"} seq=${stopped.row.seq}` : "stopped phase=-"]
+    if (Object.values(timing).some((value) => value !== undefined)) head.push(
+      `timings subscription=${timing.subscriptionMs ?? "-"}ms open_receipt=${timing.openReceiptMs ?? "-"}ms` +
+      ` first_frame=${timing.firstFrameMs ?? "-"}ms list_receipt=${timing.listReceiptMs ?? "-"}ms` +
+      ` input_receipt_max=${timing.inputReceiptMaxMs ?? "-"}ms`)
     return [...head, ...this.rows.map(terminalStageLine)].join("\n")
   }
 
