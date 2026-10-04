@@ -278,7 +278,7 @@ export class CloudTerminalSession {
     const control = receipt.result?.control as TerminalControl | undefined
     if (receipt.result?.machine_incarnation !== this.incarnation || receipt.result?.input_state_unknown === true ||
       !control?.held || !control.holder?.same_client || !control.holder?.same_device ||
-      control.epoch !== this.epoch || (control.applied_through ?? -1) < this.confirmed ||
+      control.epoch !== this.epoch || (control.applied_through ?? 0) < this.confirmed ||
       typeof control.expires_at !== "number" || control.expires_at * 1000 <= Date.now()) {
       this.forgetLease("terminal_input_state_unknown")
       return
@@ -522,7 +522,7 @@ export class CloudTerminalSession {
           const control = (receipt.result?.control ?? receipt.result) as TerminalControl | undefined
           if (!control?.held || !control.holder?.same_client || !control.holder?.same_device ||
             control.epoch !== this.epoch || (control.expires_at ?? 0) * 1000 <= Date.now() ||
-            (control.applied_through ?? -1) < this.confirmed) this.forgetLease("terminal_input_state_unknown")
+            (control.applied_through ?? 0) < this.confirmed) this.forgetLease("terminal_input_state_unknown")
           else this.set({ control })
         })
         .catch(() => this.forgetLease("terminal_input_state_unknown"))

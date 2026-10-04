@@ -412,6 +412,21 @@ test("the lease renews on its own cadence and an expired lease cannot type", asy
   session.dispose()
 })
 
+test("an omitted zero input watermark keeps a renewed idle lease typable", async () => {
+  const wire = new Wire()
+  wire.lease = { ...held, applied_through: undefined }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "screen")
+    assert.equal(session.snapshot.canType, true)
+    ;(session as unknown as { lastRenew: number }).lastRenew = Date.now() - 11_000
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
+})
+
 test("a current signed revocation notice clears the lease and stays revoked", async () => {
   const wire = new Wire()
   const session = new CloudTerminalSession(wire, "stable-tab")
