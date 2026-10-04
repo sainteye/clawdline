@@ -245,6 +245,13 @@ export function setMachinePairing(open: ((machine: string) => void) | null): voi
   for (const listener of actionListeners) listener()
 }
 
+/** A terminal refusal can offer fresh pairing even when old machine data is still decryptable. */
+export function openMachinePairing(machine: string): boolean {
+  if (!pairing) return false
+  pairing(machine)
+  return true
+}
+
 /** The Cloud gate's existing forget confirmation, opened for one account row. */
 let forgetting: ((machine: string) => void) | null = null
 

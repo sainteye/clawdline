@@ -9,6 +9,7 @@ import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords } from "../pages/terminal/words.js"
 import { collectCloudTerminals, type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
 import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, watchTerminalClose } from "../cloud/terminal-close-state.js"
+import { openMachinePairing } from "../legacy/devices-bridge.js"
 
 async function readMachine(host: TerminalHost, machine: string): Promise<import("@clawdline/contract").Terminal[]> {
   const { session, release } = await acquireTerminalConnection(host, machine, TAB)
@@ -75,6 +76,11 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
     return () => { ++generation.current }
   }, [shown, reload])
   const retry = () => setRefresh((value) => value + 1)
+  const repairPairing = (machine: string) => {
+    if (openMachinePairing(machine)) return
+    const row = document.querySelector<HTMLButtonElement>('#sidebar [data-page-to="devices"]')
+    if (row && !row.disabled) row.click()
+  }
 
   const query = filter.trim().toLocaleLowerCase()
   const projectOptions = [...new Map(rows.filter((row) => row.project).map((row) => [row.project, row.projectName])).entries()]
@@ -114,9 +120,15 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
         latestClose.status === "ended" ? "terminalTerminateEnded" : latestClose.status === "pending" ? "terminalTerminatePending" :
           latestClose.status === "unknown" ? "terminalTerminateUnknown" : "terminalCloudError",
         { code: terminalRefusalWords(latestClose.error) })}</p>}
-    {errors.map((error) => <p className="terminal-list-message" role="alert" key={error.machine}>
-      {nextWord("terminalAllMachineFailed", { machine: fleet?.machines.find((machine) => machine.id === error.machine)?.name ?? error.machine,
-        why: error.code })} <button type="button" onClick={retry} disabled={loading}>{nextWord("terminalAllRetry")}</button></p>)}
+    {errors.map((error) => {
+      const machineName = fleet?.machines.find((machine) => machine.id === error.machine)?.name ?? error.machine
+      const accessDenied = ["forbidden", "terminal_forbidden", "terminal_access_revoked"].includes(error.code)
+      return <p className="terminal-list-message" role="alert" key={error.machine}>
+        {accessDenied ? nextWord("terminalAllMachineAccessDenied", { machine: machineName }) :
+          nextWord("terminalAllMachineFailed", { machine: machineName, why: error.code })} {accessDenied ?
+          <button type="button" onClick={() => repairPairing(error.machine)}>{nextWord("terminalAllRepairPairing")}</button> :
+          <button type="button" onClick={retry} disabled={loading}>{nextWord("terminalAllRetry")}</button>}</p>
+    })}
     {loading && <p className="terminal-list-message terminal-list-progress" role="status"><span className="terminal-list-spinner" aria-hidden="true" />{nextWord("terminalListLoading")}</p>}
     {loading && !rows.length && <div className="terminal-list-skeleton" aria-hidden="true"><span /><span /></div>}
     {!loading && !projectError && !matching.length && (query || machineFilter || projectFilter) &&

@@ -12,7 +12,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts. It sits on one line because the directive answers for the line the path is on.
-import { DEVICES_ELEMENT_IDS, bindDevices, devicesLede, forgetLocalPlatform, localMachineKind, localMachines, offerForgetting, offerLastSeen, offerPairing, type MachineAnswer, setAccountMachines, setMachineForgetting, setMachinePairing } from "./devices-bridge.ts"
+import { DEVICES_ELEMENT_IDS, bindDevices, devicesLede, forgetLocalPlatform, localMachineKind, localMachines, offerForgetting, offerLastSeen, offerPairing, openMachinePairing, type MachineAnswer, setAccountMachines, setMachineForgetting, setMachinePairing } from "./devices-bridge.ts"
 // @ts-expect-error -- a `.ts` path, for node; see cloud/forget.test.ts.
 import { nextWord } from "../next-strings.ts"
 
@@ -314,6 +314,14 @@ test("a card for a machine this browser is not paired with gets a Pair button th
 
   assert.equal(offerPairing(rows, PAIR_WORDS), 0, "a card already carrying the button is left alone")
   assert.equal(card.all("device-start device-pair").length, 1)
+})
+
+test("a terminal refusal can reopen pairing even for a decryptable machine", () => {
+  const asked: string[] = []
+  assert.equal(openMachinePairing("machine-one"), false)
+  setMachinePairing((machine) => asked.push(machine))
+  assert.equal(openMachinePairing("machine-one"), true)
+  assert.deepEqual(asked, ["machine-one"])
 })
 
 test("a machine whose sessions cannot be read is not drawn as having none", async () => {
