@@ -265,8 +265,10 @@ phase 與還沒完成的 steps。patch 放在指派檔旁邊，worktree 被清�
   驗證的 step；單一修改不需要）。
 - 然後 `clawdline item phase <item id> implementing`。
 
-**4. 委派，調查也算。** 實作交給 child，調查也一樣——找原因，或是讀到足以給使用者選項。你留下的是
-結論，不是整份檔案內容；整合、合併與 landing 仍是你的。
+**4. 預設由本 Session 完成。** 自行調查、實作、驗證與落地。只有具體需要獨立並行、不同工具或權限、
+或必要的獨立審查時才派 child；先說明理由。一般調查或實作本身不是派工理由。
+
+需要派工時，整合、合併與 landing 仍由本 Session 負責：
 
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-id <item id> < brief.md
@@ -282,7 +284,7 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - 調查或 Explore child 的 brief 還要寫明停止條件——回答了就結束任務的那個問題——以及 turn 上限。
 - 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-TW dispatch`。
 
-**5. child 結束時**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
+**5. 若有 child 結束**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
 再整合交付；讀了就會關掉通知，不必另外 ACK。想直接等 child 做完，就執行
 `clawdline task wait <task id>…`（預設 `--timeout 9m`，`--any` 等第一個）。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
@@ -298,13 +300,14 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
 
 寫給提出問題的人讀，用 Markdown，不放私密資料。
 
-**7. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉。child 的
-branch merge 之後，一個指令就把項目從目前的 phase 走到 `done`；commit、target 和 remote 從已記錄的
-landing 讀，你只要寫說明：
+**7. 完成項目。** 每個 step 確認完成後用 `clawdline item step-done <item id> <step id>` 勾掉。自行完成的
+工作從一次性 worktree 提交並推送；有 child 時則 merge 它的 branch。落地後可用一個指令到 `done`。
+child 的 landing 可提供 commit、target、remote；自行落地則明確指定：
 
 ```sh
 clawdline item finish <item id> --verification "what was run and what it showed" \
-  --deployment "what went live, where, which version"      # 或 --no-deployment-reason "…"
+  --commit <sha> --target main --remote origin \
+  --deployment "what went live, where, which version"      # 已落地的 child 可省略 landing 旗標
 ```
 
 也可以一次推進一個 phase：
