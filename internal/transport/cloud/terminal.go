@@ -602,6 +602,14 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 		}
 	}
 	publicationErr := l.sendTerminalReceipt(ctx, c, receipt)
+	if req.Operation == "release_connection" && receipt.Status == "ok" && publicationErr == nil {
+		// Keep the key registered until the relay settles this final receipt.
+		// A list-only viewer would otherwise consume a slot for the full key lifetime.
+		l.terminalMu.Lock()
+		c.denied = true
+		c.deniedAt = l.opts.Now()
+		l.terminalMu.Unlock()
+	}
 	if (req.Operation == "open" || req.Operation == "read" || req.Operation == "capture") && receipt.Status == "ok" && publicationErr != nil {
 		l.closeTerminalConnection(c)
 	}
@@ -811,6 +819,12 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 			}
 		}
 	}
+	if err == nil && receipt.Status == "ok" && receipt.Operation == "release_connection" {
+		if l.terminalRetireAfterReceipt == nil {
+			l.terminalRetireAfterReceipt = map[string]*terminalConnection{}
+		}
+		l.terminalRetireAfterReceipt[terminalReceiptSettleID(terminalReceiptChannel(l.identity.MachineID, c), seq)] = c
+	}
 	if len(c.receiptOrder) < CloudTerminalReceiptsLimit {
 		if _, present := c.receipts[receipt.RequestID]; !present {
 			c.receiptOrder = append(c.receiptOrder, receipt.RequestID)
@@ -884,7 +898,7 @@ func (l *Link) publishTerminal(ctx context.Context, out Outbound) error {
 func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p terminals.Principal,
 	c *terminalConnection, req terminalRequest) (any, error) {
 	id := terminal.ID(req.TerminalID)
-	if req.Operation != "list" && req.Operation != "open" && req.Operation != "renew_connection" && req.Operation != "activate_connection" &&
+	if req.Operation != "list" && req.Operation != "open" && req.Operation != "renew_connection" && req.Operation != "activate_connection" && req.Operation != "release_connection" &&
 		(!id.Valid() || req.TerminalID == "") {
 		return nil, terminal.Refuse(terminal.CodeInvalid, "terminal_id is invalid")
 	}
@@ -1060,6 +1074,8 @@ func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p 
 		// The connection key has an absolute ten-minute lifetime. Renewal is
 		// an authenticated liveness query, not a way to extend that lifetime.
 		return l.connectionResult(c), nil
+	case "release_connection":
+		return map[string]any{"released": true}, nil
 	default:
 		return nil, terminal.Refuse(terminal.CodeInvalid, "terminal operation is unknown")
 	}

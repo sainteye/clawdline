@@ -21,8 +21,12 @@ async function readMachine(host: TerminalHost, machine: string): Promise<import(
     if (!Array.isArray(rows)) throw Object.assign(new Error("terminal_bad_receipt"), { code: "terminal_bad_receipt" })
     return rows as import("@clawdline/contract").Terminal[]
   } finally {
-    session.dispose()
-    transport.dispose()
+    // A read-only list still registers a machine-side connection. Release it
+    // without delaying the visible list by another relay round trip.
+    void session.request("release_connection").catch(() => undefined).finally(() => {
+      session.dispose()
+      transport.dispose()
+    })
   }
 }
 
