@@ -15,6 +15,68 @@ type idleTerminalHost struct {
 	offline atomic.Bool
 }
 
+type changingTerminalHost struct {
+	idleTerminalHost
+	revision atomic.Int32
+	wake     chan struct{}
+}
+
+func (h *changingTerminalHost) Frame(context.Context, terminal.ID) (terminal.Frame, error) {
+	rev := "first"
+	if h.revision.Load() > 0 {
+		rev = "second"
+	}
+	return terminal.Frame{Rev: rev, At: time.Now(), Cols: 80, Rows: 24, Lines: []string{rev}}, nil
+}
+
+func (h *changingTerminalHost) Changed(context.Context, terminal.ID) (<-chan struct{}, func(), error) {
+	return h.wake, func() {}, nil
+}
+
+func TestDeferredCloudFrameIsRetriedBeforeHeartbeat(t *testing.T) {
+	host := &changingTerminalHost{wake: make(chan struct{}, 1)}
+	svc := New(host, func(Principal) error { return nil })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watch, err := svc.Watch(ctx, Principal{Device: "viewer", Cloud: true}, terminal.NewID(), "tab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Stop()
+	frames := make(chan string, 4)
+	done := make(chan error, 1)
+	var deferred atomic.Bool
+	go func() {
+		done <- watch.RunWithFrameHeartbeat(ctx, 3*time.Second, func(e Event) error {
+			if e.Kind != EventFrame {
+				return nil
+			}
+			if e.Frame.Rev == "second" && !deferred.Swap(true) {
+				return ErrFrameDeferred
+			}
+			frames <- e.Frame.Rev
+			return nil
+		})
+	}()
+	select {
+	case <-frames:
+	case <-time.After(time.Second):
+		t.Fatal("first frame missing")
+	}
+	host.revision.Store(1)
+	host.wake <- struct{}{}
+	select {
+	case rev := <-frames:
+		if rev != "second" {
+			t.Fatalf("unexpected frame: %s", rev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("deferred frame waited for heartbeat")
+	}
+	cancel()
+	<-done
+}
+
 func (h *idleTerminalHost) Frame(context.Context, terminal.ID) (terminal.Frame, error) {
 	if h.offline.Load() {
 		return terminal.Frame{}, terminal.Refuse(terminal.CodeUnreachable, "terminal server offline")

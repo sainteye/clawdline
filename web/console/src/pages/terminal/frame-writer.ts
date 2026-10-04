@@ -52,3 +52,20 @@ export function frameBytes(frame: TerminalFrame): string {
   if (frame.cursor.visible) out += ESC + "[?25h"
   return out
 }
+
+/** Draw only changed rows when a prior complete frame is already on screen. */
+export function frameDeltaBytes(previous: TerminalFrame | null, frame: TerminalFrame): string {
+  if (!previous || previous.cols !== frame.cols || previous.rows !== frame.rows || previous.modes.alt !== frame.modes.alt) {
+    return frameBytes(frame)
+  }
+  let out = ESC + "[?25l" + modeBytes(frame.modes, frame.cursor)
+  for (let r = 0; r < frame.rows; r++) {
+    if (previous.lines[r] === frame.lines[r]) continue
+    out += ESC + "[" + (r + 1) + ";1H" + ESC + "[0m" + ESC + "[K" + (frame.lines[r] ?? "") + ESC + "[0m"
+  }
+  const y = Math.min(Math.max(0, frame.cursor.y), Math.max(0, frame.rows - 1))
+  const x = Math.min(Math.max(0, frame.cursor.x), Math.max(0, frame.cols - 1))
+  out += ESC + "[" + (y + 1) + ";" + (x + 1) + "H"
+  if (frame.cursor.visible) out += ESC + "[?25h"
+  return out
+}

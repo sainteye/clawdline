@@ -1193,7 +1193,7 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 	}
 	if c.framePending {
 		l.terminalMu.Unlock()
-		return nil
+		return terminals.ErrFrameDeferred
 	}
 	c.frameSeq++
 	seq := c.frameSeq
@@ -1209,9 +1209,13 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 		return err
 	}
 	l.terminalMu.Lock()
-	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c || c.denied || c.framePending {
+	if l.terminalConnections[terminalConnectionID(c.viewer, c.id)] != c || c.denied {
 		l.terminalMu.Unlock()
-		return nil
+		return context.Canceled
+	}
+	if c.framePending {
+		l.terminalMu.Unlock()
+		return terminals.ErrFrameDeferred
 	}
 	if l.relay == nil {
 		l.terminalMu.Unlock()

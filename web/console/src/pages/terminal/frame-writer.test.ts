@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { TerminalFrame, TerminalModes } from "@clawdline/contract"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { cursorStyle, frameBytes, modeBytes } from "./frame-writer.ts"
+import { cursorStyle, frameBytes, frameDeltaBytes, modeBytes } from "./frame-writer.ts"
 
 const ESC = "\x1b"
 const modes: TerminalModes = { app_cursor: false, app_keypad: false, mouse: "none", mouse_sgr: false, alt: false }
@@ -42,4 +42,21 @@ test("the keypad, mouse and cursor shape follow the program", () => {
 
 test("a cursor outside the screen is kept on it", () => {
   assert.ok(frameBytes(frame({ cursor: { x: 99, y: 99, visible: true } })).endsWith(ESC + "[2;5H" + ESC + "[?25h"))
+})
+
+test("a changed row is redrawn without rewriting an unchanged row", () => {
+  const next = frame({ rev: "2", lines: ["abcde", "xy"] })
+  const out = frameDeltaBytes(frame(), next)
+  assert.ok(!out.includes("abcde"))
+  assert.ok(!out.includes(ESC + "[1;1H"))
+  assert.ok(out.includes(ESC + "[2;1H" + ESC + "[0m" + ESC + "[Kxy"))
+  assert.ok(out.endsWith(ESC + "[2;3H" + ESC + "[?25h"))
+})
+
+test("a resize or alternate screen change redraws the complete frame", () => {
+  const prior = frame()
+  const resized = frame({ cols: 6, rev: "2" })
+  assert.equal(frameDeltaBytes(prior, resized), frameBytes(resized))
+  const alt = frame({ modes: { ...modes, alt: true }, rev: "2" })
+  assert.equal(frameDeltaBytes(prior, alt), frameBytes(alt))
 })

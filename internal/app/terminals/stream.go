@@ -2,12 +2,17 @@ package terminals
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/terminal"
 )
+
+// ErrFrameDeferred means the consumer still has a prior frame in flight.
+// The watch retains its last delivered revision and retries at its next read.
+var ErrFrameDeferred = errors.New("terminal frame deferred")
 
 // EventKind is one of the stream's events (plan v3 D2).
 type EventKind string
@@ -235,10 +240,12 @@ func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Even
 				return true, send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
 					"this device may no longer see this machine's terminals")})
 			}
-			last = frame
-			if err := send(Event{Kind: EventFrame, Frame: frame}); err != nil {
+			if err := send(Event{Kind: EventFrame, Frame: frame}); errors.Is(err, ErrFrameDeferred) {
+				return false, nil
+			} else if err != nil {
 				return true, err
 			}
+			last = frame
 			lastSentAt = frame.At
 		} else {
 			last.At = frame.At

@@ -89,6 +89,48 @@ test("a close exposes its request id and an unknown receipt does not claim succe
   } finally { session.dispose() }
 })
 
+test("several numbered keys publish before receipts while later keys wait for the bounded window", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.delayed.add("input")
+    const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    const sent = wire.requests.filter((request) => request.operation === "input")
+    assert.equal(sent.length, 4)
+    assert.deepEqual(sent.map((request) => request.seq), [1, 2, 3, 4])
+    wire.releaseReplies()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 5)
+    wire.releaseReplies()
+    await Promise.all(inputs)
+  } finally { session.dispose() }
+})
+
+test("an unknown pipelined input outcome stops the waiting key without replay", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.delayed.add("input")
+    const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
+    for (const pending of inputs) void pending.catch(() => undefined)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    wire.inputResult = "unknown"
+    wire.releaseReplies()
+    await Promise.allSettled(inputs)
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 4)
+    assert.equal(session.snapshot.canType, false)
+  } finally { session.dispose() }
+})
+
 test("a signed receipt with a different request id is diagnosed and cannot settle capture", async () => {
   const wire = new Wire()
   wire.delayed.add("capture")
