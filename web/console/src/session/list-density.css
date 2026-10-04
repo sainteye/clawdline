@@ -21,6 +21,19 @@
   max-width: 100%;
 }
 
+.row .state > .session-live-line {
+  flex: 1 1 12ch;
+  min-width: 0;
+}
+
+/* The phone list gives its state rail to badges; the desktop list can
+ * ellipsise the live sentence beside the spinner. */
+@media (max-width: 600px) {
+  .row .state > .session-live-line {
+    display: none;
+  }
+}
+
 .row .meta {
   overflow: hidden;
 }

@@ -2386,6 +2386,40 @@ test("the densest phone row gives each segment a boundary and never widens the l
     }
   }))
 
+test("a working row shows its live line when the state rail has room and keeps the spinner when crowded", () =>
+  inTab(async (tab) => {
+    readingScenario = "worst"
+    try {
+      await tab.go("/")
+      await tab.until("the working row arrives", (s) => s.order.join() === RETAINED)
+      const measure = () => tab.run(`(() => {
+        const state = document.querySelector("#rows > li.row .state")
+        const line = state.querySelector(".session-live-line")
+        return {
+          text: line?.textContent,
+          title: line?.getAttribute("title"),
+          visible: line && getComputedStyle(line).display !== "none",
+          spinner: !!state.querySelector("canvas.spin"),
+          width: state.getBoundingClientRect().width,
+        }
+      })()`)
+      const narrow = await measure()
+      assert.ok(narrow.width < 390, "the phone state rail is crowded")
+      assert.equal(narrow.visible, false)
+      assert.equal(narrow.spinner, true)
+      assert.match(narrow.text, /^Gitifying every package/)
+
+      await tab.desktop()
+      const wide = await measure()
+      assert.ok(wide.width > 0, "the desktop state rail is laid out")
+      assert.equal(wide.visible, true)
+      assert.equal(wide.title, wide.text)
+      assert.equal(wide.spinner, true)
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
 // Closeability is not a list axis, so "status-two" (delivery + closeability)
 // draws the same single segment as "status-one" and is not measured twice.
 for (const [scenario, segments] of [
