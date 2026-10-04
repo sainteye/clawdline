@@ -88,8 +88,7 @@ export function SessionsPage({
     window.addEventListener("popstate", onRoute)
     return () => { window.removeEventListener("hashchange", onRoute); window.removeEventListener("popstate", onRoute) }
   }, [])
-  const toggleTerminalMode = () => {
-    const next = !terminalMode
+  const chooseTerminalMode = (next: boolean) => {
     location.hash = sessionsPageHash(next)
     setTerminalMode(next)
   }
@@ -254,7 +253,10 @@ export function SessionsPage({
               aria-label={T.webFilterLabel}
               onChange={(e) => onFilter(e.target.value)}
             />
-            <button className="start session-mode-toggle" type="button" title={nextWord("terminalListMode")} aria-label={nextWord("terminalListMode")} aria-pressed={terminalMode} onClick={toggleTerminalMode}>
+            <button className="start session-mode-choice" type="button" title={T.webListLabel} aria-label={T.webListLabel} aria-pressed={!terminalMode} onClick={() => chooseTerminalMode(false)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 12h8M8 15h6"/></svg>
+            </button>
+            <button className="start session-mode-choice" type="button" title={nextWord("terminalListMode")} aria-label={nextWord("terminalListMode")} aria-pressed={terminalMode} onClick={() => chooseTerminalMode(true)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.5-3 2.5M12.5 15h4"/></svg>
             </button>
             {/* Saying what to start opens the voice-to-draft command sheet;
