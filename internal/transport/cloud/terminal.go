@@ -169,9 +169,9 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	for _, connection := range l.terminalConnections {
 		if channel == connection.framePendingChannel && connection.framePending && connection.framePendingSeq == seq {
 			connection.framePending = false
-			if kind != adaptercloud.SettleDelivered {
+			if kind != adaptercloud.SettleDelivered && kind != adaptercloud.SettleRateLimited {
 				failed = connection
-			} else {
+			} else if kind == adaptercloud.SettleDelivered {
 				connection.frameBase = connection.frameCandidate
 				connection.frameBaseSeq = connection.frameCandidateSeq
 				connection.frameBaseTerminalID = connection.frameCandidateTerminalID

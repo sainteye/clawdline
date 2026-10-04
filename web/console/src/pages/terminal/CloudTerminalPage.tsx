@@ -128,6 +128,9 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         setSession(next)
         const begun = await beginCloudTerminal(next, channelProject, id, TAB, true)
         if (live) { if ("meta" in begun) setMeta(begun.meta); else setRows(begun.rows) }
+        // The ordinary acquire path is safe when nobody holds the lease. Never
+        // take over another viewer automatically.
+        if (live && id && next.snapshot.control && !next.snapshot.control.held) await next.acquire("acquire")
       } catch (e) { if (live) { if (id && reason(e) === "terminal_closed") observeTerminalEnded(machine, id); setError(reason(e)) } }
       finally { if (live) setLoading(false) }
     })()
