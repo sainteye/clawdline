@@ -141,16 +141,16 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     (waitShape ? "+cw" + waitShape : "") +
     (row.source ? "+src" + row.source.freshness + ":" + row.source.observed_at : "")
     + (attentionSaid ? "+attention" + attention : "")
+    + (work.state === "working" ? "+line" + (row.line || "") : "")
 
   let html: string
   if (work.state === "waiting_you") {
     html = `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>` + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (work.state === "working") {
-    // The spinner alone. The provider's live line ("Wrangling… (5m 1s · …)")
-    // is drawn under the conversation itself (`WorkingLine` in Transcript.tsx);
-    // in the list it was a second copy of words nobody reads there, and it
-    // crowded out the badges beside it.
-    html = '<canvas class="spin"></canvas>' + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
+    const line = row.line
+      ? `<span class="line session-live-line" title="${L.escapeHTML(row.line)}">${L.escapeHTML(row.line)}</span>`
+      : ""
+    html = '<canvas class="spin"></canvas>' + line + attentionSaid + peerSaid + workSaid + retainedSaid + shellsSaid
   } else if (notStarted) {
     html = `<span class="unread">${L.escapeHTML(nextWord("sessionNotStartedShort"))}</span>` + attentionSaid + peerSaid + workSaid + shellsSaid
   } else if (work.state === "unknown" && row.state === "unknown") {
