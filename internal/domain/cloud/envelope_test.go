@@ -320,6 +320,8 @@ func TestChannelGrammar(t *testing.T) {
 		{"ctl/mac-01", ClassDispatch, true, "a dispatch is a command on the command rail"},
 		{"ctlr/mac-01/viewer-01", ClassCtl, true, "the response rail"},
 		{"ho/account-01/handoff-01", ClassHo, true, ""},
+		{"termd/mac-01/viewer-01/connection-01", ClassStream, true, "terminal delta stream"},
+		{"termd/mac-01/viewer-01/connection-01", ClassCtl, false, "terminal deltas are streams"},
 
 		{"s/mac-01", ClassStream, false, "a session channel needs two segments"},
 		{"orch/mac-01/extra", ClassStream, false, "an orchestrator channel takes one"},

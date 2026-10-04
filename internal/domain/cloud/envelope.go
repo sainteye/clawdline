@@ -487,6 +487,7 @@ var channelKinds = []channelKind{
 	{prefix: "ctlr", segments: 2, classes: []Class{ClassCtl}},
 	{prefix: "termi", segments: 2, classes: []Class{ClassCtl}},
 	{prefix: "term", segments: 3, classes: []Class{ClassStream}},
+	{prefix: "termd", segments: 3, classes: []Class{ClassStream}},
 	{prefix: "termr", segments: 3, classes: []Class{ClassCtl}},
 	{prefix: "ho", segments: 2, classes: []Class{ClassHo}},
 }
