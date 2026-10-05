@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
-import { TerminalChannelTransport, freshTerminalConnection, type TerminalCloudClient, type TerminalEnvelope } from "./terminal-transport.ts"
+import { RELAY_BUSY_RETRIES, RELAY_BUSY_RETRY_MS, TerminalChannelTransport, freshTerminalConnection, type TerminalCloudClient, type TerminalEnvelope } from "./terminal-transport.ts"
 import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
 import { TerminalObservation } from "./terminal-observation.ts"
@@ -312,6 +312,33 @@ test("a relay publish refusal identifies only its pending terminal request", asy
   f.emitRelay({ type: "publish_error", ch: `termi/${machine}/${viewer}`, seq: 7, code: "rate_limited" })
   assert.deepEqual(f.seen, [{ error: "rate_limited", requestID }])
   assert.ok(f.stages.some((row) => row.stage === "publish_refused" && row.code === "rate_limited"))
+  f.adapter.dispose()
+})
+
+test("a request the relay refused while its budget was full is sent again, and only a last refusal reaches the session", async (t) => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const requestID = crypto.randomUUID()
+  await f.adapter.publishTerminal({ v: 1, type: "terminal_request", request_id: requestID,
+    connection: f.fresh.connection, operation: "resize", body: { cols: 80, rows: 24 } })
+  const open = async (envelope: TerminalEnvelope) => JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64Bytes(envelope.nonce) }, f.master, base64Bytes(envelope.ct)))) as { request_id: string; operation: string }
+  for (let attempt = 1; attempt <= RELAY_BUSY_RETRIES; attempt++) {
+    f.emitRelay({ type: "publish_error", ch: `termi/${machine}/${viewer}`, seq: 7, code: attempt === 2 ? "over_capacity" : "rate_limited" })
+    assert.deepEqual(f.seen, [], "a busy relay is not yet the session's failure")
+    t.mock.timers.tick(RELAY_BUSY_RETRY_MS - 1)
+    assert.equal(f.published.length, attempt)
+    t.mock.timers.tick(1)
+    for (let i = 0; i < 200 && f.published.length === attempt; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+    assert.equal(f.published.length, attempt + 1, "the same request is sent again once the budget refills")
+    const again = await open(f.published[attempt])
+    assert.equal(again.request_id, requestID)
+    assert.equal(again.operation, "resize")
+  }
+  f.emitRelay({ type: "publish_error", ch: `termi/${machine}/${viewer}`, seq: 7, code: "rate_limited" })
+  assert.deepEqual(f.seen, [{ error: "rate_limited", requestID }])
+  assert.equal(f.stages.filter((row) => row.stage === "publish_retry").length, RELAY_BUSY_RETRIES)
   f.adapter.dispose()
 })
 

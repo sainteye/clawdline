@@ -1,5 +1,7 @@
 /** A bounded, content-free browser timeline for one terminal page instance. */
 export type TerminalStage = "subscription_sent" | "subscription_confirmed" | "subscription_refused" | "relay_error" | "request_pending" | "request_sent" | "relay_ack" | "publish_refused" |
+  /** The relay refused a publish while busy; the same request goes again shortly. */
+  "publish_retry" |
   "raw_received" | "envelope_opened" | "envelope_rejected" |
   "pending_match" | "pending_miss" | "session_settled" | "receipt_timeout" | "frame_observed" |
   /** A verified frame the session set aside without drawing; `code` says why. */
@@ -25,7 +27,7 @@ export const TERMINAL_OBSERVATION_ROWS = 128
 
 const phases: Record<TerminalStage, TerminalPhase | null> = {
   subscription_sent: null, subscription_confirmed: null, subscription_refused: null, relay_error: null,
-  request_pending: null, request_sent: null, relay_ack: null, publish_refused: "relay_publish",
+  request_pending: null, request_sent: null, relay_ack: null, publish_refused: "relay_publish", publish_retry: "relay_publish",
   raw_received: "ciphertext", envelope_opened: "verify_decrypt", envelope_rejected: "verify_decrypt",
   pending_match: "pending_match", pending_miss: "pending_match", session_settled: "session_accept",
   receipt_timeout: "receipt_timeout", frame_observed: null, frame_dropped: "session_accept",

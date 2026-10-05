@@ -74,6 +74,18 @@ export function freshTerminalConnection(): { connection: string; keyID: string; 
   return { connection, keyID: "rk-" + random22(), key: crypto.getRandomValues(new Uint8Array(32)) }
 }
 
+/**
+ * The relay refuses a publish with `rate_limited` or `over_capacity` while the account's terminal
+ * budget (refreshed every two seconds) or a viewer's connection room is full, as it briefly is when
+ * a page opens or a terminal moves to the direct path. A refused publish never reached the machine,
+ * so the same request is sent again (CloudTerminalRelayBusyRetrySecondsLimit), well inside the
+ * receipt wait; reads keep their callers' own handling.
+ */
+export const RELAY_BUSY_RETRY_MS = 2_100
+export const RELAY_BUSY_RETRIES = 3
+const RELAY_BUSY = new Set(["rate_limited", "over_capacity"])
+const RELAY_BUSY_OWN_HANDLING = new Set(["list", "read", "capture", "history"])
+
 /** Adds only terminal channels to the existing authenticated socket, leaving the copied client intact. */
 export class TerminalChannelTransport {
   private static receivers = new WeakMap<TerminalCloudClient, {
@@ -89,7 +101,9 @@ export class TerminalChannelTransport {
   private readonly confirmed = new Set<string>()
   private readonly deltaConfirmed = new Set<string>()
   private readonly deltaWaiting = new Map<string, () => void>()
-  private readonly sent = new Map<number, { connection: string; requestID: string; operation: string }>()
+  private readonly sent = new Map<number, { connection: string; requestID: string; operation: string;
+    request: Record<string, unknown>; attempt: number }>()
+  private readonly busyRetries = new Set<ReturnType<typeof setTimeout>>()
   private readonly listeners = new Map<string, (event: TerminalChannelEvent) => void>()
   private readonly verifiedFrames = new Map<string, { seq: number; frameSeq: number; direct: boolean }>()
   private readonly carriers = new Map<string, "direct" | "pending">()
@@ -258,7 +272,7 @@ export class TerminalChannelTransport {
     }
   }
 
-  async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
+  async publishTerminal(request: Record<string, unknown>, attempt = 0): Promise<{ sender: string; seq: number }> {
     if (!this.client.ready || this.client.retired) throw fail("cloud_reconnecting")
     if (!this.client.devicePrivateKey || !this.client.deviceID) throw fail("missing_device_key")
     if (request.v !== 1 || request.type !== "terminal_request" || typeof request.request_id !== "string" ||
@@ -286,7 +300,7 @@ export class TerminalChannelTransport {
       return { sender: this.viewer, seq }
     }
     this.sent.set(seq, { connection: request.connection, requestID: request.request_id,
-      operation: typeof request.operation === "string" ? request.operation : "" })
+      operation: typeof request.operation === "string" ? request.operation : "", request, attempt })
     try { this.client._send({ type: "publish", envelope }) }
     catch (error) { this.sent.delete(seq); throw error }
     this.observation?.record("request_sent", { connection: request.connection,
@@ -469,7 +483,18 @@ export class TerminalChannelTransport {
     const sent = event.ch === route("termi", this.machine, this.viewer) && typeof event.seq === "number"
       ? this.sent.get(event.seq) : undefined
     if (sent) this.sent.delete(event.seq!)
-    if (event.type === "publish_error" && sent) {
+    if (event.type === "publish_error" && sent && RELAY_BUSY.has(code) && !RELAY_BUSY_OWN_HANDLING.has(sent.operation) &&
+      sent.attempt < RELAY_BUSY_RETRIES && this.listeners.has(sent.connection)) {
+      this.observation?.record("publish_retry", { connection: sent.connection, requestID: sent.requestID,
+        operation: sent.operation, code })
+      const timer = setTimeout(() => {
+        this.busyRetries.delete(timer)
+        if (!this.listeners.has(sent.connection)) return
+        void this.publishTerminal(sent.request, sent.attempt + 1).catch((error) => this.listeners.get(sent.connection)?.(
+          { error: (error as { code?: string })?.code ?? (error as Error)?.message ?? "terminal_send_failed", requestID: sent.requestID }))
+      }, RELAY_BUSY_RETRY_MS)
+      this.busyRetries.add(timer)
+    } else if (event.type === "publish_error" && sent) {
       this.observation?.record("publish_refused", { connection: sent.connection, requestID: sent.requestID,
         operation: sent.operation, code })
       this.listeners.get(sent.connection)?.({ error: code, requestID: sent.requestID })
@@ -484,6 +509,8 @@ export class TerminalChannelTransport {
     }
   }
   dispose(): void {
+    for (const timer of this.busyRetries) clearTimeout(timer)
+    this.busyRetries.clear()
     this.link?.close("terminal_direct_released")
     for (const connection of [...this.keys.keys()]) this.unsubscribeTerminal(connection)
     this.stopEvents()
