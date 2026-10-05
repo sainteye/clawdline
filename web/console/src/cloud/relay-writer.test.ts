@@ -1924,6 +1924,7 @@ test("every read the writer carries is one it waits for, and no write is", () =>
   const reads: [string, string][] = [
     ["/v1/work/v2/images/a1", "work-v2-image"],
     ["/v1/usage/compare-compaction", "usage-compare"],
+    ["/v1/usage/compare-handoff", "usage-compare"],
     ["/v1/usage/work-samples", "usage-work-samples"],
     ["/v1/usage/sessions/s1", "usage"],
     ["/v1/capacity", "capacity"],

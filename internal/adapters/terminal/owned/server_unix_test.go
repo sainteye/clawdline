@@ -45,3 +45,38 @@ func TestASocketPathTooLongIsTyped(t *testing.T) {
 		t.Fatal("a 104-byte socket path was accepted")
 	}
 }
+
+// A batch tmux 3.7 cannot take in one command goes as several, and no UTF-8
+// character is split between two of them.
+func TestKeysSplitIntoCallsTmuxCanTakeWithoutSplittingACharacter(t *testing.T) {
+	data := []byte(strings.Repeat("a", 511) + "中" + strings.Repeat("b", 600))
+	parts := keyCalls(data, 512)
+	if len(parts) != 3 || len(parts[0]) != 511 || string(parts[1][:3]) != "中" {
+		t.Fatalf("parts of %v bytes", lens(parts))
+	}
+	if joined := strings.Join(strs(parts), ""); joined != string(data) {
+		t.Fatal("the parts are not the batch")
+	}
+	if parts := keyCalls([]byte("x"), 512); len(parts) != 1 || string(parts[0]) != "x" {
+		t.Fatalf("a small batch: %q", parts)
+	}
+	if parts := keyCalls(make([]byte, terminal.MaxInputBytes), keysPerCall); len(parts) != terminal.MaxInputBytes/keysPerCall {
+		t.Fatalf("a batch at the limit: %d calls", len(parts))
+	}
+}
+
+func lens(parts [][]byte) []int {
+	var out []int
+	for _, p := range parts {
+		out = append(out, len(p))
+	}
+	return out
+}
+
+func strs(parts [][]byte) []string {
+	var out []string
+	for _, p := range parts {
+		out = append(out, string(p))
+	}
+	return out
+}

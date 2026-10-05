@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { RestorableSession, RestorableSessions, RestoreResult } from "@clawdline/contract"
 import { nextWord } from "../next-strings.js"
+import { failureSentence } from "../legacy/bridge.js"
 import { uuid } from "../legacy/js/core/util.js"
 import {
   allOpened,
@@ -196,8 +197,9 @@ export function RestoreSheet({
         const answer = await sendRestore(fetchNow, { conversations: batch.conversations }, batch.key)
         answered.push(...answer.results)
       } catch (error) {
+        // refusal-ok: a refusal the machine named is said through failureSentence; an offline or unanswered batch has an unknown outcome and is said as restoreUnknownOutcome.
         if (error instanceof RestoreRefusal && error.code !== "offline" && error.status !== 0) {
-          failure = nextWord("restoreRefused", { why: error.message })
+          failure = nextWord("restoreRefused", { why: failureSentence(error) })
         } else {
           unknown = true
         }
@@ -235,8 +237,7 @@ export function RestoreSheet({
       onClose()
     } catch (error) {
       setPhase("idle")
-      const why = error instanceof Error ? error.message : String(error)
-      setSaid(error instanceof RestoreRefusal && error.code === "offline" ? nextWord("restoreUnknownOutcome") : nextWord("restoreRefused", { why }))
+      setSaid(error instanceof RestoreRefusal && error.code === "offline" ? nextWord("restoreUnknownOutcome") : nextWord("restoreRefused", { why: failureSentence(error) }))
       onChanged()
     }
   }

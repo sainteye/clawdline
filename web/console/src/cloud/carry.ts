@@ -172,6 +172,10 @@ export const CARRIED = {
   // Whether compacting early paid (docs/token-ledger.md "Did compacting early
   // pay"): a machine read with its one query field.
   "usage.compare-compaction": "GET /v1/usage/compare-compaction[?since=]",
+  // Whether handing over paid (docs/token-ledger.md "Did handing over pay"):
+  // the same one query field. No page asks it yet; `clawdline usage
+  // --compare-handoff` does.
+  "usage.compare-handoff": "GET /v1/usage/compare-handoff[?since=]",
   // The raw samples a before/after report is folded from (docs/token-ledger.md
   // "Did a change make one unit of work cheaper"): a machine read with its two
   // query fields. No page asks it yet; `clawdline usage --work-report` does.

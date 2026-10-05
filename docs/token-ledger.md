@@ -411,7 +411,8 @@ excluded tasks, with the count always whole (limits N44).
 ### Did handing over pay
 
 `clawdline usage --compare-handoff [--since 14d] [--json]` (and `GET
-/v1/usage/compare-handoff?since=…`) compares finished work done by one long Root against work
+/v1/usage/compare-handoff?since=…`, which a phone asks through Clawdline Cloud as the word
+`usage.compare-handoff`) compares finished work done by one long Root against work
 handed over at a milestone. A unit is a Feature, Issue or Refactor that reached `done` in the range,
 read newest first, at most 300 (limits N76). Its group comes from its assignments: `single_root`
 when no assignment came from a handoff, `milestone_handoff` when one came from a milestone handoff,

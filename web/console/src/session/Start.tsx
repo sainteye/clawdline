@@ -690,7 +690,7 @@ function press(id: string): void {
       openTerminalPage(id, made.id)
     }, (e: unknown) => {
       pressing = null
-      said(nextWord("terminalOpenFailed", { why: e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : String(e) }), e)
+      said(nextWord("terminalOpenFailed", { why: e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : L.failureSentence(e) }), e)
       draw()
     })
     return
