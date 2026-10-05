@@ -47,7 +47,7 @@ All objects use `v: 1`, reject unknown required semantics, and validate byte and
 {"v":1,"type":"terminal_request","request_id":"<uuid>","connection":"<random>","operation":"open_connection","key_id":"rk-<random>","key":"<base64 32 bytes>"}
 ```
 
-Other `terminal_request` operations are `list`, `open`, `read`, `capture`, `history`, `control`, `input`, `paste`, `resize`, `close`, `release_connection`, `renew_connection`, `rekey_connection` and `activate_connection`. The fixed top-level fields are `v`, `type`, `request_id`, `connection`, `operation`, and optional `terminal_id`, `project_id`, `client`, `epoch`, `seq`, `key_id`, `key` and `body`. Operation-specific `body` follows the local terminal contract: `open` has `{cols,rows}`, `input` has `{data}` with base64 bytes, `paste` has `{text}`, `resize` has `{cols,rows}`, and `history` has `{lines}`. `rekey_connection` has `{old_connection}` and may include `frame_delta_v1:true` after delta subscription confirmation; `open_connection` may include only that optional capability flag in its body. Neither adds top-level fields. `activate_connection` has `{old_connection,first_frame_seq}`. `control` with no `body.action` is a pure state query; with an action it applies the local `acquire`, `renew`, `release` or `takeover` semantics. A query must still name the stable `client` so `same_client` and holder-only `applied_through` can be computed. An input or paste carries `terminal_id`, stable `client`, lease `epoch`, `seq`, and its bytes/text inside `body`. The machine does not infer any effect from a relay `ack`.
+Other `terminal_request` operations are `list`, `open`, `read`, `capture`, `history`, `control`, `input`, `paste`, `resize`, `close`, `release_connection`, `renew_connection`, `rekey_connection`, `activate_connection` and `direct_offer` (see Direct carrier). The fixed top-level fields are `v`, `type`, `request_id`, `connection`, `operation`, and optional `terminal_id`, `project_id`, `client`, `epoch`, `seq`, `key_id`, `key` and `body`. Operation-specific `body` follows the local terminal contract: `open` has `{cols,rows}`, `input` has `{data}` with base64 bytes, `paste` has `{text}`, `resize` has `{cols,rows}`, and `history` has `{lines}`. `rekey_connection` has `{old_connection}` and may include `frame_delta_v1:true` after delta subscription confirmation; `open_connection` may include only that optional capability flag in its body. Neither adds top-level fields. `activate_connection` has `{old_connection,first_frame_seq}`. `control` with no `body.action` is a pure state query; with an action it applies the local `acquire`, `renew`, `release` or `takeover` semantics. A query must still name the stable `client` so `same_client` and holder-only `applied_through` can be computed. An input or paste carries `terminal_id`, stable `client`, lease `epoch`, `seq`, and its bytes/text inside `body`. The machine does not infer any effect from a relay `ack`.
 
 An `ok` receipt's `result` follows the local contract: `list` returns `{terminals:[Terminal,...]}`, `open` and `read` each return one complete `Terminal` with `id`, `project_id`, `created`, `status`, `cols`, `rows` and `control`. Cloud `history` returns `{lines:[string,...],truncated:boolean,omitted_lines:number}`: chronological complete lines from the newest suffix, and an exact count of older lines omitted to fit the 8 KiB serialized receipt limit. The machine refuses a history line over 4 KiB with `terminal_history_line_too_large`, or captured output over 4 MiB with `terminal_history_too_large`; it never silently cuts a line. There is no cursor or stable history snapshot: reconnect reads the current newest suffix again. Local HTTP history retains its existing shape and behavior. The separate `terminal_frame.frame` is one complete local `TerminalFrame`; its `terminal_id` and connection identify the stream. `connection` and `key_id` are independently generated random values; equality between their random suffixes is neither required nor meaningful.
 
@@ -70,6 +70,69 @@ When local pin or send-permission revocation invalidates an idle connection, the
 The hosted console adds a typed terminal transport next to the byte-for-byte copied legacy Cloud client. It needs `publishTerminal(request)` to seal/sign a `termi` envelope with the account key, `subscribeTerminal(connection, onEnvelope)` and `unsubscribeTerminal(connection)` for `term` and `termr`, and `openTerminalEnvelope(envelope, connectionKey)` to verify the machine signature, check channel/key/sequence and decrypt under the tab key. This surface must use the existing authenticated viewer socket and sequence allocator; it must not open a separate unauthenticated WebSocket or change copied legacy files. The adapter exposes relay `ack`, `machine_offline` and `machine_stale` separately from machine receipts.
 
 Machine `list` requests use a separate bounded queue and one worker. A slow host list does not delay connection admission or input. When that queue is full, a keyed `terminal_busy` refusal is sent where possible; stateful operations retain their arrival order on the ordinary terminal lane. A request ID already in flight is refused as busy without replacing its eventual remembered receipt.
+
+## Direct carrier
+
+A terminal connection opens on the relay as above. When the browser and the machine can reach each other, the browser upgrades it to a **direct connection** whose screens and requests travel over a WebRTC data channel (the DC) between the browser and the machine instead of through the relay. Envelopes are unchanged: every `termi`, `term` and `termd` message on the DC is the same signed, end-to-end encrypted envelope, verified by the same rules. Receipts and notices (`termr`) stay on the relay for every connection. The relay remains the authority: a direct connection is registered, subscribed and bounded on the relay exactly like any other connection. The rationale and measurements are in `docs/terminal-direct-path.md`.
+
+### Offer and answer
+
+The browser creates an `RTCPeerConnection` with STUN only (`stun:stun.cloudflare.com:3478`, `stun:stun.l.google.com:19302`), creates one data channel labelled `clawdline-terminal-v1` (ordered, reliable), creates an offer, and waits for ICE gathering to complete (at most 3 s; no trickle). It then sends `operation:"direct_offer"` on `termi`, naming a live connection it owns, with body `{"sealed":"<base64>"}`. `sealed` is AES-256-GCM under that connection's key: a 12-byte random nonce followed by the ciphertext of the UTF-8 offer SDP, with additional data `clawdline-direct-offer-v1/<connection>`. The SDP (and its candidates, so the viewer's addresses) is therefore readable only by the machine, not by other account devices.
+
+The machine admits an offer only when the sender passes the terminal authority check (`send_prompt`, pinned key, fresh roster), the named connection exists, belongs to the sender, and is not denied or expired, direct paths are enabled on this machine, the viewer has no other peer, the machine has fewer than `CloudTerminalDirectPeersLimit` peers, the viewer has sent fewer than `CloudTerminalDirectOffersPerMinuteLimit` offers in the last minute, the opened SDP is at most `CloudTerminalDirectSDPBytesLimit` bytes, and it has at most `CloudTerminalDirectCandidatesLimit` candidates. Only UDP candidates are used; candidates for loopback, link-local, multicast or unspecified addresses are dropped. `.local` (mDNS) candidates are resolved. The machine answers with a `terminal_receipt` on that connection's `termr`: `status:"ok"`, `operation:"direct_offer"`, `result:{"sdp":"<answer SDP, gathering complete>"}`. A refusal uses `terminal_direct_disabled`, `terminal_direct_unavailable`, `terminal_busy`, `terminal_forbidden` or `terminal_invalid`. The DTLS fingerprints travel only inside these signed, encrypted messages, so the DTLS peer on each side is the paired device that signed them. An older machine refuses the unknown operation with `terminal_invalid`; the browser stays on the relay.
+
+ICE that does not connect within `CloudTerminalDirectNegotiateSecondsLimit` closes the peer. There is no TURN server: a path that needs one stays on the relay.
+
+### DC messages
+
+Every DC message is a UTF-8 JSON text message of one of three shapes:
+
+- `{"t":"env","e":<envelope>}` — one whole envelope, the same JSON object the relay would carry.
+- `{"t":"chunk","id":<uint>,"i":<index>,"n":<count>,"d":"<string>"}` — a piece of the JSON text of one `env` message that is longer than 16384 bytes. Each piece's `d` is at most 16384 UTF-16 code units. A sender writes all pieces of one message contiguously, in order, before any other message in that direction. The receiver joins `d` values in order and parses the result as an `env` message. A piece out of order, a piece of a different `id` before the current message is complete, a message longer than `CloudTerminalDirectMessageBytesLimit`, or a partial message still incomplete after `CloudTerminalDirectChunkSecondsLimit` closes the DC. Bounds are checked before JSON is parsed.
+- `{"t":"ack","connection":"<connection>","frame_seq":<uint>}` — browser to machine only: the carrier acknowledgement of a frame (below). It carries no authority.
+
+Browser → machine: `env` messages carry `termi` envelopes. The machine runs the same admission ladder as for the relay (channel, sender key, signature, the same replay window shared with the relay, decrypt) and additionally requires `envelope.sender` to be the viewer whose offer created this peer and the channel to be `termi/<machine>/<that viewer>`. The machine accepts `termi` for any of that viewer's connections from either carrier.
+
+Machine → browser: `env` messages carry only `term` and `termd` envelopes of that viewer's direct connections. Their outer `seq` is a per-connection counter starting at 1, independent of the machine's relay sequence; the browser's per-connection, per-channel strictly increasing sequence check applies unchanged.
+
+### Switching to direct
+
+After the DC opens, the browser sends `rekey_connection` **over the DC** with body `{"old_connection":"<current>","carrier":"direct"}` (plus `frame_delta_v1` as usual), having first subscribed the new connection's `term`, `termr` and optional `termd` on the relay exactly as for any rekey. The machine refuses `carrier:"direct"` with `terminal_direct_unavailable` unless that viewer has a peer whose DC is open; it never silently downgrades. Otherwise the new connection is registered on the relay as usual, and its `ok` receipt (on the relay `termr`) adds `"carrier":"direct"` to `result`. `activate_connection` follows as for any rekey and may be sent on either carrier. From then on the machine publishes that connection's `term` and `termd` only on the DC; the browser drops `term`/`termd` for a direct connection that arrive from the relay, and for a relay connection that arrive from the DC. Rotating a direct connection's key is a `rekey_connection` with `carrier:"direct"` whose old connection is the current direct one.
+
+A peer belongs to one connection. It is created by an offer naming a relay connection; when the machine accepts `activate_connection` for a direct connection, the peer moves to that connection before the receipt is sent. When the connection that owns the peer is retired and no direct rekey from it is pending, the peer closes. When a peer closes, all of that viewer's direct connections are retired.
+
+### Flow control
+
+One frame is in flight per direct connection, as on the relay. After verifying, decrypting and drawing a frame from the DC, the browser sends `{"t":"ack","connection":…,"frame_seq":…}`; the machine settles the frame on it (instead of on a relay `delivered` acknowledgement) and may then send the next. The browser does not send `terminal_frame_observed` to the relay for DC frames. No ack within `CloudTerminalDirectAckSecondsLimit` retires the connection.
+
+### The relay stays the authority
+
+For each direct connection the machine publishes on its relay `termr`, at most one at a time and every `CloudTerminalDirectProbeSecondsLimit`, `{"v":1,"type":"terminal_carrier_probe","connection":"<connection>","n":<uint>}`. The browser verifies it like any `termr` payload and discards it. When the relay has withdrawn the viewer's terminal authority, released the registration (for example because the viewer's relay socket closed), or cannot deliver, the probe settles as `forbidden`/`peer_error` or `viewer_offline` instead of `delivered`, and the machine retires the connection, which closes its peer. A probe still unsettled after `CloudTerminalDirectProbeUnsettledSecondsLimit` retires it too. Peers belong to the machine's relay connection: when that socket ends, every peer closes with it.
+
+Revocation known to the machine is enforced exactly as on the relay path: every request and every frame passes the terminal authority check, which requires a roster read from the Cloud API that succeeded within the last two seconds (dated from the read's start; a failed read counts from its completion), and the terminal sweep runs every second. Frames and input stop within four seconds of a revocation and an idle connection's `terminal_access_revoked` notice is sent within five.
+
+### Fallback
+
+When the DC closes or fails, an ack or chunk times out, or ICE fails, the browser rekeys back to a relay connection over the relay, naming the direct connection as `old_connection`; if the machine has already retired it, the browser opens a new connection and proves its lease as after any network reconnect. Inputs without a receipt are never replayed. After a failed upgrade the browser waits `CloudTerminalDirectRetrySecondsLimit` before trying again for the same terminal.
+
+A machine setting `terminal_direct` (default on) turns offers off; the browser then stays on the relay.
+
+### Numbers
+
+| Name | Value | Enforced by |
+|---|---|---|
+| `CloudTerminalDirectPeersLimit` | 8 peers per machine | machine |
+| `CloudTerminalDirectOffersPerMinuteLimit` | 6 offers per viewer per minute | machine |
+| `CloudTerminalDirectSDPBytesLimit` | 16 KiB of opened offer SDP | machine (and browser before sending) |
+| `CloudTerminalDirectCandidatesLimit` | 32 candidates per offer | machine |
+| `CloudTerminalDirectNegotiateSecondsLimit` | 5 s from answer to an open DC | both |
+| `CloudTerminalDirectMessageBytesLimit` | 9 MiB per reassembled DC message | both |
+| `CloudTerminalDirectChunkSecondsLimit` | 2 s for a partial message | both |
+| `CloudTerminalDirectAckSecondsLimit` | 3 s for a frame ack | machine |
+| `CloudTerminalDirectProbeSecondsLimit` | 1 s between probes | machine |
+| `CloudTerminalDirectProbeUnsettledSecondsLimit` | 2 s for a probe to settle | machine |
+| `CloudTerminalDirectRetrySecondsLimit` | 30 s before another upgrade attempt | browser |
+| `CloudTerminalSweepSecondsLimit` | 1 s terminal sweep | machine |
 
 ## Lease continuity and revocation
 
