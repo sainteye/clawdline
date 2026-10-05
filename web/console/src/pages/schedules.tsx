@@ -495,6 +495,7 @@ const Schedule = (() => {
   const CATCH_DEFAULT = 6
   const TIMEOUT_DEFAULT = 30
   const MODELS = ["haiku", "sonnet", "opus"]
+  const EFFORTS = ["high", "xhigh"]
   // `task.permission_mode` as the parser reads it; "" is no key, the machine's default.
   const PERMISSIONS: [string, NextWord][] = [
     ["", "schedulePermissionDefault"],
@@ -511,6 +512,7 @@ const Schedule = (() => {
   let chosenPlacePath: string | null = null
   let chosenAssistant: string | null = null
   let chosenModel = ""
+  let chosenEffort = ""
   let chosenPermission = ""
   // What the schedule being edited has, so a save to "not set" sends "" to take it off.
   let storedPermission = ""
@@ -657,6 +659,7 @@ const Schedule = (() => {
       chip.onclick = () => {
         chosenAssistant = a.id
         if (chosenAssistant !== "claude") chosenModel = ""
+        if (chosenAssistant !== "codex") chosenEffort = ""
         drawWith()
         drawModel()
       }
@@ -668,18 +671,22 @@ const Schedule = (() => {
   function drawModel(): void {
     const row = el("schedule-model")
     row.innerHTML = ""
-    const show = chosenAssistant === "claude"
+    const show = chosenAssistant === "claude" || chosenAssistant === "codex"
     el("schedule-model-label").hidden = !show
+    el("schedule-model-label").textContent = chosenAssistant === "codex" ? nextWord("scheduleEffortField") : T().webScheduleModel
     row.hidden = !show
+    row.setAttribute("data-kind", chosenAssistant || "")
     if (!show) return
-    MODELS.forEach((m) => {
+    ;(chosenAssistant === "codex" ? EFFORTS : MODELS).forEach((m) => {
       const chip = document.createElement("button")
       chip.type = "button"
-      chip.className = "chip" + (m === chosenModel ? " on" : "")
+      const selected = chosenAssistant === "codex" ? chosenEffort : chosenModel
+      chip.className = "chip" + (m === selected ? " on" : "")
       chip.textContent = m
-      chip.setAttribute("aria-pressed", m === chosenModel ? "true" : "false")
+      chip.setAttribute("aria-pressed", m === selected ? "true" : "false")
       chip.onclick = () => {
-        chosenModel = chosenModel === m ? "" : m
+        if (chosenAssistant === "codex") chosenEffort = chosenEffort === m ? "" : m
+        else chosenModel = chosenModel === m ? "" : m
         drawModel()
       }
       row.appendChild(chip)
@@ -961,6 +968,7 @@ const Schedule = (() => {
     chosenPlacePath = null
     chosenAssistant = null
     chosenModel = ""
+    chosenEffort = ""
     chosenPermission = ""
     storedPermission = ""
     days = "daily"
@@ -1028,6 +1036,7 @@ const Schedule = (() => {
     ensurePlaces().then(() => {
       defaultAssistant(draft.assistant)
       chosenModel = chosenAssistant === "claude" && MODELS.includes(draft.model || "") ? draft.model || "" : ""
+      chosenEffort = ""
       drawWith()
       drawModel()
       drawPlaces()
@@ -1086,7 +1095,7 @@ const Schedule = (() => {
     storedPermission = typeof task.permission_mode === "string" ? task.permission_mode : ""
     chosenPermission = PERMISSIONS.some(([value]) => value === storedPermission) ? storedPermission : ""
     // A schedule that has a permission shows it, rather than keeping it folded away.
-    if (storedPermission) el<HTMLDetailsElement>("schedule-more").open = true
+    if (storedPermission || (task.assistant === "codex" && typeof task.reasoning_effort === "string" && EFFORTS.includes(task.reasoning_effort))) el<HTMLDetailsElement>("schedule-more").open = true
     el<HTMLInputElement>("schedule-catch").value = String(record.catch_up_hours != null ? record.catch_up_hours : CATCH_DEFAULT)
     el<HTMLInputElement>("schedule-timeout").value = String(
       task.timeout_minutes != null ? task.timeout_minutes : TIMEOUT_DEFAULT,
@@ -1102,6 +1111,7 @@ const Schedule = (() => {
       chosenPlacePath = chosenPlace ? null : task.project_dir || null
       defaultAssistant(task.assistant)
       chosenModel = chosenAssistant === "claude" && task.model && MODELS.indexOf(task.model) >= 0 ? task.model : ""
+      chosenEffort = chosenAssistant === "codex" && typeof task.reasoning_effort === "string" && EFFORTS.includes(task.reasoning_effort) ? task.reasoning_effort : ""
       loadingEdit = false
       drawWith()
       drawModel()
@@ -1221,6 +1231,7 @@ const Schedule = (() => {
       place_id: chosenPlace,
       assistant: chosenAssistant,
       model: chosenModel,
+      ...(chosenAssistant === "codex" ? { reasoning_effort: chosenEffort } : {}),
       instructions: el<HTMLTextAreaElement>("schedule-instructions").value,
       enabled,
       close_tab: closeTab,
@@ -2049,7 +2060,7 @@ let paintedCatalog = ""
 
 function paintStatic(): void {
   const t = T()
-  const signature = [t.webScheduleNew, t.webScheduleTitle, t.webScheduleModel, t.webScheduleDelete, t.webCancel].join("")
+  const signature = [t.webScheduleNew, t.webScheduleTitle, t.webScheduleModel, nextWord("scheduleEffortField"), t.webScheduleDelete, t.webCancel].join("")
   if (signature === paintedCatalog) return
   paintedCatalog = signature
   const text = (node: Element | null, value: string | undefined) => {
@@ -2087,7 +2098,7 @@ function paintStatic(): void {
     node("schedule-timeout-label") && node("schedule-timeout-label")!.querySelector(".field-label"),
     t.webScheduleTimeout,
   )
-  text(node("schedule-model-label"), t.webScheduleModel)
+  text(node("schedule-model-label"), node("schedule-model")?.getAttribute("data-kind") === "codex" ? nextWord("scheduleEffortField") : t.webScheduleModel)
   text(node("schedule-permission-label"), nextWord("schedulePermissionField"))
   attr(node("schedule-permission"), "aria-label", nextWord("schedulePermissionField"))
   text(node("schedule-delete"), t.webScheduleDelete)

@@ -4434,6 +4434,9 @@ type ScheduleRequest struct {
 	PermissionMode string `json:"permission_mode,omitempty"`
 	PlaceID        string `json:"place_id"`
 
+	// Codex high or xhigh; no key keeps the saved value, an empty string takes it off.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+
 	// The conversation the person's message was sent to. Required with via for a
 	// session-authorized repeating write.
 	SessionID string            `json:"session_id,omitempty"`
@@ -4548,16 +4551,15 @@ type ScheduleTask struct {
 	Title           string   `json:"title,omitempty"`
 }
 
-// Task-template fields the form has no control for, which a create may carry
-// — what a save already carries from the stored file, so a schedule moved
-// from another machine arrives as it was. Accepted on POST only; a PATCH that
-// names it is refused, because a save carries the stored fields itself. The
-// file's parser reads each value, as it reads a stored file. `graph` is
-// accepted too, as a stored file holds it (the generator has no type for it).
-// `permission_mode` is refused by name (`template_permission_mode`): it is sent
-// as the form's own field, where who may set it is checked. Any other key is
-// refused by name. `reasoning_effort` is kept only when the assistant is codex,
-// as a save keeps it.
+// Task-template fields which a create may carry — what a save already carries
+// from the stored file, so a schedule moved from another machine arrives as it
+// was. Accepted on POST only; a PATCH that names it is refused, because a save
+// carries the stored fields itself. The file's parser reads each value, as it
+// reads a stored file. `graph` is accepted too, as a stored file holds it (the
+// generator has no type for it). `permission_mode` is refused by name
+// (`template_permission_mode`): it is sent as the form's own field, where who
+// may set it is checked. Any other key is refused by name. `reasoning_effort`
+// is kept only when the assistant is codex, as a save keeps it.
 type ScheduleTemplate struct {
 	Claims          []string `json:"claims,omitempty"`
 	Deliverables    []string `json:"deliverables,omitempty"`
