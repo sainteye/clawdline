@@ -1,6 +1,8 @@
 import { base64Bytes, bytesBase64, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 import type { TerminalFrame } from "@clawdline/contract"
 import type { TerminalObservation } from "./terminal-observation.js"
+// @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in its suite.
+import { DirectLink, browserDirectPeers, sealDirectOffer, type DirectPeerFactory } from "./terminal-direct.ts"
 
 export interface TerminalEnvelope {
   v: number; ch: string; seq: number; ts: number; class: string; key_id: string
@@ -23,6 +25,15 @@ export interface TerminalCloudClient {
   _sendSubscriptionFrame(type: string, channels: string[]): void
   _receiveEnvelope(envelope: TerminalEnvelope, realign: boolean): Promise<unknown>
   events(listener: (event: RelayEvent) => void): () => void
+}
+/** Which carrier brings a connection's `term`/`termd`; `pending` is a direct rekey awaiting its receipt. */
+export type TerminalCarrier = "relay" | "direct"
+/** An offer made for one relay connection, waiting for the machine's answer. */
+export interface TerminalDirectOffer {
+  sealed: string
+  readonly open: boolean
+  answer(sdp: string): Promise<void>
+  close(): void
 }
 export type TerminalChannelEvent = { envelope: TerminalEnvelope; plaintext: unknown; realign: boolean } | { error: string; requestID?: string }
 const enc = new TextEncoder()
@@ -80,7 +91,9 @@ export class TerminalChannelTransport {
   private readonly deltaWaiting = new Map<string, () => void>()
   private readonly sent = new Map<number, { connection: string; requestID: string; operation: string }>()
   private readonly listeners = new Map<string, (event: TerminalChannelEvent) => void>()
-  private readonly verifiedFrames = new Map<string, number>()
+  private readonly verifiedFrames = new Map<string, { seq: number; frameSeq: number; direct: boolean }>()
+  private readonly carriers = new Map<string, "direct" | "pending">()
+  private link: DirectLink | null = null
   private readonly waiting = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private readonly receiveTails = new Map<string, Promise<void>>()
 
@@ -89,10 +102,13 @@ export class TerminalChannelTransport {
   private readonly client: TerminalCloudClient
   private readonly machine: string
   private readonly observation?: TerminalObservation
-  constructor(client: TerminalCloudClient, machine: string, observation?: TerminalObservation) {
+  private readonly peers: DirectPeerFactory | null
+  constructor(client: TerminalCloudClient, machine: string, observation?: TerminalObservation,
+    peers: DirectPeerFactory | null = browserDirectPeers()) {
     this.client = client
     this.machine = machine
     this.observation = observation
+    this.peers = peers
     if (!client.deviceID || !segment.test(client.deviceID)) throw fail("terminal_forbidden")
     this.viewer = client.deviceID
     this.pairing = client._outboundMachinePairing(machine)
@@ -120,7 +136,7 @@ export class TerminalChannelTransport {
   async subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
     if (!connectionID.test(connection) || !/^rk-[A-Za-z0-9_-]{22}$/.test(keyID) || raw.length !== 32) throw fail("terminal_invalid")
     if (!this.client.ready || this.client.retired) throw fail("cloud_reconnecting")
-    const key = await crypto.subtle.importKey("raw", raw.slice().buffer as ArrayBuffer, "AES-GCM", false, ["decrypt"])
+    const key = await crypto.subtle.importKey("raw", raw.slice().buffer as ArrayBuffer, "AES-GCM", false, ["encrypt", "decrypt"])
     this.keys.set(connection, { id: keyID, key, lastSeq: { term: -1, termr: -1, termd: -1 }, inFlight: new Set(), nonces: new Set() })
     this.listeners.set(connection, listener)
     const channels = this.channels(connection)
@@ -187,7 +203,39 @@ export class TerminalChannelTransport {
     this.deltaConfirmed.delete(connection)
     this.deltaWaiting.get(connection)?.()
     this.verifiedFrames.delete(connection)
+    this.carriers.delete(connection)
     for (const channel of channels) this.receiveTails.delete(channel)
+  }
+
+  directSupported(): boolean { return !!this.peers }
+  carrierOf(connection: string): TerminalCarrier { return this.carriers.get(connection) === "direct" ? "direct" : "relay" }
+  /** A connection is direct only after its rekey receipt said so; anything else keeps it on the relay. */
+  setCarrier(connection: string, carrier: TerminalCarrier): void {
+    if (carrier === "direct" && this.keys.has(connection)) this.carriers.set(connection, "direct")
+    else this.carriers.delete(connection)
+  }
+
+  /**
+   * Opens a peer for a live relay connection: one data channel, ICE gathered, and the offer SDP
+   * sealed under that connection's key. `onDown` runs once when that peer's DC is gone.
+   */
+  async prepareDirect(connection: string, onDown: (code: string) => void): Promise<TerminalDirectOffer> {
+    const state = this.keys.get(connection)
+    if (!this.peers || !state || !this.confirmed.has(connection)) throw fail("terminal_direct_unavailable")
+    this.link?.close("terminal_direct_replaced")
+    const link: DirectLink = new DirectLink(this.peers, (envelope) => this.receiveDirect(link, envelope), (code) => {
+      if (this.link === link) this.link = null
+      this.observation?.record("direct_down", { connection, code })
+      onDown(code)
+    })
+    this.link = link
+    try {
+      const sealed = await sealDirectOffer(state.key, connection, await link.offer())
+      return { sealed, get open() { return link.open }, answer: (sdp) => link.answer(sdp), close: () => link.close("terminal_direct_released") }
+    } catch (error) {
+      link.close("terminal_direct_failed")
+      throw error
+    }
   }
 
   deltaAvailable(connection: string): boolean { return this.deltaConfirmed.has(connection) }
@@ -215,6 +263,11 @@ export class TerminalChannelTransport {
     if (!this.client.devicePrivateKey || !this.client.deviceID) throw fail("missing_device_key")
     if (request.v !== 1 || request.type !== "terminal_request" || typeof request.request_id !== "string" ||
       typeof request.connection !== "string" || !this.confirmed.has(request.connection)) throw fail("terminal_invalid")
+    // A direct connection's requests, and the rekey that makes one, travel on the DC; its
+    // activation may use either carrier and takes the relay, which outlives a failing DC.
+    const direct = (this.carriers.get(request.connection) === "direct" && request.operation !== "activate_connection") ||
+      (request.operation === "rekey_connection" && (request.body as { carrier?: unknown } | undefined)?.carrier === "direct")
+    if (direct && !this.link?.open) throw fail("terminal_direct_closed")
     const pairing = await this.pairing
     const seq = await this.client.nextSequence(this.viewer)
     if (!Number.isSafeInteger(seq) || seq < 0) throw fail("bad_sequence")
@@ -223,6 +276,15 @@ export class TerminalChannelTransport {
     const envelope: TerminalEnvelope = { v: 1, ch: route("termi", this.machine, this.viewer), seq, ts: Date.now(), class: "ctl",
       key_id: pairing.keyID, nonce: bytesBase64(nonce), ct: bytesBase64(new Uint8Array(ct)), sender: this.viewer, sig: "" }
     envelope.sig = bytesBase64(new Uint8Array(await crypto.subtle.sign("Ed25519", this.client.devicePrivateKey, envelopeSigningBytes(envelope))))
+    if (direct) {
+      const link = this.link
+      if (!link?.open) throw fail("terminal_direct_closed")
+      if (request.operation === "rekey_connection") this.carriers.set(request.connection, "pending")
+      link.send(envelope)
+      this.observation?.record("request_sent", { connection: request.connection, requestID: request.request_id,
+        operation: typeof request.operation === "string" ? request.operation : undefined, code: "direct" })
+      return { sender: this.viewer, seq }
+    }
     this.sent.set(seq, { connection: request.connection, requestID: request.request_id,
       operation: typeof request.operation === "string" ? request.operation : "" })
     try { this.client._send({ type: "publish", envelope }) }
@@ -269,9 +331,18 @@ export class TerminalChannelTransport {
   /** Releases relay fanout only after the terminal session accepted this verified full frame. */
   observeTerminalFrame(envelope: TerminalEnvelope): void {
     const connection = envelope.ch.split("/")[3]
-    if (!this.client.ready || this.client.retired || !this.confirmed.has(connection) ||
+    const verified = this.verifiedFrames.get(connection)
+    if (!this.confirmed.has(connection) ||
       ![route("term", this.machine, this.viewer, connection), route("termd", this.machine, this.viewer, connection)].includes(envelope.ch) ||
-      this.verifiedFrames.get(connection) !== envelope.seq) throw fail("terminal_bad_envelope")
+      verified?.seq !== envelope.seq) throw fail("terminal_bad_envelope")
+    if (verified.direct) {
+      // A DC frame settles on the DC; the relay has no frame of this connection in flight.
+      this.link?.ack(connection, verified.frameSeq)
+      this.observation?.record("frame_observed", { connection, channel: envelope.ch.startsWith("termd/") ? undefined : "term", code: "direct" })
+      this.verifiedFrames.delete(connection)
+      return
+    }
+    if (!this.client.ready || this.client.retired) throw fail("terminal_bad_envelope")
     this.client._send({ type: "terminal_frame_observed", machine: this.machine, viewer: this.viewer,
       connection, envelope_seq: envelope.seq })
     this.observation?.record("frame_observed", { connection, channel: envelope.ch.startsWith("termd/") ? undefined : "term" })
@@ -288,16 +359,26 @@ export class TerminalChannelTransport {
     const connection = envelope.ch.split("/")[3]
     return this.matchesMachine(envelope) && !!connection && this.listeners.has(connection)
   }
-  private receive(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
+  /** A DC envelope: only `term`/`termd` of this viewer's connections, then the relay's checks. */
+  private receiveDirect(link: DirectLink, envelope: TerminalEnvelope): void {
+    if (link !== this.link) return
+    const parts = envelope.ch.split("/")
+    if (parts.length !== 4 || (parts[0] !== "term" && parts[0] !== "termd") || !this.receives(envelope)) {
+      this.observation?.record("envelope_rejected", { connection: parts[3], code: "terminal_direct_wrong_channel" })
+      return
+    }
+    void this.receive(envelope, false, true)
+  }
+  private receive(envelope: TerminalEnvelope, realign: boolean, direct = false): Promise<void> {
     // Relay delivery preserves order on one channel, but signature and AES work
     // is async. Serialize only that channel; a term frame cannot delay termr.
     const prior = this.receiveTails.get(envelope.ch) ?? Promise.resolve()
-    const next = prior.then(() => this.receiveOne(envelope, realign))
+    const next = prior.then(() => this.receiveOne(envelope, realign, direct))
     this.receiveTails.set(envelope.ch, next)
     void next.then(() => { if (this.receiveTails.get(envelope.ch) === next) this.receiveTails.delete(envelope.ch) })
     return next
   }
-  private async receiveOne(envelope: TerminalEnvelope, realign: boolean): Promise<void> {
+  private async receiveOne(envelope: TerminalEnvelope, realign: boolean, direct: boolean): Promise<void> {
     const connection = envelope.ch.split("/")[3]
     const listener = this.listeners.get(connection)
     const channel = envelope.ch.startsWith("termr/") ? "termr" : envelope.ch.startsWith("termd/") ? undefined : "term"
@@ -306,9 +387,22 @@ export class TerminalChannelTransport {
       this.observation?.record("envelope_rejected", { connection, channel, code: "terminal_old_connection" })
       return
     }
+    // Screens of a direct connection come only from the DC, and of a relay connection only from
+    // the relay. A pending direct rekey accepts either: no machine sends it frames before the receipt.
+    const carrier = this.carriers.get(connection)
+    if (channel !== "termr" && ((direct && !carrier) || (!direct && carrier === "direct"))) {
+      this.observation?.record("envelope_rejected", { connection, channel, code: "terminal_wrong_carrier" })
+      return
+    }
     try {
       const plaintext = await this.openTerminalEnvelope(envelope, connection)
       const value = plaintext && typeof plaintext === "object" ? plaintext as Record<string, unknown> : null
+      if (value?.type === "terminal_carrier_probe") {
+        // The machine's proof that the relay still delivers to this viewer: verified, then discarded.
+        if (envelope.ch !== route("termr", this.machine, this.viewer, connection) || value.v !== 1 ||
+          value.connection !== connection || !Number.isSafeInteger(value.n) || (value.n as number) < 0) throw refused("terminal_bad_probe")
+        return
+      }
       if (value?.type === "terminal_receipt" || value?.type === "terminal_notice") {
         this.observation?.record("envelope_opened", { connection, channel,
           requestID: typeof value.request_id === "string" ? value.request_id : undefined,
@@ -318,7 +412,7 @@ export class TerminalChannelTransport {
       }
       if ((envelope.ch === route("term", this.machine, this.viewer, connection) && isCompleteFrame(plaintext, connection)) ||
         (envelope.ch === route("termd", this.machine, this.viewer, connection) && value?.type === "terminal_frame_delta")) {
-        this.verifiedFrames.set(connection, envelope.seq)
+        this.verifiedFrames.set(connection, { seq: envelope.seq, frameSeq: value!.frame_seq as number, direct })
       }
       listener({ envelope, plaintext, realign })
     }
@@ -390,6 +484,7 @@ export class TerminalChannelTransport {
     }
   }
   dispose(): void {
+    this.link?.close("terminal_direct_released")
     for (const connection of [...this.keys.keys()]) this.unsubscribeTerminal(connection)
     this.stopEvents()
     const receiver = TerminalChannelTransport.receivers.get(this.client)

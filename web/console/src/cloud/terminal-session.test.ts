@@ -3,7 +3,7 @@ import test from "node:test"
 import type { TerminalControl, TerminalFrame } from "@clawdline/contract"
 // @ts-expect-error -- the test runner bundles this source file directly.
 import { CloudTerminalSession, type TerminalWire } from "./terminal-session.ts"
-import type { TerminalChannelEvent, TerminalEnvelope } from "./terminal-transport.js"
+import type { TerminalCarrier, TerminalChannelEvent, TerminalDirectOffer, TerminalEnvelope } from "./terminal-transport.js"
 // @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
 import { TerminalObservation } from "./terminal-observation.ts"
 // @ts-expect-error -- focused runner bundles the TypeScript source.
@@ -31,6 +31,9 @@ class Wire implements TerminalWire {
   historyResult: Record<string, unknown> = { lines: [], truncated: false, omitted_lines: 0 }
   delayed = new Set<string>()
   replies: Array<() => void> = []
+  /** Refusals by operation, or `rekey_connection:direct` for a rekey onto the DC. */
+  refusals = new Map<string, string>()
+  directMachine = false
   async subscribeTerminal(connection: string, _keyID: string, _raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
     this.channels.set(connection, listener)
   }
@@ -48,7 +51,9 @@ class Wire implements TerminalWire {
     }
     const result = operation === "open_connection" || operation === "rekey_connection"
       ? { connection, key_id: request.key_id, expires_at: Date.now() / 1000 + 500, machine_incarnation: this.incarnation,
-          ...(this.deltaMachine && (request.body as { frame_delta_v1?: boolean })?.frame_delta_v1 ? { frame_delta_v1: true } : {}) }
+          ...(this.deltaMachine && (request.body as { frame_delta_v1?: boolean })?.frame_delta_v1 ? { frame_delta_v1: true } : {}),
+          ...(this.directMachine && (request.body as { carrier?: string })?.carrier === "direct" ? { carrier: "direct" } : {}) }
+      : operation === "direct_offer" ? { sdp: "v=0 answer" }
       : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control }
         : operation === "activate_connection" ? { connection, retired_connection: (request.body as { old_connection: string }).old_connection }
         : operation === "control" && request.body === undefined ? { machine_incarnation: this.incarnation, control: this.lease, input_state_unknown: false }
@@ -56,11 +61,14 @@ class Wire implements TerminalWire {
             : operation === "list" ? { terminals: [] }
               : operation === "history" ? this.historyResult
                 : operation === "input" ? { applied_through: request.seq, duplicate: false } : {}
+    const refusal = this.refusals.get(operation + ((request.body as { carrier?: string } | undefined)?.carrier ? ":direct" : ""))
     const reply = () => this.emit(connection, "termr", {
       v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
       ...(request.terminal_id ? { terminal_id: request.terminal_id } : {}),
-      status: operation === "input" ? this.inputResult : operation === "close" ? this.closeResult : "ok", result,
-      ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
+      ...(refusal ? { status: "refused", error: refusal } : {
+        status: operation === "input" ? this.inputResult : operation === "close" ? this.closeResult : "ok", result,
+        ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
+      }),
     })
     if (this.delayed.has(operation)) this.replies.push(reply)
     else queueMicrotask(reply)
@@ -563,5 +571,157 @@ test("a rate-limited capture cannot undo a successful read or block later verifi
     await acquiring
     wire.frame(wire.latest(), 1, "ready")
     assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
+})
+
+/** A wire whose DC opens on the answer; `dropDC` is the DC closing under the session. */
+class DirectWire extends Wire {
+  dcOpen = false
+  offers = 0
+  carriers = new Map<string, TerminalCarrier>()
+  private down: ((code: string) => void) | null = null
+  constructor() { super(); this.directMachine = true }
+  directSupported(): boolean { return true }
+  async prepareDirect(_connection: string, onDown: (code: string) => void): Promise<TerminalDirectOffer> {
+    this.offers++
+    this.down = onDown
+    const wire = this
+    return { sealed: "sealed-offer", get open() { return wire.dcOpen }, answer: async () => { wire.dcOpen = true },
+      close: () => wire.dropDC("terminal_direct_released") }
+  }
+  setCarrier(connection: string, carrier: TerminalCarrier): void { this.carriers.set(connection, carrier) }
+  override async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
+    if ((request.body as { carrier?: string } | undefined)?.carrier === "direct" && !this.dcOpen) throw new Error("terminal_direct_closed")
+    return super.publishTerminal(request)
+  }
+  dropDC(code = "terminal_direct_closed"): void {
+    const down = this.down
+    this.down = null
+    this.dcOpen = false
+    down?.(code)
+  }
+}
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 10))
+const operations = (wire: Wire) => wire.requests.map((request) => request.operation)
+const lastRequest = (wire: Wire, operation: string) => [...wire.requests].reverse().find((request) => request.operation === operation)
+
+/** A held, live relay terminal that has upgraded to a direct connection and retired its relay one. */
+async function upgraded(wire: DirectWire, observation?: TerminalObservation) {
+  const session = new CloudTerminalSession(wire, "stable-tab", observation)
+  await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+  const relay = wire.latest()
+  wire.frame(relay, 1, "relay")
+  await settle()
+  const direct = wire.latest()
+  wire.frame(direct, 1, "direct")
+  await settle()
+  return { session, relay, direct }
+}
+
+test("a live relay terminal upgrades through a sealed offer, a direct rekey and an activation", async () => {
+  const wire = new DirectWire()
+  const stages: string[] = []
+  const { session, relay, direct } = await upgraded(wire, new TerminalObservation((row) => stages.push(`${row.stage}:${row.code ?? ""}`)))
+  try {
+    const offer = wire.requests.find((request) => request.operation === "direct_offer")!
+    assert.equal(offer.connection, relay)
+    assert.deepEqual(offer.body, { sealed: "sealed-offer" })
+    const rekey = lastRequest(wire, "rekey_connection")!
+    assert.equal(rekey.connection, direct)
+    assert.deepEqual(rekey.body, { old_connection: relay, carrier: "direct" })
+    assert.equal(wire.carriers.get(direct), "direct")
+    assert.equal(session.snapshot.carrier, "direct")
+    const activate = lastRequest(wire, "activate_connection")!
+    assert.deepEqual(activate.body, { old_connection: relay, first_frame_seq: 1 })
+    assert.equal(wire.channels.has(relay), false)
+    assert.equal(session.snapshot.canType, true)
+    assert.ok(stages.includes("carrier_changed:direct"))
+  } finally { session.dispose() }
+})
+
+test("a direct connection's key rotation is a direct rekey", async () => {
+  const wire = new DirectWire()
+  const { session, direct } = await upgraded(wire)
+  try {
+    await session.start()
+    const rekey = lastRequest(wire, "rekey_connection")!
+    assert.deepEqual(rekey.body, { old_connection: direct, carrier: "direct" })
+    assert.equal(session.snapshot.carrier, "direct")
+  } finally { session.dispose() }
+})
+
+test("a machine refusing the direct path leaves the terminal on the relay silently and waits before trying again", async () => {
+  for (const [operation, code] of [["direct_offer", "terminal_invalid"], ["direct_offer", "terminal_direct_disabled"],
+    ["direct_offer", "terminal_direct_unavailable"], ["rekey_connection:direct", "terminal_direct_unavailable"]]) {
+    const wire = new DirectWire()
+    wire.refusals.set(operation, code)
+    const session = new CloudTerminalSession(wire, "stable-tab")
+    try {
+      await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+      const relay = wire.latest()
+      wire.frame(relay, 1, "ready")
+      await settle()
+      assert.equal(wire.offers, 1, code)
+      assert.equal(session.snapshot.carrier, "relay", code)
+      assert.equal(session.snapshot.canType, true, code)
+      assert.equal(session.snapshot.state, "just_synced", code)
+      assert.equal(wire.latest(), relay, code)
+      assert.equal(wire.dcOpen, false, `${code}: the unused peer is closed`)
+      wire.frame(relay, 2, "later")
+      await settle()
+      assert.equal(wire.offers, 1, `${code}: no second attempt within the retry wait`)
+      assert.equal(session.snapshot.state, "live", code)
+    } finally { session.dispose() }
+  }
+})
+
+test("a closed DC rekeys back to the relay naming the direct connection and never replays input", async () => {
+  const wire = new DirectWire()
+  const stages: string[] = []
+  const { session, direct } = await upgraded(wire, new TerminalObservation((row) => stages.push(`${row.stage}:${row.code ?? ""}`)))
+  try {
+    wire.delayed.add("input")
+    const typed = session.input(new TextEncoder().encode("a"))
+    void typed.catch(() => undefined)
+    await settle()
+    assert.equal(operations(wire).filter((operation) => operation === "input").length, 1)
+    wire.dropDC()
+    await settle()
+    const rekey = lastRequest(wire, "rekey_connection")!
+    assert.deepEqual(rekey.body, { old_connection: direct })
+    assert.equal(session.snapshot.carrier, "relay")
+    assert.equal(session.snapshot.canType, false, "input waits for the relay connection's first frame")
+    wire.releaseReplies()
+    await typed
+    const relay = wire.latest()
+    wire.frame(relay, 1, "back")
+    await settle()
+    assert.equal(lastRequest(wire, "activate_connection")?.connection, relay)
+    assert.equal(operations(wire).filter((operation) => operation === "input").length, 1)
+    assert.equal(wire.offers, 1, "no new upgrade inside the retry wait")
+    assert.equal(session.snapshot.canType, true)
+    assert.ok(stages.includes("carrier_changed:relay"))
+  } finally { session.dispose() }
+})
+
+test("when the machine already retired the direct connection, the fallback opens a new one and proves the lease", async () => {
+  const wire = new DirectWire()
+  const { session, direct } = await upgraded(wire)
+  try {
+    wire.refusals.set("rekey_connection", "terminal_old_connection")
+    const before = wire.requests.length
+    wire.dropDC()
+    await settle()
+    const after = wire.requests.slice(before)
+    assert.deepEqual(after.map((request) => request.operation), ["rekey_connection", "open_connection", "control", "read", "capture"])
+    assert.equal(after[2].body, undefined, "the lease is proved by a read-only control query")
+    assert.equal(wire.channels.has(direct), false)
+    wire.frame(wire.latest(), 1, "reopened")
+    await settle()
+    assert.equal(session.snapshot.carrier, "relay")
+    assert.equal(session.snapshot.hasLease, true, "the proved lease is kept")
+    assert.equal(session.snapshot.frame?.rev, "reopened")
+    assert.equal(operations(wire).includes("input"), false)
+    assert.equal(wire.requests.slice(before).some((request) => request.operation === "activate_connection"), false)
   } finally { session.dispose() }
 })

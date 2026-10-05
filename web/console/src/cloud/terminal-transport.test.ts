@@ -6,10 +6,11 @@ import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net
 // @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
 import { TerminalObservation } from "./terminal-observation.ts"
 import goReceipt from "./testdata/terminal-receipt-go.json" with { type: "json" }
+import type { DirectChannelLike, DirectPeerFactory, DirectPeerLike } from "./terminal-direct.js"
 
 const machine = "machine_test"
 const viewer = "viewer_test"
-async function fixture() {
+async function fixture(peers: DirectPeerFactory | null = null) {
   const master = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"])
   const sender = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
   const machineKey = await crypto.subtle.generateKey("Ed25519", false, ["sign", "verify"])
@@ -46,7 +47,7 @@ async function fixture() {
     _receiveEnvelope: async () => undefined,
     events(fn) { events.add(fn); return () => { events.delete(fn) } },
   }
-  const adapter = new TerminalChannelTransport(client, machine, observation)
+  const adapter = new TerminalChannelTransport(client, machine, observation, peers)
   const fresh = freshTerminalConnection()
   const seen: unknown[] = []
   const seal = async (sequence: number, plaintext: unknown, kind: "term" | "termr" = "termr", key = fresh.key,
@@ -367,4 +368,149 @@ test("a turned-off or broken timeline leaves receipt delivery and refusal unchan
     assert.deepEqual(seen.map((event) => (event as { plaintext: unknown }).plaintext), [body])
     quiet.dispose(); f.adapter.dispose()
   }
+})
+
+class FakeChannel implements DirectChannelLike {
+  readyState = "connecting"
+  sent: string[] = []
+  onopen: ((event?: unknown) => void) | null = null
+  onclose: ((event?: unknown) => void) | null = null
+  onerror: ((event?: unknown) => void) | null = null
+  onmessage: ((event: { data: unknown }) => void) | null = null
+  send(data: string): void { this.sent.push(data) }
+  close(): void { this.readyState = "closed" }
+  deliver(envelope: unknown): void { this.onmessage?.({ data: JSON.stringify({ t: "env", e: envelope }) }) }
+}
+class FakePeer implements DirectPeerLike {
+  localDescription: { sdp: string } | null = null
+  iceGatheringState = "complete"
+  channel = new FakeChannel()
+  onicegatheringstatechange: ((event?: unknown) => void) | null = null
+  onconnectionstatechange: ((event?: unknown) => void) | null = null
+  createDataChannel(): DirectChannelLike { return this.channel }
+  async createOffer(): Promise<{ type: string; sdp?: string }> { return { type: "offer", sdp: "v=0 offer" } }
+  async setLocalDescription(description: { type: string; sdp?: string }): Promise<void> { this.localDescription = { sdp: description.sdp ?? "" } }
+  async setRemoteDescription(): Promise<void> { queueMicrotask(() => { this.channel.readyState = "open"; this.channel.onopen?.() }) }
+  close(): void { this.channel.close() }
+}
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
+const fullFrame = (connection: string, frameSeq: number) => ({ v: 1, type: "terminal_frame", connection, terminal_id: "trm_test",
+  frame_seq: frameSeq, captured_at: Date.now() / 1000, frame: { rev: `r${frameSeq}`, at: Date.now() / 1000, cols: 80, rows: 1, lines: ["ready"],
+    cursor: { x: 0, y: 0, visible: true }, modes: { app_cursor: false, app_keypad: false, mouse_sgr: false, alt: false, mouse: "none" } } })
+async function directFixture() {
+  const peer = new FakePeer()
+  const f = await fixture(() => peer)
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  const down: string[] = []
+  const offer = await f.adapter.prepareDirect(f.fresh.connection, (code) => down.push(code))
+  await offer.answer("v=0 answer")
+  const dc = () => peer.channel.sent.map((text) => JSON.parse(text) as { t: string; e?: TerminalEnvelope; connection?: string; frame_seq?: number })
+  return { ...f, peer, offer, down, dc }
+}
+const request = (connection: string, operation: string, body?: unknown) => ({ v: 1, type: "terminal_request",
+  request_id: crypto.randomUUID(), connection, operation, ...(body ? { body } : {}) })
+
+test("the offer is sealed under the current connection's key with its connection as additional data", async () => {
+  const f = await directFixture()
+  const sealed = base64Bytes(f.offer.sealed)
+  const key = await crypto.subtle.importKey("raw", f.fresh.key.slice().buffer as ArrayBuffer, "AES-GCM", false, ["decrypt"])
+  const sdp = await crypto.subtle.decrypt({ name: "AES-GCM", iv: sealed.slice(0, 12),
+    additionalData: new TextEncoder().encode(`clawdline-direct-offer-v1/${f.fresh.connection}`) }, key, sealed.slice(12))
+  assert.equal(new TextDecoder().decode(sdp), "v=0 offer")
+  assert.equal(f.offer.open, true)
+  f.adapter.dispose()
+  assert.equal(f.offer.open, false)
+})
+
+test("carrier selection: a direct connection's requests and its switching rekey use the DC, activation and relay connections the relay", async () => {
+  const f = await directFixture()
+  const next = freshTerminalConnection()
+  await f.adapter.subscribeTerminal(next.connection, next.keyID, next.key, () => undefined)
+  await f.adapter.publishTerminal(request(next.connection, "rekey_connection", { old_connection: f.fresh.connection, carrier: "direct" }))
+  assert.equal(f.published.length, 0)
+  assert.deepEqual(f.dc().map((m) => [m.t, m.e?.ch, m.e?.sender]), [["env", `termi/${machine}/${viewer}`, viewer]])
+  assert.equal(f.adapter.carrierOf(next.connection), "relay", "a pending rekey is not direct until its receipt says so")
+  await f.adapter.publishTerminal(request(f.fresh.connection, "list"))
+  assert.equal(f.published.length, 1)
+  f.adapter.setCarrier(next.connection, "direct")
+  assert.equal(f.adapter.carrierOf(next.connection), "direct")
+  await f.adapter.publishTerminal(request(next.connection, "input", { data: "YQ==" }))
+  assert.equal(f.dc().length, 2)
+  await f.adapter.publishTerminal(request(next.connection, "activate_connection", { old_connection: f.fresh.connection, first_frame_seq: 1 }))
+  assert.equal(f.published.length, 2)
+  assert.equal(f.dc().length, 2)
+  f.peer.channel.onclose?.()
+  assert.deepEqual(f.down, ["terminal_direct_closed"])
+  await assert.rejects(f.adapter.publishTerminal(request(next.connection, "input", { data: "YQ==" })), /terminal_direct_closed/)
+  await assert.rejects(f.adapter.publishTerminal(request(f.fresh.connection, "rekey_connection", { old_connection: next.connection, carrier: "direct" })),
+    /terminal_direct_closed/)
+  assert.equal(f.published.length, 2, "a refused direct request never falls through to the relay")
+  f.adapter.dispose()
+})
+
+test("DC frames pass the relay's verification and are acked on the DC only after the session observes them", async () => {
+  const f = await directFixture()
+  f.adapter.setCarrier(f.fresh.connection, "direct")
+  const forged = await f.seal(1, fullFrame(f.fresh.connection, 1), "term")
+  forged.sig = (await f.seal(1, fullFrame(f.fresh.connection, 9), "term")).sig
+  f.peer.channel.deliver(forged)
+  await settle()
+  assert.equal(f.seen.length, 0)
+  assert.equal(f.stages.at(-1)?.code, "terminal_bad_signature")
+  assert.throws(() => f.adapter.observeTerminalFrame(forged), /terminal_bad_envelope/)
+  const wrongKey = await f.seal(2, fullFrame(f.fresh.connection, 1), "term", crypto.getRandomValues(new Uint8Array(32)))
+  f.peer.channel.deliver(wrongKey)
+  await settle()
+  assert.equal(f.seen.length, 0)
+  const frame = await f.seal(3, fullFrame(f.fresh.connection, 4), "term")
+  f.peer.channel.deliver(frame)
+  await settle()
+  assert.equal(f.seen.length, 1)
+  assert.equal(f.dc().filter((m) => m.t === "ack").length, 0, "decryption alone is not an ack")
+  f.adapter.observeTerminalFrame(frame)
+  assert.deepEqual(f.dc().filter((m) => m.t === "ack"), [{ t: "ack", connection: f.fresh.connection, frame_seq: 4 }])
+  assert.equal(f.observed.length, 0, "a DC frame never sends terminal_frame_observed to the relay")
+  f.peer.channel.deliver(frame)
+  await settle()
+  assert.equal(f.seen.length, 1, "a replayed DC envelope is refused like a relay one")
+  assert.throws(() => f.adapter.observeTerminalFrame(frame), /terminal_bad_envelope/)
+  f.adapter.dispose()
+})
+
+test("a relay frame for a direct connection and a DC frame for a relay connection are dropped", async () => {
+  const f = await directFixture()
+  f.adapter.setCarrier(f.fresh.connection, "direct")
+  await f.client._receiveEnvelope(await f.seal(1, fullFrame(f.fresh.connection, 1), "term"), false)
+  assert.equal(f.seen.length, 0)
+  assert.equal(f.stages.at(-1)?.code, "terminal_wrong_carrier")
+  await f.client._receiveEnvelope(await f.seal(1, { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
+    connection: f.fresh.connection, operation: "list", status: "ok" }), false)
+  assert.equal(f.seen.length, 1, "receipts stay on the relay for a direct connection")
+  f.adapter.setCarrier(f.fresh.connection, "relay")
+  f.peer.channel.deliver(await f.seal(2, fullFrame(f.fresh.connection, 2), "term"))
+  await settle()
+  assert.equal(f.seen.length, 1)
+  assert.equal(f.stages.at(-1)?.code, "terminal_wrong_carrier")
+  f.peer.channel.deliver(await f.seal(3, { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
+    connection: f.fresh.connection, operation: "list", status: "ok" }))
+  await settle()
+  assert.equal(f.seen.length, 1, "a receipt never arrives on the DC")
+  assert.equal(f.stages.at(-1)?.code, "terminal_direct_wrong_channel")
+  f.adapter.dispose()
+})
+
+test("a carrier probe on termr is verified and discarded", async () => {
+  const f = await fixture()
+  await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
+  await f.client._receiveEnvelope(await f.seal(1, { v: 1, type: "terminal_carrier_probe", connection: f.fresh.connection, n: 1 }), false)
+  assert.equal(f.seen.length, 0)
+  assert.equal(f.stages.some((row) => row.stage === "envelope_rejected"), false)
+  const forged = await f.seal(2, { v: 1, type: "terminal_carrier_probe", connection: f.fresh.connection, n: 2 })
+  forged.sig = (await f.seal(2, { v: 1, type: "terminal_carrier_probe", connection: f.fresh.connection, n: 3 })).sig
+  await f.client._receiveEnvelope(forged, false)
+  assert.equal(f.stages.at(-1)?.code, "terminal_bad_signature")
+  await f.client._receiveEnvelope(await f.seal(3, { v: 1, type: "terminal_carrier_probe", connection: "other", n: 4 }), false)
+  assert.equal(f.stages.at(-1)?.code, "terminal_bad_probe")
+  assert.equal(f.seen.length, 0)
+  f.adapter.dispose()
 })

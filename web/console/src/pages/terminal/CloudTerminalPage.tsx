@@ -18,7 +18,7 @@ import { sessionsPageHash } from "../../page-route.js"
 import { requestPage } from "../../overlays/index.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 
-const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
+const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "", carrier: "relay" }
 const FIRST_FRAME_MS = 12_000
 /** The page's content-free receipt timeline, readable and copyable where a terminal request failed. */
 function TerminalDiagnostics({ observation }: { observation: { current: TerminalObservation | null } }) {
@@ -335,6 +335,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord(from === "sessions" ? "terminalBackSessions" : "terminalBack")}</button>
         <strong className="terminal-context" title={label}>{label}</strong>
+        {snapshot.carrier === "direct" && <span className="terminal-note terminal-carrier" title={nextWord("terminalCarrierDirectHelp")}
+          aria-label={nextWord("terminalCarrierDirectHelp")}>{nextWord("terminalCarrierDirect")}</span>}
         <details className="terminal-more terminal-action-more"><summary aria-label={nextWord("terminalMoreActions")} title={nextWord("terminalMoreActions")}>⋯</summary><div className="terminal-more-actions">
           {snapshot.control?.holder?.same_client && snapshot.hasLease && <button className="board-button" type="button" disabled={!!busy}
             onClick={() => void run("release", () => session!.release())}>{nextWord("terminalRelease")}</button>}

@@ -1,7 +1,9 @@
 /** A bounded, content-free browser timeline for one terminal page instance. */
 export type TerminalStage = "subscription_sent" | "subscription_confirmed" | "subscription_refused" | "relay_error" | "request_pending" | "request_sent" | "relay_ack" | "publish_refused" |
   "raw_received" | "envelope_opened" | "envelope_rejected" |
-  "pending_match" | "pending_miss" | "session_settled" | "receipt_timeout" | "frame_observed"
+  "pending_match" | "pending_miss" | "session_settled" | "receipt_timeout" | "frame_observed" |
+  /** The direct (WebRTC) carrier: `code` names the carrier a connection now uses, or why an upgrade or DC ended. */
+  "carrier_changed" | "direct_failed" | "direct_down"
 export type TerminalObservationRow = {
   /** This page's own count, 1 to 128. */
   seq: number
@@ -25,6 +27,7 @@ const phases: Record<TerminalStage, TerminalPhase | null> = {
   raw_received: "ciphertext", envelope_opened: "verify_decrypt", envelope_rejected: "verify_decrypt",
   pending_match: "pending_match", pending_miss: "pending_match", session_settled: "session_accept",
   receipt_timeout: "receipt_timeout", frame_observed: null,
+  carrier_changed: null, direct_failed: null, direct_down: null,
 }
 const failures = new Set<TerminalStage>(["publish_refused", "envelope_rejected", "pending_miss", "receipt_timeout"])
 

@@ -1,10 +1,12 @@
 import type { TerminalControl, TerminalFrame } from "@clawdline/contract"
 import { bytesBase64 } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- a `.ts` path, so Node's strip-types runner can load this file in terminal-session.test.ts.
-import { completeTerminalFrame, freshTerminalConnection, type TerminalChannelEvent, type TerminalEnvelope } from "./terminal-transport.ts"
+import { completeTerminalFrame, freshTerminalConnection, type TerminalCarrier, type TerminalChannelEvent, type TerminalDirectOffer, type TerminalEnvelope } from "./terminal-transport.ts"
 import type { TerminalObservation } from "./terminal-observation.js"
 // @ts-expect-error -- Node's strip-types runner loads this module directly.
 import { reconstructTerminalDelta, type TerminalDelta } from "./terminal-delta.ts"
+// @ts-expect-error -- Node's strip-types runner loads this module directly.
+import { DIRECT_RETRY_MS } from "./terminal-direct.ts"
 
 export interface TerminalWire {
   subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void>
@@ -12,6 +14,10 @@ export interface TerminalWire {
   publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }>
   observeTerminalFrame(envelope: TerminalEnvelope): void
   deltaAvailable?(connection: string): boolean
+  /** The direct carrier; a wire without these keeps every connection on the relay. */
+  directSupported?(): boolean
+  prepareDirect?(connection: string, onDown: (code: string) => void): Promise<TerminalDirectOffer>
+  setCarrier?(connection: string, carrier: TerminalCarrier): void
 }
 
 type Receipt = { v: 1; type: "terminal_receipt"; request_id: string; connection: string; operation: string;
@@ -29,6 +35,8 @@ export interface CloudTerminalSnapshot {
   canType: boolean
   hasLease: boolean
   reason: string
+  /** How the current connection's screens and requests travel. */
+  carrier: TerminalCarrier
 }
 type Pending = { operation: string; connection: string; terminal: string | null; resolve: (receipt: Receipt) => void; reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout> }
@@ -36,6 +44,8 @@ type EarlyFrame = { value: Frame; envelope: TerminalEnvelope }
 const STALE_MS = 6_000
 const RECEIPT_MS = 10_000
 const KEY_MS = 10 * 60_000
+/** An upgrade is not started this close to the key rotation, which would race it. */
+const UPGRADE_MIN_KEY_MS = 120_000
 export const EARLY_FRAME_LIMIT = 1
 const fail = (code: string) => Object.assign(new Error(code), { code })
 
@@ -63,6 +73,13 @@ export class CloudTerminalSession {
   private activating = false
   private lastRenew = 0
   private renewing = false
+  private carrier: TerminalCarrier = "relay"
+  /** The open peer of the current direct connection, or of an upgrade in progress. */
+  private direct: TerminalDirectOffer | null = null
+  private directAttempt: object | null = null
+  private upgrading = false
+  private fallbackWanted = false
+  private readonly directRetryAt = new Map<string, number>()
   private sendQueue: Promise<void> = Promise.resolve()
   private inFlightInput: Promise<void>[] = []
   private queuedBytes = 0
@@ -70,7 +87,7 @@ export class CloudTerminalSession {
   private earlyFrames: EarlyFrame[] = []
   private listeners = new Set<(snapshot: CloudTerminalSnapshot) => void>()
   private tick: ReturnType<typeof setInterval> | null = null
-  private s: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "" }
+  private s: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "", carrier: "relay" }
 
   // Declared fields rather than parameter properties: `node --test
   // --experimental-strip-types` cannot run those, and this file's suite silently
@@ -103,11 +120,20 @@ export class CloudTerminalSession {
     for (const listener of this.listeners) listener(this.s)
   }
 
-  async start(): Promise<void> {
+  /**
+   * Opens this tab's connection, or rekeys the current one. `carrier: "direct"` rekeys it onto the
+   * open DC; a direct connection's own rotation stays direct while its DC is open. `abandon` names a
+   * current connection the machine has already retired: a new one opens and proves the lease.
+   */
+  async start(options: { carrier?: "direct"; abandon?: boolean } = {}): Promise<void> {
     if (this.openingNew) throw fail("terminal_busy")
+    const previous = this.connection
+    const rekey = !!previous && Date.now() < this.expiresAt && !options.abandon
+    if (options.carrier === "direct" && (!rekey || !this.direct?.open)) throw fail("terminal_direct_unavailable")
+    const direct = rekey && !!this.direct?.open && (options.carrier === "direct" || this.carrier === "direct")
     this.openingNew = true
     const fresh = freshTerminalConnection()
-    const previous = this.connection
+    const previousCarrier = this.carrier
     const prior = this.s
     const previousExpiry = this.expiresAt
     const previousActive = this.active
@@ -115,7 +141,7 @@ export class CloudTerminalSession {
     const previousIncarnation = this.incarnation
     const previousFrameSeq = this.frameSeq
     this.earlyFrames = []
-    if (previous) { this.retiringConnection = previous; this.rotationReady = false }
+    if (previous && !options.abandon) { this.retiringConnection = previous; this.rotationReady = false }
     this.active = false
     this.set({ state: previous ? "synchronizing" : "opening", canType: false, reason: "" })
     try {
@@ -123,10 +149,10 @@ export class CloudTerminalSession {
       const requestDelta = this.transport.deltaAvailable?.(fresh.connection) === true
       this.connection = fresh.connection
       this.keyID = fresh.keyID
-      const opened = await this.request(previous && Date.now() < previousExpiry ? "rekey_connection" : "open_connection", {
+      const opened = await this.request(rekey ? "rekey_connection" : "open_connection", {
         key_id: fresh.keyID, key: bytesBase64(fresh.key),
-        ...(previous && Date.now() < previousExpiry || requestDelta ? {
-          body: { ...(previous && Date.now() < previousExpiry ? { old_connection: previous } : {}),
+        ...(rekey || requestDelta ? {
+          body: { ...(rekey ? { old_connection: previous } : {}), ...(direct ? { carrier: "direct" } : {}),
             ...(requestDelta ? { frame_delta_v1: true } : {}) },
         } : {}),
       })
@@ -141,10 +167,17 @@ export class CloudTerminalSession {
       this.expiresAt = opened.result.expires_at * 1000
       this.frameSeq = 0
       this.deltaEnabled = requestDelta && opened.result.frame_delta_v1 === true
+      // Direct only when the machine's receipt says so; it never silently downgrades.
+      const carrier: TerminalCarrier = direct && opened.result.carrier === "direct" ? "direct" : "relay"
+      this.transport.setCarrier?.(fresh.connection, carrier)
+      if (carrier !== previousCarrier) this.observation?.record("carrier_changed", { connection: fresh.connection, code: carrier })
+      this.carrier = carrier
+      if (carrier === "direct" && !this.direct?.open) this.fallbackWanted = true
+      if (options.abandon && previous) this.transport.unsubscribeTerminal(previous)
       this.active = true
       this.connectionUnknown = false
       this.rotationAttempted = false
-      this.set({ state: "synchronizing", frame: null })
+      this.set({ state: "synchronizing", frame: null, carrier })
       if (previous) {
         if (!sameMachine) this.forgetLease("terminal_machine_restarted")
         else await this.reconcileLease()
@@ -165,6 +198,9 @@ export class CloudTerminalSession {
       this.earlyFrames = []
       this.retiringConnection = ""
       this.rotationReady = false
+      this.carrier = previousCarrier
+      // A direct connection whose rotation failed falls back to the relay rather than expire.
+      if (direct && !options.carrier && previousCarrier === "direct") this.fallbackWanted = true
       this.active = this.s.state !== "revoked" && previousActive && Date.now() < previousExpiry
       if (this.s.state !== "revoked") {
         this.set({ ...prior, state: previous && Date.now() < previousExpiry ? prior.state : "unknown", reason: (error as Error).message })
@@ -173,6 +209,77 @@ export class CloudTerminalSession {
     } finally {
       this.openingNew = false
       this.set({})
+      if (this.fallbackWanted) { this.fallbackWanted = false; queueMicrotask(() => void this.fallback()) }
+    }
+  }
+
+  /** Upgrades the current relay connection to a direct one when nothing else is in motion. */
+  private maybeUpgrade(): void {
+    if (!this.transport.directSupported?.() || !this.transport.prepareDirect || this.upgrading || this.carrier !== "relay" ||
+      !this.active || this.openingNew || this.retiringConnection || this.activating || !this.terminal || !this.frameSeq ||
+      (this.s.state !== "live" && this.s.state !== "just_synced") || this.expiresAt - Date.now() < UPGRADE_MIN_KEY_MS ||
+      Date.now() < (this.directRetryAt.get(this.terminal) ?? 0)) return
+    void this.upgrade()
+  }
+  private async upgrade(): Promise<void> {
+    this.upgrading = true
+    const attempt = {}
+    this.directAttempt = attempt
+    const connection = this.connection
+    const terminal = this.terminal
+    let offer: TerminalDirectOffer | null = null
+    try {
+      offer = await this.transport.prepareDirect!(connection, (code) => this.directDown(attempt, code))
+      if (this.directAttempt !== attempt || connection !== this.connection || !this.active) throw fail("terminal_direct_stale")
+      const answer = await this.request("direct_offer", { body: { sealed: offer.sealed } })
+      const sdp = answer.result?.sdp
+      if (typeof sdp !== "string" || !sdp) throw fail("terminal_bad_receipt")
+      await offer.answer(sdp)
+      if (this.directAttempt !== attempt || connection !== this.connection || this.openingNew || this.retiringConnection || !this.active)
+        throw fail("terminal_direct_stale")
+      this.direct = offer
+      await this.start({ carrier: "direct" })
+      if (this.carrier !== "direct") throw fail("terminal_direct_unavailable")
+    } catch (error) {
+      // A machine without the direct path (`terminal_invalid`), or refusing it now
+      // (`terminal_direct_disabled`, `terminal_direct_unavailable`), leaves the terminal on the relay silently.
+      this.observation?.record("direct_failed", { connection, code: (error as { code?: string })?.code ?? "terminal_direct_failed" })
+      this.directRetryAt.set(terminal, Date.now() + DIRECT_RETRY_MS)
+      if (this.directAttempt === attempt) { this.directAttempt = null; this.direct = null }
+      offer?.close()
+    } finally { this.upgrading = false }
+  }
+  /** The DC is gone: a direct connection goes back to the relay, without replaying any input. */
+  private directDown(attempt: object, _code: string): void {
+    if (this.directAttempt !== attempt) return
+    this.directAttempt = null
+    this.direct = null
+    if (this.terminal) this.directRetryAt.set(this.terminal, Date.now() + DIRECT_RETRY_MS)
+    if (this.carrier === "direct") void this.fallback()
+  }
+  private closeDirect(): void {
+    const offer = this.direct
+    this.direct = null
+    this.directAttempt = null
+    offer?.close()
+  }
+  private async fallback(): Promise<void> {
+    if (this.carrier !== "direct" || !this.connection || this.s.state === "revoked" || this.s.state === "closed") return
+    if (this.openingNew) { this.fallbackWanted = true; return }
+    this.closeDirect()
+    try { await this.start() } // A relay rekey naming the direct connection as its old one.
+    catch (error) {
+      // Re-read after the await: the receipt may have revoked access or started another connection.
+      const now = this.s.state as CloudTerminalState
+      if (now === "revoked" || this.carrier !== "direct" || this.openingNew) return
+      if ((error as { receiptStatus?: string })?.receiptStatus !== "refused") return
+      // The machine already retired it with its peer: a new connection proves the lease instead.
+      try {
+        await this.start({ abandon: true })
+        if (this.terminal) await this.attach(this.terminal, false)
+      } catch (failure) {
+        if ((this.s.state as CloudTerminalState) !== "revoked") this.set({ state: "unknown", reason: (failure as Error).message })
+      }
     }
   }
 
@@ -188,7 +295,7 @@ export class CloudTerminalSession {
         this.pending.delete(requestID)
         this.observation?.record("receipt_timeout", { connection, requestID, operation })
         if (operation === "input" || operation === "paste") { this.inputUnknown = true; this.set({ state: "unknown", reason: "terminal_input_state_unknown" }) }
-        else if (operation !== "release_connection") { this.connectionUnknown = true; this.set({ state: "unknown", reason: "terminal_receipt_timeout" }) }
+        else if (operation !== "release_connection" && operation !== "direct_offer") { this.connectionUnknown = true; this.set({ state: "unknown", reason: "terminal_receipt_timeout" }) }
         reject(fail("terminal_receipt_timeout"))
       }, RECEIPT_MS)
       this.pending.set(requestID, { operation, connection,
@@ -388,7 +495,10 @@ export class CloudTerminalSession {
       return
     }
     const value = event.plaintext as Receipt | Frame | DeltaFrame | Notice
-    if (value?.v !== 1 || value.connection !== this.connection) {
+    // A receipt of the connection being replaced still settles its own pending request: an input
+    // sent just before a rekey (or before a DC loss) keeps its proof instead of becoming unknown.
+    const retiring = value?.type === "terminal_receipt" && !!this.retiringConnection && value.connection === this.retiringConnection
+    if (value?.v !== 1 || (value.connection !== this.connection && !retiring)) {
       if (value?.type === "terminal_receipt") this.observation?.record("pending_miss", {
         connection: typeof value.connection === "string" ? value.connection : undefined,
         requestID: typeof value.request_id === "string" ? value.request_id : undefined,
@@ -464,6 +574,7 @@ export class CloudTerminalSession {
     this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
     this.transport.observeTerminalFrame(envelope)
     this.maybeActivate()
+    this.maybeUpgrade()
   }
   private async acceptDelta(value: DeltaFrame, envelope: TerminalEnvelope): Promise<void> {
     if (!this.deltaEnabled || !this.active || this.openingNew || !this.terminal || this.deltaChecking) return
@@ -488,7 +599,10 @@ export class CloudTerminalSession {
       this.deltaEnabled = false
       this.transport.unsubscribeTerminal(connection)
       this.connection = ""
-      this.set({ frame: null, state: "synchronizing", reason: "terminal_delta_mismatch" })
+      this.closeDirect()
+      if (this.carrier === "direct") this.observation?.record("carrier_changed", { connection, code: "relay" })
+      this.carrier = "relay"
+      this.set({ frame: null, state: "synchronizing", reason: "terminal_delta_mismatch", carrier: "relay" })
       void this.start().catch(() => this.set({ state: "unknown", reason: "terminal_delta_mismatch" }))
     } finally { this.deltaChecking = false }
   }
@@ -507,6 +621,7 @@ export class CloudTerminalSession {
         this.retiringConnection = ""
         this.rotationReady = false
         this.set({})
+        this.maybeUpgrade()
       })
       .catch((error) => { this.inputUnknown = true; this.set({ state: "unknown", reason: (error as Error).message }) })
       .finally(() => { this.activating = false })
@@ -535,8 +650,10 @@ export class CloudTerminalSession {
     if (Date.now() >= this.expiresAt || (this.s.frame && Date.now() / 1000 - this.s.frame.at > STALE_MS / 1000)) {
       this.set({ state: "stale", reason: "terminal_stale" })
     }
+    this.maybeUpgrade()
   }
   dispose(): void {
+    this.closeDirect()
     this.earlyFrames = []
     if (this.tick) clearInterval(this.tick)
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(fail("terminal_closed")) }
