@@ -263,4 +263,12 @@ func TestDefaultModelsUseTheLaunchPolicyName(t *testing.T) {
 	if got := DefaultModel(values, "other"); got != "" {
 		t.Fatalf("unknown assistant = %q", got)
 	}
+	values.Raw["codex_default_effort"] = json.RawMessage(`"xhigh"`)
+	if got := DefaultReasoningEffort(values); got != "xhigh" {
+		t.Fatalf("Codex effort = %q", got)
+	}
+	values.Raw["codex_default_effort"] = json.RawMessage(`"unsupported"`)
+	if got := DefaultReasoningEffort(values); got != "" {
+		t.Fatalf("invalid effort = %q", got)
+	}
 }

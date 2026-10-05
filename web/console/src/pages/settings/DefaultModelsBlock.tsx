@@ -11,7 +11,7 @@ import {
 } from "./api.js"
 import "./default-models.css"
 
-type ModelKey = "codex_default_model" | "claude_default_model"
+type ModelKey = "codex_default_model" | "claude_default_model" | "codex_default_effort"
 
 function modelOf(snapshot: DefaultModelsSnapshot | null, key: ModelKey): string {
   if (!snapshot) return ""
@@ -61,7 +61,9 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
       },
       (error: unknown) => {
         setBusy(null)
-        setSaid(error instanceof RefusalError && error.code === "invalid_default_model"
+        setSaid(error instanceof RefusalError && error.code === "invalid_default_effort"
+          ? nextWord("defaultEffortInvalid")
+          : error instanceof RefusalError && error.code === "invalid_default_model"
           ? nextWord("defaultModelInvalid")
           : L.failureSentence(error, { fallback: nextWord("defaultModelsFailed") }))
       },
@@ -93,6 +95,15 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
       <b id="settings-default-models-title">{nextWord("defaultModelsTitle")}</b>
       <p className="say">{nextWord("defaultModelsHint")}</p>
       {picker("codex", "codex_default_model", nextWord("defaultCodexModel"))}
+      <div className="settings-model-field">
+        <label htmlFor="settings-codex-default-effort">{nextWord("defaultCodexEffort")}</label>
+        <select className="find settings-model-select" id="settings-codex-default-effort"
+          value={modelOf(snapshot, "codex_default_effort")} disabled={disabled}
+          onChange={(event) => commit("codex_default_effort", event.currentTarget.value)}>
+          <option value="">{nextWord("defaultModelPlaceholder")}</option>
+          <option value="high">high</option><option value="xhigh">xhigh</option>
+        </select>
+      </div>
       {picker("claude", "claude_default_model", nextWord("defaultClaudeModel"))}
       {snapshot ? null : (
         <button className="chip" type="button" disabled={busy === "read"} onClick={read}>

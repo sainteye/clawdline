@@ -71,6 +71,7 @@ func TestANewSessionUsesTheMachinesDefaultModel(t *testing.T) {
 		Past: func(context.Context, projects.Place, string) []projects.Past {
 			return []projects.Past{{ID: conversation}}
 		},
+		DefaultReasoningEffort: func() string { return "xhigh" },
 		DefaultModel: func(assistant string) string {
 			if assistant == "codex" {
 				return "gpt-6-sol"
@@ -84,21 +85,21 @@ func TestANewSessionUsesTheMachinesDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if started.Model != "gpt-6-sol" || !strings.Contains(term.command, " codex --model gpt-6-sol ") {
+	if started.Model != "gpt-6-sol" || !strings.Contains(term.command, " codex --model gpt-6-sol --config model_reasoning_effort=xhigh") {
 		t.Fatalf("codex default: %+v / %s", started, term.command)
 	}
 	started, err = s.Start(ctx, place, "codex", "gpt-5.6-luna", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if started.Model != "gpt-5.6-luna" || !strings.Contains(term.command, "--model gpt-5.6-luna") || strings.Contains(term.command, "gpt-6-sol") {
+	if started.Model != "gpt-5.6-luna" || !strings.Contains(term.command, "--model gpt-5.6-luna") || strings.Contains(term.command, "gpt-6-sol") || !strings.Contains(term.command, "model_reasoning_effort=xhigh") {
 		t.Fatalf("explicit override: %+v / %s", started, term.command)
 	}
 	started, err = s.Resume(ctx, place, conversation, "codex", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if started.Model != "" || strings.Contains(term.command, "--model") {
+	if started.Model != "" || strings.Contains(term.command, "--model") || strings.Contains(term.command, "model_reasoning_effort") {
 		t.Fatalf("resume changed model: %+v / %s", started, term.command)
 	}
 }

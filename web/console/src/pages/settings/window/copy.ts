@@ -56,6 +56,8 @@ const ownWords = {
     settingsCompactWindowInvalid: "A whole number of tokens from {min} to {max}, or empty for none.",
     settingsAutoNameAuto: "Automatic (Claude Code, then Codex)",
     settingsCodexDefaultModel: "Codex default model",
+    settingsCodexDefaultEffort: "Codex default reasoning effort",
+    settingsCodexDefaultEffortHint: "Used for a new Codex session without its own effort choice. A child agent may still choose its own effort.",
     settingsClaudeDefaultModel: "Claude Code default model",
     settingsDefaultModelHint:
       "Used only when Clawdline opens a new session without another model choice. A child agent or one session may still choose its own model.",
@@ -98,6 +100,8 @@ const ownWords = {
     settingsCompactWindowInvalid: "要是 {min} 到 {max} 之間的整數 token 數，或留空表示不插手。",
     settingsAutoNameAuto: "自動（先 Claude Code，不能用時改 Codex）",
     settingsCodexDefaultModel: "Codex 預設模型",
+    settingsCodexDefaultEffort: "Codex 預設推理強度",
+    settingsCodexDefaultEffortHint: "新開的 Codex session 若未指定推理強度，就使用此設定；child agent 仍可另行指定。",
     settingsClaudeDefaultModel: "Claude Code 預設模型",
     settingsDefaultModelHint:
       "只在 Clawdline 開新 session、而且沒有另外指定模型時套用；child agent 或單一 session 另外指定的模型仍然優先。",
@@ -215,6 +219,8 @@ export const W = {
   settingsCompactWindowInvalid: ownWord("settingsCompactWindowInvalid"),
   settingsAutoNameAuto: ownWord("settingsAutoNameAuto"),
   settingsCodexDefaultModel: ownWord("settingsCodexDefaultModel"),
+  settingsCodexDefaultEffort: ownWord("settingsCodexDefaultEffort"),
+  settingsCodexDefaultEffortHint: ownWord("settingsCodexDefaultEffortHint"),
   settingsClaudeDefaultModel: ownWord("settingsClaudeDefaultModel"),
   settingsDefaultModelHint: ownWord("settingsDefaultModelHint"),
   settingsProviderDefault: ownWord("settingsProviderDefault"),

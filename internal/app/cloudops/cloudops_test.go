@@ -2607,6 +2607,15 @@ func TestDefaultModelsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
 	}
 
+	r = &router{}
+	answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "default-models-update", "session": MachineReplySession, "request": "req-effort",
+		"changes": map[string]any{"codex_default_effort": "xhigh"},
+	}))
+	if answer.Status != 200 || len(r.seen) != 1 || string(r.last().Body) != `{"codex_default_effort":"xhigh"}` {
+		t.Fatalf("effort did not cross the narrow route: %+v, asked %+v", answer, r.seen)
+	}
+
 	for _, changes := range []any{
 		map[string]any{"remote": true},
 		map[string]any{"codex_default_model": 6},

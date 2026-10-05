@@ -263,6 +263,13 @@ func (s *Server) starter(reading startReading) app.Starter {
 			}
 			return s.broker.SessionLanguage(assistant)
 		},
+		DefaultReasoningEffort: func() string {
+			values, err := nextconfig.Open(s.cfg.Dir).Read()
+			if err != nil {
+				return ""
+			}
+			return nextconfig.DefaultReasoningEffort(values)
+		},
 		DefaultModel: func(assistant string) string {
 			values, err := nextconfig.Open(s.cfg.Dir).Read()
 			if err != nil {

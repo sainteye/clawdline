@@ -1868,9 +1868,9 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/capacity"}
 			}},
 
-		// The two machine-wide defaults shown on Settings. This is deliberately
+		// The machine-wide launch defaults shown on Settings. This is deliberately
 		// narrower than /v1/settings: a paired phone receives and changes only
-		// these two values, never the machine's other configuration.
+		// these values, never the machine's other configuration.
 		op{name: "default-models", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "request") {
@@ -1892,11 +1892,11 @@ func init() {
 					return plan{}, false
 				}
 				raw, ok := b["changes"].(map[string]any)
-				if !ok || len(raw) > 2 {
+				if !ok || len(raw) > 3 {
 					return plan{}, false
 				}
 				for key, value := range raw {
-					if key != "codex_default_model" && key != "claude_default_model" {
+					if key != "codex_default_model" && key != "claude_default_model" && key != "codex_default_effort" {
 						return plan{}, false
 					}
 					if value != nil {

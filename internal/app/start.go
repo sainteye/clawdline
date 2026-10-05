@@ -42,7 +42,8 @@ type Starter struct {
 	// DefaultModel is the machine setting for a new session of assistant.
 	// It is consulted only when a new launch did not name a model; resumes and
 	// explicit per-session choices keep their own model. Nil is provider default.
-	DefaultModel func(assistant string) string
+	DefaultModel           func(assistant string) string
+	DefaultReasoningEffort func() string
 	// PersonaDir is where the daemon wrote the persona texts
 	// (persona.Dir). Empty refuses every persona, which only a test wants.
 	PersonaDir string
@@ -102,6 +103,10 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	if model == "" && resume == "" && s.DefaultModel != nil {
 		model = s.DefaultModel(assistant)
 	}
+	effort := ""
+	if assistant == projects.AssistantCodex && resume == "" && s.DefaultReasoningEffort != nil {
+		effort = s.DefaultReasoningEffort()
+	}
 	language := ""
 	if s.Language != nil {
 		language = s.Language(assistant)
@@ -111,7 +116,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		preflightPersona = ""
 	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-		Model: model, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir})
+		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir})
 	if err != nil {
 		if errors.Is(err, projects.ErrUnknownPersona) {
 			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "unknown_persona", Message: err.Error()}
@@ -138,7 +143,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		}
 		if prepared.files.PromptPath != "" {
 			launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-				Model: model, Resume: resume, Language: language, Persona: persona,
+				Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona,
 				SquadPromptPath: prepared.files.PromptPath})
 			if err != nil {
 				_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)

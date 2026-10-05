@@ -6304,6 +6304,11 @@ export interface SettingsRequest {
   codex_auto_name: boolean | null
 
   /**
+   * Empty, high or xhigh for a new Codex Session.
+   */
+  codex_default_effort: string | null
+
+  /**
    * Empty, or a Codex model name used when a new Session does not name one.
    */
   codex_default_model: string | null
@@ -6523,6 +6528,12 @@ export interface SettingsSnapshot {
    * so a line copied between the two files means the same thing.
    */
   codex_auto_name: boolean | null
+
+  /**
+   * Codex reasoning effort for new Sessions when the launch does not name one.
+   * Empty leaves the choice to Codex.
+   */
+  codex_default_effort: string | null
 
   /**
    * The model used for a new Codex session when that launch does not name one.

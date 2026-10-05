@@ -5311,6 +5311,9 @@ type SettingsRequest struct {
 	// Whether a new session is named by an assistant.
 	CodexAutoName *bool `json:"codex_auto_name"`
 
+	// Empty, high or xhigh for a new Codex Session.
+	CodexDefaultEffort *string `json:"codex_default_effort"`
+
 	// Empty, or a Codex model name used when a new Session does not name one.
 	CodexDefaultModel *string `json:"codex_default_model"`
 
@@ -5447,6 +5450,10 @@ type SettingsSnapshot struct {
 	// Whether a new session is named by an assistant. The Swift app's spelling, kept
 	// so a line copied between the two files means the same thing.
 	CodexAutoName *bool `json:"codex_auto_name"`
+
+	// Codex reasoning effort for new Sessions when the launch does not name one. Empty
+	// leaves the choice to Codex.
+	CodexDefaultEffort *string `json:"codex_default_effort"`
 
 	// The model used for a new Codex session when that launch does not name one. Empty
 	// leaves the choice to Codex.

@@ -9,7 +9,7 @@ import { client } from "../../client.js"
 
 export type DefaultModelAssistant = "codex" | "claude"
 export type DefaultModelOption = { value: string; label: string }
-type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model">
+type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort">
 export type DefaultModelsSnapshot = DefaultModelValues & {
   models: Record<DefaultModelAssistant, DefaultModelOption[]>
 }

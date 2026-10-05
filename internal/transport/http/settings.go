@@ -142,7 +142,7 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for name := range body {
-			if name != "codex_default_model" && name != "claude_default_model" {
+			if name != "codex_default_model" && name != "claude_default_model" && name != "codex_default_effort" {
 				writeRefusal(w, http.StatusBadRequest, "bad_request", "not a default model key: "+name)
 				return
 			}
@@ -238,9 +238,10 @@ func (s *Server) workGateSettingsRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 type defaultModelsAnswer struct {
-	Codex  *string                         `json:"codex_default_model"`
-	Claude *string                         `json:"claude_default_model"`
-	Models map[string][]defaultModelOption `json:"models"`
+	CodexEffort *string                         `json:"codex_default_effort"`
+	Codex       *string                         `json:"codex_default_model"`
+	Claude      *string                         `json:"claude_default_model"`
+	Models      map[string][]defaultModelOption `json:"models"`
 }
 
 type defaultModelOption struct {
@@ -258,7 +259,7 @@ func defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModel
 		}
 	}
 	return defaultModelsAnswer{
-		Codex: snapshot.CodexDefaultModel, Claude: snapshot.ClaudeDefaultModel, Models: models,
+		Codex: snapshot.CodexDefaultModel, CodexEffort: snapshot.CodexDefaultEffort, Claude: snapshot.ClaudeDefaultModel, Models: models,
 	}
 }
 
