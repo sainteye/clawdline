@@ -658,6 +658,27 @@ test("a terminal this tab does not hold stays on the relay until the tab takes c
   } finally { session.dispose() }
 })
 
+test("a direct frame that arrives while the lease is being checked is drawn, acknowledged and activates", async () => {
+  const wire = new DirectWire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const relay = wire.latest()
+    wire.delayed.add("control")
+    wire.frame(relay, 1, "relay")
+    await settle()
+    const direct = wire.latest()
+    assert.notEqual(direct, relay)
+    assert.equal(lastRequest(wire, "control")?.connection, direct, "the lease check is out")
+    wire.frame(direct, 1, "direct")
+    await settle()
+    wire.releaseReplies()
+    await settle()
+    assert.equal(lastRequest(wire, "activate_connection")?.connection, direct)
+    assert.equal(session.snapshot.carrier, "direct")
+  } finally { session.dispose() }
+})
+
 test("a direct connection's key rotation is a direct rekey", async () => {
   const wire = new DirectWire()
   const { session, direct } = await upgraded(wire)

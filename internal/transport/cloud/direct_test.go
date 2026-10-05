@@ -521,6 +521,38 @@ func TestDirectConnectionRetiresWhenItsAckOrTheRelayProbeIsLate(t *testing.T) {
 	}
 }
 
+// A rekeyed direct connection does not own the peer until it activates. When
+// its frame goes unacknowledged the channel is evidently not carrying it, so
+// the peer closes too: the browser learns at once and falls back to the relay.
+func TestALateAckClosesThePeerEvenBeforeActivation(t *testing.T) {
+	var mu sync.Mutex
+	now := time.Now()
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	f := newDirectFixture(t)
+	f.l.opts.Now = clock
+	f.c.expires = clock().Add(time.Hour)
+	f.c.carrier = carrierDirect
+	f.c.probeAt = clock()
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer := &directPeer{l: f.l, viewer: "viewer", owner: "AAAAAAAAAAAAAAAAAAAAAB", pc: pc, open: true}
+	f.l.directPeers = map[string]*directPeer{"viewer": peer}
+	f.c.framePending, f.c.framePendingChannel, f.c.framePendingAt = true, carrierDirect, clock()
+	mu.Lock()
+	now = now.Add(CloudTerminalDirectAckSecondsLimit * time.Second)
+	mu.Unlock()
+	f.c.probeAt = clock()
+	f.l.sweepDirect(f.c)
+	if f.l.getTerminalConnection("viewer", testConnection) != nil {
+		t.Fatal("an unacknowledged direct frame kept the connection")
+	}
+	if !peer.closed || f.l.directPeers["viewer"] != nil {
+		t.Fatal("the peer stayed open after its rekeyed connection was retired, so the browser never learns")
+	}
+}
+
 func TestTerminalRosterReadIsDatedFromItsStart(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

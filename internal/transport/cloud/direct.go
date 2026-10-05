@@ -685,13 +685,18 @@ func (l *Link) sweepDirect(c *terminalConnection) {
 	probeLate := c.probePending && now.Sub(c.probeAt) >= CloudTerminalDirectProbeUnsettledSecondsLimit*time.Second
 	probeDue := !c.probePending && now.Sub(c.probeAt) >= CloudTerminalDirectProbeSecondsLimit*time.Second
 	l.terminalMu.Unlock()
+	// The peer goes too, even when a rekey not yet activated leaves it owned by
+	// another connection: otherwise the browser keeps waiting on a channel the
+	// machine no longer feeds, instead of falling back to the relay.
 	switch {
 	case ackLate:
 		l.logf("cloud terminal carrier=direct retired: a frame was not acknowledged in time")
 		l.closeTerminalConnection(c)
+		l.closeDirectPeerOf(c.viewer, "a frame was not acknowledged in time")
 	case probeLate:
 		l.logf("cloud terminal carrier=direct retired: the relay did not settle a probe in time")
 		l.closeTerminalConnection(c)
+		l.closeDirectPeerOf(c.viewer, "the relay did not settle a probe in time")
 	case probeDue:
 		l.sendDirectProbe(c)
 	}
