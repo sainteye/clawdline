@@ -89,10 +89,15 @@ export interface RefreshEnvironment {
   visible(): boolean
   onVisible(run: () => void): () => void
   onFocus(run: () => void): () => void
+  /** A Board item changed through this page, such as one completed from this fold. */
+  onWorkChanged(run: () => void): () => void
 }
 
-/** The browser's own. */
-export function browserRefreshEnvironment(): RefreshEnvironment {
+/**
+ * The browser's own. The caller hands in the Board's change signal
+ * (`onWorkItemChanged`), so this file stays free of imports a test cannot run.
+ */
+export function browserRefreshEnvironment(onWorkChanged: RefreshEnvironment["onWorkChanged"]): RefreshEnvironment {
   return {
     setInterval: (run, ms) => window.setInterval(run, ms),
     clearInterval: (handle) => window.clearInterval(handle as number),
@@ -106,22 +111,26 @@ export function browserRefreshEnvironment(): RefreshEnvironment {
       window.addEventListener("focus", run)
       return () => window.removeEventListener("focus", run)
     },
+    onWorkChanged,
   }
 }
 
 /**
  * Ask `refresh` every `TODO_REFRESH_MS` while the page is visible, and at once
- * when it becomes visible again or its window is focused. A hidden page's
- * ticks are skipped rather than queued. Returns the stop.
+ * when it becomes visible again, its window is focused, or a Board item
+ * changed through this page. A hidden page's ticks are skipped rather than
+ * queued. Returns the stop.
  */
-export function watchTodoRefresh(refresh: () => void, env: RefreshEnvironment = browserRefreshEnvironment()): () => void {
+export function watchTodoRefresh(refresh: () => void, env: RefreshEnvironment): () => void {
   const tick = env.setInterval(() => { if (env.visible()) refresh() }, TODO_REFRESH_MS)
   const offVisible = env.onVisible(refresh)
   const offFocus = env.onFocus(refresh)
+  const offChanged = env.onWorkChanged(refresh)
   return () => {
     env.clearInterval(tick)
     offVisible()
     offFocus()
+    offChanged()
   }
 }
 

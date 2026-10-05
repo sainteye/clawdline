@@ -6,6 +6,8 @@ import type { SessionRow } from "@clawdline/contract"
 import { isTransientReadFailure, OneRead, readFailureReason, readWithOneRetry, TODO_REFRESH_MS, todoHeaderState, TRANSIENT_READ_RETRY_MS, watchTodoRefresh, type RefreshEnvironment } from "./todo-refresh.ts"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
 import { sessionTodosReady } from "./readiness.ts"
+// @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
+import { announceWorkItemChanged, onWorkItemChanged } from "../pages/work/item-changed.ts"
 
 function row(extra: Partial<SessionRow>): SessionRow {
   return {
@@ -40,14 +42,17 @@ function fakePage() {
   const visible = { now: true }
   const onVisible: (() => void)[] = []
   const onFocus: (() => void)[] = []
+  // The Board's real change signal, on a target of the test's own.
+  const board = new EventTarget()
   const env: RefreshEnvironment = {
     setInterval: (run, ms) => setInterval(run, ms),
     clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
     visible: () => visible.now,
     onVisible: (run) => { onVisible.push(run); return () => onVisible.splice(onVisible.indexOf(run), 1) },
     onFocus: (run) => { onFocus.push(run); return () => onFocus.splice(onFocus.indexOf(run), 1) },
+    onWorkChanged: (run) => onWorkItemChanged(run, board),
   }
-  return { env, visible, onVisible, onFocus }
+  return { env, visible, onVisible, onFocus, board }
 }
 
 test("an open Session page asks again every fifteen seconds while visible, and never while hidden", (t) => {
@@ -77,6 +82,18 @@ test("an open Session page asks again every fifteen seconds while visible, and n
   t.mock.timers.tick(TODO_REFRESH_MS * 10)
   assert.equal(asks, 7, "a closed Session page kept asking")
   assert.equal(page.onVisible.length + page.onFocus.length, 0, "listeners outlived the page")
+})
+
+test("an item completed from the Board card is asked for at once, not on the next tick", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] })
+  const page = fakePage()
+  let asks = 0
+  const stop = watchTodoRefresh(() => { asks++ }, page.env)
+  announceWorkItemChanged(page.board)
+  assert.equal(asks, 1, "the fold waited for its fifteen-second tick after the Board changed an item")
+  stop()
+  announceWorkItemChanged(page.board)
+  assert.equal(asks, 1, "a closed Session page still listened to the Board")
 })
 
 /** A read the test finishes by hand. */

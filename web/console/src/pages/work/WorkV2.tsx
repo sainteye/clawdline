@@ -13,6 +13,7 @@ import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
 import { onOpenNewWorkItem, onOpenWorkItem, type NewWorkItemDraft } from "./new-item.js"
+import { announceWorkItemChanged } from "./item-changed.js"
 import { WorkMilestones } from "./WorkMilestones.js"
 import { WorkGateAttention, WorkGateDetail, WorkGateLine } from "./WorkGate.js"
 import { gateSnapshotText } from "./gate-status.js"
@@ -293,6 +294,9 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     let succeeded = false
     try {
       const answer = await task()
+      // The machine accepted it: a Session fold showing this item reads again
+      // now, not on its next tick.
+      announceWorkItemChanged()
       if (answer && typeof answer === "object" && "item" in answer) {
         const changed = (answer as { item?: WorkV2Item }).item
         if (changed) {
@@ -329,13 +333,14 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
     }
     try {
       await confirmDecisionAnswer(() => answerDecision(decisionID, optionID), confirmed)
+      announceWorkItemChanged()
       void load()
       return true
     } catch (error) {
       if (!(error instanceof RefusalError) || error.code === "request_in_progress") {
         try {
           const observed = (await readDecision(decisionID)).decision
-          if (matchingDecisionAnswer(observed, optionID)) { confirmed(); void load(); return true }
+          if (matchingDecisionAnswer(observed, optionID)) { confirmed(); announceWorkItemChanged(); void load(); return true }
           if (observed.state === "answered") {
             setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: "這題已收到另一個選項的回答，請重新整理查看。" } }))
             return false

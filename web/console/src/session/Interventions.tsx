@@ -7,7 +7,8 @@ import { WorkIcon } from "../pages/work/WorkIcon.js"
 import { interventionTarget, sameInterventionTarget, type InterventionTarget } from "./intervention-composer.js"
 import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.js"
 import { deliverUntilSeen, pendingSends } from "./send.js"
-import { readWithOneRetry, watchTodoRefresh } from "./todo-refresh.js"
+import { browserRefreshEnvironment, readWithOneRetry, watchTodoRefresh } from "./todo-refresh.js"
+import { onWorkItemChanged } from "../pages/work/item-changed.js"
 import "./interventions.css"
 
 /** Keep the attention entry in the todo header while its panel stays independent. */
@@ -61,7 +62,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     void load(destination)
     // Like the to-dos: ask again only while the page is visible, and at once
     // when it comes back.
-    const stop = watchTodoRefresh(() => { void load(destination) })
+    const stop = watchTodoRefresh(() => { void load(destination) }, browserRefreshEnvironment(onWorkItemChanged))
     return () => { ticket.current++; stop() }
   // Identity is an immutable machine / route Session / conversation tuple.
   // eslint-disable-next-line react-hooks/exhaustive-deps

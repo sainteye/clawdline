@@ -19,7 +19,8 @@ import { todoSend } from "./todo-send.js"
 import { addedBySession } from "./todo-author.js"
 import { todoProgress, todoProgressLabel, type TodoProgress } from "./todo-progress.js"
 import { useInterventions } from "./Interventions.js"
-import { OneRead, readFailureReason, readWithOneRetry, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
+import { browserRefreshEnvironment, OneRead, readFailureReason, readWithOneRetry, todoHeaderState, watchTodoRefresh } from "./todo-refresh.js"
+import { onWorkItemChanged } from "../pages/work/item-changed.js"
 import { sessionTodosReady } from "./readiness.js"
 import { nextWord } from "../next-strings.js"
 import { SessionUsage } from "../pages/work/TokenBill.js"
@@ -91,7 +92,7 @@ export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySen
     const one = new OneRead(load)
     reader.current = one
     void one.ask()
-    const stop = watchTodoRefresh(() => { void one.ask(true) })
+    const stop = watchTodoRefresh(() => { void one.ask(true) }, browserRefreshEnvironment(onWorkItemChanged))
     return () => {
       stop()
       if (reader.current === one) reader.current = null
