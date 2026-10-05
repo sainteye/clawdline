@@ -114,30 +114,44 @@
 
 .terminal-history { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .terminal-history h2 { margin: 0; font-size: 14px; font-weight: 600; }
-.terminal-history pre {
-    flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 10px 12px;
-    border: 1px solid var(--line); border-radius: 10px; background: var(--term-bg); color: var(--term-fg);
-    font: 12.5px/1.45 var(--mono); white-space: pre;
+.terminal-history-output {
+    flex: 1; min-height: 0; overflow: auto; padding: 4px 0;
+    color: var(--ink); font: 13px/1.6 var(--mono);
 }
-.terminal-history pre:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.terminal-history-line { min-height: 1.6em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-history-output:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 .terminal-more { display: contents; }
 .terminal-more > summary { display: none; }
 .terminal-more > .terminal-facts { display: flex; }
-.terminal-more-actions { display: contents; }
-.cloud-terminal-view .terminal-action-more { display: block; margin-left: auto; }
-.cloud-terminal-view .terminal-action-more > summary {
+.terminal-action-more { position: relative; display: block; margin-left: auto; flex: none; }
+.terminal-action-more > summary {
     display: grid; place-items: center; width: 44px; min-height: 44px; list-style: none;
     border: 1px solid var(--line); border-radius: 8px; color: var(--ink); cursor: pointer;
     font-size: 24px; line-height: 1;
 }
-.cloud-terminal-view .terminal-action-more > summary::-webkit-details-marker { display: none; }
-.cloud-terminal-view .terminal-more-actions {
-    display: none; position: absolute; z-index: 2; right: 8px; margin-top: 4px;
-    padding: 8px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--card); flex-wrap: wrap; gap: 6px;
+.terminal-action-more > summary::-webkit-details-marker { display: none; }
+.terminal-more-actions {
+    position: absolute; z-index: 45; top: calc(100% + 9px); right: -7px;
+    width: min(250px, calc(100vw - 28px)); padding: 5px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: #1a1a20; box-shadow: 0 14px 36px rgba(0, 0, 0, .48);
 }
-.cloud-terminal-view .terminal-action-more[open] .terminal-more-actions { display: flex; }
+.terminal-more-actions::before {
+    content: ""; position: absolute; top: -5px; right: 21px;
+    width: 8px; height: 8px; border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+    background: #1a1a20; transform: rotate(45deg);
+}
+.terminal-more-actions .board-button {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 7px;
+    background: transparent; color: var(--ink); font: 13px/1.35 var(--ui); text-align: left;
+}
+.terminal-more-actions .board-button:hover:not(:disabled), .terminal-more-actions .board-button:focus-visible { background: var(--card-hi); }
+.terminal-more-actions .board-button[aria-pressed="true"]::after { content: "✓"; position: absolute; right: 12px; }
+.terminal-more-actions .board-button { position: relative; }
+.terminal-more-actions .board-button small { color: var(--dim); font: 11px/1.3 var(--ui); }
+.terminal-more-actions .terminal-close { margin: 4px 0 0; border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; }
 .terminal-keyboard { display: none; }
 .terminal-keys { display: none; }
 
@@ -169,11 +183,7 @@
     .terminal-fact-more[open] > .terminal-facts { display: flex; }
     .terminal-fact-more .terminal-facts { flex-direction: column; }
     .terminal-actions { flex-wrap: wrap; }
-    .terminal-action-more { margin-left: auto; }
-    .terminal-action-more > summary { min-height: 40px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
-    .terminal-more-actions { display: none; position: absolute; z-index: 2; right: 8px; left: 8px; margin-top: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); flex-wrap: wrap; gap: 6px; }
-    .terminal-action-more[open] .terminal-more-actions { display: flex; }
-    .cloud-terminal-view .terminal-action-more > summary { display: grid; padding: 0; }
+    .terminal-action-more > summary { padding: 0; }
     .terminal-keyboard { display: block; flex: none; min-height: 40px; align-self: stretch; }
     .terminal-keyboard[hidden] { display: none; }
     .terminal-keys {

@@ -88,6 +88,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
 }) {
   const host = useRef<HTMLDivElement>(null)
   const backButton = useRef<HTMLButtonElement>(null)
+  const actionMenu = useRef<HTMLDetailsElement>(null)
   const cancelButton = useRef<HTMLButtonElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const term = useRef<XTerm | null>(null)
@@ -473,10 +474,6 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
     if (!code) term.current?.focus()
     return code
   })
-  const release = () => act("release", async () => {
-    await input.current?.release()
-    return ""
-  })
   const close = () => act("close", async () => {
     const epoch = input.current?.state.epoch
     if (!input.current?.state.holding || epoch === null || epoch === undefined) return "not_controller"
@@ -600,8 +597,23 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
               <div><dt>{nextWord("terminalMachine")}</dt><dd className="terminal-machine">{machine || nextWord("devicesThisMachine")}</dd></div>
             </dl>
           </details>
+          <details className="terminal-action-more" ref={actionMenu}><summary aria-label={nextWord("terminalMoreActions")} title={nextWord("terminalMoreActions")}>⋯</summary><div className="terminal-more-actions">
+          <button className="board-button" type="button" aria-pressed={history !== null}
+            onClick={() => { actionMenu.current?.removeAttribute("open"); history ? setHistory(null) : void showHistory() }}>
+            {history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}
+          </button>
+          <button className="board-button terminal-reader" type="button" aria-pressed={reader}
+            onClick={() => { actionMenu.current?.removeAttribute("open"); setReader((r) => !r) }}>
+            <span>{nextWord("terminalReaderMode")}</span><small>{nextWord("terminalReaderModeHelp")}</small>
+          </button>
+          <button className="board-button terminal-close" type="button" disabled={ended || !!busy}
+            aria-expanded={asking === "close"}
+            onClick={() => { actionMenu.current?.removeAttribute("open"); holding ? setAsking("close") : setSaid(nextWord("terminalCloseNeedsControl")) }}>
+            {nextWord("terminalClose")}
+          </button>
+          </div></details>
         </div>
-        <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
+        {(!holding || inputState?.full) && <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
           {!holding && !someoneElse && (
             <button className="board-button" type="button" disabled={!!busy || ended || !!revoked}
               aria-busy={busy === "acquire" ? "true" : undefined} onClick={() => void acquire("acquire")}>
@@ -614,29 +626,8 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
               {nextWord("terminalTakeover")}
             </button>
           )}
-          {holding && (
-            <button className="board-button" type="button" disabled={!!busy}
-              aria-busy={busy === "release" ? "true" : undefined} onClick={() => void release()}>
-              {nextWord("terminalRelease")}
-            </button>
-          )}
-          <details className="terminal-more terminal-action-more"><summary>{nextWord("terminalMoreActions")}</summary><div className="terminal-more-actions">
-          <button className="board-button" type="button" aria-pressed={history !== null}
-            onClick={() => (history ? setHistory(null) : void showHistory())}>
-            {history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}
-          </button>
-          <button className="board-button terminal-reader" type="button" aria-pressed={reader}
-            onClick={() => setReader((r) => !r)}>
-            {nextWord("terminalReaderMode")}
-          </button>
-          <button className="board-button terminal-close" type="button" disabled={ended || !!busy}
-            aria-expanded={asking === "close"}
-            onClick={() => (holding ? setAsking("close") : setSaid(nextWord("terminalCloseNeedsControl")))}>
-            {nextWord("terminalClose")}
-          </button>
-          </div></details>
           {inputState?.full && <span className="terminal-badge" role="alert">{nextWord("terminalInputFull")}</span>}
-        </div>
+        </div>}
         {asking === "takeover" && someoneElse && (
           <div className="terminal-ask" role="group" aria-label={nextWord("terminalTakeover")}>
             <p>{nextWord("terminalTakeoverAsk", { holder: holderName })}</p>
@@ -698,7 +689,9 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
           {history.kind === "failed" && (
             <p className="terminal-note" role="alert">{nextWord("terminalHistoryFailed", { why: history.why })}</p>
           )}
-          {history.kind === "lines" && <pre tabIndex={0}>{history.lines.join("\n")}</pre>}
+          {history.kind === "lines" && <div className="terminal-history-output" tabIndex={0}>
+            {history.lines.map((line, index) => <div className="terminal-history-line" key={index}>{line || "\u00a0"}</div>)}
+          </div>}
         </section>
       )}
       <div className="terminal-scroll" ref={scroller} hidden={history !== null}>
