@@ -628,7 +628,7 @@
 .session-todo-actions { justify-content: space-between; }
 /* A first Send is the row's action; a reminder is a plain grey chip. */
 .session-todo-send { display: inline-flex; align-items: center; gap: 6px; }
-.session-todo-send.on { background: var(--accent-in); font-weight: 600; }
+.session-todo-send.on { font-weight: 600; }
 .session-todo-send .work-icon { width: 14px; height: 14px; }
 .session-todo-delete {
     display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; padding: 0;

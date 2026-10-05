@@ -273,7 +273,7 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
       <p>{decision.question}</p>
       {receipts[decision.id] ? <p role="status" className="session-owned-decision-receipt">{receipts[decision.id]}</p>
         : <div className="session-owned-options">{decision.options.map((option) =>
-          <button type="button" key={option.id} disabled={!!pending}
+          <button className="chip danger session-decision-answer" type="button" key={option.id} disabled={!!pending}
             aria-busy={pending?.decision === decision.id && pending.option === option.id}
             onClick={() => void answer(decision, option)}>
             {pending?.decision === decision.id && pending.option === option.id ? "送出中…" : option.label}</button>)}</div>}
@@ -315,7 +315,7 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
       {todo.images.map((image) => <ReferenceImage key={image.id} image={image} compact />)}
     </div>}
     <div className="work-actions session-todo-actions">
-      {send.kind !== "none" && <button className={`chip session-todo-send${send.kind === "send" ? " on" : ""}`} type="button" disabled={busy || send.kind === "wait"}
+      {send.kind !== "none" && <button className={`chip session-todo-send${send.kind === "send" ? " on danger" : ""}`} type="button" disabled={busy || send.kind === "wait"}
         title={send.kind === "wait" ? "剛傳送過；兩分鐘內 Session 沒讀取才能再送" : undefined}
         onClick={() => onAction("send")}><WorkIcon name="send" />{send.label}</button>}
       <button className="session-todo-delete" type="button" disabled={busy} aria-label="刪除待辦" title="刪除待辦"
