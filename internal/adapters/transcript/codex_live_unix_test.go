@@ -98,3 +98,88 @@ func TestAStaleCodexWriterLockDoesNotBindATerminal(t *testing.T) {
 		t.Fatal("a stale unlocked writer file bound a live terminal")
 	}
 }
+
+// holdCodexThread lays out one managed thread the way Codex 0.160 does: a
+// rollout head, and a writer lock the returned file holds until the test ends.
+func holdCodexThread(t *testing.T, home, id, cwd string) {
+	t.Helper()
+	codex := filepath.Join(home, ".codex")
+	locks := filepath.Join(codex, "thread-writer-locks")
+	sessions := filepath.Join(codex, "sessions", "2026", "10", "05")
+	for _, dir := range []string{locks, sessions} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(sessions, "rollout-2026-10-05T11-44-55-"+id+".jsonl"), []byte(
+		`{"type":"session_meta","payload":{"id":"`+id+`","session_id":"`+id+`","cwd":"`+cwd+`"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := os.OpenFile(filepath.Join(locks, id+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { lock.Close() })
+}
+
+func managedCodexRow(label string) session.Session {
+	return session.Session{
+		ID: "ITERM-GUID", TTY: "ttys003", Backend: session.BackendITerm,
+		PID: 42000, Assistant: session.AssistantCodex, CWD: "/code/demo",
+		Label: label, Binding: session.BindingNoRecord,
+	}
+}
+
+// Codex 0.160 may record a thread's name only in its state database, never in
+// session_index.jsonl. That name joins the full title as an indexed one would.
+func TestACodexNameKeptOnlyInTheStateDatabaseBindsItsTitle(t *testing.T) {
+	home := t.TempDir()
+	id := "c0de0007-0000-4000-8000-000000000007"
+	holdCodexThread(t, home, id, "/code/demo")
+	writeCodexState(t, filepath.Join(home, ".codex", "state_5.sqlite"), map[string]any{id: "Inspect the queue"})
+
+	h := NewHost()
+	h.Home = home
+	h.Refresh()
+	got, ok := h.ForSession(context.Background(), managedCodexRow("Inspect the queue | demo (codex)"))
+	if !ok || got.ConversationID != id || got.Binding != session.BindingLiveTitle {
+		t.Fatalf("identity = %+v, ok %v; want the state-named conversation", got, ok)
+	}
+	if got.Label != "Inspect the queue" {
+		t.Fatalf("label = %q; want the state database's name", got.Label)
+	}
+	if _, ok := h.ForSession(context.Background(), managedCodexRow("demo (codex)")); ok {
+		t.Fatal("a named thread took the bare directory title")
+	}
+}
+
+// With no name anywhere, the bare directory title binds the one unnamed live
+// root in that directory, and nothing once a second one is live.
+func TestAnUnnamedCodexThreadBindsTheBareDirectoryTitle(t *testing.T) {
+	home := t.TempDir()
+	id := "c0de0008-0000-4000-8000-000000000008"
+	holdCodexThread(t, home, id, "/code/demo")
+	// A corrupt state database must leave the session index as the only source.
+	if err := os.WriteFile(filepath.Join(home, ".codex", "state_5.sqlite"), []byte("not a database"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHost()
+	h.Home = home
+	h.Refresh()
+	h.ObserveRows([]session.Session{managedCodexRow("⠸ demo (codex)")})
+	got, ok := h.ForSession(context.Background(), managedCodexRow("⠸ demo (codex)"))
+	if !ok || got.ConversationID != id || got.Binding != session.BindingLiveTitle {
+		t.Fatalf("identity = %+v, ok %v; want the unnamed conversation", got, ok)
+	}
+
+	holdCodexThread(t, home, "c0de0009-0000-4000-8000-000000000009", "/code/demo")
+	h.Refresh()
+	h.ObserveRows([]session.Session{managedCodexRow("demo (codex)")})
+	if got, ok := h.ForSession(context.Background(), managedCodexRow("demo (codex)")); ok {
+		t.Fatalf("two unnamed threads in one directory bound %+v", got)
+	}
+}
