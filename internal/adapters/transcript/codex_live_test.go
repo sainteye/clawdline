@@ -51,6 +51,7 @@ func TestAnUnnamedManagedCodexThreadBindsOnlyWhenAloneInItsDirectory(t *testing.
 	h := &Host{codexLive: map[string]codexLiveIdentity{unnamed.ID: unnamed}}
 	base := session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
 		CWD: "/code/demo", Label: "demo (codex)"}
+	h.ObserveRows([]session.Session{base})
 
 	if got, ok := h.codexLiveFor(base); !ok || got.ID != unnamed.ID {
 		t.Fatalf("unnamed match = %+v, %v", got, ok)
@@ -97,5 +98,43 @@ func TestANamedManagedCodexThreadIgnoresTheUnnamedTitle(t *testing.T) {
 	if got, ok := h.codexLiveFor(session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
 		CWD: "/code/demo", Label: "demo (codex)"}); ok {
 		t.Fatalf("the bare directory title bound a named thread: %+v", got)
+	}
+}
+
+// A second Codex tab opened in the same directory shows the same bare title
+// before its own thread holds a writer lock. Both rows then expect the one
+// unnamed live root, so neither is given it; with one such row it binds.
+func TestTwoBareCodexTabsNeverShareOneUnnamedThread(t *testing.T) {
+	unnamed := codexLiveIdentity{ID: "c0de000a-0000-4000-8000-00000000000a", CWD: "/code/demo"}
+	h := &Host{codexLive: map[string]codexLiveIdentity{unnamed.ID: unnamed}}
+	first := session.Session{ID: "ITERM-1", Backend: session.BackendITerm, Assistant: session.AssistantCodex,
+		CWD: "/code/demo", Label: "demo (codex)"}
+	second := first
+	second.ID = "ITERM-2"
+	second.Label = "⠸ demo (codex)"
+
+	h.ObserveRows([]session.Session{first})
+	if got, ok := h.codexLiveFor(first); !ok || got.ID != unnamed.ID {
+		t.Fatalf("one bare tab = %+v, %v; want the unnamed thread", got, ok)
+	}
+
+	h.ObserveRows([]session.Session{first, second})
+	for _, row := range []session.Session{first, second} {
+		if got, ok := h.codexLiveFor(row); ok {
+			t.Fatalf("%s bound %+v while another tab shows the same bare title", row.ID, got)
+		}
+	}
+
+	// A named tab, another directory's tab and a Claude row are not the same
+	// bare title, so they do not stop the one bare tab binding.
+	named := first
+	named.ID, named.Label = "ITERM-3", "Inspect the queue | demo (codex)"
+	elsewhere := first
+	elsewhere.ID, elsewhere.CWD, elsewhere.Label = "ITERM-4", "/other/demo", "demo (codex)"
+	claude := first
+	claude.ID, claude.Assistant = "ITERM-5", session.AssistantClaude
+	h.ObserveRows([]session.Session{first, named, elsewhere, claude})
+	if got, ok := h.codexLiveFor(first); !ok || got.ID != unnamed.ID {
+		t.Fatalf("bare tab beside unrelated rows = %+v, %v", got, ok)
 	}
 }

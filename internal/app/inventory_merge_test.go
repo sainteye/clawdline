@@ -48,3 +48,44 @@ func TestEnrichOffersButDoesNotPublishTheTerminalTitle(t *testing.T) {
 		t.Fatal("the terminal title became the displayed identity")
 	}
 }
+
+type observingIdentity struct {
+	titleJoinIdentity
+	observed []string
+	askedAt  []int
+}
+
+func (i *observingIdentity) ObserveRows(rows []session.Session) {
+	for _, s := range rows {
+		i.observed = append(i.observed, s.Label)
+	}
+}
+
+func (i *observingIdentity) ForSession(ctx context.Context, s session.Session) (ports.Identity, bool) {
+	i.askedAt = append(i.askedAt, len(i.observed))
+	return i.titleJoinIdentity.ForSession(ctx, s)
+}
+
+type twoTabsHost struct{ *overlapHost }
+
+func (h *twoTabsHost) Inventory(context.Context) (session.Inventory, error) {
+	return session.Inventory{Complete: true, Provenance: "iterm", Sessions: []session.Session{
+		{ID: "A", TTY: "tty1", Backend: session.BackendITerm, Assistant: session.AssistantCodex, Label: "demo (codex)"},
+		{ID: "B", TTY: "tty2", Backend: session.BackendITerm, Assistant: session.AssistantCodex, Label: "demo (codex)"},
+	}}, nil
+}
+
+// An identity source that asks to see every row is shown all of them, with
+// their terminal titles, before it is asked to name any one: two tabs with one
+// bare Codex title name neither, and only the whole reading can tell.
+func TestReadShowsEveryRowBeforeAskingForAnIdentity(t *testing.T) {
+	id := &observingIdentity{}
+	host := &twoTabsHost{overlapHost: newOverlapHost("%1")}
+	Inventory{Identity: id, Terminals: []ports.TerminalHost{host}}.Read(context.Background())
+	if len(id.observed) != 2 || id.observed[0] != "demo (codex)" || id.observed[1] != "demo (codex)" {
+		t.Fatalf("observed %q; want both terminal titles", id.observed)
+	}
+	if len(id.askedAt) != 2 || id.askedAt[0] != 2 || id.askedAt[1] != 2 {
+		t.Fatalf("identities asked after %v observed rows; want every row first", id.askedAt)
+	}
+}

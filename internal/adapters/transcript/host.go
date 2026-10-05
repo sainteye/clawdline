@@ -19,6 +19,9 @@ type Host struct {
 	// An ended thread leaves on the next refresh, so this cannot accumulate
 	// historical conversations behind the session list.
 	codexRollouts map[string]string
+	// codexBareRows is how many iTerm Codex rows per cwd showed the bare
+	// `<dir> (codex)` title in this reading (ObserveRows); nil until observed.
+	codexBareRows map[string]int
 	titles        *Titles
 	shells        *Shells
 	movements     *Movements
@@ -42,6 +45,7 @@ func (h *Host) Refresh() {
 	h.claude = ClaudeRegistryByPID(h.Home)
 	h.codex = CodexNames(h.Home)
 	h.refreshCodexLive()
+	h.codexBareRows = nil
 }
 
 // ForSession names a session the way the Swift app's session list does — see
@@ -89,7 +93,7 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		// live writer lock, rollout head, cwd and exact terminal title must all
 		// agree, the title carrying the thread's name when Codex has one. An
 		// unnamed thread's bare `<dir> (codex)` title binds only while it is the
-		// sole unnamed live root in that cwd. Neither path guesses from cwd
+		// sole unnamed live root in that cwd and the sole row showing that title. Neither path guesses from cwd
 		// alone; two Codex sessions in one checkout is the ordinary case here.
 		binding := s.Binding
 		if s.ConversationID == "" {

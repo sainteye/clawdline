@@ -170,6 +170,7 @@ func TestAnUnnamedCodexThreadBindsTheBareDirectoryTitle(t *testing.T) {
 	h := NewHost()
 	h.Home = home
 	h.Refresh()
+	h.ObserveRows([]session.Session{managedCodexRow("⠸ demo (codex)")})
 	got, ok := h.ForSession(context.Background(), managedCodexRow("⠸ demo (codex)"))
 	if !ok || got.ConversationID != id || got.Binding != session.BindingLiveTitle {
 		t.Fatalf("identity = %+v, ok %v; want the unnamed conversation", got, ok)
@@ -177,6 +178,7 @@ func TestAnUnnamedCodexThreadBindsTheBareDirectoryTitle(t *testing.T) {
 
 	holdCodexThread(t, home, "c0de0009-0000-4000-8000-000000000009", "/code/demo")
 	h.Refresh()
+	h.ObserveRows([]session.Session{managedCodexRow("demo (codex)")})
 	if got, ok := h.ForSession(context.Background(), managedCodexRow("demo (codex)")); ok {
 		t.Fatalf("two unnamed threads in one directory bound %+v", got)
 	}

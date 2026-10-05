@@ -122,6 +122,31 @@ func codexRolloutPaths(home string, needed map[string]bool) map[string]string {
 	return out
 }
 
+// ObserveRows counts, once per inventory reading, the iTerm Codex rows whose
+// terminal title is the bare `<base(cwd)> (codex)`, per cwd.
+//
+// codexLiveFor sees one row at a time, but the bare title is not unique to a
+// thread: a second Codex tab opened in the same directory shows it too before
+// its own thread holds a writer lock, and both rows would otherwise take the
+// one unnamed live root. Inventory.Read already holds every merged row before
+// it asks for identities, so it hands them over here rather than this host
+// reading terminals of its own. Refresh clears the count, so a reading that
+// never observed its rows binds no unnamed thread instead of guessing.
+func (h *Host) ObserveRows(rows []session.Session) {
+	bare := map[string]int{}
+	for _, s := range rows {
+		if s.Backend != session.BackendITerm || s.Assistant != session.AssistantCodex || s.CWD == "" {
+			continue
+		}
+		if codexTerminalTitle(s.Label) == codexBareTitle(s.CWD) {
+			bare[s.CWD]++
+		}
+	}
+	h.codexBareRows = bare
+}
+
+func codexBareTitle(cwd string) string { return filepath.Base(cwd) + " (codex)" }
+
 // codexLiveFor uses the terminal title only as the final join key, never as a
 // name in its own right. A duplicate exact match binds nothing.
 //
@@ -130,18 +155,23 @@ func codexRolloutPaths(home string, needed map[string]bool) map[string]string {
 // form its own name implies, so neither kind can take the other's terminal.
 // Every unnamed live root in one cwd expects the same bare title, so two of
 // them are the duplicate match that binds nothing: cwd alone never chooses.
+// The same holds from the terminal side: the bare title binds only while
+// exactly one row in that cwd shows it (ObserveRows).
 func (h *Host) codexLiveFor(s session.Session) (codexLiveIdentity, bool) {
 	if s.Backend != session.BackendITerm || s.CWD == "" || s.Label == "" {
 		return codexLiveIdentity{}, false
 	}
 	label := codexTerminalTitle(s.Label)
+	if label == codexBareTitle(s.CWD) && h.codexBareRows[s.CWD] != 1 {
+		return codexLiveIdentity{}, false
+	}
 	var found codexLiveIdentity
 	matches := 0
 	for _, live := range h.codexLive {
 		if live.CWD != s.CWD {
 			continue
 		}
-		expected := filepath.Base(live.CWD) + " (codex)"
+		expected := codexBareTitle(live.CWD)
 		if live.Name != "" {
 			expected = live.Name + " | " + expected
 		}
