@@ -426,6 +426,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "GET", path: "/v1/usage/compare-compaction",
 		query: map[string]string{"since": "14d"},
 	}, {
+		word: "usage.compare-handoff",
+		body: map[string]any{"type": "usage.compare-handoff", "session": machine,
+			"request": "req-usage-handoff", "since": "14d"},
+		session: machine, name: "read:req-usage-handoff",
+		method: "GET", path: "/v1/usage/compare-handoff",
+		query: map[string]string{"since": "14d"},
+	}, {
 		word: "usage.work-units",
 		body: map[string]any{"type": "usage.work-units", "session": machine,
 			"request": "req-usage-work", "since": "36h"},
@@ -1768,7 +1775,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"work.v2.assign", "work.v2.persona-suggestion", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.seen", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",
 		"work.v2.convert",
 		"work.v2.todo-create", "work.v2.todo-image-create", "work.v2.todo-action",
-		"usage.session", "usage.task", "usage.item", "usage.compare-compaction", "usage.work-units", "usage.work-samples",
+		"usage.session", "usage.task", "usage.item", "usage.compare-compaction", "usage.compare-handoff", "usage.work-units", "usage.work-samples",
 		"verification.list", "verification.get", "verification.create", "verification.note",
 		"verification.criterion", "verification.close", "verification.delete"} {
 		if !implemented[word] {

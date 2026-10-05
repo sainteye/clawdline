@@ -208,6 +208,7 @@ test("one word, one list, and every route names a word the table carries", () =>
     ["GET", "/v1/usage/tasks/t1"],
     ["GET", "/v1/usage/items/w1"],
     ["GET", "/v1/usage/compare-compaction"],
+    ["GET", "/v1/usage/compare-handoff"],
     ["GET", "/v1/usage/work-units"],
     ["GET", "/v1/usage/work-samples"],
     ["GET", "/v1/capacity"],
@@ -260,6 +261,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("usage.item" in CARRIED)
   assert.ok("interrupt" in CARRIED)
   assert.ok("usage.compare-compaction" in CARRIED)
+  assert.ok("usage.compare-handoff" in CARRIED)
   assert.ok("usage.work-units" in CARRIED)
   assert.ok("usage.work-samples" in CARRIED)
   assert.ok("capacity" in CARRIED)
@@ -286,7 +288,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 134)
+  assert.equal(Object.keys(CARRIED).length, 135)
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
