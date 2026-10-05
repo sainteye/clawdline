@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import type { PairedDevice } from "@clawdline/contract"
+import { failureSentence } from "../../legacy/bridge.js"
 import { nextWord, type NextWord } from "../../next-strings.js"
 import { readSignedIn, revokeDevice, signOutThisBrowser, type SignedIn } from "./signed-in.js"
 
@@ -59,7 +60,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
       setAsking(null)
       await reload()
     } catch (error) {
-      setSaid(nextWord("signedInRevokeFailed", { name: device.name, why: (error as Error).message }))
+      setSaid(nextWord("signedInRevokeFailed", { name: device.name, why: failureSentence(error) }))
     } finally {
       setBusy(false)
     }
@@ -71,7 +72,7 @@ export function SignedInBlock({ shown }: { shown: boolean }) {
       await signOutThisBrowser()
       window.location.reload()
     } catch (error) {
-      setSaid(nextWord("signedInSignOutFailed", { why: (error as Error).message }))
+      setSaid(nextWord("signedInSignOutFailed", { why: failureSentence(error) }))
       setBusy(false)
     }
   }

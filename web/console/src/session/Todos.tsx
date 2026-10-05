@@ -237,6 +237,7 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
       setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` }))
       onAnswered?.()
     } catch (error) {
+      // refusal-ok: a named refusal goes to failureWords (pages/work/shared.ts), which ends in failureSentence; anything else is re-read before it is called anything.
       if (error instanceof RefusalError && error.code !== "request_in_progress") {
         setErrors((current) => ({ ...current, [decision.id]: failureWords(error) }))
       } else {
@@ -250,8 +251,8 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
           } else {
             setErrors((current) => ({ ...current, [decision.id]: "決定狀態已變更，請查看項目詳情。" }))
           }
-        } catch {
-          setErrors((current) => ({ ...current, [decision.id]: "送出結果尚未確認，請稍後查看決定。" }))
+        } catch (readError) {
+          setErrors((current) => ({ ...current, [decision.id]: `送出結果尚未確認，請稍後查看決定。${failureWords(readError)}` }))
         }
       }
     } finally { submitting.current = false; setPending(null) }

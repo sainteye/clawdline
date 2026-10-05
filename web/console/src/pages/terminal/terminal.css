@@ -60,6 +60,11 @@
 /* one terminal */
 .terminal-page[data-view="one"] { display: flex; flex-direction: column; overflow: hidden; padding: 10px clamp(10px, 2vw, 24px) max(10px, env(safe-area-inset-bottom)); }
 .terminal-page[data-view="one"][hidden] { display: none; }
+/* One terminal in the Session page's second column (TerminalPane.tsx): the column the open
+   session takes otherwise, which stays mounted and is put away while the list shows terminals. */
+.app[data-mode="terminal"] > #pane-detail { display: none; }
+.terminal-pane-empty { display: grid; place-items: center; padding: 24px; color: var(--dim); font-size: 13px; text-align: center; }
+.terminal-pane-empty p { margin: 0; }
 .terminal-view { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; gap: 8px; }
 .terminal-head { flex: none; display: grid; gap: 6px; min-width: 0; }
 .terminal-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
@@ -167,6 +172,8 @@
     /* One terminal on a phone keeps its rows for the screen: the notes are on the list. */
     .terminal-view .terminal-session-note { display: none; }
     .terminal-page[data-view="one"] .terminal-page-head { margin: 0; }
+    /* The second column is a whole screen over the header on a phone, as a session is. */
+    .terminal-pane.terminal-page[data-view="one"] { height: var(--vvh, 100dvh); }
     .terminal-one-title { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
     .terminal-head { gap: 4px; }
     .terminal-head-row { flex-wrap: nowrap; gap: 6px; }

@@ -16,7 +16,8 @@ interface RoleSnapshot {
 }
 let shown: { session: string; conversation: string; persona: string } | null = null
 let reading: RoleReading | null = null
-let readError = false
+/** The refusal the role read came back with, kept so the sentence can name its code. */
+let readError: { error: unknown } | null = null
 let request = 0
 
 const word = (names: WireNames): string => names[document.documentElement.lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"] || names.en
@@ -62,14 +63,14 @@ function load(): void {
   const current = ++request
   const { conversation, persona } = shown
   reading = null
-  readError = false
+  readError = null
   void readRole(conversation, persona).then((value) => {
     if (current !== request || !shown) return
     reading = value
     paintCurrent()
-  }, () => {
+  }, (error: unknown) => {
     if (current !== request || !shown) return
-    readError = true
+    readError = { error }
     paintCurrent()
   })
 }
@@ -129,7 +130,7 @@ function paint(persona: Persona): void {
         (skill.files.length ? '<p>' + esc(nextWord("personaSkillFiles")) + '</p><ul>' + skill.files.map((path) => '<li>' + esc(path) + '</li>').join('') + '</ul>' : '') +
         '</details>').join('')
         : '<p>' + esc(nextWord("personaSkillsNone")) + '</p>')
-      : '<p role="status">' + esc(nextWord(readError ? "personaFullFailed" : "personaFullLoading")) + '</p>') + '</section>'
+      : '<p role="status">' + esc(readError ? L.failureSentence(readError.error, nextWord("personaFullFailed")) : nextWord("personaFullLoading")) + '</p>') + '</section>'
   L.paintIcon(content.querySelector<HTMLCanvasElement>("#role-detail-icon"), persona.icon, 5)
   for (const detail of content.querySelectorAll<HTMLDetailsElement>("details[data-skill]")) detail.open = expanded.has(detail.dataset.skill)
   content.scrollTop = scrollTop
@@ -147,7 +148,7 @@ export const RoleDetail = {
     shown = { session, conversation, persona: persona.id }
     currentPersona = persona
     reading = null
-    readError = false
+    readError = null
     paint(persona)
     node("role-detail")!.hidden = false
     ;(node("info") as HTMLElement | null)?.setAttribute("inert", "")

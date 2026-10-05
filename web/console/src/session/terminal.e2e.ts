@@ -341,7 +341,7 @@ const prompted = (s: Seen) => s.rows.some((r) => r.includes(fixture))
 const YOU = "你（這個分頁）"
 const OTHER_TAB = "另一個分頁"
 
-test("Session list opens terminals, remembers its mode, filters, and closes one", { skip }, async () => {
+test("Session list opens terminals beside it, remembers its mode, and filters", { skip }, async () => {
   const tab = await Tab.open(browser, true)
   await tab.go("#page=sessions")
   await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Session toolbar did not render")), 5000); const look = () => document.querySelector("#start-go") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
@@ -361,7 +361,7 @@ test("Session list opens terminals, remembers its mode, filters, and closes one"
   })`)
   assert.equal(await tab.run(`document.querySelector("#start-with")?.hidden && document.querySelector("#start-resume")?.hidden`), true)
   await tab.press("#start-list .place")
-  const first = await tab.until("new terminal page", (s) => /page=terminal.*terminal=/.test(s.hash) && s.stdin, 12000)
+  const first = await tab.until("new terminal beside the list", (s) => /page=sessions&mode=terminal&.*terminal=/.test(s.hash) && s.stdin, 12000)
   const firstID = new URLSearchParams(first.hash.slice(1)).get("terminal")!
   opened.add(firstID)
   await tab.run(`location.hash = "#page=sessions&mode=terminal"`)
@@ -385,7 +385,7 @@ test("Session list opens terminals, remembers its mode, filters, and closes one"
   assert.notEqual(list.cards[0], list.cards[1], "two terminals in one project show distinct IDs")
   assert.ok(list.width <= list.viewport && list.rowWidth <= list.viewport, JSON.stringify(list))
   assert.deepEqual(await tab.run(`(() => [...document.querySelectorAll(".session-mode-choice")].map((button) => ({ label: button.getAttribute("aria-label"), pressed: button.getAttribute("aria-pressed"), icon: !!button.querySelector("svg") })))()`), [
-    { label: "Claude Code sessions", pressed: "false", icon: true },
+    { label: "Claude Code session 清單", pressed: "false", icon: true },
     { label: "終端", pressed: "true", icon: true },
   ], "both views have persistent icon choices with the current view selected")
   assert.equal(await tab.run(`(() => { const group = document.querySelector(".session-mode-tabs"); if (!group) return false; const [sessions, terminals] = group.children; return group.children.length === 2 && parseFloat(getComputedStyle(group).borderTopWidth) > 0 && Math.abs(sessions.getBoundingClientRect().right - terminals.getBoundingClientRect().left) < 1 })()`), true, "the two choices share one bordered tab group")
@@ -402,11 +402,12 @@ test("Session list opens terminals, remembers its mode, filters, and closes one"
   await tab.shot("session-terminal-start-from-toolbar-375")
   await tab.press("#start-close")
   await tab.press(".session-terminal-card")
-  assert.ok((await tab.run(`location.hash`)).includes("from=sessions"))
+  assert.match(await tab.run(`location.hash`), /^#page=sessions&mode=terminal&project=.*&terminal=/, "a row opens its terminal in the Session page's second column")
+  assert.equal(await tab.run(`document.querySelector("#app")?.dataset.view`), "detail", "on a phone it is a whole screen, as a session is")
   await tab.run(`history.back()`)
   await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Back lost terminal mode")), 5000); const look = () => location.hash === "#page=sessions&mode=terminal" ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
   await tab.run(`history.forward()`)
-  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Forward lost terminal page")), 5000); const look = () => location.hash.includes("page=terminal") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Forward lost terminal page")), 5000); const look = () => location.hash.includes("terminal=") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
   await tab.run(`history.back()`)
   await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Back lost terminal cards")), 5000); const look = () => document.querySelectorAll(".session-terminal-rows li").length === 2 ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
   const changed = Date.now()
@@ -436,16 +437,35 @@ test("Session list opens terminals, remembers its mode, filters, and closes one"
   await tab.run(`location.reload()`)
   await pause(600)
   assert.equal(await tab.run(`document.querySelector(".session-mode-choice:last-child")?.getAttribute("aria-pressed")`), "true")
-  await tab.press(".session-terminal-close")
-  assert.equal(await tab.run(`!!document.querySelector(".session-terminal-confirm")`), true)
-  assert.match(await tab.run(`document.querySelector(".session-terminal-confirm h2")?.textContent ?? ""`), /f3-fixture.*[0-9a-f]{8}/)
-  assert.equal(await tab.focused(), "取消")
-  await tab.press(".session-terminal-confirm button:last-child")
-  await tab.run(`new Promise((ok, fail) => {
-    const end = setTimeout(() => fail(new Error("terminal did not close: " + JSON.stringify({ cards: document.querySelectorAll(".session-terminal-rows li").length, dialog: document.querySelector(".session-terminal-confirm")?.textContent, message: document.querySelector(".terminal-list-message")?.textContent }))), 8000)
-    const look = () => document.querySelectorAll(".session-terminal-rows li").length === 1 ? (clearTimeout(end), ok(true)) : setTimeout(look, 100)
-    look()
-  })`)
+  assert.deepEqual(await tab.run(`(() => ({
+    rowButtons: [...document.querySelectorAll(".session-terminal-rows li")].map((li) => li.querySelectorAll("button").length),
+    headButtons: document.querySelectorAll(".session-terminal-list .session-terminal-head button").length,
+  }))()`), { rowButtons: [1, 1], headButtons: 0 }, "a row is only itself: closing is in the terminal's menu, opening is the toolbar's +")
+
+  // On a desk a row opens its terminal beside the list, as a Session row opens its conversation.
+  await tab.size(1280, 800)
+  await tab.press(".session-terminal-rows li:first-child .session-terminal-card")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("no terminal beside the list")), 8000); const look = () => document.querySelector("#terminal .terminal-view") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  const desk = await tab.run(`(() => {
+    const list = document.querySelector(".pane-list").getBoundingClientRect()
+    const pane = document.querySelector("#terminal").getBoundingClientRect()
+    const row = document.querySelector(".session-terminal-rows li").getBoundingClientRect()
+    return { listShown: list.width > 0 && getComputedStyle(document.querySelector(".pane-list")).visibility === "visible",
+      beside: pane.left >= list.right - 1 && pane.width > 400, viewport: innerWidth,
+      rowFill: Math.round(list.width - row.width), open: document.querySelectorAll(".session-terminal-rows li.open").length,
+      sessionDetail: getComputedStyle(document.querySelector("#pane-detail")).display, hash: location.hash }
+  })()`)
+  assert.ok(desk.listShown && desk.beside, "the list stays and the terminal is beside it: " + JSON.stringify(desk))
+  assert.ok(desk.rowFill <= 24, "rows fill the list column as Session rows do: " + JSON.stringify(desk))
+  assert.equal(desk.open, 1, "the open terminal's row is marked")
+  assert.equal(desk.sessionDetail, "none", "the session detail is put away in terminal mode")
+  await tab.shot("session-terminal-beside-list-desktop")
+  const steps = await tab.run(`history.length`)
+  await tab.press(".session-terminal-rows li:last-child .session-terminal-card")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("the second row did not take the column")), 8000); const look = () => document.querySelector(".session-terminal-rows li:last-child")?.classList.contains("open") && location.hash.includes(document.querySelector(".session-terminal-rows li:last-child span[title]")?.getAttribute("title") ?? "-") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  assert.equal(await tab.run(`history.length`), steps, "moving between terminals on a desk adds no Back step")
+  await tab.press("#terminal .terminal-head .board-button")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Back did not leave the list: " + location.hash)), 5000); const look = () => location.hash === "#page=sessions&mode=terminal" && document.querySelector(".terminal-pane-empty") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
 })
 
 test("Session terminal entry explains unavailable tmux without project buttons", { skip }, async () => {
@@ -528,7 +548,7 @@ async function projectsPageLists(path: string): Promise<boolean> {
   return projects.some((p: { isStartPoint?: boolean; displayPath?: string }) => p.isStartPoint === true && p.displayPath === path)
 }
 
-test("the Projects page's 終端 leads to the project's list", { skip }, async (t) => {
+test("the Projects page's 終端 leads to the Session terminal list", { skip }, async (t) => {
   const place = (await api("/v1/places")).places.find((p: { id: string }) => p.id === project)
   if (!(await projectsPageLists(place.path))) {
     t.skip("the throwaway project is not a Board start point on this daemon, so the Projects page has no row for it")
@@ -542,29 +562,23 @@ test("the Projects page's 終端 leads to the project's list", { skip }, async (
     look()
   })`)
   await tab.press("button.project-row-terminal")
-  assert.match(await tab.run("location.hash"), /^#page=terminal&project=%2F.*&from=projects$/, "the Projects page links by folder, and says where Back goes")
+  assert.equal(await tab.run("location.hash"), "#page=sessions&mode=terminal", "the Projects page leads to the Session terminal list, not a page of its own")
   await tab.close()
 })
 
-test("a terminal list opened from the Projects page goes back there", { skip }, async () => {
+test("the retired terminal page's address opens the Session terminal list", { skip }, async () => {
   const place = (await api("/v1/places")).places.find((p: { id: string }) => p.id === project)
   const tab = await Tab.open(browser)
-  // The address the Projects page's 終端 writes (projects.tsx, page-route.ts `terminalPageHash`).
+  // The address the Projects page's 終端 wrote before the page was retired.
   await tab.go(`#page=terminal&project=${encodeURIComponent(place.path)}&from=projects`)
   await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("no terminal list")), 8000)
-    const look = () => document.querySelector("#terminal:not([hidden]) .terminal-list-title") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    const t = setTimeout(() => fail(new Error("no Session terminal list: " + location.hash)), 8000)
+    const look = () => document.querySelector("#app:not([hidden]) .session-terminal-list") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
-  const back = await tab.run(`document.querySelector("#terminal .terminal-page-head .board-button").textContent`)
-  assert.equal(back, "回到專案")
-  await tab.shot("02-terminal-list-from-projects")
-  await tab.press("#terminal .terminal-page-head .board-button")
-  await tab.run(`new Promise((ok, fail) => {
-    const t = setTimeout(() => fail(new Error("Back did not reach the Projects page: " + location.hash)), 8000)
-    const look = () => /page=projects/.test(location.hash) ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
-    look()
-  })`)
+  assert.equal(await tab.run(`document.querySelector(".terminal-list-title")`), null, "the per-project list is gone")
+  assert.equal(await tab.run(`document.querySelector(".session-mode-choice:last-child")?.getAttribute("aria-pressed")`), "true")
+  await tab.shot("02-retired-terminal-address")
   await tab.close()
 })
 
@@ -621,7 +635,7 @@ test("a terminal opens from the work page and takes keys the way its programs as
   await tab.key("escape")
   await pause(200)
   await tab.shot("05-vim")
-  assert.match(await tab.run("location.hash"), /page=terminal/, "Escape stayed in the terminal")
+  assert.match(await tab.run("location.hash"), /mode=terminal&.*terminal=/, "Escape stayed in the terminal")
   await tab.text(":wq")
   await tab.key("enter")
   await pause(400)
@@ -850,10 +864,10 @@ test("on a phone the special keys type through the same client and nothing is wi
   seen = (await tab.run(PROBE)) as Seen
   assert.ok(seen.scrollWidth <= seen.width, "still no sideways page scroll")
   await tab.shot("17-phone-after-ctrl-c")
-  await tab.run(`location.hash = ${JSON.stringify("#page=terminal&project=" + encodeURIComponent(project))}`)
+  await tab.run(`location.hash = "#page=sessions&mode=terminal"`)
   await tab.run(`new Promise((ok, fail) => {
     const t = setTimeout(() => fail(new Error("no terminal list on the phone")), 8000)
-    const look = () => document.querySelector("#terminal .terminal-rows") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+    const look = () => document.querySelector(".session-terminal-rows li") && document.querySelector("#app")?.dataset.view === "list" ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
     look()
   })`)
   const list = (await tab.run(PROBE)) as Seen
@@ -1057,15 +1071,15 @@ test("a machine that cannot open terminals says why and what to do, with no butt
       const cap = body.platform.capabilities.find((c: { name: string }) => c.name === "terminal")
       Object.assign(cap, { state: "unavailable", code, reason: code === "no_backend" ? "terminals need tmux, which this platform does not have" : "tmux was not found" })
     })
-    await tab.go(`#page=terminal&project=${encodeURIComponent(project)}`)
+    await tab.go("#page=sessions&mode=terminal")
     await tab.run(`new Promise((ok, fail) => {
       const t = setTimeout(() => fail(new Error("no reason on the list")), 10000)
-      const look = () => document.querySelector("#terminal .terminal-note[role=note]:not(.terminal-session-note)") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
+      const look = () => document.querySelector(".terminal-list-message[role=note]") ? (clearTimeout(t), ok(true)) : setTimeout(look, 50)
       look()
     })`)
-    const said = await tab.run(`document.querySelector("#terminal .terminal-list .terminal-note[role=note]").textContent`)
+    const said = await tab.run(`document.querySelector(".terminal-list-message[role=note]").textContent`)
     assert.match(said, want, name + ": " + said)
-    assert.equal(await tab.run(`!!document.querySelector("#terminal .terminal-open-new")`), false, "no 開新終端")
+    assert.equal(await tab.run(`!!document.querySelector(".session-terminal-card, .terminal-open-new")`), false, "no terminal to open and no 開新終端")
     await tab.shot(name)
     await tab.close()
   }

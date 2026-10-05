@@ -34,7 +34,7 @@ export const LEGACY_CORRECTIONS: readonly LegacyCorrection[] = [
       },
       {
         file: "web/console/public/strings/zh-Hant.json",
-        line: 744,
+        line: 749,
         contains: '"webStateUnreadable": "畫面讀不到"',
       },
     ],

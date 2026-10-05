@@ -58,43 +58,38 @@ export function pageFromHash<Page extends string>(
   return wanted && knows(wanted) ? wanted : "sessions"
 }
 
-/** The page a terminal-page address was opened from, which its Back returns to; "" is the board, as before `from` existed. */
-export type TerminalFrom = "projects" | "work" | "sessions" | ""
-
-/** The Session list mode carried by its own address. */
+/**
+ * The Session list's terminal mode, and the terminal open beside it.
+ *
+ * `#page=sessions&mode=terminal` is the list; `&project=<id>&terminal=<id>`
+ * names the terminal in the second column (a whole screen on a phone). The
+ * retired terminal page's addresses (`#page=terminal&project=…&terminal=…`)
+ * still arrive from bookmarks and old links; they read as this mode, so a
+ * terminal they name opens beside the list instead of on a page of its own.
+ */
 export function sessionsTerminalMode(hash: string): boolean {
-  return pageInHash(hash) === "sessions" && valueInHash(hash, "mode") === "terminal"
-}
-
-export function sessionsPageHash(terminal = false): string {
-  return "#page=sessions" + (terminal ? "&mode=terminal" : "")
+  const page = pageInHash(hash)
+  return (page === "sessions" && valueInHash(hash, "mode") === "terminal") || page === "terminal"
 }
 
 export interface TerminalRoute {
   project: string
   terminal: string
-  from: TerminalFrom
 }
 
-function terminalFrom(value: string | null): TerminalFrom {
-  return value === "projects" || value === "work" || value === "sessions" ? value : ""
+/** The terminal a terminal-mode address opens beside the list; empty when it names none. */
+export function sessionsTerminalRoute(hash: string): TerminalRoute {
+  if (!sessionsTerminalMode(hash)) return { project: "", terminal: "" }
+  const project = valueInHash(hash, "project")?.trim() ?? ""
+  const terminal = valueInHash(hash, "terminal")?.trim() ?? ""
+  return project && terminal ? { project, terminal } : { project: "", terminal: "" }
 }
 
-/** The project and terminal a terminal-page address names (`#page=terminal&project=…&terminal=…&from=…`). */
-export function terminalRouteFromHash(hash: string): TerminalRoute {
-  if (pageInHash(hash) !== "terminal") return { project: "", terminal: "", from: "" }
-  return {
-    project: valueInHash(hash, "project")?.trim() ?? "",
-    terminal: valueInHash(hash, "terminal")?.trim() ?? "",
-    from: terminalFrom(valueInHash(hash, "from")),
+export function sessionsPageHash(terminal = false, open?: TerminalRoute): string {
+  if (!terminal) return "#page=sessions"
+  let hash = "#page=sessions&mode=terminal"
+  if (open?.project.trim() && open.terminal.trim()) {
+    hash += "&project=" + encodeURIComponent(open.project.trim()) + "&terminal=" + encodeURIComponent(open.terminal.trim())
   }
-}
-
-/** A bookmarkable terminal-page address: a project's terminals, or one terminal in it, and where Back goes. */
-export function terminalPageHash(project: string, terminal = "", from: TerminalFrom = ""): string {
-  let hash = "#page=terminal"
-  if (project.trim()) hash += "&project=" + encodeURIComponent(project.trim())
-  if (terminal.trim()) hash += "&terminal=" + encodeURIComponent(terminal.trim())
-  if (from) hash += "&from=" + from
   return hash
 }

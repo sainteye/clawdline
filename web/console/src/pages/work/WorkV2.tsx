@@ -337,6 +337,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       void load()
       return true
     } catch (error) {
+      // refusal-ok: an unconfirmed send is re-read before it is called anything, and a named refusal goes to failureWords (shared.ts), which ends in failureSentence.
       if (!(error instanceof RefusalError) || error.code === "request_in_progress") {
         try {
           const observed = (await readDecision(decisionID)).decision

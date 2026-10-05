@@ -1,4 +1,5 @@
 import type { DeviceList } from "@clawdline/contract"
+import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
 
 /**
@@ -41,7 +42,17 @@ async function post(path: string, read: typeof fetch): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: "{}",
   })
-  if (!res.ok) throw new Error(await refusal(res))
+  if (res.ok) return
+  // A refused revoke or sign-out keeps its code, so the block can say which
+  // refusal it was (`failureSentence`) instead of the daemon's English.
+  let body: unknown = null
+  try {
+    body = await res.json()
+  } catch {
+    // refusal-ok: a body that is not JSON is reported below as a transport failure with its status.
+  }
+  if (isRefusal(body)) throw new RefusalError(res.status, body, path)
+  throw new TransportError(`${path} answered ${res.status} with no refusal in it`)
 }
 
 /** Take one device's key away. The device's next request is refused. */

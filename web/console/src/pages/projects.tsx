@@ -167,11 +167,10 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
     const onTerminal = (ev: Event) => {
       const button = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row-terminal[data-place-id]")
       if (!button || !rows.contains(button)) return
-      // The row's id is this page's own; the terminal routes know a project by
-      // the work page's id, which the terminal page resolves from the folder,
-      // as a Project-page link to the work page does (page-route.ts workProjectID).
+      // Every project's terminals are in the Session page's terminal list,
+      // each row named by its project; there is no per-project page any more.
       const project = page.current?.state.places?.find((place) => place.id === button.dataset.placeId)
-      if (project?.path) openTerminalPage(project.path, "", "projects")
+      if (project?.path) openTerminalPage(project.path)
     }
     rows.addEventListener("click", onSettings)
     rows.addEventListener("click", onTerminal)

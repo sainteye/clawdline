@@ -448,6 +448,8 @@ func (s *Server) Frame(ctx context.Context, id terminal.ID) (terminal.Frame, err
 // Keys types bytes as keystrokes: `send-keys -H`, one hex byte per argument,
 // so tmux looks for no key names in them and a multi-byte sequence arrives
 // whole (internal/adapters/terminal/keys.go).
+//
+// A batch larger than keysPerCall goes as several calls, in order.
 func (s *Server) Keys(ctx context.Context, id terminal.ID, data []byte) error {
 	if len(data) == 0 {
 		return terminal.Refuse(terminal.CodeInvalid, "there is no key to send")
@@ -460,13 +462,38 @@ func (s *Server) Keys(ctx context.Context, id terminal.ID, data []byte) error {
 	if err != nil {
 		return err
 	}
-	args := make([]string, 0, len(data)+4)
-	args = append(args, "send-keys", "-t", target, "-H")
-	for _, b := range data {
-		args = append(args, hex.EncodeToString([]byte{b}))
+	for _, part := range keyCalls(data, keysPerCall) {
+		args := make([]string, 0, len(part)+4)
+		args = append(args, "send-keys", "-t", target, "-H")
+		for _, b := range part {
+			args = append(args, hex.EncodeToString([]byte{b}))
+		}
+		if _, err := s.call(ctx, "", args...); err != nil {
+			return err
+		}
 	}
-	_, err = s.call(ctx, "", args...)
-	return err
+	return nil
+}
+
+// keysPerCall is the most bytes one `send-keys -H` carries. tmux refuses a
+// command larger than one message as "command too long", and 3.7 spends
+// about sixteen bytes of it on each argument: measured, 3.7c takes at most
+// 996 one-byte arguments where 3.6a took 5448. MaxInputBytes is 4096.
+const keysPerCall = 512
+
+// keyCalls splits data into parts of at most n bytes, never inside a UTF-8
+// character, so a multi-byte sequence still arrives in one call.
+func keyCalls(data []byte, n int) [][]byte {
+	var parts [][]byte
+	for len(data) > n {
+		cut := n
+		for back := 0; back < 3 && cut > 1 && data[cut]&0xC0 == 0x80; back++ {
+			cut--
+		}
+		parts = append(parts, data[:cut])
+		data = data[cut:]
+	}
+	return append(parts, data)
 }
 
 // Paste types text as a paste. `paste-buffer -p` brackets it when the program
