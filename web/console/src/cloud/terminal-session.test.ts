@@ -8,6 +8,8 @@ import type { TerminalCarrier, TerminalChannelEvent, TerminalDirectOffer, Termin
 import { TerminalObservation } from "./terminal-observation.ts"
 // @ts-expect-error -- focused runner bundles the TypeScript source.
 import { terminalScreenHash } from "./terminal-delta.ts"
+// @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
+import { until } from "./until.ts"
 
 const terminalID = "trm_test"
 const machine = "machine_test"
@@ -104,7 +106,10 @@ test("delta capability requires both relay and machine confirmation", async () =
         rev: "second", at, cols: 80, rows: 1, dead: false, cursor: frame("second").cursor,
         modes: frame("second").modes, changed_rows: [{ row: 0, line: "second" }],
         screen_hash: await terminalScreenHash(["second"]) })
-      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      // A delta this connection may use is checked against its digest off the event loop;
+      // one it may not use is dropped before the first await.
+      if (relay && machineCap) await until(() => session.snapshot.frame?.rev === "second")
+      else await new Promise<void>((resolve) => setTimeout(resolve, 0))
       assert.equal(session.snapshot.frame?.rev, relay && machineCap ? "second" : "first")
     } finally { session.dispose() }
   }
@@ -123,7 +128,7 @@ test("a corrupt delta discards the connection and never replays input", async ()
       connection: old, frame_seq: 2, base_seq: 1, base_rev: "first", captured_at: at,
       rev: "second", at, cols: 80, rows: 1, dead: false, cursor: frame("second").cursor,
       modes: frame("second").modes, changed_rows: [{ row: 0, line: "second" }], screen_hash: "0".repeat(64) })
-    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    await until(() => wire.latest() !== old && (session as unknown as { active: boolean }).active)
     assert.notEqual(wire.latest(), old)
     assert.equal(session.snapshot.canType, false)
     assert.equal(wire.requests.filter((request) => request.operation === "input" || request.operation === "paste").length, 0)
@@ -173,12 +178,14 @@ test("several numbered keys publish before receipts while later keys wait for th
     wire.frame(wire.latest(), 1, "ready")
     wire.delayed.add("input")
     const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
+    const inputCount = () => wire.requests.filter((request) => request.operation === "input").length
+    await until(() => inputCount() >= 4)
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     const sent = wire.requests.filter((request) => request.operation === "input")
     assert.equal(sent.length, 4)
     assert.deepEqual(sent.map((request) => request.seq), [1, 2, 3, 4])
     wire.releaseReplies()
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => inputCount() === 5)
     assert.equal(wire.requests.filter((request) => request.operation === "input").length, 5)
     wire.releaseReplies()
     await Promise.all(inputs)
@@ -196,7 +203,7 @@ test("an unknown pipelined input outcome stops the waiting key without replay", 
     wire.delayed.add("input")
     const inputs = Array.from({ length: 5 }, (_, i) => session.input(new TextEncoder().encode(String(i))))
     for (const pending of inputs) void pending.catch(() => undefined)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.filter((request) => request.operation === "input").length >= 4)
     wire.inputResult = "unknown"
     wire.releaseReplies()
     await Promise.allSettled(inputs)
@@ -214,7 +221,7 @@ test("a signed receipt with a different request id is diagnosed and cannot settl
     await session.start()
     const attaching = session.attach(terminalID)
     void attaching.catch(() => undefined)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.some((request) => request.operation === "capture"))
     wire.emit(wire.latest(), "termr", { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
       connection: wire.latest(), operation: "capture", terminal_id: terminalID, status: "ok" })
     assert.equal(stages.at(-1)?.stage, "pending_miss")
@@ -233,7 +240,7 @@ test("a slow read does not hold back the capture request or first frame", async 
   try {
     await session.start()
     const attaching = session.attach(terminalID)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.some((request) => request.operation === "capture"))
     assert.deepEqual(wire.requests.slice(-2).map((request) => request.operation), ["read", "capture"])
     wire.frame(wire.latest(), 1, "early screen")
     assert.equal(session.snapshot.frame?.rev, "early screen")
@@ -311,7 +318,7 @@ test("an open frame arriving before its open receipt is applied only after termi
   try {
     await session.start()
     const opening = session.create("project", 80, 1)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.some((request) => request.operation === "open"))
     assert.equal(wire.requests.some((request) => request.operation === "open"), true)
     wire.frame(wire.latest(), 1, "first")
     wire.frame(wire.latest(), 2, "newest")
@@ -344,7 +351,7 @@ test("rekey keeps the lease client and checks a read-only high-water mark before
   assert.equal(query?.client, "stable-tab")
   assert.equal(wire.requests.filter((request) => request.operation === "control" && (request.body as { action?: string } | undefined)?.action === "acquire").length, 1)
   wire.frame(newConnection, 1, "new connection")
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await until(() => !wire.channels.has(old) && session.snapshot.canType)
   assert.equal(wire.channels.has(old), false)
   assert.equal(wire.requests.filter((request) => request.operation === "activate_connection").length, 1)
   assert.equal(session.snapshot.canType, true)
@@ -360,7 +367,7 @@ test("a rekey frame arriving before its receipt waits for lease proof and then a
     wire.frame(old, 1, "old screen")
     wire.delayed.add("rekey_connection")
     const reconnect = session.start()
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.some((request) => request.operation === "rekey_connection"))
     const current = wire.latest()
     assert.notEqual(current, old)
     wire.frame(current, 1, "new screen")
@@ -368,7 +375,7 @@ test("a rekey frame arriving before its receipt waits for lease proof and then a
     assert.equal(wire.observed.length, 1, "the new frame waits for a verified rekey receipt")
     wire.releaseReplies()
     await reconnect
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => !wire.channels.has(old) && session.snapshot.canType)
     assert.equal(session.snapshot.frame?.rev, "new screen")
     assert.equal(wire.observed.length, 2)
     assert.equal(wire.requests.filter((request) => request.operation === "activate_connection").length, 1)
@@ -413,7 +420,7 @@ test("the lease renews on its own cadence and an expired lease cannot type", asy
   wire.frame(wire.latest(), 1, "screen")
   ;(session as unknown as { lastRenew: number }).lastRenew = Date.now() - 11_000
   ;(session as unknown as { checkFreshness(): void }).checkFreshness()
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await until(() => !(session as unknown as { renewing: boolean }).renewing)
   assert.equal(wire.requests.filter((request) => (request.body as { action?: string } | undefined)?.action === "renew").length, 1)
   ;(session as unknown as { set(value: object): void }).set({ control: { ...held, expires_at: Date.now() / 1000 - 1 } })
   assert.equal(session.snapshot.canType, false)
@@ -430,7 +437,8 @@ test("an omitted zero input watermark keeps a renewed idle lease typable", async
     assert.equal(session.snapshot.canType, true)
     ;(session as unknown as { lastRenew: number }).lastRenew = Date.now() - 11_000
     ;(session as unknown as { checkFreshness(): void }).checkFreshness()
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    assert.equal((session as unknown as { renewing: boolean }).renewing, true, "the renewal is out")
+    await until(() => !(session as unknown as { renewing: boolean }).renewing)
     assert.equal(session.snapshot.canType, true)
   } finally { session.dispose() }
 })
@@ -470,7 +478,7 @@ test("a different incarnation fails closed and an old connection cannot revoke t
     code: "terminal_access_revoked", machine_incarnation: wire.incarnation })
   assert.notEqual(session.snapshot.state, "revoked")
   wire.frame(current, 1, "new")
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await until(() => session.snapshot.canType)
   assert.equal(session.snapshot.canType, true)
   wire.emit(current, "termr", { v: 1, type: "terminal_notice", connection: current,
     code: "terminal_access_revoked", machine_incarnation: "another-start" })
@@ -505,7 +513,7 @@ test("fault injection: a receipt for another request stops at pending_match", as
     await session.start()
     const attaching = session.attach(terminalID)
     void attaching.catch(() => undefined)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.some((request) => request.operation === "capture"))
     const stray = crypto.randomUUID()
     wire.emit(wire.latest(), "termr", { v: 1, type: "terminal_receipt", request_id: stray,
       connection: wire.latest(), operation: "capture", terminal_id: terminalID, status: "ok" })
@@ -544,7 +552,7 @@ test("a correlated relay refusal settles the list immediately and leaves the con
   try {
     await session.start()
     const reading = session.request("list", { client: "stable-tab" })
-    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    await until(() => wire.requests.some((item) => item.operation === "list"))
     const request = wire.requests.find((item) => item.operation === "list")!
     wire.channels.get(wire.latest())?.({ error: "rate_limited", requestID: request.request_id as string })
     await assert.rejects(reading, /rate_limited/)
@@ -559,13 +567,13 @@ test("a rate-limited capture cannot undo a successful read or block later verifi
   try {
     await session.start()
     const attaching = session.attach(terminalID)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.some((item) => item.operation === "capture"))
     const first = wire.requests.filter((item) => item.operation === "capture").at(-1)!
     wire.channels.get(wire.latest())?.({ error: "rate_limited", requestID: first.request_id as string })
     await attaching
     assert.equal(session.reusable, true)
     const acquiring = session.acquire("acquire")
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await until(() => wire.requests.filter((item) => item.operation === "capture").length === 2)
     const second = wire.requests.filter((item) => item.operation === "capture").at(-1)!
     wire.channels.get(wire.latest())?.({ error: "rate_limited", requestID: second.request_id as string })
     await acquiring
@@ -611,10 +619,10 @@ async function upgraded(wire: DirectWire, observation?: TerminalObservation) {
   await session.start(); await session.attach(terminalID); await session.acquire("acquire")
   const relay = wire.latest()
   wire.frame(relay, 1, "relay")
-  await settle()
+  await until(() => session.snapshot.carrier === "direct")
   const direct = wire.latest()
   wire.frame(direct, 1, "direct")
-  await settle()
+  await until(() => !wire.channels.has(relay) && session.snapshot.canType)
   return { session, relay, direct }
 }
 
@@ -652,7 +660,7 @@ test("a terminal this tab does not hold stays on the relay until the tab takes c
     assert.equal(session.snapshot.carrier, "relay")
     await session.acquire("acquire")
     wire.frame(relay, 2, "held")
-    await settle()
+    await until(() => lastRequest(wire, "rekey_connection")?.connection === wire.latest())
     assert.equal(wire.offers, 1)
     assert.equal(lastRequest(wire, "rekey_connection")?.connection, wire.latest())
   } finally { session.dispose() }
@@ -666,14 +674,15 @@ test("a direct frame that arrives while the lease is being checked is drawn, ack
     const relay = wire.latest()
     wire.delayed.add("control")
     wire.frame(relay, 1, "relay")
-    await settle()
+    await until(() => wire.latest() !== relay && lastRequest(wire, "control")?.connection === wire.latest())
     const direct = wire.latest()
     assert.notEqual(direct, relay)
     assert.equal(lastRequest(wire, "control")?.connection, direct, "the lease check is out")
     wire.frame(direct, 1, "direct")
-    await settle()
+    await until(() => session.snapshot.frame?.rev === "direct")
+    assert.equal(lastRequest(wire, "activate_connection"), undefined, "activation waits for the lease check")
     wire.releaseReplies()
-    await settle()
+    await until(() => lastRequest(wire, "activate_connection")?.connection === direct && session.snapshot.carrier === "direct")
     assert.equal(lastRequest(wire, "activate_connection")?.connection, direct)
     assert.equal(session.snapshot.carrier, "direct")
   } finally { session.dispose() }
@@ -695,12 +704,13 @@ test("a machine refusing the direct path leaves the terminal on the relay silent
     ["direct_offer", "terminal_direct_unavailable"], ["rekey_connection:direct", "terminal_direct_unavailable"]]) {
     const wire = new DirectWire()
     wire.refusals.set(operation, code)
-    const session = new CloudTerminalSession(wire, "stable-tab")
+    const stages: string[] = []
+    const session = new CloudTerminalSession(wire, "stable-tab", new TerminalObservation((row) => stages.push(row.stage)))
     try {
       await session.start(); await session.attach(terminalID); await session.acquire("acquire")
       const relay = wire.latest()
       wire.frame(relay, 1, "ready")
-      await settle()
+      await until(() => stages.includes("direct_failed"))
       assert.equal(wire.offers, 1, code)
       assert.equal(session.snapshot.carrier, "relay", code)
       assert.equal(session.snapshot.canType, true, code)
@@ -724,17 +734,19 @@ test("a relay too busy for the upgrade is tried again in seconds, a machine refu
       skew = 0
       const wire = new DirectWire()
       wire.refusals.set("direct_offer", code)
-      const session = new CloudTerminalSession(wire, "stable-tab")
+      const stages: string[] = []
+      const session = new CloudTerminalSession(wire, "stable-tab", new TerminalObservation((row) => stages.push(row.stage)))
       try {
         await session.start(); await session.attach(terminalID); await session.acquire("acquire")
         const relay = wire.latest()
         wire.frame(relay, 1, "ready")
-        await settle()
+        await until(() => stages.includes("direct_failed"))
         assert.equal(wire.offers, 1, code)
         wire.refusals.delete("direct_offer")
         skew = 6_000
         wire.frame(relay, 2, "later")
-        await settle()
+        if (retried) await until(() => wire.offers === 2)
+        else await settle()
         assert.equal(wire.offers, retried ? 2 : 1, code)
       } finally { session.dispose() }
     }
@@ -749,10 +761,10 @@ test("a closed DC rekeys back to the relay naming the direct connection and neve
     wire.delayed.add("input")
     const typed = session.input(new TextEncoder().encode("a"))
     void typed.catch(() => undefined)
-    await settle()
+    await until(() => operations(wire).includes("input"))
     assert.equal(operations(wire).filter((operation) => operation === "input").length, 1)
     wire.dropDC()
-    await settle()
+    await until(() => session.snapshot.carrier === "relay")
     const rekey = lastRequest(wire, "rekey_connection")!
     assert.deepEqual(rekey.body, { old_connection: direct })
     assert.equal(session.snapshot.carrier, "relay")
@@ -761,7 +773,7 @@ test("a closed DC rekeys back to the relay naming the direct connection and neve
     await typed
     const relay = wire.latest()
     wire.frame(relay, 1, "back")
-    await settle()
+    await until(() => lastRequest(wire, "activate_connection")?.connection === relay && session.snapshot.canType)
     assert.equal(lastRequest(wire, "activate_connection")?.connection, relay)
     assert.equal(operations(wire).filter((operation) => operation === "input").length, 1)
     assert.equal(wire.offers, 1, "no new upgrade inside the retry wait")
@@ -777,13 +789,13 @@ test("when the machine already retired the direct connection, the fallback opens
     wire.refusals.set("rekey_connection", "terminal_old_connection")
     const before = wire.requests.length
     wire.dropDC()
-    await settle()
+    await until(() => operations(wire).slice(before).includes("capture"))
     const after = wire.requests.slice(before)
     assert.deepEqual(after.map((request) => request.operation), ["rekey_connection", "open_connection", "control", "read", "capture"])
     assert.equal(after[2].body, undefined, "the lease is proved by a read-only control query")
     assert.equal(wire.channels.has(direct), false)
     wire.frame(wire.latest(), 1, "reopened")
-    await settle()
+    await until(() => session.snapshot.frame?.rev === "reopened" && session.snapshot.hasLease)
     assert.equal(session.snapshot.carrier, "relay")
     assert.equal(session.snapshot.hasLease, true, "the proved lease is kept")
     assert.equal(session.snapshot.frame?.rev, "reopened")
