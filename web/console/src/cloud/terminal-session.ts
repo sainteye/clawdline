@@ -140,8 +140,13 @@ export class CloudTerminalSession {
     const previousKeyID = this.keyID
     const previousIncarnation = this.incarnation
     const previousFrameSeq = this.frameSeq
+    // A rotation that never activated (a direct connection retired before its first frame, say)
+    // leaves an older connection still subscribed; the new rotation replaces it.
+    const previousRetiring = this.retiringConnection
+    const previousRotationReady = this.rotationReady
     this.earlyFrames = []
     if (previous && !options.abandon) { this.retiringConnection = previous; this.rotationReady = false }
+    else if (options.abandon) { this.retiringConnection = ""; this.rotationReady = false }
     this.active = false
     this.set({ state: previous ? "synchronizing" : "opening", canType: false, reason: "" })
     try {
@@ -174,6 +179,7 @@ export class CloudTerminalSession {
       this.carrier = carrier
       if (carrier === "direct" && !this.direct?.open) this.fallbackWanted = true
       if (options.abandon && previous) this.transport.unsubscribeTerminal(previous)
+      if (previousRetiring && previousRetiring !== previous) this.transport.unsubscribeTerminal(previousRetiring)
       this.active = true
       this.connectionUnknown = false
       this.rotationAttempted = false
@@ -196,8 +202,8 @@ export class CloudTerminalSession {
       this.frameSeq = previousFrameSeq
       this.deltaEnabled = false
       this.earlyFrames = []
-      this.retiringConnection = ""
-      this.rotationReady = false
+      this.retiringConnection = previousRetiring
+      this.rotationReady = previousRotationReady
       this.carrier = previousCarrier
       // A direct connection whose rotation failed falls back to the relay rather than expire.
       if (direct && !options.carrier && previousCarrier === "direct") this.fallbackWanted = true
@@ -555,11 +561,11 @@ export class CloudTerminalSession {
       }
     } else if (value.type === "terminal_frame_delta" && event.envelope.ch.startsWith("termd/")) {
       void this.acceptDelta(value as DeltaFrame, event.envelope)
-    } else if (value.type === "terminal_frame" &&
-      event.envelope.ch.startsWith("term/") &&
-      Number.isSafeInteger(value.frame_seq) && value.frame_seq > 0 &&
-      typeof value.captured_at === "number" && Math.abs(Date.now() / 1000 - value.captured_at) <= STALE_MS / 1000 &&
-      completeTerminalFrame(value.frame)) {
+    } else if (value.type === "terminal_frame") {
+      const dropped = !event.envelope.ch.startsWith("term/") || !Number.isSafeInteger(value.frame_seq) || value.frame_seq <= 0 ||
+        !completeTerminalFrame(value.frame) ? "terminal_frame_incomplete" :
+        typeof value.captured_at !== "number" || Math.abs(Date.now() / 1000 - value.captured_at) > STALE_MS / 1000 ? "terminal_frame_stale" : ""
+      if (dropped) { this.observation?.record("frame_dropped", { connection: value.connection, code: dropped }); return }
       if (!this.active || this.openingNew || !this.terminal) {
         if (this.earlyFrames.length < EARLY_FRAME_LIMIT) this.earlyFrames.push({ value, envelope: event.envelope })
         else if (value.frame_seq > this.earlyFrames[0].value.frame_seq) {
@@ -574,9 +580,12 @@ export class CloudTerminalSession {
     this.acceptFrame(early.value, early.envelope)
   }
   private acceptFrame(value: Frame, envelope: TerminalEnvelope): void {
-    if (value.connection !== this.connection || value.terminal_id !== this.terminal ||
-      value.frame_seq <= this.frameSeq || Math.abs(Date.now() / 1000 - value.captured_at) > STALE_MS / 1000 ||
-      !completeTerminalFrame(value.frame)) return
+    const dropped = value.connection !== this.connection ? "terminal_old_connection" :
+      value.terminal_id !== this.terminal ? "terminal_frame_other_terminal" :
+        value.frame_seq <= this.frameSeq ? "terminal_frame_out_of_order" :
+          Math.abs(Date.now() / 1000 - value.captured_at) > STALE_MS / 1000 ? "terminal_frame_stale" :
+            !completeTerminalFrame(value.frame) ? "terminal_frame_incomplete" : ""
+    if (dropped) { this.observation?.record("frame_dropped", { connection: value.connection, code: dropped }); return }
     const first = this.frameSeq === 0
     this.frameSeq = value.frame_seq
     this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
