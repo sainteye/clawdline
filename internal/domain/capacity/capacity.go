@@ -368,37 +368,49 @@ const (
 	SquadEventBodyBytes          = "squad.event_body_bytes"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
-	TerminalCount                  = "terminal.count"
-	TerminalInputBytes             = "terminal.input_bytes"
-	TerminalPasteBytes             = "terminal.paste_bytes"
-	TerminalHistoryLines           = "terminal.history_lines"
-	TerminalLane                   = "terminal.lane"
-	TerminalViewers                = "terminal.viewers"
-	TerminalStreams                = "terminal.streams"
-	TerminalLeaseSeconds           = "terminal.lease_seconds"
-	TerminalGrantsBytes            = "terminal.grants_bytes"
-	CloudTerminalRosterRefresh     = "cloud.terminal_roster_refresh_seconds"
-	CloudTerminalRosterDeadline    = "cloud.terminal_roster_deadline_seconds"
-	CloudTerminalConnections       = "cloud.terminal_connections"
-	CloudTerminalViewerConnections = "cloud.terminal_viewer_connections"
-	CloudTerminalRequestBytes      = "cloud.terminal_request_bytes"
-	CloudTerminalReceipts          = "cloud.terminal_receipts"
-	CloudTerminalKeySeconds        = "cloud.terminal_key_seconds"
-	CloudTerminalIngress           = "cloud.terminal_ingress"
-	CloudTerminalListIngress       = "cloud.terminal_list_ingress"
-	CloudTerminalRefusals          = "cloud.terminal_refusals"
-	CloudTerminalRevocationRetire  = "cloud.terminal_revocation_retire_seconds"
-	CloudTerminalFrameHeartbeat    = "cloud.terminal_frame_heartbeat_seconds"
-	CloudTerminalEarlyFrames       = "cloud.terminal_early_frames"
-	CloudTerminalObservationRows   = "cloud.terminal_observation_rows"
-	CloudTerminalListRetry         = "cloud.terminal_list_retries"
-	CloudHeaderReadDiagnosticRows  = "cloud.header_read_diagnostic_rows"
-	CloudHeaderReadDiagnosticAge   = "cloud.header_read_diagnostic_seconds"
-	CloudTerminalUnconfirmed       = "cloud.terminal_unconfirmed_seconds"
-	CloudTerminalHistoryReceipt    = "cloud.terminal_history_receipt_bytes"
-	CloudTerminalHistoryLine       = "cloud.terminal_history_line_bytes"
-	CloudTerminalHistoryCapture    = "cloud.terminal_history_capture_bytes"
-	TerminalBodyBytes              = "terminal.body_bytes"
+	TerminalCount                     = "terminal.count"
+	TerminalInputBytes                = "terminal.input_bytes"
+	TerminalPasteBytes                = "terminal.paste_bytes"
+	TerminalHistoryLines              = "terminal.history_lines"
+	TerminalLane                      = "terminal.lane"
+	TerminalViewers                   = "terminal.viewers"
+	TerminalStreams                   = "terminal.streams"
+	TerminalLeaseSeconds              = "terminal.lease_seconds"
+	TerminalGrantsBytes               = "terminal.grants_bytes"
+	CloudTerminalRosterRefresh        = "cloud.terminal_roster_refresh_seconds"
+	CloudTerminalRosterDeadline       = "cloud.terminal_roster_deadline_seconds"
+	CloudTerminalConnections          = "cloud.terminal_connections"
+	CloudTerminalViewerConnections    = "cloud.terminal_viewer_connections"
+	CloudTerminalRequestBytes         = "cloud.terminal_request_bytes"
+	CloudTerminalReceipts             = "cloud.terminal_receipts"
+	CloudTerminalKeySeconds           = "cloud.terminal_key_seconds"
+	CloudTerminalIngress              = "cloud.terminal_ingress"
+	CloudTerminalListIngress          = "cloud.terminal_list_ingress"
+	CloudTerminalRefusals             = "cloud.terminal_refusals"
+	CloudTerminalRevocationRetire     = "cloud.terminal_revocation_retire_seconds"
+	CloudTerminalFrameHeartbeat       = "cloud.terminal_frame_heartbeat_seconds"
+	CloudTerminalEarlyFrames          = "cloud.terminal_early_frames"
+	CloudTerminalObservationRows      = "cloud.terminal_observation_rows"
+	CloudTerminalListRetry            = "cloud.terminal_list_retries"
+	CloudHeaderReadDiagnosticRows     = "cloud.header_read_diagnostic_rows"
+	CloudHeaderReadDiagnosticAge      = "cloud.header_read_diagnostic_seconds"
+	CloudTerminalUnconfirmed          = "cloud.terminal_unconfirmed_seconds"
+	CloudTerminalHistoryReceipt       = "cloud.terminal_history_receipt_bytes"
+	CloudTerminalHistoryLine          = "cloud.terminal_history_line_bytes"
+	CloudTerminalHistoryCapture       = "cloud.terminal_history_capture_bytes"
+	CloudTerminalDirectPeers          = "cloud.terminal_direct_peers"
+	CloudTerminalDirectOffers         = "cloud.terminal_direct_offers_per_minute"
+	CloudTerminalDirectSDP            = "cloud.terminal_direct_sdp_bytes"
+	CloudTerminalDirectCandidates     = "cloud.terminal_direct_candidates"
+	CloudTerminalDirectNegotiate      = "cloud.terminal_direct_negotiate_seconds"
+	CloudTerminalDirectGather         = "cloud.terminal_direct_gather_seconds"
+	CloudTerminalDirectMessage        = "cloud.terminal_direct_message_bytes"
+	CloudTerminalDirectChunk          = "cloud.terminal_direct_chunk_seconds"
+	CloudTerminalDirectAck            = "cloud.terminal_direct_ack_seconds"
+	CloudTerminalDirectProbe          = "cloud.terminal_direct_probe_seconds"
+	CloudTerminalDirectProbeUnsettled = "cloud.terminal_direct_probe_unsettled_seconds"
+	CloudTerminalSweep                = "cloud.terminal_sweep_seconds"
+	TerminalBodyBytes                 = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
 	TerminalLaunchLineBytes = "terminal.launch_line_bytes"
@@ -2242,6 +2254,90 @@ func Register() []Entry {
 			Limit: 15, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalUnconfirmedSecondsLimit"},
+		},
+		{
+			// A machine holds at most this many viewers' direct data channels; a further offer is refused `terminal_busy` and that viewer stays on the relay.
+			Name: CloudTerminalDirectPeers, Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectPeersLimit"},
+		},
+		{
+			// Direct offers one viewer may make in a minute; more are refused `terminal_busy`. It also bounds the connectivity checks an offer can point this machine at.
+			Name: CloudTerminalDirectOffers, Class: Buffer, Unit: Rows,
+			Limit: 6, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectOffersPerMinuteLimit"},
+		},
+		{
+			// One opened offer SDP; larger is refused `terminal_invalid` before it is parsed.
+			Name: CloudTerminalDirectSDP, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectSDPBytesLimit"},
+		},
+		{
+			// Candidate lines in one offer; more are refused `terminal_invalid`.
+			Name: CloudTerminalDirectCandidates, Class: Buffer, Unit: Rows,
+			Limit: 32, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectCandidatesLimit"},
+		},
+		{
+			// From the answer to an open data channel; a peer that has not opened by then is closed and the terminal stays on the relay.
+			Name: CloudTerminalDirectNegotiate, Class: Cache, Unit: Seconds,
+			Limit: 5, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectNegotiateSecondsLimit"},
+		},
+		{
+			// How long the machine gathers its own candidates before answering with those it has.
+			Name: CloudTerminalDirectGather, Class: Cache, Unit: Seconds,
+			Limit: 3, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectGatherSecondsLimit"},
+		},
+		{
+			// One reassembled data-channel message; a larger one closes the channel, and the terminal falls back to the relay.
+			Name: CloudTerminalDirectMessage, Class: Buffer, Unit: Bytes,
+			Limit: 9 << 20, AtLimit: Disconnect,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectMessageBytesLimit"},
+		},
+		{
+			// A partly received chunked message held longer than this closes the channel.
+			Name: CloudTerminalDirectChunk, Class: Buffer, Unit: Seconds,
+			Limit: 2, AtLimit: Disconnect,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectChunkSecondsLimit"},
+		},
+		{
+			// A direct frame not acknowledged by the viewer in this time retires the connection.
+			Name: CloudTerminalDirectAck, Class: Cache, Unit: Seconds,
+			Limit: 3, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectAckSecondsLimit"},
+		},
+		{
+			// Interval between relay probes of one direct connection; one is in flight at a time.
+			Name: CloudTerminalDirectProbe, Class: Cache, Unit: Seconds,
+			Limit: 1, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectProbeSecondsLimit"},
+		},
+		{
+			// A relay probe unsettled for this long retires the direct connection, so a relay that stops answering cannot leave a direct terminal unchecked.
+			Name: CloudTerminalDirectProbeUnsettled, Class: Cache, Unit: Seconds,
+			Limit: 2, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalDirectProbeUnsettledSecondsLimit"},
+		},
+		{
+			// Every Cloud terminal connection is re-checked this often: authority, deadlines, and a direct connection's ack and probe.
+			Name: CloudTerminalSweep, Class: Cache, Unit: Seconds,
+			Limit: 1, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalSweepSecondsLimit"},
 		},
 		{
 			// The terminal grants file. A larger one is not read, and then

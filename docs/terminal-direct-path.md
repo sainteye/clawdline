@@ -53,4 +53,54 @@ path makes unnecessary). No project does mosh-style predictive echo.
 
 ## How the direct path works
 
-<!-- filled in as the implementation lands -->
+The terminal still opens on the relay, exactly as before. Once it is showing, the page tries to
+upgrade it:
+
+1. **Offer.** The browser makes a WebRTC offer with one ordered data channel,
+   `clawdline-terminal-v1`, gathers its candidates (at most 3 s), seals the SDP under the
+   connection key and sends it as a `direct_offer` terminal request over the relay. The machine
+   applies every terminal rule to it first: a live connection that this viewer owns, the viewer
+   allowed terminals (principal, `send_prompt`, pairing pin), the setting on, one peer per viewer,
+   at most 8 peers per machine and 6 offers per viewer per minute.
+2. **Answer.** The machine (pion, `internal/transport/cloud/direct.go`) answers with its own
+   candidates in the keyed receipt. Both SDPs, and so both DTLS fingerprints, travel only inside
+   signed, end-to-end encrypted envelopes; the relay sees neither.
+3. **Switch.** When the channel opens, the browser rekeys the connection with `carrier:"direct"`.
+   From then on `term`/`termd` frames and `termi` requests ride the channel, in the same signed and
+   sealed envelopes as before. Receipts, notices and every connection registration stay on the
+   relay.
+4. **Flow.** The machine keeps one frame in flight, as before, but the browser acknowledges it on
+   the channel after drawing it, so the pace is set by the direct round trip, not by the relay's.
+
+**The relay stays the authority.** Every second the machine sends a small probe for each direct
+connection on that connection's relay receipt channel. If the relay refuses to deliver it (the
+viewer's terminal authority was withdrawn, or the viewer is gone) or does not settle it within 2 s,
+the machine retires the connection. A revoked device is refused frames and input within 4 s and
+told within 5 s, the same bound as on the relay.
+
+**It falls back by itself.** If the channel does not open within 5 s, closes, or misses an ack for
+3 s, the machine retires the direct connections and the browser rekeys back onto the relay (or
+reopens with its lease proof if the old connection is gone). Input sent before the drop is settled
+by its relay receipt, so nothing is replayed. The browser waits 30 s before trying again.
+
+The page shows "direct" next to a terminal on the direct carrier, and the wire contract with every
+number is in `docs/cloud-terminal-wire.md`, Direct carrier.
+
+## Decisions
+
+- **pion/webrtc** is the daemon's second third-party dependency after `modernc.org/sqlite`. It is
+  pure Go (MIT), so `CGO_ENABLED=0` still builds macOS, Linux and Windows from one machine. Measured
+  before adopting it: a pion↔pion channel opened in 12 ms with a 0.2 ms round trip for 4 KiB, and a
+  Chrome↔pion channel on the same machine opened in 198 ms (through an mDNS host candidate, no
+  permission prompt) with a 0.41 ms round trip.
+- **Public STUN only, no TURN.** Both ends ask `stun.cloudflare.com` and `stun.l.google.com` for
+  their public address so that two networks behind ordinary NATs can still meet. Those servers
+  learn each end's public address and nothing else. There is no TURN server: when no direct pair
+  works, the relay is the fallback, and running a TURN service would be a second relay.
+- **The machine only checks addresses it may reach.** It drops loopback, link-local, multicast and
+  unspecified candidates, never gathers on them, and accepts at most 32 candidates per offer. A
+  viewer who may already type into this machine's terminals can still make it send a few STUN
+  binding requests to private addresses of its choosing, within the offer rate. That residual risk
+  is accepted.
+- **No relay change.** Keeping receipts and registrations on the relay and probing it from the
+  machine gives the relay's gate the same reach without a new relay message or deploy.

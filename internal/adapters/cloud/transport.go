@@ -602,50 +602,70 @@ func (t *Transport) handleEnvelope(data []byte) {
 		t.opts.Status.Dropped(DropMalformed)
 		return
 	}
-	envelope, err := cloud.DecodeEnvelope(frame.Envelope)
+	t.admitEnvelope(frame.Envelope, "")
+}
+
+// AcceptDirect admits one envelope that arrived on a terminal data channel
+// rather than on the relay socket (docs/cloud-terminal-wire.md, Direct
+// carrier). It runs the same ladder with the same replay window, so an
+// envelope already taken from the relay is a replay here and the other way
+// round, and it also requires a `termi` envelope from the one viewer whose
+// signed offer created that channel. It reports whether the envelope was
+// admitted.
+func (t *Transport) AcceptDirect(viewer string, raw []byte) bool {
+	return viewer != "" && t.admitEnvelope(raw, viewer)
+}
+
+func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
+	envelope, err := cloud.DecodeEnvelope(raw)
 	if err != nil {
 		t.opts.Status.Dropped(DropMalformed)
 		t.logf("cloud dropped an envelope reason=%s detail=%v", DropMalformed, err)
-		return
+		return false
+	}
+	if directViewer != "" && (envelope.Sender != directViewer ||
+		envelope.Ch != "termi/"+t.opts.Identity.MachineID+"/"+directViewer) {
+		t.opts.Status.Dropped(DropWrongChannel)
+		return false
 	}
 	// A machine receives `ctl/<its own machine>` and `ho/`. Anything else on
 	// this socket is not addressed to it, whatever the relay thought.
 	if !t.deliverable(envelope.Ch) {
 		t.opts.Status.Dropped(DropWrongChannel)
 		t.logf("cloud dropped an envelope reason=%s ch=%s", DropWrongChannel, envelope.Ch)
-		return
+		return false
 	}
 	if strings.HasPrefix(envelope.Ch, "termi/") {
 		parts := strings.Split(envelope.Ch, "/")
 		if len(parts) != 3 || parts[2] != envelope.Sender || envelope.KeyID != MasterKeyID {
 			t.opts.Status.Dropped(DropWrongChannel)
-			return
+			return false
 		}
 	}
 	if t.opts.PublicKeyFor == nil {
 		t.opts.Status.Dropped(DropRosterUnreadable)
-		return
+		return false
 	}
 	if _, known := t.opts.PublicKeyFor(envelope.Sender); !known {
 		t.opts.Status.Dropped(DropUnknownSender)
 		t.logf("cloud dropped an envelope reason=%s sender=%s", DropUnknownSender, envelope.Sender)
-		return
+		return false
 	}
 	if !envelope.Verify(t.opts.PublicKeyFor) {
 		t.opts.Status.Dropped(DropBadSignature)
 		t.logf("cloud dropped an envelope reason=%s sender=%s seq=%d", DropBadSignature, envelope.Sender, envelope.Seq)
-		return
+		return false
 	}
 
 	switch t.opts.Replay.Claim(envelope.Sender, envelope.Seq) {
 	case cloud.ReplayRefused:
 		t.opts.Status.Dropped(DropReplay)
 		t.logf("cloud dropped an envelope reason=%s sender=%s seq=%d", DropReplay, envelope.Sender, envelope.Seq)
-		return
+		return false
 	case cloud.ReplaySenderCapacity:
 		t.opts.Status.Dropped(DropReplayWindowFull)
 		t.logf("cloud dropped an envelope reason=%s sender=%s", DropReplayWindowFull, envelope.Sender)
-		return
+		return false
 	}
 
 	var plaintext []byte
@@ -658,13 +678,14 @@ func (t *Transport) handleEnvelope(data []byte) {
 			// (`CloudTransport.swift:2449-2450`).
 			t.opts.Status.Dropped(DropDecryptFailed)
 			t.logf("cloud dropped an envelope reason=%s sender=%s seq=%d", DropDecryptFailed, envelope.Sender, envelope.Seq)
-			return
+			return false
 		}
 	}
 	t.opts.Status.Inbound()
 	if t.opts.Inbound != nil {
 		t.opts.Inbound(envelope, plaintext)
 	}
+	return true
 }
 
 // deliverable reports whether this machine is the intended reader of a

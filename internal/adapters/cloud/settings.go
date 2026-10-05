@@ -46,6 +46,10 @@ const (
 	// letting somebody read a session list and letting them run code on this
 	// Mac are two different decisions, and one switch cannot carry both.
 	KeyCommands = "cloud_commands"
+	// KeyTerminalDirect lets a Cloud viewer's terminal move onto a direct
+	// data channel to this machine (docs/cloud-terminal-wire.md, Direct
+	// carrier). Absent is on; false keeps every terminal on the relay.
+	KeyTerminalDirect = "cloud_terminal_direct"
 )
 
 // The production endpoints, `CloudBridgeLifecycle.swift:397`.
@@ -72,6 +76,8 @@ type Settings struct {
 	APIBase     string
 	AppOrigin   string
 	MachineName string
+	// TerminalDirect is KeyTerminalDirect, true unless the file says false.
+	TerminalDirect bool
 }
 
 // ReadSettings answers what the settings file says now.
@@ -85,7 +91,7 @@ func ReadSettings(file *nextconfig.File) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	settings := Settings{RelayURL: DefaultRelayURL, APIBase: DefaultAPIBase, AppOrigin: DefaultAppOrigin}
+	settings := Settings{RelayURL: DefaultRelayURL, APIBase: DefaultAPIBase, AppOrigin: DefaultAppOrigin, TerminalDirect: true}
 
 	if raw, ok := values.Raw[KeyEnabled]; ok {
 		var enabled bool
@@ -100,6 +106,13 @@ func ReadSettings(file *nextconfig.File) (Settings, error) {
 			return Settings{}, fmt.Errorf("%s must be true or false", KeyCommands)
 		}
 		settings.Commands = allowed
+	}
+	if raw, ok := values.Raw[KeyTerminalDirect]; ok {
+		var direct bool
+		if err := json.Unmarshal(raw, &direct); err != nil {
+			return Settings{}, fmt.Errorf("%s must be true or false", KeyTerminalDirect)
+		}
+		settings.TerminalDirect = direct
 	}
 	if relay, ok := values.String(KeyRelayURL); ok && relay != "" {
 		if err := ValidateRelayURL(relay); err != nil {

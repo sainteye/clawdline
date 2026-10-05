@@ -45,11 +45,27 @@ const (
 	CloudTerminalHistoryLineBytesLimit        = 4 << 10
 	CloudTerminalHistoryCaptureBytesLimit     = 4 << 20
 	CloudTerminalObservationRowsLimit         = 128
+	// CloudTerminalSweepSecondsLimit is how often every connection is
+	// re-checked: authority, deadlines, and a direct connection's ack and
+	// relay probe.
+	CloudTerminalSweepSecondsLimit = 1
 )
 
 // TerminalCapacity reports the terminal rail without exposing its keys or
 // terminal contents to diagnostics.
 func (l *Link) TerminalCapacity(name string) capacity.Reading {
+	if name == capacity.CloudTerminalDirectPeers {
+		// directMu and terminalMu are never nested, so this row is read on its own.
+		l.directMu.Lock()
+		defer l.directMu.Unlock()
+		r := capacity.Reading{Known: true}
+		for _, p := range l.directPeers {
+			if p != nil {
+				r.Used++
+			}
+		}
+		return r
+	}
 	l.terminalMu.Lock()
 	defer l.terminalMu.Unlock()
 	r := capacity.Reading{Known: true}
@@ -79,7 +95,11 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 	case capacity.CloudTerminalRosterRefresh, capacity.CloudTerminalRosterDeadline,
 		capacity.CloudTerminalRequestBytes, capacity.CloudTerminalKeySeconds, capacity.CloudTerminalRevocationRetire,
 		capacity.CloudTerminalFrameHeartbeat, capacity.CloudTerminalUnconfirmed,
-		capacity.CloudTerminalHistoryReceipt, capacity.CloudTerminalHistoryLine, capacity.CloudTerminalHistoryCapture:
+		capacity.CloudTerminalHistoryReceipt, capacity.CloudTerminalHistoryLine, capacity.CloudTerminalHistoryCapture,
+		capacity.CloudTerminalDirectOffers, capacity.CloudTerminalDirectSDP, capacity.CloudTerminalDirectCandidates,
+		capacity.CloudTerminalDirectNegotiate, capacity.CloudTerminalDirectGather, capacity.CloudTerminalDirectMessage,
+		capacity.CloudTerminalDirectChunk, capacity.CloudTerminalDirectAck, capacity.CloudTerminalDirectProbe,
+		capacity.CloudTerminalDirectProbeUnsettled, capacity.CloudTerminalSweep:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -154,6 +174,15 @@ type terminalConnection struct {
 	deniedAt                 time.Time
 	stageLines               int
 	receiptOps               map[uint64]string
+	// carrier is "direct" for a connection whose frames travel on the
+	// viewer's data channel (direct.go), and empty on the relay.
+	carrier        string
+	directSeq      uint64
+	framePendingAt time.Time
+	probePending   bool
+	probeSeq       uint64
+	probeAt        time.Time
+	probeN         uint64
 }
 
 func terminalReceiptSettleID(channel string, seq uint64) string {
@@ -181,6 +210,9 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 			break
 		}
 		if channel == terminalReceiptChannel(l.identity.MachineID, connection) {
+			if connection.probePending && connection.probeSeq == seq {
+				connection.probePending = false
+			}
 			if operation, ok := connection.receiptOps[seq]; ok {
 				delete(connection.receiptOps, seq)
 				stage = l.terminalStageLocked(connection, "receipt_settled", operation, string(kind))
@@ -384,7 +416,7 @@ func (l *Link) runTerminal(ctx context.Context) {
 	sweepDone := make(chan struct{})
 	go func() {
 		defer close(sweepDone)
-		ticker := time.NewTicker(CloudTerminalRosterRefreshLimit * time.Second)
+		ticker := time.NewTicker(CloudTerminalSweepSecondsLimit * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -449,6 +481,8 @@ func (l *Link) sweepTerminalConnections() {
 			l.closeTerminalConnection(c)
 		} else if !denied && (err != nil || svc.Allow(terminals.Principal{Device: c.viewer, Cloud: true}) != nil) {
 			l.revokeRegisteredTerminal(context.Background(), c)
+		} else {
+			l.sweepDirect(c)
 		}
 	}
 }
@@ -609,6 +643,10 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 	l.terminalMu.Lock()
 	c.unconfirmedDeadline = time.Time{}
 	l.terminalMu.Unlock()
+	if req.Operation == "direct_offer" {
+		l.handleDirectOffer(ctx, svc, p, c, req)
+		return
+	}
 	if previous := l.terminalReceipt(c, req.RequestID); previous != nil {
 		var original terminalReceipt
 		if json.Unmarshal(previous, &original) != nil || original.Operation != req.Operation || original.TerminalID != req.TerminalID {
@@ -727,9 +765,22 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 		var body struct {
 			OldConnection string `json:"old_connection"`
 			FrameDeltaV1  bool   `json:"frame_delta_v1"`
+			Carrier       string `json:"carrier"`
 		}
 		if strictTerminalBody(req.Body, &body) {
 			c.frameDeltaV1 = body.FrameDeltaV1
+			if body.Carrier == carrierDirect && preCode == "" {
+				switch {
+				case !l.directEnabled():
+					preCode = string(terminal.CodeDirectDisabled)
+				case !l.directPeerOpen(p.Device):
+					preCode = string(terminal.CodeDirectUnavailable)
+				default:
+					c.carrier = carrierDirect
+				}
+			} else if body.Carrier != "" && preCode == "" {
+				preCode = string(terminal.CodeInvalid)
+			}
 		}
 	}
 	if preCode == "" && old != nil {
@@ -797,6 +848,7 @@ func (l *Link) terminalRekeySource(viewer string, req terminalRequest) (*termina
 	var body struct {
 		OldConnection string `json:"old_connection"`
 		FrameDeltaV1  bool   `json:"frame_delta_v1"`
+		Carrier       string `json:"carrier"`
 	}
 	if !strictTerminalBody(req.Body, &body) || !validConnection(body.OldConnection) || body.OldConnection == req.Connection {
 		return nil, string(terminal.CodeInvalid)
@@ -819,6 +871,9 @@ func (l *Link) connectionResult(c *terminalConnection) any {
 		"expires_at": float64(c.expires.UnixMilli()) / 1000, "machine_incarnation": l.machineIncarnation}
 	if c.frameDeltaV1 {
 		result["frame_delta_v1"] = true
+	}
+	if c.carrier == carrierDirect {
+		result["carrier"] = carrierDirect
 	}
 	return result
 }
@@ -859,6 +914,7 @@ func (l *Link) closeTerminalConnection(c *terminalConnection) {
 	l.terminalMu.Unlock()
 	if removed {
 		l.retireTerminalConnection(c)
+		l.directOwnerRetired(c)
 	}
 }
 
@@ -1026,6 +1082,11 @@ func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p 
 			control.Client == c.client && control.Expires.After(l.opts.Now())
 		if !valid {
 			return nil, terminal.Refuse(terminal.CodeInvalid, "new frame and lease identity are unverified")
+		}
+		if c.carrier == carrierDirect {
+			// Before the receipt: settling it closes the old connection,
+			// and the peer must not go with it.
+			l.moveDirectOwner(p.Device, c.id)
 		}
 		return map[string]any{"connection": c.id, "retired_connection": old.id}, nil
 	case "list":
@@ -1377,6 +1438,23 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 	if c.framePending {
 		l.terminalMu.Unlock()
 		return terminals.ErrFrameDeferred
+	}
+	if c.carrier == carrierDirect {
+		candidate := frame
+		candidate.Lines = append([]string(nil), frame.Lines...)
+		c.framePending = true
+		c.framePendingChannel = carrierDirect
+		c.framePendingAt = l.opts.Now()
+		c.frameCandidate = &candidate
+		c.frameCandidateSeq = seq
+		c.frameCandidateTerminalID = id
+		c.publishedFrameSeq = seq
+		l.terminalMu.Unlock()
+		if err := l.sendDirectEnvelope(c, channel, payload); err != nil {
+			go l.closeTerminalConnection(c)
+			return err
+		}
+		return nil
 	}
 	if l.relay == nil {
 		l.terminalMu.Unlock()

@@ -169,6 +169,12 @@ const (
 	CodeCloudNotSupported   RefusalCode = "terminal_cloud_not_supported"
 	CodeHistoryLineTooLarge RefusalCode = "terminal_history_line_too_large"
 	CodeHistoryTooLarge     RefusalCode = "terminal_history_too_large"
+	// CodeDirectDisabled and CodeDirectUnavailable answer a Cloud viewer
+	// that asked for the direct carrier (docs/cloud-terminal-wire.md, Direct
+	// carrier): this machine has it switched off, or the viewer has no open
+	// data channel to carry it. The viewer stays on the relay.
+	CodeDirectDisabled    RefusalCode = "terminal_direct_disabled"
+	CodeDirectUnavailable RefusalCode = "terminal_direct_unavailable"
 	// CodeSocketPathTooLong is a CLAWDLINE_NEXT_DIR so deep that the
 	// server's socket path does not fit a Unix socket address (plan v3 D1).
 	CodeSocketPathTooLong RefusalCode = "terminal_socket_path_too_long"

@@ -29,6 +29,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/pion/webrtc/v4"
 	"net/http"
 	"runtime"
 	"strings"
@@ -242,10 +243,19 @@ type Link struct {
 	stopRun context.CancelFunc
 	rotated bool
 
-	terminalRosterMu           sync.Mutex
-	terminalRosterAt           time.Time
-	terminalRosterErr          error
-	terminalRosterWait         chan struct{}
+	terminalRosterMu   sync.Mutex
+	terminalRosterAt   time.Time
+	terminalRosterErr  error
+	terminalRosterWait chan struct{}
+
+	// The direct carrier (direct.go). directMu is never held while
+	// terminalMu is taken, nor the other way round.
+	directMu                   sync.Mutex
+	directPeers                map[string]*directPeer
+	directOffers               map[string][]time.Time
+	directWebRTC               *webrtc.API
+	directLoopback             bool // tests only: two peers on one host
+	directNoSTUN               bool // tests only: no network beyond this host
 	terminalMu                 sync.Mutex
 	terminalConnections        map[string]*terminalConnection
 	terminalRetireAfterReceipt map[string]*terminalConnection
@@ -352,11 +362,20 @@ func (l *Link) terminalRosterFresh() bool {
 	wait := make(chan struct{})
 	l.terminalRosterWait = wait
 	l.terminalRosterMu.Unlock()
+	// A successful read is as fresh as the moment it began, which is all
+	// it can prove about a revocation; a failed one counts from when it
+	// failed, which keeps the machine closed for longer. Together they keep a
+	// revocation's reach to frames within four seconds and to an idle
+	// connection's notice within five (docs/cloud-terminal-wire.md).
+	started := l.opts.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), CloudTerminalRosterDeadlineLimit*time.Second)
 	err := l.roster.Refresh(ctx)
 	cancel()
 	l.terminalRosterMu.Lock()
-	l.terminalRosterAt, l.terminalRosterErr = l.opts.Now(), err
+	l.terminalRosterAt, l.terminalRosterErr = started, err
+	if err != nil {
+		l.terminalRosterAt = l.opts.Now()
+	}
 	l.terminalRosterWait = nil
 	close(wait)
 	l.terminalRosterMu.Unlock()
@@ -653,6 +672,7 @@ func (l *Link) runOnce(ctx context.Context) error {
 	defer func() {
 		stopTerminal()
 		<-terminalDone
+		l.closeAllDirectPeers()
 		l.closeAllTerminalConnections()
 	}()
 	// The roster is fetched once before the socket opens, so that a viewer's
