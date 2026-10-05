@@ -17,7 +17,7 @@
         "imageCount": { "description": "Images attached to a user turn. Absent when there were none: the Swift app writes an explicit 0 on user rows, and a reader treats absence as that 0.", "type": "integer" },
         "notice": { "$ref": "#/$defs/TranscriptNotice" },
         "plan": { "description": "A complete Codex checklist update.", "type": "array", "items": { "$ref": "#/$defs/TranscriptPlanStep" } },
-        "role": { "description": "user, assistant, peer (another Claude Code session), message (another session through Clawdline), notice (Clawdline about a task) or tool.", "type": "string" },
+        "role": { "description": "user, assistant, error (a provider failure that ended a turn), peer (another Claude Code session), message (another session through Clawdline), notice (Clawdline about a task) or tool.", "type": "string" },
         "source": { "description": "The human-facing name of the session a peer or message row came from.", "type": "string" },
         "sourceAssistant": { "description": "Which assistant sent a Clawdline session message.", "type": "string" },
         "sourceMode": { "description": "How a peer or message row arrived: the peer's own mode, or `clawdline`.", "type": "string" },

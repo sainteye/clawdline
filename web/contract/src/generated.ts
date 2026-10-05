@@ -8034,8 +8034,9 @@ export interface TranscriptEntry {
   plan?: TranscriptPlanStep[]
 
   /**
-   * user, assistant, peer (another Claude Code session), message (another session
-   * through Clawdline), notice (Clawdline about a task) or tool.
+   * user, assistant, error (a provider failure that ended a turn), peer (another
+   * Claude Code session), message (another session through Clawdline), notice
+   * (Clawdline about a task) or tool.
    */
   role: string
 
