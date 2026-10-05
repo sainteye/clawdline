@@ -7,7 +7,7 @@ import "./persona.css"
 import "./machine-start.css"
 import { hostedConsole, listTerminals, openTerminal, readTerminalMachine, TerminalRequestError } from "../pages/terminal/api.js"
 import { firstSize } from "../pages/terminal/TerminalProjectList.js"
-import { openTerminalPage } from "../pages/terminal/navigate.js"
+import { openNewTerminal, openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
 import { terminalRefusalWords, unavailableWords } from "../pages/terminal/words.js"
 
@@ -680,17 +680,17 @@ function press(id: string): void {
     if (pressing || terminalAccess.state !== "ready") return
     const place = (places || []).find((p) => p.id === id)
     if (!place) return
-    if (hostedConsole()) { close(); openTerminalPage(id, "", "sessions"); return }
+    if (hostedConsole()) { close(); openNewTerminal(id); return }
     pressing = id
     draw()
     const size = firstSize()
     void openTerminal(id, size.cols, size.rows).then((made) => {
       pressing = null
       close()
-      openTerminalPage(id, made.id, "sessions")
+      openTerminalPage(id, made.id)
     }, (e: unknown) => {
       pressing = null
-      said(nextWord("terminalOpenFailed", { why: e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : String(e) }), e)
+      said(nextWord("terminalOpenFailed", { why: e instanceof TerminalRequestError ? terminalRefusalWords(e.code) : L.failureSentence(e) }), e)
       draw()
     })
     return

@@ -149,7 +149,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
           if (ticket !== serial.current) return
           if (live.text === value) { savedConfirmed = true; setContent(live); setDraft(live.text); setEditing(false); setNotice("重新讀取後確認檔案已儲存。") }
           else { setError("無法確認這次儲存是否生效。草稿仍在這裡；請複製並比對目前檔案。") }
-        } catch { if (ticket === serial.current) setError("連線中斷，無法確認是否已儲存。草稿仍在這裡；恢復連線後請重新讀取。") }
+        } catch (rereadReason) { if (ticket === serial.current) setError(`無法確認是否已儲存：${describe(rereadReason)} 草稿仍在這裡；恢復後請重新讀取。`) }
       } else setError(describe(reason))
     } finally { setBusy(false); onState({ dirty: !savedConfirmed, busy: false }) }
   }
@@ -203,7 +203,9 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
                 {!editing && content.file.editable && <button type="button" onClick={() => { setEditing(true); requestAnimationFrame(() => editor.current?.focus()) }}>編輯檔案</button>}
                 {editing && <><button type="button" disabled={!dirty || busy} onClick={() => void save()}>儲存檔案</button>
                   <button type="button" disabled={busy} onClick={() => { if (!dirty || window.confirm("放棄尚未儲存的內容？")) { setDraft(content.text); setEditing(false) } }}>取消編輯</button>
-                  <button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(draft).then(() => setNotice("已複製草稿。"), () => setError("無法複製；請從編輯欄選取文字。"))}>複製草稿</button></>}
+                  <button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(draft).then(() => setNotice("已複製草稿。"),
+                    // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.
+                    () => setError("無法複製；請從編輯欄選取文字。"))}>複製草稿</button></>}
                 {error && <button type="button" disabled={busy} onClick={() => void reloadSelected()}>重新讀取檔案</button>}
               </div>
             </>}

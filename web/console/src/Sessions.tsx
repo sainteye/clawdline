@@ -18,8 +18,10 @@ import { ScheduleSection } from "./pages/schedules.js"
 import { nextWord } from "./next-strings.js"
 import { batchReadingWords, scanFailureWords } from "./session-reading.js"
 import { openNewWorkItem } from "./pages/work/new-item.js"
-import { sessionsPageHash, sessionsTerminalMode } from "./page-route.js"
+import { sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, type TerminalRoute } from "./page-route.js"
 import { TerminalList } from "./session/TerminalList.js"
+import { TerminalPane } from "./pages/terminal/TerminalPane.js"
+import { TERMINAL_ROUTE, forgetNewTerminal, newTerminalProject } from "./pages/terminal/navigate.js"
 
 /**
  * The session list page: the list, and the conversation beside it.
@@ -82,16 +84,38 @@ export function SessionsPage({
   // does not hand its frames to this page.
   const tasks = useTasks(arrived, rows)
   const [terminalMode, setTerminalMode] = useState(() => sessionsTerminalMode(location.hash))
+  // The terminal in the second column while the list shows terminals: named
+  // by the address, or (hosted) a new one being opened in a project, which is
+  // never in the address (pages/terminal/navigate.ts).
+  const [terminalOpen, setTerminalOpen] = useState<TerminalRoute>(() => sessionsTerminalRoute(location.hash))
+  const [creating, setCreating] = useState(newTerminalProject)
   useEffect(() => {
-    const onRoute = () => setTerminalMode(sessionsTerminalMode(location.hash))
+    const onRoute = () => {
+      setTerminalMode(sessionsTerminalMode(location.hash))
+      setTerminalOpen((was) => {
+        const now = sessionsTerminalRoute(location.hash)
+        return now.project === was.project && now.terminal === was.terminal ? was : now
+      })
+      setCreating(newTerminalProject())
+    }
+    const onPop = () => { forgetNewTerminal(); onRoute() }
     window.addEventListener("hashchange", onRoute)
-    window.addEventListener("popstate", onRoute)
-    return () => { window.removeEventListener("hashchange", onRoute); window.removeEventListener("popstate", onRoute) }
+    window.addEventListener("popstate", onPop)
+    document.addEventListener(TERMINAL_ROUTE, onRoute)
+    return () => {
+      window.removeEventListener("hashchange", onRoute)
+      window.removeEventListener("popstate", onPop)
+      document.removeEventListener(TERMINAL_ROUTE, onRoute)
+    }
   }, [])
   const chooseTerminalMode = (next: boolean) => {
+    forgetNewTerminal()
     location.hash = sessionsPageHash(next)
     setTerminalMode(next)
   }
+  const terminalPane: TerminalRoute | null = !terminalMode ? null
+    : terminalOpen.terminal ? terminalOpen
+      : creating ? { project: creating, terminal: "" } : null
 
   // The copied modules read a module-level object, so it is filled before
   // anything is drawn from them, and the list's own order and filter are used.
@@ -228,8 +252,9 @@ export function SessionsPage({
         className="app"
         id="app"
         data-page-view="sessions"
-        data-view={view}
-        data-pane={paneOpen ? "on" : "off"}
+        data-view={terminalMode ? (terminalPane ? "detail" : "list") : view}
+        data-pane={terminalMode || paneOpen ? "on" : "off"}
+        data-mode={terminalMode ? "terminal" : undefined}
         hidden={!onScreen}
       >
         <section className="pane pane-list">
@@ -350,11 +375,18 @@ export function SessionsPage({
             </div>
             <ScheduleSection arrived={arrived} onOpen={onOpen} />
           </div>
-          {terminalMode && <div className="scroller list-scroll"><TerminalList shown={onScreen && terminalMode} filter={filter} /></div>}
+          {terminalMode && <div className="scroller list-scroll"><TerminalList shown={onScreen && terminalMode} filter={filter} openId={terminalPane?.terminal ?? ""} /></div>}
           <NotifyFooter />
         </section>
 
         <Detail row={open} tasks={tasks} onOpenSession={onOpen} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
+        {/* In terminal mode the second column is the terminal's, as it is the
+            open session's otherwise; the session detail stays mounted, hidden. */}
+        {terminalMode && (terminalPane
+          ? <TerminalPane route={terminalPane} create={!terminalPane.terminal} shown={onScreen} />
+          : <section className="pane pane-detail terminal-pane-empty" aria-label={nextWord("terminalListMode")}>
+            <p>{nextWord("terminalPaneEmpty")}</p>
+          </section>)}
       </main>
       <StartSheet />
       <CommandSheet />

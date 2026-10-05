@@ -56,6 +56,7 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
       await navigator.clipboard.writeText(JSON.stringify(rows, null, 2))
       setDiagnosticStatus(words("Anonymous read stages copied", "已複製匿名讀取停點"))
     } catch {
+      // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.
       setDiagnosticStatus(words("Could not copy; check clipboard access", "無法複製，請檢查剪貼簿權限"))
     }
   }

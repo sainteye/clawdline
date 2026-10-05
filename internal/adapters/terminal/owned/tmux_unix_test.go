@@ -302,8 +302,19 @@ func TestAServerStartedWithTheDaemonsWholeEnvironmentGivesACleanShell(t *testing
 
 	term := open(t, s, 120, 24)
 	keys(t, s, term.ID, `echo "C=$(env | grep -c CODEX_)=" "L=[$LC_ALL]" "S=[$SSH_AUTH_SOCK]" "T=$(tmux ls 2>/dev/null | grep -c '^clt-')="`+"\r")
-	want := "C=0= L=[] S=[" + agent + "] T=0="
-	waitFrame(t, s, term.ID, want, func(f terminal.Frame) bool { return hasLine(f, want) })
+	// LC_ALL is whatever the person's own login profile sets — a hosted
+	// macOS runner's sets en_US.UTF-8 — but never the daemon's C.
+	want := "C=0= L=[<not C>] S=[" + agent + "] T=0="
+	waitFrame(t, s, term.ID, want, func(f terminal.Frame) bool {
+		return slices.ContainsFunc(plain(f), func(line string) bool {
+			lc, ok := strings.CutPrefix(line, "C=0= L=[")
+			if !ok {
+				return false
+			}
+			lc, ok = strings.CutSuffix(lc, "] S=["+agent+"] T=0=")
+			return ok && lc != daemon["LC_ALL"]
+		})
+	})
 
 	// And the terminal is not the server's own session.
 	list, _ := s.List(context.Background())

@@ -59,7 +59,10 @@ test("a failed read is shown in the header, not as loading, and tapping it retri
   assert.match(source, /nextWord\("todosRetryTip", \{ reason \}\)/)
   // The failure's words stay in the fold as well, and only a success clears it.
   assert.match(source, /\{readReady && readFailure && <p className="work-note" role="alert">\{readFailure\.words\}<\/p>\}/)
-  assert.match(source, /if \(mine === ticket\.current\) \{ setPage\(next\); setReadFailure\(null\) \}/)
+  // Both reads — the full page while the fold is open, the bounded summary
+  // while it is folded — clear the failure only on their own success.
+  assert.match(source, /if \(mine === ticket\.current\) \{\s*setPage\(next\)\s*setSummary\([^\n]*\)\s*setReadFailure\(null\)\s*\}/)
+  assert.match(source, /if \(mine === ticket\.current\) \{ setSummary\(next\); setReadFailure\(null\) \}/)
   // A failed refresh keeps the last good page.
   assert.doesNotMatch(source, /catch \(e\) \{[^}]*setPage\(null\)/)
 })
@@ -69,7 +72,7 @@ test("an open Session page refreshes its to-dos through one read at a time", () 
   assert.match(source, /const stop = watchTodoRefresh\(\(\) => \{ void one\.ask\(true\) \}, browserRefreshEnvironment\(onWorkItemChanged\)\)/)
   assert.match(source, /return \(\) => \{\s*stop\(\)/)
   // An action's own re-read postdates the action.
-  assert.match(source, /try \{ await task\(\); await refresh\(true\); return true \}/)
+  assert.match(source, /try \{ await task\(\); expanded\.current = true; await refresh\(true\); return true \}/)
   assert.doesNotMatch(source, /await load\(\)/)
 })
 
@@ -127,7 +130,10 @@ test("direct todos explain receipts, allow a read row to be sent again, and reta
   const styles = readFileSync(new URL("../pages/work/work.css", import.meta.url), "utf8")
   assert.match(source, /filter\(\(todo\) => !todo\.completed_at\)/)
   assert.match(source, /filter\(\(todo\) => !!todo\.completed_at\)/)
-  assert.match(source, /再次 Send/)
+  // A read row can be sent again: Send's words and state come from todoSend.
+  const send = readFileSync(new URL("./todo-send.ts", import.meta.url), "utf8")
+  assert.match(source, /const send = todoSend\(todo, now\)/)
+  assert.match(send, /if \(todo\.read_at\) return \{ kind: "again", label: "再次 Send" \}/)
   assert.match(source, /已同步到 Session，尚未完成/)
   assert.match(source, /最近完成的直接待辦/)
   assert.match(source, /session-todo-check completed/)
@@ -263,7 +269,7 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
   assert.match(words, /todoAddedBySession: "Session 建立"/)
   // Delete, Complete and Send are not gated on who wrote the row.
   assert.match(source, /<button className="session-todo-delete" type="button" disabled=\{busy\} aria-label="刪除待辦"[\s\S]*?onClick=\{\(\) => onAction\("delete"\)\}><WorkIcon name="delete" \/><\/button>/)
-  assert.match(source, /className=\{`chip session-todo-send\$\{send\.kind === "send" \? " on" : ""\}`\}[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/,
+  assert.match(source, /className=\{`chip session-todo-send\$\{send\.kind === "send" \? " on danger" : ""\}`\}[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/,
     "only a first Send takes the accent; 再次 Send is a grey chip")
   assert.doesNotMatch(source, /own && <button|!own && <button/)
 })
