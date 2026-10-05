@@ -17,14 +17,14 @@
 #
 # So the bundle is built and signed in dist/.staging.<pid>/ first, and a
 # failed build leaves the installed app as it was. Then, if a process is
-# running from this checkout's dist/ (the shell or its daemon; another
-# checkout's app is not ours), the shell is asked to quit — SIGTERM to its
+# running from the selected install target (the shell or its daemon; another
+# app path is not ours), the shell is asked to quit — SIGTERM to its
 # pid, which it treats as an ordinary quit and which, unlike a quit Apple
 # event to the bundle id, cannot reach an instance launched from anywhere
 # else — and the new bundle goes in only once both are gone. The app is then
 # opened again and the script waits for its daemon to answer.
 #
-# usage: tools/package-macos.sh [--dmg] [--no-restart]
+# usage: tools/package-macos.sh [--dmg] [--no-restart] [--install-to /absolute/path/Clawdline Next.app]
 #   --no-restart  if the app is running, stop with an error instead of
 #                 restarting it; the new bundle is left in the staging folder
 set -euo pipefail
@@ -34,31 +34,56 @@ NAME="Clawdline Next"
 ID="com.sainteye.clawdline-next"     # deliberately not the Swift app's id:
                                       # both must be installable at once
 APP="dist/$NAME.app"
+INSTALL_APP=""
 VERSION="$(git describe --tags --always 2>/dev/null || echo 0.0.1)"
 
 DMG_WANTED=0
 RESTART=1
-for arg in "$@"; do
-  case "$arg" in
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --dmg) DMG_WANTED=1 ;;
     --no-restart) RESTART=0 ;;
-    *) echo "usage: $0 [--dmg] [--no-restart]" >&2; exit 2 ;;
+    --install-to)
+      [ "$#" -ge 2 ] || { echo "--install-to needs an absolute app path" >&2; exit 2; }
+      INSTALL_APP="$2"
+      shift ;;
+    *) echo "usage: $0 [--dmg] [--no-restart] [--install-to /absolute/path/$NAME.app]" >&2; exit 2 ;;
   esac
+  shift
 done
+if [ -z "$INSTALL_APP" ]; then
+  INSTALL_APP="$(pwd -P)/$APP"
+else
+  case "$INSTALL_APP" in
+    /*) ;;
+    *) echo "--install-to needs an absolute app path" >&2; exit 2 ;;
+  esac
+  [ "$(basename "$INSTALL_APP")" = "$NAME.app" ] || { echo "--install-to must name $NAME.app" >&2; exit 2; }
+  [ -d "$(dirname "$INSTALL_APP")" ] || { echo "--install-to parent does not exist" >&2; exit 2; }
+  INSTALL_APP="$(cd "$(dirname "$INSTALL_APP")" && pwd -P)/$NAME.app"
+fi
+INSTALL_DIR="$(dirname "$INSTALL_APP")"
 
 # Everything below builds into $BUILD; $APP is only ever replaced whole.
 STAGING="dist/.staging.$$"
 BUILD="$STAGING/$NAME.app"
+PROMOTION="$INSTALL_DIR/.$NAME.staging.$$"
+BACKUP="$INSTALL_DIR/.$NAME.previous.$$"
 KEEP_STAGING=0
-cleanup() { local rc=$?; [ "$KEEP_STAGING" = 1 ] || rm -rf "$STAGING"; exit "$rc"; }
+cleanup() {
+  local rc=$?
+  [ "$KEEP_STAGING" = 1 ] || rm -rf "$STAGING"
+  [ "$PROMOTION" = "$BUILD" ] || rm -rf "$PROMOTION"
+  exit "$rc"
+}
 trap cleanup EXIT
 
-# running_pids: the processes whose executable is inside this checkout's
-# $APP — the shell and `clawdline serve` alike. Matched on the absolute path,
-# so an app built in another worktree's dist/ is not counted.
+# running_pids: the processes whose executable is inside the requested install
+# target — the shell and `clawdline serve` alike. A worktree build names the
+# running app explicitly with --install-to, instead of updating only itself.
 running_pids() {
   local dir
-  dir="$(cd "$(dirname "$APP")" && pwd -P)/$(basename "$APP")/Contents/MacOS/"
+  dir="$INSTALL_APP/Contents/MacOS/"
   ps -axww -o pid= -o command= | awk -v dir="$dir" -v me="$$" '
     { pid = $1; sub(/^[ \t]*[0-9]+[ \t]+/, "") }
     index($0, dir) == 1 && pid != me { print pid }'
@@ -179,17 +204,27 @@ codesign --force --sign - "$BUILD"
 
 echo "built $BUILD ($(du -sh "$BUILD" | cut -f1))"
 
+# A disposable worktree may build for the app in the primary checkout. Copy
+# into a sibling of that app before stopping it, so the final rename stays on
+# one filesystem and the running signed bundle is never changed in place.
+if [ "$INSTALL_APP" != "$(pwd -P)/$APP" ]; then
+  [ ! -e "$PROMOTION" ] || { echo "install staging path already exists: $PROMOTION" >&2; exit 1; }
+  cp -R "$BUILD" "$PROMOTION"
+else
+  PROMOTION="$BUILD"
+fi
+
 # Put it in place without pulling the running app's files out from under it.
 WAS_RUNNING=0
 if [ -n "$(running_pids)" ]; then
   if [ "$RESTART" = 0 ]; then
     KEEP_STAGING=1
-    echo "error: $APP is running (pids $(running_pids | paste -sd ' ' -)) and --no-restart was given;" >&2
+    echo "error: $INSTALL_APP is running (pids $(running_pids | paste -sd ' ' -)) and --no-restart was given;" >&2
     echo "       it was left alone. The new bundle is at $BUILD" >&2
     exit 1
   fi
   WAS_RUNNING=1
-  echo "$APP is running; quitting it so its files can be replaced…"
+  echo "$INSTALL_APP is running; quitting it so its files can be replaced…"
   # The shell turns SIGTERM into NSApp.terminate, which stops its daemon.
   # Only the shell is asked: the daemon is the shell's to stop, and a daemon
   # left over without one is sent the same signal.
@@ -205,21 +240,28 @@ if [ -n "$(running_pids)" ]; then
   fi
   if ! wait_gone 60; then
     KEEP_STAGING=1
-    echo "error: $APP was still running 120 seconds after it was asked to quit" >&2
+    echo "error: $INSTALL_APP was still running 120 seconds after it was asked to quit" >&2
     echo "       (pids $(running_pids | paste -sd ' ' -)); it was not replaced." >&2
     echo "       The new bundle is at $BUILD" >&2
     exit 1
   fi
 fi
 
-rm -rf "$APP"
-mv "$BUILD" "$APP"
-echo "installed $APP"
+if [ -e "$INSTALL_APP" ]; then
+  [ ! -e "$BACKUP" ] || { echo "install backup path already exists: $BACKUP" >&2; exit 1; }
+  mv "$INSTALL_APP" "$BACKUP"
+fi
+if ! mv "$PROMOTION" "$INSTALL_APP"; then
+  [ ! -e "$BACKUP" ] || mv "$BACKUP" "$INSTALL_APP"
+  echo "could not install $INSTALL_APP; previous bundle restored" >&2
+  exit 1
+fi
+echo "installed $INSTALL_APP"
 
 if [ "$WAS_RUNNING" = 1 ]; then
   PORT="$(health_port)"
-  open "$APP"
-  echo "reopened $APP; waiting for its daemon on 127.0.0.1:${PORT}…"
+  open "$INSTALL_APP"
+  echo "reopened $INSTALL_APP; waiting for its daemon on 127.0.0.1:${PORT}…"
   ok=0
   for ((i = 0; i < 60; i++)); do
     if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$PORT/v1/health" || true)" = 200 ]; then
@@ -228,19 +270,20 @@ if [ "$WAS_RUNNING" = 1 ]; then
     sleep 2
   done
   if [ "$ok" = 0 ]; then
-    echo "error: $APP was reopened but http://127.0.0.1:$PORT/v1/health did not answer 200" >&2
+    echo "error: $INSTALL_APP was reopened but http://127.0.0.1:$PORT/v1/health did not answer 200" >&2
     echo "       within 120 seconds; the daemon's daemon.log says why." >&2
     exit 1
   fi
   echo "the daemon answers on 127.0.0.1:$PORT"
 fi
+if [ -e "$BACKUP" ]; then rm -rf "$BACKUP"; fi
 
 # A disk image, because that is how a Mac application arrives.
 if [ "$DMG_WANTED" = 1 ]; then
   DMG="dist/$NAME-$VERSION.dmg"
   rm -f "$DMG"
   STAGE="$(mktemp -d)"
-  cp -R "$APP" "$STAGE/"
+  cp -R "$INSTALL_APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
   hdiutil create -quiet -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
   rm -rf "$STAGE"
