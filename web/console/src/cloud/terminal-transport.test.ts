@@ -330,7 +330,11 @@ test("a request the relay refused while its budget was full is sent again, and o
     t.mock.timers.tick(RELAY_BUSY_RETRY_MS - 1)
     assert.equal(f.published.length, attempt)
     t.mock.timers.tick(1)
-    for (let i = 0; i < 200 && f.published.length === attempt; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+    // The resend seals the request again, which takes real time off the
+    // event loop; a loaded host needs more turns than a quiet one, so the
+    // wait is bounded by the clock (Date is not mocked here), not by a count.
+    const deadline = Date.now() + 5_000
+    while (f.published.length === attempt && Date.now() < deadline) await new Promise<void>((resolve) => setImmediate(resolve))
     assert.equal(f.published.length, attempt + 1, "the same request is sent again once the budget refills")
     const again = await open(f.published[attempt])
     assert.equal(again.request_id, requestID)
