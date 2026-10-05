@@ -8,15 +8,14 @@ import {
   openTerminal,
   readTerminalMachine,
 } from "./api.js"
-import type { TerminalFrom } from "../../page-route.js"
 import { openTerminalPage } from "./navigate.js"
 import { TAB } from "./tab.js"
 import { holderWords, terminalRefusalWords, terminalStatusWords, unavailableDetail, unavailableWords } from "./words.js"
 
 /**
- * One project's terminals and the button that opens another: on the terminal
- * page before one is chosen, and folded open under the work page's project
- * scope.
+ * One project's terminals and the button that opens another, folded open
+ * under the work page's project scope. A row opens in the Session page's
+ * second column, beside the terminal list.
  *
  * Its states, each drawn as itself: reading; could not read (the code's own
  * sentence, never an empty list); none yet; the rows; this machine cannot
@@ -60,12 +59,10 @@ export function firstSize(): { cols: number; rows: number } {
   }
 }
 
-export function TerminalProjectList({ project, label, shown, from, headingLevel = 2 }: {
+export function TerminalProjectList({ project, label, shown, headingLevel = 2 }: {
   project: string
   label: string
   shown: boolean
-  /** Where the terminal page's Back returns to (page-route.ts `TerminalFrom`). */
-  from: TerminalFrom
   headingLevel?: 2 | 3
 }) {
   const hosted = hostedConsole()
@@ -103,7 +100,7 @@ export function TerminalProjectList({ project, label, shown, from, headingLevel 
     try {
       const size = firstSize()
       const made = await openTerminal(project, size.cols, size.rows)
-      openTerminalPage(project, made.id, from)
+      openTerminalPage(project, made.id)
     } catch (e) {
       setOpenFailed(nextWord("terminalOpenFailed", { why: errorWords(e) }))
     } finally {
@@ -138,7 +135,7 @@ export function TerminalProjectList({ project, label, shown, from, headingLevel 
         <ul className="terminal-rows">
           {listing.rows.map((t, i) => (
             <li key={t.id}>
-              <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, t.id, from)}
+              <button className="terminal-row" type="button" onClick={() => openTerminalPage(project, t.id)}
                 title={`${new Date(t.created * 1000).toLocaleString()} · ${t.cols}×${t.rows}`}>
                 <span className="terminal-row-name">{nextWord("terminalRowName", { time: names[i] })}</span>
                 {/* The end of a path is the part that tells folders apart, so it is the part kept. */}

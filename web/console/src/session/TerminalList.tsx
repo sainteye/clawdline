@@ -3,14 +3,11 @@ import type { Terminal } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { readProjectPlaces, type ProjectPlace } from "../pages/work/api.js"
-import { closeTerminal, hostedConsole, listTerminals, readTerminalMachine, TerminalRequestError } from "../pages/terminal/api.js"
-import { TerminalInputClient } from "../pages/terminal/input-client.js"
-import { fetchTransport } from "../pages/terminal/api.js"
+import { hostedConsole, listTerminals, readTerminalMachine, TerminalRequestError } from "../pages/terminal/api.js"
 import { openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords, unavailableWords } from "../pages/terminal/words.js"
 import { rowNames } from "../pages/terminal/TerminalProjectList.js"
-import { Start } from "./Start.js"
 import { CloudAllTerminalList } from "./CloudAllTerminalList.js"
 import { TerminalMarks } from "./TerminalGlyph.js"
 import "./terminal-list.css"
@@ -24,25 +21,20 @@ function dirTail(dir: string | undefined): string {
   return dir.length > 38 ? "…" + dir.slice(-38) : dir
 }
 
-/** All running terminals on this machine, using polling rather than another held stream. */
-export function TerminalList({ shown, filter }: { shown: boolean; filter: string }) {
+/**
+ * All running terminals on this machine, using polling rather than another held
+ * stream. A row opens its terminal in the second column, as a Session row
+ * opens its conversation; opening another is the toolbar's +, and closing one
+ * is in that terminal's own menu, so a row carries no buttons of its own.
+ */
+export function TerminalList({ shown, filter, openId = "" }: { shown: boolean; filter: string; openId?: string }) {
   const [rows, setRows] = useState<Terminal[]>([])
   const [places, setPlaces] = useState<ProjectPlace[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [blocked, setBlocked] = useState("")
-  const [ask, setAsk] = useState<Terminal | null>(null)
-  const [closing, setClosing] = useState(false)
-  const [closeError, setCloseError] = useState("")
-  const dialog = useRef<HTMLDialogElement>(null)
-  const closeOpener = useRef<HTMLButtonElement | null>(null)
   const generation = useRef(0)
-  const refresh = useRef<() => void>(() => {})
   const hosted = hostedConsole()
-
-  useEffect(() => {
-    if (ask) dialog.current?.showModal()
-  }, [ask])
 
   useEffect(() => {
     if (!shown || hosted) return
@@ -85,7 +77,6 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
         if (mine === generation.current) setLoading(false)
       }
     }
-    refresh.current = () => { void read() }
     void read()
     const timer = setInterval(() => { void read() }, 2000)
     const onVisible = () => { if (!document.hidden) void read() }
@@ -98,52 +89,6 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
     }
   }, [shown, hosted])
 
-  const confirmClose = async () => {
-    const terminal = ask
-    if (!terminal || closing) return
-    const index = rows.findIndex((row) => row.id === terminal.id)
-    setClosing(true)
-    setCloseError("")
-    const input = new TerminalInputClient(terminal.id, TAB, fetchTransport)
-    let succeeded = false
-    try {
-      const code = await input.control("acquire")
-      if (code) {
-        setCloseError(terminalRefusalWords(code))
-        return
-      }
-      const epoch = input.state.epoch
-      if (!input.state.holding || epoch === null) {
-        setCloseError(nextWord("terminalCloseNeedsControl"))
-        return
-      }
-      await closeTerminal(terminal.id, epoch, TAB)
-      succeeded = true
-      setRows((was) => was.filter((row) => row.id !== terminal.id))
-      refresh.current()
-    } catch (e) {
-      setCloseError(why(e))
-    } finally {
-      await input.release()
-      input.dispose()
-      setClosing(false)
-      if (succeeded) {
-        setAsk(null)
-        requestAnimationFrame(() => {
-          const buttons = [...document.querySelectorAll<HTMLButtonElement>(".session-terminal-close")]
-          const target = buttons[Math.min(index, buttons.length - 1)] ?? document.querySelector<HTMLButtonElement>(".session-terminal-head button")
-          target?.focus()
-        })
-      }
-    }
-  }
-
-  const cancelClose = () => {
-    setAsk(null)
-    setCloseError("")
-    requestAnimationFrame(() => closeOpener.current?.focus())
-  }
-
   if (hosted) return <CloudAllTerminalList shown={shown} filter={filter} />
   if (blocked) return <p className="terminal-list-message" role="note">{blocked}</p>
   const names = rowNames(rows.map((row) => row.created))
@@ -153,10 +98,7 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
     return !q || `${project?.label ?? row.project_id} ${row.dir ?? ""}`.toLocaleLowerCase().includes(q)
   })
   return <div className="session-terminal-list">
-    <div className="session-terminal-head">
-      <h2>{nextWord("terminalListMode")}</h2>
-      <button type="button" onClick={() => Start.openTerminal()}>{nextWord("terminalAllOpening")}</button>
-    </div>
+    <h2 className="terminal-sr">{nextWord("terminalListMode")}</h2>
     {error && <p className="terminal-list-message" role="status">{error}</p>}
     {loading && !rows.length && <p className="terminal-list-message">{nextWord("terminalListLoading")}</p>}
     {!loading && !matching.length && <p className="terminal-list-message">{q ? L.strings.webEmptyFilterHint : nextWord("terminalAllEmpty")}</p>}
@@ -164,8 +106,10 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
       {matching.map((terminal) => {
         const project = places.find((place) => place.id === terminal.project_id)
         const index = rows.findIndex((row) => row.id === terminal.id)
-        return <li key={terminal.id}>
-          <button className="session-terminal-card" type="button" onClick={() => openTerminalPage(terminal.project_id, terminal.id, "sessions")}>
+        const open = terminal.id === openId
+        return <li key={terminal.id} className={open ? "open" : undefined}>
+          <button className="session-terminal-card" type="button" aria-current={open ? "true" : undefined}
+            onClick={() => openTerminalPage(terminal.project_id, terminal.id)}>
             <TerminalMarks place={project} />
             <span className="session-terminal-main">
               <strong>{project?.label ?? terminal.project_id}</strong>
@@ -175,16 +119,8 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
               <span>{terminalStatusWords(terminal.status)}{terminal.control.held ? ` · ${holderWords(terminal.control.holder)}` : ""}</span>
             </span>
           </button>
-          <button className="session-terminal-close" type="button" onClick={(event) => { closeOpener.current = event.currentTarget; setCloseError(""); setAsk(terminal) }} aria-label={`${nextWord("terminalClose")}: ${project?.label ?? terminal.project_id} · ${nextWord("terminalIdentity", { id: terminalShortID(terminal.id) })}`}>{nextWord("terminalClose")}</button>
         </li>
       })}
     </ul>
-    {ask && <dialog ref={dialog} className="session-terminal-confirm" aria-label={nextWord("terminalCloseTarget", { project: places.find((place) => place.id === ask.project_id)?.label ?? ask.project_id, id: terminalShortID(ask.id) })} onCancel={cancelClose}>
-      <h2>{nextWord("terminalCloseTarget", { project: places.find((place) => place.id === ask.project_id)?.label ?? ask.project_id, id: terminalShortID(ask.id) })}</h2>
-      <p>{nextWord("terminalCloseAsk")}</p>
-      {closeError && <p role="alert">{closeError}</p>}
-      <button type="button" onClick={cancelClose} disabled={closing}>{nextWord("terminalCancel")}</button>
-      <button type="button" onClick={() => void confirmClose()} disabled={closing}>{nextWord("terminalCloseConfirm")}</button>
-    </dialog>}
   </div>
 }

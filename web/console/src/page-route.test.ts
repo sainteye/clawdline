@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { pageFromHash, sessionsPageHash, sessionsTerminalMode, terminalPageHash, terminalRouteFromHash, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
+import { pageFromHash, sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, workPageHash, workProjectID, workRouteFromHash } from "./page-route.ts"
 
 const knows = (name: string): name is "sessions" | "devices" => name === "sessions" || name === "devices"
 
@@ -60,22 +60,20 @@ test("a Project-page path selects that Project's durable Board scope", () => {
   assert.equal(workProjectID("/workspace/missing", projects), "")
 })
 
-test("a terminal address carries its project and terminal and reads back the same", () => {
-  const hash = terminalPageHash("place 1", "trm_abc")
-  assert.equal(hash, "#page=terminal&project=place%201&terminal=trm_abc")
-  assert.deepEqual(terminalRouteFromHash(hash), { project: "place 1", terminal: "trm_abc", from: "" })
-  assert.deepEqual(terminalRouteFromHash("#page=work&project=x"), { project: "", terminal: "", from: "" })
-  assert.equal(terminalPageHash("p"), "#page=terminal&project=p")
+test("a terminal opens beside the Session list and its address reads back the same", () => {
+  const hash = sessionsPageHash(true, { project: "place 1", terminal: "trm_abc" })
+  assert.equal(hash, "#page=sessions&mode=terminal&project=place%201&terminal=trm_abc")
+  assert.equal(sessionsTerminalMode(hash), true)
+  assert.deepEqual(sessionsTerminalRoute(hash), { project: "place 1", terminal: "trm_abc" })
+  assert.deepEqual(sessionsTerminalRoute("#page=sessions&mode=terminal"), { project: "", terminal: "" })
+  assert.deepEqual(sessionsTerminalRoute("#page=sessions&project=p&terminal=t"), { project: "", terminal: "" }, "the session mode opens no terminal")
+  assert.equal(sessionsPageHash(true, { project: "p", terminal: "" }), "#page=sessions&mode=terminal", "a project alone is the list")
 })
 
-test("a terminal address remembers the page Back returns to, and an old address goes to the board", () => {
-  const hash = terminalPageHash("/w/app", "", "projects")
-  assert.equal(hash, "#page=terminal&project=%2Fw%2Fapp&from=projects")
-  assert.equal(terminalRouteFromHash(hash).from, "projects")
-  assert.equal(terminalRouteFromHash(terminalPageHash("p", "t", "work")).from, "work")
-  assert.equal(terminalRouteFromHash("#page=terminal&project=p&from=elsewhere").from, "")
-  assert.equal(terminalRouteFromHash("#page=terminal&project=p").from, "")
-  assert.equal(terminalRouteFromHash(terminalPageHash("p", "t", "sessions")).from, "sessions")
+test("the retired terminal page's addresses open the Session terminal list", () => {
+  assert.equal(sessionsTerminalMode("#page=terminal&project=p&from=projects"), true)
+  assert.deepEqual(sessionsTerminalRoute("#page=terminal&project=p&terminal=t&from=sessions"), { project: "p", terminal: "t" })
+  assert.deepEqual(sessionsTerminalRoute("#page=terminal&project=p"), { project: "", terminal: "" }, "a project's list is now the whole list")
 })
 
 test("the Session address keeps the terminal mode through a reload", () => {
