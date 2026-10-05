@@ -6,14 +6,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/turnreport"
 )
 
-// The command writes one file and prints the address a browser opens it at as
-// its last line.
-func TestReportPrintsTheFileAddressLast(t *testing.T) {
+// reportRepo is a git project with one commit touching CLAUDE.md, and a
+// status file; it answers the project, the commit and the status file.
+func reportRepo(t *testing.T) (string, string, string) {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -34,62 +38,91 @@ func TestReportPrintsTheFileAddressLast(t *testing.T) {
 	}
 	git("add", "-A")
 	git("commit", "-q", "-m", "rules")
-	sha := git("rev-parse", "HEAD")
 	status := filepath.Join(t.TempDir(), "status.md")
 	if err := os.WriteFile(status, []byte("# Done\n\n## ✅ Rules\nWritten.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	outDir := filepath.Join(t.TempDir(), "報告 dir")
+	return dir, git("rev-parse", "HEAD"), status
+}
+
+var reportDay = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+
+// By default the report is kept in the state directory under an id, and the
+// command prints two addresses: the file, which a terminal opens, then the
+// daemon's, which the console can make a link of.
+func TestReportPrintsTheFileThenTheDaemonAddress(t *testing.T) {
+	dir, sha, status := reportRepo(t)
+	state := filepath.Join(t.TempDir(), "state 狀態")
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	t.Setenv("CLAWDLINE_NEXT_PORT", "7799")
 	var stdout, stderr bytes.Buffer
-	code := runReport(&stdout, &stderr, []string{"--repo", dir, "--status", status, "--lang", "zh-TW", "--out", outDir, sha},
-		time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC), func(string) string { return "" })
-	if code != 0 {
+	if code := runReport(&stdout, &stderr, []string{"--repo", dir, "--status", status, "--lang", "zh-TW", sha},
+		reportDay, func(string) string { return "" }); code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	last := lines[len(lines)-1]
-	u, err := url.Parse(last)
-	if err != nil || u.Scheme != "file" {
-		t.Fatalf("the last line is not a file address: %q", last)
+	if len(lines) != 2 {
+		t.Fatalf("stdout = %q, want two addresses", stdout.String())
 	}
-	want := filepath.Join(outDir, "2026-10-05-"+filepath.Base(dir)+".html")
-	if filepath.FromSlash(u.Path) != want {
-		t.Errorf("address names %s, want %s", u.Path, want)
+	file, err := url.Parse(lines[0])
+	if err != nil || file.Scheme != "file" || strings.Contains(lines[0], " ") {
+		t.Fatalf("the first line is not a file address: %q", lines[0])
 	}
-	page, err := os.ReadFile(want)
+	m := regexp.MustCompile(`^http://127\.0\.0\.1:7799/reports/(2026-10-05-[0-9a-f]{32})$`).FindStringSubmatch(lines[1])
+	if m == nil {
+		t.Fatalf("the second line is not the daemon's address: %q", lines[1])
+	}
+	want := filepath.Join(state, "reports", m[1], "report.html")
+	if filepath.FromSlash(file.Path) != want {
+		t.Errorf("the file address names %s, want %s", file.Path, want)
+	}
+	page, err := turnreport.ReadStored(state, m[1])
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("the daemon would not answer the id it was given: %v", err)
 	}
 	if !bytes.Contains(page, []byte(`"lang":"zh-TW"`)) || !bytes.Contains(page, []byte(`"pins":["CLAUDE.md"]`)) {
 		t.Error("the page does not carry the asked language and the pinned CLAUDE.md")
 	}
-	if strings.Contains(last, " ") {
-		t.Errorf("the address carries a raw space: %q", last)
+}
+
+// A report written somewhere else has a file address only, and says why.
+func TestReportOutsideTheStateDirectoryHasNoDaemonAddress(t *testing.T) {
+	dir, sha, status := reportRepo(t)
+	outDir := filepath.Join(t.TempDir(), "報告 dir")
+	var stdout, stderr bytes.Buffer
+	if code := runReport(&stdout, &stderr, []string{"--repo", dir, "--status", status, "--out", outDir, sha},
+		reportDay, func(string) string { return "" }); code != 0 {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "file://") {
+		t.Fatalf("stdout = %q, want one file address", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "no http address") {
+		t.Errorf("stderr does not say why there is no http address: %s", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "2026-10-05-"+filepath.Base(dir)+".html")); err != nil {
+		t.Error(err)
 	}
 }
 
-// With no --out the report goes to the state directory, outside every
-// repository, and a second report the same day does not overwrite the first.
-func TestReportPathDefaultsToTheStateDirectory(t *testing.T) {
+// --out names a file or a directory; a second report the same day in that
+// directory does not overwrite the first.
+func TestReportPathOutsideTheStateDirectory(t *testing.T) {
 	state := t.TempDir()
-	first, err := reportPath("", state, "2026-10-05", "demo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first != filepath.Join(state, "reports", "2026-10-05-demo.html") {
-		t.Errorf("default path = %s", first)
+	out := filepath.Join(t.TempDir(), "reports")
+	first, id, err := reportPath(out, state, "2026-10-05", "demo")
+	if err != nil || id != "" || first != filepath.Join(out, "2026-10-05-demo.html") {
+		t.Fatalf("first = %s %q %v", first, id, err)
 	}
 	if err := os.WriteFile(first, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	second, err := reportPath("", state, "2026-10-05", "demo")
-	if err != nil {
-		t.Fatal(err)
+	second, _, err := reportPath(out, state, "2026-10-05", "demo")
+	if err != nil || second != filepath.Join(out, "2026-10-05-demo-2.html") {
+		t.Errorf("second = %s, %v", second, err)
 	}
-	if second != filepath.Join(state, "reports", "2026-10-05-demo-2.html") {
-		t.Errorf("second path = %s", second)
-	}
-	named, err := reportPath(filepath.Join(state, "x.html"), state, "2026-10-05", "demo")
+	named, _, err := reportPath(filepath.Join(state, "x.html"), state, "2026-10-05", "demo")
 	if err != nil || named != filepath.Join(state, "x.html") {
 		t.Errorf("--out x.html = %s, %v", named, err)
 	}

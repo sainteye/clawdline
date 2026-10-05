@@ -30,7 +30,8 @@ func reportUsage(stderr io.Writer) int {
 	fmt.Fprintln(stderr, "  commits are this turn's own, oldest first; each is read on its own, so other Sessions' commits between them stay out")
 	fmt.Fprintln(stderr, "  --status: a Markdown file, optional \"# title\", then one \"## \" heading and text per card")
 	fmt.Fprintln(stderr, "  --notes: one `path: sentence` per line, shown above that file")
-	fmt.Fprintln(stderr, "  --out: default <state dir>/reports/<date>-<project>.html, outside every repository")
+	fmt.Fprintln(stderr, "  --out: default <state dir>/reports/<date>-<id>/report.html, outside every repository, which this machine's daemon also answers at http://127.0.0.1")
+	fmt.Fprintln(stderr, "  prints the file:// address, then, for a report kept in the state directory, the daemon's http:// address")
 	return 2
 }
 
@@ -95,7 +96,7 @@ func runReport(stdout, stderr io.Writer, args []string, now time.Time, getenv fu
 		fmt.Fprintln(stderr, "clawdline report:", err)
 		return 1
 	}
-	dest, err := reportPath(*out, config.Dir(), date, project)
+	dest, id, err := reportPath(*out, config.Dir(), date, project)
 	if err != nil {
 		fmt.Fprintln(stderr, "clawdline report:", err)
 		return 1
@@ -123,6 +124,16 @@ func runReport(stdout, stderr io.Writer, args []string, now time.Time, getenv fu
 		}
 	}
 	fmt.Fprintln(stdout, link)
+	if id == "" {
+		fmt.Fprintln(stderr, "clawdline report: written outside the state directory, so the daemon does not answer it; there is no http address")
+		return 0
+	}
+	port, err := daemonPort()
+	if err != nil {
+		fmt.Fprintln(stderr, "clawdline report:", err)
+		return 0
+	}
+	fmt.Fprintf(stdout, "http://127.0.0.1:%d/reports/%s\n", port, id)
 	return 0
 }
 
@@ -139,24 +150,36 @@ func localeLanguage(getenv func(string) string) string {
 	return "en"
 }
 
-// reportPath is where the report goes. --out naming an .html file is that
-// file; naming anything else is a directory to put it in. With no --out it is
-// the state directory's reports/, which no repository tracks. The name
-// carries the date and the project, and a number when that name is taken.
-func reportPath(out, stateDir, date, project string) (string, error) {
-	dir := filepath.Join(stateDir, "reports")
-	if out != "" {
-		abs, err := filepath.Abs(out)
+// reportPath is where the report goes, and the id the daemon answers it by.
+//
+// With no --out it is a directory of its own under the state directory's
+// reports/, which no repository tracks and the daemon reads
+// (turnreport.ReadStored): <date>-<random>/report.html. --out naming an .html
+// file is that file; naming anything else is a directory to put
+// <date>-<project>.html in, with a number when that name is taken. Neither
+// has an id: the daemon answers only its own directory.
+func reportPath(out, stateDir, date, project string) (string, string, error) {
+	if out == "" {
+		id, err := turnreport.NewID(date)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		if strings.EqualFold(filepath.Ext(abs), ".html") {
-			return abs, nil
+		dir := filepath.Join(turnreport.ReportsDir(stateDir), id)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", "", err
 		}
-		dir = abs
+		return filepath.Join(dir, turnreport.PageName), id, nil
 	}
+	abs, err := filepath.Abs(out)
+	if err != nil {
+		return "", "", err
+	}
+	if strings.EqualFold(filepath.Ext(abs), ".html") {
+		return abs, "", nil
+	}
+	dir := abs
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
+		return "", "", err
 	}
 	base := date + "-" + safeName(project)
 	for n := 1; ; n++ {
@@ -166,7 +189,7 @@ func reportPath(out, stateDir, date, project string) (string, error) {
 		}
 		p := filepath.Join(dir, name)
 		if _, err := os.Lstat(p); os.IsNotExist(err) {
-			return p, nil
+			return p, "", nil
 		}
 	}
 }

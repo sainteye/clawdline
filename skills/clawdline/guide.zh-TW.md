@@ -771,9 +771,13 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
 - `--notes`：一行一個 `path: 一句話`，顯示在那個檔案上方。`--pin`（可重複）把檔案釘在最前面；這一輪
   動到 `CLAUDE.md`、`AGENTS.md` 時會自動釘。`--exclude` 排除某個路徑並在報告裡寫明。`--at` 是檔案內
   容取自哪個版本（預設 `HEAD`）。
-- 預設寫到 `<state dir>/reports/<date>-<project>.html`，不在任何 repository 裡（`--out` 指定別的檔案或
-  資料夾）。stderr 會說哪些沒列或有刪減；**stdout 的最後一行是 `file://` 網址**，把它放進你最後的回答。
-  `--open` 會順便用這台機器的瀏覽器打開。
+- 報告存在 `<state dir>/reports/<date>-<id>/report.html`，不在任何 repository 裡，並印出兩個網址：
+  **先是 `file://` 網址**（終端機裡點了就開），**再來是 `http://127.0.0.1:<port>/reports/<id>`**（這台
+  機器的 daemon 提供）。兩個都放進你最後的回答：console 會把 `file://` 顯示成點不開的文字，`http://` 那個
+  才會變成連結。這個網址只在這台機器上、已登入 console 的瀏覽器打得開；手機或 Cloud 會被拒絕
+  （`report_not_over_cloud`、`report_local_only`）。
+- `--out` 改寫到別的檔案或資料夾，這時只有 `file://` 網址。stderr 會說哪些沒列或有刪減。`--open` 會順便
+  用這台機器的瀏覽器打開檔案。
 
 ## 8. 跟另一個 session 說話
 

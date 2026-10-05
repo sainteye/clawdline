@@ -882,10 +882,15 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
 - `--notes`: one `path: sentence` per line, shown above that file. `--pin` (repeatable) puts a file
   first; `CLAUDE.md` and `AGENTS.md` are pinned when the turn touched them. `--exclude` leaves a
   path out and says so. `--at` is the revision whose contents are shown (default `HEAD`).
-- It writes `<state dir>/reports/<date>-<project>.html`, outside every repository (`--out` for
-  another file or directory). stderr says what it left out or shortened; **the last line of stdout
-  is the `file://` address**. Put that address in your final answer. `--open` also opens it in this
-  machine's browser.
+- It keeps the report in `<state dir>/reports/<date>-<id>/report.html`, outside every repository,
+  and prints two addresses: **first the `file://` address**, which a terminal opens, **then
+  `http://127.0.0.1:<port>/reports/<id>`**, which this machine's daemon answers. Put both in your
+  final answer: the console shows a `file://` address as text it cannot open, and makes the
+  `http://` one a link. That address opens only in a browser on this machine that is signed in to
+  its console; a phone or a Cloud viewer is refused (`report_not_over_cloud`,
+  `report_local_only`).
+- `--out` writes another file or directory instead, with the `file://` address only. stderr says
+  what it left out or shortened. `--open` also opens the file in this machine's browser.
 
 ## 8. Talk to another session
 

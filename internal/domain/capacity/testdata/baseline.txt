@@ -357,3 +357,4 @@ internal/adapters/turnreport.markdownLimit # read: the largest Markdown file `cl
 internal/adapters/turnreport.diffLimit # read: one commit's diff of one file in `clawdline report`, 256 KiB; past it the diff is cut and says so (limits N77)
 internal/adapters/turnreport.reportLimit # page: the text and diffs one `clawdline report` carries, 12 MiB; past it the largest whole texts, then diffs, go and each is named (limits N77)
 internal/adapters/turnreport.commitsLimit # admission: commits one `clawdline report` reads, 500; more is refused before anything is read (limits N77)
+internal/adapters/turnreport.servedLimit # read: the largest kept report page the daemon answers at /reports/<id>, 48 MiB; a larger one is report_not_found (limits N77)

@@ -568,6 +568,8 @@ func (s *Server) Handler() http.Handler {
 	// Pictures: stored by a session (machine token), read by id (images.go).
 	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)
 	mux.HandleFunc("/v1/artifacts/images/", s.imageRoute)
+	// A turn's status report, to a browser on this machine only (reports.go).
+	mux.HandleFunc("/reports/", s.reportRoute)
 	// Said out loud rather than typed (voice.go). Not a session route and not
 	// a send: this machine transcribes and answers with the text, and what
 	// happens to it afterwards is the composer's business.
