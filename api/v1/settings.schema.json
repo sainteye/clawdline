@@ -45,6 +45,11 @@
           "nullable": true,
           "type": "string"
         },
+        "codex_default_effort": {
+          "description": "Codex reasoning effort for new Sessions when the launch does not name one. Empty leaves the choice to Codex.",
+          "nullable": true,
+          "type": "string"
+        },
         "codex_default_model": {
           "description": "The model used for a new Codex session when that launch does not name one. Empty leaves the choice to Codex.",
           "nullable": true,
@@ -268,6 +273,11 @@
         },
         "terminal": {
           "description": "`auto`, `iterm`, `iterm_native` or `tmux`.",
+          "nullable": true,
+          "type": "string"
+        },
+        "codex_default_effort": {
+          "description": "Empty, high or xhigh for a new Codex Session.",
           "nullable": true,
           "type": "string"
         },

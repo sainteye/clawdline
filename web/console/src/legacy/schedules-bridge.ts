@@ -137,6 +137,7 @@ export interface ScheduleRecord {
   task?: {
     assistant?: string
     model?: string
+    reasoning_effort?: string
     project_dir?: string
     title?: string
     instructions?: string
@@ -178,6 +179,8 @@ export interface ScheduleBody {
   place_id: string | null
   assistant: string | null
   model: string
+  /** Codex high or xhigh; empty clears the saved choice. */
+  reasoning_effort?: string
   instructions: string
   enabled: boolean
   close_tab: string

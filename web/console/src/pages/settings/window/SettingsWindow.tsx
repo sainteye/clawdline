@@ -477,6 +477,12 @@ export function SettingsWindow() {
               onPick={(value) => void change({ codex_default_model: value })}
             />
           </Row>
+          <Row label={W.settingsCodexDefaultEffort} hint={W.settingsCodexDefaultEffortHint}>
+            <PopUp label={W.settingsCodexDefaultEffort}
+              value={String(now("codex_default_effort"))}
+              options={[{ value: "", label: W.settingsProviderDefault }, { value: "high", label: "high" }, { value: "xhigh", label: "xhigh" }]}
+              onPick={(value) => void change({ codex_default_effort: value })} />
+          </Row>
           <Row label={W.settingsClaudeDefaultModel} hint={W.settingsDefaultModelHint}>
             <PopUp
               label={W.settingsClaudeDefaultModel}

@@ -115,7 +115,7 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: dir}}
 
 	rec := defaultModelsCall(t, s, http.MethodPost, "application/json",
-		`{"codex_default_model":"gpt-6","claude_default_model":"claude-sonnet-4-5"}`)
+		`{"codex_default_model":"gpt-6","claude_default_model":"claude-sonnet-4-5","codex_default_effort":"xhigh"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("write: %d %s", rec.Code, rec.Body)
 	}
@@ -123,7 +123,7 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
+	if len(got) != 4 || got["codex_default_effort"] != "xhigh" || got["codex_default_model"] != "gpt-6" || got["claude_default_model"] != "claude-sonnet-4-5" {
 		t.Fatalf("narrow answer: %#v", got)
 	}
 	models, ok := got["models"].(map[string]any)
@@ -142,6 +142,11 @@ func TestDefaultModelsRouteNeverCarriesOtherSettings(t *testing.T) {
 	rec = defaultModelsCall(t, s, http.MethodPost, "application/json", `{"codex_default_model":"GPT 6"}`)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"invalid_default_model"`) {
 		t.Fatalf("invalid model: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = defaultModelsCall(t, s, http.MethodPost, "application/json", `{"codex_default_effort":"unsupported"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"error":"invalid_default_effort"`) {
+		t.Fatalf("invalid effort: %d %s", rec.Code, rec.Body)
 	}
 
 	rec = defaultModelsCall(t, s, http.MethodGet, "", "")

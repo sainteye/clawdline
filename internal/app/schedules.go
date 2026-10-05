@@ -431,7 +431,7 @@ func (b *ScheduleBook) MachineRefusal(ctx context.Context, method, id string, bo
 var formFields = map[string]bool{
 	"title": true, "at": true, "days": true, "on": true, "place_id": true, "assistant": true,
 	"instructions": true, "enabled": true, "close_tab": true, "catch_up_hours": true,
-	"notify_on_failure": true, "timeout_minutes": true, "model": true, "permission_mode": true,
+	"notify_on_failure": true, "timeout_minutes": true, "model": true, "reasoning_effort": true, "permission_mode": true,
 	"trigger_only": true, "time_zone": true,
 }
 
@@ -561,9 +561,16 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 		}
 	}
 	if tmpl["assistant"] == "codex" {
-		if kept, ok := carried["reasoning_effort"]; ok {
+		if effort, ok := body["reasoning_effort"]; ok {
+			if name, isString := effort.(string); !isString || name != "" {
+				tmpl["reasoning_effort"] = effort
+			}
+		} else if kept, ok := carried["reasoning_effort"]; ok {
 			tmpl["reasoning_effort"] = kept
 		}
+	} else if effort, ok := body["reasoning_effort"]; ok && effort != "" {
+		r := refusedSchedule(400, "bad_request", "reasoning_effort is only valid when assistant is codex")
+		return nil, schedule.Schedule{}, &r
 	}
 	when := map[string]any{"at": orEmpty(body, "at"), "days": orEmpty(body, "days")}
 	if flag, ok := body["trigger_only"]; ok && flag != false {

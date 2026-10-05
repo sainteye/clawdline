@@ -5186,6 +5186,12 @@ export interface ScheduleRequest {
   place_id: string
 
   /**
+   * Codex high or xhigh; no key keeps the saved value, an empty string takes it
+   * off.
+   */
+  reasoning_effort?: string
+
+  /**
    * The conversation the person's message was sent to. Required with via for a
    * session-authorized repeating write.
    */
@@ -5330,15 +5336,15 @@ export interface ScheduleTask {
 }
 
 /**
- * Task-template fields the form has no control for, which a create may carry —
- * what a save already carries from the stored file, so a schedule moved from
- * another machine arrives as it was. Accepted on POST only; a PATCH that names it
- * is refused, because a save carries the stored fields itself. The file's parser
- * reads each value, as it reads a stored file. `graph` is accepted too, as a stored
- * file holds it (the generator has no type for it). `permission_mode` is refused by
- * name (`template_permission_mode`): it is sent as the form's own field, where who
- * may set it is checked. Any other key is refused by name. `reasoning_effort` is
- * kept only when the assistant is codex, as a save keeps it.
+ * Task-template fields which a create may carry — what a save already carries
+ * from the stored file, so a schedule moved from another machine arrives as it was.
+ * Accepted on POST only; a PATCH that names it is refused, because a save carries
+ * the stored fields itself. The file's parser reads each value, as it reads a
+ * stored file. `graph` is accepted too, as a stored file holds it (the generator
+ * has no type for it). `permission_mode` is refused by name
+ * (`template_permission_mode`): it is sent as the form's own field, where who may
+ * set it is checked. Any other key is refused by name. `reasoning_effort` is kept
+ * only when the assistant is codex, as a save keeps it.
  */
 export interface ScheduleTemplate {
   claims?: string[]
@@ -6298,6 +6304,11 @@ export interface SettingsRequest {
   codex_auto_name: boolean | null
 
   /**
+   * Empty, high or xhigh for a new Codex Session.
+   */
+  codex_default_effort: string | null
+
+  /**
    * Empty, or a Codex model name used when a new Session does not name one.
    */
   codex_default_model: string | null
@@ -6517,6 +6528,12 @@ export interface SettingsSnapshot {
    * so a line copied between the two files means the same thing.
    */
   codex_auto_name: boolean | null
+
+  /**
+   * Codex reasoning effort for new Sessions when the launch does not name one.
+   * Empty leaves the choice to Codex.
+   */
+  codex_default_effort: string | null
 
   /**
    * The model used for a new Codex session when that launch does not name one.

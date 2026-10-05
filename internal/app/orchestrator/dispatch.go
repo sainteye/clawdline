@@ -442,6 +442,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		// launch. Keep the actual model with the task so the record explains the
 		// command that was opened rather than continuing to say "unspecified".
 		r.Model = spawned.Model
+		r.ReasoningEffort = spawned.ReasoningEffort
 		if r.State == StateQueued {
 			r.State = spawned.State
 		}
@@ -648,6 +649,9 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	defer opened()
 	if r.Model == "" && b.DefaultModel != nil {
 		r.Model = b.DefaultModel(r.Assistant)
+	}
+	if r.Assistant == projects.AssistantCodex && r.ReasoningEffort == "" && b.DefaultReasoningEffort != nil {
+		r.ReasoningEffort = b.DefaultReasoningEffort()
 	}
 	preflightPersona := r.Persona
 	if b.ResolveSquadSnapshot != nil && r.Persona != "" {

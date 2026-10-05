@@ -457,6 +457,8 @@ var Settables = []Settable{
 		Refusal: "invalid_terminal", Because: "auto, iterm, iterm_native or tmux"},
 	{Name: "codex_default_model", Kind: "string", Check: ValidDefaultModel,
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
+	{Name: "codex_default_effort", Kind: "string", Choices: []string{"", "high", "xhigh"},
+		Refusal: "invalid_default_effort", Because: "empty, high or xhigh"},
 	{Name: "claude_default_model", Kind: "string", Check: ValidDefaultModel,
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
 	{Name: "reopen_on_return", Kind: "bool"},
@@ -543,6 +545,15 @@ func DefaultModel(values Values, assistant string) string {
 		return ""
 	}
 	return model
+}
+
+// DefaultReasoningEffort reads the Codex launch default; malformed values leave Codex to choose.
+func DefaultReasoningEffort(values Values) string {
+	effort, ok := values.String("codex_default_effort")
+	if ok && projects.KnownReasoningEffort(effort) {
+		return effort
+	}
+	return ""
 }
 
 // SettableByName finds one key, or false for a name this file does not set.

@@ -70,11 +70,15 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if model == "" && b.DefaultModel != nil {
 		model = b.DefaultModel(assistant)
 	}
+	effort := ""
+	if assistant == projects.AssistantCodex && b.DefaultReasoningEffort != nil {
+		effort = b.DefaultReasoningEffort()
+	}
 	preflightPersona := persona
 	if b.ResolveSquadSnapshot != nil && persona != "" {
 		preflightPersona = ""
 	}
-	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model,
+	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
 		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir()})
 	if err != nil {
 		return openedSession{}, err
@@ -84,7 +88,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		return openedSession{}, err
 	}
 	if prepared.files.PromptPath != "" {
-		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model,
+		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
 			Language: b.SessionLanguage(assistant), Persona: persona,
 			SquadPromptPath: prepared.files.PromptPath})
 		if err != nil {
