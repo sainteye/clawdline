@@ -31,6 +31,7 @@ function TerminalDiagnostics({ observation }: { observation: { current: Terminal
       const next = observation.current?.text() ?? ""
       setText(next)
       void navigator.clipboard.writeText(next).then(() => setCopied(nextWord("terminalDiagnosticsCopied")),
+        // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.
         () => setCopied(nextWord("terminalDiagnosticsCopyFailed")))
     }}>{nextWord("terminalDiagnosticsCopy")}</button>
     {copied && <span className="terminal-note" role="status"> {copied}</span>}

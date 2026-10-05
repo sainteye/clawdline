@@ -26,6 +26,7 @@ function errorDetail(error: unknown): string {
     case "project_required": return "請先在角色小隊頁面選擇已登錄的 Project，再列出該 Project 的技能。"
     case "skill_source_missing": case "skill_source_changed": return "技能來源已變更。請重新讀取清單後再選。"
     case "unsupported_route": return "這部機器尚未支援技能來源清單。請更新 Clawdline 後重試。"
+    case "skill_collision": return "同一技能識別已有不同內容，請重新整理後檢查。"
     default: {
       const status = errorStatus(error)
       return `角色小隊服務暫時無法完成請求${status ? `（HTTP ${status}）` : ""}。請稍後重試；若持續發生，重新整理頁面。`
@@ -354,7 +355,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
           const server = fresh.personas.find((row) => row.id === persona.id)
           if (server) setDrafts((all) => ({ ...all, [key]: { ...all[key], text, serverText: server.handbook.value, serverVersion: server.settingsVersion, conflict: true } }))
           if (currentScope.current === requestScope) setNotice({ text: "手冊已有新版本。你的文字仍在下方，請比較後再決定是否覆寫。", error: true })
-        } catch { if (currentScope.current === requestScope) setNotice({ text: "版本衝突且無法重讀。你的文字仍保留，請再試一次。", error: true }) }
+        } catch (rereadError) { if (currentScope.current === requestScope) setNotice({ text: `版本衝突且無法重讀：${errorDetail(rereadError)} 你的文字仍保留，請再試一次。`, error: true }) }
       } else if (currentScope.current === requestScope) setNotice({ text: `手冊未儲存：${errorDetail(error)}`, error: true })
     } finally { setBusy("") }
   }
@@ -558,7 +559,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
       skillTransaction.current = null
       skillDialog.current?.close(); setSkillDialogOpen(false)
     } catch (error) {
-      setSkillError(`${skillTransaction.current?.catalogSaved ? "技能目錄已建立，角色尚未確認加入。" : "技能尚未確認建立。"}${errorCode(error) === "skill_collision" ? (error as Error).message : errorDetail(error)} 請重試；已輸入內容仍保留。`)
+      setSkillError(`${skillTransaction.current?.catalogSaved ? "技能目錄已建立，角色尚未確認加入。" : "技能尚未確認建立。"}${errorDetail(error)} 請重試；已輸入內容仍保留。`)
     } finally { setSkillBusy(false) }
   }
   const moveSkill = (id: string, direction: -1 | 1) => {

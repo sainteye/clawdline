@@ -16,7 +16,7 @@ import { TerminalMarks } from "./TerminalGlyph.js"
 import "./terminal-list.css"
 
 function why(error: unknown): string {
-  return error instanceof TerminalRequestError ? terminalRefusalWords(error.code) : nextWord("terminalUnavailableUnknown")
+  return error instanceof TerminalRequestError ? terminalRefusalWords(error.code) : L.failureSentence(error, nextWord("terminalUnavailableUnknown"))
 }
 
 function dirTail(dir: string | undefined): string {
@@ -62,6 +62,7 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
       controller = new AbortController()
       const timeout = setTimeout(() => controller?.abort(), 2500)
       try {
+        // refusal-ok: a refused diagnostics read is deliberately not shown, because the list is the authority for this device's terminal grant.
         const [machine, list] = await Promise.allSettled([readTerminalMachine(controller.signal), listTerminals("", TAB, controller.signal)])
         if (mine !== generation.current) return
         if (list.status === "rejected") throw list.reason
