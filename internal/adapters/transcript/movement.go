@@ -228,7 +228,7 @@ func (h *Host) recordPath(s session.Session) (string, session.Activity) {
 		// session files its transcript under the directory it was launched
 		// in, which is the one the registry keeps.
 		cwd := s.CWD
-		if r, ok := h.claude[s.PID]; ok && r.CWD != "" {
+		if r, ok := h.claudeFor(s.PID); ok && r.CWD != "" {
 			cwd = r.CWD
 		}
 		if s.ConversationID == "" || cwd == "" {

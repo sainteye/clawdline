@@ -3,15 +3,26 @@ package transcript
 import (
 	"context"
 	"os"
+	"sync"
 
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // Host answers the identity port from the assistants' own records on disk.
+//
+// One Host serves every inventory reading the daemon takes, and several run
+// at once (transport/http server.go). So the four indexes below are built
+// whole by Refresh and swapped in under mu, and never written in place after
+// that: a reader holds a map Refresh no longer touches. Before this, one
+// reading's Refresh wrote a map another reading was ranging over, which Go
+// answers with `concurrent map read and map write` and the daemon dies.
+// Readers take whichever indexes are newest; what belongs to one reading
+// alone travels in its context instead (ObserveRows).
 type Host struct {
 	Home string
 
+	mu        sync.RWMutex
 	claude    map[int]ClaudeRegistry
 	codex     map[string]string
 	codexLive map[string]codexLiveIdentity
@@ -19,9 +30,6 @@ type Host struct {
 	// An ended thread leaves on the next refresh, so this cannot accumulate
 	// historical conversations behind the session list.
 	codexRollouts map[string]string
-	// codexBareRows is how many iTerm Codex rows per cwd showed the bare
-	// `<dir> (codex)` title in this reading (ObserveRows); nil until observed.
-	codexBareRows map[string]int
 	titles        *Titles
 	shells        *Shells
 	movements     *Movements
@@ -41,11 +49,34 @@ func (h *Host) Titles() *Titles { return h.titles }
 func (h *Host) Movements() *Movements { return h.movements }
 
 // Refresh reads both indexes once per inventory rather than once per row.
+// Everything is read first and published in one swap, so a reading in
+// progress never sees half of a refresh.
 func (h *Host) Refresh() {
-	h.claude = ClaudeRegistryByPID(h.Home)
-	h.codex = CodexNames(h.Home)
-	h.refreshCodexLive()
-	h.codexBareRows = nil
+	claude := ClaudeRegistryByPID(h.Home)
+	codex := CodexNames(h.Home)
+	h.mu.RLock()
+	rollouts := h.codexRollouts
+	h.mu.RUnlock()
+	codex, live, rollouts := refreshCodexLive(h.Home, codex, rollouts)
+	h.mu.Lock()
+	h.claude, h.codex, h.codexLive, h.codexRollouts = claude, codex, live, rollouts
+	h.mu.Unlock()
+}
+
+// claudeFor is the registry entry for one pid from the newest index.
+func (h *Host) claudeFor(pid int) (ClaudeRegistry, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	r, ok := h.claude[pid]
+	return r, ok
+}
+
+// codexIndexes are the newest name and live-thread indexes. Both are
+// read-only to the caller: Refresh replaces them rather than writing them.
+func (h *Host) codexIndexes() (map[string]string, map[string]codexLiveIdentity) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.codex, h.codexLive
 }
 
 // ForSession names a session the way the Swift app's session list does — see
@@ -60,7 +91,7 @@ func (h *Host) Refresh() {
 func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identity, bool) {
 	switch s.Assistant {
 	case session.AssistantClaude:
-		r, ok := h.claude[s.PID]
+		r, ok := h.claudeFor(s.PID)
 		if !ok {
 			// Claude Code writes this file itself, so its absence is the
 			// session not having written it — not a reading that failed.
@@ -95,16 +126,17 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		// unnamed thread's bare `<dir> (codex)` title binds only while it is the
 		// sole unnamed live root in that cwd and the sole row showing that title. Neither path guesses from cwd
 		// alone; two Codex sessions in one checkout is the ordinary case here.
+		names, lives := h.codexIndexes()
 		binding := s.Binding
 		if s.ConversationID == "" {
-			live, ok := h.codexLiveFor(s)
+			live, ok := codexLiveFor(ctx, lives, s)
 			if !ok {
 				return ports.Identity{}, false
 			}
 			s.ConversationID = live.ID
 			binding = session.BindingLiveTitle
 		}
-		rungs := session.LabelRungs{Thread: h.codex[s.ConversationID]}
+		rungs := session.LabelRungs{Thread: names[s.ConversationID]}
 		return ports.Identity{
 			ConversationID: s.ConversationID,
 			Label:          session.PreferredLabel(rungs),
@@ -147,7 +179,7 @@ func (h *Host) claudeTranscript(s session.Session) (string, bool) {
 		return "", false
 	}
 	cwd := s.CWD
-	if r, ok := h.claude[s.PID]; ok && r.CWD != "" {
+	if r, ok := h.claudeFor(s.PID); ok && r.CWD != "" {
 		cwd = r.CWD
 	}
 	if cwd == "" {

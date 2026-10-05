@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -32,17 +33,21 @@ type codexLiveIdentity struct {
 // threads Codex 0.160 names only there, its state database; a thread with
 // neither is kept unnamed rather than dropped. The terminal title and cwd are
 // checked later, once terminal and process inventories have been merged.
-func (h *Host) refreshCodexLive() {
-	ids, complete := heldCodexThreadIDs(filepath.Join(h.Home, ".codex", "thread-writer-locks"))
+//
+// It takes the session index just read and the previous refresh's rollout
+// paths, and returns new maps for Host.Refresh to publish: names, live
+// threads and rollout paths. Neither argument is written, because the
+// previous paths are still what a concurrent reading may be holding.
+func refreshCodexLive(home string, names map[string]string, rollouts map[string]string) (map[string]string, map[string]codexLiveIdentity, map[string]string) {
+	ids, complete := heldCodexThreadIDs(filepath.Join(home, ".codex", "thread-writer-locks"))
 	if !complete {
-		h.codexLive = nil
-		return
+		return names, nil, rollouts
 	}
-	h.nameFromCodexState(ids)
+	names = nameFromCodexState(home, names, ids)
 	needed := make(map[string]bool, len(ids))
 	paths := make(map[string]string, len(ids))
 	for _, id := range ids {
-		if path := h.codexRollouts[id]; path != "" {
+		if path := rollouts[id]; path != "" {
 			if _, err := os.Stat(path); err == nil {
 				paths[id] = path
 				continue
@@ -51,7 +56,7 @@ func (h *Host) refreshCodexLive() {
 		needed[id] = true
 	}
 	if len(needed) > 0 {
-		for id, path := range codexRolloutPaths(h.Home, needed) {
+		for id, path := range codexRolloutPaths(home, needed) {
 			paths[id] = path
 		}
 	}
@@ -61,34 +66,38 @@ func (h *Host) refreshCodexLive() {
 		if !ok || meta.Thread != id || meta.Conversation != id || meta.CWD == "" {
 			continue
 		}
-		live[id] = codexLiveIdentity{ID: id, Name: h.codex[id], CWD: meta.CWD}
+		live[id] = codexLiveIdentity{ID: id, Name: names[id], CWD: meta.CWD}
 	}
-	h.codexLive = live
-	h.codexRollouts = paths
+	return names, live, paths
 }
 
-// nameFromCodexState fills h.codex for live ids the session index does not
-// name. The index wins where both have a name: it is what this path has
-// always trusted, so a thread named in both keeps exactly its old title
-// contract, and the database is asked only about the few live gaps rather
-// than its whole history on every refresh.
-func (h *Host) nameFromCodexState(ids []string) {
+// nameFromCodexState answers the session index's names with the live ids it
+// does not name filled from Codex's state database. The index wins where both
+// have a name: it is what this path has always trusted, so a thread named in
+// both keeps exactly its old title contract, and the database is asked only
+// about the few live gaps rather than its whole history on every refresh.
+//
+// The answer is a new map whenever anything is added, never the index
+// written in place, so no map a reading may hold is ever written.
+func nameFromCodexState(home string, index map[string]string, ids []string) map[string]string {
 	var unnamed []string
 	for _, id := range ids {
-		if h.codex[id] == "" {
+		if index[id] == "" {
 			unnamed = append(unnamed, id)
 		}
 	}
-	names := codexStateNames(h.Home, unnamed)
-	if len(names) == 0 {
-		return
+	found := codexStateNames(home, unnamed)
+	if len(found) == 0 {
+		return index
 	}
-	if h.codex == nil {
-		h.codex = map[string]string{}
+	names := make(map[string]string, len(index)+len(found))
+	for id, name := range index {
+		names[id] = name
 	}
-	for id, name := range names {
-		h.codex[id] = name
+	for id, name := range found {
+		names[id] = name
 	}
+	return names
 }
 
 // codexRolloutPaths walks Codex's tree once for every set of newly-live ids,
@@ -122,17 +131,27 @@ func codexRolloutPaths(home string, needed map[string]bool) map[string]string {
 	return out
 }
 
+// codexBareRowsKey carries one reading's bare-title count (ObserveRows).
+type codexBareRowsKey struct{}
+
 // ObserveRows counts, once per inventory reading, the iTerm Codex rows whose
-// terminal title is the bare `<base(cwd)> (codex)`, per cwd.
+// terminal title is the bare `<base(cwd)> (codex)`, per cwd, and answers a
+// context carrying that count for the reading's identity questions.
 //
 // codexLiveFor sees one row at a time, but the bare title is not unique to a
 // thread: a second Codex tab opened in the same directory shows it too before
 // its own thread holds a writer lock, and both rows would otherwise take the
 // one unnamed live root. Inventory.Read already holds every merged row before
 // it asks for identities, so it hands them over here rather than this host
-// reading terminals of its own. Refresh clears the count, so a reading that
-// never observed its rows binds no unnamed thread instead of guessing.
-func (h *Host) ObserveRows(rows []session.Session) {
+// reading terminals of its own.
+//
+// The count rides in the reading's context rather than on Host because one
+// Host serves readings that overlap: kept on Host, another reading's Refresh
+// cleared it between this reading's ObserveRows and its ForSession, and a
+// tab alone in its directory went unbound in 8 of 12 concurrent reads on
+// 2026-10-05. A context with no count binds no unnamed thread instead of
+// guessing.
+func (h *Host) ObserveRows(ctx context.Context, rows []session.Session) context.Context {
 	bare := map[string]int{}
 	for _, s := range rows {
 		if s.Backend != session.BackendITerm || s.Assistant != session.AssistantCodex || s.CWD == "" {
@@ -142,7 +161,7 @@ func (h *Host) ObserveRows(rows []session.Session) {
 			bare[s.CWD]++
 		}
 	}
-	h.codexBareRows = bare
+	return context.WithValue(ctx, codexBareRowsKey{}, bare)
 }
 
 func codexBareTitle(cwd string) string { return filepath.Base(cwd) + " (codex)" }
@@ -156,18 +175,22 @@ func codexBareTitle(cwd string) string { return filepath.Base(cwd) + " (codex)" 
 // Every unnamed live root in one cwd expects the same bare title, so two of
 // them are the duplicate match that binds nothing: cwd alone never chooses.
 // The same holds from the terminal side: the bare title binds only while
-// exactly one row in that cwd shows it (ObserveRows).
-func (h *Host) codexLiveFor(s session.Session) (codexLiveIdentity, bool) {
+// exactly one row in this reading's cwd shows it (ObserveRows, carried in
+// ctx).
+func codexLiveFor(ctx context.Context, lives map[string]codexLiveIdentity, s session.Session) (codexLiveIdentity, bool) {
 	if s.Backend != session.BackendITerm || s.CWD == "" || s.Label == "" {
 		return codexLiveIdentity{}, false
 	}
 	label := codexTerminalTitle(s.Label)
-	if label == codexBareTitle(s.CWD) && h.codexBareRows[s.CWD] != 1 {
-		return codexLiveIdentity{}, false
+	if label == codexBareTitle(s.CWD) {
+		bare, _ := ctx.Value(codexBareRowsKey{}).(map[string]int)
+		if bare[s.CWD] != 1 {
+			return codexLiveIdentity{}, false
+		}
 	}
 	var found codexLiveIdentity
 	matches := 0
-	for _, live := range h.codexLive {
+	for _, live := range lives {
 		if live.CWD != s.CWD {
 			continue
 		}

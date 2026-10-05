@@ -55,10 +55,11 @@ type observingIdentity struct {
 	askedAt  []int
 }
 
-func (i *observingIdentity) ObserveRows(rows []session.Session) {
+func (i *observingIdentity) ObserveRows(ctx context.Context, rows []session.Session) context.Context {
 	for _, s := range rows {
 		i.observed = append(i.observed, s.Label)
 	}
+	return ctx
 }
 
 func (i *observingIdentity) ForSession(ctx context.Context, s session.Session) (ports.Identity, bool) {

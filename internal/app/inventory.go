@@ -134,13 +134,17 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 	// An identity source may need to see every row before naming any one of
 	// them: a terminal title shared by two rows names neither (Codex's bare
 	// `<dir> (codex)`). The rows are handed over once, as merged and before
-	// enrichment, so the source counts what the terminals reported.
-	if h, ok := in.Identity.(interface{ ObserveRows([]session.Session) }); ok {
+	// enrichment, so the source counts what the terminals reported. What it
+	// counts comes back in the context this reading then asks with, because
+	// other readings share the source and must not see — or clear — it.
+	if h, ok := in.Identity.(interface {
+		ObserveRows(context.Context, []session.Session) context.Context
+	}); ok {
 		rows := make([]session.Session, 0, len(order))
 		for _, key := range order {
 			rows = append(rows, byTTY[key])
 		}
-		h.ObserveRows(rows)
+		ctx = h.ObserveRows(ctx, rows)
 	}
 	// One budget for the whole reading, so the bound is on what looking at
 	// this machine costs and not on what one row does.

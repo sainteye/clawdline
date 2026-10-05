@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -9,36 +10,37 @@ import (
 func TestAManagedCodexTitleMustBeAnExactUniqueMatch(t *testing.T) {
 	one := codexLiveIdentity{ID: "c0de0001-0000-4000-8000-000000000001", Name: "Inspect the queue", CWD: "/code/demo"}
 	h := &Host{codexLive: map[string]codexLiveIdentity{one.ID: one}}
+	ctx := context.Background()
 	base := session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
 		CWD: "/code/demo", Label: "Inspect the queue | demo (codex)"}
 
-	if got, ok := h.codexLiveFor(base); !ok || got.ID != one.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, base); !ok || got.ID != one.ID {
 		t.Fatalf("exact match = %+v, %v", got, ok)
 	}
 	working := base
 	working.Label = "⠸ " + working.Label
-	if got, ok := h.codexLiveFor(working); !ok || got.ID != one.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, working); !ok || got.ID != one.ID {
 		t.Fatalf("working title = %+v, %v", got, ok)
 	}
 	wrongTitle := base
 	wrongTitle.Label = "Another title | demo (codex)"
-	if _, ok := h.codexLiveFor(wrongTitle); ok {
+	if _, ok := codexLiveFor(ctx, h.codexLive, wrongTitle); ok {
 		t.Fatal("a different terminal title bound the conversation")
 	}
 	wrongDirectory := base
 	wrongDirectory.CWD = "/code/other"
-	if _, ok := h.codexLiveFor(wrongDirectory); ok {
+	if _, ok := codexLiveFor(ctx, h.codexLive, wrongDirectory); ok {
 		t.Fatal("a different process cwd bound the conversation")
 	}
 	tmux := base
 	tmux.Backend = session.BackendTmux
-	if _, ok := h.codexLiveFor(tmux); ok {
+	if _, ok := codexLiveFor(ctx, h.codexLive, tmux); ok {
 		t.Fatal("the iTerm-only title contract bound a tmux row")
 	}
 
 	two := codexLiveIdentity{ID: "c0de0002-0000-4000-8000-000000000002", Name: one.Name, CWD: one.CWD}
 	h.codexLive[two.ID] = two
-	if _, ok := h.codexLiveFor(base); ok {
+	if _, ok := codexLiveFor(ctx, h.codexLive, base); ok {
 		t.Fatal("two exact live matches were ranked instead of left unbound")
 	}
 }
@@ -51,19 +53,19 @@ func TestAnUnnamedManagedCodexThreadBindsOnlyWhenAloneInItsDirectory(t *testing.
 	h := &Host{codexLive: map[string]codexLiveIdentity{unnamed.ID: unnamed}}
 	base := session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
 		CWD: "/code/demo", Label: "demo (codex)"}
-	h.ObserveRows([]session.Session{base})
+	ctx := h.ObserveRows(context.Background(), []session.Session{base})
 
-	if got, ok := h.codexLiveFor(base); !ok || got.ID != unnamed.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, base); !ok || got.ID != unnamed.ID {
 		t.Fatalf("unnamed match = %+v, %v", got, ok)
 	}
 	working := base
 	working.Label = "⠸ demo (codex)"
-	if got, ok := h.codexLiveFor(working); !ok || got.ID != unnamed.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, working); !ok || got.ID != unnamed.ID {
 		t.Fatalf("working unnamed title = %+v, %v", got, ok)
 	}
 	piped := base
 	piped.Label = " | demo (codex)"
-	if _, ok := h.codexLiveFor(piped); ok {
+	if _, ok := codexLiveFor(ctx, h.codexLive, piped); ok {
 		t.Fatal("an empty name segment was accepted as the unnamed title")
 	}
 
@@ -71,21 +73,21 @@ func TestAnUnnamedManagedCodexThreadBindsOnlyWhenAloneInItsDirectory(t *testing.
 	// nor lets the unnamed thread take its own.
 	named := codexLiveIdentity{ID: "c0de0004-0000-4000-8000-000000000004", Name: "Inspect the queue", CWD: "/code/demo"}
 	h.codexLive[named.ID] = named
-	if got, ok := h.codexLiveFor(base); !ok || got.ID != unnamed.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, base); !ok || got.ID != unnamed.ID {
 		t.Fatalf("unnamed title beside a named peer = %+v, %v", got, ok)
 	}
 	namedTitle := base
 	namedTitle.Label = "Inspect the queue | demo (codex)"
-	if got, ok := h.codexLiveFor(namedTitle); !ok || got.ID != named.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, namedTitle); !ok || got.ID != named.ID {
 		t.Fatalf("named title beside an unnamed peer = %+v, %v", got, ok)
 	}
 
 	second := codexLiveIdentity{ID: "c0de0005-0000-4000-8000-000000000005", CWD: "/code/demo"}
 	h.codexLive[second.ID] = second
-	if got, ok := h.codexLiveFor(base); ok {
+	if got, ok := codexLiveFor(ctx, h.codexLive, base); ok {
 		t.Fatalf("two unnamed threads in one directory bound %+v", got)
 	}
-	if got, ok := h.codexLiveFor(namedTitle); !ok || got.ID != named.ID {
+	if got, ok := codexLiveFor(ctx, h.codexLive, namedTitle); !ok || got.ID != named.ID {
 		t.Fatalf("unnamed peers disturbed the named match: %+v, %v", got, ok)
 	}
 }
@@ -95,7 +97,7 @@ func TestAnUnnamedManagedCodexThreadBindsOnlyWhenAloneInItsDirectory(t *testing.
 func TestANamedManagedCodexThreadIgnoresTheUnnamedTitle(t *testing.T) {
 	named := codexLiveIdentity{ID: "c0de0006-0000-4000-8000-000000000006", Name: "Inspect the queue", CWD: "/code/demo"}
 	h := &Host{codexLive: map[string]codexLiveIdentity{named.ID: named}}
-	if got, ok := h.codexLiveFor(session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
+	if got, ok := codexLiveFor(context.Background(), h.codexLive, session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
 		CWD: "/code/demo", Label: "demo (codex)"}); ok {
 		t.Fatalf("the bare directory title bound a named thread: %+v", got)
 	}
@@ -113,14 +115,19 @@ func TestTwoBareCodexTabsNeverShareOneUnnamedThread(t *testing.T) {
 	second.ID = "ITERM-2"
 	second.Label = "⠸ demo (codex)"
 
-	h.ObserveRows([]session.Session{first})
-	if got, ok := h.codexLiveFor(first); !ok || got.ID != unnamed.ID {
+	ctx := h.ObserveRows(context.Background(), []session.Session{first})
+	if got, ok := codexLiveFor(ctx, h.codexLive, first); !ok || got.ID != unnamed.ID {
 		t.Fatalf("one bare tab = %+v, %v; want the unnamed thread", got, ok)
 	}
+	// A reading that observed no rows binds no unnamed thread, rather than
+	// trusting a count another reading took.
+	if got, ok := codexLiveFor(context.Background(), h.codexLive, first); ok {
+		t.Fatalf("a reading with no observed rows bound %+v", got)
+	}
 
-	h.ObserveRows([]session.Session{first, second})
+	ctx = h.ObserveRows(context.Background(), []session.Session{first, second})
 	for _, row := range []session.Session{first, second} {
-		if got, ok := h.codexLiveFor(row); ok {
+		if got, ok := codexLiveFor(ctx, h.codexLive, row); ok {
 			t.Fatalf("%s bound %+v while another tab shows the same bare title", row.ID, got)
 		}
 	}
@@ -133,8 +140,8 @@ func TestTwoBareCodexTabsNeverShareOneUnnamedThread(t *testing.T) {
 	elsewhere.ID, elsewhere.CWD, elsewhere.Label = "ITERM-4", "/other/demo", "demo (codex)"
 	claude := first
 	claude.ID, claude.Assistant = "ITERM-5", session.AssistantClaude
-	h.ObserveRows([]session.Session{first, named, elsewhere, claude})
-	if got, ok := h.codexLiveFor(first); !ok || got.ID != unnamed.ID {
+	ctx = h.ObserveRows(context.Background(), []session.Session{first, named, elsewhere, claude})
+	if got, ok := codexLiveFor(ctx, h.codexLive, first); !ok || got.ID != unnamed.ID {
 		t.Fatalf("bare tab beside unrelated rows = %+v, %v", got, ok)
 	}
 }

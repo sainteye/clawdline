@@ -23,7 +23,7 @@ func (h *Host) OpenQuestions(ctx context.Context, s session.Session) ([]session.
 		return nil, false
 	}
 	cwd := s.CWD
-	if r, ok := h.claude[s.PID]; ok && r.CWD != "" {
+	if r, ok := h.claudeFor(s.PID); ok && r.CWD != "" {
 		cwd = r.CWD
 	}
 	if cwd == "" {
