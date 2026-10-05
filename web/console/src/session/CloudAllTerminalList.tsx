@@ -11,6 +11,7 @@ import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords
 import { collectCloudTerminals, readCloudTerminalList, type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
 import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, watchTerminalClose } from "../cloud/terminal-close-state.js"
 import { openMachinePairing } from "../legacy/devices-bridge.js"
+import { TerminalGlyph } from "./TerminalGlyph.js"
 
 async function readMachine(host: TerminalHost, machine: string): Promise<import("@clawdline/contract").Terminal[]> {
   const { session, release } = await acquireTerminalConnection(host, machine, TAB, new TerminalObservation())
@@ -139,11 +140,11 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
     <ul className="session-terminal-rows">{matching.map((row) => <li key={`${row.machine}/${row.terminal.id}`}>
       <button className="session-terminal-card" type="button" onClick={() => open(row)}
         aria-label={nextWord("terminalOpenView", { project: row.projectName, machine: row.machineName, id: terminalShortID(row.terminal.id) })}>
+        <TerminalGlyph />
         <span className="session-terminal-main">
           <strong>{row.projectName}</strong>
           <span>{row.machineName} · {nextWord("terminalIdentity", { id: terminalShortID(row.terminal.id) })}</span>
-          <span>{terminalStatusWords(row.terminal.status)} · {holderWords(row.terminal.control.held ? row.terminal.control.holder : null)}</span>
-          <span>{nextWord("terminalScreenUnverified")}</span>
+          <span>{terminalStatusWords(row.terminal.status)}{row.terminal.control.held ? ` · ${holderWords(row.terminal.control.holder)}` : ""}</span>
           {terminalCloseState(row.machine, row.terminal.id)?.status === "unknown" && <span>{nextWord("terminalTerminateUnknown")}</span>}
           {terminalCloseState(row.machine, row.terminal.id)?.status === "pending" && <span>{nextWord("terminalTerminatePending")}</span>}
           {row.stale && <span>{nextWord("terminalAllLastConfirmed", { time: new Date(row.confirmedAt).toLocaleTimeString() })}</span>}

@@ -381,7 +381,7 @@ test("Session list opens terminals, remembers its mode, filters, and closes one"
   }))()`)
   assert.equal(list.hash, "#page=sessions&mode=terminal")
   assert.equal(list.cards.length, 2)
-  assert.ok(list.cards.every((card: string) => card.includes("f3-fixture") && card.includes("執行中")))
+  assert.ok(list.cards.every((card: string) => card.includes("f3-fixture") && card.includes("已開啟") && !card.includes("沒有人")))
   assert.notEqual(list.cards[0], list.cards[1], "two terminals in one project show distinct IDs")
   assert.ok(list.width <= list.viewport && list.rowWidth <= list.viewport, JSON.stringify(list))
   assert.deepEqual(await tab.run(`(() => [...document.querySelectorAll(".session-mode-choice")].map((button) => ({ label: button.getAttribute("aria-label"), pressed: button.getAttribute("aria-pressed"), icon: !!button.querySelector("svg") })))()`), [

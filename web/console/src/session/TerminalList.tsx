@@ -178,7 +178,7 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
               <span title={terminal.id}>{nextWord("terminalIdentity", { id: terminalShortID(terminal.id) })}</span>
               <span>{nextWord("terminalRowName", { time: names[index] })}</span>
               <bdi className="session-terminal-dir" title={terminal.dir}>{dirTail(terminal.dir)}</bdi>
-              <span>{terminalStatusWords(terminal.status)} · {holderWords(terminal.control.held ? terminal.control.holder : null)}</span>
+              <span>{terminalStatusWords(terminal.status)}{terminal.control.held ? ` · ${holderWords(terminal.control.holder)}` : ""}</span>
             </span>
           </button>
           <button className="session-terminal-close" type="button" onClick={(event) => { closeOpener.current = event.currentTarget; setCloseError(""); setAsk(terminal) }} aria-label={`${nextWord("terminalClose")}: ${project?.label ?? terminal.project_id} · ${nextWord("terminalIdentity", { id: terminalShortID(terminal.id) })}`}>{nextWord("terminalClose")}</button>

@@ -99,6 +99,7 @@
     overflow-x: auto; overflow-y: hidden;
     border: 1px solid var(--line); border-radius: 10px; background: var(--term-bg);
 }
+.cloud-terminal-view .terminal-scroll { overflow-y: auto; }
 .terminal-view[data-stale] .terminal-scroll { border-color: var(--warn); }
 /* A screen that is not being updated does not look like one that is. */
 .terminal-view[data-stale] .terminal-host, .terminal-view[data-ended] .terminal-host { opacity: .55; }
@@ -124,6 +125,19 @@
 .terminal-more > summary { display: none; }
 .terminal-more > .terminal-facts { display: flex; }
 .terminal-more-actions { display: contents; }
+.cloud-terminal-view .terminal-action-more { display: block; margin-left: auto; }
+.cloud-terminal-view .terminal-action-more > summary {
+    display: grid; place-items: center; width: 44px; min-height: 44px; list-style: none;
+    border: 1px solid var(--line); border-radius: 8px; color: var(--ink); cursor: pointer;
+    font-size: 24px; line-height: 1;
+}
+.cloud-terminal-view .terminal-action-more > summary::-webkit-details-marker { display: none; }
+.cloud-terminal-view .terminal-more-actions {
+    display: none; position: absolute; z-index: 2; right: 8px; margin-top: 4px;
+    padding: 8px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); flex-wrap: wrap; gap: 6px;
+}
+.cloud-terminal-view .terminal-action-more[open] .terminal-more-actions { display: flex; }
 .terminal-keyboard { display: none; }
 .terminal-keys { display: none; }
 
@@ -159,6 +173,7 @@
     .terminal-action-more > summary { min-height: 40px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
     .terminal-more-actions { display: none; position: absolute; z-index: 2; right: 8px; left: 8px; margin-top: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); flex-wrap: wrap; gap: 6px; }
     .terminal-action-more[open] .terminal-more-actions { display: flex; }
+    .cloud-terminal-view .terminal-action-more > summary { display: grid; padding: 0; }
     .terminal-keyboard { display: block; flex: none; min-height: 40px; align-self: stretch; }
     .terminal-keyboard[hidden] { display: none; }
     .terminal-keys {

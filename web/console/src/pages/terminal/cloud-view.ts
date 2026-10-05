@@ -1,4 +1,4 @@
-import type { Terminal as TerminalRow } from "@clawdline/contract"
+import type { Terminal as TerminalRow, TerminalControl } from "@clawdline/contract"
 
 /** What the hosted terminal page shows. With no terminal host there is no live xterm and no key is taken. */
 export type CloudTerminalBody = "offline" | "no_project" | "list" | "terminal"
@@ -36,6 +36,20 @@ export async function beginCloudTerminal(session: CloudTerminalStarter, channelP
 export async function reconnectCloudTerminal(session: CloudTerminalStarter, id: string): Promise<void> {
   await session.start()
   await session.attach(id, false)
+}
+
+/** Take control on entry when it is free or already belongs to this tab. */
+export async function acquireVisibleTerminal(session: Pick<CloudTerminalStarter, "request"> & {
+  acquire(action: "acquire"): Promise<void>
+}, id: string, tab: string, control: TerminalControl | null, state: string): Promise<"acquired" | "needs_review" | "other_holder" | "unavailable"> {
+  if (!id || !control || state === "unknown" || state === "revoked") return "unavailable"
+  if (control.held && !control.holder?.same_client) return "other_holder"
+  if (control.held) {
+    const checked = await session.request("control", { terminal_id: id, client: tab })
+    if (checked.result?.input_state_unknown === true) return "needs_review"
+  }
+  await session.acquire("acquire")
+  return "acquired"
 }
 
 /** The Project's terminals, asked on the machine's channel by its machine-local Project id. */

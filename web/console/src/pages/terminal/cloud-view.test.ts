@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
 
 // `cloud/terminal-session.ts` uses constructor parameter properties, which
 // Node's strip-types runner refuses, so the start path is driven through a fake
@@ -58,4 +58,28 @@ test("reconnect reads and captures again without replaying open or input", async
   const session = new CountingSession()
   await reconnectCloudTerminal(session, "trm_one")
   assert.deepEqual(session.operations, ["open_connection", "read", "capture"])
+})
+
+test("entry acquires a free terminal or this tab's old lease, but never another viewer's lease or uncertain input", async () => {
+  const calls: string[] = []
+  let unknown = false
+  const session = {
+    async request() { calls.push("probe"); return { result: { input_state_unknown: unknown } } },
+    async acquire() { calls.push("acquire") },
+  }
+  const free = { held: false, epoch: 0 }
+  const mine = { held: true, epoch: 1, holder: { same_client: true, same_device: true, local: false, name: "this tab" } }
+  const other = { held: true, epoch: 1, holder: { same_client: false, same_device: false, local: false, name: "other" } }
+  assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", free, "live"), "acquired")
+  assert.deepEqual(calls, ["acquire"])
+  calls.length = 0
+  assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", mine, "live"), "acquired")
+  assert.deepEqual(calls, ["probe", "acquire"])
+  calls.length = 0; unknown = true
+  assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", mine, "live"), "needs_review")
+  assert.deepEqual(calls, ["probe"])
+  calls.length = 0
+  assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", other, "live"), "other_holder")
+  assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", mine, "unknown"), "unavailable")
+  assert.deepEqual(calls, [])
 })
