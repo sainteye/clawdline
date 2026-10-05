@@ -5,6 +5,8 @@ import { RELAY_BUSY_RETRIES, RELAY_BUSY_RETRY_MS, TerminalChannelTransport, fres
 import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
 import { TerminalObservation } from "./terminal-observation.ts"
+// @ts-expect-error -- the focused runner bundles TypeScript before Node executes it.
+import { until } from "./until.ts"
 import goReceipt from "./testdata/terminal-receipt-go.json" with { type: "json" }
 import type { DirectChannelLike, DirectPeerFactory, DirectPeerLike } from "./terminal-direct.js"
 
@@ -263,7 +265,7 @@ test("a typed relay subscription refusal keeps its source code", async () => {
   const f = await fixture()
   f.setConfirm(false)
   const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await until(() => f.stages.some((row) => row.stage === "subscription_sent"))
   f.emitRelay({ type: "error", error: { code: "forbidden", subscriptionChannels: [
     `term/${machine}/${viewer}/${f.fresh.connection}`] } })
   await assert.rejects(subscribed, /forbidden/)
@@ -275,7 +277,7 @@ test("a forbidden error for another shared socket channel does not deny a termin
   const f = await fixture()
   f.setConfirm(false)
   const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, () => undefined)
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await until(() => f.stages.some((row) => row.stage === "subscription_sent"))
   f.emitRelay({ type: "error", error: { code: "forbidden", subscriptionChannels: ["t/other/session"] } })
   f.setConfirm(true)
   f.client._sendSubscriptionFrame("subscribe", [
@@ -291,7 +293,7 @@ test("a retracted terminal subscription reports the relay budget refusal promptl
   const f = await fixture()
   f.setConfirm(false)
   const subscribed = f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, () => undefined)
-  await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  await until(() => f.stages.some((row) => row.stage === "subscription_sent"))
   const channel = `term/${machine}/${viewer}/${f.fresh.connection}`
   f.client.socketSubscriptions.delete(channel)
   f.emitRelay({ type: "error", error: { code: "terminal_budget_exhausted", subscriptionChannels: [channel] } })
@@ -330,11 +332,8 @@ test("a request the relay refused while its budget was full is sent again, and o
     t.mock.timers.tick(RELAY_BUSY_RETRY_MS - 1)
     assert.equal(f.published.length, attempt)
     t.mock.timers.tick(1)
-    // The resend seals the request again, which takes real time off the
-    // event loop; a loaded host needs more turns than a quiet one, so the
-    // wait is bounded by the clock (Date is not mocked here), not by a count.
-    const deadline = Date.now() + 5_000
-    while (f.published.length === attempt && Date.now() < deadline) await new Promise<void>((resolve) => setImmediate(resolve))
+    // The resend seals the request again, which takes real time off the event loop.
+    await until(() => f.published.length > attempt)
     assert.equal(f.published.length, attempt + 1, "the same request is sent again once the budget refills")
     const again = await open(f.published[attempt])
     assert.equal(again.request_id, requestID)
@@ -424,7 +423,6 @@ class FakePeer implements DirectPeerLike {
   async setRemoteDescription(): Promise<void> { queueMicrotask(() => { this.channel.readyState = "open"; this.channel.onopen?.() }) }
   close(): void { this.channel.close() }
 }
-const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 5))
 const fullFrame = (connection: string, frameSeq: number) => ({ v: 1, type: "terminal_frame", connection, terminal_id: "trm_test",
   frame_seq: frameSeq, captured_at: Date.now() / 1000, frame: { rev: `r${frameSeq}`, at: Date.now() / 1000, cols: 80, rows: 1, lines: ["ready"],
     cursor: { x: 0, y: 0, visible: true }, modes: { app_cursor: false, app_keypad: false, mouse_sgr: false, alt: false, mouse: "none" } } })
@@ -484,25 +482,26 @@ test("DC frames pass the relay's verification and are acked on the DC only after
   f.adapter.setCarrier(f.fresh.connection, "direct")
   const forged = await f.seal(1, fullFrame(f.fresh.connection, 1), "term")
   forged.sig = (await f.seal(1, fullFrame(f.fresh.connection, 9), "term")).sig
+  const rejected = () => f.stages.filter((row) => row.stage === "envelope_rejected").length
   f.peer.channel.deliver(forged)
-  await settle()
+  await until(() => rejected() === 1)
   assert.equal(f.seen.length, 0)
   assert.equal(f.stages.at(-1)?.code, "terminal_bad_signature")
   assert.throws(() => f.adapter.observeTerminalFrame(forged), /terminal_bad_envelope/)
   const wrongKey = await f.seal(2, fullFrame(f.fresh.connection, 1), "term", crypto.getRandomValues(new Uint8Array(32)))
   f.peer.channel.deliver(wrongKey)
-  await settle()
+  await until(() => rejected() === 2)
   assert.equal(f.seen.length, 0)
   const frame = await f.seal(3, fullFrame(f.fresh.connection, 4), "term")
   f.peer.channel.deliver(frame)
-  await settle()
+  await until(() => f.seen.length === 1)
   assert.equal(f.seen.length, 1)
   assert.equal(f.dc().filter((m) => m.t === "ack").length, 0, "decryption alone is not an ack")
   f.adapter.observeTerminalFrame(frame)
   assert.deepEqual(f.dc().filter((m) => m.t === "ack"), [{ t: "ack", connection: f.fresh.connection, frame_seq: 4 }])
   assert.equal(f.observed.length, 0, "a DC frame never sends terminal_frame_observed to the relay")
   f.peer.channel.deliver(frame)
-  await settle()
+  await until(() => rejected() === 3)
   assert.equal(f.seen.length, 1, "a replayed DC envelope is refused like a relay one")
   assert.throws(() => f.adapter.observeTerminalFrame(frame), /terminal_bad_envelope/)
   f.adapter.dispose()
@@ -518,13 +517,14 @@ test("a relay frame for a direct connection and a DC frame for a relay connectio
     connection: f.fresh.connection, operation: "list", status: "ok" }), false)
   assert.equal(f.seen.length, 1, "receipts stay on the relay for a direct connection")
   f.adapter.setCarrier(f.fresh.connection, "relay")
+  const wrongCarrier = () => f.stages.filter((row) => row.code === "terminal_wrong_carrier").length
   f.peer.channel.deliver(await f.seal(2, fullFrame(f.fresh.connection, 2), "term"))
-  await settle()
+  await until(() => wrongCarrier() === 2)
   assert.equal(f.seen.length, 1)
   assert.equal(f.stages.at(-1)?.code, "terminal_wrong_carrier")
   f.peer.channel.deliver(await f.seal(3, { v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
     connection: f.fresh.connection, operation: "list", status: "ok" }))
-  await settle()
+  await until(() => f.stages.at(-1)?.code === "terminal_direct_wrong_channel")
   assert.equal(f.seen.length, 1, "a receipt never arrives on the DC")
   assert.equal(f.stages.at(-1)?.code, "terminal_direct_wrong_channel")
   f.adapter.dispose()

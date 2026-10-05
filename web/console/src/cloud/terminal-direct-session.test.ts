@@ -6,6 +6,8 @@ import { TerminalChannelTransport, type TerminalCloudClient, type TerminalEnvelo
 import { CloudTerminalSession } from "./terminal-session.ts"
 // @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
 import { TerminalObservation } from "./terminal-observation.ts"
+// @ts-expect-error -- esbuild bundles the TypeScript source for Node's test runner.
+import { settled, until } from "./until.ts"
 import { bytesBase64, base64Bytes, envelopeSigningBytes } from "../legacy/js/net/cloud-crypto.js"
 import type { DirectChannelLike, DirectPeerLike } from "./terminal-direct.js"
 
@@ -133,17 +135,23 @@ async function machineFixture() {
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 10))
 
-/** Plays the machine until `stop` says so, answering every request except those `hold` keeps. */
+type Held = Array<{ request_id: string; connection: string; operation: string }>
+
+/**
+ * Plays the machine, at least one round, until `done` holds, answering every request except
+ * those `hold` keeps. Sealing and verifying finish off the event loop, so the bound is real
+ * time, not a number of rounds.
+ */
 async function serve(m: Awaited<ReturnType<typeof machineFixture>>, hold: (request: { operation: string; connection: string }) => boolean,
-  rounds = 20, refuse: (request: { operation: string; connection: string; body?: Record<string, unknown> }) => boolean = () => false) {
-  const held: Array<{ request_id: string; connection: string; operation: string }> = []
-  for (let i = 0; i < rounds; i++) {
+  done: (held: Held) => boolean, refuse: (request: { operation: string; connection: string; body?: Record<string, unknown> }) => boolean = () => false) {
+  const held: Held = []
+  await until(async () => {
     for (const request of await m.requests()) {
       if (hold(request)) held.push(request)
       else await m.answer(request as never, refuse(request))
     }
-    await settle()
-  }
+    return done(held)
+  }, 10_000)
   return held
 }
 
@@ -152,13 +160,13 @@ test("the direct connection's first frame, arriving before the lease check retur
   const session = new CloudTerminalSession(m.transport, "stable-tab", m.observation)
   try {
     const starting = session.start()
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(starting))
     await starting
     const attaching = session.attach(terminalID)
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(attaching))
     await attaching
     const acquiring = session.acquire("acquire")
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(acquiring))
     await acquiring
     const relay = (session as unknown as { connection: string }).connection
     await m.frame(relay, false)
@@ -167,14 +175,17 @@ test("the direct connection's first frame, arriving before the lease check retur
     const held = await serve(m, (request) => {
       if (request.operation === "rekey_connection") direct = request.connection
       return request.operation === "control" && request.connection === direct
-    }, 6)
+    }, (held) => held.length === 1)
     assert.ok(direct, "the tab rekeyed onto the DC")
     assert.equal(held.length, 1, "the lease check is out")
+    const opened = () => m.stages.filter((stage) => stage.startsWith("envelope_opened")).length
+    const openedBefore = opened()
     await m.frame(direct, true)
     await m.probe(direct, 1)
+    await until(() => opened() > openedBefore)
     await settle()
     for (const request of held) await m.answer(request as never)
-    const after = await serve(m, () => false, 6)
+    const after = await serve(m, () => false, () => m.acks().length === 1 && session.snapshot.carrier === "direct" && session.snapshot.canType)
     assert.deepEqual(after, [])
     assert.equal(m.acks().length, 1, `the direct frame is acknowledged (stages: ${m.stages.filter((s) => !s.startsWith("raw") && !s.startsWith("request_") && !s.startsWith("pending") && !s.startsWith("session_") && !s.startsWith("relay_ack")).join(" ")})`)
     assert.equal(session.snapshot.carrier, "direct")
@@ -187,13 +198,13 @@ test("a direct connection the machine retires before it activates falls back to 
   const session = new CloudTerminalSession(m.transport, "stable-tab", m.observation)
   try {
     const starting = session.start()
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(starting))
     await starting
     const attaching = session.attach(terminalID)
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(attaching))
     await attaching
     const acquiring = session.acquire("acquire")
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(acquiring))
     await acquiring
     const relay = (session as unknown as { connection: string }).connection
     await m.frame(relay, false)
@@ -201,7 +212,7 @@ test("a direct connection the machine retires before it activates falls back to 
     await serve(m, (request) => {
       if (request.operation === "rekey_connection") direct = request.connection
       return false
-    }, 6)
+    }, () => session.snapshot.carrier === "direct" && !(session as unknown as { upgrading: boolean }).upgrading)
     assert.ok(direct, "the tab rekeyed onto the DC")
     assert.equal(session.snapshot.carrier, "direct")
     // The direct frame never arrives; the machine retires the connection and closes the peer.
@@ -209,10 +220,16 @@ test("a direct connection the machine retires before it activates falls back to 
     m.peer.channel.onclose?.()
     const before = m.sent.length
     // The relay rekey naming the retired connection is refused, so the tab opens afresh.
-    await serve(m, () => false, 10, (request) => request.operation === "rekey_connection" && request.body?.old_connection === direct)
-    const current = (session as unknown as { connection: string }).connection
+    const connection = () => (session as unknown as { connection: string }).connection
+    await serve(m, () => false, () => connection() !== direct && connection() !== relay &&
+      m.sent.slice(before).some((r) => r.operation === "capture" && r.connection === connection()),
+    (request) => request.operation === "rekey_connection" && request.body?.old_connection === direct)
+    const current = connection()
     await m.frame(current, false)
-    await serve(m, () => false, 4)
+    await serve(m, () => false, () => session.snapshot.carrier === "relay" && m.listening().join() === current)
+    // A last round after a settle collects anything else the tab sent, for the checks below.
+    await settle()
+    await serve(m, () => false, () => true)
     assert.equal(session.snapshot.carrier, "relay")
     assert.notEqual(current, relay)
     assert.notEqual(current, direct)
@@ -228,14 +245,14 @@ test("a frame set aside without drawing leaves a row saying why", async () => {
   const session = new CloudTerminalSession(m.transport, "stable-tab", m.observation)
   try {
     const starting = session.start()
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(starting))
     await starting
     const attaching = session.attach(terminalID)
-    await serve(m, () => false, 3)
+    await serve(m, () => false, settled(attaching))
     await attaching
     const relay = (session as unknown as { connection: string }).connection
     await m.frame(relay, false, 10)
-    await settle()
+    await until(() => m.stages.includes("frame_dropped:terminal_frame_stale"))
     assert.ok(m.stages.includes("frame_dropped:terminal_frame_stale"), m.stages.join(" "))
     assert.equal(session.snapshot.frame, null)
   } finally { session.dispose(); m.transport.dispose() }

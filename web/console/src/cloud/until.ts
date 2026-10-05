@@ -6,10 +6,11 @@
  * not on a loaded CI runner. The bound is the real clock, `Date.now()`, and each turn is
  * a `setImmediate`; tests that mock `setTimeout` with `t.mock.timers` mock neither. It
  * does not fail at the deadline: the assertion that follows says what did not happen.
+ * An async `done` can do a round of work, such as answering requests, before it checks.
  */
-export async function until(done: () => boolean, ms = 5_000): Promise<void> {
+export async function until(done: () => boolean | Promise<boolean>, ms = 5_000): Promise<void> {
   const deadline = Date.now() + ms
-  while (!done() && Date.now() < deadline) await new Promise<void>((resolve) => setImmediate(resolve))
+  while (!await done() && Date.now() < deadline) await new Promise<void>((resolve) => setImmediate(resolve))
 }
 
 /** Reports whether `promise` has settled, for `until` to wait on. */

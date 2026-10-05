@@ -679,7 +679,7 @@ test("a direct frame that arrives while the lease is being checked is drawn, ack
     assert.notEqual(direct, relay)
     assert.equal(lastRequest(wire, "control")?.connection, direct, "the lease check is out")
     wire.frame(direct, 1, "direct")
-    await until(() => session.snapshot.frame?.rev === "direct")
+    await settle()
     assert.equal(lastRequest(wire, "activate_connection"), undefined, "activation waits for the lease check")
     wire.releaseReplies()
     await until(() => lastRequest(wire, "activate_connection")?.connection === direct && session.snapshot.carrier === "direct")
