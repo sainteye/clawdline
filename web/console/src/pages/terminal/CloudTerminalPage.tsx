@@ -84,7 +84,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const lastRev = useRef("")
   const drawnFrame = useRef<CloudTerminalSnapshot["frame"]>(null)
   const back = useRef<HTMLButtonElement>(null)
-  const historyFocus = useRef<HTMLPreElement>(null)
+  const historyFocus = useRef<HTMLDivElement>(null)
+  const actionMenu = useRef<HTMLDetailsElement>(null)
   const observed = useRef<TerminalObservation | null>(null)
   const showInputLine = () => requestAnimationFrame(() => {
     const box = scroller.current
@@ -335,14 +336,12 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     <header className="terminal-head">
       <div className="terminal-head-row"><button className="board-button" type="button" ref={back} onClick={goBack}>{nextWord(from === "sessions" ? "terminalBackSessions" : "terminalBack")}</button>
         <strong className="terminal-context" title={label}>{label}</strong>
-        <details className="terminal-more terminal-action-more"><summary aria-label={nextWord("terminalMoreActions")} title={nextWord("terminalMoreActions")}>⋯</summary><div className="terminal-more-actions">
-          {snapshot.control?.holder?.same_client && snapshot.hasLease && <button className="board-button" type="button" disabled={!!busy}
-            onClick={() => void run("release", () => session!.release())}>{nextWord("terminalRelease")}</button>}
-          <button className="board-button" type="button" disabled={!!busy} onClick={() => void run("history", async () => setHistory(history ? null : await session!.history()))}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
-          <button className="board-button" type="button" aria-pressed={reader} onClick={() => setReader((value) => !value)}>{nextWord("terminalReaderMode")}</button>
+        <details className="terminal-action-more" ref={actionMenu}><summary aria-label={nextWord("terminalMoreActions")} title={nextWord("terminalMoreActions")}>⋯</summary><div className="terminal-more-actions">
+          <button className="board-button" type="button" disabled={!!busy} onClick={() => { actionMenu.current?.removeAttribute("open"); void run("history", async () => setHistory(history ? null : await session!.history())) }}>{history ? nextWord("terminalHistoryBack") : nextWord("terminalHistory")}</button>
+          <button className="board-button terminal-reader" type="button" aria-pressed={reader} onClick={() => { actionMenu.current?.removeAttribute("open"); setReader((value) => !value) }}><span>{nextWord("terminalReaderMode")}</span><small>{nextWord("terminalReaderModeHelp")}</small></button>
           <button className="board-button terminal-danger" type="button" ref={closeOpener}
             disabled={!snapshot.canType || !!busy || closeRecord?.status === "pending" || closeRecord?.status === "unknown" || closeRecord?.status === "ok" || closeRecord?.status === "ended"}
-            onClick={() => setCloseConfirm(true)}>{nextWord("terminalTerminateHost")}</button>
+            onClick={() => { actionMenu.current?.removeAttribute("open"); setCloseConfirm(true) }}>{nextWord("terminalTerminateHost")}</button>
         </div></details></div>
       <p className="terminal-status-line" role="status" aria-live="polite">{loading && !snapshot.frame ? "" :
         error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
@@ -389,7 +388,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     </header>
     {history && <section className="terminal-history" aria-label={nextWord("terminalHistoryTitle")}><h2>{nextWord("terminalHistoryTitle")}</h2>
       {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}
-      <pre ref={historyFocus} tabIndex={0}>{history.lines.join("\n")}</pre></section>}
+      <div className="terminal-history-output" ref={historyFocus} tabIndex={0}>{history.lines.map((line, index) =>
+        <div className="terminal-history-line" key={index}>{line || "\u00a0"}</div>)}</div></section>}
     <div className="terminal-scroll" ref={scroller} hidden={history !== null}>{firstFramePending && !error && <p className="terminal-loading terminal-wait" role="status" aria-live="polite"><span className="terminal-wait-indicator" aria-hidden="true" />{nextWord("terminalCloudSyncing")}</p>}<div className="terminal-host" ref={screen} /></div>
     <button className="terminal-keyboard board-button" type="button" disabled={!snapshot.canType || history !== null}
       title={!snapshot.canType ? nextWord("terminalKeyboardPaused") : undefined}
