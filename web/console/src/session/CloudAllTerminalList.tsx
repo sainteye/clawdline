@@ -94,12 +94,12 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
   })
   const open = (row: CloudTerminalRow) => {
     if (!row.project) { setRouteError(nextWord("terminalAllUnknownProject")); return }
-    openTerminalPage(row.project, row.terminal.id, "sessions")
+    openTerminalPage(row.project, row.terminal.id)
   }
 
   if (!host) return <p className="terminal-list-message" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
   return <div className="session-terminal-list" aria-busy={loading ? "true" : undefined}>
-    <div className="session-terminal-head"><div><h2>{nextWord("terminalListMode")}</h2><p>{loading && !rows.length ? nextWord("terminalAllChecking") : nextWord("terminalListCount", { n: matching.length })}</p></div>
+    <div className="session-terminal-head"><div><h2 className="terminal-sr">{nextWord("terminalListMode")}</h2><p>{loading && !rows.length ? nextWord("terminalAllChecking") : nextWord("terminalListCount", { n: matching.length })}</p></div>
       <button type="button" onClick={retry} disabled={loading}>{nextWord("terminalCloudReloadList")}</button></div>
     <div className="session-terminal-filters">
       <label>{nextWord("terminalFilterMachine")}
