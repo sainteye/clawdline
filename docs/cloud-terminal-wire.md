@@ -113,7 +113,7 @@ Revocation known to the machine is enforced exactly as on the relay path: every 
 
 ### Fallback
 
-When the DC closes or fails, an ack or chunk times out, or ICE fails, the browser rekeys back to a relay connection over the relay, naming the direct connection as `old_connection`; if the machine has already retired it, the browser opens a new connection and proves its lease as after any network reconnect. Inputs without a receipt are never replayed. After a failed upgrade the browser waits `CloudTerminalDirectRetrySecondsLimit` before trying again for the same terminal.
+When the DC closes or fails, an ack or chunk times out, or ICE fails, the browser rekeys back to a relay connection over the relay, naming the direct connection as `old_connection`; if the machine has already retired it, the rekey is refused with `terminal_invalid` (the code for an `old_connection` that is not live), and the browser opens a new connection and proves its lease as after any network reconnect. Inputs without a receipt are never replayed. After a failed upgrade the browser waits `CloudTerminalDirectRetrySecondsLimit` before trying again for the same terminal.
 
 When the machine setting `cloud_terminal_direct` (default on) is off, offers are refused with `terminal_direct_disabled` and the browser stays on the relay.
 
