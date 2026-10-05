@@ -1173,7 +1173,15 @@ func codexItemEntries(item object, at int64) []Entry {
 				return []Entry{{Kind: KindNotice, Text: n.Body, At: at, Notice: n}}
 			}
 		}
-		text, images := canonicalImageContent(codexText(item["content"]), 0, false)
+		localImages := 0
+		if blocks, ok := rawObjects(item["content"]); ok {
+			for _, block := range blocks {
+				if kind, _ := block.str("type"); kind == "local_image" {
+					localImages++
+				}
+			}
+		}
+		text, images := canonicalImageContent(codexText(item["content"]), localImages, false)
 		if images > 0 {
 			return []Entry{{Kind: KindUser, Text: text, At: at, ImageCount: images}}
 		}

@@ -88,21 +88,25 @@ number is in `docs/cloud-terminal-wire.md`, Direct carrier.
 
 ## Measured after the change (2026-10-05)
 
-In app.clawdline.com in Chrome, against the fixture terminal, with the page's stage rows timed from
-the keystroke's `request_sent` to the echo's `frame_observed`:
+In app.clawdline.com in Chrome, against the fixture terminal, on one page load per carrier. Each
+sample types one character into the terminal and times from that keystroke to the first terminal
+screen (`term/` or `termd/` envelope) the page receives, on the WebSocket for the relay or the data
+channel for direct. The relay run kept the same page on the relay by removing `RTCPeerConnection`
+from the page before it opened the terminal; nothing on the machine was changed.
 
-| Carrier | Keystroke → echo drawn | Samples |
-| --- | --- | --- |
-| direct | 35 ms, 34 ms | 2 |
+| Carrier | Median | p95 | Range | Samples |
+| --- | --- | --- | --- | --- |
+| relay | 443 ms | 832 ms | 341–832 ms | 15 |
+| direct | 18.5 ms | 26 ms | 12–26 ms | 20 |
 
-For comparison on the same page, the input's receipt, which still returns over the relay's `termr`,
-arrived 308 ms after the keystroke, while its echo had come over the DC 34 ms after it.
+One more relay sample, 40 ms, is left out: it was an idle-screen heartbeat that happened to arrive
+right after the keystroke, not the echo. A separate run timed to the page's `frame_observed` (the
+screen drawn) gave 35 ms and 34 ms on direct.
 
 The browser and the machine were the same Mac, so the direct figure is what remains without a
-network: tmux, one `CaptureGap` (33 ms), crypto and drawing. Between two networks it adds that
-pair's own round trip, not two Pacific crossings. The samples are few because the tab went to the
-background mid-run and released its Cloud line, as a hidden tab does; the page also stops logging
-stage rows after 128 (`TERMINAL_OBSERVATION_ROWS`), which a longer run has to account for.
+network: tmux, one `CaptureGap` (33 ms at most), crypto. Between two networks it adds that pair's
+own round trip, not the relay's crossings to San Jose. Each run was short because Chrome reported
+the tab as hidden, and a hidden page releases its Cloud line after a while, as designed.
 
 ## Decisions
 
