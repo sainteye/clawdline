@@ -260,6 +260,20 @@ func TestCodexItems(t *testing.T) {
 	}
 }
 
+func TestCodexUserMessageCountsLocalImage(t *testing.T) {
+	path := writeRecord(t, codexItem(m{"type": "UserMessage", "content": []m{
+		{"type": "local_image", "path": "/tmp/example.png"},
+		{"type": "text", "text": "look at this [Image #1]"},
+	}}))
+	page, err := ReadCodex(path, 10)
+	if err != nil || len(page.Entries) != 1 {
+		t.Fatalf("%v %+v", err, page.Entries)
+	}
+	if got := page.Entries[0]; got.Kind != KindUser || got.Text != "look at this" || got.ImageCount != 1 {
+		t.Fatalf("image turn: %+v", got)
+	}
+}
+
 func TestCodexPlanIsReadAsLiterals(t *testing.T) {
 	input := `const p = [{step:"Inspect <unsafe>",status:"completed"},{step:"Implement cards",status:"in_progress"},{step:"Verify",status:"pending"}]; const r = await tools.update_plan({explanation:"Now",plan:p}); text(r)`
 	row := func(input string) m {
