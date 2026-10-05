@@ -11,7 +11,7 @@ import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords
 import { collectCloudTerminals, readCloudTerminalList, type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
 import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, watchTerminalClose } from "../cloud/terminal-close-state.js"
 import { openMachinePairing } from "../legacy/devices-bridge.js"
-import { TerminalGlyph } from "./TerminalGlyph.js"
+import { TerminalMarks } from "./TerminalGlyph.js"
 
 async function readMachine(host: TerminalHost, machine: string): Promise<import("@clawdline/contract").Terminal[]> {
   const { session, release } = await acquireTerminalConnection(host, machine, TAB, new TerminalObservation())
@@ -140,7 +140,7 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
     <ul className="session-terminal-rows">{matching.map((row) => <li key={`${row.machine}/${row.terminal.id}`}>
       <button className="session-terminal-card" type="button" onClick={() => open(row)}
         aria-label={nextWord("terminalOpenView", { project: row.projectName, machine: row.machineName, id: terminalShortID(row.terminal.id) })}>
-        <TerminalGlyph />
+        <TerminalMarks place={places.current.find((place) => place.id === row.project)} />
         <span className="session-terminal-main">
           <strong>{row.projectName}</strong>
           <span>{row.machineName} · {nextWord("terminalIdentity", { id: terminalShortID(row.terminal.id) })}</span>
@@ -151,7 +151,6 @@ export function CloudAllTerminalList({ shown, filter }: { shown: boolean; filter
           <bdi className="session-terminal-dir" title={row.terminal.dir}>{row.terminal.dir}</bdi>
         </span>
       </button>
-      <button className="session-terminal-close" type="button" onClick={() => open(row)}>{nextWord("terminalTerminateOpen")}</button>
     </li>)}</ul>
   </div>
 }

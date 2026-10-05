@@ -12,6 +12,7 @@ import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords
 import { rowNames } from "../pages/terminal/TerminalProjectList.js"
 import { Start } from "./Start.js"
 import { CloudAllTerminalList } from "./CloudAllTerminalList.js"
+import { TerminalMarks } from "./TerminalGlyph.js"
 import "./terminal-list.css"
 
 function why(error: unknown): string {
@@ -21,14 +22,6 @@ function why(error: unknown): string {
 function dirTail(dir: string | undefined): string {
   if (!dir) return ""
   return dir.length > 38 ? "…" + dir.slice(-38) : dir
-}
-
-function ProjectMark({ place }: { place?: ProjectPlace }) {
-  const canvas = useRef<HTMLCanvasElement>(null)
-  useEffect(() => {
-    if (canvas.current) L.drawIcon(canvas.current, place?.icon as L.StartPlaceRow["icon"], 4)
-  }, [place?.icon])
-  return <span className="session-terminal-icon" aria-hidden="true"><canvas ref={canvas} /></span>
 }
 
 /** All running terminals on this machine, using polling rather than another held stream. */
@@ -172,7 +165,7 @@ export function TerminalList({ shown, filter }: { shown: boolean; filter: string
         const index = rows.findIndex((row) => row.id === terminal.id)
         return <li key={terminal.id}>
           <button className="session-terminal-card" type="button" onClick={() => openTerminalPage(terminal.project_id, terminal.id, "sessions")}>
-            <ProjectMark place={project} />
+            <TerminalMarks place={project} />
             <span className="session-terminal-main">
               <strong>{project?.label ?? terminal.project_id}</strong>
               <span title={terminal.id}>{nextWord("terminalIdentity", { id: terminalShortID(terminal.id) })}</span>

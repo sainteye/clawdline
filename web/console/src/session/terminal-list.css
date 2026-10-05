@@ -16,6 +16,8 @@
 .session-terminal-dir { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .session-terminal-icon { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 7px; background: var(--accent-in); display: grid; place-items: center; }
 .session-terminal-icon svg { width: 19px; height: 19px; color: var(--accent); }
+.session-terminal-marks { width: 32px; flex: 0 0 32px; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.session-terminal-project { width: 32px; min-height: 20px; display: grid; place-items: center; }
 .session-terminal-close { align-self: center; margin-right: 8px; }
 .terminal-list-message { padding: 12px; color: var(--dim); }
 .terminal-list-message button { margin-left: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); padding: 7px 10px; }
