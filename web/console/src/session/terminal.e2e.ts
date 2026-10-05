@@ -893,7 +893,11 @@ test("the keyboard reaches the header, goes into the terminal with Tab, and leav
   const hint = await tab.run(`document.querySelector("#terminal .terminal-leave-hint")?.textContent ?? ""`)
   assert.match(hint, /F6/, "a visible hint names F6")
   if (shots) writeFileSync(join(shots, "keyboard-pass.json"), JSON.stringify({ reached, visibleRing, screenName: name, afterF6, inputsSent: typed, hint }, null, 2))
-  for (const want of ["返回", "釋放", "歷史", "關閉終端"]) assert.ok(reached.some((r) => r.startsWith(want)), `${want} is reached by Tab: ${reached.join(" → ")}`)
+  assert.ok(reached.some((r) => r.includes("更多操作")), "Tab reaches the actions menu: " + reached.join(" → "))
+  const menu = await tab.run(`(() => { const details = document.querySelector('#terminal .terminal-action-more'); details.open = true; const actions = details.querySelector('.terminal-more-actions'); return { labels: actions.textContent, width: actions.getBoundingClientRect().width, display: getComputedStyle(actions).display } })()`)
+  assert.ok(!menu.labels.includes("釋放"), "release is not a visible action")
+  assert.match(menu.labels, /較早的輸出.*搭配螢幕閱讀器.*關閉終端/, "the menu holds the remaining actions")
+  assert.ok(menu.width <= 260 && menu.display !== "contents", "the actions open in a compact floating panel")
   await tab.close()
 })
 
