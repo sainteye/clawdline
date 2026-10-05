@@ -352,3 +352,8 @@ cmd/clawdline.workBaselineReadLimit # read: a frozen work baseline file, at most
 internal/app/orchestrator.CancelReasonLimit # admission: a task cancel's reason, 500 bytes after its whitespace is collapsed; longer is refused 422 reason_too_long, never cut (limits N75)
 internal/app/orchestrator.cancelKeyLimit # admission: a task cancel's Idempotency-Key, 200 characters as a board write's; longer is refused 400 bad_idempotency_key (limits N75)
 internal/transport/http.sessionTodoDecisionReadMillisecondsLimit # parameter: an optional decision projection waits at most 300 ms; on timeout the Session todo answer still returns with decisions_unavailable, and no capacity accumulates
+internal/adapters/turnreport.fullTextLimit # read: the largest code file whose whole text `clawdline report` carries, 70 000 bytes; a larger one carries only its diffs and says so (limits N77)
+internal/adapters/turnreport.markdownLimit # read: the largest Markdown file `clawdline report` renders whole, 1 MiB; a larger one carries only its diffs and says so (limits N77)
+internal/adapters/turnreport.diffLimit # read: one commit's diff of one file in `clawdline report`, 256 KiB; past it the diff is cut and says so (limits N77)
+internal/adapters/turnreport.reportLimit # page: the text and diffs one `clawdline report` carries, 12 MiB; past it the largest whole texts, then diffs, go and each is named (limits N77)
+internal/adapters/turnreport.commitsLimit # admission: commits one `clawdline report` reads, 500; more is refused before anything is read (limits N77)

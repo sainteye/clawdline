@@ -757,6 +757,24 @@ terminal 還掛著同一個 conversation 時顯示。
   `conversation_ambiguous`、`registry_stale`、`session_not_found`、`session_unbound`、
   `child_session`。被拒絕就照實回報；在聊天裡寫一句話不算收據。
 
+**留一份收尾狀態報告給使用者。** 這一輪改了某個 git 專案裡的檔案時，給使用者一頁：上面看得到進度，
+點檔案就能讀這一輪新增、修改的每個檔。它是本機的 HTML 檔：不上傳，也不載入任何外部資源。
+
+```sh
+clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang zh-TW] [--open] <commit>…
+```
+
+- 傳**這一輪自己的 commit，由舊到新**。每個 commit 分開讀，夾在中間的別的 Session 的 commit 不會混
+  進來；不要傳範圍。
+- `status.md`：可選的 `# 標題`、可選的一行副標，然後每張卡一個 `## ` 標題（用 ✅、🟡 或 ❌ 開頭）
+  和一小段 Markdown 內文。
+- `--notes`：一行一個 `path: 一句話`，顯示在那個檔案上方。`--pin`（可重複）把檔案釘在最前面；這一輪
+  動到 `CLAUDE.md`、`AGENTS.md` 時會自動釘。`--exclude` 排除某個路徑並在報告裡寫明。`--at` 是檔案內
+  容取自哪個版本（預設 `HEAD`）。
+- 預設寫到 `<state dir>/reports/<date>-<project>.html`，不在任何 repository 裡（`--out` 指定別的檔案或
+  資料夾）。stderr 會說哪些沒列或有刪減；**stdout 的最後一行是 `file://` 網址**，把它放進你最後的回答。
+  `--open` 會順便用這台機器的瀏覽器打開。
+
 ## 8. 跟另一個 session 說話
 
 **找到它。** `GET /v1/orchestrator/sessions` 是通訊錄：每個 session 的 `id`（也就是它的 terminal id）、

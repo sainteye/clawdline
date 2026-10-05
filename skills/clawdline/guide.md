@@ -867,6 +867,26 @@ conversation.
   `conversation_ambiguous`, `registry_stale`, `session_not_found`, `session_unbound`,
   `child_session`. Report the refusal honestly; a sentence in chat is not a receipt.
 
+**Leave a status report for the person.** When the turn changed files in a git project, hand the
+person one page where they can see where the work stands and read every file the turn added or
+changed. It is a local HTML file: nothing is uploaded, and it loads nothing.
+
+```sh
+clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang zh-TW] [--open] <commit>…
+```
+
+- Name **this turn's own commits, oldest first**. Each is read on its own, so another Session's
+  commits between them stay out; never pass a range.
+- `status.md`: an optional `# Title`, an optional line under it, then one `## ` heading per card —
+  open it with ✅, 🟡 or ❌ — and a short Markdown body.
+- `--notes`: one `path: sentence` per line, shown above that file. `--pin` (repeatable) puts a file
+  first; `CLAUDE.md` and `AGENTS.md` are pinned when the turn touched them. `--exclude` leaves a
+  path out and says so. `--at` is the revision whose contents are shown (default `HEAD`).
+- It writes `<state dir>/reports/<date>-<project>.html`, outside every repository (`--out` for
+  another file or directory). stderr says what it left out or shortened; **the last line of stdout
+  is the `file://` address**. Put that address in your final answer. `--open` also opens it in this
+  machine's browser.
+
 ## 8. Talk to another session
 
 **Find it.** `GET /v1/orchestrator/sessions` is the address book: every session's `id` (its

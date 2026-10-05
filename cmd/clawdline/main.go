@@ -124,6 +124,9 @@ func main() {
 		guideCommand(os.Args[2:])
 	case "skill":
 		skillCommand(os.Args[2:])
+	case "report":
+		// A turn's status report, one HTML file on this machine; no daemon.
+		reportCommand(os.Args[2:])
 	case "squad":
 		squadCommand(os.Args[2:])
 	case "interrupt":
@@ -402,9 +405,10 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|session|coordinator|usage|heavy|verify|setting|dispatch|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
+	fmt.Fprintln(os.Stderr, "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
 	fmt.Fprintln(os.Stderr, "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role")
 	fmt.Fprintln(os.Stderr, "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default")
