@@ -55,9 +55,14 @@ Deployment snapshots and comparison trees should not enter the audit backlog at 
 creation and disposal in one process:
 
 ```sh
-tools/check-worktrees.sh --ephemeral -- ./tools/package-macos.sh
+live_app="$(git rev-parse --show-toplevel)/dist/Clawdline Next.app"
+tools/check-worktrees.sh --ephemeral -- ./tools/package-macos.sh --install-to "$live_app"
 tools/check-worktrees.sh --ephemeral --rev HEAD~1 -- sh -c 'some read-only comparison'
 ```
+
+The explicit install target matters: without it, `package-macos.sh` installs the new bundle inside
+the throwaway worktree while the app serving port 7727 keeps running from the primary checkout.
+Check the served `/BUILD.json` after the restart, not only `/v1/health`.
 
 The wrapper creates a detached worktree below the operating system's temporary directory, runs the
 command from that checkout, and removes it on exit only when it is clean and its `HEAD` is contained
