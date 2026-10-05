@@ -32,6 +32,7 @@ const (
 	KindPeer       = "peer"    // another Claude Code session addressing this one
 	KindMessage    = "message" // another session addressing this one through Clawdline
 	KindNotice     = "notice"  // a versioned Clawdline message, not a person's words
+	KindError      = "error"   // a provider error that ended a turn without an answer
 	KindTool       = "tool"    // a tool being called
 	KindToolResult = "toolResult"
 )
@@ -1090,9 +1091,11 @@ func tagAttribute(name, tag string) string {
 func parseCodex(r io.ReaderAt, size int64, limit int) ([]Entry, int64) {
 	var newestFirst []Entry
 	unread := eachLineFromEnd(r, size, func(line []byte) bool {
-		// Only two row shapes can yield anything, and both spell their marker
+		// Only three row shapes can yield anything, and each spells its marker
 		// literally. Skipping the rest unparsed is most of what a rollout is.
-		if !bytes.Contains(line, []byte("item_completed")) && !bytes.Contains(line, []byte("tools.update_plan(")) {
+		if !bytes.Contains(line, []byte("item_completed")) &&
+			!bytes.Contains(line, []byte("task_complete")) &&
+			!bytes.Contains(line, []byte("tools.update_plan(")) {
 			return true
 		}
 		rowEntries := codexEntries(line)
@@ -1124,6 +1127,14 @@ func codexEntries(line []byte) []Entry {
 		if item, ok := payload.object("item"); ok {
 			return codexItemEntries(item, at)
 		}
+	}
+	if rowType == "event_msg" && payloadType == "task_complete" {
+		if failure, ok := payload.object("error"); ok {
+			if message, ok := failure.str("message"); ok && strings.TrimSpace(message) != "" {
+				return []Entry{{Kind: KindError, Text: strings.TrimSpace(message), At: at}}
+			}
+		}
+		return nil
 	}
 	if rowType != "response_item" || payloadType != "custom_tool_call" {
 		return nil

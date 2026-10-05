@@ -1,0 +1,4 @@
+.entry[data-role="error"] .who,
+.entry[data-role="error"] .body {
+  color: var(--bad);
+}

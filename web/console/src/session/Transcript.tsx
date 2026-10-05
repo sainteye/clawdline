@@ -36,6 +36,7 @@ import { conversationNotStarted } from "./readiness.js"
 import { transcriptShow } from "./transcript-trouble.js"
 import { agentReportIdentity } from "./agent-report.js"
 import "./agent-report.css"
+import "./transcript-error.css"
 import { atNewest, jumpOffered } from "./jump.js"
 import "./jump.css"
 
@@ -339,6 +340,7 @@ function TranscriptOf({ id, agentId, onAgent }: { id: string; agentId?: string; 
   const who: Record<string, string> = {
     user: T.webWhoYou,
     assistant: L.assistantDisplayName(session?.assistant),
+    error: L.assistantDisplayName(session?.assistant),
     agent: T.webAgents,
     peer: "Claude ↔",
     message: "Clawdline ↔",

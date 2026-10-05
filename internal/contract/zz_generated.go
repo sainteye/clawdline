@@ -6700,8 +6700,9 @@ type TranscriptEntry struct {
 	// A complete Codex checklist update.
 	Plan []TranscriptPlanStep `json:"plan,omitempty"`
 
-	// user, assistant, peer (another Claude Code session), message (another session
-	// through Clawdline), notice (Clawdline about a task) or tool.
+	// user, assistant, error (a provider failure that ended a turn), peer (another
+	// Claude Code session), message (another session through Clawdline), notice
+	// (Clawdline about a task) or tool.
 	Role string `json:"role"`
 
 	// The human-facing name of the session a peer or message row came from.

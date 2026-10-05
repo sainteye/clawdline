@@ -260,6 +260,30 @@ func TestCodexItems(t *testing.T) {
 	}
 }
 
+// Codex puts provider failures in the turn's task_complete event rather than
+// an AgentMessage item. Ignoring that row left a rejected request looking like
+// an empty conversation in Clawdline even while the terminal showed the error.
+func TestCodexTurnFailureIsAVisibleEntry(t *testing.T) {
+	failed := m{"timestamp": "2026-10-05T07:43:58.922Z", "type": "event_msg", "payload": m{
+		"type": "task_complete", "last_agent_message": nil,
+		"error": m{"message": "Selected model is at capacity. Please try a different model.", "codex_error_info": "server_overloaded"},
+	}}
+	succeeded := m{"timestamp": "2026-10-05T07:44:58.922Z", "type": "event_msg", "payload": m{
+		"type": "task_complete", "last_agent_message": "done", "error": nil,
+	}}
+	page, err := ReadCodex(writeRecord(t, failed, succeeded), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Entries) != 1 {
+		t.Fatalf("entries: %+v, want the one failed turn", page.Entries)
+	}
+	got := page.Entries[0]
+	if got.Kind != KindError || got.Text != "Selected model is at capacity. Please try a different model." || got.At == 0 {
+		t.Fatalf("failure: %+v", got)
+	}
+}
+
 func TestCodexPlanIsReadAsLiterals(t *testing.T) {
 	input := `const p = [{step:"Inspect <unsafe>",status:"completed"},{step:"Implement cards",status:"in_progress"},{step:"Verify",status:"pending"}]; const r = await tools.update_plan({explanation:"Now",plan:p}); text(r)`
 	row := func(input string) m {
