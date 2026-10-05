@@ -86,9 +86,11 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		// of a resumed session or the rollout the foreground process holds
 		// open. A managed app-server holds that rollout instead of the TUI, so
 		// an otherwise-unbound iTerm row gets a second, provider-owned path:
-		// live writer lock, rollout head, name index, cwd and exact terminal
-		// title must all agree. Neither path guesses from cwd alone; two Codex
-		// sessions in one checkout is the ordinary case here.
+		// live writer lock, rollout head, cwd and exact terminal title must all
+		// agree, the title carrying the thread's name when Codex has one. An
+		// unnamed thread's bare `<dir> (codex)` title binds only while it is the
+		// sole unnamed live root in that cwd. Neither path guesses from cwd
+		// alone; two Codex sessions in one checkout is the ordinary case here.
 		binding := s.Binding
 		if s.ConversationID == "" {
 			live, ok := h.codexLiveFor(s)

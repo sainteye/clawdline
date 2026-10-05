@@ -13,7 +13,8 @@ import (
 
 // codexLiveIdentity is one conversation whose writer lock is held now. It is
 // not a historical index: refreshCodexLive drops it as soon as the lock is no
-// longer held.
+// longer held. An empty Name is a thread Codex has not named yet, which joins
+// only the bare directory title (codexLiveFor).
 type codexLiveIdentity struct {
 	ID   string
 	Name string
@@ -26,8 +27,10 @@ type codexLiveIdentity struct {
 // files answers a false `no_record`.
 //
 // A writer-lock filename alone proves too little. A candidate is admitted
-// only when the lock is held now, its rollout head says it is the conversation
-// root, and Codex's own name index names it. The terminal title and cwd are
+// only when the lock is held now and its rollout head says it is the
+// conversation root. Its name comes from session_index.jsonl or, for the
+// threads Codex 0.160 names only there, its state database; a thread with
+// neither is kept unnamed rather than dropped. The terminal title and cwd are
 // checked later, once terminal and process inventories have been merged.
 func (h *Host) refreshCodexLive() {
 	ids, complete := heldCodexThreadIDs(filepath.Join(h.Home, ".codex", "thread-writer-locks"))
@@ -35,12 +38,10 @@ func (h *Host) refreshCodexLive() {
 		h.codexLive = nil
 		return
 	}
+	h.nameFromCodexState(ids)
 	needed := make(map[string]bool, len(ids))
 	paths := make(map[string]string, len(ids))
 	for _, id := range ids {
-		if h.codex[id] == "" {
-			continue
-		}
 		if path := h.codexRollouts[id]; path != "" {
 			if _, err := os.Stat(path); err == nil {
 				paths[id] = path
@@ -64,6 +65,30 @@ func (h *Host) refreshCodexLive() {
 	}
 	h.codexLive = live
 	h.codexRollouts = paths
+}
+
+// nameFromCodexState fills h.codex for live ids the session index does not
+// name. The index wins where both have a name: it is what this path has
+// always trusted, so a thread named in both keeps exactly its old title
+// contract, and the database is asked only about the few live gaps rather
+// than its whole history on every refresh.
+func (h *Host) nameFromCodexState(ids []string) {
+	var unnamed []string
+	for _, id := range ids {
+		if h.codex[id] == "" {
+			unnamed = append(unnamed, id)
+		}
+	}
+	names := codexStateNames(h.Home, unnamed)
+	if len(names) == 0 {
+		return
+	}
+	if h.codex == nil {
+		h.codex = map[string]string{}
+	}
+	for id, name := range names {
+		h.codex[id] = name
+	}
 }
 
 // codexRolloutPaths walks Codex's tree once for every set of newly-live ids,
@@ -99,6 +124,12 @@ func codexRolloutPaths(home string, needed map[string]bool) map[string]string {
 
 // codexLiveFor uses the terminal title only as the final join key, never as a
 // name in its own right. A duplicate exact match binds nothing.
+//
+// A named thread's title is `<name> | <base(cwd)> (codex)`; an unnamed one's
+// is the bare `<base(cwd)> (codex)`. Each identity is compared only with the
+// form its own name implies, so neither kind can take the other's terminal.
+// Every unnamed live root in one cwd expects the same bare title, so two of
+// them are the duplicate match that binds nothing: cwd alone never chooses.
 func (h *Host) codexLiveFor(s session.Session) (codexLiveIdentity, bool) {
 	if s.Backend != session.BackendITerm || s.CWD == "" || s.Label == "" {
 		return codexLiveIdentity{}, false
@@ -110,7 +141,10 @@ func (h *Host) codexLiveFor(s session.Session) (codexLiveIdentity, bool) {
 		if live.CWD != s.CWD {
 			continue
 		}
-		expected := live.Name + " | " + filepath.Base(live.CWD) + " (codex)"
+		expected := filepath.Base(live.CWD) + " (codex)"
+		if live.Name != "" {
+			expected = live.Name + " | " + expected
+		}
 		if label != expected {
 			continue
 		}

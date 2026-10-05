@@ -42,3 +42,60 @@ func TestAManagedCodexTitleMustBeAnExactUniqueMatch(t *testing.T) {
 		t.Fatal("two exact live matches were ranked instead of left unbound")
 	}
 }
+
+// Codex 0.160 leaves a thread unnamed until something names it, and the
+// terminal title is then only "<base(cwd)> (codex)". That title is accepted
+// only for an unnamed live root that is alone in its directory.
+func TestAnUnnamedManagedCodexThreadBindsOnlyWhenAloneInItsDirectory(t *testing.T) {
+	unnamed := codexLiveIdentity{ID: "c0de0003-0000-4000-8000-000000000003", CWD: "/code/demo"}
+	h := &Host{codexLive: map[string]codexLiveIdentity{unnamed.ID: unnamed}}
+	base := session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
+		CWD: "/code/demo", Label: "demo (codex)"}
+
+	if got, ok := h.codexLiveFor(base); !ok || got.ID != unnamed.ID {
+		t.Fatalf("unnamed match = %+v, %v", got, ok)
+	}
+	working := base
+	working.Label = "⠸ demo (codex)"
+	if got, ok := h.codexLiveFor(working); !ok || got.ID != unnamed.ID {
+		t.Fatalf("working unnamed title = %+v, %v", got, ok)
+	}
+	piped := base
+	piped.Label = " | demo (codex)"
+	if _, ok := h.codexLiveFor(piped); ok {
+		t.Fatal("an empty name segment was accepted as the unnamed title")
+	}
+
+	// A named thread in the same directory neither takes the unnamed title
+	// nor lets the unnamed thread take its own.
+	named := codexLiveIdentity{ID: "c0de0004-0000-4000-8000-000000000004", Name: "Inspect the queue", CWD: "/code/demo"}
+	h.codexLive[named.ID] = named
+	if got, ok := h.codexLiveFor(base); !ok || got.ID != unnamed.ID {
+		t.Fatalf("unnamed title beside a named peer = %+v, %v", got, ok)
+	}
+	namedTitle := base
+	namedTitle.Label = "Inspect the queue | demo (codex)"
+	if got, ok := h.codexLiveFor(namedTitle); !ok || got.ID != named.ID {
+		t.Fatalf("named title beside an unnamed peer = %+v, %v", got, ok)
+	}
+
+	second := codexLiveIdentity{ID: "c0de0005-0000-4000-8000-000000000005", CWD: "/code/demo"}
+	h.codexLive[second.ID] = second
+	if got, ok := h.codexLiveFor(base); ok {
+		t.Fatalf("two unnamed threads in one directory bound %+v", got)
+	}
+	if got, ok := h.codexLiveFor(namedTitle); !ok || got.ID != named.ID {
+		t.Fatalf("unnamed peers disturbed the named match: %+v, %v", got, ok)
+	}
+}
+
+// A named thread is joined only by its full title, never by the bare
+// directory title an unnamed thread would show.
+func TestANamedManagedCodexThreadIgnoresTheUnnamedTitle(t *testing.T) {
+	named := codexLiveIdentity{ID: "c0de0006-0000-4000-8000-000000000006", Name: "Inspect the queue", CWD: "/code/demo"}
+	h := &Host{codexLive: map[string]codexLiveIdentity{named.ID: named}}
+	if got, ok := h.codexLiveFor(session.Session{Backend: session.BackendITerm, Assistant: session.AssistantCodex,
+		CWD: "/code/demo", Label: "demo (codex)"}); ok {
+		t.Fatalf("the bare directory title bound a named thread: %+v", got)
+	}
+}
