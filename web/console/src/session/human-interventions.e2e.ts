@@ -26,6 +26,7 @@ let failActions = false
 let readDelay = 0
 let noteCount = 1
 let showOptions = true
+let singleOption = false
 let listWaiting = false
 let listAttentionCount = 1
 const row = {
@@ -123,13 +124,14 @@ function fixture(): Server {
   const publish = () => { for (const client of eventClients) client.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; listWaiting = false; listAttentionCount = 1; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; singleOption = false; listWaiting = false; listAttentionCount = 1; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-sends") { failSends = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/send-delay") { sendDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/list-waiting") { listWaiting = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/list-count") { listAttentionCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")); publish(); return json(res, 200, { ok: true }) }
     if (path === "/__fixture/count") { noteCount = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("value")) || 1; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/options") { showOptions = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") !== "0"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/single-option") { singleOption = true; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-reads") { failReads = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-actions") { failActions = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/read-delay") { readDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
@@ -152,7 +154,7 @@ function fixture(): Server {
         summary: "The release is waiting for a date.", action: "Choose a date.", reason: "Only the person knows the preferred date.",
         document_url: origin + `/#document=1&machine=this-mac&session=${SESSION}&scope=project&path=demo.md`,
         detail: ("The report is ready. Please review the proposed date and the linked evidence.\n").repeat(36), options: showOptions ? [
-          { label: "Tuesday", draft: "Tuesday works for me." }, { label: "Wednesday", draft: "Wednesday works for me." }] : [],
+          { label: "Tuesday", draft: "Tuesday works for me." }, ...singleOption ? [] : [{ label: "Wednesday", draft: "Wednesday works for me." }] ] : [],
         created_at: now, read_at: readAt, resolved_at: resolvedAt, version }
       if (req.method === "GET") {
         const answer = () => failReads ? json(res, 503, { error: "read_failed" }) : json(res, 200, { ok: true, rows: Array.from({ length: noteCount }, (_, index) => ({ ...note, id: `10000000-0000-4000-8000-${String(32 + index).padStart(12, "0")}` })), pruned_resolved: 0 })
@@ -255,6 +257,51 @@ after(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5 })
 })
 for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
+  test(name + ": one suggestion enters the composer without sending", async () => {
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    try {
+      await fetch(origin + "/__fixture/reset")
+      await fetch(origin + "/__fixture/single-option")
+      await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: name === "phone" }, id)
+      const mark = browser.loadCount; await browser.send("Page.navigate", { url: origin + "/#session=" + SESSION }, id); await browser.loaded(id, mark)
+      const deadline = Date.now() + 8000
+      while (!(await run(`!!document.querySelector(".human-interventions-head") && !!document.querySelector("#msg")`))) {
+        if (Date.now() > deadline) assert.fail("composer did not load")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      await run(`document.querySelector("#msg").textContent = "Existing draft."; document.querySelector(".human-interventions-head").click()`)
+      while (!(await run(`!!document.querySelector(".human-intervention-option")`))) {
+        if (Date.now() > deadline) assert.fail("suggestion did not load")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      assert.equal(await run(`document.querySelectorAll(".human-intervention-option").length`), 1)
+      assert.match(await run(`document.querySelector(".human-intervention-option").getAttribute("aria-label")`), /^填入對話框/)
+      assert.match(await run(`document.querySelector(".human-intervention-hint").textContent`), /確認或修改後再送出/)
+      await run(`document.querySelector(".human-intervention-option").focus()`)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
+      while (!(await run(`document.querySelector("#msg").textContent.includes("Tuesday works for me.")`))) {
+        if (Date.now() > deadline) assert.fail("suggestion did not enter composer")
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      assert.match(await run(`document.querySelector("#msg").textContent`), /^Existing draft\..*Tuesday works for me\./s)
+      assert.equal(await run(`document.activeElement?.id`), "msg")
+      assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
+      assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true)
+      assert.equal(sentTexts.length, 0)
+      assert.equal(sendRequests, 0)
+      assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
+    } finally {
+      await browser.send("Target.closeTarget", { targetId })
+    }
+  })
   test(name + ": tapping a suggested reply sends it once and then resolves the note", async () => {
     const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
     const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
@@ -276,7 +323,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await until(`!!document.querySelector(".human-interventions-head")`)
       assert.match(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /載入中/)
       assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-label")`), /0 筆/)
-      await until(`!!document.querySelector(".human-interventions-dot") && !!document.querySelector(".session-todos-empty")`)
+      await until(`!!document.querySelector(".human-interventions-dot")`)
       await fetch(origin + "/__fixture/read-delay?ms=0")
       assert.match(await run(`document.querySelector(".human-interventions-live").textContent`), /1 筆未處理/)
       assert.equal(await run(`document.querySelector(".session-todos").open`), false)
@@ -449,10 +496,11 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.equal(await run(`document.querySelector(".human-intervention-drafts h4").textContent`), "建議回覆")
       assert.equal(await run(`document.querySelector(".human-intervention-option span").textContent`), "Choose a date.")
       await run(`document.querySelector(".human-intervention-option").click()`)
-      await until(`!document.querySelector(".human-interventions-dot")`)
-      assert.equal(sentTexts.length, 1)
-      assert.match(sentTexts[0], /^Choose a date\.\n\n\(Clawdline 便條 10000000-0000-4000-8000-000000000032/)
-      assert.equal(await run(`document.getElementById("msg").textContent`), "")
+      await until(`document.getElementById("msg").textContent.includes("Choose a date.")`)
+      assert.equal(await run(`!!document.querySelector(".human-interventions-dot")`), true)
+      assert.equal(sentTexts.length, 0)
+      assert.equal(sendRequests, 0)
+      assert.match(await run(`document.getElementById("msg").textContent`), /^Choose a date\.\n\n\(Clawdline 便條 10000000-0000-4000-8000-000000000032/)
     } finally { await browser.send("Target.closeTarget", { targetId }) }
   })
   test(name + ": a document link opens its text directly", async () => {

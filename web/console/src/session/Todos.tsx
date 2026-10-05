@@ -28,9 +28,9 @@ import "../pages/work/work.css"
 import "./todos.css"
 
 /** The authoritative projection of unfinished assigned items plus direct user to-dos. */
-export function Todos({ row, onReplySent }: { row: SessionRow | null; onReplySent?: () => void }) {
+export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null; onReplySent?: () => void; onCompose?: (text: string) => void }) {
   const [open, setOpen] = useState(false)
-  const attention = useInterventions(row, onReplySent, () => setOpen(false))
+  const attention = useInterventions(row, onReplySent, () => setOpen(false), onCompose)
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState("")
   const [images, setImages] = useState<File[]>([])

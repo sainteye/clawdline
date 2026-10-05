@@ -89,8 +89,10 @@ export function Detail({
   const T = L.strings
   const [agentId, setAgentId] = useState<string | null>(null)
   const [savedComposerDraft, setSavedComposerDraft] = useState<{ target: InterventionTarget; text: string } | null>(null)
+  const [suggestedDraft, setSuggestedDraft] = useState<{ target: InterventionTarget; text: string; id: number } | null>(null)
+  const suggestedDraftSerial = useRef(0)
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
-  useEffect(() => { setAgentId(null); setSavedComposerDraft(null) }, [row?.id])
+  useEffect(() => { setAgentId(null); setSavedComposerDraft(null); setSuggestedDraft(null) }, [row?.id])
   useEffect(() => setSuggestionsOpen(false), [row?.id])
   const chooseAgent = (id: string | null) => {
     if (id && !agentId) {
@@ -291,7 +293,12 @@ export function Detail({
         }}
       />
       {/* A sent reply went to the Root conversation; show it there. */}
-      <Todos row={row} onReplySent={() => setAgentId(null)} />
+      <Todos row={row} onReplySent={() => setAgentId(null)} onCompose={(text) => {
+        const target = interventionTarget(row)
+        if (!target) return
+        setAgentId(null)
+        setSuggestedDraft({ target, text, id: ++suggestedDraftSerial.current })
+      }} />
 
       <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
         <div className={home ? "tx home" : "tx"} id="tx">
@@ -303,7 +310,7 @@ export function Detail({
           line above the composer. Kept while an agent's transcript is open, so
           the way to the next one is where the last one was. */}
       {row ? <BackgroundStrip row={row} selected={agentId} onAgent={chooseAgent} onShell={openShell} /> : null}
-      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} />}
+      {selectedAgent ? null : <Composer row={row} onDid={onDid} onScreen={() => setScreenOpen(true)} restoredDraft={savedComposerDraft} suggestedDraft={suggestedDraft} />}
       {selectedAgent ? null : <StatusLine row={row} onOpenGit={() => setGitOpen(true)} />}
       {/* `input/user-messages.js` puts its overlay on the body at import; this
           one is drawn into the body from here, because the `⋯` row that opens

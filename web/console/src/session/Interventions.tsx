@@ -12,7 +12,7 @@ import { onWorkItemChanged } from "../pages/work/item-changed.js"
 import "./interventions.css"
 
 /** Keep the attention entry in the todo header while its panel stays independent. */
-export function useInterventions(row: SessionRow | null, onReplySent?: () => void, onExpand?: () => void) {
+export function useInterventions(row: SessionRow | null, onReplySent?: () => void, onExpand?: () => void, onCompose?: (text: string) => void) {
   const destination = interventionTarget(row)
   const key = destination ? JSON.stringify(destination) : ""
   const latest = useRef<InterventionTarget | null>(destination)
@@ -113,12 +113,10 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       if (serial === actionSerial.current) { busyRef.current = false; setBusy("") }
     }
   }
-  // A suggested reply is a conversation message: it goes through the
-  // composer's own send path (`send.ts`) to the Session's Root conversation,
-  // whatever transcript is on screen, and never touches the composer's text.
-  // The note is resolved only once the daemon has taken the words, so a
-  // cleared dot always means an answer was sent. A resolved note's reply is
-  // sent again on an explicit tap and the note stays resolved.
+  // A choice among multiple suggested replies sends to the Root conversation.
+  // The note is resolved only after delivery, so a cleared dot means an
+  // answer was sent. A single suggestion enters the composer for discussion.
+  // An already resolved note's multiple-choice reply can be sent again.
   const reply = async (note: HumanInterventionV2, text: string) => {
     if (!row || readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
     const serial = ++actionSerial.current
@@ -162,6 +160,16 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       if (serial === actionSerial.current) { busyRef.current = false; setBusy("") }
     }
   }
+  const compose = (note: HumanInterventionV2, draft: string) => {
+    if (readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
+    if (!onCompose) {
+      setActionError("無法開啟對話輸入框，請先開啟這個 Session 再試一次。")
+      return
+    }
+    onCompose(interventionReplyText(note, draft))
+    setExpanded(false)
+    setActionError("")
+  }
 
   const countWords = readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
   const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
@@ -185,9 +193,9 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       {actionError && <p className="human-interventions-error" role="alert">{actionError}</p>}
       {actionStatus && <p className="human-interventions-status" role="status">{actionStatus}</p>}
       {shown && active.length === 0 && <p className="human-interventions-empty">目前沒有需要處理的便條。</p>}
-      {active.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} />)}
+      {active.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} onCompose={compose} />)}
       {recent.length > 0 && <details className="human-interventions-recent"><summary>最近已處理（{recent.length}）</summary>
-        {recent.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} />)}
+        {recent.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} onCompose={compose} />)}
       </details>}
       {!!shown?.pruned_resolved && <p className="human-interventions-retention">本機已清理 {shown.pruned_resolved} 筆較舊的已處理便條。</p>}
     </div>
@@ -197,15 +205,17 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   return { head, live, body, close: () => setExpanded(false) }
 }
 
-function InterventionCard({ note, disabled, sending, onAction, onReply }: {
+function InterventionCard({ note, disabled, sending, onAction, onReply, onCompose }: {
   note: HumanInterventionV2
   disabled: boolean
   sending: boolean
   onAction: (note: HumanInterventionV2, action: "resolve" | "reopen") => void
   onReply: (note: HumanInterventionV2, text: string) => void
+  onCompose: (note: HumanInterventionV2, draft: string) => void
 }) {
   const fromAnotherSession = note.source_conversation !== note.target_conversation
   const isReading = note.kind === "read" || note.kind === "report"
+  const composeOnly = note.options.length <= 1
   return <article className="human-intervention-card" data-intervention-id={note.id} tabIndex={-1} aria-label={note.title}>
     <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? "已處理" : "待處理"}</span><time className="human-intervention-created" dateTime={new Date(note.created_at * 1000).toISOString()}>送達 {when(note.created_at)}</time></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? "請閱讀" : note.kind === "answer" ? "請回覆" : "請處理"}</span></div>
     {fromAnotherSession && <p className="human-intervention-source">來自 {note.source_label || "其他 Session"}</p>}
@@ -216,10 +226,10 @@ function InterventionCard({ note, disabled, sending, onAction, onReply }: {
     {note.detail && <details className="human-intervention-more"><summary>閱讀完整內容</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
     <div className="human-intervention-drafts" role="group" aria-label="建議回覆" aria-busy={sending}>
       <h4>建議回覆</h4>
-      <p className="human-intervention-hint">點一下就直接送出到對話。</p>
+      <p className="human-intervention-hint">{composeOnly ? "點一下填入對話框，確認或修改後再送出。" : "點一下就直接送出到對話。"}</p>
       {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) =>
         <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`${note.resolved_at ? "再次送出這個回覆" : "送出這個回覆並移到已處理"}：${option.label}，${option.draft}`} onClick={() => onReply(note, interventionReplyText(note, option.draft))}>
+          disabled={disabled} aria-label={`${composeOnly ? "填入對話框" : note.resolved_at ? "再次送出這個回覆" : "送出這個回覆並移到已處理"}：${option.label}，${option.draft}`} onClick={() => composeOnly ? onCompose(note, option.draft) : onReply(note, interventionReplyText(note, option.draft))}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
           <span>{option.draft}</span>
         </button>)}

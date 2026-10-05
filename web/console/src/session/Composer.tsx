@@ -78,11 +78,13 @@ export function Composer({
   onDid,
   onScreen,
   restoredDraft,
+  suggestedDraft,
 }: {
   row: SessionRow | null
   onDid: () => void
   onScreen?: () => void
   restoredDraft?: { target: InterventionTarget; text: string } | null
+  suggestedDraft?: { target: InterventionTarget; text: string; id: number } | null
 }) {
   const T = L.strings
   const msg = useRef<HTMLDivElement>(null)
@@ -370,6 +372,12 @@ export function Composer({
   // Restoration is needed when this composer is remounted after viewing a subagent.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restoredDraft])
+
+  useEffect(() => {
+    if (!suggestedDraft || !sameInterventionTarget(suggestedDraft.target, interventionDestination.current) || !msg.current) return
+    sink.current(suggestedDraft.text)
+    msg.current.focus({ preventScroll: true })
+  }, [suggestedDraft])
 
   // The microphone, attached once. `Voice` is a module rather than a hook for
   // the reason the original is one object: there is one recorder on the page,
