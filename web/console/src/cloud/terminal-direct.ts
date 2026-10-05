@@ -17,6 +17,8 @@ export const DIRECT_MESSAGE_BYTES = 9 * 1024 * 1024
 export const DIRECT_CHUNK_MS = 2_000
 /** CloudTerminalDirectRetrySecondsLimit, before another upgrade of the same terminal. */
 export const DIRECT_RETRY_MS = 30_000
+/** CloudTerminalDirectBusyRetrySecondsLimit, after the relay refused the upgrade for its own load. */
+export const DIRECT_BUSY_RETRY_MS = 5_000
 // A chunk's JSON may escape each code unit of `d` (a lone surrogate becomes `\udxxx`), plus its fields.
 const CHUNK_TEXT_UNITS = DIRECT_CHUNK_UNITS * 6 + 256
 

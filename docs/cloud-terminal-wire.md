@@ -113,7 +113,7 @@ Revocation known to the machine is enforced exactly as on the relay path: every 
 
 ### Fallback
 
-When the DC closes or fails, an ack or chunk times out, or ICE fails, the browser rekeys back to a relay connection over the relay, naming the direct connection as `old_connection`; if the machine has already retired it, the rekey is refused with `terminal_invalid` (the code for an `old_connection` that is not live), and the browser opens a new connection and proves its lease as after any network reconnect. Inputs without a receipt are never replayed. After a failed upgrade the browser waits `CloudTerminalDirectRetrySecondsLimit` before trying again for the same terminal.
+When the DC closes or fails, an ack or chunk times out, or ICE fails, the browser rekeys back to a relay connection over the relay, naming the direct connection as `old_connection`; if the machine has already retired it, the rekey is refused with `terminal_invalid` (the code for an `old_connection` that is not live), and the browser opens a new connection and proves its lease as after any network reconnect. Inputs without a receipt are never replayed. After a failed upgrade the browser waits `CloudTerminalDirectRetrySecondsLimit` before trying again for the same terminal, or `CloudTerminalDirectBusyRetrySecondsLimit` when the relay refused it with `rate_limited` or `over_capacity`: the relay's per-account terminal budget and its two connections per viewer are briefly full while a page opens. Only a tab holding the terminal's lease upgrades, because the machine activates a rekeyed connection only for the lease holder.
 
 When the machine setting `cloud_terminal_direct` (default on) is off, offers are refused with `terminal_direct_disabled` and the browser stays on the relay.
 
@@ -132,6 +132,7 @@ When the machine setting `cloud_terminal_direct` (default on) is off, offers are
 | `CloudTerminalDirectProbeSecondsLimit` | 1 s between probes | machine |
 | `CloudTerminalDirectProbeUnsettledSecondsLimit` | 2 s for a probe to settle | machine |
 | `CloudTerminalDirectRetrySecondsLimit` | 30 s before another upgrade attempt | browser |
+| `CloudTerminalDirectBusyRetrySecondsLimit` | 5 s before another upgrade attempt after a relay `rate_limited` or `over_capacity` | browser |
 | `CloudTerminalSweepSecondsLimit` | 1 s terminal sweep | machine |
 
 ## Lease continuity and revocation

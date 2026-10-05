@@ -6,7 +6,7 @@ import type { TerminalObservation } from "./terminal-observation.js"
 // @ts-expect-error -- Node's strip-types runner loads this module directly.
 import { reconstructTerminalDelta, type TerminalDelta } from "./terminal-delta.ts"
 // @ts-expect-error -- Node's strip-types runner loads this module directly.
-import { DIRECT_RETRY_MS } from "./terminal-direct.ts"
+import { DIRECT_BUSY_RETRY_MS, DIRECT_RETRY_MS } from "./terminal-direct.ts"
 
 export interface TerminalWire {
   subscribeTerminal(connection: string, keyID: string, raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void>
@@ -213,9 +213,13 @@ export class CloudTerminalSession {
     }
   }
 
-  /** Upgrades the current relay connection to a direct one when nothing else is in motion. */
+  /**
+   * Upgrades the current relay connection to a direct one when nothing else is in motion. Only a tab
+   * holding the terminal's lease upgrades: the machine activates a rekeyed connection only for its holder.
+   */
   private maybeUpgrade(): void {
     if (!this.transport.directSupported?.() || !this.transport.prepareDirect || this.upgrading || this.carrier !== "relay" ||
+      this.epoch === null ||
       !this.active || this.openingNew || this.retiringConnection || this.activating || !this.terminal || !this.frameSeq ||
       (this.s.state !== "live" && this.s.state !== "just_synced") || this.expiresAt - Date.now() < UPGRADE_MIN_KEY_MS ||
       Date.now() < (this.directRetryAt.get(this.terminal) ?? 0)) return
@@ -243,8 +247,12 @@ export class CloudTerminalSession {
     } catch (error) {
       // A machine without the direct path (`terminal_invalid`), or refusing it now
       // (`terminal_direct_disabled`, `terminal_direct_unavailable`), leaves the terminal on the relay silently.
-      this.observation?.record("direct_failed", { connection, code: (error as { code?: string })?.code ?? "terminal_direct_failed" })
-      this.directRetryAt.set(terminal, Date.now() + DIRECT_RETRY_MS)
+      const code = (error as { code?: string })?.code ?? "terminal_direct_failed"
+      this.observation?.record("direct_failed", { connection, code })
+      // The relay's account budget or its two-connection rotation room is briefly full
+      // while a page opens; that passes in seconds, unlike a machine's refusal.
+      const busy = code === "rate_limited" || code === "over_capacity"
+      this.directRetryAt.set(terminal, Date.now() + (busy ? DIRECT_BUSY_RETRY_MS : DIRECT_RETRY_MS))
       if (this.directAttempt === attempt) { this.directAttempt = null; this.direct = null }
       offer?.close()
     } finally { this.upgrading = false }

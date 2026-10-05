@@ -639,6 +639,25 @@ test("a live relay terminal upgrades through a sealed offer, a direct rekey and 
   } finally { session.dispose() }
 })
 
+test("a terminal this tab does not hold stays on the relay until the tab takes control", async () => {
+  // The machine activates a rekeyed connection only for the tab holding its lease.
+  const wire = new DirectWire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    const relay = wire.latest()
+    wire.frame(relay, 1, "watching")
+    await settle()
+    assert.equal(wire.offers, 0)
+    assert.equal(session.snapshot.carrier, "relay")
+    await session.acquire("acquire")
+    wire.frame(relay, 2, "held")
+    await settle()
+    assert.equal(wire.offers, 1)
+    assert.equal(lastRequest(wire, "rekey_connection")?.connection, wire.latest())
+  } finally { session.dispose() }
+})
+
 test("a direct connection's key rotation is a direct rekey", async () => {
   const wire = new DirectWire()
   const { session, direct } = await upgraded(wire)
@@ -673,6 +692,32 @@ test("a machine refusing the direct path leaves the terminal on the relay silent
       assert.equal(session.snapshot.state, "live", code)
     } finally { session.dispose() }
   }
+})
+
+test("a relay too busy for the upgrade is tried again in seconds, a machine refusal only after the long wait", async () => {
+  const realNow = Date.now
+  let skew = 0
+  Date.now = () => realNow() + skew
+  try {
+    for (const [code, retried] of [["rate_limited", true], ["over_capacity", true], ["terminal_direct_disabled", false]] as const) {
+      skew = 0
+      const wire = new DirectWire()
+      wire.refusals.set("direct_offer", code)
+      const session = new CloudTerminalSession(wire, "stable-tab")
+      try {
+        await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+        const relay = wire.latest()
+        wire.frame(relay, 1, "ready")
+        await settle()
+        assert.equal(wire.offers, 1, code)
+        wire.refusals.delete("direct_offer")
+        skew = 6_000
+        wire.frame(relay, 2, "later")
+        await settle()
+        assert.equal(wire.offers, retried ? 2 : 1, code)
+      } finally { session.dispose() }
+    }
+  } finally { Date.now = realNow }
 })
 
 test("a closed DC rekeys back to the relay naming the direct connection and never replays input", async () => {
