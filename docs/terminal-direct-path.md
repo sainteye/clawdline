@@ -86,6 +86,24 @@ by its relay receipt, so nothing is replayed. The browser waits 30 s before tryi
 The page shows "direct" next to a terminal on the direct carrier, and the wire contract with every
 number is in `docs/cloud-terminal-wire.md`, Direct carrier.
 
+## Measured after the change (2026-10-05)
+
+In app.clawdline.com in Chrome, against the fixture terminal, with the page's stage rows timed from
+the keystroke's `request_sent` to the echo's `frame_observed`:
+
+| Carrier | Keystroke → echo drawn | Samples |
+| --- | --- | --- |
+| direct | 35 ms, 34 ms | 2 |
+
+For comparison on the same page, the input's receipt, which still returns over the relay's `termr`,
+arrived 308 ms after the keystroke, while its echo had come over the DC 34 ms after it.
+
+The browser and the machine were the same Mac, so the direct figure is what remains without a
+network: tmux, one `CaptureGap` (33 ms), crypto and drawing. Between two networks it adds that
+pair's own round trip, not two Pacific crossings. The samples are few because the tab went to the
+background mid-run and released its Cloud line, as a hidden tab does; the page also stops logging
+stage rows after 128 (`TERMINAL_OBSERVATION_ROWS`), which a longer run has to account for.
+
 ## Decisions
 
 - **pion/webrtc** is the daemon's second third-party dependency after `modernc.org/sqlite`. It is
