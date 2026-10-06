@@ -162,11 +162,10 @@ func kindOfHTTPStatus(status string, auth FailureKind) FailureKind {
 // kindByCode is every word FailureCode can answer that has a fixed kind, plus
 // the control plane's own codes on the routes this machine calls
 // (the Cloud service's auth, token and guard routes,
-// services/devices.ts). Two words are deliberately absent: `token_rotation`
-// and `switched_off` are events, not failures, and answer "".
+// services/devices.ts). One word is deliberately absent: `switched_off` is
+// an event, not a failure, and answers "".
 var kindByCode = map[string]FailureKind{
-	"token_rotation": "",
-	"switched_off":   "",
+	"switched_off": "",
 
 	"no_identity":                KindNotSignedIn,
 	"identity_other_environment": KindNotSignedIn,

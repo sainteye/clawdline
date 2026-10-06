@@ -32,10 +32,9 @@ type Status struct {
 	// ConnectedSince is when the current socket became ready; zero when not
 	// connected.
 	ConnectedSince time.Time `json:"connected_since,omitempty"`
-	// TokenExpiresAt and NextRotationAt make the four-minute reconnect
-	// rhythm legible instead of mysterious.
+	// TokenExpiresAt is when the token the current socket was opened with
+	// expires. The socket outlives it; only a redial needs a fresh one.
 	TokenExpiresAt time.Time `json:"token_expires_at,omitempty"`
-	NextRotationAt time.Time `json:"next_rotation_at,omitempty"`
 
 	Account  string `json:"account,omitempty"`
 	Machine  string `json:"machine,omitempty"`
@@ -125,13 +124,6 @@ func (r *StatusRecorder) Ready(now, tokenExpiry time.Time) {
 	r.status.State = StateConnected
 	r.status.ConnectedSince = now
 	r.status.TokenExpiresAt = tokenExpiry
-	if !tokenExpiry.IsZero() {
-		rotation := tokenExpiry.Add(-RefreshAhead)
-		if rotation.Before(now) {
-			rotation = tokenExpiry
-		}
-		r.status.NextRotationAt = rotation
-	}
 	r.status.Connects++
 }
 

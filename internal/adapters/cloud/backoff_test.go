@@ -128,7 +128,6 @@ func TestFailureCodesAreTheClosedVocabulary(t *testing.T) {
 		ErrChallengeTimeout:                 "challenge_timeout",
 		ErrReadyTimeout:                     "ready_timeout",
 		ErrReceiveTimeout:                   "receive_timeout",
-		ErrTokenRotated:                     "token_rotation",
 		ErrIdentityBinding:                  "identity_binding",
 		ErrUnauthorized:                     "unauthorized",
 		errors.New("something else"):        "connection_failed",

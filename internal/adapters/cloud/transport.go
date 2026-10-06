@@ -79,10 +79,6 @@ type Transport struct {
 	conn       *Conn
 	generation uint64
 	state      string
-	// rotating names the generation whose socket this side closed on purpose
-	// to pick up a new token, so that its death is reported as a rotation
-	// rather than as a fault.
-	rotating uint64
 	// ready is closed and replaced on each successful handshake; a waiter
 	// takes a copy under the lock.
 	ready             chan struct{}
@@ -267,24 +263,21 @@ func (t *Transport) session(ctx context.Context) error {
 	generation := t.promote(conn, token.ExpiresAt)
 	t.logf("cloud ready account=%s machine=%s generation=%d", t.opts.Identity.AccountID, t.opts.Identity.MachineID, generation)
 
-	// Three things run on one socket: the keepalive, the token rotation and
-	// the reader. The first two only ever *close* the socket, which is how
-	// they hand control back to the reader without a second channel.
+	// Two things run on one socket: the keepalive and the reader. The
+	// keepalive only ever *closes* the socket, which is how it hands control
+	// back to the reader without a second channel. Nothing closes it because
+	// the device token it was opened with expired: the relay keeps an
+	// authenticated socket until the device is revoked, and the next dial
+	// fetches a fresh token.
 	done := make(chan struct{})
 	defer close(done)
 	go t.keepalive(conn, done)
-	go t.rotateToken(conn, token.ExpiresAt, generation, done)
 	if t.opts.Spool != nil {
 		go t.drain(conn, done, true)
 	}
 
 	err = t.read(ctx, conn)
 	t.demote(generation)
-	if t.tookRotation(generation) {
-		// This side closed the socket on purpose; say so rather than reporting
-		// a fault every four minutes on a perfectly healthy machine.
-		return ErrTokenRotated
-	}
 	return err
 }
 
@@ -377,16 +370,6 @@ func (t *Transport) demote(generation uint64) {
 	}
 }
 
-func (t *Transport) tookRotation(generation uint64) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.rotating == generation {
-		t.rotating = 0
-		return true
-	}
-	return false
-}
-
 func (t *Transport) setState(state string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -428,39 +411,6 @@ func (t *Transport) keepalive(conn *Conn, done <-chan struct{}) {
 
 func missedKeepalive(previous, now time.Time) bool {
 	return now.UnixMilli()-previous.UnixMilli() > ReceiveTimeout.Milliseconds()
-}
-
-// rotateToken closes the socket a minute before the device token expires, so
-// that the next dial carries a fresh one. Waiting for the relay to close it
-// costs one refused frame and a backoff rung.
-func (t *Transport) rotateToken(conn *Conn, expiresAt time.Time, generation uint64, done <-chan struct{}) {
-	if expiresAt.IsZero() {
-		return
-	}
-	wait := time.Until(expiresAt) - RefreshAhead
-	if wait <= 0 {
-		wait = time.Until(expiresAt)
-	}
-	if wait <= 0 {
-		return
-	}
-	select {
-	case <-done:
-		return
-	case <-t.stopped:
-		return
-	case <-time.After(wait):
-	}
-	t.mu.Lock()
-	if t.generation != generation {
-		t.mu.Unlock()
-		return
-	}
-	t.rotating = generation
-	t.mu.Unlock()
-	t.opts.Token.Forget()
-	t.logf("cloud rotating the device token")
-	_ = conn.Close()
 }
 
 // read is the receive loop.

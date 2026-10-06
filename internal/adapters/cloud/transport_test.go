@@ -26,6 +26,12 @@ func TestMissedKeepaliveAfterMachineSleep(t *testing.T) {
 // tokenServer answers the one control-plane route the transport needs.
 func tokenServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return tokenServerFor(t, 5*time.Minute)
+}
+
+// tokenServerFor hands out device tokens that expire life after they are minted.
+func tokenServerFor(t *testing.T, life time.Duration) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/tokens/device" {
 			http.NotFound(w, r)
@@ -33,7 +39,7 @@ func tokenServer(t *testing.T) *httptest.Server {
 		}
 		_ = json.NewEncoder(w).Encode(DeviceToken{
 			Token: "a-device-token", TokenType: "Bearer",
-			ExpiresIn: 300, ExpiresAt: time.Now().Add(5 * time.Minute), Kid: "dev",
+			ExpiresIn: int(life / time.Second), ExpiresAt: time.Now().Add(life), Kid: "dev",
 		})
 	}))
 	t.Cleanup(server.Close)
@@ -52,6 +58,11 @@ type testLine struct {
 }
 
 func newTestLine(t *testing.T) *testLine {
+	t.Helper()
+	return newTestLineWithTokens(t, tokenServer(t))
+}
+
+func newTestLineWithTokens(t *testing.T, tokens *httptest.Server) *testLine {
 	t.Helper()
 	key, err := domain.NewDeviceKey(rand.Reader)
 	if err != nil {
@@ -75,7 +86,7 @@ func newTestLine(t *testing.T) *testLine {
 	transport, err := New(Options{
 		RelayURL: relay.URL(),
 		Role:     "machine",
-		Token:    &TokenSource{Client: NewAccountClient(tokenServer(t).URL), Credential: identity.MachineCredential},
+		Token:    &TokenSource{Client: NewAccountClient(tokens.URL), Credential: identity.MachineCredential},
 		Identity: identity,
 		Signer:   key,
 		Spool:    spool,
@@ -200,6 +211,23 @@ func TestADroppedSocketIsRedialled(t *testing.T) {
 	status := line.status.Snapshot()
 	if status.Reconnects == 0 {
 		t.Fatal("the reconnect was not counted")
+	}
+}
+
+// The socket outlives the device token it was opened with: the relay ends a
+// connection only when the device is revoked, so this side no longer closes
+// its own socket before the token expires (which used to drop every terminal
+// connection, and every direct peer, every four minutes).
+func TestTheSocketOutlivesItsDeviceToken(t *testing.T) {
+	t.Parallel()
+	line := newTestLineWithTokens(t, tokenServerFor(t, time.Second))
+	line.run(t)
+	time.Sleep(2500 * time.Millisecond)
+	if n := line.relay.Connections(); n != 1 {
+		t.Fatalf("connections after the token expired: %d, want the first one only", n)
+	}
+	if status := line.status.Snapshot(); status.Reconnects != 0 || status.State != StateConnected {
+		t.Fatalf("status after the token expired: %+v", status)
 	}
 }
 

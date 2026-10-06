@@ -738,7 +738,6 @@ func TestEveryFailureWordHasAKind(t *testing.T) {
 		{&CloseError{Code: 4429}, "closed_4429", KindEntitlement},
 		{&CloseError{Code: 1006}, "closed_1006", KindUnavailable},
 		{&UpgradeError{Status: 502}, "upgrade_refused_502", KindUnavailable},
-		{ErrTokenRotated, "token_rotation", ""},
 		{ErrDisabled, "switched_off", ""},
 	} {
 		if got := DescribeFailure(c.err); got.Code != c.code && c.kind != "" || got.Kind != c.kind {

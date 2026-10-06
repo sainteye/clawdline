@@ -213,8 +213,6 @@ func FailureCode(err error) string {
 		return "receive_timeout"
 	case errors.Is(err, ErrConnectionTimeout):
 		return "connection_timeout"
-	case errors.Is(err, ErrTokenRotated):
-		return "token_rotation"
 	case errors.Is(err, ErrIdentityBinding):
 		return "identity_binding"
 	case errors.Is(err, ErrUnexpectedFrame):

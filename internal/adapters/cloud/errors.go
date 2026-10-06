@@ -22,12 +22,6 @@ var (
 	ErrReadyTimeout = errors.New("the relay did not answer the handshake in time")
 	// ErrReceiveTimeout is ReceiveTimeout passing with no frame at all.
 	ErrReceiveTimeout = errors.New("the relay went quiet")
-	// ErrTokenRotated is this side closing its own socket to pick up a new
-	// token. It is a normal event with a name of its own, because without one
-	// a healthy machine logs `connection_failed` every four minutes and
-	// somebody eventually goes looking for a fault that is not there
-	// (`CloudTransport.swift:48-55`).
-	ErrTokenRotated = errors.New("the device token was rotated")
 	// ErrIdentityBinding is the challenge naming an account or device that is
 	// not the one this machine is pinned to. Signing it anyway would let a
 	// relay borrow this device's signature for another identity.

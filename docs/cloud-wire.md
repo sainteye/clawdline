@@ -1296,7 +1296,9 @@ query 與 fragment：那些要嘛會被丟掉，要嘛會把一次性 secret 帶
 | `unavailable` | `unreachable`、`tls_untrusted`、`connection_failed`、`relay_bad_gateway`、`api_internal` | 退避重試 |
 | `unknown` | 表裡沒有的 `api_` 字 | 照原樣顯示，不猜 |
 
-`token_rotation` 與 `switched_off` 是事件不是失敗，對照為空。**重試政策一行都沒改**（仍是 Swift 的，§15.3、
+`switched_off` 是事件不是失敗，對照為空。（`token_rotation` 已移除：2026-10-06 起 relay 不再因 device token
+到期關掉已登入的 socket，只有撤銷會；machine 也不再於到期前一分鐘自己關 socket 換 token，`refreshAhead`
+只剩「撥號時拿一張至少還有 60 s 的 token」這個用途。）**重試政策一行都沒改**（仍是 Swift 的，§15.3、
 `CloudTransport.swift:2238-2240`）；doc.go 原本說 `bad_request` 會停線，與程式不符，已改成照程式寫。
 
 版本不合原本不存在：握手的 `v≠1`、context 不對、ready 的 `v≠1`、控制面回非 JSON、poll 回沒寫過的狀態，
