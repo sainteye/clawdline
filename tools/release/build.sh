@@ -82,7 +82,8 @@ ldflags="-s -w -X main.releaseVersion=$version"
 
 # tar_into <archive> <dir>: the directory's contents at the archive's root.
 tar_into() {
-  COPYFILE_DISABLE=1 tar -C "$2" -czf "$1" .
+  # --no-xattrs: GNU tar on Linux would otherwise print a notice per macOS attribute it skips.
+  COPYFILE_DISABLE=1 tar --no-xattrs -C "$2" -czf "$1" .
 }
 
 for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64; do
