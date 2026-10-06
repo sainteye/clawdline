@@ -8,8 +8,9 @@ project, stop the turn it is on, and close it safely.
 
 - The daemon is running and the console is open ([install.md](install.md)).
 - To type into sessions, the browser needs send permission: `clawdline open` on this machine
-  grants it, and so does pairing a device ([remote-access.md](remote-access.md)). A device made
-  read-only before that stays read-only.
+  grants it, and so does pairing a device; a device paired through Cloud also needs
+  `clawdline cloud commands on` ([remote-access.md](remote-access.md)). A device made read-only
+  before that stays read-only.
 - Sessions are found in tmux on macOS and Linux, and in iTerm2 on macOS. Windows cannot list
   sessions yet ([platforms.md](platforms.md)).
 

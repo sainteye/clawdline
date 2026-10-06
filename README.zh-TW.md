@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-**替你已經在跑的 Claude Code 與 Codex Session 打造的控制中心。**
+**你已經在跑的 Claude Code 與 Codex Session，都在這裡管理。**
 
 Clawdline 是在 macOS 與 Linux 上執行的本機 daemon，附網頁主控台。它不需要 wrapper 或 hook，
 就能找到你在 tmux（Mac 上也包括 iTerm2）裡的 Session，告訴你哪一個在等你，也讓一個 Session
@@ -20,15 +20,17 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 **基本功能：每天都會用到**
 
-- **看見每一個 Session。** 每一列都標出 Project、助理與狀態：工作中、在等你、閒置，或讀不出來
+- **看見每一個 Session。** 每一列都標出專案、助理與狀態：工作中、在等你、閒置，或讀不出來
   ——讀不出來就照實說，不會猜成閒置。可以讀真正的對話記錄、回答問題、傳文字或畫過重點的圖片、
   用說的輸入、開新 Session、停下目前這一輪、安全關閉，或先封存、之後再叫回來。
   [Session](docs/user/sessions.md)
 - **即時終端機。** 在 Session 清單旁打開終端機直接輸入；在這台機器上可以，從 app.clawdline.com
-  也可以，機器連得到時會自動改走直連。[終端機](docs/terminal-direct-path.md)
+  也可以（那個瀏覽器要先有 Cloud 終端權限），機器連得到時會自動改走直連。
+  [終端機](https://clawdline.com/docs/shells/#terminals)
 - **用手機操作，並收到通知。** 同一套主控台在任何瀏覽器都能用，「讀取」與「傳送」是兩個分開的
-  權限。Session 等了十分鐘沒人回、Agent 呼叫你，或排程失敗時，會用 Web Push 通知你；點通知就
-  打開那個 Session。[遠端連線](docs/user/remote-access.md)・[通知](docs/user/notifications.md)
+  權限；可以走 SSH 轉發、你自己免費的 cloudflared tunnel，或 Cloud。Session 等了十分鐘沒人回、
+  Agent 呼叫你，或排程失敗時，會用 Web Push 通知你；點通知就打開那個 Session。
+  [遠端連線](docs/user/remote-access.md)・[通知](docs/user/notifications.md)
 - **用量一眼看懂。** 每個 Session 的 context、各 Session 與看板項目花了多少 token，以及每個
   助理的方案額度還剩多少。[用量](docs/user/usage.md)
 
@@ -39,7 +41,8 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
   有沒有真的進到分支，而不只是子 Session 說它做完了。[派工與合併確認](docs/user/clawdfather-and-dispatch.md)
 - **一路追到交付的看板。** 把 Feature、Issue 或 Epic 指派給 Session，跟著它經過實作、驗證、
   合併與部署，每個階段都要附證據。規劃預設開啟：Feature 與 Epic 開工前要先有計畫，並通過獨立
-  審查。需要你決定的問題會直接出現在卡片上。[看板](docs/user/board.md)
+  審查。需要你決定的問題會直接出現在卡片上。看板本身預設關閉，要先在設定裡開啟。
+  [看板](docs/user/board.md)
 - **角色。** 用內建角色開 Session，例如架構師、審查者、技術寫手，各自帶著自己的手冊與 skill。
   [角色](docs/personas.md)
 - **排程與 Webhook。** 把任務存起來，讓 Session 依本機時鐘或手動執行，有補跑、逾時與失敗通知。
@@ -47,16 +50,16 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 **專案與多台機器**
 
-- **跨機器的 Project。** 以 git origin 對應，讓第二台機器拿到相同的 Project 名稱、圖示和沒進
-  git 的 skill，有沒有 Cloud 都可以。[Project](docs/user/projects.md)
+- **跨機器的專案。** 以 git origin 對應，讓第二台機器拿到相同的專案名稱、圖示和沒進
+  git 的 skill，有沒有 Cloud 都可以。[專案](docs/user/projects.md)
 - **Claude 和 Codex 共用同一套規則與 skill。** `clawdline project unify` 會列出怎麼讓同一個
-  Project 的 Claude Code 與 Codex Session 讀到同一份 `AGENTS.md` 和同一組 skill；你確認套用後才
+  專案的 Claude Code 與 Codex Session 讀到同一份 `AGENTS.md` 和同一組 skill；你確認套用後才
   會改檔案，而且不會替你 commit。[Unify](docs/project-files.md#unify)
 - **選用的加密 Cloud。** 透過 Clawdline Cloud 的端對端加密中繼，配對手機或多台機器。預設關閉，
   目前是預覽版。[遠端連線](docs/user/remote-access.md)
 
 <p align="center">
-  <img src="docs/assets/fleet-phone.png" width="390" alt="手機上的 Clawdline，顯示不同 Project 中正在工作、等待中與子 Session 的狀態。">
+  <img src="docs/assets/fleet-phone.png" width="390" alt="手機上的 Clawdline，顯示不同專案中正在工作、等待中與子 Session 的狀態。">
 </p>
 
 ## 安裝
@@ -110,7 +113,7 @@ IDE，也不取代 Claude Code 或 Codex：它管理你本來就會開的 Sessio
   [遠端連線](docs/user/remote-access.md)・[通知](docs/user/notifications.md)・[用量](docs/user/usage.md)
 - 協調工作：[派工與合併確認](docs/user/clawdfather-and-dispatch.md)・[看板](docs/user/board.md)・
   [排程](docs/user/schedules.md)
-- 專案與多台機器：[Project](docs/user/projects.md)・[更新](docs/updates.md)
+- 專案與多台機器：[專案](docs/user/projects.md)・[更新](docs/updates.md)
 - 網站指南：[clawdline.com/docs](https://clawdline.com/docs/)
 - 開發者：[architecture.md](docs/architecture.md)、[AGENTS.md](AGENTS.md)、
   [docs/README.md](docs/README.md)

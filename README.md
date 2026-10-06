@@ -26,11 +26,12 @@ relay.
   marked-up picture, dictate, start a session, stop a turn, close one safely, or archive it and
   bring it back later. [Sessions](docs/user/sessions.md)
 - **Live terminals.** Open a terminal beside the session list and type in it, on this machine or
-  from app.clawdline.com, where it switches to a direct connection when the machine is reachable.
-  [Terminals](docs/terminal-direct-path.md)
+  from app.clawdline.com once that browser has Cloud terminal permission; it switches to a direct
+  connection when the machine is reachable. [Terminals](https://clawdline.com/docs/shells/#terminals)
 - **Your phone, with notifications.** The same console works in any browser, with separate read
-  and send permissions. Web Push tells you when a session has waited ten minutes, an agent calls
-  for you, or a schedule fails; tapping one opens that session.
+  and send permissions, over an SSH forward, your own free cloudflared tunnel, or Cloud. Web Push
+  tells you when a session has waited ten minutes, an agent calls for you, or a schedule fails;
+  tapping one opens that session.
   [Remote access](docs/user/remote-access.md) · [Notifications](docs/user/notifications.md)
 - **Usage at a glance.** Context, token spend per session and Board item, and how much of each
   assistant's plan is left. [Usage](docs/user/usage.md)
@@ -44,7 +45,8 @@ relay.
 - **A Board that follows delivery.** Assign a Feature, Issue or Epic to a session and follow it
   through implementation, verification, merge and deployment, each phase with evidence. Planning
   is on by default: Features and Epics need a plan and an independent review before work starts.
-  Questions for you appear on the card. [Board](docs/user/board.md)
+  Questions for you appear on the card. The Board itself is off until you turn it on in Settings.
+  [Board](docs/user/board.md)
 - **Roles.** Start a session as a built-in role — architect, reviewer, technical writer and more —
   with its own handbook and skills. [Roles](docs/personas.md)
 - **Schedules and webhooks.** Save a task that a session runs on the local clock or by hand, with
