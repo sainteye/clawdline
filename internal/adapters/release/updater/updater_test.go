@@ -114,6 +114,41 @@ func TestAReleaseThatDoesNotComeUpIsRolledBackAndNotRetriedByItself(t *testing.T
 	p.Abandon()
 }
 
+// A restart command that does not return is not a release that did not come
+// back. On a Mac, `launchctl kickstart -k` of a service launchd is holding
+// back (ThrottleInterval, after the new release kept exiting) waited out its
+// thirty seconds and was killed, and launchd started the previous release a
+// moment later; the rollback said restarting it had failed while it answered
+// (measured in the Mac drill, 2026-10-07). The previous release answering is
+// what is recorded.
+func TestARollbackWhoseRestartTimesOutStillWaitsForThePreviousRelease(t *testing.T) {
+	f := newFixture(t, "v0.10.0")
+	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
+	if err := f.update(Request{}); err != nil {
+		t.Fatal(err)
+	}
+	runFake := f.env.Run
+	f.env.Run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		line := name + " " + strings.Join(args, " ")
+		restart := strings.HasPrefix(line, "launchctl kickstart") || strings.HasPrefix(line, "systemctl --user restart")
+		if restart && f.current() == "v0.10.0" {
+			return nil, errors.New("signal: killed")
+		}
+		return runFake(ctx, name, args...)
+	}
+	f.healthy = commitOf('a')
+	if err := f.env.Finish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := f.apply()
+	if got.State != contract.UpdateApplyStateRolledBack || got.Error == nil || got.Error.Code != CodeHealthTimeout {
+		t.Fatalf("after a failed health check: %+v %+v", got, got.Error)
+	}
+	if strings.Contains(got.Error.Detail, "failed too") || strings.Contains(got.Error.Detail, "did not answer either") {
+		t.Fatalf("the previous release answered, and the rollback says it did not: %s", got.Error.Detail)
+	}
+}
+
 func TestTheHealthWaitIsBounded(t *testing.T) {
 	f := newFixture(t, "v0.10.0")
 	start := time.Now()

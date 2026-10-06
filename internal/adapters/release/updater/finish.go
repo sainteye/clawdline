@@ -140,10 +140,17 @@ func (e Env) rollback(ctx context.Context, svc install.ServiceFile, p Pending) e
 	if why == nil {
 		why = &contract.UpdateApplyError{Code: CodeHealthTimeout, Detail: "the new release did not come up"}
 	}
-	if err := e.restartService(ctx, svc); err != nil {
-		why = &contract.UpdateApplyError{Code: why.Code, Detail: why.Detail + "; restarting the previous release failed too: " + err.Error()}
-	} else if err := e.waitHealthy(ctx, svc, Served{Commit: p.FromCommit, Version: p.From}); err != nil {
-		why = &contract.UpdateApplyError{Code: why.Code, Detail: why.Detail + "; the previous release did not answer either: " + err.Error()}
+	// The previous release answering is what counts, not the restart command:
+	// `launchctl kickstart -k` of a service launchd is holding back after the
+	// new release kept exiting can outlast its timeout, and launchd starts the
+	// service again by itself a moment later.
+	restartErr := e.restartService(ctx, svc)
+	if err := e.waitHealthy(ctx, svc, Served{Commit: p.FromCommit, Version: p.From}); err != nil {
+		detail := why.Detail + "; the previous release did not answer either: " + err.Error()
+		if restartErr != nil {
+			detail = why.Detail + "; restarting the previous release failed too: " + restartErr.Error()
+		}
+		why = &contract.UpdateApplyError{Code: why.Code, Detail: detail}
 	}
 	err := e.settleRolledBack(p, why)
 	e.endSupervisor(ctx, svc)
