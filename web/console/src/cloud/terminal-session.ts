@@ -348,7 +348,9 @@ export class CloudTerminalSession {
         // A renewal changes nothing the browser cannot ask again; the next one is due shortly.
         else if (requestID === this.renewID) { /* retried by checkFreshness */ }
         else if (operation !== "release_connection" && operation !== "direct_offer") { this.connectionUnknown = true; this.set({ state: "unknown", reason: "terminal_receipt_timeout" }) }
-        reject(fail("terminal_receipt_timeout"))
+        // A key with no receipt may or may not have been typed (the machine drops an envelope it
+        // takes for a replay without a word): it is refused as unknown, with the way back.
+        reject(fail(operation === "input" || operation === "paste" ? "terminal_input_state_unknown" : "terminal_receipt_timeout"))
       }, RECEIPT_MS)
       this.pending.set(requestID, { operation, connection,
         terminal: typeof fields.terminal_id === "string" ? fields.terminal_id : null, resolve, reject, timer })

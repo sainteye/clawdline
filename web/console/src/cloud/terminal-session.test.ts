@@ -1154,3 +1154,24 @@ test("a connection discarded for a bad delta reads its terminal again and proves
     assert.equal(wire.requests.filter((request) => request.operation === "input" && request.connection === fresh).length, 1)
   } finally { session.dispose() }
 })
+
+test("keys whose envelopes the machine drops unanswered are each refused, none left waiting unsaid", async (t) => {
+  // 2026-10-06 21:01: the machine dropped a page's envelopes as replays and answered nothing.
+  // The only way the page can know is the receipt timeout; every key from then on must be refused.
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.delayed.add("input")
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const outcomes = Array.from({ length: 6 }, (_, i) => session.input(new TextEncoder().encode(String(i))).then(() => "sent", (error) => (error as Error).message))
+    for (let i = 0; i < 20; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+    t.mock.timers.tick(10_000)
+    for (let i = 0; i < 20; i++) await new Promise<void>((resolve) => setImmediate(resolve))
+    t.mock.timers.tick(10_000)
+    const settled = await Promise.all(outcomes)
+    assert.deepEqual(settled, Array(6).fill("terminal_input_state_unknown"))
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 4, "nothing past the in-flight window was sent")
+  } finally { t.mock.timers.reset(); session.dispose() }
+})

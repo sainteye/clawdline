@@ -150,13 +150,20 @@ export function chooseTransport(input) {
  * advance, so a counter that restarts at zero after a reload does not merely repeat itself,
  * it makes this browser unable to send anything until it has climbed back past where it was.
  * What is written down is the ceiling, before any number under it is handed out.
+ *
+ * Every tab of this device signs as the same sender and shares this ceiling, so each number
+ * reads it again. When another tab has reserved past this one's block, this one leaves its
+ * block and reserves above that ceiling. Until 2026-10-06 a tab read the ceiling only once and
+ * reserved its next block from its own last number: a page reloaded beside another
+ * app.clawdline.com tab reserved the same block the other tab took next, and the machine
+ * dropped every envelope of it as a replay (`reason=replay seq=26112…`), keys included. A tab
+ * left idle in an old block also fell more than the machine's 1024-number window behind.
  */
 export function durableSequence(storage, key) {
     var name = key || SEQUENCE_KEY;
     var reserved = 0;
     var next = null;
-    function read() {
-        if (next !== null) return;
+    function ceiling() {
         var raw;
         try {
             raw = storage.getItem(name);
@@ -167,11 +174,15 @@ export function durableSequence(storage, key) {
         if (!Number.isSafeInteger(parsed) || parsed < 0) {
             throw bootError("bad_sequence_store", "the stored viewer sequence is unusable");
         }
-        reserved = parsed;
-        next = parsed;
+        return parsed;
     }
     return function nextSequence() {
-        read();
+        var stored = ceiling();
+        if (next === null || stored > reserved) {
+            // First use, or another tab reserved past this block: continue above its ceiling.
+            reserved = stored;
+            next = stored;
+        }
         var value = next;
         if (value >= reserved) {
             reserved = value + SEQUENCE_BLOCK;

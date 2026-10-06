@@ -115,6 +115,17 @@ number out of it is handed out. The allocator's contract becomes "a number this 
 issued", which is what the transport already assumes. The test is the table above: two instances,
 one storage, zero overlap, in both interleaved and sequential open order.
 
+**Done 2026-10-06** (`web/console/src/legacy/js/net/cloud-boot.js`, `durableSequence`). It was
+still open then: a Cloud terminal page reloaded beside another app.clawdline.com tab of the same
+device typed about a dozen keys, after which the machine dropped every envelope of it as
+`reason=replay` from seq 26112, a block boundary, and its keys went nowhere until the receipt
+timeout said their outcome was unknown. Each number now reads the stored ceiling; a block is
+renewed from that ceiling, and a tab whose block another tab has reserved past leaves it and
+continues above, so an idle tab is not left more than the machine's 1,024-number window behind.
+`web/console/src/cloud/viewer-sequence.test.ts` drives two instances over one storage against a
+copy of the machine's window. What remains is the storage itself: `localStorage` is not a lock
+across tabs, so two tabs renewing in the same instant can still read one ceiling.
+
 ### 2. The transport's replay refusal answers before the ledger's receipt can
 
 `routeDurably` (`CloudAppBridge.swift:3503`) already implements idempotent replay properly:
