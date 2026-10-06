@@ -2,13 +2,6 @@
    Session rows are (legacy/list.css `.row`): edge to edge of the column, the same padding, gap,
    radius and open state, so switching the mode changes what is listed and not the list. */
 .session-terminal-list { min-width: 0; }
-.session-terminal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-.session-terminal-head h2 { margin: 0; font-size: 15px; }
-.session-terminal-head p { margin: 3px 0 0; color: var(--dim); font-size: 12px; }
-.session-terminal-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-.session-terminal-filters label { display: grid; gap: 3px; min-width: 120px; color: var(--dim); font-size: 12px; }
-.session-terminal-filters select { min-height: 44px; max-width: min(80vw, 240px); border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
-.session-terminal-head button { border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); padding: 8px; }
 .session-terminal-rows { list-style: none; padding: 0; margin: 0; }
 .session-terminal-rows li { display: flex; min-width: 0; margin-bottom: 6px; border: 1px solid transparent; border-radius: var(--radius); background: var(--card); overflow: hidden; transition: background 160ms var(--ease), border-color 160ms var(--ease); }
 @media (hover: hover) { .session-terminal-rows li:hover { background: var(--card-hi); } }
@@ -33,7 +26,6 @@
 @keyframes terminal-list-spin { to { transform: rotate(360deg); } }
 @keyframes terminal-list-pulse { to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .terminal-list-spinner, .terminal-list-skeleton span { animation: none; } }
-@media (max-width: 480px) { .session-terminal-filters label { flex: 1 1 140px; } .session-terminal-filters select { width: 100%; max-width: none; } }
 .start-mode-tabs { display: flex; gap: 6px; margin: 12px 0; }
 .start-mode-tabs button { flex: 1; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
 .start-mode-tabs button[aria-selected="true"] { background: var(--accent-in); color: var(--accent); }

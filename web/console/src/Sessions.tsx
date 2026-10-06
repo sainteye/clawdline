@@ -236,6 +236,12 @@ export function SessionsPage({
   // the axis has been decided and it knows whether the gesture is its own.
   const swipedId = useSwipeToEnd(scrollRef)
   const ptrWord = usePullToRefresh(scrollRef, ptrRef, onDid)
+  // The terminal list has the same pull, in its own scroller, so reading it
+  // again needs no button on the list.
+  const terminalScrollRef = useRef<HTMLDivElement>(null)
+  const terminalPtrRef = useRef<HTMLDivElement>(null)
+  const terminalReload = useRef<(() => Promise<void>) | null>(null)
+  const terminalPtrWord = usePullToRefresh(terminalScrollRef, terminalPtrRef, () => terminalReload.current?.())
   useOrderHold(scrollRef)
   // A row that has gone takes its uncovered action with it, rather than
   // leaving a close button standing over whatever row took its place.
@@ -375,7 +381,12 @@ export function SessionsPage({
             </div>
             <ScheduleSection arrived={arrived} onOpen={onOpen} />
           </div>
-          {terminalMode && <div className="scroller list-scroll"><TerminalList shown={onScreen && terminalMode} filter={filter} openId={terminalPane?.terminal ?? ""} /></div>}
+          <div className="scroller list-scroll" ref={terminalScrollRef} hidden={!terminalMode}>
+            <div className="ptr" ref={terminalPtrRef}>
+              <span>{terminalPtrWord === "release" ? T.webPullRelease : terminalPtrWord === "busy" ? T.webPullBusy : T.webPull}</span>
+            </div>
+            {terminalMode && <TerminalList shown={onScreen} filter={filter} openId={terminalPane?.terminal ?? ""} reloadRef={terminalReload} />}
+          </div>
           <NotifyFooter />
         </section>
 

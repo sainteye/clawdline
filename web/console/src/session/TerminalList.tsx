@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type MutableRefObject } from "react"
 import type { Terminal } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
@@ -26,8 +26,11 @@ function dirTail(dir: string | undefined): string {
  * stream. A row opens its terminal in the second column, as a Session row
  * opens its conversation; opening another is the toolbar's +, and closing one
  * is in that terminal's own menu, so a row carries no buttons of its own.
+ * Pulling the list down reads it at once, through `reloadRef`.
  */
-export function TerminalList({ shown, filter, openId = "" }: { shown: boolean; filter: string; openId?: string }) {
+export function TerminalList({ shown, filter, openId = "", reloadRef }: {
+  shown: boolean; filter: string; openId?: string; reloadRef?: MutableRefObject<(() => Promise<void>) | null>
+}) {
   const [rows, setRows] = useState<Terminal[]>([])
   const [places, setPlaces] = useState<ProjectPlace[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,6 +80,7 @@ export function TerminalList({ shown, filter, openId = "" }: { shown: boolean; f
         if (mine === generation.current) setLoading(false)
       }
     }
+    if (reloadRef) reloadRef.current = read
     void read()
     const timer = setInterval(() => { void read() }, 2000)
     const onVisible = () => { if (!document.hidden) void read() }
@@ -89,7 +93,7 @@ export function TerminalList({ shown, filter, openId = "" }: { shown: boolean; f
     }
   }, [shown, hosted])
 
-  if (hosted) return <CloudAllTerminalList shown={shown} filter={filter} />
+  if (hosted) return <CloudAllTerminalList shown={shown} filter={filter} reloadRef={reloadRef} />
   if (blocked) return <p className="terminal-list-message" role="note">{blocked}</p>
   const names = rowNames(rows.map((row) => row.created))
   const q = filter.trim().toLocaleLowerCase()
