@@ -126,6 +126,18 @@ func (s *Server) updateApplyRoute(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(s.releaseUpdate.Status())
 }
 
+// runUpdateCheck is the background check behind GET /v1/update until ctx
+// ends: the release check on a release install, which never asks the hosted
+// BUILD.json, and the hosted BUILD.json check otherwise.
+func (s *Server) runUpdateCheck(ctx context.Context) {
+	s.updateChecker()
+	if s.releaseUpdate != nil {
+		s.releaseUpdate.Run(ctx)
+		return
+	}
+	s.update.Run(ctx)
+}
+
 // updateChecker makes, on first use, the one update source this daemon
 // answers from: the release updater when it runs from a release install,
 // the hosted BUILD.json check otherwise.

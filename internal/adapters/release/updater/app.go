@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/release"
+	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // installedApp is the macOS app setup installed, or "" when there is none.
@@ -71,7 +72,7 @@ func (e Env) appRunning(ctx context.Context, bundle string) (bool, error) {
 // swapApp puts the staged bundle in place of the installed one when nothing
 // runs from it, keeping the replaced bundle in releases/<from>/app. It
 // answers the path still staged, "" once swapped. A running app keeps its
-// bundle: it swaps on quit.
+// bundle: SettleApp swaps it after the app quits.
 func (e Env) swapApp(ctx context.Context, staged, from string) (string, error) {
 	app := e.installedApp()
 	if staged == "" || app == "" {
@@ -100,4 +101,34 @@ func (e Env) swapApp(ctx context.Context, staged, from string) (string, error) {
 		return staged, err
 	}
 	return "", nil
+}
+
+// SettleApp swaps in an app bundle a healthy update left staged because the
+// app was running then. It answers true once the bundle is in place. It
+// takes update.lock, so it never races an update; a held lock waits for the
+// next call.
+func (e Env) SettleApp(ctx context.Context) (bool, error) {
+	a, err := e.ReadApply()
+	if err != nil {
+		return false, err
+	}
+	if a.State != contract.UpdateApplyStateHealthy || a.StagedApp == "" {
+		return false, nil
+	}
+	unlock, err := e.lock()
+	if err != nil {
+		return false, nil
+	}
+	staged, err := e.swapApp(ctx, a.StagedApp, a.From)
+	unlock()
+	if err != nil {
+		return false, err
+	}
+	if staged != "" {
+		return false, nil
+	}
+	if err := e.record(contract.UpdateApplyStateHealthy, a.From, a.To, nil, ""); err != nil {
+		return true, err
+	}
+	return true, e.pruneReleases(a.To, "")
 }

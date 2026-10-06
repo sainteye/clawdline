@@ -88,6 +88,9 @@ const (
 	// FailedVersionsLimit is how many versions that rolled back are
 	// remembered, so auto-apply does not try them again.
 	FailedVersionsLimit = 16
+	// AppSwapPollSecondsLimit is how often a daemon with a staged app bundle
+	// looks whether the app has quit, so the bundle can be swapped in.
+	AppSwapPollSecondsLimit = 60
 	// maxStateFileBytes is one of the updater's own JSON files.
 	maxStateFileBytes = 64 << 10
 )

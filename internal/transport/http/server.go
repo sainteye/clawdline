@@ -690,12 +690,7 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	go s.store.SweepReferenceImagesEvery(ctx, store.ReferenceImageSweepIntervalLimit)
 	// Whether this machine trails the cloud's latest build: read now and on
 	// its own clock, so GET /v1/update never waits on the network.
-	s.updateChecker()
-	if s.releaseUpdate != nil {
-		go s.releaseUpdate.Run(ctx)
-	} else {
-		go s.update.Run(ctx)
-	}
+	go s.runUpdateCheck(ctx)
 }
 
 // schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The

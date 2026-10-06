@@ -383,6 +383,10 @@ func machineScoped(p string) bool {
 		// Storing a session's pictures is the orchestrator's (images.go); the
 		// handler refuses a device, as the Swift app does.
 		return true
+	case "/v1/update/apply":
+		// `clawdline update --apply` on this Mac asks its own daemon to
+		// install a release (update.go); a device needs send instead.
+		return true
 	}
 	if strings.HasPrefix(p, "/v1/projects/") {
 		parts := strings.Split(strings.TrimPrefix(p, "/v1/projects/"), "/")

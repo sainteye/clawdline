@@ -128,9 +128,34 @@ func (d *Daemon) Wait() { d.wg.Wait() }
 
 // Run checks for releases until ctx ends, and after each check installs a
 // newer stable release by itself when the setting allows it and no session
-// is busy. A busy machine waits for the next check.
+// is busy. A busy machine waits for the next check. Beside it, an app bundle
+// left staged is swapped in once the app quits (SettleApp).
 func (d *Daemon) Run(ctx context.Context) {
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		d.settleApp(ctx)
+	}()
 	d.Checker.Run(ctx, d.maybeAutoApply)
+}
+
+// settleApp polls every AppSwapPollSecondsLimit until ctx ends; each poll
+// reads status.json and does nothing more unless an app bundle is staged.
+func (d *Daemon) settleApp(ctx context.Context) {
+	t := time.NewTicker(AppSwapPollSecondsLimit * time.Second)
+	defer t.Stop()
+	for {
+		if swapped, err := d.Env.SettleApp(ctx); err != nil {
+			d.logf("staged app not swapped in: %v", err)
+		} else if swapped {
+			d.logf("the staged app replaced the installed one")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 func (d *Daemon) maybeAutoApply(ctx context.Context, c Check) {

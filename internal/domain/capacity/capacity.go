@@ -269,6 +269,7 @@ const (
 	ReleaseFailedVersions         = "release.failed_versions"
 	ReleaseStateFileBytes         = "release.state_file_bytes"
 	ReleaseApplyFollowSeconds     = "release.apply_follow_seconds"
+	ReleaseAppSwapPollSeconds     = "release.app_swap_poll_seconds"
 	UpdateApplyBodyBytes          = "update.apply_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
@@ -1344,6 +1345,14 @@ func Register() []Entry {
 			Limit: 1800, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.LockStaleSecondsLimit"},
+		},
+		{
+			// How often a daemon with a staged app bundle looks whether the app
+			// has quit; a running app keeps its bundle until the next look.
+			Name: ReleaseAppSwapPollSeconds, Class: Observation, Unit: Seconds,
+			Limit: 60, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/release/updater.AppSwapPollSecondsLimit"},
 		},
 		{
 			// Store snapshots taken before an update (VACUUM INTO). The oldest is

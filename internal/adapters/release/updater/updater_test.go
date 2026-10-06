@@ -634,10 +634,18 @@ func TestTheAppBundleIsSwappedOnlyWhenItIsNotRunning(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(installed, "Contents", "old")); err != nil {
 		t.Fatal("a running app's bundle was changed")
 	}
-	// Not running: swapped, and the replaced bundle kept with its release.
+	// Still running: the daemon's poll leaves it staged.
+	if swapped, err := f.env.SettleApp(context.Background()); err != nil || swapped {
+		t.Fatalf("settle while running: %v %v", swapped, err)
+	}
+	// Quit: the poll swaps it in, keeps the replaced bundle with its
+	// release, and the status no longer names a staged app.
 	f.env.Run = runFake
-	if left, err := f.env.swapApp(context.Background(), p.StagedApp, "v0.10.0"); err != nil || left != "" {
-		t.Fatalf("swap: %q %v", left, err)
+	if swapped, err := f.env.SettleApp(context.Background()); err != nil || !swapped {
+		t.Fatalf("settle after quit: %v %v", swapped, err)
+	}
+	if got := f.apply(); got.State != contract.UpdateApplyStateHealthy || got.StagedApp != "" {
+		t.Fatalf("after the swap: %+v", got)
 	}
 	if _, err := os.Stat(filepath.Join(installed, "Contents", "new")); err != nil {
 		t.Fatal("the new bundle is not installed")
