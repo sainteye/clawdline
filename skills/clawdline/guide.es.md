@@ -869,7 +869,7 @@ verificación y continúe. Al abrirse, el traspaso captura los ítems abiertos d
 ese Project. Una vez que el receptor tiene un id de conversación y se observa su primer registro de
 conversación, las asignaciones activas y los dueños de esos ítems pasan al receptor en una sola
 transacción. Un traspaso fallido deja la propiedad en manos del emisor. Un ítem ya cerrado, pasado
-a otra persona o que se está asignando por separado se deja como está. Un ítem con compuerta de
+a otro dueño o que se está asignando por separado se deja como está. Un ítem con compuerta de
 verificación que está en verifying o merging vuelve a implementing, para que su nuevo dueño tenga
 que verificarlo otra vez. Recibes un aviso `handoff_receipt` cuando se escribe la línea del
 traspaso; ese aviso por sí solo no demuestra que se hiciera la transferencia en el Board. Rechazos:
@@ -1166,7 +1166,7 @@ echo "Clean up the release notes before the next release." | \
   La persona a menudo te pide que dejes trabajo anotado para más tarde; crear el ítem no lo hace
   tuyo. `assignment_state` es `not_requested`.
 - Añade `--assign-self` (`"assign": {"mode": "self"}`) **solo cuando el mensaje de la persona pida
-  que esta Session haga el trabajo ahora** ("make an item for this and do it"). El ítem llega
+  que esta Session haga el trabajo ahora** ("crea un ítem para esto y hazlo"). El ítem llega
   entonces **asignado a ti**, en `assigned`, en la misma escritura. No se escribe nada en tu
   terminal; tú lo pediste. Trabaja los pasos en orden, completa cada uno cuando esté verificado
   (`clawdline item steps <item id>`, `clawdline item step-done <item id> <step id>`; `clawdline item step-add`
@@ -1208,8 +1208,8 @@ Nunca crees un ítem del Board por iniciativa propia, y nunca varios para planif
 especulativo.
 
 **Reclamar un ítem del Board que la persona te señaló.** Cuando el mensaje de la persona a través
-de Clawdline te dice que tomes un ítem concreto que ya está en el Board —*"take the release-notes
-item"*, *"claim <item id>"*—, reclámalo; es un solo comando:
+de Clawdline te dice que tomes un ítem concreto que ya está en el Board —*"toma el ítem de las notas de la
+versión"*, *"reclama <item id>"*—, reclámalo; es un solo comando:
 
 ```
 clawdline item claim <item id>
@@ -1237,7 +1237,7 @@ clawdline item claim <item id>
 
 **Asignar un ítem del Board a una Session nueva que pidió la persona.** Cuando el mensaje de la
 persona a través de Clawdline te pide que entregues una Feature o una Issue concreta sin asignar a
-una Session nueva —*"open a security Session for <item id>"*—, asígnala; es un solo comando:
+una Session nueva —*"abre una Session de seguridad para <item id>"*—, asígnala; es un solo comando:
 
 ```
 clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--persona <id>]
