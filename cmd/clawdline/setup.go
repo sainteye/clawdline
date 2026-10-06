@@ -871,7 +871,8 @@ func sessionCheck(base, token, stateDir string) error {
 		}
 	}
 	if id == "" {
-		return errors.New("the daemon does not list the throwaway project it was given")
+		return fmt.Errorf("the daemon does not list the throwaway project %s it was given; a state directory under a "+
+			"temporary directory (/tmp) is never listed as a project, so there pass --no-session-check", dir)
 	}
 	var t contract.Terminal
 	if err := call(http.MethodPost, "/v1/terminals", contract.TerminalOpenRequest{ProjectID: id, Cols: 80, Rows: 24}, &t); err != nil {
@@ -1001,7 +1002,9 @@ func uninstall(h setupHost, p setupPlace) (removed, kept []string) {
 	// A restart never stops the terminals the daemon started, and neither
 	// does this: they are the person's sessions.
 	if sock := filepath.Join(p.stateDir, "tmux", "term.sock"); fileExists(sock) {
-		kept = append(kept, "the terminals the daemon started, if any are still open: tmux -S "+sock+" ls")
+		if out, err := h.run("tmux", "-S", sock, "ls"); err == nil && strings.TrimSpace(string(out)) != "" {
+			kept = append(kept, "the terminals the daemon started that are still open; they end when you exit them (tmux -S "+sock+" ls)")
+		}
 	}
 	return removed, kept
 }
