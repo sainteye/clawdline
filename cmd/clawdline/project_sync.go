@@ -37,7 +37,7 @@ func daemonJSON(method, path string, body, into any) error {
 	client := &http.Client{Timeout: 2 * time.Minute}
 	res, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("the daemon did not answer: %w", err)
+		return fmt.Errorf(cliCopy("misc", "project_sync.daemon_unanswered", "the daemon did not answer: %w"), err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode/100 != 2 {
@@ -73,13 +73,13 @@ func projectExport(args []string) {
 			Project domain.Entry `json:"project"`
 		}
 		if err := daemonJSON("GET", "/v1/project-sync/entry?repo="+url.QueryEscape(p.Repo), nil, &answer); err != nil {
-			fmt.Fprintf(os.Stderr, "clawdline: %s: %v\n", p.Repo, err)
+			fmt.Fprintf(os.Stderr, cliCopy("misc", "project_sync.clawdline_s_v.32ed93aa", "clawdline: %s: %v\n"), p.Repo, err)
 			continue
 		}
 		bundle.Projects = append(bundle.Projects, answer.Project)
 	}
 	for _, s := range manifest.Skipped {
-		fmt.Fprintf(os.Stderr, "skipped %s (%s): %s\n", s.Label, s.Path, s.Reason)
+		fmt.Fprintf(os.Stderr, cliCopy("misc", "project_sync.skipped_s_s_s.3b3a8ba9", "skipped %s (%s): %s\n"), s.Label, s.Path, s.Reason)
 	}
 	data, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
@@ -92,7 +92,7 @@ func projectExport(args []string) {
 	if err := os.WriteFile(*out, append(data, '\n'), 0o600); err != nil {
 		fail(err)
 	}
-	fmt.Fprintf(os.Stderr, "exported %d project(s) to %s\n", len(bundle.Projects), *out)
+	fmt.Fprintf(os.Stderr, cliCopy("misc", "project_sync.exported_d_project_s_to_s.081e87ed", "exported %d project(s) to %s\n"), len(bundle.Projects), *out)
 }
 
 func projectImport(args []string) {
@@ -110,10 +110,10 @@ func projectImport(args []string) {
 	}
 	var bundle projectBundle
 	if err := json.Unmarshal(data, &bundle); err != nil {
-		fail(fmt.Errorf("not a project bundle: %w", err))
+		fail(fmt.Errorf(cliCopy("misc", "project_sync.not_bundle", "not a project bundle: %w"), err))
 	}
 	if bundle.Version != domain.Version {
-		fail(fmt.Errorf("the bundle has version %d; this build reads %d", bundle.Version, domain.Version))
+		fail(fmt.Errorf(cliCopy("misc", "project_sync.version_mismatch", "the bundle has version %d; this build reads %d"), bundle.Version, domain.Version))
 	}
 	failed := 0
 	for _, p := range bundle.Projects {
@@ -127,9 +127,9 @@ func projectImport(args []string) {
 			continue
 		}
 		r := answer.Result
-		fmt.Printf("%-12s %s %s  written %d, deleted %d, kept %d\n", r.State, r.Repo, r.Path, len(r.Written), len(r.Deleted), len(r.Kept))
+		fmt.Printf(cliCopy("misc", "project_sync.summary", "%-12s %s %s  written %d, deleted %d, kept %d\n"), r.State, r.Repo, r.Path, len(r.Written), len(r.Deleted), len(r.Kept))
 		for _, k := range r.Kept {
-			fmt.Printf("             kept %s (%s)\n", k.Path, k.Reason)
+			fmt.Printf(cliCopy("misc", "project_sync.kept_s_s.1611e712", "             kept %s (%s)\n"), k.Path, k.Reason)
 		}
 	}
 	if failed > 0 {

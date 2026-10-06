@@ -23,7 +23,7 @@ func leasesCommand(args []string) {
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	asJSON := fs.Bool("json", false, "print the daemon's answer as it is")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: clawdline leases [--json] [--port n]")
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "leases.usage_clawdline_leases_json_port_n.30e25c07", "usage: clawdline leases [--json] [--port n]"))
 		os.Exit(2)
 	}
 	b, err := openBroker(*port)
@@ -47,7 +47,7 @@ func leasesRun(stdout, stderr io.Writer, b *broker, asJSON bool) int {
 		Leases *[]contract.LeaseRecord `json:"leases"`
 	}
 	if json.Unmarshal(a.Body, &list) != nil || list.Leases == nil {
-		fmt.Fprintf(stderr, "clawdline %s: the daemon's answer is not a lease list; the leases are unknown: %s\n",
+		fmt.Fprintf(stderr, cliCopy("misc", "leases.clawdline_s_the_daemon_s_answer_is.2f1f6905", "clawdline %s: the daemon's answer is not a lease list; the leases are unknown: %s\n"),
 			name, clip(string(a.Body), 200))
 		return 1
 	}
@@ -55,11 +55,11 @@ func leasesRun(stdout, stderr io.Writer, b *broker, asJSON bool) int {
 		return report(stdout, stderr, name, a)
 	}
 	if len(*list.Leases) == 0 {
-		fmt.Fprintln(stdout, "No lease is held or waited for.")
+		fmt.Fprintln(stdout, cliCopy("misc", "leases.no_lease_is_held_or_waited_for.6ae34a1f", "No lease is held or waited for."))
 		return 0
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "RESOURCE\tKEY\tHOLDER\tLIVENESS\tHELD\tREASON\tWAITING")
+	fmt.Fprintln(tw, cliCopy("misc", "leases.table_header", "RESOURCE\tKEY\tHOLDER\tLIVENESS\tHELD\tREASON\tWAITING"))
 	for _, l := range *list.Leases {
 		holder, liveness, held, reason := "-", "-", "-", "-"
 		if h := l.Holder; h != nil {
@@ -71,7 +71,7 @@ func leasesRun(stdout, stderr io.Writer, b *broker, asJSON bool) int {
 	_ = tw.Flush()
 	for _, l := range *list.Leases {
 		for _, q := range l.Queue {
-			fmt.Fprintf(stdout, "  waiting for %s %s: #%d %s, %ds: %s\n", l.Resource, l.Key, q.Position, q.Holder,
+			fmt.Fprintf(stdout, cliCopy("misc", "leases.waiting_for_s_s_d_s_ds_s.c9011b01", "  waiting for %s %s: #%d %s, %ds: %s\n"), l.Resource, l.Key, q.Position, q.Holder,
 				q.WaitedSeconds, oneLine(q.Reason))
 		}
 	}

@@ -34,6 +34,23 @@ func TestLeasesPrintsTheHolderAndTheWaiters(t *testing.T) {
 	}
 }
 
+func TestLeasesGermanHeadingKeepsLeaseIdentity(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, leaseAnswer })
+	var out, errs bytes.Buffer
+	if code := leasesRun(&out, &errs, b, false); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "RESSOURCE") || !strings.Contains(got, "WARTENDE") ||
+		!strings.Contains(got, "landing") || !strings.Contains(got, "/repo") ||
+		!strings.Contains(got, "task-a") || !strings.Contains(got, "landing item-1 on main") {
+		t.Fatalf("German lease heading or raw values: %q", got)
+	}
+}
+
 // --json prints the daemon's answer itself.
 func TestLeasesJSONPrintsTheAnswer(t *testing.T) {
 	_, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, leaseAnswer })

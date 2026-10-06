@@ -135,7 +135,7 @@ func heavyCommand(args []string) {
 	}
 	floor, err := parseBytes(*minAvail)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline heavy:", err)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.clawdline_heavy.fc074608", "clawdline heavy:"), err)
 		heavyUsage()
 	}
 	deps := heavyDeps{
@@ -153,16 +153,16 @@ func heavyCommand(args []string) {
 		if b, err := openBroker(*port); err == nil {
 			deps.broker = b
 		} else {
-			fmt.Fprintf(os.Stderr, "clawdline heavy: no compile slot (%v); running without one\n", err)
+			fmt.Fprintf(os.Stderr, cliCopy("misc", "heavy.clawdline_heavy_no_compile_slot_v_r.a110b265", "clawdline heavy: no compile slot (%v); running without one\n"), err)
 		}
 	}
 	os.Exit(runHeavy(heavyOptions{reason: *reason, minAvailable: floor, wait: *wait, noSlot: *noSlot}, fs.Args(), deps))
 }
 
 func heavyUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline heavy [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] -- <command> [args…]")
-	fmt.Fprintln(os.Stderr, "  waits for the machine's compile slot and for memory, then runs the command and gives the slot back")
-	fmt.Fprintln(os.Stderr, "  exits with the command's own status; 75 when --max-wait passed and the command was not run")
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.usage_clawdline_heavy_reason_text_m.a5a3cfe3", "usage: clawdline heavy [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] -- <command> [args…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.waits_for_the_machine_s_compile_slo.6480ade2", "  waits for the machine's compile slot and for memory, then runs the command and gives the slot back"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.exits_with_the_command_s_own_status.bad52022", "  exits with the command's own status; 75 when --max-wait passed and the command was not run"))
 	os.Exit(2)
 }
 
@@ -170,7 +170,9 @@ func heavyUsage() {
 // to leave with, which is the command's own whenever it ran, and
 // heavyExitTimedOut when --max-wait passed first.
 func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
-	say := func(format string, a ...any) { fmt.Fprintf(d.stderr, "clawdline heavy: "+format+"\n", a...) }
+	say := func(format string, a ...any) {
+		fmt.Fprintf(d.stderr, cliCopy("misc", "heavy.clawdline_heavy.a7592dd3", "clawdline heavy: ")+format+"\n", a...)
+	}
 	if held := d.getenv(heavyEnv); held != "" {
 		// The parent holds the slot and checked memory already.
 		code, err := d.run(argv, []string{heavyEnv + "=" + held})
@@ -229,7 +231,7 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 	for {
 		a, err := s.b.request("POST", "/v1/orchestrator/leases", nil, req, "")
 		if err != nil {
-			s.say("the daemon did not answer (%v); running without the compile slot", err)
+			s.say(cliCopy("misc", "heavy.daemon_unanswered", "the daemon did not answer (%v); running without the compile slot"), err)
 			s.b = nil
 			return true
 		}
@@ -238,31 +240,31 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 		switch {
 		case a.ok() && reply.State == "granted":
 			if queued {
-				s.say("the compile slot is ours after %s; starting", d.now().Sub(since).Round(time.Second))
+				s.say(cliCopy("misc", "heavy.slot_acquired", "the compile slot is ours after %s; starting"), d.now().Sub(since).Round(time.Second))
 			}
 			s.held = true
 			return true
 		case a.ok() && reply.State == "queued":
 			if !queued {
-				s.say("waiting for the compile slot (%s); quiet until it is ours, or %s passes and this exits %d without running",
+				s.say(cliCopy("misc", "heavy.slot_waiting", "waiting for the compile slot (%s); quiet until it is ours, or %s passes and this exits %d without running"),
 					queueSentence(reply), wait, heavyExitTimedOut)
 				queued = true
 			}
 		case a.Status == 429:
 			// queue_full: the line is long, not closed.
 			if !queued {
-				s.say("waiting for the compile slot (its queue is full); quiet until it is ours, or %s passes and this exits %d without running",
+				s.say(cliCopy("misc", "heavy.slot_queue_full", "waiting for the compile slot (its queue is full); quiet until it is ours, or %s passes and this exits %d without running"),
 					wait, heavyExitTimedOut)
 				queued = true
 			}
 		default:
 			code, message := a.refusal()
-			s.say("the compile slot was refused (%d %s: %s); running without it", a.Status, code, message)
+			s.say(cliCopy("misc", "heavy.slot_refused", "the compile slot was refused (%d %s: %s); running without it"), a.Status, code, message)
 			s.b = nil
 			return true
 		}
 		if !d.now().Before(deadline) {
-			s.say("waited %s (--max-wait) for the compile slot without getting it; the command was not run (exit %d)",
+			s.say(cliCopy("misc", "heavy.slot_timed_out", "waited %s (--max-wait) for the compile slot without getting it; the command was not run (exit %d)"),
 				wait, heavyExitTimedOut)
 			s.cancel()
 			return false
@@ -297,7 +299,7 @@ func (s *heavySlot) keepAlive(every time.Duration) func() {
 				a, err := s.b.request("POST", "/v1/orchestrator/leases/renew", nil, s.owner("running"), "")
 				if err == nil && !a.ok() {
 					if code, _ := a.refusal(); code == "lease_lost" {
-						s.say("the compile slot lapsed while running; the command goes on")
+						s.say(cliCopy("misc", "heavy.slot_lapsed", "the compile slot lapsed while running; the command goes on"))
 						s.held = false
 						return
 					}
@@ -314,7 +316,7 @@ func (s *heavySlot) release() {
 	}
 	if a, err := s.b.request("POST", "/v1/orchestrator/leases/release", nil, s.owner(""), ""); err != nil || !a.ok() {
 		// Unreleased, it frees itself a minute after the renewals stop.
-		s.say("the compile slot could not be given back; it frees itself within a minute")
+		s.say(cliCopy("misc", "heavy.slot_release_failed", "the compile slot could not be given back; it frees itself within a minute"))
 	}
 }
 
@@ -333,9 +335,9 @@ func (s *heavySlot) owner(phase string) contract.LeaseOwnerRequest {
 func queueSentence(r contract.LeaseReply) string {
 	who := ""
 	if h := r.Lease.Holder; h != nil && h.Holder != "" {
-		who = ", held by " + h.Holder
+		who = cliCopy("misc", "heavy.held_by", ", held by ") + h.Holder
 	}
-	return fmt.Sprintf("number %d in line%s", r.Position, who)
+	return fmt.Sprintf(cliCopy("misc", "heavy.queue_position", "number %d in line%s"), r.Position, who)
 }
 
 // waitForMemory holds the start until the machine has room, renewing the slot
@@ -351,23 +353,23 @@ func waitForMemory(opts heavyOptions, deadline time.Time, d heavyDeps, slot *hea
 			return true
 		}
 		if err != nil {
-			say("memory could not be read (%v); not waiting for it", err)
+			say(cliCopy("misc", "heavy.memory_unreadable", "memory could not be read (%v); not waiting for it"), err)
 			return true
 		}
 		ok, why := memoryRoom(s, opts.minAvailable)
 		if ok {
 			if waiting {
-				say("memory is back; starting")
+				say(cliCopy("misc", "heavy.memory_restored", "memory is back; starting"))
 			}
 			return true
 		}
 		now := d.now()
 		if !now.Before(deadline) {
-			say("waited %s (--max-wait) for memory (%s); the command was not run (exit %d)", opts.wait, why, heavyExitTimedOut)
+			say(cliCopy("misc", "heavy.memory_timed_out", "waited %s (--max-wait) for memory (%s); the command was not run (exit %d)"), opts.wait, why, heavyExitTimedOut)
 			return false
 		}
 		if !waiting {
-			say("waiting for memory: %s; quiet until it is back, or --max-wait passes and this exits %d without running",
+			say(cliCopy("misc", "heavy.memory_waiting", "waiting for memory: %s; quiet until it is back, or --max-wait passes and this exits %d without running"),
 				why, heavyExitTimedOut)
 			waiting = true
 		}
@@ -385,10 +387,10 @@ func memoryRoom(s machineusage.Sample, floor int64) (bool, string) {
 		floor = min(int64(heavyFloorCap), s.MemTotal/4)
 	}
 	if s.MemAvailable < floor {
-		return false, fmt.Sprintf("%s available, %s wanted", mib(s.MemAvailable), mib(floor))
+		return false, fmt.Sprintf(cliCopy("misc", "heavy.memory_amount", "%s available, %s wanted"), mib(s.MemAvailable), mib(floor))
 	}
 	if p := s.Pressure; p != nil && p.MemorySome >= heavyPressureCeiling {
-		return false, fmt.Sprintf("tasks waited on memory %.0f%% of the last 10 s", p.MemorySome)
+		return false, fmt.Sprintf(cliCopy("misc", "heavy.memory_pressure", "tasks waited on memory %.0f%% of the last 10 s"), p.MemorySome)
 	}
 	return true, ""
 }
@@ -514,7 +516,7 @@ func parseBytes(s string) (int64, error) {
 	}
 	var f float64
 	if _, err := fmt.Sscanf(s, "%g", &f); err != nil || f < 0 {
-		return 0, fmt.Errorf("--min-available %q is not a size like 1500M or 1G", s)
+		return 0, fmt.Errorf(cliCopy("misc", "heavy.min_available_invalid", "--min-available %q is not a size like 1500M or 1G"), s)
 	}
 	return int64(f * float64(mult)), nil
 }
