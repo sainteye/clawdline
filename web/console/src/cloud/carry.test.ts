@@ -288,7 +288,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 135)
+  assert.equal(Object.keys(CARRIED).length, 133)
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
@@ -342,12 +342,10 @@ test("a route this console does not carry is refused by the word it stands for",
   assert.equal(uncarried("screen"), "", "a carried word has no refusal sentence")
   assert.equal(uncarriedWordOf("GET", "/v1/sessions/s1/git"), "", "the Git panel's read is carried")
   assert.equal(uncarried("git"), "", "a carried word has no refusal sentence")
-  // A word this console now carries stands for nothing here, because what is
-  // carried is parsed once by the reader's own case: the work board and a
-  // Project's timeline were both in this function and are not any more.
-  assert.equal(uncarriedWordOf("GET", "/v1/work/board"), "", "the work board is carried")
+  // Retired v1 board reads have no Cloud word; current reads still do.
+  assert.equal(uncarriedWordOf("GET", "/v1/work/board"), "")
+  assert.match(notCarriedDetail("GET", "/v1/work/board"), /is not carried over Clawdline Cloud/)
   assert.equal(uncarriedWordOf("GET", "/v1/timeline?project=p"), "", "a Project's timeline is carried")
-  assert.equal(uncarried("work.board"), "", "a carried word has no refusal sentence")
   // Both a schedule in full and the schedule list are carried. The detail
   // sheet therefore reaches the selected machine instead of manufacturing a
   // Cloud refusal before it can show webhook state.

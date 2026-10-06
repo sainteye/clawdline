@@ -1,8 +1,10 @@
 # 工作系統：看板項目、Session 待辦、Backlog、GitHub Issue
 
-> **這一頁描述目前已落地的 v1。2026-09-22 已核准、但尚未實作的替代設計在
+> **2026-10-06：Work v1 的 HTTP 讀取路徑已退役。** 主控台目前使用 v2 Board；`/v1/work/board`、`/v1/work/backlog` 與 `/v1/work/items/*` 不再提供路由，Cloud 也不再攜帶前兩者。v1 資料表與儲存程式仍保留，未執行 `ResetWorkV1`。提議、決策、摘要的 `/v1/work/proposals`、`/v1/work/decisions`、`/v1/work/digests` 仍可使用。下文保留 v1 設計與歷史行為作為紀錄，現行 Board 操作請見 [`work-system-v2.md`](work-system-v2.md)。
+
+> **以下為 v1 的歷史設計。2026-09-22 核准的替代設計在
 > [`work-system-v2.md`](work-system-v2.md)，其上線驗收契約在
-> [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md)。完成切換以前，現有程式行為仍以本頁為準。**
+> [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md)。v2 已上線，現行行為以其實作為準。**
 >
 > **v2 Board: an Epic is assignable behind a plan-and-review gate (2026-09-27).** Refactor and Plan
 > stay in Planning. An Epic enters `implementing` only after its owner writes a `plan` document and

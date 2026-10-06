@@ -340,23 +340,7 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		query: map[string]string{"project": "clawdline-go", "audience": "human",
 			"cursor": "0", "limit": "50"},
 	}, {
-		// The work system, five words. What a phone showed before these was
-		// `cloud_not_carried` on every one of them, which is the whole board,
-		// the Backlog, the proposals, the decisions and the digests at once.
-		word: "work.board",
-		body: map[string]any{"type": "work.board", "session": machine, "request": "req-work-board",
-			"project": "/Users/sean/code/clawdline-go", "cursor": ""},
-		session: machine, name: "read:req-work-board",
-		method: "GET", path: "/v1/work/board",
-		query: map[string]string{"project": "/Users/sean/code/clawdline-go"},
-	}, {
-		word: "work.backlog",
-		body: map[string]any{"type": "work.backlog", "session": machine, "request": "req-work-backlog",
-			"project": "", "cursor": "c-2"},
-		session: machine, name: "read:req-work-backlog",
-		method: "GET", path: "/v1/work/backlog",
-		query: map[string]string{"cursor": "c-2"},
-	}, {
+		// Participation reads remain carried after the v1 work page retires.
 		word: "work.proposals",
 		body: map[string]any{"type": "work.proposals", "session": machine,
 			"request": "req-work-proposals", "project": ""},
@@ -1769,7 +1753,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "update", "personas",
-		"work.board", "work.backlog", "work.proposals", "work.decisions", "work.decision", "work.digests",
+		"work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
 		"work.v2.assign", "work.v2.persona-suggestion", "work.v2.remind", "work.v2.edit", "work.v2.cancel", "work.v2.complete", "work.v2.seen", "work.v2.image-create", "work.v2.image-delete", "work.v2.proposal-resolve",

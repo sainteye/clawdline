@@ -196,8 +196,6 @@ export const CARRIED = {
   "verification.list": "GET /v1/verifications",
   "verification.note": "POST /v1/verifications/{id}/notes",
   voice: "POST /v1/voice",
-  "work.backlog": "GET /v1/work/backlog[?project=&cursor=]",
-  "work.board": "GET /v1/work/board[?project=&cursor=]",
   "work.decisions": "GET /v1/work/decisions",
   "work.decision": "GET /v1/work/decisions/{id}",
   "work.decision-answer": "POST /v1/work/decisions/{id}",
