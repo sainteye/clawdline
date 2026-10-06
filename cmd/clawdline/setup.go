@@ -923,15 +923,22 @@ func runUninstall(h setupHost, o setupOptions) int {
 		return setupRefuse(h, err)
 	}
 	removed, kept := uninstall(h, place)
-	for _, r := range removed {
-		fmt.Fprintln(h.out, "removed "+r)
-	}
 	if o.purge {
-		if err := os.RemoveAll(place.stateDir); err == nil {
-			fmt.Fprintln(h.out, "removed "+place.stateDir+" (--purge)")
+		// The terminals the daemon started outlive it, and their tmux server
+		// listens in the state directory: that part stays while one is open.
+		if sock, open := openTerminals(h, place.stateDir); open {
+			if purgeAllBut(place.stateDir, filepath.Dir(sock)) == nil {
+				removed = append(removed, place.stateDir+" (--purge), all but "+filepath.Dir(sock))
+			}
+			kept = []string{filepath.Dir(sock) + ": the terminals the daemon started are still open; they end when you exit them (tmux -S " + sock + " ls), and then it can go"}
+		} else if _, err := os.Stat(place.stateDir); err == nil && os.RemoveAll(place.stateDir) == nil {
+			removed = append(removed, place.stateDir+" (--purge)")
 		}
 	} else if _, err := os.Stat(place.stateDir); err == nil {
 		kept = append(kept, place.stateDir+" (devices, sessions and settings; --purge removes it)")
+	}
+	for _, r := range removed {
+		fmt.Fprintln(h.out, "removed "+r)
 	}
 	if len(removed) == 0 {
 		fmt.Fprintln(h.out, "nothing of this install was found to remove")
@@ -1001,10 +1008,35 @@ func uninstall(h setupHost, p setupPlace) (removed, kept []string) {
 	}
 	// A restart never stops the terminals the daemon started, and neither
 	// does this: they are the person's sessions.
-	if sock := filepath.Join(p.stateDir, "tmux", "term.sock"); fileExists(sock) {
-		if out, err := h.run("tmux", "-S", sock, "ls"); err == nil && strings.TrimSpace(string(out)) != "" {
-			kept = append(kept, "the terminals the daemon started that are still open; they end when you exit them (tmux -S "+sock+" ls)")
-		}
+	if sock, open := openTerminals(h, p.stateDir); open {
+		kept = append(kept, "the terminals the daemon started that are still open; they end when you exit them (tmux -S "+sock+" ls)")
 	}
 	return removed, kept
+}
+
+// openTerminals is the daemon's own tmux socket and whether a terminal it
+// started still runs there.
+func openTerminals(h setupHost, stateDir string) (string, bool) {
+	sock := filepath.Join(stateDir, "tmux", "term.sock")
+	if !fileExists(sock) {
+		return sock, false
+	}
+	out, err := h.run("tmux", "-S", sock, "ls")
+	return sock, err == nil && strings.TrimSpace(string(out)) != ""
+}
+
+// purgeAllBut removes everything under dir except keep, one of its entries.
+func purgeAllBut(dir, keep string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if p := filepath.Join(dir, e.Name()); p != keep {
+			if err := os.RemoveAll(p); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
