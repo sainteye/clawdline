@@ -214,7 +214,9 @@ A failure before step 5 changes nothing the running daemon uses and is recorded 
 - **The new release keeps crashing.** Each start of the new release while the update is pending is
   counted. At its fourth start, or once it starts more than 10 minutes after the update was
   handed over, its boot guard switches `current` back, records `boot_guard`, and exits so the
-  service starts the old release.
+  service starts the old release. On macOS, launchd waits 30 s between restarts of a crashing
+  service, so the supervisor's 60 s health wait runs out first and the rollback is recorded as
+  `health_timeout`; on Linux it is `boot_guard`. Either way the previous release runs again.
 - **The download is interrupted.** `update.lock` is released; one left by a process that died is
   taken over after 30 minutes.
 
@@ -249,7 +251,10 @@ clawdline setting set update_auto_apply true
 
 When on, after each check the daemon installs a newer **stable** release by itself — never a
 pre-release, never a version that rolled back before — and only when no assistant session it
-started is working. A session whose state it cannot tell counts as working. A busy machine logs
+started is working. Concretely: an assistant session seen working, wherever it runs; a tmux session
+(or one the daemon opened) whose state it cannot tell; or a tmux reading that did not finish. An
+iTerm2 session it cannot read does not hold the update back, because a restart never touches it —
+on a Mac whose iTerm2 does not answer, that rule would otherwise wait for good. A busy machine logs
 `update <version> is waiting: a session is busy` and looks again every 5 minutes
 (`release.auto_apply_retry_seconds`), so the update starts once the sessions are idle rather than
 at the next check hours later.

@@ -180,22 +180,42 @@ func (s *Server) autoApplyOn() bool {
 	return ok && on
 }
 
-// sessionsBusy says whether an assistant session on this machine is working.
-// A reading that is incomplete, or a session whose state is unknown, counts
-// as busy: auto-apply restarts the daemon, and waits rather than guess.
+// sessionsBusy says whether an assistant session on this machine is working,
+// so auto-apply, which restarts the daemon, waits rather than guess.
 func (s *Server) sessionsBusy(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	inv := s.reading(ctx)
-	if !inv.Complete {
+	return inventoryBusy(s.reading(ctx))
+}
+
+// inventoryBusy is sessionsBusy's rule. A session seen working is busy
+// wherever it runs. A session whose state is unknown is busy only when it is
+// one the daemon reads itself (tmux, or a pty it opened); an iTerm2 session
+// it cannot read is not, because a restart never touches it, and a Mac whose
+// iTerm2 does not answer would otherwise wait forever (measured 2026-10-07:
+// 24 unreadable iTerm2 sessions held an update back for good). For the same
+// reason only an incomplete tmux reading counts, not an incomplete merged one
+// (docs/design-decisions.md D05 ③); a reading that names no sources falls
+// back to its own completeness.
+func inventoryBusy(inv session.Inventory) bool {
+	if inv.Sources == nil {
+		if !inv.Complete {
+			return true
+		}
+	} else if complete, read := inv.Sources["tmux"]; read && !complete {
 		return true
 	}
 	for _, item := range inv.Sessions {
 		if !item.IsAssistant() {
 			continue
 		}
-		if item.State == session.StateWorking || item.State == session.StateUnknown {
+		switch item.State {
+		case session.StateWorking:
 			return true
+		case session.StateUnknown:
+			if item.Backend != session.BackendITerm {
+				return true
+			}
 		}
 	}
 	return false
