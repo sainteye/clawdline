@@ -5,53 +5,62 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-**Keep track of the Claude Code and Codex sessions you already run. See which ones need you,
-hand off bounded work, and know when a delivery actually lands.**
+**A control plane for the Claude Code and Codex sessions you already run.**
 
-Clawdline is a local Go daemon with a browser console. It finds sessions in tmux on macOS and Linux
-(and iTerm2 on macOS) without a wrapper or hooks. Follow work across projects, answer a waiting
-session from another device, and keep ownership and delivery evidence with the work. Your agents
-and code stay on your machine. Optional Clawdline Cloud connects browsers and multiple machines
-through an end-to-end encrypted relay.
-
-## What it does
+Clawdline is a local daemon with a web console, for macOS and Linux. It finds your sessions in
+tmux (and iTerm2 on macOS) without a wrapper or hooks, shows which ones need you, and lets one
+session hand work to another and prove that it landed. Your agents and code stay on your machine;
+optional Clawdline Cloud reaches it from a phone or other machines through an end-to-end encrypted
+relay.
 
 <p align="center">
   <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline updating the state of several Claude Code and Codex sessions.">
 </p>
 
-- **Existing sessions, visible together.** See each session's project, assistant and state across
-  tmux and, on macOS, iTerm2. An unreadable session is marked unreadable, not guessed idle. Open its
-  transcript, answer it, start a session, stop a turn or close one safely.
-- **Attention on the device you're using.** Read and answer in a browser or on your phone, with
-  separate read and send permissions. Web Push can tell a subscribed device when a question has
-  waited ten minutes, an agent calls for attention or a scheduled run fails.
-- **Owned dispatch and landing.** A Project Session can send bounded work to a child, receive its
-  result and hand a line of work to a successor. Claims guard against overlapping writes; task
-  receipts and the landing record distinguish a child finishing from its work reaching the target.
-- **A Board that follows delivery.** Assign project work to a Session and follow its steps through
-  implementation, verification, merge and deployment with evidence. The owning Session remains
-  responsible for child work; the Board shows decisions that need you.
-- **Optional encrypted Cloud.** Connect several machines and a phone through Clawdline Cloud's
-  end-to-end encrypted relay. Cloud is off by default and in preview; SSH forwarding and your own
-  tunnel are other ways to reach a machine.
+## What it does
+
+**Basics — every day**
+
+- **See every session.** Each row shows its project, assistant and state: working, waiting for
+  you, idle, or unreadable — never guessed idle. Read the real transcript, answer, send text or a
+  marked-up picture, dictate, start a session, stop a turn, close one safely, or archive it and
+  bring it back later. [Sessions](docs/user/sessions.md)
+- **Live terminals.** Open a terminal beside the session list and type in it, on this machine or
+  from app.clawdline.com, where it switches to a direct connection when the machine is reachable.
+  [Terminals](docs/terminal-direct-path.md)
+- **Your phone, with notifications.** The same console works in any browser, with separate read
+  and send permissions. Web Push tells you when a session has waited ten minutes, an agent calls
+  for you, or a schedule fails; tapping one opens that session.
+  [Remote access](docs/user/remote-access.md) · [Notifications](docs/user/notifications.md)
+- **Usage at a glance.** Context, token spend per session and Board item, and how much of each
+  assistant's plan is left. [Usage](docs/user/usage.md)
+
+**Coordinate work — what sets it apart**
+
+- **Owned dispatch with landing evidence.** A session sends bounded work to a child session,
+  gets the result back, or hands its whole line of work to a successor. Claims stop overlapping
+  writes, and Clawdline records whether the work actually reached the branch, not only that the
+  child finished. [Dispatch and landing](docs/user/clawdfather-and-dispatch.md)
+- **A Board that follows delivery.** Assign a Feature, Issue or Epic to a session and follow it
+  through implementation, verification, merge and deployment, each phase with evidence. Planning
+  is on by default: Features and Epics need a plan and an independent review before work starts.
+  Questions for you appear on the card. [Board](docs/user/board.md)
+- **Roles.** Start a session as a built-in role — architect, reviewer, technical writer and more —
+  with its own handbook and skills. [Roles](docs/personas.md)
+- **Schedules and webhooks.** Save a task that a session runs on the local clock or by hand, with
+  catch-up, timeouts and failure alerts. Cloud Pro also starts it from a webhook.
+  [Schedules](docs/user/schedules.md)
+
+**Projects and machines**
+
+- **Projects across machines.** Give a second machine the same project names, icons and untracked
+  skills, matched by git origin, with or without Cloud. [Projects](docs/user/projects.md)
+- **Optional encrypted Cloud.** Pair a phone or several machines through Clawdline Cloud's
+  end-to-end encrypted relay. Off by default; a preview. [Remote access](docs/user/remote-access.md)
 
 <p align="center">
   <img src="docs/assets/fleet-phone.png" width="390" alt="Clawdline on a phone, showing working, waiting, and child sessions across several projects.">
 </p>
-
-## How it compares
-
-[T3 Code](https://github.com/pingdotgg/t3code) is a full control surface for running agents, with
-web, desktop and mobile apps, more agents and native version-control workflows.
-[Herdr](https://github.com/herdrdev/herdr) is a terminal-first agent harness and multiplexer with
-broad agent support. [Orca](https://github.com/stablyai/orca) is a full Agent Development
-Environment with worktrees, an editor, diff review and integrations.
-
-Clawdline is not an IDE and does not replace Claude Code or Codex. It is a control plane around the
-sessions you already start, with web and phone control, brokered dispatch, landing evidence,
-schedules, webhooks, Board ownership and machine stewardship at its core. Choose it when the hard part is no
-longer starting an agent, but operating several of them reliably over time.
 
 ## Install
 
@@ -74,51 +83,42 @@ In another terminal:
 ./bin/clawdline open        # sign this browser in to read and send in sessions
 ```
 
-Then run `claude` or `codex` inside tmux, and the session appears in the list. Each step, with a
-check that it worked, is in [Install and first run](docs/user/install.md).
+Run `claude` or `codex` inside tmux, and the session appears in the list. Each step, with a check
+that it worked, is in [Install and first run](docs/user/install.md). `./bin/clawdline update`
+tells you when this machine trails the latest build ([Updates](docs/updates.md)).
 
-## Some notes
+## Limits
 
-- Clawdline is **pre-1.0** and has no release download yet. Expect things to change.
-- The console's interface is in **Traditional Chinese** for now; it is the only language catalog
-  it ships.
-- **Windows** builds and runs the daemon and console, but cannot list or control sessions yet.
-  Linux runs headless under a `systemd --user` service; macOS has an optional native app.
-- Claude's **`5h`/`7d` plan percentages** need a Claude Code status line that writes
-  `~/.claude/statusline-cache/rate-limits.json`. Claude Code hands them to `statusLine.command`
-  on stdin and nowhere else, so with none configured — the usual state of a fresh Linux box —
-  that corner reads unknown. [usage.md](docs/user/usage.md) says what to set.
-- Everything on your own machine is free and needs no account. **Clawdline Cloud** (several
-  machines, remote pairing, schedule webhooks) is optional, off by default, and in preview.
+- **Pre-1.0**, built from source, no release download yet.
+- The console is in **Traditional Chinese** only for now.
+- **Windows** runs the daemon and console but cannot list sessions or open terminals. Linux runs
+  headless under `systemd --user`; macOS has an optional native app ([Platforms](docs/user/platforms.md)).
+- Claude's **5h/7d plan percentages** need a Claude Code status line that writes
+  `~/.claude/statusline-cache/rate-limits.json` ([Usage](docs/user/usage.md)).
+- Everything on your machine is free and needs no account. Cloud has a Free plan and a Pro plan.
+
+## How it compares
+
+[T3 Code](https://github.com/pingdotgg/t3code) is a full control surface with desktop and mobile
+apps and native version-control flows. [Herdr](https://github.com/herdrdev/herdr) is a
+terminal-first agent multiplexer. [Orca](https://github.com/stablyai/orca) is an agent development
+environment with an editor and diff review. Clawdline is not an IDE and does not replace Claude Code
+or Codex: it operates the sessions you already start — dispatch, landing evidence, the Board and
+schedules — when the hard part is running several agents reliably over time.
 
 ## Documentation
 
-Getting going
-
-- [Install and first run](docs/user/install.md)
-- [macOS, Linux and Windows](docs/user/platforms.md) — the native app, a `systemd --user` service,
-  what Windows can do
-- [Troubleshooting](docs/user/troubleshooting.md)
-- [Updates](docs/updates.md) — whether this machine trails the cloud's latest build, `clawdline update`
-
-Everyday use
-
-- [Watch, answer, start, stop and close sessions](docs/user/sessions.md)
-- [Keyboard shortcuts](docs/user/keyboard-shortcuts.md)
-- [Notifications](docs/user/notifications.md)
-- [Remote access from a phone or another machine](docs/user/remote-access.md) — SSH, your own
-  tunnel, Clawdline Cloud
-
-Running work
-
-- [Scheduled tasks and webhooks](docs/user/schedules.md)
-- [Board, session to-dos, Now and Verify](docs/user/board.md)
-- [Clawdfather, dispatch, landing and handoff](docs/user/clawdfather-and-dispatch.md)
-- [Projects, and bringing them to another machine](docs/user/projects.md)
-- [Token use, assistant quotas and capacity](docs/user/usage.md)
-
-Building on it? Start at [docs/architecture.md](docs/architecture.md), [AGENTS.md](AGENTS.md), and
-[docs/README.md](docs/README.md) for every design note.
+- Start: [Install and first run](docs/user/install.md) · [Platforms](docs/user/platforms.md) ·
+  [Troubleshooting](docs/user/troubleshooting.md)
+- Basics: [Sessions](docs/user/sessions.md) · [Keyboard shortcuts](docs/user/keyboard-shortcuts.md) ·
+  [Remote access](docs/user/remote-access.md) · [Notifications](docs/user/notifications.md) ·
+  [Usage](docs/user/usage.md)
+- Coordinate work: [Dispatch and landing](docs/user/clawdfather-and-dispatch.md) ·
+  [Board](docs/user/board.md) · [Schedules](docs/user/schedules.md)
+- Projects and machines: [Projects](docs/user/projects.md) · [Updates](docs/updates.md)
+- Website guides: [clawdline.com/docs](https://clawdline.com/docs/)
+- Building on it: [architecture.md](docs/architecture.md), [AGENTS.md](AGENTS.md),
+  [docs/README.md](docs/README.md)
 
 ## License
 
