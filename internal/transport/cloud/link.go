@@ -260,10 +260,12 @@ type Link struct {
 	terminalConnections        map[string]*terminalConnection
 	terminalRetireAfterReceipt map[string]*terminalConnection
 	terminalMetadata           func(context.Context, string, *terminalConnection) error
-	machineIncarnation         string
-	terminalRequests           chan Inbound
-	terminalLists              chan Inbound
-	terminalRefusals           chan Inbound
+	// terminalAfter runs f after d; tests replace it. Nil is time.AfterFunc.
+	terminalAfter      func(d time.Duration, f func())
+	machineIncarnation string
+	terminalRequests   chan Inbound
+	terminalLists      chan Inbound
+	terminalRefusals   chan Inbound
 }
 
 // A paired viewer already trusted to send commands may also use terminals.

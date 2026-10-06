@@ -530,6 +530,24 @@ test("a relay frame for a direct connection and a DC frame for a relay connectio
   f.adapter.dispose()
 })
 
+test("a direct connection takes receipts from the DC too, each carrier in its own sequence", async () => {
+  const f = await directFixture()
+  f.adapter.setCarrier(f.fresh.connection, "direct")
+  const receipt = (operation: string) => ({ v: 1, type: "terminal_receipt", request_id: crypto.randomUUID(),
+    connection: f.fresh.connection, operation, status: "ok" })
+  await f.client._receiveEnvelope(await f.seal(500, receipt("control")), false)
+  assert.equal(f.seen.length, 1)
+  const direct = await f.seal(1, receipt("input"))
+  f.peer.channel.deliver(direct)
+  await until(() => f.seen.length === 2)
+  await f.client._receiveEnvelope(await f.seal(501, receipt("read")), false)
+  assert.equal(f.seen.length, 3, "a DC receipt does not move the relay's sequence")
+  f.peer.channel.deliver(direct)
+  await until(() => f.stages.at(-1)?.code === "terminal_out_of_order")
+  assert.equal(f.seen.length, 3, "a replayed DC receipt is refused")
+  f.adapter.dispose()
+})
+
 test("a carrier probe on termr is verified and discarded", async () => {
   const f = await fixture()
   await f.adapter.subscribeTerminal(f.fresh.connection, f.fresh.keyID, f.fresh.key, (event) => f.seen.push(event))

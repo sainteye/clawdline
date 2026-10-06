@@ -67,8 +67,11 @@ upgrade it:
    signed, end-to-end encrypted envelopes; the relay sees neither.
 3. **Switch.** When the channel opens, the browser rekeys the connection with `carrier:"direct"`.
    From then on `term`/`termd` frames and `termi` requests ride the channel, in the same signed and
-   sealed envelopes as before. Receipts, notices and every connection registration stay on the
-   relay.
+   sealed envelopes as before. Notices, probes and every connection registration stay on the
+   relay; so do receipts, except those of typing, pasting, resizing and lease checks, which the
+   machine sends on the channel when the browser asks (2026-10-06: they had made every keystroke
+   spend the relay's per-account budget of 16 messages per 2 s, and a refused one dropped the
+   connection).
 4. **Flow.** The machine keeps one frame in flight, as before, but the browser acknowledges it on
    the channel after drawing it, so the pace is set by the direct round trip, not by the relay's.
 

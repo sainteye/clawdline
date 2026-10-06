@@ -886,6 +886,8 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudTerminalDirectProbe:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectProbe) },
 		capacity.CloudTerminalDirectProbeUnsettled: func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalDirectProbeUnsettled) },
 		capacity.CloudTerminalSweep:                func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalSweep) },
+		capacity.CloudTerminalReceiptBusyRetries:   func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceiptBusyRetries) },
+		capacity.CloudTerminalReceiptBusyRetry:     func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceiptBusyRetry) },
 		capacity.CloudTerminalEarlyFrames: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab guard; daemon cannot measure live browser use"}
 		},

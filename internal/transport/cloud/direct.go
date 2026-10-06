@@ -364,7 +364,7 @@ func (l *Link) handleDirectOffer(ctx context.Context, svc *terminals.Service, p 
 		}
 		if l.sendTerminalReceipt(context.Background(), c, terminalReceipt{V: 1, Type: "terminal_receipt",
 			RequestID: req.RequestID, Connection: req.Connection, Operation: req.Operation, Status: "ok",
-			Result: map[string]any{"sdp": answer}}) != nil {
+			Result: map[string]any{"sdp": answer, "direct_receipts": true}}) != nil {
 			l.closeDirectPeerOf(c.viewer, "the answer could not be sent")
 		}
 	}()
@@ -491,7 +491,7 @@ func (l *Link) closeAllDirectPeers() {
 // writes it to the viewer's data channel. The outer sequence is the
 // connection's own counter, which is what the browser's per-connection
 // sequence check reads.
-func (l *Link) sendDirectEnvelope(c *terminalConnection, channel string, payload []byte) error {
+func (l *Link) sendDirectEnvelope(c *terminalConnection, channel string, class domaincloud.Class, payload []byte) error {
 	l.directMu.Lock()
 	peer := l.directPeers[c.viewer]
 	l.directMu.Unlock()
@@ -503,7 +503,7 @@ func (l *Link) sendDirectEnvelope(c *terminalConnection, channel string, payload
 	seq := c.directSeq
 	l.terminalMu.Unlock()
 	envelope, err := domaincloud.Seal(payload, domaincloud.SealParams{
-		Ch: channel, Seq: seq, Ts: uint64(l.opts.Now().UnixMilli()), Class: domaincloud.ClassStream,
+		Ch: channel, Seq: seq, Ts: uint64(l.opts.Now().UnixMilli()), Class: class,
 		KeyID: c.keyID, Sender: l.identity.MachineID, Key: c.key, Signer: l.relay.Signer,
 	})
 	if err != nil {
@@ -682,7 +682,11 @@ func (l *Link) sweepDirect(c *terminalConnection) {
 	}
 	ackLate := c.framePending && !c.framePendingAt.IsZero() &&
 		now.Sub(c.framePendingAt) >= CloudTerminalDirectAckSecondsLimit*time.Second
-	probeLate := c.probePending && now.Sub(c.probeAt) >= CloudTerminalDirectProbeUnsettledSecondsLimit*time.Second
+	// A probe the relay refused for its own load is asked again; the relay has
+	// still to deliver one within a probe interval more than the unsettled bound.
+	probeLate := (c.probePending && now.Sub(c.probeAt) >= CloudTerminalDirectProbeUnsettledSecondsLimit*time.Second) ||
+		(!c.probeSince.IsZero() && now.Sub(c.probeSince) >=
+			(CloudTerminalDirectProbeUnsettledSecondsLimit+CloudTerminalDirectProbeSecondsLimit)*time.Second)
 	probeDue := !c.probePending && now.Sub(c.probeAt) >= CloudTerminalDirectProbeSecondsLimit*time.Second
 	l.terminalMu.Unlock()
 	// The peer goes too, even when a rekey not yet activated leaves it owned by
@@ -716,6 +720,9 @@ func (l *Link) sendDirectProbe(c *terminalConnection) {
 	seq, err := l.relay.PublishTracked(context.Background(), Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
 		Class: string(domaincloud.ClassCtl), Payload: data, Key: c.key, KeyID: c.keyID})
 	c.probeAt = l.opts.Now()
+	if c.probeSince.IsZero() {
+		c.probeSince = c.probeAt
+	}
 	if err != nil {
 		// Unsent is unsettled: the deadline above retires the connection.
 		c.probePending = true

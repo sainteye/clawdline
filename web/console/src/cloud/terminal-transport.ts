@@ -96,7 +96,7 @@ export class TerminalChannelTransport {
   private readonly viewer: string
   private readonly pairing: Promise<{ masterKey: CryptoKey; keyID: string; senderKey: CryptoKey; senderID: string }>
   private readonly stopEvents: () => void
-  private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: { term: number; termr: number; termd: number };
+  private readonly keys = new Map<string, { id: string; key: CryptoKey; lastSeq: { term: number; termr: number; termd: number; termrDirect: number };
     inFlight: Set<number>; nonces: Set<string> }>()
   private readonly confirmed = new Set<string>()
   private readonly deltaConfirmed = new Set<string>()
@@ -151,7 +151,7 @@ export class TerminalChannelTransport {
     if (!connectionID.test(connection) || !/^rk-[A-Za-z0-9_-]{22}$/.test(keyID) || raw.length !== 32) throw fail("terminal_invalid")
     if (!this.client.ready || this.client.retired) throw fail("cloud_reconnecting")
     const key = await crypto.subtle.importKey("raw", raw.slice().buffer as ArrayBuffer, "AES-GCM", false, ["encrypt", "decrypt"])
-    this.keys.set(connection, { id: keyID, key, lastSeq: { term: -1, termr: -1, termd: -1 }, inFlight: new Set(), nonces: new Set() })
+    this.keys.set(connection, { id: keyID, key, lastSeq: { term: -1, termr: -1, termd: -1, termrDirect: -1 }, inFlight: new Set(), nonces: new Set() })
     this.listeners.set(connection, listener)
     const channels = this.channels(connection)
     const confirmation = new Promise<void>((resolve, reject) => {
@@ -308,7 +308,11 @@ export class TerminalChannelTransport {
     return { sender: this.viewer, seq } // Relay acceptance is not a machine receipt.
   }
 
-  async openTerminalEnvelope(envelope: TerminalEnvelope, connection: string): Promise<unknown> {
+  /**
+   * `direct` is an envelope from the DC. Receipts of a direct connection come on both carriers, each
+   * with its own sender sequence, so a DC receipt is ordered against the DC's own receipts.
+   */
+  async openTerminalEnvelope(envelope: TerminalEnvelope, connection: string, direct = false): Promise<unknown> {
     const state = this.keys.get(connection)
     if (!state || !this.listeners.has(connection)) throw fail("terminal_old_connection")
     const frame = route("term", this.machine, this.viewer, connection)
@@ -316,7 +320,7 @@ export class TerminalChannelTransport {
     const delta = route("termd", this.machine, this.viewer, connection)
     if (envelope.ch !== frame && envelope.ch !== receipt && envelope.ch !== delta) throw fail("terminal_wrong_viewer")
     if (envelope.ch === delta && !this.deltaConfirmed.has(connection)) throw fail("terminal_bad_envelope")
-    const kind = envelope.ch === frame ? "term" : envelope.ch === receipt ? "termr" : "termd"
+    const kind = envelope.ch === frame ? "term" : envelope.ch === receipt ? (direct ? "termrDirect" : "termr") : "termd"
     if (Object.keys(envelope).length !== names.length || names.some((name) => !(name in envelope)) ||
       envelope.v !== 1 || envelope.sender !== this.machine ||
       envelope.class !== (envelope.ch === receipt ? "ctl" : "stream") ||
@@ -373,11 +377,15 @@ export class TerminalChannelTransport {
     const connection = envelope.ch.split("/")[3]
     return this.matchesMachine(envelope) && !!connection && this.listeners.has(connection)
   }
-  /** A DC envelope: only `term`/`termd` of this viewer's connections, then the relay's checks. */
+  /**
+   * A DC envelope: `term`/`termd` of this viewer's connections, or `termr` of a direct one (the
+   * machine sends everyday receipts there when asked), then the relay's checks.
+   */
   private receiveDirect(link: DirectLink, envelope: TerminalEnvelope): void {
     if (link !== this.link) return
     const parts = envelope.ch.split("/")
-    if (parts.length !== 4 || (parts[0] !== "term" && parts[0] !== "termd") || !this.receives(envelope)) {
+    const receipt = parts[0] === "termr" && !!this.carriers.get(parts[3])
+    if (parts.length !== 4 || (parts[0] !== "term" && parts[0] !== "termd" && !receipt) || !this.receives(envelope)) {
       this.observation?.record("envelope_rejected", { connection: parts[3], code: "terminal_direct_wrong_channel" })
       return
     }
@@ -409,7 +417,7 @@ export class TerminalChannelTransport {
       return
     }
     try {
-      const plaintext = await this.openTerminalEnvelope(envelope, connection)
+      const plaintext = await this.openTerminalEnvelope(envelope, connection, direct)
       const value = plaintext && typeof plaintext === "object" ? plaintext as Record<string, unknown> : null
       if (value?.type === "terminal_carrier_probe") {
         // The machine's proof that the relay still delivers to this viewer: verified, then discarded.

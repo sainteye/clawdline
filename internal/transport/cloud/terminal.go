@@ -45,6 +45,13 @@ const (
 	CloudTerminalHistoryLineBytesLimit        = 4 << 10
 	CloudTerminalHistoryCaptureBytesLimit     = 4 << 20
 	CloudTerminalObservationRowsLimit         = 128
+	// CloudTerminalReceiptBusyRetriesLimit is how many times a receipt the
+	// relay refused with rate_limited is published again, each after
+	// CloudTerminalReceiptBusyRetrySecondsLimit. The relay refreshes the
+	// account's terminal budget every two seconds, and the viewer waits ten
+	// seconds for a receipt, so a busy relay costs a delay, not the connection.
+	CloudTerminalReceiptBusyRetriesLimit      = 3
+	CloudTerminalReceiptBusyRetrySecondsLimit = 2
 	// CloudTerminalSweepSecondsLimit is how often every connection is
 	// re-checked: authority, deadlines, and a direct connection's ack and
 	// relay probe.
@@ -99,7 +106,8 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		capacity.CloudTerminalDirectOffers, capacity.CloudTerminalDirectSDP, capacity.CloudTerminalDirectCandidates,
 		capacity.CloudTerminalDirectNegotiate, capacity.CloudTerminalDirectGather, capacity.CloudTerminalDirectMessage,
 		capacity.CloudTerminalDirectChunk, capacity.CloudTerminalDirectAck, capacity.CloudTerminalDirectProbe,
-		capacity.CloudTerminalDirectProbeUnsettled, capacity.CloudTerminalSweep:
+		capacity.CloudTerminalDirectProbeUnsettled, capacity.CloudTerminalSweep,
+		capacity.CloudTerminalReceiptBusyRetries, capacity.CloudTerminalReceiptBusyRetry:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -174,6 +182,12 @@ type terminalConnection struct {
 	deniedAt                 time.Time
 	stageLines               int
 	receiptOps               map[uint64]string
+	// receiptRetries holds each relay-published receipt until it settles, so
+	// one the relay refused with rate_limited can be published again.
+	receiptRetries map[uint64]receiptRetry
+	// directReceipts is set when the viewer asked, in its direct rekey, for
+	// the receipts of its everyday requests on the data channel.
+	directReceipts bool
 	// carrier is "direct" for a connection whose frames travel on the
 	// viewer's data channel (direct.go), and empty on the relay.
 	carrier        string
@@ -182,7 +196,15 @@ type terminalConnection struct {
 	probePending   bool
 	probeSeq       uint64
 	probeAt        time.Time
-	probeN         uint64
+	// probeSince is when the oldest probe the relay has not yet delivered was
+	// sent; a probe it refused for its own load leaves it set.
+	probeSince time.Time
+	probeN     uint64
+}
+
+type receiptRetry struct {
+	receipt terminalReceipt
+	attempt int
 }
 
 func terminalReceiptSettleID(channel string, seq uint64) string {
@@ -195,6 +217,8 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	var startRekey *terminalConnection
 	var retireOld *terminalConnection
 	var stage string
+	var resend *terminalConnection
+	var again receiptRetry
 	for _, connection := range l.terminalConnections {
 		if channel == connection.framePendingChannel && connection.framePending && connection.framePendingSeq == seq {
 			connection.framePending = false
@@ -212,10 +236,24 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 		if channel == terminalReceiptChannel(l.identity.MachineID, connection) {
 			if connection.probePending && connection.probeSeq == seq {
 				connection.probePending = false
+				if kind == adaptercloud.SettleDelivered {
+					connection.probeSince = time.Time{}
+				}
+				// The relay refused it for its own load, which says nothing about
+				// this viewer: the next probe asks again, and probeSince bounds it.
+				if kind == adaptercloud.SettleRateLimited {
+					break
+				}
 			}
 			if operation, ok := connection.receiptOps[seq]; ok {
 				delete(connection.receiptOps, seq)
 				stage = l.terminalStageLocked(connection, "receipt_settled", operation, string(kind))
+			}
+			retry, retrying := connection.receiptRetries[seq]
+			delete(connection.receiptRetries, seq)
+			if kind == adaptercloud.SettleRateLimited && retrying && retry.attempt < CloudTerminalReceiptBusyRetriesLimit {
+				resend, again = connection, receiptRetry{receipt: retry.receipt, attempt: retry.attempt + 1}
+				break
 			}
 			if kind != adaptercloud.SettleDelivered {
 				failed = connection
@@ -248,6 +286,13 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	if failed != nil {
 		l.closeTerminalConnection(failed)
 	}
+	if resend != nil {
+		l.terminalAfterFunc(CloudTerminalReceiptBusyRetrySecondsLimit*time.Second, func() {
+			if l.getTerminalConnection(resend.viewer, resend.id) == resend {
+				_ = l.sendTerminalReceiptAttempt(context.Background(), resend, again.receipt, again.attempt)
+			}
+		})
+	}
 	if startRekey != nil {
 		go l.startRekeyTerminalWatch(startRekey)
 	}
@@ -257,6 +302,14 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	if c != nil {
 		l.closeTerminalConnection(c)
 	}
+}
+
+func (l *Link) terminalAfterFunc(d time.Duration, f func()) {
+	if l.terminalAfter != nil {
+		l.terminalAfter(d, f)
+		return
+	}
+	time.AfterFunc(d, f)
 }
 
 func (l *Link) startRekeyTerminalWatch(c *terminalConnection) {
@@ -763,9 +816,10 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 		}
 	} else {
 		var body struct {
-			OldConnection string `json:"old_connection"`
-			FrameDeltaV1  bool   `json:"frame_delta_v1"`
-			Carrier       string `json:"carrier"`
+			OldConnection  string `json:"old_connection"`
+			FrameDeltaV1   bool   `json:"frame_delta_v1"`
+			Carrier        string `json:"carrier"`
+			DirectReceipts bool   `json:"direct_receipts"`
 		}
 		if strictTerminalBody(req.Body, &body) {
 			c.frameDeltaV1 = body.FrameDeltaV1
@@ -777,6 +831,7 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 					preCode = string(terminal.CodeDirectUnavailable)
 				default:
 					c.carrier = carrierDirect
+					c.directReceipts = body.DirectReceipts
 				}
 			} else if body.Carrier != "" && preCode == "" {
 				preCode = string(terminal.CodeInvalid)
@@ -846,9 +901,10 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 
 func (l *Link) terminalRekeySource(viewer string, req terminalRequest) (*terminalConnection, string) {
 	var body struct {
-		OldConnection string `json:"old_connection"`
-		FrameDeltaV1  bool   `json:"frame_delta_v1"`
-		Carrier       string `json:"carrier"`
+		OldConnection  string `json:"old_connection"`
+		FrameDeltaV1   bool   `json:"frame_delta_v1"`
+		Carrier        string `json:"carrier"`
+		DirectReceipts bool   `json:"direct_receipts"`
 	}
 	if !strictTerminalBody(req.Body, &body) || !validConnection(body.OldConnection) || body.OldConnection == req.Connection {
 		return nil, string(terminal.CodeInvalid)
@@ -874,6 +930,9 @@ func (l *Link) connectionResult(c *terminalConnection) any {
 	}
 	if c.carrier == carrierDirect {
 		result["carrier"] = carrierDirect
+		if c.directReceipts {
+			result["direct_receipts"] = true
+		}
 	}
 	return result
 }
@@ -944,9 +1003,18 @@ func (l *Link) terminalReceiptAvailable(c *terminalConnection) bool {
 }
 
 func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, receipt terminalReceipt) error {
+	return l.sendTerminalReceiptAttempt(ctx, c, receipt, 0)
+}
+
+// sendTerminalReceiptAttempt publishes a receipt; attempt counts the times
+// the relay already refused this one with rate_limited.
+func (l *Link) sendTerminalReceiptAttempt(ctx context.Context, c *terminalConnection, receipt terminalReceipt, attempt int) error {
 	data, err := json.Marshal(receipt)
 	if err != nil {
 		return err
+	}
+	if l.sendDirectReceipt(c, receipt, data) {
+		return nil
 	}
 	if l.relay == nil {
 		return ErrRelayNotReady
@@ -997,6 +1065,12 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 		if len(c.receiptOps) < CloudTerminalReceiptsLimit {
 			c.receiptOps[seq] = receipt.Operation
 		}
+		if c.receiptRetries == nil {
+			c.receiptRetries = map[uint64]receiptRetry{}
+		}
+		if len(c.receiptRetries) < CloudTerminalReceiptsLimit {
+			c.receiptRetries[seq] = receiptRetry{receipt: receipt, attempt: attempt}
+		}
 		stage = l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status))
 	}
 	l.terminalMu.Unlock()
@@ -1007,6 +1081,37 @@ func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, r
 		l.logf("cloud terminal: %s receipt was not accepted for delivery: %v", receipt.Operation, err)
 	}
 	return err
+}
+
+// directReceiptOperations are the requests whose receipt starts nothing on
+// the machine, so it needs no relay settlement: a direct connection whose
+// viewer asked for it gets them on the data channel, and its typing costs
+// the relay nothing (docs/cloud-terminal-wire.md, Direct carrier).
+var directReceiptOperations = map[string]bool{"input": true, "paste": true, "resize": true, "control": true, "history": true}
+
+// sendDirectReceipt sends receipt on c's data channel when it may go there,
+// and reports whether it did; otherwise the relay carries it.
+func (l *Link) sendDirectReceipt(c *terminalConnection, receipt terminalReceipt, data []byte) bool {
+	l.terminalMu.Lock()
+	direct := c.carrier == carrierDirect && c.directReceipts && directReceiptOperations[receipt.Operation] &&
+		l.terminalConnections[terminalConnectionID(c.viewer, c.id)] == c
+	l.terminalMu.Unlock()
+	if !direct || l.sendDirectEnvelope(c, terminalReceiptChannel(l.identity.MachineID, c), domaincloud.ClassCtl, data) != nil {
+		return false
+	}
+	l.terminalMu.Lock()
+	if len(c.receiptOrder) < CloudTerminalReceiptsLimit {
+		if _, present := c.receipts[receipt.RequestID]; !present {
+			c.receiptOrder = append(c.receiptOrder, receipt.RequestID)
+		}
+		c.receipts[receipt.RequestID] = data
+	}
+	stage := l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status)+"_direct")
+	l.terminalMu.Unlock()
+	if stage != "" {
+		l.logf("%s", stage)
+	}
+	return true
 }
 
 // terminalStageLocked formats one content-free receipt stage, the daemon
@@ -1450,7 +1555,7 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 		c.frameCandidateTerminalID = id
 		c.publishedFrameSeq = seq
 		l.terminalMu.Unlock()
-		if err := l.sendDirectEnvelope(c, channel, payload); err != nil {
+		if err := l.sendDirectEnvelope(c, channel, domaincloud.ClassStream, payload); err != nil {
 			go l.closeTerminalConnection(c)
 			return err
 		}

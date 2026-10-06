@@ -104,7 +104,7 @@ async function machineFixture() {
       return { connection: request.connection, key_id: request.key_id, expires_at: Date.now() / 1000 + 300,
         machine_incarnation: "inc", ...(request.body?.carrier === "direct" ? { carrier: "direct" } : {}) }
     case "control": return request.body ? { control } : { control, machine_incarnation: "inc" }
-    case "direct_offer": return { sdp: "v=0 answer" }
+    case "direct_offer": return { sdp: "v=0 answer", direct_receipts: true }
     case "activate_connection": return { connection: request.connection, retired_connection: request.body?.old_connection }
     default: return {}
     }
@@ -177,6 +177,9 @@ test("the direct connection's first frame, arriving before the lease check retur
       return request.operation === "control" && request.connection === direct
     }, (held) => held.length === 1)
     assert.ok(direct, "the tab rekeyed onto the DC")
+    const rekey = m.sent.find((request) => request.operation === "rekey_connection" && request.connection === direct)
+    assert.equal((rekey?.body as { direct_receipts?: unknown } | undefined)?.direct_receipts, true,
+      "a machine that offered DC receipts is asked for them")
     assert.equal(held.length, 1, "the lease check is out")
     const opened = () => m.stages.filter((stage) => stage.startsWith("envelope_opened")).length
     const openedBefore = opened()

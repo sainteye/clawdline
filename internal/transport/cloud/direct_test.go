@@ -355,6 +355,108 @@ func TestDirectCarrierCarriesFramesAndInputOffTheRelay(t *testing.T) {
 	if f.l.TerminalCapacity("cloud.terminal_direct_peers").Used != 1 {
 		t.Fatal("the open peer is not counted")
 	}
+
+	// A viewer that asked for them gets its typing's receipts on the channel,
+	// so typing costs the relay nothing; a read's receipt still takes the relay.
+	f.l.terminalMu.Lock()
+	f.c.directReceipts = true
+	f.l.terminalMu.Unlock()
+	if err := f.l.sendTerminalReceipt(ctx, f.c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: "input-1",
+		Connection: testConnection, Operation: "input", TerminalID: string(f.c.terminalID), Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	env, receipt := f.open(t, b.next(t))
+	if env.Ch != "termr/machine/viewer/"+testConnection || env.Class != domaincloud.ClassCtl || receipt["request_id"] != "input-1" {
+		t.Fatalf("direct receipt: ch=%s class=%s %v", env.Ch, env.Class, receipt)
+	}
+	if _, ok := f.spool.Row(1); ok {
+		t.Fatal("a direct receipt was also put on the relay")
+	}
+	if err := f.l.sendTerminalReceipt(ctx, f.c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: "read-1",
+		Connection: testConnection, Operation: "read", TerminalID: string(f.c.terminalID), Status: "refused", Error: "terminal_invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.receiptAt(t, 1); got["request_id"] != "read-1" {
+		t.Fatalf("a read receipt did not take the relay: %v", got)
+	}
+}
+
+// The relay refuses a publish with rate_limited while the account's terminal
+// budget is spent, which says nothing about the connection. A receipt is
+// published again and a probe asked again, within bounds, instead of retiring
+// the connection; that retirement was what dropped a terminal mid-typing.
+func TestARelayBusyRefusalDelaysAReceiptOrProbeInsteadOfRetiring(t *testing.T) {
+	var mu sync.Mutex
+	now := time.Now()
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	advance := func(d time.Duration) { mu.Lock(); now = now.Add(d); mu.Unlock() }
+	gone := func(f *directFixture) bool { return f.l.getTerminalConnection("viewer", testConnection) == nil }
+
+	f := newDirectFixture(t)
+	var timers []func()
+	var delays []time.Duration
+	f.l.terminalAfter = func(d time.Duration, fn func()) { delays = append(delays, d); timers = append(timers, fn) }
+	channel := terminalReceiptChannel("machine", f.c)
+	if err := f.l.sendTerminalReceipt(context.Background(), f.c, terminalReceipt{V: 1, Type: "terminal_receipt",
+		RequestID: "input-1", Connection: testConnection, Operation: "input", TerminalID: string(f.c.terminalID), Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; attempt <= CloudTerminalReceiptBusyRetriesLimit; attempt++ {
+		f.l.terminalReceiptSettled(channel, uint64(attempt-1), adaptercloud.SettleRateLimited)
+		if gone(f) || len(timers) != attempt || delays[attempt-1] != CloudTerminalReceiptBusyRetrySecondsLimit*time.Second {
+			t.Fatalf("attempt %d: gone=%v timers=%d", attempt, gone(f), len(timers))
+		}
+		timers[attempt-1]()
+		if got := f.receiptAt(t, uint64(attempt)); got["request_id"] != "input-1" || got["operation"] != "input" {
+			t.Fatalf("attempt %d sent %v", attempt, got)
+		}
+	}
+	f.l.terminalReceiptSettled(channel, uint64(CloudTerminalReceiptBusyRetriesLimit), adaptercloud.SettleRateLimited)
+	if !gone(f) || len(timers) != CloudTerminalReceiptBusyRetriesLimit {
+		t.Fatal("a receipt the relay kept refusing kept the connection")
+	}
+
+	f = newDirectFixture(t)
+	f.l.opts.Now = clock
+	f.c.expires = clock().Add(time.Hour)
+	f.c.carrier = carrierDirect
+	f.c.probeAt = clock()
+	channel = terminalReceiptChannel("machine", f.c)
+	for i := 0; i < 3; i++ {
+		advance(CloudTerminalDirectProbeSecondsLimit * time.Second)
+		f.l.sweepDirect(f.c)
+		if gone(f) || !f.c.probePending {
+			t.Fatalf("probe %d: gone=%v pending=%v", i, gone(f), f.c.probePending)
+		}
+		f.l.terminalReceiptSettled(channel, f.c.probeSeq, adaptercloud.SettleRateLimited)
+		if gone(f) || f.c.probePending {
+			t.Fatalf("a busy probe %d retired the connection or stayed pending", i)
+		}
+	}
+	advance(CloudTerminalDirectProbeSecondsLimit * time.Second)
+	f.l.sweepDirect(f.c)
+	if !gone(f) {
+		t.Fatal("a relay that never delivered a probe kept the connection")
+	}
+
+	// A delivered probe clears the bound.
+	f = newDirectFixture(t)
+	f.l.opts.Now = clock
+	f.c.expires = clock().Add(time.Hour)
+	f.c.carrier = carrierDirect
+	f.c.probeAt = clock()
+	for i := 0; i < 6; i++ {
+		advance(CloudTerminalDirectProbeSecondsLimit * time.Second)
+		f.l.sweepDirect(f.c)
+		kind := adaptercloud.SettleRateLimited
+		if i%2 == 1 {
+			kind = adaptercloud.SettleDelivered
+		}
+		f.l.terminalReceiptSettled(terminalReceiptChannel("machine", f.c), f.c.probeSeq, kind)
+	}
+	if gone(f) {
+		t.Fatal("a relay delivering every other probe lost the connection")
+	}
 }
 
 func TestDirectOfferRefusals(t *testing.T) {

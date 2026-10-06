@@ -79,6 +79,8 @@ export class CloudTerminalSession {
   private directAttempt: object | null = null
   private upgrading = false
   private fallbackWanted = false
+  /** The machine offered, in its direct answer, to send everyday receipts on the DC. */
+  private directReceipts = false
   private readonly directRetryAt = new Map<string, number>()
   private sendQueue: Promise<void> = Promise.resolve()
   private inFlightInput: Promise<void>[] = []
@@ -158,6 +160,7 @@ export class CloudTerminalSession {
         key_id: fresh.keyID, key: bytesBase64(fresh.key),
         ...(rekey || requestDelta ? {
           body: { ...(rekey ? { old_connection: previous } : {}), ...(direct ? { carrier: "direct" } : {}),
+            ...(direct && this.directReceipts ? { direct_receipts: true } : {}),
             ...(requestDelta ? { frame_delta_v1: true } : {}) },
         } : {}),
       })
@@ -244,6 +247,7 @@ export class CloudTerminalSession {
       const answer = await this.request("direct_offer", { body: { sealed: offer.sealed } })
       const sdp = answer.result?.sdp
       if (typeof sdp !== "string" || !sdp) throw fail("terminal_bad_receipt")
+      this.directReceipts = answer.result?.direct_receipts === true
       await offer.answer(sdp)
       if (this.directAttempt !== attempt || connection !== this.connection || this.openingNew || this.retiringConnection || !this.active)
         throw fail("terminal_direct_stale")

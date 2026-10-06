@@ -410,6 +410,8 @@ const (
 	CloudTerminalDirectProbe          = "cloud.terminal_direct_probe_seconds"
 	CloudTerminalDirectProbeUnsettled = "cloud.terminal_direct_probe_unsettled_seconds"
 	CloudTerminalSweep                = "cloud.terminal_sweep_seconds"
+	CloudTerminalReceiptBusyRetries   = "cloud.terminal_receipt_busy_retries"
+	CloudTerminalReceiptBusyRetry     = "cloud.terminal_receipt_busy_retry_seconds"
 	TerminalBodyBytes                 = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
@@ -2338,6 +2340,21 @@ func Register() []Entry {
 			Limit: 1, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalSweepSecondsLimit"},
+		},
+		{
+			// A receipt the relay refused with rate_limited (its account terminal budget was spent)
+			// is published again this many times before the connection is retired.
+			Name: CloudTerminalReceiptBusyRetries, Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Disconnect,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptBusyRetriesLimit"},
+		},
+		{
+			// The wait before such a receipt is published again; the relay refreshes the budget every two seconds.
+			Name: CloudTerminalReceiptBusyRetry, Class: Cache, Unit: Seconds,
+			Limit: 2, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptBusyRetrySecondsLimit"},
 		},
 		{
 			// The terminal grants file. A larger one is not read, and then
