@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -739,4 +740,51 @@ func sha(b []byte) string {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// A new release that exits at once is restarted by its service faster than
+// the supervisor's health wait ends (systemd restarts it every 3 s), so its
+// boot guard gives the update up while the supervisor still waits. What the
+// guard recorded is the reason; the supervisor stops waiting and does not
+// write the update back as pending or restart the service again.
+func TestTheSupervisorKeepsWhatTheBootGuardDecided(t *testing.T) {
+	f := newFixture(t, "v0.10.0")
+	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
+	if err := f.update(Request{}); err != nil {
+		t.Fatal(err)
+	}
+	newExe := filepath.Join(f.env.Layout.ReleaseDir("v0.11.0"), "clawdline")
+	f.env.HealthWait = 10 * time.Second
+	starts := 0
+	f.env.Health = func(_ context.Context, _ int, _ string, want Served) error {
+		// Each poll is one more start of the new release, until its guard
+		// switches back; the old release then answers, never the new one.
+		if starts <= BootAttemptsLimit {
+			starts++
+			if _, _, err := f.env.BootGuard(newExe); err != nil {
+				t.Errorf("boot guard: %v", err)
+			}
+		}
+		if want.Version == "v0.10.0" && f.current() == "v0.10.0" {
+			return nil
+		}
+		return errors.New("not answering")
+	}
+	start := time.Now()
+	if err := f.env.Finish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("the supervisor waited %s after the boot guard had settled the update", took)
+	}
+	got := f.apply()
+	if got.State != contract.UpdateApplyStateRolledBack || got.Error == nil || got.Error.Code != CodeBootGuard {
+		t.Fatalf("the supervisor replaced the boot guard's record: %+v %+v", got, got.Error)
+	}
+	if _, pending, _ := f.env.ReadPending(); pending {
+		t.Fatal("the supervisor wrote back an update the boot guard had settled")
+	}
+	if f.current() != "v0.10.0" {
+		t.Fatalf("current is %s", f.current())
+	}
 }

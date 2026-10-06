@@ -55,6 +55,13 @@ func (e Env) Finish(ctx context.Context) error {
 	if p.Phase == phaseSwitch {
 		_ = e.record(contract.UpdateApplyStateRestarting, p.From, p.To, nil, p.StagedApp)
 		why := e.trySwitch(ctx, svc, p)
+		if why != nil && why.Code == codeSettledElsewhere {
+			// The boot guard gave the update up while this waited and
+			// recorded why; writing it back as pending would replace that
+			// reason with health_timeout and restart the service again.
+			e.endSupervisor(ctx, svc)
+			return nil
+		}
 		if why == nil {
 			// The boot guard may have given the update up while this waited;
 			// what it recorded stands.
@@ -92,11 +99,22 @@ func (e Env) trySwitch(ctx context.Context, svc install.ServiceFile, p Pending) 
 	if err := e.restartService(ctx, svc); err != nil {
 		return &contract.UpdateApplyError{Code: CodeSupervisorFailed, Detail: "restarting the service: " + err.Error()}
 	}
-	if err := e.waitHealthy(ctx, svc, Served{Commit: p.ToCommit, Version: p.To}); err != nil {
+	gaveUp := func() bool {
+		_, still, err := e.ReadPending()
+		return err == nil && !still
+	}
+	if err := e.waitHealthyUnless(ctx, svc, Served{Commit: p.ToCommit, Version: p.To}, gaveUp); err != nil {
+		if errors.Is(err, errSettledElsewhere) {
+			return &contract.UpdateApplyError{Code: codeSettledElsewhere}
+		}
 		return codeOf(err, CodeHealthTimeout)
 	}
 	return nil
 }
+
+// codeSettledElsewhere is trySwitch's answer when the boot guard settled the
+// update while it waited. It is never recorded.
+const codeSettledElsewhere = "settled_elsewhere"
 
 // rollback switches back to the old release, asks its next start to restore
 // the snapshot when the new release's store change was not additive,

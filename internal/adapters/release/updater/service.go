@@ -143,6 +143,17 @@ func (e Env) restartService(ctx context.Context, s install.ServiceFile) error {
 // waitHealthy asks the daemon on s.Port until it serves its console and
 // names commit, for at most HealthWaitSecondsLimit.
 func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, want Served) error {
+	return e.waitHealthyUnless(ctx, s, want, nil)
+}
+
+// errSettledElsewhere is waitHealthyUnless giving up the wait because
+// another process settled the update meanwhile.
+var errSettledElsewhere = errors.New("the update was settled by another process")
+
+// waitHealthyUnless is waitHealthy that stops as soon as settled answers
+// true: the new release's boot guard can give the update up while the
+// supervisor still waits for it, and what it decided stands.
+func (e Env) waitHealthyUnless(ctx context.Context, s install.ServiceFile, want Served, settled func() bool) error {
 	// The local token, as tools/deploy-linux-user.sh reads BUILD.json: the
 	// console's files answer a bearer, not the orchestrator header.
 	token, _ := os.ReadFile(filepath.Join(e.StateDir, "local-token"))
@@ -166,6 +177,9 @@ func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, want Served
 			return nil
 		} else {
 			last = err
+		}
+		if settled != nil && settled() {
+			return errSettledElsewhere
 		}
 		select {
 		case <-ctx.Done():
