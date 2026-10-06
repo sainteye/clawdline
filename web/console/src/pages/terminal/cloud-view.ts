@@ -32,6 +32,15 @@ export async function beginCloudTerminal(session: CloudTerminalStarter, channelP
   return { rows: await listCloudTerminals(session, channelProject, tab) }
 }
 
+/**
+ * Key refusals the page's status line already explains from the session's own state (input state
+ * unknown, no lease, stale key, offline, revoked, ended), with the button that recovers from it. Such
+ * a refusal is not repeated as a request error, which would stay on screen after typing recovers.
+ */
+const EXPLAINED_KEY_REFUSALS = new Set(["terminal_input_state_unknown", "not_controller", "terminal_stale", "machine_offline",
+  "machine_stale", "terminal_access_revoked", "terminal_forbidden", "terminal_machine_restarted", "terminal_closed"])
+export function keyRefusalExplained(code: string): boolean { return EXPLAINED_KEY_REFUSALS.has(code) }
+
 /** Reconnect the displayed terminal without repeating a create or input request. */
 export async function reconnectCloudTerminal(session: CloudTerminalStarter, id: string): Promise<void> {
   await session.start()

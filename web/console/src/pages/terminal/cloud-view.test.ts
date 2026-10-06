@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalExplained, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
 
 // `cloud/terminal-session.ts` uses constructor parameter properties, which
 // Node's strip-types runner refuses, so the start path is driven through a fake
@@ -82,4 +82,13 @@ test("entry acquires a free terminal or this tab's old lease, but never another 
   assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", other, "live"), "other_holder")
   assert.equal(await acquireVisibleTerminal(session, "trm_one", "tab", mine, "unknown"), "unavailable")
   assert.deepEqual(calls, [])
+})
+
+test("a refused key repeats as an error only when the status line cannot already say why", () => {
+  // The session's state says these, with the button that recovers; an error would outlive the recovery.
+  for (const code of ["terminal_input_state_unknown", "not_controller", "terminal_stale", "machine_offline", "terminal_access_revoked"])
+    assert.equal(keyRefusalExplained(code), true, code)
+  // A pause that outlasted its bound dropped keys the state no longer shows, and a send failure is news.
+  for (const code of ["terminal_input_paused", "input_too_large", "terminal_receipt_timeout"])
+    assert.equal(keyRefusalExplained(code), false, code)
 })

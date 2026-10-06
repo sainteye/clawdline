@@ -13,7 +13,7 @@ import { closeTerminalPane, openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtrl } from "./keys.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
-import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal } from "./cloud-view.js"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalExplained, reconnectCloudTerminal } from "./cloud-view.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 import { centerCursorLine, followCursorLine } from "./cursor-line.js"
 import { CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS, terminalListErrorKind } from "../../session/cloud-terminal-all.js"
@@ -43,6 +43,7 @@ function reason(error: unknown): string {
   const code = (error as { code?: string })?.code
   if (code === "terminal_history_line_too_large") return nextWord("terminalCloudHistoryLineTooLarge")
   if (code === "terminal_history_too_large") return nextWord("terminalCloudHistoryTooLarge")
+  if (code === "terminal_input_paused") return nextWord("terminalCloudTypeAheadDropped")
   return code ?? (error instanceof Error ? error.message : "cloud_failed")
 }
 /**
@@ -63,6 +64,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const [firstFramePending, setFirstFramePending] = useState(true)
   const [frameTimedOut, setFrameTimedOut] = useState(false)
   const [error, setError] = useState("")
+  /** A refused key: the status line already says why when the session's state does. */
+  const keyFailed = (e: unknown) => { if (!keyRefusalExplained((e as { code?: string })?.code ?? "")) setError(reason(e)) }
   // Attaching again by itself after a refusal that means "not right now"
   // (terminal_busy while the machine cannot verify this browser, a timeout):
   // which attempt is next for which terminal, and the wait being shown.
@@ -180,11 +183,11 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         term.onData((data) => {
           const { out } = withCtrl(ctrlArmed.current, data)
           if (ctrlArmed.current) { ctrlArmed.current = false; setCtrl(false) }
-          void session?.input(new TextEncoder().encode(out)).catch((e) => setError(reason(e)))
+          void session?.input(new TextEncoder().encode(out)).catch(keyFailed)
           showInputLine()
         })
         term.onBinary((data) => { const bytes = Uint8Array.from(data, (char) => char.charCodeAt(0) & 0xff)
-          void session?.input(bytes).catch((e) => setError(reason(e))); showInputLine() })
+          void session?.input(bytes).catch(keyFailed); showInputLine() })
         terminal.current = term
         fit.current = addon
         unfollow.current = followCursorLine(() => scroller.current, term)
@@ -197,7 +200,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const paste = (event: ClipboardEvent) => {
       event.preventDefault(); event.stopImmediatePropagation()
       const text = event.clipboardData?.getData("text/plain") ?? ""
-      if (text) void session?.paste(text).catch((e) => setError(reason(e)))
+      if (text) void session?.paste(text).catch(keyFailed)
     }
     const unbindKeys = bindTerminalKeyboard(element, () => back.current?.focus())
     element.addEventListener("paste", paste, true)
@@ -308,7 +311,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const bytes = /^[ABCD]$/.test(value) ? (snapshot.frame?.modes.app_cursor ? "\x1bO" : "\x1b[") + value : value
     const { out } = withCtrl(ctrlArmed.current, bytes)
     ctrlArmed.current = false; setCtrl(false)
-    void session?.input(new TextEncoder().encode(out)).catch((e) => setError(reason(e)))
+    void session?.input(new TextEncoder().encode(out)).catch(keyFailed)
     terminal.current?.focus()
     showInputLine()
   }

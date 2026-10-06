@@ -47,8 +47,16 @@ export interface CloudTerminalSnapshot {
 type Pending = { operation: string; connection: string; terminal: string | null; resolve: (receipt: Receipt) => void; reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout> }
 type EarlyFrame = { value: Frame; envelope: TerminalEnvelope }
+/** No verified frame has arrived for this long, by this browser's own clock: the screen is stale. */
 const STALE_MS = 6_000
 const RECEIPT_MS = 10_000
+const RENEW_MS = 10_000
+/** CloudTerminalRenewRetrySecondsLimit: a renewal that went unanswered or was refused for load is asked again this soon. */
+export const RENEW_RETRY_MS = 2_000
+/** CloudTerminalRotationRetrySecondsLimit: a key rotation that failed is tried again this soon while the old key lasts. */
+export const ROTATION_RETRY_MS = 5_000
+/** Refusals that say the machine or relay was briefly too busy, not that the lease is gone. */
+const TRANSIENT = new Set(["terminal_busy", "rate_limited", "over_capacity", "terminal_direct_closed", "cloud_reconnecting"])
 /** CloudTerminalTypeAheadSecondsLimit: how long a key typed during a brief pause waits for typing to resume. */
 export const TYPE_AHEAD_MS = 8_000
 const KEY_MS = 10 * 60_000
@@ -76,11 +84,16 @@ export class CloudTerminalSession {
   private active = false
   private openingNew = false
   private rotationAttempted = false
+  private rotationRetryAt = 0
   private retiringConnection = ""
   private rotationReady = false
   private activating = false
   private lastRenew = 0
   private renewing = false
+  /** The request id of the renewal in flight: its loss is retried, never read as a lost lease. */
+  private renewID = ""
+  /** When this browser last drew a verified frame. Staleness is judged by it, not by the machine's clock. */
+  private frameSeenAt = 0
   private carrier: TerminalCarrier = "relay"
   /** The open peer of the current direct connection, or of an upgrade in progress. */
   private direct: TerminalDirectOffer | null = null
@@ -125,10 +138,12 @@ export class CloudTerminalSession {
     this.s.canType = (this.s.state === "live" || this.s.state === "just_synced") && !!this.s.frame && !!this.s.control?.held &&
       !!this.s.control.holder?.same_client && !!this.s.control.holder?.same_device &&
       this.epoch === this.s.control.epoch && (this.s.control.expires_at ?? 0) * 1000 > Date.now() && !this.inputUnknown &&
-      Date.now() / 1000 - this.s.frame.at <= STALE_MS / 1000 && Date.now() < this.expiresAt &&
+      Date.now() - this.frameSeenAt <= STALE_MS && Date.now() < this.expiresAt &&
       !this.openingNew && !this.retiringConnection && this.active
+    // A stale screen whose key still lasts is waiting for its next frame (a late heartbeat), not lost.
     this.s.typeAhead = !this.s.canType && this.epoch !== null && !this.inputUnknown &&
-      (this.s.state === "opening" || this.s.state === "synchronizing" || this.s.state === "live" || this.s.state === "just_synced") &&
+      (this.s.state === "opening" || this.s.state === "synchronizing" || this.s.state === "live" || this.s.state === "just_synced" ||
+        (this.s.state === "stale" && Date.now() < this.expiresAt)) &&
       (!this.s.control || (!!this.s.control.held && !!this.s.control.holder?.same_client && this.epoch === this.s.control.epoch))
     for (const listener of this.listeners) listener(this.s)
   }
@@ -314,8 +329,8 @@ export class CloudTerminalSession {
 
   private issueRequest(operation: string, fields: Record<string, unknown> = {}, onRequestID?: (id: string) => void): { sent: Promise<void>; receipt: Promise<Receipt> } {
     if (!this.connection) throw fail("terminal_not_connected")
-    if (!this.active && operation !== "open_connection" && operation !== "rekey_connection") throw fail("terminal_input_paused")
-    if ((operation === "input" || operation === "paste") && !this.s.canType) throw fail("terminal_input_paused")
+    if (!this.active && operation !== "open_connection" && operation !== "rekey_connection") throw this.paused()
+    if ((operation === "input" || operation === "paste") && !this.s.canType) throw this.paused()
     const requestID = crypto.randomUUID()
     onRequestID?.(requestID)
     const connection = this.connection
@@ -324,6 +339,8 @@ export class CloudTerminalSession {
         this.pending.delete(requestID)
         this.observation?.record("receipt_timeout", { connection, requestID, operation })
         if (operation === "input" || operation === "paste") { this.inputUnknown = true; this.set({ state: "unknown", reason: "terminal_input_state_unknown" }) }
+        // A renewal changes nothing the browser cannot ask again; the next one is due shortly.
+        else if (requestID === this.renewID) { /* retried by checkFreshness */ }
         else if (operation !== "release_connection" && operation !== "direct_offer") { this.connectionUnknown = true; this.set({ state: "unknown", reason: "terminal_receipt_timeout" }) }
         reject(fail("terminal_receipt_timeout"))
       }, RECEIPT_MS)
@@ -336,7 +353,12 @@ export class CloudTerminalSession {
       .then(() => undefined, (error) => {
       const pending = this.pending.get(requestID)
       if (pending) { clearTimeout(pending.timer); this.pending.delete(requestID); pending.reject(error instanceof Error ? error : fail("terminal_send_failed")) }
-      if (pending && (operation === "input" || operation === "paste")) {
+      // The transport refuses a direct connection's request once its DC is no longer open, before
+      // the DC's close event: nothing was sent (a partly sent message dies with the DC, and the
+      // machine discards it), so the outcome is known, and the connection falls back now.
+      const unsent = (error as { code?: string })?.code === "terminal_direct_closed"
+      if (unsent && connection === this.connection) this.directClosing()
+      if (pending && !unsent && (operation === "input" || operation === "paste")) {
         this.inputUnknown = true
         this.set({ state: "unknown", reason: "terminal_input_state_unknown" })
       }
@@ -443,20 +465,31 @@ export class CloudTerminalSession {
       // Bound unacknowledged inputs while allowing several keystrokes to cross
       // a high-latency link without a full receipt round trip between them.
       if (this.inFlightInput.length >= 4) await this.inFlightInput[0]!.catch(() => undefined)
-      await this.untilTypeable()
-      if (!this.s.canType || this.epoch === null) throw fail("terminal_input_paused")
-      const seq = this.nextSeq++
-      const issued = this.issueRequest(operation, { terminal_id: this.terminal, client: this.client,
-        epoch: this.epoch, seq, body })
-      const settled = issued.receipt.then((receipt) => {
-        try { this.applied(receipt, seq); settle() } catch (error) { settle(error) }
-      }, settle)
-      this.inFlightInput.push(settled)
-      void settled.finally(() => {
-        const at = this.inFlightInput.indexOf(settled)
-        if (at >= 0) this.inFlightInput.splice(at, 1)
-      })
-      await issued.sent
+      for (;;) {
+        await this.untilTypeable()
+        if (!this.s.canType || this.epoch === null) throw this.paused()
+        const seq = this.nextSeq++
+        let issued: { sent: Promise<void>; receipt: Promise<Receipt> }
+        try {
+          issued = this.issueRequest(operation, { terminal_id: this.terminal, client: this.client, epoch: this.epoch, seq, body })
+          await issued.sent
+        } catch (error) {
+          // Never published (see issueRequest): the same numbered key waits for the relay connection.
+          // Were it somehow applied, the machine's high-water mark for this epoch and seq absorbs it.
+          if ((error as { code?: string })?.code !== "terminal_direct_closed") throw error
+          if (this.nextSeq === seq + 1) this.nextSeq = seq
+          continue
+        }
+        const settled = issued.receipt.then((receipt) => {
+          try { this.applied(receipt, seq); settle() } catch (error) { settle(error) }
+        }, settle)
+        this.inFlightInput.push(settled)
+        void settled.finally(() => {
+          const at = this.inFlightInput.indexOf(settled)
+          if (at >= 0) this.inFlightInput.splice(at, 1)
+        })
+        return
+      }
     })
     this.sendQueue = send.catch(() => undefined)
     void send.catch(settle)
@@ -465,16 +498,33 @@ export class CloudTerminalSession {
   /** Waits out a brief pause (`typeAhead`); a key typed then was never sent, so sending it later replays nothing. */
   private untilTypeable(): Promise<void> {
     if (this.s.canType && this.epoch !== null) return Promise.resolve()
-    if (!this.s.typeAhead) return Promise.reject(fail("terminal_input_paused"))
+    if (!this.s.typeAhead) return Promise.reject(this.paused())
     return new Promise<void>((resolve, reject) => {
       const done = () => { clearTimeout(timer); this.listeners.delete(check) }
+      // Only this refusal is the pause itself outlasting its bound; every other one names its cause.
       const timer = setTimeout(() => { done(); reject(fail("terminal_input_paused")) }, TYPE_AHEAD_MS)
       const check = (s: CloudTerminalSnapshot) => {
         if (s.canType && this.epoch !== null) { done(); resolve() }
-        else if (!s.typeAhead) { done(); reject(fail("terminal_input_paused")) }
+        else if (!s.typeAhead) { done(); reject(this.paused()) }
       }
       this.listeners.add(check)
     })
+  }
+  /** Why a key cannot be sent or wait now: the state that ended typing, not a generic pause. */
+  private paused(): Error {
+    const state = this.s.state
+    if (state === "revoked" || state === "offline") return fail(this.s.reason || (state === "revoked" ? "terminal_access_revoked" : "machine_offline"))
+    if (state === "closed") return fail("terminal_closed")
+    if (this.inputUnknown || state === "unknown") return fail("terminal_input_state_unknown")
+    if (this.epoch === null || (this.s.control && (!this.s.control.held || !this.s.control.holder?.same_client))) return fail("not_controller")
+    if (this.connection && Date.now() >= this.expiresAt) return fail("terminal_stale")
+    return fail("terminal_input_paused")
+  }
+  /** This direct connection's DC can no longer send: fall back to the relay as its close event would. */
+  private directClosing(): void {
+    if (this.carrier !== "direct") return
+    if (this.directAttempt) this.directDown(this.directAttempt, "terminal_direct_closed")
+    else void this.fallback()
   }
   private applied(receipt: Receipt, seq: number): void {
     if (receipt.result?.applied_through !== seq) {
@@ -530,6 +580,7 @@ export class CloudTerminalSession {
           this.pending.delete(event.requestID)
           pending.reject(fail(event.error))
           if (["list", "read", "capture", "history"].includes(pending.operation) && event.error === "rate_limited") return
+          if (event.requestID === this.renewID && TRANSIENT.has(event.error)) return
         }
       }
       this.inputUnknown = true
@@ -618,6 +669,7 @@ export class CloudTerminalSession {
     if (dropped) { this.observation?.record("frame_dropped", { connection: value.connection, code: dropped }); return }
     const first = this.frameSeq === 0
     this.frameSeq = value.frame_seq
+    this.frameSeenAt = Date.now()
     this.set({ frame: value.frame, state: value.frame.dead ? "closed" : first ? "just_synced" : "live", reason: "" })
     this.transport.observeTerminalFrame(envelope)
     this.maybeActivate()
@@ -636,6 +688,7 @@ export class CloudTerminalSession {
       const frame = await reconstructTerminalDelta(base, baseSeq, value, connection, terminal)
       if (connection !== this.connection || terminal !== this.terminal || baseSeq !== this.frameSeq) return
       this.frameSeq = value.frame_seq
+      this.frameSeenAt = Date.now()
       this.set({ frame, state: frame.dead ? "closed" : "live", reason: "" })
       this.transport.observeTerminalFrame(envelope)
     } catch {
@@ -676,10 +729,12 @@ export class CloudTerminalSession {
   private checkFreshness(): void {
     if (this.s.state === "revoked") return
     if (this.epoch !== null && this.active && !this.openingNew && !this.retiringConnection &&
-      !this.inputUnknown && !this.renewing && Date.now() - this.lastRenew >= 10_000) {
+      !this.inputUnknown && !this.renewing && Date.now() - this.lastRenew >= RENEW_MS) {
       this.renewing = true
       this.lastRenew = Date.now()
-      void this.request("control", { terminal_id: this.terminal, client: this.client, body: { action: "renew" } })
+      const epoch = this.epoch
+      void this.request("control", { terminal_id: this.terminal, client: this.client, body: { action: "renew" } },
+        (id) => { this.renewID = id })
         .then((receipt) => {
           const control = (receipt.result?.control ?? receipt.result) as TerminalControl | undefined
           if (!control?.held || !control.holder?.same_client || !control.holder?.same_device ||
@@ -687,14 +742,24 @@ export class CloudTerminalSession {
             (control.applied_through ?? 0) < this.confirmed) this.forgetLease("terminal_input_state_unknown")
           else this.set({ control })
         })
-        .catch(() => this.forgetLease("terminal_input_state_unknown"))
-        .finally(() => { this.renewing = false })
+        .catch((error: { code?: string; receiptStatus?: string }) => {
+          // Unsent, unanswered, or refused for load: the lease's own expiry still bounds typing, and
+          // the renewal is asked again soon. Only a machine's answer about the lease ends it.
+          if (!error?.receiptStatus || TRANSIENT.has(error.code ?? "")) {
+            this.lastRenew = Date.now() - RENEW_MS + RENEW_RETRY_MS
+            return
+          }
+          const now = this.s.state as CloudTerminalState
+          if (this.epoch === epoch && now !== "revoked" && now !== "closed") this.forgetLease("terminal_input_state_unknown")
+        })
+        .finally(() => { this.renewing = false; this.renewID = "" })
     }
-    if (this.connection && this.terminal && !this.openingNew && !this.rotationAttempted && this.expiresAt - Date.now() < 60_000 && Date.now() < this.expiresAt) {
+    if (this.connection && this.terminal && !this.openingNew && (!this.rotationAttempted || Date.now() >= this.rotationRetryAt) &&
+      this.expiresAt - Date.now() < 60_000 && Date.now() < this.expiresAt) {
       this.rotationAttempted = true
-      void this.start().catch(() => undefined)
+      void this.start().catch(() => { this.rotationRetryAt = Date.now() + ROTATION_RETRY_MS })
     }
-    if (Date.now() >= this.expiresAt || (this.s.frame && Date.now() / 1000 - this.s.frame.at > STALE_MS / 1000)) {
+    if (Date.now() >= this.expiresAt || (this.s.frame && Date.now() - this.frameSeenAt > STALE_MS)) {
       this.set({ state: "stale", reason: "terminal_stale" })
     }
     this.maybeUpgrade()

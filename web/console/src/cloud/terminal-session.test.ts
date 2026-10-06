@@ -460,7 +460,7 @@ test("a current signed revocation notice clears the lease and stays revoked", as
   assert.equal(session.snapshot.state, "revoked")
   assert.equal(session.snapshot.hasLease, false)
   assert.equal(session.snapshot.canType, false)
-  await assert.rejects(session.input(new TextEncoder().encode("do not type")), /terminal_input_paused/)
+  await assert.rejects(session.input(new TextEncoder().encode("do not type")), /terminal_access_revoked/)
   wire.frame(connection, 2, "later")
   assert.equal(session.snapshot.state, "revoked")
   session.dispose()
@@ -803,3 +803,182 @@ test("when the machine already retired the direct connection, the fallback opens
     assert.equal(wire.requests.slice(before).some((request) => request.operation === "activate_connection"), false)
   } finally { session.dispose() }
 })
+
+// Mid-session pauses: a person typing into a healthy terminal must never have a key refused
+// by a pause that ends by itself. Each test is a sequence seen on a live machine.
+
+/** `until` for a test that has frozen `Date.now`: a bounded number of event-loop turns. */
+async function turns(done: () => boolean, count = 2_000): Promise<void> {
+  for (let turn = 0; turn < count && !done(); turn++) await new Promise<void>((resolve) => setImmediate(resolve))
+}
+
+/** A frame captured by a machine whose clock is `skewMs` behind this browser's. */
+function skewedFrame(wire: Wire, connection: string, seq: number, rev: string, skewMs: number): void {
+  const at = (Date.now() - skewMs) / 1000
+  wire.emit(connection, "term", { v: 1, type: "terminal_frame", terminal_id: terminalID, connection,
+    frame_seq: seq, captured_at: at, frame: { ...frame(rev), at } })
+}
+
+test("a still screen on a machine whose clock is behind keeps beating and stays typable", async () => {
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const wire = new Wire()
+  wire.lease = { ...held, expires_at: now / 1000 + 90 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const connection = wire.latest()
+    // The machine's heartbeat recaptures a still screen every 3 s; its clock reads 3.5 s behind ours.
+    skewedFrame(wire, connection, 1, "still", 3_500)
+    for (let seq = 2; seq <= 6; seq++) {
+      now += 2_900
+      ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+      assert.equal(session.snapshot.state === "stale", false, `a beating screen was called stale before beat ${seq}`)
+      assert.equal(session.snapshot.canType, true)
+      now += 100
+      skewedFrame(wire, connection, seq, "still", 3_500)
+    }
+  } finally { session.dispose(); Date.now = realNow }
+})
+
+test("a key typed while a still screen's next beat is late waits for it instead of being refused", async () => {
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const wire = new Wire()
+  wire.lease = { ...held, expires_at: now / 1000 + 90 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const connection = wire.latest()
+    wire.frame(connection, 1, "still")
+    now += 6_500
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    assert.equal(session.snapshot.canType, false, "no key goes out on a screen this old")
+    const typed = session.input(new TextEncoder().encode("k"))
+    let refused: unknown = null
+    void typed.catch((error) => { refused = error })
+    await settle()
+    assert.equal(refused, null, "the key waits for the next frame")
+    assert.equal(wire.requests.some((request) => request.operation === "input"), false, "and is not sent before it")
+    wire.frame(connection, 2, "still")
+    await typed
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 1)
+  } finally { session.dispose(); Date.now = realNow }
+})
+
+test("a lease renewal whose receipt never arrives does not take the keyboard away", async (t) => {
+  const wire = new Wire()
+  wire.lease = { ...held, expires_at: Date.now() / 1000 + 25 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "screen")
+    wire.delayed.add("control")
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    ;(session as unknown as { lastRenew: number }).lastRenew = Date.now() - 11_000
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await until(() => wire.requests.some((request) => (request.body as { action?: string } | undefined)?.action === "renew"))
+    t.mock.timers.tick(10_000)
+    await until(() => !(session as unknown as { renewing: boolean }).renewing)
+    wire.frame(wire.latest(), 2, "screen")
+    assert.notEqual(session.snapshot.state, "unknown")
+    assert.equal(session.snapshot.hasLease, true, "one lost renewal receipt says nothing about the lease or the input")
+    assert.equal(session.snapshot.canType, true)
+    wire.delayed.delete("control")
+    await session.input(new TextEncoder().encode("k"))
+  } finally { t.mock.timers.reset(); session.dispose() }
+})
+
+test("a renewal the machine is too busy to answer is retried, not treated as a lost lease", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "screen")
+    wire.refusals.set("control", "terminal_busy")
+    ;(session as unknown as { lastRenew: number }).lastRenew = Date.now() - 11_000
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await until(() => !(session as unknown as { renewing: boolean }).renewing)
+    assert.equal(session.snapshot.hasLease, true)
+    assert.equal(session.snapshot.canType, true)
+    wire.refusals.delete("control")
+    await session.input(new TextEncoder().encode("k"))
+  } finally { session.dispose() }
+})
+
+test("a key typed as the DC closes waits and goes out once on the relay connection", async () => {
+  const wire = new ClosingDirectWire()
+  const { session, direct } = await upgraded(wire)
+  try {
+    const before = wire.requests.length
+    // The channel is already closing (readyState is no longer "open") before its close event fires.
+    wire.dcOpen = false
+    const typed = session.input(new TextEncoder().encode("k"))
+    let refused: unknown = null
+    void typed.catch((error) => { refused = error })
+    await until(() => session.snapshot.carrier === "relay")
+    assert.equal(refused, null, "the key was never published, so it waits")
+    assert.equal(lastRequest(wire, "rekey_connection")?.connection, wire.latest())
+    const relay = wire.latest()
+    assert.notEqual(relay, direct)
+    wire.frame(relay, 1, "back")
+    await typed
+    const inputs = wire.requests.slice(before).filter((request) => request.operation === "input")
+    assert.deepEqual(inputs.map((request) => request.connection), [relay], "published once, on the relay")
+    assert.equal(wire.thrown, 1, "the closing DC refused it before sending")
+  } finally { session.dispose() }
+})
+
+test("a key rotation the relay refuses for a moment is tried again before the key expires", async () => {
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  const wire = new Wire()
+  wire.lease = { ...held, expires_at: now / 1000 + 900 }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const first = wire.latest()
+    wire.frame(first, 1, "screen")
+    ;(session as unknown as { lastRenew: number }).lastRenew = now
+    wire.refusals.set("rekey_connection", "over_capacity")
+    now += 450_000
+    wire.frame(first, 2, "screen")
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await turns(() => !(session as unknown as { openingNew: boolean }).openingNew && operations(wire).includes("rekey_connection"))
+    wire.refusals.delete("rekey_connection")
+    now += 6_000
+    ;(session as unknown as { lastRenew: number }).lastRenew = now
+    wire.frame(first, 3, "screen")
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await turns(() => operations(wire).filter((operation) => operation === "rekey_connection").length === 2)
+    assert.equal(operations(wire).filter((operation) => operation === "rekey_connection").length, 2)
+  } finally { session.dispose(); Date.now = realNow }
+})
+
+test("a key refused for good says why instead of a generic pause", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "screen")
+    wire.inputResult = "unknown"
+    await assert.rejects(session.input(new TextEncoder().encode("a")))
+    wire.inputResult = "ok"
+    await assert.rejects(session.input(new TextEncoder().encode("b")), /terminal_input_state_unknown/)
+  } finally { session.dispose() }
+})
+
+/** A DirectWire whose transport refuses a direct connection's request once the DC is not open. */
+class ClosingDirectWire extends DirectWire {
+  thrown = 0
+  override async publishTerminal(request: Record<string, unknown>): Promise<{ sender: string; seq: number }> {
+    if (this.carriers.get(request.connection as string) === "direct" && !this.dcOpen && request.operation !== "activate_connection") {
+      this.thrown++
+      throw Object.assign(new Error("terminal_direct_closed"), { code: "terminal_direct_closed" })
+    }
+    return super.publishTerminal(request)
+  }
+}
