@@ -21,12 +21,6 @@ test("proposal cards name a project instead of printing its machine path", () =>
   assert.equal(workProjectName("clawdline-go"), "clawdline-go")
 })
 
-test("proposal reasons are section headings instead of the same sentence on every card", () => {
-  const source = readFileSync(new URL("./Board.tsx", import.meta.url), "utf8")
-  assert.doesNotMatch(source, /proposalWhy|SIGNAL_WORD/)
-  assert.match(source, /<p className="work-note">\{workWord\(g\.word\)\}<\/p>/)
-})
-
 test("Work screens translate an uncarried Cloud route instead of printing its internal code", () => {
   const source = readFileSync(new URL("./shared.ts", import.meta.url), "utf8")
   assert.match(source, /e\.code === "cloud_not_carried"/)

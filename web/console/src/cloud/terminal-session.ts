@@ -721,6 +721,7 @@ export class CloudTerminalSession {
       this.frameSeenAt = Date.now()
       this.set({ frame, state: frame.dead ? "closed" : "live", reason: "" })
       this.transport.observeTerminalFrame(envelope)
+    // refusal-ok: Every rejected delta is named terminal_delta_mismatch and triggers a fresh full frame.
     } catch {
       if (connection !== this.connection) return
       this.observation?.record("frame_dropped", { connection, code: "terminal_delta_mismatch" })

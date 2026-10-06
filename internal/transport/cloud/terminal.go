@@ -30,10 +30,19 @@ import (
 )
 
 const (
-	CloudTerminalConnectionsLimit             = 16
-	CloudTerminalViewerConnectionsLimit       = 2
-	CloudTerminalRequestBytesLimit            = 6<<20 + 4<<10
-	CloudTerminalReceiptsLimit                = 64
+	CloudTerminalConnectionsLimit       = 16
+	CloudTerminalViewerConnectionsLimit = 2
+	CloudTerminalRequestBytesLimit      = 6<<20 + 4<<10
+	// CloudTerminalReceiptsLimit receipts are kept per connection, each for
+	// CloudTerminalReceiptSecondsLimit, so that a request id sent again gets
+	// the same answer. The viewer waits ten seconds for a receipt and never
+	// sends a request id again after that, so a kept receipt is let go then.
+	// Until 2026-10-06 none was ever let go and the limit was 64: a
+	// connection refused every request after its 64th as terminal_busy, which
+	// a burst of typing reached within seconds (22:09:07, after 16 vim `j`s).
+	// 512 in 15 s is above a held-down key's repeat.
+	CloudTerminalReceiptsLimit                = 512
+	CloudTerminalReceiptSecondsLimit          = 15
 	CloudTerminalKeySecondsLimit              = 600
 	CloudTerminalIngressLimit                 = 16
 	CloudTerminalListIngressLimit             = 16
@@ -113,7 +122,7 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		capacity.CloudTerminalDirectNegotiate, capacity.CloudTerminalDirectGather, capacity.CloudTerminalDirectMessage,
 		capacity.CloudTerminalDirectChunk, capacity.CloudTerminalDirectAck, capacity.CloudTerminalDirectProbe,
 		capacity.CloudTerminalDirectProbeUnsettled, capacity.CloudTerminalSweep,
-		capacity.CloudTerminalReceiptBusyRetries, capacity.CloudTerminalReceiptBusyRetry,
+		capacity.CloudTerminalReceiptBusyRetries, capacity.CloudTerminalReceiptBusyRetry, capacity.CloudTerminalReceiptSeconds,
 		capacity.CloudTerminalRosterRetry, capacity.CloudTerminalUnverifiedRetire:
 		r.Note = "per-operation limit; no requests retained"
 	default:
@@ -184,9 +193,12 @@ type terminalConnection struct {
 	receipts                 map[string][]byte
 	pendingReceipts          map[string]bool
 	receiptOrder             []string
-	rekeyPending             bool
-	denied                   bool
-	deniedAt                 time.Time
+	// receiptTimes[i] is when receiptOrder[i] was first answered; a receipt
+	// is let go CloudTerminalReceiptSecondsLimit after that.
+	receiptTimes []time.Time
+	rekeyPending bool
+	denied       bool
+	deniedAt     time.Time
 	// unverifiedSince is when the sweep first found this viewer's authority
 	// unverifiable (TerminalUnverified) in the current streak; zero while it
 	// is verified. The connection is paused meanwhile and retired, without a
@@ -1073,7 +1085,42 @@ func (l *Link) terminalReceipt(c *terminalConnection, requestID string) []byte {
 func (l *Link) terminalReceiptAvailable(c *terminalConnection) bool {
 	l.terminalMu.Lock()
 	defer l.terminalMu.Unlock()
+	l.expireTerminalReceiptsLocked(c)
 	return len(c.receiptOrder) < CloudTerminalReceiptsLimit
+}
+
+// expireTerminalReceiptsLocked lets go of the receipts whose request id the
+// viewer can no longer send again.
+func (l *Link) expireTerminalReceiptsLocked(c *terminalConnection) {
+	cutoff := l.opts.Now().Add(-CloudTerminalReceiptSecondsLimit * time.Second)
+	gone := 0
+	for gone < len(c.receiptOrder) && gone < len(c.receiptTimes) && !c.receiptTimes[gone].After(cutoff) {
+		delete(c.receipts, c.receiptOrder[gone])
+		gone++
+	}
+	if gone > 0 {
+		c.receiptOrder = append(c.receiptOrder[:0], c.receiptOrder[gone:]...)
+		c.receiptTimes = append(c.receiptTimes[:0], c.receiptTimes[gone:]...)
+	}
+}
+
+// rememberTerminalReceiptLocked keeps receipt data for its request id while
+// there is room.
+func (l *Link) rememberTerminalReceiptLocked(c *terminalConnection, requestID string, data []byte) {
+	l.expireTerminalReceiptsLocked(c)
+	if _, present := c.receipts[requestID]; present {
+		c.receipts[requestID] = data
+		return
+	}
+	if len(c.receiptOrder) >= CloudTerminalReceiptsLimit {
+		return
+	}
+	if c.receipts == nil {
+		c.receipts = map[string][]byte{}
+	}
+	c.receiptOrder = append(c.receiptOrder, requestID)
+	c.receiptTimes = append(c.receiptTimes, l.opts.Now())
+	c.receipts[requestID] = data
 }
 
 func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, receipt terminalReceipt) error {
@@ -1125,12 +1172,7 @@ func (l *Link) sendTerminalReceiptAttempt(ctx context.Context, c *terminalConnec
 		}
 		l.terminalRetireAfterReceipt[terminalReceiptSettleID(terminalReceiptChannel(l.identity.MachineID, c), seq)] = c
 	}
-	if len(c.receiptOrder) < CloudTerminalReceiptsLimit {
-		if _, present := c.receipts[receipt.RequestID]; !present {
-			c.receiptOrder = append(c.receiptOrder, receipt.RequestID)
-		}
-		c.receipts[receipt.RequestID] = data
-	}
+	l.rememberTerminalReceiptLocked(c, receipt.RequestID, data)
 	stage := ""
 	if err == nil {
 		if c.receiptOps == nil {
@@ -1145,7 +1187,7 @@ func (l *Link) sendTerminalReceiptAttempt(ctx context.Context, c *terminalConnec
 		if len(c.receiptRetries) < CloudTerminalReceiptsLimit {
 			c.receiptRetries[seq] = receiptRetry{receipt: receipt, attempt: attempt}
 		}
-		stage = l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status))
+		stage = withRefusalCode(l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status)), receipt)
 	}
 	l.terminalMu.Unlock()
 	if stage != "" {
@@ -1174,13 +1216,8 @@ func (l *Link) sendDirectReceipt(c *terminalConnection, receipt terminalReceipt,
 		return false
 	}
 	l.terminalMu.Lock()
-	if len(c.receiptOrder) < CloudTerminalReceiptsLimit {
-		if _, present := c.receipts[receipt.RequestID]; !present {
-			c.receiptOrder = append(c.receiptOrder, receipt.RequestID)
-		}
-		c.receipts[receipt.RequestID] = data
-	}
-	stage := l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status)+"_direct")
+	l.rememberTerminalReceiptLocked(c, receipt.RequestID, data)
+	stage := withRefusalCode(l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status)+"_direct"), receipt)
 	l.terminalMu.Unlock()
 	if stage != "" {
 		l.logf("%s", stage)
@@ -1244,6 +1281,16 @@ func terminalStageWord(word string) string {
 		return "unrecognized"
 	}
 	return word
+}
+
+// withRefusalCode adds a refused or unknown receipt's typed code, a fixed
+// word, to its stage row: four `refused_direct` rows on 2026-10-06 did not
+// say they were terminal_busy.
+func withRefusalCode(stage string, receipt terminalReceipt) string {
+	if stage == "" || receipt.Error == "" {
+		return stage
+	}
+	return stage + " code=" + terminalStageWord(receipt.Error)
 }
 
 func receiptStatus(status string) string {
