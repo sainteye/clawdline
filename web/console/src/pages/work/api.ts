@@ -14,111 +14,6 @@ import type { CreatedVia } from "./words.js"
  * than carrying the decision out twice (D03).
  */
 
-export type Section = "decide" | "active" | "scheduled" | "done"
-export const SECTIONS: Section[] = ["decide", "active", "scheduled", "done"]
-
-export interface TaskCounts {
-  total: number
-  live: number
-  landed: number
-  delivered: number
-  failed: number
-}
-
-export interface Derived {
-  state: string
-  reason: string
-  landed: boolean
-  tasks: TaskCounts
-  last_evidence_at: number | null
-  stall_at: number | null
-  closure_due_at: number | null
-}
-
-export interface Item {
-  id: string
-  project: string
-  title: string
-  acceptance: string | null
-  created_at: number
-  created_by: string
-  place: "board" | "backlog" | "todo"
-  state: string | null
-  owner: string | null
-  commitment: string | null
-  start_on: string | null
-  rank: number | null
-  closed_reason: string | null
-  closed_at: number | null
-  placed_at: number
-  version: number
-  section: Section | null
-  derived: Derived
-  unknown_tasks: number
-}
-
-export interface Sweep {
-  at: number | null
-  tick_seconds: number
-  stalled: boolean
-  error?: string
-}
-
-export interface BoardPage {
-  ok: boolean
-  counts: Record<Section, number>
-  rows: Item[]
-  next_cursor: string | null
-  page_size: number
-  truncated: boolean
-  sweep: Sweep
-}
-
-export interface BacklogPage {
-  ok: boolean
-  counts: { planned: number; dropped: number }
-  rows: Item[]
-  next_cursor: string | null
-  page_size: number
-}
-
-export interface Proposal {
-  id: string
-  work_id: string
-  /**
-   * The dispatch the proposal names. For a line of work it is that line's
-   * first task; for a leftover it is only provenance — which delivery said it
-   * did not do this — and the subject is a line nobody has dispatched
-   * anything for (PT-9). The two must not read the same on a card.
-   */
-  task_id: string | null
-  session_id: string
-  source: string
-  project: string
-  title: string
-  signals: string[]
-  effects: string[]
-  /** Current to-do evidence the sweep can use to re-decide this proposal. */
-  subject_status: "unknown" | "owed" | "settled"
-  state: string
-  created_at: number
-  expires_at: number
-  /** Which fact about the subject ended the question; null while it is one. */
-  withdrawn_reason: string | null
-  withdrawn_at: number | null
-  /** Checked conclusion and source for an evidence-backed resolution. */
-  resolution: string | null
-  resolution_evidence: string | null
-  resolved_by: string | null
-  resolved_at: number | null
-}
-
-export interface ProposalPage {
-  counts: Record<string, number>
-  rows: Proposal[]
-  next_cursor: string | null
-}
-
 /** `withdrawn`: the Session that asked stopped waiting before anyone answered. */
 export type DecisionState = "open" | "answered" | "defaulted" | "withdrawn"
 
@@ -140,61 +35,6 @@ export interface Decision {
 export interface DecisionPage {
   counts: Record<string, number>
   rows: Decision[]
-  next_cursor: string | null
-}
-
-export interface DigestSection {
-  total: number
-  lines: { work_id?: string; id?: string; title: string; what: string; at: number }[]
-}
-
-export interface DigestBody {
-  completed: DigestSection
-  landed: number
-  stalled: DigestSection
-  from_backlog: DigestSection
-  automatic: DigestSection
-  moves_truncated: boolean
-  proposals_pending: number
-  proposals_expired: DigestSection
-  decisions_open: number
-  decisions_defaulted: DigestSection
-  awaiting_closure: number
-  closure_asked: DigestSection
-  handed_off_todos: number
-  backlog_stale: DigestSection
-}
-
-export interface Digest {
-  key: string
-  kind: string
-  from: number
-  to: number
-  created_at: number
-  body: DigestBody
-}
-
-export interface Todo {
-  id: string
-  origin: string
-  task_id: string
-  work_id: string | null
-  title: string
-  project: string
-  state: string
-  reason: string
-  landing_state: string | null
-  created_at: number
-  updated_at: number
-  closed_at: number | null
-  escalation: string[]
-}
-
-export interface TodoPage {
-  session_id: string
-  state: string
-  counts: Record<string, number>
-  todos: Todo[]
   next_cursor: string | null
 }
 
@@ -248,14 +88,8 @@ function query(params: Record<string, string | undefined>): string {
   return s ? "?" + s : ""
 }
 
-export const readBoard = (project?: string, cursor?: string) =>
-  call<BoardPage>("/v1/work/board" + query({ project, cursor }))
-export const readBacklog = (project?: string, cursor?: string) =>
-  call<BacklogPage>("/v1/work/backlog" + query({ project, cursor }))
-export const readProposals = (project?: string) => call<ProposalPage>("/v1/work/proposals" + query({ project }))
 export const readDecisions = () => call<DecisionPage>("/v1/work/decisions")
 export const readDecision = (id: string) => call<{ decision: Decision }>(`/v1/work/decisions/${encodeURIComponent(id)}`)
-export const readDigests = () => call<{ rows: Digest[] }>("/v1/work/digests?kind=daily")
 /** The machine's real project directory: existing places it recognizes, newest first (at most forty). */
 export const copyProjectIcon = (id: string, icon: unknown, expected: unknown) =>
   mutate<{ ok: boolean; icon: unknown }>(`/v1/projects/${encodeURIComponent(id)}/icon`, { icon, expected }, "PUT")
@@ -274,9 +108,6 @@ export const applyProjectMirror = (source: SyncSource, project: SyncEntry, clone
   mutate<{ ok: boolean; result: SyncResult }>("/v1/project-sync/mirror", { source, project, clone, replace_source: replaceSource })
 export const detachProjectMirror = (repo: string) =>
   call<{ ok: boolean; removed: boolean }>("/v1/project-sync/mirror" + query({ repo }), { method: "DELETE", headers: { "Idempotency-Key": mintKey() } })
-export const readTodos = (sessionRowId: string, state?: "outstanding" | "closed" | "all") =>
-  call<TodoPage>(`/v1/sessions/${encodeURIComponent(sessionRowId)}/todos` + query({ state }))
-
 /**
  * A fresh Idempotency-Key. `crypto.randomUUID` exists only in a secure
  * context, and a paired phone on this Mac's own network reaches the page over
@@ -674,39 +505,6 @@ export const directTodoActionV2 = (terminalID: string, todoID: string, action: "
     `/v1/work/v2/session-todos/${encodeURIComponent(terminalID)}/${todoID}/${action}`,
     {},
   )
-
-export type Op =
-  | "start"
-  | "schedule"
-  | "defer"
-  | "accept"
-  | "done_elsewhere"
-  | "rework"
-  | "drop"
-  | "handover"
-  | "untrack"
-  | "rank"
-
-export interface Command {
-  op: Op
-  owner?: string
-  start_on?: string
-  rank?: number
-  /** Why no delivery named this item: required by `done_elsewhere`, refused empty (BD-17). */
-  reason?: string
-}
-
-export const command = (item: Item, c: Command) =>
-  decide<{ item: Item }>(`/v1/work/items/${item.id}`, { ...c, expected_version: item.version })
-
-export const createItem = (n: { title: string; project: string; place: "board" | "backlog" }) =>
-  decide<{ item: Item }>("/v1/work/items", n)
-
-export const answerProposal = (id: string, answer: "track" | "later" | "no") =>
-  decide<unknown>(`/v1/work/proposals/${id}`, { answer })
-
-export const resolveProposal = (id: string, resolution: string, evidence: string) =>
-  decide<unknown>(`/v1/work/proposals/${id}/resolve`, { resolution, evidence })
 
 export const answerDecision = (id: string, option: string) =>
   decide<unknown>(`/v1/work/decisions/${id}`, { answer: option })

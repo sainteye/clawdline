@@ -843,9 +843,6 @@ test("a snippet list with no session named is refused, and an older client by na
 
 /** Every read carried by word, the URL the console asks it with, and the body that must reach the machine. */
 const CARRIED_READS: [string, string, Record<string, unknown>][] = [
-  ["/v1/work/board?project=%2Fp", "work.board", { project: "/p", cursor: "" }],
-  ["/v1/work/board", "work.board", { project: "", cursor: "" }],
-  ["/v1/work/backlog?project=%2Fp&cursor=c2", "work.backlog", { project: "/p", cursor: "c2" }],
   ["/v1/work/proposals?project=%2Fp", "work.proposals", { project: "/p" }],
   ["/v1/work/decisions", "work.decisions", {}],
   ["/v1/work/decisions/10000000-0000-4000-8000-000000000001", "work.decision", { id: "10000000-0000-4000-8000-000000000001" }],
@@ -959,14 +956,11 @@ test("a carried read stops when its caller's signal fires, instead of waiting ou
 test("a query field no word carries is refused by name, never quietly dropped", async () => {
   const client = new FakeClient()
   const r = reader(client, { t: 1000 })
-  // `section` is a real field of this daemon's own route and no part of the
-  // word: carried silently it would answer one section as though it were the
-  // board, which is worse than saying so.
+  // A retired v1 board URL is never sent to the machine.
   const res = await r.fetch("/v1/work/board?project=%2Fp&section=active")
   assert.equal(res.status, 501)
   const refusal = await body<{ error: string; detail: string }>(res)
   assert.equal(refusal.error, "cloud_not_carried")
-  assert.match(refusal.detail, /section=/)
   assert.equal(client.reads.length, 0, "the machine was asked a question it could not have been told")
 })
 

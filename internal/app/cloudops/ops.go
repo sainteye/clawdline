@@ -303,28 +303,6 @@ func someOf(pairs map[string]string) map[string]string {
 	return out
 }
 
-// decodeWorkPage is the body the two paged board reads share: a Project to
-// narrow to, and the opaque cursor the previous page answered. Both may be
-// empty, which is the first page of everything.
-func decodeWorkPage(word string) func(b body) (plan, bool) {
-	return func(b body) (plan, bool) {
-		if !b.has("type", "session", "request", "project", "cursor") {
-			return plan{}, false
-		}
-		p, ok := machinePlan(b)
-		if !ok {
-			return plan{}, false
-		}
-		project, projectOK := b.str("project")
-		cursor, cursorOK := b.str("cursor")
-		if !projectOK || !cursorOK || len(project) > 200 || len(cursor) > 200 {
-			return plan{}, false
-		}
-		p.project, p.cursor = project, cursor
-		return p, true
-	}
-}
-
 // decodeProject is the body of the Project worktree lifecycle read: one
 // bounded, non-empty Project. It is spelled into the path, where an empty
 // segment is a different route, so malformed input is refused here before the
@@ -1237,39 +1215,8 @@ func init() {
 
 		// MARK: the work system, and what a person is looking at while it runs
 		//
-		// Five words, not one word with an `area` parameter, and the reason is
-		// the one the copied client already wrote down for `board.items`
-		// (`legacy/js/net/cloud-client.js`): every read's decoder here compares
-		// the body's key set for exact equality, so a parameter that grows is a
-		// machine that refuses. One word carrying `area` would also make this
-		// machine advertise the whole board in its descriptor the moment it
-		// could answer any part of it — `commands` is a list of words, so a
-		// word is the finest thing a browser can be told about. Five words let
-		// an older machine say exactly which areas it has, let the page learn
-		// `unknown_command` per area (`machineLacks`), and let a divergence be
-		// stated about one of them. The cost is five entries in a table.
-		//
-		// All five are the same page's reads (`web/console/src/pages/work/`),
-		// and this round carries only what that page reads. `GET
-		// /v1/work/items/{id}` has no console reader — the page draws an item
-		// out of the board and the Backlog pages — and every `POST
-		// /v1/work/*` is a person answering, which is a write and is not here.
-
-		op{name: "work.board", read: true,
-			decode: decodeWorkPage("work.board"),
-			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/work/board", Query: someOf(map[string]string{
-					"project": p.project, "cursor": p.cursor,
-				})}
-			}},
-
-		op{name: "work.backlog", read: true,
-			decode: decodeWorkPage("work.backlog"),
-			route: func(p plan) LocalRequest {
-				return LocalRequest{Method: "GET", Path: "/v1/work/backlog", Query: someOf(map[string]string{
-					"project": p.project, "cursor": p.cursor,
-				})}
-			}},
+		// Participation reads remain available while the v1 board and Backlog
+		// reads are retired. The v2 Board uses its own Cloud words below.
 
 		op{name: "work.proposals", read: true,
 			decode: func(b body) (plan, bool) {

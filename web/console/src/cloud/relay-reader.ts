@@ -903,18 +903,6 @@ export class RelayReader {
             limit: whole(q.limit, BOARD_PAGE_DEFAULT),
           })
         }
-        case "/v1/work/board":
-        case "/v1/work/backlog": {
-          // The board and the Backlog, paged the same way
-          // (`pages/work/api.ts`). Two words and not one with an `area`,
-          // because a word is the finest thing a machine's descriptor can
-          // tell this page it has.
-          const q = this.only(url, path, "project", "cursor")
-          const word: CarriedWord = path === "/v1/work/board" ? "work.board" : "work.backlog"
-          return await this.machineRead(init?.signal, method, path, word, {
-            project: q.project ?? "", cursor: q.cursor ?? "",
-          })
-        }
         case "/v1/work/proposals": {
           const q = this.only(url, path, "project")
           return await this.machineRead(init?.signal, method, path, "work.proposals", { project: q.project ?? "" })

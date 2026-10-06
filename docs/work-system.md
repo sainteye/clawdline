@@ -2,8 +2,7 @@
 
 Status (2026-10-06): Work system v2 is implemented and in use for Board items.
 
-This page is a v1 historical record. Use [`work-system-v2.md`](work-system-v2.md) for current
-Board and agent behavior.
+> **2026-10-06：Work v1 的 HTTP 讀取路徑已退役。** 主控台目前使用 v2 Board；`/v1/work/board`、`/v1/work/backlog` 與 `/v1/work/items/*` 不再提供路由，Cloud 也不再攜帶前兩者。v1 資料表與儲存程式仍保留，未執行 `ResetWorkV1`。提議、決策、摘要的 `/v1/work/proposals`、`/v1/work/decisions`、`/v1/work/digests` 仍可使用。下文保留 v1 設計與歷史行為作為紀錄，現行 Board 操作請見 [`work-system-v2.md`](work-system-v2.md)。
 
 The v2 acceptance contract is [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md).
 
