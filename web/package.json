@@ -10,7 +10,7 @@
     "prebuild": "npm run deps --silent",
     "build": "npm run build --workspace @clawdline/console",
     "precheck": "npm run deps --silent",
-    "check": "tsc --noEmit -p console && node console/tools/check-catalogs.mjs",
+    "check": "tsc --noEmit -p console && node console/tools/check-catalogs.mjs && node --test console/tools/http-refusal-display.test.mjs",
     "test:deps": "node --test ../tools/ensure-web-deps.test.mjs"
   },
   "devDependencies": {

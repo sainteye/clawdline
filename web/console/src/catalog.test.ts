@@ -3,7 +3,16 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import english from "../public/catalogs/en.json" with { type: "json" }
 // @ts-expect-error -- Node runs this source test directly.
-import { activateCatalog, bootCatalog, browserPreference, catalogFormat, chooseTag, currentCatalogTag, missingCatalogKeys, resetCatalogForTest, resolveTag, validCatalog } from "./catalog.ts"
+import { activateCatalog, bootCatalog, browserPreference, catalogFormat, catalogRefusalDetail, chooseTag, currentCatalogTag, missingCatalogKeys, resetCatalogForTest, resolveTag, validCatalog } from "./catalog.ts"
+
+test("a refusal with no translated detail key retains the producer's English words", () => {
+  assert.deepEqual(catalogRefusalDetail({ detail: "The operation was refused.", detailKey: "http.0000000000000000" }),
+    { text: "The operation was refused.", lang: "en" })
+  assert.deepEqual(catalogRefusalDetail({ detail: "A dynamic path is unavailable." }),
+    { text: "A dynamic path is unavailable.", lang: "en" })
+  assert.deepEqual(catalogRefusalDetail({ error: { code: "closed", message: "The session is closed.", detail_key: "http.0000000000000000" } }),
+    { text: "The session is closed.", lang: "en" })
+})
 
 test("all numeric sentences keep 0, 1, many and long values in order in nine rendered languages", () => {
   const oldDocument = globalThis.document

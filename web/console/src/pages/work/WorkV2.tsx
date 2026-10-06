@@ -729,7 +729,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
       <span className="work-card-summary-top">
         <span className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></span>
         {originSentence && <span className="work-card-origin" title={originSentence}><AgentGlyph />{workWord("agentMadeBadge")}</span>}
-        <span className={epic ? "work-state work-epic-label" : "work-state"}>{epic ? "EPIC · " : `${item.kind} · `}{phaseName(item.phase)}</span>
+        <span className={epic ? "work-state work-epic-label" : "work-state"}>{KIND_META[item.kind].label} · {phaseName(item.phase)}</span>
       </span>
       <span className="work-card-summary-title">{item.title}</span>
       {attention && <span id={attentionDescriptionID} className="work-card-attention">{catalogWord("inline", "c85c228e97c0")}{decisions.length > 1 ? catalogFormat("template", "b6aa195d5775", [decisions.length]) : ""}</span>}
@@ -904,7 +904,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     {epic
       ? <span className="work-state work-epic-label"><b>{catalogWord("inline", "64d13f155730")}</b> · {phaseName(item.phase)}</span>
       : plan ? <span className="work-state work-plan-label"><b>{catalogWord("inline", "589939ed89dd")}</b></span>
-      : <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>}
+      : <span className="work-state">{KIND_META[item.kind].label} · {phaseName(item.phase)}</span>}
     <h3 id={`work-card-title-${item.id}`}>{item.title}</h3>
     <EpicParentLine item={item} />
     <CreatedViaNote item={item} />
@@ -1283,7 +1283,7 @@ function CreatedWorkModal({ item, created = true, back, sessions, decisions, dec
     role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id} work-card-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
-      <div className="work-modal-head"><div><p className="board-eyebrow">{created ? "WORK ITEM CREATED" : "BOARD ITEM"}</p>
+      <div className="work-modal-head"><div><p className="board-eyebrow">{created ? catalogWord("ui", "workItemCreated") : catalogWord("ui", "boardItem")}</p>
         <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
         <button ref={initialFocus} className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
@@ -1545,7 +1545,7 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     createDecision.current = decision
     onCreate(body, images, decision.key)
   }}>
-    <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? catalogWord("literal", "30947e72b04b") : catalogWord("literal", "e2956f80c3ac")}</h2></div>
+    <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? catalogWord("ui", "reviewWorkItem") : catalogWord("ui", "newWorkItem")}</p><h2 id="work-new-v2-title">{reviewingDraft ? catalogWord("literal", "30947e72b04b") : catalogWord("literal", "e2956f80c3ac")}</h2></div>
       <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
     {reviewingDraft && <p className="work-note">{catalogWord("inline", "a2d091d25a73")}</p>}
     <div className="work-modal-field"><span>{catalogWord("inline", "985959785319")}</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} onOpen={onRefreshPlaces} /></div>

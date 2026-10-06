@@ -37,11 +37,11 @@
     "session": 2,
     "settings": 174,
     "template": 154,
-    "ui": 10,
+    "ui": 14,
     "verify": 69,
     "work": 199,
     "worktree": 54,
-    "total": 3385
+    "total": 3389
   },
   "unresolvedEnglish": [
     "settings.settingsTitle",

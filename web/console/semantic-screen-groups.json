@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 3383,
+  "englishContentKeys": 3387,
   "riskKeys": 1340,
-  "nonRiskCount": 2043,
+  "nonRiskCount": 2047,
   "groups": [
     {
       "name": "bar / other",
@@ -2127,7 +2127,7 @@
     },
     {
       "name": "ui / other",
-      "count": 6,
+      "count": 10,
       "sources": [
         "src/ui-language"
       ],
@@ -2136,8 +2136,12 @@
         "ui.agentLanguageHint",
         "ui.applying",
         "ui.auto",
+        "ui.boardItem",
         "ui.browserOnly",
-        "ui.language"
+        "ui.language",
+        "ui.newWorkItem",
+        "ui.reviewWorkItem",
+        "ui.workItemCreated"
       ]
     },
     {

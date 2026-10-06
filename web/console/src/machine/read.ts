@@ -1,4 +1,4 @@
-import { catalogWord } from "../catalog.js"
+import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import type { MachineUsage } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../client.js"
@@ -52,10 +52,17 @@ export function failureWords(err: unknown, zh: boolean): string {
     if (err.code === "cloud_not_carried" || err.code === "unknown_command") {
       return catalogWord("literal", "fabc8bde5489")
     }
-    return err.detail || err.code
+    return catalogRefusalDetail(err)?.text || err.code
   }
   if (err instanceof TransportError) {
     return catalogWord("literal", "eab8191e445c")
   }
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Mark a producer sentence with its actual language for screen readers. */
+export function failureWordsLanguage(err: unknown): string | undefined {
+  if (!(err instanceof RefusalError)) return undefined
+  if (err.code === "machine_usage_unsupported" || err.code === "cloud_not_carried" || err.code === "unknown_command") return undefined
+  return catalogRefusalDetail(err)?.lang
 }

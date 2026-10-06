@@ -39,6 +39,22 @@
     "en": "This saved Agent language is not one of the interface languages. Choose a supported interface language above if needed.",
     "zh-Hant": "已存的 Agent 語言不在介面語言選項內；如需切換介面，請在上方重新選擇。"
   },
+  "ui.workItemCreated": {
+    "en": "Work item created",
+    "zh-Hant": "工作項目已建立"
+  },
+  "ui.boardItem": {
+    "en": "Board item",
+    "zh-Hant": "看板項目"
+  },
+  "ui.reviewWorkItem": {
+    "en": "Review work item",
+    "zh-Hant": "檢查工作項目"
+  },
+  "ui.newWorkItem": {
+    "en": "New work item",
+    "zh-Hant": "新增工作項目"
+  },
   "count.skillFoldersSkipped": {
     "en": "Skill folders skipped because they could not be read safely: {arg0}. Check their links or permissions on the machine.",
     "zh-Hant": "有 {arg0} 個技能資料夾無法安全讀取，已略過。請在機器上檢查連結或權限。"

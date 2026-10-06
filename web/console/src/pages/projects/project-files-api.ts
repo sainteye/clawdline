@@ -1,4 +1,4 @@
-import { catalogWord } from "../../catalog.js"
+import { catalogRefusalDetail, catalogWord } from "../../catalog.js"
 import type { ProjectUnifyApplied, ProjectUnifyPlan } from "@clawdline/contract"
 
 export interface ProjectFile {
@@ -35,7 +35,7 @@ async function answer<T>(url: string, init?: RequestInit): Promise<T> {
   catch { throw new ProjectFileError("invalid_response", catalogWord("literal", "098b08604e84"), init?.method === "PUT") }
   if (!response.ok) {
     const code = typeof data?.error === "string" ? data.error : data?.error?.code || "unavailable"
-    const detail = typeof data?.detail === "string" ? data.detail : data?.error?.message
+    const detail = catalogRefusalDetail(data)?.text
     const uncertain = init?.method === "PUT" && (data?.outcome === "unknown" || data?.error?.outcome === "unknown")
     throw new ProjectFileError(code, detail || catalogWord("literal", "7f523f32a2c0"), uncertain)
   }
@@ -97,7 +97,7 @@ export async function applyUnify(place: string, version: string, key: string): P
 
 function refusal(data: any, write: boolean): ProjectFileError {
   const code = typeof data?.error === "string" ? data.error : data?.error?.code || "unavailable"
-  const detail = typeof data?.detail === "string" ? data.detail : data?.error?.message
+  const detail = catalogRefusalDetail(data)?.text
   const uncertain = write && (data?.outcome === "unknown" || data?.error?.outcome === "unknown")
   return new ProjectFileError(code, detail || catalogWord("literal", "101992e0e2e3"), uncertain)
 }

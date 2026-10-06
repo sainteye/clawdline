@@ -140,6 +140,22 @@ export function catalogWordLanguage(domain: string, key: string): CatalogTag {
   return missing.has(`${domain}.${key}`) ? "en" : currentCatalogTag()
 }
 
+/** A producer's fixed refusal sentence is looked up only by its explicit key. */
+export function catalogRefusalDetail(error: unknown): { text: string; lang: CatalogTag } | null {
+  if (!error || typeof error !== "object") return null
+  const refusal = error as { detail?: unknown; detailKey?: unknown; detail_key?: unknown; error?: unknown }
+  const nested = refusal.error && typeof refusal.error === "object"
+    ? refusal.error as { message?: unknown; detail_key?: unknown } : null
+  const detail = typeof refusal.detail === "string" ? refusal.detail
+    : typeof nested?.message === "string" ? nested.message : ""
+  const key = typeof refusal.detailKey === "string" ? refusal.detailKey
+    : typeof refusal.detail_key === "string" ? refusal.detail_key : nested?.detail_key
+  if (typeof key === "string" && /^http\.[0-9a-f]{16}$/u.test(key) && Object.hasOwn(fallback, key)) {
+    return { text: active[key], lang: missing.has(key) ? "en" : currentCatalogTag() }
+  }
+  return detail ? { text: detail, lang: "en" } : null
+}
+
 export function resetCatalogForTest(): void {
   active = fallback
   missing.clear()

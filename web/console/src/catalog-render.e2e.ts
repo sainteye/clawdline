@@ -15,6 +15,7 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const shots = process.env.CLAWDLINE_SHOTS || ""
 const tags = ["en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"]
 const keys = ["skillFoldersSkipped", "unfinishedWork", "squadSkills", "squadGroups", "squadRoles", "squadItems", "squadSkillSources", "recentInterventions", "prunedInterventions", "pendingInterventions", "localFiles", "unsyncedProjects", "exportRounds"]
+const machineKeys = ["legacy.webFailNotFound", "legacy.webShowOnMac", "settings.webCloudPairOrderScan"]
 
 function fixture(): string {
   return `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px system-ui;margin:0;padding:12px}p{max-width:100%;overflow-wrap:anywhere}</style><body><script src="/catalog.js"></script><script>
@@ -22,6 +23,7 @@ function fixture(): string {
     const errors = []
     const tags = ${JSON.stringify(tags)}
     const keys = ${JSON.stringify(keys)}
+    const machineKeys = ${JSON.stringify(machineKeys)}
     for (const tag of tags) {
       const catalog = await (await fetch('/catalogs/' + tag + '.json')).json()
       if (Catalog.activateCatalog(catalog, tag) !== tag) errors.push(tag + ': fallback')
@@ -36,6 +38,15 @@ function fixture(): string {
         if (!paragraph.textContent.includes(String(count)) || /\\{arg[0-9]+\\}/.test(paragraph.textContent)) errors.push(tag + ':' + key + ':' + count)
         if (key === 'squadSkillSources' && !paragraph.textContent.includes(values[2])) errors.push(tag + ': source changed')
         if (key === 'unfinishedWork' && paragraph.textContent.indexOf(String(count)) > paragraph.textContent.indexOf(String(count + 1))) errors.push(tag + ': count order')
+      }
+      for (const key of machineKeys) {
+        const paragraph = document.createElement('p')
+        paragraph.lang = tag
+        paragraph.textContent = Catalog.catalogWord(...key.split('.'))
+        paragraph.dataset.key = key
+        document.body.append(paragraph)
+        if (/\\bMacs?\\b/u.test(paragraph.textContent) || (tag === 'ko' && /맥/u.test(paragraph.textContent))) errors.push(tag + ':' + key + ': hardware-only term')
+        if (!paragraph.textContent.trim()) errors.push(tag + ':' + key + ': blank')
       }
     }
     document.body.dataset.errors = errors.join('|')
@@ -140,7 +151,7 @@ test("nine catalogs render numeric sentences at phone and desktop widths", async
       console.log(JSON.stringify({ origin, width, fixture: "catalog.ts + public/catalogs/*.json", ...state }))
       assert.equal(state.error, undefined)
       assert.equal(state.errors, "")
-      assert.equal(state.paragraphs, tags.length * keys.length * 3)
+      assert.equal(state.paragraphs, tags.length * (keys.length * 3 + machineKeys.length))
       assert.equal(state.innerWidth, width)
       assert.ok(state.scrollWidth <= width, `horizontal overflow at ${width}px: ${state.scrollWidth}px`)
       if (shots) {

@@ -16,6 +16,7 @@ const namedSources = {
   projects: "src/pages/projects/project-list.ts", settings: "src/pages/settings/window/copy.ts",
   ui: "src/ui-language", verify: "src/pages/verify/words.ts", work: "src/pages/work/words.ts",
   worktree: "src/pages/projects/pinned-worktree-copy.json",
+  http: "internal/productcopy/http_refusals/en.json",
 }
 function groupFor(key) {
   const [domain, name] = key.split(".", 2)
