@@ -15,6 +15,14 @@ export interface PageModule {
   id: string
   /** False when this page has an address but is entered through another page. */
   drawer?: boolean
+  /**
+   * The lowest daemon route level (`api_level` in `/v1/health`,
+   * api/v1/routes.json) this page's routes need. A machine that reports a
+   * lower level gets the drawer entry disabled with the needs-update word
+   * (`pageNeedsUpdate`); one that reports no level is offered the page, and
+   * its 501 `not_implemented` speaks for it (docs/updates.md).
+   */
+  requiresApiLevel?: number
   /** The page's root element, as the original's `section.page`. */
   Component: ComponentType<{ shown: boolean }>
 }

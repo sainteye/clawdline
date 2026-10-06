@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/sainteye/clawdline/internal/contract"
@@ -37,4 +38,17 @@ func writeRefusalAbout(w http.ResponseWriter, status int, code, detail string, a
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(about)
+}
+
+// writeNoSuchRoute is the one answer for a path this daemon has no handler
+// for: an unknown top-level /v1 route (the fallback) and an unknown sub-route
+// under a prefix handler alike. 501 `not_implemented` naming the route, so a
+// console newer than this daemon can say "this machine needs an update"
+// instead of "could not load". A route that exists and names a record that
+// does not answers 404 instead; the two must never share a status, because
+// before 2026-10-06 they did and a newer console could not tell them apart.
+func writeNoSuchRoute(w http.ResponseWriter, r *http.Request) {
+	log.Printf("not implemented: %s %s", r.Method, r.URL.Path)
+	writeRefusalAbout(w, http.StatusNotImplemented, "not_implemented",
+		"this daemon does not own that route yet", contract.Refusal{Route: r.URL.Path})
 }

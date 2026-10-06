@@ -13,7 +13,10 @@ import AppKit
 import ServiceManagement
 import WebKit
 
-let port = ProcessInfo.processInfo.environment["CLAWDLINE_NEXT_PORT"] ?? "7727"
+// CLAWDLINE_NEXT_PORT when it is set, else the port of the service `clawdline
+// setup` installed (ServiceMode.swift), else the default.
+let port = ProcessInfo.processInfo.environment["CLAWDLINE_NEXT_PORT"]
+    ?? serviceMode.map { String($0.port) } ?? "7727"
 let home = URL(string: "http://127.0.0.1:\(port)/")!
 
 /// The Swift app's accent (Panel.swift `Style.accent`), which the menu bar mark
@@ -395,6 +398,12 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// before it does anything else, names the holder in daemon.log, and exits
     /// with `BundledDaemon.exitPortHeld`.
     func startBundledDaemon() {
+        // In service mode the daemon is the LaunchAgent's; this shell only
+        // shows it (ServiceMode.swift).
+        if let service = serviceMode {
+            shellLog("service mode: \(service.name) serves port \(service.port); the bundled daemon is not started")
+            return
+        }
         guard let dir = Bundle.main.executableURL?.deletingLastPathComponent() else { return }
         let binary = dir.appendingPathComponent("clawdline")
         guard FileManager.default.isExecutableFile(atPath: binary.path) else { return }
@@ -914,6 +923,20 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     /// Registering changes the person's login items; nothing here does it on
     /// its own.
     @objc private func toggleLogin() {
+        // In service mode it is the LaunchAgent that starts at login, and the
+        // app is only its window.
+        if let service = serviceMode {
+            do {
+                try service.setRunsAtLoad(!service.runsAtLoad)
+                shellLog("login item: \(service.name) RunAtLoad now \(service.runsAtLoad ? "on" : "off")")
+            } catch {
+                let a = NSAlert()
+                a.messageText = L.t.loginFailed
+                a.informativeText = error.localizedDescription
+                a.runModal()
+            }
+            return
+        }
         let svc = SMAppService.mainApp
         do {
             if svc.status == .enabled { try svc.unregister() } else { try svc.register() }
@@ -1284,7 +1307,8 @@ extension Shell: NSMenuDelegate {
             ? L.t.menuOpen : "\(L.t.menuOpen)   \(HotKey.display(spec))"
         menu.item(at: 1)?.title = "\(L.t.menuReveal)   \(L.t.menuNoTarget)"
         menu.item(withTag: Self.mascotTag)?.submenu = buildMascotMenu()
-        menu.item(withTag: Self.loginTag)?.state = (SMAppService.mainApp.status == .enabled) ? .on : .off
+        let loginOn = serviceMode.map { $0.runsAtLoad } ?? (SMAppService.mainApp.status == .enabled)
+        menu.item(withTag: Self.loginTag)?.state = loginOn ? .on : .off
     }
 }
 

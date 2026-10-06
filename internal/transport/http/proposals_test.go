@@ -32,7 +32,9 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	mux.HandleFunc("/v1/work/", s.workRoute)
 	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
 	mux.HandleFunc("/v1/orchestrator/runs/", s.runRoute)
-	s.participationRoutes(mux)
+	for _, rt := range s.participationRoutes() {
+		mux.HandleFunc(rt.Pattern, rt.handle)
+	}
 	person := access{verdict: auth.Verdict{Allowed: true, Local: true}}
 	machine := access{machine: true}
 	do := func(a access, method, target, key, body string) *httptest.ResponseRecorder {
@@ -54,12 +56,12 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	for _, path := range []string{"/v1/work/board", "/v1/work/backlog", "/v1/work/items", "/v1/work/items/" +
 		"0b0e0000-0000-4000-8000-000000000001", "/v1/work/items/0b0e0000-0000-4000-8000-000000000001/moves"} {
-		if rec := do(person, http.MethodGet, path, "", ""); rec.Code != http.StatusNotFound || code(rec) != "not_found" {
+		if rec := do(person, http.MethodGet, path, "", ""); rec.Code != http.StatusNotImplemented || code(rec) != "not_implemented" {
 			t.Fatalf("retired route %s: %d %s", path, rec.Code, rec.Body)
 		}
 	}
 	for _, path := range []string{"/v1/work/items", "/v1/work/items/0b0e0000-0000-4000-8000-000000000001"} {
-		if rec := do(person, http.MethodPost, path, "", `{}`); rec.Code != http.StatusNotFound || code(rec) != "not_found" {
+		if rec := do(person, http.MethodPost, path, "", `{}`); rec.Code != http.StatusNotImplemented || code(rec) != "not_implemented" {
 			t.Fatalf("retired write route %s: %d %s", path, rec.Code, rec.Body)
 		}
 	}
@@ -349,7 +351,9 @@ func TestALeftoverProposalFromTheRootEndsTheResend(t *testing.T) {
 	b := &orchestrator.Broker{Store: st, Tasks: taskdir.New(dir), Dir: dir}
 	s := &Server{store: st, broker: b}
 	mux := http.NewServeMux()
-	s.participationRoutes(mux)
+	for _, rt := range s.participationRoutes() {
+		mux.HandleFunc(rt.Pattern, rt.handle)
+	}
 	machine := access{machine: true}
 	ctx := context.Background()
 

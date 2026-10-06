@@ -308,7 +308,7 @@ func TestHealthAndDiagnostics(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if strings.Join(keys, ",") != "at,authed,ok,password,served_by" || strings.Contains(rec.Body.String(), "/secret") {
+	if strings.Join(keys, ",") != "api_level,at,authed,ok,password,served_by" || strings.Contains(rec.Body.String(), "/secret") {
 		t.Fatalf("the open health says more than it should: %s", rec.Body)
 	}
 

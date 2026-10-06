@@ -90,8 +90,8 @@ func TestAStartOrResumePathMayEndWithAPersona(t *testing.T) {
 		"/v1/places/p1/resume/0f1e2d3c-0000-4000-8000-000000000001/as/architect",
 		"/v1/places/p1/start/claude/opus/extra/as/architect",
 	} {
-		if status, _ := post(path); status != http.StatusNotFound {
-			t.Errorf("%s: %d, want 404", path, status)
+		if status, _ := post(path); status != http.StatusNotFound && status != http.StatusNotImplemented {
+			t.Errorf("%s: %d, want 404 or 501", path, status)
 		}
 	}
 	// A known one is taken off the path and the request goes on to the

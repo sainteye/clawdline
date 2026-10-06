@@ -92,7 +92,7 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		parts = append(parts, v)
 	}
 	if len(parts) < 2 || parts[0] == "" {
-		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No such route", "")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	// `…/as/<persona>` ends a start or a resume that names its assistant:
@@ -152,7 +152,7 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		s.pastRoute(w, r, parts[0], assistant)
 	default:
-		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No such route", "")
+		writeNoSuchRoute(w, r)
 	}
 }
 

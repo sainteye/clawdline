@@ -171,8 +171,8 @@ func TestASessionsTodosAreReadWithTheMachineToken(t *testing.T) {
 	if rec := get(path+"?limit=5", true, http.MethodGet); rec.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown parameter answered %d", rec.Code)
 	}
-	// Nothing writes a to-do through a route.
-	if rec := get(path, true, http.MethodPost); rec.Code != http.StatusNotFound {
+	// Nothing writes a to-do through a route: no such route.
+	if rec := get(path, true, http.MethodPost); rec.Code != http.StatusNotImplemented {
 		t.Fatalf("a POST answered %d", rec.Code)
 	}
 }

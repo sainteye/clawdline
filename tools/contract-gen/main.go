@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	httptransport "github.com/sainteye/clawdline/internal/transport/http"
 )
 
 type schema struct {
@@ -98,9 +100,22 @@ func main() {
 	}
 	sort.Strings(names)
 
+	routesPath := filepath.Join(root, "api", "v1", "routes.json")
+	prior, err := readRoutes(routesPath)
+	if err != nil {
+		fatal("%v", err)
+	}
+	// Refused in both modes: a route set that changed at the level already
+	// written is not a file to regenerate, it is a level to raise.
+	routes, err := planRoutes(prior, httptransport.Routes(), httptransport.APILevel)
+	if err != nil {
+		fatal("%v", err)
+	}
+
 	want := map[string][]byte{
 		filepath.Join(root, "internal", "contract", "zz_generated.go"): renderGo(names),
 		filepath.Join(root, "web", "contract", "src", "generated.ts"):  renderTS(names),
+		routesPath: renderRoutes(routes),
 	}
 
 	if check {
@@ -118,7 +133,7 @@ func main() {
 			}
 			fatal("%d generated file(s) do not match api/v1; run: go run ./tools/contract-gen", len(drift))
 		}
-		fmt.Printf("contract: %d types, %d generated files current\n", len(names), len(want))
+		fmt.Printf("contract: %d types, %d routes at api_level %d, %d generated files current\n", len(names), len(routes.Routes), routes.APILevel, len(want))
 		return
 	}
 

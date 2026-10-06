@@ -18,10 +18,15 @@ export interface ProjectFileContent { file: ProjectFile; text: string; version: 
 export class ProjectFileError extends Error {
   readonly code: string
   readonly uncertain: boolean
-  constructor(code: string, message: string, uncertain = false) {
+  /** The HTTP status and refused route, kept so `asMachineNeedsUpdate` (core/src/refusal.ts) can read a 501. */
+  readonly status: number | undefined
+  readonly route: string | undefined
+  constructor(code: string, message: string, uncertain = false, status?: number, route?: string) {
     super(message)
     this.code = code
     this.uncertain = uncertain
+    this.status = status
+    this.route = route
   }
 }
 
@@ -36,7 +41,8 @@ async function answer<T>(url: string, init?: RequestInit): Promise<T> {
     const code = typeof data?.error === "string" ? data.error : data?.error?.code || "unavailable"
     const detail = typeof data?.detail === "string" ? data.detail : data?.error?.message
     const uncertain = init?.method === "PUT" && (data?.outcome === "unknown" || data?.error?.outcome === "unknown")
-    throw new ProjectFileError(code, detail || "目前無法讀取這個檔案。", uncertain)
+    const route = typeof data?.route === "string" ? data.route : undefined
+    throw new ProjectFileError(code, detail || "目前無法讀取這個檔案。", uncertain, response.status, route)
   }
   return data as T
 }
