@@ -158,6 +158,24 @@ After the Japanese flow review found action and status reversals outside the 1,3
 
 The **60 corrections** preserve the difference between a sent stop request and a completed stop, a pending restore and an action to start one, staged versus unstaged changes, uncommitted changes versus promises, an active registered task versus a livestream, and an unknown branch base versus a missing branch. The second sample added 25 corrections to the first sample's 35. The changed key and value pairs are in this commit's five catalog diffs; the sampled keys above identify the reviewed set. `node web/console/tools/check-catalogs.mjs` reports zero missing keys or format errors in all nine catalogs; the Epic machine-word guard reports `machine words: 9 files clean`. The sample exposes a remaining risk: outside the full Japanese text comparison and the 1,340-key risk review, most secondary-language non-risk entries have not been individually checked. No whole-catalog naturalness claim is made for them.
 
+## Cross-language bar and small-screen flow review
+
+The Feature Root then read the English source and all nine values for all **15** non-risk keys in `bar / other` and all **20** non-risk keys in the seven small `Console /` groups (App, Overlays, projects, session-reading, Sessions, settings, timeline). This was a complete text review of these eight groups, not a random sample. The group names and key lists are pinned in `semantic-screen-groups.json`; the 35 keys do not overlap the 18-key control sample. The reviewer also checked the adjacent `template.08166fe2eeb1` (waiting for you) and `template.d1a333c2a48d` (no new output) state keys. `session-reading.ts:30-45` says these are observations from an older, unverified snapshot, so translations must not claim that activity continued to the present.
+
+| Language | Group keys read | Revised values | Examples of corrected meaning |
+| --- | ---: | ---: | --- |
+| en | 35 | 0 | Source reference. |
+| zh-Hant | 35 | 0 | Compared with the source and reviewed adjacent states. |
+| ja | 35 | 0 in this pass | Already in the complete Japanese text review. |
+| zh-Hans | 35 | 0 | Compared with the source and reviewed adjacent states. |
+| ko | 35 | 8 | `inline.250f3493e97c` now sends a commit command rather than an obligation; `inline.785626f3cb47` is Board work rather than a committee; timeline and old-snapshot states were corrected. |
+| es | 35 | 9 | Project setup is a settings screen rather than a founding event; `template.6d09f003ee65` retains seconds; old-snapshot activity and no-output states no longer imply a live state. |
+| pt-BR | 35 | 9 | `bar.hintMascot` is a character, not a letter; the bar prompt uses Brazilian Portuguese; `literal.b9fcf1d5c799` is machine load rather than loading or resource sharing; old-snapshot word order was corrected. |
+| fr | 35 | 10 | `bar.hintMascot` is a character, not a glyph; `inline.250f3493e97c` is a commit command, not a promise; timeline, machine-load share, and older snapshot states were corrected. |
+| de | 35 | 5 | Board item is an entry rather than an article; three old-snapshot states now put the elapsed time before the observation. |
+
+The **41 revised values** include two adjacent state keys outside these non-risk groups; their exact before/after values are in the five catalog diffs. Together with the previous 18-key sample, 53 distinct non-risk keys have been compared in each secondary language, leaving **1,994 non-risk keys per secondary language without individual source comparison**. The initial 1,340-key risk review is separate. This text review does not verify native-language style or every live layout; it does not certify the remaining five secondary catalogs as semantically complete.
+
 ## Future partial catalogs and screen readers
 
 The localhost Chrome Settings flow loaded all nine catalogs from the built bundle and checked the visible interface-language label against each catalog, the label's own `lang`, document `lang`/`dir`, and zero missing keys after reload. It also kept the separate Agent language setting and confirmed a broken Japanese response falls back atomically to English while preserving the saved browser preference. The focused test passed 1/1. This is a local fixture, not a Cloud deployment check.
