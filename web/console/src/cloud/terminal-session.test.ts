@@ -36,6 +36,19 @@ class Wire implements TerminalWire {
   /** Refusals by operation, or `rekey_connection:direct` for a rekey onto the DC. */
   refusals = new Map<string, string>()
   directMachine = false
+  /**
+   * A machine that decides each numbered input as internal/domain/terminal/input.go does, one at a
+   * time in arrival order, and answers each after `pacedMs`, the next only after the previous.
+   */
+  machineInputs: { applied: number; typed: string[]; pacedMs: number; queue: Array<() => void>; busy: boolean } | null = null
+  private paceMachine(): void {
+    const machine = this.machineInputs!
+    if (machine.busy) return
+    const next = machine.queue.shift()
+    if (!next) return
+    machine.busy = true
+    setTimeout(() => { machine.busy = false; next(); this.paceMachine() }, machine.pacedMs)
+  }
   async subscribeTerminal(connection: string, _keyID: string, _raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
     this.channels.set(connection, listener)
   }
@@ -72,7 +85,22 @@ class Wire implements TerminalWire {
         ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
       }),
     })
-    if (this.delayed.has(operation)) this.replies.push(reply)
+    if (operation === "input" && this.machineInputs) {
+      const machine = this.machineInputs
+      machine.queue.push(() => {
+        const seq = request.seq as number
+        const duplicate = seq <= machine.applied
+        if (seq === machine.applied + 1) {
+          machine.applied = seq
+          machine.typed.push(atob((request.body as { data: string }).data))
+        }
+        const gap = seq > machine.applied
+        this.emit(connection, "termr", { v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
+          terminal_id: request.terminal_id, ...(gap ? { status: "refused", error: "input_gap" }
+            : { status: "ok", result: { applied_through: machine.applied, duplicate } }) })
+      })
+      this.paceMachine()
+    } else if (this.delayed.has(operation)) this.replies.push(reply)
     else queueMicrotask(reply)
     return { sender: viewer, seq: this.requests.length }
   }
@@ -189,6 +217,74 @@ test("several numbered keys publish before receipts while later keys wait for th
     assert.equal(wire.requests.filter((request) => request.operation === "input").length, 5)
     wire.releaseReplies()
     await Promise.all(inputs)
+  } finally { session.dispose() }
+})
+
+test("a burst longer than the in-flight window arrives complete and in order when receipts come back one by one", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.machineInputs = { applied: 0, typed: [], pacedMs: 5, queue: [], busy: false }
+    const text = "vim -R README.zh-TW.md\n"
+    const inputs: Promise<void>[] = []
+    for (const key of text) {
+      const sent = session.input(new TextEncoder().encode(key))
+      void sent.catch(() => undefined)
+      inputs.push(sent)
+      await new Promise<void>((resolve) => setTimeout(resolve, 2))
+    }
+    const outcomes = await Promise.allSettled(inputs)
+    const seqs = wire.requests.filter((request) => request.operation === "input").map((request) => request.seq)
+    assert.equal(wire.machineInputs.typed.join(""), text, `seqs sent ${seqs.join(",")}`)
+    assert.deepEqual(seqs, Array.from({ length: text.length }, (_, i) => i + 1))
+    assert.deepEqual(outcomes.filter((outcome) => outcome.status === "rejected"), [])
+    assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
+})
+
+test("a key typed while the tab is still taking control on entry waits and goes out once it holds control", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    wire.frame(wire.latest(), 1, "watching")
+    wire.delayed.add("control")
+    const acquiring = session.acquire("acquire")
+    await until(() => wire.requests.some((request) => request.operation === "control"))
+    assert.equal(session.snapshot.typeAhead, true)
+    const key = session.input(new TextEncoder().encode("l"))
+    wire.delayed.delete("control")
+    wire.releaseReplies()
+    await acquiring
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 0, "no key before a current screen")
+    wire.frame(wire.latest(), 2, "controlled")
+    await key
+    assert.deepEqual(wire.requests.filter((request) => request.operation === "input").map((request) => request.seq), [1])
+  } finally { session.dispose() }
+})
+
+test("a key typed while taking control that another tab holds is refused as not_controller, never sent", async () => {
+  const wire = new Wire()
+  wire.lease = { ...held, holder: { name: "other", local: false, same_device: true, same_client: false } }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    wire.frame(wire.latest(), 1, "watching")
+    wire.delayed.add("control")
+    const acquiring = session.acquire("acquire")
+    void acquiring.catch(() => undefined)
+    await until(() => wire.requests.some((request) => request.operation === "control"))
+    const key = session.input(new TextEncoder().encode("l"))
+    void key.catch(() => undefined)
+    wire.releaseReplies()
+    await assert.rejects(acquiring, /not_controller/)
+    await assert.rejects(key, /not_controller/)
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 0)
+    assert.equal(session.snapshot.typeAhead, false)
   } finally { session.dispose() }
 })
 
@@ -356,6 +452,26 @@ test("rekey keeps the lease client and checks a read-only high-water mark before
   assert.equal(wire.requests.filter((request) => request.operation === "activate_connection").length, 1)
   assert.equal(session.snapshot.canType, true)
   session.dispose()
+})
+
+test("a key still awaiting its receipt across a rekey keeps its number; the next key gets the one after", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "first")
+    wire.delayed.add("input")
+    // Its receipt is never released here: only the numbering is under test.
+    void session.input(new TextEncoder().encode("a")).catch(() => undefined)
+    await until(() => wire.requests.some((request) => request.operation === "input"))
+    // The machine has not decided "a" yet: the lease proof still says nothing was applied.
+    await session.start()
+    wire.frame(wire.latest(), 1, "new connection")
+    await until(() => session.snapshot.canType)
+    void session.input(new TextEncoder().encode("b")).catch(() => undefined)
+    await until(() => wire.requests.filter((request) => request.operation === "input").length === 2)
+    assert.deepEqual(wire.requests.filter((request) => request.operation === "input").map((request) => request.seq), [1, 2])
+  } finally { session.dispose() }
 })
 
 test("a rekey frame arriving before its receipt waits for lease proof and then activates", async () => {
