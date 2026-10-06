@@ -2,12 +2,12 @@
 
 本文供执行 **Clawdline Next** 的机器上的助理 Session（Claude Code 或 Codex）使用。
 它只涵盖此守护进程目前提供的功能：下列每条路由都由产生本指南的版本注册；若有遗漏，测试会失败。
-请执行 `clawdline guide` 重新打印，不要依赖副本；`clawdline guide zh-TW` 会打印同一份指南的繁体中文版。
+请执行 `clawdline guide` 重新打印，不要依赖副本；`clawdline guide zh-Hant` 会打印台湾繁体中文版（`zh-TW` 仍是别名）。
 `clawdline guide` 会打印核心内容并列出其他部分；进行某项工作时，可打印对应部分
-（例如 `clawdline guide dispatch`），也可用 `clawdline guide all` 打印全文。
+（例如 `clawdline guide zh-Hans dispatch`），也可用 `clawdline guide zh-Hans all` 打印全文。
 任何打印内容（包括核心内容）都以 `guide-version: <sha256>` 开头；用 `--since <hash>` 执行相同命令时，
 若内容未变，则只打印 `unchanged <hash>` 一行。
-`clawdline guide refused <code>` 会打印说明该拒绝码的部分；若没有任何部分提及该码，则标准输出为空并以状态 1 结束。
+`clawdline guide zh-Hans refused <code>` 会打印说明该拒绝码的部分；若没有任何部分提及该码，则标准输出为空并以状态 1 结束。
 
 在本指南中，**步骤**是工作项目检查清单中的一条，任务的 **writes** 是它可以修改的路径，
 **assignment** 表示工作项目的负责人，**部分**是本指南中具名的一段内容。
@@ -41,7 +41,7 @@ Swift 应用程序已于 2026-09-19 退役：它已停止运作，不再于登�
 否则，你就是 **root**：与人对话的一般 Session。以下内容供你使用。
 
 如果消息写着 *「You are an independently owned Clawdline Feature Root …」*，或有看板工作项目指派给你，
-接着打印 `clawdline guide feature-root`：它涵盖从读取项目到标记 `done` 的完整一般流程，
+接着打印 `clawdline guide zh-Hans feature-root`：它涵盖从读取项目到标记 `done` 的完整一般流程，
 也会指出较少见情况应打印哪个部分。
 
 ## 2. 连接守护进程
@@ -53,11 +53,11 @@ Swift 应用程序已于 2026-09-19 退役：它已停止运作，不再于登�
 
 | 命令 | 用途 |
 |---|---|
-| `clawdline guide [zh-TW]` | 本指南；不需要守护进程 |
+| `clawdline guide [lang]` | 本指南；不需要守护进程 |
 | `clawdline session report --summary "…"` | 记录已完成的轮次（§7） |
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核并关闭已完成的 Session，绝不强制关闭（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派发自己负责的 child（§4） |
-| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 读取并推进自己负责的看板项目（`clawdline guide feature-root`、§10） |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 读取并推进自己负责的看板项目（`clawdline guide zh-Hans feature-root`、§10） |
 | `clawdline todo add\|list\|done` | 管理此 Session 自己的待办事项，仅在用户要求时使用（§10） |
 | `clawdline heavy -- <command…>` | 在此机器唯一的编译时段中执行建置或测试套件（§11） |
 | `clawdline send --to <terminal> "…"` | 将消息转送至另一个 Session（§8） |
@@ -71,12 +71,17 @@ Swift 应用程序已于 2026-09-19 退役：它已停止运作，不再于登�
 | `clawdline cloud pair [--offer <code>]` | 将一个 Cloud 浏览器与此机器配对 |
 | `clawdline task show [--json] <task id>` | 简要显示一个 child 任务的状态、判定、摘要、遗留事项标题、验证、落地和工作目录（§5） |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等待 child 完成（全部，或以 `--any` 等待其中一个），依 `task show` 的格式显示每项结果并关闭通知。全部成功时结束码为 0、一项失败为 1、没有失败但有取消为 5、逾时为 3、任务无法读取为 4；优先顺序为 4、3、1、5（§5） |
-| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 由守护进程执行长时间命令（例如部署及检查、等待 CI）并立即返回；结束此轮次后，命令结束时会显示与已完成 child 相同类型的 `<clawdline-notice>`（§5a、`clawdline guide callback`） |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 由守护进程执行长时间命令（例如部署及检查、等待 CI）并立即返回；结束此轮次后，命令结束时会显示与已完成 child 相同类型的 `<clawdline-notice>`（§5a、`clawdline guide zh-Hans callback`） |
 | `clawdline task cancel <task id> --reason "…"` | 停止误派的 child：关闭其分页，释放其写入范围与时段，保留已有提交的分支供你处理（§5） |
 | `clawdline task ack <task id> <notice id>` | 手动关闭完成通知；很少需要，因为 `task show` 和 `task wait` 也会关闭通知（§5） |
 | `clawdline task accept <task dir>` | child 签收简报；root 绝不执行 |
 | `clawdline task finish <task dir>` | child 回报完成；root 绝不执行 |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 在任何机器透过 Cloud webhook 启动调度并等待结果；结束码表示最终状态（「调度未来工作」）。不需要守护进程 |
+
+没有明确指定指南语言时，CLI 依序采用命令前的 `--lang <tag>`、`CLAWDLINE_LANG`、
+已保存的 `product_language`，最后采用英文。明确指定 `clawdline guide <tag>` 会覆盖该选择；
+不支持的语码显示英文。`clawdline guide -list` 列出九个随程序提供的语码。
+此偏好只改变供人阅读的 CLI 文字，不改变协议字段或 Agent 的语言。
 
 上述编排命令（不包括 `webhook fire`）成功时会打印守护进程的 JSON；遭拒时会先打印
 `refused, <status> <code>: <message>`，再逐行以 `key: value` 列出拒绝内容中的纯量，
@@ -303,7 +308,7 @@ curl --fail-with-body -sS -H @<(auth) "http://127.0.0.1:$PORT/v1/orchestrator/in
 
 - 若已开启记录规划，但没有验收标准，请用
   `clawdline item acceptance <item id> --body-file acceptance.md` 写入可观察的标准。
-- 若「Needs independent review」已勾选，或项目为 Epic，先依 `clawdline guide epic` 中的审查计划流程执行。
+- 若「Needs independent review」已勾选，或项目为 Epic，先依 `clawdline guide zh-Hans epic` 中的审查计划流程执行。
   未勾选时，不需要计划或审查 child。
 - 多阶段工作尚无步骤时，用 `clawdline item step-add <item id> "first" "second" …`
   创建两至八个可逐一验证的步骤；单一变更无需步骤。
@@ -327,7 +332,7 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - 简报必须能独立阅读。请纳入已验证的事实，逐一附上 `file:line` 或证明它的命令，
   让 child 不必重新发现。
 - 调查或 Explore child 的简报还需写明停止条件（回答哪个问题即可结束任务）及轮次上限。
-- 只读工作使用 `--claims ""`。所有参数与拒绝码见 `clawdline guide dispatch`。
+- 只读工作使用 `--claims ""`。所有参数与拒绝码见 `clawdline guide zh-Hans dispatch`。
 
 **5. Child 完成时，**输入框会出现一行 `<clawdline-notice>`。执行
 `clawdline task show <task id>`，再集成交付内容；读取该任务会关闭通知，不需另行 ACK。
@@ -338,7 +343,7 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 **合并会在几分钟内自行记录落地**，不要手动提交落地记录。
 `clawdline landings` 会列出尚待落地的任务。以 `--claims ""` 派发且没有写入的 child，
 broker 会记录为 `nothing_to_land`。其他情况使用 `clawdline task land <task id> <state>`
-（见 `clawdline guide landing`）。
+（见 `clawdline guide zh-Hans landing`）。
 
 **6. 完成报告。** 若查明原因需要大量调查，请撰写报告；直接且可观察的修复无需报告。
 在标记 `done` 前加入：项目完成后会解除指派，届时写入报告会得到 `409 not_item_owner`。
@@ -394,10 +399,10 @@ clawdline item finish <item id> … --deployment "what went live, where, which v
 **遭拒时。** `version_conflict`：重新执行相同命令，它会重读版本。
 `steps_incomplete`：仍有步骤未完成。其他拒绝码：先看 §12，再看其对应部分。
 
-**较少见的工作，各有对应部分：**`clawdline guide board` 说明提案、决定、待办事项、
-重新开启已完成项目、等待用户、关卡及各阶段的拒绝码；`clawdline guide epic` 说明计划、
-计划审查、Epic 子项目与 persona；`clawdline guide landing` 说明手动落地、交接
-（包括长时间 Root 的里程碑交接）及 Root 指派；`clawdline guide running` 说明停滞的 child、
+**较少见的工作，各有对应部分：**`clawdline guide zh-Hans board` 说明提案、决定、待办事项、
+重新开启已完成项目、等待用户、关卡及各阶段的拒绝码；`clawdline guide zh-Hans epic` 说明计划、
+计划审查、Epic 子项目与 persona；`clawdline guide zh-Hans landing` 说明手动落地、交接
+（包括长时间 Root 的里程碑交接）及 Root 指派；`clawdline guide zh-Hans running` 说明停滞的 child、
 遗留事项与重新产生任务。
 
 ## 3. 派发前，先读取现有工作
@@ -466,7 +471,7 @@ root 是你的对话，取自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`，�
 `--persona <id>` 以内建 persona 启动 child（记录于 `task.json` 的 `persona`）；
 若此版本没有该 ID，会在本机遭拒。任何种类（包括 `plan_review`）都不会预设使用 persona；
 想使用时请自行指定 `code-reviewer`。`GET /v1/personas` 列出此版本提供的 ID；
-persona 的说明见 §10 的 Epic 部分（`clawdline guide epic`）。
+persona 的说明见 §10 的 Epic 部分（`clawdline guide zh-Hans epic`）。
 
 若调用端没有这个二进位程序，以下是命令所执行的步骤：
 
@@ -986,7 +991,7 @@ Note 不是进度日志、私人提醒、通知，也不是看板决定的授权
 
 用 JSON 本文文件创建 Note。不指定 `--target` 时，CLI 会透过 `whoami`
 解析这个执行中 Root 自己的终端机 ID。若要送至其他 Session，
-请用通讯录（`clawdline guide send`）中的执行中**终端机 ID**作为 `--target`。
+请用通讯录（`clawdline guide zh-Hans send`）中的执行中**终端机 ID**作为 `--target`。
 `--from` 预设为环境中的此 Root 对话 ID。CLI 在不把机器凭证放入命令行的情况下读取它，
 注入来源与目标 ID，并打印守护进程的持久 Note ID。
 若结果不明，请重用已打印的 `--key`。
@@ -1018,7 +1023,7 @@ clawdline note create --body-file note.json
 **由用户决定哪些内容进入看板**。只有用户透过 Clawdline 传来的消息明确要求时，
 Session 才能创建看板项目；否则应提出提案。Session 绝不主动创建卡片。
 唯一例外是 Epic 负责人：Epic 计划经审查后，可将其拆分为 Feature 和 Issue 项目，
-再指派给 Session（`clawdline guide epic`）。
+再指派给 Session（`clawdline guide zh-Hans epic`）。
 
 **TODO / 待办 / 土度 若与看板项目一起提及，指的是该项目的步骤。**
 请用 `--step` 加在项目上，**不要**再用 `clawdline todo add` 创建一份。
@@ -1142,7 +1147,7 @@ clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--
 绝不要主动认领或指派项目；只处理用户消息指定的项目。
 也不要使用用户专用的 `POST /v1/work/v2/items/<id>/assign`，Session 调用它会收到
 `session_cannot_create_item`。Epic 负责人也可用 `clawdline item assign`
-指派 Epic 自己的子项目（`clawdline guide epic`）。
+指派 Epic 自己的子项目（`clawdline guide zh-Hans epic`）。
 
 **为看板项目开启的新 Session 命名。** 读取目标和范围后，选择描述实际任务的短名称，
 并执行 `clawdline item name <item id> "<task name>"`。
@@ -1485,7 +1490,7 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 ```
 
 命令会代你调用 `POST /v1/work/v2/agent/items/<id>/documents`
-（§10 的 Epic 部分，即 `clawdline guide epic`，列有各栏位）。
+（§10 的 Epic 部分，即 `clawdline guide zh-Hans epic`，列有各栏位）。
 若自行拼装 curl 调用该路由，却没有命令所读取的凭证，会收到 `401 unauthorized`。
 本文为 Markdown，最多 64 KiB。请写给回报问题的人，而不是输出原始除错日志，
 并避免私人资料。有效负责人须在项目进入终止状态前加入报告；
@@ -1607,7 +1612,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 ```
 
 - 终端机 ID 可从 Session 通讯录 `GET /v1/orchestrator/sessions`
-  （`clawdline guide send`）查询；接手 Session 必须在 Epic 的 Project 工作。
+  （`clawdline guide zh-Hans send`）查询；接手 Session 必须在 Epic 的 Project 工作。
   你可将子项目指派给自己；`--assign-new` 会以指明 Epic 的 Root Assignment 开启新 Session。
   不指定 `--assign` 参数时，子项目保持未指派，等待用户处理。
 - `item child` 会读取 Epic 版本、打印 Idempotency-Key（`--key` 可重试相同写入），
@@ -1633,7 +1638,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   `item_terminal`（Epic 已结束）、`child_kind_not_allowed`（只允许 `feature` 或 `issue`）、
   `epic_children_full`（Epic 最多保留 32 个子项目，无论开启或关闭）、
   `not_epic_child`（对非 Epic 子项目执行 `item assign`；应由用户指派，
-  除非其消息要求你代办，见 `clawdline guide board`）、`invalid_assignment`、
+  除非其消息要求你代办，见 `clawdline guide zh-Hans board`）、`invalid_assignment`、
   `version_conflict`、`persona_not_applicable`（422：为现有 Session 指定 persona），
   以及 `unknown_persona`（400：目录中没有该 ID）。
 - **persona** 是新 Session 启动时使用的角色：在整段对话期间，

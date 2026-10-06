@@ -1902,8 +1902,8 @@ auf; ein POST ist ein Probelauf, es sei denn, der Body sagt `{"dry_run": false}`
 - `retry_after` bedeutet, dass es eine Kapazitätsantwort ist: Warte so lange und sende dann dieselbe Anfrage.
 - `409 stale_write`, `503 orchestrator_store_busy`: Der Speicher war belegt; dieselbe Anfrage erneut zu
   senden, ist sicher.
-- `unknown`, wo auch immer – bei einer Eigentümerschaft, einer Lebendigkeit, einer Quelle –, bedeutet, dass
-  der Daemon es nicht lesen konnte. Es heißt nicht „nicht vorhanden“, und aufgrund dessen darf nichts
+- `unknown` bei Zuständigkeit, Lebenszeichen oder Herkunft bedeutet, dass
+  der Daemon die jeweiligen Daten nicht lesen konnte. Es heißt nicht „nicht vorhanden“, und aufgrund dessen darf nichts
   gelöscht oder für tot erklärt werden.
 - Antwortet eine Route, die du erwartet hast, mit `404 not_found` oder `501`, ist sie nicht in diesem
   Daemon. Sag das; weiche an ihrer Stelle nicht auf die Routen der Swift-App oder auf

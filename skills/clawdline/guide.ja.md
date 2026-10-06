@@ -1,6 +1,6 @@
 # Clawdline ガイド
 
-**Clawdline Next** が実行されているマシン上のアシスタント セッション (Claude Code または Codex) の場合。ここでは、このデーモンが現在どのような役割を果たしているかを説明しますが、それ以外のことは説明しません。以下のすべてのルートは、このガイドを出力したビルドによって登録されており、登録されていないルートがある場合はテストは失敗します。コピーを信頼するのではなく、`clawdline guide` を使用して再度出力します。 `clawdline guide zh-TW` は繁体字中国語の同じガイドです。 `clawdline guide` はコアを出力し、他の部分に名前を付けます。対象となる作業に到達したらその一部 (`clawdline guide dispatch`) を出力するか、全文の場合は `clawdline guide all` を出力します。何を出力するにしても、コアも含めて、`guide-version: <sha256>` で始まります。 `--since <hash>` を使用して同じコマンドを実行すると、テキストが変更されていない場合は、代わりに `unchanged <hash>` という 1 行が出力されます。 `clawdline guide refused <code>` は、拒否コードを説明する部分を出力し、名前を付ける部分がない場合は stdout に何も出力せずに 1 を終了します。
+**Clawdline Next** が実行されているマシン上のアシスタント セッション (Claude Code または Codex) の場合。ここでは、このデーモンが現在どのような役割を果たしているかを説明しますが、それ以外のことは説明しません。以下のすべてのルートは、このガイドを出力したビルドによって登録されており、登録されていないルートがある場合はテストは失敗します。コピーを信頼するのではなく、`clawdline guide` を使用して再度出力します。 `clawdline guide zh-Hant` は台湾向け繁体字中国語のガイドを表示します（`zh-TW` も別名として使えます）。 `clawdline guide` はコアを出力し、他の部分に名前を付けます。対象となる作業に到達したらその一部 (`clawdline guide ja dispatch`) を出力するか、全文の場合は `clawdline guide ja all` を出力します。何を出力するにしても、コアも含めて、`guide-version: <sha256>` で始まります。 `--since <hash>` を使用して同じコマンドを実行すると、テキストが変更されていない場合は、代わりに `unchanged <hash>` という 1 行が出力されます。 `clawdline guide ja refused <code>` は、拒否コードを説明する部分を出力し、名前を付ける部分がない場合は stdout に何も出力せずに 1 を終了します。
 
 このガイドでは、**ステップ**はアイテムのチェックリストの一項目、タスクの**書き込み**は変更する可能性のあるパス、**割り当て**はアイテムの所有者、**パート**はこのガイドの名前付き部分を指します。
 
@@ -20,7 +20,7 @@ Swift アプリは 2026 年 9 月 19 日に廃止されました。アプリは�
 
 それ以外の場合、あなたは**ルート**、つまり誰かが話している通常のセッションです。残りはあなたのものです。
 
-*「あなたは独立して所有されている Clawdline フィーチャー ルートです…」* と表示されている場合、またはボード アイテムがあなたに割り当てられている場合は、次に `clawdline guide feature-root` を出力します。これは、アイテムの読み取りから `done` までの通常のパス全体であり、よりまれな場合に出力する部分に名前を付けます。
+*「あなたは独立して所有されている Clawdline フィーチャー ルートです…」* と表示されている場合、またはボード アイテムがあなたに割り当てられている場合は、次に `clawdline guide ja feature-root` を出力します。これは、アイテムの読み取りから `done` までの通常のパス全体であり、よりまれな場合に出力する部分に名前を付けます。
 
 ## 2. デーモンへの到達
 
@@ -28,11 +28,11 @@ Swift アプリは 2026 年 9 月 19 日に廃止されました。アプリは�
 
 | コマンド | 機能 |
 |---|---|
-| `clawdline guide [zh-TW]` | このガイド。デーモンは必要ありません |
+| `clawdline guide [lang]` | このガイド。デーモンは必要ありません |
 | `clawdline session report --summary "…"` | 終了したターンを記録します (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | 終了したセッションを監査し、決して強制的に閉じません (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 所有する子をディスパッチする (§4) |
-| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 所有するボードアイテムを読み込んで進めます (`clawdline guide feature-root`、§10) |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 所有するボードアイテムを読み込んで進めます (`clawdline guide ja feature-root`、§10) |
 | `clawdline todo add\|list\|done` | 本人が要求した場合のみ、このセッション独自の To-Do を実行します (§10) |
 | `clawdline heavy -- <command…>` | マシンの 1 つのコンパイル スロットでビルドまたはテスト スイートを実行します (§11) |
 | `clawdline send --to <terminal> "…"` | メッセージを別のセッションに中継します (§8) |
@@ -46,12 +46,17 @@ Swift アプリは 2026 年 9 月 19 日に廃止されました。アプリは�
 | `clawdline cloud pair [--offer <code>]` | 1 つのクラウド ブラウザとこのマシンをペアリングします |
 | `clawdline task show [--json] <task id>` | 1 つの子タスクをコンパクトに: 状態、評決、概要、残されたタイトル、検証、ランディング、チェックアウト (§5) |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | 子が終了するまで待機し (すべて、または `--any` の 1 つ)、`task show` が行うようにそれぞれを表示し、その通知を閉じます。終了 0 はすべて成功、1 1 つは失敗、5 1 つはキャンセルされ失敗なし、3 タイムアウト、4 タスクを読み取れませんでした。 4 オーバー 3 オーバー 1 オーバー 5 (§5) |
-| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 長いコマンド (デプロイとその確認、CI の待機) をデーモンの管理下で実行し、すぐに制御を返します。ターンを終えると、子タスクの完了通知と同じ形式の `<clawdline-notice>` が届きます (§5a、`clawdline guide callback`) |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 長いコマンド (デプロイとその確認、CI の待機) をデーモンの管理下で実行し、すぐに制御を返します。ターンを終えると、子タスクの完了通知と同じ形式の `<clawdline-notice>` が届きます (§5a、`clawdline guide ja callback`) |
 | `clawdline task cancel <task id> --reason "…"` | 誤ってディスパッチした子を停止します。タブは閉じられ、書き込みとスロットは解放され、コミットのあるブランチは保持されます (§5) |
 | `clawdline task ack <task id> <notice id>` | 完了通知を手動で閉じます。 `task show` と `task wait` がそれを閉じるため、ほとんど必要ありません (§5) |
 | `clawdline task accept <task dir>` | 説明会に署名する子エージェント。ルートは決して実行しない |
 | `clawdline task finish <task dir>` | 子エージェントの完成。ルートは決して実行しない |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 任意のマシン上で Cloud Webhook を通じてスケジュールを開始し、その結果を待ちます。終了コードは、どのように終了したかを示します (「将来の作業をスケジュールする」)。デーモンは必要ありません |
+
+ガイドの言語タグを明示しない場合、CLI はコマンド前の `--lang <tag>`、`CLAWDLINE_LANG`、保存された
+`product_language`、英語の順に選びます。`clawdline guide <tag>` で明示したタグはこの選択より優先され、
+未対応のタグは英語を表示します。`clawdline guide -list` で公開中の 9 言語タグを確認できます。この設定は
+CLI の人が読む文章だけを変え、プロトコルのフィールドや Agent の言語は変えません。
 
 上記のオーケストレーション コマンド (`webhook fire` ではない) は、成功するとデーモンの JSON を出力します。拒否の場合は、`refused, <status> <code>: <message>` を出力し、その後、拒否の各スカラーが `key: value` として 1 行に 1 つずつ表示され、修正が最後に行われ、1 で終了します。クラウド コマンドは、人間が判読できる独自の成功出力とエラー出力を使用します。 `--port` はポートをオーバーライドします。
 
@@ -140,13 +145,13 @@ curl --fail-with-body -sS -H @<(auth) "http://127.0.0.1:$PORT/v1/orchestrator/in
 
 作業中のプロジェクトを Clawdline で読みやすくしてほしいと依頼された場合にこの部分を使用します。結果は「いくつかのファイルが存在する」ということではありません。それは、プロジェクトには真実の名前とマークがあり、長期にわたる作業は進捗状況を報告でき、その開発サーバーは Clawdline が起動しなくても確認できるということです。
 
-まず、このリポジトリの説明、README、デプロイ/ビルド スクリプト、および既存のプロセス マネージャー構成を読んでください。プロジェクトがすでに使用しているコマンドを保存します。 Clawdline のためだけに 2 番目のデプロイ パスやプロセス スーパーバイザを追加しないでください。また、操作上の変更を要求しない限り、何も開始、停止、再起動、またはデプロイしないでください。構成と実際の展開は別の作業です。
+まず、このリポジトリの説明、README、デプロイ/ビルド スクリプト、および既存のプロセス マネージャー構成を読んでください。プロジェクトがすでに使用しているコマンドを保存します。 Clawdline のためだけに 2 番目のデプロイ パスやプロセス スーパーバイザを追加しないでください。また、その運用変更を本人が依頼した場合を除き、何も開始、停止、再起動、またはデプロイしないでください。構成と実際の展開は別の作業です。
 
 以下の 4 つのチェックを実行し、本当に適用されない場合にのみチェックをスキップします。
 
 1. **プロジェクト。** `clawdline project list` を実行します。このチェックアウトがない場合は、リポジトリ ルートを `clawdline project add <absolute-root>` で追加し、再度リストします。これは、セッションが開始される可能性のある場所を記録します。リポジトリは変更されません。
 2. **名前とアイコン。** 何も設定されていない場合、Clawdline は安定したアイコンを派生します。ユーザーが意図的な名前またはピクセル マークを必要とする場合は、`~/.claude/project-icons.json` 内の 1 つおきのエントリを保存し、このプロジェクトの最長のパスを含むパスのみを編集します。この形式は、Clawdline リポジトリの `docs/project-status.md` に文書化されています。 「プロジェクト」ページでは、JSON を手動で編集せずに、既存の解決済みアイコンをコピーすることもできます。グローバル ユーザー ファイルはリポジトリのコンテンツではありません。リクエストでその編集がまだ承認されていない場合は、変更する前に提案された正確なエントリを表示します。
-3. **展開と長時間の作業。** Clawdline はステータスの受信のみを読み取ります。デプロイは決して実行されません。 GitHub リポジトリの場合、デプロイ受領書は `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` で、所有者とリポジトリは `origin` から取得されます。実行をすでに認識しているプロデューサーは、`state` (`running`、`ok`、`fail`、または `none`)、`label`、`url`、`started_at`、および測定された `typical_seconds` をアトミックに書き込みます。ローカルのビルド、テスト、インポート、またはデプロイ コマンドの場合、そのヘルパーが存在する場合は `clawdline-progress run --label <label> -- <command>` を使用するか、`docs/project-status.md` から `run-<path>.json` コントラクトを実装します。期間を決して考え出さないでください。測定されるまで省略してください。強制終了されたプロデューサーは永続的な実行状態を離れてはなりません。
+3. **展開と長時間の作業。** Clawdline はステータスの受信のみを読み取り、デプロイ自体は実行しません。 GitHub リポジトリの場合、デプロイ受領書は `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json` で、所有者とリポジトリは `origin` から取得されます。実行をすでに認識しているプロデューサーは、`state` (`running`、`ok`、`fail`、または `none`)、`label`、`url`、`started_at`、および測定された `typical_seconds` をアトミックに書き込みます。ローカルのビルド、テスト、インポート、またはデプロイ コマンドの場合、そのヘルパーが存在する場合は `clawdline-progress run --label <label> -- <command>` を使用するか、`docs/project-status.md` から `run-<path>.json` コントラクトを実装します。期間を決して考え出さないでください。測定されるまで省略してください。強制終了されたプロデューサーは永続的な実行状態を離れてはなりません。
 4. **開発サーバー。** 最も近いデプロイ可能なルートで `.devstack.json` を追加または更新します。 Go デーモンは現在、宣言された `processes` を読み取り、そのループバック `port` を調査するか、`url` を開きます。ブラウザから `status`、`up`、`down`、`restart`、または `logs` コマンドは**実行されません**。最小の真実の Tier 0 ファイルを優先します。次に例を示します。
 
    ```json
@@ -178,7 +183,7 @@ ASSIGNMENT.md に **HANDOFF** という見出しがある場合、別のセッ�
 **3.導入前**
 
 - キャプチャされた計画と受け入れ基準なし: `clawdline item acceptance <item id> --body-file acceptance.md` で観察可能なものを書き込みます。
-- 独立したレビューのチェックが必要、またはエピック: `clawdline guide epic` のレビュー済みプラン パスが最初に来ます。チェックなし: 計画なし、子レビューなし。
+- 独立したレビューのチェックが必要、またはエピック: `clawdline guide ja epic` のレビュー済みプラン パスが最初に来ます。チェックなし: 計画なし、子レビューなし。
 - ステップのない多段階作業: `clawdline item step-add <item id> "first" "second" …` (一度に 2 ～ 8 つのステップを 1 つずつ検証できます。1 つの変更には何もかかりません)。
 - じゃあ`clawdline item phase <item id> implementing`。
 
@@ -194,9 +199,9 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - タイトルは、何が異なるかを示す最大 60 文字の 1 行です。コロン (`:` または `：`) は、観察と説明を結合するものであるため、拒否されます。件名としての「ユーザー」や、コード形式の識別子で始まるタイトルも同様です。それぞれが `bad_task` に `title: …` がどちらかを答えます。
 - ブリーフは自立します。そこには、あなたがすでに確認した事実を、その`file:line`またはそれを示したコマンドとともに入れて、子エージェントがそれらを再発見しないようにします。
 - 子エージェントの調査または探索の概要には、停止条件 (回答するとタスクが終了する質問) とターン制限も記載されています。
-- 読み取り専用作品は`--claims ""`です。すべてのフラグとすべての拒否コードは `clawdline guide dispatch` にあります。
+- 読み取り専用作品は`--claims ""`です。すべてのフラグとすべての拒否コードは `clawdline guide ja dispatch` にあります。
 
-**5.子が終了**すると、`<clawdline-notice>` 行がコンポーザーに入力されます。 `clawdline task show <task id>` を実行し、配信を統合します。これを読むと通知が閉じられるため、個別の ACK はありません。 **ディスパッチ後、ターンを終了します**: 通知で目が覚め、ターンを開いたまま待つと、ポーリングのたびにコンテキスト全体が再読されます。他に何もすることがなく、ブロックする必要がある場合にのみ、`clawdline task wait <task id>…` (デフォルトは `--timeout 9m`、最初の場合は `--any`) を実行します。 **ブランチをターゲットにマージ**して、ワークツリーの子を統合します。 **マージは数分以内にランディングを自動的に記録します**。手動でランディングを投稿しないでください。 `clawdline landings` には、まだランディングが必要な作業が表示されます。 `--claims ""` でディスパッチされた何も書き込まない子は、ブローカーによって `nothing_to_land` と記録されます。それ以外は`clawdline task land <task id> <state>`（`clawdline guide landing`）です。
+**5.子が終了**すると、`<clawdline-notice>` 行がコンポーザーに入力されます。 `clawdline task show <task id>` を実行し、配信を統合します。これを読むと通知が閉じられるため、個別の ACK はありません。 **ディスパッチ後、ターンを終了します**: 通知で目が覚め、ターンを開いたまま待つと、ポーリングのたびにコンテキスト全体が再読されます。他に何もすることがなく、ブロックする必要がある場合にのみ、`clawdline task wait <task id>…` (デフォルトは `--timeout 9m`、最初の場合は `--any`) を実行します。 **ブランチをターゲットにマージ**して、ワークツリーの子を統合します。 **マージは数分以内にランディングを自動的に記録します**。手動でランディングを投稿しないでください。 `clawdline landings` には、まだランディングが必要な作業が表示されます。 `--claims ""` でディスパッチされた何も書き込まない子は、ブローカーによって `nothing_to_land` と記録されます。それ以外は`clawdline task land <task id> <state>`（`clawdline guide ja landing`）です。
 
 **6.完了レポート**。原因を特定するには十分な調査が必要でした (直接の観察された修正には必要ありません)。 `done` の前に追加します。項目が完了すると割り当てが解除され、レポートの応答は `409 not_item_owner` になります。
 
@@ -241,7 +246,7 @@ clawdline item finish <item id> … --deployment "what went live, where, which v
 
 **何かが拒否された場合。** `version_conflict`: 同じコマンドを再度実行します。バージョンを再読み込みします。 `steps_incomplete`: ステップはまだ開いています。その他のコード: §12、その後、それをカバーする部分。
 
-**珍しい作業、それぞれ 1 つのパート:** `clawdline guide board` — 提案、決定、やるべきこと、完了した項目の再開、人待ち、ゲート、およびあらゆる段階の拒否。 `clawdline guide epic` — 計画、計画レビュー、Epic の子アイテム、ペルソナ。 `clawdline guide landing` — 手動でのランディング、ハンドオフ (長いルートのマイルストーンハンドオフも)、ルートの割り当て。 `clawdline guide running` — 失速した子エージェント、残り物、リスポーン。
+**珍しい作業、それぞれ 1 つのパート:** `clawdline guide ja board` — 提案、決定、やるべきこと、完了した項目の再開、人待ち、ゲート、およびあらゆる段階の拒否。 `clawdline guide ja epic` — 計画、計画レビュー、Epic の子アイテム、ペルソナ。 `clawdline guide ja landing` — 手動でのランディング、ハンドオフ (長いルートのマイルストーンハンドオフも)、ルートの割り当て。 `clawdline guide ja running` — 失速した子エージェント、残り物、リスポーン。
 
 ## 3. ディスパッチする前に: 既存の内容を読んでください
 
@@ -279,7 +284,7 @@ ID とシークレットを作成し、`generation` と `task_root` のインベ
 
 再試行が必要な可能性があるレビューの場合は、最初の呼び出しの前に小文字の UUID を選択し、試行のたびにそれを `--task-id` として渡します。このコマンドは、元のディスパッチ インテントのプライベート コピーを `task.json` の横に保持するため、デーモンがブリーフを書き換えた後でも、同一の再試行を再送信できます。ブローカーは元のタスク ID を `(replayed)` で返します。変更された概要はローカルで拒否されます。コマンドがタイムアウトするか、その出力が失われた場合は、失敗する前に `GET /v1/orchestrator/tasks/<id>` を確認してください。不足しているタスクは、同じ ID と概要を使用して再試行できます。明示的な拒否ではタスクは作成されず、原因を修正した後に再試行することもできます。
 
-`--persona <id>` は、子を組み込みペルソナ (`task.json` の `persona`) として起動します。このビルドに欠けている ID はローカルで拒否されます。デフォルトで取得できるものはありません。`plan_review` が含まれています。必要なときに自分で `code-reviewer` という名前を付けます。 `GET /v1/personas` は、このビルドが持つ ID をリストします。ペルソナが何であるかは、§10 (`clawdline guide epic`) のエピック部分にあります。
+`--persona <id>` は、子を組み込みペルソナ (`task.json` の `persona`) として起動します。このビルドに欠けている ID はローカルで拒否されます。デフォルトで取得できるものはありません。`plan_review` が含まれています。必要なときに自分で `code-reviewer` という名前を付けます。 `GET /v1/personas` は、このビルドが持つ ID をリストします。ペルソナが何であるかは、§10 (`clawdline guide ja epic`) のエピック部分にあります。
 
 バイナリを持たない呼び出し側の場合に実行される手順は次のとおりです。
 
@@ -567,7 +572,7 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 
 **チャットで相手に選択を求める前に**、実際の質問、決定に必要なトレードオフ、および 2 ～ 4 つの完全な返信候補を含む `answer` メモを 1 つ作成します。ボタンをタップすると、その応答が会話メッセージとして送信されるため、各 `draft` はそれ自体で明確になります。作成後に簡単なチャット ポインタを入力するだけで十分です。メモの作成または処理済みとしてマークされたメモをその人の回答として扱わないでください。会話メッセージ (タップされた返信またはユーザーが入力したメッセージ) を待ってから、それに基づいて行動します。作成が失敗した場合は、その旨を伝えて直接質問してください。エージェントが行う日常的な選択ではなく、人間の判断が必要な決定についてメモを取っておきます。
 
-JSONボディファイルを使用して作成します。 `--target` がない場合、CLI は `whoami` を通じてこのライブ ルート自体の端末 ID を解決します。別のセッションの場合は、アドレス帳 (`clawdline guide send`) のライブ **端末 ID** を `--target` として使用します。 `--from` のデフォルトは、環境からのこのライブ ルートの会話 ID です。 CLI は、コマンド ラインに入力せずにマシンの認証情報を読み取り、ソース ID とターゲット ID を挿入し、デーモンの永続的なメモ ID を出力します。結果が不確かな場合は、出力された `--key` を再利用します。
+JSONボディファイルを使用して作成します。 `--target` がない場合、CLI は `whoami` を通じてこのライブ ルート自体の端末 ID を解決します。別のセッションの場合は、アドレス帳 (`clawdline guide ja send`) のライブ **端末 ID** を `--target` として使用します。 `--from` のデフォルトは、環境からのこのライブ ルートの会話 ID です。 CLI は、コマンド ラインに入力せずにマシンの認証情報を読み取り、ソース ID とターゲット ID を挿入し、デーモンの永続的なメモ ID を出力します。結果が不確かな場合は、出力された `--key` を再利用します。
 
 ```json
 {"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
@@ -582,7 +587,7 @@ clawdline note create --body-file note.json
 
 ## 10. ボード
 
-ボードには 3 つの構造 (ボード項目、バックログ、各セッション独自の ToDo リスト) があり、**その内容を決定するのは人です**。セッションは、Clawdline 経由で送信されたその人自身のメッセージが指示した場合にのみボード アイテムを作成します。それ以外の場合は提案します。自らカードを提出することは決してありません。 1 つの例外はエピックの所有者です。エピックの計画をレビューした後、エピックを機能項目と問題項目に分割し、それらをセッション (`clawdline guide epic`) に割り当てることができます。
+ボードには 3 つの構造 (ボード項目、バックログ、各セッション独自の ToDo リスト) があり、**その内容を決定するのは人です**。セッションは、Clawdline 経由で送信されたその人自身のメッセージが指示した場合にのみボード アイテムを作成します。それ以外の場合は提案します。自らカードを提出することは決してありません。 1 つの例外はエピックの所有者です。エピックの計画をレビューした後、エピックを機能項目と問題項目に分割し、それらをセッション (`clawdline guide ja epic`) に割り当てることができます。
 
 **ボードアイテムと一緒に言うTODO/待辦/土度はそのアイテムのステップを意味します。** `--step`でアイテムに付けてください。 `clawdline todo add` とも書き込まないでください**。 `clawdline todo add` は、ボード項目のない、このセッション独自の To-Do として追跡するようその人が依頼したリストのみです。
 
@@ -633,7 +638,7 @@ clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--
 - カードには「HH:MM のメッセージからセッションによって割り当てられました」と書かれており、引用された言葉と新しいセッションが実行されるペルソナが示されています。
 - それぞれ何も書かない拒否: `item claim` (`run_unknown`、`run_expired`、`run_other_session`、`session_not_found`、`child_session`、`project_mismatch`、`item_assigned`、`item_terminal`、 `version_conflict`、および `run_claims_exhausted`: `item claim` と `item assign` は 1 つのメッセージの 5 つを共有します)。 `kind_person_assigns` (機能または問題のみ); `new_session_only` (自分で受け取るには、請求してください); `unknown_persona`; `persona_disabled_for_auto_assignment` (そのプロジェクトではロールは自動割り当てではオフになっています)。
 
-決して自分の意思で項目を要求したり割り当てたりしないでください (その人のメッセージ名のみです)。また、セッション (`session_cannot_create_item`) を拒否するその人の `POST /v1/work/v2/items/<id>/assign` を決して使用しないでください。エピックの所有者は、エピック自身の子にも `clawdline item assign` (`clawdline guide epic`) を割り当てます。
+決して自分の意思で項目を要求したり割り当てたりしないでください (その人のメッセージ名のみです)。また、セッション (`session_cannot_create_item`) を拒否するその人の `POST /v1/work/v2/items/<id>/assign` を決して使用しないでください。エピックの所有者は、エピック自身の子にも `clawdline item assign` (`clawdline guide ja epic`) を割り当てます。
 
 **ボード アイテムに対して開いた新しいセッションに名前を付けます。** その目的と範囲を読んだ後、実際のタスクを説明する短い名前を選択し、`clawdline item name <item id> "<task name>"` を実行します。これにより、ボード アイテムのタイトルを変更したり、別のモデル ターンを開始したりすることなく、セッション名が 1 回変更されます。アクティブな新しいセッションの所有者だけがそれを行うことができます。同じ名前を再度送信しても安全です。別の名前は拒否されますが、手動でセッション タイトルを設定することはできます。既存のセッションにボード アイテムを指定すると、そのセッションの名前はそのまま残ります。
 
@@ -775,7 +780,7 @@ POST /v1/work/v2/agent/items/<id>/steps     (Idempotency-Key required)
 clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
 ```
 
-`POST /v1/work/v2/agent/items/<id>/documents` を送信します (§10 の Epic 部分、`clawdline guide epic` にフィールドがリストされています)。コマンドが読み取る認証情報なしでそのルートへの手書きの curlは、`401 unauthorized` と応答します。ボディは Markdown で、最大 64 KiB です。生のデバッグ ログとしてではなく、問題を報告した人に向けて書き込み、個人データが含まれないようにします。アクティブな所有者は、アイテムが終了する前にそれを追加する必要があります。バージョンの競合後に再読み込みします。完了レポートは説明的なものであり、検証、ランディング、展開の証拠に代わることはありません。存在すると、閉じたボード アイテムに残り、セッションの最近完了した行から直接開きます。
+`POST /v1/work/v2/agent/items/<id>/documents` を送信します (§10 の Epic 部分、`clawdline guide ja epic` にフィールドがリストされています)。コマンドが読み取る認証情報なしでそのルートへの手書きの curlは、`401 unauthorized` と応答します。ボディは Markdown で、最大 64 KiB です。生のデバッグ ログとしてではなく、問題を報告した人に向けて書き込み、個人データが含まれないようにします。アクティブな所有者は、アイテムが終了する前にそれを追加する必要があります。バージョンの競合後に再読み込みします。完了レポートは説明的なものであり、検証、ランディング、展開の証拠に代わることはありません。存在すると、閉じたボード アイテムに残り、セッションの最近完了した行から直接開きます。
 
 `/v1/board` は、Swift アプリの古いカードで、読み取り専用です。ランディングは重要な事実です。アイテムが手動でランディングしたとマークされることはありません (`422 landing_is_broker_fact`)。
 
@@ -828,11 +833,11 @@ clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]
 clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona <id>])
 ```
 
-- 端末 ID はセッション アドレス帳 `GET /v1/orchestrator/sessions` (`clawdline guide send`) にあります。セッションはエピックのプロジェクトで動作する必要があります。子を自分自身に割り当てることができ、`--assign-new` はエピックに名前を付けるルート割り当てで新しいセッションを開きます。 `--assign` フラグがないと、子はその人を割り当てられずに待機します。
+- 端末 ID はセッション アドレス帳 `GET /v1/orchestrator/sessions` (`clawdline guide ja send`) にあります。セッションはエピックのプロジェクトで動作する必要があります。子を自分自身に割り当てることができ、`--assign-new` はエピックに名前を付けるルート割り当てで新しいセッションを開きます。 `--assign` フラグがないと、子はその人を割り当てられずに待機します。
 - `item child` は、そのバージョンのエピックを読み取り、そのべき冪性キーを出力し (`--key` は同じ書き込みを再試行します)、子を出力します。 `{"expected_version", "session_id", "kind", "title", "description", "steps"?, "deployment_policy"?, "assign"?: {"mode": "existing_session", "terminal_id"} | {"mode": "new_session", "assistant"?, "model"?, "persona"?}}`で`POST /v1/work/v2/agent/items/<epic id>/children`、`{"item", "assigned", "assignment_error"?: {"code", "message"}}`で`201`と答えました。その子はエピックのプロジェクトに属しており、`parent_id` (エピック) を持ち、そのカードにはエピックの所有者であるセッションが作成したことが記載されています。そのステップは、`--step` 行、または割り当てられた後の説明のリスト (何も指定しない場合) です。
 - 子が最初に作成され、次に割り当てられます。割り当てが失敗すると、子は **未割り当てのまま**、答えには `assignment_error` と割り当てのコード (`session_unavailable`、`project_mismatch`、`assignment_failed`、…) が含まれ、コマンドは 1 で終了します。`item assign` で再度割り当てるか、その人にそのまま残します。
 - `item assign` は `POST /v1/work/v2/agent/items/<child id>/assign` と `{"expected_version", "session_id", "mode", "terminal_id"? | "assistant"?, "model"?, "persona"?}` です。これは、エピックの開いている子を別のセッションに移動します。これは、ユーザーの選択によって行われるのと同じ割り当てです。
-- 拒否、それぞれ何も書いていません: `not_epic_owner` (あなたはエピックの所有者ではありません)、`parent_not_epic` (親はエピックではありません)、`epic_not_planned` (エピックはまだ `implementing` より前です: 子はレビューされた計画から出てきます)、`item_terminal` (エピックは終了しました)、 `child_kind_not_allowed` (`feature` または `issue` のみ)、`epic_children_full` (エピックはオープンまたはクローズにかかわらず最大 32 個の子を保持します)、`not_epic_child` (エピックの子ではないアイテムの `item assign` — メッセージで要求されない限り、その人が割り当てます: `clawdline guide board`)、 `invalid_assignment`、`version_conflict`、`persona_not_applicable` (422: 既存のセッションを持つペルソナ)、および `unknown_persona` (400: カタログにない ID)。
+- 拒否、それぞれ何も書いていません: `not_epic_owner` (あなたはエピックの所有者ではありません)、`parent_not_epic` (親はエピックではありません)、`epic_not_planned` (エピックはまだ `implementing` より前です: 子はレビューされた計画から出てきます)、`item_terminal` (エピックは終了しました)、 `child_kind_not_allowed` (`feature` または `issue` のみ)、`epic_children_full` (エピックはオープンまたはクローズにかかわらず最大 32 個の子を保持します)、`not_epic_child` (エピックの子ではないアイテムの `item assign` — メッセージで要求されない限り、その人が割り当てます: `clawdline guide ja board`)、 `invalid_assignment`、`version_conflict`、`persona_not_applicable` (422: 既存のセッションを持つペルソナ)、および `unknown_persona` (400: カタログにない ID)。
 - **ペルソナ** は、新しいセッションが開始されるロールです。システム プロンプトに追加されるテキストで、会話全体でそのロールが機能するように機能します。これは新しいセッション (`--assign-new`、`--new`、`dispatch`) のみに適用されます。既存のセッションには、開いたセッションが保持されます。デフォルトではなし。ペルソナは、`CLAUDE.md`/`AGENTS.md`、概要、`CHILD.md`、またはこのプロトコルをオーバーライドすることはありません。 `GET /v1/personas` にそれらがリストされています。 ID (各リストの `teams` は、ペルソナが所属するすべてのチームを示します。1 つは複数のチームに所属する場合があります):
   - `architect` — エピックを計画中。
   - `backend` — デーモン、API、またはストア機能。
@@ -882,5 +887,5 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - `error.code` (フラット形状の場合は `error`) で分岐します。メッセージは人が読むためのものです。
 - `retry_after` は、それが容量の応答であることを意味します。その時間待ってから、同じリクエストを送信します。
 - `409 stale_write`、`503 orchestrator_store_busy`: ストアがビジーでした。同じリクエストを再度実行しても安全です。
-- `unknown` がどこであっても (所有権、生存性、ソース) は、デーモンがそれを読み取れなかったことを意味します。それは「存在しない」わけではないので、何も削除したり、無効になったと宣言したりする必要はありません。
+- `unknown` がどこであっても (所有権、生存性、ソース) は、デーモンがそれを読み取れなかったことを意味します。それは「存在しない」という意味ではありません。その対象を削除したり、失効したと断定したりしてはいけません。
 - 想定していたルートが `404 not_found` または `501` を返した場合、そのルートはこのデーモンにはありません。その事実を伝え、代わりに Swift アプリのルートやプロバイダー標準のサブエージェントへ切り替えないでください。

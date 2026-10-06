@@ -1,6 +1,6 @@
 # Clawdline 가이드
 
-이 가이드는 **Clawdline Next**가 실행되는 컴퓨터의 Claude Code 또는 Codex Assistant 세션을 위한 것입니다. 이 데몬이 현재 제공하는 기능만 설명합니다. 아래의 모든 경로는 가이드를 출력한 빌드에 등록되어 있고, 누락된 경로가 있으면 테스트가 실패합니다. 저장된 사본을 믿기보다 `clawdline guide`로 다시 출력하세요. `clawdline guide zh-Hant`는 대만 번체 중국어 가이드를 출력하며 `zh-TW`도 별칭으로 사용할 수 있습니다. `clawdline guide`는 핵심 부분과 나머지 부분의 이름을 출력합니다. 해당 작업에 이르면 `clawdline guide dispatch`처럼 필요한 부분을 출력하거나 `clawdline guide all`로 전체를 확인하세요. 핵심을 포함해 어느 부분이든 출력 첫 줄은 `guide-version: <sha256>`입니다. 같은 명령에 `--since <hash>`를 붙이고 내용이 바뀌지 않았다면 `unchanged <hash>` 한 줄만 출력합니다. `clawdline guide refused <code>`는 거부 코드를 설명하는 부분을 출력하며, 해당 부분이 없으면 표준 출력 없이 종료 코드 1로 끝납니다.
+이 가이드는 **Clawdline Next**가 실행되는 컴퓨터의 Claude Code 또는 Codex Assistant 세션을 위한 것입니다. 이 데몬이 현재 제공하는 기능만 설명합니다. 아래의 모든 경로는 가이드를 출력한 빌드에 등록되어 있고, 누락된 경로가 있으면 테스트가 실패합니다. 저장된 사본을 믿기보다 `clawdline guide`로 다시 출력하세요. `clawdline guide zh-Hant`는 대만 번체 중국어 가이드를 출력하며 `zh-TW`도 별칭으로 사용할 수 있습니다. `clawdline guide`는 핵심 부분과 나머지 부분의 이름을 출력합니다. 해당 작업에 이르면 `clawdline guide ko dispatch`처럼 필요한 부분을 출력하거나 `clawdline guide ko all`로 전체를 확인하세요. 핵심을 포함해 어느 부분이든 출력 첫 줄은 `guide-version: <sha256>`입니다. 같은 명령에 `--since <hash>`를 붙이고 내용이 바뀌지 않았다면 `unchanged <hash>` 한 줄만 출력합니다. `clawdline guide ko refused <code>`는 거부 코드를 설명하는 부분을 출력하며, 해당 부분이 없으면 표준 출력 없이 종료 코드 1로 끝납니다.
 
 이 가이드에서 **단계(step)**는 항목의 체크리스트 항목 하나, 작업의 **쓰기 범위(writes)**는 변경 가능한 경로, **담당(assignment)**은 항목의 소유자, **부분(part)**은 이 가이드의 이름 있는 구성 부분을 뜻합니다.
 
@@ -20,7 +20,7 @@ Swift 앱은 2026-09-19에 퇴역했습니다. 실행이 중지되었고 로그�
 
 그 외에는 사람과 대화하는 일반 세션인 **root**입니다. 아래 내용은 root를 위한 것입니다.
 
-첫 메시지에 *“You are an independently owned Clawdline Feature Root …”*라고 쓰여 있거나 보드 항목이 배정되었다면 다음으로 `clawdline guide feature-root`를 출력하세요. 항목을 읽는 단계부터 `done`까지의 일반적인 전체 흐름과 드문 상황에 필요한 부분을 안내합니다.
+첫 메시지에 *“You are an independently owned Clawdline Feature Root …”*라고 쓰여 있거나 보드 항목이 배정되었다면 다음으로 `clawdline guide ko feature-root`를 출력하세요. 항목을 읽는 단계부터 `done`까지의 일반적인 전체 흐름과 드문 상황에 필요한 부분을 안내합니다.
 
 ## 2. 데몬에 연결하기
 
@@ -32,7 +32,7 @@ Swift 앱은 2026-09-19에 퇴역했습니다. 실행이 중지되었고 로그�
 | `clawdline session report --summary "…"` | 완료한 턴을 기록합니다(§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | 완료된 세션을 점검하고 닫습니다. 강제 종료는 하지 않습니다(§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 자신이 맡은 하위 작업을 child에게 배정합니다(§4) |
-| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 자신이 담당하는 보드 항목을 읽고 진행합니다(`clawdline guide feature-root`, §10) |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 자신이 담당하는 보드 항목을 읽고 진행합니다(`clawdline guide ko feature-root`, §10) |
 | `clawdline todo add\|list\|done` | 사람이 요청했을 때만 이 세션의 할 일 목록을 관리합니다(§10) |
 | `clawdline heavy -- <command…>` | 이 컴퓨터의 단일 컴파일 슬롯에서 빌드나 테스트를 실행합니다(§11) |
 | `clawdline send --to <terminal> "…"` | 다른 세션에 메시지를 전달합니다(§8) |
@@ -46,7 +46,7 @@ Swift 앱은 2026-09-19에 퇴역했습니다. 실행이 중지되었고 로그�
 | `clawdline cloud pair [--offer <code>]` | Cloud 브라우저 하나를 이 컴퓨터와 페어링합니다 |
 | `clawdline task show [--json] <task id>` | child 작업 하나의 상태, 판정, 요약, 남은 일의 제목, 검증, 반영 내역과 체크아웃을 간략히 보여줍니다(§5) |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | 모든 child 또는 `--any`로 지정한 하나가 끝날 때까지 기다리고, 각각을 `task show`처럼 표시한 뒤 알림을 닫습니다. 종료 코드는 전체 성공 0, 하나라도 실패 1, 실패 없이 취소 5, 시간 초과 3, 작업 읽기 실패 4이며 우선순위는 4, 3, 1, 5입니다(§5) |
-| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 배포·확인이나 CI 대기처럼 오래 걸리는 명령을 데몬에 맡기고 즉시 돌아옵니다. 턴을 마치면 종료 시 child 완료와 같은 `<clawdline-notice>`가 입력됩니다(§5a, `clawdline guide callback`) |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 배포·확인이나 CI 대기처럼 오래 걸리는 명령을 데몬에 맡기고 즉시 돌아옵니다. 턴을 마치면 종료 시 child 완료와 같은 `<clawdline-notice>`가 입력됩니다(§5a, `clawdline guide ko callback`) |
 | `clawdline task cancel <task id> --reason "…"` | 잘못 배정한 child를 취소합니다. 탭을 닫고 쓰기 범위와 슬롯을 해제하되, 커밋이 있는 브랜치는 보존합니다(§5) |
 | `clawdline task ack <task id> <notice id>` | 완료 알림을 수동으로 닫습니다. 보통은 `task show`나 `task wait`가 닫으므로 드물게 사용합니다(§5) |
 | `clawdline task accept <task dir>` | child가 지시서 수령을 확인합니다. root는 실행하지 않습니다 |
@@ -180,7 +180,7 @@ ASSIGNMENT.md에 **HANDOFF** 제목이 있다면 다른 세션이 구현을 시�
 **3. 구현하기 전.**
 
 - Captured planning이 켜져 있고 인수 기준이 없다면 `clawdline item acceptance <item id> --body-file acceptance.md`로 관찰 가능한 기준을 적습니다.
-- Needs independent review가 선택되었거나 Epic이라면 먼저 `clawdline guide epic`의 검토된 계획 절차를 따릅니다. 선택되지 않았다면 계획도 검토 child도 필요하지 않습니다.
+- Needs independent review가 선택되었거나 Epic이라면 먼저 `clawdline guide ko epic`의 검토된 계획 절차를 따릅니다. 선택되지 않았다면 계획도 검토 child도 필요하지 않습니다.
 - 여러 단계로 진행할 작업인데 체크리스트가 없다면 `clawdline item step-add <item id> "first" "second" …`로 한 번씩 검증할 수 있는 단계 두 개에서 여덟 개를 추가합니다. 단일 변경에는 단계가 없어도 됩니다.
 - 그다음 `clawdline item phase <item id> implementing`을 실행합니다.
 
@@ -196,9 +196,9 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - 제목은 무엇이 달라질지를 말하는 한 줄이며 최대 60자입니다. 콜론(`:` 또는 `：`)은 관찰과 설명을 붙이므로 거부됩니다. 주어가 "the user"인 제목이나 코드 서식 식별자로 시작하는 제목도 거부됩니다. 각각 `bad_task`와 이유를 담은 `title: …`로 응답합니다.
 - 지시서는 독립적으로 이해할 수 있어야 합니다. 확인한 사실마다 `file:line`이나 확인 명령을 넣어 child가 다시 찾지 않게 하세요.
 - 조사 또는 Explore child의 지시서에는 질문의 답을 얻으면 끝나는 중단 조건과 턴 제한도 넣습니다.
-- 읽기 전용 작업은 `--claims ""`를 사용합니다. 모든 플래그와 거부 코드는 `clawdline guide dispatch`에 있습니다.
+- 읽기 전용 작업은 `--claims ""`를 사용합니다. 모든 플래그와 거부 코드는 `clawdline guide ko dispatch`에 있습니다.
 
-**5. child가 완료되면** 입력창에 `<clawdline-notice>` 줄이 입력됩니다. `clawdline task show <task id>`를 실행하고 결과를 통합하세요. 읽으면 알림이 닫히므로 별도 ACK는 필요하지 않습니다. **배정 후에는 턴을 끝내세요.** 알림이 다시 깨워 줍니다. 열린 턴에서 계속 폴링하면 매번 전체 컨텍스트를 다시 읽습니다. 다른 할 일이 없고 반드시 기다려야 할 때만 `clawdline task wait <task id>…`를 실행하세요(기본 `--timeout 9m`, 첫 번째 완료를 기다리려면 `--any`). worktree child의 결과는 **브랜치를 대상에 병합하여** 통합합니다. **병합 자체가 몇 분 안에 반영을 기록합니다.** 별도 반영 기록을 게시하지 마세요. `clawdline landings`는 아직 해야 할 반영을 나열합니다. `--claims ""`로 배정한 child가 아무것도 쓰지 않았다면 브로커가 `nothing_to_land`를 기록합니다. 그 밖의 경우는 `clawdline task land <task id> <state>`를 사용합니다(`clawdline guide landing`).
+**5. child가 완료되면** 입력창에 `<clawdline-notice>` 줄이 입력됩니다. `clawdline task show <task id>`를 실행하고 결과를 통합하세요. 읽으면 알림이 닫히므로 별도 ACK는 필요하지 않습니다. **배정 후에는 턴을 끝내세요.** 알림이 다시 깨워 줍니다. 열린 턴에서 계속 폴링하면 매번 전체 컨텍스트를 다시 읽습니다. 다른 할 일이 없고 반드시 기다려야 할 때만 `clawdline task wait <task id>…`를 실행하세요(기본 `--timeout 9m`, 첫 번째 완료를 기다리려면 `--any`). worktree child의 결과는 **브랜치를 대상에 병합하여** 통합합니다. **병합 자체가 몇 분 안에 반영을 기록합니다.** 별도 반영 기록을 게시하지 마세요. `clawdline landings`는 아직 해야 할 반영을 나열합니다. `--claims ""`로 배정한 child가 아무것도 쓰지 않았다면 브로커가 `nothing_to_land`를 기록합니다. 그 밖의 경우는 `clawdline task land <task id> <state>`를 사용합니다(`clawdline guide ko landing`).
 
 **6. 완료 보고서.** 원인 파악에 상당한 조사가 필요했다면 작성합니다. 직접 관찰한 단순 수정에는 필요하지 않습니다. `done` 전에 추가하세요. 완료 후에는 담당자가 해제되어 `409 not_item_owner`가 나옵니다.
 
@@ -243,7 +243,7 @@ clawdline item finish <item id> … --deployment "what went live, where, which v
 
 **거부된 경우.** `version_conflict`라면 같은 명령을 다시 실행하세요. 명령이 버전을 다시 읽습니다. `steps_incomplete`는 아직 열린 단계가 있다는 뜻입니다. 그 밖의 코드는 §12와 해당 작업의 부분을 차례로 읽으세요.
 
-**드문 작업별 안내:** `clawdline guide board`는 제안·결정·할 일·완료 항목 다시 열기·사람을 기다리기·게이트와 단계별 거부, `clawdline guide epic`은 계획·계획 검토·Epic의 하위 항목·persona, `clawdline guide landing`은 수동 반영·인계(오래 작업한 Root의 이정표 인계 포함)·Root 배정, `clawdline guide running`은 멈춘 child·남은 일·재시작을 다룹니다.
+**드문 작업별 안내:** `clawdline guide ko board`는 제안·결정·할 일·완료 항목 다시 열기·사람을 기다리기·게이트와 단계별 거부, `clawdline guide ko epic`은 계획·계획 검토·Epic의 하위 항목·persona, `clawdline guide ko landing`은 수동 반영·인계(오래 작업한 Root의 이정표 인계 포함)·Root 배정, `clawdline guide ko running`은 멈춘 child·남은 일·재시작을 다룹니다.
 
 ## 3. 배정하기 전에 기존 작업 확인
 
@@ -281,7 +281,7 @@ clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--as
 
 재시도가 필요할 수 있는 검토 작업은 첫 호출 전에 소문자 UUID를 정하고 모든 시도에 `--task-id`로 전달하세요. 명령은 원래 배정 의도의 비공개 사본을 `task.json` 옆에 보관하므로 데몬이 지시서를 다시 쓴 뒤에도 같은 요청을 재전송할 수 있습니다. 브로커는 원래 작업 ID와 `(replayed)`를 돌려줍니다. 지시서가 바뀌면 로컬에서 거부됩니다. 명령이 시간 초과되거나 출력이 유실되었다면 실패로 간주하기 전에 `GET /v1/orchestrator/tasks/<id>`를 확인하세요. 작업이 없다면 같은 ID와 지시서로 재시도할 수 있습니다. 명시적인 거부는 작업을 만들지 않았으므로 원인을 고친 뒤 재시도할 수 있습니다.
 
-`--persona <id>`는 내장 persona로 child를 시작합니다(`task.json`의 `persona`). 현재 빌드에 없는 ID는 로컬에서 거부됩니다. `plan_review`를 포함해 어느 종류에도 기본 persona가 없습니다. 원하면 직접 `code-reviewer`를 지정하세요. `GET /v1/personas`는 이 빌드의 ID 목록을 반환합니다. persona의 의미는 §10의 Epic 부분(`clawdline guide epic`)에 있습니다.
+`--persona <id>`는 내장 persona로 child를 시작합니다(`task.json`의 `persona`). 현재 빌드에 없는 ID는 로컬에서 거부됩니다. `plan_review`를 포함해 어느 종류에도 기본 persona가 없습니다. 원하면 직접 `code-reviewer`를 지정하세요. `GET /v1/personas`는 이 빌드의 ID 목록을 반환합니다. persona의 의미는 §10의 Epic 부분(`clawdline guide ko epic`)에 있습니다.
 
 바이너리 없이 호출할 때 명령이 대신 수행하는 단계는 다음과 같습니다.
 
@@ -569,7 +569,7 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 
 **채팅에서 선택을 요청하기 전에** 실제 질문, 결정에 필요한 장단점, 완전한 답변 제안 2–4개가 들어간 `answer` 메모 하나를 만듭니다. 버튼을 탭하면 답안이 대화 메시지로 전송되므로 각 `draft`는 자체적으로 뜻이 분명해야 합니다. 생성 후에는 채팅에서 짧게 가리키면 됩니다. 메모를 만들었거나 사람이 처리됨으로 표시했다는 사실을 답변으로 간주하지 마세요. 버튼을 탭하거나 직접 입력해 보낸 대화 메시지를 기다린 뒤 선택에 따라 행동하세요. 메모 생성이 실패하면 그 사실을 말하고 채팅에서 직접 질문하세요. Agent가 처리할 수 있는 일상적인 선택에는 쓰지 말고 사람의 판단이 필요한 결정에 사용합니다.
 
-JSON 본문 파일로 만듭니다. `--target`이 없으면 CLI가 `whoami`로 활성 Root의 터미널 ID를 찾습니다. 다른 세션을 대상으로 할 때는 주소록(`clawdline guide send`)의 활성 **터미널 ID**를 `--target`에 지정하세요. `--from`은 기본적으로 환경의 활성 Root 대화 ID입니다. CLI가 인증 정보를 명령줄에 두지 않고 읽으며 발신·대상 ID를 넣고 데몬의 영구 메모 ID를 출력합니다. 결과가 불확실하면 출력된 `--key`를 재사용하세요.
+JSON 본문 파일로 만듭니다. `--target`이 없으면 CLI가 `whoami`로 활성 Root의 터미널 ID를 찾습니다. 다른 세션을 대상으로 할 때는 주소록(`clawdline guide ko send`)의 활성 **터미널 ID**를 `--target`에 지정하세요. `--from`은 기본적으로 환경의 활성 Root 대화 ID입니다. CLI가 인증 정보를 명령줄에 두지 않고 읽으며 발신·대상 ID를 넣고 데몬의 영구 메모 ID를 출력합니다. 결과가 불확실하면 출력된 `--key`를 재사용하세요.
 
 ```json
 {"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
@@ -584,7 +584,7 @@ clawdline note create --body-file note.json
 
 ## 10. 보드
 
-보드에는 보드 항목, Backlog, 각 세션의 자체 할 일 목록이라는 세 구조가 있으며, **무엇을 올릴지는 사람이 결정합니다.** 세션은 Clawdline을 통해 보내진 사람 자신의 메시지가 명시적으로 지시할 때만 보드 항목을 만듭니다. 그 외에는 제안합니다. 스스로 카드를 만들지 않습니다. 예외는 Epic 담당자입니다. 검토된 Epic 계획을 마친 뒤 Epic을 Feature와 Issue 항목으로 나누고 세션에 배정할 수 있습니다(`clawdline guide epic`).
+보드에는 보드 항목, Backlog, 각 세션의 자체 할 일 목록이라는 세 구조가 있으며, **무엇을 올릴지는 사람이 결정합니다.** 세션은 Clawdline을 통해 보내진 사람 자신의 메시지가 명시적으로 지시할 때만 보드 항목을 만듭니다. 그 외에는 제안합니다. 스스로 카드를 만들지 않습니다. 예외는 Epic 담당자입니다. 검토된 Epic 계획을 마친 뒤 Epic을 Feature와 Issue 항목으로 나누고 세션에 배정할 수 있습니다(`clawdline guide ko epic`).
 
 **보드 항목과 함께 말한 TODO / 待辦 / 土度는 그 항목의 단계입니다.** `--step`으로 항목에 넣으세요. `clawdline todo add`로 중복 기록하지 마세요. 그 명령은 보드 항목 없이 이 세션만의 할 일로 추적해 달라고 사람이 요청한 목록에만 씁니다.
 
@@ -635,7 +635,7 @@ clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--
 - 카드에는 사람의 말을 인용한 "HH:MM의 메시지를 바탕으로 세션이 배정" 표시와 새 세션의 persona가 보입니다.
 - 아무것도 쓰지 않는 거부 코드는 `item claim`과 같은 `run_unknown`, `run_expired`, `run_other_session`, `session_not_found`, `child_session`, `project_mismatch`, `item_assigned`, `item_terminal`, `version_conflict`, `run_claims_exhausted`입니다. `item claim`과 `item assign`은 한 메시지의 다섯 번 한도를 공유합니다. 그 밖에 `kind_person_assigns`(Feature나 Issue만 가능), `new_session_only`(직접 맡으려면 claim 사용), `unknown_persona`, `persona_disabled_for_auto_assignment`(대상 프로젝트에서 자동 배정 역할 꺼짐)가 있습니다.
 
-사람의 메시지가 가리킨 항목 외에는 자발적으로 맡거나 배정하지 마세요. 사람 전용 경로 `POST /v1/work/v2/items/<id>/assign`도 사용하지 마세요. 세션은 `session_cannot_create_item`으로 거부됩니다. Epic 담당자는 `clawdline item assign`으로 자신의 하위 항목도 배정합니다(`clawdline guide epic`).
+사람의 메시지가 가리킨 항목 외에는 자발적으로 맡거나 배정하지 마세요. 사람 전용 경로 `POST /v1/work/v2/items/<id>/assign`도 사용하지 마세요. 세션은 `session_cannot_create_item`으로 거부됩니다. Epic 담당자는 `clawdline item assign`으로 자신의 하위 항목도 배정합니다(`clawdline guide ko epic`).
 
 **보드 항목을 위해 열린 새 세션의 이름을 정합니다.** 목표와 범위를 읽은 뒤 실제 작업을 설명하는 짧은 이름으로 `clawdline item name <item id> "<task name>"`을 실행하세요. 보드 제목을 바꾸거나 다른 모델 턴을 시작하지 않고 세션 이름을 한 번 바꿉니다. 활성 새 세션 담당자만 실행할 수 있습니다. 같은 이름을 재전송하면 안전하고 다른 이름은 거부됩니다. 사람은 여전히 세션 제목을 수동으로 정할 수 있습니다. 기존 세션에 준 항목은 세션 이름을 바꾸지 않습니다.
 
@@ -777,7 +777,7 @@ Issue나 사고의 근본 원인을 찾거나 그럴듯한 대안과 실제 수�
 clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
 ```
 
-명령은 `POST /v1/work/v2/agent/items/<id>/documents`를 대신 보냅니다(필드는 §10의 Epic 부분, `clawdline guide epic`). 명령이 읽는 인증 정보 없이 직접 만든 curl을 보내면 `401 unauthorized`입니다. 본문은 최대 64 KiB의 Markdown입니다. 원시 디버그 로그가 아니라 문제를 제기한 사람이 이해할 보고서를 쓰고 비공개 정보는 제외하세요. 활성 담당자는 항목이 종료되기 전에 추가해야 하며 버전 충돌 시 다시 읽어야 합니다. 완료 보고서는 작성자가 있는 서술 기록일 뿐 검증·반영·배포 증거를 대신하지 않습니다. 있으면 닫힌 보드 항목에 남고 세션의 Recently Done 행에서 바로 열립니다.
+명령은 `POST /v1/work/v2/agent/items/<id>/documents`를 대신 보냅니다(필드는 §10의 Epic 부분, `clawdline guide ko epic`). 명령이 읽는 인증 정보 없이 직접 만든 curl을 보내면 `401 unauthorized`입니다. 본문은 최대 64 KiB의 Markdown입니다. 원시 디버그 로그가 아니라 문제를 제기한 사람이 이해할 보고서를 쓰고 비공개 정보는 제외하세요. 활성 담당자는 항목이 종료되기 전에 추가해야 하며 버전 충돌 시 다시 읽어야 합니다. 완료 보고서는 작성자가 있는 서술 기록일 뿐 검증·반영·배포 증거를 대신하지 않습니다. 있으면 닫힌 보드 항목에 남고 세션의 Recently Done 행에서 바로 열립니다.
 
 `/v1/board`는 퇴역한 Swift 앱의 오래된 카드를 읽기 전용으로 보여줍니다. 반영은 브로커가 판정하는 사실이므로 항목을 수동으로 반영 완료 표시할 수 없습니다(`422 landing_is_broker_fact`).
 
@@ -829,7 +829,7 @@ clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]
 clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona <id>])
 ```
 
-- 터미널 ID는 세션 주소록 `GET /v1/orchestrator/sessions`에 있습니다(`clawdline guide send`). 받는 세션은 Epic의 프로젝트에서 작업해야 합니다. 자신에게 배정할 수도 있습니다. `--assign-new`는 Epic을 명시한 Root Assignment로 새 세션을 엽니다. `--assign` 옵션이 없으면 하위 항목은 사람이 배정할 때까지 미배정으로 남습니다.
+- 터미널 ID는 세션 주소록 `GET /v1/orchestrator/sessions`에 있습니다(`clawdline guide ko send`). 받는 세션은 Epic의 프로젝트에서 작업해야 합니다. 자신에게 배정할 수도 있습니다. `--assign-new`는 Epic을 명시한 Root Assignment로 새 세션을 엽니다. `--assign` 옵션이 없으면 하위 항목은 사람이 배정할 때까지 미배정으로 남습니다.
 - `item child`는 Epic 버전을 읽고 요청 전 Idempotency-Key를 출력합니다(`--key`로 같은 쓰기 재시도). 이어 하위 항목을 출력합니다. 요청은 `POST /v1/work/v2/agent/items/<epic id>/children`에 `{"expected_version", "session_id", "kind", "title", "description", "steps"?, "deployment_policy"?, "assign"?: {"mode": "existing_session", "terminal_id"} | {"mode": "new_session", "assistant"?, "model"?, "persona"?}}`를 보내며 응답은 `201`과 `{"item", "assigned", "assignment_error"?: {"code", "message"}}`입니다. 하위 항목은 Epic의 프로젝트에 있고 Epic을 가리키는 `parent_id`를 지니며 카드에는 Epic 담당 세션이 만들었다고 표시됩니다. 단계는 `--step` 행을 쓰고, 없다면 배정 시 설명의 목록에서 가져옵니다.
 - 하위 항목을 먼저 만들고 다음에 배정합니다. 배정 실패 시 하위 항목은 **미배정으로 남고**, 응답에 `session_unavailable`, `project_mismatch`, `assignment_failed` 같은 `assignment_error` 코드가 있으며 명령은 종료 코드 1로 끝납니다. `item assign`으로 다시 배정하거나 사람이 맡도록 남겨 두세요.
 - `item assign`은 `POST /v1/work/v2/agent/items/<child id>/assign`에 `{"expected_version", "session_id", "mode", "terminal_id"? | "assistant"?, "model"?, "persona"?}`를 보냅니다. 자신이 맡은 Epic의 열린 하위 항목을 다른 세션에 옮기며, 사람이 선택해 배정한 것과 같습니다.

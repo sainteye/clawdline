@@ -1,0 +1,690 @@
+{
+  "zh-Hant": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "99d7f2a9332ae089c94d47c08898718827627c5d428572963016dfa37dddbb14"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "1514008fac3e19254e2488c072f6f58d9518a5aa21c70f9e6cbed6ce474fa8c2"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "f181551a1b964d1f6a2acc88ae2e0e00ef25e4aa6fc8059d8b5bd163e897b7af"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "69bb26a725aa95e31f38ba32e86864f9eeb4b8bff1d0b0380ac20c72b4c9364a"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "607d1006d7cb26e47fdc6996517f8d993b458c3c251a1381b4ff3aebbbd8a926"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "3a5a85a136139a1f27cadf899551d8494c67d8a7d6befe1b6eb73cb5706edb5b"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "9fb3ec0fc06aff04ebb435d566e8af57ebbedb6a9474abc8def901e1a4e9e99f"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "a01560e303e98bb4690c9d4a7ffed784ff0c9864458fd5ef41ce0c5dd3b13d1e"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "92c004f217838268dae77093383344673b597a5bed75240048459123fe170167"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "b6e66a7d6e58659f0b42cde10383fe59d45c06a4b9e8a02bd88e6d268cd8b69d"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "39b92abcffdf5f62dda945a5ea488d2b541feafff4b1daf8f5cd80dda6fe1dc6"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "266420b8bd19d95ef7e445ea914dac9b60b593249c79882579b0e4c927d2fc61"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "664717573a6fa23872dd57074907773afbbd9a1520138166eecbe528c6f41405"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "1d8c86a25389c8252dc166eb4a4f31de8d13fd3b330d2b1efe901a731c267440"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "0ff6634dad1984fa3d6658281b732c75bacab32d1760a4dd0b0fdca8e826094e"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "1d17cf90d81d429dd406beb2569e2ab755a7517665957aca024943bd5787f5da"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "f3a5d0f5a0cbd09e325db3d197b4d05e2199d1aba20c9da5b1b217f609a6be65"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "9053467e18c0b62dd036edb39b6b4c852016e6c51c4ccb6a209c2f367f94e2b6"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "2dd4f2ea527b8023a8e6f79f91877426611fcd53bcbb620ebc3df6c613be1d99"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "5c9054bfae33ef904af8d48bbdf097e49d83dc9e5113db90c5648b0c2306f513"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "8336dc7413c187fd31b164d22352c81093304c5d3713e5a1ee9f8a0fc7b70fcb"
+    }
+  },
+  "pt-BR": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "3aaec2a3541eaefc1e55d5996d786d23495becf2babb7ea0e944bb0a2ada4d5b"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "8f43a1c58db88975efc7612adc19d7350ba5141d2482eaf7e61969538d3749a5"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "71fdac60ff0362e3c2130eca5265a75e504bdb00f0dcbb6c9b4bfdf88238ed67"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "0bd9d1df03b741332af8148cf53eedf5148d92f7183f5bc56c9fe2834656f346"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "97582954456b058da633f1fe09d97b2804b9411b13f5de50aee3781714ad4733"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "f0e9525dc1232562bb2da72452dc55493e78d67a7c87a4fc7eb03ecb10dcb3f6"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "8325b9e8c8148cb38c50410480376dfffe940fa0dc71abd4f27f74cd5179a2cf"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "1d188e6b0a6427c91193bfae45da9bef3c062a15571681bb01063b7f5538cfbc"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "d81c65a7de9f052a168d9b5b6a2f2160be96d6f3d64f7f0f4352f443e8f5a3c3"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "496e83ce8eeed10e98e99b70a37fc3fd1547a9054cf3f5f6068cec7eb625202d"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "c654aa42ce98b15b039c5a439bf85d83bac38cd3049513264ebba17970d955a7"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "b9b9055cfdebeed1b6c096ff87ecf925113f6e3f9105b3206923a61f1b84d81c"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "5f4cd579636d059ed3f1e57b9d75533a7ed98b9a584ce1cff83106fd774c83d7"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "ffd89c92f93ea9f18c9981a541f5034973cf137872ae25a4bf0b74ced6ab5c7e"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "4c32121c0c80c931fb514525a9a6c01b25e9e7d6019873e6b0109dddaed4181d"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "e51a0a1bd17d73044b493aa2328fe4b0d563ee64b39f9cbe0809d852406212b9"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "292faba19b1bc9aa632843dcef1a172329cf87b0b395f7ab526fd0664ae7ba04"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "dad5cbd433a2fdd7a3b9c843e6d0ee554cbd38ee70f5533d1645cbf7f22249ed"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "1ffe36e20287516aae4f5602554167fb35a8516c3e8765b53471672d09b70985"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "fdd82ba7e2b13db48acaf93bbe44177c92d94bc17ce5c1bc9853ad88b7170586"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "cac904fb219ebc7ef09f960fdc3d300192df70c257d9a5aee2883e496ab38766"
+    }
+  },
+  "ja": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "ca7cd36107a7951937fee00f1f1e8391179d4bbb3d8e26db9d864644bd5f5649"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "c76496ce941297339e9eafeef95f357f99b0bfa876d0f26567120c7d05d3acef"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "c88c5763daf755f77c91afeb5c23510db84ca53936b2b776dac24272561b551f"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "73c5a00e52fcd8d20c96ddaed339232ca5cf31ba2204731865ab380916d27c61"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "dcfb7088e127d36fd4359acae140fabc3cfca5376dcdbf48f4f9681322b730e0"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "fa4bc04ed3f449070687b0b4bcbbddb7ec1311bb52515eb3d8172685a15b223a"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "e8fd807ed677592178ffdf320f6c24abd3a2522e3a05064dc41a157786bd5db4"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "4b7fe4ae1305ec769ca99ae1e5bdd9e6421654e3625a2cc33471a41f1cbe5382"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "3b52134046a5798afcf7ffc3d98669ca508d030dc08ef0f2810152b529e55a9d"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "cc7587365908a946675ab884ace790a9624be79127d3cc413bb5133408218d0f"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "5c41520b9affa8d1dec8091e806645b25738b3837c29d22522124c4a8f31fc61"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "cd8d3b30af2b8fa604c2c145ca62c52a32ce722bd787140a92023f6ea8b6b943"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "c02f46da062ce76f30151f34f60230135cc5e599db1f98f0d56f3c94f16042b1"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "05acb7a55a6c6c2d0e3d1c39315a75ede3ac4510817c2fe0fee3d3da4f7e2f33"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "86fd2169a14d492d165c8ff9d72f02ead4239ed66de8c229a582d95503bffaf2"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "27b190856520984173c2bbedde9fdf89b2d721135dcfb430be7aa357569b0118"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "0c5855f3a328d59edb249b733935cb96193c3e958a07ae22aa6d7391bb325214"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "d6f48c960fd0afbebbe060e83c255a3627979ff8fee857207fcf5edd9269fd7b"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "08678c0fcc316fca90084350c3f16b701b7f4d1d4838565a2fafe16a9f7da338"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "174d550a15ff1df369f5c9740a7e54f677e4e7272b339c44528498d5e937d9e6"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "b6082de9dc2336f65f3637ceda591b5fb1e2c10ea484edcaac5ec4075ab305a7"
+    }
+  },
+  "fr": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "eb9963db4b50ac65fa344ce63bf986eddb4f2f1390e6f1909ae3a09d5113e574"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "ee51e15b7e8d50ac4953586e48700662ada2f18ce48de201d547354dd213b86f"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "bbaa077716d8bfe8ae35fe0ca706598993959233ad50c8dd0c2200a348a4892b"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "7a752391a7883b4f191e3406c0418223fbeefe0cd852e3ea1cdbefcc502389d0"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "1e3727a691fae79ba65791ff18e042a3c1d448d9f478372c7cdaeb734862ab7a"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "d933fcc7a3102be092dcd948df4d21a21afdd0c002958ca8d4df6254da659d70"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "0656887332580383ab042da2f5661591bf420732770f1b45106749927708836b"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "52857ef26a348641c0d52da7a1b661abe869fb0395931d4bad8d98de65954ba7"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "4a5d5fc7dc3d0dd437c06927e1fd2801fb4e5c51623a07f31b4eb86eb791945b"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "ed5b8db72f86737d9f306a79ba6bf6e81db8bb4595088b2536860929bbace908"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "4a39866d6f9cac84872eb00785c9ac9a73b0122dc03e55f5ab03b09418f52b8f"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "20cf6e04ba112552369a885697466997c632cc51d2fba95b29e7eeea64d6dadd"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "a3778f0c825d5b856d59e4ae8d9ab713dc05702257f40ac74ac19add8d09a381"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "42e87139cbc56f6b0fc557e22301d9990b6e7270b76c99f73937b2948acf74ec"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "1cca2bb867e8a25e3a02b682d10cc22b2c9e7049d934c399ae48d33745f564cd"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "ea5fb67e7939cf0b353b26eb84dbb1d50ecf9c0f681e5a26ab2e83eafba12b53"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "a3fa2e3d5277b063bdbbca2e830ceadf713908010c19a35a738801be3c94047f"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "bf7ee4648a5e9622701f365a851b8a5dd4ebd064dab296b8872278c57fa1a2c6"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "6cae5b022038b91db2b572ed68652a1f6bf468d9ca93dbec2a032b831dd71250"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "646802e6eb90b583fa9fe315201e9092dca3d62211313e35938326a23e2f4c57"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "7d64ec2fdb10e4912daa2376f86411693ea930cef04d963c92b3b8e2b86b8dad"
+    }
+  },
+  "zh-Hans": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "c5423633fa49b0173d2d5e873ab2d23eabbd8252461aa186b3ef9b40d66755a2"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "095fa8d7f3a79ffe943698e46f3051780cc7b438b25ee64fba92bd840eec8338"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "37b7182db7ba0cfe01085faaf342d3ccb2864e29b6213ae5367f3fa57e9b4246"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "0136488ad24eaf0cf7fcda1b62f491d018a6d6fb9d92771ca52a9f2e9d6dbb18"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "f5a5095f0ab27d628c46c67bc554d0c9fea7c5c3a21e21843328c324c65b4cbc"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "87bddbd78a9f345054684d00bd9ad2f9d564523aad8a658209f93fd6448b9c6e"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "622cd7c9daae4af5dc62dbc6ca2e221f41cdb5301fa5e988e13024725df5896c"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "f622b1f30e1e1f3373506683f3c9a491ddacbb25b4ca70119fbc010756e9a0a3"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "6223a9ad6d01bf4649e21df1f705722ad64b0a245fe93eede3f40c40630c0907"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "3b9e74b2db8b53895d6f6b2226951cc0b09dc9f0722cd694ddf8c32c6438c059"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "54f3938904560cc1be6c892a66bc3f54c50f3093c105a2950b1eb022e83a3a72"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "feb0dec26acf1d2165f34583fec5bee6d825d4e741b1bcae51ce4f0a08fcb577"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "10fffbfc74ebca9379f878ec40118e85bc9e12b56606193daee6dfb15ffc7777"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "07f6044ec98a28d29eed66ef2c7ac9fa35df9ca7aaa0861cf66206f419d4ba11"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "0cce8070fd1052e5c2c297fc6816d1d20e9f0bd5be73b899ce7a96838f5693e9"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "8aadae6bce0b9fb40de0233051be0277834af2f6bf795f439e7bdee4fb00856c"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "ee67932b9771e2a3f850899c4c2e492fadfe65575681f03a385d48f98d6026d4"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "109c935d1fce53b8c29d61d7b609119c4ff23ec7aeed6800b874dd5630f6692d"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "2ccfcdbe0bdf090ac6a6406bed49b5980af247a7c713d1a5426388475c9d749b"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "c92d3f895b2f0909e953a590b78bdeca990d152177b946cdcd075ba8391a52b0"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "17302b33e888057a20f88b5b40d427711a833123e99dbea10571d4be9af5a3b8"
+    }
+  },
+  "ko": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "36acaddb15d1f6abdc3fd87f98885a5ac3139103da8bd5da7994e4c8ea27e77f"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "d9249a81f64e16f4fb922f047a44a1eaa22461678f22eec948b69bb87a1fad37"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "fe5198c6602088d007bbdbc11281dffe12e308fd65dd8e2f779cd75bb1601bfe"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "b7d4e69597a89e67156264fe937045ac3b5809907e6cf54bebffc6dfd75dbdb3"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "22da6fa718272bf0748387669c25fb3096b9bad053b8d303675d28f30609b6e4"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "1488a65f4fa3290d22b953a5be8a1d651f1f4be09104626dac73561ac610227d"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "a63255ad61c794f4ab82f55ac1bcfae34e8a5472bdeb23d7779d47ff19c9a679"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "43e908c1a1f700c626130588322baa5a7fcd7464f3e0d80414cedb311c317be3"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "27fa6d9e2fc3596513967ae584352e8e684a3555246d1fe1aab2561d0e290f73"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "d3e5b3988e94720606d1f59e43d0f1aa708ef38523131a200d8ee5ce2b133c90"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "d2b7942e51ac6b574536501694da73f6fa7a9808632d3fe512e59a285bd9ff07"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "126581922214981224d3cf228b1d9acb4e863b137262ab16ff746de47e5ee8c5"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "309980427b17435f720883726daec1ae077f4a31a195c0e4526a247175aa2e4c"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "45b6291dc72a3c6636a3eefe1ebe6fad271bd9c40617a4c4299a75b538c6d6ec"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "680740ac555e29b5d638afdda5585100068ce5d76357d3f6f1f0ad11e527374a"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "482e82a036b7ac69cb1f352dfd42d5a5f16215c8a11f681d3d4a4634009076a4"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "3e1f95fc2b6a29a0a0724f40e1224867fcd3475f10d78684f50ecc116267e3e8"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "8c8339b9dea62af0fb133f1413040aa942792f555a61db61c95f5da81ccd653d"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "6f6627dc3582156e6627f39425dee865194d6d2bf759326eaf49c3c0e0d661e7"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "21403bc1efcef4f93ee6269f2f79b8694e0a1366267ddf7e8285cfa3549e6c17"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "041815a9abdc3e55d5da35e860a1cd977da35f543e34ab5b74a504223a0334a6"
+    }
+  },
+  "es": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "fdef74a52362e7ae735d62f04d0a3f32f307969e92410f0bc1da55fc9680daf7"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "4d4e378b28e851474ca69edadec33745dbe937c7a5be0e37a6f49d13db24865e"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "bad29163846587f452689b75ea10e2eea3892e409c32ee6a0c82c431fe37dd63"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "43430e306275dddad209be7c1af3315cc6c4f2480f359e3e8737b14dd0e918f1"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "8cd32eba83614284509e559394e08694f82d0880c74d7f72a3e9b6277c937de8"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "c4177d100b02dfa617ebe69654dca4e240a8145a6637ba3b8541dd6e9f3510fd"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "60eba7070d116f460b779665170b7adeda628272e121b88662346c7e1327fdd0"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "5f2a2871e8b1a40f60a1d06b11c205077431c76847eb283b9f730eb31eca7167"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "326a7e44f84f51a86f2aa1fc73358f90b62de775723de4c2177750546008b651"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "dd44244455e07991cf7acf26fdd38bac05d9ddbf329d7df7a1d41abd6ffc9608"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "1953e8b103a640c147d84578741fcb7c461fc7e2d6e50ebe24b12acf49072f27"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "78538f6bf91ed797c9dafeb122b2644dc111c667c4a7b994568a4df5ae59ae84"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "efe3a9e58c50f30fe94ffaa26f6b9b027794101c331cb70b8ccfef699302f425"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "1f37c599f06263f4c8ce517696ad1201f63fa1f0d104c64c9d66667388ff6dfd"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "8fe79b73f6609f6f348e66db8772c2c5d57dee2ed983bcc3d5a2dee5b9a3961c"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "cd383254d15d7a7939f50d25145bf20b0f3b5449039c5be0d0e3a53b13a41b3a"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "5bbd66666cf419b9cf682171a81a4f531e3cf27bfa7b7078542734ad832c1a7a"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "200214ac10f0b8e5832a17ea268aeb6e2bc34e19cb1bc45b1bfc6a9048a49123"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "e2f1d5975114aa38504c0092d08bae287dbe8a17931b6c634a6011b637761e1f"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "4d9dbc0999d61a69402b1a004dddba8df8c26a2445c848f7b7a59ef13f1e3131"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "62c0988014bb53484c031d63693c5e9d976281a63dde104b344a3a7ce97c1656"
+    }
+  },
+  "de": {
+    "intro": {
+      "source": "d4c6aeaecc96e6f8cc5d79cccc773b9fd5a958636fcaaa6696ee4784ae406b31",
+      "translation": "e23a9b7d051a61eaf00342b6f214e2fa3c86dde35ba256e35ef1f6abbb546beb"
+    },
+    "swift": {
+      "source": "dcd21596008a0d0d92c9db055c6bb0e0d45bfd48a23353d9928837317ac05889",
+      "translation": "1602f94697a15c24bde6b086f8a66d72ff7a3f1b3f5957e8b04cac646860e8f7"
+    },
+    "roles": {
+      "source": "358f166aed9f4303c3cff30f0c5a368f32248883ee14c9ffb2cd574fb62e5718",
+      "translation": "905237b6a44977127ba7a20850aec16df052bc322616ea98862d293f01e2213a"
+    },
+    "connect": {
+      "source": "a617880997775cf0c203aff9d1f1638cdd7a3b90a05fc6035bc220c45a9acc35",
+      "translation": "822eb2b5d01a6cdbad02ad665624f989268f4ba3d7ea3fab54d474208722a58c"
+    },
+    "cloud": {
+      "source": "4e47c4f584c62ba09751de9f2067b7e6e77726b5a88d315a014665b600530222",
+      "translation": "d3b1d9e0b33171ac286c7d2dbaaa284dc34510d85665f0bdc8457e690efc091a"
+    },
+    "project": {
+      "source": "87c8767a9995d6f9e7f71466ef5966a15fc126fa4826d911cd0dd31ac1ad81f2",
+      "translation": "f9aa5bc02a69e97a2d0fd65f3a06c751adab54141d00c823230290d019909e5d"
+    },
+    "feature-root": {
+      "source": "23de047a6ecdb7e1d2308a15148902cb1a008dd73550db8968dbcd97b864ab1e",
+      "translation": "1e9d36b74f7bfb41899da669fc04fd04a57438cd9a88b7a0d36958f6797b16ff"
+    },
+    "inventory": {
+      "source": "6a7e56bf93678a64930e11616e15134645a8c25544fd6f6dd1a8aebdb8bd901f",
+      "translation": "d34761875c5904bec697c6aad0fcac5344480e710c82b84f3c31e065de195d07"
+    },
+    "dispatch": {
+      "source": "1c7b6f5b7b93e4f778de7865462a5dcfde1df040465538fc4c1157c2f4a51b9a",
+      "translation": "672d63f676dfaee74420d96c361e6f2431ff1a99f06735f5e5f1e10d90b360fc"
+    },
+    "running": {
+      "source": "4068d290982cb7d60df26645a81fba8d1e38cbf5a0e5a02075e7fa908df786ef",
+      "translation": "3ae21a40fc2ddc280dac54aa454b6d4fe93b7aff7d7a28c07844878be3c58988"
+    },
+    "callback": {
+      "source": "3c034137ebbfa8b229c186df7a09dea2bc1e3b9f2cc1de24bf6e611b67496d91",
+      "translation": "03809f2db693040f227dc6028544ced37885bfd38c6eedacb788b3572368643a"
+    },
+    "landing": {
+      "source": "022cfa6a62fa290d5b394caf956fd9d1d0557ffb377b52b8ddd40f8cbbbf3ca1",
+      "translation": "03cab8089822c2489a1d01c553ae588d4c77e84c40529134d40715d2dfc27c5f"
+    },
+    "schedule": {
+      "source": "a010eabb207606c5b9667e427bc9c33a5244700f4566d2b7c4d7e86798c32c5d",
+      "translation": "9047331507a2dde711ee5c379c39b22056cda5c80faf8c22593c6d0f5e3f64d9"
+    },
+    "report": {
+      "source": "a3831f94fba62c81f7068f4a19120adc99e5a3d822b31044cd8837eef4e9a05e",
+      "translation": "6953057f14ce19a3546cc25804ac867874d5e5609a25f7b0a3548c7f91daa550"
+    },
+    "send": {
+      "source": "1352f41ac333345db433cee592b62a9dfc4e59ba5412693ba78339a520a8b3b1",
+      "translation": "36a45e57de7f03110437bfbba302b0afba44a23d9f9970cda2304095fb0dbd3a"
+    },
+    "notify": {
+      "source": "ff16a882ba8051bc9195e82e06d8944dd63f25d98ac84e3bf18813b1246eb618",
+      "translation": "dea9a1f7dd1e9022f9fe5255ce70a85a34c09ec3f44bdefd3a2470ab46f15d48"
+    },
+    "note": {
+      "source": "f1ee1a3d7a6f33fcdf97c031e914509f87b324ce9d9d3e6f77435dc930332a74",
+      "translation": "aae3d9f9752980c30f52a2c67dafdea3661c7b88376857589f2f19ae776e8d64"
+    },
+    "board": {
+      "source": "0aa69d402576e442174e460f3820bae7f81994d686e30faea74426d6a6d1d393",
+      "translation": "c7237f703c0a37e8e845f608e95f11f6b0f2c562811a758c66c61bfce859c01c"
+    },
+    "epic": {
+      "source": "dd6d36782ccad707e797d535329d349f6a6dcffeb7a1c482710a1fb5264e3e8b",
+      "translation": "134f4a3e97116a7dd5a8511ba3024f87bf53bd10b42be3dcb3c63d3d1bb6b9fc"
+    },
+    "coordination": {
+      "source": "0e6c50099e942ae6b7df126baea7404e0c3ab7ab9c5e11149d4f05110e0fb44e",
+      "translation": "61be9b1d910551b0fe890a05cc85b9f09b744bad40cdacac03e9a6d5f20aa4bc"
+    },
+    "refused": {
+      "source": "2491e90ba480dfabc72b2b4e88970c4eafe4da94c6ae4a826f7191e0c6fff239",
+      "translation": "ac121d2f0a2cbce4bc80d3b825d3f4b19dc1b37caba596efb21ccbe50ef50f16"
+    }
+  }
+}

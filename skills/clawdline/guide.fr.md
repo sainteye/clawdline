@@ -3,12 +3,12 @@
 Pour une session d'assistance — Claude Code ou Codex — sur une machine où **Clawdline Next** est exécuté. Ce guide
 décrit les fonctionnalités actuelles de ce démon, et rien d'autre : chaque route ci-dessous est enregistrée par la
 version qui a généré ce guide, et un test échoue si l'une d'elles ne l'est pas. Réimprimez-le avec
-`clawdline guide` plutôt que de vous fier à une copie ; `clawdline guide zh-TW` est le même guide en
-chinois traditionnel. `clawdline guide` affiche le noyau et nomme les autres composants. Imprimez une partie
-(`clawdline guide dispatch`) lorsque vous atteignez la section correspondante, ou `clawdline guide all` pour
+`clawdline guide` plutôt que de vous fier à une copie ; `clawdline guide zh-Hant` affiche le guide
+en chinois traditionnel de Taïwan (`zh-TW` reste un alias). `clawdline guide` affiche le noyau et nomme les autres composants. Imprimez une partie
+(`clawdline guide fr dispatch`) lorsque vous atteignez la section correspondante, ou `clawdline guide fr all` pour
 le texte complet. Quel que soit le contenu imprimé, y compris le noyau, il commence par `guide-version: <sha256>` ;
 exécutez la même commande avec `--since <hash>` et, si ce texte reste inchangé, elle imprimera la ligne
-`unchanged <hash>` à la place. `clawdline guide refused <code>` imprime la partie expliquant un
+`unchanged <hash>` à la place. `clawdline guide fr refused <code>` imprime la partie expliquant un
 code de refus et se termine avec le code 1 sans rien afficher sur la sortie standard si aucune partie ne le nomme.
 
 Dans ce guide, une **étape** correspond à une entrée de la liste de contrôle d'un élément, les **écritures** d'une tâche correspondent aux chemins qu'elle
@@ -44,7 +44,7 @@ Si votre premier message contenait *"You are a Clawdline CHILD agent for task �
 
 Sinon, vous êtes un **agent racine** : une session ordinaire à laquelle une personne communique. La suite vous concerne.
 
-Si votre premier message contenait *"You are an independently owned Clawdline Feature Root …"*, ou si un élément Board vous a été attribué, affichez ensuite `clawdline guide feature-root` : il s’agit du chemin d’accès normal complet, de la lecture de l’élément à `done`, et il indique la partie à afficher pour les cas plus rares.
+Si votre premier message contenait *"You are an independently owned Clawdline Feature Root …"*, ou si un élément Board vous a été attribué, affichez ensuite `clawdline guide fr feature-root` : il s’agit du chemin d’accès normal complet, de la lecture de l’élément à `done`, et il indique la partie à afficher pour les cas plus rares.
 
 ## 2. Accès au démon
 
@@ -54,11 +54,11 @@ transcription. Une version personnalisée de curl sans ces informations d'identi
 
 | Commande | Fonctionnement |
 |---|---|
-| `clawdline guide [zh-TW]` | Ce guide. Aucun démon requis. |
+| `clawdline guide [lang]` | Ce guide. Aucun démon requis. |
 | `clawdline session report --summary "…"` | Enregistre votre tour terminé (§7). |
 | `clawdline session close [--dry-run] [--terminal id]` | Vérifie et clôture un tour Session terminé, jamais par la force (§2a). |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Envoie un enfant dont vous êtes propriétaire (§4). |
-| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Lit et fait avancer un objet Board dont vous êtes propriétaire (`clawdline guide feature-root`, §10). |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Lit et fait avancer un objet Board dont vous êtes propriétaire (`clawdline guide fr feature-root`, §10). |
 | `clawdline todo add\|list\|done` | cette Session effectue ses propres tâches, uniquement à la demande de la personne (§10) |
 | `clawdline heavy -- <command…>` | Exécute une compilation ou une suite de tests dans l'unique emplacement de compilation de la machine (§11) |
 | `clawdline send --to <terminal> "…"` | Transmet un message dans une autre session (§8) |
@@ -72,12 +72,18 @@ transcription. Une version personnalisée de curl sans ces informations d'identi
 | `clawdline cloud pair [--offer <code>]` | Associe un navigateur Cloud à cette machine |
 | `clawdline task show [--json] <task id>` | Une tâche enfant en résumé : état, verdict, résumé, titres restants, vérification, intégration, sortie (§5) |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | Attend la fin des tâches enfants (toutes, ou `--any` une seule), affiche chacune d'elles comme le fait `task show` et ferme sa notification. Sortie : 0 (toutes réussies), 1 (une tâche a échoué), 5 (une tâche a été annulée et aucune n'a échoué), 3 (délai d'attente dépassé), 4 (tâche illisible) ; 4 sur 3 sur 1 sur 5 (§5) |
-| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | Exécute une commande longue (un déploiement et sa vérification, une attente sur l'élément de configuration) sous le démon et retourne immédiatement ; terminez votre tour ; à la fin, le démon insère un `<clawdline-notice>` comme pour un agent enfant terminé (§5a, `clawdline guide callback`) |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | Exécute une commande longue (un déploiement et sa vérification, une attente sur l'élément de configuration) sous le démon et retourne immédiatement ; terminez votre tour ; à la fin, le démon insère un `<clawdline-notice>` comme pour un agent enfant terminé (§5a, `clawdline guide fr callback`) |
 | `clawdline task cancel <task id> --reason "…"` | Arrête un processus enfant lancé par erreur : son onglet est fermé, ses écritures et son emplacement sont libérés, une branche contenant les commits est conservée (§5) |
 | `clawdline task ack <task id> <notice id>` | Ferme manuellement une notification de fin de processus ; rarement nécessaire, car `task show` et `task wait` la ferment (§5) |
 | `clawdline task accept <task dir>` | Signature d'un processus enfant pour son briefing. Les processus racines ne l'exécutent jamais |
 | `clawdline task finish <task dir>` | Fin de processus enfant. Les processus racines ne l'exécutent jamais |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Lance une planification via son webhook Cloud, sur n'importe quelle machine, et attend son résultat ; le code de sortie indique comment cela s'est terminé (« Planifier le travail futur »). Aucun démon requis. |
+
+Sans langue explicite pour le guide, la CLI choisit dans cet ordre : `--lang <tag>` avant la commande,
+`CLAWDLINE_LANG`, `product_language` enregistré, puis l'anglais. Un `clawdline guide <tag>` explicite
+remplace ce choix ; une langue non prise en charge affiche l'anglais. `clawdline guide -list` énumère
+les neuf tags fournis. Cette préférence ne change que le texte de la CLI destiné aux personnes ;
+elle ne modifie ni les champs du protocole ni la langue de l'Agent.
 
 Les commandes d'orchestration ci-dessus (sauf `webhook fire`) affichent le JSON du démon en cas de succès. En cas de refus, le programme affiche :
 `refused, <status> <code>: <message>`, puis chaque valeur scalaire du refus sous la forme `key: value`, une par ligne,
@@ -306,7 +312,7 @@ Continuez à partir de là ; ne recommencez pas.
 
 - Planification capturée sans critères d'acceptation : définissez des critères observables avec
 `clawdline item acceptance <item id> --body-file acceptance.md`.
-- Nécessite une revue indépendante (cochée) ou Epic : le chemin du plan revu dans `clawdline guide epic`
+- Nécessite une revue indépendante (cochée) ou Epic : le chemin du plan revu dans `clawdline guide fr epic`
 est prioritaire. Non cochée : aucun plan, aucune revue enfant.
 - Travail en plusieurs étapes sans sous-étapes : `clawdline item step-add <item id> "first" "second" …` (deux à
 huit étapes vérifiables une à une ; une modification unique ne nécessite aucune sous-étape).
@@ -331,7 +337,7 @@ sujet, ou un titre commençant par un identifiant formaté en code. Chaque répo
 - Le résumé d’une investigation ou d’une exploration indique également sa condition d’arrêt — la question qui,
 une fois répondue, met fin à la tâche — et une limite de tours.
 - Le travail en lecture seule est `--claims ""`. Chaque indicateur et chaque code de refus se trouve dans
-`clawdline guide dispatch`.
+`clawdline guide fr dispatch`.
 
 **5. Si un processus enfant termine**, une ligne `<clawdline-notice>` est saisie dans votre compositeur. Exécutez
 `clawdline task show <task id>`, puis intégrez la livraison ; sa lecture ferme la notification, il n'y a donc pas d'accusé de réception séparé. **Après une distribution, terminez votre tour** : la notification vous réveille, et un tour maintenu ouvert
@@ -339,7 +345,7 @@ relit l'intégralité de votre contexte à chaque interrogation. Ce n'est que lo
 devez bloquer que vous exécutez `clawdline task wait <task id>…` (par défaut `--timeout 9m`, `--any` pour le premier). Intégrez un processus enfant de l'arborescence de travail en **fusionnant sa branche** dans la cible. **La fusion enregistre l'**intégration automatiquement** en quelques minutes : ne publiez pas d'intégration manuellement. `clawdline landings` liste
 ce qui reste dû. Un enfant envoyé avec le code `--claims ""` qui n'a rien écrit est enregistré
 `nothing_to_land` par le courtier. Tout autre élément est `clawdline task land <task id> <state>`
-(`clawdline guide landing`).
+(`clawdline guide fr landing`).
 
 **6. Rapport d'achèvement**, lorsque la recherche de la cause a nécessité une enquête approfondie (une correction directe,
 observée, n'en nécessite aucune). Ajoutez-le avant `done` : une fois l'élément terminé, il est désassigné et le
@@ -397,10 +403,10 @@ l'onglet d'un enfant distribué par un agent une fois la tâche de cet enfant te
 version. `steps_incomplete` : une étape est toujours ouverte. Tout autre code : §12, puis la partie correspondante
 .
 
-**Tâches plus rares, une partie chacune :** `clawdline guide board` — propositions, décisions, tâches à faire, réouverture d'un élément
-terminé, attente d'une personne, portes et refus de chaque phase ; `clawdline guide epic` — Plans,
-révision de plan, éléments enfants d'un Epic, personas ; `clawdline guide landing` — intégration manuel,
-transferts (y compris un long transfert d'étape Root), affectations Root ; `clawdline guide running` — éléments enfants bloqués, restes, réapparition.
+**Tâches plus rares, une partie chacune :** `clawdline guide fr board` — propositions, décisions, tâches à faire, réouverture d'un élément
+terminé, attente d'une personne, portes et refus de chaque phase ; `clawdline guide fr epic` — Plans,
+révision de plan, éléments enfants d'un Epic, personas ; `clawdline guide fr landing` — intégration manuel,
+transferts (y compris un long transfert d'étape Root), affectations Root ; `clawdline guide fr running` — éléments enfants bloqués, restes, réapparition.
 
 ## 3. Avant de lancer : vérifiez ce qui est déjà présent
 
@@ -469,7 +475,7 @@ n'a pas créé de tâche et peut également être relancé après correction de 
 
 `--persona <id>` lance l'enfant en tant que persona intégré (`persona` dans `task.json`) ; un identifiant manquant pour cette
 build est refusé localement. Aucun type n'en reçoit un par défaut, `plan_review` inclus : indiquez vous-même `code-reviewer` si vous en voulez un. `GET /v1/personas` liste les identifiants que cette build possède ; la définition d'un persona se trouve dans la Epic
-partie du §10 (`clawdline guide epic`).
+partie du §10 (`clawdline guide fr epic`).
 
 Étapes suivies, pour un appelant sans le binaire :
 
@@ -665,8 +671,8 @@ refusée avec `429 callback_capacity` et un `retry_after`. Un dispatch ne peut p
 
 **Après la fusion de la branche d'un processus enfant, aucune autre action n'est requise :** le broker enregistre `landed` (voir ci-dessous).
 Un processus enfant qui n'a déclaré aucune écriture (`--claims ""`), s'est terminé de lui-même et n'a rien laissé sur sa branche
-ni dans son répertoire d'extraction est enregistré `nothing_to_land` par le broker avant même que sa notification ne soit générée. Un intégration
-enregistré manuellement correspond à ce qu'aucun des deux ne couvre : une sélection directe, une livraison `incorporated`,
+ni dans son répertoire d'extraction est enregistré `nothing_to_land` par le broker avant même que sa notification ne soit générée. Une intégration
+enregistrée manuellement correspond à ce qu'aucun des deux ne couvre : une sélection directe, une livraison `incorporated`,
 `nothing_to_land`, `abandoned` — et constitue une commande unique, envoyée avec le jeton d'orchestration :
 
 ```
@@ -951,7 +957,7 @@ Utilisez une note lorsqu'un Agent engagé dans un travail de longue durée a une
 
 **Avant de demander à la personne de choisir dans le chat**, créez une note `answer` qui contient la question exacte, les compromis nécessaires pour décider et deux à quatre réponses suggérées complètes. Appuyer sur un bouton envoie sa réponse comme message dans la conversation : chaque `draft` doit donc être compréhensible sans contexte supplémentaire. Après la création, un bref renvoi dans le chat suffit. Ni la création de la note ni son passage à l'état traité ne constituent une réponse. Attendez le message envoyé par la personne, depuis un bouton ou saisi librement, avant d'agir. Si la création échoue, signalez-le et posez directement la question. Réservez les notes aux décisions qui exigent son jugement, et non aux choix ordinaires que l'Agent peut faire lui-même.
 
-Créez la note à partir d'un fichier contenant son corps JSON. Sans `--target`, la CLI trouve l'identifiant de terminal de cette Root active au moyen de `whoami`. Pour une autre Session, prenez son **identifiant de terminal** actif dans le carnet d'adresses (`clawdline guide send`) et passez-le avec `--target`. Par défaut, `--from` utilise l'identifiant de conversation de cette Root active, fourni par l'environnement. La CLI lit les identifiants d'accès de la machine sans les placer dans la ligne de commande, ajoute les identifiants source et cible et affiche l'identifiant durable de la note. En cas de résultat incertain, réutilisez le `--key` affiché.
+Créez la note à partir d'un fichier contenant son corps JSON. Sans `--target`, la CLI trouve l'identifiant de terminal de cette Root active au moyen de `whoami`. Pour une autre Session, prenez son **identifiant de terminal** actif dans le carnet d'adresses (`clawdline guide fr send`) et passez-le avec `--target`. Par défaut, `--from` utilise l'identifiant de conversation de cette Root active, fourni par l'environnement. La CLI lit les identifiants d'accès de la machine sans les placer dans la ligne de commande, ajoute les identifiants source et cible et affiche l'identifiant durable de la note. En cas de résultat incertain, réutilisez le `--key` affiché.
 
 ```json
 {"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
@@ -966,7 +972,7 @@ clawdline note create --body-file note.json
 
 ## 10. Le tableau
 
-Le Board comporte trois structures : ses éléments, le Backlog et la liste personnelle de tâches de chaque session. **La personne décide de ce qui y entre.** Une session ne crée directement un élément Board que si le message de la personne, envoyé par Clawdline, le demande ; sinon, elle propose l'élément. Elle n'ajoute jamais une carte de sa propre initiative. Seule exception : le propriétaire d'un Epic peut, après révision du plan de cet Epic, décomposer l'Epic en éléments Feature et Issue, puis les affecter à des Sessions (`clawdline guide epic`).
+Le Board comporte trois structures : ses éléments, le Backlog et la liste personnelle de tâches de chaque session. **La personne décide de ce qui y entre.** Une session ne crée directement un élément Board que si le message de la personne, envoyé par Clawdline, le demande ; sinon, elle propose l'élément. Elle n'ajoute jamais une carte de sa propre initiative. Seule exception : le propriétaire d'un Epic peut, après révision du plan de cet Epic, décomposer l'Epic en éléments Feature et Issue, puis les affecter à des Sessions (`clawdline guide fr epic`).
 
 **TODO / 待辦 / 土度 mentionné avec un élément Board désigne les étapes de cet élément.** Ajoutez-les à l'élément avec `--step`. Ne les ajoutez **pas** aussi avec `clawdline todo add`. `clawdline todo add` sert uniquement à la liste de tâches que la personne demande de suivre pour cette Session, sans élément Board.
 
@@ -1079,7 +1085,7 @@ l'attribution automatique dans ce projet).
 Ne jamais réclamer ni attribuer un élément de votre propre initiative — uniquement celui mentionné dans le message de la personne — et
 ne jamais utiliser le `POST /v1/work/v2/items/<id>/assign` de la personne, qui refuse une Session
 (`session_cannot_create_item`). Le propriétaire d'un Epic attribue également aux propres enfants du Epic le
-`clawdline item assign` (`clawdline guide epic`).
+`clawdline item assign` (`clawdline guide fr epic`).
 
 **Créez un nouvel élément Session associé à un élément Board.** Après avoir pris connaissance de son objectif et de son champ d'application, choisissez un nom court décrivant votre tâche et exécutez `clawdline item name <item id> "<task name>"`.
 Cette action modifie le nom de votre élément Session une seule fois, sans modifier le titre de l'élément Board ni démarrer un nouveau cycle de modélisation.
@@ -1385,7 +1391,7 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 ```
 
 Il envoie `POST /v1/work/v2/agent/items/<id>/documents` pour vous (la partie Epic du §10,
-`clawdline guide epic`, liste ses champs). Une requête curl manuelle vers cette route sans les informations d'identification
+`clawdline guide fr epic`, liste ses champs). Une requête curl manuelle vers cette route sans les informations d'identification
 la commande lit les réponses `401 unauthorized`. Le corps est au format Markdown, d'une taille maximale de 64 Kio. Rédigez pour la personne qui a signalé le problème, et non comme un journal de débogage brut,
 et n'y incluez aucune donnée privée. Le propriétaire actif doit l'ajouter avant que l'élément ne devienne
 terminal ; relisez-le après un conflit de versions. Un rapport d'achèvement est un récit et ne
@@ -1527,7 +1533,7 @@ vers un autre Session, la même affectation que celle effectuée par le choix d'
 enfants sortent d'un plan révisé), `item_terminal` (le Epic est terminé),
 `child_kind_not_allowed` (seulement `feature` ou `issue`), `epic_children_full` (un Epic contient au maximum
 32 enfants (ouverts ou fermés), `not_epic_child` (`item assign` d'un élément qui n'est pas un enfant de Epic —
-la personne l'attribue, sauf si son message vous le demande : `clawdline guide board`), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422 :
+la personne l'attribue, sauf si son message vous le demande : `clawdline guide fr board`), `invalid_assignment`, `version_conflict`, `persona_not_applicable` (422 :
 un compte utilisateur avec une Session existant) et `unknown_persona` (400 : un identifiant manquant dans le catalogue).
 - **Un persona** est un rôle avec lequel un nouveau Session est lancé : du texte est ajouté à son invite système pour qu'il fonctionne comme ce rôle, pendant toute la conversation. Ceci est uniquement pour un nouveau Session.
 (`--assign-new`, `--new`, `dispatch`) ; une Session existant conserve celui avec lequel il a été ouvert. Aucun par

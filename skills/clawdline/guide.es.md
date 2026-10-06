@@ -6,10 +6,10 @@ imprimió esta guía, y una prueba falla si alguna no está registrada. Vuelve a
 `clawdline guide` en lugar de fiarte de una copia; `clawdline guide zh-Hant` imprime la guía en
 chino tradicional de Taiwán (`zh-TW` sigue siendo un alias). `clawdline guide` imprime el núcleo y
 nombra las demás partes; imprime una parte
-(`clawdline guide dispatch`) cuando llegues al trabajo que cubre, o `clawdline guide all` para
+(`clawdline guide es dispatch`) cuando llegues al trabajo que cubre, o `clawdline guide es all` para
 el texto completo. Todo lo que imprime, núcleo incluido, empieza por `guide-version: <sha256>`;
 ejecuta el mismo comando con `--since <hash>` y, si ese texto no ha cambiado, imprime en su lugar
-la única línea `unchanged <hash>`. `clawdline guide refused <code>` imprime la parte que explica
+la única línea `unchanged <hash>`. `clawdline guide es refused <code>` imprime la parte que explica
 un código de rechazo, y sale con 1 sin nada en stdout cuando ninguna parte lo nombra.
 
 En esta guía, un **paso** (step) es una entrada de la lista de verificación de un ítem, las
@@ -52,7 +52,7 @@ con `clawdline task accept` y terminas con `clawdline task finish`. Deja de leer
 Si no, eres un **root**: una sesión normal con la que habla una persona. El resto es para ti.
 
 Si decía *"You are an independently owned Clawdline Feature Root …"*, o se te asignó un ítem del
-Board, imprime a continuación `clawdline guide feature-root`: es todo el camino habitual, desde leer
+Board, imprime a continuación `clawdline guide es feature-root`: es todo el camino habitual, desde leer
 el ítem hasta `done`, y nombra la parte que debes imprimir para cualquier caso menos frecuente.
 
 ## 2. Llegar al daemon
@@ -69,7 +69,7 @@ comando en su lugar.
 | `clawdline session report --summary "…"` | Registra tu turno terminado (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audita y cierra una Session terminada, nunca a la fuerza (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Despacha un child propio (§4) |
-| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Lee y hace avanzar un ítem del Board que es tuyo (`clawdline guide feature-root`, §10) |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Lee y hace avanzar un ítem del Board que es tuyo (`clawdline guide es feature-root`, §10) |
 | `clawdline todo add\|list\|done` | Las tareas pendientes propias de esta Session, solo cuando la persona lo pide (§10) |
 | `clawdline heavy -- <command…>` | Ejecuta un build o una batería de pruebas en el único slot de compilación de la máquina (§11) |
 | `clawdline send --to <terminal> "…"` | Retransmite un mensaje a otra sesión (§8) |
@@ -83,7 +83,7 @@ comando en su lugar.
 | `clawdline cloud pair [--offer <code>]` | Empareja un navegador de Cloud con esta máquina |
 | `clawdline task show [--json] <task id>` | Una tarea child en forma compacta: estado, veredicto, resumen, títulos de pendientes (leftovers), verificación, landing, checkout (§5) |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | Espera a que terminen los children (todos, o uno con `--any`), muestra cada uno como lo hace `task show` y cierra su aviso. Sale con 0 si todos tuvieron éxito, 1 si uno falló, 5 si uno se canceló y ninguno falló, 3 si se agotó el tiempo, 4 si no se pudo leer una tarea; 4 prevalece sobre 3, 3 sobre 1 y 1 sobre 5 (§5) |
-| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | Ejecuta un comando largo —un despliegue y su comprobación, una espera de CI— bajo el daemon y vuelve enseguida; termina tu turno, y su salida tipa el mismo `<clawdline-notice>` que el de un child terminado (§5a, `clawdline guide callback`) |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | Ejecuta un comando largo —un despliegue y su comprobación, una espera de CI— bajo el daemon y vuelve enseguida; termina tu turno, y su salida tipa el mismo `<clawdline-notice>` que el de un child terminado (§5a, `clawdline guide es callback`) |
 | `clawdline task cancel <task id> --reason "…"` | Detiene un child que despachaste por error: se cierra su pestaña, se liberan sus escrituras y su slot, y una rama con commits se conserva para ti (§5) |
 | `clawdline task ack <task id> <notice id>` | Cierra a mano un aviso de finalización; rara vez hace falta, porque `task show` y `task wait` lo cierran (§5) |
 | `clawdline task accept <task dir>` | Un child firmando el recibo de su briefing. Los roots nunca lo ejecutan |
@@ -367,7 +367,7 @@ alcance. Renombra la Session, no el ítem.
 - Planificación capturada activada y sin criterios de aceptación: escribe criterios observables con
   `clawdline item acceptance <item id> --body-file acceptance.md`.
 - Needs independent review marcado, o una Epic: primero va el camino del plan revisado de
-  `clawdline guide epic`. Sin marcar: sin plan y sin child de revisión.
+  `clawdline guide es epic`. Sin marcar: sin plan y sin child de revisión.
 - Trabajo de varias etapas sin pasos: `clawdline item step-add <item id> "first" "second" …` (de dos
   a ocho pasos que puedas verificar de uno en uno; un cambio único no lleva ninguno).
 - Después, `clawdline item phase <item id> implementing`.
@@ -396,7 +396,7 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - El brief de un child de investigación o Explore también indica su condición de parada —la
   pregunta que, una vez respondida, termina la tarea— y un límite de turnos.
 - El trabajo de solo lectura es `--claims ""`. Cada flag, y cada código de rechazo, está en
-  `clawdline guide dispatch`.
+  `clawdline guide es dispatch`.
 
 **5. Si un child termina**, se escribe una línea `<clawdline-notice>` en tu compositor. Ejecuta
 `clawdline task show <task id>` y luego integra la entrega; leerla cierra el aviso, así que no hay
@@ -408,7 +408,7 @@ en el destino. **El merge registra el
 landing por sí solo** en pocos minutos: no publiques un landing a mano. `clawdline landings` lista
 lo que todavía se debe. Un child despachado con `--claims ""` que no escribió nada queda registrado
 por el broker como `nothing_to_land`. Cualquier otro caso es `clawdline task land <task id> <state>`
-(`clawdline guide landing`).
+(`clawdline guide es landing`).
 
 **6. Informe de finalización**, cuando encontrar la causa exigió una investigación considerable (un
 arreglo directo y observado no lo necesita). Añádelo antes de `done`: una vez que el ítem está done
@@ -470,11 +470,11 @@ ese child, según la regla de pestañas de child de `clawdline guide child`.
 versión. `steps_incomplete`: un paso sigue abierto. Cualquier otro código: §12, y después la parte
 que lo cubre.
 
-**Trabajo menos frecuente, una parte cada uno:** `clawdline guide board`: propuestas, decisiones,
+**Trabajo menos frecuente, una parte cada uno:** `clawdline guide es board`: propuestas, decisiones,
 tareas pendientes, reabrir un ítem done, esperar a la persona, compuertas y cada rechazo de fase;
-`clawdline guide epic`: planes, revisión de planes, los ítems hijos de una Epic, perfiles de persona (personas);
-`clawdline guide landing`: landing a mano, traspasos (también el traspaso de hito de un Root
-largo), asignaciones de Root; `clawdline guide running`: children atascados, pendientes
+`clawdline guide es epic`: planes, revisión de planes, los ítems hijos de una Epic, perfiles de persona (personas);
+`clawdline guide es landing`: landing a mano, traspasos (también el traspaso de hito de un Root
+largo), asignaciones de Root; `clawdline guide es running`: children atascados, pendientes
 (leftovers), respawn.
 
 ## 3. Antes de despachar: lee lo que ya existe
@@ -556,7 +556,7 @@ corregir su causa.
 id que este build no tiene se rechaza localmente. Ningún tipo recibe uno por defecto, `plan_review`
 incluido: nombra tú mismo `code-reviewer` cuando lo quieras. `GET /v1/personas` lista los ids que
 trae este build; qué es una persona se explica en la parte Epic
-de §10 (`clawdline guide epic`).
+de §10 (`clawdline guide es epic`).
 
 Los pasos que sigue, para quien llame sin el binario:
 
@@ -1112,7 +1112,7 @@ Usa una nota cuando un Agent de larga duración tenga una cosa concreta que la p
 
 **Antes de pedirle a la persona que elija en el chat**, crea una nota `answer` que contenga la pregunta real, las ventajas y desventajas necesarias para decidir, y de dos a cuatro respuestas sugeridas completas. Tocar un botón envía su respuesta como un mensaje de la conversación, así que haz que cada `draft` sea inequívoco por sí solo. Tras crearla, basta con una breve referencia en el chat. No tomes la creación de la nota ni una nota marcada como atendida como la respuesta de la persona; espera al mensaje de la conversación —una respuesta tocada o una que la persona escribió— antes de actuar en consecuencia. Si la creación falla, dilo y haz la pregunta directamente. Reserva las notas para decisiones que requieran juicio humano, no para elecciones rutinarias que el Agent puede tomar.
 
-Crea una con un archivo de cuerpo JSON. Sin `--target`, la CLI resuelve el id de terminal propio de este Root vivo mediante `whoami`. Para otra Session, usa como `--target` su **id de terminal** vivo de la libreta de direcciones (`clawdline guide send`). `--from` toma por defecto el id de conversación de este Root vivo a partir del entorno. La CLI lee la credencial de la máquina sin ponerla en la línea de comandos, inyecta los ids de origen y destino, e imprime el id duradero de la nota que da el daemon. Reutiliza el `--key` impreso tras un resultado dudoso.
+Crea una con un archivo de cuerpo JSON. Sin `--target`, la CLI resuelve el id de terminal propio de este Root vivo mediante `whoami`. Para otra Session, usa como `--target` su **id de terminal** vivo de la libreta de direcciones (`clawdline guide es send`). `--from` toma por defecto el id de conversación de este Root vivo a partir del entorno. La CLI lee la credencial de la máquina sin ponerla en la línea de comandos, inyecta los ids de origen y destino, e imprime el id duradero de la nota que da el daemon. Reutiliza el `--key` impreso tras un resultado dudoso.
 
 ```json
 {"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
@@ -1132,7 +1132,7 @@ propia de cada sesión— y **lo que entra en él lo decide una persona**. Una s
 Board solo cuando el propio mensaje de la persona, enviado a través de Clawdline, se lo indica; si
 no, lo propone. Nunca abre una tarjeta por iniciativa propia. La única excepción es el dueño de una
 Epic: después del plan revisado de la Epic puede dividirla en ítems Feature e Issue y asignarlos a
-Sessions (`clawdline guide epic`).
+Sessions (`clawdline guide es epic`).
 
 **TODO / 待辦 / 土度 dicho junto con un ítem del Board significa los pasos de ese ítem.** Ponlos en
 el ítem con `--step`. **No** los escribas además con `clawdline todo add`. `clawdline todo add` es
@@ -1265,7 +1265,7 @@ clawdline item assign <item id> --new [--assistant claude|codex] [--model m] [--
 Nunca reclames ni asignes un ítem por iniciativa propia —solo el que nombra el mensaje de la
 persona— y nunca uses el `POST /v1/work/v2/items/<id>/assign` de la persona, que rechaza a una
 Session (`session_cannot_create_item`). El dueño de una Epic también asigna los hijos de la propia
-Epic con `clawdline item assign` (`clawdline guide epic`).
+Epic con `clawdline item assign` (`clawdline guide es epic`).
 
 **Ponerle nombre a una Session nueva abierta para un ítem del Board.** Después de leer su objetivo y
 su alcance, elige un nombre corto que describa tu tarea real y ejecuta
@@ -1639,7 +1639,7 @@ clawdline item doc <item id> --role completion_report --title "Completion report
 ```
 
 Envía `POST /v1/work/v2/agent/items/<id>/documents` por ti (la parte Epic de §10,
-`clawdline guide epic`, lista sus campos). Un curl armado a mano a esa ruta sin la credencial que
+`clawdline guide es epic`, lista sus campos). Un curl armado a mano a esa ruta sin la credencial que
 lee el comando responde `401 unauthorized`. El cuerpo es Markdown, de 64 KiB como máximo. Escríbelo
 para la persona que informó del problema, no como un log de depuración en bruto, y deja fuera los
 datos privados. El dueño activo debe añadirlo antes de que el ítem llegue a un estado terminal;
@@ -1800,7 +1800,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   `child_kind_not_allowed` (solo `feature` o `issue`), `epic_children_full` (una Epic contiene como
   máximo 32 hijos, abiertos o cerrados), `not_epic_child` (`item assign` de un ítem que no es hijo
   de ninguna Epic: lo asigna la persona, salvo que su mensaje te pida hacerlo:
-  `clawdline guide board`), `invalid_assignment`, `version_conflict`, `persona_not_applicable`
+  `clawdline guide es board`), `invalid_assignment`, `version_conflict`, `persona_not_applicable`
   (422: un perfil de persona con una Session existente) y `unknown_persona` (400: un id que no está
   en el catálogo).
 - **Una persona (perfil de persona)** es un rol con el que se lanza una Session nueva: texto añadido
@@ -1963,7 +1963,7 @@ checkouts terminados; un POST es una ejecución de prueba salvo que el cuerpo di
   misma petición.
 - `409 stale_write`, `503 orchestrator_store_busy`: el almacén estaba ocupado; volver a enviar la
   misma petición es seguro.
-- `unknown` en cualquier sitio —una propiedad, una señal de vida, un origen— significa que el daemon
+- `unknown` en cualquier sitio —la titularidad, el estado de actividad o el origen— significa que el daemon
   no pudo leerlo. No significa "ausente", y no se debe borrar nada ni declarar nada muerto a partir
   de eso.
 - Si una ruta que esperabas responde `404 not_found` o `501`, no está en este daemon. Dilo; no
