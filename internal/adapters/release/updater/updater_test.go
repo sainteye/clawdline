@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -786,5 +787,53 @@ func TestTheSupervisorKeepsWhatTheBootGuardDecided(t *testing.T) {
 	}
 	if f.current() != "v0.10.0" {
 		t.Fatalf("current is %s", f.current())
+	}
+}
+
+// An auto-apply that waits for a busy session looks again on its own, so a
+// session going idle is enough: the next release check is hours away, and
+// the check a daemon makes as it starts reads sessions before their screens
+// have been read once (measured in the Ubuntu drill: an idle session read as
+// busy at every restart).
+func TestAWaitingAutoApplyStartsOnceTheSessionsAreIdle(t *testing.T) {
+	f := newFixture(t, "v0.10.0")
+	d := NewDaemon(f.env, f.exe)
+	d.AutoApply = func() bool { return true }
+	var mu sync.Mutex
+	busy, waits := true, 0
+	d.Busy = func(context.Context) bool { mu.Lock(); defer mu.Unlock(); return busy }
+	d.Logf = func(format string, args ...any) {
+		if strings.Contains(format, "is waiting") {
+			mu.Lock()
+			waits++
+			mu.Unlock()
+		}
+	}
+	d.RetryEvery = 5 * time.Millisecond
+	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	d.maybeAutoApply(ctx, d.Checker.Refresh(ctx))
+	d.maybeAutoApply(ctx, d.Checker.Last()) // a second check while it waits
+	time.Sleep(50 * time.Millisecond)
+	if f.apply().State != contract.UpdateApplyStateIdle {
+		t.Fatal("applied while a session was busy")
+	}
+	mu.Lock()
+	busy = false
+	mu.Unlock()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.apply().State == contract.UpdateApplyStateIdle && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	d.Wait()
+	if got := f.apply(); got.State != contract.UpdateApplyStateRestarting || got.To != "v0.11.0" {
+		t.Fatalf("the sessions went idle and no check came: %+v", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if waits != 2 {
+		t.Fatalf("logged the wait %d times, want once per check", waits)
 	}
 }

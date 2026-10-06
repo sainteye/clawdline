@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/release"
@@ -21,9 +22,14 @@ type Daemon struct {
 	AutoApply func() bool
 	Busy      func(context.Context) bool
 	Logf      func(format string, args ...any)
+	// RetryEvery replaces AutoApplyRetrySecondsLimit (tests).
+	RetryEvery time.Duration
 
 	// wg is the background Execute, so a test or a shutdown can wait for it.
 	wg sync.WaitGroup
+	// waiting is set while an auto-apply that found a busy session looks
+	// again every RetryEvery.
+	waiting atomic.Bool
 }
 
 // NewDaemon is the daemon's updater for the release exe runs from.
@@ -162,24 +168,55 @@ func (d *Daemon) settleApp(ctx context.Context) {
 }
 
 func (d *Daemon) maybeAutoApply(ctx context.Context, c Check) {
-	if d.AutoApply == nil || !d.AutoApply() || c.Latest == nil {
+	if !d.tryAutoApply(ctx, c, true) || !d.waiting.CompareAndSwap(false, true) {
 		return
+	}
+	// The next check is hours away. A busy session is waited for here
+	// instead, looking again until it is idle or nothing is left to apply.
+	go func() {
+		defer d.waiting.Store(false)
+		every := d.RetryEvery
+		if every <= 0 {
+			every = AutoApplyRetrySecondsLimit * time.Second
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(every):
+			}
+			if !d.tryAutoApply(ctx, d.Checker.Last(), false) {
+				return
+			}
+		}
+	}()
+}
+
+// tryAutoApply starts the update auto-apply allows, if any. It answers true
+// only when the update is held back by a busy session, which is logged when
+// say is set.
+func (d *Daemon) tryAutoApply(ctx context.Context, c Check, say bool) bool {
+	if d.AutoApply == nil || !d.AutoApply() || c.Latest == nil {
+		return false
 	}
 	v, err := release.ParseVersion(c.Latest.Version)
 	if err != nil || v.Pre != "" {
-		return // auto-apply takes stable releases only
+		return false // auto-apply takes stable releases only
 	}
 	if d.Status().State != contract.UpdateStateUpdateAvailable {
-		return
+		return false
 	}
 	if failed, err := d.Env.HasFailed(c.Latest.Version); err != nil || failed {
-		return
+		return false
 	}
 	if d.Busy != nil && d.Busy(ctx) {
-		d.logf("update %s is waiting: a session is busy", c.Latest.Version)
-		return
+		if say {
+			d.logf("update %s is waiting: a session is busy", c.Latest.Version)
+		}
+		return true
 	}
 	if _, err := d.Start(ctx, Request{Version: c.Latest.Version, Auto: true}); err != nil {
 		d.logf("auto-update to %s not started: %v", c.Latest.Version, err)
 	}
+	return false
 }

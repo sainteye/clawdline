@@ -270,6 +270,7 @@ const (
 	ReleaseStateFileBytes         = "release.state_file_bytes"
 	ReleaseApplyFollowSeconds     = "release.apply_follow_seconds"
 	ReleaseAppSwapPollSeconds     = "release.app_swap_poll_seconds"
+	ReleaseAutoApplyRetrySeconds  = "release.auto_apply_retry_seconds"
 	UpdateApplyBodyBytes          = "update.apply_body_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
@@ -1354,6 +1355,15 @@ func Register() []Entry {
 			Limit: 60, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.AppSwapPollSecondsLimit"},
+		},
+		{
+			// How often an auto-apply held back by a busy session looks again
+			// whether the sessions are idle; it stops once the update starts or
+			// nothing is left to apply.
+			Name: ReleaseAutoApplyRetrySeconds, Class: Observation, Unit: Seconds,
+			Limit: 300, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/release/updater.AutoApplyRetrySecondsLimit"},
 		},
 		{
 			// Store snapshots taken before an update (VACUUM INTO). The oldest is

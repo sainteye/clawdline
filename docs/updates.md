@@ -249,8 +249,10 @@ clawdline setting set update_auto_apply true
 
 When on, after each check the daemon installs a newer **stable** release by itself — never a
 pre-release, never a version that rolled back before — and only when no assistant session it
-started is working. A session whose state it cannot tell counts as working; a busy machine waits
-for the next check.
+started is working. A session whose state it cannot tell counts as working. A busy machine logs
+`update <version> is waiting: a session is busy` and looks again every 5 minutes
+(`release.auto_apply_retry_seconds`), so the update starts once the sessions are idle rather than
+at the next check hours later.
 
 ## Source builds
 
