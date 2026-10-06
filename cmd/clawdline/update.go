@@ -63,6 +63,12 @@ func updateCommand(args []string) {
 		os.Exit(2)
 	}
 	st := updateStatus(*port)
+	// A release install's --apply reads the manifest afresh and prints what
+	// it installs and how that ended; the daemon's last check, up to a check
+	// interval old, would print "current" just above "updating to".
+	if *apply && !*asJSON && st.InstallKind == contract.UpdateInstallKindRelease {
+		os.Exit(applyRelease(os.Stdout, os.Stderr, *port, *want, *force))
+	}
 	if *asJSON {
 		_ = json.NewEncoder(os.Stdout).Encode(st)
 	} else {

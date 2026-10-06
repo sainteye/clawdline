@@ -177,7 +177,9 @@ The update runs in these steps; `apply.state` names the one it is in:
    not kill it — `systemd-run --user --unit <unit>-update` on Linux, a one-shot LaunchAgent
    `<label>.update` on macOS — and runs `clawdline update finish` from the old release. It points
    `current` at the new release, restarts the service, and waits up to 60 s for `GET /` to answer
-   200 and the served `BUILD.json` to name the new commit.
+   200 and the served `BUILD.json`, read with the local token, to name the new release's version and
+   commit (a release candidate and its final release share a commit; only the version tells them
+   apart).
 6. **`healthy`**: the update is done. Releases besides `current` and the two newest others are
    removed. On macOS the staged app bundle replaces the installed one now if the app is not
    running; otherwise `apply.staged_app` names it and the daemon swaps it in within a minute of the
