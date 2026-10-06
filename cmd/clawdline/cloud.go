@@ -81,17 +81,17 @@ func cloudCommand(args []string) {
 }
 
 func cloudUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline cloud <status|preflight|on|off|commands|login|pair|devices|revoke|rotate|connect>")
-	fmt.Fprintln(os.Stderr, "  status                 the switch, the identity and the endpoints")
-	fmt.Fprintln(os.Stderr, "  preflight              check, without the network, that only the person's step is left")
-	fmt.Fprintln(os.Stderr, "  on | off               turn the cloud line on or off in the settings file")
-	fmt.Fprintln(os.Stderr, "  commands on | off      whether a paired viewer may act on this machine; off by default")
-	fmt.Fprintln(os.Stderr, "  login [--wait 10m]     register this machine and wait for the approval")
-	fmt.Fprintln(os.Stderr, "  pair [--offer <code>]  show a browser a one-time link, or finish with its code")
-	fmt.Fprintln(os.Stderr, "  devices                who may speak to this machine, and where that trust came from")
-	fmt.Fprintln(os.Stderr, "  revoke <device-id>     throw one browser out of this machine")
-	fmt.Fprintln(os.Stderr, "  rotate [--yes]         replace this machine's signing key; every browser re-pairs")
-	fmt.Fprintln(os.Stderr, "  connect [--for 1m]     hold the line open and report what happens")
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.overview", "usage: clawdline cloud <status|preflight|on|off|commands|login|pair|devices|revoke|rotate|connect>"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.status", "  status                 the switch, the identity and the endpoints"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.preflight", "  preflight              check, without the network, that only the person's step is left"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.switch", "  on | off               turn the cloud line on or off in the settings file"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.commands", "  commands on | off      whether a paired viewer may act on this machine; off by default"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.login", "  login [--wait 10m]     register this machine and wait for the approval"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.pair", "  pair [--offer <code>]  show a browser a one-time link, or finish with its code"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.devices", "  devices                who may speak to this machine, and where that trust came from"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.revoke", "  revoke <device-id>     throw one browser out of this machine"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.rotate", "  rotate [--yes]         replace this machine's signing key; every browser re-pairs"))
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "usage.connect", "  connect [--for 1m]     hold the line open and report what happens"))
 }
 
 // cloudParts is everything the cloud commands share: the settings file, the
@@ -141,11 +141,11 @@ func cloudStatusCommand() {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("enabled    %v\n", parts.settings.Enabled)
-	fmt.Printf("commands   %v\n", parts.settings.Commands)
-	fmt.Printf("relay      %s\n", parts.settings.RelayURL)
-	fmt.Printf("api        %s\n", parts.settings.APIBase)
-	fmt.Printf("keys       %s\n", parts.keys.Dir())
+	fmt.Printf(cliCopy("cloud", "status.enabled", "enabled    %v\n"), parts.settings.Enabled)
+	fmt.Printf(cliCopy("cloud", "status.commands", "commands   %v\n"), parts.settings.Commands)
+	fmt.Printf(cliCopy("cloud", "status.relay", "relay      %s\n"), parts.settings.RelayURL)
+	fmt.Printf(cliCopy("cloud", "status.api", "api        %s\n"), parts.settings.APIBase)
+	fmt.Printf(cliCopy("cloud", "status.keys", "keys       %s\n"), parts.keys.Dir())
 
 	identity, found, err := parts.identity.Load()
 	switch {
@@ -153,28 +153,28 @@ func cloudStatusCommand() {
 		// An identity that exists and cannot be read is reported as itself.
 		// Printing "not registered" here is how a permission error turns into
 		// a second machine registration.
-		fmt.Printf("identity   unreadable: %v\n", err)
+		fmt.Printf(cliCopy("cloud", "status.identity_unreadable", "identity   unreadable: %v\n"), err)
 		os.Exit(1)
 	case !found:
-		fmt.Printf("identity   none — run `clawdline cloud login`\n")
+		fmt.Print(cliCopy("cloud", "status.identity_none", "identity   none — run `clawdline cloud login`\n"))
 	default:
-		fmt.Printf("account    %s\n", identity.AccountID)
-		fmt.Printf("machine    %s\n", identity.MachineID)
-		fmt.Printf("registered %s\n", identity.APIBase)
+		fmt.Printf(cliCopy("cloud", "status.account", "account    %s\n"), identity.AccountID)
+		fmt.Printf(cliCopy("cloud", "status.machine", "machine    %s\n"), identity.MachineID)
+		fmt.Printf(cliCopy("cloud", "status.registered", "registered %s\n"), identity.APIBase)
 		if err := cloud.CheckEnvironment(identity, parts.settings); err != nil {
-			fmt.Printf("mismatch   %s\n", cloud.DescribeFailure(err))
+			fmt.Printf(cliCopy("cloud", "status.mismatch", "mismatch   %s\n"), cloud.DescribeFailure(err))
 		}
 	}
 
 	key, found, err := parts.keys.DeviceKey()
 	switch {
 	case err != nil:
-		fmt.Printf("device key unreadable: %v\n", err)
+		fmt.Printf(cliCopy("cloud", "status.device_key_unreadable", "device key unreadable: %v\n"), err)
 		os.Exit(1)
 	case !found:
-		fmt.Printf("device key none yet\n")
+		fmt.Print(cliCopy("cloud", "status.device_key_none", "device key none yet\n"))
 	default:
-		fmt.Printf("device key %s\n", key.Fingerprint())
+		fmt.Printf(cliCopy("cloud", "status.device_key", "device key %s\n"), key.Fingerprint())
 	}
 }
 
@@ -189,10 +189,10 @@ func cloudSwitchCommand(on bool) {
 		os.Exit(1)
 	}
 	if on {
-		fmt.Printf("cloud on   %s\n", parts.file.Path())
+		fmt.Printf(cliCopy("cloud", "switch.on", "cloud on   %s\n"), parts.file.Path())
 		return
 	}
-	fmt.Printf("cloud off  %s\n", parts.file.Path())
+	fmt.Printf(cliCopy("cloud", "switch.off", "cloud off  %s\n"), parts.file.Path())
 }
 
 // cloudCommandsCommand is the remote-write switch, which is a separate
@@ -200,7 +200,7 @@ func cloudSwitchCommand(on bool) {
 // on this machine are not the same permission and never share a switch.
 func cloudCommandsCommand(args []string) {
 	if len(args) != 1 || (args[0] != "on" && args[0] != "off") {
-		fmt.Fprintln(os.Stderr, "usage: clawdline cloud commands <on|off>")
+		fmt.Fprintln(os.Stderr, cliCopy("cloud", "commands.usage", "usage: clawdline cloud commands <on|off>"))
 		os.Exit(2)
 	}
 	parts, err := openCloud()
@@ -213,19 +213,19 @@ func cloudCommandsCommand(args []string) {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("commands %-3s %s\n", args[0], parts.file.Path())
+	fmt.Printf(cliCopy("cloud", "commands.result", "commands %-3s %s\n"), args[0], parts.file.Path())
 	if on {
 		// "this Mac" was this line for as long as there was only ever a Mac
 		// under it. This daemon is built for macOS, Linux and Windows, and the
 		// sentence is printed by whichever one it is running on.
-		fmt.Printf("           a paired viewer may now type into this machine's sessions\n")
+		fmt.Print(cliCopy("cloud", "commands.allowed", "           a paired viewer may now type into this machine's sessions\n"))
 	}
 }
 
 func cloudLoginCommand(args []string) {
 	fs := flag.NewFlagSet("cloud login", flag.ExitOnError)
-	wait := fs.Duration("wait", 10*time.Minute, "how long to wait for the approval")
-	name := fs.String("name", "", "what to call this machine; defaults to the hostname")
+	wait := fs.Duration("wait", 10*time.Minute, cliCopy("cloud", "login.wait_help", "how long to wait for the approval"))
+	name := fs.String("name", "", cliCopy("cloud", "login.name_help", "what to call this machine; defaults to the hostname"))
 	_ = fs.Parse(args)
 
 	parts, err := openCloud()
@@ -257,21 +257,21 @@ func cloudLoginCommand(args []string) {
 	if previous, found, err := parts.identity.Load(); err != nil {
 		cloudFail(err)
 	} else if found {
-		fmt.Printf("replacing  machine %s registered with %s\n", previous.MachineID, previous.APIBase)
+		fmt.Printf(cliCopy("cloud", "login.replacing", "replacing  machine %s registered with %s\n"), previous.MachineID, previous.APIBase)
 	}
 
 	client := cloud.NewAccountClient(parts.settings.APIBase)
 	ctx, cancel := context.WithTimeout(context.Background(), *wait+time.Minute)
 	defer cancel()
 
-	fmt.Printf("api        %s\n", parts.settings.APIBase)
+	fmt.Printf(cliCopy("cloud", "status.api", "api        %s\n"), parts.settings.APIBase)
 	start, err := client.StartLogin(ctx, machineName, runtime.GOOS, key.PublicKey(), version)
 	if err != nil {
 		cloudFail(err)
 	}
-	fmt.Printf("code       %s\n", start.UserCode)
-	fmt.Printf("approve at %s\n", start.VerificationURIComplete)
-	fmt.Printf("waiting    up to %s\n", wait.String())
+	fmt.Printf(cliCopy("cloud", "login.code", "code       %s\n"), start.UserCode)
+	fmt.Printf(cliCopy("cloud", "login.approve_at", "approve at %s\n"), start.VerificationURIComplete)
+	fmt.Printf(cliCopy("cloud", "login.waiting", "waiting    up to %s\n"), wait.String())
 
 	poll, err := client.WaitForApproval(ctx, start, *wait, nil)
 	if err != nil {
@@ -288,17 +288,17 @@ func cloudLoginCommand(args []string) {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("account    %s\n", identity.AccountID)
-	fmt.Printf("machine    %s\n", identity.MachineID)
-	fmt.Printf("saved      %s\n", parts.identity.Path())
+	fmt.Printf(cliCopy("cloud", "status.account", "account    %s\n"), identity.AccountID)
+	fmt.Printf(cliCopy("cloud", "status.machine", "machine    %s\n"), identity.MachineID)
+	fmt.Printf(cliCopy("cloud", "login.saved", "saved      %s\n"), parts.identity.Path())
 	// The approval is proven by using it once: the credential buys a device
 	// token or it does not. Nothing is connected — the relay is not dialled.
 	token, err := client.MintDeviceToken(ctx, identity.MachineCredential)
 	if err != nil {
 		cloudFail(err)
 	}
-	fmt.Printf("verified   the control plane issued a device token (expires %s)\n", token.ExpiresAt.Local().Format(time.RFC3339))
-	fmt.Printf("next       clawdline cloud on, then restart the daemon\n")
+	fmt.Printf(cliCopy("cloud", "login.verified", "verified   the control plane issued a device token (expires %s)\n"), token.ExpiresAt.Local().Format(time.RFC3339))
+	fmt.Print(cliCopy("cloud", "login.next", "next       clawdline cloud on, then restart the daemon\n"))
 }
 
 // cloudFail prints a failure by its name and what to do about it, and exits.
@@ -309,7 +309,7 @@ func cloudFail(err error) {
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "clawdline: %s\n", failure)
-	fmt.Fprintf(os.Stderr, "what to do %s\n", failure.Remedy())
+	fmt.Fprintf(os.Stderr, cliCopy("cloud", "failure.remedy", "what to do %s\n"), failure.Remedy())
 	os.Exit(1)
 }
 
@@ -321,8 +321,8 @@ func cloudPreflightCommand() {
 	for _, check := range report.Checks {
 		fmt.Printf("%-5s %-10s %s\n", check.Result, check.Name, check.Detail)
 	}
-	fmt.Printf("next       %s\n", report.Next)
-	fmt.Printf("network    nothing in this check was sent anywhere\n")
+	fmt.Printf(cliCopy("cloud", "preflight.next", "next       %s\n"), report.Next)
+	fmt.Print(cliCopy("cloud", "preflight.network", "network    nothing in this check was sent anywhere\n"))
 	if !report.Ready {
 		os.Exit(1)
 	}
@@ -330,11 +330,11 @@ func cloudPreflightCommand() {
 
 func cloudConnectCommand(args []string) {
 	fs := flag.NewFlagSet("cloud connect", flag.ExitOnError)
-	hold := fs.Duration("for", 0, "how long to hold the line; 0 means until interrupted")
-	publish := fs.String("publish", "", "a channel to publish one test envelope on")
-	body := fs.String("body", `{"type":"probe","v":1}`, "the plaintext of that envelope")
-	repeat := fs.Int("repeat-sequence", 0, "re-send the published envelope's exact bytes N more times, to show the relay's answer to a duplicate")
-	statusJSON := fs.Bool("json", false, "print the final status as JSON")
+	hold := fs.Duration("for", 0, cliCopy("cloud", "connect.for_help", "how long to hold the line; 0 means until interrupted"))
+	publish := fs.String("publish", "", cliCopy("cloud", "connect.publish_help", "a channel to publish one test envelope on"))
+	body := fs.String("body", `{"type":"probe","v":1}`, cliCopy("cloud", "connect.body_help", "the plaintext of that envelope"))
+	repeat := fs.Int("repeat-sequence", 0, cliCopy("cloud", "connect.repeat_help", "re-send the published envelope's exact bytes N more times, to show the relay's answer to a duplicate"))
+	statusJSON := fs.Bool("json", false, cliCopy("cloud", "connect.json_help", "print the final status as JSON"))
 	_ = fs.Parse(args)
 
 	parts, err := openCloud()
@@ -345,7 +345,7 @@ func cloudConnectCommand(args []string) {
 	if !parts.settings.Enabled {
 		// The switch is the whole answer. Connecting "just this once" because
 		// a command was typed would make the setting a decoration.
-		fmt.Fprintln(os.Stderr, "clawdline:", cloud.ErrDisabled, "— run `clawdline cloud on`")
+		fmt.Fprintln(os.Stderr, "clawdline:", cloud.ErrDisabled, cliCopy("cloud", "connect.disabled_remedy", "— run `clawdline cloud on`"))
 		os.Exit(1)
 	}
 	identity, found, err := parts.identity.Load()
@@ -452,7 +452,7 @@ func cloudConnectCommand(args []string) {
 func publishProbe(spool *cloud.Spool, transport *cloud.Transport, channel, machine string, key domaincloud.DeviceKey, secret domaincloud.ContentKey, body []byte, repeat int) error {
 	class, ok := domaincloud.ChannelClasses(channel)
 	if !ok || len(class) == 0 {
-		return fmt.Errorf("%q is not a channel this build knows", channel)
+		return fmt.Errorf(cliCopy("cloud", "connect.unknown_channel", "%q is not a channel this build knows"), channel)
 	}
 	if err := domaincloud.ProducibleChannel(channel); err != nil {
 		return err
@@ -492,7 +492,7 @@ func publishProbe(spool *cloud.Spool, transport *cloud.Transport, channel, machi
 	if err := spool.Seal(seq, sealed, now); err != nil {
 		return err
 	}
-	fmt.Printf("cloud sealed seq=%d ch=%s bytes=%d\n", seq, channel, len(sealed))
+	fmt.Printf(cliCopy("cloud", "connect.sealed", "cloud sealed seq=%d ch=%s bytes=%d\n"), seq, channel, len(sealed))
 
 	// The drain worker picks the row up; this only waits for it to leave.
 	deadline := time.Now().Add(10 * time.Second)
@@ -508,7 +508,7 @@ func publishProbe(spool *cloud.Spool, transport *cloud.Transport, channel, machi
 		if err := transport.Publish(sealed); err != nil {
 			return err
 		}
-		fmt.Printf("cloud re-published the identical bytes seq=%d (attempt %d)\n", seq, i+2)
+		fmt.Printf(cliCopy("cloud", "connect.republished", "cloud re-published the identical bytes seq=%d (attempt %d)\n"), seq, i+2)
 	}
 	return nil
 }
@@ -520,15 +520,15 @@ func reportCloudExit(err error, status *cloud.StatusRecorder, asJSON bool) {
 		encoded, _ := json.MarshalIndent(snapshot, "", "  ")
 		fmt.Println(string(encoded))
 	} else {
-		fmt.Printf("state      %s\n", snapshot.State)
-		fmt.Printf("connects   %d (reconnects %d)\n", snapshot.Connects, snapshot.Reconnects)
-		fmt.Printf("published  %d, acked %d, refused %d\n", snapshot.Published, snapshot.Acked, snapshot.PublishErrors)
-		fmt.Printf("inbound    %d accepted, %v dropped\n", snapshot.InboundTotal, snapshot.InboundDropped)
+		fmt.Printf(cliCopy("cloud", "connect.state", "state      %s\n"), snapshot.State)
+		fmt.Printf(cliCopy("cloud", "connect.connects", "connects   %d (reconnects %d)\n"), snapshot.Connects, snapshot.Reconnects)
+		fmt.Printf(cliCopy("cloud", "connect.published", "published  %d, acked %d, refused %d\n"), snapshot.Published, snapshot.Acked, snapshot.PublishErrors)
+		fmt.Printf(cliCopy("cloud", "connect.inbound", "inbound    %d accepted, %v dropped\n"), snapshot.InboundTotal, snapshot.InboundDropped)
 		if last := (cloud.LineFailure{Kind: cloud.KindOfCode(snapshot.LastClose), Code: snapshot.LastClose}); last.Kind != "" {
-			fmt.Printf("last close %s\n", last)
+			fmt.Printf(cliCopy("cloud", "connect.last_close", "last close %s\n"), last)
 			if !stopped {
 				// A line that stopped says what to do once, below.
-				fmt.Printf("what to do %s\n", last.Remedy())
+				fmt.Printf(cliCopy("cloud", "failure.remedy", "what to do %s\n"), last.Remedy())
 			}
 		}
 	}
