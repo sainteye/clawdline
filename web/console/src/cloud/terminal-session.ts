@@ -33,6 +33,12 @@ export interface CloudTerminalSnapshot {
   frame: TerminalFrame | null
   control: TerminalControl | null
   canType: boolean
+  /**
+   * Typing is paused only for a moment this tab expects to end by itself: it holds the lease and is
+   * opening, synchronizing or moving to another connection (the direct path). Keys typed now wait in
+   * the tab, never sent, and go out once typing resumes, or are dropped after TYPE_AHEAD_MS.
+   */
+  typeAhead?: boolean
   hasLease: boolean
   reason: string
   /** How the current connection's screens and requests travel. */
@@ -43,6 +49,8 @@ type Pending = { operation: string; connection: string; terminal: string | null;
 type EarlyFrame = { value: Frame; envelope: TerminalEnvelope }
 const STALE_MS = 6_000
 const RECEIPT_MS = 10_000
+/** CloudTerminalTypeAheadSecondsLimit: how long a key typed during a brief pause waits for typing to resume. */
+export const TYPE_AHEAD_MS = 8_000
 const KEY_MS = 10 * 60_000
 /** An upgrade is not started this close to the key rotation, which would race it. */
 const UPGRADE_MIN_KEY_MS = 120_000
@@ -119,6 +127,9 @@ export class CloudTerminalSession {
       this.epoch === this.s.control.epoch && (this.s.control.expires_at ?? 0) * 1000 > Date.now() && !this.inputUnknown &&
       Date.now() / 1000 - this.s.frame.at <= STALE_MS / 1000 && Date.now() < this.expiresAt &&
       !this.openingNew && !this.retiringConnection && this.active
+    this.s.typeAhead = !this.s.canType && this.epoch !== null && !this.inputUnknown &&
+      (this.s.state === "opening" || this.s.state === "synchronizing" || this.s.state === "live" || this.s.state === "just_synced") &&
+      (!this.s.control || (!!this.s.control.held && !!this.s.control.holder?.same_client && this.epoch === this.s.control.epoch))
     for (const listener of this.listeners) listener(this.s)
   }
 
@@ -432,6 +443,7 @@ export class CloudTerminalSession {
       // Bound unacknowledged inputs while allowing several keystrokes to cross
       // a high-latency link without a full receipt round trip between them.
       if (this.inFlightInput.length >= 4) await this.inFlightInput[0]!.catch(() => undefined)
+      await this.untilTypeable()
       if (!this.s.canType || this.epoch === null) throw fail("terminal_input_paused")
       const seq = this.nextSeq++
       const issued = this.issueRequest(operation, { terminal_id: this.terminal, client: this.client,
@@ -449,6 +461,20 @@ export class CloudTerminalSession {
     this.sendQueue = send.catch(() => undefined)
     void send.catch(settle)
     return result.finally(() => { this.queuedBytes -= size })
+  }
+  /** Waits out a brief pause (`typeAhead`); a key typed then was never sent, so sending it later replays nothing. */
+  private untilTypeable(): Promise<void> {
+    if (this.s.canType && this.epoch !== null) return Promise.resolve()
+    if (!this.s.typeAhead) return Promise.reject(fail("terminal_input_paused"))
+    return new Promise<void>((resolve, reject) => {
+      const done = () => { clearTimeout(timer); this.listeners.delete(check) }
+      const timer = setTimeout(() => { done(); reject(fail("terminal_input_paused")) }, TYPE_AHEAD_MS)
+      const check = (s: CloudTerminalSnapshot) => {
+        if (s.canType && this.epoch !== null) { done(); resolve() }
+        else if (!s.typeAhead) { done(); reject(fail("terminal_input_paused")) }
+      }
+      this.listeners.add(check)
+    })
   }
   private applied(receipt: Receipt, seq: number): void {
     if (receipt.result?.applied_through !== seq) {

@@ -165,7 +165,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         terminal.current = term
         fit.current = addon
         unfollow.current = followCursorLine(() => scroller.current, term)
-        term.options.disableStdin = !session?.snapshot.canType
+        term.options.disableStdin = !session?.snapshot.canType && !session?.snapshot.typeAhead
         const current = session?.snapshot.frame
         if (current) { term.resize(current.cols, current.rows); term.write(frameBytes(current), showInputLine); lastRev.current = current.rev; drawnFrame.current = current }
       } catch (e) { if (!cancelled) setError(reason(e)) }
@@ -194,7 +194,9 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     term.write(frameDeltaBytes(drawnFrame.current, frame), () => { if (follow) showInputLine() })
     drawnFrame.current = frame
   }, [snapshot.frame])
-  useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = !snapshot.canType }, [snapshot.canType])
+  // A key typed while the tab is briefly reconnecting waits in the session instead of vanishing.
+  useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = !snapshot.canType && !snapshot.typeAhead },
+    [snapshot.canType, snapshot.typeAhead])
   useEffect(() => { if (terminal.current) terminal.current.options.screenReaderMode = reader }, [reader])
   useEffect(() => {
     const box = screen.current?.parentElement
@@ -338,7 +340,9 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
           snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
           snapshot.state === "revoked" ? nextWord("terminalCloudAccessRevoked") :
-            frameTimedOut ? nextWord("terminalCloudStaleHelp") : needsReview ? nextWord("terminalCloudUnknown") : ""}</p>
+            frameTimedOut ? nextWord("terminalCloudStaleHelp") : needsReview ? nextWord("terminalCloudUnknown") :
+            snapshot.canType ? "" : snapshot.typeAhead ? nextWord("terminalCloudTypeAhead") :
+            snapshot.frame && !snapshot.hasLease ? nextWord("terminalKeyboardPaused") : ""}</p>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
         {!snapshot.control?.holder?.same_client && !loading && <button className="board-button" type="button" disabled={!!busy || accessError || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>

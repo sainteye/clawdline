@@ -106,6 +106,7 @@ async function machineFixture() {
     case "control": return request.body ? { control } : { control, machine_incarnation: "inc" }
     case "direct_offer": return { sdp: "v=0 answer", direct_receipts: true }
     case "activate_connection": return { connection: request.connection, retired_connection: request.body?.old_connection }
+    case "input": return { applied_through: (request as { seq?: number }).seq }
     default: return {}
     }
   }
@@ -192,6 +193,43 @@ test("the direct connection's first frame, arriving before the lease check retur
     assert.deepEqual(after, [])
     assert.equal(m.acks().length, 1, `the direct frame is acknowledged (stages: ${m.stages.filter((s) => !s.startsWith("raw") && !s.startsWith("request_") && !s.startsWith("pending") && !s.startsWith("session_") && !s.startsWith("relay_ack")).join(" ")})`)
     assert.equal(session.snapshot.carrier, "direct")
+    assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose(); m.transport.dispose() }
+})
+
+test("a key typed while the tab moves to the direct path waits, then goes out once it can type", async () => {
+  const m = await machineFixture()
+  const session = new CloudTerminalSession(m.transport, "stable-tab", m.observation)
+  try {
+    const starting = session.start()
+    await serve(m, () => false, settled(starting))
+    await starting
+    const attaching = session.attach(terminalID)
+    await serve(m, () => false, settled(attaching))
+    await attaching
+    const acquiring = session.acquire("acquire")
+    await serve(m, () => false, settled(acquiring))
+    await acquiring
+    const relay = (session as unknown as { connection: string }).connection
+    await m.frame(relay, false)
+    let direct = ""
+    const held = await serve(m, (request) => {
+      if (request.operation === "rekey_connection") direct = request.connection
+      return request.operation === "control" && request.connection === direct
+    }, (held) => held.length === 1)
+    assert.equal(session.snapshot.canType, false, "the move pauses typing")
+    assert.equal(session.snapshot.typeAhead, true, "but only for a moment the tab expects to end")
+    const typing = session.input(new TextEncoder().encode("a"))
+    await settle()
+    await serve(m, () => false, () => true)
+    assert.deepEqual(m.sent.filter((r) => r.operation === "input"), [], "nothing is sent while paused")
+    await m.frame(direct, true)
+    for (const request of held) await m.answer(request as never)
+    await serve(m, () => false, settled(typing))
+    await typing
+    const inputs = m.sent.filter((r) => r.operation === "input")
+    assert.equal(inputs.length, 1)
+    assert.equal(inputs[0].connection, direct, "the key went out on the direct connection")
     assert.equal(session.snapshot.canType, true)
   } finally { session.dispose(); m.transport.dispose() }
 })

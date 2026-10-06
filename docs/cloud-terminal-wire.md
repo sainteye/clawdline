@@ -137,6 +137,7 @@ When the machine setting `cloud_terminal_direct` (default on) is off, offers are
 | `CloudTerminalDirectBusyRetrySecondsLimit` | 5 s before another upgrade attempt after a relay `rate_limited` or `over_capacity` | browser |
 | `CloudTerminalRelayBusyRetrySecondsLimit` | 2.1 s before resending a request the relay refused with `rate_limited` or `over_capacity`, up to three times | browser |
 | `CloudTerminalSweepSecondsLimit` | 1 s terminal sweep | machine |
+| `CloudTerminalTypeAheadSecondsLimit` | 8 s a key typed during a brief pause waits for typing to resume | browser |
 | `CloudTerminalReceiptBusyRetriesLimit` | 3 republications of a receipt the relay refused with `rate_limited` | machine |
 | `CloudTerminalReceiptBusyRetrySecondsLimit` | 2 s before each | machine |
 
@@ -154,6 +155,6 @@ Use an authorized viewer, a paired read-only viewer, and a revoked viewer. Verif
 
 A list-only browser sends `release_connection` after its list receipt. The machine publishes the final keyed receipt, blocks further effects on that connection, and retires its relay registration when that receipt settles. The list can render without waiting for this cleanup receipt. This prevents repeated refreshes from occupying the per-viewer connection quota for the full key lifetime.
 
-The browser may publish at most four numbered input or paste requests before their receipts arrive. Publication is ordered; a later key waits when the window is full. Each receipt still proves its own applied sequence. Any unknown input outcome pauses further typing and requires reconciliation; no key or paste is automatically replayed. The viewer redraws changed rows from each verified complete frame, while a resize or alternate-screen transition redraws the full frame.
+While the tab holds its lease and is only opening, synchronizing or rotating to a new connection (as when it moves to the direct path), a key or paste typed then waits in the tab, unsent and inside the same 64 KiB queue bound, and is published once typing resumes; after `CloudTerminalTypeAheadSecondsLimit` it is dropped and the page says input is paused. The page says it is connecting meanwhile. Since such a key was never published, sending it later replays nothing. The browser may publish at most four numbered input or paste requests before their receipts arrive. Publication is ordered; a later key waits when the window is full. Each receipt still proves its own applied sequence. Any unknown input outcome pauses further typing and requires reconciliation; no key or paste is automatically replayed. The viewer redraws changed rows from each verified complete frame, while a resize or alternate-screen transition redraws the full frame.
 
 When a complete frame is awaiting relay settlement, the machine defers a newer frame without advancing the watch’s last delivered revision. Its next read retries the newest full frame, so a change during backpressure need not wait for the three-second idle heartbeat. Failed relay settlement still retires the connection.
