@@ -79,6 +79,8 @@ export class CloudTerminalSession {
   private confirmed = 0
   private epoch: number | null = null
   private nextSeq = 1
+  /** Control is being taken right now (on entry, or by the person's own button): keys typed meanwhile wait. */
+  private controlPending = 0
   private inputUnknown = false
   private connectionUnknown = false
   private active = false
@@ -145,6 +147,10 @@ export class CloudTerminalSession {
       (this.s.state === "opening" || this.s.state === "synchronizing" || this.s.state === "live" || this.s.state === "just_synced" ||
         (this.s.state === "stale" && Date.now() < this.expiresAt)) &&
       (!this.s.control || (!!this.s.control.held && !!this.s.control.holder?.same_client && this.epoch === this.s.control.epoch))
+    // A tab still taking control is about to hold it: a key typed now waits for the answer rather than
+    // being refused, and is refused with that answer's reason if control does not come.
+    if (!this.s.canType && !this.s.typeAhead && this.controlPending > 0 && !this.inputUnknown &&
+      (this.s.state === "opening" || this.s.state === "synchronizing" || this.s.state === "live" || this.s.state === "just_synced")) this.s.typeAhead = true
     for (const listener of this.listeners) listener(this.s)
   }
 
@@ -417,7 +423,19 @@ export class CloudTerminalSession {
     await this.captureOrStream(id)
     return result
   }
-  async acquire(action: "acquire" | "takeover"): Promise<void> {
+  /**
+   * Runs `work`, the page's own taking of control as it opens a terminal, with keys typed meanwhile
+   * held as type-ahead instead of refused for want of a lease that is on its way.
+   */
+  async expectControl<T>(work: () => Promise<T>): Promise<T> {
+    this.controlPending++
+    this.set({})
+    try { return await work() } finally { this.controlPending--; this.set({}) }
+  }
+  acquire(action: "acquire" | "takeover"): Promise<void> {
+    return this.expectControl(() => this.acquireNow(action))
+  }
+  private async acquireNow(action: "acquire" | "takeover"): Promise<void> {
     const receipt = await this.request("control", { terminal_id: this.terminal, client: this.client, body: { action } })
     const control = (receipt.result?.control ?? receipt.result) as TerminalControl | undefined
     if (!control?.held || !control.holder?.same_client) throw fail("not_controller")
@@ -442,7 +460,8 @@ export class CloudTerminalSession {
       return
     }
     this.confirmed = control.applied_through ?? 0
-    this.nextSeq = this.confirmed + 1
+    // A key published before the rekey may still be on its way; its number is never handed out again.
+    this.nextSeq = Math.max(this.nextSeq, this.confirmed + 1)
     this.inputUnknown = false
     this.lastRenew = Date.now()
     this.set({ control })
@@ -532,8 +551,11 @@ export class CloudTerminalSession {
       this.set({ state: "unknown", reason: "terminal_input_state_unknown" })
       throw fail("terminal_input_state_unknown")
     }
-    this.confirmed = seq
-    this.nextSeq = seq + 1
+    // Keys after this one may already be numbered and in flight: the next number only moves forward.
+    // Resetting it to seq + 1 here handed a later key the number of one still in flight, which the
+    // machine then answered as a duplicate and never typed (a burst lost its fifth key and more).
+    this.confirmed = Math.max(this.confirmed, seq)
+    this.nextSeq = Math.max(this.nextSeq, seq + 1)
   }
   async release(): Promise<void> {
     await this.request("control", { terminal_id: this.terminal, client: this.client, body: { action: "release" } })

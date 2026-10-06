@@ -13,7 +13,7 @@ import { closeTerminalPane, openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtrl } from "./keys.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
-import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalExplained, reconnectCloudTerminal } from "./cloud-view.js"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalNotice, reconnectCloudTerminal, type KeyRefusalNotice } from "./cloud-view.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 import { centerCursorLine, followCursorLine } from "./cursor-line.js"
 import { CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS, terminalListErrorKind } from "../../session/cloud-terminal-all.js"
@@ -64,8 +64,17 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const [firstFramePending, setFirstFramePending] = useState(true)
   const [frameTimedOut, setFrameTimedOut] = useState(false)
   const [error, setError] = useState("")
-  /** A refused key: the status line already says why when the session's state does. */
-  const keyFailed = (e: unknown) => { if (!keyRefusalExplained((e as { code?: string })?.code ?? "")) setError(reason(e)) }
+  /**
+   * The last refused key, said beside the terminal itself with the way back to typing. A key is never
+   * dropped with nothing said: the status line alone can be scrolled off while the person types.
+   */
+  const [keyRefused, setKeyRefused] = useState<(KeyRefusalNotice & { why: string }) | null>(null)
+  const keyFailed = (e: unknown) => {
+    const code = (e as { code?: string })?.code ?? "terminal_send_failed"
+    const why = reason(e)
+    setKeyRefused({ ...keyRefusalNotice(code, session?.snapshot.control ?? null, session?.snapshot.state ?? ""), why: why === code ? terminalRefusalWords(code) : why })
+  }
+  const keySent = () => setKeyRefused(null)
   // Attaching again by itself after a refusal that means "not right now"
   // (terminal_busy while the machine cannot verify this browser, a timeout):
   // which attempt is next for which terminal, and the wait being shown.
@@ -120,7 +129,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const observation = new TerminalObservation()
     let release: (() => void) | null = null
     let stop: (() => void) | null = null
-    setSnapshot(empty); setLoading(true); setFirstFramePending(!!id); setFrameTimedOut(false); setError(""); setNeedsReview(false); setMeta(null)
+    setSnapshot(empty); setLoading(true); setFirstFramePending(!!id); setFrameTimedOut(false); setError(""); setNeedsReview(false); setMeta(null); setKeyRefused(null)
     if (attempt === 0) setRetryWait(null)
     void (async () => {
       try {
@@ -131,12 +140,17 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         const next = lease.session
         stop = next.subscribe((value) => live && setSnapshot(value))
         setSession(next)
-        const begun = await beginCloudTerminal(next, channelProject, id, TAB, true)
-        if (live && "meta" in begun) setMeta(begun.meta)
-        // Attaching forgets this page's epoch; a same-tab holder can safely
-        // reacquire after the host confirms no input outcome is uncertain.
-        if (live && await acquireVisibleTerminal(next, id, TAB, next.snapshot.control, next.snapshot.state) === "needs_review")
-          setNeedsReview(true)
+        // A terminal nobody else holds is taken on entry; keys typed before that answer wait for it
+        // instead of being refused for a lease that is on its way.
+        const entered = async () => {
+          const begun = await beginCloudTerminal(next, channelProject, id, TAB, true)
+          if (live && "meta" in begun) setMeta(begun.meta)
+          // Attaching forgets this page's epoch; a same-tab holder can safely
+          // reacquire after the host confirms no input outcome is uncertain.
+          if (live && await acquireVisibleTerminal(next, id, TAB, next.snapshot.control, next.snapshot.state) === "needs_review")
+            setNeedsReview(true)
+        }
+        await (id ? next.expectControl(entered) : entered())
         if (live) setRetryWait(null)
       } catch (e) {
         if (!live) return
@@ -183,15 +197,14 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         term.onData((data) => {
           const { out } = withCtrl(ctrlArmed.current, data)
           if (ctrlArmed.current) { ctrlArmed.current = false; setCtrl(false) }
-          void session?.input(new TextEncoder().encode(out)).catch(keyFailed)
+          void session?.input(new TextEncoder().encode(out)).then(keySent, keyFailed)
           showInputLine()
         })
         term.onBinary((data) => { const bytes = Uint8Array.from(data, (char) => char.charCodeAt(0) & 0xff)
-          void session?.input(bytes).catch(keyFailed); showInputLine() })
+          void session?.input(bytes).then(keySent, keyFailed); showInputLine() })
         terminal.current = term
         fit.current = addon
         unfollow.current = followCursorLine(() => scroller.current, term)
-        term.options.disableStdin = !session?.snapshot.canType && !session?.snapshot.typeAhead
         const current = session?.snapshot.frame
         if (current) { term.resize(current.cols, current.rows); term.write(frameBytes(current), showInputLine); lastRev.current = current.rev; drawnFrame.current = current }
       } catch (e) { if (!cancelled) setError(reason(e)) }
@@ -200,7 +213,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const paste = (event: ClipboardEvent) => {
       event.preventDefault(); event.stopImmediatePropagation()
       const text = event.clipboardData?.getData("text/plain") ?? ""
-      if (text) void session?.paste(text).catch(keyFailed)
+      if (text) void session?.paste(text).then(keySent, keyFailed)
     }
     const unbindKeys = bindTerminalKeyboard(element, () => back.current?.focus())
     element.addEventListener("paste", paste, true)
@@ -220,9 +233,9 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     term.write(frameDeltaBytes(drawnFrame.current, frame), () => { if (follow) showInputLine() })
     drawnFrame.current = frame
   }, [snapshot.frame])
-  // A key typed while the tab is briefly reconnecting waits in the session instead of vanishing.
-  useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = !snapshot.canType && !snapshot.typeAhead },
-    [snapshot.canType, snapshot.typeAhead])
+  // The screen always takes keys: one typed during a brief pause waits in the session, and one the
+  // session refuses raises the notice beside the screen. A disabled screen swallowed keys unsaid.
+  useEffect(() => { if (snapshot.canType) setKeyRefused(null) }, [snapshot.canType])
   useEffect(() => { if (terminal.current) terminal.current.options.screenReaderMode = reader }, [reader])
   useEffect(() => {
     const box = screen.current?.parentElement
@@ -311,7 +324,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const bytes = /^[ABCD]$/.test(value) ? (snapshot.frame?.modes.app_cursor ? "\x1bO" : "\x1b[") + value : value
     const { out } = withCtrl(ctrlArmed.current, bytes)
     ctrlArmed.current = false; setCtrl(false)
-    void session?.input(new TextEncoder().encode(out)).catch(keyFailed)
+    void session?.input(new TextEncoder().encode(out)).then(keySent, keyFailed)
     terminal.current?.focus()
     showInputLine()
   }
@@ -413,7 +426,18 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
       {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}
       <div className="terminal-history-output" ref={historyFocus} tabIndex={0}>{history.lines.map((line, index) =>
         <div className="terminal-history-line" key={index}>{line || "\u00a0"}</div>)}</div></section>}
-    <div className="terminal-scroll" ref={scroller} hidden={history !== null}>{firstFramePending && !error && <p className="terminal-loading terminal-wait" role="status" aria-live="polite"><span className="terminal-wait-indicator" aria-hidden="true" />{nextWord("terminalCloudSyncing")}</p>}<div className="terminal-host" ref={screen} /></div>
+    <div className="terminal-scroll" ref={scroller} hidden={history !== null}>{keyRefused && <div className="terminal-key-refused" role="alert">
+      <p>{keyRefused.kind === "no_control" ? nextWord("terminalKeysNotSentNoControl") :
+        keyRefused.kind === "other_holder" ? nextWord("terminalKeysNotSentOtherHolder", { holder }) :
+          keyRefused.kind === "unknown" ? nextWord("terminalKeysNotSentUnknown") : nextWord("terminalKeysNotSent", { why: keyRefused.why })}</p>
+      {keyRefused.action && <button className="board-button" type="button" disabled={!!busy || accessError || snapshot.state === "revoked"} onClick={() => {
+        const action = keyRefused.action
+        if (action === "acquire") void run("acquire", async () => { await session!.acquire("acquire"); setKeyRefused(null); terminal.current?.focus() })
+        else if (action === "reconnect") reconnect()
+        else setConfirm(action)
+      }}>{nextWord(keyRefused.action === "acquire" ? "terminalAcquire" : keyRefused.action === "takeover" ? "terminalTakeover" :
+        keyRefused.action === "reacquire" ? "terminalCloudReacquire" : "terminalCloudReconnect")}</button>}
+    </div>}{firstFramePending && !error && <p className="terminal-loading terminal-wait" role="status" aria-live="polite"><span className="terminal-wait-indicator" aria-hidden="true" />{nextWord("terminalCloudSyncing")}</p>}<div className="terminal-host" ref={screen} /></div>
     <button className="terminal-keyboard board-button" type="button" disabled={!snapshot.canType || history !== null}
       title={!snapshot.canType ? nextWord("terminalKeyboardPaused") : undefined}
       onClick={() => { terminal.current?.focus(); showInputLine() }}>{nextWord(snapshot.canType ? "terminalShowKeyboard" : "terminalKeyboardPaused")}</button>

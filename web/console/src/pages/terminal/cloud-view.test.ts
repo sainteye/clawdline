@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalExplained, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalNotice, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
 
 // `cloud/terminal-session.ts` uses constructor parameter properties, which
 // Node's strip-types runner refuses, so the start path is driven through a fake
@@ -84,11 +84,18 @@ test("entry acquires a free terminal or this tab's old lease, but never another 
   assert.deepEqual(calls, [])
 })
 
-test("a refused key repeats as an error only when the status line cannot already say why", () => {
-  // The session's state says these, with the button that recovers; an error would outlive the recovery.
-  for (const code of ["terminal_input_state_unknown", "not_controller", "terminal_stale", "machine_offline", "terminal_access_revoked"])
-    assert.equal(keyRefusalExplained(code), true, code)
-  // A pause that outlasted its bound dropped keys the state no longer shows, and a send failure is news.
-  for (const code of ["terminal_input_paused", "input_too_large", "terminal_receipt_timeout"])
-    assert.equal(keyRefusalExplained(code), false, code)
+test("every refused key gets a notice beside the terminal with the way back to typing", () => {
+  const free = { held: false, epoch: 3, expires_at: 0 }
+  const mine = { held: true, epoch: 3, expires_at: 0, holder: { name: "tab", local: false, same_device: true, same_client: true } }
+  const other = { ...mine, holder: { name: "phone", local: false, same_device: false, same_client: false } }
+  assert.deepEqual(keyRefusalNotice("not_controller", free, "live"), { kind: "no_control", code: "not_controller", action: "acquire" })
+  assert.deepEqual(keyRefusalNotice("not_controller", null, "live"), { kind: "no_control", code: "not_controller", action: "acquire" })
+  assert.deepEqual(keyRefusalNotice("not_controller", other, "live"), { kind: "other_holder", code: "not_controller", action: "takeover" })
+  assert.deepEqual(keyRefusalNotice("lease_expired", mine, "live"), { kind: "no_control", code: "lease_expired", action: "reacquire" })
+  assert.deepEqual(keyRefusalNotice("terminal_input_state_unknown", mine, "unknown"),
+    { kind: "unknown", code: "terminal_input_state_unknown", action: "reacquire" })
+  assert.equal(keyRefusalNotice("terminal_stale", mine, "stale").action, "reconnect")
+  assert.equal(keyRefusalNotice("machine_offline", mine, "offline").action, "reconnect")
+  for (const code of ["terminal_input_paused", "input_too_large", "terminal_receipt_timeout", "terminal_access_revoked", "terminal_closed"])
+    assert.deepEqual(keyRefusalNotice(code, mine, "live"), { kind: "other", code, action: null }, code)
 })
