@@ -7,7 +7,7 @@ func TestCloudTerminalObservationRowsIsRegistered(t *testing.T) {
 		if row.Name != CloudTerminalObservationRows {
 			continue
 		}
-		if row.Class != Observation || row.Unit != Rows || row.Limit != 128 || row.AtLimit != Refuse || row.Deviation == "" {
+		if row.Class != Observation || row.Unit != Rows || row.Limit != 128 || row.AtLimit != EvictOldest || row.Deviation != "" {
 			t.Fatalf("Cloud terminal browser observation policy: %+v", row)
 		}
 		return

@@ -9,7 +9,7 @@ export type TerminalStage = "subscription_sent" | "subscription_confirmed" | "su
   /** The direct (WebRTC) carrier: `code` names the carrier a connection now uses, or why an upgrade or DC ended. */
   "carrier_changed" | "direct_failed" | "direct_down"
 export type TerminalObservationRow = {
-  /** This page's own count, 1 to 128. */
+  /** This page's own count of every stage it recorded, from 1; it keeps counting when older rows are evicted. */
   seq: number
   /** Milliseconds since this page instance began observing. */
   ms: number
@@ -23,7 +23,22 @@ export type TerminalObservationRow = {
 /** Where a receipt stopped, in the order a receipt passes through the browser. */
 export type TerminalPhase = "relay_publish" | "ciphertext" | "verify_decrypt" | "pending_match" | "session_accept" | "receipt_timeout"
 
+/**
+ * How a page keeps its timeline bounded without going silent (docs/cloud-terminal-wire.md, Diagnostics):
+ * the report keeps the newest TERMINAL_OBSERVATION_ROWS rows, evicting the oldest, and pins the first
+ * TERMINAL_OBSERVATION_PINNED notable rows (failures, refusals, timeouts, drops, carrier changes) so it
+ * shows both how a terminal started going wrong and its latest state. Until 2026-10 the page kept the
+ * first 128 rows and dropped everything after, so a failure after a few dozen keys was never recorded.
+ * The console writes the first TERMINAL_OBSERVATION_ROWS rows of each kind, then every
+ * TERMINAL_OBSERVATION_ROUTINE_EVERY-th routine row and every TERMINAL_OBSERVATION_NOTABLE_EVERY-th
+ * notable row; `seq` counts every row, so a gap in it shows the sampling.
+ */
 export const TERMINAL_OBSERVATION_ROWS = 128
+export const TERMINAL_OBSERVATION_PINNED = 16
+export const TERMINAL_OBSERVATION_ROUTINE_EVERY = 64
+export const TERMINAL_OBSERVATION_NOTABLE_EVERY = 16
+/** Real identifiers remembered for ordinals and receipt timing; the oldest is forgotten first. */
+const TERMINAL_OBSERVATION_IDS = 256
 
 const phases: Record<TerminalStage, TerminalPhase | null> = {
   subscription_sent: null, subscription_confirmed: null, subscription_refused: null, relay_error: null,
@@ -34,6 +49,13 @@ const phases: Record<TerminalStage, TerminalPhase | null> = {
   carrier_changed: null, direct_failed: null, direct_down: null,
 }
 const failures = new Set<TerminalStage>(["publish_refused", "envelope_rejected", "pending_miss", "receipt_timeout", "frame_dropped"])
+/** Stages worth keeping after the rows around them are evicted; `session_settled` is notable when it carries a code (refused or unknown). */
+const notableStages = new Set<TerminalStage>([...failures, "subscription_refused", "relay_error", "publish_retry",
+  "carrier_changed", "direct_failed", "direct_down"])
+function notable(row: TerminalObservationRow): boolean {
+  return notableStages.has(row.stage) || (row.stage === "session_settled" && row.code !== undefined)
+}
+type Timings = { subscriptionMs?: number; openReceiptMs?: number; firstFrameMs?: number; listReceiptMs?: number; inputReceiptMaxMs?: number }
 
 /** One row as a single line with its fields always in the same order, so a console that shows objects as `Object` still shows every field. */
 export function terminalStageLine(row: TerminalObservationRow): string {
@@ -45,7 +67,20 @@ export class TerminalObservation {
   private readonly connections = new Map<string, number>()
   private readonly requests = new Map<string, number>()
   private readonly sink: ((row: TerminalObservationRow) => void) | null
+  /** The newest rows, oldest first. */
   private readonly rows: TerminalObservationRow[] = []
+  /** The first notable rows, kept after the ring evicts them. */
+  private readonly pinned: TerminalObservationRow[] = []
+  private firstFailure: TerminalObservationRow | null = null
+  private lastNotable: TerminalObservationRow | null = null
+  private seen = 0
+  private routineSeen = 0
+  private notableSeen = 0
+  private connectionCount = 0
+  private requestCount = 0
+  /** Timings accumulate as rows arrive, so they survive the rows' eviction. */
+  private readonly timing: Timings = {}
+  private readonly sent = new Map<number, number>()
   private readonly began: number
   private readonly startedAt: string
   private readonly clock: () => number
@@ -62,63 +97,92 @@ export class TerminalObservation {
   record(stage: TerminalStage, fields: {
     connection?: string; requestID?: string; channel?: "term" | "termr"; operation?: string; code?: string
   } = {}): void {
-    if (!this.sink || this.rows.length >= TERMINAL_OBSERVATION_ROWS) return
+    if (!this.sink) return
     try {
-      const row: TerminalObservationRow = { seq: this.rows.length + 1, ms: Math.max(0, Math.round(this.clock() - this.began)), stage }
-      if (fields.connection) row.connection = this.ordinal(this.connections, fields.connection)
-      if (fields.requestID) row.request = this.ordinal(this.requests, fields.requestID)
+      const row: TerminalObservationRow = { seq: this.seen + 1, ms: Math.max(0, Math.round(this.clock() - this.began)), stage }
+      if (fields.connection) row.connection = this.ordinal(this.connections, fields.connection, () => ++this.connectionCount)
+      if (fields.requestID) row.request = this.ordinal(this.requests, fields.requestID, () => ++this.requestCount)
       if (fields.channel) row.channel = fields.channel
       if (fields.operation) row.operation = /^[a-z_]{1,32}$/.test(fields.operation) ? fields.operation : "unrecognized"
       if (fields.code) row.code = /^[a-z_]{1,48}$/.test(fields.code) ? fields.code : "terminal_receive_failed"
+      this.seen = row.seq
       this.rows.push(row)
-      this.sink(row)
+      if (this.rows.length > TERMINAL_OBSERVATION_ROWS) this.rows.shift()
+      this.time(row)
+      let write: boolean
+      if (notable(row)) {
+        this.notableSeen++
+        this.lastNotable = row
+        if (!this.firstFailure && failures.has(row.stage)) this.firstFailure = row
+        if (this.pinned.length < TERMINAL_OBSERVATION_PINNED) this.pinned.push(row)
+        write = this.notableSeen <= TERMINAL_OBSERVATION_ROWS || this.notableSeen % TERMINAL_OBSERVATION_NOTABLE_EVERY === 0
+      } else {
+        this.routineSeen++
+        write = this.routineSeen <= TERMINAL_OBSERVATION_ROWS || this.routineSeen % TERMINAL_OBSERVATION_ROUTINE_EVERY === 0
+      }
+      if (write) this.sink(row)
     } catch { /* Diagnostics cannot affect terminal delivery. */ }
   }
 
   /** The first stage at which a receipt failed, or null while nothing has. */
   stopped(): { phase: TerminalPhase; row: TerminalObservationRow } | null {
-    const row = this.rows.find((r) => failures.has(r.stage))
+    const row = this.firstFailure
     return row ? { phase: phases[row.stage]!, row } : null
   }
 
   /** Durations from this page's monotonic clock; absent means the stage was not observed. */
-  timings(): { subscriptionMs?: number; openReceiptMs?: number; firstFrameMs?: number; listReceiptMs?: number; inputReceiptMaxMs?: number } {
-    const result: { subscriptionMs?: number; openReceiptMs?: number; firstFrameMs?: number; listReceiptMs?: number; inputReceiptMaxMs?: number } = {}
-    result.subscriptionMs = this.rows.find((row) => row.stage === "subscription_confirmed")?.ms
-    result.firstFrameMs = this.rows.find((row) => row.stage === "frame_observed")?.ms
-    const sent = new Map<number, TerminalObservationRow>()
-    for (const row of this.rows) {
-      if (row.stage === "request_sent" && row.request) sent.set(row.request, row)
-      if (row.stage !== "session_settled" || !row.request) continue
-      const start = sent.get(row.request)
-      if (!start) continue
-      const elapsed = row.ms - start.ms
-      if (row.operation === "open_connection" && result.openReceiptMs === undefined) result.openReceiptMs = elapsed
-      if (row.operation === "list" && result.listReceiptMs === undefined) result.listReceiptMs = elapsed
-      if ((row.operation === "input" || row.operation === "paste") &&
-        (result.inputReceiptMaxMs === undefined || elapsed > result.inputReceiptMaxMs)) result.inputReceiptMaxMs = elapsed
-    }
-    return result
+  timings(): Timings {
+    return { ...this.timing }
   }
 
   /** The whole timeline as text a person can copy: fixed fields, no terminal contents, keys or real identifiers. */
   text(): string {
     const stopped = this.stopped()
     const timing = this.timings()
-    const head = [`cloud terminal diagnostics started=${this.startedAt} rows=${this.rows.length}/${TERMINAL_OBSERVATION_ROWS}`,
+    const kept = new Set(this.rows.map((row) => row.seq))
+    const early = this.pinned.filter((row) => !kept.has(row.seq))
+    const omitted = this.seen - this.rows.length - early.length
+    const head = [`cloud terminal diagnostics started=${this.startedAt} rows=${this.rows.length}/${TERMINAL_OBSERVATION_ROWS}` +
+      (omitted > 0 ? ` omitted=${omitted}` : ""),
       stopped ? `stopped phase=${stopped.phase} stage=${stopped.row.stage} code=${stopped.row.code ?? "-"} seq=${stopped.row.seq}` : "stopped phase=-"]
+    const last = this.lastNotable
+    if (last && last !== stopped?.row) head.push(
+      `latest_notable phase=${phases[last.stage] ?? "-"} stage=${last.stage} code=${last.code ?? "-"} seq=${last.seq}`)
     if (Object.values(timing).some((value) => value !== undefined)) head.push(
       `timings subscription=${timing.subscriptionMs ?? "-"}ms open_receipt=${timing.openReceiptMs ?? "-"}ms` +
       ` first_frame=${timing.firstFrameMs ?? "-"}ms list_receipt=${timing.listReceiptMs ?? "-"}ms` +
       ` input_receipt_max=${timing.inputReceiptMaxMs ?? "-"}ms`)
-    return [...head, ...this.rows.map(terminalStageLine)].join("\n")
+    const body = early.length ? [...early.map(terminalStageLine), `omitted ${omitted} rows; newest ${this.rows.length} follow`] :
+      omitted > 0 ? [`omitted ${omitted} rows; newest ${this.rows.length} follow`] : []
+    return [...head, ...body, ...this.rows.map(terminalStageLine)].join("\n")
   }
 
-  private ordinal(map: Map<string, number>, id: string): number {
+  private time(row: TerminalObservationRow): void {
+    const t = this.timing
+    if (row.stage === "subscription_confirmed" && t.subscriptionMs === undefined) t.subscriptionMs = row.ms
+    if (row.stage === "frame_observed" && t.firstFrameMs === undefined) t.firstFrameMs = row.ms
+    if (row.stage === "request_sent" && row.request) {
+      this.sent.delete(row.request)
+      this.sent.set(row.request, row.ms)
+      if (this.sent.size > TERMINAL_OBSERVATION_IDS) this.sent.delete(this.sent.keys().next().value!)
+    }
+    if (row.stage !== "session_settled" || !row.request) return
+    const start = this.sent.get(row.request)
+    if (start === undefined) return
+    const elapsed = row.ms - start
+    if (row.operation === "open_connection" && t.openReceiptMs === undefined) t.openReceiptMs = elapsed
+    if (row.operation === "list" && t.listReceiptMs === undefined) t.listReceiptMs = elapsed
+    if ((row.operation === "input" || row.operation === "paste") &&
+      (t.inputReceiptMaxMs === undefined || elapsed > t.inputReceiptMaxMs)) t.inputReceiptMaxMs = elapsed
+  }
+
+  /** A small number standing for a real identifier; numbers are never reused, and the oldest identifiers are forgotten. */
+  private ordinal(map: Map<string, number>, id: string, next: () => number): number {
     const found = map.get(id)
     if (found) return found
-    const next = map.size + 1
-    map.set(id, next)
-    return next
+    const assigned = next()
+    map.set(id, assigned)
+    if (map.size > TERMINAL_OBSERVATION_IDS) map.delete(map.keys().next().value!)
+    return assigned
   }
 }

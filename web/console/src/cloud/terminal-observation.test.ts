@@ -50,15 +50,20 @@ test("the copyable text names the first stage that failed", () => {
   const text = observation.text().split("\n")
   assert.match(text[0]!, /^cloud terminal diagnostics started=\S+ rows=4\/128$/)
   assert.equal(text[1], "stopped phase=pending_match stage=pending_miss code=request_unknown seq=3")
-  assert.equal(text.length, 6)
+  assert.equal(text[2], "latest_notable phase=receipt_timeout stage=receipt_timeout code=- seq=4")
+  assert.equal(text.length, 7)
 })
 
 test("observation is bounded during a broken stream", () => {
   const rows: unknown[] = []
   const observation = new TerminalObservation((row) => rows.push(row))
   for (let i = 0; i < 200; i++) observation.record("envelope_rejected", { connection: "same", code: "terminal_bad_key" })
-  assert.equal(rows.length, 128)
-  assert.equal(observation.text().split("\n").length, 130)
+  // The first 128 failures in full, then every 16th: seq 144, 160, 176 and 192.
+  assert.equal(rows.length, 132)
+  const text = observation.text().split("\n")
+  assert.equal(text.filter((line) => line.startsWith("cloud terminal stage ")).length, 128 + 16)
+  assert.equal(text[2], "latest_notable phase=verify_decrypt stage=envelope_rejected code=terminal_bad_key seq=200")
+  assert.ok(text.includes("omitted 56 rows; newest 128 follow"))
 })
 
 test("a broken diagnostic sink or clock cannot interrupt terminal delivery", () => {
@@ -97,4 +102,42 @@ test("timings separate subscription, first frame, list and numbered input receip
     listReceiptMs: 10, firstFrameMs: 70, inputReceiptMaxMs: 20 })
   assert.match(observation.text(), /timings subscription=12ms open_receipt=20ms first_frame=70ms list_receipt=10ms input_receipt_max=20ms/)
   assert.equal(observation.text().includes("secret-connection"), false)
+})
+
+test("after 200 routine rows a later failure is still in the copied report", () => {
+  const observation = new TerminalObservation(() => {}, clock(0))
+  for (let i = 0; i < 200; i++) observation.record("raw_received", { connection: "same", channel: "termr" })
+  observation.record("receipt_timeout", { connection: "same", requestID: "late", operation: "input" })
+  const text = observation.text()
+  assert.match(text, /stage=receipt_timeout phase=receipt_timeout conn=1 req=1 ch=- op=input code=-$/)
+  assert.match(text.split("\n")[0]!, /rows=128\/128 omitted=73$/)
+  assert.equal(text.split("\n")[1], "stopped phase=receipt_timeout stage=receipt_timeout code=- seq=201")
+})
+
+test("the first failure stays in the report after newer rows push it out", () => {
+  const observation = new TerminalObservation(() => {}, clock(0))
+  observation.record("subscription_confirmed", { connection: "a" })
+  observation.record("envelope_rejected", { connection: "a", channel: "termr", code: "terminal_bad_key" })
+  for (let i = 0; i < 300; i++) observation.record("frame_observed", { connection: "b", channel: "term" })
+  observation.record("direct_down", { connection: "b", code: "direct_timeout" })
+  observation.record("frame_observed", { connection: "b", channel: "term" })
+  const text = observation.text().split("\n")
+  assert.equal(text[1], "stopped phase=verify_decrypt stage=envelope_rejected code=terminal_bad_key seq=2")
+  assert.equal(text[2], "latest_notable phase=- stage=direct_down code=direct_timeout seq=303")
+  assert.equal(observation.timings().subscriptionMs, 0)
+  // The pinned early failure, then the newest rows ending with the latest state.
+  assert.ok(text.includes("cloud terminal stage seq=2 t=+0ms stage=envelope_rejected phase=verify_decrypt conn=1 req=- ch=termr op=- code=terminal_bad_key"))
+  assert.equal(text.at(-1), "cloud terminal stage seq=304 t=+0ms stage=frame_observed phase=- conn=2 req=- ch=term op=- code=-")
+  assert.equal(text.filter((line) => line.startsWith("cloud terminal stage ")).length, 129)
+})
+
+test("the console keeps writing after the first rows, sparsely for routine stages and fully for failures", () => {
+  const rows: { seq: number; stage: string }[] = []
+  const observation = new TerminalObservation((row) => rows.push(row), clock(0))
+  for (let i = 0; i < 1000; i++) observation.record("frame_observed", { connection: "same", channel: "term" })
+  observation.record("receipt_timeout", { connection: "same", requestID: "r", operation: "input" })
+  assert.equal(rows.at(-1)!.stage, "receipt_timeout")
+  assert.equal(rows.at(-1)!.seq, 1001)
+  assert.ok(rows.length < 128 + 1000 / 16, `console rows ${rows.length}`)
+  assert.ok(rows.some((row) => row.seq > 128 && row.stage === "frame_observed"))
 })

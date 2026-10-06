@@ -2240,15 +2240,17 @@ func Register() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
-			// A browser page writes at most 128 content-free terminal stages
-			// to its local console, and a daemon connection logs at most as
-			// many of its own receipt stages. The daemon publishes the policy
-			// but cannot measure page usage or retract console entries already
-			// written.
+			// A browser page keeps its newest 128 content-free terminal
+			// stages, evicting the oldest, and pins its first 16 failure-like
+			// stages so a report shows both the start of a break and the
+			// latest state. Its console, and a daemon connection's log, write
+			// the first 128 stages of each kind in full and then sample them
+			// (every 64th routine stage, every 16th failure stage), so neither
+			// goes silent and neither grows without bound. The daemon
+			// publishes the policy but cannot measure page usage.
 			Name: CloudTerminalObservationRows, Class: Observation, Unit: Rows,
-			Limit: 128, AtLimit: Refuse,
-			Deviation: "Browser console entries cannot be evicted; later diagnostic stages are omitted after 128 without affecting terminal delivery.",
-			Told:      []Channel{Diagnostics}, EvictedBy: Daemon,
+			Limit: 128, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalObservationRowsLimit"},
 		},
 		{

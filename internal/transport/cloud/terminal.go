@@ -45,6 +45,12 @@ const (
 	CloudTerminalHistoryLineBytesLimit        = 4 << 10
 	CloudTerminalHistoryCaptureBytesLimit     = 4 << 20
 	CloudTerminalObservationRowsLimit         = 128
+	// After a connection's first CloudTerminalObservationRowsLimit routine
+	// stages, every CloudTerminalStageRoutineEvery-th is logged; after its
+	// first CloudTerminalObservationRowsLimit failure stages, every
+	// CloudTerminalStageNotableEvery-th (terminalStageLocked).
+	CloudTerminalStageRoutineEvery = 64
+	CloudTerminalStageNotableEvery = 16
 	// CloudTerminalReceiptBusyRetriesLimit is how many times a receipt the
 	// relay refused with rate_limited is published again, each after
 	// CloudTerminalReceiptBusyRetrySecondsLimit. The relay refreshes the
@@ -186,8 +192,12 @@ type terminalConnection struct {
 	// is verified. The connection is paused meanwhile and retired, without a
 	// revocation, after CloudTerminalUnverifiedRetireSecondsLimit.
 	unverifiedSince time.Time
-	stageLines      int
-	receiptOps      map[uint64]string
+	// stageLines counts every receipt stage; stageRoutine and stageNotable
+	// count each kind, which decides whether a stage is logged.
+	stageLines   int
+	stageRoutine int
+	stageNotable int
+	receiptOps   map[uint64]string
 	// receiptRetries holds each relay-published receipt until it settles, so
 	// one the relay refused with rate_limited can be published again.
 	receiptRetries map[uint64]receiptRetry
@@ -410,7 +420,9 @@ func (l *Link) refuseRegisteredTerminal(ctx context.Context, c *terminalConnecti
 	l.terminalMu.Unlock()
 	if err != nil {
 		l.closeTerminalConnection(c)
+		return
 	}
+	l.logTerminalStage(c, "receipt_published", receipt.Operation, "refused")
 }
 
 func (l *Link) revokeRegisteredTerminal(ctx context.Context, c *terminalConnection) {
@@ -756,6 +768,7 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 				Status: "refused", Error: string(terminal.CodeInvalid)})
 			_ = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
 				Class: string(domaincloud.ClassCtl), Payload: bad, Key: c.key, KeyID: c.keyID})
+			l.logTerminalStage(c, "receipt_published", req.Operation, "refused")
 			return
 		}
 		_ = l.sendTerminalReceipt(ctx, c, original)
@@ -782,6 +795,7 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 				Status: "refused", Error: string(terminal.CodeInvalid)})
 			_ = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
 				Class: string(domaincloud.ClassCtl), Payload: bad, Key: c.key, KeyID: c.keyID})
+			l.logTerminalStage(c, "receipt_published", req.Operation, "refused")
 		}
 		return
 	}
@@ -792,6 +806,7 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 			Status: "refused", Error: string(terminal.CodeBusy)})
 		_ = l.publishTerminal(ctx, Outbound{Channel: terminalReceiptChannel(l.identity.MachineID, c),
 			Class: string(domaincloud.ClassCtl), Payload: busy, Key: c.key, KeyID: c.keyID})
+		l.logTerminalStage(c, "receipt_published", req.Operation, "refused")
 		return
 	}
 	c.pendingReceipts[req.RequestID] = true
@@ -1174,17 +1189,49 @@ func (l *Link) sendDirectReceipt(c *terminalConnection, receipt terminalReceipt,
 }
 
 // terminalStageLocked formats one content-free receipt stage, the daemon
-// half of the browser's timeline in terminal-observation.ts. It names only a
-// fixed stage, operation and outcome: no viewer, connection, request,
-// sequence, key or terminal text. A connection writes at most
-// CloudTerminalObservationRowsLimit of them, as the browser keeps at most that many.
+// half of the browser's timeline in terminal-observation.ts, or returns ""
+// when this stage is not logged. It names only a fixed stage, operation and
+// outcome: no viewer, connection, request, sequence, key or terminal text.
+//
+// The log stays bounded without going silent. A connection logs its first
+// CloudTerminalObservationRowsLimit routine stages (ok, ok_direct, delivered)
+// and then every CloudTerminalStageRoutineEvery-th; failure stages (refused,
+// unknown, rate_limited, viewer_offline, peer_error, ...) are counted apart, so
+// the first CloudTerminalObservationRowsLimit of them are logged however much
+// typing came before, then every CloudTerminalStageNotableEvery-th. n counts
+// every stage, so a gap in n shows the sampling. Until 2026-10 a connection
+// logged its first 128 stages and nothing after, so a break after a long
+// stretch of typing never reached the log.
 func (l *Link) terminalStageLocked(c *terminalConnection, stage, operation, outcome string) string {
-	if c.stageLines >= CloudTerminalObservationRowsLimit {
-		return ""
-	}
 	c.stageLines++
+	if routineStageOutcomes[outcome] {
+		c.stageRoutine++
+		if c.stageRoutine > CloudTerminalObservationRowsLimit && c.stageRoutine%CloudTerminalStageRoutineEvery != 0 {
+			return ""
+		}
+	} else {
+		c.stageNotable++
+		if c.stageNotable > CloudTerminalObservationRowsLimit && c.stageNotable%CloudTerminalStageNotableEvery != 0 {
+			return ""
+		}
+	}
 	return fmt.Sprintf("cloud terminal stage n=%d stage=%s op=%s outcome=%s",
 		c.stageLines, stage, terminalStageWord(operation), terminalStageWord(outcome))
+}
+
+// routineStageOutcomes are the outcomes of a receipt that went as expected;
+// every other outcome is a failure stage.
+var routineStageOutcomes = map[string]bool{"ok": true, "ok_direct": true, "delivered": true}
+
+// logTerminalStage logs one stage for a receipt that does not pass through
+// sendTerminalReceipt, such as a refusal published directly.
+func (l *Link) logTerminalStage(c *terminalConnection, stage, operation, outcome string) {
+	l.terminalMu.Lock()
+	line := l.terminalStageLocked(c, stage, operation, outcome)
+	l.terminalMu.Unlock()
+	if line != "" {
+		l.logf("%s", line)
+	}
 }
 
 var terminalStageWordPattern = regexp.MustCompile(`^[a-z_]{1,48}$`)
@@ -1200,8 +1247,8 @@ func terminalStageWord(word string) string {
 }
 
 func receiptStatus(status string) string {
-	if status == "ok" {
-		return "ok"
+	if status == "ok" || status == "unknown" {
+		return status
 	}
 	return "refused"
 }

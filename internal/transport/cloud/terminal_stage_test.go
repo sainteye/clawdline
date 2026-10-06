@@ -41,17 +41,50 @@ func TestTerminalReceiptStagesAreContentFreeAndBounded(t *testing.T) {
 		t.Fatal("a settled receipt kept its operation")
 	}
 
-	lines = nil
-	for i := 0; i < CloudTerminalObservationRowsLimit+10; i++ {
+}
+
+// A connection that types for a while and then breaks must still log the
+// break: routine stages thin out after the first rows, failures do not stop.
+func TestTerminalStagesKeepLoggingFailuresAfterRoutineRows(t *testing.T) {
+	l, _, c, _, _ := terminalLifecycleFixture(t)
+	stage := func(name, op, outcome string) string {
 		l.terminalMu.Lock()
-		line := l.terminalStageLocked(c, "receipt_published", "input", "ok")
-		l.terminalMu.Unlock()
-		if line != "" {
+		defer l.terminalMu.Unlock()
+		return l.terminalStageLocked(c, name, op, outcome)
+	}
+	var lines []string
+	for i := 0; i < 1000; i++ {
+		if line := stage("receipt_published", "input", "ok"); line != "" {
+			lines = append(lines, line)
+		}
+		if line := stage("receipt_settled", "input", "delivered"); line != "" {
 			lines = append(lines, line)
 		}
 	}
-	if c.stageLines != CloudTerminalObservationRowsLimit || len(lines) != CloudTerminalObservationRowsLimit-2 {
-		t.Fatalf("stage lines are not bounded: %d logged, %d counted", len(lines), c.stageLines)
+	// 2000 routine stages: the first 128 in full, then every 64th.
+	if want := CloudTerminalObservationRowsLimit + (2000-CloudTerminalObservationRowsLimit)/CloudTerminalStageRoutineEvery; len(lines) != want {
+		t.Fatalf("routine stages logged %d lines, want %d", len(lines), want)
+	}
+	if last := lines[len(lines)-1]; last != "cloud terminal stage n=1984 stage=receipt_settled op=input outcome=delivered" {
+		t.Fatalf("the last sampled routine line is %q", last)
+	}
+	for _, outcome := range []string{"refused", "unknown", "rate_limited", "viewer_offline"} {
+		if got := stage("receipt_published", "input", outcome); !strings.HasSuffix(got, "op=input outcome="+outcome) {
+			t.Fatalf("a %s stage after 2000 routine rows logged %q", outcome, got)
+		}
+	}
+	if got := stage("receipt_published", "input", "ok"); got != "" {
+		t.Fatalf("routine stage between samples logged %q", got)
+	}
+	// A storm of failures is bounded too: the first 128 in full, then every 16th.
+	failures := 4
+	for i := 0; i < 1000; i++ {
+		if stage("receipt_settled", "input", "peer_error") != "" {
+			failures++
+		}
+	}
+	if want := CloudTerminalObservationRowsLimit + (1004-CloudTerminalObservationRowsLimit)/CloudTerminalStageNotableEvery; failures != want {
+		t.Fatalf("failure stages logged %d lines, want %d", failures, want)
 	}
 }
 

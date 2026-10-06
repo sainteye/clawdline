@@ -626,8 +626,9 @@ export class CloudTerminalSession {
       this.observation?.record("pending_match", { connection: value.connection, requestID: value.request_id,
         operation: value.operation })
       clearTimeout(pending.timer); this.pending.delete(value.request_id)
+      // A settled receipt that is not ok names its status or refusal code, so the timeline keeps it as a failure.
       this.observation?.record("session_settled", { connection: value.connection, requestID: value.request_id,
-        operation: value.operation })
+        operation: value.operation, code: value.status === "ok" ? undefined : value.status === "unknown" ? "unknown" : value.error ?? "refused" })
       if (value.status === "ok") pending.resolve(value)
       else {
         if (value.status === "unknown") this.forgetLease("terminal_input_state_unknown")
