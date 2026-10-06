@@ -34,7 +34,7 @@ assistant what it loaded:
    link to it (or a generated copy — decision P2), so both assistants see the same skill set.
 3. **One memory.** Lessons about the Project live in one Clawdline-owned store outside the
    repository, and every Claude and Codex session launched for the Project is given its index the
-   same way (decision P1).
+   same way (decision P1, decided: a Clawdline-owned store).
 4. **No drift.** A check reports any skill that exists for one assistant only, any rule in
    `CLAUDE.md` that contradicts `AGENTS.md`, and any memory entry not reachable by both.
 
@@ -93,9 +93,9 @@ person approves before anything is written.
 
 ## 5. Decisions for the person
 
-- **P1 — where Project memory lives.**
+- **P1 — where Project memory lives. Decided 2026-10-06: (a).**
   (a) A Clawdline-owned store per Project, both assistants write through `clawdline memory`
-  (recommended: it is the only option that is the same for both and works on another machine via
+  (chosen: it is the only option that is the same for both and works on another machine via
   Cloud later). Cost: Claude's built-in auto-memory keeps working beside it, so the skill must steer
   Project lessons to the shared store; the first integration imports existing entries once.
   (b) Claude's auto-memory stays the source, Clawdline only mirrors its index into Codex launches.
