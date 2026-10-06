@@ -1,10 +1,11 @@
 """The scan behind tools/check-machine-words.sh.
 
 Reads NUL-separated paths on stdin, takes the allow list as argv[1], and exits
-1 when a string literal this build shows calls the machine a Mac. See the shell
-script for why it reads literals and not comments, and what it skips.
+1 when a source string literal or shipped catalog value calls the machine a
+Mac. See the shell script for why it skips comments and pinned copies.
 """
 
+import json
 import os
 import re
 import sys
@@ -19,6 +20,8 @@ SKIP_PREFIX = (
     "shell/darwin/",
 )
 SKIP_EXACT = {
+    # A list of catalog keys, not sentences displayed to a person.
+    "web/console/public/catalogs/baseline-keys.json",
     # Declared copies of Copy+Chinese.swift. Each header says so, and says that
     # a word the original does not have is a word this build does not show.
     "web/console/src/pages/settings/window/copy.ts",
@@ -32,6 +35,8 @@ SKIP_EXACT = {
 }
 
 MAC = re.compile(r"\bMacs?\b")
+CATALOG_PREFIX = "web/console/public/catalogs/"
+CATALOG_KEY = re.compile(r'^\s*("(?:\\.|[^"\\])*")\s*:')
 
 
 def skipped(path):
@@ -102,6 +107,19 @@ def allow_list(path):
     return allowed
 
 
+def catalog_values(src):
+    """Return parsed product copy with source line numbers for review."""
+    catalog = json.loads(src)
+    if not isinstance(catalog, dict) or any(not isinstance(value, str) for value in catalog.values()):
+        raise ValueError("catalog is not an object of strings")
+    lines = {}
+    for number, line in enumerate(src.splitlines(), 1):
+        match = CATALOG_KEY.match(line)
+        if match:
+            lines[json.loads(match.group(1))] = number
+    return [(lines.get(key, 1), key, value) for key, value in catalog.items()]
+
+
 def main():
     allowed = allow_list(sys.argv[1])
     found = []
@@ -115,9 +133,20 @@ def main():
         except OSError as err:
             print("cannot check: %s: %s" % (path, err), file=sys.stderr)
             return 2
-        for number, text in literals(src):
-            if MAC.search(text) and (path, text) not in allowed:
-                found.append((path, number, text))
+        if path.startswith(CATALOG_PREFIX) and path.endswith(".json"):
+            try:
+                values = catalog_values(src)
+            except (ValueError, json.JSONDecodeError) as err:
+                print("cannot check: %s: %s" % (path, err), file=sys.stderr)
+                return 2
+            for number, key, value in values:
+                text = "%s = %s" % (key, json.dumps(value, ensure_ascii=False))
+                if MAC.search(value) and (path, text) not in allowed:
+                    found.append((path, number, text))
+        else:
+            for number, text in literals(src):
+                if MAC.search(text) and (path, text) not in allowed:
+                    found.append((path, number, text))
 
     if read == 0:
         print("checked nothing; a zero-file run is a failure, not a pass", file=sys.stderr)

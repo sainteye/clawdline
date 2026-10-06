@@ -8,11 +8,13 @@
 # one was not a sentence at all: `machineName` returned the literal "Mac" for a
 # machine with no name, and published it to the account's machine list.
 #
-# **It reads string literals, not comments.** A comment is the codebase talking
+# **It reads source string literals and shipped catalog values, not comments.** A comment is the codebase talking
 # to itself and often names a real Mac — a measurement taken on one, an iTerm2
 # or AppleScript path that exists nowhere else. Separating those by machine is
 # guesswork. A string literal is either shown to somebody or compared against
-# something that is, and that is a question with an answer.
+# something that is, and that is a question with an answer. The nine product
+# catalogs are parsed as JSON, so a key name or a documentation comment is not
+# mistaken for copy a person sees.
 #
 # **It does not read the copies.** `web/console/src/legacy/`,
 # `public/strings/zh-Hant.json` and the files that declare themselves copies of
@@ -33,4 +35,4 @@ SCAN="tools/machine-words.py"
 [ -f "$ALLOW" ] || { echo "cannot check: no allow list at $ALLOW" >&2; exit 2; }
 [ -f "$SCAN" ] || { echo "cannot check: no scanner at $SCAN" >&2; exit 2; }
 
-git ls-files -z -- '*.go' '*.ts' '*.tsx' | python3 "$SCAN" "$ALLOW"
+git ls-files -z -- '*.go' '*.ts' '*.tsx' 'web/console/public/catalogs/*.json' | python3 "$SCAN" "$ALLOW"
