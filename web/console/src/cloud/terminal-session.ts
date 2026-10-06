@@ -335,7 +335,7 @@ export class CloudTerminalSession {
 
   private issueRequest(operation: string, fields: Record<string, unknown> = {}, onRequestID?: (id: string) => void): { sent: Promise<void>; receipt: Promise<Receipt> } {
     if (!this.connection) throw fail("terminal_not_connected")
-    if (!this.active && operation !== "open_connection" && operation !== "rekey_connection") throw this.paused()
+    if (!this.active && operation !== "open_connection" && operation !== "rekey_connection" && operation !== "release_connection") throw this.paused()
     if ((operation === "input" || operation === "paste") && !this.s.canType) throw this.paused()
     const requestID = crypto.randomUUID()
     onRequestID?.(requestID)
@@ -391,10 +391,13 @@ export class CloudTerminalSession {
 
   async attach(terminal: string, reset = true): Promise<Receipt> {
     if (reset || this.terminal !== terminal) {
+      // The same terminal on the same connection keeps its drawn screen: it is the base the
+      // machine's next delta is built on (see acquireNow).
+      const keep = this.terminal === terminal && this.frameSeq > 0
       this.terminal = ""
       this.epoch = null
-      this.frameSeq = 0
-      this.set({ frame: null, control: null, state: "synchronizing", reason: "" })
+      if (!keep) this.frameSeq = 0
+      this.set({ ...(keep ? {} : { frame: null }), control: null, state: "synchronizing", reason: "" })
     }
     this.terminal = terminal
     this.flushEarlyFrame()
@@ -444,8 +447,10 @@ export class CloudTerminalSession {
     this.nextSeq = this.confirmed + 1
     this.inputUnknown = false
     this.lastRenew = Date.now()
-    this.frameSeq = 0
-    this.set({ control, frame: null, state: "synchronizing", reason: "" })
+    // Typing waits for the next verified screen, but the one drawn stays as the base of the machine's
+    // next delta: the machine keeps its own base across a lease change, and a tab that dropped its
+    // copy read that delta as corrupt and threw the connection away (after 接手, 2026-10-06).
+    this.set({ control, state: "synchronizing", reason: "" })
     await this.captureOrStream(this.terminal)
   }
   async reconcileLease(): Promise<void> {
@@ -716,18 +721,40 @@ export class CloudTerminalSession {
       this.transport.observeTerminalFrame(envelope)
     } catch {
       if (connection !== this.connection) return
-      this.inputUnknown = true
+      this.observation?.record("frame_dropped", { connection, code: "terminal_delta_mismatch" })
+      // Nothing more is drawn from this connection; keys typed meanwhile wait (the lease is not lost).
       this.active = false
       this.frameSeq = 0
       this.deltaEnabled = false
-      this.transport.unsubscribeTerminal(connection)
-      this.connection = ""
       this.closeDirect()
       if (this.carrier === "direct") this.observation?.record("carrier_changed", { connection, code: "relay" })
       this.carrier = "relay"
       this.set({ frame: null, state: "synchronizing", reason: "terminal_delta_mismatch", carrier: "relay" })
-      void this.start().catch(() => this.set({ state: "unknown", reason: "terminal_delta_mismatch" }))
+      void this.reopen(terminal)
     } finally { this.deltaChecking = false }
+  }
+  /**
+   * Replaces a connection this tab discarded with a new one that reads the terminal again and proves
+   * the lease, as after a network loss. The new connection used to be opened and never attached: no
+   * screen and no key ever crossed it again.
+   */
+  private async reopen(terminal: string): Promise<void> {
+    try {
+      // The machine counts two connections per viewer: the discarded one is given back first, or
+      // the new one is refused as busy while it lingers (2026-10-06, 20:41:04). Receipts of keys
+      // sent before it still arrive ahead of this one, on the connection still subscribed.
+      await this.request("release_connection").catch(() => undefined)
+      await this.start({ abandon: true })
+      if (terminal && terminal === this.terminal) await this.attach(terminal, false)
+    } catch (error) {
+      if ((this.s.state as CloudTerminalState) === "revoked") return
+      // The discarded connection is not one to rekey from: the next start opens a new one, and the
+      // person reconnects from a stale screen, then takes control again.
+      if (!this.openingNew && this.connection) { this.transport.unsubscribeTerminal(this.connection); this.connection = "" }
+      this.active = false
+      this.epoch = null
+      this.set({ control: null, state: "stale", reason: (error as Error).message || "terminal_delta_mismatch" })
+    }
   }
   private maybeActivate(): void {
     if (!this.retiringConnection || !this.rotationReady || !this.frameSeq || this.activating ||

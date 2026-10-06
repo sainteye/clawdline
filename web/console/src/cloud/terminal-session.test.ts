@@ -28,6 +28,8 @@ class Wire implements TerminalWire {
   closeResult: "ok" | "unknown" = "ok"
   incarnation = "first-machine-start"
   lease = held
+  /** The control a `read` answers with. */
+  readControl = control
   deltaSubscribed = false
   deltaMachine = false
   historyResult: Record<string, unknown> = { lines: [], truncated: false, omitted_lines: 0 }
@@ -69,7 +71,7 @@ class Wire implements TerminalWire {
           ...(this.deltaMachine && (request.body as { frame_delta_v1?: boolean })?.frame_delta_v1 ? { frame_delta_v1: true } : {}),
           ...(this.directMachine && (request.body as { carrier?: string })?.carrier === "direct" ? { carrier: "direct" } : {}) }
       : operation === "direct_offer" ? { sdp: "v=0 answer" }
-      : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control }
+      : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control: this.readControl }
         : operation === "activate_connection" ? { connection, retired_connection: (request.body as { old_connection: string }).old_connection }
         : operation === "control" && request.body === undefined ? { machine_incarnation: this.incarnation, control: this.lease, input_state_unknown: false }
           : operation === "control" ? { control: this.lease }
@@ -1098,3 +1100,57 @@ class ClosingDirectWire extends DirectWire {
     return super.publishTerminal(request)
   }
 }
+
+const delta = async (connection: string, seq: number, baseSeq: number, baseRev: string, rev: string) => {
+  const at = Date.now() / 1000
+  return { v: 1, type: "terminal_frame_delta", terminal_id: terminalID, connection, frame_seq: seq, base_seq: baseSeq,
+    base_rev: baseRev, captured_at: at, rev, at, cols: 80, rows: 1, dead: false, cursor: frame(rev).cursor,
+    modes: frame(rev).modes, changed_rows: [{ row: 0, line: rev }], screen_hash: await terminalScreenHash([rev]) }
+}
+
+test("taking over a terminal whose screen arrives as deltas makes the tab typable on the same connection", async () => {
+  // 2026-10-06, app.clawdline.com: after 接手 the machine's next screen was a delta on the base it
+  // had already delivered; the tab had dropped that base when it took control, read the delta as
+  // corrupt, threw the connection away and opened one it never attached. Keys never reached it.
+  const wire = new Wire()
+  wire.deltaSubscribed = true; wire.deltaMachine = true
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    const connection = wire.latest()
+    wire.frame(connection, 1, "first")
+    await session.acquire("takeover")
+    wire.emit(connection, "termd", await delta(connection, 2, 1, "first", "second"))
+    await until(() => session.snapshot.canType)
+    assert.equal(wire.latest(), connection)
+    assert.equal(wire.requests.filter((request) => request.operation === "open_connection").length, 1)
+    await session.input(new TextEncoder().encode("x"))
+    assert.equal(wire.requests.filter((request) => request.operation === "input" && request.connection === connection).length, 1)
+  } finally { session.dispose() }
+})
+
+test("a connection discarded for a bad delta reads its terminal again and proves the lease on the new one", async () => {
+  const wire = new Wire()
+  wire.deltaSubscribed = true; wire.deltaMachine = true
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const old = wire.latest()
+    wire.frame(old, 1, "first")
+    await until(() => session.snapshot.canType)
+    wire.readControl = held
+    wire.emit(old, "termd", { ...(await delta(old, 2, 1, "first", "second")), screen_hash: "0".repeat(64) })
+    await until(() => wire.latest() !== old && wire.requests.some((request) => request.operation === "read" && request.connection === wire.latest()))
+    const fresh = wire.latest()
+    // The discarded connection was given back before the new one was asked for: the machine
+    // allows two per viewer and refused the third as busy while the old one lingered.
+    const order = wire.requests.map((request) => `${request.operation}@${request.connection === old ? "old" : request.connection === fresh ? "new" : "?"}`)
+    assert.ok(order.indexOf("release_connection@old") >= 0 && order.indexOf("release_connection@old") < order.indexOf("open_connection@new"), order.join(" "))
+    // The new connection proved the same lease rather than asking the person to take control again.
+    await until(() => wire.requests.some((request) => request.operation === "control" && request.connection === fresh && request.body === undefined))
+    wire.frame(fresh, 1, "restored")
+    await until(() => session.snapshot.canType)
+    await session.input(new TextEncoder().encode("y"))
+    assert.equal(wire.requests.filter((request) => request.operation === "input" && request.connection === fresh).length, 1)
+  } finally { session.dispose() }
+})

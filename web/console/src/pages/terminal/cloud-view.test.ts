@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalNotice, reconnectCloudTerminal, type CloudTerminalStarter } from "./cloud-view.ts"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalControl, keyRefusalNotice, reconnectCloudTerminal, shownKeyRefusal, type CloudTerminalStarter } from "./cloud-view.ts"
 
 // `cloud/terminal-session.ts` uses constructor parameter properties, which
 // Node's strip-types runner refuses, so the start path is driven through a fake
@@ -98,4 +98,15 @@ test("every refused key gets a notice beside the terminal with the way back to t
   assert.equal(keyRefusalNotice("machine_offline", mine, "offline").action, "reconnect")
   for (const code of ["terminal_input_paused", "input_too_large", "terminal_receipt_timeout", "terminal_access_revoked", "terminal_closed"])
     assert.deepEqual(keyRefusalNotice(code, mine, "live"), { kind: "other", code, action: null }, code)
+})
+
+test("a refused key's notice goes away once control changes", () => {
+  const other = { held: true, epoch: 3, expires_at: 0, holder: { name: "", local: false, same_device: true, same_client: false } }
+  const mine = { ...other, epoch: 4, holder: { ...other.holder, same_client: true } }
+  const refusal = { ...keyRefusalNotice("not_controller", other, "live"), why: "", control: keyRefusalControl(other) }
+  assert.equal(shownKeyRefusal(refusal, other), refusal)
+  assert.equal(shownKeyRefusal(refusal, { ...other, expires_at: 99 }), refusal, "a renewal is not a change of holder")
+  assert.equal(shownKeyRefusal(refusal, mine), null, "after this tab took over it no longer says another tab holds it")
+  assert.equal(shownKeyRefusal(refusal, null), null)
+  assert.equal(shownKeyRefusal(null, mine), null)
 })

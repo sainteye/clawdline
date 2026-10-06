@@ -13,7 +13,7 @@ import { closeTerminalPane, openTerminalPage } from "./navigate.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtrl } from "./keys.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
-import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalNotice, reconnectCloudTerminal, type KeyRefusalNotice } from "./cloud-view.js"
+import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalControl, keyRefusalNotice, reconnectCloudTerminal, shownKeyRefusal, type KeyRefusalNotice } from "./cloud-view.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 import { centerCursorLine, followCursorLine } from "./cursor-line.js"
 import { CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS, terminalListErrorKind } from "../../session/cloud-terminal-all.js"
@@ -68,11 +68,13 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
    * The last refused key, said beside the terminal itself with the way back to typing. A key is never
    * dropped with nothing said: the status line alone can be scrolled off while the person types.
    */
-  const [keyRefused, setKeyRefused] = useState<(KeyRefusalNotice & { why: string }) | null>(null)
+  const [keyRefused, setKeyRefused] = useState<(KeyRefusalNotice & { why: string; control: string }) | null>(null)
   const keyFailed = (e: unknown) => {
     const code = (e as { code?: string })?.code ?? "terminal_send_failed"
     const why = reason(e)
-    setKeyRefused({ ...keyRefusalNotice(code, session?.snapshot.control ?? null, session?.snapshot.state ?? ""), why: why === code ? terminalRefusalWords(code) : why })
+    const control = session?.snapshot.control ?? null
+    setKeyRefused({ ...keyRefusalNotice(code, control, session?.snapshot.state ?? ""), why: why === code ? terminalRefusalWords(code) : why,
+      control: keyRefusalControl(control) })
   }
   const keySent = () => setKeyRefused(null)
   // Attaching again by itself after a refusal that means "not right now"
@@ -344,6 +346,10 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     (snapshot.control.holder?.name || snapshot.control.holder?.same_device)
       ? holderWords(snapshot.control.holder)
       : nextWord("terminalControlOtherDevice")
+  // Shown only while control is as it was when the key was refused; its way back is offered once:
+  // the header's own button for that action steps aside, and an open confirmation replaces both.
+  const refusal = shownKeyRefusal(keyRefused, snapshot.control)
+  const refusalOffers = confirm ? null : refusal?.action ?? null
   const body = cloudTerminalBody(host, channelProject, id)
   if (body === "offline" || !host) return <p className="terminal-note" role="status">{nextWord("terminalCloudLineReconnecting")}</p>
   if (body === "no_project") return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
@@ -385,12 +391,12 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
             snapshot.canType ? "" : snapshot.typeAhead ? nextWord("terminalCloudTypeAhead") :
             snapshot.frame && !snapshot.hasLease ? nextWord("terminalKeyboardPaused") : ""}</p>
       <div className="terminal-actions" role="group" aria-label={nextWord("terminalControlLabel")}>
-        {!snapshot.control?.holder?.same_client && !loading && <button className="board-button" type="button" disabled={!!busy || accessError || snapshot.state === "revoked"}
+        {!snapshot.control?.holder?.same_client && !loading && refusalOffers !== "acquire" && refusalOffers !== "takeover" && <button className="board-button" type="button" disabled={!!busy || accessError || snapshot.state === "revoked"}
           onClick={() => snapshot.control?.held ? setConfirm("takeover") : void run("acquire", () => session!.acquire("acquire"))}>
           {snapshot.control?.held ? nextWord("terminalTakeover") : nextWord("terminalAcquire")}</button>}
-        {!accessError && !loading && (snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
+        {!accessError && !loading && refusalOffers !== "reacquire" && (snapshot.state === "unknown" || (snapshot.control?.holder?.same_client && !snapshot.hasLease)) && <button className="board-button" type="button" disabled={!!busy}
           onClick={() => setConfirm("reacquire")}>{nextWord("terminalCloudReacquire")}</button>}
-        {(snapshot.state === "stale" || snapshot.state === "offline") && <button className="board-button" type="button" disabled={!!busy}
+        {(snapshot.state === "stale" || snapshot.state === "offline") && refusalOffers !== "reconnect" && <button className="board-button" type="button" disabled={!!busy}
           onClick={reconnect}>{nextWord("terminalCloudReconnect")}</button>}
       </div>
       <dialog ref={closeDialog} className="terminal-close-confirm" onCancel={() => { setCloseConfirm(false); closeOpener.current?.focus() }}
@@ -415,6 +421,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
           await session!.acquire(confirm === "reacquire" ? "acquire" : "takeover")
           setNeedsReview(false)
           setConfirm(null)
+          setKeyRefused(null)
+          terminal.current?.focus()
         })}>{nextWord(confirm === "reacquire" ? "terminalCloudReacquire" : "terminalTakeoverConfirm")}</button>
         <button className="board-button" type="button" onClick={() => setConfirm(null)}>{nextWord("terminalCancel")}</button>
       </div>}
@@ -426,17 +434,17 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
       {history.truncated && <p className="terminal-note" role="status">{nextWord("terminalCloudHistoryTruncated", { lines: history.omitted_lines })}</p>}
       <div className="terminal-history-output" ref={historyFocus} tabIndex={0}>{history.lines.map((line, index) =>
         <div className="terminal-history-line" key={index}>{line || "\u00a0"}</div>)}</div></section>}
-    <div className="terminal-scroll" ref={scroller} hidden={history !== null}>{keyRefused && <div className="terminal-key-refused" role="alert">
-      <p>{keyRefused.kind === "no_control" ? nextWord("terminalKeysNotSentNoControl") :
-        keyRefused.kind === "other_holder" ? nextWord("terminalKeysNotSentOtherHolder", { holder }) :
-          keyRefused.kind === "unknown" ? nextWord("terminalKeysNotSentUnknown") : nextWord("terminalKeysNotSent", { why: keyRefused.why })}</p>
-      {keyRefused.action && <button className="board-button" type="button" disabled={!!busy || accessError || snapshot.state === "revoked"} onClick={() => {
-        const action = keyRefused.action
+    <div className="terminal-scroll" ref={scroller} hidden={history !== null}>{refusal && <div className="terminal-key-refused" role="alert">
+      <p>{refusal.kind === "no_control" ? nextWord("terminalKeysNotSentNoControl") :
+        refusal.kind === "other_holder" ? nextWord("terminalKeysNotSentOtherHolder", { holder }) :
+          refusal.kind === "unknown" ? nextWord("terminalKeysNotSentUnknown") : nextWord("terminalKeysNotSent", { why: refusal.why })}</p>
+      {refusalOffers && <button className="board-button" type="button" disabled={!!busy || accessError || snapshot.state === "revoked"} onClick={() => {
+        const action = refusalOffers
         if (action === "acquire") void run("acquire", async () => { await session!.acquire("acquire"); setKeyRefused(null); terminal.current?.focus() })
         else if (action === "reconnect") reconnect()
         else setConfirm(action)
-      }}>{nextWord(keyRefused.action === "acquire" ? "terminalAcquire" : keyRefused.action === "takeover" ? "terminalTakeover" :
-        keyRefused.action === "reacquire" ? "terminalCloudReacquire" : "terminalCloudReconnect")}</button>}
+      }}>{nextWord(refusalOffers === "acquire" ? "terminalAcquire" : refusalOffers === "takeover" ? "terminalTakeover" :
+        refusalOffers === "reacquire" ? "terminalCloudReacquire" : "terminalCloudReconnect")}</button>}
     </div>}{firstFramePending && !error && <p className="terminal-loading terminal-wait" role="status" aria-live="polite"><span className="terminal-wait-indicator" aria-hidden="true" />{nextWord("terminalCloudSyncing")}</p>}<div className="terminal-host" ref={screen} /></div>
     <button className="terminal-keyboard board-button" type="button" disabled={!snapshot.canType || history !== null}
       title={!snapshot.canType ? nextWord("terminalKeyboardPaused") : undefined}
