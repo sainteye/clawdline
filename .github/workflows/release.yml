@@ -1,0 +1,105 @@
+name: Release
+
+# Builds, signs and uploads one release as a DRAFT. Nothing here publishes it:
+# the draft's assets are checked against the private word list on a machine
+# that has it, and only then un-drafted (docs/releasing.md). A public
+# repository's Actions artifacts are public, so nothing is uploaded with
+# actions/upload-artifact; the assets go only to the draft Release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, vX.Y.Z (stable) or vX.Y.Z-beta.N (beta)"
+        required: true
+      min_version:
+        description: "Oldest version this release may be upgraded from (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign and draft the release
+    runs-on: macos-latest
+    timeout-minutes: 45
+    # The signing key is a secret of this environment, which waits for the
+    # person's approval before the job may read it.
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      MIN_VERSION: ${{ inputs.min_version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Refuse a version that is not a publishable release
+        run: |
+          case "$GITHUB_REF" in refs/heads/main) ;; *) echo "releases are cut from main, not $GITHUB_REF" >&2; exit 1 ;; esac
+          if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[0-9]+)?$ ]]; then
+            echo "$VERSION is not vX.Y.Z or vX.Y.Z-beta.N" >&2; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "tag $VERSION already exists" >&2; exit 1
+          fi
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install tmux for the integration tests
+        run: command -v tmux >/dev/null || brew install tmux
+
+      - name: Test
+        run: |
+          go vet ./...
+          tools/test-go-ci.sh
+          (cd web && npm ci --ignore-scripts && npm run check)
+
+      - name: Build every artifact
+        run: |
+          channel=stable
+          [[ "$VERSION" == *-beta.* ]] && channel=beta
+          args=(--channel "$channel" --skip-tests)
+          [ -z "$MIN_VERSION" ] || args+=(--min-version "$MIN_VERSION")
+          tools/release/build.sh "$VERSION" "$RUNNER_TEMP/release" "${args[@]}"
+
+      - name: Sign the manifest
+        env:
+          CLAWDLINE_RELEASE_KEY: ${{ secrets.CLAWDLINE_RELEASE_KEY }}
+        run: |
+          [ -n "$CLAWDLINE_RELEASE_KEY" ] || { echo "the release environment has no CLAWDLINE_RELEASE_KEY" >&2; exit 1; }
+          go run ./tools/release sign "$RUNNER_TEMP/release"
+          # Verified with the keys compiled into this commit, as an installed
+          # binary will verify it.
+          go run ./tools/release verify "$RUNNER_TEMP/release"
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          [[ "$VERSION" == *-beta.* ]] && prerelease=(--prerelease)
+          notes="docs/release-notes/$VERSION.md"
+          if [ -f "$notes" ]; then notes_args=(--notes-file "$notes"); else notes_args=(--generate-notes); fi
+          gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "Clawdline ${VERSION#v}" \
+            "${prerelease[@]}" "${notes_args[@]}" \
+            "$RUNNER_TEMP"/release/*.tar.gz "$RUNNER_TEMP/release/SHA256SUMS" \
+            "$RUNNER_TEMP/release/manifest.json" "$RUNNER_TEMP/release/manifest.sig.json"
+          echo "drafted $VERSION at $GITHUB_SHA; run the privacy gate in docs/releasing.md before publishing"
