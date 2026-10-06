@@ -251,6 +251,27 @@ repository 自己的 tests；`GET /v1/devstacks` 要把宣告的 server 顯示�
 是哪一項並保留 unknown，絕不能把「沒有答案」回報成成功。最後列出完成的設定、刻意判定不適用的項目，
 以及 git 以外被修改的使用者檔案。
 
+**Unify：讓 Claude 與 Codex 共用同一份規則與 skill**（`/clawdline unify`）。Codex 讀 `AGENTS.md` 與
+`.agents/skills/<name>/`；Claude 讀 `CLAUDE.md`（只有在沒有 `CLAUDE.md`，或 `CLAUDE.md` 有一行
+`@AGENTS.md` 時才讀 `AGENTS.md`）與 `.claude/skills/<name>/`。規則放在 `AGENTS.md`、`CLAUDE.md` 不存在或
+import 它，而且每個 skill 都在 `.agents/skills/<name>/`、`.claude/skills/<name>` 是指向它的相對連結時，
+這個 Project 就算 unified。使用者要求這件事，或呼叫 `/clawdline unify` 時：
+
+1. 在 Session 的 Project（git top-level）執行 `clawdline project unify`；清單裡沒有這個 Project 時先用
+   `clawdline project add` 加入。這一步什麼都不改。用使用者的語言給他看：Claude 與 Codex 各自現在讀
+   什麼、之後讀什麼，每一列 skill、每一句動作，以及每一個衝突——包括 Codex 看不到的 `CLAUDE.md` 行。
+2. 只有在使用者於這段對話中親自傳訊息同意這份計畫後，才執行 `clawdline project unify --apply`。它會
+   送出你給他看的那個版本；之後磁碟若有變動，會回 `plan_changed` 且什麼都不套用——重新印出計畫、
+   再問一次。
+3. 給他看 `clawdline project unify --check` 的結果（exit 0 unified、1 drifting、3 unknown）。它不會
+   commit；說清楚改了哪些檔案，讓使用者或某個 Session 去 commit。
+
+沒有使用者的訊息，絕不自己編輯 `AGENTS.md`、`CLAUDE.md` 或某個 skill 來解決衝突：兩個目錄內容不同的
+skill、指向別處的連結、Codex 看不到的規則，都由他決定。路由是
+`GET /v1/projects/{place}/unify`（計畫）與 `POST /v1/projects/{place}/unify`，帶 `{"version"}` 與
+`Idempotency-Key`；拒絕碼有 `plan_changed`、`plan_unknown`（Project 有一部分讀不到，所以什麼都沒改）
+與 `name_taken`（unify 要建立的名稱已經存在；不會覆寫任何東西）。
+
 ## 2a. Feature Root 的一般流程
 
 一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令

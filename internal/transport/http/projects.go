@@ -328,6 +328,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.projectTreeRoute(w, r, parts[0], len(parts) == 3)
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "unify" {
+		s.projectUnifyRoute(w, r, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "icon" {
 		s.projectIconRoute(w, r, parts[0])
 		return

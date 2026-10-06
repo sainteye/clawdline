@@ -4599,6 +4599,227 @@ export type ProjectSyncSetup =
 
 export const ProjectSyncSetupValues: readonly ProjectSyncSetup[] = ["ready", "missing"] as const
 
+export interface ProjectUnifyAction {
+  /**
+   * One plain sentence for a person.
+   */
+  description: string
+
+  /**
+   * Rules file edits, with exact text. Empty for skill actions.
+   */
+  edits: ProjectUnifyFileEdit[]
+  kind: ProjectUnifyActionKind
+
+  /**
+   * The relative link a skill_* action creates, as the link spells it.
+   */
+  link_target?: string
+
+  /**
+   * Paths relative to the repository root that the action touches.
+   */
+  paths: string[]
+}
+
+export type ProjectUnifyActionKind =
+    "rules_create_agents"
+  | "rules_add_import"
+  | "skill_link"
+  | "skill_move_and_link"
+  | "skill_replace_copy_with_link"
+  | "skill_copy"
+
+export const ProjectUnifyActionKindValues: readonly ProjectUnifyActionKind[] = ["rules_create_agents", "rules_add_import", "skill_link", "skill_move_and_link", "skill_replace_copy_with_link", "skill_copy"] as const
+
+/**
+ * The answer to POST /v1/projects/:id/unify. `applied` (200) ran every action;
+ * `stopped` (500, with `error` and `detail` as a refusal) ran `ran` and then failed
+ * on `failed`. `plan` is recomputed from disk either way.
+ */
+export interface ProjectUnifyApplied {
+  detail?: string
+  error?: string
+  failed?: ProjectUnifyAction
+  outcome: ProjectUnifyOutcome
+  plan: ProjectUnifyPlan
+  ran: ProjectUnifyAction[]
+}
+
+/**
+ * POST /v1/projects/:id/unify, with an Idempotency-Key header.
+ */
+export interface ProjectUnifyApply {
+  version: string
+}
+
+/**
+ * Something unify does not change by itself: the person resolves it. `unreadable`
+ * and `too_large` make the plan unknown.
+ */
+export interface ProjectUnifyConflict {
+  detail: string
+  kind: ProjectUnifyConflictKind
+  path: string
+}
+
+export type ProjectUnifyConflictKind =
+    "claude_only_lines"
+  | "import_without_agents"
+  | "rules_link"
+  | "skill_differs"
+  | "skill_link_elsewhere"
+  | "skills_directory_link"
+  | "name_taken"
+  | "too_large"
+  | "unreadable"
+
+export const ProjectUnifyConflictKindValues: readonly ProjectUnifyConflictKind[] = ["claude_only_lines", "import_without_agents", "rules_link", "skill_differs", "skill_link_elsewhere", "skills_directory_link", "name_taken", "too_large", "unreadable"] as const
+
+/**
+ * The exact text of one rules file before and after an action. `before` is null
+ * when the file is created.
+ */
+export interface ProjectUnifyFileEdit {
+  after: string
+  before: string | null
+  path: string
+}
+
+/**
+ * A rules file at the repository root. `link` is a symbolic link (only CLAUDE.md ->
+ * AGENTS.md counts as an import); `unreadable` could not be read as UTF-8 text
+ * within the size limit.
+ */
+export type ProjectUnifyFileState =
+    "present"
+  | "missing"
+  | "link"
+  | "unreadable"
+
+export const ProjectUnifyFileStateValues: readonly ProjectUnifyFileState[] = ["present", "missing", "link", "unreadable"] as const
+
+export type ProjectUnifyOutcome =
+    "applied"
+  | "stopped"
+
+export const ProjectUnifyOutcomeValues: readonly ProjectUnifyOutcome[] = ["applied", "stopped"] as const
+
+/**
+ * GET /v1/projects/:id/unify. Computed from disk at the Project's repository root;
+ * reading it writes nothing.
+ */
+export interface ProjectUnifyPlan {
+  /**
+   * In the order apply performs them.
+   */
+  actions: ProjectUnifyAction[]
+  conflicts: ProjectUnifyConflict[]
+
+  /**
+   * False where this machine cannot create symbolic links; skills are then copied
+   * (skill_copy).
+   */
+  links_available: boolean
+  rules: ProjectUnifyRules
+  skills: ProjectUnifySkill[]
+  status: ProjectUnifyStatus
+
+  /**
+   * SHA-256 of every input the plan read. Apply refuses plan_changed when it
+   * differs.
+   */
+  version: string
+}
+
+/**
+ * The rules files each assistant reads, as paths relative to the repository root,
+ * following the measured loading rules in docs/shared-project-instructions.md.
+ */
+export interface ProjectUnifyReads {
+  claude: string[]
+  codex: string[]
+}
+
+export interface ProjectUnifyRules {
+  after: ProjectUnifyReads
+  agents: ProjectUnifyFileState
+  claude: ProjectUnifyFileState
+
+  /**
+   * CLAUDE.md has an `@AGENTS.md` line, or is a link to AGENTS.md.
+   */
+  claude_imports_agents: boolean
+
+  /**
+   * Other Claude rules files present (.claude/CLAUDE.md, CLAUDE.local.md,
+   * .claude/CLAUDE.local.md). Listed, never changed.
+   */
+  claude_only_files: string[]
+
+  /**
+   * Non-blank CLAUDE.md lines other than the import: Codex does not see them. Shown
+   * as text; never moved automatically.
+   */
+  claude_only_lines: string[]
+  now: ProjectUnifyReads
+}
+
+export interface ProjectUnifySeen {
+  claude: boolean
+  codex: boolean
+}
+
+/**
+ * One skill name found in .agents/skills or .claude/skills at the repository root.
+ */
+export interface ProjectUnifySkill {
+  /**
+   * The action that changes this skill; absent when none does (already shared, or a
+   * conflict).
+   */
+  action?: ProjectUnifyActionKind
+  after: ProjectUnifySeen
+
+  /**
+   * The two sides are, or will be, separate copies because this machine cannot
+   * create links; the check compares them.
+   */
+  copy: boolean
+
+  /**
+   * .claude/skills/<name> is a relative link to ../../.agents/skills/<name>.
+   */
+  linked: boolean
+  name: string
+  now: ProjectUnifySeen
+  place: ProjectUnifySkillPlace
+}
+
+/**
+ * Where a skill is now: only in .agents/skills, only in .claude/skills, in both as
+ * one tree (identical copy or already linked), or in both with different content.
+ */
+export type ProjectUnifySkillPlace =
+    "agents"
+  | "claude"
+  | "both_same"
+  | "both_different"
+
+export const ProjectUnifySkillPlaceValues: readonly ProjectUnifySkillPlace[] = ["agents", "claude", "both_same", "both_different"] as const
+
+/**
+ * Whether a Project's Claude and Codex sessions read the same rules and skills.
+ * `unknown` means something the plan needed could not be read; it is never reported
+ * as unified.
+ */
+export type ProjectUnifyStatus =
+    "unified"
+  | "drifting"
+  | "unknown"
+
+export const ProjectUnifyStatusValues: readonly ProjectUnifyStatus[] = ["unified", "drifting", "unknown"] as const
+
 /**
  * /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what the
  * server decided about asking a person in the conversation, and what the sessions

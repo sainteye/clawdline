@@ -427,6 +427,22 @@ func decodeProjectFileSave(b body) (plan, bool) {
 	return p, true
 }
 
+// decodeProjectUnifyApply carries only the plan version the person read; the
+// machine recomputes the plan and refuses plan_changed when disk moved on.
+func decodeProjectUnifyApply(b body) (plan, bool) {
+	if !b.has("type", "session", "request", "project", "item") {
+		return plan{}, false
+	}
+	p, ok := actionPlan(b, false)
+	project, projectOK := b.nonEmpty("project")
+	document, documentOK := b.object("item", 4<<10)
+	if !ok || p.request == "" || !projectOK || len(project) > 200 || !documentOK {
+		return plan{}, false
+	}
+	p.project, p.document = project, document
+	return p, true
+}
+
 var catalog = map[string]op{}
 
 func register(ops ...op) {
@@ -1660,6 +1676,19 @@ func init() {
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/tree/file",
 					Query: map[string]string{"path": p.path}}
+			}},
+		// Unify (docs/project-files.md): the plan is a read a paired device
+		// may make with remote writes off; apply is a write and needs the gate.
+		op{name: "project-unify-plan", read: true,
+			decode: decodeProjectFileList,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/unify"}
+			}},
+		op{name: "project-unify-apply",
+			decode: decodeProjectUnifyApply,
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/projects/" + segment(p.project) + "/unify",
+					Body: p.document, Header: asDevice()}
 			}},
 		op{name: "project-file-save",
 			decode: decodeProjectFileSave,

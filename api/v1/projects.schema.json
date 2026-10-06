@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "projects.schema.json",
   "title": "Projects",
-  "description": "What the Projects page reads. GET /v1/places is the Swift app's StartPoints list. GET /v1/projects is the Board store's Project catalog, read-only, joined with those places the way ProjectBoardIntegration joins them. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route.",
+  "description": "What the Projects page reads. GET /v1/places is the Swift app's StartPoints list. GET /v1/projects is the Board store's Project catalog, read-only, joined with those places the way ProjectBoardIntegration joins them. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route. GET and POST /v1/projects/:id/unify plan and apply one rules file and one skills directory for Claude and Codex (docs/project-files.md, Unify).",
   "$defs": {
     "StartAvailability": {
       "description": "AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.",
@@ -439,6 +439,153 @@
       "required": ["projectWorktreeLifecycle"],
       "properties": {
         "projectWorktreeLifecycle": { "$ref": "#/$defs/WorktreeLifecycle" }
+      }
+    },
+    "ProjectUnifyStatus": {
+      "description": "Whether a Project's Claude and Codex sessions read the same rules and skills. `unknown` means something the plan needed could not be read; it is never reported as unified.",
+      "type": "string",
+      "enum": ["unified", "drifting", "unknown"]
+    },
+    "ProjectUnifyFileState": {
+      "description": "A rules file at the repository root. `link` is a symbolic link (only CLAUDE.md -> AGENTS.md counts as an import); `unreadable` could not be read as UTF-8 text within the size limit.",
+      "type": "string",
+      "enum": ["present", "missing", "link", "unreadable"]
+    },
+    "ProjectUnifyReads": {
+      "description": "The rules files each assistant reads, as paths relative to the repository root, following the measured loading rules in docs/shared-project-instructions.md.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claude", "codex"],
+      "properties": {
+        "claude": { "type": "array", "items": { "type": "string" } },
+        "codex": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ProjectUnifyRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agents", "claude", "claude_imports_agents", "claude_only_lines", "claude_only_files", "now", "after"],
+      "properties": {
+        "agents": { "$ref": "#/$defs/ProjectUnifyFileState" },
+        "claude": { "$ref": "#/$defs/ProjectUnifyFileState" },
+        "claude_imports_agents": { "description": "CLAUDE.md has an `@AGENTS.md` line, or is a link to AGENTS.md.", "type": "boolean" },
+        "claude_only_lines": { "description": "Non-blank CLAUDE.md lines other than the import: Codex does not see them. Shown as text; never moved automatically.", "type": "array", "items": { "type": "string" } },
+        "claude_only_files": { "description": "Other Claude rules files present (.claude/CLAUDE.md, CLAUDE.local.md, .claude/CLAUDE.local.md). Listed, never changed.", "type": "array", "items": { "type": "string" } },
+        "now": { "$ref": "#/$defs/ProjectUnifyReads" },
+        "after": { "$ref": "#/$defs/ProjectUnifyReads" }
+      }
+    },
+    "ProjectUnifySkillPlace": {
+      "description": "Where a skill is now: only in .agents/skills, only in .claude/skills, in both as one tree (identical copy or already linked), or in both with different content.",
+      "type": "string",
+      "enum": ["agents", "claude", "both_same", "both_different"]
+    },
+    "ProjectUnifySeen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claude", "codex"],
+      "properties": {
+        "claude": { "type": "boolean" },
+        "codex": { "type": "boolean" }
+      }
+    },
+    "ProjectUnifyActionKind": {
+      "type": "string",
+      "enum": ["rules_create_agents", "rules_add_import", "skill_link", "skill_move_and_link", "skill_replace_copy_with_link", "skill_copy"]
+    },
+    "ProjectUnifySkill": {
+      "description": "One skill name found in .agents/skills or .claude/skills at the repository root.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "place", "linked", "copy", "now", "after"],
+      "properties": {
+        "name": { "type": "string" },
+        "place": { "$ref": "#/$defs/ProjectUnifySkillPlace" },
+        "linked": { "description": ".claude/skills/<name> is a relative link to ../../.agents/skills/<name>.", "type": "boolean" },
+        "copy": { "description": "The two sides are, or will be, separate copies because this machine cannot create links; the check compares them.", "type": "boolean" },
+        "now": { "$ref": "#/$defs/ProjectUnifySeen" },
+        "after": { "$ref": "#/$defs/ProjectUnifySeen" },
+        "action": { "description": "The action that changes this skill; absent when none does (already shared, or a conflict).", "$ref": "#/$defs/ProjectUnifyActionKind" }
+      }
+    },
+    "ProjectUnifyFileEdit": {
+      "description": "The exact text of one rules file before and after an action. `before` is null when the file is created.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "after"],
+      "properties": {
+        "path": { "type": "string" },
+        "before": { "type": "string", "nullable": true },
+        "after": { "type": "string" }
+      }
+    },
+    "ProjectUnifyAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "paths", "description", "edits"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/ProjectUnifyActionKind" },
+        "paths": { "description": "Paths relative to the repository root that the action touches.", "type": "array", "items": { "type": "string" } },
+        "description": { "description": "One plain sentence for a person.", "type": "string" },
+        "link_target": { "description": "The relative link a skill_* action creates, as the link spells it.", "type": "string" },
+        "edits": { "description": "Rules file edits, with exact text. Empty for skill actions.", "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyFileEdit" } }
+      }
+    },
+    "ProjectUnifyConflictKind": {
+      "type": "string",
+      "enum": ["claude_only_lines", "import_without_agents", "rules_link", "skill_differs", "skill_link_elsewhere", "skills_directory_link", "name_taken", "too_large", "unreadable"]
+    },
+    "ProjectUnifyConflict": {
+      "description": "Something unify does not change by itself: the person resolves it. `unreadable` and `too_large` make the plan unknown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "detail"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/ProjectUnifyConflictKind" },
+        "path": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "ProjectUnifyPlan": {
+      "description": "GET /v1/projects/:id/unify. Computed from disk at the Project's repository root; reading it writes nothing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "version", "links_available", "rules", "skills", "actions", "conflicts"],
+      "properties": {
+        "status": { "$ref": "#/$defs/ProjectUnifyStatus" },
+        "version": { "description": "SHA-256 of every input the plan read. Apply refuses plan_changed when it differs.", "type": "string" },
+        "links_available": { "description": "False where this machine cannot create symbolic links; skills are then copied (skill_copy).", "type": "boolean" },
+        "rules": { "$ref": "#/$defs/ProjectUnifyRules" },
+        "skills": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifySkill" } },
+        "actions": { "description": "In the order apply performs them.", "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyAction" } },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyConflict" } }
+      }
+    },
+    "ProjectUnifyApply": {
+      "description": "POST /v1/projects/:id/unify, with an Idempotency-Key header.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string" }
+      }
+    },
+    "ProjectUnifyOutcome": {
+      "type": "string",
+      "enum": ["applied", "stopped"]
+    },
+    "ProjectUnifyApplied": {
+      "description": "The answer to POST /v1/projects/:id/unify. `applied` (200) ran every action; `stopped` (500, with `error` and `detail` as a refusal) ran `ran` and then failed on `failed`. `plan` is recomputed from disk either way.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "ran", "plan"],
+      "properties": {
+        "outcome": { "$ref": "#/$defs/ProjectUnifyOutcome" },
+        "ran": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyAction" } },
+        "failed": { "$ref": "#/$defs/ProjectUnifyAction" },
+        "plan": { "$ref": "#/$defs/ProjectUnifyPlan" },
+        "error": { "type": "string" },
+        "detail": { "type": "string" }
       }
     }
   }

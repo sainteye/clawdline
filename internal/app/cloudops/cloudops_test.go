@@ -679,6 +679,16 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:req-file-save", method: "PUT", path: "/v1/projects/p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		body2: `{"content":"updated","expected_version":"v1"}`,
 	}, {
+		word:    "project-unify-plan",
+		body:    map[string]any{"type": "project-unify-plan", "session": machine, "request": "req-unify-plan", "project": "p1"},
+		session: machine, name: "read:req-unify-plan", method: "GET", path: "/v1/projects/p1/unify",
+	}, {
+		word: "project-unify-apply",
+		body: map[string]any{"type": "project-unify-apply", "session": machine, "request": "req-unify-apply", "project": "p1",
+			"item": map[string]any{"version": "v1"}},
+		session: machine, name: "action:req-unify-apply", method: "POST", path: "/v1/projects/p1/unify",
+		body2: `{"version":"v1"}`,
+	}, {
 		// The Project id is a path segment here, so the escaping is the
 		// answer to a different question than the query above's.
 		word: "project-worktree-lifecycle",
@@ -1286,6 +1296,33 @@ func TestProjectFileCloudReadsDoNotGrantRemoteWrites(t *testing.T) {
 	}
 }
 
+func TestProjectUnifyCloudPlanIsAReadAndApplyNeedsTheWriteGate(t *testing.T) {
+	r := &router{}
+	closed := Bridge{MachineID: "mac-01", Router: r}
+	read := closed.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "project-unify-plan", "session": MachineReplySession, "request": "plan-1", "project": "p1"}))
+	if read.Status != 200 || len(r.seen) != 1 {
+		t.Fatalf("plan with remote writes off: %+v; requests: %+v", read, r.seen)
+	}
+	apply := map[string]any{"type": "project-unify-apply", "session": MachineReplySession, "request": "apply-1", "project": "p1",
+		"item": map[string]any{"version": "v1"}}
+	refused := closed.Handle(context.Background(), request(t, ClassCtl, apply))
+	if refused.Code != "cloud_commands_disabled" || len(r.seen) != 1 {
+		t.Fatalf("apply with remote writes off: %+v; requests: %+v", refused, r.seen)
+	}
+	open := Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return true }}
+	if answer := open.Handle(context.Background(), request(t, ClassCtl, apply)); answer.Status != 200 || len(r.seen) != 2 {
+		t.Fatalf("apply with remote writes on: %+v; requests: %+v", answer, r.seen)
+	}
+	if key := r.last().Header["Idempotency-Key"]; key != "apply-1" {
+		t.Fatalf("apply carried idempotency key %q", key)
+	}
+	if answer := open.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "project-unify-apply",
+		"session": MachineReplySession, "request": "apply-2", "project": "p1"})); answer.Code != "malformed_command" {
+		t.Fatalf("apply without a version body: %+v", answer)
+	}
+}
+
 // TestAMalformedBodyIsRefusedWhereItSafelyNames walks the shapes a viewer can
 // get wrong. Each one is refused, and each refusal goes only where the body's
 // own identity fields safely say it would have gone.
@@ -1751,7 +1788,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"past-sessions", "schedules", "schedule", "schedule-create", "schedule-update", "schedule-delete",
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
-		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-worktree-lifecycle",
+		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
 		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "update", "personas",
 		"work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",

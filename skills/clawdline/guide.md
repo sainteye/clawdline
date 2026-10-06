@@ -280,6 +280,31 @@ Project shows a fresh progress/deploy receipt. If a read is unavailable, malform
 which one and leave it unknown — never report absence as success. Finish by listing what was
 configured, what was intentionally not applicable, and any user-owned file changed outside git.
 
+**Unify: one set of rules and skills for Claude and Codex** (`/clawdline unify`). Codex reads
+`AGENTS.md` and `.agents/skills/<name>/`; Claude reads `CLAUDE.md` (and `AGENTS.md` only when
+`CLAUDE.md` is absent or has an `@AGENTS.md` line) and `.claude/skills/<name>/`. A Project is unified
+when its rules are in `AGENTS.md` with `CLAUDE.md` absent or importing it, and every skill lives in
+`.agents/skills/<name>/` with `.claude/skills/<name>` a relative link to it. When the person asks for
+that, or invokes `/clawdline unify`:
+
+1. Run `clawdline project unify` in the Session's Project (the git top-level; add the Project with
+   `clawdline project add` first if it is not listed). It changes nothing. Show the person, in their
+   language, what Claude and Codex each read now and will read after, every skill row, every action
+   sentence, and every conflict — including the `CLAUDE.md` lines Codex does not see.
+2. Run `clawdline project unify --apply` only after the person's own message in this conversation
+   approves that plan. It sends the version you showed; if disk changed since, it answers
+   `plan_changed` and applies nothing — print the plan again and ask again.
+3. Show the result of `clawdline project unify --check` (exit 0 unified, 1 drifting, 3 unknown).
+   Nothing is committed; say which files changed so the person or a Session commits them.
+
+Never resolve a conflict yourself by editing `AGENTS.md`, `CLAUDE.md` or a skill without the
+person's message saying so: a skill that differs between the two directories, a link pointing
+elsewhere, or rules Codex does not see are theirs to decide. The routes are
+`GET /v1/projects/{place}/unify` (the plan) and `POST /v1/projects/{place}/unify` with
+`{"version"}` and `Idempotency-Key`; refusals are `plan_changed`, `plan_unknown` (part of the
+Project could not be read, so nothing changed) and `name_taken` (a name unify would create already
+exists; nothing is overwritten).
+
 ## 2a. A Feature Root's ordinary path
 
 This is everything an ordinary Feature Root — a Session that owns one Board item — runs, in order.

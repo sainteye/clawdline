@@ -254,6 +254,10 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
+  // The machine side of unify landed before its screen; the Project settings
+  // screen that asks for these is separate work (docs/project-files.md, Unify).
+  "project-unify-plan": "Sharing one Project's rules and skills between Claude and Codex is not on this console yet; run `clawdline project unify` on the machine.",
+  "project-unify-apply": "Sharing one Project's rules and skills between Claude and Codex is not on this console yet; run `clawdline project unify --apply` on the machine.",
 } as const
 
 /**

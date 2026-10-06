@@ -32,3 +32,79 @@ folder expansion sends only that folder's immediate names and metadata. No tree 
 On a phone, the folder list and preview stack vertically, and the preview offers a return control
 that focuses the selected file. The native folder disclosure and file buttons remain keyboard
 reachable without relying on pointer-only actions.
+
+## Unify
+
+Unify gives one Project's Claude Code and Codex sessions the same rules file and the same skills.
+What each assistant loads was measured, not assumed (2026-10-06, Claude Code 2.1.291, codex-cli
+0.160.1; the table is in `docs/shared-project-instructions.md` §2): Codex reads `AGENTS.md` and
+`.agents/skills/<name>/`; Claude reads `CLAUDE.md`, reads `AGENTS.md` only when `CLAUDE.md` is absent
+or carries an `@AGENTS.md` line, and reads `.claude/skills/<name>/`, following a relative link there.
+A Project is **unified** when its rules are in `AGENTS.md` with `CLAUDE.md` absent or importing it,
+and every skill lives in `.agents/skills/<name>/` with `.claude/skills/<name>` resolving to the same
+directory. Unify works at the repository root the inventory above uses
+(`internal/adapters/projectfiles/unify.go`).
+
+`GET /v1/projects/{place}/unify` returns a `ProjectUnifyPlan` (`api/v1/projects.schema.json`) and
+writes nothing:
+
+- `status` is `unified`, `drifting`, or `unknown`. Unknown means a rules file, skills directory or
+  skill could not be read (not UTF-8, over 128 KiB, a permission error, or more than 1,024 entries in
+  one skills directory or skill tree); it is never reported as unified.
+- `version` is a SHA-256 of every input the plan read: file contents, link targets, each skill's
+  tree (names, types, executable bit, bytes), and whether links are available.
+- `rules` says which files Claude and Codex read now and after, whether `CLAUDE.md` imports
+  `AGENTS.md` (a `CLAUDE.md` that is a link to `AGENTS.md` counts), the non-blank `CLAUDE.md` lines
+  Codex does not see, as text, and the other Claude-only files present (`.claude/CLAUDE.md`,
+  `CLAUDE.local.md`, `.claude/CLAUDE.local.md`), which unify lists and never changes.
+- `skills` has one row per name in either directory: where it is (`agents`, `claude`, `both_same` —
+  identical trees or already linked — or `both_different`), whether it is linked or a watched copy,
+  who sees it now and after, and its action.
+- `actions`, in the order apply runs them, each with its paths, a sentence for a person, the link it
+  creates, and for rules files the exact text before and after:
+  `rules_create_agents` (no `AGENTS.md`; `CLAUDE.md`'s rules become `AGENTS.md` and `CLAUDE.md`
+  becomes `@AGENTS.md`), `rules_add_import` (both exist; `@AGENTS.md` is inserted as the first line of
+  `CLAUDE.md` and nothing else moves), `skill_link`, `skill_move_and_link`,
+  `skill_replace_copy_with_link`, and `skill_copy` where links are unavailable.
+- `conflicts` are what unify does not decide: `claude_only_lines` (shown while the import is
+  missing: Codex does not see these lines; move the shared ones into `AGENTS.md` — once the import
+  exists the lines are listed in `rules` as Claude-specific and are not drift),
+  `import_without_agents`, `rules_link`, `skill_differs`, `skill_link_elsewhere` (including an
+  absolute link), `skills_directory_link`, `name_taken`, `too_large` and `unreadable`.
+
+`POST /v1/projects/{place}/unify` takes `{"version": "<plan version>"}` and `Idempotency-Key`. It
+recomputes the plan under a per-repository lock and refuses `409 plan_changed` when the version
+differs and `503 plan_unknown` when the plan is unknown; nothing is written in either case. Then it
+performs each action, re-reading that action's inputs first:
+
+- Rules files: `CLAUDE.md` must still hold the planned text and is replaced through the same
+  temporary-file-and-rename save as the editor; a new `AGENTS.md` is written to a synced temporary
+  file and hard-linked to its name, which fails rather than replaces when the name appeared.
+- Skill links are relative (`../../.agents/skills/<name>`), created beneath the bound
+  `.claude/skills` handle, refused with `409 name_taken` when the name exists, and checked to
+  resolve to the `.agents/skills/<name>` directory before the action counts.
+- A move is one rename within the repository, after checking the tree still matches the plan, and
+  is checked again at its destination; replacing an identical copy renames the copy aside, creates
+  the link and only then removes the copy. A failure renames back.
+- A copy goes to a hidden staging directory, is compared with the planned tree, and is renamed into
+  place only if the destination is still absent.
+
+The answer is a `ProjectUnifyApplied` with the actions that ran and the plan read again from disk,
+`unified` unless conflicts remain. When an action fails the run stops: the answer is `500` with
+`outcome: "stopped"`, `ran`, `failed`, the refusal `error` and `detail`, and the recomputed plan.
+Within one action nothing is left half-written. A retried key replays the first answer instead of
+running again. Unify never commits to git, never edits a rules file to resolve a conflict, and
+never follows or replaces a link it did not create.
+
+From a terminal, `clawdline project unify [directory]` (default: the current directory's git
+top-level, which must be a Project this machine lists) prints the plan for a person; `--apply`
+applies the plan it just printed by sending its version; `--check` prints only `status:` and the
+drift and conflict lines and exits 0 unified, 1 drifting, 3 unknown; `--json` prints the daemon's
+answer. The `clawdline` skill's `/clawdline unify` follows the guide's Unify part: it shows the plan,
+applies only after the person's message approves it, and shows the `--check` result.
+
+The paired Cloud console has two words: `project-unify-plan`, a read available to a paired device
+with read access even when the remote write switch is off, and `project-unify-apply`, which needs
+the remote write gate and carries the request's idempotency key. A lost apply answer is uncertain:
+read the plan again before saying it applied. Both are listed as deferred in the console's carry
+table until the Project settings screen asks for them.

@@ -384,6 +384,13 @@ func Save(place, home, id, expected, text string) (Content, error) {
 	if !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
 		return Content{}, ErrText
 	}
+	return replaceText(f, expected, text)
+}
+
+// replaceText is Save after its inventory and text checks: the file must
+// still be the version the caller read, and the new text replaces it by a
+// rename in the same bound directory. Unify edits CLAUDE.md through it too.
+func replaceText(f File, expected, text string) (Content, error) {
 	mu := lockFor(filepath.Join(f.root, f.rel))
 	mu.Lock()
 	defer mu.Unlock()

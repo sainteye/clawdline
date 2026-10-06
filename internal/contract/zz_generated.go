@@ -3954,6 +3954,208 @@ const (
 // ProjectSyncSetupValues is every value the contract allows, in contract order.
 var ProjectSyncSetupValues = []ProjectSyncSetup{ProjectSyncSetupReady, ProjectSyncSetupMissing}
 
+type ProjectUnifyAction struct {
+	// One plain sentence for a person.
+	Description string `json:"description"`
+
+	// Rules file edits, with exact text. Empty for skill actions.
+	Edits []ProjectUnifyFileEdit `json:"edits"`
+	Kind  ProjectUnifyActionKind `json:"kind"`
+
+	// The relative link a skill_* action creates, as the link spells it.
+	LinkTarget string `json:"link_target,omitempty"`
+
+	// Paths relative to the repository root that the action touches.
+	Paths []string `json:"paths"`
+}
+
+type ProjectUnifyActionKind string
+
+const (
+	ProjectUnifyActionKindRulesCreateAgents        ProjectUnifyActionKind = "rules_create_agents"
+	ProjectUnifyActionKindRulesAddImport           ProjectUnifyActionKind = "rules_add_import"
+	ProjectUnifyActionKindSkillLink                ProjectUnifyActionKind = "skill_link"
+	ProjectUnifyActionKindSkillMoveAndLink         ProjectUnifyActionKind = "skill_move_and_link"
+	ProjectUnifyActionKindSkillReplaceCopyWithLink ProjectUnifyActionKind = "skill_replace_copy_with_link"
+	ProjectUnifyActionKindSkillCopy                ProjectUnifyActionKind = "skill_copy"
+)
+
+// ProjectUnifyActionKindValues is every value the contract allows, in contract order.
+var ProjectUnifyActionKindValues = []ProjectUnifyActionKind{ProjectUnifyActionKindRulesCreateAgents, ProjectUnifyActionKindRulesAddImport, ProjectUnifyActionKindSkillLink, ProjectUnifyActionKindSkillMoveAndLink, ProjectUnifyActionKindSkillReplaceCopyWithLink, ProjectUnifyActionKindSkillCopy}
+
+// The answer to POST /v1/projects/:id/unify. `applied` (200) ran every action;
+// `stopped` (500, with `error` and `detail` as a refusal) ran `ran` and then
+// failed on `failed`. `plan` is recomputed from disk either way.
+type ProjectUnifyApplied struct {
+	Detail  string               `json:"detail,omitempty"`
+	Error   string               `json:"error,omitempty"`
+	Failed  *ProjectUnifyAction  `json:"failed,omitempty"`
+	Outcome ProjectUnifyOutcome  `json:"outcome"`
+	Plan    ProjectUnifyPlan     `json:"plan"`
+	Ran     []ProjectUnifyAction `json:"ran"`
+}
+
+// POST /v1/projects/:id/unify, with an Idempotency-Key header.
+type ProjectUnifyApply struct {
+	Version string `json:"version"`
+}
+
+// Something unify does not change by itself: the person resolves it.
+// `unreadable` and `too_large` make the plan unknown.
+type ProjectUnifyConflict struct {
+	Detail string                   `json:"detail"`
+	Kind   ProjectUnifyConflictKind `json:"kind"`
+	Path   string                   `json:"path"`
+}
+
+type ProjectUnifyConflictKind string
+
+const (
+	ProjectUnifyConflictKindClaudeOnlyLines     ProjectUnifyConflictKind = "claude_only_lines"
+	ProjectUnifyConflictKindImportWithoutAgents ProjectUnifyConflictKind = "import_without_agents"
+	ProjectUnifyConflictKindRulesLink           ProjectUnifyConflictKind = "rules_link"
+	ProjectUnifyConflictKindSkillDiffers        ProjectUnifyConflictKind = "skill_differs"
+	ProjectUnifyConflictKindSkillLinkElsewhere  ProjectUnifyConflictKind = "skill_link_elsewhere"
+	ProjectUnifyConflictKindSkillsDirectoryLink ProjectUnifyConflictKind = "skills_directory_link"
+	ProjectUnifyConflictKindNameTaken           ProjectUnifyConflictKind = "name_taken"
+	ProjectUnifyConflictKindTooLarge            ProjectUnifyConflictKind = "too_large"
+	ProjectUnifyConflictKindUnreadable          ProjectUnifyConflictKind = "unreadable"
+)
+
+// ProjectUnifyConflictKindValues is every value the contract allows, in contract order.
+var ProjectUnifyConflictKindValues = []ProjectUnifyConflictKind{ProjectUnifyConflictKindClaudeOnlyLines, ProjectUnifyConflictKindImportWithoutAgents, ProjectUnifyConflictKindRulesLink, ProjectUnifyConflictKindSkillDiffers, ProjectUnifyConflictKindSkillLinkElsewhere, ProjectUnifyConflictKindSkillsDirectoryLink, ProjectUnifyConflictKindNameTaken, ProjectUnifyConflictKindTooLarge, ProjectUnifyConflictKindUnreadable}
+
+// The exact text of one rules file before and after an action. `before` is null
+// when the file is created.
+type ProjectUnifyFileEdit struct {
+	After  string  `json:"after"`
+	Before *string `json:"before"`
+	Path   string  `json:"path"`
+}
+
+// A rules file at the repository root. `link` is a symbolic link (only
+// CLAUDE.md -> AGENTS.md counts as an import); `unreadable` could not be read
+// as UTF-8 text within the size limit.
+type ProjectUnifyFileState string
+
+const (
+	ProjectUnifyFileStatePresent    ProjectUnifyFileState = "present"
+	ProjectUnifyFileStateMissing    ProjectUnifyFileState = "missing"
+	ProjectUnifyFileStateLink       ProjectUnifyFileState = "link"
+	ProjectUnifyFileStateUnreadable ProjectUnifyFileState = "unreadable"
+)
+
+// ProjectUnifyFileStateValues is every value the contract allows, in contract order.
+var ProjectUnifyFileStateValues = []ProjectUnifyFileState{ProjectUnifyFileStatePresent, ProjectUnifyFileStateMissing, ProjectUnifyFileStateLink, ProjectUnifyFileStateUnreadable}
+
+type ProjectUnifyOutcome string
+
+const (
+	ProjectUnifyOutcomeApplied ProjectUnifyOutcome = "applied"
+	ProjectUnifyOutcomeStopped ProjectUnifyOutcome = "stopped"
+)
+
+// ProjectUnifyOutcomeValues is every value the contract allows, in contract order.
+var ProjectUnifyOutcomeValues = []ProjectUnifyOutcome{ProjectUnifyOutcomeApplied, ProjectUnifyOutcomeStopped}
+
+// GET /v1/projects/:id/unify. Computed from disk at the Project's repository
+// root; reading it writes nothing.
+type ProjectUnifyPlan struct {
+	// In the order apply performs them.
+	Actions   []ProjectUnifyAction   `json:"actions"`
+	Conflicts []ProjectUnifyConflict `json:"conflicts"`
+
+	// False where this machine cannot create symbolic links; skills are then copied
+	// (skill_copy).
+	LinksAvailable bool                `json:"links_available"`
+	Rules          ProjectUnifyRules   `json:"rules"`
+	Skills         []ProjectUnifySkill `json:"skills"`
+	Status         ProjectUnifyStatus  `json:"status"`
+
+	// SHA-256 of every input the plan read. Apply refuses plan_changed when it
+	// differs.
+	Version string `json:"version"`
+}
+
+// The rules files each assistant reads, as paths relative to the repository
+// root, following the measured loading rules in
+// docs/shared-project-instructions.md.
+type ProjectUnifyReads struct {
+	Claude []string `json:"claude"`
+	Codex  []string `json:"codex"`
+}
+
+type ProjectUnifyRules struct {
+	After  ProjectUnifyReads     `json:"after"`
+	Agents ProjectUnifyFileState `json:"agents"`
+	Claude ProjectUnifyFileState `json:"claude"`
+
+	// CLAUDE.md has an `@AGENTS.md` line, or is a link to AGENTS.md.
+	ClaudeImportsAgents bool `json:"claude_imports_agents"`
+
+	// Other Claude rules files present (.claude/CLAUDE.md, CLAUDE.local.md,
+	// .claude/CLAUDE.local.md). Listed, never changed.
+	ClaudeOnlyFiles []string `json:"claude_only_files"`
+
+	// Non-blank CLAUDE.md lines other than the import: Codex does not see them. Shown
+	// as text; never moved automatically.
+	ClaudeOnlyLines []string          `json:"claude_only_lines"`
+	Now             ProjectUnifyReads `json:"now"`
+}
+
+type ProjectUnifySeen struct {
+	Claude bool `json:"claude"`
+	Codex  bool `json:"codex"`
+}
+
+// One skill name found in .agents/skills or .claude/skills at the repository
+// root.
+type ProjectUnifySkill struct {
+	// The action that changes this skill; absent when none does (already shared, or a
+	// conflict).
+	Action ProjectUnifyActionKind `json:"action,omitempty"`
+	After  ProjectUnifySeen       `json:"after"`
+
+	// The two sides are, or will be, separate copies because this machine cannot
+	// create links; the check compares them.
+	Copy bool `json:"copy"`
+
+	// .claude/skills/<name> is a relative link to ../../.agents/skills/<name>.
+	Linked bool                   `json:"linked"`
+	Name   string                 `json:"name"`
+	Now    ProjectUnifySeen       `json:"now"`
+	Place  ProjectUnifySkillPlace `json:"place"`
+}
+
+// Where a skill is now: only in .agents/skills, only in .claude/skills, in both
+// as one tree (identical copy or already linked), or in both with different
+// content.
+type ProjectUnifySkillPlace string
+
+const (
+	ProjectUnifySkillPlaceAgents        ProjectUnifySkillPlace = "agents"
+	ProjectUnifySkillPlaceClaude        ProjectUnifySkillPlace = "claude"
+	ProjectUnifySkillPlaceBothSame      ProjectUnifySkillPlace = "both_same"
+	ProjectUnifySkillPlaceBothDifferent ProjectUnifySkillPlace = "both_different"
+)
+
+// ProjectUnifySkillPlaceValues is every value the contract allows, in contract order.
+var ProjectUnifySkillPlaceValues = []ProjectUnifySkillPlace{ProjectUnifySkillPlaceAgents, ProjectUnifySkillPlaceClaude, ProjectUnifySkillPlaceBothSame, ProjectUnifySkillPlaceBothDifferent}
+
+// Whether a Project's Claude and Codex sessions read the same rules and skills.
+// `unknown` means something the plan needed could not be read; it is never
+// reported as unified.
+type ProjectUnifyStatus string
+
+const (
+	ProjectUnifyStatusUnified  ProjectUnifyStatus = "unified"
+	ProjectUnifyStatusDrifting ProjectUnifyStatus = "drifting"
+	ProjectUnifyStatusUnknown  ProjectUnifyStatus = "unknown"
+)
+
+// ProjectUnifyStatusValues is every value the contract allows, in contract order.
+var ProjectUnifyStatusValues = []ProjectUnifyStatus{ProjectUnifyStatusUnified, ProjectUnifyStatusDrifting, ProjectUnifyStatusUnknown}
+
 // /v1/diagnostics.proposals (design-decisions T4, board-redesign §4.4): what
 // the server decided about asking a person in the conversation, and what the
 // sessions reported doing, counted from the proposals table — durable, the

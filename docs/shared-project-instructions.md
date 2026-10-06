@@ -1,6 +1,9 @@
 # Shared project instructions: one source a Project's Claude and Codex sessions both read
 
-Status: **proposed design, 2026-10-06.** Nothing here is built. Claims about how Clawdline behaves
+Status: **partly built, 2026-10-06.** The rules-and-skills part is built as **unify**
+(`clawdline project unify`, `GET`/`POST /v1/projects/{place}/unify`, `/clawdline unify`;
+`docs/project-files.md`, Unify). Project memory (§2.3, §4 "Memory index in every launch",
+`clawdline memory`) is the remaining part and is not built. Claims about how Clawdline behaves
 today cite the file and line they were read from; anything not checked is labelled *assumption*.
 
 ## 1. The problem
@@ -27,16 +30,33 @@ once is followed by half the sessions.
 A Project is **integrated** when all four hold, and Clawdline can check each one without asking an
 assistant what it loaded:
 
-1. **One rules file.** `AGENTS.md` is the source. `CLAUDE.md` contains the import line `@AGENTS.md`
-   and only what is Claude-specific below it. (Claude Code expands `@path` imports in `CLAUDE.md` —
-   *assumption* to verify on 2.1.291 with a ten-line experiment before building.)
+1. **One rules file.** `AGENTS.md` is the source. `CLAUDE.md` is absent, or contains the import
+   line `@AGENTS.md` and only what is Claude-specific below it.
 2. **One skills directory.** `.agents/skills/<name>/` is the source. `.claude/skills/<name>` is a
-   link to it (or a generated copy — decision P2), so both assistants see the same skill set.
+   relative link to it (a copy only where links are unavailable — decision P2), so both assistants
+   see the same skill set.
 3. **One memory.** Lessons about the Project live in one Clawdline-owned store outside the
    repository, and every Claude and Codex session launched for the Project is given its index the
    same way (decision P1, decided: a Clawdline-owned store).
 4. **No drift.** A check reports any skill that exists for one assistant only, any rule in
    `CLAUDE.md` that contradicts `AGENTS.md`, and any memory entry not reachable by both.
+
+What each assistant loads was measured on 2026-10-06 with Claude Code 2.1.291 and codex-cli
+0.160.1, in a scratch Project with a codeword only in `AGENTS.md` and a skill `zebra-word`, each
+assistant asked with its file tools disabled so it could not read the files itself:
+
+| Setup | Claude | Codex |
+|---|---|---|
+| Only `AGENTS.md`, no `CLAUDE.md` | sees the rules | sees the rules |
+| `CLAUDE.md` exists without an `@AGENTS.md` line | does **not** see `AGENTS.md` | — |
+| `CLAUDE.md` contains `@AGENTS.md` | sees the rules | — |
+| A rule only in `CLAUDE.md` | sees it | does **not** see it |
+| Skill only in `.agents/skills/<n>/` | does not see it | sees it |
+| Skill only in `.claude/skills/<n>/` (copy) | sees it | does **not** see it |
+| `.claude/skills/<n>` a relative link to `../../.agents/skills/<n>` | sees it | sees it (via `.agents`) |
+
+Items 1 and 2 are checked and applied by unify (`docs/project-files.md`, Unify); items 3 and 4's
+memory half are not built yet.
 
 Things deliberately left alone: the person's home-scope files (`~/.claude/CLAUDE.md`,
 `~/.codex/AGENTS.md`) stay theirs — Clawdline reads them for the report and never writes them
@@ -94,8 +114,9 @@ never does) and over `integrate` (which already means landing work in this repos
   `clawdline` skill tells both assistants to use it instead of their own memory for Project lessons.
   This is what makes a lesson learned in a Codex session reach the next Claude session.
 - **Clawdline skill for Codex.** `clawdline skill install` also writes `~/.agents/skills/clawdline/`
-  (*assumption*: Codex 0.160.1 loads home skills from there, as the skill browser assumes at
-  `squad_skill_sources.go:80`).
+  (*assumption* for the home directory: Codex 0.160.1 was measured loading a Project's
+  `.agents/skills`, §2; home skills there are what the skill browser assumes at
+  `squad_skill_sources.go:80`, not yet measured).
 - **Codex delivery strength.** Codex is told to read the role and memory files rather than given
   them. Whether it reliably does is not measured; the end-to-end step in §3.5 measures it per
   Project.
@@ -109,9 +130,10 @@ never does) and over `integrate` (which already means landing work in this repos
   Project lessons to the shared store; the first integration imports existing entries once.
   (b) Claude's auto-memory stays the source, Clawdline only mirrors its index into Codex launches.
   Cost: Codex can read but never add; ties the design to one vendor's private layout.
-- **P2 — skills in `.claude/skills`: link or copy.** Link: one copy, no drift, but a link inside a
-  repository may not survive every checkout or Windows (*assumption*). Copy: works everywhere, needs
-  the drift check to catch edits made to the copy.
+- **P2 — skills in `.claude/skills`: link or copy. Decided 2026-10-06: link.** `.claude/skills/<n>`
+  is a relative link to `../../.agents/skills/<n>`, which Claude follows (measured, §2). Where links
+  are unavailable (Windows without link permission) unify copies instead, and the check reports a
+  copy whose content differs as drift.
 - **P3 — what goes in `AGENTS.md` vs the memory store.** Proposed rule: a fact every session needs
   on every task goes in `AGENTS.md` (it is committed and public for a public repository); a lesson
   needed only in some situations, or private to the person, goes in the store.
@@ -120,17 +142,20 @@ never does) and over `integrate` (which already means landing work in this repos
 
 | Hypothesis | How to confirm or refute |
 |---|---|
-| Claude Code expands `@AGENTS.md` inside `CLAUDE.md` | Ten-line experiment in a scratch Project: a rule only in `AGENTS.md`, ask a Claude session |
-| Codex loads `~/.agents/skills` and project `.agents/skills` | Same experiment with a one-line skill, Codex 0.160.1 |
+| Claude Code expands `@AGENTS.md` inside `CLAUDE.md` | **Confirmed 2026-10-06** (Claude Code 2.1.291; §2 table) |
+| Codex loads project `.agents/skills` | **Confirmed 2026-10-06** (codex-cli 0.160.1; §2 table) |
+| Codex loads `~/.agents/skills` | Not measured; same experiment with a home skill |
 | Codex reliably reads a file it is only told to read | Twenty launches with a memory-only fact; count correct answers |
 | Linked skill directories survive clone and Windows | Clone the scratch Project on the Windows build target |
 
 ## 7. Order of work
 
-1. The four experiments in §6 (cheap; they decide P2 and the shape of §4).
+1. The four experiments in §6 (cheap; they decide P2 and the shape of §4). The first two are done
+   (§2 table); P2 is decided.
 2. Memory store + `clawdline memory` + launch delivery (§4) — the one change that gives both
-   assistants the same memory.
-3. Inventory additions and `--check` (§3.1, §3.5).
+   assistants the same memory. **Remaining.**
+3. Inventory additions and `--check` (§3.1, §3.5). **Built for rules and skills** as unify
+   (`clawdline project unify --check`); memory entries are not part of it yet.
 4. The unify flow and the Project card status (§3.2-§3.6).
 5. Integrate this repository first as the pilot.
 

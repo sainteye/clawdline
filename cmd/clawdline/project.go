@@ -29,6 +29,9 @@ func projectCommand(args []string) {
 	case "import":
 		projectImport(args[1:])
 		return
+	case "unify":
+		projectUnifyCommand(args[1:])
+		return
 	}
 	registry := projects.OpenPlaceRegistry(config.Load().Dir, foreignDirs()...)
 	resolved, _ := capacity.Resolve(capacity.Register(), os.Getenv(capacity.OverrideEnv))
@@ -83,11 +86,13 @@ func projectUsage() {
 	fmt.Fprintln(os.Stderr, "usage: clawdline project <add|remove|list> [--json] [directory…]")
 	fmt.Fprintln(os.Stderr, "       clawdline project export [--out file] [--name source]")
 	fmt.Fprintln(os.Stderr, "       clawdline project import [--clone] [--replace-source] <file>")
+	fmt.Fprintln(os.Stderr, "       clawdline project unify [--apply | --check] [--json] [directory]")
 	fmt.Fprintln(os.Stderr, "  add <directory…>      keep existing directories in the session-start list")
 	fmt.Fprintln(os.Stderr, "  remove <directory…>   forget directories without deleting them")
 	fmt.Fprintln(os.Stderr, "  list                  show explicitly registered directories")
 	fmt.Fprintln(os.Stderr, "  export                this machine's project settings (icons, names, untracked skills), as a file")
 	fmt.Fprintln(os.Stderr, "  import <file>         mirror another machine's project settings here; it owns them from then on")
+	fmt.Fprintln(os.Stderr, "  unify [directory]     show how Claude and Codex can share this Project's rules and skills; --apply does it")
 }
 
 func printProjectRegistry(rows []projects.RegisteredPlace, asJSON bool) {

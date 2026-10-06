@@ -10,7 +10,7 @@ description: |
   approval" on Clawdline's screen, in any repository Clawdline watches. Triggers include
   "dispatch a task", "open a child session", "hand this off", "ask the person to choose",
   "pair this browser", `clawdline
-  cloud pair`, "report my milestone", "record this turn as delivered", "show the user this
+  cloud pair`, `/clawdline unify`, "share rules and skills between Claude and Codex", "report my milestone", "record this turn as delivered", "show the user this
   screenshot", and 「派任務」「開 child」「交接給下一個 session」「請使用者選擇」「配對瀏覽器」「回報這一輪做完了」
   「更新 milestone」「在 Clawdline 上顯示完成」「把這張截圖給他看」. Do not use for work this
   conversation can simply do, or for provider-native subagents. When this session is a Clawdline
@@ -54,6 +54,13 @@ app's routes are not this daemon's.
 If the path you chose exists and fails, report its exact error and stop. Do not fall through to the
 next path: another binary may be a different build from the daemon that will answer you. If none
 of the paths exists, Clawdline Next is not installed here; say so rather than inventing routes.
+
+## Unify a Project's rules and skills
+
+When invoked as `/clawdline unify`, or asked to make one Project's Claude and Codex sessions share
+the same rules and skills, print `BIN guide project` and follow its **Unify** part exactly: show the
+plan from `clawdline project unify`, apply it only after the person's message in this conversation
+approves it, and never edit `AGENTS.md`, `CLAUDE.md` or a skill to resolve a conflict yourself.
 
 ## Roles
 

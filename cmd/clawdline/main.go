@@ -438,6 +438,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")
 	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")
 	fmt.Fprintln(os.Stderr, "  project <add|remove|list>    explicitly keep directories in the session-start list")
+	fmt.Fprintln(os.Stderr, "  project unify [--apply|--check] [dir]   one rules file and one skills directory for Claude and Codex; --check exits 0 unified, 1 drifting, 3 unknown")
 	fmt.Fprintln(os.Stderr, "  task accept [--port n] <task dir>   a child signing for its briefing; secret from CLAWDLINE_TASK_SECRET or stdin")
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
 	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing; reading a finished one closes its notice")
