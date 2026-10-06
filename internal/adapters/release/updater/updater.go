@@ -200,9 +200,9 @@ type Env struct {
 	ReleasesAPI string
 	// AppsDir holds the installed macOS app, if setup installed one.
 	AppsDir string
-	// Health asks the daemon on port whether it serves its console and
-	// names commit; nil is the real HTTP check.
-	Health func(ctx context.Context, port int, token, commit string) error
+	// Health asks the daemon on port whether it serves its console as want;
+	// nil is the real HTTP check.
+	Health func(ctx context.Context, port int, token string, want Served) error
 	// Poll is the pause between health asks; HealthWait replaces
 	// HealthWaitSecondsLimit when shorter (tests).
 	Poll       time.Duration

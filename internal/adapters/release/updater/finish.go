@@ -92,7 +92,7 @@ func (e Env) trySwitch(ctx context.Context, svc install.ServiceFile, p Pending) 
 	if err := e.restartService(ctx, svc); err != nil {
 		return &contract.UpdateApplyError{Code: CodeSupervisorFailed, Detail: "restarting the service: " + err.Error()}
 	}
-	if err := e.waitHealthy(ctx, svc, p.ToCommit); err != nil {
+	if err := e.waitHealthy(ctx, svc, Served{Commit: p.ToCommit, Version: p.To}); err != nil {
 		return codeOf(err, CodeHealthTimeout)
 	}
 	return nil
@@ -124,7 +124,7 @@ func (e Env) rollback(ctx context.Context, svc install.ServiceFile, p Pending) e
 	}
 	if err := e.restartService(ctx, svc); err != nil {
 		why = &contract.UpdateApplyError{Code: why.Code, Detail: why.Detail + "; restarting the previous release failed too: " + err.Error()}
-	} else if err := e.waitHealthy(ctx, svc, p.FromCommit); err != nil {
+	} else if err := e.waitHealthy(ctx, svc, Served{Commit: p.FromCommit, Version: p.From}); err != nil {
 		why = &contract.UpdateApplyError{Code: why.Code, Detail: why.Detail + "; the previous release did not answer either: " + err.Error()}
 	}
 	err := e.settleRolledBack(p, why)

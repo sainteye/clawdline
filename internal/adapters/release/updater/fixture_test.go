@@ -80,10 +80,10 @@ func newFixture(t *testing.T, running string) *fixture {
 		Keys: []ed25519.PublicKey{pub}, Client: f.srv.Client(), Run: f.run,
 		Now: func() time.Time { return f.clock }, ReleaseURL: f.srv.URL + "/latest",
 		ReleasesAPI: f.srv.URL + "/api/releases", Poll: time.Millisecond, HealthWait: 200 * time.Millisecond,
-		Health: func(_ context.Context, _ int, _ string, commit string) error {
+		Health: func(_ context.Context, _ int, _ string, want Served) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			if f.healthy != "" && (commit == "" || commit == f.healthy) {
+			if f.healthy != "" && (want.Commit == "" || want.Commit == f.healthy) {
 				return nil
 			}
 			return errors.New("not answering")

@@ -142,7 +142,7 @@ func (e Env) restartService(ctx context.Context, s install.ServiceFile) error {
 
 // waitHealthy asks the daemon on s.Port until it serves its console and
 // names commit, for at most HealthWaitSecondsLimit.
-func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, commit string) error {
+func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, want Served) error {
 	token, _ := os.ReadFile(filepath.Join(e.StateDir, "orchestrator-token"))
 	check := e.Health
 	if check == nil {
@@ -160,7 +160,7 @@ func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, commit stri
 	}
 	last := errors.New("no answer yet")
 	for {
-		if err := check(ctx, s.Port, strings.TrimSpace(string(token)), commit); err == nil {
+		if err := check(ctx, s.Port, strings.TrimSpace(string(token)), want); err == nil {
 			return nil
 		} else {
 			last = err
@@ -168,16 +168,30 @@ func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, commit stri
 		select {
 		case <-ctx.Done():
 			return fail(CodeHealthTimeout, "the daemon on port %d did not come up as %s within %s: %v",
-				s.Port, short(commit), wait, last)
+				s.Port, want, wait, last)
 		case <-time.After(poll):
 		}
 	}
 }
 
+// Served is the release a restarted daemon must be serving.
+type Served struct {
+	Commit  string
+	Version string
+}
+
+func (s Served) String() string {
+	if s.Version != "" {
+		return s.Version + " (" + short(s.Commit) + ")"
+	}
+	return short(s.Commit)
+}
+
 // httpHealth is GET / answering 200 and the token-authenticated
-// /BUILD.json naming commit. /v1/health alone is not enough: it answers
-// before the console is served.
-func (e Env) httpHealth(ctx context.Context, port int, token, commit string) error {
+// /BUILD.json naming the release. /v1/health alone is not enough: it answers
+// before the console is served. The version is compared too: two releases
+// built from one commit (a release candidate and its final) differ only there.
+func (e Env) httpHealth(ctx context.Context, port int, token string, want Served) error {
 	base := "http://127.0.0.1:" + strconv.Itoa(port)
 	c := &http.Client{Timeout: 5 * time.Second}
 	ask := func(path string) ([]byte, error) {
@@ -207,15 +221,21 @@ func (e Env) httpHealth(ctx context.Context, port int, token, commit string) err
 		return err
 	}
 	var b struct {
-		Stamp string `json:"stamp"`
+		Stamp   string `json:"stamp"`
+		Version string `json:"version"`
 	}
 	if err := json.Unmarshal(body, &b); err != nil {
 		return fmt.Errorf("BUILD.json: %v", err)
 	}
 	// A release whose BUILD.json could not be read is known only by its
 	// console answering.
-	if commit != "" && !strings.EqualFold(strings.TrimSpace(b.Stamp), commit) {
-		return fmt.Errorf("the daemon serves %s, not %s", short(b.Stamp), short(commit))
+	if want.Commit != "" && !strings.EqualFold(strings.TrimSpace(b.Stamp), want.Commit) {
+		return fmt.Errorf("the daemon serves %s, not %s", short(b.Stamp), want)
+	}
+	// A release built before BUILD.json carried its version is known by its
+	// commit alone.
+	if want.Version != "" && b.Version != "" && b.Version != want.Version {
+		return fmt.Errorf("the daemon serves %s, not %s", b.Version, want)
 	}
 	return nil
 }

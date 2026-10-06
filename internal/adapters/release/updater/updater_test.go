@@ -6,8 +6,12 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -113,9 +117,39 @@ func TestTheHealthWaitIsBounded(t *testing.T) {
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	err := f.env.waitHealthy(ctx, install.ServiceFile{Port: 1}, commitOf('b'))
+	err := f.env.waitHealthy(ctx, install.ServiceFile{Port: 1}, Served{Commit: commitOf('b')})
 	if errCode(err) != CodeHealthTimeout || time.Since(start) > 5*time.Second {
 		t.Fatalf("waitHealthy: %v after %s", err, time.Since(start))
+	}
+}
+
+// A release candidate and its final release share a commit: only the version
+// tells the restarted daemon from the one it replaced.
+func TestHealthNeedsTheNewVersionNotOnlyItsCommit(t *testing.T) {
+	var build string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/BUILD.json" {
+			io.WriteString(w, build)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	port, _ := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	want := Served{Commit: commitOf('b'), Version: "v1.0.0"}
+	var e Env
+	build = `{"stamp":"` + commitOf('b') + `","version":"v1.0.0-rc.1"}`
+	if err := e.httpHealth(context.Background(), port, "", want); err == nil {
+		t.Fatal("the release candidate still running passed as the final release")
+	}
+	build = `{"stamp":"` + commitOf('b') + `","version":"v1.0.0"}`
+	if err := e.httpHealth(context.Background(), port, "", want); err != nil {
+		t.Fatalf("the final release: %v", err)
+	}
+	// A BUILD.json from before it carried a version is known by its commit.
+	build = `{"stamp":"` + commitOf('b') + `"}`
+	if err := e.httpHealth(context.Background(), port, "", want); err != nil {
+		t.Fatalf("a versionless BUILD.json: %v", err)
 	}
 }
 

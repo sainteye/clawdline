@@ -1259,7 +1259,7 @@ func Register() []Entry {
 			// One artifact's download. At the limit the download is abandoned, the
 			// partial file removed, and the update recorded failed with
 			// download_failed; the running release is untouched.
-			Name: ReleaseDownloadTimeoutSeconds, Class: Observation, Unit: Seconds,
+			Name: ReleaseDownloadTimeoutSeconds, Class: Buffer, Unit: Seconds,
 			Limit: 900, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.DownloadTimeoutSecondsLimit"},
@@ -1299,7 +1299,7 @@ func Register() []Entry {
 		{
 			// The new binary's `version --json` before anything switches to it. At
 			// the limit the update is recorded failed with smoke_run_failed.
-			Name: ReleaseSmokeTimeoutSeconds, Class: Observation, Unit: Seconds,
+			Name: ReleaseSmokeTimeoutSeconds, Class: Buffer, Unit: Seconds,
 			Limit: 15, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.SmokeTimeoutSecondsLimit"},
@@ -1308,7 +1308,7 @@ func Register() []Entry {
 			// How long the supervisor waits for a restarted daemon to serve its
 			// console and name its commit. At the limit the update is rolled back
 			// with health_timeout.
-			Name: ReleaseHealthWaitSeconds, Class: Observation, Unit: Seconds,
+			Name: ReleaseHealthWaitSeconds, Class: Buffer, Unit: Seconds,
 			Limit: 60, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.HealthWaitSecondsLimit"},
@@ -1317,7 +1317,7 @@ func Register() []Entry {
 			// How long an update may stay pending. A new release that starts after
 			// it gives the update up (boot_guard) and exits for the previous release
 			// to start.
-			Name: ReleasePendingDeadlineSeconds, Class: Observation, Unit: Seconds,
+			Name: ReleasePendingDeadlineSeconds, Class: Buffer, Unit: Seconds,
 			Limit: 600, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.PendingDeadlineSecondsLimit"},
@@ -1325,7 +1325,7 @@ func Register() []Entry {
 		{
 			// Starts of a new release while its update is pending. At the limit its
 			// boot guard rolls the update back.
-			Name: ReleaseBootAttempts, Class: Progress, Unit: Rows,
+			Name: ReleaseBootAttempts, Class: Buffer, Unit: Rows,
 			Limit: 3, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.BootAttemptsLimit"},
@@ -1333,7 +1333,7 @@ func Register() []Entry {
 		{
 			// Starts of the update supervisor for one update. Past the limit it
 			// stops trying the new release and rolls back (supervisor_gave_up).
-			Name: ReleaseSupervisorRuns, Class: Progress, Unit: Rows,
+			Name: ReleaseSupervisorRuns, Class: Buffer, Unit: Rows,
 			Limit: 5, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.SupervisorRunsLimit"},
@@ -1341,7 +1341,7 @@ func Register() []Entry {
 		{
 			// The age at which an update.lock left by a process that died is taken
 			// over; a younger one refuses a second update with update_in_progress.
-			Name: ReleaseLockStaleSeconds, Class: Observation, Unit: Seconds,
+			Name: ReleaseLockStaleSeconds, Class: Idempotency, Unit: Seconds,
 			Limit: 1800, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.LockStaleSecondsLimit"},
@@ -1350,7 +1350,7 @@ func Register() []Entry {
 			// How often a daemon with a staged app bundle looks whether the app
 			// has quit; a running app keeps its bundle until the next look.
 			Name: ReleaseAppSwapPollSeconds, Class: Observation, Unit: Seconds,
-			Limit: 60, AtLimit: Expire,
+			Limit: 60, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/release/updater.AppSwapPollSecondsLimit"},
 		},
@@ -1389,7 +1389,7 @@ func Register() []Entry {
 		{
 			// How long `clawdline update --apply` follows an update before it says
 			// the outcome could not be read and exits 3; the update itself goes on.
-			Name: ReleaseApplyFollowSeconds, Class: Observation, Unit: Seconds,
+			Name: ReleaseApplyFollowSeconds, Class: Buffer, Unit: Seconds,
 			Limit: 1500, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"cmd/clawdline.applyFollowSecondsLimit"},

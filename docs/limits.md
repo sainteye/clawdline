@@ -258,22 +258,22 @@ answer to who may let anything go.
 | `release.check_interval_seconds` | 21600 seconds | observation / seconds | release check | read the channel's manifest again; a failed read keeps the last good one ([updates.md](updates.md#release-installs)) | diagnostics / daemon |
 | `release.check_jitter_seconds` | 1800 seconds | observation / seconds | release check | added at random to each interval so machines do not ask at once | diagnostics / daemon |
 | `release.fetch_timeout_seconds` | 30 seconds | observation / seconds | release check | abandon the read; `release_unreachable` beside the last good answer | diagnostics / daemon |
-| `release.download_timeout_seconds` | 900 seconds | observation / seconds | update download | abandon the download as `download_failed`; nothing changed | diagnostics / daemon |
+| `release.download_timeout_seconds` | 900 seconds | buffer / seconds | update download | abandon the download as `download_failed`; nothing changed | diagnostics / daemon |
 | `release.artifact_bytes` | 512 MiB | buffer / bytes | update download | refuse the artifact as `download_failed` | diagnostics / daemon |
 | `release.list_bytes` | 1 MiB | buffer / bytes | beta release list | refuse the list as `release_unreachable` | diagnostics / daemon |
 | `release.archive_entries` | 20000 | buffer / rows | release unpack | refuse the archive as `archive_unsafe` | diagnostics / daemon |
 | `release.unpacked_bytes` | 2 GiB | buffer / bytes | release unpack | refuse the archive as `archive_unsafe` | diagnostics / daemon |
-| `release.smoke_timeout_seconds` | 15 seconds | observation / seconds | update smoke run | refuse the release as `smoke_run_failed` | diagnostics / daemon |
-| `release.health_wait_seconds` | 60 seconds | observation / seconds | update supervisor | roll back as `health_timeout` | diagnostics / daemon |
-| `release.pending_deadline_seconds` | 600 seconds | observation / seconds | new release's boot guard | give the update up as `boot_guard` and start the old release | diagnostics / daemon |
-| `release.boot_attempts` | 3 | progress / rows | new release's boot guard | the fourth start gives the update up as `boot_guard` | diagnostics / daemon |
-| `release.supervisor_runs` | 5 | progress / rows | update supervisor | stop trying the new release; roll back as `supervisor_gave_up` | diagnostics / daemon |
-| `release.lock_stale_seconds` | 1800 seconds | observation / seconds | update.lock | take over a lock left by a process that died; a younger one refuses `update_in_progress` | diagnostics / daemon |
+| `release.smoke_timeout_seconds` | 15 seconds | buffer / seconds | update smoke run | refuse the release as `smoke_run_failed` | diagnostics / daemon |
+| `release.health_wait_seconds` | 60 seconds | buffer / seconds | update supervisor | roll back as `health_timeout` | diagnostics / daemon |
+| `release.pending_deadline_seconds` | 600 seconds | buffer / seconds | new release's boot guard | give the update up as `boot_guard` and start the old release | diagnostics / daemon |
+| `release.boot_attempts` | 3 | buffer / rows | new release's boot guard | the fourth start gives the update up as `boot_guard` | diagnostics / daemon |
+| `release.supervisor_runs` | 5 | buffer / rows | update supervisor | stop trying the new release; roll back as `supervisor_gave_up` | diagnostics / daemon |
+| `release.lock_stale_seconds` | 1800 seconds | idempotency / seconds | update.lock | take over a lock left by a process that died; a younger one refuses `update_in_progress` | diagnostics / daemon |
 | `release.backups_kept` | 2 | journal / rows | store snapshots | remove the oldest snapshot | diagnostics / daemon |
 | `release.previous_releases_kept` | 2 | journal / rows | releases/ | remove older releases after a healthy update; source deploys are kept | diagnostics / daemon |
 | `release.failed_versions` | 16 | journal / rows | failed.json | forget the oldest version that rolled back | diagnostics / daemon |
 | `release.state_file_bytes` | 64 KiB | buffer / bytes | updater state files | read the file as unreadable: `update_state_unreadable`, never idle | diagnostics / daemon |
-| `release.apply_follow_seconds` | 1500 seconds | observation / seconds | `clawdline update --apply` | stop following and exit 3; the update continues | diagnostics / daemon |
+| `release.apply_follow_seconds` | 1500 seconds | buffer / seconds | `clawdline update --apply` | stop following and exit 3; the update continues | diagnostics / daemon |
 | `release.app_swap_poll_seconds` | 60 seconds | observation / seconds | staged macOS app | look again whether the app has quit | diagnostics / daemon |
 | `update.apply_body_bytes` | 4096 bytes | buffer / bytes | POST /v1/update/apply | refuse the body as too large | diagnostics / daemon |
 
