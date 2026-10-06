@@ -210,7 +210,7 @@ A failure before step 5 changes nothing the running daemon uses and is recorded 
 |---|---|
 | `update_in_progress` | another update holds the lock or is pending |
 | `not_a_release_install` | the daemon runs from a source build; see below for its path |
-| `not_installed_as_service` | `clawdline setup` has not installed the service |
+| `not_installed_as_service` | the daemon was not installed as a service, so `<state>/service.json` is missing |
 | `already_current` / `version_not_newer` | nothing newer to install (use `--version … --force`) |
 | `version_below_min` | the release needs a newer running version first |
 | `version_failed_before` | auto-apply skips a version that rolled back |

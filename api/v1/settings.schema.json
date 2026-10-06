@@ -237,6 +237,11 @@
           "nullable": true,
           "type": "integer"
         },
+        "update_auto_apply": {
+          "description": "Whether this machine installs a newer stable release by itself when no session it started is busy (docs/updates.md). Only a release install acts on it. Null or absent is off, the default.",
+          "nullable": true,
+          "type": "boolean"
+        },
         "on_state_change": {
           "description": "The file's `on_state_change`, the argv this app runs when a session changes state. Read only here: it is an argument list, not a command line, and a single text box invites exactly the word-splitting that would break a path with a space in it. Absent is an empty list.",
           "type": "array",
@@ -465,6 +470,11 @@
           "description": "0 for none, or 50000 to 1000000 tokens.",
           "nullable": true,
           "type": "integer"
+        },
+        "update_auto_apply": {
+          "description": "true or false.",
+          "nullable": true,
+          "type": "boolean"
         }
       }
     },

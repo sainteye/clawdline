@@ -56,7 +56,7 @@ func (e Env) Begin(ctx context.Context, exe string, req Request) (*Plan, error) 
 	}
 	svc, err := install.ReadServiceFile(e.StateDir)
 	if err != nil {
-		return nil, fail(CodeNoService, "the daemon is not installed as a service (%v); `clawdline setup` installs it", err)
+		return nil, fail(CodeNoService, "the daemon is not installed as a service: %s has no %s (%v); the installer writes it when it installs the service", e.StateDir, install.ServiceFileName, err)
 	}
 	if _, ok, err := e.ReadPending(); err != nil {
 		return nil, fail(CodeStateUnreadable, "pending.json: %v", err)
