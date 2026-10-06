@@ -8,7 +8,15 @@ export interface TerminalCloseState {
   error: string
 }
 
+/**
+ * How long an unconfirmed close keeps the close action withheld when no read resolves it. The
+ * page re-reads the terminal as soon as a close turns unknown; this bound covers the read that
+ * never answers, so the action comes back without a reload.
+ */
+export const TERMINAL_CLOSE_UNKNOWN_MS = 60_000
+
 const states = new Map<string, TerminalCloseState>()
+const expiries = new Map<string, ReturnType<typeof setTimeout>>()
 const listeners = new Set<() => void>()
 let revision = 0
 const key = (machine: string, terminal: string) => `${machine}\0${terminal}`
@@ -23,8 +31,13 @@ export function terminalCloseState(machine: string, terminal: string): TerminalC
   return states.get(key(machine, terminal)) ?? null
 }
 export function recentTerminalCloseStates(): TerminalCloseState[] { return [...states.values()].sort((a, b) => b.submittedAt - a.submittedAt) }
-export function clearTerminalCloseStates(): void { if (states.size) { states.clear(); changed() } }
+const disarm = (at: string) => { const timer = expiries.get(at); if (timer !== undefined) { clearTimeout(timer); expiries.delete(at) } }
+export function clearTerminalCloseStates(): void {
+  for (const at of [...expiries.keys()]) disarm(at)
+  if (states.size) { states.clear(); changed() }
+}
 export function beginTerminalClose(machine: string, terminal: string, requestID: string): void {
+  disarm(key(machine, terminal))
   states.set(key(machine, terminal), { machine, terminal, requestID, submittedAt: Date.now(), status: "pending", error: "" })
   changed()
 }
@@ -32,7 +45,18 @@ export function settleTerminalClose(machine: string, terminal: string, requestID
   status: TerminalCloseState["status"], error = ""): boolean {
   const held = states.get(key(machine, terminal))
   if (!held || held.requestID !== requestID) return false
-  states.set(key(machine, terminal), { ...held, status, error })
+  const at = key(machine, terminal)
+  disarm(at)
+  states.set(at, { ...held, status, error })
+  if (status === "unknown") {
+    const timer = setTimeout(() => {
+      expiries.delete(at)
+      const now = states.get(at)
+      if (now?.requestID === requestID && now.status === "unknown") { states.delete(at); changed() }
+    }, TERMINAL_CLOSE_UNKNOWN_MS)
+    ;(timer as { unref?: () => void }).unref?.()
+    expiries.set(at, timer)
+  }
   changed()
   return true
 }
@@ -40,4 +64,17 @@ export function settleTerminalClose(machine: string, terminal: string, requestID
 export function observeTerminalEnded(machine: string, terminal: string): void {
   const held = terminalCloseState(machine, terminal)
   if (held && held.status !== "ok") settleTerminalClose(machine, terminal, held.requestID, "ended")
+}
+
+/**
+ * A later read found the terminal still there: a close whose outcome was unknown did not end it,
+ * so the record goes and the close action is offered again. A pending, refused or confirmed
+ * outcome is left as it is.
+ */
+export function observeTerminalRunning(machine: string, terminal: string): void {
+  const at = key(machine, terminal)
+  if (states.get(at)?.status !== "unknown") return
+  disarm(at)
+  states.delete(at)
+  changed()
 }
