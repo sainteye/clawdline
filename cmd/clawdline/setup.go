@@ -36,23 +36,26 @@ import (
 
 const setupUsage = `usage: clawdline setup [options]
 
-Installs the release this binary belongs to as this user's Clawdline service:
-checks its signature, checks for tmux and an assistant, points
-<root>/current at it, links clawdline into ~/.local/bin, starts the daemon as
-a systemd --user unit (Linux) or a LaunchAgent (macOS), installs the app on
-macOS with a desktop, and proves the console answers. Running it again repairs.
+Installs this release of Clawdline for this user: checks its signature and that
+tmux and an assistant are installed, links clawdline into ~/.local/bin, starts
+it as a background service (systemd --user on Linux, a LaunchAgent on macOS),
+installs the menu bar app on a Mac with a desktop, and checks that the console
+answers. Running it again repairs the install.
 
   --headless          no desktop: no app, no browser; print the sign-in address
   --no-app            macOS: do not install Clawdline Next.app
   --no-autostart      start the service now, but not at login or boot
   --channel <c>       stable (default) or beta: which releases this machine follows
-  --port <n>          the daemon's port (default 7727); another port gets its own service name
-  --adopt             take over a source deploy (tools/deploy-linux-user.sh) in the same layout
-  --no-session-check  do not start and stop one throwaway terminal to prove tmux works
+  --port <n>          the daemon's port (default 7727); another port gets its own service
+  --no-session-check  skip starting and closing one test terminal in tmux
+  --verbose           also show paths and details behind each check
   --uninstall         stop and remove the service, the link and the installed releases
   --purge             with --uninstall: remove the state directory too (devices, sessions, settings)
-  --archive <file>    the daemon archive install.sh downloaded (checked against the manifest)
+
+Used by install.sh and by developers:
+  --archive <file>    the release archive install.sh downloaded, checked against the manifest
   --manifest-dir <d>  where install.sh put manifest.json and manifest.sig.json
+  --adopt             take over a source deploy (tools/deploy-linux-user.sh) in the same layout
 
 The install root is ~/.local/share/clawdline-next (CLAWDLINE_NEXT_INSTALL_ROOT),
 the link directory ~/.local/bin (CLAWDLINE_NEXT_BIN_DIR), the state directory
@@ -62,6 +65,7 @@ the link directory ~/.local/bin (CLAWDLINE_NEXT_BIN_DIR), the state directory
 type setupOptions struct {
 	headless, noApp, noAutostart, adopt bool
 	uninstall, purge, noSessionCheck    bool
+	verbose                             bool
 	channel, archive, manifestDir       string
 	port                                int
 	channelSet                          bool
@@ -73,6 +77,7 @@ type setupHost struct {
 	home         string
 	uid          int
 	username     string
+	hostname     string
 	getenv       func(string) string
 	// keys are the release keys this binary trusts.
 	keys []ed25519.PublicKey
@@ -88,8 +93,9 @@ func realSetupHost() setupHost {
 	if u, err := user.Current(); err == nil {
 		name = u.Username
 	}
+	host, _ := os.Hostname()
 	return setupHost{
-		goos: runtime.GOOS, goarch: runtime.GOARCH, home: home, uid: os.Getuid(), username: name,
+		goos: runtime.GOOS, goarch: runtime.GOARCH, home: home, uid: os.Getuid(), username: name, hostname: host,
 		getenv: os.Getenv, keys: release.TrustedKeys(),
 		run: func(name string, args ...string) ([]byte, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -119,6 +125,7 @@ func setupCommand(args []string) {
 	fs.BoolVar(&o.uninstall, "uninstall", false, "")
 	fs.BoolVar(&o.purge, "purge", false, "")
 	fs.BoolVar(&o.noSessionCheck, "no-session-check", false, "")
+	fs.BoolVar(&o.verbose, "verbose", false, "")
 	fs.StringVar(&o.channel, "channel", "", "")
 	fs.StringVar(&o.archive, "archive", "", "")
 	fs.StringVar(&o.manifestDir, "manifest-dir", "", "")
@@ -243,7 +250,8 @@ func runSetup(h setupHost, o setupOptions) int {
 	if err != nil {
 		return setupRefuse(h, err)
 	}
-	fmt.Fprintf(h.out, "release %s (%s), signature verified\n", m.Version, m.Commit[:12])
+	fmt.Fprintf(h.out, "✓ signature verified (%s)\n", m.Version)
+	o.detail(h, "  release %s, commit %s, from %s\n", m.Version, m.Commit[:12], filepath.Dir(exe))
 	if o.channel == "stable" && m.Channel == "beta" {
 		if o.channelSet {
 			return setupRefuse(h, &install.Refusal{Code: install.CodeChannelMismatch,
@@ -259,8 +267,12 @@ func runSetup(h setupHost, o setupOptions) int {
 		fmt.Fprintln(h.out, line)
 	}
 	if report.Stop {
-		fmt.Fprintln(h.errOut, "clawdline setup: nothing was activated  ("+install.CodeTmuxMissing+")")
+		fmt.Fprintf(h.errOut, "%s\n  (%s)\n", report.StopLine, install.CodeTmuxMissing)
 		return 1
+	}
+	fmt.Fprintln(h.out, "✓ tmux found")
+	for _, line := range report.Found {
+		o.detail(h, "  %s\n", line)
 	}
 	shell := h.getenv("SHELL")
 	if shell == "" {
@@ -288,15 +300,21 @@ func runSetup(h setupHost, o setupOptions) int {
 	if err := place.layout.SwitchCurrent(name); err != nil {
 		return setupRefuse(h, err)
 	}
-	fmt.Fprintf(h.out, "current -> releases/%s\n", name)
+	o.detail(h, "  %s -> releases/%s\n", place.layout.Current, name)
+	// command is how the person runs clawdline in the lines below: the
+	// short name once its directory is on PATH, the whole path until then.
+	command := tilde(h, filepath.Join(place.layout.Current, "clawdline"))
 	if err := linkBin(place.layout); err != nil {
 		fmt.Fprintf(h.errOut, "warning: %v\n", err)
 	} else {
-		fmt.Fprintf(h.out, "linked %s\n", place.layout.BinLink)
-	}
-	binDir := filepath.Dir(place.layout.BinLink)
-	if !install.OnPath(h.getenv("PATH"), binDir) {
-		fmt.Fprintf(h.out, "%s is not on your PATH; add this line to your shell's profile:\n    export PATH=\"%s:$PATH\"\n", binDir, binDir)
+		o.detail(h, "  linked %s\n", place.layout.BinLink)
+		command = tilde(h, place.layout.BinLink)
+		binDir := filepath.Dir(place.layout.BinLink)
+		if install.OnPath(h.getenv("PATH"), binDir) {
+			command = "clawdline"
+		} else {
+			fmt.Fprintln(h.out, pathHint(h, binDir))
+		}
 	}
 
 	// f. The service.
@@ -348,23 +366,121 @@ func runSetup(h setupHost, o setupOptions) int {
 	if err := install.WriteServiceFile(place.stateDir, sf); err != nil {
 		return setupRefuse(h, err)
 	}
-	fmt.Fprintf(h.out, "service %s (%s) written to %s\n", sf.Name, sf.Supervisor, unitFile)
+	fmt.Fprintln(h.out, "✓ service started")
+	o.detail(h, "  %s (%s), written to %s\n", sf.Name, sf.Supervisor, unitFile)
 
 	// h. Prove it.
 	if err := proveInstall(h, place, o, m.Commit); err != nil {
-		fmt.Fprintf(h.errOut, "the service is installed but did not prove itself; `clawdline doctor` and %s say more\n",
-			filepath.Join(place.stateDir, "daemon.log"))
+		var r *install.Refusal
+		log := tilde(h, filepath.Join(place.stateDir, "logs", "daemon.log"))
+		if errors.As(err, &r) && r.Code == install.CodeSessionCheck {
+			fmt.Fprintf(h.errOut, "Clawdline is running, but could not start a test terminal in tmux. See why: %s doctor (log: %s)\n", command, log)
+		} else {
+			fmt.Fprintf(h.errOut, "Clawdline was installed but did not start within %d seconds. See why: %s doctor (log: %s)\n",
+				setupHealthSeconds, command, log)
+		}
 		return setupRefuse(h, err)
 	}
-	fmt.Fprintf(h.out, "\nClawdline %s is installed and running on http://127.0.0.1:%d\n", m.Version, o.port)
-	if o.noAutostart {
-		fmt.Fprintln(h.out, "it was started now and will not start by itself at login (--no-autostart)")
-	} else {
-		fmt.Fprintln(h.out, "it starts by itself at login; `clawdline setup --no-autostart` turns that off")
-	}
-	fmt.Fprintln(h.out, "uninstall: clawdline setup --uninstall"+install.PortFlag(o.port))
-	openConsole(h, place, o, desktop, sf.App)
+	opened, address := openConsole(h, place, o, desktop, sf.App)
+	printNext(h, o, nextStep{version: m.Version, command: command, opened: opened, address: address, found: found})
 	return 0
+}
+
+// detail is a line only --verbose shows: the paths and checks behind each ✓.
+func (o setupOptions) detail(h setupHost, format string, a ...any) {
+	if o.verbose {
+		fmt.Fprintf(h.out, format, a...)
+	}
+}
+
+// tilde writes a path under the home directory as ~/…, the way a person types it.
+func tilde(h setupHost, p string) string {
+	if rel, err := filepath.Rel(h.home, p); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return "~/" + rel
+	}
+	return p
+}
+
+// pathHint is the one line that puts binDir on PATH, written to the profile
+// file of the shell in $SHELL, and the full path to use until it takes effect.
+func pathHint(h setupHost, binDir string) string {
+	dir := binDir
+	if rel, err := filepath.Rel(h.home, binDir); err == nil && !strings.HasPrefix(rel, "..") {
+		dir = "$HOME/" + rel
+	}
+	run := ""
+	switch filepath.Base(h.getenv("SHELL")) {
+	case "fish":
+		run = "fish_add_path " + tilde(h, binDir)
+	case "zsh":
+		run = fmt.Sprintf(`echo 'export PATH="%s:$PATH"' >> ~/.zshrc`, dir)
+	case "bash":
+		profile := "~/.bashrc"
+		if h.goos == "darwin" {
+			profile = "~/.bash_profile"
+		}
+		run = fmt.Sprintf(`echo 'export PATH="%s:$PATH"' >> %s`, dir, profile)
+	default:
+		run = fmt.Sprintf(`echo 'export PATH="%s:$PATH"' >> ~/.profile`, dir)
+	}
+	return fmt.Sprintf("%s is not on your PATH. Run once, then open a new terminal:  %s\n  Until then, run Clawdline as %s",
+		tilde(h, binDir), run, tilde(h, filepath.Join(binDir, "clawdline")))
+}
+
+// nextStep is what a finished install tells the person to do next.
+type nextStep struct {
+	version string
+	// command runs clawdline: "clawdline" once it is on PATH, else its path.
+	command string
+	// opened names what showed the console ("Clawdline Next.app", "your
+	// browser"), or is empty when nothing could; address is then the sign-in
+	// address, or empty when even that could not be made.
+	opened, address string
+	found           map[string]string
+}
+
+// printNext ends a successful install: where it runs, how to sign in, how
+// to start an assistant so the console is not empty, and how to turn
+// autostart off or remove it, every command with this install's port.
+func printNext(h setupHost, o setupOptions, n nextStep) {
+	w := h.out
+	port := install.PortFlag(o.port)
+	fmt.Fprintf(w, "\nClawdline %s is running at http://127.0.0.1:%d\n\nNext:\n", n.version, o.port)
+	switch {
+	case n.opened != "":
+		fmt.Fprintf(w, "  1. Sign in: %s just opened the console on this computer.\n", n.opened)
+		fmt.Fprintf(w, "     Not in front of you? Run   %s open%s\n", n.command, port)
+	case n.address != "":
+		fmt.Fprintln(w, "  1. Sign in: open this address in a browser on this computer (it contains a key; don't share it)")
+		fmt.Fprintf(w, "       %s\n", n.address)
+		who := "<this machine>"
+		if h.hostname != "" {
+			who = h.username + "@" + h.hostname
+		}
+		fmt.Fprintf(w, "     No browser here? On your laptop run   ssh -L %d:127.0.0.1:%d %s\n", o.port, o.port, who)
+		fmt.Fprintln(w, "     then open the same address there.")
+	default:
+		fmt.Fprintf(w, "  1. Sign in: run   %s open --print%s   and open the address it prints in a browser on this computer.\n", n.command, port)
+	}
+	_, claude := n.found["claude"]
+	_, codex := n.found["codex"]
+	assistant := "claude   (or codex)"
+	switch {
+	case codex && !claude:
+		assistant = "codex"
+	case claude && !codex:
+		assistant = "claude"
+	case !claude && !codex:
+		assistant = "claude   (or codex), once one of them is installed"
+	}
+	fmt.Fprintf(w, "  2. Start an assistant inside tmux:   tmux new -s work   then run   %s\n", assistant)
+	fmt.Fprintln(w, "     It appears in the console within a few seconds.")
+	fmt.Fprintln(w)
+	if o.noAutostart {
+		fmt.Fprintf(w, "Started now, not at login. Turn on: %s setup%s   Remove: %s setup --uninstall%s\n", n.command, port, n.command, port)
+	} else {
+		fmt.Fprintf(w, "Starts at login. Turn off: %s setup --no-autostart%s   Remove: %s setup --uninstall%s\n", n.command, port, n.command, port)
+	}
 }
 
 func supportedPlatform(goos, goarch string) bool {
@@ -419,7 +535,7 @@ func verifyRelease(h setupHost, l install.Layout, exe string, o setupOptions) (r
 			return release.Manifest{}, "", err
 		}
 	} else {
-		fmt.Fprintln(h.out, "no --archive: the manifest's signature is checked, the unpacked files are taken as installed")
+		o.detail(h, "  no --archive: the manifest's signature is checked, the unpacked files are taken as installed\n")
 	}
 	// Kept beside the release, so a later `setup` (a repair) and the updater
 	// can verify what is installed without downloading it again.
@@ -704,7 +820,7 @@ func placeApp(h setupHost, archive, target, staging, version string) (string, er
 		return "", err
 	}
 	_ = os.RemoveAll(old)
-	fmt.Fprintf(h.out, "installed %s\n", target)
+	fmt.Fprintf(h.out, "✓ app installed (%s)\n", tilde(h, target))
 	return target, nil
 }
 
@@ -781,14 +897,16 @@ func proveInstall(h setupHost, p setupPlace, o setupOptions, commit string) erro
 		}
 		time.Sleep(time.Second)
 	}
-	fmt.Fprintf(h.out, "console: GET / 200, BUILD.json names %s\n", commit[:12])
+	fmt.Fprintln(h.out, "✓ console answers")
+	o.detail(h, "  GET / 200, BUILD.json names %s\n", commit[:12])
 	if o.noSessionCheck {
 		return nil
 	}
 	if err := sessionCheck(base, token, p.stateDir); err != nil {
 		return &install.Refusal{Code: install.CodeSessionCheck, Detail: err.Error()}
 	}
-	fmt.Fprintln(h.out, "session check: started and closed one tmux terminal through the daemon")
+	fmt.Fprintln(h.out, "✓ tmux works")
+	o.detail(h, "  started and closed one test terminal in tmux through the daemon\n")
 	return nil
 }
 
@@ -886,33 +1004,32 @@ func sessionCheck(base, token, stateDir string) error {
 	return call(http.MethodDelete, "/v1/terminals/"+t.ID, contract.TerminalCloseRequest{Client: "setup-check", Epoch: c.Epoch}, nil)
 }
 
-// openConsole ends setup with the console: the app or a browser on a desktop,
-// the sign-in address and the SSH forward otherwise.
-func openConsole(h setupHost, p setupPlace, o setupOptions, desktop bool, app string) {
+// openConsole shows the console: the app or a browser on a desktop. It
+// answers what opened it, or else the sign-in address to print, or neither
+// when even that could not be made.
+func openConsole(h setupHost, p setupPlace, o setupOptions, desktop bool, app string) (opened, address string) {
 	exe := filepath.Join(p.layout.Current, "clawdline")
 	env := append(os.Environ(), "CLAWDLINE_NEXT_PORT="+strconv.Itoa(o.port), "CLAWDLINE_NEXT_DIR="+p.stateDir)
 	if desktop {
 		if app != "" {
 			if _, err := h.run("open", app); err == nil {
-				fmt.Fprintf(h.out, "opened %s\n", app)
-				return
+				return filepath.Base(app), ""
 			}
 		}
 		cmd := exec.Command(exe, "open")
-		cmd.Env, cmd.Stdout, cmd.Stderr = env, h.out, h.errOut
-		if cmd.Run() == nil {
-			return
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err == nil {
+			o.detail(h, "  %s", out)
+			return "your browser", ""
 		}
 	}
 	cmd := exec.Command(exe, "open", "--print")
 	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
-		fmt.Fprintln(h.out, "sign in later with: clawdline open --print")
-		return
+		return "", ""
 	}
-	fmt.Fprintf(h.out, "sign in by opening this address in a browser on this machine (it carries a key; do not share it):\n    %s\n", strings.TrimSpace(string(out)))
-	fmt.Fprintf(h.out, "from another computer, forward the port first:\n    ssh -L %d:127.0.0.1:%d <this machine>\n", o.port, o.port)
+	return "", strings.TrimSpace(string(out))
 }
 
 // runUninstall stops and removes what setup installed. The state directory —
@@ -935,7 +1052,10 @@ func runUninstall(h setupHost, o setupOptions) int {
 			removed = append(removed, place.stateDir+" (--purge)")
 		}
 	} else if _, err := os.Stat(place.stateDir); err == nil {
-		kept = append(kept, place.stateDir+" (devices, sessions and settings; --purge removes it)")
+		// The binary is gone now, so the way to delete the rest is one that
+		// needs nothing of Clawdline.
+		kept = append(kept, fmt.Sprintf("%s (your devices, sessions and settings). To delete it too: rm -rf %s",
+			tilde(h, place.stateDir), tilde(h, place.stateDir)))
 	}
 	for _, r := range removed {
 		fmt.Fprintln(h.out, "removed "+r)
@@ -980,6 +1100,14 @@ func uninstall(h setupHost, p setupPlace) (removed, kept []string) {
 	}
 	if err := os.Remove(sf.File); err == nil {
 		removed = append(removed, sf.File)
+	}
+	// <unit>.d holds drop-ins for this unit and nothing else (systemctl --user
+	// edit writes override.conf there); with the unit gone they configure
+	// nothing, and a later install would inherit them unseen.
+	if dropins := sf.File + ".d"; sf.Supervisor == "systemd" && fileExists(dropins) {
+		if os.RemoveAll(dropins) == nil {
+			removed = append(removed, dropins)
+		}
 	}
 	if known && sf.Supervisor == "systemd" {
 		_, _ = h.run("systemctl", "--user", "daemon-reload")

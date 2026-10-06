@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/install"
+	"github.com/sainteye/clawdline/internal/adapters/release"
 	"github.com/sainteye/clawdline/internal/adapters/release/updater"
 	"github.com/sainteye/clawdline/internal/adapters/updatecheck"
 	"github.com/sainteye/clawdline/internal/config"
@@ -43,6 +44,22 @@ func updateExit(s contract.UpdateState) int {
 	return updateExitUnknown
 }
 
+const updateUsage = `usage: clawdline update [--apply [--version vX.Y.Z] [--force]] [--json] [--port n]
+
+Checks for a newer release of Clawdline, or installs it. If the new release
+does not start, Clawdline goes back to the one running now by itself.
+
+  --apply             install the newest release (on Linux inside a source
+                      checkout: deploy the newest build)
+  --version vX.Y.Z    with --apply: install this release instead
+  --force             with --apply --version: install it even when it is not newer
+  --json              print the whole status as JSON
+  --port <n>          the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)
+
+Exit status: 0 up to date, 10 a newer release is available, 3 unknown (the
+check failed), 1 the update was refused, failed or rolled back.
+docs/updates.md says more.`
+
 // updateCommand is `clawdline update [--json] [--apply [--version vX] [--force]]`:
 // whether this machine trails the latest build, and installing it — a signed
 // release on a release install, the latest commit on Linux inside a source
@@ -53,13 +70,21 @@ func updateCommand(args []string) {
 	}
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
-	asJSON := fs.Bool("json", false, "print GET /v1/update's body")
-	apply := fs.Bool("apply", false, "install the latest release (a release install), or deploy the latest build (Linux, inside a source checkout)")
-	want := fs.String("version", "", "with --apply on a release install: install this release, vX.Y.Z")
-	force := fs.Bool("force", false, "with --apply: install even when this machine is current or ahead")
-	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: clawdline update [--json] [--apply [--version vX.Y.Z] [--force]] [--port n]")
+	port := fs.Int("port", 0, "")
+	asJSON := fs.Bool("json", false, "")
+	apply := fs.Bool("apply", false, "")
+	want := fs.String("version", "", "")
+	force := fs.Bool("force", false, "")
+	err := fs.Parse(args)
+	if errors.Is(err, flag.ErrHelp) {
+		fmt.Println(updateUsage)
+		os.Exit(0)
+	}
+	if err != nil || fs.NArg() != 0 {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "clawdline update:", err)
+		}
+		fmt.Fprintln(os.Stderr, updateUsage)
 		os.Exit(2)
 	}
 	st := updateStatus(*port)
@@ -153,13 +178,18 @@ func printUpdate(w io.Writer, st contract.UpdateStatus) {
 	}
 	line("running", st.Running)
 	line("latest", st.Latest)
-	fmt.Fprintf(w, "state    %s", st.State)
-	if st.Reason != "" {
-		fmt.Fprintf(w, " — %s", st.Reason)
+	// A failed check is said once, in words, with its code last: the
+	// reason the daemon gives for an unknown state repeats the same error.
+	switch {
+	case st.Error != "" && st.State == contract.UpdateStateUnknown:
+		fmt.Fprintf(w, "state    %s — %s\n", st.State, checkFailed(st.Error))
+	case st.Reason != "":
+		fmt.Fprintf(w, "state    %s — %s\n", st.State, st.Reason)
+	default:
+		fmt.Fprintf(w, "state    %s\n", st.State)
 	}
-	fmt.Fprintln(w)
-	if st.Error != "" {
-		fmt.Fprintf(w, "last check failed: %s\n", st.Error)
+	if st.Error != "" && st.State != contract.UpdateStateUnknown {
+		fmt.Fprintf(w, "last check failed: %s\n", checkFailed(st.Error))
 	}
 	if st.Latest.NotesURL != "" {
 		fmt.Fprintf(w, "notes    %s\n", st.Latest.NotesURL)
@@ -174,7 +204,19 @@ func printUpdate(w io.Writer, st contract.UpdateStatus) {
 		}
 		fmt.Fprintln(w)
 		if a.Error != nil {
-			fmt.Fprintf(w, "         %s: %s\n", a.Error.Code, a.Error.Detail)
+			switch a.State {
+			case contract.UpdateApplyStateRolledBack:
+				fmt.Fprintf(w, "         %s did not start, so Clawdline went back to %s. (%s)\n", a.To, a.From, a.Error.Code)
+			case contract.UpdateApplyStateFailed:
+				fmt.Fprintf(w, "         the update to %s did not finish; nothing changed. (%s)\n", a.To, a.Error.Code)
+			default:
+				fmt.Fprintf(w, "         %s: %s\n", a.Error.Code, a.Error.Detail)
+			}
+		}
+		// The updater keeps a list of versions that rolled back here, and
+		// auto-apply never installs one of them again (updater.Apply).
+		if a.State == contract.UpdateApplyStateRolledBack && a.To != "" && a.To == st.Latest.Version {
+			fmt.Fprintf(w, "         automatic updates will not try %s again; a newer release, or update --apply, will.\n", a.To)
 		}
 		if a.StagedApp != "" {
 			fmt.Fprintf(w, "         the app is staged at %s and replaces the installed one when it quits\n", a.StagedApp)
@@ -258,6 +300,29 @@ func applyUpdate(stdout, stderr io.Writer, st contract.UpdateStatus, force bool,
 	return 0
 }
 
+// checkFailed is a failed release check in words: what it means for this
+// machine and what to do, then the error's code.
+func checkFailed(errText string) string {
+	code, _, _ := strings.Cut(errText, ":")
+	code = strings.TrimSpace(code)
+	var said string
+	switch code {
+	case release.CodeManifestMalformed, release.CodeManifestUnsigned, release.CodeSignatureInvalid,
+		release.CodeNoTrustedKey, release.CodeVersionUnparseable:
+		said = "the release could not be verified; nothing was changed. Try again later."
+	case updater.CodeReleaseUnreachable:
+		said = "the update server could not be reached; nothing was changed. Try again later."
+	case updater.CodeNoReleasePublished:
+		said = "no release is published yet; nothing was changed."
+	default:
+		said = "the check for a newer release failed; nothing was changed. Try again later."
+	}
+	if code == "" || strings.ContainsAny(code, " \t") {
+		return said
+	}
+	return said + " (" + code + ")"
+}
+
 func short(s string) string {
 	if len(s) > 8 {
 		return s[:8]
@@ -318,9 +383,14 @@ func applyRelease(stdout, stderr io.Writer, port int, version string, force bool
 		if json.Unmarshal(a.Body, &st) != nil || st.Apply == nil || (to != "" && st.Apply.To != to) {
 			continue
 		}
-		if st.Apply.State != last {
+		ended := st.Apply.State == contract.UpdateApplyStateRolledBack || st.Apply.State == contract.UpdateApplyStateFailed
+		if st.Apply.State != last && !ended {
 			last = st.Apply.State
 			fmt.Fprintf(stdout, "%s\n", last)
+		}
+		details := "clawdline update --json"
+		if port != 0 {
+			details += install.PortFlag(port)
 		}
 		switch st.Apply.State {
 		case contract.UpdateApplyStateHealthy:
@@ -329,15 +399,25 @@ func applyRelease(stdout, stderr io.Writer, port int, version string, force bool
 				fmt.Fprintf(stdout, "the app is staged at %s and replaces the installed one when it quits\n", st.Apply.StagedApp)
 			}
 			return 0
-		case contract.UpdateApplyStateRolledBack, contract.UpdateApplyStateFailed:
-			if e := st.Apply.Error; e != nil {
-				fmt.Fprintf(stderr, "clawdline: %s: %s: %s\n", st.Apply.State, e.Code, e.Detail)
-			}
+		case contract.UpdateApplyStateRolledBack:
+			fmt.Fprintln(stderr, rolledBackSentence(st.Apply.To, st.Apply.From, details))
+			return 1
+		case contract.UpdateApplyStateFailed:
+			fmt.Fprintf(stderr, "The update to %s did not finish, so nothing changed: %s is still running. Details: %s\n",
+				st.Apply.To, st.Apply.From, details)
 			return 1
 		}
 	}
 	fmt.Fprintln(stderr, "clawdline: the update's outcome could not be read in time; `clawdline update` shows it later")
 	return updateExitUnknown
+}
+
+// rolledBackSentence is what `update --apply` says when the new release did
+// not start and the updater went back: that nothing is left to do, and that
+// auto-apply will not install that version again.
+func rolledBackSentence(to, from, details string) string {
+	return fmt.Sprintf("%s did not start, so Clawdline went back to %s, which is running now. "+
+		"Nothing else to do; automatic updates will skip this version. Details: %s", to, from, details)
 }
 
 // updateFinishCommand is `clawdline update finish --state <dir> --root <dir>`,

@@ -79,27 +79,39 @@ type Prereqs struct {
 }
 
 // Report is the prerequisite verdict: Stop is set when setup must not go on,
-// and Lines are what is said either way.
+// and StopLine then says what to do, last, after every warning. Lines are the
+// warnings, said either way; Found are where each tool was found, which setup
+// shows only when asked to be verbose.
 type Report struct {
-	Stop  bool
-	Lines []string
+	Stop     bool
+	StopLine string
+	Lines    []string
+	Found    []string
+}
+
+// TmuxMissing is what setup says, last, when tmux is not installed: the
+// action first, and that nothing changed.
+func TmuxMissing(goos, pm string) string {
+	how := "Install it with:  " + TmuxInstallCommand(goos, pm) + "   then"
+	if pm == "" {
+		how = strings.ToUpper(TmuxInstallCommand(goos, pm)[:1]) + TmuxInstallCommand(goos, pm)[1:] + ", then"
+	}
+	return "Clawdline needs tmux. " + how + " run the same install command again. Nothing was installed."
 }
 
 // Check turns what was found into what setup says.
 func (p Prereqs) Check(goos string) Report {
 	var r Report
 	if path, ok := p.Found["tmux"]; ok {
-		r.Lines = append(r.Lines, "tmux: "+path)
+		r.Found = append(r.Found, "tmux: "+path)
 	} else {
 		r.Stop = true
-		r.Lines = append(r.Lines, "tmux is not installed, and Clawdline runs every session inside it. Install it with:",
-			"    "+TmuxInstallCommand(goos, p.PackageManager),
-			"then run the installer again.")
+		r.StopLine = TmuxMissing(goos, p.PackageManager)
 	}
 	var missing []Assistant
 	for _, a := range Assistants {
 		if path, ok := p.Found[a.Command]; ok {
-			r.Lines = append(r.Lines, a.Name+": "+path)
+			r.Found = append(r.Found, a.Name+": "+path)
 		} else {
 			missing = append(missing, a)
 		}

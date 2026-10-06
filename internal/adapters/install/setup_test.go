@@ -47,8 +47,12 @@ func TestPrereqsStopOnlyWithoutTmux(t *testing.T) {
 		t.Fatal("no tmux did not stop setup")
 	}
 	text := strings.Join(r.Lines, "\n")
-	if !strings.Contains(text, "    sudo apt-get install -y tmux") {
-		t.Errorf("no exact command:\n%s", text)
+	want := "Clawdline needs tmux. Install it with:  sudo apt-get install -y tmux   then run the same install command again. Nothing was installed."
+	if r.StopLine != want {
+		t.Errorf("the tmux sentence is\n%s\nnot\n%s", r.StopLine, want)
+	}
+	if got := TmuxMissing("linux", ""); got != "Clawdline needs tmux. Install tmux with this machine's package manager, then run the same install command again. Nothing was installed." {
+		t.Errorf("with no package manager: %s", got)
 	}
 	if !strings.Contains(text, "npm install -g @openai/codex") || strings.Contains(text, "claude.ai/install.sh") {
 		t.Errorf("the missing assistant, and only it, is named:\n%s", text)

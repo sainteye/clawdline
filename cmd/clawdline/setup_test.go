@@ -283,6 +283,9 @@ func TestUninstallRemovesWhatSetupInstalledAndKeepsState(t *testing.T) {
 	_ = p.layout.SwitchCurrent("v0.10.0")
 	_ = linkBin(p.layout)
 	_ = os.WriteFile(unit, []byte("[Unit]\n"), 0o644)
+	// What `systemctl --user edit` leaves: drop-ins for this unit alone.
+	_ = os.MkdirAll(unit+".d", 0o755)
+	_ = os.WriteFile(filepath.Join(unit+".d", "override.conf"), []byte("[Service]\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(state, "local-token"), []byte("t"), 0o600)
 	_ = install.WriteServiceFile(state, install.ServiceFile{Supervisor: "systemd", Name: p.serviceName("linux"), Port: 17811, Root: root, File: unit})
 
@@ -292,7 +295,7 @@ func TestUninstallRemovesWhatSetupInstalledAndKeepsState(t *testing.T) {
 	if !strings.Contains(strings.Join(h.ran, "\n"), "systemctl --user disable --now "+p.serviceName("linux")) {
 		t.Errorf("the service was not stopped:\n%s", strings.Join(h.ran, "\n"))
 	}
-	for _, gone := range []string{root, unit, p.layout.BinLink, filepath.Join(state, install.ServiceFileName)} {
+	for _, gone := range []string{root, unit, unit + ".d", p.layout.BinLink, filepath.Join(state, install.ServiceFileName)} {
 		if _, err := os.Lstat(gone); err == nil {
 			t.Errorf("%s is still there", gone)
 		}
@@ -300,8 +303,9 @@ func TestUninstallRemovesWhatSetupInstalledAndKeepsState(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(state, "local-token")); err != nil {
 		t.Errorf("the state directory went without --purge: %v", err)
 	}
-	if !strings.Contains(h.out.String(), "kept "+state) {
-		t.Errorf("does not say what it kept:\n%s", h.out.String())
+	// The binary is gone, so how to delete the rest needs nothing of it.
+	if !strings.Contains(h.out.String(), "kept "+tilde(h.setupHost, state)+" (your devices, sessions and settings). To delete it too: rm -rf "+tilde(h.setupHost, state)) {
+		t.Errorf("does not say what it kept and how to delete it:\n%s", h.out.String())
 	}
 
 	// A second run finds nothing and says so.
@@ -371,5 +375,78 @@ func TestUninstallLeavesALinkItDidNotMake(t *testing.T) {
 	_ = runUninstall(h.setupHost, setupOptions{port: 17811})
 	if _, err := os.Lstat(mine); err != nil {
 		t.Error("uninstall removed a clawdline link that points outside the install")
+	}
+}
+
+// A finished install says what to do next: sign in (with the address and the
+// SSH forward that reaches it when nothing could open it here), start an
+// assistant inside tmux, and turn autostart off or remove it, every command
+// with this install's port and the path that runs it.
+func TestTheInstallEndsWithWhatToDoNext(t *testing.T) {
+	h := newFakeHost(t, "linux")
+	h.hostname = "myhost"
+	printNext(h.setupHost, setupOptions{port: 7800}, nextStep{version: "v0.10.0", command: "~/.local/bin/clawdline",
+		address: "http://127.0.0.1:7800/v1/auth/open#t=k", found: map[string]string{"claude": "/x/claude"}})
+	out := h.out.String()
+	for _, want := range []string{
+		"Clawdline v0.10.0 is running at http://127.0.0.1:7800\n",
+		"\nNext:\n  1. Sign in: open this address in a browser on this computer (it contains a key; don't share it)\n       http://127.0.0.1:7800/v1/auth/open#t=k\n",
+		"No browser here? On your laptop run   ssh -L 7800:127.0.0.1:7800 someone@myhost\n     then open the same address there.",
+		"  2. Start an assistant inside tmux:   tmux new -s work   then run   claude\n",
+		"Starts at login. Turn off: ~/.local/bin/clawdline setup --no-autostart --port 7800   Remove: ~/.local/bin/clawdline setup --uninstall --port 7800\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+
+	h.out.Reset()
+	printNext(h.setupHost, setupOptions{port: 7727, noAutostart: true}, nextStep{version: "v0.10.0", command: "clawdline",
+		opened: "Clawdline Next.app", found: map[string]string{"claude": "/x/claude", "codex": "/x/codex"}})
+	out = h.out.String()
+	for _, want := range []string{
+		"  1. Sign in: Clawdline Next.app just opened the console on this computer.\n     Not in front of you? Run   clawdline open\n",
+		"then run   claude   (or codex)\n",
+		"Started now, not at login. Turn on: clawdline setup   Remove: clawdline setup --uninstall\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "--port") || strings.Contains(out, "ssh -L") {
+		t.Errorf("the default port or a desktop install got a --port or an SSH line:\n%s", out)
+	}
+}
+
+// The PATH hint names the profile file of the shell in $SHELL and the full
+// path that works until the new PATH takes effect.
+func TestThePathHintNamesTheShellsProfile(t *testing.T) {
+	h := newFakeHost(t, "linux")
+	bin := filepath.Join(h.home, ".local", "bin")
+	for shell, want := range map[string]string{
+		"/bin/zsh":          `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc`,
+		"/bin/bash":         `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc`,
+		"/usr/bin/fish":     `fish_add_path ~/.local/bin`,
+		"/bin/sh":           `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile`,
+		"/opt/odd/bin/tcsh": `>> ~/.profile`,
+	} {
+		h.getenv = func(k string) string {
+			if k == "SHELL" {
+				return shell
+			}
+			return ""
+		}
+		got := pathHint(h.setupHost, bin)
+		if !strings.HasPrefix(got, "~/.local/bin is not on your PATH. Run once, then open a new terminal:  ") || !strings.Contains(got, want) {
+			t.Errorf("%s: %s", shell, got)
+		}
+		if !strings.HasSuffix(got, "Until then, run Clawdline as ~/.local/bin/clawdline") {
+			t.Errorf("%s: no full path until PATH takes effect: %s", shell, got)
+		}
+	}
+	h.goos = "darwin"
+	h.getenv = func(k string) string { return map[string]string{"SHELL": "/bin/bash"}[k] }
+	if got := pathHint(h.setupHost, bin); !strings.Contains(got, ">> ~/.bash_profile") {
+		t.Errorf("bash on macOS reads ~/.bash_profile: %s", got)
 	}
 }
