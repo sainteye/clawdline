@@ -26,12 +26,12 @@ func reportCommand(args []string) {
 }
 
 func reportUsage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "usage: clawdline report --status <file> [--repo dir] [--notes file] [--exclude path]… [--pin path]… [--at rev] [--lang en|zh-TW] [--out file|dir] [--open] <commit>…")
-	fmt.Fprintln(stderr, "  commits are this turn's own, oldest first; each is read on its own, so other Sessions' commits between them stay out")
-	fmt.Fprintln(stderr, "  --status: a Markdown file, optional \"# title\", then one \"## \" heading and text per card")
-	fmt.Fprintln(stderr, "  --notes: one `path: sentence` per line, shown above that file")
-	fmt.Fprintln(stderr, "  --out: default <state dir>/reports/<date>-<id>/report.html, outside every repository, which this machine's daemon also answers at http://127.0.0.1")
-	fmt.Fprintln(stderr, "  prints the file:// address, then, for a report kept in the state directory, the daemon's http:// address")
+	fmt.Fprintln(stderr, cliCopy("workflow", "report.usage_clawdline_report_status_file_repo_dir_notes", "usage: clawdline report --status <file> [--repo dir] [--notes file] [--exclude path]… [--pin path]… [--at rev] [--lang en|zh-TW] [--out file|dir] [--open] <commit>…"))
+	fmt.Fprintln(stderr, cliCopy("workflow", "report.commits_are_this_turn_s_own_oldest_first", "  commits are this turn's own, oldest first; each is read on its own, so other Sessions' commits between them stay out"))
+	fmt.Fprintln(stderr, cliCopy("workflow", "report.status_a_markdown_file_optional_title_then_one", "  --status: a Markdown file, optional \"# title\", then one \"## \" heading and text per card"))
+	fmt.Fprintln(stderr, cliCopy("workflow", "report.notes_one_path_sentence_per_line_shown_above", "  --notes: one `path: sentence` per line, shown above that file"))
+	fmt.Fprintln(stderr, cliCopy("workflow", "report.out_default_state_dir_reports_date_id_report", "  --out: default <state dir>/reports/<date>-<id>/report.html, outside every repository, which this machine's daemon also answers at http://127.0.0.1"))
+	fmt.Fprintln(stderr, cliCopy("workflow", "report.prints_the_file_address_then_for_a_report", "  prints the file:// address, then, for a report kept in the state directory, the daemon's http:// address"))
 	return 2
 }
 
@@ -60,23 +60,23 @@ func runReport(stdout, stderr io.Writer, args []string, now time.Time, getenv fu
 	}
 	raw, err := os.ReadFile(*statusFile)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline report:", err)
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 		return 1
 	}
 	status, err := turnreport.ParseStatus(string(raw))
 	if err != nil {
-		fmt.Fprintf(stderr, "clawdline report: %s: %v\n", *statusFile, err)
+		fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_s_v", "clawdline report: %s: %v\n"), *statusFile, err)
 		return 1
 	}
 	notes := map[string]string{}
 	if *notesFile != "" {
 		raw, err := os.ReadFile(*notesFile)
 		if err != nil {
-			fmt.Fprintln(stderr, "clawdline report:", err)
+			fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 			return 1
 		}
 		if notes, err = turnreport.ParseNotes(string(raw)); err != nil {
-			fmt.Fprintf(stderr, "clawdline report: %s: %v\n", *notesFile, err)
+			fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_s_v", "clawdline report: %s: %v\n"), *notesFile, err)
 			return 1
 		}
 	}
@@ -86,51 +86,51 @@ func runReport(stdout, stderr io.Writer, args []string, now time.Time, getenv fu
 		Repo: *repo, Commits: fs.Args(), At: *at, Exclude: exclude, Notes: notes, Pins: pins,
 	})
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline report:", err)
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 		return 1
 	}
 	project := filepath.Base(c.Root)
 	date := now.Format("2006-01-02")
 	page, err := turnreport.Render(c, status, *lang, date, project)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline report:", err)
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 		return 1
 	}
 	dest, id, err := reportPath(*out, config.Dir(), date, project)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline report:", err)
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 		return 1
 	}
 	if err := writeReport(dest, page); err != nil {
-		fmt.Fprintln(stderr, "clawdline report:", err)
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 		return 1
 	}
 	for p := range notes {
 		if !c.Has(p) {
-			fmt.Fprintf(stderr, "clawdline report: a note names %s, which this turn's commits do not touch\n", p)
+			fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_a_note_names_s_which_this", "clawdline report: a note names %s, which this turn's commits do not touch\n"), p)
 		}
 	}
 	for _, o := range c.Omitted {
-		fmt.Fprintf(stderr, "clawdline report: not listed or shortened: %s (%s)\n", o.Path, o.Reason)
+		fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_not_listed_or_shortened_s_s", "clawdline report: not listed or shortened: %s (%s)\n"), o.Path, o.Reason)
 	}
 	if inside(c.Root, dest) {
-		fmt.Fprintf(stderr, "clawdline report: %s is inside %s; keep it out of a commit\n", dest, c.Root)
+		fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_s_is_inside_s_keep_it", "clawdline report: %s is inside %s; keep it out of a commit\n"), dest, c.Root)
 	}
-	fmt.Fprintf(stderr, "clawdline report: %d files from %d commits, %.1f MB\n", len(c.Files), len(c.Order), float64(len(page))/1e6)
+	fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_d_files_from_d_commits_1f", "clawdline report: %d files from %d commits, %.1f MB\n"), len(c.Files), len(c.Order), float64(len(page))/1e6)
 	link := fileURL(dest)
 	if *openIt {
 		if err := openURL(link); err != nil {
-			fmt.Fprintf(stderr, "clawdline report: could not open it (%v); open the address below\n", err)
+			fmt.Fprintf(stderr, cliCopy("workflow", "report.clawdline_report_could_not_open_it_v_open", "clawdline report: could not open it (%v); open the address below\n"), err)
 		}
 	}
 	fmt.Fprintln(stdout, link)
 	if id == "" {
-		fmt.Fprintln(stderr, "clawdline report: written outside the state directory, so the daemon does not answer it; there is no http address")
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report_written_outside_the_state_directory_so", "clawdline report: written outside the state directory, so the daemon does not answer it; there is no http address"))
 		return 0
 	}
 	port, err := daemonPort()
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline report:", err)
+		fmt.Fprintln(stderr, cliCopy("workflow", "report.clawdline_report", "clawdline report:"), err)
 		return 0
 	}
 	fmt.Fprintf(stdout, "http://127.0.0.1:%d/reports/%s\n", port, id)

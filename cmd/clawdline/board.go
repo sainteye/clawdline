@@ -28,35 +28,35 @@ import (
 
 func boardCommand(args []string) {
 	if len(args) == 0 || args[0] != "tracks" {
-		fmt.Fprintln(os.Stderr, "usage: clawdline board tracks [--project id] [--track todo|board|backlog] [--rows] [--json]")
-		fmt.Fprintln(os.Stderr, "                              [--store board.json [--sessions file [--assume-complete]] [--now time] [--stall-days n]]")
+		fmt.Fprintln(os.Stderr, cliCopy("workflow", "board.usage_clawdline_board_tracks_project_id_track_todo", "usage: clawdline board tracks [--project id] [--track todo|board|backlog] [--rows] [--json]"))
+		fmt.Fprintln(os.Stderr, cliCopy("workflow", "board.store_board_json_sessions_file_assume_complete_now", "                              [--store board.json [--sessions file [--assume-complete]] [--now time] [--stall-days n]]"))
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("board tracks", flag.ExitOnError)
-	project := fs.String("project", "", "only this project's cards")
-	track := fs.String("track", "", "list the rows of one track: todo, board or backlog")
-	rows := fs.Bool("rows", false, "list the cards under their buckets")
-	asJSON := fs.Bool("json", false, "print the projection as JSON, every row included")
-	store := fs.String("store", "", "read this board file instead of asking the daemon (read-only)")
-	sessions := fs.String("sessions", "", "with --store: a saved GET /v1/sessions answer, the reading of running sessions")
-	assume := fs.Bool("assume-complete", false, "with --sessions: take that reading as complete even where it says it was not")
-	now := fs.String("now", "", "with --store: evaluate at this time, RFC 3339 or Unix seconds")
-	stallDays := fs.Float64("stall-days", work.DefaultStall.Hours()/24, "with --store: days a started card may go without a fact")
+	project := fs.String("project", "", cliCopy("workflow", "board.only_this_project_s_cards", "only this project's cards"))
+	track := fs.String("track", "", cliCopy("workflow", "board.list_the_rows_of_one_track_todo_board", "list the rows of one track: todo, board or backlog"))
+	rows := fs.Bool("rows", false, cliCopy("workflow", "board.list_the_cards_under_their_buckets", "list the cards under their buckets"))
+	asJSON := fs.Bool("json", false, cliCopy("workflow", "board.print_the_projection_as_json_every_row_included", "print the projection as JSON, every row included"))
+	store := fs.String("store", "", cliCopy("workflow", "board.read_this_board_file_instead_of_asking_the", "read this board file instead of asking the daemon (read-only)"))
+	sessions := fs.String("sessions", "", cliCopy("workflow", "board.with_store_a_saved_get_v1_sessions_answer", "with --store: a saved GET /v1/sessions answer, the reading of running sessions"))
+	assume := fs.Bool("assume-complete", false, cliCopy("workflow", "board.with_sessions_take_that_reading_as_complete_even", "with --sessions: take that reading as complete even where it says it was not"))
+	now := fs.String("now", "", cliCopy("workflow", "board.with_store_evaluate_at_this_time_rfc_3339", "with --store: evaluate at this time, RFC 3339 or Unix seconds"))
+	stallDays := fs.Float64("stall-days", work.DefaultStall.Hours()/24, cliCopy("workflow", "board.with_store_days_a_started_card_may_go", "with --store: days a started card may go without a fact"))
 	_ = fs.Parse(args[1:])
 	if fs.NArg() > 0 {
-		fail(fmt.Errorf("unexpected argument %q", fs.Arg(0)))
+		fail(fmt.Errorf(cliCopy("workflow", "board.unexpected_argument_q", "unexpected argument %q"), fs.Arg(0)))
 	}
 	switch work.Track(*track) {
 	case "", work.TrackTodo, work.TrackBoard, work.TrackBacklog:
 	default:
-		fail(fmt.Errorf("a track is todo, board or backlog, not %q", *track))
+		fail(fmt.Errorf(cliCopy("workflow", "board.a_track_is_todo_board_or_backlog_not", "a track is todo, board or backlog, not %q"), *track))
 	}
 
 	var t work.Tracks
 	var err error
 	if *store == "" {
 		if *sessions != "" || *assume || *now != "" || isSet(fs, "stall-days") {
-			fail(errors.New("--sessions, --assume-complete, --now and --stall-days replay a file; they need --store"))
+			fail(errors.New(cliCopy("workflow", "board.sessions_assume_complete_now_and_stall_days_replay", "--sessions, --assume-complete, --now and --stall-days replay a file; they need --store")))
 		}
 		t, err = daemonTracks(*project, work.Track(*track), *rows || *asJSON)
 	} else {
@@ -96,7 +96,7 @@ func daemonTracks(project string, track work.Track, all bool) (work.Tracks, erro
 		// The board holds at most 2,000 cards (the Swift app's limit), ten
 		// pages; a route that keeps handing out cursors past fifty is wrong.
 		if page == 50 {
-			return first, errors.New("the daemon kept paging past fifty pages")
+			return first, errors.New(cliCopy("workflow", "board.the_daemon_kept_paging_past_fifty_pages", "the daemon kept paging past fifty pages"))
 		}
 		q := url.Values{}
 		if project != "" {
@@ -165,15 +165,15 @@ func fileTracks(path, project, sessionsPath string, assume bool, nowText string,
 		at = parsed
 	}
 	if !(stallDays > 0 && stallDays <= 365) {
-		return work.Tracks{}, fmt.Errorf("--stall-days is more than 0 and at most 365, not %v", stallDays)
+		return work.Tracks{}, fmt.Errorf(cliCopy("workflow", "board.stall_days_is_more_than_0_and_at", "--stall-days is more than 0 and at most 365, not %v"), stallDays)
 	}
 	if assume && sessionsPath == "" {
-		return work.Tracks{}, errors.New("--assume-complete needs --sessions")
+		return work.Tracks{}, errors.New(cliCopy("workflow", "board.assume_complete_needs_sessions", "--assume-complete needs --sessions"))
 	}
 
 	state, readAt, err := board.OpenLegacy(path).Read()
 	if errors.Is(err, board.ErrLegacyAbsent) {
-		return work.Tracks{}, fmt.Errorf("no board at %s", path)
+		return work.Tracks{}, fmt.Errorf(cliCopy("workflow", "board.no_board_at_s", "no board at %s"), path)
 	}
 	if err != nil {
 		return work.Tracks{}, err
@@ -190,7 +190,7 @@ func fileTracks(path, project, sessionsPath string, assume bool, nowText string,
 			known = known || p.ID == project
 		}
 		if !known {
-			return work.Tracks{}, fmt.Errorf("the board has no project %q", project)
+			return work.Tracks{}, fmt.Errorf(cliCopy("workflow", "board.the_board_has_no_project_q", "the board has no project %q"), project)
 		}
 	}
 	histories, history := board.OpenHistory(board.HistoryDir(path)).Read(ids)
@@ -247,7 +247,7 @@ func savedPresence(path string, assume bool) (work.Presence, work.PresenceSource
 		} `json:"sessions"`
 	}
 	if err := json.NewDecoder(io.LimitReader(file, 16<<20)).Decode(&snapshot); err != nil {
-		return work.Presence{}, work.PresenceSource{}, fmt.Errorf("%s is not a GET /v1/sessions answer: %w", path, err)
+		return work.Presence{}, work.PresenceSource{}, fmt.Errorf(cliCopy("workflow", "board.s_is_not_a_get_v1_sessions_answer", "%s is not a GET /v1/sessions answer: %w"), path, err)
 	}
 	p := work.Presence{Complete: snapshot.Scan != nil && snapshot.Scan.Complete, Sessions: map[string]bool{}}
 	count := 0
@@ -279,28 +279,28 @@ func parseInstant(text string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339Nano, text); err == nil {
 		return t, nil
 	}
-	return time.Time{}, fmt.Errorf("--now is RFC 3339 or Unix seconds, not %q", text)
+	return time.Time{}, fmt.Errorf(cliCopy("workflow", "board.now_is_rfc_3339_or_unix_seconds_not", "--now is RFC 3339 or Unix seconds, not %q"), text)
 }
 
 // printTracks is the §7.2 table, and the rows under it when asked.
 func printTracks(w io.Writer, t work.Tracks, rows bool) {
 	at := time.Unix(0, int64(t.EvaluatedAt*1e9)).UTC().Format(time.RFC3339)
-	fmt.Fprintf(w, "rules     %s, stall %s, evaluated %s\n", t.Rules, days(t.StallSeconds), at)
+	fmt.Fprintf(w, cliCopy("workflow", "board.rules_s_stall_s_evaluated_s", "rules     %s, stall %s, evaluated %s\n"), t.Rules, days(t.StallSeconds), at)
 	if t.Project != nil {
-		fmt.Fprintf(w, "project   %s\n", *t.Project)
+		fmt.Fprintf(w, cliCopy("workflow", "board.project_s", "project   %s\n"), *t.Project)
 	}
 	b, h, p := t.Sources.Board, t.Sources.History, t.Sources.Presence
-	fmt.Fprintf(w, "board     revision %d, %d cards (%s)\n", b.Revision, b.Cards, b.Status)
-	fmt.Fprintf(w, "history   %d logs, %d unreadable (%s)\n", h.Files, h.Unreadable, h.Status)
+	fmt.Fprintf(w, cliCopy("workflow", "board.board_revision_d_d_cards_s", "board     revision %d, %d cards (%s)\n"), b.Revision, b.Cards, b.Status)
+	fmt.Fprintf(w, cliCopy("workflow", "board.history_d_logs_d_unreadable_s", "history   %d logs, %d unreadable (%s)\n"), h.Files, h.Unreadable, h.Status)
 	switch {
 	case p.From == "none":
-		fmt.Fprintf(w, "presence  none given: no session can be shown gone\n")
+		fmt.Fprint(w, cliCopy("workflow", "board.presence_none_given_no_session_can_be_shown", "presence  none given: no session can be shown gone\n"))
 	case p.Assumed:
-		fmt.Fprintf(w, "presence  %d sessions from %s, taken as complete (--assume-complete; the reading said it was not)\n", p.Sessions, p.From)
+		fmt.Fprintf(w, cliCopy("workflow", "board.presence_d_sessions_from_s_taken_as_complete", "presence  %d sessions from %s, taken as complete (--assume-complete; the reading said it was not)\n"), p.Sessions, p.From)
 	case p.Complete:
-		fmt.Fprintf(w, "presence  %d sessions from %s, complete\n", p.Sessions, p.From)
+		fmt.Fprintf(w, cliCopy("workflow", "board.presence_d_sessions_from_s_complete", "presence  %d sessions from %s, complete\n"), p.Sessions, p.From)
 	default:
-		fmt.Fprintf(w, "presence  %d sessions from %s, incomplete: a session missing from it is unknown, not gone\n", p.Sessions, p.From)
+		fmt.Fprintf(w, cliCopy("workflow", "board.presence_d_sessions_from_s_incomplete_a_session", "presence  %d sessions from %s, incomplete: a session missing from it is unknown, not gone\n"), p.Sessions, p.From)
 	}
 	fmt.Fprintln(w)
 
@@ -315,14 +315,14 @@ func printTracks(w io.Writer, t work.Tracks, rows bool) {
 			}
 		}
 	}
-	fmt.Fprintf(w, "%-24s %4d\n\n", "cards", total)
+	fmt.Fprintf(w, "%-24s %4d\n\n", cliCopy("workflow", "board.cards", "cards"), total)
 
 	count := map[work.Bucket]int{}
 	for _, bc := range t.Buckets {
 		count[bc.Bucket] = bc.Count
 	}
 	people := t.ForPeople()
-	fmt.Fprintf(w, "for people %d: backlog %d (%s), board.closure %d (%s), board.now %d (%s), board.done %d (%s)\n",
+	fmt.Fprintf(w, cliCopy("workflow", "board.for_people_d_backlog_d_s_board_closure", "for people %d: backlog %d (%s), board.closure %d (%s), board.now %d (%s), board.done %d (%s)\n"),
 		people, t.Counts.Backlog, percent(t.Counts.Backlog, people),
 		count[work.BoardClosure], percent(count[work.BoardClosure], people),
 		count[work.BoardNow], percent(count[work.BoardNow], people),
