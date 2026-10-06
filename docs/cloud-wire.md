@@ -232,7 +232,7 @@ v|ch|seq|ts|class|key_id|nonce|ct
 | 參數 | 值 | 來源 |
 |---|---|---|
 | 演算法 | AES-256-GCM（D16，CryptoKit 與 WebCrypto 原生共有的那個 AEAD） | PROTOCOL.md:34-37 |
-| 金鑰 | 32 bytes：帳號 master secret，或 ctlr 回應的 request-scoped reply key | PROTOCOL.md:34-37；vectors `control_response` |
+| 金鑰 | 32 bytes：目標機器的 content key（wire 上仍稱 `master_secret`），或 `ctlr` 回應的 request-scoped reply key | `internal/transport/cloud/link.go:600-669`；`internal/transport/cloud/pairing.go:335-352`；vectors `control_response` |
 | nonce | **12 bytes**，隨機 | CloudEnvelope.swift:53；relay/src/lib/envelope.ts:43 |
 | tag | 16 bytes，**接在 ciphertext 後面**，兩者一起 base64 成 `ct` | CloudEnvelope.swift:192, 231-238 |
 | AAD | **沒有**（envelope 不帶 AAD；pairing wrapper 才有，見 §8.3） | CloudEnvelope.swift:191 |
@@ -248,24 +248,32 @@ v|ch|seq|ts|class|key_id|nonce|ct
 | | Ed25519 device key | AES-256-GCM content key |
 |---|---|---|
 | 做什麼 | 簽 envelope、簽連線 challenge | 封 payload |
-| 誰有 | 每台裝置各一把 | 整個帳號共用（master secret）；ctlr 回應另有一次性的 reply key |
+| 誰有 | 每台裝置各一把 | 每台機器的本機 key store 各持自己的 content key；與該機器配對的 viewer 取得這一把；`ctlr` 回應另有一次性的 reply key |
 | cloud 看得到嗎 | 只有公鑰（在 device token 的 `pk` claim 裡） | **永遠看不到** |
 | 存在哪 | §5 的 KeyStore | 同上 |
 
 `PROTOCOL.md:38-39` 原文：「Both key roles are blueprint §02; do not conflate them.」
 
+Go 版在本機 store 缺少 content key 時自行產生，沒有從帳號載入共用 key；配對 handover 把**這台機器**的
+key 交給 viewer，瀏覽器按 account ID ＋ machine ID 分開儲存、查找。舊瀏覽器的帳號層 key 仍有
+相容讀取路徑，但新配對走機器層路徑；`master_secret` 與 `ms-1` 是沿用的 wire 名稱，不能用來推定
+金鑰在整個帳號共用（`internal/domain/cloud/keys.go:302-324`；
+`internal/transport/cloud/link.go:600-669,1074-1087`；`internal/transport/cloud/pairing.go:335-352`；
+`web/console/src/legacy/js/net/cloud-boot.js:418-469,607-623`）。
+
 ### 4.4 `ctlr` 回應用的是請求帶來的金鑰
 
-請求（viewer → Mac，走 `ctl/<machine>`，master secret 封）的 plaintext 裡帶著一把 32 bytes 的
+請求（viewer → Mac，走 `ctl/<machine>`，用該機器的 content key 封）的 plaintext 裡帶著一把 32 bytes 的
 reply key 與它的 `key_id`；回應（Mac → viewer，走 `ctlr/<machine>/<viewer_device>`）用那把 key 封，
-**不用 master secret**。`key_id` 必須是 `rk-` 加 22 個 base64url 字元
-（`contracts/cloud/v1/README.md:93-97`；`contracts/cloud/v1/schemas/envelope.schema.json` 的
+**不用該機器的 content key**。`key_id` 必須是 `rk-` 加 22 個 base64url 字元
+（`internal/transport/cloud/link.go:642-669`；`internal/transport/cloud/relay.go:242-247`；
+`contracts/cloud/v1/README.md:93-97`；`contracts/cloud/v1/schemas/envelope.schema.json` 的
 第五個 `oneOf` 分支）。
 
 向量 `control_response.response_open_results` 直接把這件事寫成兩個斷言：用 `ms-1` 開**失敗**、
 用 `rk-…` 開**成功**。Go 端的 `TestControlResponseUsesTheRequestReplyKey` 照著跑。
 
-> 這條的意義：拿得到帳號 master secret 的其他 viewer 也讀不到別人問出來的答案。
+> 這條的意義：拿得到該機器 content key 的其他 viewer 也讀不到別人問出來的答案。
 
 ---
 
@@ -276,7 +284,7 @@ reply key 與它的 `key_id`；回應（Mac → viewer，走 `ctlr/<machine>/<vi
 | | 規則 | 來源 |
 |---|---|---|
 | device key | 32 bytes 的 Ed25519 seed。CryptoKit 的 `Curve25519.Signing.PrivateKey.rawRepresentation` 就是這 32 bytes，Go 的 `ed25519.NewKeyFromSeed` 吃同樣的 32 bytes | CloudKeys.swift:358-372；**已由向量實測**（`TestDeviceKeyMatchesThePublishedSeed`） |
-| master secret | 32 bytes 亂數 | CloudKeys.swift:393-405 |
+| 這台機器的 content key（舊稱 master secret） | 32 bytes 亂數；本機 store 缺少時產生 | `internal/domain/cloud/keys.go:51-61,302-324` |
 
 ### 5.2 指紋（pairing fingerprint）
 
@@ -313,10 +321,13 @@ checksum = SHA-256("clawdline-recovery-v1" || secret)[:4]
 | 檔名 | 內容 |
 |---|---|
 | `device-ed25519-v1` | 32 bytes seed 的 base64，一行 |
-| `account-master-secret-v1` | 32 bytes content key 的 base64，一行 |
+| `account-master-secret-v1` | 這個 daemon 本機的 32 bytes content key 的 base64，一行 |
 
-檔名沿用舊 app 的 Keychain account 名稱（`CloudKeys.swift:655-656`），這樣兩邊的儲存可以放在一起
-討論。
+檔名沿用舊 app 的 Keychain account 名稱（`CloudKeys.swift:655-656`；
+`internal/adapters/cloudkeys/files.go:48-53`），是既有儲存格式
+的名稱，**不是帳號共用範圍的宣告**。`LoadOrCreateMasterSecret` 只讀寫本機 store 的這一份；配對交出
+這台機器的 key，瀏覽器則按 machine ID 儲存（`internal/domain/cloud/keys.go:302-324`；
+`internal/transport/cloud/pairing.go:335-352`；`web/console/src/legacy/js/net/cloud-boot.js:607-623`）。
 
 規矩照 `internal/adapters/devices`：目錄 0700、檔案 0600（每次寫都重設而不是相信建立時的值）、
 寫入走同目錄的暫存檔＋fsync＋rename、開檔一律 `O_NOFOLLOW` 並在前後檢查是不是同一個 inode、
@@ -1127,8 +1138,8 @@ Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console
 
 ### 16.6 還沒做的（不可以當作通過）
 
-- **配對沒做。** Go 版沒有機器半邊的 QR／四階段 handover，所以瀏覽器拿不到這台機器的 master
-  secret。實測時是**用 devtools 把已完成配對會寫的那四筆直接種進 IndexedDB**
+- **配對沒做。** Go 版沒有機器半邊的 QR／四階段 handover，所以瀏覽器拿不到這台機器的 content
+  key。實測時是**用 devtools 把已完成配對會寫的那四筆直接種進 IndexedDB**
   （`clawdline.machine-master*` / `-sender` / `-binding`）。因此這一段證明的是傳輸與操作那一層，
   **不是配對那一層**。配對仍是下一波。
 - `sessions.snapshot` 這個字沒有接（發佈器自己每 5 秒掃）。**2026-09-25 接上了**：很久沒開的頁面
@@ -1150,7 +1161,8 @@ Node 伺服器把三者收在同一個 origin `https://127.0.0.1:8443`（console
 ## 17. 第五階段：配對的機器半邊（2026-09-18 實測）
 
 §8.3 當時寫「這一波不做，規格先寫下來」，§16.6 又記了一次「配對沒做，是用 devtools 種金鑰」。
-這一節把那個洞補起來：**Go daemon 現在自己產生交接資料、自己封裝帳號金鑰、自己釘住瀏覽器的公鑰**，
+這一節把那個洞補起來：**Go daemon 現在自己產生交接資料、自己封裝這台機器的 content key、
+自己釘住瀏覽器的公鑰**（`internal/transport/cloud/pairing.go:335-365`），
 第四階段那三件事（看得到 session 清單、打得開對話、送得進訊息）在**沒有任何 devtools**
 的前提下重做了一遍。
 
@@ -1245,7 +1257,8 @@ CLI 也是先把那幾行印出來再問。實測（`artifacts/rotation.txt`）�
 | `POST /v1/cloud/devices/revoke` | 把一個瀏覽器趕出這台 Mac |
 | `GET/POST /v1/cloud/keys/rotate` | 先看代價，再換 |
 
-`POST /v1/cloud/pairing` 回答的連結，fragment 裡帶著把帳號主金鑰交出去的一次性 secret。
+`POST /v1/cloud/pairing` 回答的連結，fragment 裡帶著把這台機器的 content key 交出去的一次性 secret
+（`internal/transport/cloud/pairing.go:143-176,335-361`）。
 通道進來的手機或 Cloud viewer 如果構得到這條，就等於一個「能讀 session」的人可以自己鑄一個
 完整配對的瀏覽器出來。所以是 `requireLocal`，跟 `/v1/cloud/status` 同一條規矩。
 
@@ -1266,7 +1279,7 @@ query 與 fragment：那些要嘛會被丟掉，要嘛會把一次性 secret 帶
 - **正式環境**一個位元組都沒連過。
 - **QR 圖**沒有畫。產生的是同樣內容的連結（`https://<app-origin>/#pair=<fragment>`），
   設定頁顯示它並提供複製；手機掃 QR 那條路徑靠的是同一個 fragment，所以畫圖是純顯示層的補完。
-- **`account-master-secret` 的輪替**沒做。輪替的是簽章金鑰；換內容金鑰要讓每一個 viewer 重新
+- **`account-master-secret` 的輪替**沒做。輪替的是簽章金鑰；換這台機器的 content key 要讓與它配對的 viewer 重新
   拿一次，PROTOCOL.md 自己也說 content-key rotation 是 lazy 的。
 - **多台機器**沒測。一台 Mac、三次配對、兩把瀏覽器金鑰。
 - **重開機後**沒測（spool 與 ledger 仍在記憶體，第二階段的已知缺口沒有變）。
