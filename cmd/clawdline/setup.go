@@ -39,7 +39,7 @@ const setupUsage = `usage: clawdline setup [options]
 Installs this release of Clawdline for this user: checks its signature and that
 tmux and an assistant are installed, links clawdline into ~/.local/bin, starts
 it as a background service (systemd --user on Linux, a LaunchAgent on macOS),
-installs the menu bar app on a Mac with a desktop, and checks that the console
+installs the menu bar app on macOS with a desktop, and checks that the console
 answers. Running it again repairs the install.
 
   --headless          no desktop: no app, no browser; print the sign-in address
