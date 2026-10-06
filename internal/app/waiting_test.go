@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // waitingRig is a Waiting on a real store, with a clock it moves by hand and a
@@ -41,7 +42,8 @@ func newWaitingRig(t *testing.T) *waitingRig {
 // watcher is a fresh Waiting on the same store: what a restarted daemon has.
 func (r *waitingRig) watcher() *Waiting {
 	return &Waiting{Store: r.st, Now: func() time.Time { return r.now },
-		Run: func(_ context.Context, ids []int64) { r.ran = append(r.ran, ids...) }}
+		Language: func() string { return "zh-Hant" },
+		Run:      func(_ context.Context, ids []int64) { r.ran = append(r.ran, ids...) }}
 }
 
 func (r *waitingRig) at(d time.Duration, rows ...session.Session) int {
@@ -340,6 +342,40 @@ func TestAStopsWordsFitThePush(t *testing.T) {
 	title, _ = waitingText(s, WaitingRole{}, false, 12*time.Minute, time.Now())
 	if title != "等你回答：A" {
 		t.Fatalf("a session with no name is titled %q", title)
+	}
+}
+
+func TestWaitingPushUsesProductLanguageAtIntentAndKeepsQuestionVerbatim(t *testing.T) {
+	r := newWaitingRig(t)
+	r.w.Language = nil // An unset product language is English.
+	s := asking("locale")
+	r.at(0, s)
+	if r.at(10*time.Minute, s) != 1 {
+		t.Fatal("no push was recorded")
+	}
+	got := r.pushes(s)
+	var p orchestrator.WaitingPush
+	if len(got) != 1 || json.Unmarshal(got[0].Payload, &p) != nil {
+		t.Fatalf("recorded pushes: %+v", got)
+	}
+	if !strings.HasPrefix(p.Title, "Waiting for your answer:") || !strings.Contains(p.Body, "要用哪一個？") || p.Tag != "waiting-locale" {
+		t.Fatalf("default English and original question: %+v", p)
+	}
+	r.w.Language = func() string { return "ja" }
+	var persisted orchestrator.WaitingPush
+	if err := json.Unmarshal(r.pushes(s)[0].Payload, &persisted); err != nil || persisted != p {
+		t.Fatalf("preference change altered recorded push: %+v, %v", persisted, err)
+	}
+}
+
+func TestWaitingTextHasNineProductLanguages(t *testing.T) {
+	s := asking("nine")
+	for _, language := range productcopy.Languages {
+		title, body := waitingTextLanguage(language, s, WaitingRole{Child: true, Title: "Task", Deadline: time.Now().Add(time.Hour)}, true, 12*time.Minute, time.Now())
+		if title == "" || body == "" || !strings.Contains(title, "Task") || !strings.Contains(body, s.Menu.Question) ||
+			utf8.RuneCountInString(title) > 80 || utf8.RuneCountInString(body) > 500 {
+			t.Errorf("%s: %q / %q", language, title, body)
+		}
 	}
 }
 

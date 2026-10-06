@@ -13,6 +13,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/lane"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Effects: what the broker does to the world, and the rule that it is never
@@ -608,43 +609,40 @@ func runMessage(ctx context.Context, b *Broker, e store.Effect) effectResult {
 type deadLetterEffect struct {
 	Notice   string `json:"notice"`
 	Attempts int    `json:"attempts"`
+	// The producer must fix Language when it records the dead-letter intent.
+	// Old effects without it keep their original Traditional Chinese copy;
+	// the sender never re-reads a preference.
+	Language string `json:"language,omitempty"`
 	// Reason is the notice's last error code as the move that gave up read it.
 	// Empty on an effect recorded before this field existed, which reads as the
 	// only reason there was then: nobody acknowledged it.
 	Reason string `json:"reason,omitempty"`
 }
 
-// deadLetterTitle and the two bodies are server strings, in the one language
-// this daemon's own pushes speak today (push.go's pushTestBody).
-//
-// There are two because there are now two ways to give up, and telling a person
-// "the notice was sent eight times" about a notice that was never typed once
-// sends them looking for something that is not there. A hold code means the
-// root's terminal could not be written to at all — it was holding a dialog, or
-// its composer had something in it that typing would have been submitted with
-// (notice.go).
-const (
-	deadLetterTitle = "完成通知沒有送達"
-	deadLetterBody  = "「%s」已經結束（%s），但通知送了 %d 次都沒有被收下。打開那個 session 讀 result.json；" +
-		"修好原因後可以用 POST /v1/orchestrator/completions/reconcile 重送。"
-	deadLetterHeldBody = "「%s」已經結束（%s），但它的 root 終端機一直不能打字（%s），通知沒有送進去。" +
-		"讀 result.json；把那個終端機空出來之後，用 POST /v1/orchestrator/completions/reconcile 重送。"
-)
+const deadLetterTitle = "完成通知沒有送達"
 
-// heldReason is a hold code's Chinese sentence for the push, or empty for a
+// heldReason is a hold code's legacy sentence for the push, or empty for a
 // code that is not a hold.
 func heldReason(code string) string {
+	return heldReasonLanguage("zh-Hant", code)
+}
+
+func heldReasonLanguage(language, code string) string {
+	key := ""
 	switch code {
 	case holdComposer.Code:
-		return "輸入框裡有還沒送出的內容"
+		key = "dead.reason.composer"
 	case holdChoosing.Code:
-		return "畫面停在一個等人回答的選單"
+		key = "dead.reason.choosing"
 	case holdLane.Code:
-		return "那個終端機一直被別人佔用"
+		key = "dead.reason.lane"
 	case holdQueued.Code:
-		return "先前那一份還排在輸入框裡沒被讀到"
+		key = "dead.reason.queued"
 	}
-	return ""
+	if key == "" {
+		return ""
+	}
+	return productcopy.Format(language, key, nil)
 }
 
 // runDeadLetterPush sends the one push a dead letter owes. Tapping it opens
@@ -663,11 +661,12 @@ func runDeadLetterPush(ctx context.Context, b *Broker, e store.Effect) effectRes
 	if title == "" {
 		title = r.ID
 	}
-	said := fmt.Sprintf(deadLetterBody, title, r.State, d.Attempts)
-	if why := heldReason(d.Reason); why != "" {
-		said = fmt.Sprintf(deadLetterHeldBody, title, r.State, why)
+	language := d.Language
+	if language == "" {
+		language = "zh-Hant" // Effect recorded before language was persisted.
 	}
-	sent, failed, err := b.Push(ctx, deadLetterTitle, said, r.RootTerminalID, "dead-letter-"+r.ID)
+	pushTitle, said := deadLetterText(language, title, string(r.State), d.Attempts, d.Reason)
+	sent, failed, err := b.Push(ctx, pushTitle, said, r.RootTerminalID, "dead-letter-"+r.ID)
 	body, _ := json.Marshal(map[string]any{"task": r.ID, "notice": d.Notice, "sent": sent, "failed": failed})
 	events := []store.Event{{Kind: "task.completion.dead_letter.pushed", Subject: r.ID, Payload: body}}
 	switch {
@@ -682,4 +681,14 @@ func runDeadLetterPush(ctx context.Context, b *Broker, e store.Effect) effectRes
 		return effectResult{state: store.EffectFailed, outcome: "no push service accepted it", events: events}
 	}
 	return effectResult{state: store.EffectDone, outcome: "pushed", events: events}
+}
+
+func deadLetterText(language, title, state string, attempts int, reason string) (string, string) {
+	values := map[string]string{"title": title, "state": state, "attempts": fmt.Sprint(attempts)}
+	body := productcopy.Format(language, "dead.body", values)
+	if why := heldReasonLanguage(language, reason); why != "" {
+		values["reason"] = why
+		body = productcopy.Format(language, "dead.held", values)
+	}
+	return productcopy.Format(language, "dead.title", nil), body
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 var workV2ByServer sync.Map // *Server -> *app.WorkSystemV2
@@ -983,7 +984,7 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 		SessionID: body.SessionID, Verification: body.Verification, Landing: landing,
 		NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
-		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}},
+		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, s.productLanguage())}},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -1702,10 +1703,8 @@ func workV2CompletionEffect(v app.WorkV2View, session, language string) store.Ef
 			break
 		}
 	}
-	title, body := "Board item completed", v.Item.Title+" is complete."
-	if strings.HasPrefix(strings.ToLower(language), "zh") {
-		title, body = "看板項目已完成", "「"+v.Item.Title+"」已完成"
-	}
+	title := productcopy.Format(language, "board.title", nil)
+	body := productcopy.Format(language, "board.body", map[string]string{"title": v.Item.Title})
 	payload, _ := json.Marshal(orchestrator.WorkItemCompletedPush{WorkID: v.Item.ID, Terminal: terminal,
 		Title: title, Body: body, Tag: "work-item-" + v.Item.ID})
 	return store.Effect{Kind: orchestrator.EffectWorkItemCompletedPush, Subject: v.Item.ID, Payload: payload}
@@ -2913,7 +2912,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		var effects []store.Effect
 		if work.Phase(body.Next) == work.PhaseDone {
-			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}
+			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, s.productLanguage())}
 		}
 		var answer []byte
 		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
