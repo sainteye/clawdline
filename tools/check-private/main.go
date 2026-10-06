@@ -59,8 +59,9 @@ func main() {
 	full := flag.Bool("full", false, "-history reads every commit, whatever the checkpoint says")
 	checkpoint := flag.String("checkpoint", "", "where -history remembers what it read; - keeps none")
 	onlyNew := flag.Bool("new", false, "-history is red only for a finding the checkpoint had not already recorded")
+	dir := flag.String("dir", "", "read every file under this directory instead of the repository, and the printable strings of a binary (a release's unpacked artifacts, docs/releasing.md)")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-full] [-new] [-checkpoint P]] [-- git-pathspec...]")
+		fmt.Fprintln(os.Stderr, "usage: check-private [-rules] [-history [-revs R] [-full] [-new] [-checkpoint P]] [-dir D] [-- git-pathspec...]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -71,16 +72,27 @@ func main() {
 	if *history {
 		os.Exit(int(runHistory(historyOptions{revs: *revs, full: *full, checkpoint: *checkpoint, onlyNew: *onlyNew})))
 	}
-	os.Exit(int(run(flag.Args())))
+	os.Exit(int(run(flag.Args(), *dir)))
 }
 
-func run(pathspecs []string) privacy.Answer {
+func run(pathspecs []string, dir string) privacy.Answer {
 	root, err := repoRoot()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot check:", err)
 		return privacy.CannotCheck
 	}
-	files, err := published(root, pathspecs)
+	read := func(p string) ([]byte, bool, bool, error) {
+		data, ok, err := content(p)
+		return data, ok, false, err
+	}
+	scanRoot := root
+	var files []string
+	if dir != "" {
+		scanRoot, read = dir, contentOrStrings
+		files, err = everyFile(dir)
+	} else {
+		files, err = published(root, pathspecs)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot check:", err)
 		return privacy.CannotCheck
@@ -97,9 +109,9 @@ func run(pathspecs []string) privacy.Answer {
 		privacy.Finding
 	}
 	var hits []hit
-	read := 0
+	nread := 0
 	for _, rel := range files {
-		data, ok, err := content(filepath.Join(root, filepath.FromSlash(rel)))
+		data, ok, binary, err := read(filepath.Join(scanRoot, filepath.FromSlash(rel)))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "cannot check:", err)
 			return privacy.CannotCheck
@@ -107,12 +119,24 @@ func run(pathspecs []string) privacy.Answer {
 		if !ok {
 			continue
 		}
-		read++
+		nread++
 		for _, f := range scanner.Scan(rel, data) {
+			// A binary's strings are every literal compiled into it, its
+			// dependencies' too: the fixed rules' exemptions are written for
+			// source files and do not reach them. What a binary must never
+			// carry is one of the person's words or this machine's home.
+			if binary && f.Rule != "private-word" {
+				continue
+			}
 			hits = append(hits, hit{rel, f})
 		}
+		if binary {
+			if home, err := os.UserHomeDir(); err == nil && home != "" && bytes.Contains(data, []byte(home)) {
+				hits = append(hits, hit{rel, privacy.Finding{Rule: "home-path", Match: "this machine's home directory"}})
+			}
+		}
 	}
-	if read == 0 {
+	if nread == 0 {
 		fmt.Fprintln(os.Stderr, "cannot check: read no files; a run that read nothing is not a pass")
 		return privacy.CannotCheck
 	}
@@ -140,7 +164,7 @@ func run(pathspecs []string) privacy.Answer {
 	}
 	if len(hits) > 0 {
 		fmt.Fprintf(os.Stderr, "private: %d finding(s) in %d of %d file(s); %s. `tools/check-private.sh -rules` says what passes.\n",
-			len(hits), len(inFiles), read, wordNote)
+			len(hits), len(inFiles), nread, wordNote)
 		return privacy.Found
 	}
 	// An empty word list is not a clean tree. The rules that need it did not
@@ -148,12 +172,12 @@ func run(pathspecs []string) privacy.Answer {
 	// saying "clean" would be the quiet green a fresh clone and a CI runner
 	// would get for ever.
 	if len(words) == 0 {
-		fmt.Printf("private: %d files read; nothing the fixed rules catch\n", read)
+		fmt.Printf("private: %d files read; nothing the fixed rules catch\n", nread)
 		fmt.Fprintf(os.Stderr, "private: undetermined: no private-word list. Put one line per word in %s, or point CLAWDLINE_PRIVATE_WORDS at it. An empty list is not a clean tree.\n",
 			wordsPath(root))
 		return privacy.Undetermined
 	}
-	fmt.Printf("private: %d files clean; %s\n", read, wordNote)
+	fmt.Printf("private: %d files clean; %s\n", nread, wordNote)
 	return privacy.Clean
 }
 
@@ -241,6 +265,72 @@ func published(root string, pathspecs []string) ([]string, error) {
 // content is what publishing path publishes: a file's bytes, or a symlink's
 // target. A binary file is skipped (ok false), and so is a tracked file that
 // is gone from the working tree; neither is an error.
+// everyFile is every regular file and symlink under dir, slash-separated and
+// relative to it.
+func everyFile(dir string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	return out, err
+}
+
+// contentOrStrings is content, except that a binary file is read as its
+// printable strings, one per line, as `strings` would print them: a release
+// binary carries every literal compiled into it, and that is what it would
+// publish.
+func contentOrStrings(path string) ([]byte, bool, bool, error) {
+	data, ok, err := content(path)
+	if err != nil || ok {
+		return data, ok, false, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, false, false, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false, false, err
+	}
+	return printableRuns(raw, 6), true, true, nil
+}
+
+// printableRuns is every run of at least min printable ASCII bytes, each on
+// its own line.
+func printableRuns(raw []byte, min int) []byte {
+	var out bytes.Buffer
+	start := -1
+	flush := func(end int) {
+		if start >= 0 && end-start >= min {
+			out.Write(raw[start:end])
+			out.WriteByte('\n')
+		}
+		start = -1
+	}
+	for i, b := range raw {
+		if b >= 0x20 && b < 0x7f || b == '\t' {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		flush(i)
+	}
+	flush(len(raw))
+	return out.Bytes()
+}
+
 func content(path string) ([]byte, bool, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, fs.ErrNotExist) {
