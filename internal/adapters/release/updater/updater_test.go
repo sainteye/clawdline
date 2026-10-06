@@ -67,6 +67,11 @@ func TestAHealthyUpdateSwitchesCurrentAndPrunesOldReleases(t *testing.T) {
 
 func TestAReleaseThatDoesNotComeUpIsRolledBackAndNotRetriedByItself(t *testing.T) {
 	f := newFixture(t, "v0.10.0")
+	// A store, so there is a snapshot that an additive release must not
+	// ask to have restored.
+	conn := openWAL(t, filepath.Join(f.env.StateDir, StoreFile))
+	execSQL(t, conn, "CREATE TABLE t (v TEXT)")
+	conn.Close()
 	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
 	if err := f.update(Request{}); err != nil {
 		t.Fatal(err)
@@ -86,7 +91,10 @@ func TestAReleaseThatDoesNotComeUpIsRolledBackAndNotRetriedByItself(t *testing.T
 	if failed, _ := f.env.HasFailed("v0.11.0"); !failed {
 		t.Fatal("the version that rolled back is not remembered")
 	}
-	if _, err := os.Stat(f.env.restorePath()); err == nil {
+	if p := filepath.Join(f.env.BackupsDir(), "v0.10.0-v0.11.0.sqlite3"); !exists(p) {
+		t.Fatal("no snapshot was taken before the update")
+	}
+	if exists(f.env.restorePath()) {
 		t.Fatal("an additive release asked for the snapshot to be restored")
 	}
 	// Auto-apply does not try it again; a person asking does.
@@ -373,6 +381,10 @@ func TestAnArchiveCannotWriteOutsideItsRelease(t *testing.T) {
 	for name, entries := range cases {
 		t.Run(name, func(t *testing.T) {
 			f := newFixture(t, "v0.10.0")
+			// A binary at the root, so the only thing wrong is the entry.
+			if name != "no binary at the root" {
+				entries = append([]entry{{name: "clawdline", body: "x"}}, entries...)
+			}
 			f.publish("v0.11.0", commitOf('b'), tarGz(t, entries...), true, nil)
 			if err := f.update(Request{}); errCode(err) != CodeArchiveUnsafe {
 				t.Fatalf("got %v", err)
@@ -380,8 +392,10 @@ func TestAnArchiveCannotWriteOutsideItsRelease(t *testing.T) {
 			if _, err := os.Stat(f.env.Layout.ReleaseDir("v0.11.0")); err == nil {
 				t.Fatal("a refused archive left releases/v0.11.0")
 			}
-			if _, err := os.Stat(filepath.Join(filepath.Dir(f.env.Layout.Root), "evil")); err == nil {
-				t.Fatal("an entry escaped")
+			for _, at := range []string{f.env.Layout.Releases, f.env.Layout.Root, filepath.Dir(f.env.Layout.Root)} {
+				if _, err := os.Lstat(filepath.Join(at, "evil")); err == nil {
+					t.Fatalf("an entry escaped to %s", at)
+				}
 			}
 		})
 	}
@@ -664,4 +678,9 @@ func count(t *testing.T, db *sql.DB, q string) int {
 func sha(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
