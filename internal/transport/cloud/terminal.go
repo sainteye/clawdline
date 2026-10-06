@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,7 +41,11 @@ const (
 	// Until 2026-10-06 none was ever let go and the limit was 64: a
 	// connection refused every request after its 64th as terminal_busy, which
 	// a burst of typing reached within seconds (22:09:07, after 16 vim `j`s).
-	// 512 in 15 s is above a held-down key's repeat.
+	// The limit only bounds memory: when it is full the oldest receipt is let
+	// go early, counted and logged as stage receipt_evicted, and the new
+	// request is answered. Until 2026-10-07 the new request was refused
+	// terminal_busy instead, which a key held down at the fastest repeat
+	// (about 40 a second against 512 in 15 s) reached after about 12.8 s.
 	CloudTerminalReceiptsLimit                = 512
 	CloudTerminalReceiptSecondsLimit          = 15
 	CloudTerminalKeySecondsLimit              = 600
@@ -108,6 +113,7 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 				r.Used = int64(len(c.receiptOrder))
 			}
 		}
+		r.Counters = capacity.Counters{Evicted: l.terminalReceiptsEvicted, LastActionAt: l.terminalReceiptEvictedAt}
 	case capacity.CloudTerminalIngress:
 		r.Used = int64(len(l.terminalRequests))
 	case capacity.CloudTerminalListIngress:
@@ -209,7 +215,10 @@ type terminalConnection struct {
 	stageLines   int
 	stageRoutine int
 	stageNotable int
-	receiptOps   map[uint64]string
+	// receiptsEvicted counts the receipts this connection let go early at
+	// CloudTerminalReceiptsLimit.
+	receiptsEvicted int
+	receiptOps      map[uint64]string
 	// receiptRetries holds each relay-published receipt until it settles, so
 	// one the relay refused with rate_limited can be published again.
 	receiptRetries map[uint64]receiptRetry
@@ -250,7 +259,10 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 	for _, connection := range l.terminalConnections {
 		if channel == connection.framePendingChannel && connection.framePending && connection.framePendingSeq == seq {
 			connection.framePending = false
-			if kind != adaptercloud.SettleDelivered && kind != adaptercloud.SettleRateLimited {
+			// A burned frame got no answer (the relay went quiet past the
+			// spool's attempt window): like a rate-limited one it does not
+			// become the delta base, and the next screen goes out.
+			if kind != adaptercloud.SettleDelivered && kind != adaptercloud.SettleRateLimited && kind != adaptercloud.SettleBurned {
 				failed = connection
 			} else if kind == adaptercloud.SettleDelivered {
 				connection.frameBase = connection.frameCandidate
@@ -267,9 +279,10 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 				if kind == adaptercloud.SettleDelivered {
 					connection.probeSince = time.Time{}
 				}
-				// The relay refused it for its own load, which says nothing about
-				// this viewer: the next probe asks again, and probeSince bounds it.
-				if kind == adaptercloud.SettleRateLimited {
+				// The relay refused it for its own load, or never answered it,
+				// which says nothing about this viewer: the next probe asks
+				// again, and probeSince bounds it.
+				if kind == adaptercloud.SettleRateLimited || kind == adaptercloud.SettleBurned {
 					break
 				}
 			}
@@ -281,6 +294,17 @@ func (l *Link) terminalReceiptSettled(channel string, seq uint64, kind adaptercl
 			delete(connection.receiptRetries, seq)
 			if kind == adaptercloud.SettleRateLimited && retrying && retry.attempt < CloudTerminalReceiptBusyRetriesLimit {
 				resend, again = connection, receiptRetry{receipt: retry.receipt, attempt: retry.attempt + 1}
+				break
+			}
+			// A burned receipt got no answer. An everyday one is let go: the
+			// viewer stops waiting after ten seconds and reconciles a lost
+			// receipt with its next control query. One a handshake waits on
+			// (rekey, activate, watch) fails the connection, as an undelivered
+			// one does, because nothing else would end that wait.
+			if kind == adaptercloud.SettleBurned &&
+				!(connection.rekeyReceiptPending && connection.rekeyReceiptSeq == seq) &&
+				!(connection.activateReceiptPending && connection.activateReceiptSeq == seq) &&
+				!(connection.watchReceiptPending && connection.watchReceiptSeq == seq) {
 				break
 			}
 			if kind != adaptercloud.SettleDelivered {
@@ -786,12 +810,6 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 		_ = l.sendTerminalReceipt(ctx, c, original)
 		return
 	}
-	if !l.terminalReceiptAvailable(c) {
-		l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
-			Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
-			Status: "refused", Error: string(terminal.CodeBusy)})
-		return
-	}
 	l.terminalMu.Lock()
 	if c.pendingReceipts == nil {
 		c.pendingReceipts = map[string]bool{}
@@ -1082,13 +1100,6 @@ func (l *Link) terminalReceipt(c *terminalConnection, requestID string) []byte {
 	return append([]byte(nil), c.receipts[requestID]...)
 }
 
-func (l *Link) terminalReceiptAvailable(c *terminalConnection) bool {
-	l.terminalMu.Lock()
-	defer l.terminalMu.Unlock()
-	l.expireTerminalReceiptsLocked(c)
-	return len(c.receiptOrder) < CloudTerminalReceiptsLimit
-}
-
 // expireTerminalReceiptsLocked lets go of the receipts whose request id the
 // viewer can no longer send again.
 func (l *Link) expireTerminalReceiptsLocked(c *terminalConnection) {
@@ -1104,16 +1115,36 @@ func (l *Link) expireTerminalReceiptsLocked(c *terminalConnection) {
 	}
 }
 
-// rememberTerminalReceiptLocked keeps receipt data for its request id while
-// there is room.
-func (l *Link) rememberTerminalReceiptLocked(c *terminalConnection, requestID string, data []byte) {
+// rememberTerminalReceiptLocked keeps receipt data for its request id. At
+// CloudTerminalReceiptsLimit the oldest receipt is let go first: it is the
+// one least likely to be asked for again, and the request in hand is served
+// rather than refused. It answers the stage row to log for an eviction, or "".
+func (l *Link) rememberTerminalReceiptLocked(c *terminalConnection, requestID string, data []byte) string {
 	l.expireTerminalReceiptsLocked(c)
 	if _, present := c.receipts[requestID]; present {
 		c.receipts[requestID] = data
-		return
+		return ""
 	}
+	stage := ""
 	if len(c.receiptOrder) >= CloudTerminalReceiptsLimit {
-		return
+		gone := len(c.receiptOrder) - CloudTerminalReceiptsLimit + 1
+		for _, id := range c.receiptOrder[:gone] {
+			delete(c.receipts, id)
+		}
+		c.receiptOrder = append(c.receiptOrder[:0], c.receiptOrder[gone:]...)
+		c.receiptTimes = append(c.receiptTimes[:0], c.receiptTimes[gone:]...)
+		l.terminalReceiptsEvicted += int64(gone)
+		l.terminalReceiptEvictedAt = l.opts.Now()
+		// A held key evicts one receipt per key, so the row is logged at the
+		// connection's 1st, 2nd, 4th, 8th ... eviction, outside the routine
+		// and failure budgets of terminalStageLocked; `evicted` is the total.
+		before := c.receiptsEvicted
+		c.receiptsEvicted += gone
+		c.stageLines++
+		if bits.Len(uint(before)) != bits.Len(uint(c.receiptsEvicted)) {
+			stage = fmt.Sprintf("cloud terminal stage n=%d stage=receipt_evicted op=- outcome=evicted evicted=%d",
+				c.stageLines, c.receiptsEvicted)
+		}
 	}
 	if c.receipts == nil {
 		c.receipts = map[string][]byte{}
@@ -1121,6 +1152,7 @@ func (l *Link) rememberTerminalReceiptLocked(c *terminalConnection, requestID st
 	c.receiptOrder = append(c.receiptOrder, requestID)
 	c.receiptTimes = append(c.receiptTimes, l.opts.Now())
 	c.receipts[requestID] = data
+	return stage
 }
 
 func (l *Link) sendTerminalReceipt(ctx context.Context, c *terminalConnection, receipt terminalReceipt) error {
@@ -1172,7 +1204,7 @@ func (l *Link) sendTerminalReceiptAttempt(ctx context.Context, c *terminalConnec
 		}
 		l.terminalRetireAfterReceipt[terminalReceiptSettleID(terminalReceiptChannel(l.identity.MachineID, c), seq)] = c
 	}
-	l.rememberTerminalReceiptLocked(c, receipt.RequestID, data)
+	evicted := l.rememberTerminalReceiptLocked(c, receipt.RequestID, data)
 	stage := ""
 	if err == nil {
 		if c.receiptOps == nil {
@@ -1190,6 +1222,9 @@ func (l *Link) sendTerminalReceiptAttempt(ctx context.Context, c *terminalConnec
 		stage = withRefusalCode(l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status)), receipt)
 	}
 	l.terminalMu.Unlock()
+	if evicted != "" {
+		l.logf("%s", evicted)
+	}
 	if stage != "" {
 		l.logf("%s", stage)
 	}
@@ -1216,9 +1251,12 @@ func (l *Link) sendDirectReceipt(c *terminalConnection, receipt terminalReceipt,
 		return false
 	}
 	l.terminalMu.Lock()
-	l.rememberTerminalReceiptLocked(c, receipt.RequestID, data)
+	evicted := l.rememberTerminalReceiptLocked(c, receipt.RequestID, data)
 	stage := withRefusalCode(l.terminalStageLocked(c, "receipt_published", receipt.Operation, receiptStatus(receipt.Status)+"_direct"), receipt)
 	l.terminalMu.Unlock()
+	if evicted != "" {
+		l.logf("%s", evicted)
+	}
 	if stage != "" {
 		l.logf("%s", stage)
 	}

@@ -718,6 +718,7 @@ func (t *Transport) drain(conn *Conn, done <-chan struct{}, reconnect bool) {
 		case <-ticker.C:
 		}
 		t.opts.Spool.BurnExpired()
+		t.settleBurned()
 		for {
 			disposition := t.opts.Spool.SendNext()
 			if disposition.Row == nil {
@@ -732,6 +733,25 @@ func (t *Transport) drain(conn *Conn, done <-chan struct{}, reconnect bool) {
 			}
 			t.opts.Status.Published()
 		}
+		t.settleBurned()
+	}
+}
+
+// settleBurned tells OnSettled about every row the spool burned since the
+// last call: past its attempt window with no answer while the socket stayed
+// up, gone stale before it could be written, or replaced by a newer screen.
+// No receipt will ever settle such a row, so this is the only word its waiter
+// gets.
+func (t *Transport) settleBurned() {
+	if t.opts.Spool == nil {
+		return
+	}
+	burned := t.opts.Spool.TakeBurned()
+	if t.opts.OnSettled == nil {
+		return
+	}
+	for _, row := range burned {
+		t.opts.OnSettled(row.Recipient, row.Seq, SettleBurned)
 	}
 }
 

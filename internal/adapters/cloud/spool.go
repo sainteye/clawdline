@@ -294,6 +294,8 @@ type SpoolRow struct {
 	// Tombstoned is when the row became terminal. It is what the retention
 	// window is measured from.
 	Tombstoned time.Time
+	// burnTold is set once TakeBurned has handed this burned row out.
+	burnTold bool
 }
 
 // SettleKind is what a receipt said.
@@ -310,6 +312,10 @@ const (
 	SettlePeerError SettleKind = "peer_error"
 	// SettleRateLimited is a temporary relay refusal; the latest screen may be sent again.
 	SettleRateLimited SettleKind = "rate_limited"
+	// SettleBurned is not a receipt: the spool let the row go without one
+	// (its BurnReason says why), and none will be acted on if it comes late.
+	// Whoever waits on the row hears it so it stops waiting.
+	SettleBurned SettleKind = "burned"
 )
 
 // SettleResult is what settling did.
@@ -778,6 +784,26 @@ func (s *Spool) BurnExpired() []uint64 {
 		s.tally.lastAt = now
 	}
 	return burned
+}
+
+// TakeBurned answers, in ascending sequence order, every row burned since
+// the last call: each is handed out once. A burned row gets no receipt, and a
+// late one is ignored, so this is the only way its waiter learns to stop
+// waiting. Until 2026-10-06 nothing told it, and a terminal frame burned
+// after 30 s without an ack held back every later screen of its connection.
+func (s *Spool) TakeBurned() []SpoolRow {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []SpoolRow
+	for _, row := range s.rows {
+		if row.State != SpoolBurned || row.burnTold {
+			continue
+		}
+		row.burnTold = true
+		out = append(out, *row)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
+	return out
 }
 
 // Row answers a copy of one row, and whether there is one.

@@ -64,6 +64,13 @@ func newTestLine(t *testing.T) *testLine {
 
 func newTestLineWithTokens(t *testing.T, tokens *httptest.Server) *testLine {
 	t.Helper()
+	return newTestLineConfigured(t, tokens, nil)
+}
+
+// newTestLineConfigured is newTestLineWithTokens with a last word on the
+// options, such as a spool on a fake clock or an OnSettled.
+func newTestLineConfigured(t *testing.T, tokens *httptest.Server, configure func(*Options)) *testLine {
+	t.Helper()
 	key, err := domain.NewDeviceKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("device key: %v", err)
@@ -83,7 +90,7 @@ func newTestLineWithTokens(t *testing.T, tokens *httptest.Server) *testLine {
 	status := NewStatusRecorder(time.Now())
 	logs := make(chan string, 256)
 
-	transport, err := New(Options{
+	opts := Options{
 		RelayURL: relay.URL(),
 		Role:     "machine",
 		Token:    &TokenSource{Client: NewAccountClient(tokens.URL), Credential: identity.MachineCredential},
@@ -108,7 +115,12 @@ func newTestLineWithTokens(t *testing.T, tokens *httptest.Server) *testLine {
 		// A fixed jitter makes the ladder's numbers exact rather than merely
 		// plausible.
 		Jitter: func() float64 { return 0.5 },
-	})
+	}
+	if configure != nil {
+		configure(&opts)
+		spool = opts.Spool
+	}
+	transport, err := New(opts)
 	if err != nil {
 		t.Fatalf("transport: %v", err)
 	}

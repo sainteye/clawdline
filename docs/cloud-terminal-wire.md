@@ -158,7 +158,7 @@ When the machine setting `cloud_terminal_direct` (default on) is off, offers are
 | `CloudTerminalRotationRetrySecondsLimit` | 5 s before trying again a key rotation that failed, while the old key lasts | browser |
 | `CloudTerminalReceiptBusyRetriesLimit` | 3 republications of a receipt the relay refused with `rate_limited` | machine |
 | `CloudTerminalReceiptBusyRetrySecondsLimit` | 2 s before each | machine |
-| `CloudTerminalReceiptsLimit` | 512 receipts kept per connection for a re-sent request id; a request past it is refused `terminal_busy` | machine |
+| `CloudTerminalReceiptsLimit` | 512 receipts kept per connection for a re-sent request id; past it the oldest receipt is let go early (counted as evicted, stage `receipt_evicted`) and the new request is answered | machine |
 | `CloudTerminalReceiptSecondsLimit` | 15 s a receipt is kept, past the viewer's ten-second wait, after which it never sends that request id again. Until 2026-10-06 receipts were never let go and the limit was 64, so a connection refused every request after its 64th: a burst of typing on a direct connection stopped after 16 vim `j`s (22:09:07) | machine |
 
 ## Lease continuity and revocation

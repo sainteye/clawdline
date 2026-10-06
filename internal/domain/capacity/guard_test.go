@@ -286,8 +286,10 @@ func TestRegisterRowsAnswerTheFourQuestions(t *testing.T) {
 	}
 	// The rows that do not yet do what their class requires, by name. A new
 	// one is a decision to write down here, not a string to add to a row.
+	// CloudTerminalReceipts evicts its oldest receipt instead of refusing a
+	// held key (2026-10-07, the row's Deviation).
 	sort.Strings(deviating)
-	if want := []string{StoreDB}; strings.Join(deviating, ",") != strings.Join(want, ",") {
+	if want := []string{CloudTerminalReceipts, StoreDB}; strings.Join(deviating, ",") != strings.Join(want, ",") {
 		t.Errorf("rows deviating from their class: %v, want %v", deviating, want)
 	}
 }
