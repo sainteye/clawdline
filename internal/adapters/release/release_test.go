@@ -165,3 +165,20 @@ func TestVersionsCompareAsReleasesDo(t *testing.T) {
 		}
 	}
 }
+
+// A key that does not decode would be dropped by TrustedKeys without a word,
+// and every release signed by it refused on every machine.
+func TestEveryCompiledInKeyIsAnEd25519PublicKey(t *testing.T) {
+	if len(releaseKeys) == 0 {
+		t.Fatal("no release key is compiled in")
+	}
+	n := 0
+	for _, k := range TrustedKeys() {
+		if len(k) == ed25519.PublicKeySize {
+			n++
+		}
+	}
+	if extraKey == "" && n != len(releaseKeys) {
+		t.Fatalf("%d of %d compiled-in keys decode", n, len(releaseKeys))
+	}
+}
