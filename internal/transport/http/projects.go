@@ -338,7 +338,7 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) < 2 || parts[0] == "" || parts[1] != "worktrees" || len(parts) > 3 ||
 		(len(parts) == 3 && parts[2] != "refresh") {
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such route")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	refresh := len(parts) == 3

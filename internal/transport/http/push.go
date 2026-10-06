@@ -106,7 +106,7 @@ func (s *Server) pushRoute(w http.ResponseWriter, r *http.Request) {
 	case post && p == "/v1/push/unsubscribe":
 		s.pushUnsubscribeRoute(w, r)
 	default:
-		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
+		writeNoSuchRoute(w, r)
 	}
 }
 

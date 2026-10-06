@@ -91,7 +91,7 @@ func (s *Server) verificationsRoute(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 2 && parts[1] == "close" && r.Method == http.MethodPost:
 		s.verificationClose(w, r, id)
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "That is not a verification route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

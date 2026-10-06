@@ -68,7 +68,7 @@ func (s *Server) authRoute(w http.ResponseWriter, r *http.Request) {
 	case p == "/v1/auth/devices" || strings.HasPrefix(p, "/v1/auth/devices/"):
 		g.devicesRoute(w, r, strings.TrimPrefix(strings.TrimPrefix(p, "/v1/auth/devices"), "/"))
 	default:
-		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
+		writeNoSuchRoute(w, r)
 	}
 }
 
@@ -386,7 +386,7 @@ func (g *gate) devicesRoute(w http.ResponseWriter, r *http.Request, rest string)
 		_, err := g.auth.SetCapabilities(parts[0], caps)
 		writeDeviceChange(w, err)
 	default:
-		writeAuthRefusal(w, http.StatusNotFound, "not_found", "No such route")
+		writeNoSuchRoute(w, r)
 	}
 }
 

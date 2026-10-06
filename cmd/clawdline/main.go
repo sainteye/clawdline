@@ -234,6 +234,7 @@ func serve() {
 	if err != nil {
 		refuseToServe(1, err.Error())
 	}
+	srv.SetVersion(version)
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
@@ -319,8 +320,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 			}
 			cloudtransport.LocalAuthorizer(local, machine)(r)
 		},
-		Version: version,
-		Log:     func(format string, args ...any) { log.Printf(format, args...) },
+		Version:  version,
+		APILevel: httptransport.APILevel,
+		Log:      func(format string, args ...any) { log.Printf(format, args...) },
 		// The request queue is the register's `cloud.relay_queue` row.
 		QueueDepth: int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
 		// The outbound spool is its four rows: two global, one per wire

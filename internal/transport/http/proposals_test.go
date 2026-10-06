@@ -32,7 +32,9 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	mux.HandleFunc("/v1/work/", s.workRoute)
 	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
 	mux.HandleFunc("/v1/orchestrator/runs/", s.runRoute)
-	s.participationRoutes(mux)
+	for _, rt := range s.participationRoutes() {
+		mux.HandleFunc(rt.Pattern, rt.handle)
+	}
 	person := access{verdict: auth.Verdict{Allowed: true, Local: true}}
 	machine := access{machine: true}
 	do := func(a access, method, target, key, body string) *httptest.ResponseRecorder {
@@ -349,7 +351,9 @@ func TestALeftoverProposalFromTheRootEndsTheResend(t *testing.T) {
 	b := &orchestrator.Broker{Store: st, Tasks: taskdir.New(dir), Dir: dir}
 	s := &Server{store: st, broker: b}
 	mux := http.NewServeMux()
-	s.participationRoutes(mux)
+	for _, rt := range s.participationRoutes() {
+		mux.HandleFunc(rt.Pattern, rt.handle)
+	}
 	machine := access{machine: true}
 	ctx := context.Background()
 

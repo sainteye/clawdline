@@ -92,10 +92,10 @@ func (s *Server) waitsRoute(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, contract.WaitCancelResult{OK: true, ID: id})
 		default:
-			writeRefusal(w, http.StatusNotFound, "not_found", "That is not a wait action.")
+			writeNoSuchRoute(w, r)
 		}
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such wait route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 
@@ -136,7 +136,7 @@ func (s *Server) leasesRoute(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		if p != "/v1/orchestrator/leases" {
-			writeRefusal(w, http.StatusNotFound, "not_found", "No such lease route.")
+			writeNoSuchRoute(w, r)
 			return
 		}
 		views, err := s.broker.Leases(ctx)
@@ -193,7 +193,7 @@ func (s *Server) leasesRoute(w http.ResponseWriter, r *http.Request) {
 			answer, err = s.broker.Cancel(ctx, o)
 		}
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such lease route.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	if err != nil {
@@ -282,7 +282,7 @@ func (s *Server) completionsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, contract.CompletionReconcileResult{OK: true, Rearmed: rearmed, Limited: limited, BatchLimit: 25})
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such completions route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

@@ -3306,8 +3306,10 @@ export interface GitSnapshot {
  * GET /v1/health, open without a token: that this daemon is alive, which
  * implementation it is, and the two answers a page needs before it can be let in
  * — whether the asker's own credential is one this machine knows, and whether a
- * password door exists. Nothing else: no path, no port, nothing about the work;
- * those are in Diagnostics.
+ * password door exists — and which build answered (`version`, `api_level`), so a
+ * console newer than this daemon can say a feature needs an update rather than that
+ * it failed. Nothing else: no path, no port, nothing about the work; those are in
+ * Diagnostics.
  */
 export interface Health {
   /**

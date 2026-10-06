@@ -95,19 +95,21 @@ func (s *Server) participationSweep(ctx context.Context) error {
 	return s.participation().Sweep(ctx)
 }
 
-// participationRoutes adds these routes to the daemon's mux. The mux sends a
+// participationRoutes are these routes' rows of the route table. The mux sends a
 // path to its longest registered prefix, so these participation routes
 // remain reachable beside the v2 board.
-func (s *Server) participationRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/v1/orchestrator/proposals", s.sessionProposalsRoute)
-	mux.HandleFunc("/v1/orchestrator/proposals/", s.sessionProposalsRoute)
-	mux.HandleFunc("/v1/orchestrator/decisions", s.sessionDecisionsRoute)
-	mux.HandleFunc("/v1/orchestrator/decisions/", s.sessionDecisionsRoute)
-	mux.HandleFunc("/v1/work/proposals", s.workProposalsRoute)
-	mux.HandleFunc("/v1/work/proposals/", s.workProposalsRoute)
-	mux.HandleFunc("/v1/work/decisions", s.workDecisionsRoute)
-	mux.HandleFunc("/v1/work/decisions/", s.workDecisionsRoute)
-	mux.HandleFunc("/v1/work/digests", s.workDigestsRoute)
+func (s *Server) participationRoutes() []route {
+	return []route{
+		{Route{"*", "/v1/orchestrator/proposals"}, s.sessionProposalsRoute},
+		{Route{"*", "/v1/orchestrator/proposals/"}, s.sessionProposalsRoute},
+		{Route{"*", "/v1/orchestrator/decisions"}, s.sessionDecisionsRoute},
+		{Route{"*", "/v1/orchestrator/decisions/"}, s.sessionDecisionsRoute},
+		{Route{"*", "/v1/work/proposals"}, s.workProposalsRoute},
+		{Route{"*", "/v1/work/proposals/"}, s.workProposalsRoute},
+		{Route{"*", "/v1/work/decisions"}, s.workDecisionsRoute},
+		{Route{"*", "/v1/work/decisions/"}, s.workDecisionsRoute},
+		{Route{"*", "/v1/work/digests"}, s.workDigestsRoute},
+	}
 }
 
 // proposalDiagnostics is /v1/diagnostics.proposals. A process with no store
@@ -422,7 +424,11 @@ func (s *Server) sessionProposalsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, rest, ok := idAfter(p, "/v1/orchestrator/proposals/")
-	if !ok || !machineAuthed(r) {
+	if !ok {
+		writeNoSuchRoute(w, r)
+		return
+	}
+	if !machineAuthed(r) {
 		writeRefusal(w, http.StatusNotFound, "not_found", "No such proposal route.")
 		return
 	}
@@ -591,7 +597,7 @@ func (s *Server) sessionDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	id, rest, ok := idAfter(p, "/v1/orchestrator/decisions/")
 	if !ok || rest != "" {
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such decision route.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	s.decisionRead(w, r, id)
@@ -690,7 +696,7 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	id, rest, ok := idAfter(p, "/v1/work/proposals/")
 	if !ok || (rest != "" && rest != "resolve") {
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such proposal route.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	if rest == "resolve" {
@@ -800,7 +806,7 @@ func (s *Server) workDecisionsRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	id, rest, ok := idAfter(p, "/v1/work/decisions/")
 	if !ok || rest != "" {
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such decision route.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	switch r.Method {
