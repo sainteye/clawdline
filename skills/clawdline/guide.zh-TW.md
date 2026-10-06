@@ -1313,9 +1313,8 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
   會被拒絕，仍在 assigned 的項目上帶 `--work-id` 的 dispatch 除了 `--kind plan_review` 也會被拒絕
   （`epic_plan_review_blocking` 或 `feature_plan_review_blocking`）；拒絕訊息列出 blocking finding
   與下一步指令：修訂計畫，再派一次新審查。只有 non-blocking finding，或 finding 沒有 severity 的舊收據，
-  都可以繼續。兩輪審查已用完、第二輪仍有 blocking 的 Epic，只能靠使用者 override（Feature 的「需要
-  獨立審查」開關，或下一輪起把 `planning_gate` 關掉），或修訂計畫後由使用者放寬審查上限；不要自己
-  派第三次審查。
+  都可以繼續。Epic 最多審查兩輪：第二輪仍有 blocking 時，修訂計畫回應那些 finding，修訂後的計畫
+  不必再審，就能進 implementing；不要派第三次審查。
 
 **把 Epic 拆成子項目，再指派出去。** 這是「session 只在使用者訊息要求時才建立看板項目」和「只有使用者
 能指派項目」的唯一例外：使用者把 Epic 指派給你，這就是拆分它的授權。等審查過的計畫讓 Epic 進入

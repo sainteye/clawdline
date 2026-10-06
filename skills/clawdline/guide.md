@@ -1540,9 +1540,8 @@ as it is, so a retry is safe. The old text is not kept; use a different title to
   (`epic_plan_review_blocking` or `feature_plan_review_blocking`); the refusal lists the blocking
   findings and the next commands: revise the plan, then dispatch a new review. Only non-blocking
   findings, or an older receipt whose findings carry no severity, let the item proceed. An Epic
-  whose two reviews are used and whose second still blocks goes on only by the person's override
-  (a Feature's Needs independent review switch, or `planning_gate` off for the next cycle) or by a
-  revised plan once the person raises the review limit; do not dispatch a third review yourself.
+  gets at most two reviews: when the second still blocks, revise the plan to answer its findings,
+  and the revised plan goes into implementing without a third review; do not dispatch one.
 
 **Break the Epic into child items, and hand them out.** This is the one exception to "a session
 creates a Board item only when the person's message tells it to" and to "only the person assigns

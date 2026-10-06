@@ -686,14 +686,15 @@ func PlanReviewDispatchGate(i ItemV2, kind string, plans []DocumentV2, review Pl
 }
 
 // planReviewBlocking refuses when the latest plan review has a blocking
-// finding that still stands. An Epic plan revised after that review, with a
-// round left, is waiting for its next review instead (the review-required
-// rule); otherwise the findings stand until a new review clears them.
+// finding that still stands. An Epic plan revised after that review answers
+// it: with a round left the review-required rule asks for the next review,
+// and with the rounds used the revised plan goes into implementing without a
+// third. Otherwise the findings stand until a new review clears them.
 func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, rounds int, review PlanReviewSummary) error {
 	if lastReview < 0 || review.Legacy || len(review.Blocking) == 0 {
 		return nil
 	}
-	if i.Kind == KindEpic && lastPlan > lastReview && reviews < rounds {
+	if i.Kind == KindEpic && lastPlan > lastReview {
 		return nil
 	}
 	listed := review.Blocking
@@ -713,10 +714,9 @@ func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, 
 	}
 	b.WriteString(". ")
 	if i.Kind == KindEpic && reviews >= rounds {
-		fmt.Fprintf(&b, "This Epic has used its %d plan reviews, so there are only two ways forward: the person overrides "+
-			"the planning gate (%s), or you revise the plan (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`) "+
-			"and the person raises the review limit for it. Ask the person; do not dispatch a third review on your own.",
-			rounds, PlanningGateOverride, i.ID)
+		fmt.Fprintf(&b, "This Epic has used its %d plan reviews, so there is no third: revise the plan to answer these "+
+			"findings (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`), and the revised plan goes into "+
+			"implementing without another review.", rounds, i.ID)
 	} else {
 		fmt.Fprintf(&b, "Revise the plan (`clawdline item doc %s --role plan --title \"Plan\" --body-file <file>`), then have "+
 			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`); or the person overrides the "+

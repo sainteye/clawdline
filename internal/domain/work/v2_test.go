@@ -325,8 +325,8 @@ func TestPlanningGateBlocksOnlyAReviewWithABlockingFinding(t *testing.T) {
 			docs(DocumentPlan, DocumentPlanReview, DocumentPlan), receipt("blocking"), "epic_plan_review_required"},
 		{"epic second round still blocking", gated(KindEpic),
 			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview), receipt("blocking"), "epic_plan_review_blocking"},
-		{"epic rounds used and plan revised after a blocking review", gated(KindEpic),
-			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan), receipt("blocking"), "epic_plan_review_blocking"},
+		{"epic rounds used and plan revised after a blocking review goes on", gated(KindEpic),
+			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview, DocumentPlan), receipt("blocking"), ""},
 		{"epic second round non-blocking", gated(KindEpic),
 			docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview), receipt("non_blocking"), ""},
 	}
@@ -357,13 +357,15 @@ func TestPlanningGateBlocksOnlyAReviewWithABlockingFinding(t *testing.T) {
 	err = PlanningGate(gated(KindEpic), PhaseImplementing, docs(DocumentPlan, DocumentPlanReview, DocumentPlan, DocumentPlanReview),
 		ReadPlanReview(receipt("blocking")))
 	refusal, _ = AsRefusalV2(err)
-	for _, want := range []string{"used its 2 plan reviews", "raises the review limit", PlanningGateOverride} {
+	for _, want := range []string{"used its 2 plan reviews", "--role plan", "without another review"} {
 		if !strings.Contains(refusal.Message, want) {
 			t.Errorf("Epic limit refusal does not say %q: %s", want, refusal.Message)
 		}
 	}
-	if strings.Contains(refusal.Message, "dispatch --kind plan_review") {
-		t.Errorf("Epic limit refusal offers a third review: %s", refusal.Message)
+	for _, stale := range []string{"dispatch --kind plan_review", "review limit", PlanningGateOverride} {
+		if strings.Contains(refusal.Message, stale) {
+			t.Errorf("Epic limit refusal offers %q, which is not the way on: %s", stale, refusal.Message)
+		}
 	}
 
 	many := make([]string, PlanReviewBlockingListLimit+3)

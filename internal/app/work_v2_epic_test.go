@@ -510,8 +510,9 @@ func reviewedWith(id, item string, at time.Time, severities ...string) orchestra
 // The phase route reads the latest plan review's receipt from its task: a
 // blocking finding stops implementing and is named in the refusal; zero
 // findings, only non-blocking ones, or a legacy receipt with no severities
-// let the item through. An Epic whose second review still blocks is told it
-// may go on only by the person's override or a raised review limit.
+// let the item through. An Epic whose second review still blocks is told to
+// revise the plan, and the revised plan goes into implementing without a
+// third review.
 func TestThePlanningGateBlocksOnlyABlockingPlanReview(t *testing.T) {
 	w, clock := newEpicTest(t)
 	w.GateSettings = func(context.Context) (WorkV2GateSettings, error) {
@@ -588,14 +589,16 @@ func TestThePlanningGateBlocksOnlyABlockingPlanReview(t *testing.T) {
 	}
 	err := advanceTo(w, &epic, work.PhaseImplementing)
 	refusedAsWork(t, err, "epic_plan_review_blocking")
-	if !strings.Contains(err.Error(), "raises the review limit") || !strings.Contains(err.Error(), "only the person can") {
-		t.Fatalf("the Epic past its rounds is not told its two ways forward: %v", err)
+	if !strings.Contains(err.Error(), "without another review") || strings.Contains(err.Error(), "review limit") {
+		t.Fatalf("the Epic past its rounds is not told that a revised plan goes on: %v", err)
 	}
-	// Revised a third time, with no third review: the rounds are used and the
-	// second review's blocking finding still stands.
+	// Revised a third time, with no third review: the rounds are used, so the
+	// revised plan answers the second review and the Epic goes on.
 	clock.at = clock.at.Add(time.Minute)
 	if err := addDoc(w, &epic, work.DocumentPlan, ""); err != nil {
 		t.Fatal(err)
 	}
-	refusedAsWork(t, advanceTo(w, &epic, work.PhaseImplementing), "epic_plan_review_blocking")
+	if err := advanceTo(w, &epic, work.PhaseImplementing); err != nil {
+		t.Fatalf("a plan revised after the last of the Epic's reviews was refused: %v", err)
+	}
 }
