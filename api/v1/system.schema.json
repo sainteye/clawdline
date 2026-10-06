@@ -5,9 +5,52 @@
   "description": "Routes that describe this process rather than the work it carries.",
   "$defs": {
     "UpdateState": {
-      "description": "How this machine's build stands against the cloud's latest (docs/updates.md). `current`: the same commit. `update_available`: the cloud's commit is later. `ahead`: this machine's is later. `differs`: the commits differ and a commit time is missing on one side. `unknown`: no comparison could be made; `reason` says why.",
+      "description": "How this machine's build stands against the cloud's latest (docs/updates.md). `current`: the same commit. `update_available`: the cloud's commit is later. `ahead`: this machine's is later. `differs`: the commits differ and a commit time is missing on one side. `unknown`: no comparison could be made; `reason` says why. A release install compares release versions instead of commits and never reads the hosted BUILD.json.",
       "type": "string",
       "enum": ["current", "update_available", "ahead", "differs", "unknown"]
+    },
+    "UpdateInstallKind": {
+      "description": "What kind of installation the running daemon belongs to (docs/updates.md). `release`: a signed release in the install layout; the updater owns it. `source_deploy`: a commit deployed from a source checkout into the layout. `source_checkout`: a binary run from outside the layout. `none`: not known.",
+      "type": "string",
+      "enum": ["release", "source_deploy", "source_checkout", "none"]
+    },
+    "UpdateApplyState": {
+      "description": "Where the last update of a release install stands. `idle`: none has run. `downloading`, `verifying`, `staged`: the running daemon is fetching, checking and unpacking it. `restarting`: the supervisor is switching to it. `healthy`: the new release answered its health check. `rolled_back`: it did not, and the previous release runs again; `error` says why. `failed`: it stopped before switching, and the running release was never changed.",
+      "type": "string",
+      "enum": ["idle", "downloading", "verifying", "staged", "restarting", "healthy", "rolled_back", "failed"]
+    },
+    "UpdateApplyError": {
+      "description": "Why an update stopped or was rolled back: a stable code a person can look up in docs/user/troubleshooting.md, and a sentence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "UpdateApply": {
+      "description": "The last update of a release install, as the updater recorded it in the state directory.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/UpdateApplyState" },
+        "from": { "description": "The release that ran before it.", "type": "string" },
+        "to": { "description": "The release it installs.", "type": "string" },
+        "error": { "$ref": "#/$defs/UpdateApplyError" },
+        "at": { "description": "When the state was recorded (RFC3339 UTC).", "type": "string" },
+        "staged_app": { "description": "A macOS app bundle unpacked and waiting for the app to quit before it replaces the installed one.", "type": "string" }
+      }
+    },
+    "UpdateApplyRequest": {
+      "description": "POST /v1/update/apply, on a release install: install the newest release of this machine's channel, or `version`. Answered 202 with the UpdateStatus once the update has started; the rest is read from GET /v1/update.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": { "description": "A release to install instead of the newest, vX.Y.Z.", "type": "string" },
+        "force": { "description": "Install `version` even when it is not newer than the running release. Never below the release's `min_version`.", "type": "boolean" }
+      }
     },
     "BuildStamp": {
       "description": "One build: the commit it was built from and, when its BUILD.json said so, that commit's committer time (RFC3339 UTC). An older BUILD.json has no time.",
@@ -16,11 +59,13 @@
       "required": ["stamp"],
       "properties": {
         "stamp": { "description": "The full commit hash, or empty when it is not known.", "type": "string" },
-        "committed_at": { "type": "string" }
+        "committed_at": { "type": "string" },
+        "version": { "description": "The release version (vX.Y.Z): on a release install, the running release and the newest one of its channel. Absent for a source build.", "type": "string" },
+        "notes_url": { "description": "Where the newest release's notes are read; only on `latest` of a release install.", "type": "string" }
       }
     },
     "UpdateStatus": {
-      "description": "GET /v1/update: whether this machine trails the cloud's latest build. Answered from the daemon's last background check; a request never waits on the network. A failed check keeps the last good `latest` and says what failed in `error`.",
+      "description": "GET /v1/update: whether this machine trails the cloud's latest build. Answered from the daemon's last background check; a request never waits on the network. A failed check keeps the last good `latest` and says what failed in `error`. On a release install `running` and `latest` also carry release versions, `latest` is the signed manifest of this machine's channel, and `apply` says where the last update stands.",
       "type": "object",
       "additionalProperties": false,
       "required": ["state", "running", "latest", "source_url"],
@@ -31,7 +76,11 @@
         "latest": { "$ref": "#/$defs/BuildStamp" },
         "checked_at": { "description": "When the last successful check read the cloud's BUILD.json (RFC3339 UTC). Absent before the first success.", "type": "string" },
         "error": { "description": "What the most recent check said when it failed after the last success.", "type": "string" },
-        "source_url": { "description": "The BUILD.json this daemon asks.", "type": "string" }
+        "source_url": { "description": "The BUILD.json this daemon asks; on a release install, the manifest it reads.", "type": "string" },
+        "install_kind": { "$ref": "#/$defs/UpdateInstallKind" },
+        "channel": { "description": "The release channel a release install follows: `stable` or `beta`.", "type": "string" },
+        "auto_apply": { "description": "Whether this machine installs a newer stable release by itself when no session it started is busy (the setting `update_auto_apply`).", "type": "boolean" },
+        "apply": { "$ref": "#/$defs/UpdateApply" }
       }
     },
     "SchedulerPulse": {

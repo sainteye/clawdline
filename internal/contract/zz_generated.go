@@ -1723,8 +1723,16 @@ type BrowserRequest struct {
 type BuildStamp struct {
 	CommittedAt string `json:"committed_at,omitempty"`
 
+	// Where the newest release's notes are read; only on `latest` of a release
+	// install.
+	NotesURL string `json:"notes_url,omitempty"`
+
 	// The full commit hash, or empty when it is not known.
 	Stamp string `json:"stamp"`
+
+	// The release version (vX.Y.Z): on a release install, the running release and the
+	// newest one of its channel. Absent for a source build.
+	Version string `json:"version,omitempty"`
 }
 
 // `none`: nothing is refused, removed or rotated; the limit is only reported.
@@ -7129,11 +7137,88 @@ type TunnelStatus struct {
 	URL string `json:"url,omitempty"`
 }
 
+// The last update of a release install, as the updater recorded it in the state
+// directory.
+type UpdateApply struct {
+	// When the state was recorded (RFC3339 UTC).
+	At    string            `json:"at,omitempty"`
+	Error *UpdateApplyError `json:"error,omitempty"`
+
+	// The release that ran before it.
+	From string `json:"from,omitempty"`
+
+	// A macOS app bundle unpacked and waiting for the app to quit before it replaces
+	// the installed one.
+	StagedApp string           `json:"staged_app,omitempty"`
+	State     UpdateApplyState `json:"state"`
+
+	// The release it installs.
+	To string `json:"to,omitempty"`
+}
+
+// Why an update stopped or was rolled back: a stable code a person can look up
+// in docs/user/troubleshooting.md, and a sentence.
+type UpdateApplyError struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// POST /v1/update/apply, on a release install: install the newest release of
+// this machine's channel, or `version`. Answered 202 with the UpdateStatus once
+// the update has started; the rest is read from GET /v1/update.
+type UpdateApplyRequest struct {
+	// Install `version` even when it is not newer than the running release. Never
+	// below the release's `min_version`.
+	Force bool `json:"force,omitempty"`
+
+	// A release to install instead of the newest, vX.Y.Z.
+	Version string `json:"version,omitempty"`
+}
+
+// Where the last update of a release install stands. `idle`: none has run.
+// `downloading`, `verifying`, `staged`: the running daemon is fetching,
+// checking and unpacking it. `restarting`: the supervisor is switching to it.
+// `healthy`: the new release answered its health check. `rolled_back`: it did
+// not, and the previous release runs again; `error` says why. `failed`: it
+// stopped before switching, and the running release was never changed.
+type UpdateApplyState string
+
+const (
+	UpdateApplyStateIdle        UpdateApplyState = "idle"
+	UpdateApplyStateDownloading UpdateApplyState = "downloading"
+	UpdateApplyStateVerifying   UpdateApplyState = "verifying"
+	UpdateApplyStateStaged      UpdateApplyState = "staged"
+	UpdateApplyStateRestarting  UpdateApplyState = "restarting"
+	UpdateApplyStateHealthy     UpdateApplyState = "healthy"
+	UpdateApplyStateRolledBack  UpdateApplyState = "rolled_back"
+	UpdateApplyStateFailed      UpdateApplyState = "failed"
+)
+
+// UpdateApplyStateValues is every value the contract allows, in contract order.
+var UpdateApplyStateValues = []UpdateApplyState{UpdateApplyStateIdle, UpdateApplyStateDownloading, UpdateApplyStateVerifying, UpdateApplyStateStaged, UpdateApplyStateRestarting, UpdateApplyStateHealthy, UpdateApplyStateRolledBack, UpdateApplyStateFailed}
+
+// What kind of installation the running daemon belongs to (docs/updates.md).
+// `release`: a signed release in the install layout; the updater owns it.
+// `source_deploy`: a commit deployed from a source checkout into the layout.
+// `source_checkout`: a binary run from outside the layout. `none`: not known.
+type UpdateInstallKind string
+
+const (
+	UpdateInstallKindRelease        UpdateInstallKind = "release"
+	UpdateInstallKindSourceDeploy   UpdateInstallKind = "source_deploy"
+	UpdateInstallKindSourceCheckout UpdateInstallKind = "source_checkout"
+	UpdateInstallKindNone           UpdateInstallKind = "none"
+)
+
+// UpdateInstallKindValues is every value the contract allows, in contract order.
+var UpdateInstallKindValues = []UpdateInstallKind{UpdateInstallKindRelease, UpdateInstallKindSourceDeploy, UpdateInstallKindSourceCheckout, UpdateInstallKindNone}
+
 // How this machine's build stands against the cloud's latest (docs/updates.md).
 // `current`: the same commit. `update_available`: the cloud's commit is later.
 // `ahead`: this machine's is later. `differs`: the commits differ and a commit
 // time is missing on one side. `unknown`: no comparison could be made; `reason`
-// says why.
+// says why. A release install compares release versions instead of commits and
+// never reads the hosted BUILD.json.
 type UpdateState string
 
 const (
@@ -7150,21 +7235,33 @@ var UpdateStateValues = []UpdateState{UpdateStateCurrent, UpdateStateUpdateAvail
 // GET /v1/update: whether this machine trails the cloud's latest build.
 // Answered from the daemon's last background check; a request never waits on
 // the network. A failed check keeps the last good `latest` and says what failed
-// in `error`.
+// in `error`. On a release install `running` and `latest` also carry release
+// versions, `latest` is the signed manifest of this machine's channel, and
+// `apply` says where the last update stands.
 type UpdateStatus struct {
+	Apply *UpdateApply `json:"apply,omitempty"`
+
+	// Whether this machine installs a newer stable release by itself when no session
+	// it started is busy (the setting `update_auto_apply`).
+	AutoApply bool `json:"auto_apply,omitempty"`
+
+	// The release channel a release install follows: `stable` or `beta`.
+	Channel string `json:"channel,omitempty"`
+
 	// When the last successful check read the cloud's BUILD.json (RFC3339 UTC). Absent
 	// before the first success.
 	CheckedAt string `json:"checked_at,omitempty"`
 
 	// What the most recent check said when it failed after the last success.
-	Error  string     `json:"error,omitempty"`
-	Latest BuildStamp `json:"latest"`
+	Error       string            `json:"error,omitempty"`
+	InstallKind UpdateInstallKind `json:"install_kind,omitempty"`
+	Latest      BuildStamp        `json:"latest"`
 
 	// Why the state is `unknown`.
 	Reason  string     `json:"reason,omitempty"`
 	Running BuildStamp `json:"running"`
 
-	// The BUILD.json this daemon asks.
+	// The BUILD.json this daemon asks; on a release install, the manifest it reads.
 	SourceURL string      `json:"source_url"`
 	State     UpdateState `json:"state"`
 }

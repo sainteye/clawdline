@@ -32,6 +32,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	psync "github.com/sainteye/clawdline/internal/adapters/projectsync"
+	"github.com/sainteye/clawdline/internal/adapters/release/updater"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/subagents"
@@ -133,7 +134,11 @@ type Server struct {
 	// first use; StartScheduler starts its background refresh.
 	update     *updatecheck.Checker
 	updateOnce sync.Once
-	usage      *machineusage.Sampler
+	// releaseUpdate is set, on the same first use, when this daemon runs
+	// from a release install: it then answers GET /v1/update instead of
+	// update, and POST /v1/update/apply installs releases (update.go).
+	releaseUpdate *updater.Daemon
+	usage         *machineusage.Sampler
 	// beat is the broker's account of its last pass, read by /v1/diagnostics.
 	beat atomic.Pointer[orchestrator.Pulse]
 	// pulse is the scheduler's own account of its last pass, read by
@@ -400,6 +405,9 @@ func (s *Server) routeTable() []route {
 		// Whether this machine trails the cloud's latest build (update.go). Any
 		// paired device, as /v1/capacity.
 		{Route{"*", "/v1/update"}, s.updateRoute},
+		// Installing a newer release on a release install (update.go). This
+		// machine's token, or a device that may send.
+		{Route{"*", "/v1/update/apply"}, s.updateApplyRoute},
 		// What the line to app.clawdline.com is doing (cloud.go). This machine's
 		// own token only.
 		{Route{"*", "/v1/cloud/status"}, s.cloudStatusRoute},
@@ -703,7 +711,7 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	go s.store.SweepReferenceImagesEvery(ctx, store.ReferenceImageSweepIntervalLimit)
 	// Whether this machine trails the cloud's latest build: read now and on
 	// its own clock, so GET /v1/update never waits on the network.
-	go s.updateChecker().Run(ctx)
+	go s.runUpdateCheck(ctx)
 }
 
 // schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The

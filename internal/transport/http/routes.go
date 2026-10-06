@@ -16,7 +16,7 @@ import (
 // it reads do not. On 2026-10-04 a newer console said 「讀取失敗」 beside
 // features an older daemon simply lacked (docs/updates.md). A console that
 // knows the level can say "this machine needs an update" before it asks.
-const APILevel = 1
+const APILevel = 2
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
