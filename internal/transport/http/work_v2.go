@@ -32,6 +32,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 var workV2ByServer sync.Map // *Server -> *app.WorkSystemV2
@@ -983,7 +984,7 @@ func (s *Server) agentFinishItem(w http.ResponseWriter, r *http.Request, id stri
 		SessionID: body.SessionID, Verification: body.Verification, Landing: landing,
 		NoLandingReason: body.NoLandingReason, Deployment: body.Deployment,
 		NoDeploymentReason: body.NoDeploymentReason, Actor: body.SessionID,
-		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}},
+		Effects: []store.Effect{workV2CompletionEffect(item, body.SessionID, s.productLanguage())}},
 		func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {
 			answer = workV2Answer(s.workV2ItemOf(catalog, v))
 			return k, store.ReceiptAnswer{Status: http.StatusOK, Body: answer}, true
@@ -1103,10 +1104,31 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 func (s *Server) writeWorkV2Error(w http.ResponseWriter, err error) {
 	var we *app.WorkError
 	if errors.As(err, &we) {
-		writeRefusal(w, we.Status, we.Code, we.Message)
+		if we.RawMessage {
+			writeRawRefusal(w, we.Status, we.Code, we.Message)
+		} else {
+			writeRefusal(w, we.Status, we.Code, we.Message)
+		}
 		return
 	}
 	writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The work system could not complete that operation.")
+}
+
+func assignmentErrorWire(err error) map[string]string {
+	code, message := "assignment_failed", err.Error()
+	key := ""
+	var workErr *app.WorkError
+	if errors.As(err, &workErr) {
+		code, message = workErr.Code, workErr.Message
+		if !workErr.RawMessage {
+			key = fixedRefusalKey(message)
+		}
+	}
+	result := map[string]string{"code": code, "message": message}
+	if key != "" {
+		result["detail_key"] = key
+	}
+	return result
 }
 
 func requirePersonWorkV2(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -1556,6 +1578,8 @@ func readWorkV2BodyAtMost(w http.ResponseWriter, r *http.Request, into any, limi
 		// instead of leaving it to guess at the whole body.
 		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
 			message = "The body is not a valid work-system request: this route does not take the field " + field + "."
+			writeRawRefusal(w, http.StatusBadRequest, "invalid_request", message)
+			return nil, false
 		}
 		writeRefusal(w, http.StatusBadRequest, "invalid_request", message)
 		return nil, false
@@ -1702,10 +1726,8 @@ func workV2CompletionEffect(v app.WorkV2View, session, language string) store.Ef
 			break
 		}
 	}
-	title, body := "Board item completed", v.Item.Title+" is complete."
-	if strings.HasPrefix(strings.ToLower(language), "zh") {
-		title, body = "看板項目已完成", "「"+v.Item.Title+"」已完成"
-	}
+	title := productcopy.Format(language, "board.title", nil)
+	body := productcopy.Format(language, "board.body", map[string]string{"title": v.Item.Title})
 	payload, _ := json.Marshal(orchestrator.WorkItemCompletedPush{WorkID: v.Item.ID, Terminal: terminal,
 		Title: title, Body: body, Tag: "work-item-" + v.Item.ID})
 	return store.Effect{Kind: orchestrator.EffectWorkItemCompletedPush, Subject: v.Item.ID, Payload: payload}
@@ -1795,6 +1817,8 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		if !person {
 			message = "An item's phase is not edited; the owning Session moves it with POST /v1/work/v2/agent/items/" +
 				id + "/phase (clawdline item phase)."
+			writeRawRefusal(w, http.StatusBadRequest, "phase_not_editable", message)
+			return
 		}
 		writeRefusal(w, http.StatusBadRequest, "phase_not_editable", message)
 		return
@@ -2913,7 +2937,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 		}
 		var effects []store.Effect
 		if work.Phase(body.Next) == work.PhaseDone {
-			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, brokerLanguage(s))}
+			effects = []store.Effect{workV2CompletionEffect(item, body.SessionID, s.productLanguage())}
 		}
 		var answer []byte
 		changed, err := s.workV2().Advance(r.Context(), parts[1], app.AdvanceWorkV2{ExpectedVersion: app.AgentExpectedVersion(body.ExpectedVersion),
@@ -3167,7 +3191,11 @@ func (s *Server) agentAddSessionTodos(w http.ResponseWriter, r *http.Request, co
 	if _, err := s.broker.LiveRootSession(r.Context(), conversation); err != nil {
 		release()
 		if ref, typed := err.(orchestrator.Refusal); typed {
-			writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			if ref.RawMessage {
+				writeRawRefusal(w, ref.Status, ref.Code, ref.Message)
+			} else {
+				writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			}
 			return
 		}
 		writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved",
@@ -3334,12 +3362,7 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 			assignedView, assignErr := s.assignWorkV2By(r.Context(), created.Item.ID, run.Actor(), "", created.Item.Version,
 				a.Mode, a.TerminalID, a.Assistant, a.Model, a.Persona, nil)
 			if assignErr != nil {
-				code, message := "assignment_failed", assignErr.Error()
-				var we *app.WorkError
-				if errors.As(assignErr, &we) {
-					code, message = we.Code, we.Message
-				}
-				result["assignment_error"] = map[string]string{"code": code, "message": message}
+				result["assignment_error"] = assignmentErrorWire(assignErr)
 				result["assignment_state"] = "failed"
 			} else {
 				view = assignedView
@@ -3362,7 +3385,7 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := replace(context.WithoutCancel(r.Context()), k,
 			store.ReceiptAnswer{Status: http.StatusCreated, Body: answer}); err != nil {
-			writeRefusal(w, http.StatusInternalServerError, "receipt_update_failed",
+			writeRawRefusal(w, http.StatusInternalServerError, "receipt_update_failed",
 				"Board item "+created.Item.ID+" was created, but its delegation receipt could not be updated. Retry the same key to recover the item ID, then inspect the Board before assigning again.")
 			return
 		}
@@ -3383,7 +3406,11 @@ func (s *Server) relayRefuser(w http.ResponseWriter, r *http.Request, k store.Re
 	return func(err error) {
 		_ = s.store.ReleaseReceipt(context.WithoutCancel(r.Context()), k)
 		if ref, typed := err.(orchestrator.Refusal); typed {
-			writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			if ref.RawMessage {
+				writeRawRefusal(w, ref.Status, ref.Code, ref.Message)
+			} else {
+				writeRefusal(w, ref.Status, ref.Code, ref.Message)
+			}
 			return
 		}
 		s.writeWorkV2Error(w, err)
@@ -3558,12 +3585,7 @@ func (s *Server) agentCreateEpicChild(w http.ResponseWriter, r *http.Request, ep
 		_, assignErr := s.assignWorkV2By(r.Context(), created.Item.ID, work.EpicOwnerActor(body.SessionID), body.SessionID,
 			created.Item.Version, a.Mode, a.TerminalID, a.Assistant, a.Model, a.Persona, nil)
 		if assignErr != nil {
-			code, message := "assignment_failed", assignErr.Error()
-			var we *app.WorkError
-			if errors.As(assignErr, &we) {
-				code, message = we.Code, we.Message
-			}
-			answer["assignment_error"] = map[string]string{"code": code, "message": message}
+			answer["assignment_error"] = assignmentErrorWire(assignErr)
 		} else {
 			answer["assigned"] = true
 		}
@@ -3695,7 +3717,7 @@ func (s *Server) workV2Reset(w http.ResponseWriter, r *http.Request) {
 	}
 	counts, err := s.store.WorkV1Counts(r.Context())
 	if err != nil {
-		writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", err.Error())
+		writeRawRefusal(w, http.StatusServiceUnavailable, "store_unavailable", err.Error())
 		return
 	}
 	confirmation := resetConfirmation(counts)
@@ -3720,7 +3742,7 @@ func (s *Server) workV2Reset(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, err := s.store.ResetWorkV1(r.Context())
 	if err != nil {
-		writeRefusal(w, http.StatusServiceUnavailable, "reset_failed", err.Error())
+		writeRawRefusal(w, http.StatusServiceUnavailable, "reset_failed", err.Error())
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "deleted": deleted})

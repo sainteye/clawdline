@@ -383,10 +383,9 @@ func brokerLanguage(s *Server) string {
 			return lang
 		}
 	}
-	// This daemon ships one catalog and /v1/strings defaults to it, so the one
-	// line a child says out loud defaults to the same language rather than to
-	// English nobody chose.
-	return defaultCatalog
+	// Keep the pre-localization authoring fallback independently of product
+	// copy. A new English UI default is not an instruction to existing agents.
+	return agentVoiceFallbackLanguage
 }
 
 func brokerMaxChildren(s *Server) int {

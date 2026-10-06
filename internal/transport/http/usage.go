@@ -267,7 +267,7 @@ func (s *Server) usageSession(ctx context.Context, w http.ResponseWriter, u *app
 		}
 	}
 	if !own && parent != "" {
-		writeRefusal(w, http.StatusNotFound, "unknown_session",
+		writeRawRefusal(w, http.StatusNotFound, "unknown_session",
 			"That conversation is a subagent; its bill is in its session's delegate: /v1/usage/sessions/"+parent)
 		return
 	}

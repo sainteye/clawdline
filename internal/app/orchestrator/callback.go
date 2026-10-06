@@ -191,6 +191,9 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 	bad := func(msg string) (Dispatched, error) {
 		return Dispatched{}, refuse(http.StatusUnprocessableEntity, "bad_task", msg)
 	}
+	badRaw := func(msg string) (Dispatched, error) {
+		return Dispatched{}, refuseRaw(http.StatusUnprocessableEntity, "bad_task", msg)
+	}
 	if !IsTaskID(req.TaskID) {
 		return bad("task_id must be a lowercase UUID.")
 	}
@@ -211,7 +214,7 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 	}
 	title := strings.TrimSpace(req.Title)
 	if reason := work.OutcomeTitleRefusal(title); reason != "" {
-		return bad("title: " + reason)
+		return badRaw("title: " + reason)
 	}
 	if len(req.Argv) == 0 || len(req.Argv) > MaxCallbackArgs {
 		return bad(fmt.Sprintf("argv must have 1 to %d words.", MaxCallbackArgs))
@@ -230,15 +233,15 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 		return bad("dir must be an absolute path.")
 	}
 	if st, err := os.Stat(req.Dir); err != nil || !st.IsDir() {
-		return bad("dir is not a directory on this machine: " + req.Dir)
+		return badRaw("dir is not a directory on this machine: " + req.Dir)
 	}
 	env := map[string]string{}
 	for k, v := range req.Env {
 		if !callbackEnv[k] {
-			return bad("env may name only " + strings.Join(CallbackEnvNames(), ", ") + "; " + k + " is not one of them.")
+			return badRaw("env may name only " + strings.Join(CallbackEnvNames(), ", ") + "; " + k + " is not one of them.")
 		}
 		if strings.IndexByte(v, 0) >= 0 || len(v) > CallbackCommandLimit {
-			return bad("env " + k + " is not a usable value.")
+			return badRaw("env " + k + " is not a usable value.")
 		}
 		env[k] = v
 	}
@@ -326,7 +329,7 @@ func (b *Broker) StartCallback(ctx context.Context, req CallbackRequest) (Dispat
 	record.State = StateBriefed
 	record.Dispatcher = b.Store.Owner()
 	if err := os.MkdirAll(record.Dir, 0o700); err != nil {
-		return Dispatched{}, refuse(http.StatusInternalServerError, "callback_dir_unavailable",
+		return Dispatched{}, refuseRaw(http.StatusInternalServerError, "callback_dir_unavailable",
 			"Could not make the callback's task directory: "+err.Error())
 	}
 	ids, err := b.create(ctx, record, "", store.Effect{Kind: EffectCallbackStart, Subject: record.ID})

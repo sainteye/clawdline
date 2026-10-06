@@ -39,7 +39,7 @@ func coordinatorCommand(args []string) {
 }
 
 func coordinatorUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline coordinator bind [--conversation id] [--port n]")
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "coordinator.usage_clawdline_coordinator_bind_co.0531b99d", "usage: clawdline coordinator bind [--conversation id] [--port n]"))
 	os.Exit(2)
 }
 
@@ -52,12 +52,12 @@ func bindCoordinatorWithWait(stdout, stderr io.Writer, b *broker, conversation s
 	if conversation == "" {
 		var err error
 		if conversation, _, err = conversationFromEnv(getenv); err != nil {
-			fmt.Fprintf(stderr, "clawdline coordinator bind: %s No role was changed.\n", conversationRefusal(err, "--conversation"))
+			fmt.Fprintf(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_s_no_rol.9f393468", "clawdline coordinator bind: %s No role was changed.\n"), conversationRefusal(err, "--conversation"))
 			return 2
 		}
 	}
 	if conversation == "" {
-		fmt.Fprintln(stderr, "clawdline coordinator bind: pass --conversation <this assistant's conversation id>; no role was changed")
+		fmt.Fprintln(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_pass_con.cfa52d1a", "clawdline coordinator bind: pass --conversation <this assistant's conversation id>; no role was changed"))
 		return 2
 	}
 	for attempt := 0; attempt < coordinatorBindAttemptLimit; attempt++ {
@@ -75,7 +75,7 @@ func bindCoordinatorWithWait(stdout, stderr io.Writer, b *broker, conversation s
 func inspectAndBindCoordinator(stdout, stderr io.Writer, b *broker, conversation string, canRetry bool) (int, bool) {
 	read, err := b.request(http.MethodGet, "/v1/orchestrator/coordinator", nil, nil, "")
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline coordinator bind:", err)
+		fmt.Fprintln(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind.261adc78", "clawdline coordinator bind:"), err)
 		return 1, false
 	}
 	if !read.ok() {
@@ -83,7 +83,7 @@ func inspectAndBindCoordinator(stdout, stderr io.Writer, b *broker, conversation
 	}
 	var state contract.CoordinatorInspection
 	if err := json.Unmarshal(read.Body, &state); err != nil {
-		fmt.Fprintln(stderr, "clawdline coordinator bind: role inspection was unreadable; no role was changed")
+		fmt.Fprintln(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_role_ins.c8330b67", "clawdline coordinator bind: role inspection was unreadable; no role was changed"))
 		return 1, false
 	}
 	path := "/v1/orchestrator/coordinator/register"
@@ -94,7 +94,7 @@ func inspectAndBindCoordinator(stdout, stderr io.Writer, b *broker, conversation
 			if state.Coordinator.Status == contract.CoordinatorStatusUnknown && canRetry {
 				return 1, true
 			}
-			fmt.Fprintf(stderr, "clawdline coordinator bind: old role is %s; only a proven offline holder may be replaced\n", state.Coordinator.Status)
+			fmt.Fprintf(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_old_role.d61e6b9a", "clawdline coordinator bind: old role has status %s; only a proven offline holder may be replaced\n"), state.Coordinator.Status)
 			return 1, false
 		}
 		path = "/v1/orchestrator/coordinator/rebind"
@@ -103,7 +103,7 @@ func inspectAndBindCoordinator(stdout, stderr io.Writer, b *broker, conversation
 	}
 	answer, err := b.request(http.MethodPost, path, nil, body, "")
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline coordinator bind:", err)
+		fmt.Fprintln(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind.261adc78", "clawdline coordinator bind:"), err)
 		return 1, false
 	}
 	if !answer.ok() && refusalCode(answer) == "coordinator_liveness_unknown" && canRetry {

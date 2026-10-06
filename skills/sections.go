@@ -23,7 +23,7 @@ import (
 // it is needed. `clawdline guide all` is the whole text, unchanged.
 
 // section is one printable part: a name, and the heading that opens it in
-// each guide. Headings are matched by their order in the file: both guides
+// each guide. Headings are matched by their order in the file: all guides
 // carry the same twenty, and TestBothGuidesHaveTheSameSections holds them
 // to it.
 type section struct {
@@ -68,8 +68,8 @@ var refusalCode = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // RefusedSection names the part that owns a refusal code, and returns it.
 //
 // The owner is the first part, in the guide's own order, that mentions the
-// code — core parts count like any other — so the answer is the same in both
-// languages as long as their parts say the same things in the same places,
+// code — core parts count like any other — so the answer is the same in every
+// language as long as their parts say the same things in the same places,
 // which TestEveryRefusalCodeHasTheSameOwnerInBothLanguages holds them to.
 // Two parts are passed over in that walk: "swift" describes the retired app's
 // words, and "refused" is the summary every code may also appear in; the
@@ -170,9 +170,10 @@ func Core(lang string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	resolved := ResolveTopic(lang)
 	prefix := "clawdline guide "
-	if lang != "" && lang != DefaultTopic {
-		prefix += lang + " "
+	if resolved != DefaultTopic {
+		prefix += resolved + " "
 	}
 	var b bytes.Buffer
 	b.Write(preamble)
@@ -181,13 +182,41 @@ func Core(lang string) ([]byte, error) {
 			b.Write(parts[i])
 		}
 	}
-	b.WriteString("## The rest of this guide, one part at a time\n\n")
-	b.WriteString("Print a part when the work in front of you needs it, not before:\n\n")
-	for _, s := range sections {
+	copy := coreIndexCopy[resolved]
+	b.WriteString("## " + copy.heading + "\n\n")
+	b.WriteString(copy.instruction + "\n\n")
+	for i, s := range sections {
 		if !s.Core {
-			fmt.Fprintf(&b, "- `%s%s` — %s\n", prefix, s.Name, s.Summary)
+			fmt.Fprintf(&b, "- `%s%s` — %s\n", prefix, s.Name, sectionTitle(parts[i]))
 		}
 	}
-	fmt.Fprintf(&b, "\n`%sall` prints the whole guide.\n", prefix)
+	fmt.Fprintf(&b, "\n`%sall` %s\n", prefix, copy.all)
 	return b.Bytes(), nil
+}
+
+type coreIndexWords struct {
+	heading, instruction, all string
+}
+
+// The index is generated from each translated guide's headings. Only its
+// surrounding instructions need separate copy, so a heading edit cannot
+// silently leave a stale summary here.
+var coreIndexCopy = map[string]coreIndexWords{
+	"en":      {"The rest of this guide, one part at a time", "Print a part when the work in front of you needs it, not before:", "prints the whole guide."},
+	"zh-Hant": {"本指南其餘部分，按需閱讀", "需要處理某項工作時，再印出對應的部分：", "會印出完整指南。"},
+	"ja":      {"このガイドの残りを必要な部分ごとに読む", "作業に必要になった部分だけを表示してください：", "を実行するとガイド全体を表示します。"},
+	"zh-Hans": {"本指南的其余部分，按需阅读", "处理某项工作时，再显示对应的部分：", "会显示完整指南。"},
+	"ko":      {"필요할 때 읽는 나머지 안내", "작업에 필요한 부분만 그때 출력하세요:", "명령은 전체 안내를 출력합니다."},
+	"es":      {"El resto de esta guía, una parte cada vez", "Muestra una parte cuando la necesites para tu trabajo:", "muestra la guía completa."},
+	"pt-BR":   {"O restante deste guia, uma parte por vez", "Mostre uma parte quando precisar dela para o trabalho:", "mostra o guia completo."},
+	"fr":      {"La suite de ce guide, une partie à la fois", "Affichez une partie lorsque votre travail l'exige :", "affiche le guide complet."},
+	"de":      {"Der Rest dieses Leitfadens, Abschnitt für Abschnitt", "Gib einen Abschnitt erst aus, wenn du ihn für deine Arbeit brauchst:", "gibt den vollständigen Leitfaden aus."},
+}
+
+func sectionTitle(part []byte) string {
+	line := string(part)
+	if end := strings.IndexByte(line, '\n'); end >= 0 {
+		line = line[:end]
+	}
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "### "), "## "))
 }

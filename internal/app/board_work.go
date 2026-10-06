@@ -281,6 +281,9 @@ type WorkError struct {
 	Status  int
 	Code    string
 	Message string
+	// RawMessage is set when Message includes runtime or external content.
+	// A matching English catalog sentence alone does not prove its source.
+	RawMessage bool
 	// Current is the item as it is, for a version conflict.
 	Current *WorkView
 }
@@ -289,6 +292,10 @@ func (e *WorkError) Error() string { return e.Code + ": " + e.Message }
 
 func workRefusal(status int, code, msg string) *WorkError {
 	return &WorkError{Status: status, Code: code, Message: msg}
+}
+
+func workRefusalRaw(status int, code, msg string) *WorkError {
+	return &WorkError{Status: status, Code: code, Message: msg, RawMessage: true}
 }
 
 // storeRefusal turns a store failure into the refusal its route answers.
@@ -301,6 +308,9 @@ func storeRefusal(err error) error {
 	case errors.As(err, &we):
 		return we
 	case errors.As(err, &r):
+		if r.RawMessage {
+			return workRefusalRaw(r.Status, r.Code, r.Message)
+		}
 		return workRefusal(r.Status, r.Code, r.Message)
 	case errors.Is(err, store.ErrNoWork):
 		return workRefusal(404, "work_not_found", "No work item has that id.")

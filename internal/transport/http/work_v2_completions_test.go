@@ -5,13 +5,38 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
+
+func TestBoardCompletionPushUsesNineProductLanguagesAndPreservesItemTitle(t *testing.T) {
+	v := app.WorkV2View{Item: work.ItemV2{ID: "work-1", Title: "修好通知"},
+		Assignments: []work.AssignmentV2{{State: "active", SessionID: "session-1", TerminalID: "terminal-1"}}}
+	for _, language := range productcopy.Languages {
+		e := workV2CompletionEffect(v, "session-1", language)
+		var p orchestrator.WorkItemCompletedPush
+		if err := json.Unmarshal(e.Payload, &p); err != nil {
+			t.Fatal(err)
+		}
+		if p.Title == "" || p.Body == "" || p.WorkID != "work-1" || p.Terminal != "terminal-1" ||
+			p.Tag != "work-item-work-1" || !strings.Contains(p.Body, v.Item.Title) {
+			t.Errorf("%s: %+v", language, p)
+		}
+	}
+	var ambiguous orchestrator.WorkItemCompletedPush
+	if err := json.Unmarshal(workV2CompletionEffect(v, "session-1", "zh").Payload, &ambiguous); err != nil ||
+		ambiguous.Title != "Board item completed" {
+		t.Fatalf("ambiguous language did not use English: %+v %v", ambiguous, err)
+	}
+}
 
 // The pull path for a finished child. A root reads its own session-todos at
 // every turn boundary; a completion it has not acknowledged is on that answer

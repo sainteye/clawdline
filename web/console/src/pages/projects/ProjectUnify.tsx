@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { ProjectUnifyAction, ProjectUnifyPlan } from "@clawdline/contract"
 import type { ProjectPlace } from "../work/api.js"
+import { failureSentence } from "../../legacy/bridge.js"
 import { applyUnify, readUnifyPlan, ProjectFileError } from "./project-files-api.js"
 import {
   MARK_WORDS, actionPictures, actionSentence, conflictViews, mayApply, movesSummary, unifyColumns, unifyStatusLine, unknownReason,
@@ -17,7 +18,7 @@ function describe(error: unknown): string {
       case "plan_unknown": return "有檔案讀不到，無法套用；請先在機器上檢查。"
       case "name_taken": return "要建立連結的位置已經有別的東西。"
       case "cloud_not_carried": case "cloud_feature_unavailable": return "這個連線尚未提供共用設定。請確認機器與 Cloud 的版本。"
-      default: return "目前無法讀取或套用共用設定；請檢查連線後重試。"
+      default: return failureSentence(error, "目前無法讀取或套用共用設定；請檢查連線後重試。")
     }
   }
   return "目前無法完成操作。請檢查連線後重試。"

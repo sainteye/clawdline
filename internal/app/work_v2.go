@@ -106,7 +106,7 @@ type TodoV2Filer func(work.DirectTodoV2) (store.ReceiptKey, store.ReceiptAnswer,
 // notItemOwner is the not_item_owner refusal: what was refused, why, and the
 // one command that shows who does own the item.
 func notItemOwner(action, id string) error {
-	return work.RefuseV2("not_item_owner", NotItemOwnerMessage(action, id))
+	return work.RefuseV2Raw("not_item_owner", NotItemOwnerMessage(action, id))
 }
 
 // NotItemOwnerMessage is the not_item_owner text every route answers, so the
@@ -120,7 +120,7 @@ func NotItemOwnerMessage(action, id string) string {
 // evidenceUnknown is the evidence_unknown refusal: a bound task whose record
 // cannot be decoded holds a landing that cannot be told from no landing.
 func evidenceUnknown(taskID string) error {
-	return work.RefuseV2("evidence_unknown", "Broker task "+taskID+", bound to this item, has a record that cannot "+
+	return work.RefuseV2Raw("evidence_unknown", "Broker task "+taskID+", bound to this item, has a record that cannot "+
 		"be read, so its landing cannot be told from no landing and nothing was changed. Inspect it with "+
 		"`clawdline task show "+taskID+"`; the item moves once that record reads again.")
 }
@@ -139,7 +139,7 @@ func unreadableTask(rows []store.BrokerRow) string {
 // documentsFull is the documents_full refusal: the limit, that nothing was
 // written, and how to write the same document without needing a new place.
 func documentsFull(id, role string) error {
-	return workV2Error(http.StatusInsufficientStorage, "documents_full", DocumentsFullMessage(id, role))
+	return workV2ErrorRaw(http.StatusInsufficientStorage, "documents_full", DocumentsFullMessage(id, role))
 }
 
 // DocumentsFullMessage names the per-item limit and the two writes it never
@@ -158,6 +158,10 @@ func workV2Error(status int, code, message string) error {
 	return &WorkError{Status: status, Code: code, Message: message}
 }
 
+func workV2ErrorRaw(status int, code, message string) error {
+	return &WorkError{Status: status, Code: code, Message: message, RawMessage: true}
+}
+
 func mapWorkV2Error(err error) error {
 	var typed *WorkError
 	if errors.As(err, &typed) {
@@ -168,6 +172,9 @@ func mapWorkV2Error(err error) error {
 	case err == nil:
 		return nil
 	case errors.As(err, &refusal):
+		if refusal.RawMessage {
+			return workV2ErrorRaw(http.StatusConflict, refusal.Code, refusal.Message)
+		}
 		return workV2Error(http.StatusConflict, refusal.Code, refusal.Message)
 	case errors.Is(err, store.ErrNoWorkV2):
 		return workV2Error(http.StatusNotFound, "work_not_found", "No work item has that id.")
@@ -203,7 +210,7 @@ func mapWorkV2Error(err error) error {
 	case errors.Is(err, store.ErrBusy):
 		return workV2Error(http.StatusServiceUnavailable, "store_busy", "The store is busy; nothing was changed.")
 	}
-	return workV2Error(http.StatusServiceUnavailable, "store_unavailable", err.Error())
+	return workV2ErrorRaw(http.StatusServiceUnavailable, "store_unavailable", err.Error())
 }
 
 type NewWorkV2 struct {
@@ -649,7 +656,7 @@ func linkableDecision(tx *store.WorkV2Tx, item work.ItemV2, id string) error {
 		return workV2Error(http.StatusConflict, "decision_other_item",
 			"That decision is about another Board item; open one with this item's work_id.")
 	case d.State != work.DecisionOpen:
-		return workV2Error(http.StatusConflict, "decision_not_open",
+		return workV2ErrorRaw(http.StatusConflict, "decision_not_open",
 			"That decision is "+string(d.State)+"; a closed question cannot be waited on. Open a new one.")
 	}
 	return nil
@@ -1573,7 +1580,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 				return work.ItemV2{}, nil, err
 			}
 			if open != 0 {
-				return work.ItemV2{}, nil, work.RefuseV2("epic_children_open",
+				return work.ItemV2{}, nil, work.RefuseV2Raw("epic_children_open",
 					fmt.Sprintf("Finish or cancel every Epic child before its final Reality Checker round; %d remain open.", open))
 			}
 		}
@@ -1586,7 +1593,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 			candidate.AssignmentID != active.ID || candidate.OwnerSessionID != prev.OwnerSession ||
 			candidate.Cycle != prev.Cycle || candidate.CriteriaVersion != prev.AcceptanceVersion ||
 			candidate.CriteriaDigest != prev.AcceptanceDigest || candidate.Commit == "" || candidate.Tree == "" {
-			return work.ItemV2{}, nil, work.RefuseV2("verification_candidate_required",
+			return work.ItemV2{}, nil, work.RefuseV2Raw("verification_candidate_required",
 				"Entering verification needs the active owner's exact candidate receipt for this cycle and acceptance digest; "+
 					"none matches. From the owning Session's worktree, with the candidate committed, run "+
 					"`clawdline item phase "+id+" verifying`: it registers the worktree, branch and HEAD commit itself.")
@@ -1620,7 +1627,7 @@ func (w *WorkSystemV2) advanceTx(tx *store.WorkV2Tx, id string, prev work.ItemV2
 			}
 		}
 		if incomplete > 0 {
-			return work.ItemV2{}, nil, work.RefuseV2("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
+			return work.ItemV2{}, nil, work.RefuseV2Raw("steps_incomplete", fmt.Sprintf("Complete all item TODOs before closing this work; %d remain.", incomplete))
 		}
 	}
 	now := w.now()
@@ -1744,7 +1751,7 @@ func (w *WorkSystemV2) Finish(ctx context.Context, id string, c FinishWorkV2, fi
 			if cur.Phase.Terminal() {
 				return work.RefuseV2("item_terminal", "A person must reopen terminal work.")
 			}
-			return work.RefuseV2("finish_not_started",
+			return work.RefuseV2Raw("finish_not_started",
 				"Finish moves an item from implementing onward; this one is "+string(cur.Phase)+". Move it to implementing first.")
 		}
 		var effectIDs []int64
@@ -1786,7 +1793,7 @@ func finishRefusal(from, to work.Phase, err error) error {
 	}
 	switch to {
 	case work.PhaseMerging:
-		return work.RefuseV2("verification_required",
+		return work.RefuseV2Raw("verification_required",
 			"Moving "+string(from)+" to merging needs --verification: what was run to verify and what it showed.")
 	case work.PhaseDeploying:
 		return work.RefuseV2("landing_required", LandingRequiredMessage)
@@ -2202,7 +2209,7 @@ func (w *WorkSystemV2) addDocument(tx *store.WorkV2Tx, id string, c AddDocumentV
 				return work.RefuseV2("review_assessment_invalid", "Review assessments use role other and a JSON body, without a reference.")
 			}
 			if _, err := work.ParseReviewBoundary(c.Body); err != nil {
-				return work.RefuseV2("review_assessment_invalid", err.Error())
+				return work.RefuseV2Raw("review_assessment_invalid", err.Error())
 			}
 		}
 		if c.Role == work.DocumentPlanReview {
@@ -2285,7 +2292,7 @@ func (w *WorkSystemV2) AddPlanReviewFromTask(ctx context.Context, taskID string)
 				"That task's record is not readable.")
 		}
 		if r.WorkID == "" {
-			return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_no_item",
+			return workV2ErrorRaw(http.StatusUnprocessableEntity, "plan_review_task_no_item",
 				"That review was dispatched on no item; record it with `clawdline item doc <item id> --role plan_review --title \"Plan review\" --reference "+taskID+"`.")
 		}
 		prev, err := tx.Item(r.WorkID)
@@ -2399,7 +2406,7 @@ func checkPlanReviewTask(tx *store.WorkV2Tx, item work.ItemV2, taskID string) er
 		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_not_owned",
 			"That task was not dispatched by this item's owning Session; dispatch the review yourself.")
 	case r.WorkID != "" && r.WorkID != item.ID:
-		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_other_item",
+		return workV2ErrorRaw(http.StatusUnprocessableEntity, "plan_review_task_other_item",
 			"That task is on another item's line; dispatch the review with --work-id "+item.ID+".")
 	case r.Kind != work.DocumentPlanReview:
 		return workV2Error(http.StatusUnprocessableEntity, "plan_review_task_wrong_kind",
@@ -2565,11 +2572,11 @@ func (w *WorkSystemV2) CreateSessionTodos(ctx context.Context, n NewSessionTodos
 	for i, text := range n.Texts {
 		text = strings.TrimSpace(text)
 		if text == "" {
-			return nil, workV2Error(http.StatusBadRequest, "todo_text_required",
+			return nil, workV2ErrorRaw(http.StatusBadRequest, "todo_text_required",
 				fmt.Sprintf("To-do %d is empty; nothing was added.", i+1))
 		}
 		if len(text) > directTodoTextLimit {
-			return nil, workV2Error(http.StatusRequestEntityTooLarge, "todo_too_large",
+			return nil, workV2ErrorRaw(http.StatusRequestEntityTooLarge, "todo_too_large",
 				fmt.Sprintf("To-do %d is over 8 KiB; nothing was added.", i+1))
 		}
 		rows = append(rows, work.DirectTodoV2{ID: newWorkID(), SessionID: n.SessionID, Text: text,

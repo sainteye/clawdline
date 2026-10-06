@@ -31,7 +31,12 @@
           "type": "string"
         },
         "language": {
-          "description": "`auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships only zh-Hant; the key is written so a later one can read it.",
+          "description": "Existing agent and Board authoring language and voice auto fallback. Its stored value and behavior are preserved independently of product language.",
+          "nullable": true,
+          "type": "string"
+        },
+        "product_language": {
+          "description": "Daemon notifications and human-readable CLI copy. Absent, malformed or unsupported saved values render as English.",
           "nullable": true,
           "type": "string"
         },
@@ -262,7 +267,12 @@
           "type": "string"
         },
         "language": {
-          "description": "`auto` or a language tag the catalog resolves.",
+          "description": "Existing agent and Board authoring language and voice auto fallback.",
+          "nullable": true,
+          "type": "string"
+        },
+        "product_language": {
+          "description": "One of the nine shipped product-copy tags; changes daemon notifications and human-readable CLI copy only.",
           "nullable": true,
           "type": "string"
         },

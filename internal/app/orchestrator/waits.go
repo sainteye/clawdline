@@ -62,6 +62,10 @@ func badWait(message string) Refusal {
 	return refuse(http.StatusBadRequest, "bad_wait", message)
 }
 
+func badWaitRaw(message string) Refusal {
+	return refuseRaw(http.StatusBadRequest, "bad_wait", message)
+}
+
 // normaliseWait checks a request and puts its paths in the one spelling a
 // wait is keyed by: repository-relative, cleaned, sorted, without repeats.
 func normaliseWait(req WaitRequest) (WaitRequest, error) {
@@ -99,13 +103,13 @@ func normaliseWait(req WaitRequest) (WaitRequest, error) {
 		if filepath.IsAbs(p) {
 			rel, ok := inside(p)
 			if !ok {
-				return req, badWait("a path must be inside the repository: " + p)
+				return req, badWaitRaw("a path must be inside the repository: " + p)
 			}
 			p = rel
 		}
 		p = filepath.Clean(p)
 		if p == "." || p == ".." || strings.HasPrefix(p, "../") {
-			return req, badWait("a path must be inside the repository: " + raw)
+			return req, badWaitRaw("a path must be inside the repository: " + raw)
 		}
 		if !seen[p] {
 			seen[p] = true
@@ -182,7 +186,7 @@ func (b *Broker) RegisterWait(ctx context.Context, raw WaitRequest) (WaitOutcome
 		}
 		if found == nil {
 			if ceiling := b.openWaits(); len(open) >= ceiling {
-				return change, refuseWith(http.StatusTooManyRequests, "waits_full",
+				return change, refuseRawWith(http.StatusTooManyRequests, "waits_full",
 					fmt.Sprintf("%d file waits are already open on this machine; nothing was recorded.", ceiling),
 					map[string]any{"retry_after": 60, "limit": ceiling})
 			}
@@ -235,7 +239,7 @@ func (b *Broker) RegisterWait(ctx context.Context, raw WaitRequest) (WaitOutcome
 				"The owner is showing a menu; nothing was typed and the wait stays recorded, undelivered. Ask again once the menu is gone.",
 				map[string]any{"wait_id": out.Wait.ID})
 		}
-		return out, refuseWith(http.StatusBadGateway, "request_delivery_failed",
+		return out, refuseRawWith(http.StatusBadGateway, "request_delivery_failed",
 			"The wait is recorded but its owner could not be told: "+res.outcome,
 			map[string]any{"wait_id": out.Wait.ID})
 	}

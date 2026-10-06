@@ -9,7 +9,11 @@ import (
 // A rotation adds the new key here, ships a release signed by both, and only
 // a later release drops the old one (docs/releasing.md). The private halves
 // are never in this repository.
-var releaseKeys = []string{}
+var releaseKeys = []string{
+	// b8d959431f1ad836, created 2026-10-06; the seed is the release
+	// environment's CLAWDLINE_RELEASE_KEY.
+	"2Du3yZ4jZF8zoMcZ2ANHFNbxZuz0wgAZdR0nZJ/g/O0=",
+}
 
 // extraKey is one more trusted key stamped in with
 // `-ldflags "-X github.com/sainteye/clawdline/internal/adapters/release.extraKey=<base64>"`

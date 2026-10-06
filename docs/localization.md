@@ -106,6 +106,24 @@ English copy remains the browser's final fallback. The server should report
 its own English catalog failure as a typed error rather than claim to have
 served a translation.
 
+## Actionable refusals
+
+Keep the wire status, error code, English detail or message, and existing
+metadata unchanged. A producer may add `detail_key` for fixed, authored copy:
+beside a flat refusal's `detail`, or inside a nested `error` beside `message`.
+The key is an explicit source claim, not a value inferred from the error code
+or from matching external text. Dynamic and forwarded raw messages carry no
+key, even if their English wording happens to equal a catalog sentence.
+
+The local and Cloud transports must preserve that explicit key through every
+refusal envelope. A console may display a translation only when the key exists
+in its validated English and selected catalogs. If a secondary catalog lacks a
+new key, the English catalog supplies that sentence. Without a usable key, the
+original detail remains English. English fragments carry `lang=en` where the
+rendering surface allows. Cloud Bridge refusals authored before a local HTTP
+route follow the same source and catalog rules. None of this changes the
+machine-readable code, status, outcome, or acknowledgement reference.
+
 ## Delivery checks
 
 The Console and daemon/CLI inventories must each enumerate the source of every

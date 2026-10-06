@@ -87,13 +87,13 @@ func (a assignFlags) personaRefusal(terminalFlag, newFlag string) string {
 	case a.persona == "":
 		return ""
 	case a.terminal != "":
-		return "--persona goes with a new Session, not with " + terminalFlag + "; an existing Session keeps the persona it was opened with."
+		return cliCopy("item", "persona.existing", "--persona goes with a new Session, not with ") + terminalFlag + cliCopy("item", "persona.existing_suffix", "; an existing Session keeps the persona it was opened with.")
 	case !a.open:
-		return "--persona goes with " + newFlag + "; it names what the new Session opens as."
+		return cliCopy("item", "persona.new", "--persona goes with ") + newFlag + cliCopy("item", "persona.new_suffix", "; it names what the new Session opens as.")
 	}
 	_, builtin := persona.Known(a.persona)
 	if !builtin && !squad.ValidCustomID(a.persona) {
-		return fmt.Sprintf("--persona %q is not a persona this build has; it has %s.", a.persona, strings.Join(persona.IDs(), ", "))
+		return fmt.Sprintf(cliCopy("item", "persona.unknown", "--persona %q is not a persona this build has; it has %s."), a.persona, strings.Join(persona.IDs(), ", "))
 	}
 	return ""
 }
@@ -140,42 +140,42 @@ func itemCommand(args []string) {
 	op := args[0]
 	fs := flag.NewFlagSet("item "+op, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	conversation := fs.String("conversation", "", "this assistant's conversation id (default: from the environment)")
-	key := fs.String("key", "", "the Idempotency-Key; reuse the one printed by a failed attempt to retry it")
-	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
-	project := fs.String("project", "", "the Project id from the catalog")
-	kind := fs.String("kind", "", "feature, issue, epic, refactor or plan")
-	title := fs.String("title", "", "the item's title")
-	descriptionFile := fs.String("description-file", "", "a file holding the description; - or absent reads stdin")
-	acceptanceFile := fs.String("acceptance-file", "", "a file holding the acceptance criteria Markdown")
-	stepsFile := fs.String("steps-file", "", "a file holding the steps, one per non-empty line")
-	deploy := fs.String("deploy", "", "required, not_required or agent_decides (default agent_decides)")
-	run := fs.String("run", "", "the run of the person's message (default: this conversation's latest run)")
-	expectedVersion := fs.Int64("expected-version", 0, "the item's version the write expects; refused as version_conflict when it moved on (required for acceptance-revise)")
-	docID := fs.String("doc", "", "for show: print only this document's body, raw")
-	role := fs.String("role", "", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other")
-	reference := fs.String("reference", "", "for doc: a path in the Project, a URL, or for plan_review the review task's id")
-	bodyFile := fs.String("body-file", "", "for doc or acceptance: a file holding Markdown; - or absent reads stdin")
+	conversation := fs.String("conversation", "", cliCopy("item", "flag.conversation", "this assistant's conversation id (default: from the environment)"))
+	key := fs.String("key", "", cliCopy("item", "flag.key", "the Idempotency-Key; reuse the one printed by a failed attempt to retry it"))
+	port := fs.Int("port", 0, cliCopy("item", "flag.port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
+	project := fs.String("project", "", cliCopy("item", "flag.project", "the Project id from the catalog"))
+	kind := fs.String("kind", "", cliCopy("item", "flag.kind", "feature, issue, epic, refactor or plan"))
+	title := fs.String("title", "", cliCopy("item", "flag.title", "the item's title"))
+	descriptionFile := fs.String("description-file", "", cliCopy("item", "flag.description_file", "a file holding the description; - or absent reads stdin"))
+	acceptanceFile := fs.String("acceptance-file", "", cliCopy("item", "flag.acceptance_file", "a file holding the acceptance criteria Markdown"))
+	stepsFile := fs.String("steps-file", "", cliCopy("item", "flag.steps_file", "a file holding the steps, one per non-empty line"))
+	deploy := fs.String("deploy", "", cliCopy("item", "flag.deploy", "required, not_required or agent_decides (default agent_decides)"))
+	run := fs.String("run", "", cliCopy("item", "flag.run", "the run of the person's message (default: this conversation's latest run)"))
+	expectedVersion := fs.Int64("expected-version", 0, cliCopy("item", "flag.expected_version", "the item's version the write expects; refused as version_conflict when it moved on (required for acceptance-revise)"))
+	docID := fs.String("doc", "", cliCopy("item", "flag.doc", "for show: print only this document's body, raw"))
+	role := fs.String("role", "", cliCopy("item", "flag.role", "for doc: spec, design, test, deploy, completion_report, plan, plan_review or other"))
+	reference := fs.String("reference", "", cliCopy("item", "flag.reference", "for doc: a path in the Project, a URL, or for plan_review the review task's id"))
+	bodyFile := fs.String("body-file", "", cliCopy("item", "flag.body_file", "for doc or acceptance: a file holding Markdown; - or absent reads stdin"))
 	var assign assignFlags
-	fs.StringVar(&assign.terminal, "assign-terminal", "", "for child: assign it to the existing Session in this terminal")
-	fs.BoolVar(&assign.open, "assign-new", false, "for child: assign it to a new Session Clawdline opens")
-	fs.BoolVar(&assign.self, "assign-self", false, "for add: assign it to this Session, when the person's message asks it to do the work now")
-	fs.StringVar(&assign.terminal, "terminal", "", "for assign: the existing Session's terminal id")
-	fs.BoolVar(&assign.open, "new", false, "for assign: a new Session Clawdline opens")
-	fs.StringVar(&assign.assistant, "assistant", "", "with a new Session: claude or codex (default codex)")
-	fs.StringVar(&assign.model, "model", "", "with a new Session: the model (default the assistant's)")
-	fs.StringVar(&assign.persona, "persona", "", "with a new Session: a built-in persona to open it as (none by default)")
+	fs.StringVar(&assign.terminal, "assign-terminal", "", cliCopy("item", "flag.assign_terminal", "for add or child: assign it to the existing Session in this terminal"))
+	fs.BoolVar(&assign.open, "assign-new", false, cliCopy("item", "flag.assign_new", "for add or child: assign it to a new Session Clawdline opens"))
+	fs.BoolVar(&assign.self, "assign-self", false, cliCopy("item", "flag.assign_self", "for add: assign it to this Session, when the person's message asks it to do the work now"))
+	fs.StringVar(&assign.terminal, "terminal", "", cliCopy("item", "flag.terminal", "for assign: the existing Session's terminal id"))
+	fs.BoolVar(&assign.open, "new", false, cliCopy("item", "flag.new", "for assign: a new Session Clawdline opens"))
+	fs.StringVar(&assign.assistant, "assistant", "", cliCopy("item", "flag.assistant", "with a new Session: claude or codex (default codex)"))
+	fs.StringVar(&assign.model, "model", "", cliCopy("item", "flag.model", "with a new Session: the model (default the assistant's)"))
+	fs.StringVar(&assign.persona, "persona", "", cliCopy("item", "flag.persona", "with a new Session: a built-in persona to open it as (none by default)"))
 	var steps stringList
-	fs.Var(&steps, "step", "one step of the item, in order; repeat it for each step")
+	fs.Var(&steps, "step", cliCopy("item", "flag.step", "one step of the item, in order; repeat it for each step"))
 	var ev phaseEvidence
-	fs.StringVar(&ev.verification, "verification", "", "for merging, or deploying an ungated item: what was run to verify and what it showed")
-	fs.StringVar(&ev.commit, "commit", "", "for deploying (from merging, or from implementing when the verify gate is off): the landed commit")
-	fs.StringVar(&ev.target, "target", "", "for deploying: the local target branch the commit is on")
-	fs.StringVar(&ev.remote, "remote", "", "for deploying: the remote whose tracking target also holds it")
-	fs.StringVar(&ev.landingProject, "landing-project", "", "for deploying: the catalog Project whose repository holds the commit, when it is not the item's")
-	fs.StringVar(&ev.noLanding, "no-landing-reason", "", "for deploying: why there is no code to land (instead of --commit)")
-	fs.StringVar(&ev.deployment, "deployment", "", "for done: what was deployed, where, which version")
-	fs.StringVar(&ev.noDeployment, "no-deployment-reason", "", "for done: why nothing needs deploying")
+	fs.StringVar(&ev.verification, "verification", "", cliCopy("item", "flag.verification", "for merging, or deploying an ungated item: what was run to verify and what it showed"))
+	fs.StringVar(&ev.commit, "commit", "", cliCopy("item", "flag.commit", "for deploying (from merging, or from implementing when the verify gate is off): the landed commit"))
+	fs.StringVar(&ev.target, "target", "", cliCopy("item", "flag.target", "for deploying: the local target branch the commit is on"))
+	fs.StringVar(&ev.remote, "remote", "", cliCopy("item", "flag.remote", "for deploying: the remote whose tracking target also holds it"))
+	fs.StringVar(&ev.landingProject, "landing-project", "", cliCopy("item", "flag.landing_project", "for deploying: the catalog Project whose repository holds the commit, when it is not the item's"))
+	fs.StringVar(&ev.noLanding, "no-landing-reason", "", cliCopy("item", "flag.no_landing_reason", "for deploying: why there is no code to land (instead of --commit)"))
+	fs.StringVar(&ev.deployment, "deployment", "", cliCopy("item", "flag.deployment", "for done: what was deployed, where, which version"))
+	fs.StringVar(&ev.noDeployment, "no-deployment-reason", "", cliCopy("item", "flag.no_deployment_reason", "for done: why nothing needs deploying"))
 	positional, err := parseInterspersed(fs, args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "clawdline item %s: %v\n", op, err)
@@ -190,7 +190,7 @@ func itemCommand(args []string) {
 		}
 		if op == "child" {
 			if len(positional) != 1 {
-				fmt.Fprintf(os.Stderr, "clawdline item child: takes one Epic id, got %d arguments\n", len(positional))
+				fmt.Fprintf(os.Stderr, cliCopy("item", "argument.child", "clawdline item child: takes one Epic id, got %d arguments\n"), len(positional))
 				itemUsage()
 			}
 			rest = positional
@@ -200,7 +200,7 @@ func itemCommand(args []string) {
 		// so the command never waits on a keyboard, and the daemon's
 		// description_required says what is missing.
 		if st, statErr := os.Stdin.Stat(); *descriptionFile != "" || (statErr == nil && st.Mode()&os.ModeCharDevice == 0) {
-			description, err := readTextFrom(*descriptionFile, os.Stdin, "description")
+			description, err := readTextFrom(*descriptionFile, os.Stdin, cliCopy("item", "text.description", "description"))
 			if err != nil {
 				fail(err)
 			}
@@ -219,7 +219,7 @@ func itemCommand(args []string) {
 			f.steps = append(f.steps, lines...)
 		}
 		if *acceptanceFile != "" {
-			acceptance, err := readTextFrom(*acceptanceFile, os.Stdin, "acceptance criteria")
+			acceptance, err := readTextFrom(*acceptanceFile, os.Stdin, cliCopy("item", "text.acceptance", "acceptance criteria"))
 			if err != nil {
 				fail(err)
 			}
@@ -227,20 +227,20 @@ func itemCommand(args []string) {
 		}
 	case "claim":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item claim: takes one item id, got %d arguments\n", len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.claim", "clawdline item claim: takes one item id, got %d arguments\n"), len(positional))
 			itemUsage()
 		}
 		rest = positional
 		f.run = *run
 	case "name":
 		if len(positional) != 2 {
-			fmt.Fprintln(os.Stderr, "clawdline item name: takes an item id and the Session's task name")
+			fmt.Fprintln(os.Stderr, cliCopy("item", "argument.name", "clawdline item name: takes an item id and the Session's task name"))
 			itemUsage()
 		}
 		rest = positional
 	case "assign":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item assign: takes one item id, got %d arguments\n", len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.assign", "clawdline item assign: takes one item id, got %d arguments\n"), len(positional))
 			itemUsage()
 		}
 		rest = positional
@@ -248,7 +248,7 @@ func itemCommand(args []string) {
 		f.run = *run
 	case "steps", "show":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item %s: takes one item id, got %d arguments\n", op, len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.single_item", "clawdline item %s: takes one item id, got %d arguments\n"), op, len(positional))
 			itemUsage()
 		}
 		rest = positional
@@ -257,7 +257,7 @@ func itemCommand(args []string) {
 		}
 	case "step-add":
 		if len(positional) < 1 {
-			fmt.Fprintln(os.Stderr, "clawdline item step-add: takes an item id and the steps' titles")
+			fmt.Fprintln(os.Stderr, cliCopy("item", "argument.step_add", "clawdline item step-add: takes an item id and the steps' titles"))
 			itemUsage()
 		}
 		rest = positional
@@ -272,28 +272,28 @@ func itemCommand(args []string) {
 		}
 	case "finish":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item finish: takes one item id, got %d arguments\n", len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.finish", "clawdline item finish: takes one item id, got %d arguments\n"), len(positional))
 			itemUsage()
 		}
 		rest = positional
 		f.phase = ev
 	case "step-done", "phase":
 		if len(positional) != 2 {
-			fmt.Fprintf(os.Stderr, "clawdline item %s: takes an item id and one more argument, got %d arguments\n", op, len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.two", "clawdline item %s: takes an item id and one more argument, got %d arguments\n"), op, len(positional))
 			itemUsage()
 		}
 		rest = positional
 		f.phase = ev
 	case "doc":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item doc: takes one item id, got %d arguments\n", len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.doc", "clawdline item doc: takes one item id, got %d arguments\n"), len(positional))
 			itemUsage()
 		}
 		rest = positional
 		f.doc = docFlags{role: *role, title: *title, reference: *reference}
 		// Like add's description: a terminal on stdin is not waited on.
 		if st, statErr := os.Stdin.Stat(); *bodyFile != "" || (statErr == nil && st.Mode()&os.ModeCharDevice == 0) {
-			body, err := readTextFrom(*bodyFile, os.Stdin, "document body")
+			body, err := readTextFrom(*bodyFile, os.Stdin, cliCopy("item", "text.document_body", "document body"))
 			if err != nil {
 				fail(err)
 			}
@@ -301,12 +301,12 @@ func itemCommand(args []string) {
 		}
 	case "acceptance", "acceptance-revise":
 		if len(positional) != 1 {
-			fmt.Fprintf(os.Stderr, "clawdline item %s: takes one item id, got %d arguments\n", op, len(positional))
+			fmt.Fprintf(os.Stderr, cliCopy("item", "argument.single_item", "clawdline item %s: takes one item id, got %d arguments\n"), op, len(positional))
 			itemUsage()
 		}
 		rest = positional
 		if st, statErr := os.Stdin.Stat(); *bodyFile != "" || (statErr == nil && st.Mode()&os.ModeCharDevice == 0) {
-			body, err := readTextFrom(*bodyFile, os.Stdin, "acceptance criteria")
+			body, err := readTextFrom(*bodyFile, os.Stdin, cliCopy("item", "text.acceptance", "acceptance criteria"))
 			if err != nil {
 				fail(err)
 			}
@@ -349,54 +349,54 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func itemUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>")
-	fmt.Fprintln(os.Stderr, "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]")
-	fmt.Fprintln(os.Stderr, "                          [--assign-self | --assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
-	fmt.Fprintln(os.Stderr, "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]")
-	fmt.Fprintln(os.Stderr, "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item name [--conversation id] [--port n] <item id> <Session task name>")
-	fmt.Fprintln(os.Stderr, "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f] [--acceptance-file f]")
-	fmt.Fprintln(os.Stderr, "                          [--description-file f | stdin] [--deploy policy]")
-	fmt.Fprintln(os.Stderr, "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]")
-	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <epic id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona id])")
-	fmt.Fprintln(os.Stderr, "                          [--run id] [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item show [--doc <doc id>] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item steps [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin")
-	fmt.Fprintln(os.Stderr, "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item acceptance [--body-file f | stdin] [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item acceptance-revise --run id --expected-version n [--body-file f | stdin]")
-	fmt.Fprintln(os.Stderr, "                            [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item doc --role <role> --title <t> [--reference r] [--body-file f | stdin]")
-	fmt.Fprintln(os.Stderr, "                          [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id] | --no-landing-reason t]")
-	fmt.Fprintln(os.Stderr, "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]")
-	fmt.Fprintln(os.Stderr, "                            <item id> <implementing|verifying|merging|deploying|done>")
-	fmt.Fprintln(os.Stderr, "       clawdline item finish [--verification t] (--deployment t | --no-deployment-reason t)")
-	fmt.Fprintln(os.Stderr, "                            [--commit c] [--target b] [--remote r] [--landing-project id] [--no-landing-reason t]")
-	fmt.Fprintln(os.Stderr, "                            [--conversation id] [--key k] [--port n] <item id>")
-	fmt.Fprintln(os.Stderr, "  add creates a Board item only because the person's message through Clawdline asked for one;")
-	fmt.Fprintln(os.Stderr, "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;")
-	fmt.Fprintln(os.Stderr, "  it arrives unassigned, and its --step rows are the item's steps, not to-dos; --assign-self")
-	fmt.Fprintln(os.Stderr, "  assigns it to this Session, only when the person's message asks this Session to do the work now;")
-	fmt.Fprintln(os.Stderr, "  claim assigns an existing item to this Session only because the person's message through")
-	fmt.Fprintln(os.Stderr, "  Clawdline told it to take that item; never on its own initiative;")
-	fmt.Fprintln(os.Stderr, "  name lets an assigned new Feature Root choose its own task name once, after reading the item;")
-	fmt.Fprintln(os.Stderr, "  child breaks an Epic this Session owns, after its reviewed plan (implementing or later), into a")
-	fmt.Fprintln(os.Stderr, "  feature or issue item, assigned to the Session in that terminal, to a new one, or to nobody yet;")
-	fmt.Fprintln(os.Stderr, "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`),")
-	fmt.Fprintln(os.Stderr, "  or, only because the person's message through Clawdline asked for it, an unassigned Feature or Issue")
-	fmt.Fprintln(os.Stderr, "  to a new Session (--new), under that message's run; never on its own initiative;")
-	fmt.Fprintln(os.Stderr, "  --persona opens that new Session as a built-in persona (`GET /v1/personas` lists them); none by default;")
-	fmt.Fprintln(os.Stderr, "  step-add breaks an item this Session owns into ordered steps, after any it already has;")
-	fmt.Fprintln(os.Stderr, "  acceptance fills missing criteria once; acceptance-revise relays a person's explicit revision message;")
-	fmt.Fprintln(os.Stderr, "  doc adds a document to an item this Session owns, or revises the one with the same --role and --title")
-	fmt.Fprintln(os.Stderr, "  (an item's one completion_report whatever its title; plan and plan_review are always added); an Epic needs a plan, and a plan_review")
-	fmt.Fprintln(os.Stderr, "  whose --reference is the id of the plan_review child that reviewed it, before implementing;")
-	fmt.Fprintln(os.Stderr, "  phase moves an item this Session owns one phase on, with that phase's evidence;")
-	fmt.Fprintln(os.Stderr, "  finish takes it from implementing onward to done in one step once its work has landed:")
-	fmt.Fprintln(os.Stderr, "  the commit, target and remote come from the recorded landing unless given, and every gate still applies")
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add", "usage: clawdline item add --project <id> --kind <feature|issue|epic|refactor|plan> --title <t>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_steps", "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_assign", "                          [--assign-self | --assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_options", "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.claim", "       clawdline item claim [--run id] [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.name", "       clawdline item name [--conversation id] [--port n] <item id> <Session task name>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.child", "       clawdline item child --kind <feature|issue> --title <t> [--step <text>]… [--steps-file f] [--acceptance-file f]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.child_description", "                          [--description-file f | stdin] [--deploy policy]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.child_assign", "                          [--assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.child_options", "                          [--conversation id] [--key k] [--port n] <epic id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.assign", "       clawdline item assign (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona id])"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.assign_options", "                          [--run id] [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.show", "       clawdline item show [--doc <doc id>] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.steps", "       clawdline item steps [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_add", "       clawdline item step-add [--conversation id] [--key k] [--port n] <item id> <title> [<title>]… | stdin"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.step_done", "       clawdline item step-done [--conversation id] [--key k] [--port n] <item id> <step id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance", "       clawdline item acceptance [--body-file f | stdin] [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance_revise", "       clawdline item acceptance-revise --run id --expected-version n [--body-file f | stdin]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.acceptance_revise_options", "                            [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.doc", "       clawdline item doc --role <role> --title <t> [--reference r] [--body-file f | stdin]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.doc_options", "                          [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.phase", "       clawdline item phase [--verification t] [--commit c --target b --remote r [--landing-project id] | --no-landing-reason t]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.phase_deployment", "                            [--deployment t | --no-deployment-reason t] [--conversation id] [--key k] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.phase_next", "                            <item id> <implementing|verifying|merging|deploying|done>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.finish", "       clawdline item finish [--verification t] (--deployment t | --no-deployment-reason t)"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.finish_landing", "                            [--commit c] [--target b] [--remote r] [--landing-project id] [--no-landing-reason t]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.finish_options", "                            [--conversation id] [--key k] [--port n] <item id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.add_permission", "  add creates a Board item only because the person's message through Clawdline asked for one;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.add_delegate", "  the registered Clawdfather may create it unassigned, then delegate to a Project Session with --assign-new or --assign-terminal;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.add_steps", "  it arrives unassigned, and its --step rows are the item's steps, not to-dos; --assign-self"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.add_self", "  assigns it to this Session, only when the person's message asks this Session to do the work now;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.claim_permission", "  claim assigns an existing item to this Session only because the person's message through"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.claim_limit", "  Clawdline told it to take that item; never on its own initiative;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.name", "  name lets an assigned new Feature Root choose its own task name once, after reading the item;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.child_plan", "  child breaks an Epic this Session owns, after its reviewed plan (implementing or later), into a"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.child_assignment", "  feature or issue item, assigned to the Session in that terminal, to a new one, or to nobody yet;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.assign_epic", "  assign hands a child of an Epic this Session owns to a Session (terminal ids: `clawdline guide send`),"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.assign_permission", "  or, only because the person's message through Clawdline asked for it, an unassigned Feature or Issue"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.assign_new", "  to a new Session (--new), under that message's run; never on its own initiative;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.persona", "  --persona opens that new Session as a built-in persona (`GET /v1/personas` lists them); none by default;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.step_add", "  step-add breaks an item this Session owns into ordered steps, after any it already has;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.acceptance", "  acceptance fills missing criteria once; acceptance-revise relays a person's explicit revision message;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.doc", "  doc adds a document to an item this Session owns, or revises the one with the same --role and --title"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.doc_epic", "  (an item's one completion_report whatever its title; plan and plan_review are always added); an Epic needs a plan, and a plan_review"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.doc_review", "  whose --reference is the id of the plan_review child that reviewed it, before implementing;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.phase", "  phase moves an item this Session owns one phase on, with that phase's evidence;"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.finish", "  finish takes it from implementing onward to done in one step once its work has landed:"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "guide.finish_landing", "  the commit, target and remote come from the recorded landing unless given, and every gate still applies"))
 	os.Exit(2)
 }
 
@@ -422,7 +422,7 @@ func readTextFrom(name string, r io.Reader, what string) (string, error) {
 		return "", err
 	}
 	if len(data) > itemTextLimit {
-		return "", fmt.Errorf("the %s is larger than %d bytes, the most the daemon keeps for one item text", what, itemTextLimit)
+		return "", fmt.Errorf(cliCopy("item", "text.too_large", "the %s is larger than %d bytes, the most the daemon keeps for one item text"), what, itemTextLimit)
 	}
 	return string(data), nil
 }
@@ -479,7 +479,7 @@ const verifyGateHint = "  verify gate on: this item walks verifying and merging 
 
 func printVerifyGateHint(w io.Writer, it itemWire) {
 	if it.VerifyGate {
-		fmt.Fprintln(w, verifyGateHint)
+		fmt.Fprintln(w, cliCopy("item", "hint.verify_gate", verifyGateHint))
 	}
 }
 
@@ -489,7 +489,7 @@ func printVerifyGateHint(w io.Writer, it itemWire) {
 func printItem(w io.Writer, it itemWire) {
 	printItemHead(w, it)
 	if len(it.Steps) == 0 {
-		fmt.Fprintln(w, "  (no steps)")
+		fmt.Fprintln(w, cliCopy("item", "list.no_steps", "  (no steps)"))
 	}
 	for _, s := range it.Steps {
 		mark := " "
@@ -499,29 +499,29 @@ func printItem(w io.Writer, it itemWire) {
 		fmt.Fprintf(w, "  [%s] %s  %s\n", mark, s.ID, s.Title)
 	}
 	for _, d := range it.Documents {
-		fmt.Fprintf(w, "  doc %s  %s  %s  v%d\n", d.ID, d.Role, d.Title, d.Version)
+		fmt.Fprintf(w, cliCopy("item", "list.doc", "  doc %s  %s  %s  v%d\n"), d.ID, d.Role, d.Title, d.Version)
 	}
 }
 
 // printItemHead prints what every answer about an item carries: its row,
 // acceptance and gates, without steps or documents.
 func printItemHead(w io.Writer, it itemWire) {
-	owner := "unassigned"
+	owner := cliCopy("item", "owner.unassigned", "unassigned")
 	if it.OwnerSession != nil && *it.OwnerSession != "" {
-		owner = "assigned to " + *it.OwnerSession
+		owner = cliCopy("item", "owner.assigned", "assigned to ") + *it.OwnerSession
 	}
 	fmt.Fprintf(w, "%s  %s  [%s, %s, %s]\n", it.ID, it.Title, it.Kind, it.Phase, owner)
 	if it.AcceptanceCriteria != "" {
-		fmt.Fprintf(w, "  acceptance v%d sha256:%s\n%s\n", it.AcceptanceVersion, it.AcceptanceDigest, it.AcceptanceCriteria)
+		fmt.Fprintf(w, cliCopy("item", "label.acceptance", "  acceptance v%d sha256:%s\n%s\n"), it.AcceptanceVersion, it.AcceptanceDigest, it.AcceptanceCriteria)
 	}
 	if it.GateSnapshotCycle > 0 {
-		fmt.Fprintf(w, "  gates cycle %d: planning=%t verification=%t\n", it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
+		fmt.Fprintf(w, cliCopy("item", "label.gates", "  gates cycle %d: planning=%t verification=%t\n"), it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
 	}
 	printVerifyGateHint(w, it)
 	if it.Kind == "feature" {
 		// The person's switch, read when the Feature asks to enter
 		// implementing; the Agent follows it and never sets it.
-		fmt.Fprintf(w, "  needs independent review (set by the person): %t\n", it.ReviewRequired)
+		fmt.Fprintf(w, cliCopy("item", "label.review", "  needs independent review (set by the person): %t\n"), it.ReviewRequired)
 	}
 }
 
@@ -543,13 +543,13 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	if conversation == "" {
 		var err error
 		if conversation, _, err = conversationFromEnv(getenv); err != nil {
-			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was changed.\n", name, conversationRefusal(err, "--conversation"))
+			fmt.Fprintf(stderr, cliCopy("item", "error.conversation_refusal", "clawdline %s: %s Nothing was changed.\n"), name, conversationRefusal(err, "--conversation"))
 			return 2
 		}
 	}
 	if conversation == "" {
-		fmt.Fprintf(stderr, "clawdline %s: cannot tell which conversation this is: none of %s is set. "+
-			"Pass --conversation <this assistant's conversation id>. Nothing was changed.\n",
+		fmt.Fprintf(stderr, cliCopy("item", "error.no_conversation", "clawdline %s: cannot tell which conversation this is: none of %s is set. ")+
+			cliCopy("item", "error.no_conversation_next", "Pass --conversation <this assistant's conversation id>. Nothing was changed.\n"),
 			name, strings.Join(conversationEnv, ", "))
 		return 2
 	}
@@ -566,20 +566,20 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	switch op {
 	case "add":
 		if strings.TrimSpace(f.project) == "" || strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
-			fmt.Fprintf(stderr, "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.add_required", "clawdline %s: --project, --kind and --title are all required. Nothing was created.\n"), name)
 			return 2
 		}
 		if f.assign.choices() > 1 {
-			fmt.Fprintf(stderr, "clawdline %s: --assign-self, --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.add_assignment_choice", "clawdline %s: --assign-self, --assign-terminal and --assign-new are one choice. Nothing was created.\n"), name)
 			return 2
 		}
 		if why := f.assign.personaRefusal("--assign-terminal", "--assign-new"); why != "" {
-			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was created.\n", name, why)
+			fmt.Fprintf(stderr, cliCopy("item", "error.created_refusal", "clawdline %s: %s Nothing was created.\n"), name, why)
 			return 2
 		}
 		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
-			"Nothing was created. Without a message sent through Clawdline, file a proposal "+
-				"(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals.")
+			cliCopy("item", "error.no_run_create", "Nothing was created. Without a message sent through Clawdline, file a proposal ")+
+				cliCopy("item", "error.no_run_create_next", "(POST /v1/work/v2/agent/proposals) and tell the person to accept it in the Board's Agent proposals."))
 		if code != 0 {
 			return code
 		}
@@ -605,20 +605,20 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	case "child":
 		epicID := strings.TrimSpace(args[0])
 		if strings.TrimSpace(f.kind) == "" || strings.TrimSpace(f.title) == "" {
-			fmt.Fprintf(stderr, "clawdline %s: --kind and --title are both required. Nothing was created.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.child_required", "clawdline %s: --kind and --title are both required. Nothing was created.\n"), name)
 			return 2
 		}
 		if f.assign.self {
-			fmt.Fprintf(stderr, "clawdline %s: --assign-self is for item add; an Epic's child goes to "+
-				"--assign-terminal or --assign-new. Nothing was created.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.child_self", "clawdline %s: --assign-self is for item add; an Epic's child can remain unassigned or use ")+
+				cliCopy("item", "error.child_self_next", "--assign-terminal or --assign-new. Nothing was created.\n"), name)
 			return 2
 		}
 		if f.assign.terminal != "" && f.assign.open {
-			fmt.Fprintf(stderr, "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.child_assignment_choice", "clawdline %s: --assign-terminal and --assign-new are one choice. Nothing was created.\n"), name)
 			return 2
 		}
 		if why := f.assign.personaRefusal("--assign-terminal", "--assign-new"); why != "" {
-			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was created.\n", name, why)
+			fmt.Fprintf(stderr, cliCopy("item", "error.created_refusal", "clawdline %s: %s Nothing was created.\n"), name, why)
 			return 2
 		}
 		body = map[string]any{"session_id": conversation, "kind": f.kind,
@@ -637,11 +637,11 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		itemID := strings.TrimSpace(args[0])
 		a := f.assign.request()
 		if a == nil || f.assign.self || f.assign.choices() > 1 {
-			fmt.Fprintf(stderr, "clawdline %s: name one Session: --terminal <terminal id> or --new. Nothing was changed.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.assign_choice", "clawdline %s: name one Session: --terminal <terminal id> or --new. Nothing was changed.\n"), name)
 			return 2
 		}
 		if why := f.assign.personaRefusal("--terminal", "--new"); why != "" {
-			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was changed.\n", name, why)
+			fmt.Fprintf(stderr, cliCopy("item", "error.conversation_refusal", "clawdline %s: %s Nothing was changed.\n"), name, why)
 			return 2
 		}
 		it, code := readItem(stdout, stderr, b, name, itemID)
@@ -657,12 +657,12 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		// authority, unless --run names a message.
 		if it.ParentID == "" || strings.TrimSpace(f.run) != "" {
 			if !f.assign.open {
-				fmt.Fprintf(stderr, "clawdline %s: on the person's message a Session assigns an item only to a new Session (--new); "+
-					"to take it itself, use `clawdline item claim %s`. Nothing was changed.\n", name, itemID)
+				fmt.Fprintf(stderr, cliCopy("item", "error.assign_only_new", "clawdline %s: on the person's message a Session assigns an item only to a new Session (--new); ")+
+					cliCopy("item", "error.assign_only_new_next", "to take it itself, use `clawdline item claim %s`. Nothing was changed.\n"), name, itemID)
 				return 2
 			}
 			run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
-				"Nothing was assigned. Without a message sent through Clawdline asking for it, leave the item for the person to assign.")
+				cliCopy("item", "error.no_run_assign", "Nothing was assigned. Without a message sent through Clawdline asking for it, leave the item for the person to assign."))
 			if code != 0 {
 				return code
 			}
@@ -672,7 +672,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	case "claim":
 		itemID := strings.TrimSpace(args[0])
 		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
-			"Nothing was claimed. Without a message sent through Clawdline, leave the item for the person to assign.")
+			cliCopy("item", "error.no_run_claim", "Nothing was claimed. Without a message sent through Clawdline, leave the item for the person to assign."))
 		if code != 0 {
 			return code
 		}
@@ -687,7 +687,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		ev := f.phase
 		landing := ev.commit != "" || ev.target != "" || ev.remote != ""
 		if (landing || ev.landingProject != "") && (ev.commit == "" || ev.target == "" || ev.remote == "") {
-			fmt.Fprintf(stderr, "clawdline %s: --commit, --target and --remote go together. Nothing was changed.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.landing_group", "clawdline %s: --commit, --target and --remote go together. Nothing was changed.\n"), name)
 			return 2
 		}
 		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
@@ -705,7 +705,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		if next == "verifying" && it.VerifyGate {
 			cwd, err := os.Getwd()
 			if err != nil {
-				fmt.Fprintf(stderr, "clawdline %s: candidate worktree: %v\n", name, err)
+				fmt.Fprintf(stderr, cliCopy("item", "error.candidate_worktree", "clawdline %s: candidate worktree: %v\n"), name, err)
 				return 1
 			}
 			gitRead := func(args ...string) (string, error) {
@@ -716,7 +716,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			branch, branchErr := gitRead("symbolic-ref", "--short", "HEAD")
 			commit, commitErr := gitRead("rev-parse", "--verify", "HEAD^{commit}")
 			if branchErr != nil || commitErr != nil || branch == "" || commit == "" {
-				fmt.Fprintf(stderr, "clawdline %s: verification needs a branch-attached Git worktree with a readable HEAD. Nothing was changed.\n", name)
+				fmt.Fprintf(stderr, cliCopy("item", "error.verification_worktree", "clawdline %s: verification needs a branch-attached Git worktree with a readable HEAD. Nothing was changed.\n"), name)
 				return 1
 			}
 			body["candidate"] = map[string]string{"worktree": cwd, "branch": branch, "commit": commit}
@@ -763,7 +763,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	case "doc":
 		itemID, d := strings.TrimSpace(args[0]), f.doc
 		if strings.TrimSpace(d.role) == "" || strings.TrimSpace(d.title) == "" {
-			fmt.Fprintf(stderr, "clawdline %s: --role and --title are both required. Nothing was added.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.doc_required", "clawdline %s: --role and --title are both required. Nothing was added.\n"), name)
 			return 2
 		}
 		a, err := b.request(http.MethodGet, "/v1/work/v2/items/"+url.PathEscape(itemID), nil, nil, "")
@@ -793,7 +793,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	case "acceptance":
 		itemID := strings.TrimSpace(args[0])
 		if strings.TrimSpace(f.acceptance) == "" {
-			fmt.Fprintf(stderr, "clawdline %s: provide non-empty Markdown with --body-file or stdin. Nothing was changed.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.acceptance_empty", "clawdline %s: provide non-empty Markdown with --body-file or stdin. Nothing was changed.\n"), name)
 			return 2
 		}
 		body = map[string]any{"session_id": conversation, "acceptance_criteria": f.acceptance}
@@ -801,14 +801,14 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	case "acceptance-revise":
 		itemID := strings.TrimSpace(args[0])
 		if strings.TrimSpace(f.acceptance) == "" || f.run == "" || f.expectedVersion < 1 {
-			fmt.Fprintf(stderr, "clawdline %s: non-empty Markdown, --run and --expected-version are required. Nothing was changed.\n", name)
+			fmt.Fprintf(stderr, cliCopy("item", "error.revision_required", "clawdline %s: non-empty Markdown, --run and --expected-version are required. Nothing was changed.\n"), name)
 			return 2
 		}
 		body = map[string]any{"expected_version": f.expectedVersion, "session_id": conversation,
 			"acceptance_criteria": f.acceptance, "via": map[string]string{"run": f.run}}
 		path = "/v1/work/v2/agent/items/" + url.PathEscape(itemID) + "/acceptance-revision"
 	default:
-		fmt.Fprintf(stderr, "clawdline item: no such action %q\n", op)
+		fmt.Fprintf(stderr, cliCopy("item", "error.unknown_action", "clawdline item: no such action %q\n"), op)
 		return 2
 	}
 	// The daemon compares a version only when one was named: a version read
@@ -829,7 +829,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 	a, err := b.request(method, path, nil, body, key)
 	if err != nil {
 		fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-		fmt.Fprintf(stderr, "To retry the same write: clawdline %s --key %s …\n", name, key)
+		fmt.Fprintf(stderr, cliCopy("item", "error.retry", "To retry the same write: clawdline %s --key %s …\n"), name, key)
 		return 1
 	}
 	it, ok := itemOf(a)
@@ -850,7 +850,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			} `json:"acceptance_source"`
 		}
 		if json.Unmarshal(a.Body, &revision) == nil {
-			fmt.Fprintf(stdout, "  requested by run %s in Session %s at %d: %s\n",
+			fmt.Fprintf(stdout, cliCopy("item", "label.revision_source", "  requested by run %s in Session %s at %d: %s\n"),
 				revision.Source.Run, revision.Source.SessionID, revision.Source.At, revision.Source.Excerpt)
 		}
 	}
@@ -858,40 +858,43 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		var got struct {
 			AssignmentState string `json:"assignment_state"`
 			AssignmentError *struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
+				Code      string `json:"code"`
+				Message   string `json:"message"`
+				DetailKey string `json:"detail_key"`
 			} `json:"assignment_error"`
 		}
 		if json.Unmarshal(a.Body, &got) == nil && got.AssignmentError != nil {
-			fmt.Fprintf(stderr, "clawdline %s: the item was created but not assigned: %s: %s\n",
-				name, got.AssignmentError.Code, got.AssignmentError.Message)
+			detail := (cliHTTPRefusal{Code: got.AssignmentError.Code, Detail: got.AssignmentError.Message,
+				DetailKey: got.AssignmentError.DetailKey}).humanDetail(currentCLILanguage())
+			fmt.Fprintf(stderr, cliCopy("item", "error.created_unassigned", "clawdline %s: the item was created but not assigned: %s: %s\n"),
+				name, got.AssignmentError.Code, detail)
 			if op == "child" {
-				fmt.Fprintf(stderr, "Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n", it.ID)
+				fmt.Fprintf(stderr, cliCopy("item", "next.assign_child", "Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n"), it.ID)
 			} else {
-				fmt.Fprintf(stderr, "The person can assign item %s from the Board.\n", it.ID)
+				fmt.Fprintf(stderr, cliCopy("item", "next.assign_board", "The person can assign item %s from the Board.\n"), it.ID)
 			}
 			return 1
 		}
 		if op == "add" {
 			switch got.AssignmentState {
 			case "not_requested":
-				fmt.Fprintf(stderr, "Board item %s was created but not assigned. The person can assign it from the Board.\n", it.ID)
+				fmt.Fprintf(stderr, cliCopy("item", "result.created_unassigned", "Board item %s was created but not assigned. The person can assign it from the Board.\n"), it.ID)
 				if f.assign.request() == nil && it.Kind != "plan" {
-					fmt.Fprintf(stderr, "When the person's message asks this Session to do it, take it with `clawdline item claim %s`.\n", it.ID)
+					fmt.Fprintf(stderr, cliCopy("item", "next.claim", "When the person's message asks this Session to do it, take it with `clawdline item claim %s`.\n"), it.ID)
 				}
 			case "awaiting_user":
-				fmt.Fprintf(stderr, "Board item %s is awaiting the person's first dialog in the new Project Session; no owner is assigned yet. Open that Session and answer its first screen, then check the Board.\n", it.ID)
+				fmt.Fprintf(stderr, cliCopy("item", "result.awaiting_dialog", "Board item %s is awaiting the person's first dialog in the new Project Session; no owner is assigned yet. Open that Session and answer its first screen, then check the Board.\n"), it.ID)
 				return 1
 			case "pending":
-				fmt.Fprintf(stderr, "Board item %s was created; delegation outcome needs review. Check the Board before trying another assignment.\n", it.ID)
+				fmt.Fprintf(stderr, cliCopy("item", "result.delegation_pending", "Board item %s was created; delegation outcome needs review. Check the Board before trying another assignment.\n"), it.ID)
 				return 1
 			}
 		}
 	}
 	if (op == "add" || op == "claim") && it.Kind == "epic" && it.OwnerSession != nil {
-		fmt.Fprintf(stdout, "This is an Epic: write its plan with `clawdline item doc %s --role plan --title Plan`, "+
-			"have a child review it (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`), record the review with "+
-			"`--role plan_review --reference <task id>`, then move it to implementing. `clawdline guide epic` says how.\n",
+		fmt.Fprintf(stdout, cliCopy("item", "next.epic_plan", "This is an Epic: write its plan with `clawdline item doc %s --role plan --title Plan`, ")+
+			cliCopy("item", "next.epic_review", "have a child review it (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`), record the review with ")+
+			cliCopy("item", "next.epic_implement", "`--role plan_review --reference <task id>`, then move it to implementing. `clawdline guide epic` says how.\n"),
 			it.ID, it.ID)
 	}
 	return 0
@@ -901,7 +904,7 @@ func itemName(stdout, stderr io.Writer, b *broker, args []string, conversation s
 	name := "item name"
 	itemID, title := strings.TrimSpace(args[0]), strings.TrimSpace(args[1])
 	if itemID == "" || title == "" {
-		fmt.Fprintln(stderr, "clawdline item name: an item id and a nonempty task name are required. Nothing was changed.")
+		fmt.Fprintln(stderr, cliCopy("item", "error.name_required", "clawdline item name: an item id and a nonempty task name are required. Nothing was changed."))
 		return 2
 	}
 	a, err := b.request(http.MethodPost, "/v1/work/v2/agent/items/"+url.PathEscape(itemID)+"/session-name",
@@ -918,12 +921,12 @@ func itemName(stdout, stderr io.Writer, b *broker, args []string, conversation s
 		DisplayTitle *string `json:"display_title"`
 	}
 	if json.Unmarshal(a.Body, &got) != nil || got.StoredTitle == "" {
-		fmt.Fprintln(stderr, "clawdline item name: the daemon returned no stored Session name.")
+		fmt.Fprintln(stderr, cliCopy("item", "error.name_missing", "clawdline item name: the daemon returned no stored Session name."))
 		return 1
 	}
-	fmt.Fprintf(stdout, "Session name: %s\n", got.StoredTitle)
+	fmt.Fprintf(stdout, cliCopy("item", "label.session_name", "Session name: %s\n"), got.StoredTitle)
 	if got.DisplayTitle != nil && *got.DisplayTitle != got.StoredTitle {
-		fmt.Fprintf(stdout, "Displayed name: %s\n", *got.DisplayTitle)
+		fmt.Fprintf(stdout, cliCopy("item", "label.display_name", "Displayed name: %s\n"), *got.DisplayTitle)
 	}
 	return 0
 }
@@ -944,19 +947,19 @@ func itemShow(stdout, stderr io.Writer, it itemWire, docID string) int {
 			}
 			ids = append(ids, d.ID)
 		}
-		held := "it holds no documents"
+		held := cliCopy("item", "show.held_none", "it holds no documents")
 		if len(ids) > 0 {
-			held = "its documents are " + strings.Join(ids, ", ")
+			held = cliCopy("item", "show.held_list", "its documents are ") + strings.Join(ids, ", ")
 		}
-		fmt.Fprintf(stderr, "clawdline item show: item %s has no document %s; %s.\n", it.ID, docID, held)
+		fmt.Fprintf(stderr, cliCopy("item", "show.no_document", "clawdline item show: item %s has no document %s; %s.\n"), it.ID, docID, held)
 		return 1
 	}
 	printItem(stdout, it)
-	fmt.Fprintf(stdout, "  item version %d\n", it.Version)
+	fmt.Fprintf(stdout, cliCopy("item", "show.version", "  item version %d\n"), it.Version)
 	for _, d := range it.Documents {
-		fmt.Fprintf(stdout, "\n===== doc %s  %s  %s  (v%d) =====\n", d.ID, d.Role, d.Title, d.Version)
+		fmt.Fprintf(stdout, cliCopy("item", "show.document_header", "\n===== doc %s  %s  %s  (v%d) =====\n"), d.ID, d.Role, d.Title, d.Version)
 		if d.Reference != "" {
-			fmt.Fprintf(stdout, "reference: %s\n", d.Reference)
+			fmt.Fprintf(stdout, cliCopy("item", "show.reference", "reference: %s\n"), d.Reference)
 		}
 		if d.Body != "" {
 			fmt.Fprint(stdout, d.Body)
@@ -995,11 +998,11 @@ func docWrote(stdout io.Writer, it itemWire, d docFlags, before int64) {
 	}
 	switch {
 	case before == 0:
-		fmt.Fprintf(stdout, "  added document %s (%s) at v%d\n", got.ID, got.Role, got.Version)
+		fmt.Fprintf(stdout, cliCopy("item", "result.doc_added", "  added document %s (%s) at v%d\n"), got.ID, got.Role, got.Version)
 	case got.Version == before:
-		fmt.Fprintf(stdout, "  document %s (%s) already held this text; nothing changed, still v%d\n", got.ID, got.Role, got.Version)
+		fmt.Fprintf(stdout, cliCopy("item", "result.doc_unchanged", "  document %s (%s) already held this text; nothing changed, still v%d\n"), got.ID, got.Role, got.Version)
 	default:
-		fmt.Fprintf(stdout, "  revised document %s (%s) to v%d\n", got.ID, got.Role, got.Version)
+		fmt.Fprintf(stdout, cliCopy("item", "result.doc_revised", "  revised document %s (%s) to v%d\n"), got.ID, got.Role, got.Version)
 	}
 }
 
@@ -1007,36 +1010,36 @@ func docWrote(stdout io.Writer, it itemWire, d docFlags, before int64) {
 // carries. That answer holds no steps or documents, so none are claimed
 // about: `item show` reads them.
 func itemWrote(stdout io.Writer, op string, args []string, it itemWire) {
-	what := map[string]string{"add": "the item", "child": "the child item", "assign": "the assignment",
-		"claim": "the claim", "finish": "the finish", "doc": "the document",
-		"acceptance": "the acceptance criteria", "acceptance-revise": "the acceptance revision"}[op]
+	what := map[string]string{"add": cliCopy("item", "receipt.item", "the item"), "child": cliCopy("item", "receipt.child", "the child item"), "assign": cliCopy("item", "receipt.assignment", "the assignment"),
+		"claim": cliCopy("item", "receipt.claim", "the claim"), "finish": cliCopy("item", "receipt.finish", "the finish"), "doc": cliCopy("item", "receipt.document", "the document"),
+		"acceptance": cliCopy("item", "receipt.acceptance", "the acceptance criteria"), "acceptance-revise": cliCopy("item", "receipt.acceptance_revision", "the acceptance revision")}[op]
 	if op == "step-done" && len(args) > 1 {
-		what = "step " + strings.TrimSpace(args[1]) + " done"
+		what = cliCopy("item", "receipt.step_prefix", "step ") + strings.TrimSpace(args[1]) + cliCopy("item", "receipt.step_suffix", " done")
 	} else if op == "phase" && len(args) > 1 {
-		what = "phase " + strings.TrimSpace(args[1])
+		what = cliCopy("item", "receipt.phase_prefix", "phase ") + strings.TrimSpace(args[1])
 	}
-	fmt.Fprintf(stdout, "wrote %s; item %s is at version %d\n", what, it.ID, it.Version)
+	fmt.Fprintf(stdout, cliCopy("item", "result.wrote", "wrote %s; item %s is at version %d\n"), what, it.ID, it.Version)
 	printItemWriteHead(stdout, it)
-	fmt.Fprintf(stdout, "  steps and documents: clawdline item show %s\n", it.ID)
+	fmt.Fprintf(stdout, cliCopy("item", "next.show", "  steps and documents: clawdline item show %s\n"), it.ID)
 }
 
 // printItemWriteHead keeps write receipts small even when a response carries
 // the complete acceptance contract. Explicit reads retain the full text.
 func printItemWriteHead(w io.Writer, it itemWire) {
-	owner := "unassigned"
+	owner := cliCopy("item", "owner.unassigned", "unassigned")
 	if it.OwnerSession != nil && *it.OwnerSession != "" {
-		owner = "assigned to " + *it.OwnerSession
+		owner = cliCopy("item", "owner.assigned", "assigned to ") + *it.OwnerSession
 	}
 	fmt.Fprintf(w, "%s  %s  [%s, %s, %s]\n", it.ID, it.Title, it.Kind, it.Phase, owner)
 	if it.AcceptanceCriteria != "" {
-		fmt.Fprintf(w, "  acceptance v%d sha256:%s; full text: clawdline item show %s\n", it.AcceptanceVersion, it.AcceptanceDigest, it.ID)
+		fmt.Fprintf(w, cliCopy("item", "label.acceptance_summary", "  acceptance v%d sha256:%s; full text: clawdline item show %s\n"), it.AcceptanceVersion, it.AcceptanceDigest, it.ID)
 	}
 	if it.GateSnapshotCycle > 0 {
-		fmt.Fprintf(w, "  gates cycle %d: planning=%t verification=%t\n", it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
+		fmt.Fprintf(w, cliCopy("item", "label.gates", "  gates cycle %d: planning=%t verification=%t\n"), it.GateSnapshotCycle, it.PlanningGate, it.VerifyGate)
 	}
 	printVerifyGateHint(w, it)
 	if it.Kind == "feature" {
-		fmt.Fprintf(w, "  needs independent review (set by the person): %t\n", it.ReviewRequired)
+		fmt.Fprintf(w, cliCopy("item", "label.review", "  needs independent review (set by the person): %t\n"), it.ReviewRequired)
 	}
 }
 
@@ -1087,7 +1090,7 @@ func wordRun(stdout, stderr io.Writer, b *broker, name, named, conversation, not
 		} `json:"run"`
 	}
 	if json.Unmarshal(a.Body, &got) != nil || got.Run.ID == "" {
-		fmt.Fprintf(stderr, "clawdline %s: the daemon's run answer names no run: %s\n", name, strings.TrimSpace(string(a.Body)))
+		fmt.Fprintf(stderr, cliCopy("item", "error.no_run_answer", "clawdline %s: the daemon's run answer names no run: %s\n"), name, strings.TrimSpace(string(a.Body)))
 		return "", 1
 	}
 	return got.Run.ID, 0
@@ -1108,7 +1111,7 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 		}
 	}
 	if len(titles) == 0 {
-		fmt.Fprintf(stderr, "clawdline %s: no step titles, as arguments or on stdin. Nothing was changed.\n", name)
+		fmt.Fprintf(stderr, cliCopy("item", "error.no_step_titles", "clawdline %s: no step titles, as arguments or on stdin. Nothing was changed.\n"), name)
 		return 2
 	}
 	read := func() (itemWire, int) {
@@ -1125,10 +1128,10 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 	}
 	stopped := func(added int) {
 		if added == 0 {
-			fmt.Fprintf(stderr, "No step was added.\n")
+			fmt.Fprint(stderr, cliCopy("item", "result.no_step", "No step was added.\n"))
 			return
 		}
-		fmt.Fprintf(stderr, "%d of %d steps were added; the rest were not: %s\n", added, len(titles),
+		fmt.Fprintf(stderr, cliCopy("item", "result.partial_steps", "%d of %d steps were added; the rest were not: %s\n"), added, len(titles),
 			strings.Join(titles[added:], " | "))
 	}
 	for i, title := range titles {
@@ -1152,7 +1155,7 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 		a, err := b.request(http.MethodPost, "/v1/work/v2/agent/items/"+url.PathEscape(itemID)+"/steps", nil, body, k)
 		if err != nil {
 			fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-			fmt.Fprintf(stderr, "To retry the same write: clawdline %s --key %s %s …\n", name, k, itemID)
+			fmt.Fprintf(stderr, cliCopy("item", "error.retry_step", "To retry the same write: clawdline %s --key %s %s …\n"), name, k, itemID)
 			stopped(i)
 			return 1
 		}
@@ -1166,8 +1169,8 @@ func itemStepAdd(stdout, stderr io.Writer, b *broker, args []string, conversatio
 	if code != 0 {
 		return code
 	}
-	fmt.Fprintf(stdout, "wrote %d step(s); item %s is at version %d\n", len(titles), it.ID, it.Version)
+	fmt.Fprintf(stdout, cliCopy("item", "result.steps_written", "wrote %d step(s); item %s is at version %d\n"), len(titles), it.ID, it.Version)
 	printItemWriteHead(stdout, it)
-	fmt.Fprintf(stdout, "  steps and documents: clawdline item show %s\n", it.ID)
+	fmt.Fprintf(stdout, cliCopy("item", "next.show", "  steps and documents: clawdline item show %s\n"), it.ID)
 	return 0
 }

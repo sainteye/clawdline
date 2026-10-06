@@ -150,6 +150,32 @@ func TestSettingGetsAndSetsDefaultModels(t *testing.T) {
 	}
 }
 
+func TestSettingGermanErrorsKeepWireCodeAndSettingKeys(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	call := func(method string, body any) (int, []byte, error) {
+		return http.StatusForbidden, []byte(`{"error":"forbidden","detail":"raw detail"}`), nil
+	}
+	var out, errs bytes.Buffer
+	if code := runSetting(&out, &errs, []string{"set", "unknown_key", "on"}, call); code != 2 ||
+		!strings.Contains(errs.String(), "unknown_key") || !strings.Contains(errs.String(), "Verwendung:") {
+		t.Fatalf("unknown setting key = %d %q", code, errs.String())
+	}
+	errs.Reset()
+	if code := runSetting(&out, &errs, []string{"set", "planning_gate", "yes"}, call); code != 2 ||
+		!strings.Contains(errs.String(), "planning_gate") || !strings.Contains(errs.String(), "on/off") ||
+		!strings.Contains(errs.String(), `"yes"`) {
+		t.Fatalf("invalid German setting value = %d %q", code, errs.String())
+	}
+	errs.Reset()
+	if code := runSetting(&out, &errs, []string{"set", "planning_gate", "on"}, call); code != 1 ||
+		!strings.Contains(errs.String(), "abgelehnt") || !strings.Contains(errs.String(), "forbidden") ||
+		!strings.Contains(errs.String(), "raw detail") {
+		t.Fatalf("German refusal lost wire code/detail = %d %q", code, errs.String())
+	}
+}
+
 // The usage words for a session's window: none said as none, and nothing
 // said for a session Clawdline did not launch.
 func TestUsageSaysTheWindowInWords(t *testing.T) {

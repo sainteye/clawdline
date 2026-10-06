@@ -25,6 +25,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The capacity register on this daemon (docs/limits.md §4, design-decisions
@@ -109,6 +110,8 @@ type capacityBeat struct {
 	latest func(context.Context) ([]store.Effect, error)
 	// loc is where a notice writes the day a row will be full.
 	loc *time.Location
+	// language is read when a push intent is recorded, then its text is fixed.
+	language func() string
 	// sending is the pushes sent off the beat and not yet finished.
 	sending sync.WaitGroup
 
@@ -152,6 +155,7 @@ func (s *Server) capacity() *capacityBeat {
 		since:    time.Now(),
 		poke:     make(chan struct{}, 1),
 		loc:      time.Local,
+		language: s.productLanguage,
 		latest: func(ctx context.Context) ([]store.Effect, error) {
 			return s.store.LatestEffects(ctx, orchestrator.EffectCapacityPush)
 		},
@@ -904,6 +908,7 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.CloudTerminalSweep:                func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalSweep) },
 		capacity.CloudTerminalReceiptBusyRetries:   func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceiptBusyRetries) },
 		capacity.CloudTerminalReceiptBusyRetry:     func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceiptBusyRetry) },
+		capacity.CloudTerminalReceiptSeconds:       func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalReceiptSeconds) },
 		capacity.CloudTerminalEarlyFrames: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab guard; daemon cannot measure live browser use"}
 		},
@@ -1278,7 +1283,11 @@ type owedNotice struct {
 func (b *capacityBeat) recordNotice(ctx context.Context, n owedNotice) (int64, error) {
 	e, st := n.event, n.status
 	state := capacity.State(fmt.Sprint(e.Payload["state"]))
-	title, body := capacity.NoticeText(st.Entry, state, st.Reading.Used, st.Limit, st.ProjectedFullAt, b.loc)
+	language := "en"
+	if b.language != nil {
+		language = productcopy.Resolve(b.language())
+	}
+	title, body := capacity.NoticeTextLanguage(language, st.Entry, state, st.Reading.Used, st.Limit, st.ProjectedFullAt, b.loc)
 	push, err := json.Marshal(orchestrator.CapacityPush{
 		Name: e.Subject, State: string(state), From: fmt.Sprint(e.Payload["from"]),
 		Used: st.Reading.Used, Limit: st.Limit,

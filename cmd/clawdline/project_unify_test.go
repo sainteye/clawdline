@@ -55,6 +55,135 @@ func unifyCheckout(t *testing.T) string {
 	return dir
 }
 
+func TestProjectUnifyCatalogShipsItsNineLanguageBaseline(t *testing.T) {
+	for _, language := range []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
+		translated, total := cliCatalogCoverage("unify", language)
+		if total != 72 || translated != total {
+			t.Errorf("unify coverage %s = %d/%d, want 72/72", language, translated, total)
+		}
+	}
+}
+
+func TestProjectUnifyConflictCopyRequiresExactKnownSource(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	other := ".agents/skills/example"
+	for _, tc := range []contract.ProjectUnifyConflict{
+		{Kind: contract.ProjectUnifyConflictKindUnreadable, Path: ".claude/CLAUDE.local.md", Detail: "This Claude rules file could not be checked."},
+		{Kind: contract.ProjectUnifyConflictKindUnreadable, Path: "AGENTS.md", Detail: "This file could not be read as UTF-8 text."},
+		{Kind: contract.ProjectUnifyConflictKindUnreadable, Path: ".agents/skills", Detail: "This skills directory could not be read."},
+		{Kind: contract.ProjectUnifyConflictKindUnreadable, Path: other, Detail: "This skill could not be read."},
+		{Kind: contract.ProjectUnifyConflictKindTooLarge, Path: "AGENTS.md", Detail: "This file is larger than unify reads; check it on the machine."},
+		{Kind: contract.ProjectUnifyConflictKindTooLarge, Path: ".claude/skills", Detail: "This skills directory has more entries than unify reads."},
+		{Kind: contract.ProjectUnifyConflictKindTooLarge, Path: other, Detail: "This skill has more files than unify compares."},
+		{Kind: contract.ProjectUnifyConflictKindRulesLink, Path: "AGENTS.md", Detail: "AGENTS.md is a link to outside; unify does not follow or change it."},
+		{Kind: contract.ProjectUnifyConflictKindRulesLink, Path: "CLAUDE.md", Detail: "CLAUDE.md is a link to outside; unify does not follow or change it."},
+		{Kind: contract.ProjectUnifyConflictKindImportWithoutAgents, Path: "CLAUDE.md", Detail: "CLAUDE.md imports AGENTS.md, which does not exist; write the shared rules there."},
+		{Kind: contract.ProjectUnifyConflictKindClaudeOnlyLines, Path: "CLAUDE.md", Detail: "Codex does not see these lines; move the shared ones into AGENTS.md."},
+		{Kind: contract.ProjectUnifyConflictKindSkillsDirectoryLink, Path: ".claude/skills", Detail: "This skills directory, or the one above it, is a link; unify does not follow or change it."},
+		{Kind: contract.ProjectUnifyConflictKindSkillLinkElsewhere, Path: other, Detail: "This skill is a link to outside; unify does not follow or change it."},
+		{Kind: contract.ProjectUnifyConflictKindSkillLinkElsewhere, Path: ".claude/skills/example", Detail: "This skill is a link to outside, not to " + other + "; unify does not follow or change it."},
+		{Kind: contract.ProjectUnifyConflictKindSkillDiffers, Path: ".claude/skills/example", Detail: "This skill differs from " + other + "; keep one version in " + other + " and remove the other."},
+		{Kind: contract.ProjectUnifyConflictKindNameTaken, Path: ".claude/skills/example", Detail: "Something that is not this skill already uses this name; move it before linking the skill here."},
+		{Kind: contract.ProjectUnifyConflictKindNameTaken, Path: other, Detail: "Something that is not this skill already uses this name; move it before sharing the skill."},
+	} {
+		if got := unifyConflictDescription(tc); got == tc.Detail || got == "" {
+			t.Errorf("known %s conflict was not translated: %q", tc.Kind, got)
+		}
+		changed := tc
+		changed.Detail += " New server clause."
+		if got := unifyConflictDescription(changed); got != changed.Detail {
+			t.Errorf("unknown %s sentence was guessed: %q", tc.Kind, got)
+		}
+	}
+}
+
+func TestProjectUnifyHumanEnumsLeaveUnknownWireValuesRaw(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	if got := unifyStatusText(contract.ProjectUnifyStatusDrifting); got != "mit Abweichungen" {
+		t.Errorf("German human status = %q", got)
+	}
+	if got := unifyPlaceText(contract.ProjectUnifySkillPlaceBothDifferent); got != "auf beiden Seiten unterschiedlich" {
+		t.Errorf("German human place = %q", got)
+	}
+	if got := unifyStatusText(contract.ProjectUnifyStatus("future")); got != "future" {
+		t.Errorf("unknown status = %q", got)
+	}
+	if got := unifyPlaceText(contract.ProjectUnifySkillPlace("future")); got != "future" {
+		t.Errorf("unknown place = %q", got)
+	}
+}
+
+func TestProjectUnifyActionCopyRequiresExactKnownSource(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	c, a := ".claude/skills/example", ".agents/skills/example"
+	for _, tc := range []contract.ProjectUnifyAction{
+		{Kind: contract.ProjectUnifyActionKindRulesCreateAgents, Paths: []string{"AGENTS.md", "CLAUDE.md"},
+			Description: "Move CLAUDE.md's rules into a new AGENTS.md, and leave CLAUDE.md as one line that imports it."},
+		{Kind: contract.ProjectUnifyActionKindRulesAddImport, Paths: []string{"CLAUDE.md"},
+			Description: "Add an @AGENTS.md line at the top of CLAUDE.md so Claude reads AGENTS.md too; the rest of CLAUDE.md stays as it is."},
+		{Kind: contract.ProjectUnifyActionKindSkillReplaceCopyWithLink, Paths: []string{c, a},
+			Description: "Replace the identical copy " + c + " with a link to " + a + "."},
+		{Kind: contract.ProjectUnifyActionKindSkillLink, Paths: []string{c}, LinkTarget: "../../.agents/skills/example",
+			Description: "Link " + c + " to " + a + " so Claude sees the skill Codex already sees."},
+		{Kind: contract.ProjectUnifyActionKindSkillMoveAndLink, Paths: []string{c, a},
+			Description: "Move " + c + " to " + a + " and leave a link in its place, so Codex sees it too."},
+		{Kind: contract.ProjectUnifyActionKindSkillCopy, Paths: []string{a, c},
+			Description: "Copy " + a + " to " + c + " so Claude sees it; this machine cannot make links, so the check compares the copies."},
+		{Kind: contract.ProjectUnifyActionKindSkillCopy, Paths: []string{c, a},
+			Description: "Copy " + c + " to " + a + " so Codex sees it; this machine cannot make links, so the check compares the copies."},
+	} {
+		if got := unifyActionDescription(tc); got == tc.Description || got == "" {
+			t.Errorf("known %s action was not translated: %q", tc.Kind, got)
+		}
+		changed := tc
+		changed.Description += " New server clause."
+		if got := unifyActionDescription(changed); got != changed.Description {
+			t.Errorf("unknown %s sentence was guessed: %q", tc.Kind, got)
+		}
+	}
+}
+
+func TestProjectUnifyGermanHumanCopyKeepsMachineOutputsAndPlanData(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	dir := unifyCheckout(t)
+	plan := contract.ProjectUnifyPlan{Status: "drifting", Version: "v1",
+		Actions: []contract.ProjectUnifyAction{{Kind: "skill_link", Description: "Link it."}},
+		Conflicts: []contract.ProjectUnifyConflict{{Kind: contract.ProjectUnifyConflictKindImportWithoutAgents,
+			Path: "CLAUDE.md", Detail: "CLAUDE.md imports AGENTS.md, which does not exist; write the shared rules there."}}}
+	client, _ := unifyDaemon(t, dir, plan, 200, nil)
+	var out, errs bytes.Buffer
+	if code := runProjectUnify(&out, &errs, client, dir, false, false, false); code != unifyExitDrifting ||
+		!strings.Contains(out.String(), "Aktionen in Ausführungsreihenfolge") ||
+		!strings.Contains(out.String(), "Link it.") || !strings.Contains(out.String(), "Project: "+dir) ||
+		!strings.Contains(out.String(), "Status: mit Abweichungen") ||
+		!strings.Contains(out.String(), "CLAUDE.md bindet AGENTS.md ein") {
+		t.Fatalf("localized plan changed source data: exit %d, output %q, errors %q", code, out.String(), errs.String())
+	}
+	out.Reset()
+	if code := runProjectUnify(&out, &errs, client, dir, false, true, false); code != unifyExitDrifting ||
+		out.String() != "status: drifting\ndrift: Link it.\nconflict: CLAUDE.md: CLAUDE.md imports AGENTS.md, which does not exist; write the shared rules there.\n" {
+		t.Fatalf("--check machine output changed: exit %d, output %q", code, out.String())
+	}
+	out.Reset()
+	if code := runProjectUnify(&out, &errs, client, dir, false, false, true); code != unifyExitDrifting {
+		t.Fatalf("--json exit = %d", code)
+	}
+	var got contract.ProjectUnifyPlan
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.Status != plan.Status ||
+		len(got.Actions) != 1 || got.Actions[0].Description != plan.Actions[0].Description ||
+		len(got.Conflicts) != 1 || got.Conflicts[0].Detail != plan.Conflicts[0].Detail {
+		t.Fatalf("--json data changed: %#v, %v", got, err)
+	}
+}
+
 func TestProjectUnifyCheckExitCodes(t *testing.T) {
 	dir := unifyCheckout(t)
 	drift := contract.ProjectUnifyPlan{Status: "drifting", Version: "v1",

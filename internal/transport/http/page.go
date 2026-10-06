@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -123,7 +124,7 @@ func (p *page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := os.Stat(full); err != nil {
-		writeRefusal(w, http.StatusNotFound, "not_found", clean)
+		writeRawRefusal(w, http.StatusNotFound, "not_found", clean)
 		return
 	}
 	http.ServeFile(w, r, full)
@@ -133,10 +134,14 @@ func (p *page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *page) document(w http.ResponseWriter) {
 	body, err := os.ReadFile(filepath.Join(p.root, "index.html"))
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "no_document", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "no_document", err.Error())
 		return
 	}
 	html := string(body)
+	// The document is hidden while the browser resolves its own preference.
+	// The daemon cannot see that per-origin preference, so it must not claim a
+	// different language before the client has selected a complete catalog.
+	html = htmlDocumentLanguage.ReplaceAllString(html, `${1}en${2}`)
 	html = strings.Replace(html, "<!-- clawdline:modules -->", p.modulePreloads(), 1)
 	// The words, written in rather than asked for. Fetching them was the last
 	// round trip in front of the first paint and the worst-placed one: the page
@@ -151,11 +156,16 @@ func (p *page) document(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(html))
 }
 
-// defaultCatalog is the one catalog this daemon ships, and so the language
-// every page it serves is written in when nothing narrows it. The page, the
-// `/v1/strings` default, a child's briefing and dictation's last resort all
-// read it here, so they cannot come to disagree.
-const defaultCatalog = "zh-Hant"
+var htmlDocumentLanguage = regexp.MustCompile(`(?i)(<html\b[^>]*\blang=")[^"]+(")`)
+
+// defaultCatalog is the product copy default. Agent and voice language retain
+// their own existing resolution rules.
+const defaultCatalog = "en"
+
+// An unconfigured agent or voice session keeps its pre-localization fallback.
+// Product copy defaults to English without changing a person's existing
+// authoring or dictation behavior.
+const agentVoiceFallbackLanguage = "zh-Hant"
 
 // strings returns the one line that carries the catalog into the document.
 //
@@ -164,16 +174,10 @@ const defaultCatalog = "zh-Hant"
 // already dealt with quotes and backslashes, and a second pass over them would
 // corrupt the very strings it was meant to protect.
 func (p *page) strings() string {
-	body, err := os.ReadFile(filepath.Join(p.root, "strings", defaultCatalog+".json"))
+	catalog, err := loadCatalog(p.root, defaultCatalog)
 	if err != nil {
 		return ""
 	}
-	var catalog map[string]any
-	if json.Unmarshal(body, &catalog) != nil {
-		return ""
-	}
-	catalog["lang"] = defaultCatalog
-	catalog["dir"] = "ltr"
 	out, err := json.Marshal(catalog)
 	if err != nil {
 		return ""

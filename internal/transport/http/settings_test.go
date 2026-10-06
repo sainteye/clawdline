@@ -379,3 +379,33 @@ func TestSettingsEveryWindowRow(t *testing.T) {
 		t.Fatalf("a key of the wrong shape: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestProductLanguageSettingDoesNotRewriteAgentOrVoicePreferences(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "clawdline-next")
+	s := &Server{cfg: config.Config{Dir: dir}}
+	rec, _, refusal := settingsCall(t, s, http.MethodPost, "application/json",
+		`{"language":"zh-Hant","voice_language":"ja","product_language":"fr"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("write: %d %s %s", rec.Code, refusal.Error, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{"language": "zh-Hant", "voice_language": "ja", "product_language": "fr"} {
+		if got[key] != want {
+			t.Fatalf("%s = %v, want %s", key, got[key], want)
+		}
+	}
+	rec, _, refusal = settingsCall(t, s, http.MethodPost, "application/json", `{"product_language":"ru"}`)
+	if rec.Code != http.StatusBadRequest || refusal.Error != "invalid_product_language" {
+		t.Fatalf("unsupported language: %d %s", rec.Code, rec.Body.String())
+	}
+	values, err := nextconfig.Open(dir).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextconfig.ProductLanguage(values) != "fr" {
+		t.Fatalf("rejected change altered saved product language: %#v", values.Raw)
+	}
+}

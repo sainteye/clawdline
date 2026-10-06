@@ -293,6 +293,12 @@ export interface AuthError {
    * not_found, store_unavailable, unsupported_media_type.
    */
   code: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English message. Dynamic
+   * messages have no key.
+   */
+  detail_key?: string
   message: string
 
   /**
@@ -2502,6 +2508,12 @@ export interface CloseReason {
  */
 export interface CloseRefusal {
   detail: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English detail. Dynamic
+   * details have no key.
+   */
+  detail_key?: string
   error: string
   reasons: CloseReason[]
 }
@@ -5003,6 +5015,12 @@ export const RecordedLandingSourceValues: readonly RecordedLandingSource[] = ["t
  */
 export interface Refusal {
   detail: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English detail. Dynamic
+   * details have no key.
+   */
+  detail_key?: string
   error: string
   route?: string
   upstream?: string
@@ -6545,7 +6563,7 @@ export interface SettingsRequest {
   hotkey: string | null
 
   /**
-   * `auto` or a language tag the catalog resolves.
+   * Existing agent and Board authoring language and voice auto fallback.
    */
   language: string | null
 
@@ -6619,6 +6637,12 @@ export interface SettingsRequest {
    * stored setting unchanged; absence in the settings file defaults to true.
    */
   planning_gate: boolean | null
+
+  /**
+   * One of the nine shipped product-copy tags; changes daemon notifications and
+   * human-readable CLI copy only.
+   */
+  product_language: string | null
 
   /**
    * Notify when a session reports a delivery.
@@ -6780,8 +6804,8 @@ export interface SettingsSnapshot {
   hotkey: string | null
 
   /**
-   * `auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships
-   * only zh-Hant; the key is written so a later one can read it.
+   * Existing agent and Board authoring language and voice auto fallback. Its stored
+   * value and behavior are preserved independently of product language.
    */
   language: string | null
 
@@ -6870,6 +6894,12 @@ export interface SettingsSnapshot {
    * snapshot.
    */
   planning_gate: boolean | null
+
+  /**
+   * Daemon notifications and human-readable CLI copy. Absent, malformed or
+   * unsupported saved values render as English.
+   */
+  product_language: string | null
 
   /**
    * Notify when a session reports a delivery.

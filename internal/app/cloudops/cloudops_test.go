@@ -40,13 +40,14 @@ const verificationFixture = "7e000000-0000-4000-8000-000000000006"
 
 // router records what it was asked and answers what the test told it to.
 type router struct {
-	seen     []LocalRequest
-	status   int
-	body     string
-	media    string
-	empty    bool
-	fail     error
-	byPrefix map[string]LocalResponse
+	seen           []LocalRequest
+	status         int
+	body           string
+	media          string
+	empty          bool
+	fail           error
+	fixedDetailKey string
+	byPrefix       map[string]LocalResponse
 }
 
 func (r *router) Do(_ context.Context, req LocalRequest) (LocalResponse, error) {
@@ -67,7 +68,7 @@ func (r *router) Do(_ context.Context, req LocalRequest) (LocalResponse, error) 
 	if body == "" && !r.empty {
 		body = `{"ok":true}`
 	}
-	return LocalResponse{Status: status, Body: []byte(body), ContentType: r.media}, nil
+	return LocalResponse{Status: status, Body: []byte(body), ContentType: r.media, FixedDetailKey: r.fixedDetailKey}, nil
 }
 
 func (r *router) last() LocalRequest {
@@ -1539,6 +1540,61 @@ func TestThisDaemonsOwnRefusalSpellingAlsoCrosses(t *testing.T) {
 	reasons, ok := failure["reasons"].([]any)
 	if !ok || len(reasons) != 1 {
 		t.Fatalf("the reasons did not cross: %v", failure)
+	}
+}
+
+func TestLocalRefusalDetailKeyCrossesCloudOnlyWhenTheWriterProvidedIt(t *testing.T) {
+	const detail = "That task already finished."
+	const key = "http.ee71993f567fd4fe"
+	for _, tc := range []struct {
+		name   string
+		body   string
+		want   string
+		origin string
+	}{
+		{"flat writer", `{"error":"task_finished","detail":"That task already finished.","detail_key":"http.ee71993f567fd4fe"}`, key, key},
+		{"nested writer", `{"error":{"code":"task_finished","message":"That task already finished.","detail_key":"http.ee71993f567fd4fe"}}`, key, key},
+		{"raw same sentence", `{"error":"task_finished","detail":"That task already finished."}`, "", ""},
+		{"external copied key and sentence", `{"error":"task_finished","detail":"That task already finished.","detail_key":"http.ee71993f567fd4fe"}`, "", ""},
+		{"wrong explicit key", `{"error":"task_finished","detail":"That task already finished.","detail_key":"http.0000000000000000"}`, "", key},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &router{status: 409, body: tc.body, fixedDetailKey: tc.origin}
+			answer := open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+				"type": "screen", "session": pane}))
+			failure := errorOf(t, answer)
+			if answer.Status != 409 || failure["code"] != "task_finished" || failure["message"] != detail ||
+				failure["layer"] != layerRoute || failure["seq"] != float64(411) {
+				t.Fatalf("Cloud refusal changed: %#v", failure)
+			}
+			if got, _ := failure["detail_key"].(string); got != tc.want {
+				t.Fatalf("detail_key = %q, want %q: %#v", got, tc.want, failure)
+			}
+		})
+	}
+}
+
+func TestBridgeFixedClockRefusalCarriesKeyButDynamicCopyDoesNot(t *testing.T) {
+	r := &router{}
+	b := open(r)
+	b.Authority = func(context.Context, string, bool) Authority {
+		return Authority{RosterReadable: true, RosterAllowsSender: true, WriteGateAllows: true}
+	}
+	answer := b.Handle(context.Background(), request(t, ClassCtl, map[string]any{
+		"type": "focus", "session": pane, "request": "req-clock",
+	}))
+	failure := errorOf(t, answer)
+	if failure["code"] != "command_clock_uncertain" || failure["message"] !=
+		"This machine is still confirming the time; try again shortly." ||
+		failure["detail_key"] != "http.72e768b5b868dcc2" {
+		t.Fatalf("Bridge fixed copy lost its verified key: %#v", failure)
+	}
+	if len(r.seen) != 0 {
+		t.Fatalf("preflight refusal still reached a route: %#v", r.seen)
+	}
+	raw := bridgeRefusalBase(Refusal{Code: "dynamic", Message: "This machine is still confirming the time; try again shortly."})
+	if _, ok := raw["detail_key"]; ok {
+		t.Fatalf("unmarked matching prose gained a key: %#v", raw)
 	}
 }
 

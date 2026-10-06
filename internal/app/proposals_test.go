@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Where a person takes part, against a real store: every refusal of
@@ -21,6 +23,39 @@ import (
 // broker's landing move one work item end to end.
 
 const theRoot = "root-conv"
+
+func TestDecisionPushCopyUsesProductLanguageAndKeepsAuthoredWords(t *testing.T) {
+	d := work.Decision{Question: "Choose {raw}", Options: []work.Option{{ID: "keep", Label: "keep {state}"},
+		{ID: "remove", Label: "remove"}}, Default: "keep", DueAt: time.Date(2026, 10, 7, 12, 30, 0, 0, time.UTC)}
+	p := &Participation{}
+	title, body := p.decisionPushText(d, time.UTC)
+	if title != "Waiting for your decision: Choose {raw}" ||
+		!strings.Contains(body, "Options: keep {state} / remove.") ||
+		!strings.Contains(body, "default “keep {state}” takes effect at 10-07 12:30") {
+		t.Fatalf("unset product language: %q / %q", title, body)
+	}
+	p.ProductLanguage = func() string { return "de" }
+	title, body = p.decisionPushText(d, time.UTC)
+	if !strings.HasPrefix(title, "Wartet auf Ihre Entscheidung: Choose {raw}") ||
+		!strings.Contains(body, "Optionen: keep {state} / remove.") ||
+		!strings.Contains(body, "Vorgabe „keep {state}“") {
+		t.Fatalf("German copy changed authored words or default: %q / %q", title, body)
+	}
+	p.ProductLanguage = func() string { return "zh-TW" }
+	title, body = p.decisionPushText(d, time.UTC)
+	legacyTitle, legacyBody := pushText(d, time.UTC)
+	if title != legacyTitle || body != legacyBody ||
+		!strings.Contains(body, "選項：keep {state}／remove。沒有回答的話，10-07 12:30 起照「keep {state}」做。") {
+		t.Fatalf("Traditional Chinese alias changed legacy decision copy: %q / %q", title, body)
+	}
+	for _, language := range productcopy.Languages {
+		title, body := pushTextLanguage(language, d, time.UTC)
+		if !strings.Contains(title, d.Question) || !strings.Contains(body, "keep {state}") ||
+			!strings.Contains(body, "remove") || !strings.Contains(body, "10-07 12:30") {
+			t.Errorf("%s changed authored words or due time: %q / %q", language, title, body)
+		}
+	}
+}
 
 func newParticipation(t *testing.T) (*Participation, *WorkBoard, *store.Store, *boardClock) {
 	t.Helper()

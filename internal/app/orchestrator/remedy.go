@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Remediation: the one request that clears a typed refusal, carried inside it
@@ -60,6 +62,8 @@ type Remedy struct {
 	// Because is why there is nothing to send, when Available is false: what
 	// this build is missing, and what a caller may do instead.
 	Because string `json:"because,omitempty"`
+	// BecauseKey identifies fixed authored copy without changing Because.
+	BecauseKey string `json:"because_key,omitempty"`
 }
 
 // RemedyRoute is one row of the table remedies are built from. A row with an
@@ -112,7 +116,7 @@ func RemedyFor(code string, known map[string]any) (Remedy, bool) {
 		return Remedy{}, false
 	}
 	if route.Route == "" {
-		return Remedy{Available: false, Because: route.Because}, true
+		return Remedy{Available: false, Because: route.Because, BecauseKey: productcopy.HTTPRefusalKey(route.Because)}, true
 	}
 	rem := Remedy{Available: true, Method: route.Method, Route: route.Route, Header: route.Header}
 	target := route.Route

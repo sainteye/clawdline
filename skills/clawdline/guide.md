@@ -3,8 +3,9 @@
 For an assistant session — Claude Code or Codex — on a machine where **Clawdline Next** runs. It
 covers what this daemon serves today, and nothing else: every route below is registered by the
 build that printed this guide, and a test fails when one is not. Print it again with
-`clawdline guide` rather than trusting a copy; `clawdline guide zh-TW` is the same guide in
-Traditional Chinese. `clawdline guide` prints the core and names the other parts; print a part
+`clawdline guide` rather than trusting a copy; `clawdline guide zh-Hant` prints the Taiwan
+Traditional Chinese guide (`zh-TW` remains an alias). `clawdline guide` prints the core and names
+the other parts; print a part
 (`clawdline guide dispatch`) when you reach the work it covers, or `clawdline guide all` for
 the full text. Whatever it prints, the core included, starts with `guide-version: <sha256>`;
 run the same command with `--since <hash>` and, when that text is unchanged, it prints the one
@@ -62,7 +63,7 @@ the command instead.
 
 | Command | What it does |
 |---|---|
-| `clawdline guide [zh-TW]` | This guide. No daemon needed |
+| `clawdline guide [lang]` | This guide. No daemon needed |
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
@@ -86,6 +87,12 @@ the command instead.
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
+
+With no explicit guide tag, CLI language follows `--lang <tag>` before the command, then
+`CLAWDLINE_LANG`, saved `product_language`, and English. An explicit `clawdline guide <tag>`
+overrides that choice; an unsupported tag shows English. `clawdline guide -list` names the nine
+shipped tags. This preference changes human-readable CLI text, not protocol fields or an Agent's
+language.
 
 The orchestration commands above (not `webhook fire`) print the daemon's JSON on success; on a refusal they print
 `refused, <status> <code>: <message>`, then each scalar the refusal carries as `key: value`, one per

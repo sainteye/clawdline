@@ -79,7 +79,7 @@ func (b *Broker) CancelTask(ctx context.Context, id, reason, key string, c Cance
 			"Say why the task is cancelled: --reason \"wrong brief\", \"wrong scope\", \"duplicate of <id>\".")
 	}
 	if len(reason) > CancelReasonLimit {
-		return Cancelled{}, refuseWith(http.StatusUnprocessableEntity, "reason_too_long",
+		return Cancelled{}, refuseRawWith(http.StatusUnprocessableEntity, "reason_too_long",
 			fmt.Sprintf("The reason is %d bytes; a cancel's reason is at most %d.", len(reason), CancelReasonLimit),
 			map[string]any{"limit": CancelReasonLimit})
 	}
@@ -135,7 +135,7 @@ func cancelledAlready(r Record, key string) (Cancelled, error) {
 	if r.State == StateCancelled && r.Cancellation != nil && key != "" && r.Cancellation.Key == key {
 		return Cancelled{Record: r, Replayed: true}, nil
 	}
-	return Cancelled{}, refuseWith(http.StatusConflict, "task_already_terminal",
+	return Cancelled{}, refuseRawWith(http.StatusConflict, "task_already_terminal",
 		fmt.Sprintf("Task %s has already ended (%s); there is nothing to cancel.", r.ID, r.State),
 		map[string]any{"state": string(r.State)})
 }
@@ -172,7 +172,7 @@ func (b *Broker) cancelCaller(ctx context.Context, r Record, c CancelCaller) (by
 			"Name the calling Session: send its squad capability, or its conversation id as session_id.")
 	}
 	if conversation != root {
-		return "", "", refuseWith(http.StatusForbidden, "not_task_root",
+		return "", "", refuseRawWith(http.StatusForbidden, "not_task_root",
 			"Only the root Session that dispatched this task ("+rootName(r)+") or the person, from the console, "+
 				"may cancel it.", map[string]any{"root_session": root})
 	}

@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Waiting tells the person when a session has stopped on a question to them
@@ -53,6 +54,9 @@ type Waiting struct {
 	Role func(ctx context.Context, terminal string) (WaitingRole, bool)
 	// Enabled is the person's switch. Nil is on.
 	Enabled func() bool
+	// Language reads the product language when a push intent is recorded.
+	// Nil uses English; retries use the persisted title and body.
+	Language func() string
 	// After is how long a question stands before it is pushed, and HourLimit
 	// how many this machine pushes in an hour. Zero is the default; an
 	// override may only lower them.
@@ -297,7 +301,11 @@ func (w *Waiting) settle(ctx context.Context, key string, s session.Session, st 
 	if len(w.sent) >= w.hourLimit() {
 		return false, record(WaitingOverBudget)
 	}
-	title, body := waitingText(s, role, hasRole, now.Sub(st.since), now)
+	language := "en"
+	if w.Language != nil {
+		language = w.Language()
+	}
+	title, body := waitingTextLanguage(language, s, role, hasRole, now.Sub(st.since), now)
 	push, err := json.Marshal(orchestrator.WaitingPush{Key: key, Terminal: s.ID, Title: title, Body: body,
 		Tag: "waiting-" + s.ID})
 	if err != nil {
@@ -331,6 +339,10 @@ func waitingPhase(e store.Event) string {
 // body says how long it has stood, and for a child how long its task has left,
 // and then the question when the screen showed one.
 func waitingText(s session.Session, role WaitingRole, hasRole bool, stood time.Duration, now time.Time) (string, string) {
+	return waitingTextLanguage("zh-Hant", s, role, hasRole, stood, now)
+}
+
+func waitingTextLanguage(language string, s session.Session, role WaitingRole, hasRole bool, stood time.Duration, now time.Time) (string, string) {
 	label := strings.TrimSpace(s.Label)
 	if hasRole && role.Child && strings.TrimSpace(role.Title) != "" {
 		label = strings.TrimSpace(role.Title)
@@ -338,14 +350,14 @@ func waitingText(s session.Session, role WaitingRole, hasRole bool, stood time.D
 	if label == "" {
 		label = s.ID
 	}
-	title := clip("等你回答："+label, 80)
-	body := fmt.Sprintf("停在一個問題上 %d 分鐘了", int(stood/time.Minute))
+	title := clip(productcopy.Format(language, "waiting.title", map[string]string{"label": label}), 80)
+	body := productcopy.Format(language, "waiting.body", map[string]string{"minutes": strconv.Itoa(int(stood / time.Minute))})
 	if hasRole && role.Child && !role.Deadline.IsZero() {
 		if left := int(role.Deadline.Sub(now) / time.Minute); left > 0 {
-			body += fmt.Sprintf("，這個 task 的時限還剩 %d 分鐘", left)
+			body += productcopy.Format(language, "waiting.deadline", map[string]string{"minutes": strconv.Itoa(left)})
 		}
 	}
-	body += "。"
+	body += productcopy.Format(language, "waiting.end", nil)
 	if s.Menu != nil {
 		if q := strings.TrimSpace(s.Menu.Question); q != "" {
 			body += "\n" + q

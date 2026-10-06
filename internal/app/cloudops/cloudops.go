@@ -129,6 +129,9 @@ type LocalResponse struct {
 	Status      int
 	Body        []byte
 	ContentType string
+	// FixedDetailKey is marked by a local HTTP refusal writer, outside the
+	// response JSON. A coincident or copied JSON detail_key cannot supply it.
+	FixedDetailKey string
 }
 
 // LocalRouter is the whole seam between this package and the daemon it speaks
@@ -281,16 +284,16 @@ func (b Bridge) Handle(ctx context.Context, cmd Command) (answer Answer) {
 	// an answer of ours would be read by nobody. The notice is the reply.
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
-			Message: "This Cloud request addresses another machine."})
+			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
 	if parseErr != nil || word == "" {
 		return b.refuse(cmd, parsed, "", Refusal{Status: 400, Code: "malformed_command",
-			Message: "This Cloud command is malformed."})
+			Message: "This Cloud command is malformed.", fixedCopy: true})
 	}
 	o, known := catalog[word]
 	if !known {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This machine does not know that Cloud command."})
+			Message: "This machine does not know that Cloud command.", fixedCopy: true})
 	}
 	mutating = !o.read
 	if o.read {
@@ -313,12 +316,12 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 	// class and never a read.
 	if cmd.Class != ClassCtl {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_read",
-			Message: "This Cloud read is malformed."})
+			Message: "This Cloud read is malformed.", fixedCopy: true})
 	}
 	plan, ok := o.decode(parsed)
 	if !ok {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_read",
-			Message: "This Cloud read is malformed."})
+			Message: "This Cloud read is malformed.", fixedCopy: true})
 	}
 	if o.sessions {
 		return b.stateSessions(ctx, cmd, parsed, plan)
@@ -331,7 +334,7 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 		// the Swift bridge's, because it is the code the hosted console learns
 		// from: `machineLacks` stops it asking this machine for the word again.
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This machine does not know that Cloud command."}, nil)
+			Message: "This machine does not know that Cloud command.", fixedCopy: true}, nil)
 	}
 	return b.route(ctx, cmd, plan, o)
 }
@@ -343,7 +346,7 @@ func (b Bridge) serveRead(ctx context.Context, cmd Command, parsed body, o op) A
 func (b Bridge) stateSessions(ctx context.Context, cmd Command, parsed body, p plan) Answer {
 	if b.Sessions == nil && b.SessionsFor == nil {
 		return b.publish(cmd, p, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This machine does not know that Cloud command."}, nil)
+			Message: "This machine does not know that Cloud command.", fixedCopy: true}, nil)
 	}
 	word, _ := parsed.str("type")
 	first := word == sessionsSnapshotInitialWord
@@ -370,7 +373,7 @@ func (b Bridge) stateSessions(ctx context.Context, cmd Command, parsed body, p p
 	body, err := json.Marshal(map[string]any{"sessions": ids, "complete": stated.Complete})
 	if err != nil {
 		return b.publish(cmd, p, Refusal{Status: 502, Code: "read_failed",
-			Message: "This read could not be answered.", Layer: layerRoute}, nil)
+			Message: "This read could not be answered.", fixedCopy: true, Layer: layerRoute}, nil)
 	}
 	return b.publish(cmd, p, Refusal{}, body)
 }
@@ -383,7 +386,7 @@ func (b Bridge) stateSessions(ctx context.Context, cmd Command, parsed body, p p
 func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op) Answer {
 	if !o.readLevel && !b.allowCommands() {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 403, Code: "cloud_commands_disabled",
-			Message: "Cloud commands are disabled on this machine."})
+			Message: "Cloud commands are disabled on this machine.", fixedCopy: true})
 	}
 	// A command rides the class its envelope was sealed under, and every word
 	// but `dispatch` rides `ctl`. A body that reads perfectly under the wrong
@@ -391,12 +394,12 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 	// envelope pins, so it is a fact about the request rather than a detail.
 	if !o.anyClass && cmd.Class != ClassCtl {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_command",
-			Message: "This Cloud command is malformed."})
+			Message: "This Cloud command is malformed.", fixedCopy: true})
 	}
 	plan, ok := o.decode(parsed)
 	if !ok {
 		return b.refuse(cmd, parsed, o.name, Refusal{Status: 400, Code: "malformed_command",
-			Message: "This Cloud command is malformed."})
+			Message: "This Cloud command is malformed.", fixedCopy: true})
 	}
 	// Admission may have waited. Re-read every revocable authority here, at
 	// the point of no return, instead of reusing what was true when this
@@ -414,7 +417,7 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 	}
 	if o.route == nil {
 		return b.publish(cmd, plan, Refusal{Status: 400, Code: "unknown_command",
-			Message: "This machine does not know that Cloud command."}, nil)
+			Message: "This machine does not know that Cloud command.", fixedCopy: true}, nil)
 	}
 	return b.route(ctx, cmd, plan, o)
 }
@@ -423,8 +426,8 @@ func (b Bridge) serveCommand(ctx context.Context, cmd Command, parsed body, o op
 func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer {
 	if b.Router == nil {
 		return b.publish(cmd, plan, Refusal{Status: 503, Code: "router_unavailable",
-			Message: "This machine's own routes are not reachable from its Cloud bridge.",
-			Layer:   layerRoute}, nil)
+			Message: "This machine's own routes are not reachable from its Cloud bridge.", fixedCopy: true,
+			Layer: layerRoute}, nil)
 	}
 	req := o.route(plan)
 	if req.Header == nil {
@@ -440,7 +443,7 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	res, err := b.Router.Do(ctx, req)
 	if err != nil {
 		return b.publish(cmd, plan, Refusal{Status: 502, Code: "route_failed",
-			Message: "This machine could not answer that.", Layer: layerRoute}, nil)
+			Message: "This machine could not answer that.", fixedCopy: true, Layer: layerRoute}, nil)
 	}
 	return b.answer(cmd, plan, o, res)
 }
@@ -474,17 +477,17 @@ func (b Bridge) authorize(ctx context.Context, sender string, requiresWriteGate 
 			detail["clears_in_ms"] = a.ClockClearsInMS
 		}
 		return Refusal{Status: 503, Code: "command_clock_uncertain",
-			Message: "This machine is still confirming the time; try again shortly.",
-			Detail:  detail}, true
+			Message: "This machine is still confirming the time; try again shortly.", fixedCopy: true,
+			Detail: detail}, true
 	case !a.RosterReadable:
 		return Refusal{Status: 503, Code: "command_roster_unreadable",
-			Message: "This machine could not read its paired devices."}, true
+			Message: "This machine could not read its paired devices.", fixedCopy: true}, true
 	case !a.RosterAllowsSender:
 		return Refusal{Status: 403, Code: "unknown_sender",
-			Message: "This machine does not recognise this device."}, true
+			Message: "This machine does not recognise this device.", fixedCopy: true}, true
 	case !a.WriteGateAllows:
 		return Refusal{Status: 403, Code: "cloud_commands_disabled",
-			Message: "Cloud commands are disabled on this machine."}, true
+			Message: "Cloud commands are disabled on this machine.", fixedCopy: true}, true
 	}
 	return Refusal{}, false
 }

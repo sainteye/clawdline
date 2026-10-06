@@ -12,6 +12,7 @@
       "properties": {
         "code": { "description": "unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request, not_found, store_unavailable, unsupported_media_type.", "type": "string" },
         "message": { "type": "string" },
+        "detail_key": { "description": "Optional stable catalog key for this exact fixed English message. Dynamic messages have no key.", "type": "string" },
         "request_id": { "description": "A fresh lowercase UUID per refusal, for finding it in a log.", "type": "string" },
         "tries_left": { "description": "Only on wrong_code: how many guesses pairing has left, so a page need not count for itself. The count is across pairings, not per pairing: asking again does not refill it.", "type": "integer" }
       }

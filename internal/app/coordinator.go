@@ -51,10 +51,11 @@ func (c *Coordinator) now() time.Time {
 // RoleRefusal is a typed no from the coordinator routes. Extra is placed
 // inside the error envelope, as every broker refusal's is.
 type RoleRefusal struct {
-	Status  int
-	Code    string
-	Message string
-	Extra   map[string]any
+	Status     int
+	Code       string
+	Message    string
+	RawMessage bool
+	Extra      map[string]any
 }
 
 func (r RoleRefusal) Error() string { return r.Code + ": " + r.Message }
@@ -180,7 +181,7 @@ func (c *Coordinator) Register(ctx context.Context, conversation string) (State,
 	if st.Status == store.CoordinatorCorrupt || st.Status == store.CoordinatorUnsupported {
 		return st, false, RoleRefusal{Status: http.StatusConflict, Code: "coordinator_store_invalid",
 			Message: "The stored role is not a record this daemon can vouch for (" + string(st.Status) +
-				"); it is left as it is for a person to look at, and nothing was registered."}
+				"); it is left as it is for a person to look at, and nothing was registered.", RawMessage: true}
 	}
 	live, err := c.resolve(st.Seen, conversation)
 	if err != nil && st.Record == nil {

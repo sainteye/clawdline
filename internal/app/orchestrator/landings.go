@@ -87,7 +87,7 @@ func (b *Broker) PendingLandings(ctx context.Context, rd LandingReading) ([]Pend
 		return nil, err
 	}
 	if len(unreadable) > 0 {
-		return nil, refuseWith(http.StatusServiceUnavailable, "landings_incomplete",
+		return nil, refuseRawWith(http.StatusServiceUnavailable, "landings_incomplete",
 			fmt.Sprintf("%d stored task(s) could not be read, so this list could be missing a landing.", len(unreadable)),
 			map[string]any{"unreadable": len(unreadable)})
 	}

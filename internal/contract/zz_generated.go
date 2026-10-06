@@ -249,8 +249,12 @@ var AssistantUnknownReasonValues = []AssistantUnknownReason{AssistantUnknownReas
 type AuthError struct {
 	// unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
 	// not_found, store_unavailable, unsupported_media_type.
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code string `json:"code"`
+
+	// Optional stable catalog key for this exact fixed English message. Dynamic
+	// messages have no key.
+	DetailKey string `json:"detail_key,omitempty"`
+	Message   string `json:"message"`
 
 	// A fresh lowercase UUID per refusal, for finding it in a log.
 	RequestID string `json:"request_id"`
@@ -2132,9 +2136,13 @@ type CloseReason struct {
 // the fleet list was already showing, so the screen and the action never
 // disagree.
 type CloseRefusal struct {
-	Detail  string        `json:"detail"`
-	Error   string        `json:"error"`
-	Reasons []CloseReason `json:"reasons"`
+	Detail string `json:"detail"`
+
+	// Optional stable catalog key for this exact fixed English detail. Dynamic details
+	// have no key.
+	DetailKey string        `json:"detail_key,omitempty"`
+	Error     string        `json:"error"`
+	Reasons   []CloseReason `json:"reasons"`
 }
 
 type CloseRequest struct {
@@ -4301,10 +4309,14 @@ var RecordedLandingSourceValues = []RecordedLandingSource{RecordedLandingSourceT
 // Every refusal on this daemon has this shape. A caller reads `error` as the
 // code and never parses `detail`.
 type Refusal struct {
-	Detail   string `json:"detail"`
-	Error    string `json:"error"`
-	Route    string `json:"route,omitempty"`
-	Upstream string `json:"upstream,omitempty"`
+	Detail string `json:"detail"`
+
+	// Optional stable catalog key for this exact fixed English detail. Dynamic details
+	// have no key.
+	DetailKey string `json:"detail_key,omitempty"`
+	Error     string `json:"error"`
+	Route     string `json:"route,omitempty"`
+	Upstream  string `json:"upstream,omitempty"`
 }
 
 // Why nothing can be offered. `boot_unknown`: this machine cannot read its boot
@@ -5525,7 +5537,7 @@ type SettingsRequest struct {
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
 
-	// `auto` or a language tag the catalog resolves.
+	// Existing agent and Board authoring language and voice auto fallback.
 	Language *string `json:"language"`
 
 	// A pack name the shell offers.
@@ -5570,6 +5582,10 @@ type SettingsRequest struct {
 	// Whether future execution cycles capture the planning gate. Null leaves the
 	// stored setting unchanged; absence in the settings file defaults to true.
 	PlanningGate *bool `json:"planning_gate"`
+
+	// One of the nine shipped product-copy tags; changes daemon notifications and
+	// human-readable CLI copy only.
+	ProductLanguage *string `json:"product_language"`
 
 	// Notify when a session reports a delivery.
 	PushOnDelivery *bool `json:"push_on_delivery"`
@@ -5672,8 +5688,8 @@ type SettingsSnapshot struct {
 	// does; an empty string means the person asked for none, and registers nothing.
 	Hotkey *string `json:"hotkey"`
 
-	// `auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships
-	// only zh-Hant; the key is written so a later one can read it.
+	// Existing agent and Board authoring language and voice auto fallback. Its stored
+	// value and behavior are preserved independently of product language.
 	Language *string `json:"language"`
 
 	// Which mascot pack the shell draws.
@@ -5728,6 +5744,10 @@ type SettingsSnapshot struct {
 	// Whether a newly assigned execution cycle captures the planning gate. Absent
 	// means true; a later setting change never rewrites an in-flight cycle's snapshot.
 	PlanningGate *bool `json:"planning_gate"`
+
+	// Daemon notifications and human-readable CLI copy. Absent, malformed or
+	// unsupported saved values render as English.
+	ProductLanguage *string `json:"product_language"`
 
 	// Notify when a session reports a delivery.
 	PushOnDelivery *bool `json:"push_on_delivery"`

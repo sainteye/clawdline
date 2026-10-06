@@ -25,7 +25,7 @@ import (
 func (s *Server) obligations(w http.ResponseWriter, r *http.Request) {
 	open, err := s.owed(r.Context(), s.reading(r.Context()).Sessions)
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
 

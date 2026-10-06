@@ -130,11 +130,11 @@ func (s *Server) projectSyncRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		entry, err := s.projectSync.Entry(r.Context(), repo)
 		if errors.Is(err, psync.ErrNotOffered) {
-			writeRefusal(w, 404, "project_not_offered", "This machine does not offer "+repo+".")
+			writeRawRefusal(w, 404, "project_not_offered", "This machine does not offer "+repo+".")
 			return
 		}
 		if err != nil {
-			writeRefusal(w, 503, "project_unreadable", err.Error())
+			writeRawRefusal(w, 503, "project_unreadable", err.Error())
 			return
 		}
 		writeJSON(w, map[string]any{"project": entry})
@@ -214,19 +214,19 @@ func (s *Server) projectMirrorApply(w http.ResponseWriter, r *http.Request) {
 	result, err := s.projectSync.Apply(r.Context(), req)
 	switch {
 	case errors.Is(err, psync.ErrSourceMismatch):
-		writeRefusal(w, 409, "mirror_source_mismatch", err.Error())
+		writeRawRefusal(w, 409, "mirror_source_mismatch", err.Error())
 	case errors.Is(err, psync.ErrCloneTarget):
-		writeRefusal(w, 409, "clone_target_exists", err.Error())
+		writeRawRefusal(w, 409, "clone_target_exists", err.Error())
 	case errors.Is(err, psync.ErrCloneBusy):
 		writeRefusal(w, 429, "clone_busy", err.Error())
 	case errors.Is(err, domain.ErrMirrorCapacity):
 		writeRefusal(w, 409, "mirror_capacity", err.Error())
 	case errors.Is(err, psync.ErrInvalid):
-		writeRefusal(w, 422, "invalid_project", err.Error())
+		writeRawRefusal(w, 422, "invalid_project", err.Error())
 	case errors.Is(err, psync.ErrNoCloneRoot):
 		writeRefusal(w, 409, "clone_root_unavailable", err.Error())
 	case err != nil:
-		writeRefusal(w, 503, "mirror_store_unavailable", err.Error())
+		writeRawRefusal(w, 503, "mirror_store_unavailable", err.Error())
 	default:
 		writeJSON(w, map[string]any{"ok": true, "result": result})
 	}

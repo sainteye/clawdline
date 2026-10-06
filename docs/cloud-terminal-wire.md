@@ -158,6 +158,8 @@ When the machine setting `cloud_terminal_direct` (default on) is off, offers are
 | `CloudTerminalRotationRetrySecondsLimit` | 5 s before trying again a key rotation that failed, while the old key lasts | browser |
 | `CloudTerminalReceiptBusyRetriesLimit` | 3 republications of a receipt the relay refused with `rate_limited` | machine |
 | `CloudTerminalReceiptBusyRetrySecondsLimit` | 2 s before each | machine |
+| `CloudTerminalReceiptsLimit` | 512 receipts kept per connection for a re-sent request id; a request past it is refused `terminal_busy` | machine |
+| `CloudTerminalReceiptSecondsLimit` | 15 s a receipt is kept, past the viewer's ten-second wait, after which it never sends that request id again. Until 2026-10-06 receipts were never let go and the limit was 64, so a connection refused every request after its 64th: a burst of typing on a direct connection stopped after 16 vim `j`s (22:09:07) | machine |
 
 ## Lease continuity and revocation
 
@@ -173,7 +175,7 @@ The relay discards a connection's cached frame when an authenticated machine ret
 
 ## Diagnostics
 
-Both halves of a terminal keep a content-free timeline: fixed stage words, small ordinals in place of real identifiers, and no terminal text, keys or request IDs. The browser's is `web/console/src/cloud/terminal-observation.ts` (console lines `cloud terminal stage seq=…`, and the text behind the terminal page's delivery-diagnostics panel); the machine's is `terminalStageLocked` in `internal/transport/cloud/terminal.go` (log lines `cloud terminal stage n=… stage=… op=… outcome=…`).
+Both halves of a terminal keep a content-free timeline: fixed stage words, small ordinals in place of real identifiers, and no terminal text, keys or request IDs. The browser's is `web/console/src/cloud/terminal-observation.ts` (console lines `cloud terminal stage seq=…`, and the text behind the terminal page's delivery-diagnostics panel); the machine's is `terminalStageLocked` in `internal/transport/cloud/terminal.go` (log lines `cloud terminal stage n=… stage=… op=… outcome=…`, with `code=<typed refusal code>` on a refused or unknown receipt).
 
 Neither keeps only its first rows. Until 2026-10 both stopped after 128 rows — per page load in the browser, per connection on the machine — so a terminal that broke after a few dozen keys broke with nothing recorded. Now:
 

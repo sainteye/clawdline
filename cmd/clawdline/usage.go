@@ -77,16 +77,16 @@ func usageCommand(args []string) {
 }
 
 func usageCommandUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline usage [--session <conversation> | --task <id> | --item <id>] [--json] [--port n]")
-	fmt.Fprintln(os.Stderr, "  what a session, a child task or a Board item spent, by category; this session's own by default")
-	fmt.Fprintln(os.Stderr, "       clawdline usage --compare-compaction [--since 14d] [--json] [--port n]")
-	fmt.Fprintln(os.Stderr, "  child tasks grouped by the compaction window they were launched with: what they cost and how they ended")
-	fmt.Fprintln(os.Stderr, "       clawdline usage --compare-handoff [--since 14d] [--json] [--port n]")
-	fmt.Fprintln(os.Stderr, "  finished Board items grouped by whether a milestone handoff carried them: cache reads per item, and whether to make it the default")
-	fmt.Fprintln(os.Stderr, "       clawdline usage --freeze-baseline [--since 14d] [--out FILE] [--port n]")
-	fmt.Fprintln(os.Stderr, "  write the raw per-unit samples of the range to a file outside any repository")
-	fmt.Fprintln(os.Stderr, "       clawdline usage --work-report --baseline FILE [--since t] [--json] [--port n]")
-	fmt.Fprintln(os.Stderr, "  the baseline beside the units since, by stratum, with a verdict per group")
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_usage_clawdline_usage_session_conversation_task", "usage: clawdline usage [--session <conversation> | --task <id> | --item <id>] [--json] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_what_a_session_a_child_task", "  what a session, a child task or a Board item spent, by category; this session's own by default"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_clawdline_usage_compare_compaction_since_14d", "       clawdline usage --compare-compaction [--since 14d] [--json] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_child_tasks_grouped_by_the_compaction", "  child tasks grouped by the compaction window they were launched with: what they cost and how they ended"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_clawdline_usage_compare_handoff_since_14d", "       clawdline usage --compare-handoff [--since 14d] [--json] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_finished_board_items_grouped_by_whether", "  finished Board items grouped by whether a milestone handoff carried them: cache reads per item, and whether to make it the default"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_clawdline_usage_freeze_baseline_since_14d", "       clawdline usage --freeze-baseline [--since 14d] [--out FILE] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_write_the_raw_per_unit_samples", "  write the raw per-unit samples of the range to a file outside any repository"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_clawdline_usage_work_report_baseline_file", "       clawdline usage --work-report --baseline FILE [--since t] [--json] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "usage_the_baseline_beside_the_units_since", "  the baseline beside the units since, by stratum, with a verdict per group"))
 	os.Exit(2)
 }
 
@@ -107,12 +107,11 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 	case id == "":
 		var err error
 		if id, _, err = conversationFromEnv(getenv); err != nil {
-			fmt.Fprintf(stderr, "clawdline usage: %s\n", conversationRefusal(err, "--session"))
+			fmt.Fprintf(stderr, cliCopy("entry", "usage_clawdline_usage_s", "clawdline usage: %s\n"), conversationRefusal(err, "--session"))
 			return 2
 		}
 		if id == "" {
-			fmt.Fprintf(stderr, "clawdline usage: cannot tell which conversation this is: none of %s is set. "+
-				"Pass --session <conversation id>, --task <id> or --item <id>.\n", strings.Join(conversationEnv, ", "))
+			fmt.Fprintf(stderr, cliCopy("entry", "usage_conversation_unknown", "clawdline usage: cannot tell which conversation this is: none of %s is set. Pass --session <conversation id>, --task <id> or --item <id>.\n"), strings.Join(conversationEnv, ", "))
 			return 2
 		}
 	}
@@ -134,18 +133,18 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 		if json.Unmarshal(a.Body, &s) != nil {
 			return unreadableUsage(stderr)
 		}
-		head = usageHead("session "+s.Conversation, s.Reason, s.Calls, s.PeakContext, s.Bill)
+		head = usageHead(cliCopy("entry", "usage_session_prefix", "session ")+s.Conversation, s.Reason, s.Calls, s.PeakContext, s.Bill)
 		if s.ReadAt != 0 {
-			head += fmt.Sprintf(", %d wait calls", s.WaitCalls)
+			head += fmt.Sprintf(cliCopy("entry", "usage_wait_calls", ", %d wait calls"), s.WaitCalls)
 		}
 		if s.CallsAbove > 0 {
-			head += fmt.Sprintf(", %d calls above 200k context (%s)", s.CallsAbove, usageCost(s.Above))
+			head += fmt.Sprintf(cliCopy("entry", "usage_calls_above_context", ", %d calls above 200k context (%s)"), s.CallsAbove, usageCost(s.Above))
 		}
 		if s.Compactions > 0 {
-			head += fmt.Sprintf(", %d compactions", s.Compactions)
+			head += fmt.Sprintf(cliCopy("entry", "usage_compactions", ", %d compactions"), s.Compactions)
 		}
 		if w := usageWindow(s.AutoCompactWindow); w != "" {
-			head += ", " + w
+			head += cliCopy("entry", "usage_list_separator", ", ") + w
 		}
 		bill, gaps = s.Bill, s.Gaps
 	case "tasks":
@@ -153,14 +152,14 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 		if json.Unmarshal(a.Body, &t) != nil {
 			return unreadableUsage(stderr)
 		}
-		head = usageHead(fmt.Sprintf("task %s (%d sessions)", t.TaskID, len(t.Sessions)), t.Reason, t.Calls, t.PeakContext, t.Bill)
+		head = usageHead(fmt.Sprintf(cliCopy("entry", "usage_task_heading", "task %s (%d sessions)"), t.TaskID, len(t.Sessions)), t.Reason, t.Calls, t.PeakContext, t.Bill)
 		bill, gaps, sessions = t.Bill, t.Gaps, t.Sessions
 	case "items":
 		var it contract.UsageItem
 		if json.Unmarshal(a.Body, &it) != nil {
 			return unreadableUsage(stderr)
 		}
-		head = usageHead(fmt.Sprintf("item %s (%d sessions, %d tasks)", it.ItemID, len(it.Sessions), len(it.Tasks)),
+		head = usageHead(fmt.Sprintf(cliCopy("entry", "usage_item_heading", "item %s (%d sessions, %d tasks)"), it.ItemID, len(it.Sessions), len(it.Tasks)),
 			"", it.Calls, it.PeakContext, it.Bill)
 		bill, gaps, sessions = it.Bill, it.Gaps, it.Sessions
 		for _, t := range it.Tasks {
@@ -173,22 +172,22 @@ func showUsage(stdout, stderr io.Writer, b *broker, ask usageAsk, getenv func(st
 	// experiment can be grouped by it; one it did not launch says nothing.
 	for _, s := range sessions {
 		if w := usageWindow(s.AutoCompactWindow); w != "" {
-			fmt.Fprintf(stdout, "session %s: %s, peak context %s, %d compactions\n",
+			fmt.Fprintf(stdout, cliCopy("entry", "usage_session_s_s_peak_context_s", "session %s: %s, peak context %s, %d compactions\n"),
 				s.Conversation, w, usageCount(float64(s.PeakContext)), s.Compactions)
 		}
 	}
 	for _, g := range gaps {
-		counted := "nothing of it counted"
+		counted := cliCopy("entry", "usage_gap_nothing_counted", "nothing of it counted")
 		if g.Counted {
-			counted = "an earlier reading counted"
+			counted = cliCopy("entry", "usage_gap_earlier_counted", "an earlier reading counted")
 		}
-		fmt.Fprintf(stdout, "gap: %s %s %s (%s)\n", g.Kind, g.ID, g.Reason, counted)
+		fmt.Fprintf(stdout, cliCopy("entry", "usage_gap_s_s_s_s", "gap: %s %s %s (%s)\n"), g.Kind, g.ID, g.Reason, counted)
 	}
 	return 0
 }
 
 func unreadableUsage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "clawdline usage: the daemon's answer could not be read; --json prints it as it came")
+	fmt.Fprintln(stderr, cliCopy("entry", "usage_clawdline_usage_the_daemon_s_answer", "clawdline usage: the daemon's answer could not be read; --json prints it as it came"))
 	return 1
 }
 
@@ -196,11 +195,11 @@ func unreadableUsage(stderr io.Writer) int {
 // its cost — or, for a reading the ledger does not have, why.
 func usageHead(what string, reason contract.UsageReason, calls, peak int64, bill contract.UsageBill) string {
 	if reason == contract.UsageReasonNotYetRead {
-		return what + ": not_yet_read — the ledger has no reading of it yet"
+		return what + cliCopy("entry", "usage_not_yet_read", ": not_yet_read — the ledger has no reading of it yet")
 	}
-	head := fmt.Sprintf("%s: %d calls, peak context %s, %s", what, calls, usageCount(float64(peak)), usageCost(bill.Total))
+	head := fmt.Sprintf(cliCopy("entry", "usage_heading_read", "%s: %d calls, peak context %s, %s"), what, calls, usageCount(float64(peak)), usageCost(bill.Total))
 	if reason != "" {
-		head += " — " + string(reason) + ", from the last reading"
+		head += cliCopy("entry", "usage_reason_separator", " — ") + string(reason) + cliCopy("entry", "usage_from_last_reading", ", from the last reading")
 	}
 	return head
 }
@@ -216,17 +215,17 @@ func writeUsageLines(w io.Writer, bill contract.UsageBill) {
 		}
 		return lines[i].Tokens.Cost > lines[j].Tokens.Cost
 	})
-	of := "of cost"
+	of := cliCopy("entry", "usage_of_cost", "of cost")
 	if byTokens {
-		of = "of tokens"
+		of = cliCopy("entry", "usage_of_tokens", "of tokens")
 	}
 	for _, c := range lines {
 		if c.Tokens.Total == 0 {
 			continue
 		}
-		line := fmt.Sprintf("  %-10s %5.1f%% %s  %8s tokens  %s", c.Name, c.Share*100, of, usageCount(c.Tokens.Total), usageCost(c.Tokens))
+		line := fmt.Sprintf(cliCopy("entry", "usage_category_line", "  %-10s %5.1f%% %s  %8s tokens  %s"), c.Name, c.Share*100, of, usageCount(c.Tokens.Total), usageCost(c.Tokens))
 		if c.UpperBound {
-			line += "  (upper bound)"
+			line += cliCopy("entry", "usage_upper_bound", "  (upper bound)")
 		}
 		fmt.Fprintln(w, line)
 	}
@@ -247,9 +246,9 @@ func usageCount(n float64) string {
 func usageCost(t contract.UsageTokens) string {
 	if !t.CostKnown {
 		if t.Cost == 0 {
-			return "cost unknown"
+			return cliCopy("entry", "usage_cost_unknown", "cost unknown")
 		}
-		return fmt.Sprintf("$%.2f + unpriced %s tokens", t.Cost, usageCount(t.Unpriced))
+		return fmt.Sprintf(cliCopy("entry", "usage_unpriced_tokens", "$%.2f + unpriced %s tokens"), t.Cost, usageCount(t.Unpriced))
 	}
 	return fmt.Sprintf("$%.2f", t.Cost)
 }
@@ -261,9 +260,9 @@ func usageWindow(w *int64) string {
 	case w == nil:
 		return ""
 	case *w == 0:
-		return "launched with no compaction window"
+		return cliCopy("entry", "usage_no_compaction_window", "launched with no compaction window")
 	}
-	return "launched to compact at " + usageCount(float64(*w))
+	return cliCopy("entry", "usage_compact_at", "launched to compact at ") + usageCount(float64(*w))
 }
 
 // showCompactionComparison is `usage --compare-compaction`: one GET to
@@ -293,13 +292,13 @@ func showCompactionComparison(stdout, stderr io.Writer, b *broker, since string,
 // writeCompactionComparison is the comparison as a table and the lines that
 // qualify it; `clawdline verify show` prints a record's data with it too.
 func writeCompactionComparison(stdout io.Writer, c contract.UsageCompactionComparison) {
-	fmt.Fprintf(stdout, "child tasks created %s – %s, by the compaction window they were launched with\n",
+	fmt.Fprintf(stdout, cliCopy("entry", "usage_child_tasks_created_s_s_by", "child tasks created %s – %s, by the compaction window they were launched with\n"),
 		time.Unix(c.Since, 0).UTC().Format("2006-01-02 15:04Z"), time.Unix(c.Until, 0).UTC().Format("2006-01-02 15:04Z"))
 	if len(c.Groups) == 0 {
-		fmt.Fprintln(stdout, "no child task in this range was launched with a known window")
+		fmt.Fprintln(stdout, cliCopy("entry", "usage_no_child_task_in_this_range", "no child task in this range was launched with a known window"))
 	} else {
 		tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-		fmt.Fprintln(tw, "group\tsessions\ttasks\tcost/task\tcalls/task\tcompactions/task\tabove-200k share\tsuccess rate\tstalled\trespawns\t")
+		fmt.Fprintln(tw, cliCopy("entry", "usage_group_sessions_tasks_cost_task_calls", "group\tsessions\ttasks\tcost/task\tcalls/task\tcompactions/task\tabove-200k share\tsuccess rate\tstalled\trespawns\t"))
 		for _, g := range c.Groups {
 			cost := "—"
 			if g.ReadTasks > 0 {
@@ -313,14 +312,14 @@ func writeCompactionComparison(stdout io.Writer, c contract.UsageCompactionCompa
 				comparePercent(g.SuccessRate, g.TooFew), g.Stalled, g.Respawns)
 		}
 		_ = tw.Flush()
-		fmt.Fprintln(stdout, "cost/task is the median over the tasks the ledger has read; + means part of it has no price.")
+		fmt.Fprintln(stdout, cliCopy("entry", "usage_cost_task_is_the_median_over", "cost/task is the median over the tasks the ledger has read; + means part of it has no price."))
 		for _, g := range c.Groups {
 			if g.TooFew {
-				fmt.Fprintf(stdout, "%s: %d tasks, fewer than %d — too few to compare, so no percentage is shown\n",
+				fmt.Fprintf(stdout, cliCopy("entry", "usage_s_d_tasks_fewer_than_d", "%s: %d tasks, fewer than %d — too few to compare, so no percentage is shown\n"),
 					g.Group, g.Tasks, c.MinTasks)
 			}
 			if g.Running > 0 || g.ReadTasks < g.Tasks {
-				fmt.Fprintf(stdout, "%s: %d still running, %d not read by the ledger yet\n", g.Group, g.Running, g.Tasks-g.ReadTasks)
+				fmt.Fprintf(stdout, cliCopy("entry", "usage_s_d_still_running_d_not", "%s: %d still running, %d not read by the ledger yet\n"), g.Group, g.Running, g.Tasks-g.ReadTasks)
 			}
 		}
 	}
@@ -335,21 +334,21 @@ func writeCompactionComparison(stdout io.Writer, c contract.UsageCompactionCompa
 				parts = append(parts, fmt.Sprintf("%d %s", reasons[r], r))
 			}
 		}
-		line := fmt.Sprintf("excluded: %d tasks with no known window", c.Excluded)
+		line := fmt.Sprintf(cliCopy("entry", "usage_excluded_unknown_window", "excluded: %d tasks with no known window"), c.Excluded)
 		if len(parts) > 0 {
 			line += " (" + strings.Join(parts, ", ")
 			if c.ExcludedTruncated {
-				line += fmt.Sprintf(" among the newest %d", len(c.ExcludedTasks))
+				line += fmt.Sprintf(cliCopy("entry", "usage_among_newest", " among the newest %d"), len(c.ExcludedTasks))
 			}
 			line += ")"
 		}
 		fmt.Fprintln(stdout, line)
 	}
 	if c.Truncated {
-		fmt.Fprintln(stdout, "truncated: the range held more tasks than one answer reads; these are the newest")
+		fmt.Fprintln(stdout, cliCopy("entry", "usage_truncated_the_range_held_more_tasks", "truncated: the range held more tasks than one answer reads; these are the newest"))
 	}
 	for _, m := range c.NotRecorded {
-		fmt.Fprintf(stdout, "not recorded: %s — %s\n", m.Name, m.Why)
+		fmt.Fprintf(stdout, cliCopy("entry", "usage_not_recorded_s_s", "not recorded: %s — %s\n"), m.Name, m.Why)
 	}
 }
 
@@ -357,7 +356,7 @@ func writeCompactionComparison(stdout io.Writer, c contract.UsageCompactionCompa
 func comparePercent(p *float64, tooFew bool) string {
 	switch {
 	case tooFew:
-		return "too few"
+		return cliCopy("entry", "usage_too_few", "too few")
 	case p == nil:
 		return "—"
 	}
@@ -389,10 +388,10 @@ func showHandoffComparison(stdout, stderr io.Writer, b *broker, since string, as
 }
 
 func writeHandoffComparison(stdout io.Writer, c contract.UsageHandoffComparison) {
-	fmt.Fprintf(stdout, "Board items finished %s – %s, by whether a milestone handoff carried them\n",
+	fmt.Fprintf(stdout, cliCopy("entry", "usage_board_items_finished_s_s_by", "Board items finished %s – %s, by whether a milestone handoff carried them\n"),
 		time.Unix(c.Since, 0).UTC().Format("2006-01-02 15:04Z"), time.Unix(c.Until, 0).UTC().Format("2006-01-02 15:04Z"))
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(tw, "group\titems\tcache reads/item\tcalls/item\thours to done\treopened\t")
+	fmt.Fprintln(tw, cliCopy("entry", "usage_group_items_cache_reads_item_calls", "group\titems\tcache reads/item\tcalls/item\thours to done\treopened\t"))
 	for _, g := range c.Groups {
 		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t%s\t\n", g.Name, g.Items, handoffNumber(g.CacheReadPerItem, usageCount),
 			handoffNumber(g.CallsPerItem, func(v float64) string { return fmt.Sprintf("%.0f", v) }),
@@ -400,29 +399,29 @@ func writeHandoffComparison(stdout io.Writer, c contract.UsageHandoffComparison)
 			comparePercent(g.ReopenedShare, false))
 	}
 	_ = tw.Flush()
-	fmt.Fprintln(stdout, "cache reads/item is the median of the owner Sessions' own cache reads, each Session's shared among the items it finished.")
-	fmt.Fprintf(stdout, "milestone handoffs: %d opened, %d failed to open, %d carried tasks unsettled a day later\n",
+	fmt.Fprintln(stdout, cliCopy("entry", "usage_cache_reads_item_is_the_median", "cache reads/item is the median of the owner Sessions' own cache reads, each Session's shared among the items it finished."))
+	fmt.Fprintf(stdout, cliCopy("entry", "usage_milestone_handoffs_d_opened_d_failed", "milestone handoffs: %d opened, %d failed to open, %d carried tasks unsettled a day later\n"),
 		c.MilestoneHandoffs, c.FailedHandoffs, c.CarriedUnsettled)
 	if c.ExcludedUnowned+c.ExcludedUnread > 0 {
-		fmt.Fprintf(stdout, "excluded: %d with no owner Session, %d with an owner the ledger has not read\n", c.ExcludedUnowned, c.ExcludedUnread)
+		fmt.Fprintf(stdout, cliCopy("entry", "usage_excluded_d_with_no_owner_session", "excluded: %d with no owner Session, %d with an owner the ledger has not read\n"), c.ExcludedUnowned, c.ExcludedUnread)
 	}
 	if c.Truncated {
-		fmt.Fprintln(stdout, "truncated: the range held more items than one answer reads; these are the newest")
+		fmt.Fprintln(stdout, cliCopy("entry", "usage_truncated_the_range_held_more_items", "truncated: the range held more items than one answer reads; these are the newest"))
 	}
-	saving := "not computed"
+	saving := cliCopy("entry", "usage_not_computed", "not computed")
 	if c.Saving != nil {
 		saving = fmt.Sprintf("%.0f%%", *c.Saving*100)
 	}
-	fmt.Fprintf(stdout, "saving per item: %s (target %.0f%%, each group needs %d items)\n", saving, c.Target*100, c.MinItems)
-	fmt.Fprintf(stdout, "verdict: %s\n", c.Verdict)
+	fmt.Fprintf(stdout, cliCopy("entry", "usage_saving_per_item_s_target_0f", "saving per item: %s (target %.0f%%, each group needs %d items)\n"), saving, c.Target*100, c.MinItems)
+	fmt.Fprintf(stdout, cliCopy("entry", "usage_verdict_s", "verdict: %s\n"), c.Verdict)
 	for _, r := range c.Reasons {
 		fmt.Fprintf(stdout, "  %s\n", r)
 	}
 	if c.Verdict != "recommend_default" {
-		fmt.Fprintln(stdout, "handing over stays each Session's own choice: `clawdline handoff --summary <file>` at a milestone")
+		fmt.Fprintln(stdout, cliCopy("entry", "usage_handing_over_stays_each_session_s", "handing over stays each Session's own choice: `clawdline handoff --summary <file>` at a milestone"))
 	}
 	for _, m := range c.NotMeasured {
-		fmt.Fprintf(stdout, "not measured: %s\n", m)
+		fmt.Fprintf(stdout, cliCopy("entry", "usage_not_measured_s", "not measured: %s\n"), m)
 	}
 }
 
