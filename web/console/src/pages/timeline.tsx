@@ -1,6 +1,8 @@
+import { catalogWord } from "../catalog.js"
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
 import { bindTimeline, requestedTimeline, timelineReturn, type TimelinePage } from "../legacy/timeline-bridge.js"
+import { machineWording } from "../legacy/machine-copy.js"
 import { ActionConfirm, Info, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./timeline/section.html?raw"
 
@@ -40,6 +42,11 @@ function TimelinePageView({ shown }: { shown: boolean }) {
     root?.querySelector("#timeline-board-tab")?.remove()
     const discardUnmappedPills = () => {
       for (const pill of root?.querySelectorAll(".timeline-board-pill, .timeline-board-more") ?? []) pill.remove()
+      const status = root?.querySelector("#timeline-status")
+      if (status?.textContent) {
+        const wording = machineWording(status.textContent, document.documentElement.lang)
+        if (wording !== status.textContent) status.textContent = wording
+      }
     }
     discardUnmappedPills()
     const observer = root ? new MutationObserver(discardUnmappedPills) : null
@@ -107,7 +114,7 @@ function TimelinePageView({ shown }: { shown: boolean }) {
       className="page timeline-page"
       id="timeline"
       data-page-view="timeline"
-      aria-label="Project Timeline"
+      aria-label={catalogWord("inline", "da2fd084302a")}
       hidden={!shown}
       dangerouslySetInnerHTML={{ __html: sectionMarkup }}
     />

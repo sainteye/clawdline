@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import type { NewSquadSkill } from "./api.js"
 import { SKILL_BODY_BYTES } from "./skill-create.js"
 
@@ -33,25 +34,25 @@ function frontmatter(body: string, field: string): string {
 /** Capture exact files once; a later change to the selected folder cannot alter a retry. */
 export async function importSkillFiles(input: FileList | File[], folder: boolean): Promise<ImportedSkill> {
   const files = Array.from(input)
-  if (!files.length) throw new Error("請選擇技能檔案。")
+  if (!files.length) throw new Error(catalogWord("literal", "711deea02238"))
   const rows = files.map((file) => {
     const raw = folder ? file.webkitRelativePath || file.name : file.name
     const parts = raw.split("/")
     const relative = folder ? parts.slice(1).join("/") : raw
     return { file, relative }
   }).filter((row) => row.relative !== "")
-  if (rows.some((row) => !safePath(row.relative))) throw new Error("技能資料夾包含無法使用的檔案路徑。")
+  if (rows.some((row) => !safePath(row.relative))) throw new Error(catalogWord("literal", "de95647166ea"))
   const seen = new Set<string>()
   for (const row of rows) {
     const key = row.relative.toLocaleLowerCase()
-    if (seen.has(key)) throw new Error("技能資料夾含有重複檔名。")
+    if (seen.has(key)) throw new Error(catalogWord("literal", "e861ebcd3d2a"))
     seen.add(key)
   }
   const main = rows.find((row) => row.relative === "SKILL.md")
-  if (!main || (!folder && rows.length !== 1)) throw new Error("請選擇含有 SKILL.md 的技能資料夾，或單獨選擇 SKILL.md。")
-  if (rows.reduce((sum, row) => sum + row.file.size, 0) > SKILL_BODY_BYTES) throw new Error("技能全文與附檔合計超過 64 KiB。")
+  if (!main || (!folder && rows.length !== 1)) throw new Error(catalogWord("literal", "157f5f468213"))
+  if (rows.reduce((sum, row) => sum + row.file.size, 0) > SKILL_BODY_BYTES) throw new Error(catalogWord("literal", "71a96c33c44f"))
   const content = await main.file.text()
-  if (!content.trim() || encodedLength(content) > SKILL_BODY_BYTES) throw new Error("SKILL.md 必須有內容，且不得超過 64 KiB。")
+  if (!content.trim() || encodedLength(content) > SKILL_BODY_BYTES) throw new Error(catalogWord("literal", "6d418d44972b"))
   const attachments: ImportedSkill["files"] = []
   for (const row of rows.filter((entry) => entry !== main).sort((a, b) => a.relative.localeCompare(b.relative))) {
     const bytes = new Uint8Array(await row.file.arrayBuffer())
@@ -60,5 +61,5 @@ export async function importSkillFiles(input: FileList | File[], folder: boolean
     attachments.push({ path: row.relative, content_base64: btoa(binary) })
   }
   const fallback = folder ? files[0].webkitRelativePath.split("/")[0] : "SKILL.md"
-  return { name: frontmatter(content, "name") || fallback, purpose: frontmatter(content, "description") || "匯入的技能", content, files: attachments }
+  return { name: frontmatter(content, "name") || fallback, purpose: frontmatter(content, "description") || catalogWord("literal", "751b770b11a9"), content, files: attachments }
 }

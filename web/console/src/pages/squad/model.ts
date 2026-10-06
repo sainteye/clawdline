@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import type { Icon } from "@clawdline/contract"
 
 /** Presentation data. The wire adapter owns the mapping from the squad contract. */
@@ -132,9 +133,9 @@ export function visiblePersonas(data: SquadView, teamId: string, search: string)
 
 export function sourceLabel(source: Effective<unknown>["source"]): string {
   switch (source) {
-    case "default": return "內建預設"
-    case "global": return "全域設定"
-    case "project": return "Project 覆寫"
+    case "default": return catalogWord("literal", "f32daac07918")
+    case "global": return catalogWord("literal", "b545baf83246")
+    case "project": return catalogWord("literal", "d77dd218a98a")
   }
 }
 

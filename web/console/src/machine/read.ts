@@ -1,3 +1,4 @@
+import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import type { MachineUsage } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../client.js"
@@ -46,15 +47,22 @@ async function call(method: string, path: string): Promise<MachineUsage> {
 export function failureWords(err: unknown, zh: boolean): string {
   if (err instanceof RefusalError) {
     if (err.code === "machine_usage_unsupported") {
-      return zh ? "這台機器的作業系統還沒有用量讀取器（目前支援 Linux 和 macOS）。" : "This machine's system has no usage reader yet (Linux and macOS for now)."
+      return catalogWord("literal", "ed6c1de76c4f")
     }
     if (err.code === "cloud_not_carried" || err.code === "unknown_command") {
-      return zh ? "這台機器的 Clawdline 版本還不會回答用量，更新後就能看到。" : "This machine's Clawdline does not answer usage yet; update it to see this."
+      return catalogWord("literal", "fabc8bde5489")
     }
-    return err.detail || err.code
+    return catalogRefusalDetail(err)?.text || err.code
   }
   if (err instanceof TransportError) {
-    return zh ? "機器沒有回應，可能正忙著；會自動再試。" : "The machine did not answer — it may be busy. Trying again."
+    return catalogWord("literal", "eab8191e445c")
   }
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Mark a producer sentence with its actual language for screen readers. */
+export function failureWordsLanguage(err: unknown): string | undefined {
+  if (!(err instanceof RefusalError)) return undefined
+  if (err.code === "machine_usage_unsupported" || err.code === "cloud_not_carried" || err.code === "unknown_command") return undefined
+  return catalogRefusalDetail(err)?.lang
 }

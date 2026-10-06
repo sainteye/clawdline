@@ -9,6 +9,8 @@
  * Holes are `{name}`, as the catalog's are.
  */
 
+import { catalogWord, currentCatalogTag, type CatalogTag } from "../../catalog.js"
+
 const words = {
   en: {
     nav: "Verify",
@@ -167,18 +169,18 @@ const words = {
 } as const
 
 export type VerifyWord = keyof (typeof words)["en"]
-export type Language = keyof typeof words
+export type Language = CatalogTag
 
 /** The page's language as the copied catalog set it, or the browser's (next-strings.ts). */
 export function language(): Language {
-  const lang = (typeof document !== "undefined" && document.documentElement.lang) ||
-    (typeof navigator !== "undefined" && navigator.language) || "en"
-  return lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"
+  return currentCatalogTag()
 }
 
 /** One sentence in a named language, its holes filled. */
 export function verifyWordIn(lang: Language, key: VerifyWord, holes: Record<string, string | number> = {}): string {
-  return words[lang][key].replace(/\{(\w+)\}/g, (all, name: string) =>
+  const template = lang === currentCatalogTag() ? catalogWord("verify", key) :
+    lang === "en" || lang === "zh-Hant" ? words[lang][key] : catalogWord("verify", key)
+  return template.replace(/\{(\w+)\}/g, (all, name: string) =>
     name in holes ? String(holes[name]) : all,
   )
 }

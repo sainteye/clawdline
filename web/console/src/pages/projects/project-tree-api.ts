@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import { ProjectFileError } from "./project-files-api.js"
 
 export interface TreeEntry {
@@ -13,11 +14,11 @@ export interface TreeContent { path: string; text: string; size: number; version
 async function answer<T>(url: string): Promise<T> {
   let response: Response
   try { response = await fetch(url, { credentials: "same-origin" }) }
-  catch { throw new ProjectFileError("network", "連線中斷。") }
+  catch { throw new ProjectFileError("network", catalogWord("literal", "9d9da944cf48")) }
   let body: any
   try { body = await response.json() }
-  catch { throw new ProjectFileError("invalid_response", "機器回覆無法讀取。") }
-  if (!response.ok) throw new ProjectFileError(body?.error ?? "unavailable", body?.detail ?? "檔案目前無法讀取。")
+  catch { throw new ProjectFileError("invalid_response", catalogWord("literal", "8630b0a7e9d2")) }
+  if (!response.ok) throw new ProjectFileError(body?.error ?? "unavailable", body?.detail ?? catalogWord("literal", "22881454a0f0"))
   return body as T
 }
 

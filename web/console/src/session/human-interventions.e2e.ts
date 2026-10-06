@@ -29,6 +29,9 @@ let showOptions = true
 let singleOption = false
 let listWaiting = false
 let listAttentionCount = 1
+let documentMode: "ready" | "refused" | "keyed" = "ready"
+let documentListMode: "ready" | "empty" | "starting" = "ready"
+let documentReadDelay = 0
 const row = {
   id: SESSION, label: "Delivery Session", backend: "owned", state: "idle", work_state: "ready",
   evidence: "process", assistant: "codex", sessionId: CONVERSATION, cwd: "/tmp/fixture",
@@ -37,6 +40,138 @@ const row = {
   closeability: { activity_generation: 1, attestation_id: null, mover: null, obligation_generation: 1,
     observed_at: 1, provenance: [], reasons: [], session_generation: 1, source: "broker", state: "safe", version: "fixture" },
 }
+
+for (const [tag, width, title, projectMeta, listMeta, invalid] of [
+  ["ja", 390, "ドキュメント", "プロジェクト · demo.md · 47 バイト", "プロジェクト · 57 バイト", "ドキュメントのリンクが無効です。"],
+  ["es", 1280, "Documentos", "Proyecto · demo.md · 47 bytes", "Proyecto · 57 bytes", "El enlace del documento no es válido."],
+] as const) {
+  test(`Documents ${tag} at ${width}px translates states without changing document data`, async () => {
+    const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+    const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+    const run = async (expression: string) => {
+      const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+      if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+      return result.value
+    }
+    const until = async (expression: string) => {
+      const deadline = Date.now() + 8_000
+      while (!(await run(expression))) {
+        if (Date.now() > deadline) assert.fail("Documents did not reach " + expression + ": " + JSON.stringify(await run(`({status: document.getElementById("documents-status")?.textContent, lang: document.documentElement.lang})`)))
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
+    try {
+      await fetch(origin + "/__fixture/reset")
+      await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+      await browser.send("Emulation.setDeviceMetricsOverride", { width, height: 844, deviceScaleFactor: 2, mobile: width < 900 }, id)
+      await browser.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: width < 900 ? "dark" : "light" }] }, id)
+      const address = `${origin}/?ui=${tag}#document=1&machine=this-mac&session=${SESSION}&scope=project&path=demo.md`
+      const mark = browser.loadCount; await browser.send("Page.navigate", { url: address }, id); await browser.loaded(id, mark)
+      await until(`document.getElementById("document-body")?.textContent?.includes("The document opened directly.")`)
+      assert.equal(await run(`document.documentElement.lang`), tag)
+      assert.equal(await run(`document.getElementById("documents-title")?.textContent`), title)
+      assert.equal(await run(`document.activeElement?.id`), "documents-title")
+      assert.equal(await run(`document.getElementById("document-meta")?.textContent`), projectMeta)
+      assert.equal(await run(`document.getElementById("document-title")?.textContent`), "demo.md")
+      assert.equal(await run(`document.getElementById("document-share")?.disabled`), true)
+      assert.match(await run(`document.getElementById("document-share")?.getAttribute("title")`), /document_share_unavailable/)
+      assert.equal(await run(`document.getElementById("document-share")?.getAttribute("title")?.includes(${JSON.stringify(tag === "ja" ? "文書のホスト識別情報を確認してください。" : "Comprueba la identidad del anfitrión de este documento.")})`), true)
+      await run(`document.getElementById("document-list-back").click()`)
+      await until(`document.querySelectorAll("#documents-rows button").length === 5`)
+      assert.equal(await run(`document.querySelector("#documents-rows button span")?.textContent`), listMeta)
+      assert.equal(await run(`document.querySelectorAll("#documents-rows button strong")[1]?.textContent`), "notes/long-name.md")
+      assert.equal(await run(`document.querySelectorAll("#documents-rows button span")[1]?.textContent?.includes("A very long user supplied task title that stays exactly as written")`), true)
+      assert.equal(await run(`document.querySelectorAll("#documents-rows button span")[2]?.textContent`), tag === "ja" ? "プロジェクト · 0 バイト" : "Proyecto · 0 bytes")
+      assert.equal(await run(`document.querySelectorAll("#documents-rows button span")[3]?.textContent`), tag === "ja" ? "プロジェクト · 1 バイト" : "Proyecto · 1 byte")
+      assert.equal(await run(`document.querySelectorAll("#documents-rows button span")[4]?.textContent`), tag === "ja" ? "タスク · User supplied tiny task · 1 バイト" : "Tarea · User supplied tiny task · 1 byte")
+      const accessibility = await browser.send("Accessibility.getFullAXTree", {}, id)
+      assert.ok(accessibility.nodes.some((node: any) => node.role?.value === "button" && String(node.name?.value || "").includes(listMeta)))
+      assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
+      if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, `documents-${tag}-${width}.png`), Buffer.from(data, "base64")) }
+      await run(`document.querySelectorAll("#documents-rows button")[1].click()`)
+      await until(`document.getElementById("document-meta")?.textContent?.includes("notes/long-name.md")`)
+      assert.equal(await run(`document.getElementById("document-meta")?.textContent?.includes("1,200")`), tag === "ja")
+      assert.equal(await run(`document.getElementById("document-title")?.textContent`), "A very long user supplied task title that stays exactly as written")
+      await run(`document.getElementById("document-list-back").click()`)
+      await until(`document.querySelectorAll("#documents-rows button").length === 5`)
+      await run(`document.querySelectorAll("#documents-rows button")[2].click()`)
+      await until(`document.getElementById("document-meta")?.textContent?.includes("empty.txt")`)
+      assert.equal(await run(`document.getElementById("document-meta")?.textContent`), tag === "ja" ? "プロジェクト · empty.txt · 0 バイト" : "Proyecto · empty.txt · 0 bytes")
+      await run(`document.getElementById("document-list-back").click()`)
+      await until(`document.querySelectorAll("#documents-rows button").length === 5`)
+      await fetch(origin + "/__fixture/document-read-delay?ms=350")
+      await run(`document.querySelectorAll("#documents-rows button")[4].click()`)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      assert.equal(await run(`document.getElementById("document-meta")?.textContent`), "")
+      await until(`document.getElementById("document-meta")?.textContent?.includes("notes/one.txt")`)
+      await fetch(origin + "/__fixture/document-read-delay?ms=0")
+      assert.equal(await run(`document.getElementById("document-meta")?.textContent`), tag === "ja" ? "タスク · notes/one.txt · 1 バイト" : "Tarea · notes/one.txt · 1 byte")
+      assert.equal(await run(`document.getElementById("document-title")?.textContent`), "User supplied tiny task")
+      await run(`document.getElementById("document-list-back").click()`)
+      await until(`document.querySelectorAll("#documents-rows button").length === 5`)
+      await fetch(origin + "/__fixture/document-list-mode?value=empty")
+      await run(`document.dispatchEvent(new CustomEvent("clawdline:open-documents", { detail: { id: ${JSON.stringify(SESSION)} } }))`)
+      await until(`document.getElementById("documents-status")?.textContent?.includes(${JSON.stringify(tag === "ja" ? "読み取り可能な Markdown" : "documentos Markdown")})`)
+      assert.equal(await run(`document.querySelectorAll("#documents-rows button").length`), 0)
+      await fetch(origin + "/__fixture/document-list-mode?value=starting")
+      await run(`document.dispatchEvent(new CustomEvent("clawdline:open-documents", { detail: { id: ${JSON.stringify(SESSION)} } }))`)
+      await until(`document.getElementById("documents-status")?.textContent?.includes(${JSON.stringify(tag === "ja" ? "暗号化された接続" : "conexión cifrada")})`)
+      await fetch(origin + "/__fixture/document-list-mode?value=ready")
+      await until(`document.querySelectorAll("#documents-rows button").length === 5`)
+      await fetch(origin + "/__fixture/document-mode?value=refused")
+      await run(`document.querySelector("#documents-rows button").focus()`)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, id)
+      await browser.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, id)
+      await until(`document.getElementById("documents-status")?.textContent?.includes("Raw document policy detail in English.")`)
+      assert.equal(await run(`document.getElementById("documents-status")?.querySelector("span[lang=en]")?.textContent`), "Raw document policy detail in English.")
+      assert.equal(await run(`document.getElementById("documents-status")?.lang`), "")
+      assert.equal(await run(`document.getElementById("documents-status")?.textContent?.includes("forbidden")`), true)
+      await fetch(origin + "/__fixture/document-mode?value=keyed")
+      await browser.send("Page.navigate", { url: `${origin}/?ui=${tag}&fixture=keyed#document=1&machine=this-mac&session=${SESSION}&scope=project&path=demo.md` }, id)
+      const translated = JSON.parse(readFileSync(join(dist, "catalogs", `${tag}.json`), "utf8"))["http.1e31c72f0db9eb5b"]
+      await until(`document.getElementById("documents-status")?.textContent?.includes(${JSON.stringify(translated)})`)
+      assert.equal(await run(`document.getElementById("documents-status")?.querySelector("span[lang=en]")?.textContent`), undefined)
+      assert.equal(await run(`document.getElementById("documents-status")?.textContent?.includes("not_found")`), true)
+      await browser.send("Page.navigate", { url: `${origin}/?ui=${tag}#document=invalid` }, id)
+      await until(`document.getElementById("documents-status")?.textContent?.includes(${JSON.stringify(invalid)})`)
+      assert.equal(await run(`document.getElementById("documents-status")?.textContent?.includes("malformed_document_locator")`), true)
+      assert.equal(await run(`document.getElementById("documents-status")?.textContent?.includes("{arg0}")`), false)
+      assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true)
+    } finally { await browser.send("Target.closeTarget", { targetId }) }
+  })
+}
+
+test("Documents all nine catalogs paint the active page before it is shown", async () => {
+  const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+  const { sessionId: id } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+  const run = async (expression: string) => {
+    const { result, exceptionDetails } = await browser.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, id)
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+    return result.value
+  }
+  try {
+    await fetch(origin + "/__fixture/reset")
+    await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
+    for (const tag of ["en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"]) {
+      const catalog = JSON.parse(readFileSync(join(dist, "catalogs", `${tag}.json`), "utf8"))
+      const mark = browser.loadCount
+      await browser.send("Page.navigate", { url: `${origin}/?ui=${tag}#document=1&machine=this-mac&session=${SESSION}&scope=project&path=demo.md` }, id)
+      await browser.loaded(id, mark)
+      const deadline = Date.now() + 8_000
+      while (!(await run(`document.getElementById("document-body")?.textContent?.includes("The document opened directly.")`))) {
+        if (Date.now() > deadline) assert.fail(`Documents ${tag} did not load`)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      assert.equal(await run(`document.documentElement.lang`), tag)
+      assert.equal(await run(`document.getElementById("documents-title")?.textContent`), catalog["documents.title"])
+      assert.equal(await run(`document.getElementById("document-share")?.textContent`), catalog["documents.share"])
+      assert.equal(await run(`document.getElementById("document-copy")?.textContent`), catalog["documents.copy"])
+      assert.equal(await run(`document.getElementById("session-documents")?.textContent`), catalog["literal.6a2079c8124f"])
+      assert.equal(await run(`document.getElementById("document-meta")?.textContent`), catalog["documents.projectMeta"].replace("{arg0}", "demo.md").replace("{arg1}", "47"))
+      assert.equal(await run(`document.getElementById("document-title")?.textContent`), "demo.md")
+    }
+  } finally { await browser.send("Target.closeTarget", { targetId }) }
+})
 
 for (const width of [320, 375, 390, 1280]) {
   test(`list at ${width}px keeps attention and provider waiting visible`, async () => {
@@ -109,11 +244,11 @@ const snapshot = () => ({ at: Date.now(), scan: { complete: true, completed: { c
     state: listWaiting ? "waiting" : "idle", work_state: listWaiting ? "waiting_you" : "ready" }] })
 const TYPES: Record<string, string> = { ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".webp": "image/webp" }
 function json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(value)) }
-function document(): string {
+function document(ui = "zh-Hant"): string {
   const html = readFileSync(join(dist, "index.html"), "utf8")
   const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
   words.lang = "zh-Hant"; words.dir = "ltr"
-  return html.replace("<!-- clawdline:strings -->", "<script>window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>")
+  return html.replace("<!-- clawdline:strings -->", "<script>" + (ui ? "localStorage.setItem('ui_language'," + JSON.stringify(ui) + ");" : "") + "window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>")
     .replace("<!-- clawdline:cloud -->", "")
 }
 function fixture(): Server {
@@ -124,7 +259,10 @@ function fixture(): Server {
   const publish = () => { for (const client of eventClients) client.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n") }
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
-    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; singleOption = false; listWaiting = false; listAttentionCount = 1; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/reset") { readAt = null; resolvedAt = null; version = 1; failReads = false; failActions = false; readDelay = 0; noteCount = 1; showOptions = true; singleOption = false; listWaiting = false; listAttentionCount = 1; documentMode = "ready"; documentListMode = "ready"; documentReadDelay = 0; sendRequests = 0; sentTexts = []; sentBeforeResolve = []; failSends = false; sendDelay = 0; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/document-mode") { const mode = new URL(req.url ?? "/", "http://fixture").searchParams.get("value"); documentMode = mode === "refused" || mode === "keyed" ? mode : "ready"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/document-list-mode") { const value = new URL(req.url ?? "/", "http://fixture").searchParams.get("value"); documentListMode = value === "empty" || value === "starting" ? value : "ready"; return json(res, 200, { ok: true }) }
+    if (path === "/__fixture/document-read-delay") { documentReadDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/fail-sends") { failSends = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/send-delay") { sendDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/list-waiting") { listWaiting = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
@@ -136,6 +274,11 @@ function fixture(): Server {
     if (path === "/__fixture/fail-actions") { failActions = new URL(req.url ?? "/", "http://fixture").searchParams.get("on") === "1"; return json(res, 200, { ok: true }) }
     if (path === "/__fixture/read-delay") { readDelay = Number(new URL(req.url ?? "/", "http://fixture").searchParams.get("ms")) || 0; return json(res, 200, { ok: true }) }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
+    if (path === "/v1/strings") {
+      const tag = new URL(req.url ?? "/", "http://fixture").searchParams.get("lang") || "en"
+      const file = join(dist, "catalogs", `${tag}.json`)
+      return existsSync(file) ? json(res, 200, JSON.parse(readFileSync(file, "utf8"))) : json(res, 404, { error: "not_found" })
+    }
     if (path === "/v1/events") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n")
@@ -144,7 +287,32 @@ function fixture(): Server {
       return
     }
     if (path === "/v1/transcript") return json(res, 200, { entries: [], evidence: "process", id: SESSION, signature: "fixture" })
+    if (path === `/v1/sessions/${SESSION}/documents`) {
+      if (documentListMode === "starting") return json(res, 503, { error: "cloud_starting", detail: "The encrypted connection is starting." })
+      if (documentListMode === "empty") return json(res, 200, { documents: [] })
+      return json(res, 200, { documents: [
+      { source: "project", path: "demo.md", label: "demo.md", bytes: 57, modified: now, url: "/fixture/demo.md" },
+      { source: "task", path: "notes/long-name.md", label: "notes/long-name.md", bytes: 1200, modified: now,
+        url: "/fixture/long-name.md", task: { id: "10000000-0000-4000-8000-000000000033", title: "A very long user supplied task title that stays exactly as written" } },
+      { source: "project", path: "empty.txt", label: "empty.txt", bytes: 0, modified: now, url: "/fixture/empty.txt" },
+      { source: "project", path: "one.md", label: "one.md", bytes: 1, modified: now, url: "/fixture/one.md" },
+      { source: "task", path: "notes/one.txt", label: "notes/one.txt", bytes: 1, modified: now,
+        url: "/fixture/task-one.txt", task: { id: "10000000-0000-4000-8000-000000000033", title: "User supplied tiny task" } },
+    ] })
+    }
+    if (path === `/v1/sessions/${SESSION}/documents/task/10000000-0000-4000-8000-000000000033/notes/one.txt`) {
+      const answer = () => { res.writeHead(200, { "content-type": "text/plain; charset=utf-8" }); res.end("x") }
+      return documentReadDelay ? setTimeout(answer, documentReadDelay) : answer()
+    }
+    if (path === `/v1/sessions/${SESSION}/documents/task/10000000-0000-4000-8000-000000000033/notes/long-name.md`) {
+      res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" }); return res.end("x".repeat(1200))
+    }
+    if (path === `/v1/sessions/${SESSION}/documents/project/empty.txt`) {
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8" }); return res.end("")
+    }
     if (path === `/v1/sessions/${SESSION}/documents/project/demo.md`) {
+      if (documentMode === "refused") return json(res, 403, { error: "forbidden", detail: "Raw document policy detail in English." })
+      if (documentMode === "keyed") return json(res, 404, { error: "not_found", detail: "No document named that.", detail_key: "http.1e31c72f0db9eb5b" })
       res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" }); return res.end("# Demo document\n\nThe document opened directly.\n")
     }
     if (path.startsWith("/v1/work/v2/session-todos/")) return json(res, 200, { ok: true, direct_todos: [], assigned_items: [], recent_items: [], truncated: false })
@@ -193,7 +361,7 @@ function fixture(): Server {
       if (req.method === "POST" && (path.endsWith("/send") || path === "/v1/messages")) sendRequests++
       return json(res, 404, { error: "not_found", detail: path })
     }
-    if (path === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(document()) }
+    if (path === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(document(new URL(req.url ?? "/", "http://fixture").searchParams.get("ui") || undefined)) }
     const file = normalize(join(dist, path))
     if (!file.startsWith(dist + "/") || !existsSync(file) || !statSync(file).isFile()) return json(res, 404, {})
     res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" }); res.end(readFileSync(file))
@@ -238,6 +406,7 @@ before(async () => {
   assert.ok(existsSync(chrome), "Chrome is required")
   server = fixture(); await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
   const address = server.address(); origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
+  console.log(`Session fixture origin: ${origin}; reset: ${origin}/__fixture/reset`)
   profile = mkdtempSync(join(tmpdir(), "clawdline-human-interventions-"))
   browserProcess = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
   const endpoint = await new Promise<string>((ok, fail) => {
@@ -328,7 +497,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       assert.match(await run(`document.querySelector(".human-interventions-live").textContent`), /1 筆未處理/)
       assert.equal(await run(`document.querySelector(".session-todos").open`), false)
       assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "false")
-      assert.match(await run(`document.querySelector(".human-interventions-head").innerText`), /待處理 1/)
+      assert.match(await run(`document.querySelector(".human-interventions-head").innerText`), /待處理：1/)
       assert.equal(await run(`!!document.querySelector(".human-intervention-card")`), false)
       assert.equal(await run(`document.querySelector(".session-todos > summary").contains(document.querySelector(".human-interventions-head"))`), true)
       if (shots) { const { data } = await browser.send("Page.captureScreenshot", { format: "png" }, id); writeFileSync(join(shots, name + "-collapsed.png"), Buffer.from(data, "base64")) }
@@ -461,7 +630,7 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       await run(`fetch("/__fixture/fail-reads?on=0"); document.querySelector(".human-interventions-error button").click()`)
       await until(`!document.querySelector(".human-interventions-error") && !document.querySelector(".human-interventions-dot")`)
       assert.equal(await run(`!!document.querySelector(".human-interventions-recent")`), true)
-      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").innerText`), /待處理 1/)
+      assert.doesNotMatch(await run(`document.querySelector(".human-interventions-head").innerText`), /待處理：1/)
       assert.equal(await run(`document.querySelector(".human-interventions-head").getAttribute("aria-expanded")`), "true")
       assert.equal(sentTexts.length, 4, "resolving by hand sends nothing")
       await fetch(origin + "/__fixture/reset")

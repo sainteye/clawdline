@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import { Fragment, useEffect } from "react"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
@@ -80,7 +81,7 @@ export function Overlays() {
         <div className="sheet info-sheet" role="dialog" aria-modal="true" id="info-sheet" aria-label={T.webInfoTitle}>
           <h2 id="info-title">{T.webInfoTitle}</h2>
           <p className="say" id="info-say" hidden></p>
-          <aside id="session-board" className="session-board" aria-label="Related Board work" hidden></aside>
+          <aside id="session-board" className="session-board" aria-label={catalogWord("inline", "785626f3cb47")} hidden></aside>
           <div className="facts" id="info-body"></div>
           <p className="said" id="info-said" role="status" aria-live="polite"></p>
           <div className="buttons">
@@ -115,9 +116,8 @@ export function Overlays() {
           aria-labelledby="action-confirm-title"
           aria-describedby="action-confirm-say"
         >
-          <h2 id="action-confirm-title">Run commit?</h2>
-          <div className="say" id="action-confirm-say">
-            This sends commit to the current session.
+          <h2 id="action-confirm-title">{catalogWord("inline", "81191ae00ea5")}</h2>
+          <div className="say" id="action-confirm-say">{catalogWord("inline", "250f3493e97c")}
           </div>
           <div className="buttons">
             <button className="chip" id="action-confirm-cancel" type="button"></button>

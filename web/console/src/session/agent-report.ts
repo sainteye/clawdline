@@ -1,3 +1,5 @@
+import { catalogFormat } from "../catalog.js"
+import { catalogWord } from "../catalog.js"
 import type { SessionAgent } from "@clawdline/contract"
 
 export interface AgentReportIdentity {
@@ -22,23 +24,23 @@ export function agentReportIdentity(
   const id = typeof source === "string" ? source.trim() : ""
   const ordinal = (agents?.findIndex((candidate) => candidate.id === id) ?? -1) + 1
   const agent = ordinal > 0 ? agents?.[ordinal - 1] : undefined
-  const zh = /^zh(?:-|$)/i.test(language)
-  const speaker = zh ? "背景 agent" : "Background agent"
+  void language
+  const speaker = catalogWord("literal", "2a45c79c1f67")
   if (agent) {
     const what = agent.what?.trim()
-    const generic = zh ? "背景 agent" : "Background agents"
-    const missing = zh ? "Codex 沒有記下這個 thread 在做什麼" : "Codex did not record what this thread is doing"
+    const generic = catalogWord("literal", "e5db0352b7e8")
+    const missing = catalogWord("literal", "ac7ebb4a6c29")
     const label = what && what !== agent.type
       ? what
       : assistant === "codex" ? `${missing} · ${ordinal}` : what || `${generic} ${ordinal}`
     return { id, known: true, label, speaker, detail: id }
   }
-  const shown = id || (zh ? "未知 id" : "unknown id")
+  const shown = id || (catalogWord("literal", "c9911c4b0f8f"))
   return {
     id,
     known: false,
     label: shown,
     speaker,
-    detail: zh ? `來源是 ${shown}，這台機器不認得它` : `Source: ${shown}; this machine does not recognize it`,
+    detail: catalogFormat("template", "ff865ce6ed4f", [shown]),
   }
 }

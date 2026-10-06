@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import { IconCopy } from "./IconCopy.js"
 import { ProjectSetup } from "./ProjectSetup.js"
 import type { ProjectSetupHandle } from "./ProjectSetup.js"
@@ -14,12 +15,12 @@ export function ProjectTools({ shown, changed, setupRef }: { shown: boolean; cha
   return <details className="project-tools" hidden={!shown}>
     <summary>
       <span className="project-tools-summary-copy">
-        <strong>專案管理</strong>
-        <span>設定健檢、跨機器同步與圖示工具</span>
+        <strong>{catalogWord("inline", "3b71e7c5c1b9")}</strong>
+        <span>{catalogWord("inline", "0eb9b6dde40e")}</span>
       </span>
     </summary>
     <div className="project-tools-body">
-      <p className="project-tools-intro">這些工具會改變專案如何顯示或在不同機器間共用；日常工作請直接從下方選擇專案。</p>
+      <p className="project-tools-intro">{catalogWord("inline", "4956bcafb9bc")}</p>
       <ProjectSetup shown={shown} ref={setupRef} />
       <ProjectSync shown={shown} changed={changed} />
       <IconCopy shown={shown} changed={changed} />

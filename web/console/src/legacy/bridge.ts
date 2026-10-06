@@ -13,6 +13,7 @@
 // original, and the copied stylesheet then styles it identically.
 import type { Icon, SessionRow, TaskRow } from "@clawdline/contract"
 import { retrying } from "../strings-retry.js"
+import { adaptLegacyCatalog } from "./machine-copy.js"
 import { currentCloseability, currentCloseabilityBadge, currentCloseabilityShape } from "./current-closeability.js"
 
 /* The imports below are the copied modules. They are plain JavaScript with no
@@ -187,6 +188,7 @@ export function registerPendingSpinners(canvases: HTMLCanvasElement[]): void {
 export const path = shortPath as (cwd: string | undefined) => string
 export const accentTint = tint as (hex: string | undefined) => string
 export const strings = T as Record<string, string>
+adaptLegacyCatalog(strings, "en")
 /** Interface copy as HTML: `*emphasis*` and `` `typed` `` only, escaped first. */
 export const wordsHTML = words as (s: string) => string
 /** Asked of the pointer each time, because a keyboard can be attached while the page is open. */
@@ -207,6 +209,7 @@ export async function loadStrings(
 ): Promise<void> {
   try {
     applyStrings(await get())
+    adaptLegacyCatalog(strings, document.documentElement.lang)
     return
   } catch {
     /* built-in English stays, for now */
@@ -218,6 +221,7 @@ export async function loadStrings(
   // late. Not `words` for the value: this file imports a function by that name.
   void retrying(get, (catalog) => {
     applyStrings(catalog)
+    adaptLegacyCatalog(strings, document.documentElement.lang)
     again?.()
   })
 }

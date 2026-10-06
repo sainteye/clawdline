@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import {
   useEffect,
   useMemo,
@@ -225,7 +226,7 @@ function UserEntry({ entry, you }: { entry: TranscriptEntry; you: string }): Rea
     // The label is the original's own literal; the catalog has no key for it.
     body += L.workflowRecordHTML(record, {
       escape: esc,
-      label: /^zh/i.test(document.documentElement.lang || "") ? "看板紀錄" : "Board record",
+      label: catalogWord("literal", "e5e0c653bbca"),
     })
   }
   return (

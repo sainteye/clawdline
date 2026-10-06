@@ -1,3 +1,5 @@
+import { catalogFormat } from "../catalog.js"
+import { catalogWord } from "../catalog.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
@@ -97,7 +99,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       await humanInterventionActionV2(destination.conversation, note, action)
       await load(destination)
       if (sameInterventionTarget(destination, latest.current)) {
-        setActionStatus(action === "resolve" ? "已移到最近已處理" : "已重新開啟")
+        setActionStatus(action === "resolve" ? catalogWord("literal", "75420f3866c1") : catalogWord("literal", "e0e3789d893d"))
         window.setTimeout(() => {
           document.querySelector<HTMLElement>(".human-interventions-head")?.focus({ preventScroll: true })
         }, 0)
@@ -121,7 +123,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     if (!row || readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
     const serial = ++actionSerial.current
     busyRef.current = true
-    setBusy(note.id); setActionError(""); setActionStatus("正在送出回覆…")
+    setBusy(note.id); setActionError(""); setActionStatus(catalogWord("literal", "2c09858c5eed"))
     const current = () => sameInterventionTarget(destination, latest.current)
     try {
       const card = pendingSends.add(row.id, text, [], Date.now())
@@ -135,24 +137,24 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
         if (current()) {
           setActionStatus("")
           setActionError(failed
-            ? `回覆沒有送出，便條仍待處理。${pendingFailureSentence(code)}${pendingFailureCanRetry(code) ? " 可以再點一次建議回覆重試。" : ""}`
-            : `無法確認回覆是否送出，便條仍待處理。請先在對話中查看這則訊息，確認沒送出再重試。${pendingFailureSentence(code)}`)
+            ? catalogFormat("template", "f02affbcd988", [pendingFailureSentence(code), catalogWord("literal", "94e5b8af285e")])
+            : catalogFormat("template", "a11c575f16d3", [pendingFailureSentence(code)]))
         }
         return
       }
       onReplySent?.()
       if (note.resolved_at) {
-        if (current()) setActionStatus("回覆已送出")
+        if (current()) setActionStatus(catalogWord("literal", "cc8e34d543a9"))
         return
       }
       try {
         await humanInterventionActionV2(destination.conversation, note, "resolve")
         await load(destination)
-        if (current()) setActionStatus("回覆已送出，便條已移到最近已處理")
+        if (current()) setActionStatus(catalogWord("literal", "44a711826eb0"))
       } catch (error) {
         if (current()) {
           setActionStatus("")
-          setActionError(`回覆已送出，但便條仍待處理：${failureWords(error)} 請按「移到已處理」重試，不必再送一次回覆。`)
+          setActionError(catalogFormat("template", "e22e6512792a", [failureWords(error)]))
           await load(destination)
         }
       }
@@ -163,7 +165,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   const compose = (note: HumanInterventionV2, draft: string) => {
     if (readError || busyRef.current || !sameInterventionTarget(destination, latest.current) || pageKey !== key) return
     if (!onCompose) {
-      setActionError("無法開啟對話輸入框，請先開啟這個 Session 再試一次。")
+      setActionError(catalogWord("literal", "4fdbe22d40a1"))
       return
     }
     onCompose(interventionReplyText(note, draft))
@@ -171,35 +173,35 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     setActionError("")
   }
 
-  const countWords = readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
+  const countWords = readError ? catalogWord("literal", "ff569bc2e31d") : shown ? catalogFormat("template", "f16df8b87a41", [active.length]) : catalogWord("literal", "e44c005aa593")
   const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
-    aria-label={`${countWords}${actionError ? "，操作失敗，請展開查看" : ""}`}
+    aria-label={`${countWords}${actionError ? catalogWord("literal", "f095f6af37ff") : ""}`}
     onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (readError) { void load(destination); return } if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
-      <span>關注</span>
+      <span>{catalogWord("inline", "a4f8e0fcaaf8")}</span>
       {active.length > 0 && <span className="human-interventions-dot" aria-hidden="true" />}
-      {shown && active.length > 0 && <span className="human-interventions-count">待處理 {active.length}</span>}
-      {actionError && <span className="human-interventions-count human-interventions-failed">操作失敗</span>}
-      {readError && <span className="human-interventions-count">讀取失敗</span>}
-      {reading && !shown && !readError && <span className="human-interventions-count">載入中</span>}
+      {shown && active.length > 0 && <span className="human-interventions-count">{catalogFormat("count", "pendingInterventions", [active.length])}</span>}
+      {actionError && <span className="human-interventions-count human-interventions-failed">{catalogWord("inline", "aa065ac6118d")}</span>}
+      {readError && <span className="human-interventions-count">{catalogWord("inline", "88cd4f4d97f1")}</span>}
+      {reading && !shown && !readError && <span className="human-interventions-count">{catalogWord("inline", "656c48dad32b")}</span>}
     </button>
   const live = <>
     <span className="human-interventions-live" role="status" aria-live="polite" aria-atomic="true">{shown || readError ? countWords : ""}</span>
-    {actionError && <span className="human-interventions-live" role="alert">操作失敗，請展開關注便條查看。</span>}
+    {actionError && <span className="human-interventions-live" role="alert">{catalogWord("inline", "9aaa26b21b0c")}</span>}
   </>
   const body = expanded && <section className="human-interventions" aria-labelledby="human-interventions-title">
-    <div className="human-interventions-panelbar"><h2 id="human-interventions-title">需要你關注</h2><button type="button" onClick={closeWithFocus}><WorkIcon name="close" />收起關注</button></div>
+    <div className="human-interventions-panelbar"><h2 id="human-interventions-title">{catalogWord("inline", "0999edae13a4")}</h2><button type="button" onClick={closeWithFocus}><WorkIcon name="close" />{catalogWord("inline", "1fa4945f108c")}</button></div>
     <div className="human-interventions-body" id="human-interventions-body">
-      {readError && <p className="human-interventions-error" role="alert">{shown ? "資料可能已過期，請重試；更新前不能操作便條。" : "無法讀取便條。"} {readError} <button type="button" onClick={() => { void load(destination) }}>重試</button></p>}
+      {readError && <p className="human-interventions-error" role="alert">{shown ? catalogWord("literal", "5789b797c9ef") : catalogWord("literal", "24fe20ab6d4d")} {readError} <button type="button" onClick={() => { void load(destination) }}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
       {actionError && <p className="human-interventions-error" role="alert">{actionError}</p>}
       {actionStatus && <p className="human-interventions-status" role="status">{actionStatus}</p>}
-      {shown && active.length === 0 && <p className="human-interventions-empty">目前沒有需要處理的便條。</p>}
+      {shown && active.length === 0 && <p className="human-interventions-empty">{catalogWord("inline", "e43b3c54e4b6")}</p>}
       {active.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} onCompose={compose} />)}
-      {recent.length > 0 && <details className="human-interventions-recent"><summary>最近已處理（{recent.length}）</summary>
+      {recent.length > 0 && <details className="human-interventions-recent"><summary>{catalogFormat("count", "recentInterventions", [recent.length])}</summary>
         {recent.map((note) => <InterventionCard key={note.id} note={note} disabled={!!busy || !!readError} sending={busy === note.id} onAction={run} onReply={reply} onCompose={compose} />)}
       </details>}
-      {!!shown?.pruned_resolved && <p className="human-interventions-retention">本機已清理 {shown.pruned_resolved} 筆較舊的已處理便條。</p>}
+      {!!shown?.pruned_resolved && <p className="human-interventions-retention">{catalogFormat("count", "prunedInterventions", [shown.pruned_resolved])}</p>}
     </div>
-    <button className="human-interventions-backdrop" type="button" tabIndex={-1} aria-label="收起關注便條"
+    <button className="human-interventions-backdrop" type="button" tabIndex={-1} aria-label={catalogWord("inline", "de6c2fb83e07")}
       onClick={closeWithFocus} />
   </section>
   return { head, live, body, close: () => setExpanded(false) }
@@ -217,27 +219,27 @@ function InterventionCard({ note, disabled, sending, onAction, onReply, onCompos
   const isReading = note.kind === "read" || note.kind === "report"
   const composeOnly = note.options.length <= 1
   return <article className="human-intervention-card" data-intervention-id={note.id} tabIndex={-1} aria-label={note.title}>
-    <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? "已處理" : "待處理"}</span><time className="human-intervention-created" dateTime={new Date(note.created_at * 1000).toISOString()}>送達 {when(note.created_at)}</time></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? "請閱讀" : note.kind === "answer" ? "請回覆" : "請處理"}</span></div>
-    {fromAnotherSession && <p className="human-intervention-source">來自 {note.source_label || "其他 Session"}</p>}
+    <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? catalogWord("literal", "927c9ed33728") : catalogWord("literal", "77f6d2cceedd")}</span><time className="human-intervention-created" dateTime={new Date(note.created_at * 1000).toISOString()}>{catalogWord("inline", "0f6f6df015c6")} {when(note.created_at)}</time></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? catalogWord("literal", "3d9157962dd2") : note.kind === "answer" ? catalogWord("literal", "e12820431ff9") : catalogWord("literal", "5a15e03eaa4a")}</span></div>
+    {fromAnotherSession && <p className="human-intervention-source">{catalogWord("inline", "afc7f76a7d4f")} {note.source_label || catalogWord("literal", "92018c889270")}</p>}
     <p>{note.summary}</p>
-    <p><b>需要你做：</b>{note.action}</p>
-    <p className="human-intervention-reason">原因：{note.reason}</p>
-    {note.document_url && <p><a className="human-intervention-document" href={note.document_url} target="_blank" rel="noopener noreferrer"><WorkIcon name="file" />在新分頁開啟文件</a></p>}
-    {note.detail && <details className="human-intervention-more"><summary>閱讀完整內容</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
-    <div className="human-intervention-drafts" role="group" aria-label="建議回覆" aria-busy={sending}>
-      <h4>建議回覆</h4>
-      <p className="human-intervention-hint">{composeOnly ? "點一下填入對話框，確認或修改後再送出。" : "點一下就直接送出到對話。"}</p>
-      {(note.options.length ? note.options : [{ label: "待辦文字", draft: note.action }]).map((option, index) =>
+    <p><b>{catalogWord("inline", "7ed8d242eabd")}</b>{note.action}</p>
+    <p className="human-intervention-reason">{catalogWord("inline", "b9fbb8ede4cb")}{note.reason}</p>
+    {note.document_url && <p><a className="human-intervention-document" href={note.document_url} target="_blank" rel="noopener noreferrer"><WorkIcon name="file" />{catalogWord("inline", "740cf7e11430")}</a></p>}
+    {note.detail && <details className="human-intervention-more"><summary>{catalogWord("inline", "61e5b2be1827")}</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
+    <div className="human-intervention-drafts" role="group" aria-label={catalogWord("inline", "c4636462e1de")} aria-busy={sending}>
+      <h4>{catalogWord("inline", "c4636462e1de")}</h4>
+      <p className="human-intervention-hint">{composeOnly ? catalogWord("literal", "981ea9fd14d5") : catalogWord("literal", "3e129c69ac26")}</p>
+      {(note.options.length ? note.options : [{ label: catalogWord("literal", "cc6ade09e09b"), draft: note.action }]).map((option, index) =>
         <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`${composeOnly ? "填入對話框" : note.resolved_at ? "再次送出這個回覆" : "送出這個回覆並移到已處理"}：${option.label}，${option.draft}`} onClick={() => composeOnly ? onCompose(note, option.draft) : onReply(note, interventionReplyText(note, option.draft))}>
+          disabled={disabled} aria-label={`${composeOnly ? catalogWord("literal", "e3949613add9") : note.resolved_at ? catalogWord("literal", "7d6cc5d58935") : catalogWord("literal", "2ffd9b695259")}：${option.label}，${option.draft}`} onClick={() => composeOnly ? onCompose(note, option.draft) : onReply(note, interventionReplyText(note, option.draft))}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
           <span>{option.draft}</span>
         </button>)}
     </div>
     <div className="human-intervention-state">
       <div className="human-intervention-actions">
-        {!note.resolved_at ? <button className="human-intervention-resolve" type="button" disabled={disabled} onClick={() => onAction(note, "resolve")}><WorkIcon name="check" />移到已處理</button>
-          : <button className="human-intervention-reopen" type="button" disabled={disabled} onClick={() => onAction(note, "reopen")}>重新開啟提醒</button>}
+        {!note.resolved_at ? <button className="human-intervention-resolve" type="button" disabled={disabled} onClick={() => onAction(note, "resolve")}><WorkIcon name="check" />{catalogWord("inline", "f51bfc3ed707")}</button>
+          : <button className="human-intervention-reopen" type="button" disabled={disabled} onClick={() => onAction(note, "reopen")}>{catalogWord("inline", "507ec6638095")}</button>}
       </div>
     </div>
   </article>

@@ -4,6 +4,7 @@ import { BRAND_MARK } from "../brand-mark.js"
 import type { ConnectionLight } from "../connection-state.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
+import { bootCatalog } from "../catalog.js"
 import { cardsAreFor } from "../session/send.js"
 import {
   chooseTransport,
@@ -47,7 +48,7 @@ import { machineForAddress } from "./document-target.js"
 import { CloudAccountContext } from "./account-context.js"
 import { machinesByCapability } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
-import { BUILTIN_TAG, bundledCatalog } from "./strings.js"
+import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader } from "./relay-reader.js"
 import { RelayWriter, writeRoute } from "./relay-writer.js"
 import { installScheduleWebhookManagement } from "./schedule-webhooks.js"
@@ -268,6 +269,8 @@ export function CloudGate({ declared }: { declared: string }) {
   useEffect(() => {
     if (transport.kind === "misdeclared") {
       console.error("clawdline: " + transport.reason)
+      document.documentElement.lang = "en"
+      document.documentElement.dir = "ltr"
       setWords(true)
       document.documentElement.classList.remove("booting")
       return
@@ -278,13 +281,8 @@ export function CloudGate({ declared }: { declared: string }) {
     // catalog sets it when one lands (`applyStrings`); when none does, the
     // words on the screen are the built-in English and this says so, rather
     // than leaving the tag the document was built with.
-    let landed = false
-    void L.loadStrings(async () => {
-      const words = await catalog(transport.config)
-      landed = typeof words.lang === "string" && !!words.lang
-      return words
-    }, () => redraw((n) => n + 1)).finally(() => {
-      if (!landed) document.documentElement.lang = BUILTIN_TAG
+    void bootCatalog((tag) => catalogURL(transport.config, tag, document.baseURI)).finally(() => {
+      redraw((n) => n + 1)
       setWords(true)
       document.documentElement.classList.remove("booting")
     })

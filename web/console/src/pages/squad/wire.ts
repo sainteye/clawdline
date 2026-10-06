@@ -1,3 +1,4 @@
+import { catalogWord, currentCatalogTag } from "../../catalog.js"
 import type { Icon } from "@clawdline/contract"
 import type { Effective, SquadPersona, SquadProject, SquadSkill, SquadView } from "./model.js"
 
@@ -26,7 +27,7 @@ export interface WireSettings {
   motion: WireField<boolean>; motion_settings_version: number; personas: WireEffectivePersona[]
 }
 
-function name(words: WireNames): string { return words["zh-Hant"] || words.en }
+function name(words: WireNames): string { return currentCatalogTag() === "zh-Hant" ? words["zh-Hant"] || words.en : words.en || words["zh-Hant"] }
 
 function effective<T>(field: WireField<T>, global: T): Effective<T> {
   return { value: field.value, global, source: field.source, present: field.present, version: field.version }
@@ -43,14 +44,14 @@ export function squadView(
   const personas: SquadPersona[] = catalog.definitions.map((definition) => {
     const entry = currentByID.get(definition.definition_id)
     const globalEntry = globalByID.get(definition.definition_id)
-    if (!entry || !globalEntry) throw Object.assign(new Error("角色設定與目錄不一致。"), { code: "catalog_inconsistent" })
+    if (!entry || !globalEntry) throw Object.assign(new Error(catalogWord("literal", "3057a039e94d")), { code: "catalog_inconsistent" })
     const globalChoices = globalEntry.skills.value
     const skills: SquadSkill[] = entry.skills.value.map((choice, index) => {
       const found = skillByKey.get(`${choice.id}\u0000${choice.version}`)
       return {
         id: choice.id, name: found ? name(found.name) : choice.id,
-        purpose: found ? name(found.purpose) : "目錄中找不到此技能版本。",
-        body: found?.content ?? "", folder: found?.folder, files: found?.files, source: found?.source ?? "未知", version: choice.version,
+        purpose: found ? name(found.purpose) : catalogWord("literal", "feba2f8d9bcd"),
+        body: found?.content ?? "", folder: found?.folder, files: found?.files, source: found?.source ?? catalogWord("literal", "2316613f030f"), version: choice.version,
         license: found?.license ?? "", icon: found?.icon, status: found ? "available" : "unavailable",
         enabled: effective({ ...entry.skills, value: choice.enabled }, globalChoices.find((row) => row.id === choice.id)?.enabled ?? false),
         order: index + 1,

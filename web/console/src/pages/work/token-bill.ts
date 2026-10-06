@@ -10,7 +10,7 @@ import { workWordIn, type WorkWord } from "./words.ts"
  * current has its own sentence.
  */
 
-type Lang = "en" | "zh-Hant"
+type Lang = Parameters<typeof workWordIn>[0]
 
 /** US dollars at list price, as short as still says the amount. */
 export function formatCost(cost: number): string {

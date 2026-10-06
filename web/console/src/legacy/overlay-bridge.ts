@@ -5,7 +5,7 @@
 // copied modules directly.
 import { S } from "./js/core/state.js"
 import { currentCloseability, currentCloseabilityBadge, currentCloseabilityLines, currentCloseabilityPlainReasons } from "./current-closeability.js"
-import { failureSentence as failureSentenceOriginal } from "./js/core/failure-text.js"
+export { failureSentence } from "../refusals/refusal-text.js"
 import { confirmSpin, drawSpinner, setConfirmSpin as setConfirmSpinOriginal, spinPhase } from "./js/core/pixels.js"
 import {
   byId as byIdOriginal,
@@ -50,12 +50,6 @@ export const statusGlyphHTML = sessionStatusGlyphHTML as (icon: string, copy: st
 export const workStateBadgeHTML = sessionWorkStateHTML as (s: unknown) => string
 export const suggestedReplyButtonHTML = suggestedReplyButtonHTMLOriginal as (s: unknown, options: Record<string, unknown>) => string
 export const suggestedReplyKeydown = suggestedReplyKeydownOriginal as (ev: KeyboardEvent) => void
-
-/** `failureSentence` (`core/failure-text.js`): a failure's sentence and its `code · ref` tag. */
-export const failureSentence = failureSentenceOriginal as (
-  error: unknown,
-  options?: string | { sentence?: string; fallback?: string },
-) => string
 
 /**
  * `setConfirmSpin` and the first draw `ActionConfirm.sync` gives it: the
