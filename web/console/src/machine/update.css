@@ -66,7 +66,9 @@
 .update-banner .x:hover { background: var(--card-hi); color: var(--ink); }
 
 @media (max-width: 520px) {
-    .settings-update .update-auto { align-items: start; grid-template-columns: 1fr; }
+    /* Stacked, the description's own margin is the gap: the switch's 44 px
+       hit area already pads it. */
+    .settings-update .update-auto { align-items: start; grid-template-columns: 1fr; gap: 0; }
     .settings-update .update-auto .settings-switch { justify-self: start; }
     .settings-update .update-now { min-height: 44px; }
     .update-banner { flex-wrap: wrap; }

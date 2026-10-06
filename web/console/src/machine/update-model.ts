@@ -397,6 +397,8 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
   }
   if (input.pressOlder) {
     view.problem = { kind: "older", sentence: say("updateApplyOlder"), details: null, command: INSTALL_COMMAND }
+    // "Can be installed" is not true from this page; the problem says how.
+    if (!status.error) view.stateLine = null
   }
   if (apply?.staged_app && apply.state === "healthy") view.staged = say("updateStagedApp")
 
@@ -411,7 +413,12 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
   // it says so, and it sits under the sentence that explains what went wrong.
   const again = (apply?.state === "rolled_back" || apply?.state === "failed") && !moving && !restarting &&
     (!status.latest.version || status.latest.version === apply.to)
-  if (again) view.press.label = say("updateRetry")
+  if (again) {
+    view.press.label = say("updateRetry")
+    // "A new version can be installed" beside "it did not start" reads as two
+    // stories about one release: the problem says it alone.
+    if (status.state === "update_available" && !status.error) view.stateLine = null
+  }
   view.press.below = view.problem !== null
 
   view.auto.shown = true

@@ -155,6 +155,7 @@ test("a rolled-back or failed update says plainly that the previous version runs
   assert.equal(rolled.press.enabled, true, "a person may try again")
   assert.equal(rolled.press.label, nextWord("updateRetry"))
   assert.equal(rolled.press.below, true, "the button sits under the explanation")
+  assert.equal(rolled.stateLine, null, "the rollback is not also called an available update")
   const failed = panel({ read: answered(release("update_available", {
     state: "failed", from: "v0.10.0", to: "v0.11.0", error: { code: "download_failed" },
   })) })
@@ -271,6 +272,7 @@ test("a machine without the apply route keeps the panel and says to run the inst
   assert.equal(view.problem!.command, INSTALL_COMMAND)
   assert.ok(INSTALL_COMMAND.startsWith("curl -fsSL https://") && INSTALL_COMMAND.endsWith("| sh"))
   assert.equal(view.press.shown, false, "pressing again cannot work")
+  assert.equal(view.stateLine, null, "it is not also told the version can be installed here")
   // With no status at all there is no panel to keep: the needs-update line.
   assert.equal(panel({ pressOlder: true }).kind, "older")
 })

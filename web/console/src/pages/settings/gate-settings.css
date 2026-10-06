@@ -28,6 +28,7 @@
 @media (max-width: 520px) {
   .settings-gate-row {
     align-items: start;
+    gap: 0;
     grid-template-columns: 1fr;
   }
 
