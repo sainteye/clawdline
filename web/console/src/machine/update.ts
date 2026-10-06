@@ -1,37 +1,131 @@
-import type { UpdateStatus } from "@clawdline/contract"
 import { client } from "../client.js"
-import { settleUpdateRead } from "./update-model.js"
+import { isDifferentBuild } from "../build-freshness.js"
+import { classifyApplyAnswer, classifyUpdateRead, UPDATE_READ_EVERY_MS, type Answer, type ApplyAnswer, type UpdateRead } from "./update-model.js"
 
 /**
- * `/v1/update`, asked the way `read.ts` asks `/v1/machine/usage`: through
- * `client.url` and the page's `fetch`, which a console reading a machine
- * through Clawdline Cloud answers from the relay as the `update` word. The
- * read is spelled beside its method on one line because `cloud/carry.test.ts`
- * reads it there.
+ * `/v1/update` and `/v1/update/apply`, asked the way `read.ts` asks
+ * `/v1/machine/usage`: through `client.url` and the page's `fetch`, which a
+ * console reading a machine through Clawdline Cloud answers from the relay as
+ * the `update` and `update-apply` words. Each request is spelled beside its
+ * method on one line because `cloud/carry.test.ts` reads it there.
  *
- * It never throws: a refusal, a missing route or a machine that did not answer
- * is null, and the notice stays silent.
+ * Nothing here throws: a refusal, a missing route or a machine that did not
+ * answer comes back sorted (`update-model.ts`), and the panel says what that
+ * means rather than 「讀取失敗」.
  */
-export function readUpdateStatus(): Promise<UpdateStatus | null> {
-  return call("GET", "/v1/update")
+export function readUpdate(): Promise<UpdateRead> {
+  return call("GET", "/v1/update").then(classifyUpdateRead)
 }
 
-async function call(method: string, path: string): Promise<UpdateStatus | null> {
+/**
+ * The press of 「立即更新」: the newest release of the machine's channel. The
+ * key is the press's own, so a relay that retries the envelope starts one
+ * update, not two.
+ */
+export function applyUpdate(): Promise<ApplyAnswer> {
+  return call("POST", "/v1/update/apply", "{}").then(classifyApplyAnswer)
+}
+
+async function call(method: string, path: string, body?: string): Promise<Answer> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15_000)
   try {
-    const res = await fetch(client.url(path), { method, credentials: "same-origin", signal: controller.signal })
+    const headers: Record<string, string> = {}
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json"
+      headers["Idempotency-Key"] = pressKey()
+    }
+    const res = await fetch(client.url(path), { method, credentials: "same-origin", signal: controller.signal, headers, body })
     const text = await res.text()
     let parsed: unknown = null
     try {
       parsed = text ? JSON.parse(text) : null
     } catch {
-      return null
+      parsed = null
     }
-    return settleUpdateRead(res.ok, parsed)
+    return { transport: "answered", status: res.status, parsed }
   } catch {
-    return null
+    return { transport: "failed" }
   } finally {
     clearTimeout(timer)
   }
+}
+
+function pressKey(): string {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return "update-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2)
+  }
+}
+
+/*
+ * One reading shared by the Settings panel and the session list's banner, so
+ * the two never ask twice for the same answer. It reads while somebody is
+ * listening: every ten minutes on its own, and sooner whenever the panel asks
+ * (`refreshUpdate`), which it does every two seconds while an update moves.
+ */
+let reading: UpdateRead | null = null
+const listeners = new Set<() => void>()
+let clock: ReturnType<typeof setInterval> | null = null
+let inFlight: Promise<UpdateRead> | null = null
+
+function publish(next: UpdateRead): void {
+  reading = next
+  for (const listener of listeners) listener()
+}
+
+/** Read now; a read already on the wire is shared rather than doubled. */
+export function refreshUpdate(): Promise<UpdateRead> {
+  if (inFlight) return inFlight
+  inFlight = readUpdate().then((next) => {
+    inFlight = null
+    publish(next)
+    return next
+  })
+  return inFlight
+}
+
+/** Hand a status the press answered with to every listener, as a read would. */
+export function publishUpdateRead(next: UpdateRead): void {
+  publish(next)
+}
+
+export function subscribeUpdate(listener: () => void): () => void {
+  listeners.add(listener)
+  if (listeners.size === 1) {
+    if (!reading) void refreshUpdate()
+    clock = setInterval(() => void refreshUpdate(), UPDATE_READ_EVERY_MS)
+  }
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0 && clock) {
+      clearInterval(clock)
+      clock = null
+    }
+  }
+}
+
+export function currentUpdateRead(): UpdateRead | null {
+  return reading
+}
+
+/**
+ * Whether the machine now serves a console this page is not: the index it
+ * names against the files this page loaded (`build-freshness.ts`). An index
+ * that could not be read is not an answer, so it is false.
+ */
+export async function servedConsoleChanged(): Promise<boolean> {
+  let served: string
+  try {
+    const res = await fetch(document.baseURI, { cache: "reload", credentials: "include" })
+    if (!res.ok) return false
+    served = await res.text()
+  } catch {
+    return false
+  }
+  const running = [...document.querySelectorAll("script[src], link[href]")].map(
+    (el) => el.getAttribute("src") || el.getAttribute("href") || "",
+  )
+  return isDifferentBuild(served, running)
 }

@@ -1,0 +1,51 @@
+/* The Settings page's update panel (`UpdatePanel.tsx`) and the session list's
+   update banner (`UpdateBanner.tsx`). Built from rules that exist: the panel's
+   facts are the sheet's `.say` text in a two-column list, its switch row is
+   `pages/settings/gate-settings.css`'s, and the banner is `.restore-card`'s
+   accent-edged card made one line tall. */
+
+.settings-update .update-facts {
+    display: grid; gap: 6px 14px;
+    grid-template-columns: max-content minmax(0, 1fr);
+    margin: 4px 0 12px; font-size: 12.5px; line-height: 1.5;
+}
+.settings-update .update-fact { display: contents; }
+.settings-update .update-facts dt { color: var(--dim); }
+.settings-update .update-facts dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.settings-update .update-facts .update-value { font-variant-numeric: tabular-nums; }
+.settings-update .update-facts a { color: var(--accent); }
+.settings-update .update-progress:empty { display: none; }
+.settings-update .update-problem {
+    margin: 8px 0 10px; padding: 10px 12px;
+    border: 1px solid var(--line); border-left: 2px solid var(--bad); border-radius: 10px;
+    color: var(--ink); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.settings-update .update-auto {
+    align-items: center; display: grid; gap: 16px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-top: 14px;
+}
+.settings-update .update-auto strong { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.settings-update .update-auto .say { margin: 4px 0 0; }
+
+.update-banner {
+    display: flex; align-items: center; gap: 10px;
+    margin: 8px 10px 6px 10px; padding: 8px 8px 8px 12px;
+    background: var(--card); border: 1px solid var(--line); border-left: 2px solid var(--accent);
+    border-radius: 12px; font-size: 12.5px; color: var(--ink);
+}
+.update-banner-say { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.update-banner-go { flex: 0 0 auto; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.update-banner-go:hover { text-decoration: underline; }
+.update-banner .x {
+    flex: 0 0 auto; color: var(--faint); font-size: 15px; line-height: 1;
+    padding: 4px 8px; border-radius: 7px; background: none; border: 0; cursor: pointer;
+}
+.update-banner .x:hover { background: var(--card-hi); color: var(--ink); }
+
+@media (max-width: 520px) {
+    .settings-update .update-auto { align-items: start; grid-template-columns: 1fr; }
+    .settings-update .update-auto .chip, .settings-update .update-now { justify-self: start; min-height: 44px; }
+    .update-banner { flex-wrap: wrap; }
+    .update-banner-go { min-height: 32px; display: inline-flex; align-items: center; }
+}

@@ -8,6 +8,7 @@ import { Detail } from "./session/Detail.js"
 import { Start, StartSheet, StartingRow } from "./session/Start.js"
 import { Command, CommandSheet } from "./session/Command.js"
 import { Starting } from "./session/Starting.js"
+import { UpdateBanner } from "./machine/UpdateBanner.js"
 import { RestoreCard, RestoreHero, RestoreSheet, useRestoreOffer } from "./session/Restore.js"
 import { offerShape } from "./session/restore-offer.js"
 import "./session/empty-list.css"
@@ -264,6 +265,9 @@ export function SessionsPage({
         hidden={!onScreen}
       >
         <section className="pane pane-list">
+          {/* A newer release for this machine, and the way to Settings where
+              it is one press (machine/UpdateBanner.tsx). */}
+          <UpdateBanner />
           <div className="filter-row">
             {/* Every attribute here keeps a password manager out of a box that
                 filters a list (`index.html`). Uncontrolled, because a controlled

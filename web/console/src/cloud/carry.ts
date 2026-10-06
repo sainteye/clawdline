@@ -67,8 +67,8 @@ export const CARRIED = {
   // The dashboard behind the session counts (`machine/`): this machine's CPU
   // and memory and each session's share, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",
-  // The Settings page's update notice (`machine/UpdateNotice.tsx`): whether
-  // this machine trails the cloud's latest build, a machine read with no parameter.
+  // The Settings page's update panel and the list's banner (`machine/update.ts`):
+  // whether this machine trails the latest build, a machine read with no parameter.
   update: "GET /v1/update",
   // The Settings page's 「立即更新」 (`machine/UpdatePanel.tsx`): install the
   // newest release of the machine's channel, a machine command with no body.
