@@ -155,6 +155,33 @@ func TestCatalogKeepsInterpolationInItsPluralBranch(t *testing.T) {
 	}
 }
 
+func TestStringsAcceptsLiteralJSONExamplesWithoutLosingNamedPlaceholders(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CLAWDLINE_NEXT_WEB", root)
+	writeCatalogFixture(t, root, "en", `{"lang":"en","dir":"ltr","example":"Send {\"files\": {\"item.json\": \"contents\"}} for {name}."}`)
+	writeCatalogFixture(t, root, "ja", `{"lang":"ja","dir":"ltr","example":"{\"ファイル\": {\"item.json\": \"内容\"}} を {name} に送信。"}`)
+	read := func() map[string]string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		(&Server{}).strings(rec, httptest.NewRequest(http.MethodGet, "/v1/strings?lang=ja", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("catalog with literal JSON = %d %s", rec.Code, rec.Body.String())
+		}
+		var got map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := read(); got["lang"] != "ja" {
+		t.Fatalf("literal JSON rejected selected catalog: %#v", got)
+	}
+	writeCatalogFixture(t, root, "ja", `{"lang":"ja","dir":"ltr","example":"{\"ファイル\": {\"item.json\": \"内容\"}} を送信。"}`)
+	if got := read(); got["lang"] != "en" {
+		t.Fatalf("missing named placeholder accepted: %#v", got)
+	}
+}
+
 func TestEnglishCatalogFailureIsTypedAndPageDoesNotEmbedBrokenCopy(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CLAWDLINE_NEXT_WEB", root)

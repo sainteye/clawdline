@@ -17,7 +17,9 @@ import (
 // whole selected catalog.
 var errEnglishCatalog = errors.New("English console catalog is unavailable")
 
-var catalogPlaceholder = regexp.MustCompile(`\{[^{}]+\}`)
+// Match the Console validator's named interpolation syntax. Refusal copy may
+// contain literal JSON objects; their braces are not interpolation tokens.
+var catalogPlaceholder = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
 var catalogMarkup = regexp.MustCompile(`<[^>]*>`)
 
 func validCatalogTag(tag string) bool {
@@ -79,12 +81,6 @@ func readCatalogFile(root, lang string) (map[string]string, error) {
 }
 
 func catalogShape(value string) (string, bool) {
-	// All braces must belong to a placeholder. A broken interpolation is a
-	// corrupt catalog even when it happens to leave the other tokens intact.
-	withoutPlaceholders := catalogPlaceholder.ReplaceAllString(value, "")
-	if strings.ContainsAny(withoutPlaceholders, "{}") {
-		return "", false
-	}
 	forms := strings.Split(value, "\x1f")
 	shapes := make([]string, len(forms))
 	for i, form := range forms {
