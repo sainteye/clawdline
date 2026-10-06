@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { asMachineNeedsUpdate } from "@clawdline/core"
+import { nextWord } from "../../next-strings.js"
 import type { ProjectPlace } from "../work/api.js"
 import { ProjectTreeIcon } from "./ProjectTreeIcon.js"
 import {
@@ -54,6 +56,7 @@ const STATUS: Record<ProjectFile["status"], string> = {
 }
 
 function describe(error: unknown): string {
+  if (asMachineNeedsUpdate(error)) return nextWord("machineNeedsUpdate")
   if (error instanceof ProjectFileError) {
     switch (error.code) {
       case "file_changed": return "檔案已在別處變更。草稿仍在這裡；請複製草稿，再重新讀取並比對。"
@@ -63,7 +66,7 @@ function describe(error: unknown): string {
       case "file_not_found": return "檔案已移除。草稿仍在這裡；請重新讀取清單。"
       case "file_too_large": case "body_too_large": return "檔案超過此介面的大小上限；請在機器上編輯。"
       case "not_text": return "檔案不是可編輯的 UTF-8 文字；請在機器上檢查。"
-      case "cloud_not_carried": case "cloud_feature_unavailable": return "這個連線尚未提供檔案檢視。請確認機器與 Cloud 的版本。"
+      case "cloud_not_carried": return "這個連線尚未提供檔案檢視。請確認機器與 Cloud 的版本。"
       default: return "目前無法讀取或儲存檔案；請檢查機器上的檔案與連線後重試。"
     }
   }

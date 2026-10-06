@@ -47,6 +47,82 @@ function refusalFields(body: RefusalBody): {
 }
 
 /**
+ * The refusal codes that mean "the machine answered, and its Clawdline is
+ * older than this feature" — over Clawdline Cloud, where the copied client
+ * says it in its own words (`legacy/js/net/cloud-client.js`):
+ *
+ * - `unknown_command`: the machine was asked the word and said it does not
+ *   know it;
+ * - `cloud_feature_unavailable`: a Mac already known to lack the word;
+ * - `cloud_machine_unsupported`: the machine's descriptor lists its words and
+ *   this one is not among them.
+ *
+ * `cloud_not_carried` is deliberately absent: it is *this console* not
+ * carrying a route over Cloud, and updating the machine would change nothing.
+ */
+export const MACHINE_NEEDS_UPDATE_CODES: readonly string[] = Object.freeze([
+  "unknown_command",
+  "cloud_feature_unavailable",
+  "cloud_machine_unsupported",
+])
+
+/**
+ * A feature the machine does not have because its Clawdline is older than
+ * this console (docs/updates.md). One shape, whichever request layer saw it.
+ *
+ * `code` is the wire code, kept so code that branches on it keeps working.
+ * `version` is the machine's own version when the refusal carried one; absent
+ * is unknown, and a screen then reads it from health instead.
+ */
+export interface MachineNeedsUpdate {
+  kind: "machine_needs_update"
+  code: string
+  route?: string
+  version?: string
+}
+
+/**
+ * Whether a refusal says the machine needs an update for this feature.
+ *
+ * True for the daemon's own answer to a route it has no handler for — 501
+ * `not_implemented` naming the `route` (`writeNoSuchRoute`,
+ * internal/transport/http/write.go) — and for the three Cloud codes above.
+ *
+ * False for everything else, and on purpose for a 404 `not_found`: a daemon
+ * from before 2026-10-06 answered an unknown sub-route that way, and it is
+ * the same answer as a record that does not exist. Guessing would tell a
+ * person to update a machine whose only fault is a deleted row.
+ */
+export function machineNeedsUpdate(status: number | undefined, code: unknown, route: unknown): boolean {
+  if (typeof code !== "string") return false
+  if (MACHINE_NEEDS_UPDATE_CODES.includes(code)) return true
+  return status === 501 && code === "not_implemented" && typeof route === "string" && route.length > 0
+}
+
+/**
+ * The typed "this machine needs an update" for anything a request layer
+ * threw, or null when it is some other failure.
+ *
+ * It reads a `RefusalError`, a copied page's `jsonFetch` Error (`code`, and
+ * `machineNeedsUpdate` set by `makeJSONFetch`), and any object with a string
+ * `code` and optional `status`/`route`/`version`, so a module that does its
+ * own `fetch` is understood without a second classifier.
+ */
+export function asMachineNeedsUpdate(err: unknown): MachineNeedsUpdate | null {
+  if (typeof err !== "object" || err === null) return null
+  const e = err as { code?: unknown; status?: unknown; route?: unknown; version?: unknown; machineNeedsUpdate?: unknown }
+  if (typeof e.code !== "string") return null
+  const marked = e.machineNeedsUpdate === true
+  if (!marked && !machineNeedsUpdate(typeof e.status === "number" ? e.status : undefined, e.code, e.route)) return null
+  return {
+    kind: "machine_needs_update",
+    code: e.code,
+    ...(typeof e.route === "string" && e.route ? { route: e.route } : {}),
+    ...(typeof e.version === "string" && e.version ? { version: e.version } : {}),
+  }
+}
+
+/**
  * A refusal the daemon returned, kept whole.
  *
  * `code` is the machine-readable half and the only part anything may branch
@@ -60,6 +136,15 @@ export class RefusalError extends Error {
   readonly route: string | undefined
   /** What a blocked close is blocked by. Empty for every other refusal. */
   readonly reasons: readonly CloseReason[]
+  /**
+   * The machine lacks this feature because its Clawdline is older
+   * (`machineNeedsUpdate`). Decided here, in the constructor, so every request
+   * layer that builds a RefusalError — the client, and each module that does
+   * its own `fetch` — says it the same way without being edited.
+   */
+  readonly machineNeedsUpdate: boolean
+  /** The machine's version, when the refusal named one (the Cloud relay does). */
+  readonly version: string | undefined
 
   constructor(status: number, body: RefusalBody, route?: string) {
     const refusal = refusalFields(body)
@@ -70,6 +155,11 @@ export class RefusalError extends Error {
     this.status = status
     this.route = refusal.route ?? route
     this.reasons = refusal.reasons
+    // The body's own route, not the path asked: `not_implemented` counts only
+    // when the daemon named the route it does not have.
+    this.machineNeedsUpdate = machineNeedsUpdate(status, refusal.code, refusal.route)
+    const version = (body as { version?: unknown }).version ?? refusal.source?.version
+    this.version = typeof version === "string" && version ? version : undefined
   }
 }
 
@@ -102,6 +192,12 @@ export interface JSONFetchWords {
   offline: string
   requestFailed: string
   notJSON: string
+  /**
+   * The sentence for a feature the machine is too old for
+   * (`machineNeedsUpdate`). Optional: without it the refusal's own detail is
+   * the message, as before, and the Error is still marked.
+   */
+  machineNeedsUpdate?: string
 }
 
 /** One route-specific refusal field copied onto the Error consumed by a legacy page. */
@@ -168,8 +264,14 @@ export function makeJSONFetch(config: JSONFetchConfig): JSONFetch {
             detail: response.statusText || config.words.requestFailed,
             source: null,
           }
-      const failed = new Error(refusal.detail || refusal.code) as Error & Record<string, unknown>
+      const needsUpdate = machineNeedsUpdate(response.status, refusal.code, "route" in refusal ? refusal.route : undefined)
+      const message = needsUpdate && config.words.machineNeedsUpdate ? config.words.machineNeedsUpdate : refusal.detail || refusal.code
+      const failed = new Error(message) as Error & Record<string, unknown>
       failed.code = refusal.code
+      if (needsUpdate) {
+        failed.machineNeedsUpdate = true
+        if ("route" in refusal && refusal.route) failed.route = refusal.route
+      }
       for (const field of config.refusalFields ?? []) {
         const value = refusal.source?.[field.source]
         if (typeof value === field.type) failed[field.target] = value

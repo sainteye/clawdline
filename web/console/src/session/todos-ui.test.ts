@@ -58,7 +58,8 @@ test("a failed read is shown in the header, not as loading, and tapping it retri
   assert.match(source, /className="session-todos-failed"[\s\S]*?title=\{tip\}[\s\S]*?onClick=\{\(ev\) => \{ ev\.preventDefault\(\); ev\.stopPropagation\(\); onRetry\(\) \}\}/)
   assert.match(source, /nextWord\("todosRetryTip", \{ reason \}\)/)
   // The failure's words stay in the fold as well, and only a success clears it.
-  assert.match(source, /\{readReady && readFailure && <p className="work-note" role="alert">\{readFailure\.words\}<\/p>\}/)
+  // A machine too old for the read says that instead (machine/NeedsUpdate.tsx).
+  assert.match(source, /\{readReady && readFailure && \(readFailure\.update\s*\? <NeedsUpdate update=\{readFailure\.update\} \/>\s*: <p className="work-note" role="alert">\{readFailure\.words\}<\/p>\)\}/)
   // Both reads — the full page while the fold is open, the bounded summary
   // while it is folded — clear the failure only on their own success.
   assert.match(source, /if \(mine === ticket\.current\) \{\s*setPage\(next\)\s*setSummary\([^\n]*\)\s*setReadFailure\(null\)\s*\}/)

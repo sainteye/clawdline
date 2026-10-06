@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
+import { asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
+import { NeedsUpdate } from "../machine/NeedsUpdate.js"
+import { nextWord } from "../next-strings.js"
 import * as L from "../legacy/bridge.js"
 import { humanInterventionActionV2, readHumanInterventionsV2, type HumanInterventionV2, type HumanInterventionsV2 } from "../pages/work/api.js"
 import { failureWords, when } from "../pages/work/shared.js"
@@ -22,6 +25,8 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   const [page, setPage] = useState<HumanInterventionsV2 | null>(null)
   const [pageKey, setPageKey] = useState("")
   const [readError, setReadError] = useState("")
+  // The read failed because this machine is too old for it (docs/updates.md).
+  const [readUpdate, setReadUpdate] = useState<MachineNeedsUpdate | null>(null)
   const [actionError, setActionError] = useState("")
   const [actionStatus, setActionStatus] = useState("")
   const [reading, setReading] = useState(false)
@@ -40,10 +45,10 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
         // A transient failure is asked again once before it is shown.
         const next = await readWithOneRetry(() => readHumanInterventionsV2(target.conversation))
         if (mine === ticket.current && sameInterventionTarget(target, latest.current)) {
-          setPage(next); setPageKey(targetKey); setReadError("")
+          setPage(next); setPageKey(targetKey); setReadError(""); setReadUpdate(null)
         }
       } catch (error) {
-        if (mine === ticket.current && sameInterventionTarget(target, latest.current)) setReadError(failureWords(error))
+        if (mine === ticket.current && sameInterventionTarget(target, latest.current)) { setReadError(failureWords(error)); setReadUpdate(asMachineNeedsUpdate(error)) }
       } finally {
         if (mine === ticket.current) setReading(false)
       }
@@ -57,7 +62,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     ticket.current++
     actionSerial.current++
     busyRef.current = false
-    setPage(null); setPageKey(""); setReadError(""); setActionError(""); setActionStatus(""); setBusy(""); setExpanded(false)
+    setPage(null); setPageKey(""); setReadError(""); setReadUpdate(null); setActionError(""); setActionStatus(""); setBusy(""); setExpanded(false)
     if (!destination) return
     void load(destination)
     // Like the to-dos: ask again only while the page is visible, and at once
@@ -171,7 +176,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
     setActionError("")
   }
 
-  const countWords = readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
+  const countWords = readUpdate ? `關注便條：${nextWord("machineNeedsUpdate")}` : readError ? "關注便條讀取失敗" : shown ? `需要你關注，${active.length} 筆未處理便條` : "關注便條載入中"
   const head = <button className="human-interventions-head" type="button" aria-expanded={expanded} aria-controls={expanded ? "human-interventions-body" : undefined}
     aria-label={`${countWords}${actionError ? "，操作失敗，請展開查看" : ""}`}
     onClick={(event) => { event.preventDefault(); event.stopPropagation(); if (readError) { void load(destination); return } if (!expanded) { onExpand?.(); setActionStatus("") } setExpanded(!expanded) }}>
@@ -179,7 +184,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
       {active.length > 0 && <span className="human-interventions-dot" aria-hidden="true" />}
       {shown && active.length > 0 && <span className="human-interventions-count">待處理 {active.length}</span>}
       {actionError && <span className="human-interventions-count human-interventions-failed">操作失敗</span>}
-      {readError && <span className="human-interventions-count">讀取失敗</span>}
+      {readError && <span className="human-interventions-count">{readUpdate ? nextWord("machineNeedsUpdateShort") : "讀取失敗"}</span>}
       {reading && !shown && !readError && <span className="human-interventions-count">載入中</span>}
     </button>
   const live = <>
@@ -189,7 +194,7 @@ export function useInterventions(row: SessionRow | null, onReplySent?: () => voi
   const body = expanded && <section className="human-interventions" aria-labelledby="human-interventions-title">
     <div className="human-interventions-panelbar"><h2 id="human-interventions-title">需要你關注</h2><button type="button" onClick={closeWithFocus}><WorkIcon name="close" />收起關注</button></div>
     <div className="human-interventions-body" id="human-interventions-body">
-      {readError && <p className="human-interventions-error" role="alert">{shown ? "資料可能已過期，請重試；更新前不能操作便條。" : "無法讀取便條。"} {readError} <button type="button" onClick={() => { void load(destination) }}>重試</button></p>}
+      {readUpdate ? <NeedsUpdate update={readUpdate} className="human-interventions-error" /> : readError && <p className="human-interventions-error" role="alert">{shown ? "資料可能已過期，請重試；更新前不能操作便條。" : "無法讀取便條。"} {readError} <button type="button" onClick={() => { void load(destination) }}>重試</button></p>}
       {actionError && <p className="human-interventions-error" role="alert">{actionError}</p>}
       {actionStatus && <p className="human-interventions-status" role="status">{actionStatus}</p>}
       {shown && active.length === 0 && <p className="human-interventions-empty">目前沒有需要處理的便條。</p>}
