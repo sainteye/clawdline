@@ -86,7 +86,9 @@ clawdline callback --title "The hosted console serves <sha>" --timeout 20m -- \
 
 `tools/wait-hosted-console.sh <sha> [--deadline 15m]` polls `BUILD.json` until its stamp is
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
-bundle has `CloudGate`.
+bundle has `CloudGate`. Builds that ship product catalogs also read every advertised language's
+hosted JSON and check its `lang`, key set and placeholders against English with
+`tools/check-hosted-catalogs.py`.
 
 ## The check that answers the right question
 

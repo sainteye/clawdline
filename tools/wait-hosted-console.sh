@@ -62,9 +62,16 @@ if [ -z "$bundle" ]; then
   exit 1
 fi
 gates=$(curl -fsS --max-time 20 "$origin/$bundle" | grep -c CloudGate)
-if [ "${gates:-0}" -gt 0 ]; then
-  echo "the served $bundle takes the Cloud branch (CloudGate x$gates)"
-  exit 0
+if [ "${gates:-0}" -eq 0 ]; then
+  echo "FAILED: the served $bundle has no CloudGate: the build that went up did not take the Cloud branch"
+  exit 1
 fi
-echo "FAILED: the served $bundle has no CloudGate: the build that went up did not take the Cloud branch"
-exit 1
+echo "the served $bundle takes the Cloud branch (CloudGate x$gates)"
+
+# The source directory marks builds that advertise the new catalogs. Older
+# released builds have no such directory, so their existing CloudGate check
+# remains sufficient. Once a build ships catalogs, all of them must be served.
+if [ -f web/console/public/catalogs/en.json ]; then
+  python3 tools/check-hosted-catalogs.py "$origin" || exit 1
+fi
+exit 0
