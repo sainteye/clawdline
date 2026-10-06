@@ -21,6 +21,7 @@ import { KEY_ROW, StatusMessage, holderKey, isRegionKey, pasteRefusal, readClipb
 import { TAB } from "./tab.js"
 import { firstSize } from "./TerminalProjectList.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
+import { followCursorLine } from "./cursor-line.js"
 
 /**
  * One terminal: its screen, drawn by xterm.js from the daemon's frames, and
@@ -235,6 +236,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
   // ---- xterm.js, loaded on first use
   useEffect(() => {
     let disposed = false
+    let unfollow = () => {}
     const el = host.current
     if (!el) return
     setLoaded("loading")
@@ -271,6 +273,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
       })
       term.current = t
       fit.current = addon
+      unfollow = followCursorLine(() => scroller.current, t)
       setLoaded("ready")
       if (lastFrame.current) draw(lastFrame.current)
     }
@@ -306,6 +309,7 @@ export function TerminalView({ id, shown, label, onBack, onOpenNew }: {
       el.removeEventListener("paste", onPaste, true)
       el.removeEventListener("keydown", onRegion, true)
       el.removeEventListener("keydown", onKey)
+      unfollow()
       term.current?.dispose()
       term.current = null
       fit.current = null

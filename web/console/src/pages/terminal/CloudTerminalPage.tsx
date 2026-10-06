@@ -15,6 +15,7 @@ import { KEY_ROW, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtr
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
 import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal } from "./cloud-view.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
+import { centerCursorLine, followCursorLine } from "./cursor-line.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "", carrier: "relay" }
 const FIRST_FRAME_MS = 12_000
@@ -87,10 +88,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const historyFocus = useRef<HTMLDivElement>(null)
   const actionMenu = useRef<HTMLDetailsElement>(null)
   const observed = useRef<TerminalObservation | null>(null)
-  const showInputLine = () => requestAnimationFrame(() => {
-    const box = scroller.current
-    if (box) box.scrollTop = box.scrollHeight
-  })
+  const showInputLine = () => requestAnimationFrame(() => centerCursorLine(scroller.current, terminal.current))
+  const unfollow = useRef(() => {})
   useEffect(() => watchTerminalHost(setHost), [])
   useEffect(() => {
     const dialog = closeDialog.current
@@ -165,6 +164,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
           void session?.input(bytes).catch((e) => setError(reason(e))); showInputLine() })
         terminal.current = term
         fit.current = addon
+        unfollow.current = followCursorLine(() => scroller.current, term)
         term.options.disableStdin = !session?.snapshot.canType
         const current = session?.snapshot.frame
         if (current) { term.resize(current.cols, current.rows); term.write(frameBytes(current), showInputLine); lastRev.current = current.rev; drawnFrame.current = current }
@@ -179,6 +179,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const unbindKeys = bindTerminalKeyboard(element, () => back.current?.focus())
     element.addEventListener("paste", paste, true)
     return () => { cancelled = true; element.removeEventListener("paste", paste, true); unbindKeys()
+      unfollow.current(); unfollow.current = () => {}
       terminal.current?.dispose(); terminal.current = null; fit.current = null; lastRev.current = ""; drawnFrame.current = null }
   }, [id, shown, session, label])
 
@@ -187,7 +188,7 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
     const frame = snapshot.frame
     if (!term || !frame || frame.rev === lastRev.current) return
     const box = scroller.current
-    const follow = !box || box.scrollHeight - box.clientHeight - box.scrollTop < 32
+    const follow = !box || box.contains(document.activeElement) || box.scrollHeight - box.clientHeight - box.scrollTop < 32
     lastRev.current = frame.rev
     if (term.cols !== frame.cols || term.rows !== frame.rows) term.resize(frame.cols, frame.rows)
     term.write(frameDeltaBytes(drawnFrame.current, frame), () => { if (follow) showInputLine() })

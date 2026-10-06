@@ -101,10 +101,12 @@
 
 .terminal-scroll {
     position: relative; flex: 1; min-height: 160px; min-width: 0;
-    overflow-x: auto; overflow-y: hidden;
+    overflow: auto;
     border: 1px solid var(--line); border-radius: 10px; background: var(--term-bg);
 }
-.cloud-terminal-view .terminal-scroll { overflow-y: auto; }
+/* Room under a screen taller than its box, so its last row can still come to the middle
+   (cursor-line.ts). */
+.terminal-tail { pointer-events: none; }
 .terminal-view[data-stale] .terminal-scroll { border-color: var(--warn); }
 /* A screen that is not being updated does not look like one that is. */
 .terminal-view[data-stale] .terminal-host, .terminal-view[data-ended] .terminal-host { opacity: .55; }

@@ -582,6 +582,55 @@ test("the retired terminal page's address opens the Session terminal list", { sk
   await tab.close()
 })
 
+test("focusing a screen taller than its box brings the cursor's row to the middle", { skip }, async () => {
+  const made = await api("/v1/terminals", { method: "POST", body: JSON.stringify({ project_id: project, cols: 80, rows: 24 }) })
+  opened.add(made.id)
+  const at = `#page=sessions&mode=terminal&project=${encodeURIComponent(project)}&terminal=${made.id}`
+  // A tall window holds the terminal, so the screen is sized to it; a short
+  // one watching the same terminal then has a screen taller than its box.
+  const holder = await Tab.open(browser)
+  await holder.size(1280, 1600)
+  await holder.go(at)
+  await holder.until("the tall tab holds the terminal", (s) => s.holder === YOU && s.rows.length > 50, 10_000)
+  await holder.focusTerminal()
+  await holder.line("clear; for i in $(seq 1 40); do echo line-$i; done")
+  await holder.until("the lines are drawn", (s) => s.rows.some((r) => r.trim() === "line-40"))
+  const watcher = await Tab.open(browser)
+  await watcher.size(1280, 700)
+  await watcher.go(at)
+  await watcher.until("the short tab watches", (s) => s.holder === OTHER_TAB && s.rows.some((r) => r.trim() === "line-40"), 10_000)
+  const where = `(() => {
+    const box = document.querySelector("#terminal .terminal-scroll")
+    const screen = box.querySelector(".xterm-screen")
+    const rows = [...box.querySelectorAll(".xterm-rows > div")]
+    const line = rows.findIndex((r) => r.textContent.trim() === "line-40") + 1
+    const b = box.getBoundingClientRect(), s = screen.getBoundingClientRect(), h = s.height / rows.length
+    const cursor = s.top + (line + 0.5) * h
+    return { overflow: s.height > box.clientHeight, row: h, middle: b.top + box.clientHeight / 2, cursor, line }
+  })()`
+  const before = await watcher.run(where)
+  assert.ok(before.overflow && before.line > 0, JSON.stringify(before))
+  // A person focuses the screen by clicking it, and xterm.js then focuses
+  // without the browser's own scroll; a script's focus() would scroll.
+  const box = await watcher.run(`(() => { const r = document.querySelector("#terminal .terminal-scroll").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 40 } })()`)
+  await watcher.b.send("Page.bringToFront", {}, watcher.session)
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await watcher.b.send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 }, watcher.session)
+  }
+  await pause(300)
+  assert.equal(await watcher.run(`document.activeElement?.classList.contains("xterm-helper-textarea")`), true, "the click focused the screen")
+  const after = await watcher.run(where)
+  assert.ok(Math.abs(after.cursor - after.middle) <= after.row, "the cursor's row is in the middle of the box: " + JSON.stringify(after))
+  await watcher.shot("02b-cursor-row-centred")
+  await watcher.close()
+  await holder.close()
+  // Its shell goes now rather than at the end, so later tests start with the
+  // machine's terminal count they expect.
+  const c = await api(`/v1/terminals/${made.id}/control`, { method: "POST", body: JSON.stringify({ action: "takeover", client: "e2e-cleanup" }) })
+  await api(`/v1/terminals/${made.id}`, { method: "DELETE", body: JSON.stringify({ epoch: c.epoch, client: "e2e-cleanup" }) })
+  opened.delete(made.id)
+})
+
 test("a terminal opens from the work page and takes keys the way its programs asked", { skip }, async () => {
   const tab = await Tab.open(browser)
   await tab.go("#page=work&project=" + encodeURIComponent(project))
