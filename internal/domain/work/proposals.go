@@ -666,7 +666,7 @@ func AnswerProposal(p Proposal, a Answer, actor string, now time.Time) (Proposal
 		// it. A withdrawal is a fact about the subject — the line is already
 		// tracked, or already over — and answering `track` would put
 		// finished work on a board. What a person wants followed after that
-		// is an item they make (POST /v1/work/items), which says so.
+		// is an item they make on the v2 board, which says so.
 		return Proposal{}, refuse(409, "proposal_withdrawn",
 			"This proposal was withdrawn (%s): its subject moved on, so there is nothing left to answer. Make an item on the board if you want it followed.",
 			p.WithdrawnReason)
@@ -851,7 +851,7 @@ func Placing(p Proposal, tasks []TaskFacts, now time.Time) (Item, Change, bool) 
 	if p.Leftover() {
 		// Which task said it did not do this. It is the whole provenance of a
 		// row that nobody typed: the item's first move names the delivery it
-		// came out of, and `GET /v1/work/items/{id}/moves` reads it back.
+		// came out of, and the stored moves retain it for audit.
 		c.Evidence["leftover_of_task"] = p.TaskID
 	}
 	if place == PlaceBoard {

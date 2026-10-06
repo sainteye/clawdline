@@ -66,13 +66,6 @@ const RULES: Rule[] = [
     probes: [{ file: "web/console/src/cloud/CloudGate.tsx", all: ["setMachines([])", "setSyncing(false)"] }],
   },
   {
-    id: "U03",
-    family: U,
-    title: "An unread board becomes zero items and an empty section",
-    cause: "fallback_value",
-    probes: [{ file: "web/console/src/pages/work/Board.tsx", all: ["board?.counts[section] ?? 0", "rows.length === 0", "workWord(\"sectionEmpty\")"] }],
-  },
-  {
     id: "U04",
     family: U,
     title: "A relay socket is reported as a healthy machine",

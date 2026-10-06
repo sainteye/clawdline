@@ -19,8 +19,8 @@ import sectionMarkup from "./timeline/section.html?raw"
  *
  * **Where it is reached from changed** (work-system-review §5.2, W6). The old
  * Project Board was a frozen snapshot presented as a live page. It has been
- * removed, and a work item now opens this page (`pages/work/Board.tsx`), which
- * is where "the history of this one thing" belongs.
+ * removed. The v1 work page once opened this timeline from its Board view;
+ * that page was retired when v2 became the Board reader.
  *
  * `boardItemIds` belong to the old store and have no proved mapping to work
  * ids. The copied renderer still emits their pills, so this host removes them

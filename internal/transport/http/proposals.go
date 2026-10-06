@@ -96,8 +96,8 @@ func (s *Server) participationSweep(ctx context.Context) error {
 }
 
 // participationRoutes adds these routes to the daemon's mux. The mux sends a
-// path to its longest registered prefix, so the board's `/v1/work/` keeps
-// everything else under it.
+// path to its longest registered prefix, so these participation routes
+// remain reachable beside the v2 board.
 func (s *Server) participationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/orchestrator/proposals", s.sessionProposalsRoute)
 	mux.HandleFunc("/v1/orchestrator/proposals/", s.sessionProposalsRoute)
@@ -521,7 +521,7 @@ func (s *Server) propose(w http.ResponseWriter, r *http.Request) {
 		principal = "child:" + rec.ID
 	case accessOf(r).verdict.Allowed:
 		writeRefusal(w, http.StatusForbidden, "proposal_is_for_sessions",
-			"A person does not propose to themselves: make the item on the board (POST /v1/work/items).")
+			"A person does not propose to themselves: make the item on the v2 board (POST /v1/work/v2/items).")
 		return
 	default:
 		writeRefusal(w, http.StatusUnauthorized, "unauthorized", "This needs the orchestrator token.")

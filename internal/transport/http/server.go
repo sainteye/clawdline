@@ -475,8 +475,8 @@ func (s *Server) Handler() http.Handler {
 		s.boardRead(w, r)
 	})
 	mux.HandleFunc("/v1/board/tracks", s.boardTracks)
-	// The new board and its Backlog (work.go, design-decisions T3): the
-	// three structures' own resource, beside the old cards' read-only view.
+	// The v2 work board; participation routes under the same prefix are
+	// registered separately.
 	mux.HandleFunc("/v1/work/", s.workRoute)
 	// Where a person takes part: proposals, decisions, digests (proposals.go, T4).
 	s.participationRoutes(mux)

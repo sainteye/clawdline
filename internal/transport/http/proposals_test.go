@@ -52,6 +52,29 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &body)
 		return body.Error
 	}
+	for _, path := range []string{"/v1/work/board", "/v1/work/backlog", "/v1/work/items", "/v1/work/items/" +
+		"0b0e0000-0000-4000-8000-000000000001", "/v1/work/items/0b0e0000-0000-4000-8000-000000000001/moves"} {
+		if rec := do(person, http.MethodGet, path, "", ""); rec.Code != http.StatusNotFound || code(rec) != "not_found" {
+			t.Fatalf("retired route %s: %d %s", path, rec.Code, rec.Body)
+		}
+	}
+	for _, path := range []string{"/v1/work/items", "/v1/work/items/0b0e0000-0000-4000-8000-000000000001"} {
+		if rec := do(person, http.MethodPost, path, "", `{}`); rec.Code != http.StatusNotFound || code(rec) != "not_found" {
+			t.Fatalf("retired write route %s: %d %s", path, rec.Code, rec.Body)
+		}
+	}
+	if rec := do(person, http.MethodGet, "/v1/work/v2/items", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("v2 board read: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(person, http.MethodGet, "/v1/work/decisions", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("decisions read: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(person, http.MethodGet, "/v1/work/proposals", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("proposals read: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(person, http.MethodGet, "/v1/work/digests?kind=daily", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("digests read: %d %s", rec.Code, rec.Body)
+	}
 	type answer struct {
 		Proposal struct {
 			ID            string `json:"id"`
@@ -224,11 +247,11 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 		made.Proposal.SubjectStatus != string(work.SubjectUnknown) {
 		t.Fatalf("track: %d %s", rec.Code, rec.Body)
 	}
-	moves := do(person, http.MethodGet, "/v1/work/items/"+lines[0]+"/moves", "", "")
-	if !strings.Contains(moves.Body.String(), `"from":"proposal"`) ||
-		!strings.Contains(moves.Body.String(), `"actor":"user_via_session:`+mine.ID+`"`) ||
-		!strings.Contains(moves.Body.String(), `"session":"root-conv"`) {
-		t.Fatalf("moves: %s", moves.Body)
+	moves, _, err := s.work().Moves(context.Background(), lines[0], 0)
+	if err != nil || len(moves) == 0 || moves[0].From != work.Place("proposal") ||
+		moves[0].Actor != "user_via_session:"+mine.ID ||
+		!strings.Contains(string(moves[0].Evidence), `"session":"root-conv"`) {
+		t.Fatalf("moves: %+v, %v", moves, err)
 	}
 	// A question without its Board context is refused at the public route,
 	// before it can become an unattached row in the person's attention queue.
@@ -259,9 +282,9 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	if rec := do(person, http.MethodPost, "/v1/work/decisions/"+opened.Decision.ID, "d3", `{"answer":"r"}`); rec.Code != 200 {
 		t.Fatalf("answer: %d %s", rec.Code, rec.Body)
 	}
-	moves = do(person, http.MethodGet, "/v1/work/items/"+lines[0]+"/moves", "", "")
-	if !strings.Contains(moves.Body.String(), `"trigger":"decision_answered"`) {
-		t.Fatalf("moves after the decision: %s", moves.Body)
+	moves, _, err = s.work().Moves(context.Background(), lines[0], 0)
+	if err != nil || len(moves) == 0 || moves[len(moves)-1].Trigger != "decision_answered" {
+		t.Fatalf("moves after the decision: %+v, %v", moves, err)
 	}
 	if rec := do(machine, http.MethodGet, "/v1/orchestrator/decisions/"+opened.Decision.ID, "", ""); !strings.Contains(rec.Body.String(), `"answer":"r"`) {
 		t.Fatalf("the session reads the answer: %d %s", rec.Code, rec.Body)
