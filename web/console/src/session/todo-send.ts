@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node runs todo-send.test.ts against this source file.
+import { catalogWord } from "../catalog.ts"
 /**
  * What the Send button on a direct to-do says, and whether it can be pressed.
  *
@@ -10,15 +12,15 @@
 export const DIRECT_TODO_RESEND_AFTER_SECONDS = 120
 
 export type TodoSend =
-  | { kind: "send"; label: "Send" }
-  | { kind: "again"; label: "再次 Send" }
-  | { kind: "wait"; label: "再次 Send"; until: number }
+  | { kind: "send"; label: string }
+  | { kind: "again"; label: string }
+  | { kind: "wait"; label: string; until: number }
   | { kind: "none" }
 
 export function todoSend(todo: { completed_at?: number | null; sent_at: number | null; read_at: number | null }, now: number): TodoSend {
   if (todo.completed_at) return { kind: "none" }
-  if (!todo.sent_at && !todo.read_at) return { kind: "send", label: "Send" }
-  if (todo.read_at) return { kind: "again", label: "再次 Send" }
+  if (!todo.sent_at && !todo.read_at) return { kind: "send", label: catalogWord("legacy", "webSend") }
+  if (todo.read_at) return { kind: "again", label: catalogWord("literal", "3aa8e038c09d") }
   const until = (todo.sent_at ?? 0) + DIRECT_TODO_RESEND_AFTER_SECONDS
-  return now < until ? { kind: "wait", label: "再次 Send", until } : { kind: "again", label: "再次 Send" }
+  return now < until ? { kind: "wait", label: catalogWord("literal", "3aa8e038c09d"), until } : { kind: "again", label: catalogWord("literal", "3aa8e038c09d") }
 }

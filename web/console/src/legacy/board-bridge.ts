@@ -6,7 +6,9 @@
 // that carry an old board Project id. The latter is redirected to the Projects
 // page's own repository detail; it never opens or reads an old card.
 import { T } from "./js/core/i18n.js"
+import { machineWording } from "./machine-copy.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
+import { catalogWord } from "../catalog.js"
 
 /** The part of a board answer the Settings block reads. */
 export interface BoardMode {
@@ -18,7 +20,7 @@ export interface BoardMode {
 
 /** Read this daemon's flat or nested refusal shape through the shared transport. */
 const jsonFetch = makeJSONFetch({
-  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+  words: { offline: machineWording(T.webOffline, "en"), requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
 })
 
 const post = (body: unknown): RequestInit => ({
@@ -49,10 +51,6 @@ export function subscribeBoardMode(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-function words(en: string, zh: string): string {
-  return /^zh/i.test(document.documentElement.lang || navigator.language || "") ? zh : en
-}
-
 /** Apply only an answer that names the mode, and never an older revision. */
 export function applyBoardMode(answer: unknown): void {
   let next = answer as BoardMode | null
@@ -63,8 +61,8 @@ export function applyBoardMode(answer: unknown): void {
   const lede = document.getElementById("projects-lede")
   if (lede) {
     lede.textContent = next.enabled
-      ? words("Choose a project to see its work, progress and results.", "選擇專案，了解正在進行的工作與已落地的成果。")
-      : words("Directories an assistant has actually been run in, and that are still there.", "assistant 真的跑過、而且還在的目錄。")
+      ? catalogWord("projects", "boardLede")
+      : catalogWord("next", "projectsLede")
   }
   document.documentElement.dataset.boardMode = next.enabled ? "board" : "standard"
   for (const listener of listeners) listener()

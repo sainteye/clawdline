@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import type { Icon, SessionAgent, SessionRow, SessionShell, TaskRow } from "@clawdline/contract"
 import {
   useEffect,
@@ -51,8 +52,7 @@ import "./git-status.css"
 const SNIPPETS_READABLE = true
 
 function suggestionsTitle(): string {
-  return /^zh/i.test(document.documentElement.lang || navigator.language)
-    ? "Clawdfather 可以做什麼" : "Ask Clawdfather"
+  return catalogWord("literal", "32c2f23b127b")
 }
 
 /**
@@ -231,7 +231,7 @@ export function Detail({
                 className="clawdfather-crown"
                 id="detail-clawdfather-crown"
                 role="img"
-                aria-label="Clawdfather"
+                aria-label={catalogWord("inline", "5d559e858210")}
                 hidden={!L.coordinatorForSession(row)}
               />
               <canvas id="detail-mark" ref={markRef} width={0} height={0} />
@@ -793,8 +793,7 @@ function Tools({
                   setGit(true)
                   focusNext.current = "first"
                 }}
-              >
-                Git <span className="next" aria-hidden="true">›</span>
+              >{catalogWord("inline", "b949c922b6ef")} <span className="next" aria-hidden="true">›</span>
               </button>
               <button
                 className="end"
@@ -859,8 +858,7 @@ function Tools({
                   closeMenu(false)
                   requestConfirm({ kind: "commit", id: row.id, opener: triggerRef.current })
                 }}
-              >
-                commit
+              >{catalogWord("inline", "9505cacb7c71")}
               </button>
               <button
                 id="session-push"
@@ -873,8 +871,7 @@ function Tools({
                   closeMenu(false)
                   requestConfirm({ kind: "push", id: row.id, opener: triggerRef.current })
                 }}
-              >
-                push
+              >{catalogWord("inline", "d107ea3629c3")}
               </button>
             </div>
           </div>
@@ -899,7 +896,7 @@ function pageLanguage(): string {
  * catalog.
  */
 function documentsMenuWord(): string {
-  return /^zh(?:-|$)/i.test(pageLanguage()) ? "文件" : "Documents"
+  return catalogWord("literal", "6a2079c8124f")
 }
 
 /** `copyForUserMessages(lang).title`, from the copied `view/user-messages-data.js`. */

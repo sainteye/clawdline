@@ -34,7 +34,7 @@ export function Row({
       {!first && <div className="sw-hairline" />}
       <div className="sw-row">
         <span className="sw-row-label">{label}</span>
-        <span className="sw-row-control">{children}</span>
+        <div className="sw-row-control">{children}</div>
       </div>
       {hint ? <p className="sw-hint">{hint}</p> : null}
     </>

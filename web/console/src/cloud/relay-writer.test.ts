@@ -15,6 +15,10 @@ import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity,
 import { CARRIED_READS, RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
 // The copied client's own failure constructor: what the machine's refusal really becomes.
 import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
+import { CatalogCloudClient } from "./refusal-client.js"
+import japanese from "../../public/catalogs/ja.json" with { type: "json" }
+// @ts-expect-error -- Node runs the source test with type stripping.
+import { activateCatalog, catalogRefusalDetail, resetCatalogForTest } from "../catalog.ts"
 
 type Call = [string, ...unknown[]]
 
@@ -822,6 +826,53 @@ test("a refused Work v2 create settles as the route's flat refusal", async () =>
     error: "project_not_found", detail: "Choose a current Project.", route: "/v1/work/v2/items",
     layer: "mac_route", ref: "abcdef12·12", retryable: false, word: "work.v2.create",
   })
+})
+
+test("a signed Cloud refusal keeps its detail key through flat and nested writes", async () => {
+  const verified = new CatalogCloudClient({ relayURL: "wss://relay.example.test/v1/connect", deviceToken: "fixture" })
+  let signed: Error | null = null
+  verified.events((event: { type?: string; error?: Error }) => { if (event.type === "read") signed = event.error ?? null })
+  const detail = "No decision has that id."
+  const key = "http.2abbea69ae9bec02"
+  verified._applySnapshot({ kind: "transcript", machine: "mac-a", session: "s1" }, {
+    read: "action:press-1", status: 404,
+    error: { code: "decision_not_found", layer: "mac_route", message: detail, detail_key: key, ref: REF },
+  }, { seq: 3, ts: "2026-10-07T00:00:00Z" }, false)
+  assert.ok(signed, "the copied CloudClient emitted its parsed refusal")
+  const client = new FakeClient()
+  client.fail._machineRequestAs = signed
+  const { reader } = seam(client)
+  const id = "10000000-0000-4000-8000-000000000001"
+  const nested = await reader.fetch(`/v1/work/decisions/${id}`, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-1" }))
+  const nestedBody = await json(nested) as { error: { detail_key?: string; message?: string } }
+  assert.equal(nestedBody.error.detail_key, key)
+  assert.equal(nestedBody.error.message, detail)
+  const oldDocument = globalThis.document
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } } })
+  try {
+    assert.equal(activateCatalog(japanese, "ja"), "ja")
+    assert.deepEqual(catalogRefusalDetail(nestedBody), { text: japanese[key], lang: "ja" })
+  } finally {
+    resetCatalogForTest()
+    Object.defineProperty(globalThis, "document", { configurable: true, value: oldDocument })
+  }
+
+  verified._applySnapshot({ kind: "transcript", machine: "mac-a", session: "s1" }, {
+    read: "action:press-2", status: 403,
+    error: { code: "forbidden", layer: "mac_route", message: "Only this machine's own token may change its settings.",
+      detail_key: "http.9989084eae5cdab3" },
+  }, { seq: 4, ts: "2026-10-07T00:00:01Z" }, false)
+  client.fail._machineRequestAs = signed ?? undefined
+  const flat = await reader.fetch("/v1/work/v2/items", post({
+    project_id: "cloud-p1", kind: "issue", title: "A", description: "B", deployment_policy: "agent_decides",
+  }, { "Idempotency-Key": "press-create-2" }))
+  assert.equal((await json(flat) as { detail_key?: string }).detail_key, "http.9989084eae5cdab3")
+
+  const raw = failureFromMac({ code: "decision_not_found", layer: "mac_route", message: detail }, 404, REF)
+  ;(raw as Error & { detailKey?: string }).detailKey = key
+  client.fail._machineRequestAs = raw
+  const untrusted = await reader.fetch(`/v1/work/decisions/${id}`, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-2" }))
+  assert.equal(((await json(untrusted)).error as { detail_key?: string }).detail_key, undefined)
 })
 
 test("a Board reference picture is read as machine-scoped bytes", async () => {

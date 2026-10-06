@@ -1,3 +1,4 @@
+import { catalogWord } from "./catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import type { BearingsSource, RestorableSession, ScanSource, SessionRow, TaskRow } from "@clawdline/contract"
 import { client } from "./client.js"
@@ -321,8 +322,8 @@ export function SessionsPage({
               className="start"
               id="work-create-go"
               type="button"
-              title="新增看板項目"
-              aria-label="新增看板項目"
+              title={catalogWord("inline", "2c58f0c0b5ae")}
+              aria-label={catalogWord("inline", "2c58f0c0b5ae")}
               onClick={() => openNewWorkItem()}
             >
               <svg className="ico ico-work-add" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

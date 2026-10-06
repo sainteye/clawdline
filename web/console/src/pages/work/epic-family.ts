@@ -1,3 +1,4 @@
+import { catalogFormat } from "../../catalog.js"
 import type { WorkV2Item } from "./api.js"
 
 /**
@@ -45,8 +46,8 @@ export function epicProgress(children: readonly Pick<WorkV2Item, "phase">[]): Ep
 }
 
 export function epicProgressWords(progress: EpicProgress): string {
-  const words = `${progress.done} / ${progress.total} 已完成`
-  return progress.cancelled ? `${words} · ${progress.cancelled} 已取消` : words
+  const words = catalogFormat("template", "7e807e36364d", [progress.done, progress.total])
+  return progress.cancelled ? catalogFormat("template", "d11ed4fee18a", [words, progress.cancelled]) : words
 }
 
 export interface EpicParent {

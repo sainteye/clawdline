@@ -32,6 +32,7 @@
 // Nothing is imported at run time, so `node --test` loads it as it is.
 import type { CarriedWord } from "./carry.js"
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
+import { authenticatedRefusalKey } from "./refusal-client.js"
 
 // One admitted request may wait behind one turn, and each turn may try two
 // 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
@@ -1783,6 +1784,7 @@ export class RelayWriter {
     const session = route.op === "focus" ? null : sessionOf(route)
     if (session) this.host.wrote(session, outcome === "not_done" ? "refused" : "unknown")
     const ref = refOf(error)
+    const detailKey = authenticatedRefusalKey(error)
     this.host.note({
       method,
       path,
@@ -1800,6 +1802,7 @@ export class RelayWriter {
       // machine's own route, whose code the page reads as it does locally.
       ...(outcome ? { outcome } : {}),
       word: route.word,
+      ...(detailKey ? { detail_key: detailKey } : {}),
     }
     // The fields each reader acts on, where the machine sent them: a blocked
     // close's `reasons`, a closed terminal's `app`, a missing Whisper's `reason`.

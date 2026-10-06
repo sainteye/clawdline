@@ -2,14 +2,37 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { activityUnknownScope, currentProjectSummary, projectListWords, replaceSuffix } from "./project-list.ts"
+import { activityUnknownScope, currentProjectSummary, localizePinnedProjectStatus, projectActivityWords, projectListWords, projectOpenLabel, replaceSuffix } from "./project-list.ts"
 
 test("an unavailable activity read says which number is missing without judging Project progress", () => {
   const zh = projectListWords("zh-TW")
   const en = projectListWords("en")
   assert.equal(zh.unknownAfter, "進行中數量待更新")
   assert.doesNotMatch(zh.unknownAfter, /進度尚未確認/)
-  assert.equal(en.unknownAfter, "In-progress count unavailable")
+  assert.equal(en.unknownAfter, "In-progress count needs updating")
+})
+
+test("pinned Project activity is rebuilt from the same read facts for every language", () => {
+  assert.equal(projectActivityWords({ boardProjectId: "p" })?.text, "In-progress count needs updating")
+  assert.equal(projectActivityWords({ boardProjectId: "p", activeItemCount: 2, summaryCoverage: "complete", activityReadStatus: "ready" })?.text, "2 in progress")
+  assert.equal(projectActivityWords({ boardProjectId: "p", activeItemCount: 2, summaryCoverage: "complete", activityReadStatus: "stale" })?.text, "Last known: 2 in progress")
+  assert.equal(projectActivityWords({ boardProjectId: "p", activeItemCount: 2, summaryCoverage: "partial", activityReadStatus: "ready" })?.text, "Partial: 2 in progress")
+  assert.equal(projectActivityWords({ boardProjectId: "p", activeItemCount: 0, summaryCoverage: "complete", activityReadStatus: "ready" })?.text, "None in progress")
+  assert.equal(projectActivityWords({ activeItemCount: 2 }), null)
+})
+
+test("the Project row label keeps its accessible name and omits a repeated unknown badge", () => {
+  assert.equal(projectOpenLabel("Atlas", "Last known: 2 in progress", false), "Open Atlas, Last known: 2 in progress")
+  assert.equal(projectOpenLabel("Atlas", "In-progress count needs updating", true), "Open Atlas")
+})
+
+test("pinned loading and refusal prefixes are translated without changing the following code", () => {
+  assert.equal(localizePinnedProjectStatus("看板暫時無法讀取，目前顯示一般專案。設定未變更。 (board_unavailable)"),
+    "Board unavailable; showing standard Projects. Your setting has not changed. (board_unavailable)")
+  assert.equal(localizePinnedProjectStatus("更新失敗，目前保留上次的專案目錄。Access denied"),
+    "Update failed; showing the last available project directory. Access denied")
+  assert.equal(localizePinnedProjectStatus("User title: Update failed; showing the last available project directory."),
+    "User title: Update failed; showing the last available project directory.")
 })
 
 test("the current item total opens the work board instead of claiming to be progress", () => {

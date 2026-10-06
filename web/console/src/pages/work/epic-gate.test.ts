@@ -92,8 +92,8 @@ test("a Feature checked as needing independent review shows its plan and review 
   assert.equal(epicGateShown({ ...feature, phase: "assigned", gate_snapshot_cycle: 0 }), false)
   assert.equal(epicGateShown({ ...feature, phase: "assigned", closed_at: 1 }), false)
   assert.deepEqual(epicGate(undefined), { plan: false, review: false, ready: false })
-  assert.equal(planGateHint(feature), FEATURE_GATE_HINT)
-  assert.equal(planGateHint({ kind: "epic" }), EPIC_GATE_HINT)
+  assert.equal(planGateHint(feature), FEATURE_GATE_HINT())
+  assert.equal(planGateHint({ kind: "epic" }), EPIC_GATE_HINT())
 })
 
 test("only a Feature's or Refactor's own checkbox matters: an Epic always needs plan review, an Issue never does", () => {

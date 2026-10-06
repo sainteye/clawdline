@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import * as L from "../../legacy/bridge.js"
 import {
@@ -24,10 +25,6 @@ import {
  * and the board read again. It needs `viewer.canManage`, so a device that may
  * only read sees it disabled, as there.
  */
-function words(en: string, zh: string): string {
-  return /^zh/i.test(document.documentElement.lang || navigator.language || "") ? zh : en
-}
-
 /** The refusals after which the write may still have happened. */
 const RETRYABLE = /offline|busy|timeout|unavailable|network|connection|persistence_failed/
 
@@ -54,7 +51,7 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         if (!operationError.current && !savingRef.current) setStatus("")
       })
       .catch((error: unknown) => {
-        setStatus(L.failureSentence(error, words("Board unavailable", "無法讀取看板設定")))
+        setStatus(L.failureSentence(error, catalogWord("literal", "b253d8b3c409")))
       })
 
   useEffect(() => {
@@ -76,12 +73,12 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
     pending.current = command
     setBusy(true)
     operationError.current = false
-    setStatus(words("Saving…", "儲存中…"))
+    setStatus(catalogWord("literal", "b27f67abf518"))
     boardCommand(command)
       .then((result) => {
         pending.current = null
         applyBoardMode(result.board)
-        setStatus(words("Saved", "已儲存"))
+        setStatus(catalogWord("literal", "d968c5e734ce"))
       })
       .catch((error: Failure) => {
         // A network loss may follow a successful write: retry the same request.
@@ -91,7 +88,7 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         }
         operationError.current = true
         setStatus(
-          L.failureSentence(error, words("Save failed", "儲存失敗")) + words(" · Press again to retry.", " · 再按一次重試。"),
+          L.failureSentence(error, catalogWord("literal", "a8f4898b1364")) + catalogWord("literal", "4c9f465602cb"),
         )
       })
       .finally(() => setBusy(false))
@@ -99,13 +96,10 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
 
   return (
     <div className="block" id="settings-board">
-      <b id="settings-board-title">{words("Enable Project Board", "啟用看板系統")}</b>
+      <b id="settings-board-title">{catalogWord("literal", "9c2b7fce9411")}</b>
       <p className="say" id="settings-board-say">
         {board
-          ? words(
-              "Currently free. Organize work, sessions, usage and delivery under each Project. Disable to use the standard workflow; history is retained.",
-              "目前免費。以 Project 項目整合派工、進度、用量與成果。關閉後使用一般流程，歷史紀錄仍保留。",
-            )
+          ? catalogWord("literal", "03e4342b12d6")
           : ""}
       </p>
       <button
@@ -116,7 +110,7 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         disabled={!board || saving || !canManage}
         onClick={pressMode}
       >
-        {board ? (board.enabled ? words("Enabled", "已啟用") : words("Disabled", "已關閉")) : ""}
+        {board ? (board.enabled ? catalogWord("literal", "2989c6b2870d") : catalogWord("literal", "1a40ea6c139f")) : ""}
       </button>{" "}
       <button
         className="chip"
@@ -125,7 +119,7 @@ export function BoardBlock({ shown, goToPage }: { shown: boolean; goToPage: (nam
         data-page-to="projects"
         onClick={() => goToPage("projects")}
       >
-        {words("Open projects", "開啟專案")}
+        {catalogWord("literal", "e43bcf17f8bc")}
       </button>
       <p className="say" id="settings-board-status" role="status">
         {status}

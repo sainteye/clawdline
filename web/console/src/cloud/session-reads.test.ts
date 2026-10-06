@@ -19,10 +19,12 @@
 // Sealing and opening stand aside, as in `subscriptions.test.ts`.
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { CloudClient } from "../legacy/js/net/cloud-client.js"
+import { CatalogCloudClient } from "./refusal-client.js"
 import { parseEnvelopeChannel } from "../legacy/js/net/cloud-crypto.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, type CloudReadClient } from "./relay-reader.ts"
+// @ts-expect-error -- Node runs this TypeScript source test directly.
+import { RelayWriter, writeRoute } from "./relay-writer.ts"
 
 const MACHINE = "mac-a"
 const READ_TIMEOUT_MS = 300
@@ -31,12 +33,14 @@ const READ_TIMEOUT_MS = 300
 const WORDS: Record<string, { keys: string[]; id: string }> = {
   agent: { keys: ["type", "session", "agent", "limit"], id: "agent" },
   shell: { keys: ["type", "session", "shell", "bytes"], id: "shell" },
+  "work.decision-answer": { keys: ["type", "session", "request", "id", "answer"], id: "id" },
 }
 
 type Frame = { type: string; channels?: string[]; envelope?: { ch: string; body: Record<string, unknown> } }
 
 class Machine {
   socket: FakeSocket | null = null
+  refusal: { code: string; message: string; detail_key?: string } | null = null
   /** What each publish carried, and whether it decoded. */
   asked: { body: Record<string, unknown>; decoded: boolean }[] = []
   private seq = 1
@@ -49,16 +53,19 @@ class Machine {
     const body = frame.envelope!.body
     const word = WORDS[String(body.type)]
     const keys = Object.keys(body).sort()
+    const action = body.type === "work.decision-answer"
     const decoded = !!word && keys.length === word.keys.length && word.keys.every((key) => key in body) &&
-      typeof body.session === "string" && !!body.session && typeof body[word.id] === "string" && !!body[word.id]
+      (action || (typeof body.session === "string" && !!body.session)) && typeof body[word.id] === "string" && !!body[word.id]
     this.asked.push({ body, decoded })
     this.say({ type: "ack", ch: frame.envelope!.ch, seq: this.seq, fanout: 1, status: "delivered" })
     if (decoded) {
       const id = String(body[word.id])
       this.say({ type: "envelope", envelope: {
-        ch: "t/" + MACHINE + "/" + encodeURIComponent(String(body.session)), seq: this.seq, ts: Date.now(),
+        ch: "t/" + MACHINE + "/" + (action ? "__clawdline_machine__" : encodeURIComponent(String(body.session))), seq: this.seq, ts: Date.now(),
         sender: "mac-sender",
-        payload: { read: body.type + ":" + id, body: { [word.id]: id, entries: [{ role: "assistant", text: "found it" }], signature: "1" } },
+        payload: this.refusal
+          ? { read: action ? "action:" + body.request : body.type + ":" + id, error: this.refusal, status: 409 }
+          : { read: action ? "action:" + body.request : body.type + ":" + id, body: { [word.id]: id, entries: [{ role: "assistant", text: "found it" }], signature: "1" } },
       } })
     }
     this.seq += 1
@@ -86,7 +93,7 @@ class FakeSocket {
 async function connected(machine: Machine) {
   FakeSocket.machine = machine
   let sequence = 1
-  const client = new CloudClient({
+  const client = new CatalogCloudClient({
     relayURL: "https://relay.example.test", deviceToken: "token", devicePrivateKey: { extractable: false },
     deviceID: "viewer-1", account: "account-1", allowWrites: true, nextSequence: async () => sequence++,
     WebSocket: FakeSocket, readTimeoutMs: READ_TIMEOUT_MS,
@@ -131,6 +138,48 @@ test("a background command's output opened over Cloud is a read the machine deco
     const answer = await reader(client).fetch("/v1/sessions/S1/shells/b0aau3e6s?bytes=65536")
     assert.equal(answer.status, 200)
     assert.deepEqual(machine.asked, [{ body: { type: "shell", session: "S1", shell: "b0aau3e6s", bytes: 65536 }, decoded: true }])
+  } finally {
+    client.stop()
+  }
+})
+
+test("a machine refusal keeps its explicit key through the copied client and Cloud read seam", async () => {
+  const machine = new Machine()
+  const message = "This agent is no longer available."
+  machine.refusal = { code: "agent_not_found", message, detail_key: "http.1234567890abcdef" }
+  const client = await connected(machine)
+  try {
+    const response = await reader(client).fetch("/v1/sessions/S1/agents/a7?limit=200")
+    assert.equal(response.status, 409, JSON.stringify(machine.asked))
+    const body = await response.json() as { error: string; detail: string; detail_key?: string }
+    assert.deepEqual([body.error, body.detail, body.detail_key], ["agent_not_found", message, "http.1234567890abcdef"])
+    machine.refusal = { code: "agent_not_found", message }
+    const raw = await reader(client).fetch("/v1/sessions/S1/agents/a7?limit=200")
+    const rawBody = await raw.json() as { detail: string; detail_key?: string }
+    assert.equal(rawBody.detail, message)
+    assert.equal(rawBody.detail_key, undefined, "the same raw English sentence cannot borrow the earlier key")
+  } finally {
+    client.stop()
+  }
+})
+
+test("a machine refusal keeps its explicit key through the copied client and nested Cloud write seam", async () => {
+  const machine = new Machine()
+  const message = "This decision was already answered."
+  machine.refusal = { code: "decision_already_answered", message, detail_key: "http.1234567890abcdef" }
+  const client = await connected(machine)
+  try {
+    const relay = new RelayReader(MACHINE, { now: () => 1000 })
+    const writer = new RelayWriter(relay.writeHost, { now: () => 1000, requestID: () => "request-1" })
+    relay.carryWrites({ route: writeRoute, answer: (route, method, url, init) => writer.answer(route, method, url, init) })
+    relay.attach(client)
+    const response = await relay.fetch("/v1/work/decisions/10000000-0000-4000-8000-000000000001", {
+      method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": "request-1" },
+      body: JSON.stringify({ answer: "Proceed" }),
+    })
+    assert.equal(response.status, 409, JSON.stringify(machine.asked))
+    const body = await response.json() as { error: { code: string; message: string; detail_key?: string } }
+    assert.deepEqual([body.error.code, body.error.message, body.error.detail_key], ["decision_already_answered", message, "http.1234567890abcdef"])
   } finally {
     client.stop()
   }

@@ -26,6 +26,7 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
+import { authenticatedRefusalKey } from "./refusal-client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
 export interface CloudIdentity {
@@ -1025,7 +1026,7 @@ export class RelayReader {
         throw new TypeError(`${code}: ${message}`)
       }
       const status = typeof failure?.status === "number" && failure.status >= 400 && failure.status < 600 ? failure.status : 502
-      return this.refuse(method, path, status, code, message)
+      return this.refuse(method, path, status, code, message, authenticatedRefusalKey(error))
     }
   }
 
@@ -1511,9 +1512,9 @@ export class RelayReader {
     )
   }
 
-  private refuse(method: string, path: string, status: number, code: string, detail: string): Response {
+  private refuse(method: string, path: string, status: number, code: string, detail: string, detailKey: string | null = null): Response {
     this.note(method, path, "refused", code)
-    return json(status, { error: code, detail, route: path })
+    return json(status, { error: code, detail, route: path, ...(detailKey ? { detail_key: detailKey } : {}) })
   }
 
   private note(method: string, path: string, answer: SeamRow["answer"], code?: string, extra?: Partial<SeamRow>): void {

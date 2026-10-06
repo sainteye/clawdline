@@ -1,0 +1,4394 @@
+{
+  "literal.1b40e6344265": {
+    "include": true,
+    "en": "all quiet",
+    "zh-Hant": "都很安靜",
+    "reason": ""
+  },
+  "literal.b9fcf1d5c799": {
+    "include": true,
+    "en": "Machine load: CPU, memory and each session's share",
+    "zh-Hant": "機器負載：CPU、記憶體與各 session 的用量",
+    "reason": ""
+  },
+  "literal.0a0017caec11": {
+    "include": true,
+    "en": "Machine load",
+    "zh-Hant": "機器負載",
+    "reason": ""
+  },
+  "literal.7361fddb7d5f": {
+    "include": true,
+    "en": "unreachable — last reading shown",
+    "zh-Hant": "連不上，顯示上一次的讀數",
+    "reason": ""
+  },
+  "literal.371d49dd8b8f": {
+    "include": true,
+    "en": "every 3 s",
+    "zh-Hant": "每 3 秒更新",
+    "reason": ""
+  },
+  "literal.f8533719e17a": {
+    "include": true,
+    "en": "Reading…",
+    "zh-Hant": "讀取中…",
+    "reason": ""
+  },
+  "literal.82860b805ea6": {
+    "include": true,
+    "en": "Close",
+    "zh-Hant": "關閉",
+    "reason": ""
+  },
+  "literal.bb1756b831b9": {
+    "include": true,
+    "en": "Go to Clawdfather",
+    "zh-Hant": "前往 Clawdfather",
+    "reason": ""
+  },
+  "literal.e962e81b9996": {
+    "include": true,
+    "en": "Memory",
+    "zh-Hant": "記憶體",
+    "reason": ""
+  },
+  "literal.2826e9975083": {
+    "include": true,
+    "en": "no swap",
+    "zh-Hant": "沒有設定 swap",
+    "reason": ""
+  },
+  "literal.6965bbac3e3d": {
+    "include": true,
+    "en": "Waiting, last 10 s",
+    "zh-Hant": "近 10 秒在等待",
+    "reason": ""
+  },
+  "literal.35c033c1dbfc": {
+    "include": true,
+    "en": "memory",
+    "zh-Hant": "記憶體",
+    "reason": ""
+  },
+  "literal.3f30b2c523df": {
+    "include": true,
+    "en": "disk",
+    "zh-Hant": "磁碟",
+    "reason": ""
+  },
+  "literal.d173b3f0bd70": {
+    "include": true,
+    "en": "Who holds the memory",
+    "zh-Hant": "記憶體被誰用掉",
+    "reason": ""
+  },
+  "literal.bde9237d920d": {
+    "include": true,
+    "en": "Sort",
+    "zh-Hant": "排序",
+    "reason": ""
+  },
+  "literal.4f2ba7c98279": {
+    "include": true,
+    "en": "swapped out",
+    "zh-Hant": "被換到 swap 的部分",
+    "reason": ""
+  },
+  "literal.4420cacfb8e8": {
+    "include": true,
+    "en": "No sessions are running.",
+    "zh-Hant": "沒有正在跑的 session。",
+    "reason": ""
+  },
+  "literal.5d2f213c46e2": {
+    "include": true,
+    "en": "Outside any session",
+    "zh-Hant": "session 以外的程序",
+    "reason": ""
+  },
+  "literal.0547c3976b56": {
+    "include": true,
+    "en": "Overloaded",
+    "zh-Hant": "過載",
+    "reason": ""
+  },
+  "literal.de1f4ca207b0": {
+    "include": true,
+    "en": "Busy",
+    "zh-Hant": "偏高",
+    "reason": ""
+  },
+  "literal.96e69c58bf8b": {
+    "include": true,
+    "en": "OK",
+    "zh-Hant": "正常",
+    "reason": ""
+  },
+  "literal.3167aacb70d1": {
+    "include": true,
+    "en": "this service itself",
+    "zh-Hant": "這個服務本身",
+    "reason": ""
+  },
+  "literal.1c22cfe1e037": {
+    "include": true,
+    "en": "other processes and the system",
+    "zh-Hant": "其他程序與系統",
+    "reason": ""
+  },
+  "literal.ed6c1de76c4f": {
+    "include": true,
+    "en": "This machine's system has no usage reader yet (Linux and macOS for now).",
+    "zh-Hant": "這台機器的作業系統還沒有用量讀取器（目前支援 Linux 和 macOS）。",
+    "reason": ""
+  },
+  "literal.fabc8bde5489": {
+    "include": true,
+    "en": "This machine's Clawdline does not answer usage yet; update it to see this.",
+    "zh-Hant": "這台機器的 Clawdline 版本還不會回答用量，更新後就能看到。",
+    "reason": ""
+  },
+  "literal.eab8191e445c": {
+    "include": true,
+    "en": "The machine did not answer — it may be busy. Trying again.",
+    "zh-Hant": "機器沒有回應，可能正忙著；會自動再試。",
+    "reason": ""
+  },
+  "literal.104c1cd9aa9b": {
+    "include": true,
+    "en": "The network or Clawdline connection was interrupted. Check the connection, then select “Retry reading” when it is restored.",
+    "zh-Hant": "網路或 Clawdline 連線中斷。請確認連線，恢復後按「重試讀取」。",
+    "reason": ""
+  },
+  "literal.7b8613470413": {
+    "include": true,
+    "en": "The Squad service timed out. Check the connection, then select “Retry reading” later.",
+    "zh-Hant": "角色小隊服務回應逾時。請確認連線，稍後按「重試讀取」。",
+    "reason": ""
+  },
+  "literal.1b73a16a77bc": {
+    "include": true,
+    "en": "This connection lacks read or edit permission. Sign in again or use a paired device, then retry.",
+    "zh-Hant": "目前的連線沒有讀取或修改權限。請重新登入或使用已配對的裝置，再重試。",
+    "reason": ""
+  },
+  "literal.82ebaf38e367": {
+    "include": true,
+    "en": "The Squad service returned unreadable data. Refresh the page; if this continues, try again later.",
+    "zh-Hant": "角色小隊服務回傳的資料格式無法讀取。請重新整理頁面；若持續發生，稍後再試。",
+    "reason": ""
+  },
+  "literal.d793d12ce9f0": {
+    "include": true,
+    "en": "The persona catalog and settings do not match. Reload them; if this continues, try again later.",
+    "zh-Hant": "角色目錄與設定資料不一致。請重新讀取；若持續發生，稍後再試。",
+    "reason": ""
+  },
+  "literal.a102d79d8935": {
+    "include": true,
+    "en": "A newer version of the settings is available. Reload and review the current contents before saving.",
+    "zh-Hant": "設定已有新版本。請重新讀取後檢查目前內容，再決定是否儲存。",
+    "reason": ""
+  },
+  "literal.9b1a9e00e745": {
+    "include": true,
+    "en": "This Project scope was not found. Reload the list and try again.",
+    "zh-Hant": "找不到這個 Project 範圍。請重新讀取清單後再試。",
+    "reason": ""
+  },
+  "literal.70e59c98260c": {
+    "include": true,
+    "en": "The package exceeds the 512 KiB limit. Choose a smaller ZIP file.",
+    "zh-Hant": "資料包超過 512 KiB 上限。請選擇較小的 ZIP 檔。",
+    "reason": ""
+  },
+  "literal.b1841a4d668e": {
+    "include": true,
+    "en": "The package format failed validation. Check the ZIP file and preview it again.",
+    "zh-Hant": "資料包格式無法通過驗證。請檢查 ZIP 檔後重新預覽。",
+    "reason": ""
+  },
+  "literal.723875f08620": {
+    "include": true,
+    "en": "Select and confirm the private settings scopes to include first.",
+    "zh-Hant": "請先選擇並確認要包含的私人設定範圍。",
+    "reason": ""
+  },
+  "literal.6f0efc37b91f": {
+    "include": true,
+    "en": "The directory contains a complete skill folder. This package cannot include attachments yet, so it was not exported.",
+    "zh-Hant": "目錄含有完整技能資料夾；目前資料包無法包含附檔，因此未匯出。",
+    "reason": ""
+  },
+  "literal.5b1368f9b563": {
+    "include": true,
+    "en": "Select a registered Project on the Squad page before listing its skills.",
+    "zh-Hant": "請先在角色小隊頁面選擇已登錄的 Project，再列出該 Project 的技能。",
+    "reason": ""
+  },
+  "literal.86d122327ca8": {
+    "include": true,
+    "en": "The skill source has changed. Reload the list before selecting it again.",
+    "zh-Hant": "技能來源已變更。請重新讀取清單後再選。",
+    "reason": ""
+  },
+  "literal.7d6137152666": {
+    "include": true,
+    "en": "This machine does not support listing skill sources yet. Update Clawdline and retry.",
+    "zh-Hant": "這部機器尚未支援技能來源清單。請更新 Clawdline 後重試。",
+    "reason": ""
+  },
+  "literal.55c20c96a7cb": {
+    "include": true,
+    "en": "The same skill ID has different content. Refresh and check it.",
+    "zh-Hant": "同一技能識別已有不同內容，請重新整理後檢查。",
+    "reason": ""
+  },
+  "literal.0617e0306ab4": {
+    "include": true,
+    "en": "Cannot connect to the Squad",
+    "zh-Hant": "目前無法連線至角色小隊",
+    "reason": ""
+  },
+  "literal.96f51882b0b5": {
+    "include": true,
+    "en": "No permission to read the Squad",
+    "zh-Hant": "沒有權限讀取角色小隊",
+    "reason": ""
+  },
+  "literal.d7dc16add85b": {
+    "include": true,
+    "en": "The Squad response is unreadable",
+    "zh-Hant": "角色小隊回應無法讀取",
+    "reason": ""
+  },
+  "literal.23c894b01687": {
+    "include": true,
+    "en": "The Squad is temporarily unavailable",
+    "zh-Hant": "角色小隊暫時無法讀取",
+    "reason": ""
+  },
+  "literal.2ab97cab85ef": {
+    "include": true,
+    "en": "Inherited from “",
+    "zh-Hant": "繼承「",
+    "reason": ""
+  },
+  "literal.12a88fbe7e6a": {
+    "include": true,
+    "en": "Complete folder",
+    "zh-Hant": "完整資料夾",
+    "reason": ""
+  },
+  "literal.c58e17097c46": {
+    "include": true,
+    "en": "SKILL.md text",
+    "zh-Hant": "SKILL.md 文字",
+    "reason": ""
+  },
+  "literal.de0fe59826cf": {
+    "include": true,
+    "en": "Collapse persona definition",
+    "zh-Hant": "收合角色定義",
+    "reason": ""
+  },
+  "literal.ee20e2bb4c67": {
+    "include": true,
+    "en": "Show full persona definition",
+    "zh-Hant": "顯示完整角色定義",
+    "reason": ""
+  },
+  "literal.2c34d6bb47d7": {
+    "include": true,
+    "en": "● Enabled",
+    "zh-Hant": "● 已啟用",
+    "reason": ""
+  },
+  "literal.23748aa2bb8c": {
+    "include": true,
+    "en": "○ Disabled",
+    "zh-Hant": "○ 已停用",
+    "reason": ""
+  },
+  "literal.46926d0c9ced": {
+    "include": true,
+    "en": "Adopted",
+    "zh-Hant": "已採納",
+    "reason": ""
+  },
+  "literal.c3209054441f": {
+    "include": true,
+    "en": "Currently unavailable",
+    "zh-Hant": "目前不可用",
+    "reason": ""
+  },
+  "literal.2ffc1c13422d": {
+    "include": true,
+    "en": "Pending review, not installed",
+    "zh-Hant": "待審，尚未安裝",
+    "reason": ""
+  },
+  "literal.fad748d33598": {
+    "include": true,
+    "en": "Enabled",
+    "zh-Hant": "已啟用",
+    "reason": ""
+  },
+  "literal.f4cd146147ab": {
+    "include": true,
+    "en": "Disabled",
+    "zh-Hant": "已停用",
+    "reason": ""
+  },
+  "literal.48f8f7971da9": {
+    "include": true,
+    "en": "Not provided",
+    "zh-Hant": "未提供",
+    "reason": ""
+  },
+  "literal.d15524ad623c": {
+    "include": true,
+    "en": "Adopted and available to this persona",
+    "zh-Hant": "已採納，可供此角色使用",
+    "reason": ""
+  },
+  "literal.9b24865cd11e": {
+    "include": true,
+    "en": "Pending review, not installed or adopted",
+    "zh-Hant": "待審，尚未安裝或採納",
+    "reason": ""
+  },
+  "literal.a17f7f60b071": {
+    "include": true,
+    "en": "This skill has no readable content yet.",
+    "zh-Hant": "此技能尚無可讀內容。",
+    "reason": ""
+  },
+  "literal.96b1e1626bcb": {
+    "include": true,
+    "en": "Imported skill",
+    "zh-Hant": "匯入的技能",
+    "reason": ""
+  },
+  "literal.1cc39b45c9cb": {
+    "include": true,
+    "en": "Global",
+    "zh-Hant": "全域",
+    "reason": ""
+  },
+  "literal.2c2913f4f722": {
+    "include": true,
+    "en": "This scope has unsaved handbook text. The draft will remain in the original scope after switching. Switch anyway?",
+    "zh-Hant": "目前範圍有未儲存的手冊文字。切換後草稿仍會保留在原範圍，確定切換？",
+    "reason": ""
+  },
+  "literal.5a54ddb48d6b": {
+    "include": true,
+    "en": "Saving persona handbook…",
+    "zh-Hant": "正在儲存角色手冊…",
+    "reason": ""
+  },
+  "literal.73b1d8d2dd8b": {
+    "include": true,
+    "en": "Persona handbook saved; effective values reloaded.",
+    "zh-Hant": "角色手冊已儲存，並已重新讀取生效值。",
+    "reason": ""
+  },
+  "literal.6e12c4771df2": {
+    "include": true,
+    "en": "A newer handbook version is available. Your text is still below; compare before deciding whether to overwrite it.",
+    "zh-Hant": "手冊已有新版本。你的文字仍在下方，請比較後再決定是否覆寫。",
+    "reason": ""
+  },
+  "literal.8e61b20dddaf": {
+    "include": true,
+    "en": "Restoring inheritance will discard this Project’s unsaved handbook text. Restore it?",
+    "zh-Hant": "還原繼承會放棄這個 Project 的未儲存手冊文字。確定還原？",
+    "reason": ""
+  },
+  "literal.26462666ea13": {
+    "include": true,
+    "en": "Restoring inheritance…",
+    "zh-Hant": "正在還原繼承…",
+    "reason": ""
+  },
+  "literal.ef4393acfe9e": {
+    "include": true,
+    "en": "Inheritance restored; effective values reloaded.",
+    "zh-Hant": "已還原繼承，並已重新讀取生效值。",
+    "reason": ""
+  },
+  "literal.70a7ff14d82d": {
+    "include": true,
+    "en": "Saving settings…",
+    "zh-Hant": "正在儲存設定…",
+    "reason": ""
+  },
+  "literal.d294b20a8375": {
+    "include": true,
+    "en": "Settings saved; effective values reloaded.",
+    "zh-Hant": "設定已儲存，並已重新讀取生效值。",
+    "reason": ""
+  },
+  "literal.baa32ae67a58": {
+    "include": true,
+    "en": "Saving skill settings…",
+    "zh-Hant": "正在儲存技能設定…",
+    "reason": ""
+  },
+  "literal.b1a5f601c188": {
+    "include": true,
+    "en": "Skill settings saved; order and sources reloaded.",
+    "zh-Hant": "技能設定已儲存，並已重新讀取排序與來源。",
+    "reason": ""
+  },
+  "literal.d7fb6eee1033": {
+    "include": true,
+    "en": "Skill settings reloaded. Confirm the effective values before continuing.",
+    "zh-Hant": "已重新讀取技能設定；請確認目前生效值後再操作。",
+    "reason": ""
+  },
+  "literal.332b027e23f9": {
+    "include": true,
+    "en": "The skill was added to the catalog. If it is not assigned to a persona yet, reopen “Add skill” and choose “Add existing skill.”",
+    "zh-Hant": "技能已存入目錄。若尚未加入角色，可重新開啟「新增技能」並選「加入已建立技能」。",
+    "reason": ""
+  },
+  "literal.0d5ad51260a4": {
+    "include": true,
+    "en": "Reloading the skill catalog. If the skill was actually created, reopen “Add skill” and choose “Add existing skill.”",
+    "zh-Hant": "正在重新讀取技能目錄。若技能其實已建立，可重新開啟「新增技能」並選「加入已建立技能」。",
+    "reason": ""
+  },
+  "literal.5f7801717fea": {
+    "include": true,
+    "en": "Select and load a skill from the skill list first.",
+    "zh-Hant": "請先從技能清單選擇並讀取一項技能。",
+    "reason": ""
+  },
+  "literal.743c4d79a088": {
+    "include": true,
+    "en": "Select a skill to add. If the catalog changed, reload it before selecting again. ",
+    "zh-Hant": "請選擇要加入的技能；若目錄已更新，請重新讀取後再選。 ",
+    "reason": ""
+  },
+  "literal.e0ad76a1ac2d": {
+    "include": true,
+    "en": "The combined content of enabled skills exceeds the safe limit. Disable other skills or shorten their content so new Sessions can start.",
+    "zh-Hant": "已啟用技能的內容合計超過安全額度；請先停用其他技能或縮短內容，以免新 Session 無法啟動。",
+    "reason": ""
+  },
+  "literal.e8f46a1b7fe3": {
+    "include": true,
+    "en": "A newer skill catalog is available. Your content is preserved; select “Retry creation” to submit it against the new catalog version.",
+    "zh-Hant": "技能目錄已有新版本；你的內容仍保留，請按「重試建立」以新的目錄版本送出。",
+    "reason": ""
+  },
+  "literal.7e58ba1e511e": {
+    "include": true,
+    "en": "This persona is no longer in the catalog.",
+    "zh-Hant": "角色已不在目錄中。",
+    "reason": ""
+  },
+  "literal.19e3b676481b": {
+    "include": true,
+    "en": "A newer version of this skill is available. Select the current version before adding it to the persona.",
+    "zh-Hant": "這項技能已有新版本；請重新選擇目前版本，再加入角色。",
+    "reason": ""
+  },
+  "literal.1f76dfcc4d46": {
+    "include": true,
+    "en": "This persona already uses another version of this skill, or the skill is disabled. Check the skill list first to avoid overwriting its settings.",
+    "zh-Hant": "角色已使用此技能的其他版本或已停用；請先在技能清單檢查，避免覆蓋現有設定。",
+    "reason": ""
+  },
+  "literal.aa2c7bae8939": {
+    "include": true,
+    "en": "Enabled skills exceed the safe limit. Disable other skills before adding this one.",
+    "zh-Hant": "目前已啟用技能超過安全額度；請先停用其他技能後再加入。",
+    "reason": ""
+  },
+  "literal.4cd467a2eb33": {
+    "include": true,
+    "en": "The skill was added to the catalog, but its persona settings are unconfirmed. Retry; the skill will not be created twice.",
+    "zh-Hant": "技能目錄已建立，但角色設定尚未確認。請按重試；不會重複建立技能。",
+    "reason": ""
+  },
+  "literal.a2ebfc6e487d": {
+    "include": true,
+    "en": "Compare the global and Project lists",
+    "zh-Hant": "請比對全域與 Project 清單",
+    "reason": ""
+  },
+  "literal.fecb7d98be72": {
+    "include": true,
+    "en": "The skill was added and enabled; effective settings reloaded.",
+    "zh-Hant": "技能已加入並啟用，並已重新讀取生效設定。",
+    "reason": ""
+  },
+  "literal.d356ce36d4f9": {
+    "include": true,
+    "en": "The skill was added to the catalog, but adding it to the persona is unconfirmed.",
+    "zh-Hant": "技能目錄已建立，角色尚未確認加入。",
+    "reason": ""
+  },
+  "literal.5c64311ba406": {
+    "include": true,
+    "en": "Skill creation is unconfirmed.",
+    "zh-Hant": "技能尚未確認建立。",
+    "reason": ""
+  },
+  "literal.65c0d2b7f595": {
+    "include": true,
+    "en": "Restoring skill inheritance…",
+    "zh-Hant": "正在還原技能繼承…",
+    "reason": ""
+  },
+  "literal.a3cdb451cc2d": {
+    "include": true,
+    "en": "Skill inheritance restored; effective values reloaded.",
+    "zh-Hant": "已還原技能繼承，並已重新讀取生效值。",
+    "reason": ""
+  },
+  "literal.864e8653cc52": {
+    "include": true,
+    "en": "Choose a package file first.",
+    "zh-Hant": "請先選擇資料包檔案。",
+    "reason": ""
+  },
+  "literal.9d1b0d17990f": {
+    "include": true,
+    "en": "Confirm the private settings scopes in the package.",
+    "zh-Hant": "請確認資料包中的私人設定範圍。",
+    "reason": ""
+  },
+  "literal.9a9a62474225": {
+    "include": true,
+    "en": "The package was adopted; the catalog has been reloaded.",
+    "zh-Hant": "資料包已採納，目錄已重新讀取。",
+    "reason": ""
+  },
+  "literal.be71ec45cc65": {
+    "include": true,
+    "en": "The preview expired, or the catalog or private settings changed. Preview again; the previous adoption choices will not be submitted automatically.",
+    "zh-Hant": "預覽已過期或目錄、私人設定已變更。請重新預覽，舊的採納選擇不會直接送出。",
+    "reason": ""
+  },
+  "literal.fc23e60a64d6": {
+    "include": true,
+    "en": "Confirm the private settings scopes to include first.",
+    "zh-Hant": "請先確認將包含的私人設定範圍。",
+    "reason": ""
+  },
+  "literal.3445e3bbfc67": {
+    "include": true,
+    "en": "Package downloaded.",
+    "zh-Hant": "資料包已下載。",
+    "reason": ""
+  },
+  "literal.03e05dc9c519": {
+    "include": true,
+    "en": "No matching personas",
+    "zh-Hant": "沒有符合的角色",
+    "reason": ""
+  },
+  "literal.b9f440f7bb3d": {
+    "include": true,
+    "en": "This catalog has no personas yet",
+    "zh-Hant": "這個目錄目前沒有角色",
+    "reason": ""
+  },
+  "literal.7942cb67343e": {
+    "include": true,
+    "en": "Clear the search or choose another squad.",
+    "zh-Hant": "清除搜尋或選擇其他小隊。",
+    "reason": ""
+  },
+  "literal.3dfb93dd1061": {
+    "include": true,
+    "en": "New personas will appear here after you import a package.",
+    "zh-Hant": "讀入資料包後，新角色會顯示在這裡。",
+    "reason": ""
+  },
+  "literal.800a6095679f": {
+    "include": true,
+    "en": "Unassigned to a squad",
+    "zh-Hant": "未分隊",
+    "reason": ""
+  },
+  "literal.d2520bd9c850": {
+    "include": true,
+    "en": "Global inheritance",
+    "zh-Hant": "全域繼承",
+    "reason": ""
+  },
+  "literal.0d9f5fa59ac1": {
+    "include": true,
+    "en": "Built-in default",
+    "zh-Hant": "內建預設",
+    "reason": ""
+  },
+  "literal.97cfc2e0f30f": {
+    "include": true,
+    "en": "Currently blank",
+    "zh-Hant": "目前空白",
+    "reason": ""
+  },
+  "literal.1e4888cc9d8d": {
+    "include": true,
+    "en": "Global handbook",
+    "zh-Hant": "全域手冊",
+    "reason": ""
+  },
+  "literal.9512ab1d42d9": {
+    "include": true,
+    "en": "Has content",
+    "zh-Hant": "有內容",
+    "reason": ""
+  },
+  "literal.4eb1c8ce4af2": {
+    "include": true,
+    "en": "Blank",
+    "zh-Hant": "空白",
+    "reason": ""
+  },
+  "literal.76d3e6a81a7d": {
+    "include": true,
+    "en": "(Explicitly overridden with blank text)",
+    "zh-Hant": "（明確覆寫為空白）",
+    "reason": ""
+  },
+  "literal.fb04fcf18a82": {
+    "include": true,
+    "en": "Working…",
+    "zh-Hant": "處理中…",
+    "reason": ""
+  },
+  "literal.abdf0198b028": {
+    "include": true,
+    "en": "Save handbook",
+    "zh-Hant": "儲存手冊",
+    "reason": ""
+  },
+  "literal.55cee0dc6306": {
+    "include": true,
+    "en": "Enabled",
+    "zh-Hant": "啟用",
+    "reason": ""
+  },
+  "literal.255e0ddb097b": {
+    "include": true,
+    "en": "Disabled",
+    "zh-Hant": "停用",
+    "reason": ""
+  },
+  "literal.f423cf998c53": {
+    "include": true,
+    "en": "On",
+    "zh-Hant": "開啟",
+    "reason": ""
+  },
+  "literal.53bb291bfdd8": {
+    "include": true,
+    "en": "Off",
+    "zh-Hant": "關閉",
+    "reason": ""
+  },
+  "literal.15fd0de63f3e": {
+    "include": true,
+    "en": "Skill",
+    "zh-Hant": "技能",
+    "reason": ""
+  },
+  "literal.d6b8206d3925": {
+    "include": true,
+    "en": "Import Squad package",
+    "zh-Hant": "讀入角色小隊資料包",
+    "reason": ""
+  },
+  "literal.e42975cbadd3": {
+    "include": true,
+    "en": "Export Squad package",
+    "zh-Hant": "匯出角色小隊資料包",
+    "reason": ""
+  },
+  "literal.c1db8f8f3067": {
+    "include": true,
+    "en": "Validating…",
+    "zh-Hant": "驗證中…",
+    "reason": ""
+  },
+  "literal.0f245f311d10": {
+    "include": true,
+    "en": "Validate and preview",
+    "zh-Hant": "驗證並預覽",
+    "reason": ""
+  },
+  "literal.d9418f721a0e": {
+    "include": true,
+    "en": "Adopting…",
+    "zh-Hant": "採納中…",
+    "reason": ""
+  },
+  "literal.da1278fb9df3": {
+    "include": true,
+    "en": "Confirm package adoption",
+    "zh-Hant": "確認採納資料包",
+    "reason": ""
+  },
+  "literal.4572689872bb": {
+    "include": true,
+    "en": ", global private settings",
+    "zh-Hant": "、全域私人設定",
+    "reason": ""
+  },
+  "literal.dc0649ef049d": {
+    "include": true,
+    "en": "Exporting…",
+    "zh-Hant": "匯出中…",
+    "reason": ""
+  },
+  "literal.ce5716358490": {
+    "include": true,
+    "en": "Download package",
+    "zh-Hant": "下載資料包",
+    "reason": ""
+  },
+  "literal.a078de280d6e": {
+    "include": true,
+    "en": "Skills for the selected Project will appear here.",
+    "zh-Hant": "會列出目前選取 Project 的技能。",
+    "reason": ""
+  },
+  "literal.9eb1948e6879": {
+    "include": true,
+    "en": "Purpose not provided",
+    "zh-Hant": "未提供用途",
+    "reason": ""
+  },
+  "literal.8ba083abc4e7": {
+    "include": true,
+    "en": "Retry adding skill",
+    "zh-Hant": "重試加入技能",
+    "reason": ""
+  },
+  "literal.3ec4ae599e2d": {
+    "include": true,
+    "en": "Retry creation",
+    "zh-Hant": "重試建立",
+    "reason": ""
+  },
+  "literal.c368508d691f": {
+    "include": true,
+    "en": "Create and enable",
+    "zh-Hant": "建立並啟用",
+    "reason": ""
+  },
+  "literal.68a0a3e0231e": {
+    "include": true,
+    "en": "Add and enable",
+    "zh-Hant": "加入並啟用",
+    "reason": ""
+  },
+  "literal.00186c9a0293": {
+    "include": true,
+    "en": "Project setup",
+    "zh-Hant": "專案設定",
+    "reason": ""
+  },
+  "literal.fb67023ade0c": {
+    "include": true,
+    "en": "Projects",
+    "zh-Hant": "專案",
+    "reason": ""
+  },
+  "literal.69ef68c71337": {
+    "include": true,
+    "en": "Could not complete the icon action. Retry.",
+    "zh-Hant": "無法完成圖示操作，請重試。",
+    "reason": ""
+  },
+  "literal.b956e61ad141": {
+    "include": true,
+    "en": "Icon copied. Switch to the target machine, then return to Projects, select the target Project, and apply it.",
+    "zh-Hant": "已複製圖示。切換到目標機器後，回到 Projects 選擇目標專案並套用。",
+    "reason": ""
+  },
+  "literal.2c7adeb9a241": {
+    "include": true,
+    "en": "The browser could not store the icon temporarily. Allow storage for this tab and retry.",
+    "zh-Hant": "瀏覽器無法暫存圖示，請允許此分頁使用儲存空間後重試。",
+    "reason": ""
+  },
+  "literal.67778891527f": {
+    "include": true,
+    "en": "The target icon changed. Reload and confirm it before applying.",
+    "zh-Hant": "目標圖示已變更，請重新讀取並確認後再套用。",
+    "reason": ""
+  },
+  "literal.9a2a8b2fd5fc": {
+    "include": true,
+    "en": "Saving…",
+    "zh-Hant": "儲存中…",
+    "reason": ""
+  },
+  "literal.05fe9a9feb68": {
+    "include": true,
+    "en": "Apply the copied icon to this Project",
+    "zh-Hant": "將已複製圖示套用到此專案",
+    "reason": ""
+  },
+  "literal.cc98d5c65273": {
+    "include": true,
+    "en": "Could not clear the stored icon. Close this tab.",
+    "zh-Hant": "無法清除暫存圖示，請關閉此分頁。",
+    "reason": ""
+  },
+  "literal.ef78406e2d2a": {
+    "include": true,
+    "en": "This is not a previewable UTF-8 text file. Open it on the machine.",
+    "zh-Hant": "這不是可預覽的 UTF-8 文字檔。請在機器上開啟。",
+    "reason": ""
+  },
+  "literal.3d56bf3cb7fb": {
+    "include": true,
+    "en": "The file exceeds the text preview size limit. Open it on the machine.",
+    "zh-Hant": "檔案超過文字預覽的大小上限。請在機器上開啟。",
+    "reason": ""
+  },
+  "literal.fffb2491d13a": {
+    "include": true,
+    "en": "The file or folder is a link or changed while being read. Reload the folder.",
+    "zh-Hant": "檔案或資料夾是連結，或已在讀取時變動。請重新讀取資料夾。",
+    "reason": ""
+  },
+  "literal.2233fee94e8e": {
+    "include": true,
+    "en": "This connection lacks read permission. Check on the machine.",
+    "zh-Hant": "這個連線沒有讀取權限。請在機器上檢查。",
+    "reason": ""
+  },
+  "literal.d244c8aec386": {
+    "include": true,
+    "en": "The file was moved or deleted. Reload the folder.",
+    "zh-Hant": "檔案已移動或刪除。請重新讀取資料夾。",
+    "reason": ""
+  },
+  "literal.e04c8f261fd5": {
+    "include": true,
+    "en": "This Project is no longer listed on this machine. Return to the Projects list and select it again.",
+    "zh-Hant": "專案已不在這台機器的清單中。請回專案列表重新選擇。",
+    "reason": ""
+  },
+  "literal.bdfe8879aeee": {
+    "include": true,
+    "en": "This machine does not provide a file tree yet. Check the machine and Cloud versions.",
+    "zh-Hant": "這台機器尚未提供檔案樹。請確認機器與 Cloud 的版本。",
+    "reason": ""
+  },
+  "literal.febcaa56ae82": {
+    "include": true,
+    "en": "Cannot read this now. Check the machine and connection, then retry.",
+    "zh-Hant": "目前無法讀取。請檢查機器與連線後重試。",
+    "reason": ""
+  },
+  "literal.fafba231d972": {
+    "include": true,
+    "en": "Links cannot be opened from the file tree",
+    "zh-Hant": "連結不會從檔案樹開啟",
+    "reason": ""
+  },
+  "literal.bdff2374d8c9": {
+    "include": true,
+    "en": "Unsupported file type",
+    "zh-Hant": "不支援的檔案類型",
+    "reason": ""
+  },
+  "literal.eacc3c13a4ba": {
+    "include": true,
+    "en": "Link",
+    "zh-Hant": "連結",
+    "reason": ""
+  },
+  "literal.0bdbbebb7c1e": {
+    "include": true,
+    "en": "Cannot preview",
+    "zh-Hant": "無法預覽",
+    "reason": ""
+  },
+  "literal.cfa37229f340": {
+    "include": true,
+    "en": " · Read-only",
+    "zh-Hant": " · 唯讀",
+    "reason": ""
+  },
+  "literal.92363068f5b3": {
+    "include": true,
+    "en": "Viewable",
+    "zh-Hant": "可檢視",
+    "reason": ""
+  },
+  "literal.8c6019531435": {
+    "include": true,
+    "en": "Not created yet",
+    "zh-Hant": "尚未建立",
+    "reason": ""
+  },
+  "literal.bec019f69985": {
+    "include": true,
+    "en": "Link or non-regular file; skipped",
+    "zh-Hant": "連結或非一般檔案，已略過",
+    "reason": ""
+  },
+  "literal.82c6e1d1683d": {
+    "include": true,
+    "en": "Cannot read now",
+    "zh-Hant": "目前無法讀取",
+    "reason": ""
+  },
+  "literal.abc92ff61a07": {
+    "include": true,
+    "en": "File too large",
+    "zh-Hant": "檔案過大",
+    "reason": ""
+  },
+  "literal.591f563d21e9": {
+    "include": true,
+    "en": "The file changed elsewhere. Your draft is still here; copy it, then reload and compare.",
+    "zh-Hant": "檔案已在別處變更。草稿仍在這裡；請複製草稿，再重新讀取並比對。",
+    "reason": ""
+  },
+  "literal.4e6f482a5e6b": {
+    "include": true,
+    "en": "This connection lacks save permission. Your draft is still here; you can copy it first.",
+    "zh-Hant": "這個連線沒有儲存權限。草稿仍在這裡；可先複製內容。",
+    "reason": ""
+  },
+  "literal.a5ae08fd969e": {
+    "include": true,
+    "en": "This Project is no longer listed on this machine. Return to the Projects list and select it again.",
+    "zh-Hant": "專案已不在這台機器的清單中。請回專案列表重新選擇。",
+    "reason": ""
+  },
+  "literal.4bacde8e39d3": {
+    "include": true,
+    "en": "The file or folder became a link. Nothing was saved; reload the list.",
+    "zh-Hant": "檔案或資料夾已變成連結。未儲存；請重新讀取清單。",
+    "reason": ""
+  },
+  "literal.35eabd8dfb75": {
+    "include": true,
+    "en": "The file was removed. Your draft is still here; reload the list.",
+    "zh-Hant": "檔案已移除。草稿仍在這裡；請重新讀取清單。",
+    "reason": ""
+  },
+  "literal.c04de8c5889e": {
+    "include": true,
+    "en": "The file exceeds this interface’s size limit. Edit it on the machine.",
+    "zh-Hant": "檔案超過此介面的大小上限；請在機器上編輯。",
+    "reason": ""
+  },
+  "literal.b1d6d32d82f8": {
+    "include": true,
+    "en": "The file is not editable UTF-8 text. Check it on the machine.",
+    "zh-Hant": "檔案不是可編輯的 UTF-8 文字；請在機器上檢查。",
+    "reason": ""
+  },
+  "literal.19a12eac60f0": {
+    "include": true,
+    "en": "This connection does not provide file viewing yet. Check the machine and Cloud versions.",
+    "zh-Hant": "這個連線尚未提供檔案檢視。請確認機器與 Cloud 的版本。",
+    "reason": ""
+  },
+  "literal.5ce9bf90d01a": {
+    "include": true,
+    "en": "Cannot read or save files now. Check the files and connection on the machine, then retry.",
+    "zh-Hant": "目前無法讀取或儲存檔案；請檢查機器上的檔案與連線後重試。",
+    "reason": ""
+  },
+  "literal.d928fb3f9c80": {
+    "include": true,
+    "en": "Could not complete the action. Check the connection and retry.",
+    "zh-Hant": "目前無法完成操作。請檢查連線後重試。",
+    "reason": ""
+  },
+  "literal.0651603b0c62": {
+    "include": true,
+    "en": "Discard unsaved changes to this file?",
+    "zh-Hant": "放棄這個檔案尚未儲存的內容？",
+    "reason": ""
+  },
+  "literal.d19eb852ab9d": {
+    "include": true,
+    "en": "Saving…",
+    "zh-Hant": "正在儲存…",
+    "reason": ""
+  },
+  "literal.d54b3df23fc9": {
+    "include": true,
+    "en": "File saved and reloaded.",
+    "zh-Hant": "檔案已儲存並重新讀取。",
+    "reason": ""
+  },
+  "literal.725c63536f66": {
+    "include": true,
+    "en": "Save outcome unconfirmed; reloading…",
+    "zh-Hant": "儲存結果待確認，正在重新讀取…",
+    "reason": ""
+  },
+  "literal.693907cea312": {
+    "include": true,
+    "en": "Reload confirmed that the file was saved.",
+    "zh-Hant": "重新讀取後確認檔案已儲存。",
+    "reason": ""
+  },
+  "literal.cfa6a364a5c2": {
+    "include": true,
+    "en": "Cannot confirm whether this save took effect. Your draft is still here; copy it and compare with the current file.",
+    "zh-Hant": "無法確認這次儲存是否生效。草稿仍在這裡；請複製並比對目前檔案。",
+    "reason": ""
+  },
+  "literal.8669637f659c": {
+    "include": true,
+    "en": "Codex instructions",
+    "zh-Hant": "Codex 指令",
+    "reason": ""
+  },
+  "literal.4a596dd065ba": {
+    "include": true,
+    "en": "Claude Code instructions",
+    "zh-Hant": "Claude Code 指令",
+    "reason": ""
+  },
+  "literal.03f843cf3e55": {
+    "include": true,
+    "en": "Skills",
+    "zh-Hant": "Skills 技能",
+    "reason": ""
+  },
+  "literal.450e5d731947": {
+    "include": true,
+    "en": "This Project",
+    "zh-Hant": "此專案",
+    "reason": ""
+  },
+  "literal.23bf8eafeef3": {
+    "include": true,
+    "en": "Machine-wide",
+    "zh-Hant": "本機全域",
+    "reason": ""
+  },
+  "literal.ddc43085429e": {
+    "include": true,
+    "en": "Creation is not available here. Create it in the Project directory, then reload.",
+    "zh-Hant": "目前不提供建立；可在專案目錄建立後重新讀取。",
+    "reason": ""
+  },
+  "literal.565085a5da03": {
+    "include": true,
+    "en": "Check the file on the machine, then reload the list.",
+    "zh-Hant": "請在機器上檢查檔案，再重新讀取清單。",
+    "reason": ""
+  },
+  "literal.c5a4b86fa44f": {
+    "include": true,
+    "en": "Discard unsaved changes?",
+    "zh-Hant": "放棄尚未儲存的內容？",
+    "reason": ""
+  },
+  "literal.d9489690da4d": {
+    "include": true,
+    "en": "Draft copied.",
+    "zh-Hant": "已複製草稿。",
+    "reason": ""
+  },
+  "literal.3b77a5005a39": {
+    "include": true,
+    "en": "Could not copy. Select the text in the editor.",
+    "zh-Hant": "無法複製；請從編輯欄選取文字。",
+    "reason": ""
+  },
+  "literal.83799bb51f05": {
+    "include": true,
+    "en": "Complete",
+    "zh-Hant": "已完成",
+    "reason": ""
+  },
+  "literal.54c58892d432": {
+    "include": true,
+    "en": "Incomplete",
+    "zh-Hant": "待補",
+    "reason": ""
+  },
+  "literal.f81fb7eed946": {
+    "include": true,
+    "en": "Needs review",
+    "zh-Hant": "需檢查",
+    "reason": ""
+  },
+  "literal.fa463019faec": {
+    "include": true,
+    "en": "Not applicable",
+    "zh-Hant": "不適用",
+    "reason": ""
+  },
+  "literal.944f88e4f77b": {
+    "include": true,
+    "en": "Unknown",
+    "zh-Hant": "未知",
+    "reason": ""
+  },
+  "literal.0a98c973ad81": {
+    "include": true,
+    "en": "Check setup",
+    "zh-Hant": "檢查設定",
+    "reason": ""
+  },
+  "literal.7ef8b05c48f0": {
+    "include": true,
+    "en": "Complete setup",
+    "zh-Hant": "補齊設定",
+    "reason": ""
+  },
+  "literal.1b6d43720612": {
+    "include": true,
+    "en": "Review again",
+    "zh-Hant": "重新檢視",
+    "reason": ""
+  },
+  "literal.738cc5207e7d": {
+    "include": true,
+    "en": "Setup check data unknown",
+    "zh-Hant": "健檢資料未知",
+    "reason": ""
+  },
+  "literal.167e00adca12": {
+    "include": true,
+    "en": "A file is being saved. Wait for the action to finish before closing.",
+    "zh-Hant": "檔案正在儲存，請等操作完成後再關閉。",
+    "reason": ""
+  },
+  "literal.1167bc91fa0c": {
+    "include": true,
+    "en": "Discard unsaved file changes?",
+    "zh-Hant": "放棄尚未儲存的檔案內容？",
+    "reason": ""
+  },
+  "literal.df0d05d31c79": {
+    "include": true,
+    "en": "Could not read the Project setup check. Retry.",
+    "zh-Hant": "讀不到專案配置健檢，請重試。",
+    "reason": ""
+  },
+  "literal.77fe4c2aa7e2": {
+    "include": true,
+    "en": "Loading Project setup…",
+    "zh-Hant": "讀取專案配置中…",
+    "reason": ""
+  },
+  "literal.a95e9e07a847": {
+    "include": true,
+    "en": "Setup status unavailable",
+    "zh-Hant": "目前讀不到配置狀態",
+    "reason": ""
+  },
+  "literal.1cfce0908f3d": {
+    "include": true,
+    "en": "No Projects available to check",
+    "zh-Hant": "目前沒有可檢查的專案",
+    "reason": ""
+  },
+  "literal.faec0867e1cc": {
+    "include": true,
+    "en": "Project",
+    "zh-Hant": "專案",
+    "reason": ""
+  },
+  "literal.f207dc293b4f": {
+    "include": true,
+    "en": "Files",
+    "zh-Hant": "檔案",
+    "reason": ""
+  },
+  "literal.91c1ae775198": {
+    "include": true,
+    "en": "Settings",
+    "zh-Hant": "設定",
+    "reason": ""
+  },
+  "literal.6a6633400d3e": {
+    "include": true,
+    "en": "See what is missing at a glance",
+    "zh-Hant": "還差什麼，一眼看懂",
+    "reason": ""
+  },
+  "literal.0e8fb42d973e": {
+    "include": true,
+    "en": "Cannot read this Project’s settings now. Reload.",
+    "zh-Hant": "目前讀不到這個專案的設定，請重新讀取。",
+    "reason": ""
+  },
+  "literal.796b25ecda67": {
+    "include": true,
+    "en": "Could not complete Project sync. Retry.",
+    "zh-Hant": "無法完成專案同步，請重試。",
+    "reason": ""
+  },
+  "literal.3d74d47e0b33": {
+    "include": true,
+    "en": "Synced",
+    "zh-Hant": "已同步",
+    "reason": ""
+  },
+  "literal.860ee16cc39a": {
+    "include": true,
+    "en": "Up to date",
+    "zh-Hant": "已是最新",
+    "reason": ""
+  },
+  "literal.ea1537ae1e96": {
+    "include": true,
+    "en": "This machine does not have this repo",
+    "zh-Hant": "這台沒有這個 repo",
+    "reason": ""
+  },
+  "literal.8b07863dbce6": {
+    "include": true,
+    "en": "Cloning",
+    "zh-Hant": "正在 clone",
+    "reason": ""
+  },
+  "literal.75615ead8829": {
+    "include": true,
+    "en": "Clone failed",
+    "zh-Hant": "clone 失敗",
+    "reason": ""
+  },
+  "literal.fbf7406f4710": {
+    "include": true,
+    "en": "Modified on this machine; kept",
+    "zh-Hant": "這台已修改過，保留",
+    "reason": ""
+  },
+  "literal.7e64e54d2baa": {
+    "include": true,
+    "en": "Tracked by Git; not overwritten",
+    "zh-Hant": "由 git 追蹤，不覆寫",
+    "reason": ""
+  },
+  "literal.1d9552acce79": {
+    "include": true,
+    "en": "Path passes through a link or is not writable; skipped",
+    "zh-Hant": "路徑經過連結或無法寫入，略過",
+    "reason": ""
+  },
+  "literal.00fae213888a": {
+    "include": true,
+    "en": "No origin remote",
+    "zh-Hant": "沒有 origin remote",
+    "reason": ""
+  },
+  "literal.4367608ea369": {
+    "include": true,
+    "en": "Not a Git repo",
+    "zh-Hant": "不是 git repo",
+    "reason": ""
+  },
+  "literal.bb0979aecd71": {
+    "include": true,
+    "en": "Origin is a local path; other machines cannot fetch it",
+    "zh-Hant": "origin 是本機路徑，其他機器無法取得",
+    "reason": ""
+  },
+  "literal.fa9704b1899c": {
+    "include": true,
+    "en": "This machine is already the mirror",
+    "zh-Hant": "這台本身就是鏡像",
+    "reason": ""
+  },
+  "literal.6ee5a00c192a": {
+    "include": true,
+    "en": "Cannot read Git information",
+    "zh-Hant": "讀不到 git 資訊",
+    "reason": ""
+  },
+  "literal.7b0ab080b9e0": {
+    "include": true,
+    "en": "Another checkout of the same repo",
+    "zh-Hant": "同一個 repo 的另一份 checkout",
+    "reason": ""
+  },
+  "literal.de1c2e60a0be": {
+    "include": true,
+    "en": "Exceeds the number of Projects that can be synced at once",
+    "zh-Hant": "超過一次可同步的專案數",
+    "reason": ""
+  },
+  "literal.8239a6a8f0e7": {
+    "include": true,
+    "en": "Updated from the primary machine:",
+    "zh-Hant": "已從主要機器更新：",
+    "reason": ""
+  },
+  "literal.3c07629e48a7": {
+    "include": true,
+    "en": "(Clawdline update required)",
+    "zh-Hant": "（需要更新 Clawdline）",
+    "reason": ""
+  },
+  "literal.e2a511758f17": {
+    "include": true,
+    "en": "(Offline)",
+    "zh-Hant": "（離線）",
+    "reason": ""
+  },
+  "literal.0d6fca356d81": {
+    "include": true,
+    "en": "Reading…",
+    "zh-Hant": "讀取中…",
+    "reason": ""
+  },
+  "literal.672c0aa99301": {
+    "include": true,
+    "en": "Read its Projects",
+    "zh-Hant": "讀取它的專案",
+    "reason": ""
+  },
+  "literal.ebdff2f8a427": {
+    "include": true,
+    "en": " · Up to date",
+    "zh-Hant": " · 已是最新",
+    "reason": ""
+  },
+  "literal.7e6a49246391": {
+    "include": true,
+    "en": " · Updates available",
+    "zh-Hant": " · 有更新",
+    "reason": ""
+  },
+  "literal.469e3fc18f6a": {
+    "include": true,
+    "en": "(Unknown)",
+    "zh-Hant": "（未知）",
+    "reason": ""
+  },
+  "literal.d2dca5f96f16": {
+    "include": true,
+    "en": "Syncing…",
+    "zh-Hant": "同步中…",
+    "reason": ""
+  },
+  "literal.9a7262b359c8": {
+    "include": true,
+    "en": "This Project is no longer listed on this machine. Return to the Projects list and select it again.",
+    "zh-Hant": "專案已不在這台機器的清單中。請回專案列表重新選擇。",
+    "reason": ""
+  },
+  "literal.3e7bd562c1a0": {
+    "include": true,
+    "en": "This connection lacks permission to apply changes. Run clawdline project unify --apply on the machine instead.",
+    "zh-Hant": "這個連線沒有套用權限；可在機器上執行 clawdline project unify --apply。",
+    "reason": ""
+  },
+  "literal.629ac7ab4009": {
+    "include": true,
+    "en": "Remote writes are disabled on this machine. Enable them on the machine and retry, or run clawdline project unify --apply there.",
+    "zh-Hant": "這台機器關閉了遠端寫入；可在機器上開啟後再試，或在機器上執行 clawdline project unify --apply。",
+    "reason": ""
+  },
+  "literal.57ca6d4d6bda": {
+    "include": true,
+    "en": "Some files could not be read, so changes cannot be applied. Check them on the machine first.",
+    "zh-Hant": "有檔案讀不到，無法套用；請先在機器上檢查。",
+    "reason": ""
+  },
+  "literal.413ebfdaf106": {
+    "include": true,
+    "en": "Something else already occupies the location where the link would be created.",
+    "zh-Hant": "要建立連結的位置已經有別的東西。",
+    "reason": ""
+  },
+  "literal.d32e2af285db": {
+    "include": true,
+    "en": "This connection does not provide shared settings yet. Check the machine and Cloud versions.",
+    "zh-Hant": "這個連線尚未提供共用設定。請確認機器與 Cloud 的版本。",
+    "reason": ""
+  },
+  "literal.ff95187970b9": {
+    "include": true,
+    "en": "Cannot read or apply shared settings now. Check the connection and retry.",
+    "zh-Hant": "目前無法讀取或套用共用設定；請檢查連線後重試。",
+    "reason": ""
+  },
+  "literal.2714b3b0bbd5": {
+    "include": true,
+    "en": "Could not complete the action. Check the connection and retry.",
+    "zh-Hant": "目前無法完成操作。請檢查連線後重試。",
+    "reason": ""
+  },
+  "literal.09b167988430": {
+    "include": true,
+    "en": "rules",
+    "zh-Hant": "規則",
+    "reason": ""
+  },
+  "literal.079d188b7362": {
+    "include": true,
+    "en": "(New file)",
+    "zh-Hant": "（新檔案）",
+    "reason": ""
+  },
+  "literal.25efadbde2aa": {
+    "include": true,
+    "en": "(After applying)",
+    "zh-Hant": "（套用後）",
+    "reason": ""
+  },
+  "literal.f592c9a3a866": {
+    "include": true,
+    "en": "Added",
+    "zh-Hant": "新增",
+    "reason": ""
+  },
+  "literal.9b71e94cd03d": {
+    "include": true,
+    "en": "Removed",
+    "zh-Hant": "移出",
+    "reason": ""
+  },
+  "literal.516617a04da2": {
+    "include": true,
+    "en": "Applying…",
+    "zh-Hant": "正在套用…",
+    "reason": ""
+  },
+  "literal.70e41291ca36": {
+    "include": true,
+    "en": "Files changed after the preview. Nothing was applied; reloading…",
+    "zh-Hant": "預覽之後檔案有變動，沒有套用任何東西；正在重新讀取…",
+    "reason": ""
+  },
+  "literal.943f6e8d152e": {
+    "include": true,
+    "en": "The latest preview has been reloaded. Review it again before applying.",
+    "zh-Hant": "已重新讀取最新的預覽；請再看一次，確認後再套用。",
+    "reason": ""
+  },
+  "literal.8701068aa07d": {
+    "include": true,
+    "en": "No response from the machine; reloading to confirm…",
+    "zh-Hant": "沒收到機器的回覆，正在重新讀取確認…",
+    "reason": ""
+  },
+  "literal.9297a379c744": {
+    "include": true,
+    "en": "Reload confirmed: shared.",
+    "zh-Hant": "重新讀取後確認：已共用。",
+    "reason": ""
+  },
+  "literal.04b8ab6d287d": {
+    "include": true,
+    "en": "Cannot read the latest state now either. Check again.",
+    "zh-Hant": "目前也讀不到最新狀態，請重新檢查。",
+    "reason": ""
+  },
+  "literal.5a02558d001a": {
+    "include": true,
+    "en": "Checking…",
+    "zh-Hant": "正在檢查…",
+    "reason": ""
+  },
+  "literal.f1e5ad92e0dc": {
+    "include": true,
+    "en": "Connection interrupted. Reload to confirm the current file state.",
+    "zh-Hant": "連線中斷；請重新讀取確認目前檔案狀態。",
+    "reason": ""
+  },
+  "literal.098b08604e84": {
+    "include": true,
+    "en": "The machine response is unreadable. Reload to confirm.",
+    "zh-Hant": "機器回覆無法讀取；請重新讀取確認。",
+    "reason": ""
+  },
+  "literal.7f523f32a2c0": {
+    "include": true,
+    "en": "Cannot read this file now.",
+    "zh-Hant": "目前無法讀取這個檔案。",
+    "reason": ""
+  },
+  "literal.3eab3f330eea": {
+    "include": true,
+    "en": "Connection interrupted. Check again.",
+    "zh-Hant": "連線中斷；請重新檢查。",
+    "reason": ""
+  },
+  "literal.36d5d75c722f": {
+    "include": true,
+    "en": "The machine response is unreadable. Check again.",
+    "zh-Hant": "機器回覆無法讀取；請重新檢查。",
+    "reason": ""
+  },
+  "literal.460e4fdb7ab7": {
+    "include": true,
+    "en": "Connection interrupted; the apply outcome is unconfirmed.",
+    "zh-Hant": "連線中斷；套用結果待確認。",
+    "reason": ""
+  },
+  "literal.dfaaeab488da": {
+    "include": true,
+    "en": "The machine response is unreadable; the apply outcome is unconfirmed.",
+    "zh-Hant": "機器回覆無法讀取；套用結果待確認。",
+    "reason": ""
+  },
+  "literal.101992e0e2e3": {
+    "include": true,
+    "en": "Cannot read the shared state now.",
+    "zh-Hant": "目前無法讀取共用狀態。",
+    "reason": ""
+  },
+  "literal.3c7f6575978d": {
+    "include": true,
+    "en": "Progress not yet confirmed",
+    "zh-Hant": "進度尚未確認",
+    "reason": ""
+  },
+  "literal.e47242d55799": {
+    "include": true,
+    "en": "In-progress count needs updating",
+    "zh-Hant": "進行中數量待更新",
+    "reason": ""
+  },
+  "literal.ef0246985a25": {
+    "include": true,
+    "en": "work items · View progress →",
+    "zh-Hant": "個工作項目 · 查看進度 →",
+    "reason": ""
+  },
+  "literal.28ce0b145abb": {
+    "include": true,
+    "en": "work items · Open work board →",
+    "zh-Hant": "個工作項目 · 開啟工作看板 →",
+    "reason": ""
+  },
+  "literal.cc665d77a525": {
+    "include": true,
+    "en": "Synced from the source machine",
+    "zh-Hant": "已從來源機器同步",
+    "reason": ""
+  },
+  "literal.cd7f6327d0b3": {
+    "include": true,
+    "en": "Customized",
+    "zh-Hant": "已自訂",
+    "reason": ""
+  },
+  "literal.8140c66c9bf8": {
+    "include": true,
+    "en": "Registered",
+    "zh-Hant": "已登記",
+    "reason": ""
+  },
+  "literal.7c8592c509f9": {
+    "include": true,
+    "en": "Using an automatically generated icon",
+    "zh-Hant": "目前使用自動產生圖示",
+    "reason": ""
+  },
+  "literal.76bf39159b6b": {
+    "include": true,
+    "en": "No current progress",
+    "zh-Hant": "目前沒有進度",
+    "reason": ""
+  },
+  "literal.8d7dedc0c9d6": {
+    "include": true,
+    "en": "In progress",
+    "zh-Hant": "正在進行",
+    "reason": ""
+  },
+  "literal.97731ef0bc81": {
+    "include": true,
+    "en": "Recently succeeded",
+    "zh-Hant": "最近成功",
+    "reason": ""
+  },
+  "literal.d3f4db92141b": {
+    "include": true,
+    "en": "Recently failed",
+    "zh-Hant": "最近失敗",
+    "reason": ""
+  },
+  "literal.b176bc03af47": {
+    "include": true,
+    "en": "No current status yet",
+    "zh-Hant": "尚無目前狀態",
+    "reason": ""
+  },
+  "literal.9a7acd6c7c08": {
+    "include": true,
+    "en": "Setup check",
+    "zh-Hant": "配置健檢",
+    "reason": ""
+  },
+  "literal.94c76925c566": {
+    "include": true,
+    "en": "This machine does not provide setup check data yet. Update Clawdline, then reload.",
+    "zh-Hant": "這台機器尚未提供健檢資料；更新 Clawdline 後再讀取。",
+    "reason": ""
+  },
+  "literal.7a805af78cf4": {
+    "include": true,
+    "en": "Status data found, but needs review",
+    "zh-Hant": "找到狀態資料，但需要檢查",
+    "reason": ""
+  },
+  "literal.fbe78156575f": {
+    "include": true,
+    "en": "The current GitHub workflow progress mechanism does not apply",
+    "zh-Hant": "目前的 GitHub workflow 進度機制不適用",
+    "reason": ""
+  },
+  "literal.3056db4ed234": {
+    "include": true,
+    "en": "No deploy progress received yet",
+    "zh-Hant": "尚未收到 deploy 進度",
+    "reason": ""
+  },
+  "literal.82af552f444c": {
+    "include": true,
+    "en": "Set up origin first to match the deploy",
+    "zh-Hant": "先設定 origin，才能對應 deploy",
+    "reason": ""
+  },
+  "literal.3723c98b41df": {
+    "include": true,
+    "en": "Could not read .devstack.json",
+    "zh-Hant": ".devstack.json 讀取失敗",
+    "reason": ""
+  },
+  "literal.f1c62f33216d": {
+    "include": true,
+    "en": ".devstack.json declares no services yet",
+    "zh-Hant": ".devstack.json 尚未宣告服務",
+    "reason": ""
+  },
+  "literal.c1a43ec0edc2": {
+    "include": true,
+    "en": ".devstack.json is not configured yet",
+    "zh-Hant": "尚未設定 .devstack.json",
+    "reason": ""
+  },
+  "literal.aa3249e29a5d": {
+    "include": true,
+    "en": "Project icon",
+    "zh-Hant": "Project 圖示",
+    "reason": ""
+  },
+  "literal.6ae06f64f8fa": {
+    "include": true,
+    "en": "Deploy progress",
+    "zh-Hant": "Deploy 進度",
+    "reason": ""
+  },
+  "literal.7d6a2964df09": {
+    "include": true,
+    "en": "Development services",
+    "zh-Hant": "開發服務",
+    "reason": ""
+  },
+  "literal.f3e136131a7e": {
+    "include": true,
+    "en": "Cross-machine identity",
+    "zh-Hant": "跨機器識別",
+    "reason": ""
+  },
+  "literal.9391584df834": {
+    "include": true,
+    "en": "The same Project is matched by origin",
+    "zh-Hant": "已用 origin 對應同一個 Project",
+    "reason": ""
+  },
+  "literal.d14c93fd8dbe": {
+    "include": true,
+    "en": "Origin is not configured yet",
+    "zh-Hant": "尚未設定 origin",
+    "reason": ""
+  },
+  "literal.7e545a6a9b17": {
+    "include": true,
+    "en": "Complete this Project’s display setup in Clawdline and leave verifiable results.",
+    "zh-Hant": "請把這個專案在 Clawdline 裡的顯示設定完整，並留下可驗證的結果。",
+    "reason": ""
+  },
+  "literal.0272dbb4a00f": {
+    "include": true,
+    "en": "Before starting, run and read `clawdline guide zh-TW project` in full. Then read this repository’s AGENTS.md, README, build/deploy scripts, and current process manager setup.",
+    "zh-Hant": "開始前先完整執行並閱讀 `clawdline guide zh-TW project`，再讀這個 repository 的 AGENTS.md、README、build/deploy scripts 與現有 process manager 設定。",
+    "reason": ""
+  },
+  "literal.81dffa7e36c1": {
+    "include": true,
+    "en": "Follow the guide step by step:",
+    "zh-Hant": "依 guide 逐項處理：",
+    "reason": ""
+  },
+  "literal.c08033e523fa": {
+    "include": true,
+    "en": "1. Confirm the Project is registered and has a meaningful name and pixel icon.",
+    "zh-Hant": "1. 確認 Project 已登記，而且名稱與像素圖示有意義。",
+    "reason": ""
+  },
+  "literal.7aa3b940bfe1": {
+    "include": true,
+    "en": "2. Make deploy/CI and long-running local work show progress through accurate status receipts that expire.",
+    "zh-Hant": "2. 讓 deploy／CI 與長時間本機工作能用正確、會過期的狀態收據顯示進度。",
+    "reason": ""
+  },
+  "literal.3ec8c6e1bcd0": {
+    "include": true,
+    "en": "3. Declare the development server’s port or URL in a minimal, real `.devstack.json`.",
+    "zh-Hant": "3. 用最小而真實的 `.devstack.json` 宣告開發伺服器的 port 或 URL。",
+    "reason": ""
+  },
+  "literal.97b97136df1d": {
+    "include": true,
+    "en": "4. Verify the JSON, repository tests, Clawdline Project/server reads, and the status actually shown on the Session.",
+    "zh-Hant": "4. 分別驗證 JSON、repository tests、Clawdline 的 Project／server 讀取，以及 Session 上實際顯示的狀態。",
+    "reason": ""
+  },
+  "literal.ee73618ae2cb": {
+    "include": true,
+    "en": "Keep the Project’s existing deploy and server management methods; do not create a second system for Clawdline. Unless I explicitly request it separately in this Session, do not start, stop, restart, or deploy anything. Before changing any user settings file outside Git, show the complete entry you plan to change. Finally, list what changed, what did not apply, and what could not be verified.",
+    "zh-Hant": "沿用專案既有的 deploy 與 server 管理方式；不要為 Clawdline 另建第二套。除非我在這個 Session 另外明確要求，否則不要啟動、停止、重啟或部署任何東西。修改 git 以外的使用者設定檔前，先顯示準備改動的完整 entry；最後列出改了什麼、不適用什麼，以及仍無法驗證的項目。",
+    "reason": ""
+  },
+  "literal.9d9da944cf48": {
+    "include": true,
+    "en": "Connection interrupted.",
+    "zh-Hant": "連線中斷。",
+    "reason": ""
+  },
+  "literal.8630b0a7e9d2": {
+    "include": true,
+    "en": "The machine response is unreadable.",
+    "zh-Hant": "機器回覆無法讀取。",
+    "reason": ""
+  },
+  "literal.22881454a0f0": {
+    "include": true,
+    "en": "The file cannot be read now.",
+    "zh-Hant": "檔案目前無法讀取。",
+    "reason": ""
+  },
+  "literal.920a83370e34": {
+    "include": true,
+    "en": "Unchanged",
+    "zh-Hant": "不變",
+    "reason": ""
+  },
+  "literal.fef5e42dbb55": {
+    "include": true,
+    "en": "Added (visible after applying)",
+    "zh-Hant": "新增（套用後才看得到）",
+    "reason": ""
+  },
+  "literal.bd3837042be2": {
+    "include": true,
+    "en": "Not visible (this is the gap)",
+    "zh-Hant": "看不到（這是落差）",
+    "reason": ""
+  },
+  "literal.8f94e36cd835": {
+    "include": true,
+    "en": "Not visible after applying",
+    "zh-Hant": "套用後看不到",
+    "reason": ""
+  },
+  "literal.de4050822523": {
+    "include": true,
+    "en": "For Claude only; unify leaves it unchanged",
+    "zh-Hant": "只給 Claude，unify 不更動",
+    "reason": ""
+  },
+  "literal.e83e668845a4": {
+    "include": true,
+    "en": "The two sides have different content",
+    "zh-Hant": "兩邊內容不同",
+    "reason": ""
+  },
+  "literal.a24619afa16e": {
+    "include": true,
+    "en": "Share a copy (this machine cannot create links)",
+    "zh-Hant": "以副本共用（這台機器不能建立連結）",
+    "reason": ""
+  },
+  "literal.67ba4a3f606c": {
+    "include": true,
+    "en": "Some files cannot be read",
+    "zh-Hant": "有檔案讀不到",
+    "reason": ""
+  },
+  "literal.97db2287057d": {
+    "include": true,
+    "en": "Shared",
+    "zh-Hant": "已共用",
+    "reason": ""
+  },
+  "literal.0e65ca077795": {
+    "include": true,
+    "en": "Link",
+    "zh-Hant": "連結",
+    "reason": ""
+  },
+  "literal.71669d600a21": {
+    "include": true,
+    "en": "Move it and leave a link at the original location",
+    "zh-Hant": "搬過去，原處留連結",
+    "reason": ""
+  },
+  "literal.e9fdcd2c600d": {
+    "include": true,
+    "en": "Replace the identical copy with a link",
+    "zh-Hant": "相同的副本換成連結",
+    "reason": ""
+  },
+  "literal.dc5f1e4f6042": {
+    "include": true,
+    "en": "Copy",
+    "zh-Hant": "複製",
+    "reason": ""
+  },
+  "literal.0a9316607f27": {
+    "include": true,
+    "en": "Move the rules from CLAUDE.md into the new AGENTS.md. Leave only a single @AGENTS.md reference in CLAUDE.md. No rules are deleted; both assistants can read them from the new location.",
+    "zh-Hant": "把 CLAUDE.md 的規則搬到新的 AGENTS.md，CLAUDE.md 只留一行 @AGENTS.md 引用它。規則沒有刪掉，只是換了位置，兩邊都讀得到。",
+    "reason": ""
+  },
+  "literal.c08f09bed8ec": {
+    "include": true,
+    "en": "Add an @AGENTS.md line at the top of CLAUDE.md so Claude also reads AGENTS.md. Leave the rest of CLAUDE.md unchanged.",
+    "zh-Hant": "在 CLAUDE.md 最上面加一行 @AGENTS.md，讓 Claude 也讀 AGENTS.md；CLAUDE.md 其他內容不動。",
+    "reason": ""
+  },
+  "literal.bf74f7ef840d": {
+    "include": true,
+    "en": "CLAUDE.md rules → AGENTS.md",
+    "zh-Hant": "CLAUDE.md 的規則 → AGENTS.md",
+    "reason": ""
+  },
+  "literal.74df92b721ee": {
+    "include": true,
+    "en": "Nothing will be deleted.",
+    "zh-Hant": "不會刪除任何東西。",
+    "reason": ""
+  },
+  "literal.a35624ea0763": {
+    "include": true,
+    "en": "Move content needed by both assistants into AGENTS.md; Claude-only content can stay.",
+    "zh-Hant": "把兩邊都需要的內容搬進 AGENTS.md；只給 Claude 的可以留著。",
+    "reason": ""
+  },
+  "literal.c39a8e57dbfc": {
+    "include": true,
+    "en": "CLAUDE.md references AGENTS.md, but AGENTS.md does not exist.",
+    "zh-Hant": "CLAUDE.md 引用了 AGENTS.md，但 AGENTS.md 不存在。",
+    "reason": ""
+  },
+  "literal.ad1250f9023e": {
+    "include": true,
+    "en": "Write the shared rules in AGENTS.md, then check again.",
+    "zh-Hant": "把共用的規則寫進 AGENTS.md，再重新檢查。",
+    "reason": ""
+  },
+  "literal.6aa72e4fdef8": {
+    "include": true,
+    "en": "Check where it points on the machine. To share it, change it to a regular file, then check again.",
+    "zh-Hant": "在機器上確認它指向哪裡；要共用的話改成一般檔案，再重新檢查。",
+    "reason": ""
+  },
+  "literal.292b7755b937": {
+    "include": true,
+    "en": "Check this link on the machine. To share it, point it to the folder with the same name under .agents/skills.",
+    "zh-Hant": "在機器上檢查這個連結；要共用就讓它指向 .agents/skills 裡的同名資料夾。",
+    "reason": ""
+  },
+  "literal.e094f3526875": {
+    "include": true,
+    "en": "Check this folder link on the machine.",
+    "zh-Hant": "在機器上檢查這個資料夾連結。",
+    "reason": ""
+  },
+  "literal.9dd0e6117357": {
+    "include": true,
+    "en": "Move or rename it first, then check again.",
+    "zh-Hant": "先把它移走或改名，再重新檢查。",
+    "reason": ""
+  },
+  "literal.062b9a10a6f1": {
+    "include": true,
+    "en": "Check this file or folder on the machine.",
+    "zh-Hant": "在機器上檢查這個檔案或資料夾。",
+    "reason": ""
+  },
+  "literal.8f8136f76819": {
+    "include": true,
+    "en": "Check its permissions or encoding on the machine (UTF-8 text is required).",
+    "zh-Hant": "在機器上檢查它的權限或編碼（需要 UTF-8 文字）。",
+    "reason": ""
+  },
+  "literal.6e9be990a363": {
+    "include": true,
+    "en": "Check on the machine.",
+    "zh-Hant": "在機器上檢查。",
+    "reason": ""
+  },
+  "literal.b593e064f518": {
+    "include": true,
+    "en": "Enable Project timeline",
+    "zh-Hant": "啟用專案時間軸",
+    "reason": ""
+  },
+  "literal.acc0b43a1d07": {
+    "include": true,
+    "en": "Keep traceable delivery and release records.",
+    "zh-Hant": "保留可追溯的交付與上線紀錄。",
+    "reason": ""
+  },
+  "literal.6f1c2c5c46b4": {
+    "include": true,
+    "en": "Open timeline",
+    "zh-Hant": "開啟時間軸",
+    "reason": ""
+  },
+  "literal.b253d8b3c409": {
+    "include": true,
+    "en": "Board unavailable",
+    "zh-Hant": "無法讀取看板設定",
+    "reason": ""
+  },
+  "literal.b27f67abf518": {
+    "include": true,
+    "en": "Saving…",
+    "zh-Hant": "儲存中…",
+    "reason": ""
+  },
+  "literal.d968c5e734ce": {
+    "include": true,
+    "en": "Saved",
+    "zh-Hant": "已儲存",
+    "reason": ""
+  },
+  "literal.a8f4898b1364": {
+    "include": true,
+    "en": "Save failed",
+    "zh-Hant": "儲存失敗",
+    "reason": ""
+  },
+  "literal.4c9f465602cb": {
+    "include": true,
+    "en": " · Press again to retry.",
+    "zh-Hant": " · 再按一次重試。",
+    "reason": ""
+  },
+  "literal.9c2b7fce9411": {
+    "include": true,
+    "en": "Enable Project Board",
+    "zh-Hant": "啟用看板系統",
+    "reason": ""
+  },
+  "literal.03e4342b12d6": {
+    "include": true,
+    "en": "Currently free. Organize work, sessions, usage and delivery under each Project. Disable to use the standard workflow; history is retained.",
+    "zh-Hant": "目前免費。以 Project 項目整合派工、進度、用量與成果。關閉後使用一般流程，歷史紀錄仍保留。",
+    "reason": ""
+  },
+  "literal.2989c6b2870d": {
+    "include": true,
+    "en": "Enabled",
+    "zh-Hant": "已啟用",
+    "reason": ""
+  },
+  "literal.1a40ea6c139f": {
+    "include": true,
+    "en": "Disabled",
+    "zh-Hant": "已關閉",
+    "reason": ""
+  },
+  "literal.e43bcf17f8bc": {
+    "include": true,
+    "en": "Open projects",
+    "zh-Hant": "開啟專案",
+    "reason": ""
+  },
+  "literal.712dbdd9c3f0": {
+    "include": true,
+    "en": "No recent header reads recorded",
+    "zh-Hant": "近期沒有標題讀取紀錄",
+    "reason": ""
+  },
+  "literal.be28f5f7d1a9": {
+    "include": true,
+    "en": "Anonymous read stages copied",
+    "zh-Hant": "已複製匿名讀取停點",
+    "reason": ""
+  },
+  "literal.ec06934bf3cc": {
+    "include": true,
+    "en": "Could not copy; check clipboard access",
+    "zh-Hant": "無法複製，請檢查剪貼簿權限",
+    "reason": ""
+  },
+  "literal.aff43bfb749b": {
+    "include": true,
+    "en": "Capacity unavailable",
+    "zh-Hant": "讀不到容量",
+    "reason": ""
+  },
+  "literal.6ea9f84cc7ae": {
+    "include": true,
+    "en": "Capacity",
+    "zh-Hant": "容量",
+    "reason": ""
+  },
+  "literal.e47d3117e261": {
+    "include": true,
+    "en": "Copy recent Session read diagnostics",
+    "zh-Hant": "複製近期 Session 讀取診斷",
+    "reason": ""
+  },
+  "literal.51062dc6381b": {
+    "include": true,
+    "en": "Reading…",
+    "zh-Hant": "讀取中…",
+    "reason": ""
+  },
+  "literal.6f684cb2905c": {
+    "include": true,
+    "en": "Showing the last reading. ",
+    "zh-Hant": "顯示上一次讀到的。",
+    "reason": ""
+  },
+  "literal.7331776e6ff4": {
+    "include": true,
+    "en": "Completion notices could not be read, so whether any are dead letters is unknown: ",
+    "zh-Hant": "完成通知讀不到，所以不知道有沒有 dead letter：",
+    "reason": ""
+  },
+  "literal.4c7b4ddb78d8": {
+    "include": true,
+    "en": "The capacity patrol is not running on this daemon, so every row below is unknown.",
+    "zh-Hant": "容量巡邏沒有在這個 daemon 跑，所以下面每一列都是未知。",
+    "reason": ""
+  },
+  "literal.2f93135491a8": {
+    "include": true,
+    "en": "The capacity patrol has stalled: no pass finished in over three ticks, so the numbers below are old.",
+    "zh-Hant": "容量巡邏停了：超過三輪沒有完成，下面的數字是舊的。",
+    "reason": ""
+  },
+  "literal.1a2fd5039544": {
+    "include": true,
+    "en": "Every row is below its warning line.",
+    "zh-Hant": "每一列都在告警門檻以下。",
+    "reason": ""
+  },
+  "literal.73576f2cee8d": {
+    "include": true,
+    "en": "Only rows that need a look",
+    "zh-Hant": "只看要注意的",
+    "reason": ""
+  },
+  "literal.0bd13da58a88": {
+    "include": true,
+    "en": "Limit lowered by override",
+    "zh-Hant": "上限被調小了",
+    "reason": ""
+  },
+  "literal.09fc8876cbf4": {
+    "include": true,
+    "en": "Planning review and independent verification are both required.",
+    "zh-Hant": "同時要求規劃檢查與獨立驗證。",
+    "reason": ""
+  },
+  "literal.f02322e08ccd": {
+    "include": true,
+    "en": "Planning",
+    "zh-Hant": "規劃",
+    "reason": ""
+  },
+  "literal.dae4fe00826a": {
+    "include": true,
+    "en": "Features and Epics require a reviewed plan; independent verification is not required.",
+    "zh-Hant": "Feature 與 Epic 要先通過規劃檢查；不要求獨立驗證。",
+    "reason": ""
+  },
+  "literal.c07c2d8f4a0d": {
+    "include": true,
+    "en": "Independent verification",
+    "zh-Hant": "獨立驗證",
+    "reason": ""
+  },
+  "literal.8a6f40cf0be9": {
+    "include": true,
+    "en": "A maker/checker gate is required; even Epics skip the forced planning review.",
+    "zh-Hant": "要求 maker／checker 獨立驗證；Epic 也略過強制規劃檢查。",
+    "reason": ""
+  },
+  "literal.7c1f5f313fa9": {
+    "include": true,
+    "en": "Standard workflow",
+    "zh-Hant": "一般流程",
+    "reason": ""
+  },
+  "literal.d6b66e033d46": {
+    "include": true,
+    "en": "No planning review or independent verification is forced.",
+    "zh-Hant": "不強制規劃檢查或獨立驗證。",
+    "reason": ""
+  },
+  "literal.b505f585baf9": {
+    "include": true,
+    "en": "Gate settings unavailable",
+    "zh-Hant": "無法讀取 gate 設定",
+    "reason": ""
+  },
+  "literal.bc1c88162612": {
+    "include": true,
+    "en": "Saved for future assignments",
+    "zh-Hant": "已儲存，套用於之後的指派",
+    "reason": ""
+  },
+  "literal.f201e051e1ac": {
+    "include": true,
+    "en": "Gate settings could not be saved",
+    "zh-Hant": "無法儲存 gate 設定",
+    "reason": ""
+  },
+  "literal.b6bef29d23da": {
+    "include": true,
+    "en": "On",
+    "zh-Hant": "開啟",
+    "reason": ""
+  },
+  "literal.b6c180ac93e9": {
+    "include": true,
+    "en": "Off",
+    "zh-Hant": "關閉",
+    "reason": ""
+  },
+  "literal.af53543a73b6": {
+    "include": true,
+    "en": "Loading…",
+    "zh-Hant": "讀取中…",
+    "reason": ""
+  },
+  "literal.6eded7a7db6a": {
+    "include": true,
+    "en": "Planning and verification gates",
+    "zh-Hant": "規劃與驗證 gate",
+    "reason": ""
+  },
+  "literal.dff03055ebea": {
+    "include": true,
+    "en": "These machine-wide defaults are captured when a Board item is successfully assigned. Changing them does not rewrite work already in flight.",
+    "zh-Hant": "這是整台機器的全域預設值，只在看板項目成功指派時擷取；之後修改不會改動進行中的工作。",
+    "reason": ""
+  },
+  "literal.2df24b862ead": {
+    "include": true,
+    "en": "Planning gate",
+    "zh-Hant": "規劃 gate",
+    "reason": ""
+  },
+  "literal.3a75f2cb35d9": {
+    "include": true,
+    "en": "Require a reviewed plan for newly assigned Features and Epics. Issues are exempt.",
+    "zh-Hant": "新指派的 Feature 與 Epic 必須先完成獨立審查的 Plan；Issue 不受影響。",
+    "reason": ""
+  },
+  "literal.f7b57f4896e3": {
+    "include": true,
+    "en": "Independent verification gate",
+    "zh-Hant": "獨立驗證 gate",
+    "reason": ""
+  },
+  "literal.c2a3e5a9d8e2": {
+    "include": true,
+    "en": "Require an independent checker to pass the fixed Git candidate before merging.",
+    "zh-Hant": "合併前必須由獨立 checker 對固定 Git 候選提交驗證通過。",
+    "reason": ""
+  },
+  "literal.cd9dd176be81": {
+    "include": true,
+    "en": "Current mode",
+    "zh-Hant": "目前模式",
+    "reason": ""
+  },
+  "literal.a0747c50f20b": {
+    "include": true,
+    "en": "Retry",
+    "zh-Hant": "重試",
+    "reason": ""
+  },
+  "literal.499be85f5b3b": {
+    "include": true,
+    "en": "OK",
+    "zh-Hant": "正常",
+    "reason": ""
+  },
+  "literal.7c2553d0f0f2": {
+    "include": true,
+    "en": "Filling",
+    "zh-Hant": "注意",
+    "reason": ""
+  },
+  "literal.959dd5060ea6": {
+    "include": true,
+    "en": "Nearly full",
+    "zh-Hant": "快滿了",
+    "reason": ""
+  },
+  "literal.6a0d24a2797e": {
+    "include": true,
+    "en": "Full",
+    "zh-Hant": "滿了",
+    "reason": ""
+  },
+  "literal.74d2b141f0a6": {
+    "include": true,
+    "en": "Not measured",
+    "zh-Hant": "量不到",
+    "reason": ""
+  },
+  "literal.a409c44179a1": {
+    "include": true,
+    "en": "Rotates when full; only you delete old segments",
+    "zh-Hant": "滿了輪替，舊的分段只有你能刪",
+    "reason": ""
+  },
+  "literal.a7632813e591": {
+    "include": true,
+    "en": "Refuses new entries when full; only you can make room",
+    "zh-Hant": "滿了拒絕新的，只有你能騰出空間",
+    "reason": ""
+  },
+  "literal.24be634bc511": {
+    "include": true,
+    "en": "Only reports when full, refuses nothing yet; only you can make room",
+    "zh-Hant": "滿了只回報、還不會拒絕，只有你能騰出空間",
+    "reason": ""
+  },
+  "literal.56ce6ed5b735": {
+    "include": true,
+    "en": "Refuses new entries when full; keeps what it has",
+    "zh-Hant": "滿了拒絕新的，daemon 不丟已有的",
+    "reason": ""
+  },
+  "literal.fd71625e8c36": {
+    "include": true,
+    "en": "The daemon drops the oldest when full",
+    "zh-Hant": "滿了由 daemon 淘汰最舊的",
+    "reason": ""
+  },
+  "literal.41b7b78d5589": {
+    "include": true,
+    "en": "The daemon expires entries past their window",
+    "zh-Hant": "過了視窗由 daemon 讓它過期",
+    "reason": ""
+  },
+  "literal.64f36331b69f": {
+    "include": true,
+    "en": "The daemon rotates and deletes the oldest segment",
+    "zh-Hant": "滿了由 daemon 輪替、刪最舊的分段",
+    "reason": ""
+  },
+  "literal.2f810d174492": {
+    "include": true,
+    "en": "Keeps only the latest value",
+    "zh-Hant": "滿了只留最新的值",
+    "reason": ""
+  },
+  "literal.603cabc2847f": {
+    "include": true,
+    "en": "Disconnects readers that cannot keep up",
+    "zh-Hant": "滿了斷開跟不上的讀者",
+    "reason": ""
+  },
+  "literal.8eb312e5c44d": {
+    "include": true,
+    "en": "Summarizes before moving entries out",
+    "zh-Hant": "滿了先摘要再移走",
+    "reason": ""
+  },
+  "literal.b2f7a693e69e": {
+    "include": true,
+    "en": "Only reports when full",
+    "zh-Hant": "滿了只回報，不拒絕也不淘汰",
+    "reason": ""
+  },
+  "literal.f8d802ee3b49": {
+    "include": true,
+    "en": "push queued",
+    "zh-Hant": "推播待送",
+    "reason": ""
+  },
+  "literal.4abc45706b7c": {
+    "include": true,
+    "en": "push sending",
+    "zh-Hant": "推播送出中",
+    "reason": ""
+  },
+  "literal.2c5109559831": {
+    "include": true,
+    "en": "pushed",
+    "zh-Hant": "已推播",
+    "reason": ""
+  },
+  "literal.682e873e7cdf": {
+    "include": true,
+    "en": "no device subscribed to pushes",
+    "zh-Hant": "沒有裝置訂閱推播",
+    "reason": ""
+  },
+  "literal.f90cd1fa096f": {
+    "include": true,
+    "en": "push could not be sent",
+    "zh-Hant": "推播送不出去",
+    "reason": ""
+  },
+  "literal.7ddacedc1cff": {
+    "include": true,
+    "en": "not known whether the push went out",
+    "zh-Hant": "不確定推播有沒有送出",
+    "reason": ""
+  },
+  "literal.e0390e103f88": {
+    "include": true,
+    "en": "Never alerted",
+    "zh-Hant": "沒有告警過",
+    "reason": ""
+  },
+  "literal.79be3075d69a": {
+    "include": true,
+    "en": "Not pushed; recorded in diagnostics only",
+    "zh-Hant": "不推播，只記在 diagnostics",
+    "reason": ""
+  },
+  "literal.78f1213394fc": {
+    "include": true,
+    "en": ", not pushed",
+    "zh-Hant": "，不推播",
+    "reason": ""
+  },
+  "literal.9034aceb6633": {
+    "include": true,
+    "en": "Last alert ",
+    "zh-Hant": "上次告警 ",
+    "reason": ""
+  },
+  "literal.ac2ddfb95017": {
+    "include": true,
+    "en": "Refused",
+    "zh-Hant": "拒絕",
+    "reason": ""
+  },
+  "literal.3d1666fc258f": {
+    "include": true,
+    "en": "Evicted",
+    "zh-Hant": "淘汰",
+    "reason": ""
+  },
+  "literal.88fefceaa267": {
+    "include": true,
+    "en": "Expired",
+    "zh-Hant": "過期",
+    "reason": ""
+  },
+  "literal.55c4eda8a6e9": {
+    "include": true,
+    "en": "Rotated",
+    "zh-Hant": "輪替",
+    "reason": ""
+  },
+  "literal.ee94960e6f12": {
+    "include": true,
+    "en": "Dropped",
+    "zh-Hant": "丟掉",
+    "reason": ""
+  },
+  "literal.c4fd4486315f": {
+    "include": true,
+    "en": "Merged",
+    "zh-Hant": "合併",
+    "reason": ""
+  },
+  "literal.9c405ef85bd2": {
+    "include": true,
+    "en": "Disconnected",
+    "zh-Hant": "斷線",
+    "reason": ""
+  },
+  "literal.d8007d80c5de": {
+    "include": true,
+    "en": "Write failed",
+    "zh-Hant": "寫入失敗",
+    "reason": ""
+  },
+  "literal.bc9e50e8ee8c": {
+    "include": true,
+    "en": "Planning gate",
+    "zh-Hant": "規劃 gate",
+    "reason": ""
+  },
+  "literal.7daab4ee36ab": {
+    "include": true,
+    "en": "On by default. Captured only when the item is first assigned successfully in this cycle; later setting changes do not alter work already in progress.",
+    "zh-Hant": "預設開啟。只在項目本輪第一次成功指派時擷取；之後改設定不會改動進行中的工作。",
+    "reason": ""
+  },
+  "literal.b970bd3d556b": {
+    "include": true,
+    "en": "Independent verification gate",
+    "zh-Hant": "獨立驗證 gate",
+    "reason": ""
+  },
+  "literal.f4456928970e": {
+    "include": true,
+    "en": "Off by default. When enabled, newly assigned work requires independent review of a fixed Git candidate commit; an inability to verify does not count as a pass.",
+    "zh-Hant": "預設關閉。開啟後，新指派的工作要以固定 Git 候選提交接受獨立檢查；無法驗證不算通過。",
+    "reason": ""
+  },
+  "literal.d2b869d818e1": {
+    "include": true,
+    "en": "This setting can only be changed in the Clawdline app",
+    "zh-Hant": "這一項要在 Clawdline app 裡才能改",
+    "reason": ""
+  },
+  "literal.4f066af02920": {
+    "include": true,
+    "en": "Planning review + independent verification",
+    "zh-Hant": "規劃檢查＋獨立驗證",
+    "reason": ""
+  },
+  "literal.5cddfd18b35f": {
+    "include": true,
+    "en": "Planning",
+    "zh-Hant": "規劃",
+    "reason": ""
+  },
+  "literal.bfa73268a872": {
+    "include": true,
+    "en": "Planning review only (default)",
+    "zh-Hant": "只要求規劃檢查（預設）",
+    "reason": ""
+  },
+  "literal.b9b69876ed00": {
+    "include": true,
+    "en": "Independent verification",
+    "zh-Hant": "獨立驗證",
+    "reason": ""
+  },
+  "literal.b5ecad888fc4": {
+    "include": true,
+    "en": "Maker/checker verification only",
+    "zh-Hant": "只要求 maker／checker 驗證",
+    "reason": ""
+  },
+  "literal.9f758b115a39": {
+    "include": true,
+    "en": "Standard workflow",
+    "zh-Hant": "一般流程",
+    "reason": ""
+  },
+  "literal.38759b4f9a8d": {
+    "include": true,
+    "en": "Planning and independent verification are not required",
+    "zh-Hant": "不強制規劃或獨立驗證",
+    "reason": ""
+  },
+  "literal.3f3878d54702": {
+    "include": true,
+    "en": "NEXUS: Capture planning and independent verification at assignment. Features and Epics must pass a plan review before implementation, and an independent checker must approve the completed code before merging. Issues do not require a plan review.",
+    "zh-Hant": "NEXUS：指派時擷取規劃與獨立驗證。Feature 和 Epic 先完成計劃檢查，完成程式後須由獨立 checker 通過才可合併；Issue 不需計劃檢查。",
+    "reason": ""
+  },
+  "literal.5cea22b9e003": {
+    "include": true,
+    "en": "Capture planning only at assignment: Features and Epics must pass a plan review first; merging uses the standard verification record. Issues do not require a plan review.",
+    "zh-Hant": "指派時只擷取規劃：Feature 和 Epic 先完成計劃檢查；合併沿用一般驗證紀錄。Issue 不需計劃檢查。",
+    "reason": ""
+  },
+  "literal.5a2c278484d7": {
+    "include": true,
+    "en": "Capture independent verification only at assignment: Epics also skip mandatory plan review; after implementation, an independent checker must approve before merging.",
+    "zh-Hant": "指派時只擷取獨立驗證：Epic 也略過強制計劃檢查；完成程式後仍須由獨立 checker 通過才可合併。",
+    "reason": ""
+  },
+  "literal.14337b315281": {
+    "include": true,
+    "en": "Both gates are off: Epics also skip mandatory plan review; work follows the standard execution and verification process.",
+    "zh-Hant": "兩道 gate 都關閉：Epic 也略過強制計劃檢查；工作沿用一般執行與驗證流程。",
+    "reason": ""
+  },
+  "literal.fe3afeb22bf7": {
+    "include": true,
+    "en": "The Squad service timed out.",
+    "zh-Hant": "角色小隊服務回應逾時。",
+    "reason": ""
+  },
+  "literal.e03cb38f7707": {
+    "include": true,
+    "en": "Cannot connect to the Squad service now.",
+    "zh-Hant": "目前無法連線至角色小隊服務。",
+    "reason": ""
+  },
+  "literal.59dd020f4f72": {
+    "include": true,
+    "en": "The Squad service returned unreadable data.",
+    "zh-Hant": "角色小隊服務回傳了無法讀取的資料。",
+    "reason": ""
+  },
+  "literal.cd4cc76ef07a": {
+    "include": true,
+    "en": "Request failed (",
+    "zh-Hant": "請求失敗（",
+    "reason": ""
+  },
+  "literal.bff186284aa2": {
+    "include": true,
+    "en": "Built-in entries cannot be overwritten",
+    "zh-Hant": "內建項目不能覆蓋",
+    "reason": ""
+  },
+  "literal.82f4174d0598": {
+    "include": true,
+    "en": "Another ID already uses this name",
+    "zh-Hant": "名稱已由其他 ID 使用",
+    "reason": ""
+  },
+  "literal.3cad597f3ac5": {
+    "include": true,
+    "en": "Same version, different content",
+    "zh-Hant": "版本相同但內容不同",
+    "reason": ""
+  },
+  "literal.b65ed7e2e286": {
+    "include": true,
+    "en": "Package version is older than the current version",
+    "zh-Hant": "資料包版本比現有版本舊",
+    "reason": ""
+  },
+  "literal.50ed5fc5bdc6": {
+    "include": true,
+    "en": "Versions cannot be compared",
+    "zh-Hant": "版本無法比較",
+    "reason": ""
+  },
+  "literal.0e6e08f8f616": {
+    "include": true,
+    "en": "Catalog conflict",
+    "zh-Hant": "目錄衝突",
+    "reason": ""
+  },
+  "literal.5ef9a2399e25": {
+    "include": true,
+    "en": "This Project scope was not found. Reload the list.",
+    "zh-Hant": "找不到這個 Project 範圍；請重新讀取清單。",
+    "reason": ""
+  },
+  "literal.d41a4cbb075f": {
+    "include": true,
+    "en": "Select a registered Project in the Squad first.",
+    "zh-Hant": "請先在角色小隊選擇已登錄的 Project。",
+    "reason": ""
+  },
+  "literal.63c65dff6ab8": {
+    "include": true,
+    "en": "The package exceeds the 512 KiB limit.",
+    "zh-Hant": "資料包超過 512 KiB 上限。",
+    "reason": ""
+  },
+  "literal.f32daac07918": {
+    "include": true,
+    "en": "Built-in default",
+    "zh-Hant": "內建預設",
+    "reason": ""
+  },
+  "literal.b545baf83246": {
+    "include": true,
+    "en": "Global settings",
+    "zh-Hant": "全域設定",
+    "reason": ""
+  },
+  "literal.d77dd218a98a": {
+    "include": true,
+    "en": "Project override",
+    "zh-Hant": "Project 覆寫",
+    "reason": ""
+  },
+  "literal.ea38578dd6df": {
+    "include": true,
+    "en": "Enter a name, purpose, and skill content.",
+    "zh-Hant": "請填寫名稱、用途與技能內容。",
+    "reason": ""
+  },
+  "literal.b25dc4eefbd9": {
+    "include": true,
+    "en": "Skill content exceeds 64 KiB. Shorten it and retry.",
+    "zh-Hant": "技能內容超過 64 KiB，請縮短後重試。",
+    "reason": ""
+  },
+  "literal.711deea02238": {
+    "include": true,
+    "en": "Choose a skill file.",
+    "zh-Hant": "請選擇技能檔案。",
+    "reason": ""
+  },
+  "literal.de95647166ea": {
+    "include": true,
+    "en": "The skill folder contains unusable file paths.",
+    "zh-Hant": "技能資料夾包含無法使用的檔案路徑。",
+    "reason": ""
+  },
+  "literal.e861ebcd3d2a": {
+    "include": true,
+    "en": "The skill folder contains duplicate file names.",
+    "zh-Hant": "技能資料夾含有重複檔名。",
+    "reason": ""
+  },
+  "literal.157f5f468213": {
+    "include": true,
+    "en": "Choose a skill folder containing SKILL.md, or select SKILL.md alone.",
+    "zh-Hant": "請選擇含有 SKILL.md 的技能資料夾，或單獨選擇 SKILL.md。",
+    "reason": ""
+  },
+  "literal.71a96c33c44f": {
+    "include": true,
+    "en": "The skill text and attachments together exceed 64 KiB.",
+    "zh-Hant": "技能全文與附檔合計超過 64 KiB。",
+    "reason": ""
+  },
+  "literal.6d418d44972b": {
+    "include": true,
+    "en": "SKILL.md must contain text and be no larger than 64 KiB.",
+    "zh-Hant": "SKILL.md 必須有內容，且不得超過 64 KiB。",
+    "reason": ""
+  },
+  "literal.751b770b11a9": {
+    "include": true,
+    "en": "Imported skill",
+    "zh-Hant": "匯入的技能",
+    "reason": ""
+  },
+  "literal.3057a039e94d": {
+    "include": true,
+    "en": "Persona settings and the catalog do not match.",
+    "zh-Hant": "角色設定與目錄不一致。",
+    "reason": ""
+  },
+  "literal.feba2f8d9bcd": {
+    "include": true,
+    "en": "This skill version was not found in the catalog.",
+    "zh-Hant": "目錄中找不到此技能版本。",
+    "reason": ""
+  },
+  "literal.2316613f030f": {
+    "include": true,
+    "en": "Unknown",
+    "zh-Hant": "未知",
+    "reason": ""
+  },
+  "literal.60ff8d468b52": {
+    "include": true,
+    "en": "Completion report",
+    "zh-Hant": "結案報告",
+    "reason": ""
+  },
+  "literal.64c3025365fb": {
+    "include": true,
+    "en": "Agent findings · Verification, merge, and deployment evidence appear separately in item progress",
+    "zh-Hant": "Agent 調查結論 · 驗證、合併與部署證據另列於項目進度",
+    "reason": ""
+  },
+  "literal.b59b29087e27": {
+    "include": true,
+    "en": "Plan",
+    "zh-Hant": "計劃書",
+    "reason": ""
+  },
+  "literal.9c6e1e391888": {
+    "include": true,
+    "en": "Plan and review",
+    "zh-Hant": "計劃書與 Review",
+    "reason": ""
+  },
+  "literal.79fd72ac8a6c": {
+    "include": true,
+    "en": "Implementation plan written by the owning Session · A Child Session must review it before implementation",
+    "zh-Hant": "負責 Session 寫的實作計劃 · 實作前須經 Child Session review",
+    "reason": ""
+  },
+  "literal.4d02b00558fa": {
+    "include": true,
+    "en": "Verification summary unavailable · View details",
+    "zh-Hant": "驗證摘要無法讀取 · 請查看詳情",
+    "reason": ""
+  },
+  "literal.ff745d63f0ed": {
+    "include": true,
+    "en": "Give correction guidance",
+    "zh-Hant": "給修正方向",
+    "reason": ""
+  },
+  "literal.b6c1ba21d900": {
+    "include": true,
+    "en": "Revise acceptance criteria",
+    "zh-Hant": "修訂驗收條件",
+    "reason": ""
+  },
+  "literal.4c3e804361fa": {
+    "include": true,
+    "en": "Retry verification after fixing",
+    "zh-Hant": "修復後重試驗證",
+    "reason": ""
+  },
+  "literal.f38983f7e110": {
+    "include": true,
+    "en": "Reassign Session",
+    "zh-Hant": "改派 Session",
+    "reason": ""
+  },
+  "literal.6f81e41d7af8": {
+    "include": true,
+    "en": "Technical review approved (not PASS)",
+    "zh-Hant": "技術覆核通過（不是 PASS）",
+    "reason": ""
+  },
+  "literal.3fbf7dc0b3f0": {
+    "include": true,
+    "en": "Review approved (not PASS)",
+    "zh-Hant": "覆核通過（不是 PASS）",
+    "reason": ""
+  },
+  "literal.72984e003fe2": {
+    "include": true,
+    "en": "Cancel item",
+    "zh-Hant": "取消項目",
+    "reason": ""
+  },
+  "literal.bae271f09e69": {
+    "include": true,
+    "en": "Decision recorded; item status is updating.",
+    "zh-Hant": "決定已記錄；項目狀態正在更新。",
+    "reason": ""
+  },
+  "literal.9e4bf413b2fd": {
+    "include": true,
+    "en": "Decision incomplete. Check the latest item version and reason, then retry.",
+    "zh-Hant": "決定未完成。請確認項目最新版本與原因，再重試。",
+    "reason": ""
+  },
+  "literal.622afbf65497": {
+    "include": true,
+    "en": "Recording…",
+    "zh-Hant": "記錄中…",
+    "reason": ""
+  },
+  "literal.7b1667febb0c": {
+    "include": true,
+    "en": "Confirm resolution",
+    "zh-Hant": "確認處置",
+    "reason": ""
+  },
+  "literal.2d66bc997d16": {
+    "include": true,
+    "en": "Export byte count does not match the manifest; no evidence was cleared.",
+    "zh-Hant": "匯出位元組數與 manifest 不符；沒有清除任何證據。",
+    "reason": ""
+  },
+  "literal.cd3ba7de1f2d": {
+    "include": true,
+    "en": "Export hash does not match the manifest; no evidence was cleared.",
+    "zh-Hant": "匯出雜湊與 manifest 不符；沒有清除任何證據。",
+    "reason": ""
+  },
+  "literal.c8759c3fdb18": {
+    "include": true,
+    "en": "Eligible old verification details were cleared; totals, latest status, and audit records remain.",
+    "zh-Hant": "符合條件的舊驗證詳情已清除；總計、最新狀態與稽核紀錄仍保留。",
+    "reason": ""
+  },
+  "literal.532eeda3d5c1": {
+    "include": true,
+    "en": "Clearing was incomplete. The export contents or item version may have changed; export again before confirming.",
+    "zh-Hant": "清除未完成。匯出內容或項目版本可能已變更；請重新匯出再確認。",
+    "reason": ""
+  },
+  "literal.30d4d152f338": {
+    "include": true,
+    "en": "Working…",
+    "zh-Hant": "處理中…",
+    "reason": ""
+  },
+  "literal.ed21e82d12c2": {
+    "include": true,
+    "en": "Export verification details eligible for clearing",
+    "zh-Hant": "匯出可清除的驗證詳情",
+    "reason": ""
+  },
+  "literal.bf753874893f": {
+    "include": true,
+    "en": "Third consecutive FAIL",
+    "zh-Hant": "連續第三次 FAIL",
+    "reason": ""
+  },
+  "literal.f987cffe62e7": {
+    "include": true,
+    "en": "Technical verification could not be completed",
+    "zh-Hant": "技術驗證無法完成",
+    "reason": ""
+  },
+  "literal.cd8db91c094e": {
+    "include": true,
+    "en": "Not assigned successfully yet; settings at the first successful assignment will be captured",
+    "zh-Hant": "尚未成功指派；將在第一次成功指派時擷取當時設定",
+    "reason": ""
+  },
+  "literal.10da14d9c382": {
+    "include": true,
+    "en": "Unknown authorization type",
+    "zh-Hant": "未知授權種類",
+    "reason": ""
+  },
+  "literal.0841cf12ec8c": {
+    "include": true,
+    "en": "Verified",
+    "zh-Hant": "已驗證",
+    "reason": ""
+  },
+  "literal.c0b14e64a4b1": {
+    "include": true,
+    "en": "Failed",
+    "zh-Hant": "未通過",
+    "reason": ""
+  },
+  "literal.ca57dc5b26d8": {
+    "include": true,
+    "en": "Unable to verify",
+    "zh-Hant": "無法驗證",
+    "reason": ""
+  },
+  "literal.d9f7294e59ea": {
+    "include": true,
+    "en": "Complete",
+    "zh-Hant": "已完成",
+    "reason": ""
+  },
+  "literal.2c65ed1ce8be": {
+    "include": true,
+    "en": "In progress",
+    "zh-Hant": "進行中",
+    "reason": ""
+  },
+  "literal.caa636f04eb1": {
+    "include": true,
+    "en": "Incomplete",
+    "zh-Hant": "尚未完成",
+    "reason": ""
+  },
+  "literal.56f8e506038b": {
+    "include": true,
+    "en": "Add a new capability people can experience",
+    "zh-Hant": "加入一項使用者可以感受到的新能力",
+    "reason": ""
+  },
+  "literal.33ca73248c20": {
+    "include": true,
+    "en": "Fix an error, anomaly, or unexpected behavior",
+    "zh-Hant": "修正錯誤、異常或不符合預期的行為",
+    "reason": ""
+  },
+  "literal.7ef41cddac8e": {
+    "include": true,
+    "en": "Large assignable work; if the planning gate is enabled at assignment, the Session must write a plan and obtain Child Session review first",
+    "zh-Hant": "可指派的大型工作；指派時若啟用規劃 gate，Session 要先寫計劃書並經 Child Session review",
+    "reason": ""
+  },
+  "literal.728f2c662e96": {
+    "include": true,
+    "en": "Improve internal structure without changing external behavior; like a Feature, it can be assigned and have steps and acceptance criteria",
+    "zh-Hant": "不改變外部行為的內部結構改善；和 Feature 一樣可以指派、寫步驟與驗收",
+    "reason": ""
+  },
+  "literal.ba5eb53b1697": {
+    "include": true,
+    "en": "Research or an implementation plan to keep in the planning area first",
+    "zh-Hant": "先放在規劃區的研究或實作計畫",
+    "reason": ""
+  },
+  "literal.5aabeb560dbd": {
+    "include": true,
+    "en": "This question already received a different answer. Refresh to view it.",
+    "zh-Hant": "這題已收到另一個選項的回答，請重新整理查看。",
+    "reason": ""
+  },
+  "literal.e2379153f479": {
+    "include": true,
+    "en": "Answer delivery is unconfirmed. Retry or refresh to check.",
+    "zh-Hant": "尚未確認回答是否送達；請重試或重新整理查看。",
+    "reason": ""
+  },
+  "literal.8e0d15ad92d4": {
+    "include": true,
+    "en": "Refreshing Board",
+    "zh-Hant": "正在重新整理看板",
+    "reason": ""
+  },
+  "literal.8f643bcd5a10": {
+    "include": true,
+    "en": "In progress",
+    "zh-Hant": "進行中",
+    "reason": ""
+  },
+  "literal.20df2a7775cd": {
+    "include": true,
+    "en": "Complete",
+    "zh-Hant": "已完成",
+    "reason": ""
+  },
+  "literal.aa44a36dc811": {
+    "include": true,
+    "en": "All",
+    "zh-Hant": "全部",
+    "reason": ""
+  },
+  "literal.f653840acc04": {
+    "include": true,
+    "en": "Matching Plan items are hidden. Turn on “Show Plans” to view them.",
+    "zh-Hant": "符合搜尋的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。",
+    "reason": ""
+  },
+  "literal.000c45f69d2f": {
+    "include": true,
+    "en": "Plan items in this scope are hidden. Turn on “Show Plans” to view them.",
+    "zh-Hant": "這個範圍的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。",
+    "reason": ""
+  },
+  "literal.6bb45a6f3d11": {
+    "include": true,
+    "en": "No completed items yet.",
+    "zh-Hant": "還沒有已完成的項目。",
+    "reason": ""
+  },
+  "literal.9c2aa7fb1748": {
+    "include": true,
+    "en": "No items in this scope yet.",
+    "zh-Hant": "這個範圍目前沒有項目。",
+    "reason": ""
+  },
+  "literal.223a19c135b4": {
+    "include": true,
+    "en": "Loading…",
+    "zh-Hant": "正在載入…",
+    "reason": ""
+  },
+  "literal.70ee17f5b118": {
+    "include": true,
+    "en": "Load more items",
+    "zh-Hant": "載入更多項目",
+    "reason": ""
+  },
+  "literal.94d08f62dcc8": {
+    "include": true,
+    "en": " · List incomplete",
+    "zh-Hant": " · 清單不完整",
+    "reason": ""
+  },
+  "literal.f40cef79943e": {
+    "include": true,
+    "en": "Unassigned",
+    "zh-Hant": "未指派",
+    "reason": ""
+  },
+  "literal.89d0cc30dc8b": {
+    "include": true,
+    "en": "From Session to-do",
+    "zh-Hant": "來自 Session 待辦",
+    "reason": ""
+  },
+  "literal.15d308223697": {
+    "include": true,
+    "en": "Source data incomplete",
+    "zh-Hant": "來源資料不完整",
+    "reason": ""
+  },
+  "literal.865569dfdfe1": {
+    "include": true,
+    "en": "This older proposal did not record an observable completion outcome.",
+    "zh-Hant": "這筆舊提案沒有記下可觀察的完成結果。",
+    "reason": ""
+  },
+  "literal.06e9721c22a0": {
+    "include": true,
+    "en": "Needs your decision",
+    "zh-Hant": "需要你決定",
+    "reason": ""
+  },
+  "literal.da65d95a49fd": {
+    "include": true,
+    "en": "Answer outcome",
+    "zh-Hant": "回答結果",
+    "reason": ""
+  },
+  "literal.cbc015194d93": {
+    "include": true,
+    "en": "The owning Session is waiting for this answer and will continue after you reply",
+    "zh-Hant": "負責的 Session 正在等這個答案，回答後就會繼續",
+    "reason": ""
+  },
+  "literal.b81539b6dfef": {
+    "include": true,
+    "en": "Work on this item is paused until you answer",
+    "zh-Hant": "回答前，這個項目的工作暫停",
+    "reason": ""
+  },
+  "literal.29feba66a834": {
+    "include": true,
+    "en": "This question does not pause the work",
+    "zh-Hant": "這個問題不會暫停工作",
+    "reason": ""
+  },
+  "literal.0ec51d2f1b3c": {
+    "include": true,
+    "en": "’s next step",
+    "zh-Hant": "的下一步",
+    "reason": ""
+  },
+  "literal.87a8d926d9e7": {
+    "include": true,
+    "en": "’s full details",
+    "zh-Hant": "的完整內容",
+    "reason": ""
+  },
+  "literal.8722de1b1769": {
+    "include": true,
+    "en": "Answer question",
+    "zh-Hant": "回答問題",
+    "reason": ""
+  },
+  "literal.b8f8e3ceb51b": {
+    "include": true,
+    "en": "View next step",
+    "zh-Hant": "查看下一步",
+    "reason": ""
+  },
+  "literal.bfc3ff801ec6": {
+    "include": true,
+    "en": "View full details",
+    "zh-Hant": "查看完整內容",
+    "reason": ""
+  },
+  "literal.e2d3fee22432": {
+    "include": true,
+    "en": "The role returned by AI is not in the current list, so the selection was not changed.",
+    "zh-Hant": "AI 回傳的角色不在目前清單中，因此沒有變更選擇。",
+    "reason": ""
+  },
+  "literal.43500bdb3e8e": {
+    "include": true,
+    "en": "Turn Plan into an executable item",
+    "zh-Hant": "把 Plan 轉成可執行項目",
+    "reason": ""
+  },
+  "literal.e30e9ddc70f5": {
+    "include": true,
+    "en": "Prepare to execute this Plan",
+    "zh-Hant": "準備執行這份 Plan",
+    "reason": ""
+  },
+  "literal.a2e583309304": {
+    "include": true,
+    "en": "Move to planning area",
+    "zh-Hant": "移到規劃區",
+    "reason": ""
+  },
+  "literal.aa49b8a6ba21": {
+    "include": true,
+    "en": "After conversion, move to “Ready to assign”",
+    "zh-Hant": "轉換後會移到「待指派」",
+    "reason": ""
+  },
+  "literal.24f7f6ef66e1": {
+    "include": true,
+    "en": "After conversion, move to “Planning area”",
+    "zh-Hant": "轉換後會移到「規劃區」",
+    "reason": ""
+  },
+  "literal.729d5136c5cb": {
+    "include": true,
+    "en": "Converting…",
+    "zh-Hant": "轉換中…",
+    "reason": ""
+  },
+  "literal.635c296257d2": {
+    "include": true,
+    "en": "Reminded",
+    "zh-Hant": "已提醒",
+    "reason": ""
+  },
+  "literal.ca263b730ae8": {
+    "include": true,
+    "en": "Remind Session",
+    "zh-Hant": "提醒 Session",
+    "reason": ""
+  },
+  "literal.935d3ef2ee45": {
+    "include": true,
+    "en": "Marking…",
+    "zh-Hant": "標記中…",
+    "reason": ""
+  },
+  "literal.5a651fa3c7ca": {
+    "include": true,
+    "en": "Confirm completion",
+    "zh-Hant": "確認標記完成",
+    "reason": ""
+  },
+  "literal.c147921b47db": {
+    "include": true,
+    "en": "Assigning to selected Session…",
+    "zh-Hant": "正在指派給所選 Session…",
+    "reason": ""
+  },
+  "literal.d87caeb7f606": {
+    "include": true,
+    "en": "Assign to selected Session",
+    "zh-Hant": "指派給所選 Session",
+    "reason": ""
+  },
+  "literal.29e124139608": {
+    "include": true,
+    "en": "AI is suggesting…",
+    "zh-Hant": "AI 建議中…",
+    "reason": ""
+  },
+  "literal.2bbea1c41037": {
+    "include": true,
+    "en": "AI suggestion",
+    "zh-Hant": "AI 建議",
+    "reason": ""
+  },
+  "literal.74a97b8b8227": {
+    "include": true,
+    "en": "Another role is currently selected",
+    "zh-Hant": "目前已改選其他角色",
+    "reason": ""
+  },
+  "literal.c1083b6ca5e0": {
+    "include": true,
+    "en": "Preselected; you can still choose another role",
+    "zh-Hant": "已預先選取，仍可手動改選",
+    "reason": ""
+  },
+  "literal.0e8fa59ff18e": {
+    "include": true,
+    "en": "Collapse description",
+    "zh-Hant": "收合描述",
+    "reason": ""
+  },
+  "literal.7b47ff3dceba": {
+    "include": true,
+    "en": "Show full description",
+    "zh-Hant": "顯示完整描述",
+    "reason": ""
+  },
+  "literal.038bac9c971f": {
+    "include": true,
+    "en": "This machine still uses an older AI suggestion system that requires separate setup. Update Clawdline first.",
+    "zh-Hant": "這台機器仍使用需要另行設定的舊版 AI 建議；請先更新 Clawdline。",
+    "reason": ""
+  },
+  "literal.de75668d4759": {
+    "include": true,
+    "en": "Codex is unavailable on this machine, so the role was not changed.",
+    "zh-Hant": "這台機器沒有可用的 Codex，因此沒有變更角色。",
+    "reason": ""
+  },
+  "literal.d5c34e496d87": {
+    "include": true,
+    "en": "Codex currently has no available quota, so the role was not changed.",
+    "zh-Hant": "Codex 目前沒有可用額度，因此沒有變更角色。",
+    "reason": ""
+  },
+  "literal.15266fe5c659": {
+    "include": true,
+    "en": "AI returned no usable role, so the current selection was kept.",
+    "zh-Hant": "AI 沒有回傳可用的角色，因此保留目前選擇。",
+    "reason": ""
+  },
+  "literal.4a77fbfcb87e": {
+    "include": true,
+    "en": "This machine is processing other AI work. Try again later.",
+    "zh-Hant": "這台機器正在處理其他 AI 工作，請稍後再按一次。",
+    "reason": ""
+  },
+  "literal.bb8e3857f2cf": {
+    "include": true,
+    "en": "The item has changed. Review the latest contents before using AI to choose a role.",
+    "zh-Hant": "項目內容已更新；請確認最新內容後再用 AI 判斷。",
+    "reason": ""
+  },
+  "literal.dbf828033b91": {
+    "include": true,
+    "en": "Epic pre-implementation review",
+    "zh-Hant": "Epic 實作前檢查",
+    "reason": ""
+  },
+  "literal.c67e7799cd48": {
+    "include": true,
+    "en": "Feature pre-implementation review",
+    "zh-Hant": "Feature 實作前檢查",
+    "reason": ""
+  },
+  "literal.58ea8fb4addc": {
+    "include": true,
+    "en": "Reading…",
+    "zh-Hant": "讀取中…",
+    "reason": ""
+  },
+  "literal.40e3c0a7bbd8": {
+    "include": true,
+    "en": "Cannot read work",
+    "zh-Hant": "讀不到工作",
+    "reason": ""
+  },
+  "literal.4a085d55298e": {
+    "include": true,
+    "en": "No Board items currently owned.",
+    "zh-Hant": "目前沒有負責中的看板項目。",
+    "reason": ""
+  },
+  "literal.f5520c76f525": {
+    "include": true,
+    "en": "No incomplete to-dos now.",
+    "zh-Hant": "目前沒有未完成的 TODO。",
+    "reason": ""
+  },
+  "literal.d2defbef2b6a": {
+    "include": true,
+    "en": "Read",
+    "zh-Hant": "已讀",
+    "reason": ""
+  },
+  "literal.a5d037c48e9f": {
+    "include": true,
+    "en": "Sent",
+    "zh-Hant": "已傳送",
+    "reason": ""
+  },
+  "literal.1c39ef00f1ce": {
+    "include": true,
+    "en": "Not sent yet",
+    "zh-Hant": "尚未傳送",
+    "reason": ""
+  },
+  "literal.5aa68b48f74d": {
+    "include": true,
+    "en": "No recently completed Board items.",
+    "zh-Hant": "目前沒有最近完成的看板項目。",
+    "reason": ""
+  },
+  "literal.935ee1ab45ca": {
+    "include": true,
+    "en": "Board item created",
+    "zh-Hant": "看板項目已建立",
+    "reason": ""
+  },
+  "literal.79a3cb6e5cdb": {
+    "include": true,
+    "en": "Board item",
+    "zh-Hant": "看板項目",
+    "reason": ""
+  },
+  "literal.8561515b8b34": {
+    "include": true,
+    "en": "Description",
+    "zh-Hant": "描述",
+    "reason": ""
+  },
+  "literal.21aa64dd7446": {
+    "include": true,
+    "en": "Saving…",
+    "zh-Hant": "儲存中…",
+    "reason": ""
+  },
+  "literal.9a8097d8f563": {
+    "include": true,
+    "en": "Save changes",
+    "zh-Hant": "儲存變更",
+    "reason": ""
+  },
+  "literal.a5df1fce3ed1": {
+    "include": true,
+    "en": "Deleting…",
+    "zh-Hant": "刪除中…",
+    "reason": ""
+  },
+  "literal.2f1a94aefc74": {
+    "include": true,
+    "en": "Confirm deletion",
+    "zh-Hant": "確認刪除",
+    "reason": ""
+  },
+  "literal.7ae221f38b02": {
+    "include": true,
+    "en": "Loading image…",
+    "zh-Hant": "載入圖片…",
+    "reason": ""
+  },
+  "literal.b2ee45d95857": {
+    "include": true,
+    "en": "All Projects",
+    "zh-Hant": "所有 Project",
+    "reason": ""
+  },
+  "literal.ef8fe1c8ac54": {
+    "include": true,
+    "en": "Select Project",
+    "zh-Hant": "選擇 Project",
+    "reason": ""
+  },
+  "literal.eec20299e1b1": {
+    "include": true,
+    "en": "Loading Projects…",
+    "zh-Hant": "正在讀取 Project…",
+    "reason": ""
+  },
+  "literal.dc9a2139ef07": {
+    "include": true,
+    "en": "No Projects available now.",
+    "zh-Hant": "目前沒有可用的 Project。",
+    "reason": ""
+  },
+  "literal.30947e72b04b": {
+    "include": true,
+    "en": "Confirm Board item",
+    "zh-Hant": "確認看板項目",
+    "reason": ""
+  },
+  "literal.e2956f80c3ac": {
+    "include": true,
+    "en": "Create Board item",
+    "zh-Hant": "建立看板項目",
+    "reason": ""
+  },
+  "literal.983dac4efa86": {
+    "include": true,
+    "en": "Upload after creating the item",
+    "zh-Hant": "建立項目後上傳",
+    "reason": ""
+  },
+  "literal.aca2a4fc28ff": {
+    "include": true,
+    "en": "Creating…",
+    "zh-Hant": "建立中…",
+    "reason": ""
+  },
+  "literal.c5d8aaa266d8": {
+    "include": true,
+    "en": "Create",
+    "zh-Hant": "建立",
+    "reason": "語境衝突：src/pages/work/WorkV2.tsx:1561 的按鈕是「Create」，src/pages/work/WorkV2.tsx:1566 的階段名稱應是「Created」。建議拆成 action.create 與 phase.created 兩個鍵。"
+  },
+  "literal.4b623c82cb16": {
+    "include": true,
+    "en": "Claiming",
+    "zh-Hant": "認領中",
+    "reason": ""
+  },
+  "literal.dc759c07b306": {
+    "include": true,
+    "en": "Claimed",
+    "zh-Hant": "已認領",
+    "reason": ""
+  },
+  "literal.8bbd4591bf7e": {
+    "include": true,
+    "en": "Implement",
+    "zh-Hant": "實作",
+    "reason": ""
+  },
+  "literal.b6164286b3c0": {
+    "include": true,
+    "en": "Verify",
+    "zh-Hant": "驗證",
+    "reason": ""
+  },
+  "literal.0ac70837dd33": {
+    "include": true,
+    "en": "Merge",
+    "zh-Hant": "合併",
+    "reason": ""
+  },
+  "literal.059b1cdc97bd": {
+    "include": true,
+    "en": "Deploy",
+    "zh-Hant": "部署",
+    "reason": ""
+  },
+  "literal.05c50e80b5d9": {
+    "include": true,
+    "en": "Done",
+    "zh-Hant": "完成",
+    "reason": ""
+  },
+  "literal.dc47baa800c8": {
+    "include": true,
+    "en": "Cancel",
+    "zh-Hant": "取消",
+    "reason": ""
+  },
+  "literal.4fefeb9ea924": {
+    "include": true,
+    "en": "Work blocked",
+    "zh-Hant": "工作受阻",
+    "reason": ""
+  },
+  "literal.edbff7828d02": {
+    "include": true,
+    "en": "Waiting for your response",
+    "zh-Hant": "等待你回應",
+    "reason": ""
+  },
+  "literal.83d7348506b6": {
+    "include": true,
+    "en": "Awaiting assignment",
+    "zh-Hant": "尚待指派",
+    "reason": ""
+  },
+  "literal.0b7448cc7d28": {
+    "include": true,
+    "en": "Owning Session offline",
+    "zh-Hant": "負責 Session 未在線",
+    "reason": ""
+  },
+  "literal.e6067601215a": {
+    "include": true,
+    "en": "Progress evidence needs confirmation",
+    "zh-Hant": "進度證據待確認",
+    "reason": ""
+  },
+  "literal.c2c72abc5152": {
+    "include": true,
+    "en": "Assignment failed",
+    "zh-Hant": "指派失敗",
+    "reason": ""
+  },
+  "literal.d7ee58bbe444": {
+    "include": true,
+    "en": "Owning Session not yet notified",
+    "zh-Hant": "尚未通知負責 Session",
+    "reason": ""
+  },
+  "literal.aa5b220d59fe": {
+    "include": true,
+    "en": "Project currently unavailable",
+    "zh-Hant": "專案目前無法使用",
+    "reason": ""
+  },
+  "literal.4a8cf314ecbe": {
+    "include": true,
+    "en": "Status unconfirmed",
+    "zh-Hant": "狀態待確認",
+    "reason": ""
+  },
+  "literal.3b46754552ca": {
+    "include": true,
+    "en": "OK",
+    "zh-Hant": "正常",
+    "reason": ""
+  },
+  "literal.712a6cdf60cf": {
+    "include": true,
+    "en": "Waiting for your answer to a question",
+    "zh-Hant": "等你回答一個問題",
+    "reason": ""
+  },
+  "literal.e761602c4ba2": {
+    "include": true,
+    "en": "Time in this state unknown",
+    "zh-Hant": "停留時間不明",
+    "reason": ""
+  },
+  "literal.3e9f7d914950": {
+    "include": true,
+    "en": "In this state for less than 1 minute",
+    "zh-Hant": "停留不到 1 分鐘",
+    "reason": ""
+  },
+  "literal.5d6f2c54d8ec": {
+    "include": true,
+    "en": "No owning Session yet",
+    "zh-Hant": "尚無負責 Session",
+    "reason": ""
+  },
+  "literal.4734166d945d": {
+    "include": true,
+    "en": "Owning Session online",
+    "zh-Hant": "負責 Session 在線",
+    "reason": ""
+  },
+  "literal.6d7e597d4591": {
+    "include": true,
+    "en": "Owning Session online status unknown",
+    "zh-Hant": "負責 Session 在線狀態不明",
+    "reason": ""
+  },
+  "literal.dc8d685a64b5": {
+    "include": true,
+    "en": "No deployment details yet",
+    "zh-Hant": "尚無部署說明",
+    "reason": ""
+  },
+  "literal.ee952fba0441": {
+    "include": true,
+    "en": "Mark this item complete?",
+    "zh-Hant": "確定要標記這個項目完成嗎？",
+    "reason": ""
+  },
+  "literal.b1239e2ae8ce": {
+    "include": true,
+    "en": "The planning gate is enabled for this cycle: an Epic needs a written plan and Child Session review before implementation can begin",
+    "zh-Hant": "本輪已啟用規劃 gate：Epic 要先寫計劃書、經 Child Session review，才能開始實作",
+    "reason": ""
+  },
+  "literal.c5be988f8030": {
+    "include": true,
+    "en": "The planning gate is enabled for this cycle and this item requires independent review: write a plan and obtain Child Session review before implementation begins",
+    "zh-Hant": "本輪已啟用規劃 gate，且這個項目需要獨立審查：要先寫計劃書、經 Child Session review，才能開始實作",
+    "reason": ""
+  },
+  "literal.5418f86ba3ea": {
+    "include": true,
+    "en": "Independent checker PASS",
+    "zh-Hant": "獨立 checker PASS",
+    "reason": ""
+  },
+  "literal.a5ef9ebb1095": {
+    "include": true,
+    "en": "AI (Epic owner) approved manual review · Not checker PASS",
+    "zh-Hant": "AI（Epic owner）人工覆核通過 · 非 checker PASS",
+    "reason": ""
+  },
+  "literal.f6eb09d61a5d": {
+    "include": true,
+    "en": "You approved manual review · Not checker PASS",
+    "zh-Hant": "你決定覆核通過 · 非 checker PASS",
+    "reason": ""
+  },
+  "literal.28d16292ace1": {
+    "include": true,
+    "en": "AI (Epic owner) approved technical review · No checker PASS",
+    "zh-Hant": "AI（Epic owner）技術覆核通過 · 未取得 checker PASS",
+    "reason": ""
+  },
+  "literal.9d2f7c1f283b": {
+    "include": true,
+    "en": "You approved technical review · No checker PASS",
+    "zh-Hant": "你決定技術覆核通過 · 未取得 checker PASS",
+    "reason": ""
+  },
+  "literal.731141a1b815": {
+    "include": true,
+    "en": "Captured after successful assignment",
+    "zh-Hant": "成功指派後擷取",
+    "reason": ""
+  },
+  "literal.09b410f51b19": {
+    "include": true,
+    "en": "On",
+    "zh-Hant": "開",
+    "reason": ""
+  },
+  "literal.862364ba6811": {
+    "include": true,
+    "en": "Off",
+    "zh-Hant": "關",
+    "reason": ""
+  },
+  "literal.b2a1c6bc47a4": {
+    "include": true,
+    "en": "Gate settings not yet captured",
+    "zh-Hant": "Gate 設定尚未擷取",
+    "reason": ""
+  },
+  "literal.a8c1da282b1b": {
+    "include": true,
+    "en": "Verification authorization type unknown · View details",
+    "zh-Hant": "驗證授權種類未知 · 請查看詳情",
+    "reason": ""
+  },
+  "literal.7314e95c4cbb": {
+    "include": true,
+    "en": "Verification escalated · Awaiting your decision",
+    "zh-Hant": "驗證升級 · 等你決定",
+    "reason": ""
+  },
+  "literal.e4c7f6e1f371": {
+    "include": true,
+    "en": "Verification escalated · Awaiting Epic owner decision",
+    "zh-Hant": "驗證升級 · 等 Epic owner 決定",
+    "reason": ""
+  },
+  "literal.ce0c89b0dbf3": {
+    "include": true,
+    "en": "Planning gate on · Independent verification not required",
+    "zh-Hant": "規劃 gate 開啟 · 未要求獨立驗證",
+    "reason": ""
+  },
+  "literal.d85a2ae65148": {
+    "include": true,
+    "en": "Both gates off",
+    "zh-Hant": "兩道 gate 均關閉",
+    "reason": ""
+  },
+  "literal.d1e4a07bc098": {
+    "include": true,
+    "en": "Independent verification not started",
+    "zh-Hant": "獨立驗證尚未開始",
+    "reason": ""
+  },
+  "literal.e7f7f95a735c": {
+    "include": true,
+    "en": "Checker reported PASS · No valid merge authorization yet",
+    "zh-Hant": "checker 回報 PASS · 尚無有效合併授權",
+    "reason": ""
+  },
+  "literal.80916f71df75": {
+    "include": true,
+    "en": "Verification expired · Cannot count as PASS",
+    "zh-Hant": "驗證已過期 · 不能當作 PASS",
+    "reason": ""
+  },
+  "literal.ee97a405ed90": {
+    "include": true,
+    "en": "Technical verification failed · Epic owner must fix and retry; if there is no parent Epic, you decide",
+    "zh-Hant": "驗證技術失敗 · 上層 Epic owner 修復後重試；沒有上層時由你決定",
+    "reason": ""
+  },
+  "literal.16c749fb7cd0": {
+    "include": true,
+    "en": "Verification awaiting dispatch",
+    "zh-Hant": "驗證待派送",
+    "reason": ""
+  },
+  "literal.d9715e0f7ae6": {
+    "include": true,
+    "en": "Verification dispatching",
+    "zh-Hant": "驗證派送中",
+    "reason": ""
+  },
+  "literal.9d7cb46b6e3a": {
+    "include": true,
+    "en": "Independent verification in progress",
+    "zh-Hant": "獨立驗證中",
+    "reason": ""
+  },
+  "literal.1c2daefcb904": {
+    "include": true,
+    "en": "Verification status unknown",
+    "zh-Hant": "驗證狀態未知",
+    "reason": ""
+  },
+  "literal.583482996f34": {
+    "include": true,
+    "en": "Independent verification PASS",
+    "zh-Hant": "獨立驗證 PASS",
+    "reason": ""
+  },
+  "literal.4f214c6fa008": {
+    "include": true,
+    "en": "Independent verification FAIL · Owning Session must fix and submit a new candidate",
+    "zh-Hant": "獨立驗證 FAIL · 負責 Session 修正後提交新候選",
+    "reason": ""
+  },
+  "literal.3ad19c8935c2": {
+    "include": true,
+    "en": "NEEDS_WORK · Owning Session must add evidence or resubmit for verification",
+    "zh-Hant": "NEEDS_WORK · 負責 Session 須補證或重新送驗",
+    "reason": ""
+  },
+  "literal.4ed38be26870": {
+    "include": true,
+    "en": "Verification result unknown · Owning Session must check the result and resubmit",
+    "zh-Hant": "驗證結果未知 · 負責 Session 檢查結果後重新送驗",
+    "reason": ""
+  },
+  "literal.ad8aadf7bf19": {
+    "include": true,
+    "en": "Waiting",
+    "zh-Hant": "等待中",
+    "reason": ""
+  },
+  "literal.68c054f499d6": {
+    "include": true,
+    "en": "Status unknown",
+    "zh-Hant": "狀況不明",
+    "reason": ""
+  },
+  "literal.6db78eb344c7": {
+    "include": true,
+    "en": "Running",
+    "zh-Hant": "執行中",
+    "reason": ""
+  },
+  "literal.098adc2b04e2": {
+    "include": true,
+    "en": "Waiting for your response",
+    "zh-Hant": "等你回應",
+    "reason": ""
+  },
+  "literal.619d09f68466": {
+    "include": true,
+    "en": "Waiting for another Session",
+    "zh-Hant": "等待其他 Session",
+    "reason": ""
+  },
+  "literal.92d2ca17aee9": {
+    "include": true,
+    "en": "Paused",
+    "zh-Hant": "暫停中",
+    "reason": ""
+  },
+  "literal.f3a995d001b1": {
+    "include": true,
+    "en": "Awaiting acceptance",
+    "zh-Hant": "待驗收",
+    "reason": ""
+  },
+  "literal.389a958c1c0b": {
+    "include": true,
+    "en": "Work complete",
+    "zh-Hant": "工作已完成",
+    "reason": ""
+  },
+  "literal.65901131fccc": {
+    "include": true,
+    "en": "Available for work",
+    "zh-Hant": "可接工作",
+    "reason": ""
+  },
+  "literal.6815fa90cb2c": {
+    "include": true,
+    "en": "Work status unknown",
+    "zh-Hant": "工作狀況不明",
+    "reason": ""
+  },
+  "literal.8b456ffd3d10": {
+    "include": true,
+    "en": "Reported this cycle",
+    "zh-Hant": "本輪已回報",
+    "reason": ""
+  },
+  "literal.1d6ea8ca2af5": {
+    "include": true,
+    "en": "Unknown assistant",
+    "zh-Hant": "助理不明",
+    "reason": ""
+  },
+  "literal.c93791de6596": {
+    "include": true,
+    "en": "Each item or Session to-do can have up to 6 reference images.",
+    "zh-Hant": "每個項目或 Session 待辦最多可放 6 張參考圖片。",
+    "reason": ""
+  },
+  "literal.5ee0423efcee": {
+    "include": true,
+    "en": "The image is too large. Reduce its size and retry.",
+    "zh-Hant": "圖片太大，請縮小後再試。",
+    "reason": ""
+  },
+  "literal.b32c94186fd8": {
+    "include": true,
+    "en": "This file is not a readable image.",
+    "zh-Hant": "這個檔案不是可讀取的圖片。",
+    "reason": ""
+  },
+  "literal.b1b5c6f84f09": {
+    "include": true,
+    "en": "Implement",
+    "zh-Hant": "實作",
+    "reason": ""
+  },
+  "literal.56e232762104": {
+    "include": true,
+    "en": "Verify",
+    "zh-Hant": "驗證",
+    "reason": ""
+  },
+  "literal.218220af5c8e": {
+    "include": true,
+    "en": "Merge",
+    "zh-Hant": "合併",
+    "reason": ""
+  },
+  "literal.1882d286da02": {
+    "include": true,
+    "en": "Deploy",
+    "zh-Hant": "部署",
+    "reason": ""
+  },
+  "literal.ffa731746caa": {
+    "include": true,
+    "en": "Done",
+    "zh-Hant": "完成",
+    "reason": ""
+  },
+  "literal.193da7941700": {
+    "include": false,
+    "en": "",
+    "zh-Hant": "refusal?.error?.message || `${path} 回答 ${res.status}`",
+    "reason": "這是稽核規則的原始碼 probe，僅供比對程式碼，不呈現在 Console；src/refusals/audit.ts:232。"
+  },
+  "literal.ae1523fd382c": {
+    "include": true,
+    "en": "This pass did not finish; at least one source has no recent earlier reading to show.",
+    "zh-Hant": "這次沒有讀完整；至少一個來源沒有仍可採用的上次讀數。",
+    "reason": ""
+  },
+  "literal.17ca248a65b6": {
+    "include": true,
+    "en": "Clawdline could not read iTerm2. In System Settings → Privacy & Security → Automation, allow Clawdline to control iTerm2.",
+    "zh-Hant": "Clawdline 讀不到 iTerm2。請到「系統設定 → 隱私權與安全性 → 自動化」，允許 Clawdline 控制 iTerm2。",
+    "reason": ""
+  },
+  "literal.46bdd1695d89": {
+    "include": true,
+    "en": "iTerm2 returned an unreadable session list. Refresh it, and restart iTerm2 if it continues.",
+    "zh-Hant": "iTerm2 回傳的 session 清單無法讀取；請重新整理，若仍然發生，再重新啟動 iTerm2。",
+    "reason": ""
+  },
+  "literal.ba53feed13b3": {
+    "include": true,
+    "en": "tmux did not finish reading its session list. Run `tmux list-panes -a` on this machine to see why it refused.",
+    "zh-Hant": "tmux 沒有完成 session 清單讀取；請在這台機器執行 `tmux list-panes -a` 查看它拒絕的原因。",
+    "reason": ""
+  },
+  "literal.2811b1d9d660": {
+    "include": true,
+    "en": "An iTerm2 window or tab did not report its sessions. Open iTerm2 and check for a blank or unresponsive window.",
+    "zh-Hant": "iTerm2 有一個視窗或分頁沒有回報 session；請打開 iTerm2，檢查沒有內容或正在等待回應的視窗。",
+    "reason": ""
+  },
+  "literal.dee6ddd8236d": {
+    "include": true,
+    "en": "no sessions",
+    "zh-Hant": "沒有 session",
+    "reason": ""
+  },
+  "literal.4c4eebeb189f": {
+    "include": true,
+    "en": "Summarize Session progress",
+    "zh-Hant": "整理 Session 進度",
+    "reason": ""
+  },
+  "literal.d3167f38f5fb": {
+    "include": true,
+    "en": "Summarize the progress of each Session on this machine, decisions awaiting me, and anything unconfirmed. Include observation times and sources.",
+    "zh-Hant": "請整理這台機器目前各 Session 的進度、待我決定的事項，以及無法確認的部分；附上觀察時間與來源。",
+    "reason": ""
+  },
+  "literal.4fb4ad1b7401": {
+    "include": true,
+    "en": "Check machine status",
+    "zh-Hant": "檢查機器狀況",
+    "reason": ""
+  },
+  "literal.365604b32858": {
+    "include": true,
+    "en": "Check Clawdline’s machine load and coordinator status. Report issues that need attention, with observation times and sources.",
+    "zh-Hant": "請檢查 Clawdline 的機器負載與協調者狀態，回報需要處理的異常，並註明觀察時間與來源。",
+    "reason": ""
+  },
+  "literal.3d37fb3af4ee": {
+    "include": true,
+    "en": "Review Clawdline settings",
+    "zh-Hant": "檢視 Clawdline 設定",
+    "reason": ""
+  },
+  "literal.6c7e323f158d": {
+    "include": true,
+    "en": "List the relevant settings currently adjustable through Clawdline and their values. Explain recommendations and effects before changing anything.",
+    "zh-Hant": "請列出目前可透過 Clawdline 調整的相關設定及其值，先說明建議與影響，不要直接修改。",
+    "reason": ""
+  },
+  "literal.98091e56303b": {
+    "include": true,
+    "en": "Import or export Project settings",
+    "zh-Hant": "匯入或匯出專案設定",
+    "reason": ""
+  },
+  "literal.673f223fa434": {
+    "include": true,
+    "en": "Help import or export the specified Project’s Clawdline settings and supported assistant settings. Ask me which Project to handle first, and list the scope and conflicts.",
+    "zh-Hant": "請協助匯入或匯出指定專案的 Clawdline 設定與支援的助理設定。先問我要處理哪個專案，並列出範圍與衝突。",
+    "reason": ""
+  },
+  "literal.a956b8eeb16c": {
+    "include": true,
+    "en": "Create and assign a Board item",
+    "zh-Hant": "建立看板項目並派工",
+    "reason": ""
+  },
+  "literal.3e8c30b7e30d": {
+    "include": true,
+    "en": "Confirm the target Project and work requirements first, then create a Board item and assign it to that Project’s Session. Do not change code yourself.",
+    "zh-Hant": "請先確認目標專案和工作需求，再建立看板項目並交給該專案的 Session；請勿自行修改程式碼。",
+    "reason": ""
+  },
+  "literal.56aed5587136": {
+    "include": true,
+    "en": "Ask Clawdfather",
+    "zh-Hant": "可以交給 Clawdfather",
+    "reason": ""
+  },
+  "literal.4d8822d96b94": {
+    "include": true,
+    "en": "Close",
+    "zh-Hant": "關閉",
+    "reason": ""
+  },
+  "literal.32c2f23b127b": {
+    "include": true,
+    "en": "Ask Clawdfather",
+    "zh-Hant": "Clawdfather 可以做什麼",
+    "reason": ""
+  },
+  "literal.6a2079c8124f": {
+    "include": true,
+    "en": "Documents",
+    "zh-Hant": "文件",
+    "reason": ""
+  },
+  "literal.75420f3866c1": {
+    "include": true,
+    "en": "Moved to recently handled",
+    "zh-Hant": "已移到最近已處理",
+    "reason": ""
+  },
+  "literal.e0e3789d893d": {
+    "include": true,
+    "en": "Reopened",
+    "zh-Hant": "已重新開啟",
+    "reason": ""
+  },
+  "literal.2c09858c5eed": {
+    "include": true,
+    "en": "Sending reply…",
+    "zh-Hant": "正在送出回覆…",
+    "reason": ""
+  },
+  "literal.94e5b8af285e": {
+    "include": true,
+    "en": " You can select the suggested reply again to retry.",
+    "zh-Hant": " 可以再點一次建議回覆重試。",
+    "reason": ""
+  },
+  "literal.cc8e34d543a9": {
+    "include": true,
+    "en": "Reply sent",
+    "zh-Hant": "回覆已送出",
+    "reason": ""
+  },
+  "literal.44a711826eb0": {
+    "include": true,
+    "en": "Reply sent; Note moved to recently handled",
+    "zh-Hant": "回覆已送出，便條已移到最近已處理",
+    "reason": ""
+  },
+  "literal.4fdbe22d40a1": {
+    "include": true,
+    "en": "Cannot open the conversation input. Open this Session first, then retry.",
+    "zh-Hant": "無法開啟對話輸入框，請先開啟這個 Session 再試一次。",
+    "reason": ""
+  },
+  "literal.ff569bc2e31d": {
+    "include": true,
+    "en": "Failed to read attention Notes",
+    "zh-Hant": "關注便條讀取失敗",
+    "reason": ""
+  },
+  "literal.e44c005aa593": {
+    "include": true,
+    "en": "Loading attention Notes",
+    "zh-Hant": "關注便條載入中",
+    "reason": ""
+  },
+  "literal.f095f6af37ff": {
+    "include": true,
+    "en": ", action failed; expand to view",
+    "zh-Hant": "，操作失敗，請展開查看",
+    "reason": ""
+  },
+  "literal.5789b797c9ef": {
+    "include": true,
+    "en": "Data may be stale. Retry; Notes cannot be changed until it updates.",
+    "zh-Hant": "資料可能已過期，請重試；更新前不能操作便條。",
+    "reason": ""
+  },
+  "literal.24fe20ab6d4d": {
+    "include": true,
+    "en": "Cannot read Notes.",
+    "zh-Hant": "無法讀取便條。",
+    "reason": ""
+  },
+  "literal.927c9ed33728": {
+    "include": true,
+    "en": "Handled",
+    "zh-Hant": "已處理",
+    "reason": ""
+  },
+  "literal.77f6d2cceedd": {
+    "include": true,
+    "en": "Pending",
+    "zh-Hant": "待處理",
+    "reason": ""
+  },
+  "literal.3d9157962dd2": {
+    "include": true,
+    "en": "Please read",
+    "zh-Hant": "請閱讀",
+    "reason": ""
+  },
+  "literal.e12820431ff9": {
+    "include": true,
+    "en": "Please reply",
+    "zh-Hant": "請回覆",
+    "reason": ""
+  },
+  "literal.5a15e03eaa4a": {
+    "include": true,
+    "en": "Please act",
+    "zh-Hant": "請處理",
+    "reason": ""
+  },
+  "literal.92018c889270": {
+    "include": true,
+    "en": "Other Sessions",
+    "zh-Hant": "其他 Session",
+    "reason": ""
+  },
+  "literal.981ea9fd14d5": {
+    "include": true,
+    "en": "Select to fill the conversation box; review or edit before sending.",
+    "zh-Hant": "點一下填入對話框，確認或修改後再送出。",
+    "reason": ""
+  },
+  "literal.3e129c69ac26": {
+    "include": true,
+    "en": "Select to send directly to the conversation.",
+    "zh-Hant": "點一下就直接送出到對話。",
+    "reason": ""
+  },
+  "literal.cc6ade09e09b": {
+    "include": true,
+    "en": "To-do text",
+    "zh-Hant": "待辦文字",
+    "reason": ""
+  },
+  "literal.e3949613add9": {
+    "include": true,
+    "en": "Fill conversation box",
+    "zh-Hant": "填入對話框",
+    "reason": ""
+  },
+  "literal.7d6cc5d58935": {
+    "include": true,
+    "en": "Send this reply again",
+    "zh-Hant": "再次送出這個回覆",
+    "reason": ""
+  },
+  "literal.2ffd9b695259": {
+    "include": true,
+    "en": "Send this reply and mark handled",
+    "zh-Hant": "送出這個回覆並移到已處理",
+    "reason": ""
+  },
+  "literal.1ebe900add97": {
+    "include": true,
+    "en": "Verification paused",
+    "zh-Hant": "驗證暫停",
+    "reason": ""
+  },
+  "literal.788337506c75": {
+    "include": true,
+    "en": "\nWork tree under the Epic owner",
+    "zh-Hant": "\n隸屬於 Epic 負責人的工作樹",
+    "reason": ""
+  },
+  "literal.f1eb32348be4": {
+    "include": true,
+    "en": "Work tree under the Epic owner",
+    "zh-Hant": "隸屬於 Epic 負責人的工作樹",
+    "reason": ""
+  },
+  "literal.035492ae6343": {
+    "include": true,
+    "en": "Upload after creating the to-do",
+    "zh-Hant": "建立待辦後上傳",
+    "reason": ""
+  },
+  "literal.eb5d91602c3f": {
+    "include": true,
+    "en": "Answer not yet confirmed. Try again later.",
+    "zh-Hant": "回答尚未確認，請稍後再試。",
+    "reason": ""
+  },
+  "literal.2fc474e2ef13": {
+    "include": true,
+    "en": "Decision status changed. View the item details.",
+    "zh-Hant": "決定狀態已變更，請查看項目詳情。",
+    "reason": ""
+  },
+  "literal.9dbb156d1439": {
+    "include": true,
+    "en": "Answer received",
+    "zh-Hant": "已收到回答",
+    "reason": ""
+  },
+  "literal.84b95f498939": {
+    "include": true,
+    "en": "Sending…",
+    "zh-Hant": "送出中…",
+    "reason": ""
+  },
+  "literal.9e5c6601f40b": {
+    "include": true,
+    "en": "Synced to Session; incomplete",
+    "zh-Hant": "已同步到 Session，尚未完成",
+    "reason": ""
+  },
+  "literal.246e7ec1af00": {
+    "include": true,
+    "en": "Sent; waiting for Session to sync",
+    "zh-Hant": "已傳送，等待 Session 同步",
+    "reason": ""
+  },
+  "literal.ecd46b6ac930": {
+    "include": true,
+    "en": "Not sent yet; the Session will see it when it next reads to-dos",
+    "zh-Hant": "尚未傳送；Session 會在下一次讀取待辦時看到",
+    "reason": ""
+  },
+  "literal.2de32e306def": {
+    "include": true,
+    "en": "Complete",
+    "zh-Hant": "已完成",
+    "reason": ""
+  },
+  "literal.d433aa4d8170": {
+    "include": true,
+    "en": "Just sent; cannot resend until the Session has not read it for two minutes",
+    "zh-Hant": "剛傳送過；兩分鐘內 Session 沒讀取才能再送",
+    "reason": ""
+  },
+  "literal.c7821df3194e": {
+    "include": true,
+    "en": "Loading…",
+    "zh-Hant": "載入中…",
+    "reason": ""
+  },
+  "literal.7d2bc8bc67a4": {
+    "include": true,
+    "en": "Loading image…",
+    "zh-Hant": "載入圖片…",
+    "reason": ""
+  },
+  "literal.5d0b1461d0c0": {
+    "include": true,
+    "en": "Create",
+    "zh-Hant": "建立",
+    "reason": ""
+  },
+  "literal.775daf422b09": {
+    "include": true,
+    "en": "Claiming",
+    "zh-Hant": "認領中",
+    "reason": ""
+  },
+  "literal.43e6adeeb78b": {
+    "include": true,
+    "en": "Claimed",
+    "zh-Hant": "已認領",
+    "reason": ""
+  },
+  "literal.e2efb01c573a": {
+    "include": true,
+    "en": "Implement",
+    "zh-Hant": "實作",
+    "reason": ""
+  },
+  "literal.736549851a31": {
+    "include": true,
+    "en": "Verify",
+    "zh-Hant": "驗證",
+    "reason": ""
+  },
+  "literal.94c354556cdd": {
+    "include": true,
+    "en": "Merge",
+    "zh-Hant": "合併",
+    "reason": ""
+  },
+  "literal.3a031cf6791f": {
+    "include": true,
+    "en": "Deploy",
+    "zh-Hant": "部署",
+    "reason": ""
+  },
+  "literal.47ce622b0195": {
+    "include": true,
+    "en": "Done",
+    "zh-Hant": "完成",
+    "reason": ""
+  },
+  "literal.f86d38340530": {
+    "include": true,
+    "en": "Cancel",
+    "zh-Hant": "取消",
+    "reason": ""
+  },
+  "literal.4cf6534d4865": {
+    "include": true,
+    "en": "Waiting for your decision",
+    "zh-Hant": "等待你的決定",
+    "reason": ""
+  },
+  "literal.ec0c4df4aa0d": {
+    "include": true,
+    "en": "Blocked",
+    "zh-Hant": "遇到阻礙",
+    "reason": ""
+  },
+  "literal.b25bb9d26c5f": {
+    "include": true,
+    "en": "Missing verifiable evidence",
+    "zh-Hant": "缺少可驗證證據",
+    "reason": ""
+  },
+  "literal.1f0eacfd6542": {
+    "include": true,
+    "en": "Waiting for owner",
+    "zh-Hant": "等待負責人",
+    "reason": ""
+  },
+  "literal.63c6995a9c0c": {
+    "include": true,
+    "en": "Owning Session offline",
+    "zh-Hant": "負責 Session 離線",
+    "reason": ""
+  },
+  "literal.2afc5c12a7c1": {
+    "include": true,
+    "en": "Assignment failed",
+    "zh-Hant": "指派失敗",
+    "reason": ""
+  },
+  "literal.4811e0a75040": {
+    "include": true,
+    "en": "Assigned, not yet notified",
+    "zh-Hant": "已指派，尚未通知",
+    "reason": ""
+  },
+  "literal.7f161e90beaf": {
+    "include": true,
+    "en": "In progress",
+    "zh-Hant": "進行中",
+    "reason": ""
+  },
+  "literal.785fe57babc4": {
+    "include": true,
+    "en": "Not started",
+    "zh-Hant": "未開始",
+    "reason": ""
+  },
+  "literal.0fcf854c8ac2": {
+    "include": true,
+    "en": "Board record",
+    "zh-Hant": "看板紀錄",
+    "reason": ""
+  },
+  "literal.e5e0c653bbca": {
+    "include": true,
+    "en": "Board record",
+    "zh-Hant": "看板紀錄",
+    "reason": ""
+  },
+  "literal.398bedfd1dd3": {
+    "include": true,
+    "en": "Codex did not record what this thread is doing",
+    "zh-Hant": "Codex 沒有記下這個 thread 在做什麼",
+    "reason": ""
+  },
+  "literal.6de919644531": {
+    "include": true,
+    "en": "Likely still running",
+    "zh-Hant": "推測仍在跑",
+    "reason": ""
+  },
+  "literal.05439464f4fe": {
+    "include": true,
+    "en": "Started",
+    "zh-Hant": "開始",
+    "reason": ""
+  },
+  "literal.2a45c79c1f67": {
+    "include": true,
+    "en": "Background agent",
+    "zh-Hant": "背景 agent",
+    "reason": ""
+  },
+  "literal.e5db0352b7e8": {
+    "include": true,
+    "en": "Background agents",
+    "zh-Hant": "背景 agent",
+    "reason": ""
+  },
+  "literal.ac7ebb4a6c29": {
+    "include": true,
+    "en": "Codex did not record what this thread is doing",
+    "zh-Hant": "Codex 沒有記下這個 thread 在做什麼",
+    "reason": ""
+  },
+  "literal.c9911c4b0f8f": {
+    "include": true,
+    "en": "unknown id",
+    "zh-Hant": "未知 id",
+    "reason": ""
+  },
+  "literal.3aa8e038c09d": {
+    "include": true,
+    "en": "Send again",
+    "zh-Hant": "再次 Send",
+    "reason": ""
+  },
+  "literal.c97796ee63ff": {
+    "include": true,
+    "en": "Traditional Chinese (Taiwan)",
+    "zh-Hant": "繁體中文（臺灣）",
+    "reason": ""
+  },
+  "literal.c3a9ada98d3e": {
+    "include": true,
+    "en": "Japanese",
+    "zh-Hant": "日本語",
+    "reason": ""
+  },
+  "literal.d63871961a4c": {
+    "include": true,
+    "en": "Simplified Chinese",
+    "zh-Hant": "简体中文",
+    "reason": ""
+  }
+}

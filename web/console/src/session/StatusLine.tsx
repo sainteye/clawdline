@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { GitSnapshot, ProjectLink, SessionInfo, SessionInfoContext, SessionLimits, SessionRow } from "@clawdline/contract"
 import { contextCell } from "./context.js"
@@ -340,8 +341,7 @@ function contextItem(at: SessionInfoContext | undefined) {
   const cell = contextCell(at, L.strings.webInfoTokens)
   if (!cell) return null
   return (
-    <span className="item context" data-level={cell.level} title={cell.title}>
-      ctx <b>{cell.percent}%</b>
+    <span className="item context" data-level={cell.level} title={cell.title}>{catalogWord("inline", "0230c6b1d833")} <b>{cell.percent}%</b>
     </span>
   )
 }

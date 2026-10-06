@@ -1,24 +1,12 @@
+import { catalogFormat } from "../../../catalog.js"
 /**
- * The native settings window's words.
- *
- * Most unmarked entries below are properties of `TraditionalChinese` in the
- * Swift app's `Sources/Copy+Chinese.swift`, copied across under the same name.
- * This cross-platform app's own words are marked below and live bilingually in
- * `ownWords`; this file selects the page's language for the ones the settings
- * window uses. The distinction is explicit rather than pretending this whole
- * file is a byte-for-byte copy that no guard checks.
- *
- * **They live on this side rather than in the shell.** The five the console's
- * settings page already needed were handed over by shell/darwin (`Copy.swift`,
- * `settingsWordsScript`), which was right while the shell was the only thing
- * that had them; a whole window of words held there would mean writing them
- * again for the Linux shell and the Windows one. The shell now sends only what
- * it alone can know — what it registered, which apps are open, where the file
- * is — and the words come from here. See docs/shell-bridge.md.
- *
- * The console's own catalog (`public/strings/zh-Hant.json`, 778 keys) has none
- * of these: in the Swift app this window was never a web page.
+ * The native settings window's typed words. Original Swift copy and this
+ * cross-platform app's own additions remain as source references here;
+ * maintained `public/catalogs/<tag>.json` files provide screen text in all
+ * supported languages. The guarded Swift web catalog stays unchanged.
  */
+import { catalogWord } from "../../../catalog.js"
+
 const ownWords = {
   en: {
     settingsRemoteHint:
@@ -27,7 +15,7 @@ const ownWords = {
     settingsTunnelHint:
       "cloudflared connects outward from this machine — no port forwarding, and nothing listens on your network. It starts only after a device has been paired, because behind the tunnel are every repository name and work title on this machine.",
     settingsRemoteWriteHint:
-      "When this is off, a device paired with a code can only read, and a browser opened with clawdline open --send keeps the sending it was given. When it is on, every paired device can send text into a session and open new sessions — which runs code on this machine, because that is what Claude Code does. It takes effect on the next request. Clawdline Cloud has its own switch, clawdline cloud commands on. Terminals are not included: each paired device is given them on the Devices page.",
+      "When this is off, a device paired with a code can only read, and a browser opened with clawdline open keeps the sending it was given. When it is on, every paired device can send text into a session and open new sessions — which runs code on this machine, because that is what Claude Code does. It takes effect on the next request. Clawdline Cloud has its own switch, clawdline cloud commands on. Terminals are not included: each paired device is given them on the Devices page.",
     settingsOrchestratorMaxHint:
       "The default is five. The limit is per session, not per machine. Each child is a terminal tab with an assistant doing work in it.",
     settingsHotkeyHint:
@@ -73,7 +61,7 @@ const ownWords = {
     settingsTunnelHint:
       "透過 cloudflared 從這台機器往外連出去——不必開通訊埠轉發，你的網路上也沒有東西在聽。要先配對過一台裝置它才會啟動，因為通道後面就是這台機器上每一個儲存庫名稱、每一個工作標題。",
     settingsRemoteWriteHint:
-      "關著的時候，用配對碼配對的裝置只能讀；用 clawdline open --send 開的瀏覽器照樣保有當初給它的送出權限。打開之後，每一台配對過的裝置都可以把文字送進 session，也可以開新的 session——那就是在這台機器上執行程式碼，因為 Claude Code 做的就是這件事。下一個請求就生效。Clawdline Cloud 另有自己的開關：clawdline cloud commands on。終端另外在「裝置」頁逐台授權，這個開關不會給。",
+      "關著的時候，用配對碼配對的裝置只能讀；用 clawdline open 開的瀏覽器照樣保有當初給它的送出權限。打開之後，每一台配對過的裝置都可以把文字送進 session，也可以開新的 session——那就是在這台機器上執行程式碼，因為 Claude Code 做的就是這件事。下一個請求就生效。Clawdline Cloud 另有自己的開關：clawdline cloud commands on。終端另外在「裝置」頁逐台授權，這個開關不會給。",
     settingsOrchestratorMaxHint:
       "預設五個，一個 session 算一份，不是整台機器算一份。每一個都是一個終端機分頁，裡面有一個 assistant 在做事。",
     settingsHotkeyHint:
@@ -119,10 +107,10 @@ function ownWord(key: OwnWord): string {
     (typeof document !== "undefined" && document.documentElement.lang) ||
     (typeof navigator !== "undefined" && navigator.language) ||
     "en"
-  return ownWords[lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"][key]
+  return ownWords[lang === "zh-Hant" ? "zh-Hant" : "en"][key]
 }
 
-export const W = {
+const baseW = {
   settingsTitle: "Clawdline 設定",
   settingsGeneral: "一般",
   settingsBar: "輸入條",
@@ -297,7 +285,7 @@ export const W = {
   webCloudPairOrderInstall: "用 Safari 打開 app.clawdline.com，按「分享」→「加入主畫面」。",
   webCloudPairOrderOpen: "關掉 Safari，從主畫面打開 Clawdline。",
   webCloudPairOrderSignIn: "在這個主畫面 app 裡登入同一個 Clawdline Cloud 帳號。",
-  webCloudPairOrderScan: "按「Scan the QR on the Mac」，對準這張 QR。",
+  webCloudPairOrderScan: "在主畫面 app 裡掃描這張 QR。",
   webCloudPairOrderWhy:
     "不要用相機 app 或 Safari 直接掃：主畫面 app 的儲存跟 Safari 是分開的，金鑰又不能匯出，在 Safari 配好的，裝成 app 之後就不見了。",
   webCloudPairOrderOther: "Android 或電腦：用相機掃、或直接打開連結，登入同一個帳號就好。",
@@ -337,6 +325,12 @@ export const W = {
   voiceWhyChosen: "這裡選的是{tag}",
 } as const
 
+export const W = new Proxy(baseW, {
+  get(target, key, receiver) {
+    return typeof key === "string" && key in target ? catalogWord("settings", key) : Reflect.get(target, key, receiver)
+  },
+})
+
 /**
  * Where `auto` landed, said in one sentence under the voice language picker.
  *
@@ -371,17 +365,17 @@ export function voiceLanguageSaid(v: {
         // LANG, LC_ALL, LC_MESSAGES, LANGUAGE: the variable is named, because
         // it is the thing somebody would go and change. The leading space is
         // the one between Han and Latin.
-        return fill(W.voiceWhyMachine, { where: ` ${source} 環境變數`, tag: tag(value) })
+        return fill(W.voiceWhyMachine, { where: catalogFormat("template", "24bd559cca30", [source]), tag: tag(value) })
     }
   }
   const script = (value: string) => (value === "Hant" ? "繁體" : "簡體")
   if (v.setting !== "auto" && v.source === "voice_language") {
     return fill(W.voiceLanguageFixed, {
-      name: v.code === "zh" ? `${script(v.script)}中文` : tag(v.tag),
+      name: v.code === "zh" ? catalogFormat("template", "145cded61d7b", [script(v.script)]) : tag(v.tag),
     })
   }
   if (v.code === "zh") {
-    return fill(W.voiceLanguageChinese, { name: `${script(v.script)}中文`, why: why(v.source, v.tag) })
+    return fill(W.voiceLanguageChinese, { name: catalogFormat("template", "145cded61d7b", [script(v.script)]), why: why(v.source, v.tag) })
   }
   if (!v.source) return W.voiceLanguageNobody
   if (!v.script) return fill(W.voiceLanguageDetectBare, { why: why(v.source, v.tag) })
@@ -419,7 +413,7 @@ export function fill(template: string, values: Record<string, string>): string {
 
 /** `settingsSeconds(_:)`, the same `%.1f 秒`. */
 export function seconds(value: number): string {
-  return `${value.toFixed(1)} 秒`
+  return catalogFormat("template", "d4763f644521", [value.toFixed(1)])
 }
 
 /** `Assistant.label` (`Assistant.swift`), the two product names as they are written there. */
@@ -433,7 +427,7 @@ export const ASSISTANT_LABEL = { claude: "Claude Code", codex: "Codex" } as cons
 export function dictationStatus(status: { kind: string; model?: string }): string {
   switch (status.kind) {
     case "ready":
-      return `語音：Apple，之後 Whisper（${status.model ?? ""}）`
+      return catalogFormat("template", "7646119625b7", [status.model ?? ""])
     case "noModel":
       return "語音：只有 Apple——whisper-cli 有了，缺模型"
     default:
@@ -443,7 +437,7 @@ export function dictationStatus(status: { kind: string; model?: string }): strin
 
 /** `hotkeyFailedTitle(_:)` (`Copy+Chinese.swift`). */
 export function hotkeyFailedTitle(combo: string): string {
-  return `${combo} 註冊不起來`
+  return catalogFormat("template", "5a514cd850be", [combo])
 }
 
 /**

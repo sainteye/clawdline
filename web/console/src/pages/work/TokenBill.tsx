@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useRef, useState, type RefObject } from "react"
 import type { UsageBill, UsageComposition, UsageGap, UsageItem, UsageSession, UsageTokens } from "@clawdline/contract"
 import { readItemUsage, readSessionUsage } from "./api.js"
@@ -204,9 +205,9 @@ function BillTable({ bill }: { bill: UsageBill }) {
       </tr>)}</tbody>
     </table>
     {bill.categories.some((c) => c.upper_bound && c.tokens.total > 0) &&
-      <p className="work-usage-note">rules · {workWord("usageRulesWhy")}</p>}
+      <p className="work-usage-note">{catalogWord("inline", "ec9bc59e916b")} {workWord("usageRulesWhy")}</p>}
     {bill.categories.some((c) => c.name === "wait" && c.tokens.total > 0) &&
-      <p className="work-usage-note">wait · {workWord("usageWaitWhy")}</p>}
+      <p className="work-usage-note">{catalogWord("inline", "afdb1f99a7e9")} {workWord("usageWaitWhy")}</p>}
     {bill.share_of === "tokens" && <p className="work-usage-note">{workWord("usageShareOfTokens")}</p>}
   </>
 }

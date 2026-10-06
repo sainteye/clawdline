@@ -1,3 +1,6 @@
+import { localizedLiteralMap } from "../../catalog.js"
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ProjectPlace } from "../work/api.js"
 import { ProjectTreeIcon } from "./ProjectTreeIcon.js"
@@ -43,31 +46,31 @@ function FolderRows({ folder, selected, busy, choose }: {
       disabled={busy} onClick={() => choose(file)}>
       <ProjectTreeIcon kind="file" />
       <strong>{file.name}</strong><span>{file.location}</span>
-      <small>{STATUS[file.status]}{file.source === "global" ? " · 唯讀" : ""}</small>
+      <small>{STATUS[file.status]}{catalogWord("literal", "cfa37229f340")}</small>
     </button>)}
   </>
 }
 
-const STATUS: Record<ProjectFile["status"], string> = {
-  ready: "可檢視", missing: "尚未建立", unsafe: "連結或非一般檔案，已略過",
-  unreadable: "目前無法讀取", too_large: "檔案過大",
-}
+const STATUS: Record<ProjectFile["status"], string> = localizedLiteralMap({
+  ready: "92363068f5b3", missing: "8c6019531435", unsafe: "bec019f69985",
+  unreadable: "82c6e1d1683d", too_large: "abc92ff61a07",
+})
 
 function describe(error: unknown): string {
   if (error instanceof ProjectFileError) {
     switch (error.code) {
-      case "file_changed": return "檔案已在別處變更。草稿仍在這裡；請複製草稿，再重新讀取並比對。"
-      case "file_permission": case "forbidden": case "file_read_only": return "這個連線沒有儲存權限。草稿仍在這裡；可先複製內容。"
-      case "project_not_found": return "專案已不在這台機器的清單中。請回專案列表重新選擇。"
-      case "unsafe_file": return "檔案或資料夾已變成連結。未儲存；請重新讀取清單。"
-      case "file_not_found": return "檔案已移除。草稿仍在這裡；請重新讀取清單。"
-      case "file_too_large": case "body_too_large": return "檔案超過此介面的大小上限；請在機器上編輯。"
-      case "not_text": return "檔案不是可編輯的 UTF-8 文字；請在機器上檢查。"
-      case "cloud_not_carried": case "cloud_feature_unavailable": return "這個連線尚未提供檔案檢視。請確認機器與 Cloud 的版本。"
-      default: return "目前無法讀取或儲存檔案；請檢查機器上的檔案與連線後重試。"
+      case "file_changed": return catalogWord("literal", "591f563d21e9")
+      case "file_permission": case "forbidden": case "file_read_only": return catalogWord("literal", "4e6f482a5e6b")
+      case "project_not_found": return catalogWord("literal", "a5ae08fd969e")
+      case "unsafe_file": return catalogWord("literal", "4bacde8e39d3")
+      case "file_not_found": return catalogWord("literal", "35eabd8dfb75")
+      case "file_too_large": case "body_too_large": return catalogWord("literal", "c04de8c5889e")
+      case "not_text": return catalogWord("literal", "b1d6d32d82f8")
+      case "cloud_not_carried": case "cloud_feature_unavailable": return catalogWord("literal", "19a12eac60f0")
+      default: return catalogWord("literal", "5ce9bf90d01a")
     }
   }
-  return "目前無法完成操作。請檢查連線後重試。"
+  return catalogWord("literal", "d928fb3f9c80")
 }
 
 function groupOf(file: ProjectFile): "codex" | "claude" | "skills" {
@@ -112,7 +115,7 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
 
   const choose = async (file: ProjectFile) => {
     if (busy) return
-    if (dirty && !window.confirm("放棄這個檔案尚未儲存的內容？")) { editor.current?.focus(); return }
+    if (dirty && !window.confirm(catalogWord("literal", "0651603b0c62"))) { editor.current?.focus(); return }
     const ticket = ++serial.current
     setSelected(file.id); setContent(null); setDraft(""); setEditing(false); setError(""); setNotice("")
     if (file.status !== "ready") return
@@ -132,24 +135,24 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
     const value = draft
     const ticket = ++serial.current
     let savedConfirmed = false
-    setBusy(true); onState({ dirty: true, busy: true }); setError(""); setNotice("正在儲存…")
+    setBusy(true); onState({ dirty: true, busy: true }); setError(""); setNotice(catalogWord("literal", "d19eb852ab9d"))
     const key = crypto.randomUUID()
     try {
       const saved = await saveProjectFile(place.id, file.id, content.version, value, key)
       if (ticket !== serial.current) return
       savedConfirmed = true
-      setContent(saved); setDraft(saved.text); setEditing(false); setNotice("檔案已儲存並重新讀取。")
+      setContent(saved); setDraft(saved.text); setEditing(false); setNotice(catalogWord("literal", "d54b3df23fc9"))
       void reloadList()
     } catch (reason) {
       if (ticket !== serial.current) return
       if (reason instanceof ProjectFileError && reason.uncertain) {
-        setNotice("儲存結果待確認，正在重新讀取…")
+        setNotice(catalogWord("literal", "725c63536f66"))
         try {
           const live = await readProjectFile(place.id, file.id)
           if (ticket !== serial.current) return
-          if (live.text === value) { savedConfirmed = true; setContent(live); setDraft(live.text); setEditing(false); setNotice("重新讀取後確認檔案已儲存。") }
-          else { setError("無法確認這次儲存是否生效。草稿仍在這裡；請複製並比對目前檔案。") }
-        } catch (rereadReason) { if (ticket === serial.current) setError(`無法確認是否已儲存：${describe(rereadReason)} 草稿仍在這裡；恢復後請重新讀取。`) }
+          if (live.text === value) { savedConfirmed = true; setContent(live); setDraft(live.text); setEditing(false); setNotice(catalogWord("literal", "693907cea312")) }
+          else { setError(catalogWord("literal", "cfa6a364a5c2")) }
+        } catch (rereadReason) { if (ticket === serial.current) setError(catalogFormat("template", "f5dc01fdffbd", [describe(rereadReason)])) }
       } else setError(describe(reason))
     } finally { setBusy(false); onState({ dirty: !savedConfirmed, busy: false }) }
   }
@@ -161,59 +164,59 @@ export function ProjectFiles({ place, onState }: { place: ProjectPlace; onState(
   }
 
   const groups = useMemo(() => ([
-    { id: "codex", title: "Codex 指令" }, { id: "claude", title: "Claude Code 指令" }, { id: "skills", title: "Skills 技能" },
+    { id: "codex", title: catalogWord("literal", "8669637f659c") }, { id: "claude", title: catalogWord("literal", "4a596dd065ba") }, { id: "skills", title: catalogWord("literal", "03f843cf3e55") },
   ] as const), [])
   const chosen = list?.files.find(f => f.id === selected)
   return <section className="project-files" aria-labelledby="project-files-title">
     <div className="project-files-head">
-      <div><h3 id="project-files-title">指令與技能檔案</h3>
-        <p>列出這個專案及本機全域找到的磁碟候選檔案；Session 實際採用的指令與技能可能因覆寫、外掛及啟動時間而不同。</p></div>
-      <button type="button" disabled={loading || busy || dirty} onClick={() => void reloadList()}>重新讀取清單</button>
+      <div><h3 id="project-files-title">{catalogWord("inline", "7a67b3e6ab4e")}</h3>
+        <p>{catalogWord("inline", "2c899f0c0469")}</p></div>
+      <button type="button" disabled={loading || busy || dirty} onClick={() => void reloadList()}>{catalogWord("inline", "db1659dac0df")}</button>
     </div>
-    {listError && <p role="alert">檔案清單讀取失敗：{listError} 請按「重新讀取清單」。</p>}
-    {loading && <p role="status">正在讀取檔案…</p>}
+    {listError && <p role="alert">{catalogWord("inline", "5751fdee7531")}{listError}{catalogWord("inline", "fdf3ba351a22")}</p>}
+    {loading && <p role="status">{catalogWord("inline", "2b3d59f666b3")}</p>}
     {list && <>
       <div className="project-files-layout">
-        <nav className="project-files-nav" aria-label="專案指令與技能檔案">
+        <nav className="project-files-nav" aria-label={catalogWord("inline", "d4d68a08e0e6")}>
           {groups.map(group => <div className="project-files-group" key={group.id}>
             <h4>{group.title}</h4>
-            {list.files.filter(f => groupOf(f) === group.id).length === 0 && <p>沒有找到檔案。</p>}
+            {list.files.filter(f => groupOf(f) === group.id).length === 0 && <p>{catalogWord("inline", "df2e1b644818")}</p>}
             {(["project", "global"] as const).map(source => {
               const files = list.files.filter(f => groupOf(f) === group.id && f.source === source)
               return files.length > 0 && <div className="project-files-source" key={source}>
-                <h5>{source === "project" ? "此專案" : "本機全域"}</h5>
+                <h5>{source === "project" ? catalogWord("literal", "450e5d731947") : catalogWord("literal", "23bf8eafeef3")}</h5>
                 <FolderRows folder={fileTree(files)} selected={selected} busy={busy} choose={file => void choose(file)} />
               </div>
             })}
           </div>)}
         </nav>
         <div className="project-files-detail">
-          {!selected && <p className="project-files-hint">選擇檔案查看實際內容與可編輯狀態。</p>}
+          {!selected && <p className="project-files-hint">{catalogWord("inline", "e0e91da1e831")}</p>}
           {chosen && <>
             <h4 ref={contentHeading} tabIndex={-1}>{chosen.name}</h4>
-            <p className="project-files-location">{chosen.source === "global" ? "本機全域" : "此專案"} · <code>{chosen.location}</code></p>
-            {chosen.source === "global" && <p>這是全域檔案，可能影響所有專案；此處僅供閱讀。</p>}
-            {chosen.status !== "ready" && <p role="status">{STATUS[chosen.status]}。{chosen.status === "missing" ? "目前不提供建立；可在專案目錄建立後重新讀取。" : "請在機器上檢查檔案，再重新讀取清單。"}</p>}
+            <p className="project-files-location">{chosen.source === "global" ? catalogWord("literal", "23bf8eafeef3") : catalogWord("literal", "450e5d731947")} · <code>{chosen.location}</code></p>
+            {chosen.source === "global" && <p>{catalogWord("inline", "bb3ee00241a5")}</p>}
+            {chosen.status !== "ready" && <p role="status">{STATUS[chosen.status]}。{chosen.status === "missing" ? catalogWord("literal", "ddc43085429e") : catalogWord("literal", "565085a5da03")}</p>}
             {error && <p role="alert">{error}</p>}
             {notice && <p role="status">{notice}</p>}
             {content && <>
-              {editing ? <label className="project-files-editor">檔案內容<textarea ref={editor} value={draft} onChange={event => { setDraft(event.target.value); onState({ dirty: event.target.value !== content.text, busy }) }} spellCheck={false} disabled={busy} /></label>
+              {editing ? <label className="project-files-editor">{catalogWord("inline", "e3f57fd6eacc")}<textarea ref={editor} value={draft} onChange={event => { setDraft(event.target.value); onState({ dirty: event.target.value !== content.text, busy }) }} spellCheck={false} disabled={busy} /></label>
                 : <pre className="project-files-text" tabIndex={0}>{content.text}</pre>}
               <div className="project-files-actions">
-                {!editing && content.file.editable && <button type="button" onClick={() => { setEditing(true); requestAnimationFrame(() => editor.current?.focus()) }}>編輯檔案</button>}
-                {editing && <><button type="button" disabled={!dirty || busy} onClick={() => void save()}>儲存檔案</button>
-                  <button type="button" disabled={busy} onClick={() => { if (!dirty || window.confirm("放棄尚未儲存的內容？")) { setDraft(content.text); setEditing(false) } }}>取消編輯</button>
-                  <button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(draft).then(() => setNotice("已複製草稿。"),
+                {!editing && content.file.editable && <button type="button" onClick={() => { setEditing(true); requestAnimationFrame(() => editor.current?.focus()) }}>{catalogWord("inline", "74aed729535a")}</button>}
+                {editing && <><button type="button" disabled={!dirty || busy} onClick={() => void save()}>{catalogWord("inline", "9c6bde88026e")}</button>
+                  <button type="button" disabled={busy} onClick={() => { if (!dirty || window.confirm(catalogWord("literal", "c5a4b86fa44f"))) { setDraft(content.text); setEditing(false) } }}>{catalogWord("inline", "7a3efd8a888d")}</button>
+                  <button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(draft).then(() => setNotice(catalogWord("literal", "d9489690da4d")),
                     // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.
-                    () => setError("無法複製；請從編輯欄選取文字。"))}>複製草稿</button></>}
-                {error && <button type="button" disabled={busy} onClick={() => void reloadSelected()}>重新讀取檔案</button>}
+                    () => setError(catalogWord("literal", "3b77a5005a39")))}>{catalogWord("inline", "c6438a8858d3")}</button></>}
+                {error && <button type="button" disabled={busy} onClick={() => void reloadSelected()}>{catalogWord("inline", "ffeb28983cdb")}</button>}
               </div>
             </>}
           </>}
         </div>
       </div>
-      {list.truncated && <p role="status">檔案數量超出清單上限，仍有項目未列出。</p>}
-      {list.skipped.length > 0 && <p role="status">有 {list.skipped.length} 個技能資料夾無法安全讀取，已略過；請在機器上檢查連結或權限。</p>}
+      {list.truncated && <p role="status">{catalogWord("inline", "b3980647fa20")}</p>}
+      {list.skipped.length > 0 && <p role="status">{catalogFormat("count", "skillFoldersSkipped", [list.skipped.length])}</p>}
     </>}
   </section>
 }

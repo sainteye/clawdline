@@ -735,3 +735,4 @@
 @media (max-width: 460px) {
   .sw-gate-overview ul { grid-template-columns: 1fr; }
 }
+html.booting body { visibility: hidden; }

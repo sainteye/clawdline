@@ -1,16 +1,7 @@
 /*
- * The words of the board, the Backlog and a session's to-dos (design-decisions
- * D35, T6).
- *
- * The Swift app never had these three structures, so its catalog has no words
- * for them: "Backlog", "Session 待辦" and "等你決定" are board-redesign §3.5's
- * names, and every sentence here says something the replicated screens never
- * said. They live in this one file, beside the page that says them, and the
- * copied `public/strings/zh-Hant.json` stays byte for byte. Where the catalog
- * already has the word — "已落地", "做完了，沒有落地", "在跑", "載入中",
- * "重新整理", "取消" — the page reads the catalog, not this.
- *
- * Holes are `{name}`, as the catalog's are.
+ * Typed source copy for the board, Backlog, and Session to-dos. Maintained
+ * `public/catalogs/<tag>.json` files provide the nine displayed languages;
+ * the guarded Swift `public/strings/zh-Hant.json` stays unchanged.
  */
 
 /**
@@ -23,6 +14,8 @@
  * which is the regression the rule is about. Inline it again and the rule goes
  * red on the one catalog that is right.
  */
+import { catalogWord, currentCatalogTag, type CatalogTag } from "../../catalog.js"
+
 const englishBacklog = "Backlog"
 
 const words = {
@@ -459,11 +452,9 @@ export function workProjectName(project: string): string {
   return parts.at(-1) ?? project
 }
 
-/** The page's language as the copied catalog set it, or the browser's (next-strings.ts). */
-export function language(): "en" | "zh-Hant" {
-  const lang = (typeof document !== "undefined" && document.documentElement.lang) ||
-    (typeof navigator !== "undefined" && navigator.language) || "en"
-  return lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"
+/** The actual page language after the browser's catalog is activated. */
+export function language(): CatalogTag {
+  return currentCatalogTag()
 }
 
 /** One sentence, its holes filled. */
@@ -472,8 +463,10 @@ export function workWord(key: WorkWord, holes: Record<string, string | number> =
 }
 
 /** One sentence in a named language, its holes filled. */
-export function workWordIn(lang: "en" | "zh-Hant", key: WorkWord, holes: Record<string, string | number> = {}): string {
-  return words[lang][key].replace(/\{(\w+)\}/g, (all, name: string) =>
+export function workWordIn(lang: CatalogTag, key: WorkWord, holes: Record<string, string | number> = {}): string {
+  const template = lang === currentCatalogTag() ? catalogWord("work", key) :
+    lang === "en" || lang === "zh-Hant" ? words[lang][key] : catalogWord("work", key)
+  return template.replace(/\{(\w+)\}/g, (all, name: string) =>
     name in holes ? String(holes[name]) : all,
   )
 }
@@ -502,7 +495,7 @@ export function clockOf(at: number): string {
  * The line a card created by a Session on the person's message carries, or
  * null for an item the person created themselves.
  */
-export function createdViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string | null {
+export function createdViaLine(via: CreatedVia | null | undefined, lang: CatalogTag = language()): string | null {
   if (!via || !via.run || !via.at) return null
   return workWordIn(lang, "createdViaSession", { time: clockOf(via.at) })
 }
@@ -513,7 +506,7 @@ export function createdViaLine(via: CreatedVia | null | undefined, lang: "en" | 
  * holds. `persona` is the shown name of the new Session's persona; without it
  * the persona id is named, and with neither the line names none.
  */
-export function claimedViaLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language(), persona?: string): string | null {
+export function claimedViaLine(via: CreatedVia | null | undefined, lang: CatalogTag = language(), persona?: string): string | null {
   if (!via || !via.run || !via.at) return null
   const time = clockOf(via.at)
   if (!via.assigned) return workWordIn(lang, "claimedViaSession", { time })
@@ -535,7 +528,7 @@ export function workOrigin(createdBy: string | undefined): WorkOrigin {
 }
 
 /** The line an item the Epic's owner Session split out of the Epic carries. */
-export function epicOwnerLine(via: CreatedVia | null | undefined, lang: "en" | "zh-Hant" = language()): string {
+export function epicOwnerLine(via: CreatedVia | null | undefined, lang: CatalogTag = language()): string {
   return via?.at ? workWordIn(lang, "createdByEpicOwnerAt", { time: clockOf(via.at) }) : workWordIn(lang, "createdByEpicOwner")
 }
 
@@ -544,7 +537,7 @@ export function epicOwnerLine(via: CreatedVia | null | undefined, lang: "en" | "
  * person made. A Session's item names the time of the person's message when
  * the wire carries it.
  */
-export function originLine(item: { created_by?: string; created_via?: CreatedVia }, lang: "en" | "zh-Hant" = language()): string | null {
+export function originLine(item: { created_by?: string; created_via?: CreatedVia }, lang: CatalogTag = language()): string | null {
   switch (workOrigin(item.created_by)) {
     case "session": return createdViaLine(item.created_via, lang) ??
       (item.created_via?.at ? workWordIn(lang, "createdViaSession", { time: clockOf(item.created_via.at) }) : workWordIn(lang, "createdBySession"))

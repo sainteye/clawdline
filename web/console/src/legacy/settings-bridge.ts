@@ -86,4 +86,22 @@ export function settingsBuildVersion(macVersion: string, cloud?: { build?: strin
  */
 export const revealSettingsDiagnostics = (): void => {
   ;(Diagnostics as { reveal: () => void }).reveal()
+  const panel = document.getElementById("layout-debug")
+  if (!panel || panel.dataset.machineCopyAdapted) return
+  panel.dataset.machineCopyAdapted = "true"
+  const adapt = () => {
+    const button = [...panel.querySelectorAll("button")].find((node) => /^Send to Mac$/.test(node.textContent ?? ""))
+    if (button) button.textContent = "Send to machine"
+    const said = panel.querySelector(".layout-debug-said")
+    if (!said?.textContent) return
+    const value = said.textContent
+    const wording = value
+      .replace(/Sending to the Mac over Cloud/g, "Sending to the machine over Cloud")
+      .replace(/the Mac answered without a path/g, "the machine answered without a path")
+      .replace(/Sending to this Mac/g, "Sending to this machine")
+      .replace(/Could not reach this Mac/g, "Could not reach this machine")
+    if (wording !== value) said.textContent = wording
+  }
+  adapt()
+  new MutationObserver(adapt).observe(panel, { childList: true, characterData: true, subtree: true })
 }
