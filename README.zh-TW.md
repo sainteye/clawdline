@@ -49,6 +49,9 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 - **跨機器的 Project。** 以 git origin 對應，讓第二台機器拿到相同的 Project 名稱、圖示和沒進
   git 的 skill，有沒有 Cloud 都可以。[Project](docs/user/projects.md)
+- **Claude 和 Codex 共用同一套規則與 skill。** `clawdline project unify` 會列出怎麼讓同一個
+  Project 的 Claude Code 與 Codex Session 讀到同一份 `AGENTS.md` 和同一組 skill；你確認套用後才
+  會改檔案，而且不會替你 commit。[Unify](docs/project-files.md#unify)
 - **選用的加密 Cloud。** 透過 Clawdline Cloud 的端對端加密中繼，配對手機或多台機器。預設關閉，
   目前是預覽版。[遠端連線](docs/user/remote-access.md)
 

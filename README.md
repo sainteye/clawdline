@@ -55,6 +55,9 @@ relay.
 
 - **Projects across machines.** Give a second machine the same project names, icons and untracked
   skills, matched by git origin, with or without Cloud. [Projects](docs/user/projects.md)
+- **One set of rules and skills for Claude and Codex.** `clawdline project unify` shows how to give
+  a project's Claude Code and Codex sessions the same `AGENTS.md` and skills, and changes files only
+  when you apply that plan. It never commits. [Unify](docs/project-files.md#unify)
 - **Optional encrypted Cloud.** Pair a phone or several machines through Clawdline Cloud's
   end-to-end encrypted relay. Off by default; a preview. [Remote access](docs/user/remote-access.md)
 
