@@ -153,7 +153,7 @@ test("health's version and level are read only when present; absent is unknown, 
   assert.equal(sameMachineVersion({ version: "1" }, { version: "1", apiLevel: 1 }), false)
 })
 
-test("the needs-update words, with and without a version, link to Settings and never call the machine a Mac", () => {
+test("the needs-update words, with and without a version, link to Settings and name the machine as a machine", () => {
   const without = needsUpdateWords({}, {}, nextWord)
   assert.equal(without.version, null)
   assert.equal(without.href, SETTINGS_UPDATE_HREF)
