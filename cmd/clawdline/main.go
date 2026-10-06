@@ -210,6 +210,13 @@ func serve() {
 	cfg.Port = port
 	// The log goes where it is bounded before anything else is said.
 	daemonLog(cfg)
+	// A release install's update, before the port and the store: a snapshot
+	// a rollback asked for goes back before the store is opened, and a new
+	// release that keeps failing its update gives it up here (update.go).
+	if !updateBootGuard(cfg.Dir) {
+		fmt.Fprintln(os.Stderr, "clawdline: this release's update was rolled back; the service starts the previous release")
+		os.Exit(1)
+	}
 	// The port before anything else is done. Everything below writes: the
 	// stable binary, the store, the broker's beat, the cloud line, the tunnel's
 	// Reclaim — which stops the cloudflared this state directory's pid file

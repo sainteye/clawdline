@@ -461,6 +461,12 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 		if !machine {
 			return http.StatusForbidden, "forbidden", "Moving the machine coordinator needs the orchestrator token."
 		}
+	case p == "/v1/update/apply":
+		// Installing a release restarts this daemon: this machine's token,
+		// or a device that may send (update.go checks it again).
+		if !machine && !send {
+			return http.StatusForbidden, "forbidden", "This device may read, and not send."
+		}
 	case p == "/v1/settings":
 		// The Swift app has no such route: its settings are a native window.
 		// Here they are the hotkey, a global keyboard grab, so only this
