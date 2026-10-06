@@ -1,0 +1,31 @@
+/* `Switch.tsx`: the Settings page's on/off control. A track and thumb drawn
+   from the sheet's own tokens, the state word beside it, and a 44 px tall hit
+   area so a thumb on a phone finds it. */
+
+.settings-switch {
+    align-items: center; display: inline-flex; gap: 10px;
+    min-height: 44px; padding: 0 4px; margin: 0;
+    background: none; border: 0; border-radius: 10px;
+    color: var(--dim); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.settings-switch:disabled { opacity: 0.45; cursor: default; }
+.settings-switch-track {
+    position: relative; flex: 0 0 auto; width: 38px; height: 22px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card-hi);
+    transition: background 160ms ease, border-color 160ms ease;
+}
+.settings-switch-thumb {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--faint);
+    transition: transform 160ms ease, background 160ms ease;
+}
+.settings-switch.on .settings-switch-track { background: var(--accent-ed); border-color: var(--accent); }
+.settings-switch.on .settings-switch-thumb { transform: translateX(16px); background: var(--accent); }
+.settings-switch.on { color: var(--ink); }
+.settings-switch-state { min-width: 2em; text-align: left; }
+.settings-switch:hover:not(:disabled) .settings-switch-track { border-color: var(--dim); }
+
+@media (prefers-reduced-motion: reduce) {
+    .settings-switch-track, .settings-switch-thumb { transition: none; }
+}

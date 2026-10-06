@@ -182,6 +182,44 @@ export interface UpdateFact {
   hrefLabel?: string
 }
 
+/** The code and sentence behind a plain explanation, for 「技術細節」 and its copy button. */
+export interface UpdateDetails {
+  code: string
+  detail: string
+}
+
+/** A rolled-back or failed update, a refused press, or a machine too old to update from here. */
+export interface UpdateProblem {
+  kind: "rolled_back" | "failed" | "refused" | "older"
+  /** What happened and what it means, in words a newcomer can act on. */
+  sentence: string
+  /** The code and the daemon's own sentence, folded away; null when there are none. */
+  details: UpdateDetails | null
+  /** A command to run on the machine, shown as code beside the sentence. */
+  command: string | null
+}
+
+/** The one line that installs or reinstalls Clawdline on a machine (README.md, install.sh). */
+export const INSTALL_COMMAND = "curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh"
+
+/**
+ * The address that opens the Settings page at its update panel: the needs-update
+ * line and the banner send a person here. `#page=settings` alone still opens the
+ * page at its top.
+ */
+export const UPDATE_PANEL_FOCUS = "update"
+
+/** Whether an address asks for the update panel itself, not only the Settings page. */
+export function asksForUpdatePanel(hash: string): boolean {
+  const parts = String(hash || "").replace(/^#/, "").split("&")
+  return parts.includes("page=settings") && parts.includes("focus=" + UPDATE_PANEL_FOCUS)
+}
+
+/** What a copy button puts on the clipboard: the code and the sentence on one line. */
+export function detailsText(details: UpdateDetails): string {
+  return reason(details.code, details.detail)
+}
+
 export interface UpdatePanelView {
   /**
    * `nothing`: draw nothing. `legacy`: the older daemon's one line.
@@ -190,18 +228,28 @@ export interface UpdatePanelView {
   kind: "nothing" | "legacy" | "older" | "panel"
   legacyLine: string | null
   facts: UpdateFact[]
-  /** The one-line state under the facts: current, checking failed, … */
+  /** The one-line state under the facts: current, available, checking failed, … */
   stateLine: string | null
-  press: { shown: boolean; enabled: boolean; label: string }
+  /** What a failed check or an unknown comparison said, folded under the state line. */
+  stateDetails: UpdateDetails | null
+  /** The last update that finished, with when: 「{時間} 已從 {from} 更新到 {to}。」 */
+  done: string | null
+  /** `below`: the button follows the problem it retries, not the facts. */
+  press: { shown: boolean; enabled: boolean; label: string; below: boolean }
   /** Where a moving update is, the restart included. */
   progress: string | null
-  /** A rolled-back or failed update, or a refused press, said plainly. */
-  problem: string | null
+  /** A rolled-back or failed update, a refused press, or a too-old machine, said plainly. */
+  problem: UpdateProblem | null
   /** A macOS app bundle waiting for the app to quit. */
   staged: string | null
   /** A source build's one sentence on how it is updated. */
   sourceNote: string | null
-  auto: { shown: boolean; on: boolean; enabled: boolean; label: string; note: string | null }
+  /**
+   * The switch: its name never changes; `state` is the 開／關 beside it, and
+   * `beta` the sentence a beta-channel reader needs, since auto-update installs
+   * only stable releases.
+   */
+  auto: { shown: boolean; on: boolean; enabled: boolean; state: string; beta: string | null; note: string | null }
   /** How soon the panel should read again. */
   everyMs: number
   /** The daemon is between the old release and the new one. */
@@ -209,6 +257,12 @@ export interface UpdatePanelView {
 }
 
 type Say = (key: NextWord, holes?: Record<string, string | number>) => string
+
+function details(code: string | undefined, detail: string | undefined): UpdateDetails | null {
+  const c = (code ?? "").trim()
+  const d = (detail ?? "").trim()
+  return c || d ? { code: c, detail: d } : null
+}
 
 function reason(code: string | undefined, detail: string | undefined): string {
   const c = (code ?? "").trim()
@@ -228,12 +282,14 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
     legacyLine: null,
     facts: [],
     stateLine: null,
-    press: { shown: false, enabled: false, label: say("updateNow") },
+    stateDetails: null,
+    done: null,
+    press: { shown: false, enabled: false, label: say("updateNow"), below: false },
     progress: null,
     problem: null,
     staged: null,
     sourceNote: null,
-    auto: { shown: false, on: false, enabled: false, label: "", note: null },
+    auto: { shown: false, on: false, enabled: false, state: "", beta: null, note: null },
     everyMs: UPDATE_READ_EVERY_MS,
     restarting: false,
   }
@@ -248,7 +304,7 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
     view.everyMs = UPDATE_FOLLOW_EVERY_MS
   }
 
-  if (input.pressOlder) {
+  if (input.pressOlder && !status) {
     view.kind = "older"
     return view
   }
@@ -287,9 +343,14 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
 
   if (status.state === "current") view.stateLine = say("updateIsCurrent")
   else if (status.state === "ahead") view.stateLine = say("updateIsAhead")
-  else if (status.state === "unknown") view.stateLine = say("updateIsUnknown", { reason: status.reason || status.error || "" }).trim()
+  else if (status.state === "update_available" && latestName) view.stateLine = say("updateIsAvailable", { latest: latestName })
+  else if (status.state === "unknown") {
+    view.stateLine = say("updateIsUnknown")
+    view.stateDetails = details("", status.reason || status.error)
+  }
   if (status.error && status.state !== "unknown") {
-    view.stateLine = [view.stateLine, say("updateCheckFailed", { error: status.error })].filter(Boolean).join(" ")
+    view.stateLine = [view.stateLine, say("updateCheckFailed")].filter(Boolean).join(" ")
+    view.stateDetails = details("", status.error)
   }
 
   if (!release) {
@@ -313,17 +374,29 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
           : apply.state === "staged" ? "updateStaged"
             : "updateRestarting"
     view.progress = say(key, { to })
-  } else if (apply?.state === "healthy" && input.following) {
+  }
+  // A finished update stays said — after the page reloads into the new
+  // console, and after one auto-update installed overnight — for as long as
+  // it is the machine's last.
+  if (!moving && !restarting && apply?.state === "healthy" && apply.from) {
+    const installed = apply.to || buildName(status.running)
+    view.done = apply.at
+      ? say("updateDoneAt", { when: when(apply.at), from: apply.from, to: installed })
+      : say("updateDone", { from: apply.from, to: installed })
+  } else if (!view.progress && apply?.state === "healthy" && input.following) {
     view.progress = say("updateHealthy", { to: buildName(status.running) || to })
   }
 
   if (!moving && !restarting && apply?.state === "rolled_back") {
-    view.problem = say("updateRolledBack", { to, from, reason: reason(apply.error?.code, apply.error?.detail) })
+    view.problem = { kind: "rolled_back", sentence: say("updateRolledBack", { to, from }), details: details(apply.error?.code, apply.error?.detail), command: null }
   } else if (!moving && !restarting && apply?.state === "failed") {
-    view.problem = say("updateFailed", { to, from, reason: reason(apply.error?.code, apply.error?.detail) })
+    view.problem = { kind: "failed", sentence: say("updateFailed", { to, from }), details: details(apply.error?.code, apply.error?.detail), command: null }
   }
   if (input.pressRefused) {
-    view.problem = say("updateRefused", { reason: reason(input.pressRefused.code, input.pressRefused.detail) })
+    view.problem = { kind: "refused", sentence: say("updateRefused"), details: details(input.pressRefused.code, input.pressRefused.detail), command: null }
+  }
+  if (input.pressOlder) {
+    view.problem = { kind: "older", sentence: say("updateApplyOlder"), details: null, command: INSTALL_COMMAND }
   }
   if (apply?.staged_app && apply.state === "healthy") view.staged = say("updateStagedApp")
 
@@ -332,12 +405,19 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
   // more press, on the same page — it is not reloaded when the new daemon
   // serves the console it already runs.
   const justInstalled = apply?.state === "healthy" && input.following && !moving && (!status.latest.version || status.latest.version === apply.to)
-  view.press.shown = status.state === "update_available" && !justInstalled
+  view.press.shown = status.state === "update_available" && !justInstalled && !input.pressOlder
   view.press.enabled = view.press.shown && !input.sending && !moving && !restarting
+  // After a rollback or a failure the button installs the same release again:
+  // it says so, and it sits under the sentence that explains what went wrong.
+  const again = (apply?.state === "rolled_back" || apply?.state === "failed") && !moving && !restarting &&
+    (!status.latest.version || status.latest.version === apply.to)
+  if (again) view.press.label = say("updateRetry")
+  view.press.below = view.problem !== null
 
   view.auto.shown = true
   view.auto.on = status.auto_apply === true
-  view.auto.label = view.auto.on ? say("updateAutoOn") : say("updateAutoOff")
+  view.auto.state = view.auto.on ? say("updateAutoOn") : say("updateAutoOff")
+  view.auto.beta = status.channel === "beta" ? say("updateAutoBeta") : null
   view.auto.enabled = !input.overCloud && !input.autoSaving
   view.auto.note = input.autoFailed || (input.overCloud ? say("updateAutoCloud") : null)
   return view

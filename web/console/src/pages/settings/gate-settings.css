@@ -31,8 +31,7 @@
     grid-template-columns: 1fr;
   }
 
-  .settings-gate-row .chip {
+  .settings-gate-row .settings-switch {
     justify-self: start;
-    min-height: 44px;
   }
 }

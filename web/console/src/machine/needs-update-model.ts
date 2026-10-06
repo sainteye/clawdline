@@ -29,8 +29,13 @@ type Words = (
   holes?: Record<string, string | number>,
 ) => string
 
-/** Where the needs-update line sends a person: the Settings page, where updating is. */
-export const SETTINGS_UPDATE_HREF = "#page=settings"
+/**
+ * Where the needs-update line and the update banner send a person: the
+ * Settings page, scrolled to its update panel with the keyboard on the panel's
+ * title (`asksForUpdatePanel`, update-model.ts). The page reads only `page=`,
+ * so the address still opens Settings on a console that ignores `focus=`.
+ */
+export const SETTINGS_UPDATE_HREF = "#page=settings&focus=update"
 
 /**
  * The version and route level a `/v1/health` answer names, each only when it
