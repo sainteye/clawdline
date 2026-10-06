@@ -89,13 +89,23 @@ trap rollback ERR
 systemctl --user daemon-reload
 systemctl --user restart clawdline-next.service
 
-token=$(cat "${CLAWDLINE_NEXT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/clawdline-next}/local-token")
+# The port and state directory the unit gives the daemon, which is what it
+# listens on; a unit that names neither uses the defaults.
+unit_env=$(systemctl --user show clawdline-next.service -p Environment --value || true)
+unit_value() {
+  printf '%s\n' "$unit_env" | tr ' ' '\n' | sed -n "s/^\"\{0,1\}$1=\(.*\)/\1/p" | sed 's/"$//' | tail -n 1
+}
+port=$(unit_value CLAWDLINE_NEXT_PORT)
+port=${port:-7727}
+state_dir=$(unit_value CLAWDLINE_NEXT_DIR)
+state_dir=${state_dir:-${XDG_CONFIG_HOME:-$HOME/.config}/clawdline-next}
+token=$(cat "$state_dir/local-token")
 healthy=0
 deploy_health_seconds=$(go run ./tools/deploy-limit)
 deadline=$((SECONDS + deploy_health_seconds))
 while [ "$SECONDS" -lt "$deadline" ]; do
-  page=$(curl --connect-timeout 1 --max-time 2 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:7727/ || true)
-  build=$(curl --connect-timeout 1 --max-time 2 -fsS -H "Authorization: Bearer $token" http://127.0.0.1:7727/BUILD.json 2>/dev/null || true)
+  page=$(curl --connect-timeout 1 --max-time 2 -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:$port/ || true)
+  build=$(curl --connect-timeout 1 --max-time 2 -fsS -H "Authorization: Bearer $token" http://127.0.0.1:$port/BUILD.json 2>/dev/null || true)
   stamp=$(printf '%s' "$build" | sed -n 's/.*"stamp":"\([0-9a-f]*\)".*/\1/p')
   if [ "$page" = 200 ] && [ "$stamp" = "$commit" ]; then
     healthy=1
@@ -107,4 +117,4 @@ done
 trap - ERR
 
 pid=$(systemctl --user show clawdline-next.service -p MainPID --value)
-echo "deployed $commit; daemon pid $pid; console 200"
+echo "deployed $commit; daemon pid $pid; console 200 on port $port"

@@ -181,6 +181,10 @@ func main() {
 		// The caller's side of a schedule webhook, from any machine; no
 		// daemon needed (webhook_fire.go).
 		webhookCommand(os.Args[2:])
+	case "setup":
+		// Install this release as the per-user service, repair it, or
+		// --uninstall it (setup.go). install.sh ends here.
+		setupCommand(os.Args[2:])
 	case "update":
 		// Whether this machine trails the cloud's latest build, and on Linux
 		// deploying it (update.go, docs/updates.md).
@@ -442,7 +446,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|setup|update|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last")
@@ -450,6 +454,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role")
 	fmt.Fprintln(os.Stderr, "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default")
 	fmt.Fprintln(os.Stderr, "  update [--json] [--apply [--force]]   whether this machine trails the cloud's latest build; exit 0 current, 10 behind, 3 unknown")
+	fmt.Fprintln(os.Stderr, "  setup [--headless] [--no-app] [--no-autostart] [--port n] [--uninstall [--purge]]   install this release as the per-user service; --help says more")
 	fmt.Fprintln(os.Stderr, "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory")
 	fmt.Fprintln(os.Stderr, "  setting <get|set> <key> <value>   planning_gate, verify_gate, or claude_auto_compact_window")
 	fmt.Fprintln(os.Stderr, "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step")
