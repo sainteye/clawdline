@@ -318,6 +318,47 @@ func TestUninstallRemovesWhatSetupInstalledAndKeepsState(t *testing.T) {
 	}
 }
 
+// --purge with terminals still open keeps the directory their tmux server
+// listens in, and says so: removing it strands them, and the line that says
+// how to reach them would name a socket that is gone.
+func TestPurgeKeepsTheSocketOfTerminalsStillOpen(t *testing.T) {
+	h := newFakeHost(t, "linux")
+	state := filepath.Join(h.home, "state")
+	t.Setenv("CLAWDLINE_NEXT_INSTALL_ROOT", filepath.Join(h.home, "root"))
+	t.Setenv("CLAWDLINE_NEXT_DIR", state)
+	t.Setenv("CLAWDLINE_NEXT_BIN_DIR", filepath.Join(h.home, "bin"))
+	sock := filepath.Join(state, "tmux", "term.sock")
+	_ = os.MkdirAll(filepath.Dir(sock), 0o700)
+	_ = os.WriteFile(sock, nil, 0o600)
+	_ = os.WriteFile(filepath.Join(state, "local-token"), []byte("t"), 0o600)
+	run := h.run
+	h.run = func(name string, args ...string) ([]byte, error) {
+		if name == "tmux" && strings.Join(args, " ") == "-S "+sock+" ls" {
+			return []byte("t-1: 1 windows\n"), nil
+		}
+		return run(name, args...)
+	}
+
+	_ = runUninstall(h.setupHost, setupOptions{port: 17811, purge: true})
+	if _, err := os.Stat(sock); err != nil {
+		t.Errorf("--purge removed the socket of terminals still open: %v\n%s", err, h.out.String())
+	}
+	if _, err := os.Stat(filepath.Join(state, "local-token")); err == nil {
+		t.Errorf("--purge kept the rest of the state directory:\n%s", h.out.String())
+	}
+	if !strings.Contains(h.out.String(), "kept "+filepath.Dir(sock)) || !strings.Contains(h.out.String(), "tmux -S "+sock+" ls") {
+		t.Errorf("does not say it kept the terminals' directory and how to reach them:\n%s", h.out.String())
+	}
+
+	// Once they are closed, --purge takes the rest.
+	h.run = run
+	h.out.Reset()
+	_ = runUninstall(h.setupHost, setupOptions{port: 17811, purge: true})
+	if _, err := os.Stat(state); err == nil {
+		t.Errorf("--purge kept the state directory with no terminal open:\n%s", h.out.String())
+	}
+}
+
 func TestUninstallLeavesALinkItDidNotMake(t *testing.T) {
 	h := newFakeHost(t, "linux")
 	bin := filepath.Join(h.home, "bin")

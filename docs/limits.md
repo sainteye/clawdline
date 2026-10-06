@@ -275,6 +275,7 @@ answer to who may let anything go.
 | `release.state_file_bytes` | 64 KiB | buffer / bytes | updater state files | read the file as unreadable: `update_state_unreadable`, never idle | diagnostics / daemon |
 | `release.apply_follow_seconds` | 1500 seconds | buffer / seconds | `clawdline update --apply` | stop following and exit 3; the update continues | diagnostics / daemon |
 | `release.app_swap_poll_seconds` | 60 seconds | observation / seconds | staged macOS app | look again whether the app has quit | diagnostics / daemon |
+| `release.auto_apply_retry_seconds` | 300 seconds | observation / seconds | auto-apply held back by a busy session | look again whether the sessions are idle | diagnostics / daemon |
 | `update.apply_body_bytes` | 4096 bytes | buffer / bytes | POST /v1/update/apply | refuse the body as too large | diagnostics / daemon |
 
 另外兩件跟「誰會知道」直接相關的：`plan.md` §3.2 與 `cross-platform.md` 還寫 `scheduler` 在 `/v1/health`，實際已經在

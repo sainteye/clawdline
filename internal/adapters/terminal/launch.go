@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -31,7 +33,13 @@ var openConfirm = 15 * time.Second
 
 // Launcher is the start route's port over this machine's terminals: tmux on
 // every platform, iTerm2 where there is one (launch_darwin.go).
-type Launcher struct{ Tmux *Tmux }
+type Launcher struct {
+	Tmux *Tmux
+	// Lang is the UTF-8 LANG a new tmux pane's shell starts with (paneLang).
+	// Nil is this daemon's own LANG when it is UTF-8, and a UTF-8 locale every
+	// machine of its kind has otherwise.
+	Lang func(context.Context) string
+}
 
 var _ ports.Launcher = Launcher{}
 
@@ -170,7 +178,7 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 	if err != nil {
 		return "", err
 	}
-	args := append([]string{}, create...)
+	args := append(append([]string{}, create...), l.paneLocale(ctx)...)
 	if cwd != "" {
 		args = append(args, "-c", cwd)
 	}
@@ -236,6 +244,43 @@ func (l Launcher) openPane(ctx context.Context, create []string, cwd, command, r
 		return "", Failure{Message: "tmux typed the line but Enter did not land."}
 	}
 	return id, nil
+}
+
+// paneLocale is what a new pane's environment is given so its shell reads
+// UTF-8: a LANG that names it, and an LC_ALL that is empty, which the C
+// library reads as unset.
+//
+// A daemon launchd or systemd started has no LANG, and runs tmux under
+// LC_ALL=C. When it is the first to run tmux, that is the new server's global
+// environment and so every pane's: the shell draws `中` as unknown bytes, and
+// a launch line carrying the person's language never shows on the pane as it
+// was typed, so the start fails (measured on macOS 15, tmux 3.6a, 2026-10-07).
+// The person's profile, which the login shell reads next, still has the last
+// word on both. tmux has had `-e` on new-window and new-session since 3.0,
+// the oldest it is run with (docs/cross-platform.md).
+func (l Launcher) paneLocale(ctx context.Context) []string {
+	lang := ""
+	if l.Lang != nil {
+		lang = l.Lang(ctx)
+	}
+	if lang == "" {
+		lang = defaultPaneLang()
+	}
+	return []string{"-e", "LANG=" + lang, "-e", "LC_ALL="}
+}
+
+// defaultPaneLang is this daemon's LANG when it names UTF-8, and otherwise
+// the fallback an owned terminal's shell gets (owned's fallbackLang): en_US.UTF-8
+// on macOS, and C.UTF-8 elsewhere, which a minimal Debian has where it has no
+// en_US.UTF-8.
+func defaultPaneLang() string {
+	if v := os.Getenv("LANG"); strings.HasSuffix(strings.ToLower(v), ".utf-8") || strings.HasSuffix(strings.ToLower(v), ".utf8") {
+		return v
+	}
+	if runtime.GOOS == "darwin" {
+		return "en_US.UTF-8"
+	}
+	return "C.UTF-8"
 }
 
 // discard kills a pane openPane made and did not hand out. Its failure is

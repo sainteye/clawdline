@@ -129,7 +129,8 @@ clawdline setup --uninstall --purge   # and the state: devices, sessions, settin
 ```
 
 Without `--purge` your state in `~/.config/clawdline-next` stays, so installing again picks up
-where you were. If you ran `clawdline skill install`, run `clawdline skill uninstall` first
+where you were. Terminals Clawdline opened keep running after either; while one is still open,
+`--purge` leaves the `tmux` folder they run from, and says how to reach them. If you ran `clawdline skill install`, run `clawdline skill uninstall` first
 ([clawdfather-and-dispatch.md](clawdfather-and-dispatch.md)).
 
 ## Build from source instead

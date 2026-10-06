@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -110,6 +112,41 @@ func TestAReleaseThatDoesNotComeUpIsRolledBackAndNotRetriedByItself(t *testing.T
 		t.Fatalf("a person asking again: %v", err)
 	}
 	p.Abandon()
+}
+
+// A restart command that does not return is not a release that did not come
+// back. On a Mac, `launchctl kickstart -k` of a service launchd is holding
+// back (ThrottleInterval, after the new release kept exiting) waited out its
+// thirty seconds and was killed, and launchd started the previous release a
+// moment later; the rollback said restarting it had failed while it answered
+// (measured in the Mac drill, 2026-10-07). The previous release answering is
+// what is recorded.
+func TestARollbackWhoseRestartTimesOutStillWaitsForThePreviousRelease(t *testing.T) {
+	f := newFixture(t, "v0.10.0")
+	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
+	if err := f.update(Request{}); err != nil {
+		t.Fatal(err)
+	}
+	runFake := f.env.Run
+	f.env.Run = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		line := name + " " + strings.Join(args, " ")
+		restart := strings.HasPrefix(line, "launchctl kickstart") || strings.HasPrefix(line, "systemctl --user restart")
+		if restart && f.current() == "v0.10.0" {
+			return nil, errors.New("signal: killed")
+		}
+		return runFake(ctx, name, args...)
+	}
+	f.healthy = commitOf('a')
+	if err := f.env.Finish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := f.apply()
+	if got.State != contract.UpdateApplyStateRolledBack || got.Error == nil || got.Error.Code != CodeHealthTimeout {
+		t.Fatalf("after a failed health check: %+v %+v", got, got.Error)
+	}
+	if strings.Contains(got.Error.Detail, "failed too") || strings.Contains(got.Error.Detail, "did not answer either") {
+		t.Fatalf("the previous release answered, and the rollback says it did not: %s", got.Error.Detail)
+	}
 }
 
 func TestTheHealthWaitIsBounded(t *testing.T) {
@@ -739,4 +776,99 @@ func sha(b []byte) string {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// A new release that exits at once is restarted by its service faster than
+// the supervisor's health wait ends (systemd restarts it every 3 s), so its
+// boot guard gives the update up while the supervisor still waits. What the
+// guard recorded is the reason; the supervisor stops waiting and does not
+// write the update back as pending or restart the service again.
+func TestTheSupervisorKeepsWhatTheBootGuardDecided(t *testing.T) {
+	f := newFixture(t, "v0.10.0")
+	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
+	if err := f.update(Request{}); err != nil {
+		t.Fatal(err)
+	}
+	newExe := filepath.Join(f.env.Layout.ReleaseDir("v0.11.0"), "clawdline")
+	f.env.HealthWait = 10 * time.Second
+	starts := 0
+	f.env.Health = func(_ context.Context, _ int, _ string, want Served) error {
+		// Each poll is one more start of the new release, until its guard
+		// switches back; the old release then answers, never the new one.
+		if starts <= BootAttemptsLimit {
+			starts++
+			if _, _, err := f.env.BootGuard(newExe); err != nil {
+				t.Errorf("boot guard: %v", err)
+			}
+		}
+		if want.Version == "v0.10.0" && f.current() == "v0.10.0" {
+			return nil
+		}
+		return errors.New("not answering")
+	}
+	start := time.Now()
+	if err := f.env.Finish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("the supervisor waited %s after the boot guard had settled the update", took)
+	}
+	got := f.apply()
+	if got.State != contract.UpdateApplyStateRolledBack || got.Error == nil || got.Error.Code != CodeBootGuard {
+		t.Fatalf("the supervisor replaced the boot guard's record: %+v %+v", got, got.Error)
+	}
+	if _, pending, _ := f.env.ReadPending(); pending {
+		t.Fatal("the supervisor wrote back an update the boot guard had settled")
+	}
+	if f.current() != "v0.10.0" {
+		t.Fatalf("current is %s", f.current())
+	}
+}
+
+// An auto-apply that waits for a busy session looks again on its own, so a
+// session going idle is enough: the next release check is hours away, and
+// the check a daemon makes as it starts reads sessions before their screens
+// have been read once (measured in the Ubuntu drill: an idle session read as
+// busy at every restart).
+func TestAWaitingAutoApplyStartsOnceTheSessionsAreIdle(t *testing.T) {
+	f := newFixture(t, "v0.10.0")
+	d := NewDaemon(f.env, f.exe)
+	d.AutoApply = func() bool { return true }
+	var mu sync.Mutex
+	busy, waits := true, 0
+	d.Busy = func(context.Context) bool { mu.Lock(); defer mu.Unlock(); return busy }
+	d.Logf = func(format string, args ...any) {
+		if strings.Contains(format, "is waiting") {
+			mu.Lock()
+			waits++
+			mu.Unlock()
+		}
+	}
+	d.RetryEvery = 5 * time.Millisecond
+	f.publish("v0.11.0", commitOf('b'), daemonArchive(t, commitOf('b')), true, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	d.maybeAutoApply(ctx, d.Checker.Refresh(ctx))
+	d.maybeAutoApply(ctx, d.Checker.Last()) // a second check while it waits
+	time.Sleep(50 * time.Millisecond)
+	if f.apply().State != contract.UpdateApplyStateIdle {
+		t.Fatal("applied while a session was busy")
+	}
+	mu.Lock()
+	busy = false
+	mu.Unlock()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.apply().State == contract.UpdateApplyStateIdle && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	d.Wait()
+	if got := f.apply(); got.State != contract.UpdateApplyStateRestarting || got.To != "v0.11.0" {
+		t.Fatalf("the sessions went idle and no check came: %+v", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if waits != 2 {
+		t.Fatalf("logged the wait %d times, want once per check", waits)
+	}
 }

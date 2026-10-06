@@ -327,7 +327,12 @@ export function updatePanel(input: UpdatePanelInput, say: Say, when: (iso: strin
   }
   if (apply?.staged_app && apply.state === "healthy") view.staged = say("updateStagedApp")
 
-  view.press.shown = status.state === "update_available" && !(apply?.state === "healthy" && input.following && !moving)
+  // Right after the update this page followed, a read may still call what it
+  // installed available: no button for that. A newer release than it is one
+  // more press, on the same page — it is not reloaded when the new daemon
+  // serves the console it already runs.
+  const justInstalled = apply?.state === "healthy" && input.following && !moving && (!status.latest.version || status.latest.version === apply.to)
+  view.press.shown = status.state === "update_available" && !justInstalled
   view.press.enabled = view.press.shown && !input.sending && !moving && !restarting
 
   view.auto.shown = true

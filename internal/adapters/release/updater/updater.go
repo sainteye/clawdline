@@ -91,6 +91,10 @@ const (
 	// AppSwapPollSecondsLimit is how often a daemon with a staged app bundle
 	// looks whether the app has quit, so the bundle can be swapped in.
 	AppSwapPollSecondsLimit = 60
+	// AutoApplyRetrySecondsLimit is how often an auto-apply held back by a
+	// busy session looks again whether the sessions are idle, between
+	// release checks.
+	AutoApplyRetrySecondsLimit = 300
 	// maxStateFileBytes is one of the updater's own JSON files.
 	maxStateFileBytes = 64 << 10
 )
