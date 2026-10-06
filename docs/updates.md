@@ -1,123 +1,28 @@
-# Updates: is this machine behind the cloud?
+# Updates
 
-The hosted console at app.clawdline.com moves ahead as features land. A machine left on an older
-daemon shows "讀取失敗" beside console features it predates, and until 2026-10-04 nothing said the
-machine was behind: that day `https://app.clawdline.com/BUILD.json` named `4b7c3f8d…` while a
-machine's daemon served `08b4277b…`.
+Clawdline installed with `install.sh` is a **release install**: it learns of new signed releases by
+itself and can install them, and goes back to the release it was running when a new one does not
+start. This page first answers the four questions most people have, then describes release
+installs in full, and last, how a development machine running a source build is compared and caught
+up.
 
-This page says what the daemon and the CLI report, how a machine installed from a release updates
-itself and rolls back, and how a development machine running a source build catches up.
+## In short
 
-There are three kinds of install, and `GET /v1/update` names which one answers in `install_kind`:
-
-| `install_kind` | The daemon runs from | Compared with |
-|---|---|---|
-| `release` | `<root>/releases/<version>/clawdline` through `current`, unpacked from a signed release | the release channel's signed manifest ([Release installs](#release-installs)) |
-| `source_deploy` | `<root>/releases/<commit>/` put there by `tools/deploy-linux-user.sh` | the hosted console's `BUILD.json` |
-| `source_checkout` | a binary built in a checkout, or anywhere else | the hosted console's `BUILD.json` |
-
-A release install never reads the hosted `BUILD.json`: the console's commit says nothing about
-which release this machine should run.
-
-## What "latest" and "running" mean for a source build
-
-- **Latest** is the `BUILD.json` the hosted console serves: `<DefaultAppOrigin>/BUILD.json`, where
-  `DefaultAppOrigin` is `https://app.clawdline.com` (`internal/adapters/cloud/settings.go`). Set
-  `CLAWDLINE_NEXT_UPDATE_URL` to ask another `BUILD.json`; set `CLAWDLINE_NEXT_UPDATE_CHECK=off`
-  to turn the check off.
-- **Running** is the `BUILD.json` in the web dist this daemon serves (`CLAWDLINE_NEXT_WEB`). When
-  there is none, it is the binary's own full `vcs.revision`, with no commit time.
-
-Every `BUILD.json` writer records the commit as `stamp` and its committer time (RFC3339 UTC) as
-`committed_at`: `tools/build-linux-user-release.sh`, `tools/package-macos.sh` (into the bundle's
-`Contents/Resources/web`), and the hosted console's build steps in
-[hosted-console.md](hosted-console.md). A `BUILD.json` written before 2026-10-04 has only `stamp`;
-readers accept it.
-
-## The states
-
-| State | Means |
-|---|---|
-| `current` | Running and latest are the same commit. |
-| `update_available` | The commits differ and latest was committed later. |
-| `ahead` | The commits differ and running was committed later (a local build of unreleased work). |
-| `differs` | The commits differ and a commit time is missing on one side, so neither is known to be later. |
-| `unknown` | No comparison could be made; `reason` says why (check off, latest never read, own commit unknown). |
-
-## The check
-
-The daemon reads latest when it starts and again every 1800 s, each read within 10 s and at most
-4096 bytes. A request never waits on the network: it is answered from the last read. A failed read
-keeps the last good latest and says what failed in `error`. The bounds are the capacity rows
-`update.refresh_seconds`, `update.fetch_timeout_seconds` and `update.build_body_bytes`
-([limits.md](limits.md)).
-
-`GET /v1/update`, with the same local authentication as its sibling read routes, answers
-`UpdateStatus` (`api/v1/system.schema.json`):
-
-```json
-{"state": "differs",
- "running": {"stamp": "08b4277b…"},
- "latest":  {"stamp": "4b7c3f8d…", "committed_at": "2026-10-04T02:31:05Z"},
- "checked_at": "2026-10-04T12:40:00Z",
- "source_url": "https://app.clawdline.com/BUILD.json"}
-```
-
-This is the shape a release built before `committed_at` existed answers: its BUILD.json has
-only a stamp, so the two commits differ and neither is known to be later. Once both sides carry
-`committed_at` the state is `update_available` or `ahead`. `reason` appears with `unknown`; `error` while the most recent read failed. Clawdline Cloud
-carries the route as the parameterless machine read `update`, so a phone asks the same question
-the local console does.
-
-## The console's update panel
-
-The Settings page's **Clawdline 版本** panel (`web/console/src/machine/UpdatePanel.tsx`, its logic
-in `update-model.ts`) reads `/v1/update` when the console mounts and then every ten minutes. It
-shows the running and latest version (a short commit for a source build), a **版本說明** link to
-`latest.notes_url`, when the last check ran, and the channel.
-
-- On a release install with `update_available`, **立即更新** posts `/v1/update/apply` (over Cloud,
-  the word `update-apply`), then reads `/v1/update` every two seconds until `apply.state` settles.
-  The seconds in which the daemon restarts and no read answers show as restarting, not as a
-  failure; when the new daemon serves a different console, the page reloads itself.
-- `rolled_back` and `failed` show `apply.error.code` and `detail` and say the previous release still
-  runs. `staged_app` says the app is replaced once it is quit.
-- **自動更新** writes `update_auto_apply` through `/v1/settings`. Over Cloud it is shown but disabled,
-  with a sentence saying to change it on the machine: the settings route takes only the machine's
-  own token.
-- `source_deploy` and `source_checkout` show no button, only how that machine updates and that
-  `clawdline setup --adopt` moves a Linux source deploy onto releases.
-- An older daemon — no `install_kind`, or a `501 not_implemented` for the POST — gets the earlier
-  quiet line or the needs-update sentence, never "讀取失敗".
-
-On a release install with `update_available`, the session list also shows a banner linking to
-Settings, dismissed per version in the browser's storage.
-
-## The CLI
-
-```sh
-clawdline update           # running vs latest, and the state
-clawdline update --json    # the route's body
-```
-
-It asks the running daemon; when no daemon answers, it reads both stamps itself. Exit status: 0
-for `current` or `ahead`, 10 for `update_available` or `differs`, 3 for `unknown`.
-
-### Catching up a development machine now
-
-```sh
-clawdline update --apply [--force]
-```
-
-On Linux, inside a source checkout, it runs `git fetch origin main`, requires the latest stamp to
-be `origin/main` or an ancestor of it, and runs `tools/deploy-linux-user.sh --rev <stamp>`. The
-deploy builds that commit in an ephemeral checkout, so the shared checkout's HEAD does not move,
-then switches, restarts, verifies and rolls back as [linux.md](linux.md) describes. It refuses
-when the state is `current` or `ahead` unless `--force` is given, and refuses outside a source
-checkout.
-
-On macOS it does not apply anything: it prints the commands — a disposable worktree at the stamp
-and `tools/package-macos.sh` run from it — and exits non-zero.
+- **How you know there is a new release.** The Settings page's **Clawdline 版本** panel shows the
+  running and the latest version; when a newer release is out, the session list also shows a banner
+  that links there. In a terminal, `clawdline update` says the same and exits 10 when a newer
+  release is available.
+- **How to install it.** Press **立即更新** in that panel, or run `clawdline update --apply`.
+  Clawdline restarts for a few seconds; the sessions running in tmux keep running.
+- **What happens when it fails.** If the new release does not come up within 60 seconds, Clawdline
+  switches back to the release that was running and starts it again, by itself; there is nothing to
+  do. Automatic updates will not try that version again. A failure before the restart changes
+  nothing at all.
+- **Automatic updates.** Off by default, per machine. Turn them on with the **自動更新** switch in
+  the same panel, in a console signed in on that machine, or with
+  `clawdline setting set update_auto_apply true`. They install only **stable** releases, never a
+  pre-release, and wait until no assistant session is working
+  ([Automatic updates](#automatic-updates)).
 
 ## Release installs
 
@@ -168,8 +73,8 @@ clawdline update --apply --version v0.10.0 --force   # that release even when it
 
 The CLI asks its own daemon (`POST /v1/update/apply`, body `{"version", "force"}`) and follows
 `GET /v1/update` until the update settles: exit 0 when it is `healthy`, 1 when it `rolled_back` or
-`failed`, 3 when it has not settled within 25 minutes (the download window plus the pending deadline). The route takes this Mac's own
-machine token or a device that may send; anything else is refused 403. It answers 202 once the
+`failed`, 3 when it has not settled within 25 minutes (the download window plus the pending deadline). The route takes this machine's own
+token or a device that may send; anything else is refused 403. It answers 202 once the
 update has started, 409 with a code when it is refused, 502 when the release host could not be
 read.
 
@@ -241,9 +146,11 @@ A failure before step 5 changes nothing the running daemon uses and is recorded 
 | `app_swap_deferred` | healthy, but the staged app bundle could not be swapped in yet |
 | `update_state_unreadable` | a file under `<state>/update/` could not be read; the state is unknown, not idle |
 
+
 ### Automatic updates
 
-Off by default, and per machine:
+Off by default, and per machine. Turn it on with the **自動更新** switch in the Settings page's
+**Clawdline 版本** panel, in a console signed in on that machine, or from a terminal:
 
 ```sh
 clawdline setting set update_auto_apply true
@@ -259,7 +166,133 @@ on a Mac whose iTerm2 does not answer, that rule would otherwise wait for good. 
 (`release.auto_apply_retry_seconds`), so the update starts once the sessions are idle rather than
 at the next check hours later.
 
-## Source builds
+## The console's update panel
+
+The Settings page's **Clawdline 版本** panel (`web/console/src/machine/UpdatePanel.tsx`, its logic
+in `update-model.ts`) reads `/v1/update` when the console mounts and then every ten minutes. It
+shows the running and latest version (a short commit for a source build), a **版本說明** link to
+`latest.notes_url`, when the last check ran, and the channel.
+
+- On a release install with `update_available`, **立即更新** posts `/v1/update/apply` (over Cloud,
+  the word `update-apply`), then reads `/v1/update` every two seconds until `apply.state` settles.
+  The seconds in which the daemon restarts and no read answers show as restarting, not as a
+  failure; when the new daemon serves a different console, the page reloads itself.
+- `rolled_back` and `failed` show `apply.error.code` and `detail` and say the previous release still
+  runs. `staged_app` says the app is replaced once it is quit.
+- **自動更新** writes `update_auto_apply` through `/v1/settings`. Over Cloud it is shown but disabled,
+  with a sentence saying to change it on the machine: the settings route takes only the machine's
+  own token.
+- `source_deploy` and `source_checkout` show no button, only how that machine updates and that
+  `clawdline setup --adopt` moves a Linux source deploy onto releases.
+- An older daemon — no `install_kind`, or a `501 not_implemented` for the POST — gets the earlier
+  quiet line or the needs-update sentence, never "讀取失敗".
+
+On a release install with `update_available`, the session list also shows a banner linking to
+Settings, dismissed per version in the browser's storage.
+
+## The CLI
+
+```sh
+clawdline update           # running vs latest, and the state
+clawdline update --json    # the route's body
+clawdline update --help    # every option
+```
+
+It asks the running daemon; when no daemon answers, it reads both versions itself. Exit status: 0
+for `current` or `ahead`, 10 for `update_available` or `differs`, 3 for `unknown`. A failed check
+is one line in words with its code last; after a rollback it says that automatic updates will not
+try that version again, and `update --apply` that ended in a rollback says so in one sentence and
+points at `clawdline update --json` for the details.
+
+## Development machines
+
+A machine running a source build — a checkout, or a source deploy made by
+`tools/deploy-linux-user.sh` — is not updated by releases. It compares itself with the hosted
+console instead.
+
+The hosted console at app.clawdline.com moves ahead as features land. A machine left on an older
+daemon shows "讀取失敗" beside console features it predates, and until 2026-10-04 nothing said the
+machine was behind: that day `https://app.clawdline.com/BUILD.json` named `4b7c3f8d…` while a
+machine's daemon served `08b4277b…`.
+
+There are three kinds of install, and `GET /v1/update` names which one answers in `install_kind`:
+
+| `install_kind` | The daemon runs from | Compared with |
+|---|---|---|
+| `release` | `<root>/releases/<version>/clawdline` through `current`, unpacked from a signed release | the release channel's signed manifest ([Release installs](#release-installs)) |
+| `source_deploy` | `<root>/releases/<commit>/` put there by `tools/deploy-linux-user.sh` | the hosted console's `BUILD.json` |
+| `source_checkout` | a binary built in a checkout, or anywhere else | the hosted console's `BUILD.json` |
+
+A release install never reads the hosted `BUILD.json`: the console's commit says nothing about
+which release this machine should run.
+
+### What "latest" and "running" mean for a source build
+
+- **Latest** is the `BUILD.json` the hosted console serves: `<DefaultAppOrigin>/BUILD.json`, where
+  `DefaultAppOrigin` is `https://app.clawdline.com` (`internal/adapters/cloud/settings.go`). Set
+  `CLAWDLINE_NEXT_UPDATE_URL` to ask another `BUILD.json`; set `CLAWDLINE_NEXT_UPDATE_CHECK=off`
+  to turn the check off.
+- **Running** is the `BUILD.json` in the web dist this daemon serves (`CLAWDLINE_NEXT_WEB`). When
+  there is none, it is the binary's own full `vcs.revision`, with no commit time.
+
+Every `BUILD.json` writer records the commit as `stamp` and its committer time (RFC3339 UTC) as
+`committed_at`: `tools/build-linux-user-release.sh`, `tools/package-macos.sh` (into the bundle's
+`Contents/Resources/web`), and the hosted console's build steps in
+[hosted-console.md](hosted-console.md). A `BUILD.json` written before 2026-10-04 has only `stamp`;
+readers accept it.
+
+### The states
+
+| State | Means |
+|---|---|
+| `current` | Running and latest are the same commit. |
+| `update_available` | The commits differ and latest was committed later. |
+| `ahead` | The commits differ and running was committed later (a local build of unreleased work). |
+| `differs` | The commits differ and a commit time is missing on one side, so neither is known to be later. |
+| `unknown` | No comparison could be made; `reason` says why (check off, latest never read, own commit unknown). |
+
+### How a source build is checked
+
+The daemon reads latest when it starts and again every 1800 s, each read within 10 s and at most
+4096 bytes. A request never waits on the network: it is answered from the last read. A failed read
+keeps the last good latest and says what failed in `error`. The bounds are the capacity rows
+`update.refresh_seconds`, `update.fetch_timeout_seconds` and `update.build_body_bytes`
+([limits.md](limits.md)).
+
+`GET /v1/update`, with the same local authentication as its sibling read routes, answers
+`UpdateStatus` (`api/v1/system.schema.json`):
+
+```json
+{"state": "differs",
+ "running": {"stamp": "08b4277b…"},
+ "latest":  {"stamp": "4b7c3f8d…", "committed_at": "2026-10-04T02:31:05Z"},
+ "checked_at": "2026-10-04T12:40:00Z",
+ "source_url": "https://app.clawdline.com/BUILD.json"}
+```
+
+This is the shape a release built before `committed_at` existed answers: its BUILD.json has
+only a stamp, so the two commits differ and neither is known to be later. Once both sides carry
+`committed_at` the state is `update_available` or `ahead`. `reason` appears with `unknown`; `error` while the most recent read failed. Clawdline Cloud
+carries the route as the parameterless machine read `update`, so a phone asks the same question
+the local console does.
+
+### Catching up a development machine now
+
+```sh
+clawdline update --apply [--force]
+```
+
+On Linux, inside a source checkout, it runs `git fetch origin main`, requires the latest stamp to
+be `origin/main` or an ancestor of it, and runs `tools/deploy-linux-user.sh --rev <stamp>`. The
+deploy builds that commit in an ephemeral checkout, so the shared checkout's HEAD does not move,
+then switches, restarts, verifies and rolls back as [linux.md](linux.md) describes. It refuses
+when the state is `current` or `ahead` unless `--force` is given, and refuses outside a source
+checkout.
+
+On macOS it does not apply anything: it prints the commands — a disposable worktree at the stamp
+and `tools/package-macos.sh` run from it — and exits non-zero.
+
+### Source builds
 
 `clawdline update --apply` on a source build is the development path described in
 [Catching up a development machine now](#catching-up-a-development-machine-now): a source checkout

@@ -64,8 +64,23 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 ## 安裝
 
-在 macOS 或 Linux 從原始碼建置。你需要 Go 1.25 以上、Node.js 與 npm、tmux，以及 Claude Code
-或 Codex。
+在 macOS 13 以上或 Linux，已經裝好 tmux 和 Claude Code 或 Codex：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
+```
+
+它會安裝簽章過的最新正式版，以使用者服務在登入時啟動（不需要 `sudo`、Go 或 Node.js），在 Mac
+上一併裝選單列 App，最後在瀏覽器打開主控台。伺服器上請在 `sh` 後面加 `-s -- --headless`。接著
+在 tmux 裡執行 `claude` 或 `codex`，Session 就會出現在清單裡。
+
+每一步與確認方法、所有選項和移除方式，都在[安裝與第一次執行](docs/user/install.md)。正式版可以
+在主控台的設定頁或用 `clawdline update --apply` 更新；新版起不來時會自己退回原版本
+（[更新](docs/updates.md)）。
+
+### 從原始碼建置
+
+你需要 Go 1.25 以上、Node.js 與 npm、tmux，以及 Claude Code 或 Codex。
 
 ```sh
 git clone https://github.com/sainteye/clawdline.git
@@ -83,13 +98,12 @@ CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 ./bin/clawdline open        # 讓這個瀏覽器登入，讀取並傳送到 Session
 ```
 
-在 tmux 裡執行 `claude` 或 `codex`，Session 就會出現在清單上。每一步與確認方法都在
-[安裝與第一次執行](docs/user/install.md)。`./bin/clawdline update` 會告訴你這台機器是否落後最新
-版本（[更新](docs/updates.md)）。
+在 tmux 裡執行 `claude` 或 `codex`，Session 就會出現在清單上。`./bin/clawdline update` 會告訴你
+這台機器是否落後最新版本（[更新](docs/updates.md#development-machines)）。
 
 ## 限制
 
-- **1.0 之前**，要從原始碼建置，還沒有安裝檔。
+- **1.0 之前**：版本之間可能有變動。
 - 主控台目前只有**繁體中文**介面。
 - **Windows** 能跑 daemon 與主控台，但還不能列出 Session，也不能開終端機。Linux 用
   `systemd --user` 在背景執行；macOS 另有選用的原生 App（[平台](docs/user/platforms.md)）。

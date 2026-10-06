@@ -15,7 +15,7 @@ says what it set up, and how a source checkout does the same.
 | Installer, signed updates with rollback | Yes | Yes | No |
 | Global hotkey, menu bar, notch mascot | Native app | No | No |
 
-Linux was measured on a headless Ubuntu 24.04 server, and Windows on Windows Server 2022. Other distributions and desktop Linux have not been run.
+Linux was measured on a headless Ubuntu 24.04 server, and the installer and updates were also run on Debian 12 (bookworm) in a container with systemd as its init, logged in over SSH; Windows was measured on Windows Server 2022. Other distributions and desktop Linux have not been run.
 
 ## macOS: the service and the app
 

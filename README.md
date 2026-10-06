@@ -87,7 +87,7 @@ page or with `clawdline update --apply`, and rolls back by itself if it does not
 
 ## Limits
 
-- **Pre-1.0**, built from source, no release download yet.
+- **Pre-1.0**: expect changes between releases.
 - The console is in **Traditional Chinese** only for now.
 - **Windows** runs the daemon and console but cannot list sessions or open terminals. Linux runs
   headless under `systemd --user`; macOS has an optional native app ([Platforms](docs/user/platforms.md)).

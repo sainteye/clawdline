@@ -32,7 +32,8 @@ signature, and runs `clawdline setup` from it, which:
 
 - puts the release in `~/.local/share/clawdline-next/releases/<version>/` and links
   `~/.local/bin/clawdline` to it — if `~/.local/bin` is not on your `PATH`, it prints the one
-  line to add to your shell profile;
+  line that adds it to your shell's profile file (`~/.zshrc`, `~/.bashrc`, …), and every
+  command it prints uses the full path until then;
 - starts the daemon as a per-user service that comes back after logout and reboot: a
   `systemd --user` unit on Linux, a LaunchAgent on macOS. On Linux it also turns on lingering,
   so the service starts at boot and outlives your last logout; where your system reserves that
@@ -41,6 +42,14 @@ signature, and runs `clawdline setup` from it, which:
 - on a Mac with a desktop, also installs **Clawdline Next.app** into `~/Applications`;
 - checks that the console answers, that it is the release just installed, and that the daemon
   can open and close a tmux session — then opens the console in your browser.
+
+Each check prints one ✓ line; `--verbose` adds the paths and versions behind it. The install ends
+with a **Next:** block: how to sign in (on a machine with no desktop, the address and the
+`ssh -L` line that reaches it from your laptop), how to start an assistant inside tmux, and how to
+turn autostart off or remove Clawdline, each with `--port` when you chose another port.
+
+"Next" in `Clawdline Next.app`, `clawdline-next.service` and `~/.config/clawdline-next` is this
+generation's internal name; the product is Clawdline.
 
 Options go after `sh -s --`:
 
@@ -56,6 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh 
 | `--channel beta` | Follow pre-releases too |
 | `--version vX.Y.Z` | Install that release instead of the latest |
 | `--port N` | Listen on another port than 7727 (it gets its own service name) |
+| `--verbose` | Also print the paths and versions behind each check |
 | `--adopt` | Take over an installation made from a source checkout (below) |
 
 **Check:** the installer ends with the console open (or its address printed), and
@@ -71,10 +81,12 @@ answers with the version you installed.
 The installer opens it for you. To open it again, or on another browser:
 
 ```sh
-clawdline open           # this browser can read every session
-clawdline open --send    # this browser can also type into sessions
+clawdline open           # sign this browser in
 clawdline open --print   # print the address instead (a machine with no desktop)
 ```
+
+A browser signed in this way can read every session and type into it. (`--send` is still accepted
+for older scripts and changes nothing.)
 
 `open` creates a device for your browser and signs it in. The key travels in the address's
 fragment, which the browser never sends to a server. Treat a printed address like a password
@@ -107,9 +119,11 @@ clawdline project add ~/code/my-app ~/code/another-app
 ## Updates
 
 The daemon checks for a new release every few hours. When there is one, the console's Settings
-page and `clawdline update` say so; **update** there, or `clawdline update --apply`, installs it.
+page and `clawdline update` say so; **立即更新** there, or `clawdline update --apply`, installs it.
 Every release is signature-checked before it is installed, and one that does not come up healthy
-is rolled back by itself. [updates.md](../updates.md) has the whole of it.
+is rolled back by itself. Automatic updates are off until you turn on **自動更新** on the Settings
+page or run `clawdline setting set update_auto_apply true`. [updates.md](../updates.md) has the
+whole of it.
 
 ## When something already runs
 
@@ -129,7 +143,10 @@ clawdline setup --uninstall --purge   # and the state: devices, sessions, settin
 ```
 
 Without `--purge` your state in `~/.config/clawdline-next` stays, so installing again picks up
-where you were. Terminals Clawdline opened keep running after either; while one is still open,
+where you were. To delete it later, once the `clawdline` command is gone, run
+`rm -rf ~/.config/clawdline-next`, or the installer with `--uninstall --purge`, which removes it
+even when nothing else is left. Uninstall also removes the service's systemd drop-in directory
+(`~/.config/systemd/user/clawdline-next.service.d/`, where `systemctl --user edit` puts overrides). Terminals Clawdline opened keep running after either; while one is still open,
 `--purge` leaves the `tmux` folder they run from, and says how to reach them. If you ran `clawdline skill install`, run `clawdline skill uninstall` first
 ([clawdfather-and-dispatch.md](clawdfather-and-dispatch.md)).
 

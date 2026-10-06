@@ -47,7 +47,7 @@ the installer again after the fix is safe: it picks up from what is already in p
 | `source_deploy_needs_adopt` | This Linux machine runs a deploy from a checkout | Keep it, or install with `--adopt` to move it onto releases |
 | `no_user_service_manager` | Linux: this login has no `systemd --user` (you came in through `su` or `sudo -u`) | Log in as that user over SSH or a desktop session, or have an administrator run the `loginctl enable-linger` line it prints |
 | `service_failed` | The LaunchAgent or systemd unit did not start | `logs/daemon.log`, then `journalctl --user -u clawdline-next` (Linux) or `launchctl print gui/$(id -u)/<label>` (macOS) |
-| `health_check_failed` | The service started, but the console did not answer as the release just installed | `logs/daemon.log` says why; fix it and run the installer again |
+| `health_check_failed` | The service started, but the console did not answer as the release just installed within 60 seconds | `clawdline doctor`, then `logs/daemon.log`, say why (the installer prints both); fix it and run the installer again |
 | `session_check_failed` | The daemon could not open and close a tmux session | `tmux -V` as the same user; `--no-session-check` skips it on a machine meant to have none |
 | `channel_mismatch` | You asked for a channel other than the one this machine follows | Pass `--channel` again to switch |
 | `current_not_a_release`, `not_installed` | The command needs an installed release and this machine has none | Install it first |
@@ -61,7 +61,7 @@ An update that does not come up healthy rolls back by itself; the console's Sett
 | --- | --- | --- |
 | A session is missing from the list | It is not running inside tmux (or iTerm2 on a Mac), or tmux is not on `PATH` nor in `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` or `/opt/local/bin` | Run the agent inside tmux; `tmux -V` must work for the user running the daemon |
 | The list is empty on Windows | Windows has no session discovery yet | See [platforms.md](platforms.md) |
-| You can read a session but cannot type into it | The browser's device is read-only (made before `open` granted send) | Run `clawdline open` again, or see [remote-access.md](remote-access.md) for a paired device |
+| You can read a session but cannot type into it | The browser's device is a read-only one, made by an older version's `clawdline open` | Run `clawdline open` again; every browser it signs in now can type. For a paired device see [remote-access.md](remote-access.md) |
 | A state reads as unknown, not idle | The screen or transcript could not be read, and Clawdline does not guess | Open the session's screen; the state returns when the evidence does |
 | The Status Line's right edge says `方案額度 未知`, or a fresh Linux box never shows Claude's `5h`/`7d` | Claude Code hands those percentages to the stdin of `statusLine.command` and to nothing else, so with no status line configured nothing ever writes `~/.claude/statusline-cache/rate-limits.json` | Configure a status line that writes that file ([usage.md](usage.md)). **Session 資訊** names the missing file. Codex's weekly window is unaffected |
 
