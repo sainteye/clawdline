@@ -5625,6 +5625,9 @@ type SettingsRequest struct {
 	// `auto`, `iterm`, `iterm_native` or `tmux`.
 	Terminal *string `json:"terminal"`
 
+	// true or false.
+	UpdateAutoApply *bool `json:"update_auto_apply"`
+
 	// Whether future execution cycles capture independent verification. Null leaves
 	// the stored setting unchanged; absence in the settings file defaults to false.
 	VerifyGate *bool `json:"verify_gate"`
@@ -5786,6 +5789,11 @@ type SettingsSnapshot struct {
 	// tab; `iterm_native` runs it in the tab itself. Not the same question as
 	// scope_app.
 	Terminal *string `json:"terminal"`
+
+	// Whether this machine installs a newer stable release by itself when no session
+	// it started is busy (docs/updates.md). Only a release install acts on it. Null or
+	// absent is off, the default.
+	UpdateAutoApply *bool `json:"update_auto_apply"`
 
 	// Whether a newly assigned execution cycle captures independent verification.
 	// Absent means false; a later setting change never rewrites an in-flight cycle's

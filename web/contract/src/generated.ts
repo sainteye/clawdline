@@ -6705,6 +6705,11 @@ export interface SettingsRequest {
   terminal: string | null
 
   /**
+   * true or false.
+   */
+  update_auto_apply: boolean | null
+
+  /**
    * Whether future execution cycles capture independent verification. Null leaves
    * the stored setting unchanged; absence in the settings file defaults to false.
    */
@@ -6958,6 +6963,13 @@ export interface SettingsSnapshot {
    * scope_app.
    */
   terminal: string | null
+
+  /**
+   * Whether this machine installs a newer stable release by itself when no session
+   * it started is busy (docs/updates.md). Only a release install acts on it. Null
+   * or absent is off, the default.
+   */
+  update_auto_apply: boolean | null
 
   /**
    * Whether a newly assigned execution cycle captures independent verification.
