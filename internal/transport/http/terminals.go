@@ -267,7 +267,7 @@ func (s *Server) terminalRoute(w http.ResponseWriter, r *http.Request) {
 		parts[i] = decodeSegment(part)
 	}
 	if len(parts) > 2 || parts[0] == "" {
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such route")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	id := terminal.ID(parts[0])
@@ -382,7 +382,7 @@ func (s *Server) terminalRoute(w http.ResponseWriter, r *http.Request) {
 		verb == "paste" || verb == "resize":
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "That method is not answered here.")
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such route")
+		writeNoSuchRoute(w, r)
 	}
 }
 

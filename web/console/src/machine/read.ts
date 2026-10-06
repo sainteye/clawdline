@@ -1,5 +1,6 @@
 import type { MachineUsage } from "@clawdline/contract"
-import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
+import { RefusalError, TransportError, asMachineNeedsUpdate, isRefusal } from "@clawdline/core"
+import { nextWord } from "../next-strings.js"
 import { client } from "../client.js"
 
 /**
@@ -44,13 +45,16 @@ async function call(method: string, path: string): Promise<MachineUsage> {
 
 /** A failure as the dashboard says it. */
 export function failureWords(err: unknown, zh: boolean): string {
+  // A machine older than the usage route: the console's one needs-update
+  // sentence (machine/NeedsUpdate.tsx), not a failure.
+  if (asMachineNeedsUpdate(err)) return nextWord("machineNeedsUpdate")
   if (err instanceof RefusalError) {
     if (err.code === "machine_usage_unsupported") {
       return zh ? "這台機器的作業系統還沒有用量讀取器（目前支援 Linux 和 macOS）。" : "This machine's system has no usage reader yet (Linux and macOS for now)."
     }
-    if (err.code === "cloud_not_carried" || err.code === "unknown_command") {
-      return zh ? "這台機器的 Clawdline 版本還不會回答用量，更新後就能看到。" : "This machine's Clawdline does not answer usage yet; update it to see this."
-    }
+    // This console not carrying the read over Cloud is the console's fact,
+    // and updating the machine would not change it.
+    if (err.code === "cloud_not_carried") return nextWord("cloudNotCarried")
     return err.detail || err.code
   }
   if (err instanceof TransportError) {

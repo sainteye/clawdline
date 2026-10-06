@@ -10,7 +10,9 @@ import { toggleOrder } from "./session/Transcript.js"
 import { conversationNotStarted } from "./session/readiness.js"
 import * as L from "./legacy/bridge.js"
 import type { PageModule } from "./pages/types.js"
-import { drawerEntries, pageReady } from "./pages/registry.js"
+import { drawerEntries, pageNeedsUpdate, pageReady } from "./pages/registry.js"
+import { publishMachineVersion, useMachineVersion } from "./machine/NeedsUpdate.js"
+import { machineVersionFromHealth } from "./machine/needs-update-model.js"
 import { pageFromHash } from "./page-route.js"
 import { workWord } from "./pages/work/words.js"
 import { verifyWord } from "./pages/verify/words.js"
@@ -191,6 +193,13 @@ function rowNode(id: string): HTMLElement | null {
 export default function App({ aside }: { aside?: ReactNode | ((light: ConnectionLight) => ReactNode) } = {}) {
   const fleet = useFleet(client)
   const light = useConnectionLight(fleet.live, fleet.refresh)
+  const machineVersion = useMachineVersion()
+  // A page this machine reports too low a route level for is offered disabled
+  // and says why, rather than missing (pages/registry.ts `pageNeedsUpdate`).
+  const tooOld = (id: string) => pageNeedsUpdate(id, PAGE_MODULES, machineVersion.apiLevel)
+  const offered = (id: string) => ready(id) && !tooOld(id)
+  const tooOldTitle = (id: string) => tooOld(id) ? nextWord("machineNeedsUpdate") : undefined
+  const tooOldMark = (id: string) => tooOld(id) ? <small className="sidebar-needs-update"> · {nextWord("machineNeedsUpdateShort")}</small> : null
   const [page, setPage] = useState<Page>(() => hasDocumentIntent(location.hash) ? "documents" : "sessions")
   const [menu, setMenu] = useState(false)
   // The machine dashboard, opened from the counts (machine/MachineDashboard.tsx).
@@ -773,11 +782,13 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
               type="button"
               data-page-to={p.id}
               aria-current={page === p.id ? "page" : undefined}
-              disabled={!ready(p.id)}
+              disabled={!offered(p.id)}
               onClick={() => go(p.id)}
+              title={tooOldTitle(p.id)}
             >
               <SidebarIcon name={p.icon} />
               {p.key ? T[p.key] : p.text}
+              {tooOldMark(p.id)}
             </button>
           ))}
           {/* The work system (design-decisions T6): not one of the retired app's
@@ -788,11 +799,13 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
             type="button"
             data-page-to="work"
             aria-current={page === "work" ? "page" : undefined}
-            disabled={!ready("work")}
+            disabled={!offered("work")}
             onClick={() => go("work")}
+            title={tooOldTitle("work")}
           >
             <SidebarIcon name="work" />
             {workWord("nav")}
+            {tooOldMark("work")}
           </button>
           {/* 驗收 (docs/verifications.md): what was changed and waits for
               someone to look again by a date. This is where a verdict is
@@ -803,11 +816,13 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
             type="button"
             data-page-to="verify"
             aria-current={page === "verify" ? "page" : undefined}
-            disabled={!ready("verify")}
+            disabled={!offered("verify")}
             onClick={() => go("verify")}
+            title={tooOldTitle("verify")}
           >
             <SidebarIcon name="verify" />
             {verifyWord("nav")}
+            {tooOldMark("verify")}
           </button>
           <button
             className="sidebar-item"
@@ -815,11 +830,13 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
             type="button"
             data-page-to="squad"
             aria-current={page === "squad" ? "page" : undefined}
-            disabled={!ready("squad")}
+            disabled={!offered("squad")}
             onClick={() => go("squad")}
+            title={tooOldTitle("squad")}
           >
             <SidebarIcon name="squad" />
             角色小隊
+            {tooOldMark("squad")}
           </button>
           {/* 封存 (docs/session-archive.md): the Sessions archived from the
               list's swipe, each with the way back. */}
@@ -829,11 +846,13 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
             type="button"
             data-page-to="archive"
             aria-current={page === "archive" ? "page" : undefined}
-            disabled={!ready("archive")}
+            disabled={!offered("archive")}
             onClick={() => go("archive")}
+            title={tooOldTitle("archive")}
           >
             <SidebarIcon name="archive" />
             {nextWord("archiveNav")}
+            {tooOldMark("archive")}
           </button>
         </div>
       </nav>
@@ -987,6 +1006,12 @@ function useConnectionLight(live: boolean, onRetry: () => void): ConnectionLight
   // must not paint "connected" before the chosen machine's health arrives.
   const state = connectionLightState(live, data !== null, healthError !== null)
   const version = (data as unknown as { version?: unknown } | null)?.version
+  // The same answer tells a feature whether this machine is too old for it
+  // (machine/NeedsUpdate.tsx): one health read, not a second poll. A failed
+  // read keeps the last reading, as the light keeps its last state.
+  useEffect(() => {
+    if (data) publishMachineVersion(machineVersionFromHealth(data))
+  }, [data])
   return { state, ...connectionLightWords(state, L.strings, version), onRetry }
 }
 

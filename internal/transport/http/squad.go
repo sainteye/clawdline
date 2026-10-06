@@ -61,7 +61,7 @@ func (s *Server) squadRoute(w http.ResponseWriter, r *http.Request) {
 			s.squadDefinitionRead(w, r)
 			return
 		}
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such squad route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

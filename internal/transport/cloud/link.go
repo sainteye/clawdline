@@ -187,6 +187,9 @@ type LinkOptions struct {
 	Authorize func(*http.Request)
 	// Version is this build, for the machine registration record.
 	Version string
+	// APILevel is the route level this daemon answers (httptransport.APILevel),
+	// for the descriptor's `app.api_level`. Zero leaves it out.
+	APILevel int
 	// Log is one line per material event. Nil is silence.
 	Log func(format string, args ...any)
 	// Now exists so a test can drive the clock.
@@ -692,6 +695,7 @@ func (l *Link) wire() error {
 		MachineName: machineName(identity, settings, HostName(), runtime.GOOS),
 		Platform:    runtime.GOOS,
 		Version:     opts.Version,
+		APILevel:    opts.APILevel,
 		Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
 			AppOrigin: settings.AppOrigin},
 		Publish: l.relay.Publish,

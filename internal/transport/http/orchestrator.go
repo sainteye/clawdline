@@ -40,7 +40,7 @@ import (
 func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(routePath(r), "/v1/orchestrator/tasks/")
 	if rest == "" {
-		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a task action")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	id, action := rest, ""
@@ -81,7 +81,7 @@ func (s *Server) orchestratorTaskRoute(w http.ResponseWriter, r *http.Request) {
 	case action == "cancel" && r.Method == http.MethodPost:
 		s.brokerCancel(w, r, id)
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a task action")
+		writeNoSuchRoute(w, r)
 	}
 }
 
@@ -628,7 +628,7 @@ func (s *Server) brokerSessionRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action != "complete" || r.Method != http.MethodPost {
-		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a session action")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	if !machineAuthed(r) {

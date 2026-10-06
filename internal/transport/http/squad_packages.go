@@ -141,7 +141,7 @@ func (s *Server) squadPackagesRoute(w http.ResponseWriter, r *http.Request) {
 	case "/v1/squad-packages/export":
 		s.squadPackageExport(w, r)
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such package route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

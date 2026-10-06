@@ -47,7 +47,7 @@ type agentCloseRefusal struct {
 
 func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request, parts []string) {
 	if len(parts) != 3 {
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such Agent work-system route.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	// The route reads the escaped path (routePath), and a tmux pane's name
@@ -64,7 +64,7 @@ func (s *Server) agentSessions(w http.ResponseWriter, r *http.Request, parts []s
 	case parts[2] == "close" && r.Method == http.MethodPost:
 		s.agentCloseSession(w, r, terminal)
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such Agent work-system route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

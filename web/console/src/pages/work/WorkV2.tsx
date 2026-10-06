@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
-import { RefusalError } from "@clawdline/core"
+import { RefusalError, asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
+import { NeedsUpdate } from "../../machine/NeedsUpdate.js"
 import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
 import { sessionFragment } from "../../session/address.js"
@@ -1126,6 +1127,8 @@ interface SessionWorkReading {
   page?: SessionWorkV2
   loading?: boolean
   error?: string
+  /** The machine is too old for this read; said instead of `error` (docs/updates.md). */
+  update?: MachineNeedsUpdate | null
 }
 
 function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false }: {
@@ -1158,7 +1161,7 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
         setReadings((current) => ({ ...current, [session.id]: { page } }))
       } catch (error) {
         if (mine !== ticket.current) return
-        setReadings((current) => ({ ...current, [session.id]: { error: failureWords(error) } }))
+        setReadings((current) => ({ ...current, [session.id]: { error: failureWords(error), update: asMachineNeedsUpdate(error) } }))
       }
     }))
   }, [sessions])
@@ -1213,7 +1216,7 @@ function SessionChoice({ session, reading, selected, onChoose }: {
   return <button className="work-session-option" type="button" role="option" aria-selected={selected} onClick={onChoose}>
     <SessionStateDot session={session} />
     <span><b>{session.label || session.id}</b><PersonaTag id={session.persona} personas={personas} /><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkLabel(session)}</small></span>
-    <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.error ? "讀不到工作" : counts
+    <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.update ? nextWord("machineNeedsUpdateShort") : reading?.error ? "讀不到工作" : counts
       ? `${counts.board} 看板 · ${counts.todos} TODO` : "—"}</span>
   </button>
 }
@@ -1228,7 +1231,7 @@ function SessionAssignmentDetail({ session, reading }: { session: SessionRow; re
   return <section className="work-session-detail" aria-label={`${session.label || session.id} 的狀況`} aria-live="polite">
     <div className="work-session-detail-head"><strong>Session 狀況</strong><span>{sessionActivityName(session.state)} · {sessionWorkLabel(session)}</span></div>
     {(session.line || session.work_note) && <p>{session.line || session.work_note}</p>}
-    {reading?.loading && !page ? <p>正在讀取看板與 TODO…</p> : reading?.error ? <p className="work-note" role="alert">工作資訊讀取失敗：{reading.error}</p> : page ? <>
+    {reading?.loading && !page ? <p>正在讀取看板與 TODO…</p> : reading?.update ? <NeedsUpdate update={reading.update} /> : reading?.error ? <p className="work-note" role="alert">工作資訊讀取失敗：{reading.error}</p> : page ? <>
       <p>尚未完成：{counts?.board ?? 0} 個看板項目 · {counts?.todos ?? 0} 個 TODO</p>
       <SessionWorkList title="還在做" empty="目前沒有負責中的看板項目。" rows={page.assigned_items.map((item) => ({
         id: item.id, title: item.title, meta: `${item.project.label} · ${phaseName(item.phase)}${item.condition ? ` · ${conditionWords(item)}` : ""}`,
