@@ -56,12 +56,12 @@ func TestTheProposalRoutesAndTheDiagnosticsCounts(t *testing.T) {
 	}
 	for _, path := range []string{"/v1/work/board", "/v1/work/backlog", "/v1/work/items", "/v1/work/items/" +
 		"0b0e0000-0000-4000-8000-000000000001", "/v1/work/items/0b0e0000-0000-4000-8000-000000000001/moves"} {
-		if rec := do(person, http.MethodGet, path, "", ""); rec.Code != http.StatusNotFound || code(rec) != "not_found" {
+		if rec := do(person, http.MethodGet, path, "", ""); rec.Code != http.StatusNotImplemented || code(rec) != "not_implemented" {
 			t.Fatalf("retired route %s: %d %s", path, rec.Code, rec.Body)
 		}
 	}
 	for _, path := range []string{"/v1/work/items", "/v1/work/items/0b0e0000-0000-4000-8000-000000000001"} {
-		if rec := do(person, http.MethodPost, path, "", `{}`); rec.Code != http.StatusNotFound || code(rec) != "not_found" {
+		if rec := do(person, http.MethodPost, path, "", `{}`); rec.Code != http.StatusNotImplemented || code(rec) != "not_implemented" {
 			t.Fatalf("retired write route %s: %d %s", path, rec.Code, rec.Body)
 		}
 	}

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -29,13 +27,9 @@ func TestEveryRemedyNamesARouteThisDaemonServes(t *testing.T) {
 	if taskSecret(req) != "x" {
 		t.Fatalf("the task routes do not read %q", orchestrator.HeaderTaskSecret)
 	}
-	src, err := os.ReadFile("server.go")
-	if err != nil {
-		t.Fatal(err)
-	}
 	patterns := []string{}
-	for _, m := range regexp.MustCompile(`mux\.HandleFunc\("([^"]+)"`).FindAllStringSubmatch(string(src), -1) {
-		patterns = append(patterns, m[1])
+	for _, r := range Routes() {
+		patterns = append(patterns, r.Pattern)
 	}
 	served := func(route string) bool {
 		for _, p := range patterns {
