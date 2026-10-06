@@ -147,7 +147,10 @@ main() {
   # Unpacked beside its final place and renamed in, so a release directory is
   # whole or absent. setup proves every file matches the signed archive.
   mkdir "$work/unpacked"
-  tar -xzf "$work/$name" -C "$work/unpacked"
+  # GNU tar names every macOS extended attribute it skips; those lines say
+  # nothing about the files, anything else it says is shown.
+  tar -xzf "$work/$name" -C "$work/unpacked" 2>"$work/tar.err" || { cat "$work/tar.err" >&2; die "could not unpack $name"; }
+  grep -v 'Ignoring unknown extended header keyword' "$work/tar.err" >&2 || true
   [ -x "$work/unpacked/clawdline" ] || die "$name holds no clawdline binary"
   mkdir -p "$root/releases"
   dest=$root/releases/$v
