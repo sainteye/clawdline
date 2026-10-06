@@ -24,7 +24,7 @@ test("every row is placed and cleared in place, never with a newline", () => {
 
 test("the modes come first and the cursor last", () => {
   const out = frameBytes(frame({ modes: { ...modes, app_cursor: true, mouse: "button", mouse_sgr: true } }))
-  assert.ok(out.startsWith(ESC + "[?25l" + ESC + "[?1h" + ESC + ">"))
+  assert.ok(out.startsWith(ESC + "[?25l" + ESC + "[?7l" + ESC + "[?1h" + ESC + ">"))
   assert.ok(out.indexOf(ESC + "[?1002h") < out.indexOf(ESC + "[1;1H"))
   assert.ok(out.includes(ESC + "[?1006h"))
   assert.ok(out.endsWith(ESC + "[2;3H" + ESC + "[?25h"))
@@ -42,6 +42,14 @@ test("the keypad, mouse and cursor shape follow the program", () => {
 
 test("a cursor outside the screen is kept on it", () => {
   assert.ok(frameBytes(frame({ cursor: { x: 99, y: 99, visible: true } })).endsWith(ESC + "[2;5H" + ESC + "[?25h"))
+})
+
+test("a row wider than the screen cannot wrap and scroll the screen under a later delta", () => {
+  const wide = frame({ lines: ["abcde", "vwxyz12345"] })
+  for (const out of [frameBytes(wide), frameDeltaBytes(frame(), wide)]) {
+    assert.ok(out.indexOf(ESC + "[?7l") >= 0 && out.indexOf(ESC + "[?7l") < out.indexOf("vwxyz"))
+    assert.ok(!out.includes(ESC + "[?7h"))
+  }
 })
 
 test("a changed row is redrawn without rewriting an unchanged row", () => {

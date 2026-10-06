@@ -16,7 +16,11 @@ import type { TerminalCursor, TerminalFrame, TerminalModes } from "@clawdline/co
  * program left it, shown or hidden as it was.
  *
  * The viewer's terminal is kept at the frame's own size before this is
- * written (TerminalView), so a row never wraps.
+ * written (TerminalView), and autowrap is off (`ESC[?7l`) while it is, so a
+ * row never wraps even when it is wider than the screen: a capture that raced
+ * a resize, or a character the two sides measure differently. A wrap on the
+ * bottom row would scroll the whole screen up one line, and a delta drawn
+ * over that would leave every unchanged row a line off until a full redraw.
  */
 
 const ESC = "\x1b"
@@ -41,7 +45,7 @@ export function modeBytes(modes: TerminalModes, cursor: Pick<TerminalCursor, "sh
 }
 
 export function frameBytes(frame: TerminalFrame): string {
-  let out = ESC + "[?25l" + modeBytes(frame.modes, frame.cursor)
+  let out = ESC + "[?25l" + ESC + "[?7l" + modeBytes(frame.modes, frame.cursor)
   const rows = Math.max(0, frame.rows)
   for (let r = 0; r < rows; r++) {
     out += ESC + "[" + (r + 1) + ";1H" + ESC + "[0m" + ESC + "[K" + (frame.lines[r] ?? "") + ESC + "[0m"
@@ -58,7 +62,7 @@ export function frameDeltaBytes(previous: TerminalFrame | null, frame: TerminalF
   if (!previous || previous.cols !== frame.cols || previous.rows !== frame.rows || previous.modes.alt !== frame.modes.alt) {
     return frameBytes(frame)
   }
-  let out = ESC + "[?25l" + modeBytes(frame.modes, frame.cursor)
+  let out = ESC + "[?25l" + ESC + "[?7l" + modeBytes(frame.modes, frame.cursor)
   for (let r = 0; r < frame.rows; r++) {
     if (previous.lines[r] === frame.lines[r]) continue
     out += ESC + "[" + (r + 1) + ";1H" + ESC + "[0m" + ESC + "[K" + (frame.lines[r] ?? "") + ESC + "[0m"
