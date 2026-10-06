@@ -1,4 +1,5 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
+<!-- clawdline-doc: kind=record audience=both -->
 
 > **這是一份設計，不是現況說明。** 撰寫於 2026-09-13。量測對象：本 repo commit `517480fb` 的工作樹、
 > `~/Library/Logs/Clawdline.log`（08-31 起，659,523 行）、private Cloud service source snapshot。

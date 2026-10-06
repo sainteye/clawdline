@@ -1,13 +1,13 @@
 # Work system v2
 
-Status: **implemented locally; release verification and live-data cutover pending**. The owner
-approved the defaults in this document on 2026-09-22. The v2 store, authority boundaries,
-lifecycle API, Board Console, Session projection, direct to-dos, proposals, and guarded v1 reset
-are present on the implementation branch. The person's running daemon has not been changed and
-its v1 rows have not been deleted.
+Status (2026-10-06): Work system v2 is implemented and in use for Board items.
 
-This page is normative for the replacement. Where the earlier board design, work-system design,
-or broker projection disagrees with it, this page wins for v2. The acceptance contract is
+The owner approved the defaults in this document on 2026-09-22. The v2 store, authority
+boundaries, lifecycle API, Board Console, Session projection, direct to-dos, proposals, and guarded
+v1 reset are implemented.
+
+This page is normative for v2. Where the earlier board design, work-system design, or broker
+projection disagrees with it, this page wins. The acceptance contract is
 [`work-system-v2-acceptance.md`](work-system-v2-acceptance.md).
 
 Agent requests for a person's attention on a Session use the separate
