@@ -157,7 +157,8 @@ test("the needs-update words, with and without a version, link to Settings and n
   const without = needsUpdateWords({}, {}, nextWord)
   assert.equal(without.version, null)
   assert.equal(without.href, SETTINGS_UPDATE_HREF)
-  assert.equal(SETTINGS_UPDATE_HREF, "#page=settings")
+  // Settings, at its update panel; `page=` alone is what routing reads.
+  assert.equal(SETTINGS_UPDATE_HREF, "#page=settings&focus=update")
   assert.match(without.sentence, /Update it to use this|更新後就能使用/)
   assert.doesNotMatch(without.sentence + without.link, /\bMac\b/)
 

@@ -28,11 +28,11 @@
 @media (max-width: 520px) {
   .settings-gate-row {
     align-items: start;
+    gap: 0;
     grid-template-columns: 1fr;
   }
 
-  .settings-gate-row .chip {
+  .settings-gate-row .settings-switch {
     justify-self: start;
-    min-height: 44px;
   }
 }

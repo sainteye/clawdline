@@ -16,6 +16,7 @@ import { ShellBlocks } from "./settings/ShellBlocks.js"
 import { BoardBlock } from "./settings/BoardBlock.js"
 import { CapacityBlock } from "./settings/CapacityBlock.js"
 import { UpdatePanel } from "../machine/UpdatePanel.js"
+import { asksForUpdatePanel } from "../machine/update-model.js"
 import { DefaultModelsBlock } from "./settings/DefaultModelsBlock.js"
 import { GateSettingsBlock } from "./settings/GateSettingsBlock.js"
 import { nextWord } from "../next-strings.js"
@@ -127,7 +128,12 @@ function SettingsPage({ shown }: { shown: boolean }) {
   // landing waits for the words, as the shell's does for the wordmark.
   useLayoutEffect(() => {
     if (!shown) return
-    const land = () => closeRef.current?.focus({ preventScroll: true })
+    // An address that asks for the update panel lands there instead
+    // (`landOnUpdatePanel`), and a landing it already made is not taken back.
+    const land = () => {
+      if (asksForUpdatePanel(location.hash) || document.activeElement?.id === "settings-update-title") return
+      closeRef.current?.focus({ preventScroll: true })
+    }
     const root = document.documentElement
     if (!root.classList.contains("booting")) {
       land()

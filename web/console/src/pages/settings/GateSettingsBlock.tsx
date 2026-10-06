@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import type { WorkGateSettingsSnapshot } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
 import { readWorkGateSettings, writeWorkGateSettings } from "./api.js"
+import { Switch } from "./Switch.js"
 import "./gate-settings.css"
 
 type GateKey = keyof WorkGateSettingsSnapshot
@@ -92,21 +93,22 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
   const current = snapshot ? mode(snapshot.planning_gate, snapshot.verify_gate) : null
   const toggle = (key: GateKey, label: string, hint: string) => {
     const on = snapshot?.[key] === true
+    const title = "settings-gate-" + key + "-title"
+    const say = "settings-gate-" + key + "-say"
     return (
       <div className="settings-gate-row">
         <div>
-          <strong>{label}</strong>
-          <p className="say">{hint}</p>
+          <strong id={title}>{label}</strong>
+          <p className="say" id={say}>{hint}</p>
         </div>
-        <button
-          className={on ? "chip on" : "chip"}
-          type="button"
-          aria-pressed={snapshot ? String(on) as "true" | "false" : "false"}
+        <Switch
+          labelledBy={title}
+          describedBy={say}
+          on={on}
+          stateText={snapshot ? (on ? words("On", "開") : words("Off", "關")) : words("Loading…", "讀取中…")}
           disabled={!snapshot || busy !== null}
-          onClick={() => commit(key)}
-        >
-          {snapshot ? (on ? words("On", "開啟") : words("Off", "關閉")) : words("Loading…", "讀取中…")}
-        </button>
+          onToggle={() => commit(key)}
+        />
       </div>
     )
   }

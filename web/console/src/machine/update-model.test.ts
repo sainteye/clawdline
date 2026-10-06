@@ -2,7 +2,10 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { UpdateApply, UpdateState, UpdateStatus } from "@clawdline/contract"
 import {
+  asksForUpdatePanel,
   classifyApplyAnswer,
+  detailsText,
+  INSTALL_COMMAND,
   classifyUpdateRead,
   settleUpdateRead,
   shortStamp,
@@ -138,18 +141,86 @@ test("the restart's silence reads as restarting, never as a failure", () => {
   assert.equal(view.problem, null)
 })
 
-test("a rolled-back or failed update says the code, the detail and that the previous version runs", () => {
+test("a rolled-back or failed update says plainly that the previous version runs, and folds the code away", () => {
   const rolled = panel({ read: answered(release("update_available", {
     state: "rolled_back", from: "v0.10.0", to: "v0.11.0", error: { code: "health_timeout", detail: "no answer in 60 s" },
   })) })
-  assert.ok(rolled.problem!.includes("health_timeout") && rolled.problem!.includes("no answer in 60 s"), rolled.problem!)
-  assert.ok(rolled.problem!.includes("v0.10.0") && rolled.problem!.includes("v0.11.0"), rolled.problem!)
+  const sentence = rolled.problem!.sentence
+  assert.equal(rolled.problem!.kind, "rolled_back")
+  assert.ok(sentence.includes("v0.10.0") && sentence.includes("v0.11.0"), sentence)
+  assert.ok(!sentence.includes("health_timeout") && !sentence.includes("no answer"), "the code is not in the sentence: " + sentence)
+  assert.ok(sentence.includes("Automatic updates will not try this version again"), sentence)
+  assert.deepEqual(rolled.problem!.details, { code: "health_timeout", detail: "no answer in 60 s" })
+  assert.equal(detailsText(rolled.problem!.details!), "health_timeout — no answer in 60 s")
   assert.equal(rolled.press.enabled, true, "a person may try again")
+  assert.equal(rolled.press.label, nextWord("updateRetry"))
+  assert.equal(rolled.press.below, true, "the button sits under the explanation")
+  assert.equal(rolled.stateLine, null, "the rollback is not also called an available update")
   const failed = panel({ read: answered(release("update_available", {
     state: "failed", from: "v0.10.0", to: "v0.11.0", error: { code: "download_failed" },
   })) })
-  assert.ok(failed.problem!.includes("download_failed") && failed.problem!.includes("v0.10.0"), failed.problem!)
-  assert.notEqual(failed.problem, rolled.problem)
+  assert.equal(failed.problem!.kind, "failed")
+  assert.ok(failed.problem!.sentence.includes("v0.10.0") && !failed.problem!.sentence.includes("download_failed"), failed.problem!.sentence)
+  assert.ok(!failed.problem!.sentence.includes("Automatic updates"), "a failure before switching is not remembered as failed: " + failed.problem!.sentence)
+  assert.deepEqual(failed.problem!.details, { code: "download_failed", detail: "" })
+  assert.equal(failed.press.label, nextWord("updateRetry"))
+})
+
+test("after a rollback, a newer release than the one that failed is offered as an update, not a retry", () => {
+  const view = panel({ read: answered(release("update_available", { state: "rolled_back", from: "v0.10.0", to: "v0.10.5" })) })
+  assert.equal(view.press.label, nextWord("updateNow"))
+})
+
+test("a finished update stays said with when and from what, after a reload and after an overnight auto-update", () => {
+  const healthy = release("current", { state: "healthy", from: "v0.10.0", to: "v0.11.0", at: "2026-10-07T03:12:00Z" }, {
+    running: { stamp: "4b7c3f8d9e0f1a2b3c4d", version: "v0.11.0" },
+  })
+  // Not following: the page reloaded into the new console, or nobody watched.
+  const view = panel({ read: answered(healthy) })
+  assert.equal(view.done, nextWord("updateDoneAt", { when: "at 2026-10-07T03:12:00Z", from: "v0.10.0", to: "v0.11.0" }))
+  assert.equal(view.progress, null)
+  assert.equal(view.problem, null)
+  const noTime = panel({ read: answered({ ...healthy, apply: { state: "healthy", from: "v0.10.0", to: "v0.11.0" } }) })
+  assert.equal(noTime.done, nextWord("updateDone", { from: "v0.10.0", to: "v0.11.0" }))
+  // A healthy record that does not say what it replaced says nothing of it.
+  assert.equal(panel({ read: answered({ ...healthy, apply: { state: "healthy", to: "v0.11.0" } }) }).done, null)
+  // A moving update is not a finished one.
+  assert.equal(panel({ read: answered(release("update_available", { state: "downloading", from: "v0.10.0", to: "v0.11.0" })) }).done, null)
+})
+
+test("a newer release available says what pressing does", () => {
+  const view = panel({ read: answered(release("update_available")) })
+  assert.equal(view.stateLine, nextWord("updateIsAvailable", { latest: "v0.11.0" }))
+  assert.ok(view.stateLine!.includes("tmux"), view.stateLine!)
+})
+
+test("a failed check and an unknown comparison say it plainly and fold the error away", () => {
+  const failed = panel({ read: answered(release("update_available", undefined, { error: "Get \"https://x/manifest.json\": dial tcp: no such host" })) })
+  assert.ok(failed.stateLine!.includes(nextWord("updateCheckFailed")), failed.stateLine!)
+  assert.ok(!failed.stateLine!.includes("dial tcp"), failed.stateLine!)
+  assert.equal(failed.stateDetails!.detail, "Get \"https://x/manifest.json\": dial tcp: no such host")
+  const unknown = panel({ read: answered(release("unknown", undefined, { reason: "manifest signature did not verify" })) })
+  assert.equal(unknown.stateLine, nextWord("updateIsUnknown"))
+  assert.equal(unknown.stateDetails!.detail, "manifest signature did not verify")
+  assert.equal(panel({ read: answered(release("current")) }).stateDetails, null)
+})
+
+test("the auto-update switch says 開 or 關 beside a name that never changes, and warns the beta channel", () => {
+  const off = panel({ read: answered(release("current")) })
+  assert.equal(off.auto.state, nextWord("updateAutoOff"))
+  assert.equal(off.auto.beta, null)
+  const on = panel({ read: answered(release("current", undefined, { auto_apply: true, channel: "beta" })) })
+  assert.equal(on.auto.on, true)
+  assert.equal(on.auto.state, nextWord("updateAutoOn"))
+  assert.equal(on.auto.beta, nextWord("updateAutoBeta"))
+})
+
+test("only an address that asks for the update panel lands on it", () => {
+  assert.equal(asksForUpdatePanel("#page=settings&focus=update"), true)
+  assert.equal(asksForUpdatePanel("#focus=update&page=settings"), true)
+  assert.equal(asksForUpdatePanel("#page=settings"), false)
+  assert.equal(asksForUpdatePanel("#page=sessions&focus=update"), false)
+  assert.equal(asksForUpdatePanel(""), false)
 })
 
 test("a healthy update with a staged app says it is replaced when the app quits", () => {
@@ -160,7 +231,8 @@ test("a healthy update with a staged app says it is replaced when the app quits"
     following: true,
   })
   assert.equal(view.staged, nextWord("updateStagedApp"))
-  assert.equal(view.progress, nextWord("updateHealthy", { to: "v0.11.0" }))
+  assert.equal(view.done, nextWord("updateDone", { from: "v0.10.0", to: "v0.11.0" }))
+  assert.equal(view.progress, null, "said once, as what was done")
   assert.equal(view.press.shown, false)
 })
 
@@ -183,10 +255,26 @@ test("a page that followed an update to healthy offers the next release that arr
   assert.equal(same.press.shown, false)
 })
 
-test("a refused press says why, and a machine without the apply route gets the needs-update line", () => {
+test("a refused press says nothing changed, and folds the code away", () => {
   const refused = panel({ read: answered(release("update_available")), pressRefused: { code: "not_installed_as_service", detail: "service.json is missing" } })
-  assert.ok(refused.problem!.includes("not_installed_as_service"), refused.problem!)
-  assert.equal(panel({ read: answered(release("update_available")), pressOlder: true }).kind, "older")
+  assert.equal(refused.problem!.kind, "refused")
+  assert.equal(refused.problem!.sentence, nextWord("updateRefused"))
+  assert.deepEqual(refused.problem!.details, { code: "not_installed_as_service", detail: "service.json is missing" })
+  assert.equal(refused.press.below, true)
+})
+
+test("a machine without the apply route keeps the panel and says to run the install command", () => {
+  const view = panel({ read: answered(release("update_available")), pressOlder: true })
+  assert.equal(view.kind, "panel")
+  assert.equal(view.facts[0].value, "v0.10.0", "the versions stay")
+  assert.equal(view.problem!.kind, "older")
+  assert.equal(view.problem!.sentence, nextWord("updateApplyOlder"))
+  assert.equal(view.problem!.command, INSTALL_COMMAND)
+  assert.ok(INSTALL_COMMAND.startsWith("curl -fsSL https://") && INSTALL_COMMAND.endsWith("| sh"))
+  assert.equal(view.press.shown, false, "pressing again cannot work")
+  assert.equal(view.stateLine, null, "it is not also told the version can be installed here")
+  // With no status at all there is no panel to keep: the needs-update line.
+  assert.equal(panel({ pressOlder: true }).kind, "older")
 })
 
 test("a source build has no button and one sentence on how it updates", () => {

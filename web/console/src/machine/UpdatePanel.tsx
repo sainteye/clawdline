@@ -4,10 +4,19 @@ import * as L from "../legacy/bridge.js"
 import { followsRelay } from "../client.js"
 import { nextWord } from "../next-strings.js"
 import { writeSettings } from "../pages/settings/api.js"
+import { Switch } from "../pages/settings/Switch.js"
 import { useMachineVersion } from "./NeedsUpdate.js"
 import { needsUpdateWords } from "./needs-update-model.js"
 import { applyUpdate, currentUpdateRead, publishUpdateRead, refreshUpdate, servedConsoleChanged, subscribeUpdate } from "./update.js"
-import { applyMoving, buildName, shouldLookForNewConsole, updatePanel } from "./update-model.js"
+import {
+  applyMoving,
+  asksForUpdatePanel,
+  buildName,
+  detailsText,
+  shouldLookForNewConsole,
+  updatePanel,
+  type UpdateDetails,
+} from "./update-model.js"
 import "./update.css"
 
 /** An RFC3339 time as the reader's own clock and language print it. */
@@ -17,6 +26,55 @@ function when(iso: string): string {
   return at.toLocaleString(document.documentElement.lang || undefined, {
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
   })
+}
+
+/**
+ * 「技術細節」: the code and the daemon's sentence behind a plain explanation,
+ * folded away, with a button that copies them for a report.
+ */
+function TechnicalDetails({ details }: { details: UpdateDetails }) {
+  const [copied, setCopied] = useState<"" | "yes" | "no">("")
+  const text = detailsText(details)
+  const copy = () => {
+    const done = (ok: boolean) => setCopied(ok ? "yes" : "no")
+    try {
+      void navigator.clipboard.writeText(text).then(() => done(true), () => done(false))
+    } catch {
+      done(false)
+    }
+  }
+  return (
+    <details className="update-details">
+      <summary>{nextWord("updateDetails")}</summary>
+      <pre className="update-details-text">{text}</pre>
+      <div className="update-details-row">
+        <button className="chip" type="button" onClick={copy}>{nextWord("updateCopy")}</button>
+        <span className="update-details-said" role="status">
+          {copied === "yes" ? nextWord("updateCopied") : copied === "no" ? nextWord("updateCopyFailed") : ""}
+        </span>
+      </div>
+    </details>
+  )
+}
+
+/**
+ * Scroll to the panel and put the keyboard on its title, once per arrival by
+ * an address that asks for it (`SETTINGS_UPDATE_HREF`). The panel appears only
+ * after its first read, so this waits for it; the address is then put back to
+ * plain `#page=settings`, so the same link followed again is a new arrival.
+ */
+export function landOnUpdatePanel(): boolean {
+  if (!asksForUpdatePanel(location.hash)) return false
+  const target = document.getElementById("settings-update-title") ?? document.getElementById("settings-update-notice")
+  if (!target || target.closest("[hidden]")) return false
+  target.scrollIntoView({ block: "start", behavior: "smooth" })
+  target.focus({ preventScroll: true })
+  try {
+    history.replaceState(history.state, "", "#page=settings")
+  } catch {
+    /* the address keeps asking; landing again is harmless */
+  }
+  return true
 }
 
 /**
@@ -67,6 +125,19 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
     const timer = setInterval(() => void refreshUpdate(), view.everyMs)
     return () => clearInterval(timer)
   }, [shown, following, view.everyMs])
+
+  // Arrived by 「前往設定更新」: land on the panel once it is drawn, and again
+  // whenever the same link is followed while the page is open.
+  const [asked, setAsked] = useState(() => asksForUpdatePanel(location.hash))
+  useEffect(() => {
+    const listen = () => setAsked(asksForUpdatePanel(location.hash))
+    window.addEventListener("hashchange", listen)
+    return () => window.removeEventListener("hashchange", listen)
+  }, [])
+  useEffect(() => {
+    if (!shown || !asked || view.kind === "nothing") return
+    if (landOnUpdatePanel()) setAsked(false)
+  }, [shown, asked, view.kind])
 
   // The new daemon answered healthy: if it serves a console this page is not,
   // load it. Asked once per update.
@@ -124,7 +195,7 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   if (view.kind === "nothing") return null
   if (view.kind === "legacy") {
     return (
-      <p className="say" id="settings-update-notice" role="status">
+      <p className="say" id="settings-update-notice" role="status" tabIndex={-1}>
         {view.legacyLine}
       </p>
     )
@@ -132,7 +203,7 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   if (view.kind === "older") {
     const words = needsUpdateWords(null, known, nextWord)
     return (
-      <p className="say" id="settings-update-notice" role="status" data-needs-update="update-apply">
+      <p className="say" id="settings-update-notice" role="status" tabIndex={-1} data-needs-update="update-apply">
         {words.sentence}
         {words.version ? <> {words.version}</> : null}
       </p>
@@ -140,9 +211,17 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   }
 
   const running = last.current ? buildName(last.current.running) : ""
+  const pressButton = view.press.shown ? (
+    <div className="row">
+      <button className="chip update-now" id="settings-update-now" type="button" disabled={!view.press.enabled} onClick={press}>
+        {view.press.label}
+      </button>
+    </div>
+  ) : null
+  const problem = view.problem
   return (
     <div className="block settings-update" id="settings-update" aria-busy={sending || view.restarting}>
-      <b id="settings-update-title">{nextWord("updateTitle")}</b>
+      <b id="settings-update-title" tabIndex={-1}>{nextWord("updateTitle")}</b>
       {view.facts.length > 0 ? (
         <dl className="update-facts">
           {view.facts.map((fact) => (
@@ -161,37 +240,41 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
           ))}
         </dl>
       ) : null}
-      {view.stateLine ? <p className="say">{view.stateLine}</p> : null}
+      {view.done ? <p className="say update-done">{view.done}</p> : null}
+      {view.stateLine ? <p className="say update-state">{view.stateLine}</p> : null}
+      {view.stateDetails ? <TechnicalDetails details={view.stateDetails} /> : null}
       {view.sourceNote ? <p className="say update-source">{view.sourceNote}</p> : null}
-      {view.press.shown ? (
-        <div className="row">
-          <button className="chip update-now" id="settings-update-now" type="button" disabled={!view.press.enabled} onClick={press}>
-            {view.press.label}
-          </button>
-        </div>
-      ) : null}
-      <p className={view.restarting ? "said calm update-progress" : "said update-progress"} role="status" aria-live="polite">
+      {view.press.below ? null : pressButton}
+      <p className="said calm update-progress" role="status" aria-live="polite">
         {reloading ? nextWord("updateReloading", { to: running }) : view.progress ?? ""}
       </p>
-      {view.problem ? <p className="update-problem" role="alert">{view.problem}</p> : null}
+      {problem ? (
+        <div className="update-problem" data-problem={problem.kind} role="alert">
+          <p>{problem.sentence}</p>
+          {problem.command ? <code className="update-command">{problem.command}</code> : null}
+          {problem.details ? <TechnicalDetails details={problem.details} /> : null}
+        </div>
+      ) : null}
+      {view.press.below ? pressButton : null}
       {view.staged ? <p className="say">{view.staged}</p> : null}
       {view.auto.shown ? (
         <div className="update-auto">
           <div>
             <strong id="settings-update-auto-title">{nextWord("updateAuto")}</strong>
-            <p className="say">{nextWord("updateAutoSay")}</p>
+            <p className="say" id="settings-update-auto-say">
+              {nextWord("updateAutoSay")}
+              {view.auto.beta ? <> {view.auto.beta}</> : null}
+            </p>
           </div>
-          <button
-            className={view.auto.on ? "chip on" : "chip"}
+          <Switch
             id="settings-update-auto"
-            type="button"
-            aria-pressed={view.auto.on ? "true" : "false"}
-            aria-labelledby="settings-update-auto-title settings-update-auto"
+            labelledBy="settings-update-auto-title"
+            describedBy="settings-update-auto-say"
+            on={view.auto.on}
+            stateText={view.auto.state}
             disabled={!view.auto.enabled}
-            onClick={toggleAuto}
-          >
-            {view.auto.label}
-          </button>
+            onToggle={toggleAuto}
+          />
         </div>
       ) : null}
       {view.auto.note ? <p className="said" role="status">{view.auto.note}</p> : null}
