@@ -82,7 +82,7 @@
     "js/net/cloud-client.js": "664b6d7bf023ccf3",
     "js/net/cloud-pairing.js": "9a93a640b43c0cb0",
     "js/net/cloud-onboarding.js": "ef4044a53fb313f6",
-    "js/net/cloud-boot.js": "987d84773ffc7d2d",
+    "js/net/cloud-boot.js": "d3104910f1280046",
     "js/view/timeline.js": "d5583a3b18d3d633"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",

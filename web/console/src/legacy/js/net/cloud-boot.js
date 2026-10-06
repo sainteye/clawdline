@@ -37,6 +37,14 @@ const DEVICE_KEY = "clawdline.viewer.device";
 const DEVICE_PUBLIC_KEY = "clawdline.viewer.public";
 const SEQUENCE_KEY = "clawdline.viewer.sequence";
 const SEQUENCE_BLOCK = 64;
+// Where the device's sequence ceiling is reserved. Its own database, so the key store's schema
+// version never has to move for it.
+const SEQUENCE_DATABASE = "clawdline-viewer-sequence";
+const SEQUENCE_STORE = "ceilings";
+// How far below another tab's ceiling a tab may keep using its own block: half the machine's
+// 1024-number replay window (`internal/domain/cloud/replay.go`), so its numbers are never old
+// enough to be undecidable there.
+const SEQUENCE_BEHIND = 512;
 const CURRENT_MASTER_KEY_ID = "master-v1";
 const PRE_METADATA_MASTER_KEY_IDS = Object.freeze(["ms-1", CURRENT_MASTER_KEY_ID]);
 
@@ -151,19 +159,35 @@ export function chooseTransport(input) {
  * it makes this browser unable to send anything until it has climbed back past where it was.
  * What is written down is the ceiling, before any number under it is handed out.
  *
- * Every tab of this device signs as the same sender and shares this ceiling, so each number
- * reads it again. When another tab has reserved past this one's block, this one leaves its
- * block and reserves above that ceiling. Until 2026-10-06 a tab read the ceiling only once and
- * reserved its next block from its own last number: a page reloaded beside another
- * app.clawdline.com tab reserved the same block the other tab took next, and the machine
- * dropped every envelope of it as a replay (`reason=replay seq=26112…`), keys included. A tab
- * left idle in an old block also fell more than the machine's 1024-number window behind.
+ * Every tab of this device signs as the same sender, and the machine keeps one replay window
+ * for that sender: a number is accepted once, and none more than 1024 below the highest. So
+ * every tab takes its numbers from blocks that no other tab can be given, and none lags far
+ * behind the others.
+ *
+ * A block is reserved in one IndexedDB readwrite transaction: read the ceiling, write it one
+ * block higher. Transactions over one store run one at a time across every tab of the origin,
+ * and each sees what the previous one committed, so two tabs can never be given the same block.
+ * Local storage is not that: a write reaches another tab's copy asynchronously, and a Web Lock
+ * around it would not change that, because releasing the lock is not ordered with delivering the
+ * write. Until 2026-10-06 the ceiling lived only in local storage, and two tabs reserving in the
+ * same moment both read one ceiling and signed the same numbers; the machine dropped one tab's
+ * envelopes as replays (`reason=replay seq=26112…`), keys included.
+ *
+ * Local storage still carries the ceiling as a hint, read on every number: a tab that sees
+ * another tab's ceiling more than SEQUENCE_BEHIND above its own next number leaves its block and
+ * reserves above it, so an idle tab is not left below the machine's window. A ceiling an older
+ * page left there is also the floor of the first reservation. A browser with no IndexedDB has no
+ * atomic store, and refuses to number an envelope rather than guess (it could not have loaded
+ * this device's signing key from IndexedDB either).
  */
-export function durableSequence(storage, key) {
+export function durableSequence(storage, key, indexedDBValue) {
     var name = key || SEQUENCE_KEY;
+    var factory = indexedDBValue === undefined ? globalThis.indexedDB : indexedDBValue;
+    var database = null;
     var reserved = 0;
     var next = null;
-    function ceiling() {
+    var turn = Promise.resolve();
+    function hint() {
         var raw;
         try {
             raw = storage.getItem(name);
@@ -176,23 +200,81 @@ export function durableSequence(storage, key) {
         }
         return parsed;
     }
-    return function nextSequence() {
-        var stored = ceiling();
-        if (next === null || stored > reserved) {
-            // First use, or another tab reserved past this block: continue above its ceiling.
-            reserved = stored;
-            next = stored;
+    function open() {
+        if (!factory) return Promise.reject(bootError("no_sequence_store", "this browser has no IndexedDB for the viewer sequence"));
+        if (!database) {
+            database = new Promise(function (resolve, reject) {
+                var request = factory.open(SEQUENCE_DATABASE, 1);
+                request.onupgradeneeded = function () {
+                    if (!request.result.objectStoreNames.contains(SEQUENCE_STORE)) request.result.createObjectStore(SEQUENCE_STORE);
+                };
+                request.onsuccess = function () {
+                    var db = request.result;
+                    db.onversionchange = function () { db.close(); database = null; };
+                    resolve(db);
+                };
+                request.onerror = function () { reject(request.error); };
+            }).catch(function (e) {
+                database = null;
+                throw bootError("no_sequence_store", "the viewer sequence store could not be opened");
+            });
+        }
+        return database;
+    }
+    /** The start of a block no other tab of this device has been or will be given. */
+    async function reserve(floor) {
+        var db = await open();
+        return new Promise(function (resolve, reject) {
+            var tx;
+            try {
+                tx = db.transaction(SEQUENCE_STORE, "readwrite", { durability: "strict" });
+            } catch (e) {
+                database = null;
+                reject(bootError("no_sequence_store", "the viewer sequence could not be reserved"));
+                return;
+            }
+            var store = tx.objectStore(SEQUENCE_STORE);
+            var start = null;
+            var failure = null;
+            var read = store.get(name);
+            read.onsuccess = function () {
+                var held = read.result === undefined ? 0 : read.result;
+                if (!Number.isSafeInteger(held) || held < 0) {
+                    failure = bootError("bad_sequence_store", "the stored viewer sequence is unusable");
+                    tx.abort();
+                    return;
+                }
+                start = Math.max(floor, held);
+                store.put(start + SEQUENCE_BLOCK, name);
+            };
+            tx.oncomplete = function () {
+                if (start === null) reject(failure || bootError("no_sequence_store", "the viewer sequence could not be reserved"));
+                else resolve(start);
+            };
+            tx.onerror = tx.onabort = function () {
+                reject(failure || bootError("no_sequence_store", "the viewer sequence could not be written"));
+            };
+        });
+    }
+    async function take() {
+        var seen = hint();
+        if (next === null || next >= reserved || seen - next > SEQUENCE_BEHIND) {
+            var start = await reserve(Math.max(seen, next === null ? 0 : next));
+            reserved = start + SEQUENCE_BLOCK;
+            next = start;
+            // Only a hint for the other tabs; what keeps numbers apart was committed above.
+            try {
+                if (hint() < reserved) storage.setItem(name, String(reserved));
+            } catch (e) { /* the hint is advisory */ }
         }
         var value = next;
-        if (value >= reserved) {
-            reserved = value + SEQUENCE_BLOCK;
-            try {
-                storage.setItem(name, String(reserved));
-            } catch (e) {
-                throw bootError("no_sequence_store", "the viewer sequence could not be written");
-            }
-        }
         next = value + 1;
+        return value;
+    }
+    // One number at a time per tab, so a reservation in flight is not raced by this tab itself.
+    return function nextSequence() {
+        var value = turn.then(take);
+        turn = value.catch(function () {});
         return value;
     };
 }
@@ -659,7 +741,7 @@ export class CloudViewerSession {
             // read back rather than assumed: a device downgraded to read-only must find that
             // out here rather than at the first refused envelope.
             allowWrites: this.caps.indexOf("send_prompt") >= 0,
-            nextSequence: durableSequence(this.storage, SEQUENCE_KEY + ":" + this.deviceID),
+            nextSequence: durableSequence(this.storage, SEQUENCE_KEY + ":" + this.deviceID, this.indexedDB),
             // Names/platforms are non-authoritative display metadata. CloudClient writes them
             // only after an authenticated `orch/` envelope, then restores them here across a
             // full PWA process restart while the relay realigns each machine independently.
