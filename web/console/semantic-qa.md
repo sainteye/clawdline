@@ -176,6 +176,24 @@ The Feature Root then read the English source and all nine values for all **15**
 
 The **41 revised values** include two adjacent state keys outside these non-risk groups; their exact before/after values are in the five catalog diffs. Together with the previous 18-key sample, 53 distinct non-risk keys have been compared in each secondary language, leaving **1,994 non-risk keys per secondary language without individual source comparison**. The initial 1,340-key risk review is separate. This text review does not verify native-language style or every live layout; it does not certify the remaining five secondary catalogs as semantically complete.
 
+## Cross-language start and failure review
+
+The Feature Root read all **18** non-risk keys in `legacy / Start` (10) and `legacy / Fail` (8) against English and all nine catalog values, including a second Japanese pass. These groups include remote Session start, stale device data, detached tmux Sessions, Cloud retry messages, oversized sends, and the `{text} ({tag})` failure label. The 18 keys do not overlap the earlier 53 reviewed non-risk keys.
+
+| Language | Group keys read | Revised values | Traceable findings |
+| --- | ---: | ---: | --- |
+| en | 18 | 0 | Source reference. |
+| zh-Hant | 18 | 0 | States and actions matched the source. |
+| ja | 18 | 3 | `legacy.webStartOff` now names **remote** Session start as disabled; `legacy.webStartDetached` says nobody is attached, rather than there being no destination; `legacy.webFailRateLimited` retains the short wait before retry. |
+| zh-Hans | 18 | 0 | States and actions matched the source. |
+| ko | 18 | 3 | `legacy.webStartMachineStale` no longer says “prehistoric”; `legacy.webStartFilter` is a filtering action; `legacy.webFailWithTag` keeps the tag in parentheses. |
+| es | 18 | 3 | `legacy.webStartDetached` instructs the person to type the command, and Cloud reconnection is in progress. |
+| pt-BR | 18 | 3 | `legacy.webFailClock` again asks for a retry; oversized content is sent **through** Cloud; `legacy.webStartPick` asks for a location. |
+| fr | 18 | 13 | Device gender and retry timing, an oversized Cloud send, detached tmux state, project start, stale data, and the Remote settings path were corrected. |
+| de | 18 | 4 | `legacy.webStart` and `legacy.webStartFilter` are actions; the empty-state and project-start sentences are grammatical. |
+
+The **29 changed values** are traceable in the six catalog diffs. The Japanese second pass found three errors despite the earlier complete source comparison; that earlier pass remains evidence of text coverage, not native editorial certification. The five secondary languages now have **71 distinct non-risk keys** individually compared with English (18 + 35 + 18), leaving **1,976 per language without individual review**. The initial 1,340-key risk review remains separate. Independent read-only review can divide the remaining groups by language and return exact keys and suggested revisions; the Feature Root owns catalog edits and rechecks. No nine-language semantic release claim follows from this coverage alone.
+
 ## Future partial catalogs and screen readers
 
 The localhost Chrome Settings flow loaded all nine catalogs from the built bundle and checked the visible interface-language label against each catalog, the label's own `lang`, document `lang`/`dir`, and zero missing keys after reload. It also kept the separate Agent language setting and confirmed a broken Japanese response falls back atomically to English while preserving the saved browser preference. The focused test passed 1/1. This is a local fixture, not a Cloud deployment check.
