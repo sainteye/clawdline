@@ -3310,6 +3310,14 @@ export interface GitSnapshot {
  * those are in Diagnostics.
  */
 export interface Health {
+  /**
+   * Which set of routes this daemon answers: `api_level` in api/v1/routes.json when
+   * it was built, raised every time a route is added or removed. A console compares
+   * it with a feature's `requiresApiLevel` before it offers the feature. Absent
+   * from a daemon built before 2026-10-06, and from a reading that could not learn
+   * it; absent is unknown, not zero.
+   */
+  api_level?: number
   at: number
 
   /**
@@ -3339,6 +3347,13 @@ export interface Health {
    * the Swift app on the same port.
    */
   served_by: string
+
+  /**
+   * The daemon's own version, as `clawdline version` prints it: a release tag, or
+   * `devel+<revision>` for a build from a checkout. What a person is told when a
+   * feature needs a newer one. Absent when the reading could not learn it.
+   */
+  version?: string
 }
 
 /**
