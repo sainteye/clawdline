@@ -743,6 +743,15 @@ test("browser language selector survives reload and a broken catalog falls back 
       if (Date.now() > readyBy) assert.fail("Settings browser language selector did not appear")
       await new Promise((ok) => setTimeout(ok, 50))
     }
+    const assertVisibleLocale = async (tag: string) => {
+      const expected = JSON.parse(readFileSync(join(dist, "catalogs", `${tag}.json`), "utf8"))["ui.language"]
+      const seen = await tab.run(`(() => {
+        const label = document.querySelector('label[for="settings-ui-language-select"]')
+        return { text: label?.textContent, lang: label?.lang, dir: document.documentElement.dir,
+          missing: document.documentElement.getAttribute('data-i18n-missing') }
+      })()`)
+      assert.deepEqual(seen, { text: expected, lang: tag, dir: "ltr", missing: "0" })
+    }
     await tab.run(`localStorage.setItem("language", "fixture-agent-language")`)
     const select = async (tag: string) => {
       await tab.run(`(() => {
@@ -768,6 +777,7 @@ test("browser language selector survives reload and a broken catalog falls back 
       if (Date.now() > zhReadyBy) assert.fail(`Traditional Chinese did not survive reload: ${JSON.stringify(seen)}`)
       await new Promise((ok) => setTimeout(ok, 50))
     }
+    await assertVisibleLocale("zh-Hant")
     for (const tag of ["ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de", "en"] as const) {
       await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
       await tab.reload()
@@ -778,6 +788,7 @@ test("browser language selector survives reload and a broken catalog falls back 
         if (Date.now() > until) assert.fail(`${tag} did not load: ${JSON.stringify(seen)}`)
         await new Promise((ok) => setTimeout(ok, 50))
       }
+      await assertVisibleLocale(tag)
     }
     refusedCatalog = "ja"
     try {

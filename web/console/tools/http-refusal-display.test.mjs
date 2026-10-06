@@ -10,6 +10,8 @@ test("command examples remain readable text without HTML-looking brackets", () =
     ["http.bb96b476b96bba73", '/v1/usage/sessions/<conversation>'],
     ["http.dd9496ebcab9dfee", '/v1/orchestrator/sessions/<conversation id>/run'],
     ["http.df99d615a86cecb5", 'conversation:<lowercase UUID>'],
+    ["http.9775bdba5ed93c48", '--title <title> --claims <paths> --conversation <conversation id> --root-assistant <claude|codex>'],
+    ["http.e4624297f324376b", '--title <title> --claims <paths> --conversation <conversation id> --root-assistant <claude|codex>'],
   ]
   for (const [key, example] of examples) {
     const text = displayRefusal(key, example)
