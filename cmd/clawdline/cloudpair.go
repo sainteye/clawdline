@@ -63,8 +63,8 @@ func cloudDaemonJSON(method, path string, body any, out any) error {
 // a code the person carried from their browser.
 func cloudPairCommand(args []string) {
 	fs := flag.NewFlagSet("cloud pair", flag.ExitOnError)
-	offer := fs.String("offer", "", "finish a pairing with the code the browser is showing")
-	wait := fs.Duration("wait", 10*time.Minute, "how long to wait for a browser")
+	offer := fs.String("offer", "", cliCopy("cloud", "pair.offer_help", "finish a pairing with the code the browser is showing"))
+	wait := fs.Duration("wait", 10*time.Minute, cliCopy("cloud", "pair.wait_help", "how long to wait for a browser"))
 	_ = fs.Parse(args)
 
 	if *offer != "" {
@@ -81,18 +81,18 @@ func cloudPairCommand(args []string) {
 	if err := cloudDaemonJSON(http.MethodPost, "/v1/cloud/pairing", nil, &state); err != nil {
 		fail(err)
 	}
-	fmt.Println("Open this on the browser you want to pair, signed in to the same")
-	fmt.Println("Clawdline Cloud account:")
+	fmt.Println(cliCopy("cloud", "pair.open_1", "Open this on the browser you want to pair, signed in to the same"))
+	fmt.Println(cliCopy("cloud", "pair.open_2", "Clawdline Cloud account:"))
 	fmt.Println()
 	fmt.Println("   ", state.Link)
 	fmt.Println()
-	fmt.Printf("This machine's key is %s. The browser shows the same one when it finishes.\n",
+	fmt.Printf(cliCopy("cloud", "pair.machine_key", "This machine's key is %s. The browser shows the same one when it finishes.\n"),
 		state.MachineFingerprint)
 	if state.ExpiresAt > 0 {
-		fmt.Printf("The link stops working at %s.\n", time.Unix(state.ExpiresAt, 0).Format(time.Kitchen))
+		fmt.Printf(cliCopy("cloud", "pair.link_expires", "The link stops working at %s.\n"), time.Unix(state.ExpiresAt, 0).Format(time.Kitchen))
 	}
 	fmt.Println()
-	fmt.Println("Waiting… (Ctrl-C stops waiting; the link keeps working until it expires)")
+	fmt.Println(cliCopy("cloud", "pair.waiting", "Waiting… (Ctrl-C stops waiting; the link keeps working until it expires)"))
 
 	deadline := time.Now().Add(*wait)
 	for time.Now().Before(deadline) {
@@ -110,21 +110,21 @@ func cloudPairCommand(args []string) {
 			return
 		}
 	}
-	fmt.Fprintln(os.Stderr, "clawdline: nothing answered that link in time")
+	fmt.Fprintln(os.Stderr, cliCopy("cloud", "pair.timeout", "clawdline: nothing answered that link in time"))
 	os.Exit(1)
 }
 
 func printPairingState(state cloudtransport.PairingState) {
 	switch state.Phase {
 	case cloudtransport.PairingPaired:
-		fmt.Printf("paired     %s\n", state.ViewerDeviceID)
-		fmt.Printf("browser    %s\n", state.ViewerFingerprint)
-		fmt.Printf("machine    %s\n", state.MachineFingerprint)
-		fmt.Println("           that browser can now read and, if commands are on, drive this machine")
+		fmt.Printf(cliCopy("cloud", "pair.paired", "paired     %s\n"), state.ViewerDeviceID)
+		fmt.Printf(cliCopy("cloud", "pair.browser", "browser    %s\n"), state.ViewerFingerprint)
+		fmt.Printf(cliCopy("cloud", "pair.machine", "machine    %s\n"), state.MachineFingerprint)
+		fmt.Println(cliCopy("cloud", "pair.access", "           that browser can now read and, if commands are on, drive this machine"))
 	case cloudtransport.PairingFailed:
-		fmt.Fprintf(os.Stderr, "clawdline: the pairing did not complete: %s\n", state.Error)
+		fmt.Fprintf(os.Stderr, cliCopy("cloud", "pair.failed", "clawdline: the pairing did not complete: %s\n"), state.Error)
 	default:
-		fmt.Printf("pairing    %s\n", state.Phase)
+		fmt.Printf(cliCopy("cloud", "pair.phase", "pairing    %s\n"), state.Phase)
 	}
 }
 
@@ -140,17 +140,17 @@ func cloudDevicesCommand() {
 		os.Exit(1)
 	}
 	if len(status.Devices) == 0 {
-		fmt.Println("no browser has been paired with this machine")
-		fmt.Println("run `clawdline cloud pair` to show one a link")
+		fmt.Println(cliCopy("cloud", "devices.none", "no browser has been paired with this machine"))
+		fmt.Println(cliCopy("cloud", "devices.pair_hint", "run `clawdline cloud pair` to show one a link"))
 		return
 	}
 	for _, device := range status.Devices {
-		source := "roster only"
+		source := cliCopy("cloud", "devices.roster_only", "roster only")
 		switch {
 		case device.Revoked:
-			source = "revoked here"
+			source = cliCopy("cloud", "devices.revoked_here", "revoked here")
 		case device.Pinned:
-			source = "pinned here"
+			source = cliCopy("cloud", "devices.pinned_here", "pinned here")
 		}
 		name := device.Name
 		if name == "" {
@@ -166,7 +166,7 @@ func cloudDevicesCommand() {
 // cloudRevokeCommand throws one browser out of this machine.
 func cloudRevokeCommand(args []string) {
 	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
-		fmt.Fprintln(os.Stderr, "usage: clawdline cloud revoke <device-id>")
+		fmt.Fprintln(os.Stderr, cliCopy("cloud", "revoke.usage", "usage: clawdline cloud revoke <device-id>"))
 		os.Exit(2)
 	}
 	var answer struct {
@@ -178,11 +178,11 @@ func cloudRevokeCommand(args []string) {
 		fail(err)
 	}
 	if !answer.Revoked {
-		fmt.Printf("nothing changed: %s was not a browser this machine had pinned\n", answer.Device)
+		fmt.Printf(cliCopy("cloud", "revoke.no_change", "nothing changed: %s was not a browser this machine had pinned\n"), answer.Device)
 		return
 	}
-	fmt.Printf("revoked    %s\n", answer.Device)
-	fmt.Println("           its next envelope is refused here, whatever the account's list says")
+	fmt.Printf(cliCopy("cloud", "revoke.revoked", "revoked    %s\n"), answer.Device)
+	fmt.Println(cliCopy("cloud", "revoke.refusal", "           its next envelope is refused here, whatever the account's list says"))
 }
 
 // cloudRotateCommand replaces this machine's signing key.
@@ -192,7 +192,7 @@ func cloudRevokeCommand(args []string) {
 // browsers cannot weigh that.
 func cloudRotateCommand(args []string) {
 	fs := flag.NewFlagSet("cloud rotate", flag.ExitOnError)
-	yes := fs.Bool("yes", false, "do not ask")
+	yes := fs.Bool("yes", false, cliCopy("cloud", "rotate.yes_help", "do not ask"))
 	_ = fs.Parse(args)
 
 	var preview struct {
@@ -202,19 +202,19 @@ func cloudRotateCommand(args []string) {
 		fail(err)
 	}
 	if len(preview.Repair) > 0 {
-		fmt.Println("Rotating this machine's signing key makes these browsers stop being able to")
-		fmt.Println("verify it. Each one has to be paired again:")
+		fmt.Println(cliCopy("cloud", "rotate.warning_1", "Rotating this machine's signing key makes these browsers stop being able to"))
+		fmt.Println(cliCopy("cloud", "rotate.warning_2", "verify it. Each one has to be paired again:"))
 		for _, row := range preview.Repair {
 			fmt.Println("   ", row)
 		}
 	} else {
-		fmt.Println("No browser has been paired with this machine, so nothing has to be repaired.")
+		fmt.Println(cliCopy("cloud", "rotate.none", "No browser has been paired with this machine, so nothing has to be repaired."))
 	}
 	if !*yes {
-		fmt.Print("Rotate anyway? [y/N] ")
+		fmt.Print(cliCopy("cloud", "rotate.prompt", "Rotate anyway? [y/N] "))
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
-			fmt.Println("nothing was rotated")
+			fmt.Println(cliCopy("cloud", "rotate.cancelled", "nothing was rotated"))
 			return
 		}
 	}
@@ -223,9 +223,9 @@ func cloudRotateCommand(args []string) {
 		map[string]any{"confirm": true}, &outcome); err != nil {
 		fail(err)
 	}
-	fmt.Printf("rotated    %s (was %s)\n", outcome.Fingerprint, outcome.Previous)
-	fmt.Printf("epoch      key %d, identity %d\n", outcome.KeyEpoch, outcome.IdentityEpoch)
+	fmt.Printf(cliCopy("cloud", "rotate.rotated", "rotated    %s (was %s)\n"), outcome.Fingerprint, outcome.Previous)
+	fmt.Printf(cliCopy("cloud", "rotate.epoch", "epoch      key %d, identity %d\n"), outcome.KeyEpoch, outcome.IdentityEpoch)
 	if outcome.Reconnected {
-		fmt.Println("           the line went down and is coming back on the new key")
+		fmt.Println(cliCopy("cloud", "rotate.reconnecting", "           the line went down and is coming back on the new key"))
 	}
 }
