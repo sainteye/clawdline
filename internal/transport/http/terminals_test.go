@@ -21,7 +21,7 @@ import (
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
-type cloudTerminalGrantStub struct{ allowed bool }
+type cloudTerminalGrantStub struct{ allowed, unverified bool }
 
 func (s *cloudTerminalGrantStub) Status() cloud.Status { return cloud.Status{Enabled: true} }
 func (s *cloudTerminalGrantStub) PinnedTerminalViewer(device string) (string, bool) {
@@ -30,8 +30,14 @@ func (s *cloudTerminalGrantStub) PinnedTerminalViewer(device string) (string, bo
 	}
 	return "", false
 }
-func (s *cloudTerminalGrantStub) TerminalViewerAllowed(device string) bool {
-	return s.allowed && device == "cloud-viewer"
+func (s *cloudTerminalGrantStub) TerminalViewerAccess(device string) error {
+	if s.unverified {
+		return terminal.Refuse(terminal.CodeBusy, "the device roster could not be read")
+	}
+	if s.allowed && device == "cloud-viewer" {
+		return nil
+	}
+	return terminal.Refuse(terminal.CodeForbidden, "this Cloud device may no longer use terminals")
 }
 
 func TestCloudPinAndSendPermissionNeedNoLocalGrant(t *testing.T) {
@@ -56,6 +62,26 @@ func TestCloudPinAndSendPermissionNeedNoLocalGrant(t *testing.T) {
 	stub.allowed = false
 	if err := svc.Allow(p); err == nil {
 		t.Fatal("a revoked pin retained terminal access")
+	}
+}
+
+func TestUnverifiedCloudViewerIsBusyNotForbidden(t *testing.T) {
+	f := newTermFixture(t, newFakeTerms())
+	stub := &cloudTerminalGrantStub{allowed: true, unverified: true}
+	SetCloudLine(f.dir, stub)
+	t.Cleanup(func() { SetCloudLine(f.dir, nil) })
+	svc, err := f.s.CloudTerminalService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.Allow(terminals.Principal{Device: "cloud-viewer", Cloud: true})
+	if code, _ := terminal.CodeOf(err); code != terminal.CodeBusy {
+		t.Fatalf("an unreadable roster answered %v, want terminal_busy", err)
+	}
+	stub.unverified, stub.allowed = false, false
+	err = svc.Allow(terminals.Principal{Device: "cloud-viewer", Cloud: true})
+	if code, _ := terminal.CodeOf(err); code != terminal.CodeForbidden {
+		t.Fatalf("a fresh denial answered %v, want terminal_forbidden", err)
 	}
 }
 

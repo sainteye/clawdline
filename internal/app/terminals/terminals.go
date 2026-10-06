@@ -226,6 +226,16 @@ func (s *Service) allowed(p Principal) error {
 	return nil
 }
 
+// Unverified reports whether an access answer means "cannot tell right now"
+// rather than "no": Access answers terminal_busy when the authority behind a
+// Cloud viewer (its account roster) could not be read in time. Nothing is
+// let through on it, but nothing is revoked on it either: a stream pauses and
+// a request is refused as retryable.
+func Unverified(err error) bool {
+	code, known := terminal.CodeOf(err)
+	return known && code == terminal.CodeBusy
+}
+
 // Allow checks a principal without asking a terminal to exist. The signed
 // Cloud ingress uses it before accepting a new per-viewer connection key.
 func (s *Service) Allow(p Principal) error { return s.allowed(p) }
@@ -661,15 +671,17 @@ func (s *Service) Revalidate() {
 	s.mu.Unlock()
 
 	// Asked outside s.mu: Access reads the device list and the grants file.
+	// An unverified answer revokes nothing: every effect and frame is asked
+	// again and refused while it lasts.
 	voided := map[terminal.ID]bool{}
 	for id, p := range holders {
-		if s.allowed(p) != nil {
+		if err := s.allowed(p); err != nil && !Unverified(err) {
 			voided[id] = true
 		}
 	}
 	var revoked []*viewer
 	for _, v := range watching {
-		if s.allowed(v.who) != nil {
+		if err := s.allowed(v.who); err != nil && !Unverified(err) {
 			revoked = append(revoked, v)
 		}
 	}

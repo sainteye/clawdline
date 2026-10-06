@@ -44,6 +44,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
+	"github.com/sainteye/clawdline/internal/domain/terminal"
 )
 
 // SendCapability is the roster capability a Cloud viewer needs before this
@@ -247,6 +248,9 @@ type Link struct {
 	terminalRosterAt   time.Time
 	terminalRosterErr  error
 	terminalRosterWait chan struct{}
+	// terminalRosterFailures counts consecutive failed terminal roster reads,
+	// so a failure streak is logged once.
+	terminalRosterFailures int
 
 	// The direct carrier (direct.go). directMu is never held while
 	// terminalMu is taken, nor the other way round.
@@ -275,7 +279,41 @@ const TerminalCapability = "send_prompt"
 const (
 	CloudTerminalRosterRefreshLimit  = 2
 	CloudTerminalRosterDeadlineLimit = 2
+	// CloudTerminalRosterRetrySecondsLimit is how soon after a failed terminal
+	// roster read the next check reads again. Only a success is trusted for
+	// CloudTerminalRosterRefreshLimit; a failure is not held against the
+	// machine for that long, and this gap keeps a control plane that answers
+	// instantly with an error from being asked on every frame.
+	CloudTerminalRosterRetrySecondsLimit = 1
+	// CloudTerminalUnverifiedRetireSecondsLimit is how long a registered
+	// connection is kept paused (no frames, no input) while its viewer's
+	// authority cannot be verified, before it is retired without a revocation.
+	CloudTerminalUnverifiedRetireSecondsLimit = 10
 )
+
+// TerminalVerdict is a Cloud viewer's terminal authority at one moment.
+type TerminalVerdict int
+
+const (
+	// TerminalUnverified means this machine cannot tell right now: the
+	// account's roster could not be read in time, or a local file that holds
+	// the answer could not be read. Terminal rights fail closed, but the
+	// answer is retryable (terminal_busy), never a revocation.
+	TerminalUnverified TerminalVerdict = iota
+	// TerminalAllowed means a roster read fresh within
+	// CloudTerminalRosterRefreshLimit names the viewer, unrevoked, with
+	// send_prompt and the same key this machine verifies its envelopes with.
+	TerminalAllowed
+	// TerminalDenied means a fact this machine holds says no: Cloud or Cloud
+	// commands are off here, this machine revoked the device, or a fresh
+	// roster lacks the device, marks it revoked, lacks send_prompt or names a
+	// different key than the pin.
+	TerminalDenied
+)
+
+// errTerminalRosterWait is the answer of a check that waited the whole
+// deadline for another check's roster read.
+var errTerminalRosterWait = errors.New("the device roster read did not finish within its deadline")
 
 // PinnedTerminalViewer names a locally pinned, unrevoked Cloud viewer for the
 // local-only grant page. An account roster row alone never creates a grantable
@@ -300,75 +338,144 @@ func (l *Link) PinnedTerminalViewer(device string) (string, bool) {
 	return "", false
 }
 
-// TerminalViewerAllowed is rechecked by terminal service before each effect
-// and frame. It uses the same locally revoked, pin-first sender key as Cloud
-// commands, plus a fresh roster with the matching key and send_prompt.
-// A read-only viewer cannot reach the terminal service.
-func (l *Link) TerminalViewerAllowed(device string) bool {
-	if !l.TerminalViewerCloudCapable(device) {
-		return false
+// TerminalViewerAccess is what the terminal service asks before each effect,
+// frame and beat: nil, a terminal_forbidden refusal when a fact this machine
+// holds says no, or a retryable terminal_busy refusal when it cannot tell.
+func (l *Link) TerminalViewerAccess(device string) error {
+	switch verdict, why := l.terminalAuthority(device, true); verdict {
+	case TerminalAllowed:
+		return nil
+	case TerminalDenied:
+		return terminal.Refuse(terminal.CodeForbidden, "this Cloud device may no longer use terminals: "+why)
+	default:
+		return terminal.Refuse(terminal.CodeBusy, "this machine cannot confirm this Cloud device's terminal access right now: "+why)
 	}
-	senderKey, ok := l.publicKeyFor(device)
-	if !ok {
-		return false
+}
+
+// TerminalViewerAllowed is TerminalViewerAccess as a yes or no.
+func (l *Link) TerminalViewerAllowed(device string) bool {
+	verdict, _ := l.terminalAuthority(device, true)
+	return verdict == TerminalAllowed
+}
+
+// terminalAuthority is the three-way terminal answer. With withKey false it
+// is only the Cloud-side prerequisite for a relay connection registration:
+// local pin and grant are checked again after that registration, so a
+// locally refused viewer can receive a keyed refusal. With withKey it uses the
+// same locally revoked, pin-first sender key as Cloud commands, plus a fresh
+// roster with the matching key and send_prompt. A read-only viewer cannot
+// reach the terminal service.
+func (l *Link) terminalAuthority(device string, withKey bool) (TerminalVerdict, string) {
+	if !l.settings.Enabled {
+		return TerminalDenied, "Cloud is off on this machine"
+	}
+	settings, err := adaptercloud.ReadSettings(l.file)
+	if err != nil {
+		return TerminalUnverified, "this machine's Cloud settings could not be read"
+	}
+	if !settings.Commands {
+		return TerminalDenied, "Cloud commands are off on this machine"
+	}
+	// A local revocation is answered before the roster is asked: an
+	// unreadable roster must not turn "this machine threw it out" into
+	// "try again".
+	var pinnedKey ed25519.PublicKey
+	if withKey && l.pinned != nil {
+		refused, err := l.pinned.Refused(device)
+		if err != nil {
+			return TerminalUnverified, "the paired-device file could not be read"
+		}
+		if refused {
+			return TerminalDenied, "this machine revoked the device"
+		}
+		key, ok, err := l.pinned.PublicKeyFor(device)
+		if err != nil {
+			return TerminalUnverified, "the paired-device file could not be read"
+		}
+		if ok {
+			pinnedKey = key
+		}
+	}
+	if l.roster == nil {
+		return TerminalUnverified, "this machine holds no credential to read the device roster"
+	}
+	if err := l.terminalRosterRead(); err != nil {
+		return TerminalUnverified, "the device roster could not be read"
 	}
 	for _, row := range l.roster.Devices() {
-		if row.ID != device || (row.RevokedAt != nil && *row.RevokedAt != "") ||
-			!hasAny(row.Caps, TerminalCapability) {
+		if row.ID != device {
 			continue
 		}
-		rosterKey, err := base64.StdEncoding.DecodeString(row.PublicKey)
-		return err == nil && bytes.Equal(rosterKey, senderKey)
-	}
-	return false
-}
-
-// TerminalViewerCloudCapable is the Cloud-side prerequisite for a relay
-// connection registration. Local pin and grant are checked again after that
-// registration, so a locally refused viewer can receive a keyed refusal.
-func (l *Link) TerminalViewerCloudCapable(device string) bool {
-	if !l.settings.Enabled || !l.allowCommands() || l.roster == nil || !l.terminalRosterFresh() {
-		return false
-	}
-	for _, row := range l.roster.Devices() {
-		if row.ID == device && (row.RevokedAt == nil || *row.RevokedAt == "") && hasAny(row.Caps, TerminalCapability) {
-			return true
+		if row.RevokedAt != nil && *row.RevokedAt != "" {
+			return TerminalDenied, "the account revoked the device"
 		}
+		if !hasAny(row.Caps, TerminalCapability) {
+			return TerminalDenied, "the device may not send commands"
+		}
+		if !withKey {
+			return TerminalAllowed, ""
+		}
+		rosterKey, err := base64.StdEncoding.DecodeString(row.PublicKey)
+		if err != nil || len(rosterKey) != ed25519.PublicKeySize {
+			return TerminalDenied, "the account's key for the device is unreadable"
+		}
+		// The roster is the fallback key for a viewer paired before pins.
+		if pinnedKey != nil && !bytes.Equal(rosterKey, pinnedKey) {
+			return TerminalDenied, "the account's key for the device is not the paired one"
+		}
+		return TerminalAllowed, ""
 	}
-	return false
+	return TerminalDenied, "the account has no such device"
 }
 
-// terminalRosterFresh singleflights the active terminal roster read. A failed
-// or timed-out read expires terminal authority only; the normal Cloud command
-// path keeps its own roster policy and never waits for this one.
-func (l *Link) terminalRosterFresh() bool {
+// terminalRosterFresh is terminalRosterRead as a yes or no.
+func (l *Link) terminalRosterFresh() bool { return l.terminalRosterRead() == nil }
+
+// terminalRosterRead singleflights the active terminal roster read and says
+// whether a read that succeeded within CloudTerminalRosterRefreshLimit stands
+// behind the answer. A failed or timed-out read expires terminal authority
+// only; the normal Cloud command path keeps its own roster policy and never
+// waits for this one.
+func (l *Link) terminalRosterRead() error {
 	now := l.opts.Now()
 	l.terminalRosterMu.Lock()
-	if !l.terminalRosterAt.IsZero() && now.Sub(l.terminalRosterAt) < CloudTerminalRosterRefreshLimit*time.Second {
-		ok := l.terminalRosterErr == nil
-		l.terminalRosterMu.Unlock()
-		return ok
+	if !l.terminalRosterAt.IsZero() {
+		age := now.Sub(l.terminalRosterAt)
+		if l.terminalRosterErr == nil && age < CloudTerminalRosterRefreshLimit*time.Second {
+			l.terminalRosterMu.Unlock()
+			return nil
+		}
+		if err := l.terminalRosterErr; err != nil && age < CloudTerminalRosterRetrySecondsLimit*time.Second {
+			l.terminalRosterMu.Unlock()
+			return err
+		}
 	}
 	if wait := l.terminalRosterWait; wait != nil {
 		l.terminalRosterMu.Unlock()
 		select {
 		case <-wait:
 		case <-time.After(CloudTerminalRosterDeadlineLimit * time.Second):
-			return false
+			return errTerminalRosterWait
 		}
 		l.terminalRosterMu.Lock()
-		ok := l.terminalRosterErr == nil && now.Sub(l.terminalRosterAt) < CloudTerminalRosterRefreshLimit*time.Second
-		l.terminalRosterMu.Unlock()
-		return ok
+		defer l.terminalRosterMu.Unlock()
+		if l.terminalRosterErr != nil {
+			return l.terminalRosterErr
+		}
+		if now.Sub(l.terminalRosterAt) >= CloudTerminalRosterRefreshLimit*time.Second {
+			return errTerminalRosterWait
+		}
+		return nil
 	}
 	wait := make(chan struct{})
 	l.terminalRosterWait = wait
 	l.terminalRosterMu.Unlock()
-	// A successful read is as fresh as the moment it began, which is all
-	// it can prove about a revocation; a failed one counts from when it
-	// failed, which keeps the machine closed for longer. Together they keep a
-	// revocation's reach to frames within four seconds and to an idle
-	// connection's notice within five (docs/cloud-terminal-wire.md).
+	// A successful read is as fresh as the moment it began, which is all it
+	// can prove about a revocation, so a revocation still reaches frames
+	// within four seconds and an idle connection's notice within five
+	// (docs/cloud-terminal-wire.md). A failed one is dated from when it
+	// failed and is retried CloudTerminalRosterRetrySecondsLimit later; until
+	// then terminal rights stay closed as unverified, not denied.
 	started := l.opts.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), CloudTerminalRosterDeadlineLimit*time.Second)
 	err := l.roster.Refresh(ctx)
@@ -378,10 +485,25 @@ func (l *Link) terminalRosterFresh() bool {
 	if err != nil {
 		l.terminalRosterAt = l.opts.Now()
 	}
+	// One line per failure streak, and one when it ends, so daemon.log shows
+	// why terminals paused without a line per frame.
+	startedFailing := err != nil && l.terminalRosterFailures == 0
+	recovered := err == nil && l.terminalRosterFailures > 0
+	failures := l.terminalRosterFailures
+	if err != nil {
+		l.terminalRosterFailures++
+	} else {
+		l.terminalRosterFailures = 0
+	}
 	l.terminalRosterWait = nil
 	close(wait)
 	l.terminalRosterMu.Unlock()
-	return err == nil
+	if startedFailing {
+		l.logf("cloud terminal: the device roster could not be read, so Cloud terminals pause (refused as terminal_busy, not revoked) until it can: %v", err)
+	} else if recovered {
+		l.logf("cloud terminal: the device roster is readable again after %d failed reads", failures)
+	}
+	return err
 }
 
 // ErrDisabledLink is Run's answer for a link whose switch is off. It is not a

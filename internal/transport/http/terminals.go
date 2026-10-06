@@ -128,10 +128,12 @@ func (s *Server) terminalAccess(p terminals.Principal) error {
 	g := s.gate()
 	if p.Cloud {
 		line := s.cloudTerminalLine()
-		if line == nil || !line.TerminalViewerAllowed(p.Device) {
+		if line == nil {
 			return terminal.Refuse(terminal.CodeForbidden, "this Cloud device may no longer use terminals")
 		}
-		return nil
+		// terminal_busy (unverified) pauses rather than revokes; see
+		// terminals.Unverified.
+		return line.TerminalViewerAccess(p.Device)
 	}
 	if g.auth == nil {
 		return terminal.Refuse(terminal.CodeForbidden, "the device store could not be read")

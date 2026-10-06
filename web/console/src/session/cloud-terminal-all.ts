@@ -63,3 +63,50 @@ export async function collectCloudTerminals(
   }))
   return { rows: rows.flat(), errors }
 }
+
+/**
+ * Codes that mean a fact the machine (or the relay) holds says no: pairing or
+ * send permission is missing. Only these ask the person to pair again.
+ */
+const TERMINAL_DENIAL_CODES = new Set(["forbidden", "terminal_forbidden", "terminal_access_revoked"])
+/**
+ * Codes that mean "not right now": the machine could not verify this browser in
+ * time (it answers terminal_busy while the account's device roster cannot be
+ * read), the terminal host or relay was briefly unreachable or full, or a
+ * receipt did not arrive in time. A browser that can send messages to the
+ * machine should reach its terminals once the moment passes.
+ */
+const TERMINAL_RETRYABLE_CODES = new Set(["terminal_busy", "terminal_unreachable", "terminal_receipt_timeout",
+  "terminal_subscription_timeout", "terminal_send_failed", "terminal_not_connected", "rate_limited", "over_capacity",
+  "cloud_read_busy", "cloud_reconnecting", "machine_stale"])
+
+export type TerminalListErrorKind = "denied" | "retryable" | "other"
+export function terminalListErrorKind(code: string): TerminalListErrorKind {
+  if (TERMINAL_DENIAL_CODES.has(code)) return "denied"
+  return TERMINAL_RETRYABLE_CODES.has(code) ? "retryable" : "other"
+}
+
+/** The waits before each automatic re-read of a list the machine could not answer yet. */
+export const CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000]
+
+/**
+ * Reads the list, and while every failed machine failed for a retryable reason
+ * reads it again after each of CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS. `onWait`
+ * says a wait has begun (so the page can say it is retrying); `live` stops the
+ * loop once the page has started another read or closed.
+ */
+export async function withTerminalListRetries<T extends { errors: readonly CloudTerminalError[] }>(
+  read: () => Promise<T>, onWait: (wait: { attempt: number; delayMs: number; result: T }) => void,
+  live: () => boolean = () => true,
+  pause: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const result = await read()
+    const delayMs = CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS[attempt]
+    if (delayMs === undefined || !result.errors.length || !live() ||
+      !result.errors.every((error) => terminalListErrorKind(error.code) === "retryable")) return result
+    onWait({ attempt: attempt + 1, delayMs, result })
+    await pause(delayMs)
+    if (!live()) return result
+  }
+}

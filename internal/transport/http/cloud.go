@@ -40,7 +40,10 @@ type CloudLine interface {
 // only signed-envelope ingress can produce a Cloud terminal principal.
 type CloudTerminalLine interface {
 	PinnedTerminalViewer(device string) (name string, ok bool)
-	TerminalViewerAllowed(device string) bool
+	// TerminalViewerAccess is nil, a terminal_forbidden refusal when a fact
+	// the machine holds says no, or a retryable terminal_busy refusal when it
+	// cannot verify the viewer right now (the account roster is unreadable).
+	TerminalViewerAccess(device string) error
 }
 
 func (s *Server) cloudTerminalLine() CloudTerminalLine {

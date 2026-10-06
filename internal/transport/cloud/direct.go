@@ -342,7 +342,10 @@ func (l *Link) handleDirectOffer(ctx context.Context, svc *terminals.Service, p 
 		refuse(terminal.Refuse(terminal.CodeInvalid, "the connection is not live"))
 		return
 	}
-	if err := svc.Allow(p); err != nil {
+	if err := svc.Allow(p); terminals.Unverified(err) {
+		refuse(err) // terminal_busy: the browser stays on the relay and may offer again
+		return
+	} else if err != nil {
 		refuse(terminal.Refuse(terminal.CodeForbidden, "this device may not use this machine's terminals"))
 		return
 	}

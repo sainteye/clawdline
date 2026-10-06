@@ -379,6 +379,8 @@ const (
 	TerminalGrantsBytes               = "terminal.grants_bytes"
 	CloudTerminalRosterRefresh        = "cloud.terminal_roster_refresh_seconds"
 	CloudTerminalRosterDeadline       = "cloud.terminal_roster_deadline_seconds"
+	CloudTerminalRosterRetry          = "cloud.terminal_roster_retry_seconds"
+	CloudTerminalUnverifiedRetire     = "cloud.terminal_unverified_retire_seconds"
 	CloudTerminalConnections          = "cloud.terminal_connections"
 	CloudTerminalViewerConnections    = "cloud.terminal_viewer_connections"
 	CloudTerminalRequestBytes         = "cloud.terminal_request_bytes"
@@ -2132,6 +2134,24 @@ func Register() []Entry {
 			Limit: 2, AtLimit: Expire,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalRosterDeadlineLimit"},
+		},
+		{
+			// A failed terminal roster read is read again on the first check
+			// this long after it failed; until then terminal rights stay
+			// closed as unverified (terminal_busy), never revoked.
+			Name: CloudTerminalRosterRetry, Class: Cache, Unit: Seconds,
+			Limit: 1, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalRosterRetrySecondsLimit"},
+		},
+		{
+			// A registered connection whose viewer's authority cannot be
+			// verified is paused (no frames, input refused as busy) and retired
+			// without a revocation notice after this long.
+			Name: CloudTerminalUnverifiedRetire, Class: Cache, Unit: Seconds,
+			Limit: 10, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalUnverifiedRetireSecondsLimit"},
 		},
 		{
 			Name: CloudTerminalConnections, Class: Buffer, Unit: Rows,

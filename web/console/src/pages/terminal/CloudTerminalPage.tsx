@@ -16,6 +16,7 @@ import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
 import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, reconnectCloudTerminal } from "./cloud-view.js"
 import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 import { centerCursorLine, followCursorLine } from "./cursor-line.js"
+import { CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS, terminalListErrorKind } from "../../session/cloud-terminal-all.js"
 
 const empty: CloudTerminalSnapshot = { state: "opening", frame: null, control: null, canType: false, hasLease: false, reason: "", carrier: "relay" }
 const FIRST_FRAME_MS = 12_000
@@ -62,6 +63,12 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   const [firstFramePending, setFirstFramePending] = useState(true)
   const [frameTimedOut, setFrameTimedOut] = useState(false)
   const [error, setError] = useState("")
+  // Attaching again by itself after a refusal that means "not right now"
+  // (terminal_busy while the machine cannot verify this browser, a timeout):
+  // which attempt is next for which terminal, and the wait being shown.
+  const attachKey = `${machine}/${channelProject}/${id}`
+  const [attachRetry, setAttachRetry] = useState({ key: attachKey, attempt: 0 })
+  const [retryWait, setRetryWait] = useState<{ attempt: number; code: string } | null>(null)
   const [needsReview, setNeedsReview] = useState(false)
   const [busy, setBusy] = useState("")
   const [history, setHistory] = useState<CloudTerminalHistory | null>(null)
@@ -105,10 +112,13 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   useEffect(() => {
     if (!shown || !host || !channelProject) return
     let live = true
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    const attempt = attachRetry.key === attachKey ? attachRetry.attempt : 0
     const observation = new TerminalObservation()
     let release: (() => void) | null = null
     let stop: (() => void) | null = null
     setSnapshot(empty); setLoading(true); setFirstFramePending(!!id); setFrameTimedOut(false); setError(""); setNeedsReview(false); setMeta(null)
+    if (attempt === 0) setRetryWait(null)
     void (async () => {
       try {
         const lease = await acquireTerminalConnection(host, machine, TAB, observation)
@@ -124,11 +134,24 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
         // reacquire after the host confirms no input outcome is uncertain.
         if (live && await acquireVisibleTerminal(next, id, TAB, next.snapshot.control, next.snapshot.state) === "needs_review")
           setNeedsReview(true)
-      } catch (e) { if (live) { if (id && reason(e) === "terminal_closed") observeTerminalEnded(machine, id); setError(reason(e)) } }
+        if (live) setRetryWait(null)
+      } catch (e) {
+        if (!live) return
+        const code = reason(e)
+        if (id && code === "terminal_closed") observeTerminalEnded(machine, id)
+        const delay = CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS[attempt]
+        if (terminalListErrorKind(code) === "retryable" && delay !== undefined) {
+          setRetryWait({ attempt: attempt + 1, code })
+          retryTimer = setTimeout(() => { if (live) setAttachRetry({ key: attachKey, attempt: attempt + 1 }) }, delay)
+        } else {
+          setRetryWait(null)
+          setError(code)
+        }
+      }
       finally { if (live) setLoading(false) }
     })()
-    return () => { live = false; stop?.(); release?.(); setSession(null) }
-  }, [host, machine, channelProject, id, shown])
+    return () => { live = false; if (retryTimer) clearTimeout(retryTimer); stop?.(); release?.(); setSession(null) }
+  }, [host, machine, channelProject, id, shown, attachRetry, attachKey])
 
   useEffect(() => {
     if (!id || loading || !firstFramePending || snapshot.frame || error || !shown) return
@@ -310,7 +333,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
   if (body === "no_project") return <p className="terminal-note" role="alert">{nextWord("terminalNoProject")}</p>
   if (body === "list") return <section className="terminal-wrap" aria-label={nextWord("terminalEntryFor", { project: label })}>
     <header className="board-head terminal-page-head"><button className="board-button" type="button" onClick={goBack}>{nextWord("terminalBackSessions")}</button></header>
-    {!error && <p className="terminal-note" role="status">{create ? nextWord("terminalOpening") : nextWord("terminalListLoading")}</p>}
+    {!error && <p className="terminal-note" role="status">{retryWait ? nextWord("terminalCloudRetrying", { code: retryWait.code,
+      attempt: retryWait.attempt, max: CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS.length }) : create ? nextWord("terminalOpening") : nextWord("terminalListLoading")}</p>}
     {error && <div><p className="terminal-note" role="alert">{accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) :
       error === "terminal_open_state_unknown" ? nextWord("terminalCloudOpenUnknown") : nextWord("terminalOpenFailed", { why: error })}</p>
       <TerminalDiagnostics observation={observed} /></div>}
@@ -336,7 +360,8 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
             disabled={!snapshot.canType || !!busy || closeRecord?.status === "pending" || closeRecord?.status === "unknown" || closeRecord?.status === "ok" || closeRecord?.status === "ended"}
             onClick={() => { actionMenu.current?.removeAttribute("open"); setCloseConfirm(true) }}>{nextWord("terminalTerminateHost")}</button>
         </div></details></div>
-      <p className="terminal-status-line" role="status" aria-live="polite">{loading && !snapshot.frame ? "" :
+      <p className="terminal-status-line" role="status" aria-live="polite">{retryWait && !error ? nextWord("terminalCloudRetrying", {
+        code: retryWait.code, attempt: retryWait.attempt, max: CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS.length }) : loading && !snapshot.frame ? "" :
         error ? accessError ? nextWord("terminalCloudNotAuthorized", { code: error }) : nextWord("terminalCloudError", { code: error }) : snapshot.state === "offline" ? nextWord("terminalCloudOffline") :
           snapshot.state === "stale" ? nextWord("terminalCloudStaleHelp") : snapshot.state === "unknown" ? nextWord("terminalCloudUnknown") :
           snapshot.state === "revoked" ? nextWord("terminalCloudAccessRevoked") :

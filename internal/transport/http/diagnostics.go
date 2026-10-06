@@ -861,6 +861,8 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		},
 		capacity.CloudTerminalRosterRefresh:        func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterRefresh) },
 		capacity.CloudTerminalRosterDeadline:       func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterDeadline) },
+		capacity.CloudTerminalRosterRetry:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRosterRetry) },
+		capacity.CloudTerminalUnverifiedRetire:     func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalUnverifiedRetire) },
 		capacity.CloudTerminalConnections:          func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalConnections) },
 		capacity.CloudTerminalViewerConnections:    func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalViewerConnections) },
 		capacity.CloudTerminalRequestBytes:         func() capacity.Reading { return s.terminalCapacity(capacity.CloudTerminalRequestBytes) },

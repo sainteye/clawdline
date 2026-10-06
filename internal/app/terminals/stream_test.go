@@ -155,3 +155,62 @@ func TestCloudFrameHeartbeatKeepsIdleShellFreshAndStopsOffline(t *testing.T) {
 		}
 	}
 }
+
+func TestUnverifiedAccessPausesAStreamInsteadOfRevokingIt(t *testing.T) {
+	host := &changingTerminalHost{wake: make(chan struct{}, 1)}
+	var unverified atomic.Bool
+	svc := New(host, func(Principal) error {
+		if unverified.Load() {
+			return terminal.Refuse(terminal.CodeBusy, "the device roster could not be read")
+		}
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	watch, err := svc.Watch(ctx, Principal{Device: "viewer", Cloud: true}, terminal.NewID(), "tab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watch.Stop()
+	unverified.Store(true)
+	events := make(chan Event, 16)
+	done := make(chan error, 1)
+	go func() { done <- watch.Run(ctx, func(e Event) error { events <- e; return nil }) }()
+	svc.Revalidate()
+	host.revision.Store(1)
+	host.wake <- struct{}{}
+	paused := time.After(700 * time.Millisecond)
+waiting:
+	for {
+		select {
+		case e := <-events:
+			if e.Kind == EventRefusal || e.Kind == EventFrame {
+				t.Fatalf("an unverified viewer got a %s event: %+v", e.Kind, e)
+			}
+		case err := <-done:
+			t.Fatalf("an unverified viewer's stream ended: %v", err)
+		case <-paused:
+			break waiting
+		}
+	}
+	unverified.Store(false)
+	host.wake <- struct{}{}
+	for {
+		select {
+		case e := <-events:
+			if e.Kind == EventRefusal {
+				t.Fatalf("a verified viewer was refused: %+v", e)
+			}
+			if e.Kind == EventFrame {
+				if e.Frame.Rev != "second" {
+					t.Fatalf("resumed with %q, want the newest screen", e.Frame.Rev)
+				}
+				cancel()
+				<-done
+				return
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("the stream did not resume once access was verified")
+		}
+	}
+}

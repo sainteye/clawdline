@@ -8,7 +8,8 @@ import { TerminalObservation } from "../cloud/terminal-observation.js"
 import { openTerminalPage } from "../pages/terminal/navigate.js"
 import { TAB } from "../pages/terminal/tab.js"
 import { holderWords, terminalRefusalWords, terminalShortID, terminalStatusWords } from "../pages/terminal/words.js"
-import { collectCloudTerminals, readCloudTerminalList, type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
+import { collectCloudTerminals, readCloudTerminalList, terminalListErrorKind, withTerminalListRetries, CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS,
+  type CloudTerminalRow, type CloudTerminalError } from "./cloud-terminal-all.js"
 import { recentTerminalCloseStates, terminalCloseRevision, terminalCloseState, watchTerminalClose } from "../cloud/terminal-close-state.js"
 import { openMachinePairing } from "../legacy/devices-bridge.js"
 import { TerminalMarks } from "./TerminalGlyph.js"
@@ -44,6 +45,9 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
   const [projectError, setProjectError] = useState("")
   const [routeError, setRouteError] = useState("")
   const [refresh, setRefresh] = useState(0)
+  // The automatic re-read in progress (1-based), or 0. A machine that could not
+  // verify this browser yet answers terminal_busy; the list asks again by itself.
+  const [retrying, setRetrying] = useState(0)
   useSyncExternalStore(watchTerminalClose, terminalCloseRevision, () => 0)
   const latestClose = recentTerminalCloseStates()[0]
   const generation = useRef(0)
@@ -58,6 +62,7 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
     const mine = ++generation.current
     setLoading(true)
     setErrors([])
+    setRetrying(0)
     setProjectError("")
     try {
       // Start machine reads while the Project directory is in flight. Its
@@ -70,9 +75,13 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
         return places.current
       })
       const machines = [{ id: host.machine, name: machineName }]
-      const next = await collectCloudTerminals(machines, nextPlaces, currentRows.current,
+      const next = await withTerminalListRetries(() => collectCloudTerminals(machines, nextPlaces, currentRows.current,
         (machine) => readMachine(host, machine),
-        (progress) => { if (mine === generation.current) { setRows(progress.rows); setErrors(progress.errors) } })
+        (progress) => { if (mine === generation.current) { setRows(progress.rows); setErrors(progress.errors) } }),
+      ({ attempt, result }) => {
+        if (mine !== generation.current) return
+        setRows(result.rows); setErrors(result.errors); setRetrying(attempt)
+      }, () => mine === generation.current)
       if (mine === generation.current) { setRows(next.rows); setErrors(next.errors) }
     } finally {
       if (mine === generation.current) setLoading(false)
@@ -115,10 +124,16 @@ export function CloudAllTerminalList({ shown, filter, reloadRef }: {
         { code: terminalRefusalWords(latestClose.error) })}</p>}
     {errors.map((error) => {
       const machineName = fleet?.machines.find((machine) => machine.id === error.machine)?.name ?? error.machine
-      const accessDenied = ["forbidden", "terminal_forbidden", "terminal_access_revoked"].includes(error.code)
+      const kind = terminalListErrorKind(error.code)
+      if (kind === "retryable" && loading && retrying > 0) {
+        return <p className="terminal-list-message" role="status" key={error.machine}>
+          {nextWord("terminalAllMachineRetrying", { machine: machineName, why: error.code,
+            attempt: String(retrying), max: String(CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS.length) })}</p>
+      }
       return <p className="terminal-list-message" role="alert" key={error.machine}>
-        {accessDenied ? nextWord("terminalAllMachineAccessDenied", { machine: machineName }) :
-          nextWord("terminalAllMachineFailed", { machine: machineName, why: error.code })} {accessDenied ?
+        {kind === "denied" ? nextWord("terminalAllMachineAccessDenied", { machine: machineName }) :
+          kind === "retryable" ? nextWord("terminalAllMachineUnverified", { machine: machineName, why: error.code }) :
+            nextWord("terminalAllMachineFailed", { machine: machineName, why: error.code })} {kind === "denied" ?
           <button type="button" onClick={() => repairPairing(error.machine)}>{nextWord("terminalAllRepairPairing")}</button> :
           <button type="button" onClick={retry} disabled={loading}>{nextWord("terminalAllRetry")}</button>}</p>
     })}

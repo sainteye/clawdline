@@ -107,7 +107,8 @@ func (l *Link) TerminalCapacity(name string) capacity.Reading {
 		capacity.CloudTerminalDirectNegotiate, capacity.CloudTerminalDirectGather, capacity.CloudTerminalDirectMessage,
 		capacity.CloudTerminalDirectChunk, capacity.CloudTerminalDirectAck, capacity.CloudTerminalDirectProbe,
 		capacity.CloudTerminalDirectProbeUnsettled, capacity.CloudTerminalSweep,
-		capacity.CloudTerminalReceiptBusyRetries, capacity.CloudTerminalReceiptBusyRetry:
+		capacity.CloudTerminalReceiptBusyRetries, capacity.CloudTerminalReceiptBusyRetry,
+		capacity.CloudTerminalRosterRetry, capacity.CloudTerminalUnverifiedRetire:
 		r.Note = "per-operation limit; no requests retained"
 	default:
 		return capacity.Unmeasured("unknown terminal capacity row")
@@ -180,8 +181,13 @@ type terminalConnection struct {
 	rekeyPending             bool
 	denied                   bool
 	deniedAt                 time.Time
-	stageLines               int
-	receiptOps               map[uint64]string
+	// unverifiedSince is when the sweep first found this viewer's authority
+	// unverifiable (TerminalUnverified) in the current streak; zero while it
+	// is verified. The connection is paused meanwhile and retired, without a
+	// revocation, after CloudTerminalUnverifiedRetireSecondsLimit.
+	unverifiedSince time.Time
+	stageLines      int
+	receiptOps      map[uint64]string
 	// receiptRetries holds each relay-published receipt until it settles, so
 	// one the relay refused with rate_limited can be published again.
 	receiptRetries map[uint64]receiptRetry
@@ -320,7 +326,11 @@ func (l *Link) startRekeyTerminalWatch(c *terminalConnection) {
 	}
 	name, _ := l.PinnedTerminalViewer(c.viewer)
 	p := terminals.Principal{Device: c.viewer, Name: name, Cloud: true}
-	if err := svc.Allow(p); err != nil {
+	if err := svc.Allow(p); terminals.Unverified(err) {
+		// Not a revocation: the viewer rekeys or reopens once it can be verified.
+		l.closeTerminalConnection(c)
+		return
+	} else if err != nil {
 		l.revokeRegisteredTerminal(context.Background(), c)
 		return
 	}
@@ -532,10 +542,42 @@ func (l *Link) sweepTerminalConnections() {
 			(!watchReceiptDeadline.IsZero() && !watchReceiptDeadline.After(l.opts.Now())) ||
 			(denied && !deniedAt.Add(CloudTerminalRevocationRetireSecondsLimit*time.Second).After(l.opts.Now())) {
 			l.closeTerminalConnection(c)
-		} else if !denied && (err != nil || svc.Allow(terminals.Principal{Device: c.viewer, Cloud: true}) != nil) {
-			l.revokeRegisteredTerminal(context.Background(), c)
-		} else {
+			continue
+		} else if denied {
 			l.sweepDirect(c)
+			continue
+		}
+		access := err
+		if access == nil {
+			access = svc.Allow(terminals.Principal{Device: c.viewer, Cloud: true})
+		}
+		switch {
+		case access == nil:
+			l.terminalMu.Lock()
+			c.unverifiedSince = time.Time{}
+			l.terminalMu.Unlock()
+			l.sweepDirect(c)
+		case err == nil && terminals.Unverified(access):
+			// Paused, not revoked: frames and requests are refused as they come
+			// while the roster cannot be read. A streak that outlasts the bound
+			// retires the registration without terminal_access_revoked; the
+			// viewer reconnects.
+			now := l.opts.Now()
+			l.terminalMu.Lock()
+			if c.unverifiedSince.IsZero() {
+				c.unverifiedSince = now
+			}
+			expired := !c.unverifiedSince.Add(CloudTerminalUnverifiedRetireSecondsLimit * time.Second).After(now)
+			l.terminalMu.Unlock()
+			if expired {
+				l.logf("cloud terminal: retired connection of %s after %d s without verifiable authority", c.viewer,
+					CloudTerminalUnverifiedRetireSecondsLimit)
+				l.closeTerminalConnection(c)
+			} else {
+				l.sweepDirect(c)
+			}
+		default:
+			l.revokeRegisteredTerminal(context.Background(), c)
 		}
 	}
 }
@@ -687,7 +729,13 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 			Status: "refused", Error: string(terminal.CodeForbidden)})
 		return
 	}
-	if err := svc.Allow(p); err != nil {
+	if err := svc.Allow(p); terminals.Unverified(err) {
+		// Cannot tell right now: a retryable refusal, and the connection stays.
+		l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+			Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
+			Status: "refused", Error: string(terminal.CodeBusy)})
+		return
+	} else if err != nil {
 		l.refuseRegisteredTerminal(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
 			Connection: req.Connection, Operation: req.Operation, TerminalID: req.TerminalID,
 			Status: "refused", Error: string(terminal.CodeForbidden)})
@@ -843,7 +891,14 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 		c.terminalID, c.client = old.terminalID, old.client
 		l.terminalMu.Unlock()
 	}
-	if !l.TerminalViewerCloudCapable(p.Device) {
+	switch verdict, _ := l.terminalAuthority(p.Device, false); verdict {
+	case TerminalDenied:
+		return // A viewer the account does not let in is not someone to encrypt to.
+	case TerminalUnverified:
+		// The viewer's own key is in the request, so it can be told to try
+		// again rather than left to time out. Nothing is registered.
+		l.sendTerminalReceipt(ctx, c, terminalReceipt{V: 1, Type: "terminal_receipt", RequestID: req.RequestID,
+			Connection: req.Connection, Operation: req.Operation, Status: "refused", Error: string(terminal.CodeBusy)})
 		return
 	}
 	l.terminalMu.Lock()
@@ -881,11 +936,15 @@ func (l *Link) openTerminalConnection(ctx context.Context, svc *terminals.Servic
 		return
 	}
 	code := preCode
-	if !l.TerminalViewerAllowed(p.Device) {
+	if err := l.TerminalViewerAccess(p.Device); terminals.Unverified(err) {
+		code = string(terminal.CodeBusy)
+	} else if err != nil {
 		code = string(terminal.CodeForbidden)
 	} else if svc == nil {
 		code = string(terminal.CodeUnsupported)
-	} else if svc.Allow(p) != nil {
+	} else if err := svc.Allow(p); terminals.Unverified(err) {
+		code = string(terminal.CodeBusy)
+	} else if err != nil {
 		code = string(terminal.CodeForbidden)
 	}
 	if code != "" {
@@ -1501,7 +1560,9 @@ func (l *Link) watchTerminal(ctx context.Context, svc *terminals.Service, p term
 
 func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p terminals.Principal,
 	c *terminalConnection, id terminal.ID, frame terminal.Frame) error {
-	if err := svc.Allow(p); err != nil {
+	if err := svc.Allow(p); terminals.Unverified(err) {
+		return terminals.ErrFrameDeferred // paused: offered again once verified
+	} else if err != nil {
 		l.revokeRegisteredTerminal(ctx, c)
 		return err
 	}
@@ -1531,7 +1592,9 @@ func (l *Link) sendTerminalFrame(ctx context.Context, svc *terminals.Service, p 
 		payload = delta
 		channel = "termd/" + l.identity.MachineID + "/" + c.viewer + "/" + c.id
 	}
-	if err := svc.Allow(p); err != nil {
+	if err := svc.Allow(p); terminals.Unverified(err) {
+		return terminals.ErrFrameDeferred
+	} else if err != nil {
 		l.revokeRegisteredTerminal(ctx, c)
 		return err
 	}

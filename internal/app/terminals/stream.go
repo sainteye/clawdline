@@ -170,9 +170,16 @@ func (w *Watch) RunWithFrameHeartbeat(ctx context.Context, heartbeat time.Durati
 
 func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Event) error) error {
 	s, id := w.s, w.id
-	if err := s.allowed(w.v.who); err != nil {
-		return send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
-			"this device may no longer see this machine's terminals")})
+	// revoked is whether an access answer ends the stream. An unverified
+	// answer (Unverified) only pauses it: nothing is sent while it lasts, and
+	// the screen is offered again once access is confirmed.
+	revoked := func(err error) bool { return err != nil && !Unverified(err) }
+	revokedEvent := func() Event {
+		return Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
+			"this device may no longer see this machine's terminals")}
+	}
+	if err := s.allowed(w.v.who); revoked(err) {
+		return send(revokedEvent())
 	}
 	if err := send(Event{Kind: EventControl, Control: s.Control(id)}); err != nil {
 		return err
@@ -184,11 +191,16 @@ func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Even
 	lastSentAt := last.At
 	// Watch may have spent time capturing the first frame while access was
 	// revoked. Do not release that frame merely because Watch was admitted.
-	if err := s.allowed(w.v.who); err != nil {
-		return send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
-			"this device may no longer see this machine's terminals")})
-	}
-	if err := send(Event{Kind: EventFrame, Frame: last}); err != nil {
+	// owed is set while the newest frame has not been delivered (paused or
+	// deferred), so the next read offers it even when the screen is still.
+	owed := false
+	if err := s.allowed(w.v.who); revoked(err) {
+		return send(revokedEvent())
+	} else if err != nil {
+		owed = true
+	} else if err := send(Event{Kind: EventFrame, Frame: last}); errors.Is(err, ErrFrameDeferred) {
+		owed = true
+	} else if err != nil {
 		return err
 	}
 	var poll <-chan time.Time
@@ -204,9 +216,11 @@ func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Even
 	// look reads the screen and sends it when it moved, and says whether the
 	// stream is over.
 	look := func() (bool, error) {
-		if err := s.allowed(w.v.who); err != nil {
-			return true, send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
-				"this device may no longer see this machine's terminals")})
+		if err := s.allowed(w.v.who); revoked(err) {
+			return true, send(revokedEvent())
+		} else if err != nil {
+			owed = true
+			return false, nil
 		}
 		if wait := CaptureGap - s.now().Sub(last.At); wait > 0 && !last.At.IsZero() {
 			select {
@@ -235,16 +249,19 @@ func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Even
 				return true, err
 			}
 		}
-		if frame.Rev != last.Rev || (heartbeat > 0 && frame.At.Sub(lastSentAt) >= heartbeat) {
-			if err := s.allowed(w.v.who); err != nil {
-				return true, send(Event{Kind: EventRefusal, Refusal: refuse(terminal.CodeAccessRevoked,
-					"this device may no longer see this machine's terminals")})
+		if owed || frame.Rev != last.Rev || (heartbeat > 0 && frame.At.Sub(lastSentAt) >= heartbeat) {
+			if err := s.allowed(w.v.who); revoked(err) {
+				return true, send(revokedEvent())
+			} else if err != nil {
+				owed = true
+				return false, nil
 			}
 			if err := send(Event{Kind: EventFrame, Frame: frame}); errors.Is(err, ErrFrameDeferred) {
 				return false, nil
 			} else if err != nil {
 				return true, err
 			}
+			owed = false
 			last = frame
 			lastSentAt = frame.At
 		} else {
@@ -284,6 +301,10 @@ func (w *Watch) run(ctx context.Context, heartbeat time.Duration, send func(Even
 			// signal missed is at most one beat late.
 			if done, err := look(); done || err != nil {
 				return err
+			}
+			// A paused stream does not say it is still let in.
+			if s.allowed(w.v.who) != nil {
+				continue
 			}
 			if err := send(Event{Kind: EventBeat, Now: s.now(), LastCapture: last.At}); err != nil {
 				return err
