@@ -112,3 +112,34 @@ func TestNewTmuxPaneDoesNotInheritAssistantIdentityFromServer(t *testing.T) {
 		t.Fatal("new window inherited the existing session's squad capability")
 	}
 }
+
+// A daemon launchd or systemd started has no LANG, and its tmux runs under
+// LC_ALL=C; when it is the one that starts the tmux server, that is the
+// server's environment, and a pane's shell under it draws `中` as unknown
+// bytes. A launch line with the person's language in it (`--settings
+// {"language":"…中文…"}`) then never shows on the pane as typed, and the start
+// fails. The pane gets a UTF-8 LANG and no LC_ALL, the way an owned terminal's
+// shell does.
+func TestANewPaneShowsALaunchLineThatIsNotASCII(t *testing.T) {
+	bin, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("no tmux")
+	}
+	dir, err := os.MkdirTemp("/tmp", "cl-tmux-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	t.Setenv("TMUX_TMPDIR", dir)
+	t.Setenv("TMUX", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("SHELL", "/bin/sh")
+	for _, key := range []string{"LANG", "LC_ALL", "LC_CTYPE"} {
+		t.Setenv(key, "")
+	}
+	defer exec.Command(bin, "kill-server").Run()
+	launcher := Launcher{Tmux: &Tmux{Binary: bin}}
+	if _, err := launcher.NewTmuxSession(context.Background(), dir, "cl-utf8", `: '{"language":"繁體中文"}'`); err != nil {
+		t.Fatalf("a launch line that is not ASCII did not start: %v", err)
+	}
+}

@@ -283,6 +283,13 @@ server. A pane created with no command at all gets an interactive login shell, w
 file your `PATH` is actually set in — so Clawdline makes the pane, then types the line into it,
 the same two steps the iTerm2 backend has always taken.
 
+**The pane is made with a UTF-8 `LANG` and an empty `LC_ALL`.** A daemon launchd or systemd
+started has no `LANG`, and runs tmux under `LC_ALL=C`; when it is the first to run tmux, that is
+the new server's environment and every pane's. The shell then draws `中` as unknown bytes, so a
+launch line carrying your language setting never shows on the pane as it was typed, and the start
+failed `terminal_io_failed` (measured on macOS 15 with tmux 3.6a, 2026-10-07). The `LANG` is the
+one an owned terminal's shell gets; your profile, read next, still has the last word.
+
 **Typing is not running, and Clawdline claims only the first.** tmux tells it the keystrokes were
 delivered to the pane; nothing on that path tells it your shell ran them. A startup file that
 flushes pending input — `tcsetattr(0, TCSAFLUSH, …)`, which is what some `stty` lines and a few
