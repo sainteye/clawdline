@@ -143,7 +143,9 @@ func (e Env) restartService(ctx context.Context, s install.ServiceFile) error {
 // waitHealthy asks the daemon on s.Port until it serves its console and
 // names commit, for at most HealthWaitSecondsLimit.
 func (e Env) waitHealthy(ctx context.Context, s install.ServiceFile, want Served) error {
-	token, _ := os.ReadFile(filepath.Join(e.StateDir, "orchestrator-token"))
+	// The local token, as tools/deploy-linux-user.sh reads BUILD.json: the
+	// console's files answer a bearer, not the orchestrator header.
+	token, _ := os.ReadFile(filepath.Join(e.StateDir, "local-token"))
 	check := e.Health
 	if check == nil {
 		check = e.httpHealth
@@ -200,7 +202,7 @@ func (e Env) httpHealth(ctx context.Context, port int, token string, want Served
 			return nil, err
 		}
 		if token != "" {
-			req.Header.Set("X-Clawdline-Orchestrator", token)
+			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		resp, err := c.Do(req)
 		if err != nil {

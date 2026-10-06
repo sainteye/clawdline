@@ -119,6 +119,7 @@ func TestApplyingAnUpdateNeedsSendAndAReleaseInstall(t *testing.T) {
 	s, _ := releaseUpdateServer(t, f.g.dir, "v0.11.0")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/update/apply", s.updateApplyRoute)
+	mux.HandleFunc("/v1/update", s.updateRoute)
 	h := f.g.wrap(mux)
 	bearer := func(tok string) map[string]string {
 		return map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}
@@ -148,6 +149,12 @@ func TestApplyingAnUpdateNeedsSendAndAReleaseInstall(t *testing.T) {
 	rec = (call{path: "/v1/update/apply", headers: map[string]string{"X-Clawdline-Orchestrator": f.machine, "Content-Type": "application/json"}}).do(h)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), updater.CodeUpdateInProgress) {
 		t.Fatalf("in progress: %d %s", rec.Code, rec.Body)
+	}
+	// The CLI on this machine follows the update it started with the same
+	// token it started it with.
+	rec = (call{method: http.MethodGet, path: "/v1/update", headers: map[string]string{"X-Clawdline-Orchestrator": f.machine}}).do(h)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"install_kind":"release"`) {
+		t.Fatalf("the machine reading its update: %d %s", rec.Code, rec.Body)
 	}
 	// And a daemon that is not a release install says so.
 	plain := &Server{cfg: config.Config{Dir: t.TempDir()}, update: &updatecheck.Checker{Disabled: true}}

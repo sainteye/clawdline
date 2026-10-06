@@ -109,6 +109,9 @@ func (d *Daemon) Start(ctx context.Context, req Request) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Recorded before the answer, so the caller's first read already names
+	// the release it follows; Execute records it again as it starts.
+	_ = d.Env.record(contract.UpdateApplyStateDownloading, plan.From, plan.Manifest.Version, nil, "")
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()

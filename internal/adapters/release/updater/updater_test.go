@@ -123,12 +123,19 @@ func TestTheHealthWaitIsBounded(t *testing.T) {
 	}
 }
 
-// A release candidate and its final release share a commit: only the version
-// tells the restarted daemon from the one it replaced.
+// The real check, as the daemon serves it: BUILD.json answers only the
+// local token as a bearer (the drill on a Mac rolled a healthy release back
+// when it sent the orchestrator header). A release candidate and its final
+// release share a commit, so only the version tells the restarted daemon
+// from the one it replaced.
 func TestHealthNeedsTheNewVersionNotOnlyItsCommit(t *testing.T) {
 	var build string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/BUILD.json" {
+			if r.Header.Get("Authorization") != "Bearer local-secret" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 			io.WriteString(w, build)
 			return
 		}
@@ -136,19 +143,26 @@ func TestHealthNeedsTheNewVersionNotOnlyItsCommit(t *testing.T) {
 	}))
 	defer srv.Close()
 	port, _ := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	e := Env{StateDir: t.TempDir(), Poll: time.Millisecond, HealthWait: 100 * time.Millisecond}
+	if err := os.WriteFile(filepath.Join(e.StateDir, "local-token"), []byte("local-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.StateDir, "orchestrator-token"), []byte("machine-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc := install.ServiceFile{Port: port}
 	want := Served{Commit: commitOf('b'), Version: "v1.0.0"}
-	var e Env
 	build = `{"stamp":"` + commitOf('b') + `","version":"v1.0.0-rc.1"}`
-	if err := e.httpHealth(context.Background(), port, "", want); err == nil {
-		t.Fatal("the release candidate still running passed as the final release")
+	if err := e.waitHealthy(context.Background(), svc, want); errCode(err) != CodeHealthTimeout {
+		t.Fatalf("the release candidate still running passed as the final release: %v", err)
 	}
 	build = `{"stamp":"` + commitOf('b') + `","version":"v1.0.0"}`
-	if err := e.httpHealth(context.Background(), port, "", want); err != nil {
+	if err := e.waitHealthy(context.Background(), svc, want); err != nil {
 		t.Fatalf("the final release: %v", err)
 	}
 	// A BUILD.json from before it carried a version is known by its commit.
 	build = `{"stamp":"` + commitOf('b') + `"}`
-	if err := e.httpHealth(context.Background(), port, "", want); err != nil {
+	if err := e.waitHealthy(context.Background(), svc, want); err != nil {
 		t.Fatalf("a versionless BUILD.json: %v", err)
 	}
 }
