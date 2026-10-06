@@ -80,6 +80,7 @@ the command instead.
 | `clawdline cloud pair [--offer <code>]` | Pairs one Cloud browser with this machine |
 | `clawdline task show [--json] <task id>` | One child task compactly: state, verdict, summary, leftover titles, verification, landing, checkout (§5) |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | Waits until the children finish (all, or `--any` one), shows each as `task show` does and closes its notice. Exit 0 all succeeded, 1 one failed, 5 one was cancelled and none failed, 3 timed out, 4 a task could not be read; 4 over 3 over 1 over 5 (§5) |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | Runs a long command — a deploy and its check, a wait on CI — under the daemon and returns at once; end your turn, and its exit types the same `<clawdline-notice>` a finished child's does (§5a, `clawdline guide callback`) |
 | `clawdline task cancel <task id> --reason "…"` | Stops a child you dispatched by mistake: its tab is closed, its writes and slot are released, a branch with commits is kept for you (§5) |
 | `clawdline task ack <task id> <notice id>` | Closes a completion notice by hand; rarely needed, since `task show` and `task wait` close it (§5) |
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
@@ -342,8 +343,9 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 
 **5. If a child finishes**, a `<clawdline-notice>` line is typed into your composer. Run
 `clawdline task show <task id>`, then integrate the delivery; reading it closes the notice, so there
-is no separate ACK. To block until your children finish instead, run
-`clawdline task wait <task id>…` (default `--timeout 9m`, `--any` for the first one). Integrate a worktree child by **merging its branch** into the target. **The merge records the
+is no separate ACK. **After a dispatch, end your turn**: the notice wakes you, and a turn kept open
+to wait rereads your whole context on every poll. Only when there is nothing else to do and you
+must block, run `clawdline task wait <task id>…` (default `--timeout 9m`, `--any` for the first one). Integrate a worktree child by **merging its branch** into the target. **The merge records the
 landing by itself** within a few minutes: do not post a landing by hand. `clawdline landings` lists
 what is still owed. A child dispatched with `--claims ""` that wrote nothing is recorded
 `nothing_to_land` by the broker. Anything else is `clawdline task land <task id> <state>`
@@ -383,6 +385,16 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 `done` takes `--deployment` or `--no-deployment-reason` as the item's deployment policy says. When
 `clawdline item steps <item id>` prints a gate line, this item keeps the longer path that line
 points to.
+
+**Waiting on a deploy.** Do not keep the turn open while a deploy runs or propagates. Start the
+deploy and its check as one callback, end the turn, and finish the item when its notice arrives:
+
+```sh
+clawdline callback --title "The hosted console serves <sha>" --work-id <item id> --timeout 20m -- \
+  sh -c './deploy.sh <sha> && tools/wait-hosted-console.sh <sha>'
+# … the notice: clawdline task show <callback id>, then
+clawdline item finish <item id> … --deployment "what went live, where, which version (callback <callback id>)"
+```
 
 **8. Report the turn**: `clawdline session report --summary "…"` (§7).
 
@@ -646,6 +658,37 @@ You do not call those routes.
   Otherwise a task ends by finishing, failing or timing out.
 - **A finished child is not landed code.** Its work sits in the shared tree or on its branch until
   you integrate it.
+
+## 5a. Waiting on a long command: a callback
+
+A deploy, a CI run, a release propagating, a long build: anything whose answer is "later". Do not
+wait for it in your turn, and do not poll it from later turns. Hand it to the daemon:
+
+```sh
+clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch <run id> --exit-status
+```
+
+It prints `callback <id> briefed` and returns. **End your turn.** When the command exits, the daemon
+types a `<clawdline-notice>` whose body reads
+`callback <first 8 of id> finished: success (exit 0 after 6m) — run clawdline task show <id>`; `task show`
+prints how it ended — its exit status and the last lines of its output — and closes the notice,
+exactly as for a child.
+
+- It is a task of yours with no tab: `clawdline task cancel <id> --reason "…"` stops the command's
+  whole process group; past `--timeout` (1m to 4h, default 30m) it is stopped and settled `timeout`.
+  A running callback keeps your Session from closing, as a running child does.
+- The command runs as its words, without a shell; write `sh -c '…'` for one. It runs in this
+  directory (`--dir` for another) with only PATH, HOME, locale, USER, SHELL, TMPDIR and TERM from
+  your environment: never a credential. A command that needs one reads it from its own file.
+- Its output is in the task's directory, `output.log`, kept 7 days after it ends.
+- It is run once. If the daemon restarts meanwhile, it picks the command up again; a command that
+  ended while no daemon was watching it and left no exit status is settled `failure` with the
+  outcome unknown, and is **not** run again. Start it again yourself if that is safe.
+- An uncertain start — the CLI could not reach the daemon — is retried with
+  `--task-id <the id it printed>`: the same id is never started twice.
+- A callback does not take a child slot. At most 8 run per Session and 16 per machine; one more is
+  refused `429 callback_capacity` with a `retry_after`. A dispatch cannot call itself
+  `kind callback` (`bad_task`). Windows refuses `501 no_callback_capability`.
 
 ## 6. Landing, and the other three kinds of work
 

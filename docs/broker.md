@@ -372,6 +372,55 @@ An override is reasoned, candidate-bound authority, never a checker PASS. The fi
 requires every child terminal and uses Reality Checker. See `docs/work-system-v2.md` §6.4a for the
 Board projection and export/purge recovery.
 
+## Callbacks: waiting without a turn (2026-10-06)
+
+A root that deployed used to keep its turn open while the deploy ran, or end it and poll from later
+turns; each poll reread its whole context. `POST /v1/orchestrator/callbacks`
+(`clawdline callback --title "…" -- <command…>`, `internal/app/orchestrator/callback.go`) hands the
+command to the daemon instead. The command's exit settles a task and opens the same notice a
+finished child does, so the root ends its turn and is woken.
+
+A callback is a task with no tab. **`Record.Callback` is what makes one**, never `kind`: only this
+route sets it, and a dispatch naming `kind callback` is refused `bad_task`. It is `briefed` from the
+moment it is recorded, holds no child slot (`childrenOf`), has its own caps (8 per root, 16 per
+machine, `callback_capacity` 429), carries no claims and adds no work-unit edge. Like a running child, a
+running callback keeps its root Session from closing (`child_task_running`, `live_descendant_task`).
+
+Running it:
+
+- **Start** is the `callback.start` outbox effect, recorded with the task. The command runs under
+  `/bin/sh -c <wrapper> sh <argv…>` in its own process group, stdout and stderr appended to
+  `<task dir>/output.log`. The wrapper writes `pid` and, when the command ends, `exit`. The
+  environment is a fixed allowlist (PATH, HOME, locale, USER, SHELL, TMPDIR, TERM) and never a
+  credential.
+- **`run.lock`** is flocked by the start and inherited by the command as fd 3, so "the lock is
+  held" means "something of this run is alive", across a daemon restart.
+- **`attempt`** is written and fsynced, with its directory, after the lock and before the exec. A
+  recovery that finds it, with no exit status and the lock free, settles the task `failure` with
+  the outcome unknown and **does not run the command again**. A deploy is never run twice by the
+  daemon.
+- **The lock is the fence between starting and settling**:
+  - a start rereads the record after taking the lock and does not begin for a settled task;
+  - the beat holds the lock while it settles "no exit status, lock free";
+  - so a command never begins after its task told the root it ended.
+- **Stop** is the `callback.stop` effect that a cancel or a timeout records with its settlement. It
+  signals the group only when `getpgid(pid)` matches and either this process is the one waiting on
+  it or the leader's kernel start time matches the recorded one within a second. A reused pid is
+  never signalled.
+- **Restart.** The beat settles a callback whose `exit` file exists, adopts one whose lock is
+  still held, and leaves alone one whose start effect is still open. Only the daemon that
+  recorded a callback, or one whose recorder is gone, settles it.
+
+The verdict is the exit status (or signal) and duration, then as many of the last lines of
+`output.log` as fit, keeping the last one; the notice line is
+`callback <id> finished: <state> (<head>)`. `output.log` is capped at 8 MiB by keeping its newest
+output, and the reclaim sweep removes a finished callback's files after 7 days
+(`callback_files`). Windows refuses `501 no_callback_capability` until it can stop a process tree.
+
+`tools/wait-hosted-console.sh <sha>` is written to be a callback's command: it waits until the
+hosted console serves `<sha>` or later and then runs the CloudGate check
+(`docs/hosted-console.md`).
+
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。

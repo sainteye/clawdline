@@ -527,6 +527,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/completions", s.completionsRoute)
 	mux.HandleFunc("/v1/orchestrator/completions/", s.completionsRoute)
 	mux.HandleFunc("/v1/orchestrator/detached-tasks", s.brokerDetached)
+	// A command run for a root instead of a tab, which wakes it when it ends
+	// (callbacks.go, orchestrator/callback.go).
+	mux.HandleFunc("/v1/orchestrator/callbacks", s.brokerCallback)
 	// The hand-over plane (handoffs.go, W6).
 	mux.HandleFunc("/v1/orchestrator/handoffs", s.handoffsRoute)
 	mux.HandleFunc("/v1/orchestrator/handoffs/", s.handoffsRoute)

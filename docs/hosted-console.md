@@ -75,6 +75,19 @@ git merge-base --is-ancestor "$live" <sha> || { echo "production is at $live, no
 When it refuses and `<sha>` is already an ancestor of `$live`, production already carries the
 change: there is nothing to deploy.
 
+**Do not wait for the deploy in your turn.** Pages takes minutes to serve a new build. Run the
+deploy, then the wait and the check below, as one callback. End the turn, and read the result when
+its notice arrives (`clawdline guide`, §5a):
+
+```sh
+clawdline callback --title "The hosted console serves <sha>" --timeout 20m -- \
+  sh -c '<the deploy above> && tools/wait-hosted-console.sh <sha>'
+```
+
+`tools/wait-hosted-console.sh <sha> [--deadline 15m]` polls `BUILD.json` until its stamp is
+`<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
+bundle has `CloudGate`.
+
 ## The check that answers the right question
 
 ```sh

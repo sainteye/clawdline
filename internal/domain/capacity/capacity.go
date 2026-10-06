@@ -432,6 +432,14 @@ const (
 	HandoffWorktrees  = "handoff.worktrees"
 	HandoffPatchBytes = "handoff.patch_bytes"
 	HandoffPackBytes  = "handoff.pack_bytes"
+	// A callback: a command the daemon runs for a root and reports on when
+	// it exits (orchestrator/callback.go).
+	CallbackArgs         = "callback.args"
+	CallbackCommandBytes = "callback.command_bytes"
+	CallbacksPerRoot     = "callback.per_root"
+	CallbacksPerMachine  = "callback.per_machine"
+	CallbackOutputBytes  = "callback.output_bytes"
+	CallbackTailBytes    = "callback.tail_bytes"
 )
 
 // Entry is one row of the register.
@@ -2470,6 +2478,52 @@ func Register() []Entry {
 			Limit: 32 << 20, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/orchestrator.MaxHandoffPackBytes"},
+		},
+		{
+			// A callback naming more words, or more bytes of them, is refused
+			// bad_task and nothing is started.
+			Name: CallbackArgs, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxCallbackArgs"},
+		},
+		{
+			Name: CallbackCommandBytes, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.CallbackCommandLimit"},
+		},
+		{
+			// Callbacks still running, per root and on this machine. They do
+			// not take a child's slot; one past either cap is refused
+			// callback_capacity and nothing is started.
+			Name: CallbacksPerRoot, Class: Buffer, Unit: Rows,
+			Limit: 8, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxCallbacksPerRoot"},
+		},
+		{
+			Name: CallbacksPerMachine, Class: Buffer, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.MaxCallbacksPerMachine"},
+		},
+		{
+			// A running command's output.log. Past the limit the beat keeps
+			// its newest output and says on the first line that earlier
+			// output was dropped.
+			Name: CallbackOutputBytes, Class: Observation, Unit: Bytes,
+			Limit: 8 << 20, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.CallbackLogLimit"},
+		},
+		{
+			// The end of output.log read for a finished callback's verdict;
+			// earlier output stays in the file for `task show`'s reader.
+			Name: CallbackTailBytes, Class: Observation, Unit: Bytes,
+			Limit: 8 << 10, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.CallbackTailLimit"},
 		},
 	}
 }

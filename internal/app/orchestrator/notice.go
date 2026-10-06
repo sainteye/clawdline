@@ -140,6 +140,9 @@ func (b *Broker) FinishedLine(r Record, noticeID string) string {
 	// Neither the title nor "[clawdline]" is repeated here: the line is typed
 	// inside the notice, whose wrapper says where it is from and whose `task`
 	// carries the title.
+	if r.Callback != nil {
+		return callbackFinishedLine(r, short, noticeID)
+	}
 	line := fmt.Sprintf("task %s finished: %s", short, r.State)
 	if r.State == StateTimeout && len(r.Lease()) > 0 {
 		line += "; claims released, its tab may still be writing"

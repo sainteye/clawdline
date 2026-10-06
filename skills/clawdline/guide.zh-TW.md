@@ -75,6 +75,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline task show [--json] <task id>` | 精簡地看一個 child task：狀態、verdict、summary、leftover 標題、驗證、landing、checkout（§5） |
 | `clawdline task wait <task id>… [--timeout 9m] [--any]` | 等 child 結束（全部，或 `--any` 一個），每個都照 `task show` 印出並關掉它的通知。exit 0 全部成功、1 有一個失敗、5 有一個被取消且沒有其他失敗、3 逾時、4 有 task 讀不到；優先順序 4、3、1、5（§5） |
 | `clawdline task cancel <task id> --reason "…"` | 停掉派錯的 child：關掉它的分頁、釋放它的寫入範圍與名額，有 commit 的 branch 會留給你（§5） |
+| `clawdline callback --title "…" [--timeout 30m] [--work-id <item>] -- <command…>` | 把長時間的指令——deploy 加上它的檢查、等 CI——交給 daemon 跑，立刻返回；你結束這個 turn，指令結束時會打進一行跟 child 結束一樣的 `<clawdline-notice>`（§5a，`clawdline guide callback`） |
 | `clawdline task ack <task id> <notice id>` | 手動關掉一則完成通知；`task show` 與 `task wait` 已經會關，很少需要（§5） |
 | `clawdline task accept <task dir>` | child 簽收 briefing。root 永遠不執行它 |
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
@@ -301,7 +302,8 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-TW dispatch`。
 
 **5. 若有 child 結束**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
-再整合交付；讀了就會關掉通知，不必另外 ACK。想直接等 child 做完，就執行
+再整合交付；讀了就會關掉通知，不必另外 ACK。**派工之後就結束這個 turn**：通知會叫醒你，而開著 turn
+等待，每輪輪詢都要重讀整段 context。只有沒別的事可做、非得卡住等時，才執行
 `clawdline task wait <task id>…`（預設 `--timeout 9m`，`--any` 等第一個）。worktree child 的整合方式是**把它的 branch
 merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要手動送 landing。`clawdline landings`
 列出還欠著的。用 `--claims ""` 派出、什麼都沒寫的 child，broker 會自己記 `nothing_to_land`。其他情況用
@@ -338,6 +340,16 @@ clawdline item phase <item id> done --no-deployment-reason "why nothing needs de
 
 `done` 依項目的部署政策帶 `--deployment` 或 `--no-deployment-reason`。`clawdline item steps <item id>`
 印出 gate 那一行時，這個項目走那一行指向的較長路徑。
+
+**等 deploy。** deploy 在跑或在擴散時不要開著 turn 等。把 deploy 和它的檢查當成一個 callback 啟動，結束
+turn，通知來了再收尾 item：
+
+```sh
+clawdline callback --title "The hosted console serves <sha>" --work-id <item id> --timeout 20m -- \
+  sh -c './deploy.sh <sha> && tools/wait-hosted-console.sh <sha>'
+# …通知來了：clawdline task show <callback id>，然後
+clawdline item finish <item id> … --deployment "what went live, where, which version (callback <callback id>)"
+```
 
 **8. 回報這個 turn**：`clawdline session report --summary "…"`（§7）。
 
@@ -565,6 +577,34 @@ child 會用 `clawdline task accept` 簽收 briefing（它會送 `/accepted`，�
   `clawdline task wait` 等到的 task 被取消時 exit 5。除此之外，task 只會以完成、失敗或逾時結束。
 - **child 結束，不等於程式碼已經 landing。** 在你整合之前，它的成果還放在共用的 working tree 或它自己的
   branch 上。
+
+## 5a. 等一個長時間的指令：callback
+
+deploy、CI、release 擴散、長時間編譯——任何答案是「等一下才知道」的事。不要在 turn 裡等，也不要在之後
+的 turn 輪詢。交給 daemon：
+
+```sh
+clawdline callback --title "CI is green on <sha>" --timeout 45m -- gh run watch <run id> --exit-status
+```
+
+它印出 `callback <id> briefed` 就返回。**結束你的 turn。** 指令結束時，daemon 會打進一行
+`<clawdline-notice>`，body 是
+`callback <id 前 8 碼> finished: success (exit 0 after 6m) — run clawdline task show <id>`；`task show`
+印出它怎麼結束——exit status 與輸出的最後幾行——並關掉通知，跟 child 完全一樣。
+
+- 它是你的一個沒有分頁的 task：`clawdline task cancel <id> --reason "…"` 會停掉指令整個 process
+  group；超過 `--timeout`（1m 到 4h，預設 30m）會被停掉並記成 `timeout`。執行中的 callback 跟執行中的
+  child 一樣，會擋住你的 Session 關閉。
+- 指令照字面執行，不經過 shell；要 shell 就寫 `sh -c '…'`。它在目前目錄執行（`--dir` 換目錄），只帶你環境
+  裡的 PATH、HOME、語系、USER、SHELL、TMPDIR 與 TERM：絕不帶憑證。需要憑證的指令自己從它的檔案讀。
+- 輸出在 task 目錄的 `output.log`，結束後保留 7 天。
+- 只跑一次。daemon 中途重啟會把指令接回來；在沒有 daemon 看著時結束、又沒留下 exit status 的指令，記成
+  `failure`、結果不明，而且**不會**再跑一次。安全的話由你自己重新啟動。
+- 不確定有沒有啟動成功——CLI 連不到 daemon——就用 `--task-id <它印出的 id>` 重試：同一個 id 絕不會啟動
+  兩次。
+- callback 不佔 child 名額。每個 Session 最多 8 個、每台機器 16 個；再多一個會被 `429 callback_capacity`
+  拒絕並附 `retry_after`。派工不能自稱 `kind callback`（`bad_task`）。Windows 會回
+  `501 no_callback_capability`。
 
 ## 6. Landing，以及另外三種工作
 

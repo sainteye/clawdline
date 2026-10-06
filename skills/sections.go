@@ -24,7 +24,7 @@ import (
 
 // section is one printable part: a name, and the heading that opens it in
 // each guide. Headings are matched by their order in the file: both guides
-// carry the same nineteen, and TestBothGuidesHaveTheSameSections holds them
+// carry the same twenty, and TestBothGuidesHaveTheSameSections holds them
 // to it.
 type section struct {
 	Name    string
@@ -44,6 +44,7 @@ var sections = []section{
 	{"inventory", "before you dispatch: read what is already there", false},
 	{"dispatch", "dispatching an owned child", false},
 	{"running", "while a child runs, and when it finishes", false},
+	{"callback", "waiting on a long command, a deploy or CI, without keeping a turn open", false},
 	{"landing", "landing, handoff, detached work and root assignments", false},
 	{"schedule", "scheduling future work", false},
 	{"report", "reporting your own finished turn", true},

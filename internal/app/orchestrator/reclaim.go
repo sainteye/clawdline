@@ -57,6 +57,8 @@ import (
 const (
 	ReclaimWorktree = "worktree"
 	ReclaimTaskDir  = "task_dir"
+	// ReclaimCallbackFiles is a settled callback's evidence files (callback.go).
+	ReclaimCallbackFiles = "callback_files"
 )
 
 // The outcomes. The `would_` pair is a dry run's.
@@ -76,6 +78,7 @@ const (
 	WhyCommittedOnBranch = "committed_on_branch" // clean, not landed: its commits on the delivery branch and a preservation branch
 	WhyPreserved         = "preserved"           // edits kept on a preservation branch and a proved patch
 	WhyWorkScratch       = "work_scratch"        // a task directory's work/, which the briefing declares disposable
+	WhyCallbackFiles     = "callback_files"      // a callback settled over CallbackRetentionDays ago: its output, pid, exit, attempt and lock files
 	// kept
 	WhyLive         = "task_live"
 	WhyGrace        = "within_grace"
@@ -305,6 +308,11 @@ func (b *Broker) Reclaim(ctx context.Context, dryRun bool) (ReclaimReport, error
 		if r.Dir != "" {
 			d := b.reclaimTaskDir(ctx, rd, r, rep.At, dryRun)
 			touched = touched || (d.Subject != "" && d.Reason != WhyLive)
+			b.decide(ctx, &rep, d, dryRun)
+		}
+		if r.Callback != nil {
+			d := b.reclaimCallback(ctx, r, rep.At, dryRun)
+			touched = touched || d.Subject != ""
 			b.decide(ctx, &rep, d, dryRun)
 		}
 		if touched {

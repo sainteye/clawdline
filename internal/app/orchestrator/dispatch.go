@@ -226,9 +226,10 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 
 	// Capacity, per root and per machine. Both are 429 with a retry_after,
 	// because "busy" without a number sends a caller into a loop.
+	children := childrenOf(live)
 	if record.Root != nil {
 		mine := 0
-		for _, other := range live {
+		for _, other := range children {
 			if other.Root != nil && other.Root.SessionID == record.Root.SessionID {
 				mine++
 			}
@@ -239,7 +240,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 				map[string]any{"retry_after": 60})
 		}
 	}
-	if len(live) >= b.machineChildren() {
+	if len(children) >= b.machineChildren() {
 		return Dispatched{}, refuseWith(http.StatusTooManyRequests, "over_capacity",
 			fmt.Sprintf("All %d child sessions on this machine are busy; retry when one finishes.", b.machineChildren()),
 			map[string]any{"retry_after": 60})
@@ -1140,6 +1141,19 @@ func assistantName(assistant string) string {
 // errAlreadyTerminal is Settle finding that somebody settled the task first.
 var errAlreadyTerminal = errors.New("already terminal")
 
+// childrenOf is the live tasks that hold a child slot. A callback holds none:
+// it opens no tab and runs no assistant, and it has its own bound
+// (callback.go).
+func childrenOf(live []Record) []Record {
+	children := live[:0:0]
+	for _, other := range live {
+		if other.Callback == nil {
+			children = append(children, other)
+		}
+	}
+	return children
+}
+
 // Settle records a terminal outcome and opens the notice that tells the root.
 //
 // Exactly once. A `/complete` and the beat's collection of result.json can both
@@ -1172,7 +1186,9 @@ func (b *Broker) settle(ctx context.Context, id string, state State, why string,
 func (b *Broker) settleWith(ctx context.Context, id string, state State, why string, result *taskdir.Result,
 	also func(*Record), effects ...store.Effect) (Record, []int64, error) {
 	r, ids, err := b.settleOnce(ctx, id, state, why, result, also, effects...)
-	if err == nil && b.WorkUnitEdge != nil {
+	// A callback has no session for the usage ledger to read, so it is given
+	// no end marker that could never be settled.
+	if err == nil && b.WorkUnitEdge != nil && r.Callback == nil {
 		b.WorkUnitEdge(id, "end", string(state), r.FinishedAt)
 	}
 	return r, ids, err

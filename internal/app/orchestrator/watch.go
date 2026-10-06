@@ -153,6 +153,14 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	b.keepReading(rd)
 	for _, r := range live {
 		p.Watched++
+		// A callback has no tab, brief or result.json: its command's exit
+		// and its own clock are all there is to watch (callback.go).
+		if r.Callback != nil {
+			if b.tendCallback(ctx, r) {
+				p.Settled++
+			}
+			continue
+		}
 		switch b.collectNote(ctx, &r) {
 		case noteTaken:
 			p.Notes++

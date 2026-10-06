@@ -850,6 +850,12 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 		state += " — " + t.Verdict
 	}
 	fmt.Fprintf(w, "state:        %s\n", state)
+	// A callback is a command, not a child: its verdict is the whole story —
+	// exit status and the end of its output — and it writes no result,
+	// owes no landing and has no branch.
+	if t.Kind == orchestrator.TaskKindCallback {
+		return
+	}
 
 	r := t.Result
 	switch {

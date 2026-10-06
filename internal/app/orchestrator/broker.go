@@ -227,6 +227,11 @@ type Broker struct {
 	// to keep.
 	secrets map[string]string
 
+	// callbacks is every callback command this process started and has not
+	// yet seen exit (callback.go). In memory only: after a restart the
+	// evidence in each callback's task directory takes its place.
+	callbacks callbackRuns
+
 	// beat is the loop's account of itself (observe.go). In memory only: it
 	// describes this process, and a restart is a new beat.
 	beat beatState
@@ -579,7 +584,7 @@ func (b *Broker) create(ctx context.Context, r Record, secretHash string, effect
 	if err != nil {
 		return nil, storeError(err)
 	}
-	if b.WorkUnitEdge != nil {
+	if b.WorkUnitEdge != nil && r.Callback == nil {
 		b.WorkUnitEdge(r.ID, "start", string(r.State), r.CreatedAt)
 	}
 	return ids, nil

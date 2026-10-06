@@ -425,6 +425,11 @@ type Record struct {
 	// round, candidate, acceptance digest and base the checker is allowed to
 	// speak for.
 	Gate *GateOrigin `json:"verification_gate,omitempty"`
+	// Callback is present only on a callback: a command this daemon runs
+	// for a root instead of a tab (callback.go). Only the callback route
+	// writes it, and it is what makes a record a callback — Kind is for
+	// display and nothing decides on it.
+	Callback *Callback `json:"callback,omitempty"`
 
 	// LeaseScope is `shared` or `worktree`, fixed at dispatch. Empty on a
 	// record written before it existed; Scope reads those.

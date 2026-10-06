@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"net/http"
 	"strings"
 )
@@ -104,9 +105,13 @@ func (b *Broker) CancelTask(ctx context.Context, id, reason, key string, c Cance
 			map[string]any{"state": string(r.State)})
 	}
 	verdict := "Cancelled by " + who + ": " + reason
+	stop := b.closeChild(r, r.ChildTerminalID != "")
+	if r.Callback != nil {
+		stop = []store.Effect{callbackStopEffect(r)}
+	}
 	settled, ids, err := b.settleWith(ctx, id, StateCancelled, verdict, nil, func(rec *Record) {
 		rec.Cancellation = &Cancellation{By: by, Key: key}
-	}, b.closeChild(r, r.ChildTerminalID != "")...)
+	}, stop...)
 	if errors.Is(err, errAlreadyTerminal) {
 		// Somebody settled it between the read and the write — a result
 		// collected, the timeout, or this same cancel sent twice at once.

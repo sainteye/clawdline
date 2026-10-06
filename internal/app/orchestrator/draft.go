@@ -347,6 +347,11 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	if kind == "" {
 		kind = "custom"
 	}
+	// A callback is a command the callback route runs, never a child: a
+	// brief that calls itself one is refused rather than displayed as one.
+	if kind == TaskKindCallback {
+		return bad("kind callback is for clawdline callback, not a dispatch")
+	}
 	gate, err := admitGateOrigin(d.VerificationGate, kind, d.Assistant, isolation, claims)
 	if err != nil {
 		return Record{}, err

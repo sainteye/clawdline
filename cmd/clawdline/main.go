@@ -76,6 +76,10 @@ func main() {
 		// skeleton's `dispatch` wrote a second table of tasks; this one writes
 		// nothing the broker does not read.
 		dispatchCommand(os.Args[2:])
+	case "callback":
+		// A wait handed to the daemon: it runs the command and wakes this
+		// session when it exits (orchestrator/callback.go).
+		callbackCommand(os.Args[2:])
 	case "handoff":
 		handoffCommand(os.Args[2:])
 	case "land", "settle":
@@ -405,7 +409,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
 	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last")
@@ -416,6 +420,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory")
 	fmt.Fprintln(os.Stderr, "  setting <get|set> <key> <value>   planning_gate, verify_gate, or claude_auto_compact_window")
 	fmt.Fprintln(os.Stderr, "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step")
+	fmt.Fprintln(os.Stderr, "  callback --title <t> -- <command…>   run a command under the daemon and end the turn; its exit wakes this session")
 	fmt.Fprintln(os.Stderr, "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary")
 	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
 	fmt.Fprintln(os.Stderr, "  note create                   post a human intervention to one Session")
