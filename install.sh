@@ -135,7 +135,8 @@ main() {
   have tar || die "tar is not installed. Install it and run this again."
   mkdir -p "$root/staging"
   work=$(mktemp -d "$root/staging/install.XXXXXX")
-  trap 'rm -rf "$work"' EXIT
+  # The staging and root directories go too when nothing else is in them.
+  trap 'rm -rf "$work"; rmdir "$root/staging" "$root" 2>/dev/null || true' EXIT
   trap 'exit 130' INT TERM
 
   if [ -n "${CLAWDLINE_INSTALL_BASE_URL:-}" ]; then
@@ -195,8 +196,14 @@ main() {
   status=0
   "$dest/clawdline" setup --archive "$work/$name" --manifest-dir "$work" "$@" </dev/null || status=$?
   # A repair that failed puts back the copy of this version that was there.
+  # A first install that setup refused before `current` named it (tmux
+  # missing, a bad signature) takes the unpacked release away again, so
+  # "Nothing was installed" is true.
   if [ "$status" != 0 ] && [ -e "$work/previous" ]; then
     mv "$dest" "$work/refused" && mv "$work/previous" "$dest"
+  elif [ "$status" != 0 ] && [ "$(readlink "$root/current" 2>/dev/null)" != "releases/$v" ]; then
+    mv "$dest" "$work/refused"
+    rmdir "$root/releases" 2>/dev/null || true
   fi
   exit "$status"
 }
