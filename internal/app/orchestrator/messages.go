@@ -263,7 +263,7 @@ func relayedOf(a store.ReceiptAnswer, replayed bool) (Relayed, error) {
 	if a.Status == http.StatusOK {
 		var m messageAnswer
 		if err := json.Unmarshal(a.Body, &m); err != nil {
-			return Relayed{}, refuse(http.StatusInternalServerError, "receipt_unreadable", err.Error())
+			return Relayed{}, refuseRaw(http.StatusInternalServerError, "receipt_unreadable", err.Error())
 		}
 		out := Relayed{At: time.Unix(m.At, 0), Stage: Stage(m.Stage), Replayed: replayed}
 		if m.Accepted > 0 {
@@ -276,9 +276,9 @@ func relayedOf(a store.ReceiptAnswer, replayed bool) (Relayed, error) {
 	}
 	var r storedRefusal
 	if err := json.Unmarshal(a.Body, &r); err != nil {
-		return Relayed{}, refuse(http.StatusInternalServerError, "receipt_unreadable", err.Error())
+		return Relayed{}, refuseRaw(http.StatusInternalServerError, "receipt_unreadable", err.Error())
 	}
-	return Relayed{}, Refusal{Status: a.Status, Code: r.Code, Message: r.Message, Extra: r.Extra}
+	return Relayed{}, Refusal{Status: a.Status, Code: r.Code, Message: r.Message, RawMessage: true, Extra: r.Extra}
 }
 
 func retrySeconds(d time.Duration) int {
@@ -388,7 +388,7 @@ func (b *Broker) ReportSessionDelivery(ctx context.Context, terminalID, summary 
 	}
 	s, ok := b.sessionByTerminal(ctx, terminalID)
 	if !ok || !s.IsAssistant() {
-		return SessionDelivery{}, refuse(http.StatusNotFound, "session_not_found",
+		return SessionDelivery{}, refuseRaw(http.StatusNotFound, "session_not_found",
 			"No current assistant session named "+terminalID+".")
 	}
 	trimmed := strings.TrimSpace(summary)

@@ -246,7 +246,7 @@ func (s *Server) verificationAfterWrite(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if !found {
-		writeRefusal(w, http.StatusNotFound, "not_found", "There is no verification "+id+".")
+		writeRawRefusal(w, http.StatusNotFound, "not_found", "There is no verification "+id+".")
 		return
 	}
 	writeJSON(w, contract.VerificationDetail{At: time.Now().Unix(), Verification: verificationRow(rec)})
@@ -298,7 +298,7 @@ func decodeStrict(w http.ResponseWriter, r *http.Request, into any) bool {
 	dec := json.NewDecoder(&raw)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(into); err != nil {
-		writeRefusal(w, http.StatusBadRequest, "bad_request", "The body is not what this route reads: "+err.Error()+".")
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", "The body is not what this route reads: "+err.Error()+".")
 		return false
 	}
 	if dec.More() {
@@ -331,7 +331,7 @@ func verificationFailure(w http.ResponseWriter, err error) {
 		case "schedule_mismatch", "not_scheduled":
 			status = http.StatusForbidden
 		}
-		writeRefusal(w, status, refusal.Code, refusal.Message)
+		writeRawRefusal(w, status, refusal.Code, refusal.Message)
 		return
 	}
 	if errors.Is(err, store.ErrBusy) {

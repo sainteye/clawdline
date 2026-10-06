@@ -588,7 +588,7 @@ func runMessage(ctx context.Context, b *Broker, e store.Effect) effectResult {
 					map[string]any{"retry_after": 5}))}
 		}
 		return effectResult{state: store.EffectFailed, outcome: err.Error(),
-			answer: refusalAnswer(refuse(http.StatusBadGateway, "delivery_failed", err.Error()))}
+			answer: refusalAnswer(refuseRaw(http.StatusBadGateway, "delivery_failed", err.Error()))}
 	}
 	at := b.now()
 	// Delivered: the composer took the line. Not observed, and not
@@ -618,8 +618,6 @@ type deadLetterEffect struct {
 	// only reason there was then: nobody acknowledged it.
 	Reason string `json:"reason,omitempty"`
 }
-
-const deadLetterTitle = "完成通知沒有送達"
 
 // heldReason is a hold code's legacy sentence for the push, or empty for a
 // code that is not a hold.

@@ -124,7 +124,7 @@ func (p *page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := os.Stat(full); err != nil {
-		writeRefusal(w, http.StatusNotFound, "not_found", clean)
+		writeRawRefusal(w, http.StatusNotFound, "not_found", clean)
 		return
 	}
 	http.ServeFile(w, r, full)
@@ -134,7 +134,7 @@ func (p *page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *page) document(w http.ResponseWriter) {
 	body, err := os.ReadFile(filepath.Join(p.root, "index.html"))
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "no_document", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "no_document", err.Error())
 		return
 	}
 	html := string(body)

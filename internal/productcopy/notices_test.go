@@ -22,6 +22,7 @@ func TestNotificationCatalogShipsNineCompleteLanguages(t *testing.T) {
 				"label": "L", "minutes": "7", "name": "N", "amount": "A", "percent": "75%",
 				"used": "U", "limit": "C", "consequence": "K", "at": "10:30", "count": "2",
 				"drops": "D", "title": "T", "state": "S", "attempts": "3", "reason": "R",
+				"question": "Q", "options": "O", "default": "F",
 			})
 			if out == "" || strings.ContainsAny(out, "{}<>") {
 				t.Errorf("%s %s rendered %q", language, key, out)

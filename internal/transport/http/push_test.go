@@ -26,6 +26,9 @@ func TestDaemonProductLanguageIsIndependentOfAgentAndVoice(t *testing.T) {
 	if got := s.productLanguage(); got != "en" {
 		t.Fatalf("unset product language = %q", got)
 	}
+	if got := s.participation().ProductLanguage(); got != "en" {
+		t.Fatalf("unset decision push language = %q", got)
+	}
 	file := nextconfig.Open(s.cfg.Dir)
 	if _, err := file.Set(map[string]any{"language": "zh-Hant", "voice_language": "ja"}); err != nil {
 		t.Fatal(err)
@@ -38,6 +41,9 @@ func TestDaemonProductLanguageIsIndependentOfAgentAndVoice(t *testing.T) {
 	}
 	if got := s.productLanguage(); got != "fr" {
 		t.Fatalf("French product language = %q", got)
+	}
+	if got := s.participation().ProductLanguage(); got != "fr" {
+		t.Fatalf("decision push did not read the current product language: %q", got)
 	}
 	values, err := file.Read()
 	if err != nil {

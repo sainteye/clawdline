@@ -97,7 +97,7 @@ func (s *Server) writeTodos(w http.ResponseWriter, r *http.Request, session stri
 	q := r.URL.Query()
 	for key := range q {
 		if !todosQueryKeys[key] {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "unknown query parameter "+key)
+			writeRawRefusal(w, http.StatusBadRequest, "bad_request", "unknown query parameter "+key)
 			return
 		}
 	}

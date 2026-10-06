@@ -293,6 +293,12 @@ export interface AuthError {
    * not_found, store_unavailable, unsupported_media_type.
    */
   code: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English message. Dynamic
+   * messages have no key.
+   */
+  detail_key?: string
   message: string
 
   /**
@@ -2502,6 +2508,12 @@ export interface CloseReason {
  */
 export interface CloseRefusal {
   detail: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English detail. Dynamic
+   * details have no key.
+   */
+  detail_key?: string
   error: string
   reasons: CloseReason[]
 }
@@ -5003,6 +5015,12 @@ export const RecordedLandingSourceValues: readonly RecordedLandingSource[] = ["t
  */
 export interface Refusal {
   detail: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English detail. Dynamic
+   * details have no key.
+   */
+  detail_key?: string
   error: string
   route?: string
   upstream?: string

@@ -51,7 +51,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	upstream, err := s.openUpstreamEvents(r)
 	if err != nil {
-		writeRefusal(w, http.StatusBadGateway, "upstream_unreachable", err.Error())
+		writeRawRefusal(w, http.StatusBadGateway, "upstream_unreachable", err.Error())
 		return
 	}
 	defer upstream.Body.Close()

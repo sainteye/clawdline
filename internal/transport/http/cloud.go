@@ -280,13 +280,10 @@ func (s *Server) cloudRotateRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		outcome, err := holder.RotateSigningKey(r.Context(), body.Confirm)
 		if errors.Is(err, cloudtransport.ErrRotationUnconfirmed) {
+			markFixedRefusalKey(w, fixedRefusalKey(err.Error()))
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"error":   map[string]any{"code": "confirm_required", "message": err.Error()},
-				"repair":  outcome.Repair,
-				"confirm": "post {\"confirm\": true} to rotate anyway",
-			})
+			_ = json.NewEncoder(w).Encode(rotationConfirmationWire(err, outcome.Repair))
 			return
 		}
 		if err != nil {
@@ -297,6 +294,20 @@ func (s *Server) cloudRotateRoute(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeAuthRefusal(w, http.StatusMethodNotAllowed, "bad_request",
 			"A rotation is previewed with GET and done with POST.")
+	}
+}
+
+func rotationConfirmationWire(err error, repair any) map[string]any {
+	refusal := map[string]any{"code": "confirm_required", "message": err.Error()}
+	if err == cloudtransport.ErrRotationUnconfirmed {
+		if key := fixedRefusalKey(err.Error()); key != "" {
+			refusal["detail_key"] = key
+		}
+	}
+	return map[string]any{
+		"error":   refusal,
+		"repair":  repair,
+		"confirm": "post {\"confirm\": true} to rotate anyway",
 	}
 }
 
@@ -333,12 +344,12 @@ func writeCloudPairingError(w http.ResponseWriter, err error) {
 	case errors.Is(err, adaptercloud.ErrPairingPending):
 		writeAuthRefusal(w, http.StatusAccepted, "pairing_pending", err.Error())
 	case errors.Is(err, adaptercloud.ErrInvitationGone):
-		writeAuthRefusal(w, http.StatusConflict, "pairing_expired", err.Error())
+		writeRawAuthRefusal(w, http.StatusConflict, "pairing_expired", err.Error())
 	case errors.Is(err, adaptercloud.ErrPairingUnknown):
-		writeAuthRefusal(w, http.StatusNotFound, "unknown_pairing", err.Error())
+		writeRawAuthRefusal(w, http.StatusNotFound, "unknown_pairing", err.Error())
 	case errors.Is(err, adaptercloud.ErrPairingRefused):
-		writeAuthRefusal(w, http.StatusForbidden, "pairing_refused", err.Error())
+		writeRawAuthRefusal(w, http.StatusForbidden, "pairing_refused", err.Error())
 	default:
-		writeAuthRefusal(w, http.StatusBadRequest, "pairing_failed", err.Error())
+		writeRawAuthRefusal(w, http.StatusBadRequest, "pairing_failed", err.Error())
 	}
 }

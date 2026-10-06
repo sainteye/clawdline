@@ -718,7 +718,7 @@ func jsonBody(value map[string]any) []byte {
 // written. This daemon has a dispatch route and still refuses, because
 // inventing the missing half here would put a file somewhere nobody agreed on.
 var cloudDispatchUnpinned = Refusal{Status: 409, Code: "cloud_dispatch_unpinned",
-	Message: "Cloud dispatch has no pinned wire shape on this machine."}
+	Message: "Cloud dispatch has no pinned wire shape on this machine.", fixedCopy: true}
 
 func init() {
 	register(
@@ -3517,7 +3517,7 @@ func answerNamesItsQuestion(p plan) *Refusal {
 		return nil
 	}
 	return &Refusal{Status: 428, Code: "menu_unverified",
-		Message: "This machine answers a menu over Clawdline Cloud only when the answer names the question it was chosen for. Reload the page and answer again."}
+		Message: "This machine answers a menu over Clawdline Cloud only when the answer names the question it was chosen for. Reload the page and answer again.", fixedCopy: true}
 }
 
 // routeAnswer is the menu-answer route, which is not `send`.

@@ -196,7 +196,11 @@ func (s *Server) agentCreateHumanIntervention(w http.ResponseWriter, r *http.Req
 func (s *Server) writeHumanInterventionIdentityError(w http.ResponseWriter, err error) {
 	var refusal orchestrator.Refusal
 	if errors.As(err, &refusal) {
-		writeRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+		if refusal.RawMessage {
+			writeRawRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+		} else {
+			writeRefusal(w, refusal.Status, refusal.Code, refusal.Message)
+		}
 		return
 	}
 	writeRefusal(w, http.StatusServiceUnavailable, "session_unresolved", "The source Session could not be verified.")

@@ -305,6 +305,10 @@ func badHandoff(message string) error {
 	return refuse(http.StatusUnprocessableEntity, "bad_task", message)
 }
 
+func badHandoffRaw(message string) error {
+	return refuseRaw(http.StatusUnprocessableEntity, "bad_task", message)
+}
+
 // OpenHandoff is the route. The order of the refusals is the Swift app's, so a
 // caller correcting one at a time meets them in the same sequence.
 func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, bool, error) {
@@ -403,7 +407,7 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	dir := filepath.Join(b.HandoffRoot(), req.ID)
 	pkg := filepath.Join(dir, "handoff.md")
 	if info, err := os.Lstat(pkg); err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
-		return Handoff{}, false, refuseWith(http.StatusUnprocessableEntity, "bad_task",
+		return Handoff{}, false, refuseRawWith(http.StatusUnprocessableEntity, "bad_task",
 			"Write the handoff package first: "+pkg+
 				" must be a non-empty regular file (REFERENCES, VERIFICATION, OPEN THREADS). Then send the same request again.",
 			withRemedy(map[string]any{"package": pkg, "handoff_id": req.ID, "project_dir": project,
@@ -414,10 +418,10 @@ func (b *Broker) OpenHandoff(ctx context.Context, req HandoffRequest) (Handoff, 
 	if milestone {
 		data, err := readBounded(pkg, MilestoneSummaryLimit+1)
 		if err != nil {
-			return Handoff{}, false, badHandoff("The milestone summary " + pkg + " could not be read: " + err.Error())
+			return Handoff{}, false, badHandoffRaw("The milestone summary " + pkg + " could not be read: " + err.Error())
 		}
 		if problems := CheckMilestoneSummary(data); len(problems) > 0 {
-			return Handoff{}, false, refuseWith(http.StatusUnprocessableEntity, "bad_milestone_summary",
+			return Handoff{}, false, refuseRawWith(http.StatusUnprocessableEntity, "bad_milestone_summary",
 				fmt.Sprintf("%s is not a milestone summary (%d problems). It needs the sections %s, at most %d bytes, "+
 					"evidence as links, and no credential or conversation text. Fix it and send the same request again.",
 					pkg, len(problems), strings.Join(MilestoneSections, ", "), MilestoneSummaryLimit),
@@ -722,6 +726,10 @@ func badAssignment(message string) error {
 	return refuse(http.StatusUnprocessableEntity, "bad_root_assignment", message)
 }
 
+func badAssignmentRaw(message string) error {
+	return refuseRaw(http.StatusUnprocessableEntity, "bad_root_assignment", message)
+}
+
 // validateAssignment is the closed body's checks, in the Swift app's order.
 func validateAssignment(req RootAssignmentRequest) error {
 	if !uuidShape.MatchString(req.RequestID) {
@@ -739,7 +747,7 @@ func validateAssignment(req RootAssignmentRequest) error {
 	if req.Persona != "" {
 		_, builtin := personas.Known(req.Persona)
 		if !builtin && !squad.ValidCustomID(req.Persona) {
-			return badAssignment("persona must be one of: " + strings.Join(personas.IDs(), ", ") + ".")
+			return badAssignmentRaw("persona must be one of: " + strings.Join(personas.IDs(), ", ") + ".")
 		}
 	}
 	label := strings.TrimSpace(req.Label)
@@ -753,7 +761,7 @@ func validateAssignment(req RootAssignmentRequest) error {
 		"acceptance": req.Assignment.Acceptance,
 	} {
 		if strings.TrimSpace(v) == "" || len(v) > assignmentFieldLimit || strings.ContainsRune(v, 0) {
-			return badAssignment("assignment." + name + " must be 1–8192 bytes, not blank, with no NUL.")
+			return badAssignmentRaw("assignment." + name + " must be 1–8192 bytes, not blank, with no NUL.")
 		}
 		total += len(v)
 	}
@@ -851,7 +859,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		if claim.Answer.Status != http.StatusOK || json.Unmarshal(claim.Answer.Body, &answer) != nil {
 			var r storedRefusal
 			_ = json.Unmarshal(claim.Answer.Body, &r)
-			return RootAssignment{}, false, Refusal{Status: claim.Answer.Status, Code: r.Code, Message: r.Message, Extra: r.Extra}
+			return RootAssignment{}, false, Refusal{Status: claim.Answer.Status, Code: r.Code, Message: r.Message, RawMessage: true, Extra: r.Extra}
 		}
 		a, err := b.RootAssignmentByID(ctx, answer.ID)
 		return a, true, err
@@ -883,7 +891,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		b.refundDispatch()
-		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())
+		return RootAssignment{}, false, refuseRaw(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
 	brief := AssignmentBrief(id, req.Assignment, req.Persona, personas.Path(b.Dir, req.Persona))
 	if req.Handoff != nil {
@@ -896,7 +904,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 	}
 	if err := writeFileSync(a.BriefPath, []byte(brief)); err != nil {
 		b.refundDispatch()
-		return RootAssignment{}, false, refuse(http.StatusServiceUnavailable, "persistence_failed", err.Error())
+		return RootAssignment{}, false, refuseRaw(http.StatusServiceUnavailable, "persistence_failed", err.Error())
 	}
 	if err := b.createOpened(ctx, store.TableRootAssignments, id, a.State, a, "root_assignment.accepted", now); err != nil {
 		b.refundDispatch()

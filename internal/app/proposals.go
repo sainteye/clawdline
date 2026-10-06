@@ -15,6 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Participation keeps the points where a person takes part in the board
@@ -49,6 +50,9 @@ type Participation struct {
 	// is a daemon with no push path: a blocking decision is then recorded as
 	// not_subscribed.
 	Push func(ctx context.Context, title, body, tag string) (sent, failed int, err error)
+	// ProductLanguage is read when a blocking decision's push is rendered.
+	// Nil uses English and does not affect the decision's authored question.
+	ProductLanguage func() string
 	// The register's limits: proposals.open, decisions.open, work.digests.
 	// Zero is the store's default; an override may only lower them.
 	ProposalLimit int64
@@ -398,7 +402,7 @@ func (p *Participation) Propose(ctx context.Context, req ProposalRequest, file P
 			case bound && workID == "":
 				workID = line
 			case bound && line != workID:
-				return workRefusal(409, "work_id_mismatch", "That task is on another line of work ("+line+").")
+				return workRefusalRaw(409, "work_id_mismatch", "That task is on another line of work ("+line+").")
 			case bound:
 			case workID != "":
 				// The root names the line this unbound task is part of.
@@ -986,7 +990,11 @@ func decisionSource(tx *store.WorkTx, id, session string) (string, error) {
 // pushText is a blocking decision's notification, its title and its body,
 // inside the push's own bounds (80 and 500 characters).
 func pushText(d work.Decision, loc *time.Location) (string, string) {
-	title := "等你決定：" + d.Question
+	return pushTextLanguage("zh-Hant", d, loc)
+}
+
+func pushTextLanguage(language string, d work.Decision, loc *time.Location) (string, string) {
+	title := productcopy.Format(language, "decision.title", map[string]string{"question": d.Question})
 	if utf8.RuneCountInString(title) > 80 {
 		title = string([]rune(title)[:79]) + "…"
 	}
@@ -1001,12 +1009,23 @@ func pushText(d work.Decision, loc *time.Location) (string, string) {
 	if loc == nil {
 		loc = time.UTC
 	}
-	body := "選項：" + strings.Join(labels, "／") + "。沒有回答的話，" + d.DueAt.In(loc).Format("01-02 15:04") +
-		" 起照「" + fallback + "」做。"
+	body := productcopy.Format(language, "decision.body", map[string]string{
+		"options": strings.Join(labels, productcopy.Format(language, "decision.option_separator", nil)),
+		"at":      d.DueAt.In(loc).Format("01-02 15:04"),
+		"default": fallback,
+	})
 	if utf8.RuneCountInString(body) > 500 {
 		body = string([]rune(body)[:499]) + "…"
 	}
 	return title, body
+}
+
+func (p *Participation) decisionPushText(d work.Decision, loc *time.Location) (string, string) {
+	language := "en"
+	if p.ProductLanguage != nil {
+		language = p.ProductLanguage()
+	}
+	return pushTextLanguage(language, d, loc)
 }
 
 // PushDecision pushes a blocking decision recorded as pending, once, and
@@ -1045,7 +1064,7 @@ func (p *Participation) PushDecision(ctx context.Context, id string) work.PushSt
 	if err != nil || outcome != "" {
 		return outcome
 	}
-	title, body := pushText(d, p.Proposals.Location)
+	title, body := p.decisionPushText(d, p.Proposals.Location)
 	sent, failed, perr := p.Push(ctx, title, body, "decision-"+d.ID)
 	switch {
 	case perr != nil || (failed > 0 && sent == 0):

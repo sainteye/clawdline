@@ -53,7 +53,7 @@ func (b *Broker) Respawn(ctx context.Context, id, supplied string) (Respawned, e
 	// somebody's decision — copying any of those into a new tab would be
 	// re-running work, not retrying a dispatch.
 	if origin.State != StateSpawnFailed {
-		return Respawned{}, refuseWith(http.StatusConflict, "not_respawnable",
+		return Respawned{}, refuseRawWith(http.StatusConflict, "not_respawnable",
 			fmt.Sprintf("Only a spawn_failed task may be respawned; task %s is %s.", id, origin.State),
 			map[string]any{"state": string(origin.State)})
 	}
@@ -69,7 +69,7 @@ func (b *Broker) Respawn(ctx context.Context, id, supplied string) (Respawned, e
 		code = "gate_respawn_exhausted"
 	}
 	if descendants >= limit {
-		return Respawned{}, refuseWith(http.StatusConflict, code,
+		return Respawned{}, refuseRawWith(http.StatusConflict, code,
 			fmt.Sprintf("Task %s has already been respawned %d times; the limit is %d. "+
 				"Dispatch a new task, or find out why the tab will not open.", original, descendants, limit),
 			map[string]any{"original_task": original, "respawns": descendants, "limit": limit})

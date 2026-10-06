@@ -98,7 +98,7 @@ func (s *Server) imageRoute(w http.ResponseWriter, r *http.Request) {
 		if found.Evicted {
 			// Same code, so every reader that branches on it still does; the
 			// sentence says which of the two happened (limits N15).
-			writeRefusal(w, http.StatusGone, "artifact_expired",
+			writeRawRefusal(w, http.StatusGone, "artifact_expired",
 				"That image artifact was let go to make room for newer pictures: this machine keeps the newest "+
 					strconv.Itoa(s.pictures.store.Policy.MaxCount)+".")
 			return
@@ -186,7 +186,7 @@ func writePictureRefusal(w http.ResponseWriter, err error) {
 		writeRefusal(w, ref.Status, ref.Code, ref.Message)
 		return
 	}
-	writeRefusal(w, http.StatusInternalServerError, "artifact_storage_failed", err.Error())
+	writeRawRefusal(w, http.StatusInternalServerError, "artifact_storage_failed", err.Error())
 }
 
 // wireArtifacts is what one entry's pictures are now.

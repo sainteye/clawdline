@@ -143,7 +143,7 @@ func (s *Server) restoreArchived(w http.ResponseWriter, raw []byte) {
 		if err == nil {
 			err = errors.New("conversations is required")
 		}
-		writeRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
+		writeConversationsRefusal(w, err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -155,7 +155,7 @@ func (s *Server) restoreArchived(w http.ResponseWriter, raw []byte) {
 			conversation: row.ConversationID, assistant: row.Assistant, persona: row.Persona, recorded: true})
 	})
 	if errors.Is(err, app.ErrArchiveBatch) {
-		writeRefusal(w, http.StatusBadRequest, "archive_batch_too_large",
+		writeRawRefusal(w, http.StatusBadRequest, "archive_batch_too_large",
 			"One restore may name at most "+strconv.FormatInt(CapacityLimit(capacity.SessionsArchiveBatch), 10)+" conversations.")
 		return
 	}

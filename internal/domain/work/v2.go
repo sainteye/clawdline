@@ -386,11 +386,17 @@ func (i ItemV2) Area() string {
 type RefusalV2 struct {
 	Code    string
 	Message string
+	// RawMessage is true for text carrying runtime or external values.
+	RawMessage bool
 }
 
 func (r RefusalV2) Error() string { return r.Code + ": " + r.Message }
 
 func RefuseV2(code, message string) error { return RefusalV2{Code: code, Message: message} }
+
+func RefuseV2Raw(code, message string) error {
+	return RefusalV2{Code: code, Message: message, RawMessage: true}
+}
 
 // LeaveDecision keeps an item's link to a decision only while the item still
 // waits on it: the same decision, condition waiting_user, the same owner,
@@ -588,11 +594,11 @@ func PlanningGate(i ItemV2, next Phase, plans []DocumentV2, review PlanReviewSum
 	}
 	switch {
 	case lastPlan < 0:
-		return RefuseV2(prefix+"_plan_required",
+		return RefuseV2Raw(prefix+"_plan_required",
 			"Write the item's plan first: `clawdline item doc "+i.ID+" --role plan --title \"Plan\"` with the plan as its body.")
 	case lastReview < lastPlan && ((i.Kind == KindEpic && reviews < rounds) ||
 		(i.Kind.FeatureLike() && !UnchangedReviewBoundary(plans, lastReview, lastPlan))):
-		return RefuseV2(prefix+"_plan_review_required",
+		return RefuseV2Raw(prefix+"_plan_review_required",
 			"The latest plan has no independent review yet. Dispatch one: `clawdline dispatch --kind plan_review --work-id "+i.ID+
 				" --title \"Review the plan\" --claims \"\"` with the review brief on stdin, and wait for that child to finish: "+
 				"a successful review is recorded on the item by itself. Only if it is not, add it as a plan_review document "+
@@ -722,7 +728,7 @@ func planReviewBlocking(i ItemV2, prefix string, lastPlan, lastReview, reviews, 
 			"it reviewed again (`clawdline dispatch --kind plan_review --work-id %s --title \"Review the plan\" --claims \"\"`); or the person overrides the "+
 			"planning gate (%s).", i.ID, i.ID, PlanningGateOverride)
 	}
-	return RefuseV2(prefix+"_plan_review_blocking", b.String())
+	return RefuseV2Raw(prefix+"_plan_review_blocking", b.String())
 }
 
 // PlanningGateOverride names the override a refusal offers. It is the
@@ -808,7 +814,7 @@ func EpicDoneGate(i ItemV2, next Phase, openChildren int64) error {
 	if i.Kind != KindEpic || next != PhaseDone || openChildren == 0 {
 		return nil
 	}
-	return RefuseV2("epic_children_open", fmt.Sprintf(
+	return RefuseV2Raw("epic_children_open", fmt.Sprintf(
 		"%d child item(s) of this Epic are still open; follow them to done or cancelled before closing the Epic.", openChildren))
 }
 
@@ -853,7 +859,7 @@ func AgentTransition(i ItemV2, next Phase, hasVerification, hasLanding, hasDeplo
 		}
 	}
 	if !ok {
-		return RefuseV2("invalid_transition", TransitionAdvice(i, next))
+		return RefuseV2Raw("invalid_transition", TransitionAdvice(i, next))
 	}
 	return nil
 }
@@ -973,10 +979,10 @@ func NoLandingGate(reason string, directLanding bool, tasks []TaskFacts) error {
 	for _, f := range tasks {
 		switch f.Landing {
 		case "pending":
-			return RefuseV2("landing_owed", fmt.Sprintf(
+			return RefuseV2Raw("landing_owed", fmt.Sprintf(
 				"Task %s bound to this item still owes its landing; land or abandon it before saying there is no code.", f.Task))
 		case "landed", "incorporated":
-			return RefuseV2("landing_recorded", fmt.Sprintf(
+			return RefuseV2Raw("landing_recorded", fmt.Sprintf(
 				"Task %s bound to this item has landed code; --no-landing-reason does not apply.", f.Task))
 		}
 	}

@@ -38,7 +38,7 @@ func daemonPort() (int, error) {
 	}
 	port, err := strconv.Atoi(v)
 	if err != nil || port <= 0 || port > 65535 {
-		return 0, fmt.Errorf("CLAWDLINE_NEXT_PORT is not a port: %q", v)
+		return 0, fmt.Errorf(cliCopy("core", "auth.daemon_port_invalid", "CLAWDLINE_NEXT_PORT is not a port: %q"), v)
 	}
 	return port, nil
 }
@@ -49,14 +49,14 @@ func localToken(cfg config.Config) (string, error) {
 	path := filepath.Join(cfg.Dir, devices.LocalTokenFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("no local token at %s — is the daemon running? (clawdline serve)", path)
+		return "", fmt.Errorf(cliCopy("core", "auth.local_token_missing", "no local token at %s — is the daemon running? (clawdline serve)"), path)
 	}
 	if err != nil {
 		return "", err
 	}
 	token := strings.TrimSpace(string(data))
 	if token == "" {
-		return "", fmt.Errorf("%s is empty", path)
+		return "", fmt.Errorf(cliCopy("core", "auth.local_token_empty", "%s is empty"), path)
 	}
 	return token, nil
 }
@@ -92,10 +92,9 @@ func daemonRequest(method, path string, body any) (*http.Request, error) {
 
 // refusalText is the message inside the Swift envelope, or the status.
 func refusalText(res *http.Response) string {
-	var refusal contract.AuthRefusal
 	data, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
-	if json.Unmarshal(data, &refusal) == nil && refusal.Error.Message != "" {
-		return fmt.Sprintf("%s (%s)", refusal.Error.Message, refusal.Error.Code)
+	if refusal, ok := parseCLIHTTPRefusal(data); ok {
+		return fmt.Sprintf("%s (%s)", refusal.humanDetail(currentCLILanguage()), refusal.Code)
 	}
 	return res.Status
 }
@@ -120,7 +119,7 @@ func openCommand(args []string) {
 	}
 	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		fail(fmt.Errorf("the daemon did not answer: %w", err))
+		fail(fmt.Errorf(cliCopy("core", "auth.daemon_unreachable", "the daemon did not answer: %w"), err))
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -128,16 +127,16 @@ func openCommand(args []string) {
 	}
 	var made contract.BrowserDevice
 	if err := json.NewDecoder(res.Body).Decode(&made); err != nil {
-		fail(fmt.Errorf("the daemon's answer was not a device: %w", err))
+		fail(fmt.Errorf(cliCopy("core", "auth.device_unreadable", "the daemon's answer was not a device: %w"), err))
 	}
 	if *printOnly {
 		fmt.Println(made.URL)
 		return
 	}
 	if err := openURL(made.URL); err != nil {
-		fail(fmt.Errorf("could not open a browser (%v); run `clawdline open --print` and open the address yourself", err))
+		fail(fmt.Errorf(cliCopy("core", "auth.browser_open_failed", "could not open a browser (%v); run `clawdline open --print` and open the address yourself"), err))
 	}
-	fmt.Printf("opened a browser as device %s\n", made.ID)
+	fmt.Printf(cliCopy("core", "auth.opened_browser", "opened a browser as device %s\n"), made.ID)
 }
 
 func openURL(u string) error {
@@ -157,10 +156,10 @@ func openURL(u string) error {
 // waits for one and exits.
 //
 // The words are the Swift app's alert (Copy+English.swift pairingAsks and
-// pairingCode), in English like the rest of this command line.
+// pairingCode); the device name and pairing code remain as received.
 func pairCommand(args []string) {
 	fs := flag.NewFlagSet("pair", flag.ExitOnError)
-	watch := fs.Bool("watch", false, "keep printing codes until interrupted")
+	watch := fs.Bool("watch", false, cliCopy("core", "auth.watch_help", "keep printing codes until interrupted"))
 	_ = fs.Parse(args)
 
 	req, err := daemonRequest(http.MethodGet, "/v1/auth/pairings", nil)
@@ -170,16 +169,16 @@ func pairCommand(args []string) {
 	req.Header.Set("Accept", "text/event-stream")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fail(fmt.Errorf("the daemon did not answer: %w", err))
+		fail(fmt.Errorf(cliCopy("core", "auth.daemon_unreachable", "the daemon did not answer: %w"), err))
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		fail(errors.New(refusalText(res)))
 	}
 	if *watch {
-		fmt.Fprintln(os.Stderr, "waiting for a device to ask to pair (Ctrl-C to stop)")
+		fmt.Fprintln(os.Stderr, cliCopy("core", "auth.wait_watch", "waiting for a device to ask to pair (Ctrl-C to stop)"))
 	} else {
-		fmt.Fprintln(os.Stderr, "waiting for a device to ask to pair")
+		fmt.Fprintln(os.Stderr, cliCopy("core", "auth.wait", "waiting for a device to ask to pair"))
 	}
 
 	reader := bufio.NewReader(res.Body)
@@ -206,17 +205,21 @@ func pairCommand(args []string) {
 		}
 		if err != nil {
 			if *watch || err != io.EOF {
-				fail(fmt.Errorf("the pairing stream ended: %v", err))
+				fail(fmt.Errorf(cliCopy("core", "auth.pairing_stream_ended", "the pairing stream ended: %v"), err))
 			}
-			fail(errors.New("the pairing stream ended before anybody asked"))
+			fail(errors.New(cliCopy("core", "auth.pairing_stream_no_request", "the pairing stream ended before anybody asked")))
 		}
 	}
 }
 
 func printPairing(n contract.PairingNotice) {
-	fmt.Printf("\n%s wants to pair with this machine\n\n", n.Name)
-	fmt.Printf("Type this code into it:\n\n%s\n\n", n.Code)
-	fmt.Printf("It is good for two minutes. If you did not just ask for this, ignore it — "+
-		"whoever asked cannot finish without this code.\n(expires %s)\n",
+	printPairingTo(os.Stdout, n)
+}
+
+func printPairingTo(w io.Writer, n contract.PairingNotice) {
+	fmt.Fprintf(w, cliCopy("core", "auth.pair_wants", "\n%s wants to pair with this machine\n\n"), n.Name)
+	fmt.Fprintf(w, cliCopy("core", "auth.pair_code", "Type this code into it:\n\n%s\n\n"), n.Code)
+	fmt.Fprintf(w, cliCopy("core", "auth.pair_expires", "It is good for two minutes. If you did not just ask for this, ignore it — "+
+		"whoever asked cannot finish without this code.\n(expires %s)\n"),
 		time.Unix(n.Expires, 0).Format("15:04:05"))
 }

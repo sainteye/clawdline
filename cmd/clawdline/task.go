@@ -205,13 +205,13 @@ func submitGateEvidence(stdout, stderr io.Writer, dir, path, artifact, mediaType
 	short.Timeout = brokerTimeout
 	res, err := short.Do(req)
 	if err != nil {
-		fmt.Fprintf(stderr, "clawdline task gate-evidence: the broker did not acknowledge durable evidence (%v). Nothing local counts as gate evidence; restore loopback and rerun this same command.\n", err)
+		fmt.Fprintf(stderr, cliCopy("task", "gate_evidence.no_durable_ack", "clawdline task gate-evidence: the broker did not acknowledge durable evidence (%v). Nothing local counts as gate evidence; restore loopback and rerun this same command.\n"), err)
 		return 1
 	}
 	defer res.Body.Close()
 	answer, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		fmt.Fprintf(stderr, cliCopy("task", "gate_evidence.refused", "clawdline task gate-evidence: refused, %s: %s\n"), res.Status, strings.TrimSpace(string(answer)))
+		fmt.Fprintf(stderr, cliCopy("task", "gate_evidence.refused", "clawdline task gate-evidence: refused, %s: %s\n"), res.Status, humanHTTPAnswer(answer))
 		return 1
 	}
 	var receipt contract.WorkGateEvidenceReceipt
@@ -283,13 +283,13 @@ func submitGateResult(stdout, stderr io.Writer, dir, path, secret string, port i
 	short.Timeout = brokerTimeout
 	res, err := short.Do(req)
 	if err != nil {
-		fmt.Fprintf(stderr, "clawdline task gate-result: the broker did not acknowledge a durable verdict (%v). A result file in the checker task directory cannot finish this gate; restore loopback and rerun this same command.\n", err)
+		fmt.Fprintf(stderr, cliCopy("task", "gate_result.no_durable_ack", "clawdline task gate-result: the broker did not acknowledge a durable verdict (%v). A result file in the checker task directory cannot finish this gate; restore loopback and rerun this same command.\n"), err)
 		return 1
 	}
 	defer res.Body.Close()
 	answer, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
 	if res.StatusCode != http.StatusAccepted {
-		fmt.Fprintf(stderr, cliCopy("task", "gate_result.refused", "clawdline task gate-result: refused, %s: %s\n"), res.Status, strings.TrimSpace(string(answer)))
+		fmt.Fprintf(stderr, cliCopy("task", "gate_result.refused", "clawdline task gate-result: refused, %s: %s\n"), res.Status, humanHTTPAnswer(answer))
 		return 1
 	}
 	var receipt contract.WorkGateResultReceipt
@@ -508,16 +508,15 @@ func askCollect(stdout, stderr io.Writer, done taskdir.Finished, port int, clien
 	if err != nil {
 		// No loopback in this sandbox, or no daemon on that port: the file is
 		// the report, and it is in place.
-		fmt.Fprintf(stdout, "The broker at 127.0.0.1:%d could not be asked to collect it now (%v). Nothing is lost: "+
-			"result.json is the completion signal, and the broker reads it at its next look.\n", port, err)
+		fmt.Fprintf(stdout, cliCopy("task", "finish.broker_unreachable_result_saved", "The broker at 127.0.0.1:%d could not be asked to collect it now (%v). Nothing is lost: "+
+			"result.json is the completion signal, and the broker reads it at its next look.\n"), port, err)
 		return 0
 	}
 	defer res.Body.Close()
-	var refusal contract.AuthRefusal
 	body, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
 	code, message := "", ""
-	if json.Unmarshal(body, &refusal) == nil {
-		code, message = refusal.Error.Code, refusal.Error.Message
+	if refusal, ok := parseCLIHTTPRefusal(body); ok {
+		code, message = refusal.Code, refusal.humanDetail(currentCLILanguage())
 	}
 	switch {
 	case res.StatusCode == http.StatusOK:
@@ -674,9 +673,8 @@ func acceptTask(stdout, stderr io.Writer, dir string, port int, secret string, c
 			return 0
 		case res.StatusCode < 500:
 			code, message := res.Status, ""
-			var refusal contract.AuthRefusal
-			if json.Unmarshal(body, &refusal) == nil && refusal.Error.Code != "" {
-				code, message = refusal.Error.Code, refusal.Error.Message
+			if refusal, ok := parseCLIHTTPRefusal(body); ok {
+				code, message = refusal.Code, refusal.humanDetail(currentCLILanguage())
 			}
 			fmt.Fprintf(stderr, cliCopy("task", "accept.refused", "clawdline task accept: refused, %d %s: %s\n"), res.StatusCode, code, message)
 			return 1
@@ -690,8 +688,8 @@ func acceptTask(stdout, stderr io.Writer, dir string, port int, secret string, c
 		Secret string `json:"task_secret"`
 	}{secret})
 	if err := writePrivate(path, append(body, '\n')); err != nil {
-		fmt.Fprintf(stderr, "clawdline task accept: the broker at 127.0.0.1:%d could not be reached (%s), "+
-			"and the receipt could not be written: %v\n", port, why, err)
+		fmt.Fprintf(stderr, cliCopy("task", "accept.broker_unreachable_receipt_write_failed", "clawdline task accept: the broker at 127.0.0.1:%d could not be reached (%s), "+
+			"and the receipt could not be written: %v\n"), port, why, err)
 		return 1
 	}
 	fmt.Fprintf(stdout, cliCopy("task", "accept.unreachable_prefix", "The broker at 127.0.0.1:%d could not be reached (%s). Signed all the same: the receipt ")+
@@ -822,7 +820,7 @@ func closeNotice(stdout, stderr io.Writer, b *broker, name string, t contract.Br
 	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(t.ID)+"/completion/ack", nil,
 		map[string]string{"notice_id": n.NoticeID}, "")
 	if err != nil {
-		fmt.Fprintf(stderr, "clawdline %s: the completion notice %s of %s was not closed: %v\n", name, n.NoticeID, t.ID, err)
+		fmt.Fprintf(stderr, cliCopy("task", "completion_notice.not_closed", "clawdline %s: the completion notice %s of %s was not closed: %v\n"), name, n.NoticeID, t.ID, err)
 		return false
 	}
 	if !a.ok() {

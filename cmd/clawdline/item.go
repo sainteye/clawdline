@@ -858,13 +858,16 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 		var got struct {
 			AssignmentState string `json:"assignment_state"`
 			AssignmentError *struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
+				Code      string `json:"code"`
+				Message   string `json:"message"`
+				DetailKey string `json:"detail_key"`
 			} `json:"assignment_error"`
 		}
 		if json.Unmarshal(a.Body, &got) == nil && got.AssignmentError != nil {
+			detail := (cliHTTPRefusal{Code: got.AssignmentError.Code, Detail: got.AssignmentError.Message,
+				DetailKey: got.AssignmentError.DetailKey}).humanDetail(currentCLILanguage())
 			fmt.Fprintf(stderr, cliCopy("item", "error.created_unassigned", "clawdline %s: the item was created but not assigned: %s: %s\n"),
-				name, got.AssignmentError.Code, got.AssignmentError.Message)
+				name, got.AssignmentError.Code, detail)
 			if op == "child" {
 				fmt.Fprintf(stderr, cliCopy("item", "next.assign_child", "Assign it with `clawdline item assign %s --terminal <id> | --new`, or leave it for the person.\n"), it.ID)
 			} else {

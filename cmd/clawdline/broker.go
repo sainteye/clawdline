@@ -20,7 +20,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/devices"
 	"github.com/sainteye/clawdline/internal/adapters/skillfile"
 	"github.com/sainteye/clawdline/internal/config"
-	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The thin commands a session runs instead of hand-typed curl: each one is a
@@ -87,14 +87,14 @@ func machineToken(dir string) (string, error) {
 	path := filepath.Join(dir, devices.MachineTokenFile)
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("no orchestrator token at %s — has a daemon started with this directory? "+
-			"(CLAWDLINE_NEXT_DIR chooses it)", path)
+		return "", fmt.Errorf(cliCopy("core", "broker.machine_token_missing", "no orchestrator token at %s — has a daemon started with this directory? "+
+			"(CLAWDLINE_NEXT_DIR chooses it)"), path)
 	}
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("%s is not a plain file; it was not read", path)
+		return "", fmt.Errorf(cliCopy("core", "broker.machine_token_not_file", "%s is not a plain file; it was not read"), path)
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -107,7 +107,7 @@ func machineToken(dir string) (string, error) {
 	}
 	token := strings.TrimSpace(string(data))
 	if len(data) > brokerTokenLimit || token == "" || strings.ContainsAny(token, " \t\r\n") {
-		return "", fmt.Errorf("%s does not hold a usable token; it was left as it is", path)
+		return "", fmt.Errorf(cliCopy("core", "broker.machine_token_invalid", "%s does not hold a usable token; it was left as it is"), path)
 	}
 	return token, nil
 }
@@ -120,14 +120,8 @@ type answer struct {
 
 // refusal is the daemon's refusal envelope, when the body is one.
 func (a answer) refusal() (code, message string) {
-	var r contract.AuthRefusal
-	if json.Unmarshal(a.Body, &r) == nil {
-		return r.Error.Code, r.Error.Message
-	}
-	// The work-system routes answer the flat envelope: {"error": code, "detail": …}.
-	var flat contract.Refusal
-	if json.Unmarshal(a.Body, &flat) == nil {
-		return flat.Error, flat.Detail
+	if refusal, ok := parseCLIHTTPRefusal(a.Body); ok {
+		return refusal.Code, refusal.humanDetail(currentCLILanguage())
 	}
 	return "", ""
 }
@@ -171,15 +165,15 @@ func (b *broker) request(method, path string, query url.Values, body any, key st
 	res, err := b.client.Do(req)
 	if err != nil {
 		// The client's error names the URL, which carries no credential.
-		return answer{}, fmt.Errorf("the daemon at %s did not answer: %w", b.base, err)
+		return answer{}, fmt.Errorf(cliCopy("core", "broker.daemon_unreachable", "the daemon at %s did not answer: %w"), b.base, err)
 	}
 	defer res.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(res.Body, brokerAnswerLimit+1))
 	if err != nil {
-		return answer{}, fmt.Errorf("the daemon's answer could not be read: %w", err)
+		return answer{}, fmt.Errorf(cliCopy("core", "broker.answer_unreadable", "the daemon's answer could not be read: %w"), err)
 	}
 	if len(data) > brokerAnswerLimit {
-		return answer{}, fmt.Errorf("the daemon's answer was larger than %d bytes", brokerAnswerLimit)
+		return answer{}, fmt.Errorf(cliCopy("core", "broker.answer_too_large", "the daemon's answer was larger than %d bytes"), brokerAnswerLimit)
 	}
 	return answer{Status: res.StatusCode, Body: b.mask(data)}, nil
 }
@@ -231,11 +225,11 @@ func report(stdout, stderr io.Writer, name string, a answer) int {
 	}
 	code, message := a.refusal()
 	if code == "" {
-		fmt.Fprintf(stderr, "clawdline %s: the daemon answered %d: %s\n", name, a.Status,
+		fmt.Fprintf(stderr, cliCopy("core", "broker.daemon_answered", "clawdline %s: the daemon answered %d: %s\n"), name, a.Status,
 			strings.TrimSpace(string(a.Body)))
 		return 1
 	}
-	fmt.Fprintf(stderr, "clawdline %s: refused, %d %s: %s\n", name, a.Status, code, message)
+	fmt.Fprintf(stderr, cliCopy("core", "broker.refused", "clawdline %s: refused, %d %s: %s\n"), name, a.Status, code, message)
 	for _, line := range a.refusalExtras() {
 		fmt.Fprintln(stderr, line)
 	}
@@ -252,14 +246,14 @@ func (a answer) refusalExtras() []string {
 		return nil
 	}
 	fields := map[string]json.RawMessage{}
-	skip := map[string]bool{"code": true, "message": true, "request_id": true}
+	skip := map[string]bool{"code": true, "message": true, "request_id": true, "detail_key": true}
 	if inner := outer["error"]; len(inner) > 0 && inner[0] == '{' {
 		if json.Unmarshal(inner, &fields) != nil {
 			return nil
 		}
 	} else {
 		fields = outer
-		skip = map[string]bool{"error": true, "detail": true}
+		skip = map[string]bool{"error": true, "detail": true, "detail_key": true}
 	}
 	var lines []string
 	var remedy string
@@ -274,14 +268,15 @@ func (a answer) refusalExtras() []string {
 		}
 		if k == "remediation" || k == "remedy" {
 			var r struct {
-				Command string `json:"command"`
-				Because string `json:"because"`
+				Command    string `json:"command"`
+				Because    string `json:"because"`
+				BecauseKey string `json:"because_key"`
 			}
 			var text string
 			if json.Unmarshal(fields[k], &r) == nil && (r.Command != "" || r.Because != "") {
 				text = r.Command
 				if text == "" {
-					text = r.Because
+					text = productcopy.HTTPRefusalText(currentCLILanguage(), r.BecauseKey, r.Because)
 				}
 			} else if json.Unmarshal(fields[k], &text) != nil {
 				continue

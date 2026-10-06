@@ -170,7 +170,7 @@ func (b *Broker) Acknowledge(ctx context.Context, id, noticeID string) (changed 
 			return false, err
 		}
 		// The one route whose 404 names the id, as the Swift app's does.
-		return false, refuse(http.StatusNotFound, "not_found", "No task named "+id+".")
+		return false, refuseRaw(http.StatusNotFound, "not_found", "No task named "+id+".")
 	}
 	// A compare-and-set against the transition this read saw, retried a few
 	// times because the pump may move the notice between the read and the
@@ -331,7 +331,7 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	}
 	if settled {
 		if prev.State != next.State {
-			return Record{}, refuse(http.StatusConflict, "invalid_transition", fmt.Sprintf(
+			return Record{}, refuseRaw(http.StatusConflict, "invalid_transition", fmt.Sprintf(
 				"This landing is already settled as %s, and a settled landing does not move to another state; "+
 					"the record stands. To correct its commit or note, resend the same state: "+
 					"`clawdline task land %s %s --commit <sha> --note \"<why>\"`.", prev.State, r.ID, prev.State))
@@ -424,7 +424,7 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 		}
 		// A correction of it is held to the same gate as the claim itself.
 		if why := b.nothingToLandRefusal(ctx, r); why != "" {
-			return Record{}, refuse(http.StatusConflict, "wrote_to_repository",
+			return Record{}, refuseRaw(http.StatusConflict, "wrote_to_repository",
 				"nothing_to_land says this task wrote nothing to land, and "+why+".")
 		}
 		next.At = b.now()

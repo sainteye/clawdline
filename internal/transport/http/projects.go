@@ -399,7 +399,7 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "worktree_lifecycle_failed", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "worktree_lifecycle_failed", err.Error())
 		return
 	}
 	writeJSON(w, struct {

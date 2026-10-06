@@ -335,7 +335,7 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 		}
 		if mine < 0 {
 			if line := b.leaseLine(); len(waiters) >= line {
-				return change, refuseWith(http.StatusTooManyRequests, "queue_full",
+				return change, refuseRawWith(http.StatusTooManyRequests, "queue_full",
 					fmt.Sprintf("%d askers are already waiting for this lease; nothing was queued.", line),
 					map[string]any{"retry_after": 30, "limit": line})
 			}

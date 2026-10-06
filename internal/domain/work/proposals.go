@@ -518,10 +518,10 @@ func ParseUserNeed(in UserNeed) (UserNeed, bool, error) {
 		return UserNeed{}, false, refuse(400, "invalid_user_need",
 			"needs_user.kind is device, account, credential, or decision; importance is not a dependency.")
 	case in.Action == "" || utf8.RuneCountInString(in.Action) > LeftoverWhyLimit:
-		return UserNeed{}, false, refuse(400, "invalid_user_need",
+		return UserNeed{}, false, refuseFixed(400, "invalid_user_need",
 			"needs_user.action says what only the person can do, in 1 to %d characters.", LeftoverWhyLimit)
 	case in.Unblocks == "" || utf8.RuneCountInString(in.Unblocks) > LeftoverAcceptanceLimit:
-		return UserNeed{}, false, refuse(400, "invalid_user_need",
+		return UserNeed{}, false, refuseFixed(400, "invalid_user_need",
 			"needs_user.unblocks says what happens after that action, in 1 to %d characters.", LeftoverAcceptanceLimit)
 	}
 	return in, true, nil
@@ -975,21 +975,21 @@ const (
 func NewDecision(d Decision, due time.Duration, p DecisionPolicy, now time.Time) (Decision, error) {
 	d.Question = strings.TrimSpace(d.Question)
 	if d.Question == "" || utf8.RuneCountInString(d.Question) > decisionQuestionLimit {
-		return Decision{}, refuse(400, "invalid_question", "question is 1 to %d characters.", decisionQuestionLimit)
+		return Decision{}, refuseFixed(400, "invalid_question", "question is 1 to %d characters.", decisionQuestionLimit)
 	}
 	if len(d.Options) < decisionOptionsMin || len(d.Options) > decisionOptionsLimit {
-		return Decision{}, refuse(400, "invalid_options", "A decision offers %d to %d options.", decisionOptionsMin,
+		return Decision{}, refuseFixed(400, "invalid_options", "A decision offers %d to %d options.", decisionOptionsMin,
 			decisionOptionsLimit)
 	}
 	ids := map[string]bool{}
 	for i, o := range d.Options {
 		o.ID, o.Label = strings.TrimSpace(o.ID), strings.TrimSpace(o.Label)
 		if !optionID(o.ID) || ids[o.ID] {
-			return Decision{}, refuse(400, "invalid_options",
+			return Decision{}, refuseFixed(400, "invalid_options",
 				"Each option has a distinct id: 1 to %d lowercase letters, digits, _ or -.", optionIDLimit)
 		}
 		if o.Label == "" || utf8.RuneCountInString(o.Label) > optionLabelLimit {
-			return Decision{}, refuse(400, "invalid_options", "Each option has a label of 1 to %d characters.", optionLabelLimit)
+			return Decision{}, refuseFixed(400, "invalid_options", "Each option has a label of 1 to %d characters.", optionLabelLimit)
 		}
 		ids[o.ID] = true
 		d.Options[i] = o

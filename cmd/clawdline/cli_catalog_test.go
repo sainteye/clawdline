@@ -14,7 +14,7 @@ func TestCLICatalogCoreBaselineAndSafeFallback(t *testing.T) {
 	t.Cleanup(func() { commandLanguage = previous })
 	for _, language := range []string{"zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 		translated, total := cliCatalogCoverage("core", language)
-		if translated != 1 || total != 1 {
+		if translated != 44 || total != 44 {
 			t.Errorf("core coverage %s = %d/%d", language, translated, total)
 		}
 		commandLanguage = language

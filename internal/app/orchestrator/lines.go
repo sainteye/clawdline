@@ -188,7 +188,7 @@ func (b *Broker) checkAlsoWork(ctx context.Context, r Record) error {
 		v2, err := b.Store.WorkV2Item(ctx, id)
 		switch {
 		case errors.Is(err, store.ErrNoWorkV2):
-			return refuseWith(http.StatusUnprocessableEntity, "also_work_not_found",
+			return refuseRawWith(http.StatusUnprocessableEntity, "also_work_not_found",
 				"also_work_ids names "+id+", which is no Board item. Name Board items only, or dispatch it separately.",
 				map[string]any{"work_id": id})
 		case err != nil:
@@ -228,7 +228,7 @@ func (b *Broker) checkLineWork(ctx context.Context, r Record) error {
 	}
 	var ref *work.Refusal
 	if err := work.Nameable(it, found, r.ProjectDir); errors.As(err, &ref) {
-		return refuseWith(ref.Status, ref.Code, ref.Message, map[string]any{"work_id": r.WorkID})
+		return refuseRawWith(ref.Status, ref.Code, ref.Message, map[string]any{"work_id": r.WorkID})
 	}
 	return nil
 }
@@ -312,7 +312,7 @@ func (b *Broker) checkPlanReviewBlocking(ctx context.Context, it work.ItemV2, r 
 	}
 	var refusal work.RefusalV2
 	if err := work.PlanReviewDispatchGate(it, r.Kind, docs, review); errors.As(err, &refusal) {
-		return refuseWith(http.StatusUnprocessableEntity, refusal.Code, refusal.Message, map[string]any{"work_id": r.WorkID})
+		return refuseRawWith(http.StatusUnprocessableEntity, refusal.Code, refusal.Message, map[string]any{"work_id": r.WorkID})
 	} else if err != nil {
 		return err
 	}
@@ -324,11 +324,11 @@ func (b *Broker) checkPlanReviewBlocking(ctx context.Context, it work.ItemV2, r 
 func nameableV2(it work.ItemV2, r Record) error {
 	switch {
 	case it.ProjectPath != r.ProjectDir:
-		return refuseWith(http.StatusUnprocessableEntity, work.RefusedWorkOtherProject,
+		return refuseRawWith(http.StatusUnprocessableEntity, work.RefusedWorkOtherProject,
 			"That Board item belongs to "+it.ProjectPath+", and this dispatch is in "+r.ProjectDir+
 				". An item follows the work of one project.", map[string]any{"work_id": r.WorkID})
 	case it.Phase.Terminal():
-		return refuseWith(http.StatusUnprocessableEntity, work.RefusedWorkClosed,
+		return refuseRawWith(http.StatusUnprocessableEntity, work.RefusedWorkClosed,
 			"That Board item is already "+string(it.Phase)+". Name an open item, or leave work_id out.",
 			map[string]any{"work_id": r.WorkID})
 	}

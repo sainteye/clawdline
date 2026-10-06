@@ -249,8 +249,12 @@ var AssistantUnknownReasonValues = []AssistantUnknownReason{AssistantUnknownReas
 type AuthError struct {
 	// unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
 	// not_found, store_unavailable, unsupported_media_type.
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code string `json:"code"`
+
+	// Optional stable catalog key for this exact fixed English message. Dynamic
+	// messages have no key.
+	DetailKey string `json:"detail_key,omitempty"`
+	Message   string `json:"message"`
 
 	// A fresh lowercase UUID per refusal, for finding it in a log.
 	RequestID string `json:"request_id"`
@@ -2132,9 +2136,13 @@ type CloseReason struct {
 // the fleet list was already showing, so the screen and the action never
 // disagree.
 type CloseRefusal struct {
-	Detail  string        `json:"detail"`
-	Error   string        `json:"error"`
-	Reasons []CloseReason `json:"reasons"`
+	Detail string `json:"detail"`
+
+	// Optional stable catalog key for this exact fixed English detail. Dynamic details
+	// have no key.
+	DetailKey string        `json:"detail_key,omitempty"`
+	Error     string        `json:"error"`
+	Reasons   []CloseReason `json:"reasons"`
 }
 
 type CloseRequest struct {
@@ -4301,10 +4309,14 @@ var RecordedLandingSourceValues = []RecordedLandingSource{RecordedLandingSourceT
 // Every refusal on this daemon has this shape. A caller reads `error` as the
 // code and never parses `detail`.
 type Refusal struct {
-	Detail   string `json:"detail"`
-	Error    string `json:"error"`
-	Route    string `json:"route,omitempty"`
-	Upstream string `json:"upstream,omitempty"`
+	Detail string `json:"detail"`
+
+	// Optional stable catalog key for this exact fixed English detail. Dynamic details
+	// have no key.
+	DetailKey string `json:"detail_key,omitempty"`
+	Error     string `json:"error"`
+	Route     string `json:"route,omitempty"`
+	Upstream  string `json:"upstream,omitempty"`
 }
 
 // Why nothing can be offered. `boot_unknown`: this machine cannot read its boot

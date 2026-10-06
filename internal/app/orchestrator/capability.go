@@ -179,7 +179,7 @@ func (b *Broker) checkChildCapability(ctx context.Context) error {
 		names = append(names, string(c.Name))
 		clauses = append(clauses, string(c.Name)+" is unavailable: "+strings.TrimSuffix(c.Reason, "."))
 	}
-	return refuseWith(http.StatusConflict, "no_child_capability",
+	return refuseRawWith(http.StatusConflict, "no_child_capability",
 		"This machine cannot open a child session — "+strings.Join(clauses, "; ")+
 			". Nothing was recorded, made or opened.",
 		map[string]any{

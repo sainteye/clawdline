@@ -42,7 +42,7 @@ func (s *Server) brokerCallback(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
-		writeRefusal(w, http.StatusBadRequest, "bad_request",
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request",
 			"The body is {task_id, title, argv, dir, env?, timeout_minutes?, work_id?, root: {session_id, assistant}}: "+err.Error())
 		return
 	}

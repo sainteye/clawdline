@@ -153,11 +153,11 @@ func (g *gate) confirmPairing(w http.ResponseWriter, r *http.Request) {
 	case auth.WrongCode:
 		// A code of its own, and the count in the body, so a page can say
 		// "two tries left" without reading the sentence or counting.
-		writeAuthError(w, http.StatusForbidden, contract.AuthError{
+		writeAuthErrorWithSource(w, http.StatusForbidden, contract.AuthError{
 			Code:      "wrong_code",
 			Message:   fmt.Sprintf("That code is not right. %d tries left.", result.Left),
 			TriesLeft: int64(result.Left),
-		})
+		}, false)
 	default:
 		writeAuthRefusal(w, http.StatusForbidden, "expired", "That pairing has expired. Start again.")
 	}

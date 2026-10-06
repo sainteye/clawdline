@@ -122,13 +122,9 @@ func daemonTracks(project string, track work.Track, all bool) (work.Tracks, erro
 		}
 		if res.StatusCode != http.StatusOK {
 			defer res.Body.Close()
-			var refusal struct {
-				Error  string `json:"error"`
-				Detail string `json:"detail"`
-			}
 			data, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
-			if json.Unmarshal(data, &refusal) == nil && refusal.Error != "" {
-				return first, fmt.Errorf("%s: %s (%s)", res.Status, refusal.Detail, refusal.Error)
+			if refusal, ok := parseCLIHTTPRefusal(data); ok {
+				return first, fmt.Errorf("%s: %s (%s)", res.Status, refusal.humanDetail(currentCLILanguage()), refusal.Code)
 			}
 			return first, errors.New(res.Status)
 		}

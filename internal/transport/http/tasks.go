@@ -41,7 +41,7 @@ func (s *Server) tasksList(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.tasksPayload(r.Context(), cursor, limit)
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
 	if state := q.Get("state"); state != "" {

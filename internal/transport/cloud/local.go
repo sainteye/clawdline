@@ -96,9 +96,10 @@ func (r Router) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.Loc
 	out := &recorder{header: http.Header{}}
 	r.Handler.ServeHTTP(out, request)
 	return cloudops.LocalResponse{
-		Status:      out.statusOr(http.StatusOK),
-		Body:        out.body.Bytes(),
-		ContentType: mediaType(out.header.Get("Content-Type")),
+		Status:         out.statusOr(http.StatusOK),
+		Body:           out.body.Bytes(),
+		ContentType:    mediaType(out.header.Get("Content-Type")),
+		FixedDetailKey: out.fixedDetailKey,
 	}, nil
 }
 
@@ -131,10 +132,15 @@ func ViaCloud(ctx context.Context) bool {
 // what a handler wrote and nothing else: no flushing, no hijacking, no
 // trailers — a Cloud answer is one payload, decided and then sealed.
 type recorder struct {
-	header http.Header
-	status int
-	body   bytes.Buffer
+	header         http.Header
+	status         int
+	body           bytes.Buffer
+	fixedDetailKey string
 }
+
+// ClawdlineFixedRefusalKey is called only by this daemon's fixed refusal
+// writers; it does not read a header or the response body.
+func (r *recorder) ClawdlineFixedRefusalKey(key string) { r.fixedDetailKey = key }
 
 func (r *recorder) Header() http.Header { return r.header }
 

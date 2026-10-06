@@ -210,12 +210,12 @@ func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error
 	path := filepath.Join(b.Tasks.Path(id), "task.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task",
+		return Record{}, refuseRaw(http.StatusUnprocessableEntity, "bad_task",
 			"No readable task.json under "+b.Tasks.Path(id)+"/.")
 	}
 	var d draft
 	if err := json.Unmarshal(body, &d); err != nil {
-		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task",
+		return Record{}, refuseRaw(http.StatusUnprocessableEntity, "bad_task",
 			draftDecodeProblem(err)+" (task.json under "+b.Tasks.Path(id)+"/)")
 	}
 	return b.admit(id, d, scheduled, detached)
@@ -238,6 +238,9 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	bad := func(msg string) (Record, error) {
 		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task", msg)
 	}
+	badRaw := func(msg string) (Record, error) {
+		return Record{}, refuseRaw(http.StatusUnprocessableEntity, "bad_task", msg)
+	}
 	if d.Protocol == nil || *d.Protocol != Protocol {
 		return bad("clawdline_protocol must be 1")
 	}
@@ -259,7 +262,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	case d.Claims != nil:
 		admitted, err := admitClaims(*d.Claims)
 		if err != nil {
-			return bad(err.Error())
+			return badRaw(err.Error())
 		}
 		claims = admitted
 	case !scheduled:
@@ -311,7 +314,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 		"serialize": d.Serialize, "attach_session": d.AttachSession,
 	} {
 		if len(raw) > 0 && string(raw) != "null" {
-			return bad(name + " is not supported by this broker yet; dispatch without it")
+			return badRaw(name + " is not supported by this broker yet; dispatch without it")
 		}
 	}
 	model := strings.TrimSpace(d.Model)
@@ -358,7 +361,7 @@ func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, er
 	}
 	title := strings.TrimSpace(d.Title)
 	if reason := work.OutcomeTitleRefusal(title); reason != "" {
-		return bad("title: " + reason)
+		return badRaw("title: " + reason)
 	}
 
 	return Record{
@@ -441,7 +444,7 @@ func admitAlsoWorkIDs(raw json.RawMessage, workID string) ([]string, error) {
 				"also_work_ids must be a list of lowercase UUIDs naming work items, or left out")
 		}
 		if seen[id] {
-			return nil, refuse(http.StatusUnprocessableEntity, "bad_task",
+			return nil, refuseRaw(http.StatusUnprocessableEntity, "bad_task",
 				"also_work_ids names "+id+" twice, or names work_id again")
 		}
 		seen[id] = true

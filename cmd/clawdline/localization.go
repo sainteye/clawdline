@@ -14,14 +14,12 @@ import (
 // product_language, English. A well-formed but unsupported tag renders English.
 var commandLanguage string
 
-var errCLIActionMissing = errors.New("--lang requires a tag and a command")
-
 func commandLanguagePrefix(args []string) ([]string, string, error) {
 	if len(args) <= 1 || args[1] != "--lang" {
 		return args, "", nil
 	}
 	if len(args) < 4 || !nextconfig.ValidProductLanguageTag(args[2]) {
-		return args, "", errCLIActionMissing
+		return args, "", errors.New(cliCopy("core", "language.action_missing", "--lang requires a tag and a command"))
 	}
 	return append([]string{args[0]}, args[3:]...), nextconfig.ResolveProductLanguage(args[2]), nil
 }
