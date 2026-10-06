@@ -69,14 +69,29 @@ only a stamp, so the two commits differ and neither is known to be later. Once b
 carries the route as the parameterless machine read `update`, so a phone asks the same question
 the local console does.
 
-## The console's notice
+## The console's update panel
 
-The Settings page reads `/v1/update` once when the console mounts and then no more often than
-every ten minutes (`web/console/src/machine/UpdateNotice.tsx`). Only `update_available` and
-`differs` show anything: one quiet line naming the running and latest stamps (eight characters
-each) and that `clawdline update --apply` brings this machine up to date. `current`, `ahead`,
-`unknown`, and a read that is refused or fails — a daemon predating the route answers 404, an
-older one over Cloud `unknown_command` — show nothing.
+The Settings page's **Clawdline 版本** panel (`web/console/src/machine/UpdatePanel.tsx`, its logic
+in `update-model.ts`) reads `/v1/update` when the console mounts and then every ten minutes. It
+shows the running and latest version (a short commit for a source build), a **版本說明** link to
+`latest.notes_url`, when the last check ran, and the channel.
+
+- On a release install with `update_available`, **立即更新** posts `/v1/update/apply` (over Cloud,
+  the word `update-apply`), then reads `/v1/update` every two seconds until `apply.state` settles.
+  The seconds in which the daemon restarts and no read answers show as restarting, not as a
+  failure; when the new daemon serves a different console, the page reloads itself.
+- `rolled_back` and `failed` show `apply.error.code` and `detail` and say the previous release still
+  runs. `staged_app` says the app is replaced once it is quit.
+- **自動更新** writes `update_auto_apply` through `/v1/settings`. Over Cloud it is shown but disabled,
+  with a sentence saying to change it on the machine: the settings route takes only the machine's
+  own token.
+- `source_deploy` and `source_checkout` show no button, only how that machine updates and that
+  `clawdline setup --adopt` moves a Linux source deploy onto releases.
+- An older daemon — no `install_kind`, or a `501 not_implemented` for the POST — gets the earlier
+  quiet line or the needs-update sentence, never "讀取失敗".
+
+On a release install with `update_available`, the session list also shows a banner linking to
+Settings, dismissed per version in the browser's storage.
 
 ## The CLI
 
