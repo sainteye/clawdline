@@ -109,7 +109,8 @@ screen drawn) gave 35 ms and 34 ms on direct.
 The browser and the machine were the same Mac, so the direct figure is what remains without a
 network: tmux, one `CaptureGap` (33 ms at most), crypto. Between two networks it adds that pair's
 own round trip, not the relay's crossings to San Jose. Each run was short because Chrome reported
-the tab as hidden, and a hidden page releases its Cloud line after a while, as designed.
+the tab as hidden, and at the time a hidden page released its Cloud line after a minute. That was
+removed on 2026-10-06: a hidden page now keeps its Cloud connection exactly as a shown one does.
 
 ## Decisions
 

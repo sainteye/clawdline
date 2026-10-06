@@ -1825,9 +1825,9 @@ test("squad settings carry per-field patches and package reads never gain write 
 // throws the moment the attached client is not ready. The reader's own machine
 // reads already waited for the client `keepConnected` attaches next; the reads
 // the writer carries now wait the same bound, and its writes still do not.
-type Pausable = FakeClient & { lifecycle?: (reason: string) => boolean | "hidden" }
+type Pausable = FakeClient & { lifecycle?: (reason: string) => boolean }
 
-function pausedSeam(coming: boolean | "hidden", waitMs: number) {
+function pausedSeam(coming: boolean, waitMs: number) {
   const retired = new FakeClient() as Pausable
   retired.ready = false
   const demands: string[] = []

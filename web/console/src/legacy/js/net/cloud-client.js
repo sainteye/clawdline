@@ -202,13 +202,6 @@ const SUBSCRIPTION_IDLE_MS = 2 * 60 * 1000;
 const RESUBSCRIBE_LIMIT = 2;
 
 /**
- * How long a read asked of a retired client waits for a hidden page to be shown (`_viaSuccessor`).
- * A service worker's `focus()` follows its `navigate` within a moment; a page that stays hidden is
- * not held longer than this.
- */
-const HIDDEN_DEMAND_WAIT_MS = 5 * 1000;
-
-/**
  * How long a machine the relay called `machine_offline` is not asked again: five seconds, doubling
  * while it stays offline, never more than five minutes. A live envelope from it ends the wait.
  */
@@ -885,7 +878,7 @@ export class CloudClient {
             this._sendSubscriptionFrame("subscribe", channels);
         }
         // Any connection that did not take over from a live socket — a first one, a return from a
-        // quiesced page, a reconnect after a drop — may follow a relay eviction, whose replay holds
+        // page the browser froze, a reconnect after a drop — may follow a relay eviction, whose replay holds
         // no rows. Every machine that says it can answer is asked for its rows; a renewal already
         // carries which ones this viewer asked (`_continueFrom`), so it asks none of them again.
         this._knownMachines().forEach(function (machine) { this._recoverSessions(machine); }, this);
@@ -934,25 +927,19 @@ export class CloudClient {
      * `run(client)` on the ready client that replaced this retired one: at once if there is one;
      * otherwise once it is ready, if `keepConnected` says a connection is on its way, and within this
      * client's read bound. With nothing on its way — the loop has ended — the refusal is the one a
-     * retired client has always given.
-     *
-     * A page that is hidden (`"hidden"`) is held `HIDDEN_DEMAND_WAIT_MS` first: a notification tap
-     * posts its `navigate` before `focus()` shows the page, so the Session it opens asks while
-     * `document.hidden` is still true. Shown by then, the read waits out the rest of its bound for
-     * the connection that brings; still hidden, it is refused as before, and nothing it set is left.
+     * retired client has always given. A hidden page is no different: its connection is kept.
      */
     _viaSuccessor(run) {
         var next = this.successor;
         while (next && next.retired && next.successor) next = next.successor;
         if (next && next.ready) return Promise.resolve().then(function () { return run(next); });
         var self = this;
-        var ask = function () {
-            if (typeof self.lifecycle !== "function") return false;
-            try { return self.lifecycle("demand"); } catch (e) { return false; }
-        };
-        var coming = ask();
+        var coming = false;
+        if (typeof self.lifecycle === "function") {
+            try { coming = self.lifecycle("demand"); } catch (e) { coming = false; }
+        }
         var refusal = this.closedFailure || cloudError("cloud_reconnecting", "the cloud connection is being renewed");
-        if (coming !== true && coming !== "hidden") return Promise.reject(refusal);
+        if (coming !== true) return Promise.reject(refusal);
         return new Promise(function (resolve, reject) {
             var timer = null;
             var waiter = function (client) {
@@ -967,25 +954,9 @@ export class CloudClient {
                 if (index >= 0) self.successorWaiters.splice(index, 1);
                 reject(refusal);
             };
-            var shownWithin = Math.min(HIDDEN_DEMAND_WAIT_MS, self.readTimeoutMs);
-            timer = coming === true ? self.setTimeout(giveUp, self.readTimeoutMs)
-                : self.setTimeout(function () {
-                    if (ask() === true) timer = self.setTimeout(giveUp, self.readTimeoutMs - shownWithin);
-                    else giveUp();
-                }, shownWithin);
+            timer = self.setTimeout(giveUp, self.readTimeoutMs);
             self.successorWaiters.push(waiter);
         });
-    }
-
-    /**
-     * Work somebody pressed for and is still waiting on: an `action:` answer, or a keypress waiting
-     * for the relay's word. `keepConnected` does not retire a hidden page's socket under it.
-     */
-    _unsettledWork() {
-        var count = 0;
-        this.readWaiters.forEach(function (waiters) { if (waiters.action) count += 1; });
-        this.pendingBySequence.forEach(function (pending) { if (pending.ack) count += 1; });
-        return count;
     }
 
     async _senderKey(sender, envelope, probe) {

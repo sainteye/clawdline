@@ -100,7 +100,6 @@ export type CloudUpdate =
   | { state: "terminal_error"; error?: CloudFailure; reason?: string; attempts?: number }
   | { state: "revoked"; error?: CloudFailure }
   | { state: "reconnecting" }
-  | { state: "paused" }
 
 export interface CloudSession {
   readonly account: string | null

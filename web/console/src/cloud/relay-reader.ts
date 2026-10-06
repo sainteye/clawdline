@@ -128,11 +128,11 @@ export interface CloudReadClient {
   /**
    * `keepConnected`'s hook on every client it made (`cloud-boot.js`,
    * `attach`): asked `"demand"`, it answers whether a connection is live or on
-   * its way — `true`; `"hidden"` when one comes as soon as the page is shown;
-   * `false` when none will. A retired client keeps it, which is what lets a
+   * its way — `true`; `false` when none will. A hidden page answers the same
+   * way: it keeps its connection. A retired client keeps it, which is what lets a
    * read asked through one wake the loop instead of failing at once.
    */
-  lifecycle?(reason: string): boolean | "hidden"
+  lifecycle?(reason: string): boolean
   /** machine → the last inventory marker it published; present once one arrived. */
   readonly sessionInventoryByMachine?: Map<string, unknown>
   events(listener: (event: CloudEvent) => void): () => void
@@ -281,19 +281,11 @@ export const TRANSCRIPT_EXPECT_MS = 45_000
 
 /**
  * How long a machine read waits for this page's own Cloud connection when it
- * is asked while that connection is renewing or paused and `keepConnected`
- * says one is on its way. A tab hidden past the grace has its client retired
- * (`cloud-boot.js`, `tryQuiesce`) and a new one is made when it is shown; a
- * press in that second used to fail at once as `offline`.
+ * is asked while that connection is renewing or reconnecting and `keepConnected`
+ * says one is on its way; a press in that second used to fail at once as
+ * `offline`.
  */
 export const RECONNECT_WAIT_MS = 10_000
-
-/**
- * The same wait while the page is still hidden: the copied client's own
- * `HIDDEN_DEMAND_WAIT_MS`, for a notification tap that asks before `focus()`
- * shows the page.
- */
-export const HIDDEN_RECONNECT_WAIT_MS = 5_000
 
 /**
  * Failures that mean nobody answered, rather than that somebody said no. They
@@ -388,7 +380,7 @@ export interface RelayReaderOptions {
    * says the route and `drift` says it does not know.
    */
   carry?: CarryTable
-  /** `RECONNECT_WAIT_MS` and `HIDDEN_RECONNECT_WAIT_MS`, both, for a test. */
+  /** `RECONNECT_WAIT_MS`, for a test. */
   reconnectWaitMs?: number
 }
 
@@ -579,7 +571,7 @@ export class RelayReader {
     })
   }
 
-  /** The line went away (`reconnecting`, `paused`, a terminal refusal). */
+  /** The line went away (`reconnecting`, a terminal refusal). */
   lost(): void {
     for (const stream of this.streams) stream.handlers.onError?.(new Error("the relay connection is down"))
   }
@@ -1332,9 +1324,9 @@ export class RelayReader {
       // Not `offline`: that is `jsonFetch`'s word for a network that failed,
       // and it put "is it still running on the machine?" under a machine that
       // was online. What is down is this page's own line, which is renewing
-      // or paused while the page is hidden, and the machine was not asked.
+      // or reconnecting, and the machine was not asked.
       return this.refuse(method, path, 503, "cloud_reconnecting",
-        "This page's Cloud connection is renewing or paused; the machine was not asked.")
+        "This page's Cloud connection is renewing or reconnecting; the machine was not asked.")
     }
     if (typeof client._machineRequest !== "function") {
       mark("read_failed", "cloud_not_carried")
@@ -1441,14 +1433,14 @@ export class RelayReader {
   private async connectedFor(signal: AbortSignal | null | undefined): Promise<CloudReadClient | null> {
     const current = this.client
     if (current && current.ready !== false) return current
-    let coming: boolean | "hidden" = false
+    let coming = false
     try {
       coming = current?.lifecycle?.("demand") ?? false
     } catch {
       coming = false
     }
-    if (coming !== true && coming !== "hidden") return null
-    const bound = this.options.reconnectWaitMs ?? (coming === true ? RECONNECT_WAIT_MS : HIDDEN_RECONNECT_WAIT_MS)
+    if (coming !== true) return null
+    const bound = this.options.reconnectWaitMs ?? RECONNECT_WAIT_MS
     await new Promise<void>((resolve) => {
       const done = () => {
         clearTimeout(timer)

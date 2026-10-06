@@ -79,10 +79,10 @@
     "js/input/schedule-history.js": "56dd8682b4bcf0e7",
     "js/door/door.js": "712ba04a6d7323fd",
     "js/net/cloud-viewer-events.js": "bdedb8d818f0000a",
-    "js/net/cloud-client.js": "adc05db51e87eeaf",
+    "js/net/cloud-client.js": "664b6d7bf023ccf3",
     "js/net/cloud-pairing.js": "9a93a640b43c0cb0",
     "js/net/cloud-onboarding.js": "ef4044a53fb313f6",
-    "js/net/cloud-boot.js": "8da4696de2a15345",
+    "js/net/cloud-boot.js": "9acf83388bc24997",
     "js/view/timeline.js": "d5583a3b18d3d633"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",

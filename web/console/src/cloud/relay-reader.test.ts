@@ -661,8 +661,9 @@ test("one schedule is asked of the chosen machine so its history and webhook pan
 })
 
 // Measured on 2026-09-27 against app.clawdline.com: a tab that had been hidden
-// past the grace had its client retired by `keepConnected` (`tryQuiesce`), and
-// every schedule — timed or trigger-only — then opened as "Could not reach
+// past the grace had its client retired by `keepConnected` (a hidden-page
+// retirement removed on 2026-10-06; renewals and drops still leave a retired
+// client), and every schedule — timed or trigger-only — then opened as "Could not reach
 // Clawdline. Is it still running on the machine? (offline)" within a second,
 // with the machine online: the seam threw `NotConnected` without asking the
 // client to come back, and `jsonFetch` turned the throw into `offline`.
@@ -670,7 +671,7 @@ test("a machine read asked while the page's connection is paused waits for it to
   const retired = new FakeClient()
   retired.ready = false
   const demands: string[] = []
-  const paused = retired as FakeClient & { lifecycle?: (reason: string) => boolean | "hidden" }
+  const paused = retired as FakeClient & { lifecycle?: (reason: string) => boolean }
   paused.lifecycle = (reason) => {
     demands.push(reason)
     return true
@@ -691,8 +692,8 @@ test("a machine read asked while the page's connection is paused waits for it to
 })
 
 test("a machine read the connection does not come back for is refused as reconnecting, not offline", async () => {
-  for (const coming of [false, "hidden" as const]) {
-    const retired = new FakeClient() as FakeClient & { lifecycle?: (reason: string) => boolean | "hidden" }
+  for (const coming of [false]) {
+    const retired = new FakeClient() as FakeClient & { lifecycle?: (reason: string) => boolean }
     retired.ready = false
     retired.lifecycle = () => coming
     const r = new RelayReader("mac-a", { now: () => 1000, reconnectWaitMs: 20 })

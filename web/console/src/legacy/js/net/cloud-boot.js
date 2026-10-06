@@ -764,8 +764,7 @@ export function keepConnected(session, options) {
     var renewalLeadMs = Math.max(0, Number(options.renewalLeadMs) || 30000);
     var renewalFloorMs = positive(options.renewalFloorMs, RENEWAL_FLOOR_MS);
     var stableMs = positive(options.stableMs, STABLE_CONNECTION_MS);
-    var hiddenGraceMs = positive(options.hiddenGraceMs, HIDDEN_GRACE_MS);
-    var quiesceDeferMs = positive(options.quiesceDeferMs, QUIESCE_DEFER_MS);
+    var staleAfterHiddenMs = positive(options.staleAfterHiddenMs, STALE_AFTER_HIDDEN_MS);
     var wakeSpacingMs = positive(options.wakeSpacingMs, WAKE_SPACING_MS);
     var maximumFailures = positive(options.maximumConnectFailures, MAXIMUM_CONNECT_FAILURES);
     var page = pageLifecycle(options);
@@ -787,12 +786,12 @@ export function keepConnected(session, options) {
     // Parked by 4403s `MAXIMUM_FORBIDDEN_PARKS` times: the page coming back no longer starts it.
     var parkedForGood = false;
     var lastAttemptAt = null;
-    // Hidden past the grace period: the socket is retired and nothing connects until the page is back.
-    var quiesced = false;
+    // A hidden page keeps its connection exactly as a shown one does: nothing here closes the socket
+    // or holds back a connect because the page is out of sight. What is kept is when it was hidden,
+    // only to recover from a page the browser froze meanwhile (`staleResume`).
     var hiddenSince = page.hidden() ? now() : null;
-    var graceTimer = null;
     // Set when the page returns from a hide long enough that its socket cannot be trusted — a phone
-    // that froze this page never ran the grace timer, and its socket may be dead without saying so.
+    // that froze this page ran none of its timers, and its socket may be dead without saying so.
     var staleResume = false;
     var wakeListeners = new Set();
 
@@ -818,9 +817,9 @@ export function keepConnected(session, options) {
                 resolve(reason);
             }
             var off = onWake(function (reason) {
-                if (stopped || quiesced || !wakes || wakes(reason)) finish(reason);
+                if (stopped || !wakes || wakes(reason)) finish(reason);
             });
-            if (stopped || quiesced) { finish("stopped"); return; }
+            if (stopped) { finish("stopped"); return; }
             if (injectedSleep) {
                 Promise.resolve(injectedSleep(ms)).then(function () { finish("elapsed"); },
                     function () { finish("elapsed"); });
@@ -837,23 +836,14 @@ export function keepConnected(session, options) {
      */
     async function backoffWait(delay) {
         var reason = await waitFor(delay, function () { return true; });
-        if (reason === "elapsed" || stopped || quiesced) return;
+        if (reason === "elapsed" || stopped) return;
         var since = lastAttemptAt === null ? wakeSpacingMs : now() - lastAttemptAt;
         if (since < wakeSpacingMs) await waitFor(wakeSpacingMs - since, function () { return false; });
     }
 
-    /** Nothing connects while quiesced, or while the browser says it has no network. */
+    /** Nothing connects while the browser says it has no network. Hidden or shown makes no difference. */
     async function gate() {
         while (!stopped) {
-            if (quiesced) {
-                await new Promise(function (resolve) {
-                    var off = onWake(function () {
-                        if (stopped || !quiesced) { off(); resolve(); }
-                    });
-                    if (stopped || !quiesced) { off(); resolve(); }
-                });
-                continue;
-            }
             if (page.offline()) {
                 // `online` wakes this; the timer only reads the flag again, it connects nothing.
                 await waitFor(OFFLINE_RECHECK_MS, function (reason) { return reason === "online"; });
@@ -907,7 +897,7 @@ export function keepConnected(session, options) {
         if (forbidden) forbiddenParks += 1;
         parked = true;
         parkedForGood = forbidden === true && forbiddenParks >= MAXIMUM_FORBIDDEN_PARKS;
-        if (parkedForGood) { disarmGrace(); detach(); }
+        if (parkedForGood) detach();
         await new Promise(function (resolve) {
             var off = onWake(function (reason) {
                 if (stopped || (!parkedForGood && RESTART_WAKES.has(reason))) { off(); resolve(); }
@@ -946,7 +936,6 @@ export function keepConnected(session, options) {
             });
             var offWake = onWake(function () {
                 if (stopped) finish({ reason: "stopped" });
-                else if (quiesced) finish({ reason: "quiesce" });
                 else if (staleResume) finish({ reason: "resume" });
             });
             function finish(result) {
@@ -969,7 +958,6 @@ export function keepConnected(session, options) {
                 }
             }
             if (stopped) finish({ reason: "stopped" });
-            else if (quiesced) finish({ reason: "quiesce" });
         });
     }
 
@@ -981,74 +969,35 @@ export function keepConnected(session, options) {
 
     /* ---- the page's lifecycle ------------------------------------------------------------- */
 
-    function armGrace(delay) {
-        if (graceTimer !== null || quiesced || stopped) return;
-        graceTimer = setTimer(function () {
-            graceTimer = null;
-            tryQuiesce();
-        }, delay);
-    }
-
-    function disarmGrace() {
-        if (graceTimer === null) return;
-        clearTimer(graceTimer);
-        graceTimer = null;
-    }
-
-    /**
-     * Hidden for the whole grace period: retire the socket. A person's own work still in the air —
-     * a send, a keypress, anything answered as `action:` — is waited for, up to `quiesceDeferMs`, so
-     * putting the phone away right after pressing Send does not turn the send into an unknown.
-     */
-    function tryQuiesce() {
-        if (stopped || quiesced || !page.hidden()) return;
-        var hiddenFor = hiddenSince === null ? hiddenGraceMs : now() - hiddenSince;
-        if (hiddenFor < hiddenGraceMs) { armGrace(hiddenGraceMs - hiddenFor); return; }
-        var client = active;
-        var unsettled = client && typeof client._unsettledWork === "function" ? client._unsettledWork() : 0;
-        if (unsettled > 0 && hiddenFor < hiddenGraceMs + quiesceDeferMs) {
-            armGrace(Math.min(QUIESCE_RECHECK_MS, hiddenGraceMs + quiesceDeferMs - hiddenFor));
-            return;
-        }
-        quiesced = true;
-        wake("quiesce");
-    }
-
+    /** Only remembered: being hidden never closes the socket nor holds back a connect. */
     function onHidden() {
         if (stopped) return;
         if (hiddenSince === null) hiddenSince = now();
-        armGrace(hiddenGraceMs);
     }
 
     /**
      * Visible, restored from the back-forward cache, back online, or asked by the page. Answers
      * whether a connection is live or on its way, which is what a retired client asks before it
-     * holds a read for its replacement (`CloudClient._viaSuccessor`): `true`; `false` when none will
-     * come — stopped, ended, or out of attempts; or `"hidden"` when one comes as soon as the page is
-     * shown. A notification tap posts its `navigate` before `focus()` makes the page visible, so a
-     * read asked in that moment is worth holding for a few seconds, not refusing.
+     * holds a read for its replacement (`CloudClient._viaSuccessor`): `true`, or `false` when none
+     * will come — stopped, ended, or out of attempts. Hidden or shown, the answer is the same: a
+     * hidden page keeps connecting. A wake cuts a retry's wait short (`backoffWait`) and starts a
+     * loop that ran out of attempts again (`parkUntilReturn`).
      */
     function resume(reason) {
         if (stopped || ended) return false;
         if (parked && (parkedForGood || !RESTART_WAKES.has(reason))) return false;
         if (page.hidden()) {
-            // `online` while hidden: a loop that is not quiesced may re-read the network flag.
-            if (!quiesced) wake(reason);
-            return "hidden";
-        }
-        disarmGrace();
-        var hiddenFor = hiddenSince === null ? 0 : now() - hiddenSince;
-        hiddenSince = null;
-        if (quiesced) {
-            quiesced = false;
             wake(reason);
             return true;
         }
-        if (hiddenFor >= hiddenGraceMs && active) {
+        var hiddenFor = hiddenSince === null ? 0 : now() - hiddenSince;
+        hiddenSince = null;
+        if (hiddenFor >= staleAfterHiddenMs && active) {
             staleResume = true;
-            // Hidden past the grace with a socket that still says `ready`: the page was frozen
-            // before its timer ran, and nothing proves that socket heard what was published
-            // meanwhile. Its successor is not a renewal, and asks for the rows (`_becameReady`).
+            // Hidden that long with a socket that still says `ready`: the browser may have frozen
+            // the page meanwhile, and nothing proves that socket heard what was published. A fresh
+            // connection is made while this one still serves; it is not a renewal, and asks for the
+            // rows (`_becameReady`).
             try { active.continuityUnproven = true; } catch (e) { /* a frozen stand-in */ }
         }
         wake(reason);
@@ -1061,7 +1010,6 @@ export function keepConnected(session, options) {
         pageshow: function () { resume("pageshow"); },
         online: function () { resume("online"); }
     });
-    if (hiddenSince !== null) armGrace(hiddenGraceMs);
 
     function attach(client) {
         if (!client || (typeof client !== "object" && typeof client !== "function")) return;
@@ -1121,14 +1069,6 @@ export function keepConnected(session, options) {
                 onState(outcome);
                 return;
             }
-            if (quiesced) {
-                // Hidden past the grace while this connect was in flight: keep nothing open.
-                retireClient(outcome.client);
-                if (outcome.previous && outcome.previous !== outcome.client) retireClient(outcome.previous);
-                active = null;
-                healthySince = null;
-                continue;
-            }
             if (!active || !active.ready || healthySince === null) healthySince = now();
             active = outcome.client;
             staleResume = false;
@@ -1149,15 +1089,6 @@ export function keepConnected(session, options) {
                 forbiddenRefusals = 0;
                 forbiddenParks = 0;
                 backoff = initial;
-            }
-            if (boundary.reason === "quiesce") {
-                // The socket goes, the rows stay: `resumeFrom` seeds the next client with them and
-                // the relay realigns every retained channel when the page is back.
-                retireClient(outcome.client);
-                active = null;
-                healthySince = null;
-                onState({ state: "paused" });
-                continue;
             }
             if (boundary.reason === "offline") {
                 active = null;
@@ -1185,17 +1116,16 @@ export function keepConnected(session, options) {
             // `renew` and `resume` connect again at once, with the current client still serving.
         }
     })();
-    // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener or
-    // grace timer behind; the next `keepConnected` a retry starts brings its own. One that ran out of
+    // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener
+    // behind; the next `keepConnected` a retry starts brings its own. One that ran out of
     // attempts has not ended: it keeps its page listeners, and only those, to start again — unless
     // 4403s parked it `MAXIMUM_FORBIDDEN_PARKS` times, when it lets go of those too (`parkUntilReturn`).
-    function release() { ended = true; disarmGrace(); detach(); }
+    function release() { ended = true; detach(); }
     loop.then(release, release);
 
     return {
         stop: function () {
             stopped = true;
-            disarmGrace();
             detach();
             wake("stopped");
             // A loop that already ended on its own no longer owns the session's client: the next
@@ -1207,12 +1137,14 @@ export function keepConnected(session, options) {
     };
 }
 
-const HIDDEN_GRACE_MS = 60 * 1000;
+/**
+ * Hidden at least this long, a page shown again does not trust a socket that still says `ready`:
+ * the browser may have frozen the page meanwhile. Recovery only; nothing is closed while hidden.
+ */
+const STALE_AFTER_HIDDEN_MS = 60 * 1000;
 const STABLE_CONNECTION_MS = 60 * 1000;
 const RENEWAL_FLOOR_MS = 60 * 1000;
 const WAKE_SPACING_MS = 2000;
-const QUIESCE_DEFER_MS = 60 * 1000;
-const QUIESCE_RECHECK_MS = 5000;
 const OFFLINE_RECHECK_MS = 60 * 1000;
 const MAXIMUM_CONNECT_FAILURES = 16;
 /**

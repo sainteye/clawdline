@@ -745,7 +745,6 @@ export function CloudGate({ declared }: { declared: string }) {
           setScreen({ at: "revoked", url: session.current?.signInURL() ?? "" })
           return
         case "reconnecting":
-        case "paused":
           reader.current?.lost()
           setTerminalHost(null)
           return
