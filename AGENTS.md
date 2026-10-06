@@ -7,14 +7,9 @@ and procedures behind them — read its section when you reach the thing it cove
 
 ## The retired Swift app
 
-The Swift app was stopped on 2026-09-19 and archived on 2026-09-22 as bundles under
-`~/code/clawdline-archive-20260922`; this checkout now lives at `~/code/clawdline`. Its code is a
-record of what still has to migrate and how it was done the first time. Comments cite it by file and
-line (`SessionInfo.swift:864-872`) and those citations stay. Never modify the archive.
-
-A sentence here that says the Swift app is running, holds a port, or is somewhere traffic goes is
-false; `TestNothingSaysTheRetiredAppIsStillRunning` (`internal/config/`) fails on one. Write such a
-measurement in the past with its date, or mark the whole file `retired-app-record` with a date.
+The Swift app stopped on 2026-09-19 and was archived on 2026-09-22; keep its archive read-only and
+its file-and-line citations intact (see `docs/working-rules.md`), and let
+`TestNothingSaysTheRetiredAppIsStillRunning` guard against claims that it still runs.
 
 ## Where work happens
 
@@ -58,16 +53,9 @@ tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && ../tools/heavy.sh npm run build )   # when anything under web/ changed
 ```
 
-- **Every compile, test suite or bundle build goes through `tools/heavy.sh`** (`clawdline heavy`):
-  it waits for the machine's one compile slot and for available memory, runs the command at a
-  lower priority, and gives the slot back. On 2026-09-26 several sessions building at once on a
-  2-core, 1.9 GB machine drove the load to 34 and every console read to 8-74 s, and Claude Code
-  killed a landing's checks twice for low memory. It never refuses to build for a missing daemon:
-  it runs the command anyway and says so. When `--max-wait` (default 30m) passes before it gets the
-  slot and memory, it does not run the command and exits 75 — run it again later. While it waits it
-  prints one line when the wait starts and one when it ends, so wait for it with one long wait (a
-  background run, or one call with a long timeout), not repeated short polls. Wrap the whole script
-  once, not its steps — a `heavy` inside a `heavy` runs directly.
+- **Every compile, test suite or bundle build goes through `tools/heavy.sh`** (`clawdline heavy`).
+  Wrap the whole script once; wait for it with one long wait. If it exits 75 before acquiring the
+  slot, run it later. See `docs/working-rules.md` for the incident and procedure.
 
 - A test that needs a Unix facility asks for it through a per-platform file
   (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
@@ -144,14 +132,8 @@ The incident behind each of these is in `docs/working-rules.md`.
 
 ## Questions that need the person to choose
 
-When this Session needs the person to choose between concrete options, create one Clawdline
-`answer` Note before asking in chat. Put the question, relevant tradeoffs, and two to four
-complete suggested replies in the Note; a reply button sends its text when tapped, so each should
-say exactly what the person means. Then give only a short pointer in chat, continue independent
-work, and wait for the person's answer to arrive as a conversation message before taking the
-dependent action. A Note, or a Note marked handled, is not an answer or authorization. Do not make a Note for routine progress, a rhetorical question, or a
-choice the Agent can reasonably make. For the command and JSON fields, read `clawdline guide note`.
-If Note creation fails, explain the failure and ask in chat so the decision is still visible.
+For a concrete choice the person must make, read `clawdline guide note`, create one `answer` Note
+with complete suggested replies, then ask briefly in chat and wait for the person's sent message.
 
 ## The single pages
 
@@ -159,13 +141,16 @@ If Note creation fails, explain the failure and ask in chat so the decision is s
 |---|---|
 | What is the architecture | `docs/architecture.md` |
 | Why a decision is what it is | `docs/design-decisions.md` |
-| How work is tracked: board, to-dos, Backlog, issues | `docs/work-system.md` |
+| How work is tracked: board, to-dos, Backlog, issues | `docs/work-system-v2.md`, `docs/work-system.md` (v1 record) |
 | What each platform does and does not do | `docs/cross-platform.md`, `docs/linux.md` |
 | The broker: dispatch, landing, handoff | `docs/broker.md` |
-| Cloud and the phone | `docs/remote.md`, `docs/cloud-wire.md` |
+| Cloud and the phone | `docs/cloud.md`, `docs/cloud-wire.md` |
 | Deploying app.clawdline.com | `docs/hosted-console.md` |
-| Every bound and where it is enforced | `docs/limits.md` |
+| Every bound and where it is enforced | `internal/domain/capacity` |
 | What keeps the person out of a public repository | `docs/privacy-guard.md` |
 | The incidents and procedures behind these rules | `docs/working-rules.md` |
+
+The capacity register implements the policy in `docs/limits.md` §4; the rest of that file is a
+dated retired-app record.
 
 Where instruction files conflict, the nearest one wins, and a task brief wins over all of them.

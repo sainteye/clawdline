@@ -28,6 +28,8 @@ class Wire implements TerminalWire {
   closeResult: "ok" | "unknown" = "ok"
   incarnation = "first-machine-start"
   lease = held
+  /** The control a `read` answers with. */
+  readControl = control
   deltaSubscribed = false
   deltaMachine = false
   historyResult: Record<string, unknown> = { lines: [], truncated: false, omitted_lines: 0 }
@@ -36,6 +38,19 @@ class Wire implements TerminalWire {
   /** Refusals by operation, or `rekey_connection:direct` for a rekey onto the DC. */
   refusals = new Map<string, string>()
   directMachine = false
+  /**
+   * A machine that decides each numbered input as internal/domain/terminal/input.go does, one at a
+   * time in arrival order, and answers each after `pacedMs`, the next only after the previous.
+   */
+  machineInputs: { applied: number; typed: string[]; pacedMs: number; queue: Array<() => void>; busy: boolean } | null = null
+  private paceMachine(): void {
+    const machine = this.machineInputs!
+    if (machine.busy) return
+    const next = machine.queue.shift()
+    if (!next) return
+    machine.busy = true
+    setTimeout(() => { machine.busy = false; next(); this.paceMachine() }, machine.pacedMs)
+  }
   async subscribeTerminal(connection: string, _keyID: string, _raw: Uint8Array, listener: (event: TerminalChannelEvent) => void): Promise<void> {
     this.channels.set(connection, listener)
   }
@@ -56,7 +71,7 @@ class Wire implements TerminalWire {
           ...(this.deltaMachine && (request.body as { frame_delta_v1?: boolean })?.frame_delta_v1 ? { frame_delta_v1: true } : {}),
           ...(this.directMachine && (request.body as { carrier?: string })?.carrier === "direct" ? { carrier: "direct" } : {}) }
       : operation === "direct_offer" ? { sdp: "v=0 answer" }
-      : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control }
+      : operation === "read" || operation === "open" ? { id: terminalID, project_id: "project", status: "running", control: this.readControl }
         : operation === "activate_connection" ? { connection, retired_connection: (request.body as { old_connection: string }).old_connection }
         : operation === "control" && request.body === undefined ? { machine_incarnation: this.incarnation, control: this.lease, input_state_unknown: false }
           : operation === "control" ? { control: this.lease }
@@ -72,7 +87,22 @@ class Wire implements TerminalWire {
         ...(operation === "input" && this.inputResult === "refused" ? { error: "terminal_forbidden" } : {}),
       }),
     })
-    if (this.delayed.has(operation)) this.replies.push(reply)
+    if (operation === "input" && this.machineInputs) {
+      const machine = this.machineInputs
+      machine.queue.push(() => {
+        const seq = request.seq as number
+        const duplicate = seq <= machine.applied
+        if (seq === machine.applied + 1) {
+          machine.applied = seq
+          machine.typed.push(atob((request.body as { data: string }).data))
+        }
+        const gap = seq > machine.applied
+        this.emit(connection, "termr", { v: 1, type: "terminal_receipt", request_id: request.request_id, connection, operation,
+          terminal_id: request.terminal_id, ...(gap ? { status: "refused", error: "input_gap" }
+            : { status: "ok", result: { applied_through: machine.applied, duplicate } }) })
+      })
+      this.paceMachine()
+    } else if (this.delayed.has(operation)) this.replies.push(reply)
     else queueMicrotask(reply)
     return { sender: viewer, seq: this.requests.length }
   }
@@ -189,6 +219,74 @@ test("several numbered keys publish before receipts while later keys wait for th
     assert.equal(wire.requests.filter((request) => request.operation === "input").length, 5)
     wire.releaseReplies()
     await Promise.all(inputs)
+  } finally { session.dispose() }
+})
+
+test("a burst longer than the in-flight window arrives complete and in order when receipts come back one by one", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start()
+    await session.attach(terminalID)
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "ready")
+    wire.machineInputs = { applied: 0, typed: [], pacedMs: 5, queue: [], busy: false }
+    const text = "vim -R README.zh-TW.md\n"
+    const inputs: Promise<void>[] = []
+    for (const key of text) {
+      const sent = session.input(new TextEncoder().encode(key))
+      void sent.catch(() => undefined)
+      inputs.push(sent)
+      await new Promise<void>((resolve) => setTimeout(resolve, 2))
+    }
+    const outcomes = await Promise.allSettled(inputs)
+    const seqs = wire.requests.filter((request) => request.operation === "input").map((request) => request.seq)
+    assert.equal(wire.machineInputs.typed.join(""), text, `seqs sent ${seqs.join(",")}`)
+    assert.deepEqual(seqs, Array.from({ length: text.length }, (_, i) => i + 1))
+    assert.deepEqual(outcomes.filter((outcome) => outcome.status === "rejected"), [])
+    assert.equal(session.snapshot.canType, true)
+  } finally { session.dispose() }
+})
+
+test("a key typed while the tab is still taking control on entry waits and goes out once it holds control", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    wire.frame(wire.latest(), 1, "watching")
+    wire.delayed.add("control")
+    const acquiring = session.acquire("acquire")
+    await until(() => wire.requests.some((request) => request.operation === "control"))
+    assert.equal(session.snapshot.typeAhead, true)
+    const key = session.input(new TextEncoder().encode("l"))
+    wire.delayed.delete("control")
+    wire.releaseReplies()
+    await acquiring
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 0, "no key before a current screen")
+    wire.frame(wire.latest(), 2, "controlled")
+    await key
+    assert.deepEqual(wire.requests.filter((request) => request.operation === "input").map((request) => request.seq), [1])
+  } finally { session.dispose() }
+})
+
+test("a key typed while taking control that another tab holds is refused as not_controller, never sent", async () => {
+  const wire = new Wire()
+  wire.lease = { ...held, holder: { name: "other", local: false, same_device: true, same_client: false } }
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    wire.frame(wire.latest(), 1, "watching")
+    wire.delayed.add("control")
+    const acquiring = session.acquire("acquire")
+    void acquiring.catch(() => undefined)
+    await until(() => wire.requests.some((request) => request.operation === "control"))
+    const key = session.input(new TextEncoder().encode("l"))
+    void key.catch(() => undefined)
+    wire.releaseReplies()
+    await assert.rejects(acquiring, /not_controller/)
+    await assert.rejects(key, /not_controller/)
+    assert.equal(wire.requests.filter((request) => request.operation === "input").length, 0)
+    assert.equal(session.snapshot.typeAhead, false)
   } finally { session.dispose() }
 })
 
@@ -356,6 +454,26 @@ test("rekey keeps the lease client and checks a read-only high-water mark before
   assert.equal(wire.requests.filter((request) => request.operation === "activate_connection").length, 1)
   assert.equal(session.snapshot.canType, true)
   session.dispose()
+})
+
+test("a key still awaiting its receipt across a rekey keeps its number; the next key gets the one after", async () => {
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "first")
+    wire.delayed.add("input")
+    // Its receipt is never released here: only the numbering is under test.
+    void session.input(new TextEncoder().encode("a")).catch(() => undefined)
+    await until(() => wire.requests.some((request) => request.operation === "input"))
+    // The machine has not decided "a" yet: the lease proof still says nothing was applied.
+    await session.start()
+    wire.frame(wire.latest(), 1, "new connection")
+    await until(() => session.snapshot.canType)
+    void session.input(new TextEncoder().encode("b")).catch(() => undefined)
+    await until(() => wire.requests.filter((request) => request.operation === "input").length === 2)
+    assert.deepEqual(wire.requests.filter((request) => request.operation === "input").map((request) => request.seq), [1, 2])
+  } finally { session.dispose() }
 })
 
 test("a rekey frame arriving before its receipt waits for lease proof and then activates", async () => {
@@ -982,3 +1100,57 @@ class ClosingDirectWire extends DirectWire {
     return super.publishTerminal(request)
   }
 }
+
+const delta = async (connection: string, seq: number, baseSeq: number, baseRev: string, rev: string) => {
+  const at = Date.now() / 1000
+  return { v: 1, type: "terminal_frame_delta", terminal_id: terminalID, connection, frame_seq: seq, base_seq: baseSeq,
+    base_rev: baseRev, captured_at: at, rev, at, cols: 80, rows: 1, dead: false, cursor: frame(rev).cursor,
+    modes: frame(rev).modes, changed_rows: [{ row: 0, line: rev }], screen_hash: await terminalScreenHash([rev]) }
+}
+
+test("taking over a terminal whose screen arrives as deltas makes the tab typable on the same connection", async () => {
+  // 2026-10-06, app.clawdline.com: after 接手 the machine's next screen was a delta on the base it
+  // had already delivered; the tab had dropped that base when it took control, read the delta as
+  // corrupt, threw the connection away and opened one it never attached. Keys never reached it.
+  const wire = new Wire()
+  wire.deltaSubscribed = true; wire.deltaMachine = true
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID)
+    const connection = wire.latest()
+    wire.frame(connection, 1, "first")
+    await session.acquire("takeover")
+    wire.emit(connection, "termd", await delta(connection, 2, 1, "first", "second"))
+    await until(() => session.snapshot.canType)
+    assert.equal(wire.latest(), connection)
+    assert.equal(wire.requests.filter((request) => request.operation === "open_connection").length, 1)
+    await session.input(new TextEncoder().encode("x"))
+    assert.equal(wire.requests.filter((request) => request.operation === "input" && request.connection === connection).length, 1)
+  } finally { session.dispose() }
+})
+
+test("a connection discarded for a bad delta reads its terminal again and proves the lease on the new one", async () => {
+  const wire = new Wire()
+  wire.deltaSubscribed = true; wire.deltaMachine = true
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const old = wire.latest()
+    wire.frame(old, 1, "first")
+    await until(() => session.snapshot.canType)
+    wire.readControl = held
+    wire.emit(old, "termd", { ...(await delta(old, 2, 1, "first", "second")), screen_hash: "0".repeat(64) })
+    await until(() => wire.latest() !== old && wire.requests.some((request) => request.operation === "read" && request.connection === wire.latest()))
+    const fresh = wire.latest()
+    // The discarded connection was given back before the new one was asked for: the machine
+    // allows two per viewer and refused the third as busy while the old one lingered.
+    const order = wire.requests.map((request) => `${request.operation}@${request.connection === old ? "old" : request.connection === fresh ? "new" : "?"}`)
+    assert.ok(order.indexOf("release_connection@old") >= 0 && order.indexOf("release_connection@old") < order.indexOf("open_connection@new"), order.join(" "))
+    // The new connection proved the same lease rather than asking the person to take control again.
+    await until(() => wire.requests.some((request) => request.operation === "control" && request.connection === fresh && request.body === undefined))
+    wire.frame(fresh, 1, "restored")
+    await until(() => session.snapshot.canType)
+    await session.input(new TextEncoder().encode("y"))
+    assert.equal(wire.requests.filter((request) => request.operation === "input" && request.connection === fresh).length, 1)
+  } finally { session.dispose() }
+})

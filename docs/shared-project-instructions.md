@@ -34,7 +34,7 @@ assistant what it loaded:
    link to it (or a generated copy — decision P2), so both assistants see the same skill set.
 3. **One memory.** Lessons about the Project live in one Clawdline-owned store outside the
    repository, and every Claude and Codex session launched for the Project is given its index the
-   same way (decision P1).
+   same way (decision P1, decided: a Clawdline-owned store).
 4. **No drift.** A check reports any skill that exists for one assistant only, any rule in
    `CLAUDE.md` that contradicts `AGENTS.md`, and any memory entry not reachable by both.
 
@@ -44,11 +44,20 @@ Things deliberately left alone: the person's home-scope files (`~/.claude/CLAUDE
 (`internal/domain/squad/builtin_skills/`) stay a catalog, not provider installs
 (`docs/persona-skill-decisions.md`).
 
-## 3. The flow: integrate one Project
+## 3. The flow: unify one Project
 
-Run per Project, by hand, from the Project gear (Settings and instructions) or
-`clawdline project integrate <place>`. It is a Board Feature with the usual planning gate, so the
-person approves before anything is written.
+Run per Project, by hand. It is a Board Feature with the usual planning gate, so the person
+approves before anything is written. The flow is called **unify** and has three entry points:
+
+| Where | Command | What it does |
+|---|---|---|
+| Terminal | `clawdline project unify <path>` | Opens the Feature for that Project and runs step 1; a sibling of the existing `clawdline project add\|remove\|list` |
+| Terminal | `clawdline project unify --check <path>` | Step 5's drift check only: read-only, writes nothing, exit 0 unified, 1 drifting, 3 unknown |
+| Inside a Session | `/clawdline unify` | The same flow for the Session's own Project, the way `/clawdline close` is an argument of the Clawdline skill |
+| Console | Project gear → Settings and instructions → **Unify** | The same flow, with the step 1 table shown before the Feature opens |
+
+`unify` was chosen over `sync` (which suggests a background copy that runs by itself, and this
+never does) and over `integrate` (which already means landing work in this repository).
 
 1. **Inventory (read-only, no child).** Reuse the existing inventory
    (`GET /v1/projects/{place}/files`) and add: skills present for one assistant only, and the
@@ -68,7 +77,7 @@ person approves before anything is written.
    `CLAUDE.md`, `.agents/skills`, links) through the Project's own commit and check flow; writes the
    memory store outside the repository. Personal memory never enters a repository; for a public
    repository the Project's privacy check applies as usual.
-5. **Verify.** `clawdline project integrate --check <place>` re-runs step 1 and must report no
+5. **Verify.** `clawdline project unify --check <path>` re-runs step 1 and must report no
    drift. Then one Claude and one Codex session are launched on the Project with the same question
    whose answer is only in a memory entry and only in a skill; both must answer it. This is the
    end-to-end proof; the file check alone does not show an assistant loaded anything.
@@ -93,9 +102,9 @@ person approves before anything is written.
 
 ## 5. Decisions for the person
 
-- **P1 — where Project memory lives.**
+- **P1 — where Project memory lives. Decided 2026-10-06: (a).**
   (a) A Clawdline-owned store per Project, both assistants write through `clawdline memory`
-  (recommended: it is the only option that is the same for both and works on another machine via
+  (chosen: it is the only option that is the same for both and works on another machine via
   Cloud later). Cost: Claude's built-in auto-memory keeps working beside it, so the skill must steer
   Project lessons to the shared store; the first integration imports existing entries once.
   (b) Claude's auto-memory stays the source, Clawdline only mirrors its index into Codex launches.
@@ -122,7 +131,7 @@ person approves before anything is written.
 2. Memory store + `clawdline memory` + launch delivery (§4) — the one change that gives both
    assistants the same memory.
 3. Inventory additions and `--check` (§3.1, §3.5).
-4. The integrate flow and the Project card status (§3.2-§3.6).
+4. The unify flow and the Project card status (§3.2-§3.6).
 5. Integrate this repository first as the pilot.
 
 <!-- clawdline-doc: kind=spec audience=agent -->

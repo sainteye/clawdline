@@ -32,14 +32,44 @@ export async function beginCloudTerminal(session: CloudTerminalStarter, channelP
   return { rows: await listCloudTerminals(session, channelProject, tab) }
 }
 
+/** The way back to typing that a refused key's notice offers beside the terminal. */
+export type KeyRefusalAction = "acquire" | "takeover" | "reacquire" | "reconnect" | null
+/** What a refused key's notice says, and which way back it offers. */
+export interface KeyRefusalNotice {
+  /** `no_control`, `other_holder` and `unknown` have their own sentences; `other` says `code` in words. */
+  kind: "no_control" | "other_holder" | "unknown" | "other"
+  code: string
+  action: KeyRefusalAction
+}
+
 /**
- * Key refusals the page's status line already explains from the session's own state (input state
- * unknown, no lease, stale key, offline, revoked, ended), with the button that recovers from it. Such
- * a refusal is not repeated as a request error, which would stay on screen after typing recovers.
+ * Every key the session refused, as the notice the page shows next to the terminal itself. None is
+ * left to the status line alone: that line can be off screen while the person types, and a key that
+ * vanished with nothing said beside the screen is the failure this replaces.
  */
-const EXPLAINED_KEY_REFUSALS = new Set(["terminal_input_state_unknown", "not_controller", "terminal_stale", "machine_offline",
-  "machine_stale", "terminal_access_revoked", "terminal_forbidden", "terminal_machine_restarted", "terminal_closed"])
-export function keyRefusalExplained(code: string): boolean { return EXPLAINED_KEY_REFUSALS.has(code) }
+export function keyRefusalNotice(code: string, control: TerminalControl | null, state: string): KeyRefusalNotice {
+  if (code === "terminal_input_state_unknown" || code === "input_state_unknown") return { kind: "unknown", code, action: "reacquire" }
+  if (code === "not_controller" || code === "lease_superseded" || code === "lease_expired") {
+    if (control?.held && !control.holder?.same_client) return { kind: "other_holder", code, action: "takeover" }
+    return { kind: "no_control", code, action: control?.held ? "reacquire" : "acquire" }
+  }
+  const reconnect = state === "stale" || state === "offline" || code === "terminal_stale" || code === "machine_offline" || code === "machine_stale"
+  return { kind: "other", code, action: reconnect ? "reconnect" : null }
+}
+
+/** Who holds the terminal, as far as a refused key's notice depends on it. */
+export function keyRefusalControl(control: TerminalControl | null): string {
+  return control ? `${control.held ? "held" : "free"}/${control.epoch}/${control.holder?.same_client ? "this-tab" : "other"}` : ""
+}
+
+/**
+ * The refused key's notice while what it says still holds: once control changes (this tab took
+ * over, another took it, the lease was forgotten) it is gone. Kept across that change it read
+ * "not sent: you (this tab) control this terminal" after 接手, and offered 接手 a second time.
+ */
+export function shownKeyRefusal<T extends { control: string }>(refusal: T | null, control: TerminalControl | null): T | null {
+  return refusal && refusal.control === keyRefusalControl(control) ? refusal : null
+}
 
 /** Reconnect the displayed terminal without repeating a create or input request. */
 export async function reconnectCloudTerminal(session: CloudTerminalStarter, id: string): Promise<void> {

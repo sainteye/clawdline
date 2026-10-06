@@ -256,7 +256,9 @@ out of it, not to add rules about reading.
 
 **A marker, reusing the discipline the repository already has.** `TestNothingSaysTheRetiredAppIsStillRunning`
 already accepts a `retired-app-record` marker with a date in a file's first 60 lines
-(`internal/config/retiredapp_test.go:31-42`). Twelve docs carry it. The proposal generalises that
+(`internal/config/retiredapp_test.go:31-42`). Ten docs carry that marker. Another 42 docs start
+with a dated Retired Swift-generation record banner (39 directly in `docs/`, three in `docs/adr/`);
+these carry `<!-- clawdline-doc: kind=record audience=both -->`. The proposal generalises the
 marker instead of adding YAML front matter:
 
 ```
@@ -268,6 +270,9 @@ marker instead of adding YAML front matter:
 - `audience`: `human` | `agent` | `both`.
 - One HTML comment, invisible when rendered, inside the first 60 lines like the existing marker. A
   file with `retired-app-record` counts as `kind=retired`, so existing files need no edit.
+- An explicit `clawdline-doc` marker is required only for root-level Markdown documents and
+  `docs/*.md`. `docs/user/` counts as `kind=user` and `docs/adr/` as `kind=record` by directory;
+  their explicit markers, when present, agree with that classification.
 
 **Records move to `docs/records/`**, and no table in `AGENTS.md` points there. A spec links to the
 records it was decided from, so history is one click away and never inlined.
