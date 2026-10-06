@@ -21,6 +21,7 @@
 //   `{ error: { code, message } }`; `jsonFetch` below reads both, and — as the
 //   original's — sets no `status`, so the sentences that append one do not.
 import { T } from "./js/core/i18n.js"
+import { machineWording } from "./machine-copy.js"
 import { drawIcon } from "./js/core/pixels.js"
 import { tint } from "./js/core/util.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
@@ -71,7 +72,7 @@ export const PROJECTS_ELEMENT_IDS = [
 
 /** `net/fetch.js`'s `jsonFetch`, now supplied by the shared refusal-aware transport. */
 const jsonFetch = makeJSONFetch({
-  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+  words: { offline: machineWording(T.webOffline, "en"), requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
 })
 
 type Place = { id: string; boardProjectId?: string; path?: string; machine?: string }

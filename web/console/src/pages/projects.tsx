@@ -5,6 +5,7 @@ import { activityUnknownScope, projectListWords, replaceSuffix } from "./project
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
+import { machineWording } from "../legacy/machine-copy.js"
 import {
   registerRetiredBoardProjectFallback,
   type RetiredBoardProject,
@@ -49,6 +50,24 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   const setup = useRef<ProjectSetupHandle>(null)
   const was = useRef(false)
   const painted = useRef(false)
+
+  useLayoutEffect(() => {
+    const root = document.getElementById("project-worktree-lifecycle")
+    if (!root) return
+    const adapt = () => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const value = node.textContent ?? ""
+        if (!/The Mac reports|until the Mac|Refreshing the Mac observation|Mac 回報|Mac 取得|重新觀測 Mac/.test(value)) continue
+        const wording = machineWording(value, document.documentElement.lang)
+        if (wording !== value) node.textContent = wording
+      }
+    }
+    adapt()
+    const observer = new MutationObserver(adapt)
+    observer.observe(root, { childList: true, characterData: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
 
   useLayoutEffect(() => {
     // The copied Projects view still calls its old `openBoard(place)` seam for

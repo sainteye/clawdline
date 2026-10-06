@@ -16,6 +16,7 @@
 //   - a refusal on this daemon is `{ error: "code", detail }`, which
 //     `jsonFetch` reads as well as the original's shape.
 import { T } from "./js/core/i18n.js"
+import { machineWording } from "./machine-copy.js"
 import { bindTimelinePage } from "./js/view/timeline.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 
@@ -52,7 +53,7 @@ type Coded = Error & { code?: string; retryable?: boolean }
 
 /** `net/fetch.js`'s `jsonFetch`, now supplied by the shared refusal-aware transport. */
 const jsonFetch = makeJSONFetch({
-  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+  words: { offline: machineWording(T.webOffline, "en"), requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
 })
 
 /** `net/live.js`'s `timeline`, with this route's closed parameter set. */

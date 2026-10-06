@@ -28,6 +28,7 @@
 // `updateSchedule`, `deleteSchedule`, `runSchedule` and `places`, spelled
 // against this daemon, which answers them in the Swift app's shapes.
 import { T, fill as fillOriginal } from "./js/core/i18n.js"
+import { adaptedWords, machineWording } from "./machine-copy.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 import { esc as escOriginal } from "./js/core/esc.js"
 import { drawIcon as drawIconOriginal } from "./js/core/pixels.js"
@@ -318,30 +319,31 @@ export type ScheduleRunWords = Record<
   "button" | "running" | "confirm" | "accepted" | "active" | "spent" | "dispatchOff" | "writeOff" | "gone" | "failed",
   string
 >
-export const scheduleRunCopy = scheduleRunCopyOriginal as (language: string) => ScheduleRunWords
-export const scheduleRunMessage = scheduleRunMessageOriginal as (error: unknown, language: string) => string
-export const scheduleRunConfirmation = scheduleRunConfirmationOriginal as (title: string, language: string) => string
+export const scheduleRunCopy = (language: string): ScheduleRunWords =>
+  adaptedWords(scheduleRunCopyOriginal(language), language)
+export const scheduleRunMessage = (error: unknown, language: string): string =>
+  machineWording(scheduleRunMessageOriginal(error, language), language)
+export const scheduleRunConfirmation = (title: string, language: string): string =>
+  scheduleRunCopy(language).confirm.replace("{title}", title || "Schedule")
 
 // Every word is a string except `states`, a table of the timeline's words, which this page reads
 // only through `scheduleWebhookTimelineHTML`.
-export const scheduleWebhookCopy = scheduleWebhookCopyOriginal as unknown as (
-  language: string,
-) => Record<string, string>
-export const scheduleWebhookHelpHTML = scheduleWebhookHelpHTMLOriginal as (language: string) => string
+export const scheduleWebhookCopy = (language: string): Record<string, string> =>
+  adaptedWords(scheduleWebhookCopyOriginal(language), language) as unknown as Record<string, string>
+export const scheduleWebhookHelpHTML = (language: string): string =>
+  machineWording(scheduleWebhookHelpHTMLOriginal(language), language)
 export const scheduleWebhookCurlExample = scheduleWebhookCurlExampleOriginal as () => string
-export const scheduleWebhookManagementWarning = scheduleWebhookManagementWarningOriginal as (
-  hook: unknown,
-  context: Record<string, unknown>,
-) => string
+export const scheduleWebhookManagementWarning = (hook: unknown, context: Record<string, unknown>): string =>
+  machineWording(scheduleWebhookManagementWarningOriginal(hook, context), String(context.language || "en"))
 export const scheduleWebhookCanGenerate = scheduleWebhookCanGenerateOriginal as (
   hook: unknown,
   context: Record<string, unknown>,
 ) => boolean
-export const scheduleWebhookTimelineHTML = scheduleWebhookTimelineHTMLOriginal as (
+export const scheduleWebhookTimelineHTML = (
   deliveries: unknown[],
   observed: Record<string, unknown>,
   language: string,
-) => string
+): string => machineWording(scheduleWebhookTimelineHTMLOriginal(deliveries, observed, language), language)
 
 export interface ScheduleWebhookHook {
   hook_id: string

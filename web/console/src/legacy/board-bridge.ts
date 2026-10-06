@@ -6,6 +6,7 @@
 // that carry an old board Project id. The latter is redirected to the Projects
 // page's own repository detail; it never opens or reads an old card.
 import { T } from "./js/core/i18n.js"
+import { machineWording } from "./machine-copy.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
 
 /** The part of a board answer the Settings block reads. */
@@ -18,7 +19,7 @@ export interface BoardMode {
 
 /** Read this daemon's flat or nested refusal shape through the shared transport. */
 const jsonFetch = makeJSONFetch({
-  words: { offline: T.webOffline, requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
+  words: { offline: machineWording(T.webOffline, "en"), requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
 })
 
 const post = (body: unknown): RequestInit => ({
