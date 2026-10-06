@@ -417,6 +417,7 @@ const (
 	CloudTerminalSweep                = "cloud.terminal_sweep_seconds"
 	CloudTerminalReceiptBusyRetries   = "cloud.terminal_receipt_busy_retries"
 	CloudTerminalReceiptBusyRetry     = "cloud.terminal_receipt_busy_retry_seconds"
+	CloudTerminalReceiptSeconds       = "cloud.terminal_receipt_seconds"
 	TerminalBodyBytes                 = "terminal.body_bytes"
 	// What a new tab or pane is typed to start an assistant, and the scripts
 	// that hold a line too long to type.
@@ -2217,8 +2218,9 @@ func Register() []Entry {
 			Sources: []string{"internal/transport/cloud.CloudTerminalHistoryCaptureBytesLimit"},
 		},
 		{
+			// Receipts kept per connection for a re-sent request id; each goes after CloudTerminalReceiptSeconds, and a request past the limit is refused terminal_busy.
 			Name: CloudTerminalReceipts, Class: Idempotency, Unit: Rows,
-			Limit: 64, AtLimit: Refuse,
+			Limit: 512, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptsLimit"},
 		},
@@ -2397,6 +2399,13 @@ func Register() []Entry {
 			Limit: 3, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptBusyRetriesLimit"},
+		},
+		{
+			// How long a terminal receipt is kept for its request id: past the viewer's ten-second wait, after which it never sends that id again.
+			Name: CloudTerminalReceiptSeconds, Class: Idempotency, Unit: Seconds,
+			Limit: 15, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptSecondsLimit"},
 		},
 		{
 			// The wait before such a receipt is published again; the relay refreshes the budget every two seconds.

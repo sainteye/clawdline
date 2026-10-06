@@ -14,11 +14,54 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 )
+
+func TestDaemonProductLanguageIsIndependentOfAgentAndVoice(t *testing.T) {
+	s := pushServer(t)
+	if got := s.productLanguage(); got != "en" {
+		t.Fatalf("unset product language = %q", got)
+	}
+	file := nextconfig.Open(s.cfg.Dir)
+	if _, err := file.Set(map[string]any{"language": "zh-Hant", "voice_language": "ja"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.productLanguage(); got != "en" {
+		t.Fatalf("agent and voice language affected product language: %q", got)
+	}
+	if _, err := file.Set(map[string]any{"product_language": "fr-CA"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.productLanguage(); got != "fr" {
+		t.Fatalf("French product language = %q", got)
+	}
+	values, err := file.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent, _ := values.String("language"); agent != "zh-Hant" {
+		t.Fatalf("agent language changed to %q", agent)
+	}
+	if voice, _ := values.String("voice_language"); voice != "ja" {
+		t.Fatalf("voice language changed to %q", voice)
+	}
+	if _, err := file.Set(map[string]any{"product_language": "zh"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.productLanguage(); got != "en" {
+		t.Fatalf("ambiguous product language = %q", got)
+	}
+	if _, err := file.Set(map[string]any{"product_language": true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.productLanguage(); got != "en" {
+		t.Fatalf("wrong-shaped product language = %q", got)
+	}
+}
 
 // pushServer is a Server over its own state directory, so nothing here shares a
 // store with another test or with this machine.

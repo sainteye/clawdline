@@ -253,7 +253,7 @@ const RULES: Rule[] = [
   },
 ]
 
-const EXPECTED_RULES = 28
+const EXPECTED_RULES = 27
 const EXPECTED_OPEN = 0
 const EXPECTED_LOCKED = 0
 

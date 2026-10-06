@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // Every notice any registered row can say fits a push: eighty characters of
@@ -21,6 +23,22 @@ func TestEveryNoticeFitsAPush(t *testing.T) {
 				}
 				if !strings.Contains(body, e.Name) || utf8.RuneCountInString(body) > 500 {
 					t.Errorf("%s %s: body %q", e.Name, state, body)
+				}
+			}
+		}
+	}
+}
+
+func TestEveryCapacityNoticeFitsInAllNineLanguages(t *testing.T) {
+	full := t0.Add(9 * 24 * time.Hour)
+	for _, language := range productcopy.Languages {
+		for _, e := range Register() {
+			for _, state := range []State{Critical, Full, OK} {
+				title, body := NoticeTextLanguage(language, e, state, e.Limit, e.Limit, full, time.UTC)
+				if !strings.Contains(title+body, e.Name) || title == "" || body == "" ||
+					utf8.RuneCountInString(title) > 80 || utf8.RuneCountInString(body) > 500 {
+					t.Errorf("%s %s %s: title=%d body=%d: %q / %q", language, e.Name, state,
+						utf8.RuneCountInString(title), utf8.RuneCountInString(body), title, body)
 				}
 			}
 		}
