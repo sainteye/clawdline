@@ -34,8 +34,15 @@ SKIP_EXACT = {
     "tools/machine-words.py",
 }
 
-MAC = re.compile(r"\bMacs?\b")
-CATALOG_PREFIX = "web/console/public/catalogs/"
+# Korean uses 맥 for a Mac and attaches case particles directly. A Hangul
+# prefix marks ordinary words such as 문맥, while 맥락 means context and 맥OS
+# names the actual platform; neither calls a generic machine a Mac.
+MAC = re.compile(r"\bMacs?\b|(?<![가-힣])맥(?!락|OS)")
+CATALOG_PREFIXES = (
+    "web/console/public/catalogs/",
+    "cmd/clawdline/cli_catalogs/",
+    "internal/productcopy/http_refusals/",
+)
 CATALOG_KEY = re.compile(r'^\s*("(?:\\.|[^"\\])*")\s*:')
 
 
@@ -133,7 +140,7 @@ def main():
         except OSError as err:
             print("cannot check: %s: %s" % (path, err), file=sys.stderr)
             return 2
-        if path.startswith(CATALOG_PREFIX) and path.endswith(".json"):
+        if path.startswith(CATALOG_PREFIXES) and path.endswith(".json"):
             try:
                 values = catalog_values(src)
             except (ValueError, json.JSONDecodeError) as err:
