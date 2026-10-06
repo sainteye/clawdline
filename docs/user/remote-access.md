@@ -8,7 +8,7 @@ permission away again. Your agents and code stay on your machine whichever way y
 
 | Way | Account | Reaches | What it can do | State |
 | --- | --- | --- | --- | --- |
-| A. SSH port forward | None | Another computer you can SSH from | Read, or read and send | Works |
+| A. SSH port forward | None | Another computer you can SSH from | Read and send | Works |
 | B. Your own cloudflared tunnel | None | Any browser, including a phone | Read, and send once you allow it | Built; the real Cloudflare leg has not been tested end to end |
 | C. Clawdline Cloud | Clawdline account (GitHub sign-in) | Any browser, including a phone; several machines | Read, and act once you allow it | Preview |
 
@@ -23,7 +23,7 @@ On the computer you are sitting at, forward the port and ask the machine for a s
 
 ```sh
 ssh -L 7727:127.0.0.1:7727 you@your-machine
-./bin/clawdline open --print          # in that SSH session; add --send to allow typing
+./bin/clawdline open --print          # in that SSH session; the browser can read and type
 ```
 
 Open the printed address in your local browser. It carries a key in its fragment; treat it like a

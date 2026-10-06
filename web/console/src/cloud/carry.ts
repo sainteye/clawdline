@@ -105,6 +105,11 @@ export const CARRIED = {
   "project-file-list": "GET /v1/projects/{project}/files",
   "project-file-read": "GET /v1/projects/{project}/files/{file}",
   "project-file-save": "PUT /v1/projects/{project}/files/{file}",
+  // The 「Claude 與 Codex 共用」 block in Project settings
+  // (`pages/projects/ProjectUnify.tsx`, docs/project-files.md §Unify): the
+  // plan is a read, and apply carries the press's Idempotency-Key.
+  "project-unify-plan": "GET /v1/projects/{project}/unify",
+  "project-unify-apply": "POST /v1/projects/{project}/unify",
   "project-tree-list": "GET /v1/projects/{project}/tree?directory=",
   "project-tree-read": "GET /v1/projects/{project}/tree/file?path=",
   "project-icon-copy": "PUT /v1/projects/{id}/icon",
@@ -254,10 +259,6 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
-  // The machine side of unify landed before its screen; the Project settings
-  // screen that asks for these is separate work (docs/project-files.md, Unify).
-  "project-unify-plan": "Sharing one Project's rules and skills between Claude and Codex is not on this console yet; run `clawdline project unify` on the machine.",
-  "project-unify-apply": "Sharing one Project's rules and skills between Claude and Codex is not on this console yet; run `clawdline project unify --apply` on the machine.",
 } as const
 
 /**

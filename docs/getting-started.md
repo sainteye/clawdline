@@ -105,11 +105,8 @@ console is app.clawdline.com's, and a missing page on this address stops nothing
 This creates a device for your browser, opens the console, and signs it in. The key travels in
 the address's fragment, which a browser never sends to a server and never logs.
 
-That browser can **read** every session. To let it type into sessions as well:
-
-```sh
-./bin/clawdline open --send
-```
+That browser can read every session and type into it. (`--send` is still accepted and changes
+nothing.)
 
 `--print` prints the address instead of opening it. Treat that address like a password until it
 has been used.
@@ -128,8 +125,7 @@ claude            # or: codex
 ```
 
 **Check:** within a few seconds the session is a row in the console, with its project and its
-state. Open the row to read the transcript, and type into the box to send it text if you
-opened the browser with `--send`.
+state. Open the row to read the transcript, and type into the box to send it text.
 
 Nothing was installed into Claude Code or Codex to make this work. The daemon reads what the
 assistants already write under `~/.claude` and `~/.codex`, and reads their screens through tmux.

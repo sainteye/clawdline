@@ -599,6 +599,15 @@ export class RelayReader {
           projectFile.file ? "project-file-read" : "project-file-list",
           { project: place.id, ...(projectFile.file ? { file: projectFile.file } : {}) })
       }
+      const unifyProject = projectUnifyRoute(path)
+      if (unifyProject) {
+        this.only(url, path)
+        const client = this.connected()
+        if (typeof client._place !== "function") throw Object.assign(new Error("the Cloud client cannot resolve this Project"), { code: "cloud_not_carried", status: 501 })
+        const place = client._place(unifyProject)
+        if (place.machine !== this.machine) throw Object.assign(new Error("this Project belongs to another machine"), { code: "cloud_project_machine_mismatch", status: 409 })
+        return await this.machineRead(init?.signal, method, path, "project-unify-plan", { project: place.id })
+      }
       const projectTree = projectTreeRoute(path)
       if (projectTree) {
         const query = this.only(url, path, projectTree.file ? "path" : "directory")
@@ -1648,6 +1657,13 @@ function projectFileRoute(path: string): { project: string; file?: string } | nu
     if (!project || parts.length === 6 && !/^[0-9a-f]{32}$/.test(file ?? "")) return null
     return { project, ...(file ? { file } : {}) }
   } catch { return null }
+}
+
+/** The Project a unify plan read names, or "" for any other path. */
+function projectUnifyRoute(path: string): string {
+  const parts = path.split("/")
+  if (parts.length !== 5 || parts[1] !== "v1" || parts[2] !== "projects" || parts[4] !== "unify") return ""
+  try { return decodeURIComponent(parts[3]) } catch { return "" }
 }
 
 function projectTreeRoute(path: string): { project: string; file: boolean } | null {

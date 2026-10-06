@@ -7,6 +7,7 @@ import { Mark } from "../../session/List.js"
 import { readProjectPlaces, type ProjectPlace } from "../work/api.js"
 import { BEFORE_PAGE_CHANGE } from "../../overlays/index.js"
 import { ProjectFiles } from "./ProjectFiles.js"
+import { ProjectUnify } from "./ProjectUnify.js"
 import { ProjectExplorer } from "./ProjectExplorer.js"
 import {
   projectSetupCapabilities,
@@ -227,6 +228,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
           <p>檢視這台機器的專案設定與指令檔案；可在下方編輯現有的專案檔案。缺少的設定仍可先交給 AI 檢查。</p>
           {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
         </div>
+        {projectPath && visiblePlaces[0] && <ProjectUnify key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
         {projectPath && visiblePlaces[0] && <ProjectFiles key={visiblePlaces[0].id} place={visiblePlaces[0]} onState={updateFilesState} />}
         {loading && <p className="project-setup-loading" role="status">讀取專案配置中…</p>}
         {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
