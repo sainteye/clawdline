@@ -2,7 +2,7 @@
 
 Para una sesión de asistente —Claude Code o Codex— en una máquina donde corre **Clawdline Next**.
 Cubre lo que este daemon sirve hoy y nada más: cada ruta de abajo la registra el mismo build que
-imprimió esta guía, y una prueba falla si alguna no lo está. Vuelve a imprimirla con
+imprimió esta guía, y una prueba falla si alguna no está registrada. Vuelve a imprimirla con
 `clawdline guide` en lugar de fiarte de una copia; `clawdline guide zh-Hant` imprime la guía en
 chino tradicional de Taiwán (`zh-TW` sigue siendo un alias). `clawdline guide` imprime el núcleo y
 nombra las demás partes; imprime una parte
@@ -107,8 +107,9 @@ cada token — `board`, `protocol`, `rules`, `impl`, `delegate`, `harness`, `tal
 `other`. Sin ningún flag lee tu propia sesión, nombrada por `CLAUDE_CODE_SESSION_ID` o
 `CODEX_THREAD_ID`. Imprime una línea de encabezado (llamadas, contexto máximo, coste), una línea
 por categoría ordenada por coste —proporción, tokens, coste— y después cada hueco; `--json`
-imprime la respuesta del daemon. `rules` es una cota superior, y lo dice: una guarda ejecutada en
-un mismo comando de shell junto con otro trabajo se lleva el comando entero.
+imprime la respuesta del daemon. `rules` es una cota superior, y lo dice: una comprobación de guarda
+(guard) ejecutada en un mismo comando de shell junto con otro trabajo se queda con el coste de
+todo ese comando.
 Las rutas son `GET /v1/usage/sessions/<conversation>`, `GET /v1/usage/tasks/<task id>` y
 `GET /v1/usage/items/<item id>`, que se leen con un dispositivo emparejado o con el token del
 orquestador. Una sesión que el libro aún no ha leído, o que ya no puede leer, responde
@@ -189,8 +190,8 @@ Si tiene éxito, imprime tres líneas: `paired` nombra el id de dispositivo del 
 es la huella del navegador y `machine` es la huella de la máquina. Compara la huella del navegador
 con la que se muestra en el navegador, y la huella de la máquina con la que se muestra para esta
 máquina. Una discrepancia no es un éxito: ejecuta de inmediato `clawdline cloud revoke <device-id>`
-con el id de `paired` y luego informa de la discrepancia. `clawdline cloud devices` lista la nómina
-actual de navegadores y su estado de confianza local; también es la comprobación de solo lectura
+con el id de `paired` y luego informa de la discrepancia. `clawdline cloud devices` lista los navegadores
+registrados actualmente y su estado de confianza local; también es la comprobación de solo lectura
 que debes usar después de emparejar.
 
 Estos comandos pasan por el daemon local en ejecución. Si uno falla, informa de su stderr exacto. No
@@ -270,7 +271,7 @@ Recorre estas cuatro comprobaciones, y sáltate una solo cuando de verdad no apl
    Project. El formato está documentado en `docs/project-status.md` del repositorio de Clawdline;
    la página Projects también puede copiar un icono ya resuelto sin editar JSON a mano. Un archivo
    global del usuario no es contenido del repositorio: muestra la entrada exacta que propones antes
-   de cambiarla si la petición no autorizaba ya esa edición.
+   de cambiar ese archivo si la petición no autorizaba ya esa edición.
 3. **Despliegue y trabajo largo.** Clawdline solo lee recibos de estado; nunca ejecuta un
    despliegue. Para un repositorio de GitHub, un recibo de despliegue es
    `~/.claude/statusline-cache/ghrun-<owner>-<repo>.json`, donde owner y repo salen de `origin`.
@@ -299,7 +300,8 @@ JSON se puede analizar; pasan las pruebas propias del repositorio para los scrip
 lugar de omitirlos en silencio; y una Session del Project muestra un recibo de progreso/despliegue
 reciente. Si una lectura no está disponible, está mal formada o está desactualizada, di cuál y
 déjala como desconocida: nunca informes de una ausencia como si fuera un éxito. Termina listando
-qué se configuró, qué no aplicaba a propósito y cualquier archivo del usuario cambiado fuera de git.
+qué se configuró, qué se consideró deliberadamente no aplicable y cualquier archivo propiedad del
+usuario que se haya cambiado fuera de git.
 
 **Unificar: un solo conjunto de reglas y skills para Claude y Codex** (`/clawdline unify`). Codex
 lee `AGENTS.md` y `.agents/skills/<name>/`; Claude lee `CLAUDE.md` (y `AGENTS.md` solo cuando
@@ -533,7 +535,8 @@ final de esta parte dice qué significa cada código. El root es tu conversació
 `CLAUDE_CODE_SESSION_ID` o `CODEX_THREAD_ID`, o si no de `--conversation`; el asistente del child
 es el tuyo salvo que `--assistant` diga otra cosa; el proyecto es el nivel superior de git de este
 directorio salvo que `--project-dir` diga otra cosa. `--claims ""` declara un child que no escribe
-nada. Mientras el daemon abre el worktree y la pestaña del child no imprime nada; es una sola
+nada. Mientras el daemon abre el worktree y la pestaña del child, el comando no imprime
+nada; es una sola
 petición que responde cuando el child ya existe, así que espérala una vez (§2, "Esperar un comando
 largo"). El secreto nunca está en argv, en `task.json` ni en lo que imprime, y el token se lee como
 lo lee cada comando ligero.
@@ -606,8 +609,8 @@ despacha con `--permission-mode ask`: en Codex, `full` significa un lanzamiento 
 interactivo (`--ask-for-approval never`), no todas las herramientas, y Auto-review no puede revisar
 una petición que nunca se crea. Al empezar la tarea, el child usa de verdad cada herramienta
 necesaria, no solo comprueba el nombre de un comando. Si falta alguna, informa de inmediato del
-hueco exacto y el root restaura el acceso o vuelve a despachar. No da por terminada como no
-verificada una comprobación de aceptación que depende de una herramienta porque el root eligiera
+hueco exacto y el root restaura el acceso o vuelve a despachar. El child no da por terminada como no
+verificada una comprobación de aceptación que depende de una herramienta por el hecho de que el root eligiera
 un worker incompatible.
 
 **`root.session_id` es el id de tu conversación, nunca un id de terminal.** Claude Code lo exporta
@@ -635,7 +638,7 @@ Una pestaña que no logra abrirse responde igualmente 200, con `task.state: "spa
 nuevo, como máximo dos veces por original.
 
 ¿Despachaste el child equivocado: el brief equivocado, el alcance equivocado o el mismo trabajo dos
-veces? No esperes a que termine o agote su tiempo mientras ocupa un slot y sus escrituras:
+veces? No esperes a que termine o agote su tiempo mientras ocupa un slot y retiene sus escrituras:
 `clawdline task cancel <id>
 --reason "…"` lo detiene ya (§5).
 
@@ -804,8 +807,8 @@ POST /v1/orchestrator/tasks/<id>/landing
   `pending` y `abandoned` aceptan el secreto de tarea o el token del orquestador; `landed`,
   `incorporated` y `nothing_to_land` aceptan solo el token del orquestador.
 - `landed` necesita `target` y `commit`; `incorporated` necesita `target`, `commit` y
-  `carrier_task`, la otra tarea cuyo landing verificado llevó esta entrega. El daemon **comprueba
-  cualquiera de los dos en Git**; si no cuadra, `409 unverified_landing` con uno de estos `reason`:
+  `carrier_task`, la otra tarea cuyo landing verificado llevó esta entrega. El daemon **comprueba en
+  Git cualquiera de los dos estados**; si no cuadra, `409 unverified_landing` con uno de estos `reason`:
   `commit_unresolved`, `target_unresolved`, `not_on_target`, `base_unknown`, `predates_dispatch`,
   `delivery_unknown`, `nothing_delivered`, `not_the_delivery`, y para `incorporated`
   `carrier_required`, `carrier_is_delivery`, `carrier_unresolved`, `carrier_not_landed`,
@@ -1033,7 +1036,7 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
   `--exclude` deja fuera una ruta y lo dice. `--at` es la revisión cuyo contenido se muestra
   (`HEAD` por defecto).
 - Guarda el informe en `<state dir>/reports/<date>-<id>/report.html`, fuera de todo repositorio,
-  e imprime dos direcciones: **primero la dirección `file://`**, que abre una terminal, **y luego
+  e imprime dos direcciones: **primero la dirección `file://`**, que una terminal sí puede abrir, **y luego
   `http://127.0.0.1:<port>/reports/<id>`**, que responde el daemon de esta máquina. Pon las dos en
   tu respuesta final: la consola muestra una dirección `file://` como texto que no puede abrir, y
   convierte en enlace la `http://`. Esa dirección solo se abre en un navegador de esta máquina que
@@ -1447,7 +1450,7 @@ La versión del ítem es la línea `item version N` que imprime `clawdline item 
 `GET /v1/orchestrator/sessions/<conversation>/run`. El extracto del mensaje que se conserva debe
 pedir explícitamente un cambio de aceptación; una prohibición, una discusión o una simple pregunta
 no son autorización.
-Puede referirse al ítem por el contexto de la conversación si este Root
+El mensaje puede referirse al ítem por el contexto de la conversación si este Root
 es dueño de exactamente un ítem abierto; si no, debe identificar el ítem por su ID o su título. El
 run debe ser más reciente que la versión de aceptación actual. Un rechazo tipado significa que no
 cambió nada. Reintenta una respuesta dudosa con
@@ -1540,7 +1543,8 @@ POST /v1/work/v2/agent/items/<id>/phase     (Idempotency-Key required)
   (`landing_owed`, que nombra la tarea), y junto a un child que hizo landing (`landing_recorded`).
   `done` necesita `deployment` o `no_deployment_reason`; la `deployment_policy` del ítem decide
   cuál (`required` solo acepta `deployment`, `not_required` solo `no_deployment_reason`,
-  `agent_decides` cualquiera de los dos). Antes, todos los pasos deben estar completos.
+  `agent_decides` cualquiera de los dos). Antes de pasar a done, todos los pasos deben estar
+  completos.
 - `done` libera tu asignación y lleva el ítem a la fila de completados recientemente de la Session.
   Añade antes un informe de finalización (ver abajo) cuando se deba uno.
 - Rechazos: `invalid_transition` (no es una fase siguiente, o falta su evidencia),
@@ -1747,8 +1751,8 @@ título distinto para conservar ambos.
   hallazgo tiene una `severity` de `blocking` o `non_blocking` (`important` y `minor`, de la
   plantilla antigua, cuentan como no bloqueantes). El veredicto es `safe_to_land` sin hallazgos,
   `proceed_with_findings` cuando todos los hallazgos son `non_blocking`, y `changes_required` cuando
-  alguno es `blocking`. Una revisión más reciente con un hallazgo bloqueante rechaza
-  `item phase implementing` y cualquier despacho con `--work-id` sobre el ítem todavía asignado,
+  alguno es `blocking`. Si la revisión más reciente tiene un hallazgo bloqueante, se
+  rechazan `item phase implementing` y cualquier despacho con `--work-id` sobre el ítem todavía asignado,
   salvo `--kind plan_review`
   (`epic_plan_review_blocking` o `feature_plan_review_blocking`); el rechazo lista los hallazgos
   bloqueantes y los comandos siguientes: revisa el plan y luego despacha una revisión nueva. Solo
@@ -1774,7 +1778,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   (`clawdline guide
   send`); la Session debe trabajar en el Project de la Epic. Puedes asignarte un hijo a ti mismo, y
   `--assign-new` abre una Session nueva con una Root Assignment que nombra la Epic. Sin un flag
-  `--assign`, el hijo espera sin asignar a que lo haga la persona.
+  `--assign`, el hijo queda sin asignar hasta que la persona lo asigne.
 - `item child` lee la Epic para obtener su versión, imprime su Idempotency-Key (`--key` reintenta
   la misma escritura) e imprime el hijo. Es `POST /v1/work/v2/agent/items/<epic id>/children` con
   `{"expected_version", "session_id", "kind", "title", "description", "steps"?, "deployment_policy"?,
@@ -1869,8 +1873,8 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   política de despliegue. Si el hijo es tuyo, haz tú mismo esas acciones. Si es de otra Session,
   haz el seguimiento con ese dueño o usa la vía autorizada de reasignación de hijos; no suplantes a
   su dueño (`not_item_owner`). Acusa recibo del aviso de finalización del broker cuando exista, y
-  luego clasifica los restos del worktree y elimina solo el material que se haya demostrado idéntico
-  a lo que ya hizo landing o que sea temporal de la tarea. Conserva los bytes sin landing, mixtos o
+  luego clasifica los restos del worktree y elimina solo el material del que se haya demostrado que es
+  idéntico a lo que ya hizo landing o que es temporal de la tarea. Conserva los bytes sin landing, mixtos o
   desconocidos para el siguiente dueño. No declares done la Epic padre hasta que todos los hijos
   estén `done` o `cancelled`: `epic_children_open` dice cuántos quedan. No crees ningún ítem del
   Board aparte de los hijos de la Epic.
@@ -1896,7 +1900,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 
 ## 11. Coordinación
 
-**El coordinador de la máquina ("Clawdfather").** Trabaja desde un espacio de trabajo de la máquina propiedad del daemon, fuera de los Projects, para informar sobre las Sessions y gestionar las operaciones de máquina admitidas. Nunca edita el código fuente de un Project, Clawdline incluido. Ante una petición explícita de la persona de trabajo de ingeniería, crea primero un ítem del Board del Project con `clawdline item add --project … --assign-new` y luego delega en una Session del Project. Sin esa petición, propone un ítem para que la persona lo acepte. El dueño asignado del Project se encarga del despacho de children, la verificación y el landing. El espacio de trabajo es un límite organizativo, no un sandbox del sistema de archivos. Los vínculos nuevos deben venir de ese espacio de trabajo; los existentes siguen siendo legibles. Abre la Session desde la acción Clawdfather separada de la consola y luego registra su ID de conversación. Consulta `docs/clawdfather-role.md` para el límite del producto.
+**El coordinador de la máquina ("Clawdfather").** Trabaja desde un espacio de trabajo de la máquina propiedad del daemon, fuera de los Projects, para informar sobre las Sessions y gestionar las operaciones de máquina admitidas. Nunca edita el código fuente de un Project, Clawdline incluido. Ante una petición explícita de la persona de trabajo de ingeniería, crea primero un ítem del Board del Project con `clawdline item add --project … --assign-new` y luego delega en una Session del Project. Sin esa petición, propón un ítem para que la persona lo acepte. El dueño asignado del Project se encarga del despacho de children, la verificación y el landing. El espacio de trabajo es un límite organizativo, no un sandbox del sistema de archivos. Los vínculos nuevos deben venir de ese espacio de trabajo; los existentes siguen siendo legibles. Abre la Session desde la acción Clawdfather separada de la consola y luego registra su ID de conversación. Consulta `docs/clawdfather-role.md` para el límite del producto.
 Ejecuta `clawdline coordinator bind` dentro de esa Session nueva para registrarla o para volver a vincular un predecesor del que se haya demostrado que está desconectado. El comando lee su propio ID de conversación y se niega a sustituir a un titular que esté conectado o que no se pueda leer.
 `GET /v1/orchestrator/coordinator` inspecciona el rol;
 `/coordinator/bearings` es la máquina de un vistazo (tareas activas, landings pendientes, esperas
