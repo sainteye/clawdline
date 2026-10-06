@@ -233,6 +233,9 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/orchestrator/schedules/sch-1/run", "schedule-run"],
     ["POST", "/v1/projects/%2Frepo/worktrees/refresh", "project-worktree-lifecycle-refresh"],
     ["PUT", "/v1/projects/cloud-p1/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "project-file-save"],
+    ["POST", "/v1/projects/cloud-p1/unify", "project-unify-apply"],
+    // The plan is a read, answered by `relay-reader.ts`.
+    ["GET", "/v1/projects/cloud-p1/unify", null],
     // The list is a read and is answered by `relay-reader.ts`, not here, and
     // so is one schedule in full — which this machine has no route for at all.
     ["GET", "/v1/orchestrator/schedules", null],
@@ -1373,6 +1376,27 @@ test("a Project file save keeps its key, Project machine and exact file id", asy
   const wrongMachine = await reader.fetch(path, { ...post(item), method: "PUT", headers: { "Idempotency-Key": "save-2" } })
   assert.equal(wrongMachine.status, 409)
   assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/files/%2Fetc%2Fpasswd"), null)
+})
+
+test("a unify apply keeps its key and Project machine, and carries only the plan version", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const path = "/v1/projects/cloud-p1/unify"
+  const item = { version: "plan-v1" }
+  const applied = await reader.fetch(path, { ...post(item), headers: { "Idempotency-Key": "unify-1" } })
+  assert.equal(applied.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "unify-1", "mac-a", "project-unify-apply", { project: "p1", item }, "action"])
+  const missingKey = await reader.fetch(path, post(item))
+  assert.equal(missingKey.status, 400)
+  assert.equal((await json<{ error: string }>(missingKey)).error, "idempotency_key_required")
+  const withQuery = await reader.fetch(path + "?force=1", { ...post(item), headers: { "Idempotency-Key": "unify-2" } })
+  assert.equal(withQuery.status, 501)
+  client._place = () => ({ machine: "different-machine", id: "p1", path: "/fixture" })
+  const wrongMachine = await reader.fetch(path, { ...post(item), headers: { "Idempotency-Key": "unify-3" } })
+  assert.equal(wrongMachine.status, 409)
+  assert.deepEqual(client.calls, [], "only the first apply reached the machine")
+  assert.equal(writeRoute("POST", "/v1/projects/cloud-p1/unify/extra"), null)
+  assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/unify"), null)
 })
 
 test("a project settings apply and detach reach the mirror as its own words, and a read reaches the machine", async () => {

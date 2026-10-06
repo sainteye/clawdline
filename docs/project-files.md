@@ -103,8 +103,48 @@ drift and conflict lines and exits 0 unified, 1 drifting, 3 unknown; `--json` pr
 answer. The `clawdline` skill's `/clawdline unify` follows the guide's Unify part: it shows the plan,
 applies only after the person's message approves it, and shows the `--check` result.
 
-The paired Cloud console has two words: `project-unify-plan`, a read available to a paired device
-with read access even when the remote write switch is off, and `project-unify-apply`, which needs
-the remote write gate and carries the request's idempotency key. A lost apply answer is uncertain:
-read the plan again before saying it applied. Both are listed as deferred in the console's carry
-table until the Project settings screen asks for them.
+### In the console
+
+The Project gear's 設定與指引 view has a block titled 「Claude 與 Codex 共用」 above the file
+editor (`web/console/src/pages/projects/ProjectUnify.tsx`; the view model is `project-unify.ts`). It
+reads the plan when the view opens and shows one line: 已共用, 有落差（n 項） where n counts the
+planned actions plus the conflicts, or 無法判斷（原因） — the paths an `unknown` plan could not read,
+or the refusal when the plan itself could not be read, with a 重新檢查 button. A failed read is never
+shown as unified or as no drift.
+
+Its button 檢視變更 opens the preview, which is the confirmation; there is no second dialog:
+
+- **Two columns, Claude and Codex**, listing every rules file and every skill by name, each marked
+  不變, 新增（套用後才看得到） with "現在看不到 → 套用後看得到", or 看不到（這是落差） for something
+  that stays unseen after apply. Claude-only rules files are listed as unchanged.
+- **會做的事（依順序）**: the plan's `actions` in apply order, each as a sentence the console writes
+  from the action's kind and paths (the plan's English `description` is for the terminal). A rules
+  edit is drawn as its after-text with inserted lines marked `+` and moved-out lines marked `−`; long
+  unchanged runs fold to a count. A skill action is drawn as `from → to` with what the arrow means
+  (連結, 搬過去，原處留連結, 相同的副本換成連結, 複製). Below them: which files move, which are created,
+  and "不會刪除任何東西" — or, when an identical copy is replaced by a link, which copies are removed.
+- **unify 不會替你決定的事**: each conflict with a sentence and what the person can do; for
+  `claude_only_lines` the lines Codex cannot see.
+- One line saying unify does not commit to git.
+- A `unified` plan shows only the columns and 「Claude 和 Codex 已看到相同的規則與 skills」; an
+  `unknown` plan says what could not be read and offers no apply.
+
+套用這些變更 is enabled only when the plan has actions and is not unknown. It sends the plan's
+`version` with a fresh `Idempotency-Key` per press. `plan_changed` says the files changed since the
+preview and rereads it; a stopped run shows which actions ran, which failed and the plan read again;
+success shows the new plan. An answer that was lost (no response, an unreadable body, or Cloud's
+`outcome: "unknown"`) rereads the plan and says what it shows, and says 已共用 only when the reread
+says so. Any other refusal that is not one sent before an action ran (`plan_unknown`, `forbidden`,
+`bad_request`, the Cloud gates) also rereads the plan and says some actions may have run. At phone
+width the preview fills the screen and the columns stack; closing it returns focus to 檢視變更.
+
+The console has no readiness-card row for unify: the card list is drawn from `/v1/places`, which
+carries no unify status, and one plan read per card would be a new request per Project on every
+open of the Projects health check.
+
+The paired Cloud console carries both words (`web/console/src/cloud/carry.ts`):
+`project-unify-plan`, a read available to a paired device with read access even when the remote
+write switch is off, and `project-unify-apply`, which needs the remote write gate and carries the
+request's idempotency key. Over Cloud a stopped run arrives as a plain refusal — the machine's
+answer of what ran and the recomputed plan are not in the refusal fields the Cloud bridge forwards —
+so the console rereads the plan, as above.

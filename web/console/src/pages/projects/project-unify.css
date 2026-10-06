@@ -1,0 +1,108 @@
+/* The 「Claude 與 Codex 共用」 block and its preview. Follows project-files.css
+   and the setup dialog in icon-copy.css; colour always sits beside a word or a
+   sign, never alone. `--bad` is too dark for small text on `--bg`, so text that
+   names a gap mixes it towards `--ink`. */
+.project-unify { --gap-ink: color-mix(in srgb, var(--bad) 55%, var(--ink)); margin-top: 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.project-unify-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.project-unify-head h3 { margin: 0; font-size: 17px; }
+.project-unify-head p { margin: 6px 0 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+.project-unify-buttons { display: flex; flex: none; flex-wrap: wrap; gap: 8px; }
+.project-unify-buttons button { min-height: 40px; }
+.project-unify-status { display: flex; align-items: flex-start; gap: 8px; min-height: 1.5em; margin: 10px 0 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.project-unify-dot { flex: none; width: 9px; height: 9px; margin-top: .45em; border-radius: 50%; background: var(--faint); }
+.project-unify-status.is-ready .project-unify-dot { background: var(--ok); }
+.project-unify-status.is-attention .project-unify-dot { background: var(--warn); }
+.project-unify-status.is-unknown .project-unify-dot { background: var(--bad); }
+.project-unify-status.is-loading { color: var(--dim); }
+
+.project-unify-dialog { --gap-ink: color-mix(in srgb, var(--bad) 55%, var(--ink)); box-sizing: border-box; width: min(960px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: hidden; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 80px #0008; }
+.project-unify-dialog[open] { display: flex; flex-direction: column; }
+.project-unify-dialog::backdrop { background: #0009; }
+.project-unify-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.project-unify-dialog-heading h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.project-unify-dialog-heading h2:focus { outline: none; }
+.project-unify-close { flex: none; min-width: 44px; min-height: 44px; }
+.project-unify-dialog-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px; overflow-y: auto; overscroll-behavior: contain; }
+.project-unify-dialog-body > .project-unify-status { margin-top: 0; font-weight: 600; }
+.project-unify-dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.project-unify-dialog-foot p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+.project-unify-apply { min-height: 44px; padding-inline: 18px; color: var(--bg); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.project-unify-apply:disabled { opacity: .55; }
+.project-unify-apply[aria-busy="true"] { cursor: progress; }
+
+.project-unify-section { margin: 22px 0 10px; font-size: 15px; }
+.project-unify-verdict { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; line-height: 1.5; }
+.project-unify-verdict.is-ready { border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.project-unify-dialog .project-unify-verdict.is-unknown { color: var(--ink); border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+.project-unify-notice { margin: 10px 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+.project-unify-dialog .project-unify-error { margin: 10px 0; color: var(--gap-ink); font-size: 13px; line-height: 1.5; }
+
+.project-unify-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.project-unify-column { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.project-unify-column h4 { margin: 0 0 8px; font-size: 15px; }
+.project-unify-column ul { margin: 0; padding: 0; list-style: none; }
+.project-unify-empty { color: var(--dim); font-size: 13px; }
+.project-unify-seen { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; row-gap: 3px; padding: 8px 0; border-top: 1px solid var(--line); }
+.project-unify-seen:first-child { border-top: 0; }
+.project-unify-seen-kind { grid-row: 1 / 4; align-self: start; min-width: 3.2em; padding: 2px 6px; border-radius: 6px; background: var(--card-hi); color: var(--dim); font-size: 11px; text-align: center; }
+.project-unify-seen-name { display: grid; gap: 2px; min-width: 0; }
+.project-unify-seen-name code { overflow-wrap: anywhere; font: 13px/1.4 var(--mono); }
+.project-unify-seen-name small { color: var(--dim); font-size: 11px; }
+.project-unify-seen-mark { display: inline-flex; align-items: center; gap: 4px; justify-self: start; padding: 1px 7px; border-radius: 999px; font-size: 12px; line-height: 1.6; }
+.project-unify-seen.is-same .project-unify-seen-mark { color: var(--dim); background: var(--card-hi); }
+.project-unify-seen.is-added .project-unify-seen-mark { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.project-unify-seen.is-missing .project-unify-seen-mark,
+.project-unify-seen.is-lost .project-unify-seen-mark { color: var(--gap-ink); background: color-mix(in srgb, var(--bad) 18%, transparent); }
+.project-unify-seen-flow { color: var(--ok); font-size: 12px; }
+
+.project-unify-actions { display: grid; gap: 12px; margin: 0; padding-left: 22px; }
+.project-unify-action { min-width: 0; }
+.project-unify-action > p { margin: 0 0 8px; line-height: 1.55; overflow-wrap: anywhere; }
+.project-unify-arrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.project-unify-arrow code { min-width: 0; padding: 3px 7px; border-radius: 6px; background: var(--card-hi); font: 12px/1.4 var(--mono); overflow-wrap: anywhere; }
+.project-unify-arrow-line { position: relative; flex: 1 1 90px; min-width: 90px; max-width: 220px; height: 26px; }
+.project-unify-arrow-line::before { content: ""; position: absolute; left: 0; right: 8px; top: 50%; border-top: 2px solid var(--accent); }
+.project-unify-arrow.is-link .project-unify-arrow-line::before { border-top-style: dashed; }
+.project-unify-arrow-line::after { content: ""; position: absolute; right: 0; top: calc(50% - 6px); border: 6px solid transparent; border-left: 9px solid var(--accent); border-right: 0; }
+.project-unify-arrow-line > span { position: absolute; left: 0; right: 10px; top: -4px; color: var(--dim); font-size: 11px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-unify-file { margin: 8px 0 0; }
+.project-unify-file figcaption { margin-bottom: 4px; color: var(--dim); font-size: 12px; overflow-wrap: anywhere; }
+.project-unify-file pre, .project-unify-conflicts pre { box-sizing: border-box; max-height: 260px; margin: 0; padding: 8px 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--term-bg); font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.project-unify-file pre:focus-visible, .project-unify-conflicts pre:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.project-unify-line { display: block; padding: 0 10px 0 6px; border-left: 3px solid transparent; }
+.project-unify-line-sign { display: inline-block; width: 1.3em; color: var(--dim); }
+.project-unify-line.is-added { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.project-unify-line.is-added .project-unify-line-sign { color: var(--ok); }
+.project-unify-line.is-removed { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--dim); }
+.project-unify-line.is-removed .project-unify-line-sign { color: var(--warn); }
+.project-unify-line.is-folded { color: var(--faint); font-style: italic; }
+.project-unify-moves { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card); font-size: 13px; line-height: 1.6; }
+.project-unify-moves p { margin: 0; overflow-wrap: anywhere; }
+.project-unify-moves p + p { margin-top: 4px; }
+.project-unify-moves code { margin: 0 4px; font: 12px/1.4 var(--mono); }
+
+.project-unify-conflicts { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.project-unify-conflicts li { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 10px; }
+.project-unify-conflicts p { margin: 0 0 6px; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.project-unify-conflicts pre { padding: 8px 10px; }
+.project-unify-git { margin: 18px 0 4px; color: var(--dim); font-size: 13px; line-height: 1.5; }
+
+.project-unify-stopped { margin: 0 0 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--bad) 60%, transparent); border-radius: 10px; font-size: 13px; line-height: 1.55; }
+.project-unify-dialog .project-unify-stopped { color: var(--ink); }
+.project-unify-stopped p { margin: 0 0 4px; }
+.project-unify-stopped ul { margin: 0 0 8px; padding-left: 20px; }
+.project-unify-stopped .is-ran::marker { content: "✓ "; color: var(--ok); }
+.project-unify-stopped .is-failed::marker { content: "✗ "; color: var(--gap-ink); }
+
+@media (max-width: 899px) {
+  .project-unify-head { flex-direction: column; }
+  .project-unify-buttons button { min-height: 44px; }
+  .project-unify-dialog { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; }
+  .project-unify-dialog-heading { padding: max(12px, env(safe-area-inset-top)) 14px 12px; }
+  .project-unify-dialog-body { padding: 14px; }
+  .project-unify-dialog-foot { padding: 10px 14px max(12px, env(safe-area-inset-bottom)); }
+  .project-unify-apply { flex: 1 1 auto; }
+}
+@media (max-width: 639px) {
+  .project-unify-columns { grid-template-columns: minmax(0, 1fr); }
+}

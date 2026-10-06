@@ -288,7 +288,13 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-file-save" in CARRIED)
   assert.ok("project-tree-list" in CARRIED)
   assert.ok("project-tree-read" in CARRIED)
-  assert.equal(Object.keys(CARRIED).length, 133)
+  // Unify's plan and apply (docs/project-files.md §Unify): carried since the
+  // Project settings block asks for them, and no longer deferred.
+  assert.ok("project-unify-plan" in CARRIED)
+  assert.ok("project-unify-apply" in CARRIED)
+  assert.ok(!("project-unify-plan" in DEFERRED))
+  assert.ok(!("project-unify-apply" in DEFERRED))
+  assert.equal(Object.keys(CARRIED).length, 135)
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
