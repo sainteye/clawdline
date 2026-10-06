@@ -164,6 +164,25 @@ test("a healthy update with a staged app says it is replaced when the app quits"
   assert.equal(view.press.shown, false)
 })
 
+test("a page that followed an update to healthy offers the next release that arrives", () => {
+  // The same page, not reloaded: the console the new daemon served was the
+  // one it already ran. A newer release is then one more press.
+  const next = panel({
+    following: true,
+    read: answered(release("update_available", { state: "healthy", from: "v0.10.0", to: "v0.11.0" }, {
+      running: { stamp: "4b7c3f8d9e0f1a2b3c4d", version: "v0.11.0" },
+      latest: { stamp: "5c8d4e9f0a1b2c3d4e5f", version: "v0.12.0" },
+    })),
+  })
+  assert.deepEqual([next.press.shown, next.press.enabled], [true, true])
+  // What it just installed, still read as available, offers nothing yet.
+  const same = panel({
+    following: true,
+    read: answered(release("update_available", { state: "healthy", from: "v0.10.0", to: "v0.11.0" })),
+  })
+  assert.equal(same.press.shown, false)
+})
+
 test("a refused press says why, and a machine without the apply route gets the needs-update line", () => {
   const refused = panel({ read: answered(release("update_available")), pressRefused: { code: "not_installed_as_service", detail: "service.json is missing" } })
   assert.ok(refused.problem!.includes("not_installed_as_service"), refused.problem!)
