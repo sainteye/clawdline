@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -73,6 +74,8 @@ type setupHost struct {
 	uid          int
 	username     string
 	getenv       func(string) string
+	// keys are the release keys this binary trusts.
+	keys []ed25519.PublicKey
 	// run runs a command and answers its combined output.
 	run         func(name string, args ...string) ([]byte, error)
 	portAnswers func(port int) bool
@@ -87,7 +90,7 @@ func realSetupHost() setupHost {
 	}
 	return setupHost{
 		goos: runtime.GOOS, goarch: runtime.GOARCH, home: home, uid: os.Getuid(), username: name,
-		getenv: os.Getenv,
+		getenv: os.Getenv, keys: release.TrustedKeys(),
 		run: func(name string, args ...string) ([]byte, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
@@ -390,7 +393,7 @@ func verifyRelease(h setupHost, l install.Layout, exe string, o setupOptions) (r
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return release.Manifest{}, "", err
 	}
-	m, err := release.Open(manifest, sigs, release.TrustedKeys())
+	m, err := release.Open(manifest, sigs, h.keys)
 	if err != nil {
 		return release.Manifest{}, "", err
 	}
@@ -952,12 +955,16 @@ func uninstall(h setupHost, p setupPlace) (removed, kept []string) {
 	if sf.File == "" {
 		sf.File = serviceFilePath(h, p)
 	}
-	switch sf.Supervisor {
-	case "launchd":
+	// Only a service this install has a record or a file of is stopped:
+	// never a label or unit somebody else loaded under a similar name.
+	known := err == nil || fileExists(sf.File)
+	switch {
+	case !known:
+	case sf.Supervisor == "launchd":
 		if _, err := h.run("launchctl", "bootout", sf.Domain+"/"+sf.Name); err == nil {
 			removed = append(removed, "service "+sf.Name+" (stopped)")
 		}
-	case "systemd":
+	case sf.Supervisor == "systemd":
 		_ = userBus(h)
 		if _, err := h.run("systemctl", "--user", "disable", "--now", sf.Name); err == nil {
 			removed = append(removed, "service "+sf.Name+" (stopped and disabled)")
@@ -966,7 +973,7 @@ func uninstall(h setupHost, p setupPlace) (removed, kept []string) {
 	if err := os.Remove(sf.File); err == nil {
 		removed = append(removed, sf.File)
 	}
-	if sf.Supervisor == "systemd" {
+	if known && sf.Supervisor == "systemd" {
 		_, _ = h.run("systemctl", "--user", "daemon-reload")
 	}
 	if _, err := os.Stat(filepath.Join(p.stateDir, install.ServiceFileName)); err == nil {
