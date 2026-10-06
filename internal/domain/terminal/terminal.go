@@ -213,11 +213,23 @@ func (r *Refusal) Unwrap() error { return r.Err }
 // Refuse is a Refusal as an error.
 func Refuse(code RefusalCode, detail string) error { return &Refusal{Code: code, Detail: detail} }
 
-// CodeOf is the refusal code err carries, if it carries one.
+// refusalCarrier is a richer refusal built around a Refusal, such as the
+// terminal service's, which adds the lease holder. errors.As cannot see the
+// Refusal inside it on its own.
+type refusalCarrier interface{ TerminalRefusal() *Refusal }
+
+// CodeOf is the refusal code err carries, if it carries one. Until
+// 2026-10-06 it did not see the terminal service's refusals, so every lease
+// answer a Cloud viewer got (lease_expired, not_controller,
+// terminal_controlled, ...) arrived as terminal_unreachable.
 func CodeOf(err error) (RefusalCode, bool) {
 	var r *Refusal
 	if errors.As(err, &r) {
 		return r.Code, true
+	}
+	var carrier refusalCarrier
+	if errors.As(err, &carrier) {
+		return carrier.TerminalRefusal().Code, true
 	}
 	return "", false
 }

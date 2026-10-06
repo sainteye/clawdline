@@ -766,7 +766,7 @@ test("a live relay terminal upgrades through a sealed offer, a direct rekey and 
 })
 
 test("a terminal this tab does not hold stays on the relay until the tab takes control", async () => {
-  // The machine activates a rekeyed connection only for the tab holding its lease.
+  // Only a tab holding the lease upgrades; a watching tab has no keys to speed up.
   const wire = new DirectWire()
   const session = new CloudTerminalSession(wire, "stable-tab")
   try {
@@ -1174,4 +1174,61 @@ test("keys whose envelopes the machine drops unanswered are each refused, none l
     assert.deepEqual(settled, Array(6).fill("terminal_input_state_unknown"))
     assert.equal(wire.requests.filter((request) => request.operation === "input").length, 4, "nothing past the in-flight window was sent")
   } finally { t.mock.timers.reset(); session.dispose() }
+})
+
+test("a lease that lapsed while the tab was idle is let go cleanly: the screen stays and taking control again types", async () => {
+  // A background tab's timers slept past the 30-second lease (2026-10-06, 22:50). Nothing was
+  // typed under it since the last receipt, so no input is in doubt: the tab no longer holds the
+  // terminal, and says so, instead of "input may already have been applied".
+  const wire = new Wire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    wire.frame(wire.latest(), 1, "screen")
+    await session.input(new TextEncoder().encode("k"))
+    assert.equal(session.snapshot.canType, true)
+    wire.refusals.set("control", "lease_expired")
+    ;(session as unknown as { lastRenew: number }).lastRenew = Date.now() - 31_000
+    ;(session as unknown as { checkFreshness(): void }).checkFreshness()
+    await until(() => !(session as unknown as { renewing: boolean }).renewing)
+    assert.equal(session.snapshot.hasLease, false)
+    assert.equal(session.snapshot.canType, false)
+    assert.notEqual(session.snapshot.state, "unknown", "a lapsed idle lease is not an input in doubt")
+    assert.equal(session.snapshot.reason, "lease_expired")
+    assert.ok(session.snapshot.frame, "the screen stays drawn")
+    wire.refusals.delete("control")
+    await session.acquire("acquire")
+    wire.frame(wire.latest(), 2, "screen again")
+    assert.equal(session.snapshot.canType, true)
+    await session.input(new TextEncoder().encode("j"))
+  } finally { session.dispose() }
+})
+
+test("an activation the machine refuses is not asked again on every frame; a fresh connection reads the terminal", async () => {
+  // 2026-10-06 22:50-22:53: the upgrade's rekey was answered, its activation refused
+  // terminal_invalid, and the tab sent activate_connection again with every frame for minutes.
+  const wire = new DirectWire()
+  const session = new CloudTerminalSession(wire, "stable-tab")
+  try {
+    await session.start(); await session.attach(terminalID); await session.acquire("acquire")
+    const relay = wire.latest()
+    wire.refusals.set("activate_connection", "terminal_invalid")
+    wire.frame(relay, 1, "relay")
+    await until(() => lastRequest(wire, "rekey_connection") !== undefined && wire.latest() !== relay)
+    const direct = wire.latest()
+    wire.frame(direct, 1, "direct 1")
+    await until(() => lastRequest(wire, "activate_connection") !== undefined)
+    await settle()
+    for (let seq = 2; seq <= 5; seq++) { wire.frame(direct, seq, `direct ${seq}`); await settle() }
+    const activations = wire.requests.filter((request) => request.operation === "activate_connection").length
+    assert.equal(activations, 1, "a refused activation was asked again")
+    await until(() => lastRequest(wire, "open_connection")?.connection === wire.latest() && wire.latest() !== direct)
+    const fresh = wire.latest()
+    await until(() => lastRequest(wire, "read")?.connection === fresh)
+    wire.frame(fresh, 1, "fresh")
+    await until(() => session.snapshot.state === "just_synced" || session.snapshot.state === "live")
+    assert.ok(session.snapshot.frame)
+    assert.equal(wire.channels.has(relay), false, "the old relay connection is let go")
+    assert.equal(wire.channels.has(direct), false, "the refused connection is let go")
+  } finally { session.dispose() }
 })

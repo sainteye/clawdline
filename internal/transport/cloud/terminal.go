@@ -165,6 +165,9 @@ type terminalReceipt struct {
 	Status     string `json:"status"`
 	Error      string `json:"error,omitempty"`
 	Result     any    `json:"result,omitempty"`
+	// reason is the stage row's word for which check refused it; it is
+	// never sent (see stageReason).
+	reason string
 }
 
 type terminalConnection struct {
@@ -855,7 +858,7 @@ func (l *Link) handleTerminal(ctx context.Context, in Inbound) {
 		if !known {
 			code = terminal.CodeUnreachable
 		}
-		receipt.Status, receipt.Error, receipt.Result = "refused", string(code), nil
+		receipt.Status, receipt.Error, receipt.Result, receipt.reason = "refused", string(code), nil, stageReasonOf(err)
 		if code == terminal.CodeInputStateUnknown {
 			receipt.Status = "unknown"
 		}
@@ -1328,7 +1331,39 @@ func withRefusalCode(stage string, receipt terminalReceipt) string {
 	if stage == "" || receipt.Error == "" {
 		return stage
 	}
-	return stage + " code=" + terminalStageWord(receipt.Error)
+	stage += " code=" + terminalStageWord(receipt.Error)
+	if receipt.reason != "" {
+		stage += " reason=" + terminalStageWord(receipt.reason)
+	}
+	return stage
+}
+
+// stageReason is a refusal that also names, in one fixed word, which of the
+// checks behind its code failed. The wire keeps only the code; the stage row
+// shows the word, because activation's three terminal_invalid refusals read
+// the same in the 2026-10-06 log.
+type stageReason struct {
+	error
+	reason string
+}
+
+func (r stageReason) Unwrap() error { return r.error }
+
+func refuseWithReason(reason string, code terminal.RefusalCode, detail string) error {
+	return stageReason{error: terminal.Refuse(code, detail), reason: reason}
+}
+
+// stageReasonOf is err's stage word: its own, untyped for an error that
+// carries no refusal code (sent as terminal_unreachable), or none.
+func stageReasonOf(err error) string {
+	var r stageReason
+	if errors.As(err, &r) {
+		return r.reason
+	}
+	if _, known := terminal.CodeOf(err); err != nil && !known {
+		return "untyped"
+	}
+	return ""
 }
 
 func receiptStatus(status string) string {
@@ -1363,21 +1398,33 @@ func (l *Link) terminalOperation(ctx context.Context, svc *terminals.Service, p 
 			FirstFrameSeq uint64 `json:"first_frame_seq"`
 		}
 		if !strictTerminalBody(req.Body, &body) || !validConnection(body.OldConnection) || body.OldConnection == c.id || body.FirstFrameSeq == 0 {
-			return nil, terminal.Refuse(terminal.CodeInvalid, "activation body is invalid")
+			return nil, refuseWithReason("activation_body", terminal.CodeInvalid, "activation body is invalid")
 		}
 		old := l.getTerminalConnection(p.Device, body.OldConnection)
 		if old == nil {
-			return nil, terminal.Refuse(terminal.CodeInvalid, "old connection is unavailable")
+			return nil, refuseWithReason("activation_old_gone", terminal.CodeInvalid, "old connection is unavailable")
 		}
+		// Activation moves this viewer's frames and receipts from the old
+		// key to the new one; it types nothing. The lease is judged on every
+		// input, so it is not asked here: a tab whose lease lapsed while its
+		// timers slept in the background (2026-10-06 22:50) was refused here
+		// on every frame for minutes, and so was every key rotation of a
+		// viewer that does not hold the lease.
 		l.terminalMu.Lock()
-		valid := c.rekeyPending && c.terminalID.Valid() && old.terminalID == c.terminalID &&
-			c.client != "" && old.client == c.client && body.FirstFrameSeq <= c.publishedFrameSeq
+		reason := ""
+		switch {
+		case !c.rekeyPending:
+			reason = "activation_not_rekeying"
+		case !c.terminalID.Valid() || old.terminalID != c.terminalID:
+			reason = "activation_other_terminal"
+		case c.client == "" || old.client != c.client:
+			reason = "activation_other_client"
+		case body.FirstFrameSeq > c.publishedFrameSeq:
+			reason = "activation_frame_unpublished"
+		}
 		l.terminalMu.Unlock()
-		control := svc.Control(c.terminalID)
-		valid = valid && control.Held && !control.Unknown && control.Holder.Device == p.Device &&
-			control.Client == c.client && control.Expires.After(l.opts.Now())
-		if !valid {
-			return nil, terminal.Refuse(terminal.CodeInvalid, "new frame and lease identity are unverified")
+		if reason != "" {
+			return nil, refuseWithReason(reason, terminal.CodeInvalid, "the new connection's terminal, client or frame is unverified")
 		}
 		if c.carrier == carrierDirect {
 			// Before the receipt: settling it closes the old connection,
