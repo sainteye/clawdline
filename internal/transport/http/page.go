@@ -25,9 +25,37 @@ func newPage(root string) *page { return &page{root: root} }
 // WebRoot is where the console's files live. It is configuration rather than a
 // constant because the bundle ships beside the binary in a release and sits in
 // a checkout during development.
+//
+// With CLAWDLINE_NEXT_WEB unset, a console installed with the binary is found
+// by itself: a release archive and the Linux deploy put it at `dist/` beside the
+// executable, and the app bundle at `Contents/Resources/web` beside
+// `Contents/MacOS/clawdline`. Before this, a daemon installed any way but by
+// hand answered 501 until somebody set the variable.
 func WebRoot() string {
 	if v := os.Getenv("CLAWDLINE_NEXT_WEB"); v != "" {
 		return v
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return webRootBeside(exe)
+}
+
+// webRootBeside is the console that was installed with the executable at exe,
+// or "" when there is none.
+func webRootBeside(exe string) string {
+	dir := filepath.Dir(exe)
+	for _, c := range []string{
+		filepath.Join(dir, "dist"),
+		filepath.Join(dir, "..", "Resources", "web"),
+	} {
+		if _, err := os.Stat(filepath.Join(c, "index.html")); err == nil {
+			return filepath.Clean(c)
+		}
 	}
 	return ""
 }
@@ -42,7 +70,7 @@ func consoleReading(root string) contract.ConsoleDiagnostics {
 	if root == "" {
 		return contract.ConsoleDiagnostics{
 			State:  contract.ConsoleStateNone,
-			Detail: "CLAWDLINE_NEXT_WEB is not set, so / answers 501 no_web_root and this address shows no page",
+			Detail: "CLAWDLINE_NEXT_WEB is not set and no console was installed beside this binary, so / answers 501 no_web_root and this address shows no page",
 		}
 	}
 	index := filepath.Join(root, "index.html")

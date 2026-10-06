@@ -25,8 +25,14 @@
 # opened again and the script waits for its daemon to answer.
 #
 # usage: tools/package-macos.sh [--dmg] [--no-restart] [--install-to /absolute/path/Clawdline Next.app]
+#                                [--build-only /absolute/dir]
 #   --no-restart  if the app is running, stop with an error instead of
 #                 restarting it; the new bundle is left in the staging folder
+#   --build-only  build and sign the bundle into that directory and stop:
+#                 nothing is installed, quit or opened (tools/release/build.sh)
+#
+# CLAWDLINE_RELEASE_VERSION=vX.Y.Z stamps a release: the daemon is built with
+# -trimpath and that version, and BUILD.json and Info.plist carry it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -36,6 +42,9 @@ ID="com.sainteye.clawdline-next"     # deliberately not the Swift app's id:
 APP="dist/$NAME.app"
 INSTALL_APP=""
 VERSION="$(git describe --tags --always 2>/dev/null || echo 0.0.1)"
+RELEASE_VERSION="${CLAWDLINE_RELEASE_VERSION:-}"
+[ -z "$RELEASE_VERSION" ] || VERSION="${RELEASE_VERSION#v}"
+BUILD_ONLY=""
 
 DMG_WANTED=0
 RESTART=1
@@ -43,11 +52,17 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --dmg) DMG_WANTED=1 ;;
     --no-restart) RESTART=0 ;;
+    --build-only)
+      [ "$#" -ge 2 ] || { echo "--build-only needs an absolute directory" >&2; exit 2; }
+      case "$2" in /*) ;; *) echo "--build-only needs an absolute directory" >&2; exit 2 ;; esac
+      [ -d "$2" ] || { echo "--build-only directory does not exist: $2" >&2; exit 2; }
+      BUILD_ONLY="$2"
+      shift ;;
     --install-to)
       [ "$#" -ge 2 ] || { echo "--install-to needs an absolute app path" >&2; exit 2; }
       INSTALL_APP="$2"
       shift ;;
-    *) echo "usage: $0 [--dmg] [--no-restart] [--install-to /absolute/path/$NAME.app]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--dmg] [--no-restart] [--install-to /absolute/path/$NAME.app] [--build-only /absolute/dir]" >&2; exit 2 ;;
   esac
   shift
 done
@@ -110,8 +125,14 @@ health_port() {
 rm -rf "$STAGING"
 mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
 
-CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" \
-  -o "$BUILD/Contents/MacOS/clawdline" ./cmd/clawdline
+if [ -n "$RELEASE_VERSION" ]; then
+  CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
+    -ldflags="-s -w -X main.releaseVersion=$RELEASE_VERSION" \
+    -o "$BUILD/Contents/MacOS/clawdline" ./cmd/clawdline
+else
+  CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" \
+    -o "$BUILD/Contents/MacOS/clawdline" ./cmd/clawdline
+fi
 swiftc -O -o "$BUILD/Contents/MacOS/$NAME" shell/darwin/*.swift
 
 # The shell's own files — the mascot packs its menu lists. Copied, like the
@@ -139,7 +160,11 @@ if [ -d "$WEB" ]; then
   # say whether the cloud's build is later (docs/updates.md).
   stamp=$(git rev-parse HEAD)
   committed_at=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ "$stamp")
-  printf '{"stamp":"%s","committed_at":"%s"}\n' "$stamp" "$committed_at" >"$BUILD/Contents/Resources/web/BUILD.json"
+  if [ -n "$RELEASE_VERSION" ]; then
+    printf '{"stamp":"%s","committed_at":"%s","version":"%s"}\n' "$stamp" "$committed_at" "$RELEASE_VERSION" >"$BUILD/Contents/Resources/web/BUILD.json"
+  else
+    printf '{"stamp":"%s","committed_at":"%s"}\n' "$stamp" "$committed_at" >"$BUILD/Contents/Resources/web/BUILD.json"
+  fi
 else
   echo "error: no console at $WEB; refusing to ship an app with nothing to show" >&2
   exit 1
@@ -203,6 +228,13 @@ codesign --force --sign - "$BUILD/Contents/MacOS/clawdline"
 codesign --force --sign - "$BUILD"
 
 echo "built $BUILD ($(du -sh "$BUILD" | cut -f1))"
+
+if [ -n "$BUILD_ONLY" ]; then
+  [ ! -e "$BUILD_ONLY/$NAME.app" ] || { echo "$BUILD_ONLY/$NAME.app already exists" >&2; exit 1; }
+  mv "$BUILD" "$BUILD_ONLY/$NAME.app"
+  echo "built $BUILD_ONLY/$NAME.app; nothing was installed"
+  exit 0
+fi
 
 # A disposable worktree may build for the app in the primary checkout. Copy
 # into a sibling of that app before stopping it, so the final rename stays on

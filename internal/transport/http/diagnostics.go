@@ -782,6 +782,12 @@ func (s *Server) capacityMeasures() map[string]func() capacity.Reading {
 		capacity.UpdateBuildBodyBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-read guard on one BUILD.json body; no retained buffer"}
 		},
+		capacity.ReleaseManifestBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on one release manifest; no retained buffer"}
+		},
+		capacity.ReleaseSignatureBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read guard on one manifest signature list; no retained buffer"}
+		},
 		capacity.IntentRequestBytes: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-request guard; no retained buffer"}
 		},

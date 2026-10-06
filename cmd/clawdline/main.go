@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -41,7 +43,17 @@ import (
 // number it is not.
 var version = buildVersion()
 
+// releaseVersion is the tag a release build stamps in with
+// `-ldflags "-X main.releaseVersion=vX.Y.Z"` (tools/release/build.sh). It has
+// no initializer on purpose: the linker leaves a variable initialized by a
+// call, as `version` is, at whatever the call returns, so a stamp aimed at
+// `version` itself was silently dropped and every release said `devel`.
+var releaseVersion string
+
 func buildVersion() string {
+	if releaseVersion != "" {
+		return releaseVersion
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "devel"
@@ -55,6 +67,18 @@ func buildVersion() string {
 		}
 	}
 	return "devel"
+}
+
+// buildRevision is the full commit Go recorded for this binary, or "".
+func buildRevision() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" {
+				return s.Value
+			}
+		}
+	}
+	return ""
 }
 
 func main() {
@@ -162,6 +186,13 @@ func main() {
 		// deploying it (update.go, docs/updates.md).
 		updateCommand(os.Args[2:])
 	case "version", "--version", "-v":
+		if len(os.Args) > 2 && os.Args[2] == "--json" {
+			// The updater runs a staged binary this way before it switches to
+			// it: a binary that cannot even say what it is is never installed.
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{
+				"version": version, "commit": buildRevision(), "os": runtime.GOOS, "arch": runtime.GOARCH})
+			return
+		}
 		fmt.Println(version)
 	default:
 		usage()

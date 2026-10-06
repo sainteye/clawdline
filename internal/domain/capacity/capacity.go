@@ -246,6 +246,9 @@ const (
 	UpdateRefreshSeconds      = "update.refresh_seconds"
 	UpdateFetchTimeoutSeconds = "update.fetch_timeout_seconds"
 	UpdateBuildBodyBytes      = "update.build_body_bytes"
+	// A release's signed manifest and its signature list (docs/releasing.md).
+	ReleaseManifestBytes  = "release.manifest_bytes"
+	ReleaseSignatureBytes = "release.signature_bytes"
 	// T4: where a person takes part.
 	ProposalsOpen = "proposals.open"
 	DecisionsOpen = "decisions.open"
@@ -1186,6 +1189,22 @@ func Register() []Entry {
 			Limit: 4096, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/adapters/updatecheck.maxBuildBodyBytes"},
+		},
+		{
+			// One release manifest.json. A longer one is refused as
+			// manifest_malformed and nothing of it is followed.
+			Name: ReleaseManifestBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/release.maxManifestBytes"},
+		},
+		{
+			// One manifest.sig.json, the list of signatures over the
+			// manifest. A longer one is refused as manifest_signature_invalid.
+			Name: ReleaseSignatureBytes, Class: Buffer, Unit: Bytes,
+			Limit: 16 << 10, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/release.maxSignatureBytes"},
 		},
 		{
 			// Proposals waiting for a person's answer — the "to confirm"

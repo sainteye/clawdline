@@ -253,6 +253,8 @@ answer to who may let anything go.
 | `update.refresh_seconds` | 1800 seconds | observation / seconds | update check | read the cloud's BUILD.json again; the old answer is replaced only by a good new one ([updates.md](updates.md)) | diagnostics / daemon |
 | `update.fetch_timeout_seconds` | 10 seconds | observation / seconds | update check | abandon the read and show its error beside the last good answer | diagnostics / daemon |
 | `update.build_body_bytes` | 4096 bytes | buffer / bytes | update check | refuse the body as not a BUILD.json | diagnostics / daemon |
+| `release.manifest_bytes` | 65536 bytes | buffer / bytes | release manifest read | refuse as `manifest_malformed`; nothing is followed | diagnostics / daemon |
+| `release.signature_bytes` | 16384 bytes | buffer / bytes | release signature read | refuse as `manifest_signature_invalid` | diagnostics / daemon |
 
 另外兩件跟「誰會知道」直接相關的：`plan.md` §3.2 與 `cross-platform.md` 還寫 `scheduler` 在 `/v1/health`，實際已經在
 `/v1/diagnostics`；`git/changes.go:80-82` 的註解說「every file read goes through an `io.LimitReader`」，至少 6 處不是
