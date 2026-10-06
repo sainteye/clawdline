@@ -39,8 +39,8 @@ const setupUsage = `usage: clawdline setup [options]
 Installs the release this binary belongs to as this user's Clawdline service:
 checks its signature, checks for tmux and an assistant, points
 <root>/current at it, links clawdline into ~/.local/bin, starts the daemon as
-a systemd --user unit (Linux) or a LaunchAgent (macOS), installs the app on a
-Mac with a desktop, and proves the console answers. Running it again repairs.
+a systemd --user unit (Linux) or a LaunchAgent (macOS), installs the app on
+macOS with a desktop, and proves the console answers. Running it again repairs.
 
   --headless          no desktop: no app, no browser; print the sign-in address
   --no-app            macOS: do not install Clawdline Next.app
@@ -649,7 +649,7 @@ func appsDir(h setupHost) string {
 // installed path, or "" when the release carries no app for this Mac.
 func installApp(h setupHost, l install.Layout, m release.Manifest) (string, error) {
 	if h.goarch != "arm64" {
-		fmt.Fprintln(h.out, "the app is built for Apple silicon; this Mac gets the daemon and the browser console")
+		fmt.Fprintln(h.out, "the app is built for Apple silicon; this machine gets the daemon and the browser console")
 		return "", nil
 	}
 	a, err := m.Artifact("darwin", "arm64", release.KindApp)
