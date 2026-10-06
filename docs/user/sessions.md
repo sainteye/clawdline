@@ -7,8 +7,9 @@ project, stop the turn it is on, and close it safely.
 ## Before you start
 
 - The daemon is running and the console is open ([install.md](install.md)).
-- To type into sessions, the browser needs write permission: `clawdline open --send` on this
-  machine, or a paired device that is allowed to act ([remote-access.md](remote-access.md)).
+- To type into sessions, the browser needs send permission: `clawdline open` on this machine
+  grants it, and so does pairing a device ([remote-access.md](remote-access.md)). A device made
+  read-only before that stays read-only.
 - Sessions are found in tmux on macOS and Linux, and in iTerm2 on macOS. Windows cannot list
   sessions yet ([platforms.md](platforms.md)).
 
@@ -92,7 +93,7 @@ You can also press the microphone in the header (**說要開什麼**, say what t
 task; Clawdline drafts the project, assistant, model and first message, and nothing starts until you
 press **開始** (start).
 
-**設定** (Settings) → **新 session 的預設模型** offers the models available to Codex and Claude Code
+**設定** (Settings) → **新 session 的預設設定** (defaults for new sessions) offers the models available to Codex and Claude Code
 as separate machine-wide pickers. The Claude Code choices follow that machine's installed `/model`
 catalog and account cache, including its versioned legacy choices, instead of a Clawdline-owned list.
 Choose **由助理決定** to leave that assistant in charge. The setting applies only when Clawdline

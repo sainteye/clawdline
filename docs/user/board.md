@@ -17,7 +17,8 @@ below are given as they appear, with their meaning in parentheses.
 2. Find **啟用看板系統** (enable Project Board) and press the button so it reads **已啟用**
    (enabled).
 
-**Check:** **看板** (Board) appears in the menu. Turning it off again keeps the history.
+**Check:** the block says **已儲存** (saved), and **看板** (Board) in the menu lists items. Turning it
+off again keeps the history.
 
 ## Put work on the Board
 

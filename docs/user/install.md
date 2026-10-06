@@ -65,8 +65,7 @@ command means the daemon was started without `CLAWDLINE_NEXT_WEB`.
 ## 3. Open the console
 
 ```sh
-./bin/clawdline open           # this browser can read every session
-./bin/clawdline open --send    # this browser can also type into sessions
+./bin/clawdline open           # this browser can read and type into every session
 ```
 
 `open` creates a device for your browser and signs it in. The key travels in the address's
