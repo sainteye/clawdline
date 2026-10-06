@@ -79,6 +79,17 @@ names the commit, file and line, never the matched text. `docs/privacy-guard.md`
 Commit messages, comments and documentation are in **English**; the conversation with the person
 is in Traditional Chinese.
 
+## Maintaining product translations
+
+When changing product-generated, person-facing copy, update English and Taiwan Traditional Chinese
+in the same change. Other shipped languages may be translated in batches; do not require their
+files to change with every code edit. A missing newer translation falls back to English and is
+counted in the localization coverage report. Keep placeholders, plural forms, and markup valid in
+every existing translation. An outdated translated guide section falls back to its current English
+section so it cannot show obsolete commands. The first multilingual release requires a complete
+baseline in every shipped language; later routine changes use the two-language gate. The resolver,
+fallback and release checks are in [docs/localization.md](docs/localization.md).
+
 ## How a commit reads here
 
 The subject is a sentence about what changed for a person, not a category:

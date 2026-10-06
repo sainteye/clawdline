@@ -1,5 +1,5 @@
 #!/bin/sh
-# tools/wait-hosted-console.sh <sha> [--deadline 15m]
+# tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]
 #
 # Waits until the hosted console serves <sha> or a commit after it, then runs
 # docs/hosted-console.md's check: the served bundle took the Cloud branch.
@@ -15,13 +15,15 @@
 # CLAWDLINE_CONSOLE_URL points it at another origin (a test's).
 set -u
 
-usage() { echo "usage: tools/wait-hosted-console.sh <sha> [--deadline 15m]" >&2; exit 2; }
+usage() { echo "usage: tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 sha=$1; shift
 deadline=15m
+strict_catalogs=
 while [ $# -gt 0 ]; do
   case "$1" in
     --deadline) [ $# -ge 2 ] || usage; deadline=$2; shift 2 ;;
+    --strict-catalogs) strict_catalogs=--strict; shift ;;
     *) usage ;;
   esac
 done
@@ -72,6 +74,6 @@ echo "the served $bundle takes the Cloud branch (CloudGate x$gates)"
 # released builds have no such directory, so their existing CloudGate check
 # remains sufficient. Once a build ships catalogs, all of them must be served.
 if [ -f web/console/public/catalogs/en.json ]; then
-  python3 tools/check-hosted-catalogs.py "$origin" || exit 1
+  python3 tools/check-hosted-catalogs.py "$origin" $strict_catalogs || exit 1
 fi
 exit 0

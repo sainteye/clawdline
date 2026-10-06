@@ -2,53 +2,73 @@
 """Verify every shipped product catalog on the served Cloud origin."""
 
 import json
-import re
+from pathlib import Path
+import subprocess
 import sys
+from tempfile import TemporaryDirectory
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
 
 LANGUAGES = ("en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de")
-HOLE = re.compile(r"\{[A-Za-z][A-Za-z0-9_]*\}")
+VALIDATOR = Path(__file__).resolve().parents[1] / "web/console/tools/validate-catalog.mjs"
 
 
-def catalog(origin: str, tag: str) -> dict[str, str]:
+def catalog(origin: str, tag: str, destination: Path) -> None:
     url = origin.rstrip("/") + "/catalogs/" + quote(tag) + ".json"
     try:
         with urlopen(url, timeout=20) as response:
-            data = json.load(response)
+            content = response.read()
+        data = json.loads(content)
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
         raise ValueError(f"{tag}: could not read {url}: {exc}") from exc
-    if not isinstance(data, dict) or data.get("lang") != tag or data.get("dir") != "ltr":
-        raise ValueError(f"{tag}: invalid catalog or language metadata at {url}")
-    if any(not isinstance(key, str) or not isinstance(value, str) or not value for key, value in data.items()):
-        raise ValueError(f"{tag}: empty or non-string catalog entry at {url}")
-    return data
+    if not isinstance(data, dict):
+        raise ValueError(f"{tag}: expected a JSON object at {url}")
+    destination.write_bytes(content)
 
 
-def check(origin: str) -> None:
-    english = catalog(origin, "en")
-    keys = set(english) - {"lang", "dir"}
-    if not keys:
-        raise ValueError("en: no product-copy keys")
-    for tag in LANGUAGES[1:]:
-        translated = catalog(origin, tag)
-        actual = set(translated) - {"lang", "dir"}
-        if actual != keys:
-            raise ValueError(f"{tag}: missing {len(keys - actual)} and extra {len(actual - keys)} keys")
-        for key in keys:
-            if sorted(HOLE.findall(translated[key])) != sorted(HOLE.findall(english[key])):
-                raise ValueError(f"{tag}: placeholders differ at {key}")
-    print(f"hosted catalogs: {len(LANGUAGES)} languages, {len(keys)} matching keys and placeholders")
+def validate(reference: Path, target: Path, tag: str, strict: bool) -> dict:
+    command = ["node", str(VALIDATOR), "--reference", str(reference), "--target", str(target), "--tag", tag]
+    if strict:
+        command.append("--initial")
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise ValueError(f"{tag}: catalog validator could not run: {exc}") from exc
+    if result.returncode:
+        details = "; ".join(result.stderr.splitlines()[:5]) or result.stdout.strip()
+        raise ValueError(f"{tag}: catalog validation failed: {details}")
+    try:
+        report = json.loads(result.stdout)
+    except ValueError as exc:
+        raise ValueError(f"{tag}: invalid catalog validator report") from exc
+    if not isinstance(report, dict) or any(not isinstance(report.get(key), (int, float)) for key in ("keys", "coverage", "missing", "untranslated")):
+        raise ValueError(f"{tag}: incomplete catalog validator report")
+    return report
+
+
+def check(origin: str, strict: bool = False) -> None:
+    if not VALIDATOR.is_file():
+        raise ValueError(f"catalog validator missing: {VALIDATOR}")
+    with TemporaryDirectory(prefix="clawdline-hosted-catalogs-") as temporary:
+        directory = Path(temporary)
+        for tag in LANGUAGES:
+            catalog(origin, tag, directory / f"{tag}.json")
+        reference = directory / "en.json"
+        coverage = []
+        for tag in LANGUAGES:
+            report = validate(reference, directory / f"{tag}.json", tag, strict)
+            coverage.append(f"{tag} {report['keys']} keys, {report['coverage']}% ({report['missing']} missing, {report['untranslated']} English)")
+    print(f"hosted catalogs: {len(LANGUAGES)} languages; " + ", ".join(coverage))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2 or not sys.argv[1].startswith(("https://", "http://")):
-        print("usage: tools/check-hosted-catalogs.py <origin>", file=sys.stderr)
+    if len(sys.argv) not in (2, 3) or not sys.argv[1].startswith(("https://", "http://")) or (len(sys.argv) == 3 and sys.argv[2] != "--strict"):
+        print("usage: tools/check-hosted-catalogs.py <origin> [--strict]", file=sys.stderr)
         sys.exit(2)
     try:
-        check(sys.argv[1])
+        check(sys.argv[1], strict=len(sys.argv) == 3)
     except ValueError as exc:
         print(f"FAILED: hosted catalogs: {exc}", file=sys.stderr)
         sys.exit(1)

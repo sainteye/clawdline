@@ -1,19 +1,44 @@
 # Product localization
 
 English is the source language and the fallback for Clawdline's product copy. A
-translated interface must use a complete, validated catalog. User, project, and
+translated interface must use a validated catalog. User, project, and
 agent-authored content is data and stays in the language in which it was written.
 Protocol names, JSON fields, error codes, and machine-readable CLI output stay
 stable. The retired Swift archive and its byte-for-byte console copies stay
 read-only.
 
+The first multilingual release must ship complete catalogs in all nine
+languages. For later code changes, maintain English and Taiwan Traditional
+Chinese in the same change. The other seven languages can be updated in
+batches. A missing new key in one of those seven uses its English sentence and
+is counted as untranslated; an existing translated key must still have valid
+placeholders, plural forms, and safe markup. A key absent from the current
+English catalog invalidates the selected catalog. Ordinary development and
+release checks report coverage but do not require those seven catalogs to be
+updated with every code change. A translation catch-up uses the strict
+nine-language check again. Guides use the same policy at the section level: an
+outdated translated section must yield to the current English section rather
+than show obsolete commands. Guide freshness pins, pending sections, and the
+initial `--require-current` gate are maintained in
+`skills/clawdline/TRANSLATIONS.md`.
+
+`web/console/public/catalogs/baseline-keys.json` records the keys shipped in
+the first complete release. New keys go into English and Taiwan Traditional
+Chinese without changing that baseline, so the other seven catalogs may omit
+them. When removing a baseline key, remove it from English and every translated
+catalog in the same change, remove it from the baseline list, increment the
+baseline's integer version, and run the strict catalog check for the affected
+catalogs. This explicit cleanup prevents obsolete keys from invalidating whole
+catalogs at runtime. The maintenance procedure is in
+`web/console/catalog-baseline.md`.
+
 ## Shipped interface languages
 
 The shipped set is `en`, `zh-Hant` (Taiwan Traditional Chinese), `ja`,
-`zh-Hans`, `ko`, `es`, `pt-BR`, `fr`, and `de`. A language is advertised only
-after every product-copy key, placeholder, and plural form has passed catalog
-validation. Voice recognition has a separate language list; a voice language
-does not imply an interface translation.
+`zh-Hans`, `ko`, `es`, `pt-BR`, `fr`, and `de`. The initial advertised set must
+pass complete catalog validation. Later changes may leave secondary-language
+new keys untranslated under the fallback rule above. Voice recognition has a
+separate language list; a voice language does not imply an interface translation.
 
 ## Separate preferences
 
@@ -38,8 +63,10 @@ browser resolver and any Go resolver that names the same product catalog:
 | Input | Catalog |
 | --- | --- |
 | no usable preference, `en-US` | `en` |
-| `zh-Hant`, `zh-Hant-TW`, `zh-TW`, `zh-HK` | `zh-Hant` |
-| `zh-Hans`, `zh-Hans-CN`, `zh-CN`, `zh-SG` | `zh-Hans` |
+| `zh-Hant`, `zh-Hant-TW`, `zh-Hant-CN`, `zh-TW`, `zh-HK`, `zh-MO` | `zh-Hant` |
+| `zh-Hans`, `zh-Hans-CN`, `zh-Hans-TW`, `zh-CN`, `zh-SG` | `zh-Hans` |
+| `zh-Latn-TW` or another explicit unknown script | `en` |
+| legacy setting `zh_MO` after underscore normalization | `zh-Hant` |
 | ambiguous `zh` | `en` |
 | `ja-JP` | `ja` |
 | `pt`, `pt-PT`, `pt-BR` | `pt-BR` |
@@ -47,7 +74,7 @@ browser resolver and any Go resolver that names the same product catalog:
 | unsupported or malformed preference | `en` |
 
 The local HTML document starts with `lang=en` and stays hidden by its boot
-class until the browser has selected and applied a complete catalog. The
+class until the browser has selected and applied a validated catalog. The
 embedded English catalog may avoid a request for English. Other selections
 must be fetched before the first visible render. Cloud uses the same resolver
 and bundle catalog as the local console. Both set `lang` and `dir` to the
@@ -55,22 +82,29 @@ catalog actually displayed; neither guesses the document language from an
 unfulfilled preference.
 
 `GET /v1/strings` without `lang` returns English. With a supported tag it
-returns that complete catalog. A syntactically invalid tag is a 400 refusal;
-an unknown well-formed tag or an unusable selected catalog returns the English
-catalog with `lang=en`. Browser-local preference is not inferred by the daemon
-for this API; the client passes its resolved tag explicitly.
+returns that catalog, which may omit new keys after the initial complete
+release. The client fills missing secondary-language keys from English. A
+syntactically invalid tag is a 400 refusal; an unknown well-formed tag or an
+unusable selected catalog returns the English catalog with `lang=en`.
+Browser-local preference is not inferred by the daemon for this API; the
+client passes its resolved tag explicitly.
 
 ## Atomic fallback
 
-Validate the whole catalog before applying any value. A missing file, invalid
-JSON, absent or empty key, changed placeholder, or invalid plural form rejects
-the whole selected catalog. Fetch and parse failures on Cloud, and embedded
-catalog failure on the local page, lead to the same English fallback. The
-console remains usable and announces `lang=en`; it must never combine labels
-from two languages while claiming one `lang`. If the optional English file is
-unavailable, the built-in English copy remains the browser's final fallback.
-The server should report its own English catalog failure as a typed error
-rather than claim to have served a translation.
+Validate every supplied value before applying the selected catalog. A missing
+file, invalid JSON, empty value, changed placeholder, invalid plural form, or
+unsafe markup rejects that whole catalog. A missing English or Traditional
+Chinese key also rejects it. After the initial complete release, a missing key
+in another language is a valid untranslated gap: the client fills just that
+key from English and reports the gap count. The document keeps the selected
+language tag when a secondary catalog has valid translated values; English
+fallback fragments should carry `lang=en` where the rendering surface allows.
+Fetch and parse failures on Cloud, and embedded catalog failure on the local
+page, lead to whole-catalog English fallback with `lang=en`. The console must
+remain usable. If the optional English file is unavailable, the built-in
+English copy remains the browser's final fallback. The server should report
+its own English catalog failure as a typed error rather than claim to have
+served a translation.
 
 ## Delivery checks
 
@@ -81,3 +115,7 @@ Test the failure cases above on local HTML, `/v1/strings`, and the Cloud bundle.
 Production acceptance requires the delivered commit in `BUILD.json`, a served
 main bundle passing `CloudGate`, and a readable, validated static catalog for
 every advertised language at the path the deployed Cloud configuration uses.
+The first multilingual deployment uses the strict nine-language catalog gate.
+Subsequent deployments require full English and Traditional Chinese parity,
+validate every present translation, and report the remaining languages'
+coverage without blocking on new untranslated keys.
