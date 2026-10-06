@@ -64,11 +64,11 @@ func todoCommand(args []string) {
 }
 
 func todoUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline todo add [--conversation id] [--key k] [--port n] <text> [text…]")
-	fmt.Fprintln(os.Stderr, "       clawdline todo list [--conversation id] [--port n]")
-	fmt.Fprintln(os.Stderr, "       clawdline todo done [--conversation id] [--key k] [--port n] <to-do id>")
-	fmt.Fprintln(os.Stderr, "  add writes this Session's own to-dos, one per argument or one per non-empty stdin line,")
-	fmt.Fprintln(os.Stderr, "  and only when the person asked for them; all are added or none are")
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.usage_clawdline_todo_add_conversati.9360a66e", "usage: clawdline todo add [--conversation id] [--key k] [--port n] <text> [text…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.clawdline_todo_list_conversation_id.e632425b", "       clawdline todo list [--conversation id] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.clawdline_todo_done_conversation_id.16fcbcb0", "       clawdline todo done [--conversation id] [--key k] [--port n] <to-do id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.add_writes_this_session_s_own_to_do.c46fb2f1", "  add writes this Session's own to-dos, one per argument or one per non-empty stdin line,"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "todo.and_only_when_the_person_asked_for.832bfe30", "  and only when the person asked for them; all are added or none are"))
 	os.Exit(2)
 }
 
@@ -84,7 +84,7 @@ func todoLines(r io.Reader) ([]string, error) {
 		return nil, err
 	}
 	if len(data) > todoInputLimit {
-		return nil, fmt.Errorf("the to-dos on stdin are larger than %d bytes, the most the daemon reads", todoInputLimit)
+		return nil, fmt.Errorf(cliCopy("misc", "todo.input_too_large", "the to-dos on stdin are larger than %d bytes, the most the daemon reads"), todoInputLimit)
 	}
 	var out []string
 	sc := bufio.NewScanner(strings.NewReader(string(data)))
@@ -104,13 +104,13 @@ func sessionTodo(stdout, stderr io.Writer, b *broker, op string, args []string, 
 	if conversation == "" {
 		var err error
 		if conversation, _, err = conversationFromEnv(getenv); err != nil {
-			fmt.Fprintf(stderr, "clawdline %s: %s Nothing was changed.\n", name, conversationRefusal(err, "--conversation"))
+			fmt.Fprintf(stderr, cliCopy("misc", "todo.clawdline_s_s_nothing_was_changed.5cfd372d", "clawdline %s: %s Nothing was changed.\n"), name, conversationRefusal(err, "--conversation"))
 			return 2
 		}
 	}
 	if conversation == "" {
-		fmt.Fprintf(stderr, "clawdline %s: cannot tell which conversation this is: none of %s is set. "+
-			"Pass --conversation <this assistant's conversation id>. Nothing was changed.\n",
+		fmt.Fprintf(stderr, cliCopy("misc", "todo.conversation_missing", "clawdline %s: cannot tell which conversation this is: none of %s is set. "+
+			"Pass --conversation <this assistant's conversation id>. Nothing was changed.\n"),
 			name, strings.Join(conversationEnv, ", "))
 		return 2
 	}
@@ -133,19 +133,19 @@ func sessionTodo(stdout, stderr io.Writer, b *broker, op string, args []string, 
 			}
 		}
 		if len(rows) == 0 {
-			fmt.Fprintf(stderr, "clawdline %s: there is no to-do to add\n", name)
+			fmt.Fprintf(stderr, cliCopy("misc", "todo.clawdline_s_there_is_no_to_do_to_ad.5fe944fc", "clawdline %s: there is no to-do to add\n"), name)
 			return 2
 		}
 		method, path, body = http.MethodPost, base, map[string]any{"todos": rows}
 	case "done":
 		id := strings.TrimSpace(args[0])
 		if id == "" {
-			fmt.Fprintf(stderr, "clawdline %s: name the to-do id to complete\n", name)
+			fmt.Fprintf(stderr, cliCopy("misc", "todo.clawdline_s_name_the_to_do_id_to_co.fcf11d12", "clawdline %s: name the to-do id to complete\n"), name)
 			return 2
 		}
 		method, path, body = http.MethodPost, base+"/"+url.PathEscape(id)+"/complete", map[string]any{}
 	default:
-		fmt.Fprintf(stderr, "clawdline todo: no such action %q\n", op)
+		fmt.Fprintf(stderr, cliCopy("misc", "todo.clawdline_todo_no_such_action_q.a8c18ff2", "clawdline todo: no such action %q\n"), op)
 		return 2
 	}
 	if key == "" {
@@ -157,7 +157,7 @@ func sessionTodo(stdout, stderr io.Writer, b *broker, op string, args []string, 
 	a, err := b.request(method, path, nil, body, key)
 	if err != nil {
 		fmt.Fprintf(stderr, "clawdline %s: %v\n", name, err)
-		fmt.Fprintf(stderr, "To retry the same write: clawdline %s --key %s …\n", name, key)
+		fmt.Fprintf(stderr, cliCopy("misc", "todo.to_retry_the_same_write_clawdline_s.ac418e8e", "To retry the same write: clawdline %s --key %s …\n"), name, key)
 		return 1
 	}
 	return report(stdout, stderr, name, a)

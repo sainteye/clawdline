@@ -64,19 +64,19 @@ func callbackArgs(args []string, cwd string) (callbackInvocation, error) {
 	}
 	inv.argv = fs.Args()
 	if len(inv.argv) == 0 {
-		return inv, errors.New("name the command after --: clawdline callback --title \"…\" -- <command> [args…]")
+		return inv, errors.New(cliCopy("misc", "callback.command_required", "name the command after --: clawdline callback --title \"…\" -- <command> [args…]"))
 	}
 	if strings.TrimSpace(inv.title) == "" {
-		return inv, errors.New("--title is required")
+		return inv, errors.New(cliCopy("misc", "callback.title_required", "--title is required"))
 	}
 	if inv.timeout < time.Minute || inv.timeout > 240*time.Minute {
-		return inv, errors.New("--timeout must be 1m to 4h")
+		return inv, errors.New(cliCopy("misc", "callback.timeout_invalid", "--timeout must be 1m to 4h"))
 	}
 	if inv.workID != "" && !orchestrator.IsTaskID(inv.workID) {
-		return inv, fmt.Errorf("--work-id %q is not a lowercase UUID", inv.workID)
+		return inv, fmt.Errorf(cliCopy("misc", "callback.work_id_invalid", "--work-id %q is not a lowercase UUID"), inv.workID)
 	}
 	if inv.taskID != "" && !orchestrator.IsTaskID(inv.taskID) {
-		return inv, fmt.Errorf("--task-id %q is not a lowercase UUID", inv.taskID)
+		return inv, fmt.Errorf(cliCopy("misc", "callback.task_id_invalid", "--task-id %q is not a lowercase UUID"), inv.taskID)
 	}
 	if inv.dir == "" {
 		inv.dir = cwd
@@ -91,8 +91,8 @@ func callbackCommand(args []string) {
 	cwd, _ := os.Getwd()
 	inv, err := callbackArgs(args, cwd)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline callback:", err)
-		fmt.Fprintln(os.Stderr, `usage: clawdline callback --title "…" [--timeout 30m] [--work-id <item>] [--dir D] [--task-id uuid] [--json] -- <command> [args…]`)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "callback.clawdline_callback.0e6befe9", "clawdline callback:"), err)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "callback.usage_clawdline_callback_title_time.ed8f80b7", `usage: clawdline callback --title "…" [--timeout 30m] [--work-id <item>] [--dir D] [--task-id uuid] [--json] -- <command> [args…]`))
 		os.Exit(2)
 	}
 	b, err := openBroker(inv.port)
@@ -109,9 +109,9 @@ func startCallback(stdout, stderr io.Writer, b *broker, inv callbackInvocation, 
 		var err error
 		if conversation, name, err = conversationFromEnv(getenv); err != nil || conversation == "" {
 			if err == nil {
-				err = errors.New("no conversation id")
+				err = errors.New(cliCopy("misc", "callback.no_conversation", "no conversation id"))
 			}
-			fmt.Fprintf(stderr, "clawdline callback: %s Nothing was started.\n", conversationRefusal(err, "--conversation"))
+			fmt.Fprintf(stderr, cliCopy("misc", "callback.clawdline_callback_s_nothing_was_st.12e9f2cd", "clawdline callback: %s Nothing was started.\n"), conversationRefusal(err, "--conversation"))
 			return 2
 		}
 	}
@@ -142,8 +142,8 @@ func startCallback(stdout, stderr io.Writer, b *broker, inv callbackInvocation, 
 	}
 	a, err := b.request(http.MethodPost, "/v1/orchestrator/callbacks", nil, body, "")
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline callback:", err)
-		fmt.Fprintf(stderr, "Check `clawdline task show %s` before starting it again with --task-id %s.\n", id, id)
+		fmt.Fprintln(stderr, cliCopy("misc", "callback.clawdline_callback.0e6befe9", "clawdline callback:"), err)
+		fmt.Fprintf(stderr, cliCopy("misc", "callback.check_clawdline_task_show_s_before.17b564c8", "Check `clawdline task show %s` before starting it again with --task-id %s.\n"), id, id)
 		return 1
 	}
 	if !a.ok() {
@@ -156,20 +156,19 @@ func startCallback(stdout, stderr io.Writer, b *broker, inv callbackInvocation, 
 	}
 	var got contract.BrokerDispatchResult
 	if json.Unmarshal(a.Body, &got) != nil || got.Task.ID == "" {
-		fmt.Fprintln(stderr, "clawdline callback: the daemon answered without the task it started")
+		fmt.Fprintln(stderr, cliCopy("misc", "callback.clawdline_callback_the_daemon_answe.9136210b", "clawdline callback: the daemon answered without the task it started"))
 		return 1
 	}
 	line := "callback " + got.Task.ID + " " + string(got.Task.State)
 	if got.Replayed {
-		line += " (already started under this id; nothing was started again)"
+		line += cliCopy("misc", "callback.replayed", " (already started under this id; nothing was started again)")
 	}
 	fmt.Fprintln(stdout, line)
 	for _, w := range got.Warnings {
-		fmt.Fprintln(stdout, "warning:", w.Code, w.Message)
+		fmt.Fprintln(stdout, cliCopy("misc", "callback.warning.47578bd3", "warning:"), w.Code, w.Message)
 	}
 	if string(got.Task.State) == string(orchestrator.StateBriefed) {
-		fmt.Fprintln(stdout, "End your turn now: a notice arrives when the command exits, and `clawdline task show "+
-			got.Task.ID+"` prints how it ended.")
+		fmt.Fprintf(stdout, cliCopy("misc", "callback.end_turn", "End your turn now: a notice arrives when the command exits, and `clawdline task show %s` prints how it ended.\n"), got.Task.ID)
 	} else {
 		writeTaskView(stdout, got.Task)
 	}

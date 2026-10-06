@@ -133,7 +133,7 @@ func dispatchCommand(args []string) {
 	}
 	instructions, err := readInstructions(*instructionsFile, os.Stdin)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline dispatch:", err)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.clawdline_dispatch.ecf3a494", "clawdline dispatch:"), err)
 		os.Exit(2)
 	}
 	o.Instructions = instructions
@@ -155,11 +155,11 @@ func (o *dispatchOptions) setWorkIDs(ids []string) {
 }
 
 func dispatchUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.usage", "usage: clawdline dispatch --title <t> --claims a,b [--claims c] [--project-dir d] "+
 		"[--assistant claude|codex] [--isolation none|worktree] [--permission-mode ask|edits|full] [--timeout min] "+
 		"[--kind k] [--deliverable p …] [--model m] [--persona id] [--work-id uuid …] [--task-id uuid] [--label l] "+
-		"[--instructions-file f | instructions on stdin] [--conversation id] [--root-assistant claude|codex] [--port n] [--json]")
-	fmt.Fprintln(os.Stderr, "  dispatches an owned child: writes task.json, reads the inventory, posts the task")
+		"[--instructions-file f | instructions on stdin] [--conversation id] [--root-assistant claude|codex] [--port n] [--json]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "dispatch.dispatches_an_owned_child_writes_ta.5756ae0b", "  dispatches an owned child: writes task.json, reads the inventory, posts the task"))
 	os.Exit(2)
 }
 
@@ -180,35 +180,35 @@ func readInstructions(path string, stdin io.Reader) (string, error) {
 		return "", err
 	}
 	if len(data) > dispatchInstructionsLimit {
-		return "", fmt.Errorf("the instructions in %s are longer than %d bytes, the most a task may carry. "+
-			"Nothing was dispatched: shorten them, or put the detail in a file the child reads", source, dispatchInstructionsLimit)
+		return "", fmt.Errorf(cliCopy("misc", "dispatch.instructions_too_long", "the instructions in %s are longer than %d bytes, the most a task may carry. "+
+			"Nothing was dispatched: shorten them, or put the detail in a file the child reads"), source, dispatchInstructionsLimit)
 	}
 	return string(data), nil
 }
 
 // dispatchRefusal says why nothing was dispatched, answering the usage status.
 func dispatchRefusal(stderr io.Writer, format string, args ...any) int {
-	fmt.Fprintf(stderr, "clawdline dispatch: "+format+" Nothing was dispatched.\n", args...)
+	fmt.Fprintf(stderr, cliCopy("misc", "dispatch.refusal", "clawdline dispatch: %s Nothing was dispatched.\n"), fmt.Sprintf(format, args...))
 	return 2
 }
 
 // checkDispatchFlags refuses the flags a dispatch cannot go without.
 func checkDispatchFlags(stderr io.Writer, o dispatchOptions) int {
 	if strings.TrimSpace(o.Title) == "" {
-		return dispatchRefusal(stderr, "--title is required.")
+		return dispatchRefusal(stderr, "%s", cliCopy("misc", "dispatch.title_required", "--title is required."))
 	}
 	if !o.ClaimsGiven {
-		return dispatchRefusal(stderr, "--claims is required: the relative paths the child may write (--claims '' for none).")
+		return dispatchRefusal(stderr, "%s", cliCopy("misc", "dispatch.claims_required", "--claims is required: the relative paths the child may write (--claims '' for none)."))
 	}
 	if o.Persona != "" {
 		_, builtin := persona.Known(o.Persona)
 		if !builtin && !squad.ValidCustomID(o.Persona) {
-			return dispatchRefusal(stderr, "--persona %q is not a persona this build has; it has %s.",
+			return dispatchRefusal(stderr, cliCopy("misc", "dispatch.persona_unknown", "--persona %q is not a persona this build has; it has %s."),
 				o.Persona, strings.Join(persona.IDs(), ", "))
 		}
 	}
 	if o.TaskID != "" && !orchestrator.IsTaskID(o.TaskID) {
-		return dispatchRefusal(stderr, "--task-id must be a lowercase UUID.")
+		return dispatchRefusal(stderr, "%s", cliCopy("misc", "dispatch.task_id_invalid", "--task-id must be a lowercase UUID."))
 	}
 	return 0
 }
@@ -221,10 +221,10 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 	}
 	o.Title = strings.TrimSpace(o.Title)
 	if strings.TrimSpace(o.Instructions) == "" {
-		return usage("there are no instructions: pass --instructions-file, or send them on stdin.")
+		return usage("%s", cliCopy("misc", "dispatch.instructions_missing", "there are no instructions: pass --instructions-file, or send them on stdin."))
 	}
 	if len(o.Instructions) > dispatchInstructionsLimit {
-		return usage("the instructions are longer than %d bytes, the most a task may carry.", dispatchInstructionsLimit)
+		return usage(cliCopy("misc", "dispatch.instructions_over_limit", "the instructions are longer than %d bytes, the most a task may carry."), dispatchInstructionsLimit)
 	}
 
 	// The root: this conversation, and which assistant it is.
@@ -245,17 +245,17 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 			}
 			assistant := conversationAssistant[name]
 			if rootAssistant != "" && rootAssistant != assistant {
-				return usage("conversation %s matches both assistants. Pass --root-assistant claude or codex.", conversation)
+				return usage(cliCopy("misc", "dispatch.conversation_ambiguous", "conversation %s matches both assistants. Pass --root-assistant claude or codex."), conversation)
 			}
 			rootAssistant = assistant
 		}
 	}
 	if conversation == "" {
-		return usage("cannot tell which conversation is dispatching: none of %s is set. "+
-			"Pass --conversation <this assistant's conversation id>.", strings.Join(conversationEnv, ", "))
+		return usage(cliCopy("misc", "dispatch.conversation_missing", "cannot tell which conversation is dispatching: none of %s is set. "+
+			"Pass --conversation <this assistant's conversation id>."), strings.Join(conversationEnv, ", "))
 	}
 	if rootAssistant == "" {
-		return usage("cannot tell which assistant %s belongs to. Pass --root-assistant claude or codex.", conversation)
+		return usage(cliCopy("misc", "dispatch.assistant_unknown", "cannot tell which assistant %s belongs to. Pass --root-assistant claude or codex."), conversation)
 	}
 	if o.Assistant == "" {
 		o.Assistant = rootAssistant
@@ -264,7 +264,7 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 	if o.ProjectDir == "" {
 		top, err := env.toplevel()
 		if err != nil {
-			return usage("--project-dir was not given and this directory's git top-level could not be read: %v.", err)
+			return usage(cliCopy("misc", "dispatch.project_dir_unknown", "--project-dir was not given and this directory's git top-level could not be read: %v."), err)
 		}
 		o.ProjectDir = top
 	}
@@ -278,7 +278,7 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 	}
 	id, secret, err := env.fresh()
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline dispatch: no task id or secret could be made:", err)
+		fmt.Fprintln(stderr, cliCopy("misc", "dispatch.clawdline_dispatch_no_task_id_or_se.bbac28a4", "clawdline dispatch: no task id or secret could be made:"), err)
 		return 1
 	}
 	if o.TaskID != "" {
@@ -292,27 +292,27 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		want, _ := json.Marshal(brief)
 		var existing any
 		if json.Unmarshal(old, &existing) != nil {
-			return usage("task %s has an unreadable dispatch intent; inspect it before retrying.", id)
+			return usage(cliCopy("misc", "dispatch.intent_unreadable", "task %s has an unreadable dispatch intent; inspect it before retrying."), id)
 		}
 		got, _ := json.Marshal(existing)
 		if string(got) != string(want) {
-			return usage("task %s already has a different brief; choose a different --task-id.", id)
+			return usage(cliCopy("misc", "dispatch.intent_conflict", "task %s already has a different brief; choose a different --task-id."), id)
 		}
 	} else if os.IsNotExist(readErr) {
 		if _, taskErr := os.Stat(filepath.Join(dir, "task.json")); taskErr == nil {
-			return usage("task %s already exists without a retryable dispatch intent; inspect it before retrying.", id)
+			return usage(cliCopy("misc", "dispatch.task_exists", "task %s already exists without a retryable dispatch intent; inspect it before retrying."), id)
 		}
 		dir, err = writeTaskFile(inv.TaskRoot, id, brief)
 		created = err == nil
 	} else {
-		return usage("task %s could not be inspected: %v.", id, readErr)
+		return usage(cliCopy("misc", "dispatch.task_uninspectable", "task %s could not be inspected: %v."), id, readErr)
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline dispatch:", err, "Nothing was dispatched.")
+		fmt.Fprintln(stderr, cliCopy("misc", "dispatch.clawdline_dispatch.ecf3a494", "clawdline dispatch:"), err, cliCopy("misc", "dispatch.nothing_dispatched", "Nothing was dispatched."))
 		return 1
 	}
 	if o.TaskID != "" {
-		fmt.Fprintf(stderr, "Task ID: %s; retry this dispatch with --task-id %s if the response is lost.\n", id, id)
+		fmt.Fprintf(stderr, cliCopy("misc", "dispatch.task_id_s_retry_this_dispatch_with.11297cf7", "Task ID: %s; retry this dispatch with --task-id %s if the response is lost.\n"), id, id)
 	}
 	warnings := inv.overlapLines()
 
@@ -340,9 +340,9 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 	}
 	if err != nil {
 		// Whether the daemon took it is unknown, so the brief stays.
-		fmt.Fprintln(stderr, "clawdline dispatch:", err)
-		fmt.Fprintf(stderr, "Whether task %s was dispatched is unknown: GET /v1/orchestrator/tasks/%s answers it. "+
-			"Its task.json stays at %s. Retry with --task-id %s and the same brief.\n", id, id, dir, id)
+		fmt.Fprintln(stderr, cliCopy("misc", "dispatch.clawdline_dispatch.ecf3a494", "clawdline dispatch:"), err)
+		fmt.Fprintf(stderr, cliCopy("misc", "dispatch.uncertain", "Whether task %s was dispatched is unknown: GET /v1/orchestrator/tasks/%s answers it. "+
+			"Its task.json stays at %s. Retry with --task-id %s and the same brief.\n"), id, id, dir, id)
 		return 1
 	}
 	if !a.ok() {
@@ -374,7 +374,7 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		} `json:"warnings"`
 	}
 	if json.Unmarshal(a.Body, &got) != nil || got.Task.ID == "" {
-		fmt.Fprintf(stderr, "clawdline dispatch: the daemon said yes with an answer this command cannot read: %s\n",
+		fmt.Fprintf(stderr, cliCopy("misc", "dispatch.clawdline_dispatch_the_daemon_said.462b642e", "clawdline dispatch: the daemon said yes with an answer this command cannot read: %s\n"),
 			strings.TrimSpace(string(a.Body)))
 		return 1
 	}
@@ -383,11 +383,11 @@ func dispatchTask(stdout, stderr io.Writer, b *broker, o dispatchOptions, env di
 		line += " worktree " + got.Task.Worktree.Path
 	}
 	if got.Replayed {
-		line += " (replayed)"
+		line += cliCopy("misc", "dispatch.replayed", " (replayed)")
 	}
 	fmt.Fprintln(stdout, line)
 	for _, w := range got.Warnings {
-		fmt.Fprintf(stdout, "warning %s: %s\n", w.Code, w.Message)
+		fmt.Fprintf(stdout, cliCopy("misc", "dispatch.warning", "warning %s: %s\n"), w.Code, w.Message)
 	}
 	for _, w := range warnings {
 		fmt.Fprintln(stdout, w)
@@ -414,7 +414,7 @@ func (inv dispatchInventory) overlapLines() []string {
 		if len(row.Overlaps) == 0 {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("warning overlap: live task %s (%s) %q also claims %s",
+		lines = append(lines, fmt.Sprintf(cliCopy("misc", "dispatch.overlap_warning", "warning overlap: live task %s (%s) %q also claims %s"),
 			row.Task, row.State, row.Title, strings.Join(row.Overlaps, ", ")))
 	}
 	return lines
@@ -429,7 +429,7 @@ func readDispatchInventory(stderr io.Writer, b *broker, o dispatchOptions) (disp
 	}
 	a, err := b.request(http.MethodGet, "/v1/orchestrator/inventory", query, nil, "")
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline dispatch:", err, "Nothing was dispatched.")
+		fmt.Fprintln(stderr, cliCopy("misc", "dispatch.clawdline_dispatch.ecf3a494", "clawdline dispatch:"), err, cliCopy("misc", "dispatch.nothing_dispatched", "Nothing was dispatched."))
 		return dispatchInventory{}, 1
 	}
 	if !a.ok() {
@@ -437,8 +437,8 @@ func readDispatchInventory(stderr io.Writer, b *broker, o dispatchOptions) (disp
 	}
 	var inv dispatchInventory
 	if json.Unmarshal(a.Body, &inv) != nil || inv.Generation == "" || !filepath.IsAbs(inv.TaskRoot) {
-		fmt.Fprintln(stderr, "clawdline dispatch: the inventory answered without a generation or an absolute task_root. "+
-			"Nothing was dispatched.")
+		fmt.Fprintln(stderr, cliCopy("misc", "dispatch.inventory_unreadable", "clawdline dispatch: the inventory answered without a generation or an absolute task_root. "+
+			"Nothing was dispatched."))
 		return dispatchInventory{}, 1
 	}
 	return inv, 0
@@ -498,20 +498,20 @@ func writeTaskFile(root, id string, task map[string]any) (string, error) {
 		return "", err
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
-		return "", fmt.Errorf("the task root %s could not be made: %w.", root, err)
+		return "", fmt.Errorf(cliCopy("misc", "dispatch.root_create_failed", "the task root %s could not be made: %w."), root, err)
 	}
 	dir := filepath.Join(root, id)
 	if err := os.Mkdir(dir, 0o700); err != nil {
-		return "", fmt.Errorf("the task directory %s could not be made: %w.", dir, err)
+		return "", fmt.Errorf(cliCopy("misc", "dispatch.directory_create_failed", "the task directory %s could not be made: %w."), dir, err)
 	}
 	path := filepath.Join(dir, "task.json")
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		_ = os.RemoveAll(dir)
-		return "", fmt.Errorf("%s could not be written: %w.", path, err)
+		return "", fmt.Errorf(cliCopy("misc", "dispatch.task_write_failed", "%s could not be written: %w."), path, err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "dispatch-intent.json"), append(data, '\n'), 0o600); err != nil {
 		_ = os.RemoveAll(dir)
-		return "", fmt.Errorf("dispatch intent for %s could not be written: %w.", id, err)
+		return "", fmt.Errorf(cliCopy("misc", "dispatch.intent_write_failed", "dispatch intent for %s could not be written: %w."), id, err)
 	}
 	return dir, nil
 }
@@ -553,7 +553,7 @@ func gitToplevel() (string, error) {
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return "", fmt.Errorf("this directory is not in a git repository")
+			return "", errors.New(cliCopy("misc", "dispatch.not_git_repository", "this directory is not in a git repository"))
 		}
 		return "", err
 	}
