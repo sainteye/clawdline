@@ -70,6 +70,17 @@ The Windows vet was red on exactly that from the day it could have been run unti
 a check that is always red is one nobody runs. A test that needs a Unix facility asks for it through
 a per-platform file (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
 
+## Why every build runs through heavy
+
+`tools/heavy.sh` (`clawdline heavy`) waits for the machine's one compile slot and available memory,
+runs the command at a lower priority, and gives the slot back. On 2026-09-26 several sessions built
+at once on a 2-core, 1.9 GB machine; load reached 34, console reads took 8-74 seconds, and Claude
+Code killed a landing's checks twice for low memory. The wrapper still runs when the daemon is
+missing and says so. If `--max-wait` (default 30m) passes before it gets the slot and memory, it
+does not run the command and exits 75; run it again later. It prints one line when waiting starts
+and one when waiting ends, so use one long wait rather than repeated short polls. Wrap the whole
+script once; a nested `heavy` runs directly.
+
 ## The public repository in full
 
 `tools/check-private.sh` reads a word list kept out of git (`.git/info/private-words`); without
@@ -110,4 +121,3 @@ intentional history rewrite. `docs/privacy-guard.md` is the whole of it.
   2026-09-21 two restarts were each confirmed with health while `/` answered 501 to everybody for
   seven and a half hours. The console is back when `GET /` answers 200, or when the line under
   `listening` in `logs/daemon.log` says `console: served from …`.
-
