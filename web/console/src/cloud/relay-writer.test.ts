@@ -219,6 +219,7 @@ test("each console route is the Cloud word the machine lists, and nothing else",
     ["POST", "/v1/settings/default-models", "default-models-update"],
     ["GET", "/v1/settings/work-gates", "work-gate-settings"],
     ["POST", "/v1/settings/work-gates", "work-gate-settings-update"],
+    ["POST", "/v1/update/apply", "update-apply"],
     ["POST", "/v1/board", "board-command"],
     ["GET", "/v1/places/p1/sessions/claude", "past-sessions"],
     ["GET", "/v1/artifacts/images/img-1", "image"],
@@ -1798,6 +1799,7 @@ test("the update read crosses as its machine word, with no field of its own", as
 
   assert.equal(writeRoute("GET", "/v1/update/1"), null)
   assert.equal(writeRoute("POST", "/v1/update"), null)
+  assert.equal(writeRoute("GET", "/v1/update/apply"), null)
 
   const extra = await reader.fetch("/v1/update?apply=1")
   assert.equal(extra.status, 501)
@@ -1808,6 +1810,30 @@ test("the update read crosses as its machine word, with no field of its own", as
   const old = await reader.fetch("/v1/update")
   assert.equal(old.status, 501)
   assert.equal((await json<{ error: { code: string } }>(old)).error.code, "unknown_command")
+})
+
+test("the update press crosses as a machine command with nothing but its key", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  assert.equal(writeRoute("POST", "/v1/update/apply")?.word, "update-apply")
+  const pressed = await reader.fetch("/v1/update/apply", post({}, { "Idempotency-Key": "press-1" }))
+  assert.equal(pressed.status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequestAs", "press-1", "mac-a", "update-apply", {}, "action"])
+
+  // Naming a release or forcing one is the machine's own CLI, never a phone's.
+  for (const body of [{ version: "v9.9.9" }, { force: true }]) {
+    const refused = await reader.fetch("/v1/update/apply", post(body, { "Idempotency-Key": "press-2" }))
+    assert.equal(refused.status, 501, JSON.stringify(body))
+    assert.equal(client.calls.length, 0)
+  }
+  const query = await reader.fetch("/v1/update/apply?version=v1", post({}))
+  assert.equal(query.status, 501)
+
+  // A machine that predates the word says so with its own code.
+  client.fail._machineRequestAs = refusal("unknown_command", { status: 501, layer: "mac_route", message: "update-apply" })
+  const old = await reader.fetch("/v1/update/apply", post({}, { "Idempotency-Key": "press-3" }))
+  assert.equal(old.status, 501)
+  assert.equal((await json<{ error: string }>(old)).error, "unknown_command")
 })
 
 test("squad settings carry per-field patches and package reads never gain write authority", async () => {

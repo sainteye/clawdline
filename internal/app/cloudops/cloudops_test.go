@@ -760,6 +760,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-update",
 		method: "GET", path: "/v1/update",
 	}, {
+		// The Settings page's 「立即更新」: a machine command with no parameter.
+		word:    "update-apply",
+		body:    map[string]any{"type": "update-apply", "session": machine, "request": "req-apply"},
+		session: machine, name: "action:req-apply",
+		method: "POST", path: "/v1/update/apply",
+		body2: `{}`,
+	}, {
 		// The built-in personas a start may name: machine-wide and
 		// parameterless, as the local route is.
 		word:    "personas",
@@ -1789,7 +1796,7 @@ func TestTheVocabularyAndTheImplementedListAgreeWithTheCatalog(t *testing.T) {
 		"schedule-run", "schedule-webhook-bind-v1", "snippets", "snippet-create", "snippet-update", "snippet-delete",
 		"snippet-order", "push-key", "push-subscribe", "push-unsubscribe", "push-test",
 		"board", "board-command", "board.items", "timeline", "projects", "project-file-list", "project-file-read", "project-file-save", "project-tree-list", "project-tree-read", "project-unify-plan", "project-unify-apply", "project-worktree-lifecycle",
-		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "update", "personas",
+		"project-worktree-lifecycle-refresh", "capacity", "default-models", "default-models-update", "work-gate-settings", "work-gate-settings-update", "machine-usage", "update", "update-apply", "personas",
 		"work.proposals", "work.decisions", "work.decision", "work.digests",
 		"work.v2.item", "work.v2.items", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.image", "work.v2.create",
 		"work.v2.gate-export", "work.v2.gate-decision", "work.v2.gate-purge",
@@ -2609,6 +2616,41 @@ func TestTheUpdateReadCrossesWithNothingButItsName(t *testing.T) {
 		"type": "update", "session": MachineReplySession, "request": "req"}))
 	if answer.Status != 404 {
 		t.Fatalf("answered %d/%q, wanted 404", answer.Status, answer.Code)
+	}
+}
+
+// The Settings page's 「立即更新」 over Cloud is a command: it needs the
+// machine's command switch, carries nothing but the request, and reaches the
+// apply route as a paired device rather than as this machine.
+func TestUpdateApplyCrossesAsACommandWithNothingButItsName(t *testing.T) {
+	press := map[string]any{"type": "update-apply", "session": MachineReplySession, "request": "req-apply"}
+	r := &router{}
+	refused := Bridge{MachineID: "mac-01", Router: r}.Handle(context.Background(), request(t, ClassCtl, press))
+	if refused.Code != "cloud_commands_disabled" || len(r.seen) != 0 {
+		t.Fatalf("with commands off answered %+v, asked %v", refused, r.seen)
+	}
+
+	r = &router{status: 202, body: `{"state":"update_available","running":{"stamp":""},"latest":{"stamp":""},"source_url":"x","apply":{"state":"downloading"}}`}
+	answer := open(r).Handle(context.Background(), request(t, ClassCtl, press))
+	if answer.Status != 202 || len(r.seen) != 1 {
+		t.Fatalf("answered %+v, asked %+v", answer, r.seen)
+	}
+	got := r.last()
+	if got.Method != "POST" || got.Path != "/v1/update/apply" || string(got.Body) != "{}" ||
+		got.Header[actorHeader] != actorDevice || len(got.Query) != 0 {
+		t.Fatalf("the press crossed as %+v body=%s", got, got.Body)
+	}
+
+	for _, body := range []map[string]any{
+		{"type": "update-apply", "session": MachineReplySession, "request": "req", "version": "v9.9.9"},
+		{"type": "update-apply", "session": MachineReplySession, "request": "req", "force": true},
+		{"type": "update-apply", "session": pane, "request": "req"},
+		{"type": "update-apply", "session": MachineReplySession},
+	} {
+		r := &router{}
+		if bad := open(r).Handle(context.Background(), request(t, ClassCtl, body)); bad.Code != "malformed_command" || len(r.seen) != 0 {
+			t.Fatalf("took %v: %+v, asked %v", body, bad, r.seen)
+		}
 	}
 }
 
