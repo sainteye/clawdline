@@ -84,7 +84,7 @@ func buildRevision() string {
 func main() {
 	args, language, err := commandLanguagePrefix(os.Args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "usage: clawdline --lang <tag> <command> [arguments]")
+		fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_clawdline_lang_tag_command_arguments", "usage: clawdline --lang <tag> <command> [arguments]"))
 		os.Exit(2)
 	}
 	os.Args, commandLanguage = args, language
@@ -359,37 +359,35 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 
 func doctor() {
 	cfg := config.Load()
-	fmt.Printf("version   %s\n", version)
-	fmt.Printf("port      %d\n", cfg.Port)
+	fmt.Printf(cliCopy("entry", "main_version_s", "version   %s\n"), version)
+	fmt.Printf(cliCopy("entry", "main_port_d", "port      %d\n"), cfg.Port)
 	// "0" would read like a port. Nobody behind this daemon is the ordinary
 	// answer and it is said in words (config.NoUpstream).
 	if port, ok := cfg.Upstream(); ok {
-		fmt.Printf("upstream  %d\n", port)
+		fmt.Printf(cliCopy("entry", "main_upstream_d", "upstream  %d\n"), port)
 	} else {
-		fmt.Printf("upstream  none (an unowned route answers 501 not_implemented; %s asks for one)\n",
+		fmt.Printf(cliCopy("entry", "main_upstream_none_an_unowned_route_answers", "upstream  none (an unowned route answers 501 not_implemented; %s asks for one)\n"),
 			config.UpstreamPortEnv)
 	}
-	fmt.Printf("dir       %s\n", cfg.Dir)
+	fmt.Printf(cliCopy("entry", "main_dir_s", "dir       %s\n"), cfg.Dir)
 
 	st, err := store.Open(cfg.Dir)
 	if err != nil {
-		fmt.Printf("store     unreadable: %v\n", err)
+		fmt.Printf(cliCopy("entry", "main_store_unreadable_v", "store     unreadable: %v\n"), err)
 		return
 	}
 	defer st.Close()
 	events, tasks, err := st.Counts(context.Background())
 	if err != nil {
-		fmt.Printf("store     unreadable: %v\n", err)
+		fmt.Printf(cliCopy("entry", "main_store_unreadable_v", "store     unreadable: %v\n"), err)
 		return
 	}
-	fmt.Printf("store     %d events, %d broker tasks\n", events, tasks)
+	fmt.Printf(cliCopy("entry", "main_store_d_events_d_broker_tasks", "store     %d events, %d broker tasks\n"), events, tasks)
 }
 
 // retiredCommand answers a command this binary no longer has.
 func retiredCommand(name string) {
-	fmt.Fprintf(os.Stderr, "clawdline %s: retired. Work is dispatched through the broker only — "+
-		"POST /v1/orchestrator/tasks, and a schedule's run goes the same way — and a landing is "+
-		"recorded with POST /v1/orchestrator/tasks/<id>/landing.\n", name)
+	fmt.Fprintf(os.Stderr, cliCopy("entry", "main_retired_command", "clawdline %s: retired. Work is dispatched through the broker only — POST /v1/orchestrator/tasks, and a schedule's run goes the same way — and a landing is recorded with POST /v1/orchestrator/tasks/<id>/landing.\n"), name)
 	os.Exit(2)
 }
 
@@ -401,7 +399,7 @@ func terminalCommand(op string, args []string) {
 		if op == "send" {
 			name = "type"
 		}
-		fmt.Fprintf(os.Stderr, "usage: clawdline %s <session-id> [text]\n", name)
+		fmt.Fprintf(os.Stderr, cliCopy("entry", "main_usage_clawdline_s_session_id_text", "usage: clawdline %s <session-id> [text]\n"), name)
 		os.Exit(2)
 	}
 	target := session.Session{ID: args[0], Backend: session.BackendTmux}
@@ -419,7 +417,7 @@ func terminalCommand(op string, args []string) {
 		}
 	}
 	if host == nil {
-		fmt.Fprintln(os.Stderr, "clawdline: no backend for", target.Backend)
+		fmt.Fprintln(os.Stderr, cliCopy("entry", "main_clawdline_no_backend_for", "clawdline: no backend for"), target.Backend)
 		os.Exit(1)
 	}
 
@@ -427,7 +425,7 @@ func terminalCommand(op string, args []string) {
 	switch op {
 	case "send":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "clawdline type needs text")
+			fmt.Fprintln(os.Stderr, cliCopy("entry", "main_clawdline_type_needs_text", "clawdline type needs text"))
 			os.Exit(2)
 		}
 		err = host.Send(ctx, target, strings.Join(args[1:], " "))
@@ -442,46 +440,46 @@ func terminalCommand(op string, args []string) {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("%s: delivered to %s\n", op, target.ID)
+	fmt.Printf(cliCopy("entry", "main_s_delivered_to_s", "%s: delivered to %s\n"), op, target.ID)
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>")
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_clawdline_serve_doctor_guide_skill", "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>"))
 	fmt.Fprintln(os.Stderr, "  "+cliCopy("core", "language_option", cliLanguageOptionEnglish))
-	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
-	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
-	fmt.Fprintln(os.Stderr, "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last")
-	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
-	fmt.Fprintln(os.Stderr, "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role")
-	fmt.Fprintln(os.Stderr, "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default")
-	fmt.Fprintln(os.Stderr, "  update [--json] [--apply [--force]]   whether this machine trails the cloud's latest build; exit 0 current, 10 behind, 3 unknown")
-	fmt.Fprintln(os.Stderr, "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory")
-	fmt.Fprintln(os.Stderr, "  setting <get|set> <key> <value>   product_language, planning_gate, verify_gate, or claude_auto_compact_window")
-	fmt.Fprintln(os.Stderr, "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step")
-	fmt.Fprintln(os.Stderr, "  callback --title <t> -- <command…>   run a command under the daemon and end the turn; its exit wakes this session")
-	fmt.Fprintln(os.Stderr, "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary")
-	fmt.Fprintln(os.Stderr, "  todo <add|list|done>          this session's own to-dos, added only when the person asks")
-	fmt.Fprintln(os.Stderr, "  note create                   post a human intervention to one Session")
-	fmt.Fprintln(os.Stderr, "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase")
-	fmt.Fprintln(os.Stderr, "  send --to <terminal> [text…]  relay a message into another session's composer")
-	fmt.Fprintln(os.Stderr, "  notify --title <t> --body <b>   push a notification to the person")
-	fmt.Fprintln(os.Stderr, "  landings | assistants         every landing still owed (--work-id: every landing recorded for one item); what each assistant's account has left")
-	fmt.Fprintln(os.Stderr, "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send, wait or handoff can name")
-	fmt.Fprintln(os.Stderr, "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)")
-	fmt.Fprintln(os.Stderr, "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so")
-	fmt.Fprintln(os.Stderr, "  open [--print]   sign a browser in with permission to read and send")
-	fmt.Fprintln(os.Stderr, "  pair [--watch]            show the code when a device asks to pair")
-	fmt.Fprintln(os.Stderr, "  devices [revoke <id>]     the browsers and devices signed in to this machine directly; revoke one")
-	fmt.Fprintln(os.Stderr, "  tunnel [--json]           what the cloudflared tunnel is doing; remote_tunnel in the settings turns it on")
-	fmt.Fprintln(os.Stderr, "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default")
-	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")
-	fmt.Fprintln(os.Stderr, "  project <add|remove|list>    explicitly keep directories in the session-start list")
-	fmt.Fprintln(os.Stderr, "  project unify [--apply|--check] [dir]   one rules file and one skills directory for Claude and Codex; --check exits 0 unified, 1 drifting, 3 unknown")
-	fmt.Fprintln(os.Stderr, "  task accept [--port n] <task dir>   a child signing for its briefing; secret from CLAWDLINE_TASK_SECRET or stdin")
-	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
-	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing; reading a finished one closes its notice")
-	fmt.Fprintln(os.Stderr, "  task wait <task id>… [--timeout 9m] [--any]   wait for children to finish, show each and close its notice; exit 0 ok, 1 failed, 3 timed out, 4 unreadable")
-	fmt.Fprintln(os.Stderr, "  task ack <task id> <notice id>      close a completion notice by hand; rarely needed")
-	fmt.Fprintln(os.Stderr, "  task land <task id> <state> [--target b --commit c]   record a landing a merge does not record by itself")
-	fmt.Fprintln(os.Stderr, "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   start a schedule through its webhook URL (from --url-file or CLAWDLINE_WEBHOOK_URL) and wait for its outcome; no daemon needed")
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_guide_topic_guide_list_the_agent", "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_skill_install_uninstall_put_this_build", "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_report_status_file_repo_dir_open", "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_session_report_summary_sentence_record_this", "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_coordinator_bind_conversation_id_register_this", "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_session_c_task_id_item", "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_update_json_apply_force_whether_this", "  update [--json] [--apply [--force]]   whether this machine trails the cloud's latest build; exit 0 current, 10 behind, 3 unknown"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_heavy_reason_r_command_run_a", "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_setting_get_set_key_value_product", "  setting <get|set> <key> <value>   product_language, planning_gate, verify_gate, or claude_auto_compact_window"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_dispatch_title_t_claims_a_b", "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_callback_title_t_command_run_a", "  callback --title <t> -- <command…>   run a command under the daemon and end the turn; its exit wakes this session"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_handoff_summary_file_check_hand_this", "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_todo_add_list_done_this_session", "  todo <add|list|done>          this session's own to-dos, added only when the person asks"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_note_create_post_a_human_intervention", "  note create                   post a human intervention to one Session"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_item_add_claim_name_child_assign", "  item <add|claim|name|child|assign|show|steps|step-add|step-done|doc|phase>   Board items, a Root's own name, steps, documents and phase"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_send_to_terminal_text_relay_a", "  send --to <terminal> [text…]  relay a message into another session's composer"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_notify_title_t_body_b_push", "  notify --title <t> --body <b>   push a notification to the person"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_landings_assistants_every_landing_still_owed", "  landings | assistants         every landing still owed (--work-id: every landing recorded for one item); what each assistant's account has left"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_leases_sessions_json_who_holds_or", "  leases | sessions [--json]    who holds or waits for each lease; the Sessions a send, wait or handoff can name"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_type_session_id_text_type_straight", "  type <session-id> <text>      type straight into a terminal, recording nothing (for testing a backend)"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_doctor_capacity_drill_audit_security_fill", "  doctor capacity --drill audit.security   fill a row on purpose, in a throwaway directory, and see it say so"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_open_print_sign_a_browser_in", "  open [--print]   sign a browser in with permission to read and send"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_pair_watch_show_the_code_when", "  pair [--watch]            show the code when a device asks to pair"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_devices_revoke_id_the_browsers_and", "  devices [revoke <id>]     the browsers and devices signed in to this machine directly; revoke one"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_tunnel_json_what_the_cloudflared_tunnel", "  tunnel [--json]           what the cloudflared tunnel is doing; remote_tunnel in the settings turns it on"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_cloud_status_on_off_login_connect", "  cloud <status|on|off|login|connect>   the line to app.clawdline.com; off by default"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_board_tracks_rows_json_the_old", "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_project_add_remove_list_explicitly_keep", "  project <add|remove|list>    explicitly keep directories in the session-start list"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_project_unify_apply_check_dir_one", "  project unify [--apply|--check] [dir]   one rules file and one skills directory for Claude and Codex; --check exits 0 unified, 1 drifting, 3 unknown"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_task_accept_port_n_task_dir", "  task accept [--port n] <task dir>   a child signing for its briefing; secret from CLAWDLINE_TASK_SECRET or stdin"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_task_finish_port_n_task_dir", "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_task_show_json_task_id_one", "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing; reading a finished one closes its notice"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_task_wait_task_id_timeout_9m", "  task wait <task id>… [--timeout 9m] [--any]   wait for children to finish, show each and close its notice; exit 0 ok, 1 failed, 3 timed out, 4 unreadable"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_task_ack_task_id_notice_id", "  task ack <task id> <notice id>      close a completion notice by hand; rarely needed"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_task_land_task_id_state_target", "  task land <task id> <state> [--target b --commit c]   record a landing a merge does not record by itself"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_webhook_fire_url_file_p_deliver", "  webhook fire [--url-file p] [--deliver-within 60s] [--timeout 60m] [--no-wait]   start a schedule through its webhook URL (from --url-file or CLAWDLINE_WEBHOOK_URL) and wait for its outcome; no daemon needed"))
 }

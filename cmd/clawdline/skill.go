@@ -36,7 +36,7 @@ func guideCommand(args []string) {
 // `clawdline guide child` is the protocol every dispatched child follows,
 // which its CHILD.md points at instead of carrying (orchestrator.ChildGuide).
 func printGuide(stdout, stderr io.Writer, args []string) int {
-	const usage = "usage: clawdline guide [lang] [part|all|refused <code>] [--since <hash>] | clawdline guide child | clawdline guide -list | clawdline guide -sections"
+	usage := cliCopy("entry", "skill_guide_usage", "usage: clawdline guide [lang] [part|all|refused <code>] [--since <hash>] | clawdline guide child | clawdline guide -list | clawdline guide -sections")
 	var since string
 	if len(args) >= 2 && args[len(args)-2] == "--since" {
 		since = args[len(args)-1]
@@ -91,6 +91,7 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 	case 2:
 		lang, part = args[0], args[1]
 	}
+	lang = guideTopic(lang)
 	var text []byte
 	var err error
 	switch {
@@ -111,7 +112,7 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 	// so a session that rereads it can ask for one line instead of the text.
 	hash := fmt.Sprintf("%x", sha256.Sum256(text))
 	if since == hash {
-		fmt.Fprintf(stdout, "unchanged %s\n", hash)
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_unchanged_s", "unchanged %s\n"), hash)
 		return 0
 	}
 	fmt.Fprintf(stdout, "guide-version: %s\n", hash)
@@ -120,7 +121,7 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 }
 
 func isGuideSection(v string) bool {
-	if v == "all" {
+	if v == "all" || v == orchestrator.ChildGuideTopic {
 		return true
 	}
 	for _, t := range skills.SectionNames() {
@@ -131,13 +132,36 @@ func isGuideSection(v string) bool {
 	return false
 }
 
+// guideTopic keeps command language selection separate from the guide's
+// published topic names. Unsupported language tags read the English guide.
+func guideTopic(language string) string {
+	if language == "" {
+		language = currentCLILanguage()
+	}
+	candidates := []string{language}
+	switch language {
+	case "zh-TW", "zh-Hant", "zh-Hant-TW":
+		candidates = []string{"zh-Hant", "zh-TW"}
+	case "zh-Hans-CN", "zh-CN":
+		candidates = []string{"zh-Hans", "zh-CN"}
+	}
+	for _, candidate := range candidates {
+		for _, topic := range skills.Topics() {
+			if candidate == topic {
+				return topic
+			}
+		}
+	}
+	return "en"
+}
+
 func skillCommand(args []string) {
 	if len(args) != 1 {
 		skillUsage()
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fail(fmt.Errorf("no home directory: %w", err))
+		fail(fmt.Errorf(cliCopy("entry", "skill_no_home_directory", "no home directory: %w"), err))
 	}
 	paths := skillfile.Paths{Home: home, StateDir: config.Dir(), Foreign: foreignDirs()}
 	switch args[0] {
@@ -151,9 +175,9 @@ func skillCommand(args []string) {
 }
 
 func skillUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline skill <install|uninstall>")
-	fmt.Fprintln(os.Stderr, "  install     write this build's stub to ~/.claude/skills/clawdline/SKILL.md, recording what was there")
-	fmt.Fprintln(os.Stderr, "  uninstall   put back what install recorded")
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_usage_clawdline_skill_install_uninstall", "usage: clawdline skill <install|uninstall>"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_install_write_this_build_s_stub", "  install     write this build's stub to ~/.claude/skills/clawdline/SKILL.md, recording what was there"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_uninstall_put_back_what_install_recorded", "  uninstall   put back what install recorded"))
 	os.Exit(2)
 }
 
@@ -165,15 +189,15 @@ func installSkill(stdout, stderr io.Writer, paths skillfile.Paths, now time.Time
 	}
 	switch done.Outcome {
 	case skillfile.AlreadyCurrent:
-		fmt.Fprintf(stdout, "Already installed: %s is this build's stub. Nothing was changed.\n", done.Path)
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_already_installed_s_is_this_build", "Already installed: %s is this build's stub. Nothing was changed.\n"), done.Path)
 		return 0
 	case skillfile.Updated:
-		fmt.Fprintf(stdout, "Updated %s to this build's stub.\n", done.Path)
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_updated_s_to_this_build_s", "Updated %s to this build's stub.\n"), done.Path)
 	default:
-		fmt.Fprintf(stdout, "Installed this build's stub at %s.\n", done.Path)
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_installed_this_build_s_stub_at", "Installed this build's stub at %s.\n"), done.Path)
 	}
-	fmt.Fprintf(stdout, "What was there before: %s. Recorded in %s.\n", describePrevious(done.Previous), done.RecordPath)
-	fmt.Fprintln(stdout, "`clawdline skill uninstall` puts it back. Sessions started from now on load the new stub.")
+	fmt.Fprintf(stdout, cliCopy("entry", "skill_what_was_there_before_s_recorded", "What was there before: %s. Recorded in %s.\n"), describePrevious(done.Previous), done.RecordPath)
+	fmt.Fprintln(stdout, cliCopy("entry", "skill_clawdline_skill_uninstall_puts_it_back", "`clawdline skill uninstall` puts it back. Sessions started from now on load the new stub."))
 	return 0
 }
 
@@ -184,11 +208,11 @@ func uninstallSkill(stdout, stderr io.Writer, paths skillfile.Paths) int {
 		return 1
 	}
 	if !done.Recorded {
-		fmt.Fprintf(stdout, "Nothing to undo: there is no install record at %s. %s was left as it is.\n",
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_nothing_to_undo_there_is_no", "Nothing to undo: there is no install record at %s. %s was left as it is.\n"),
 			done.RecordPath, done.Path)
 		return 0
 	}
-	fmt.Fprintf(stdout, "Put back what was at %s before the install: %s. The record is removed.\n",
+	fmt.Fprintf(stdout, cliCopy("entry", "skill_put_back_what_was_at_s", "Put back what was at %s before the install: %s. The record is removed.\n"),
 		done.Path, describePrevious(done.Restored))
 	return 0
 }
@@ -213,11 +237,11 @@ func projectBinary(dir string) {
 func describePrevious(p skillfile.Previous) string {
 	switch p.Kind {
 	case skillfile.KindSymlink:
-		return "a symbolic link to " + p.LinkTarget
+		return cliCopy("entry", "skill_previous_symbolic_link", "a symbolic link to ") + p.LinkTarget
 	case skillfile.KindFile:
-		return "a file (sha256 " + p.SHA256 + "), kept as a backup"
+		return cliCopy("entry", "skill_previous_file_prefix", "a file (sha256 ") + p.SHA256 + cliCopy("entry", "skill_previous_file_suffix", "), kept as a backup")
 	case skillfile.KindAbsent:
-		return "nothing"
+		return cliCopy("entry", "skill_previous_nothing", "nothing")
 	}
-	return "unknown"
+	return cliCopy("entry", "skill_previous_unknown", "unknown")
 }
