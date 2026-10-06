@@ -81,7 +81,7 @@
   "usage_excluded_d_with_no_owner_session": "除外: 所有者 Session のないもの %d 件、所有者を台帳がまだ読み取っていないもの %d 件\n",
   "usage_finished_board_items_grouped_by_whether": "  完了した Board 項目を節目での引き継ぎの有無別に集計し、項目あたりのキャッシュ読み取り数と既定にすべきかを表示",
   "usage_gap_s_s_s_s": "差: %s %s %s（%s）\n",
-  "usage_group_items_cache_reads_item_calls": "グループ\t項目\t項目あたりのキャッシュ読み取り\t項目あたりの呼び出し\t完了までの時間\t再開\t",
+  "usage_group_items_cache_reads_item_calls": "グループ\t項目\t項目あたりのキャッシュ読み取り\t項目あたりの呼び出し\t完了までの時間（h）\t再開\t",
   "usage_group_sessions_tasks_cost_task_calls": "グループ\tSession\tタスク\tタスクあたりの費用\tタスクあたりの呼び出し\tタスクあたりの圧縮\t200k 超の割合\t成功率\t停滞\t再起動\t",
   "usage_handing_over_stays_each_session_s": "引き継ぐかどうかは各 Session が決めます。節目で `clawdline handoff --summary <file>` を使用",
   "usage_milestone_handoffs_d_opened_d_failed": "節目での引き継ぎ: 開始 %d 件、開始失敗 %d 件、1 日後もタスクが未解決 %d 件\n",

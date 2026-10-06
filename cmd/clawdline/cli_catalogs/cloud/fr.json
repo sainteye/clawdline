@@ -80,7 +80,7 @@
   "revoke.refusal": "           sa prochaine enveloppe sera refusée ici, quel que soit le contenu de la liste du compte",
   "rotate.yes_help": "ne pas demander confirmation",
   "rotate.warning_1": "Remplacer la clé de signature de cette machine empêchera ces navigateurs de",
-  "rotate.warning_2": "la vérifier. Chacun devra être jumelé à nouveau :",
+  "rotate.warning_2": "vérifier cette machine. Chacun devra être jumelé à nouveau :",
   "rotate.none": "Aucun navigateur n'est jumelé à cette machine ; rien n'est donc à réparer.",
   "rotate.prompt": "Remplacer la clé quand même ? [y/N] ",
   "rotate.cancelled": "la clé n'a pas été remplacée",

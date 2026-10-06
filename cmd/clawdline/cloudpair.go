@@ -203,7 +203,7 @@ func cloudRotateCommand(args []string) {
 	}
 	if len(preview.Repair) > 0 {
 		fmt.Println(cliCopy("cloud", "rotate.warning_1", "Rotating this machine's signing key makes these browsers stop being able to"))
-		fmt.Println(cliCopy("cloud", "rotate.warning_2", "verify it. Each one has to be paired again:"))
+		fmt.Println(cliCopy("cloud", "rotate.warning_2", "verify this machine. Each one has to be paired again:"))
 		for _, row := range preview.Repair {
 			fmt.Println("   ", row)
 		}

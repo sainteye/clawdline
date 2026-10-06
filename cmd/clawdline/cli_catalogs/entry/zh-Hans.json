@@ -106,7 +106,7 @@
   "skill_previous_symbolic_link": "符号链接，目标为 ",
   "usage_category_line": "  %-10s %5.1f%% %s  %8s tokens  %s",
   "usage_upper_bound": "  （上限）",
-  "usage_compact_at": "启动时设置在此比例压缩：",
+  "usage_compact_at": "启动时压缩门槛设为 ",
   "usage_wait_calls": "、%d 次等待调用",
   "usage_of_tokens": "占 token 的比例",
   "skill_previous_nothing": "无内容",

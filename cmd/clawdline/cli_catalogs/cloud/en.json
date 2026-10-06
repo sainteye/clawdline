@@ -80,7 +80,7 @@
   "revoke.refusal": "           its next envelope is refused here, whatever the account's list says",
   "rotate.yes_help": "do not ask",
   "rotate.warning_1": "Rotating this machine's signing key makes these browsers stop being able to",
-  "rotate.warning_2": "verify it. Each one has to be paired again:",
+  "rotate.warning_2": "verify this machine. Each one has to be paired again:",
   "rotate.none": "No browser has been paired with this machine, so nothing has to be repaired.",
   "rotate.prompt": "Rotate anyway? [y/N] ",
   "rotate.cancelled": "nothing was rotated",

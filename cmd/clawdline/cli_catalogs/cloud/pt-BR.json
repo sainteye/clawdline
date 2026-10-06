@@ -80,11 +80,11 @@
   "revoke.refusal": "           o próximo envelope dele será recusado aqui, independentemente do cadastro da conta",
   "rotate.yes_help": "não pedir confirmação",
   "rotate.warning_1": "A troca da chave de assinatura desta máquina faz com que estes navegadores deixem de",
-  "rotate.warning_2": "verificá-la. Cada um precisa ser pareado novamente:",
+  "rotate.warning_2": "verificar esta máquina. Cada um precisa ser pareado novamente:",
   "rotate.none": "Nenhum navegador foi pareado com esta máquina, então não há nada a reparar.",
   "rotate.prompt": "Trocar a chave mesmo assim? [y/N] ",
   "rotate.cancelled": "a chave não foi trocada",
   "rotate.rotated": "trocada    %s (antes %s)\n",
-  "rotate.epoch": "versão     chave %d, identidade %d\n",
+  "rotate.epoch": "geração    chave %d, identidade %d\n",
   "rotate.reconnecting": "           a conexão caiu e está sendo restabelecida com a nova chave"
 }

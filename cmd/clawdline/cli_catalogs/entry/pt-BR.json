@@ -8,7 +8,7 @@
   "main_devices_revoke_id_the_browsers_and": "  devices [revoke <id>]     os navegadores e dispositivos conectados diretamente a esta máquina; revoga o acesso de um deles",
   "main_dir_s": "diretório %s\n",
   "main_dispatch_title_t_claims_a_b": "  dispatch --title <t> --claims a,b < brief   despacha uma tarefa filha sob sua responsabilidade: task.json, inventário e POST em uma etapa",
-  "main_doctor_capacity_drill_audit_security_fill": "  doctor capacity --drill audit.security   preenche uma linha de propósito em um diretório temporário e verifica o resultado",
+  "main_doctor_capacity_drill_audit_security_fill": "  doctor capacity --drill audit.security   preenche uma linha de propósito em um diretório temporário e verifica se o sistema informa que ela ficou cheia",
   "main_guide_topic_guide_list_the_agent": "  guide [topic] | guide -list   o guia do agente incluído nesta versão; dispensa o daemon",
   "main_handoff_summary_file_check_hand_this": "  handoff --summary <file> [--check]   transfere o trabalho desta sessão para uma nova sessão em um marco, com um resumo de tamanho limitado",
   "main_heavy_reason_r_command_run_a": "  heavy [--reason r] -- <command…>   executa uma compilação ou suíte de testes após obter a vaga de compilação e memória suficiente na máquina",

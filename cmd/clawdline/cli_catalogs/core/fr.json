@@ -28,7 +28,7 @@
   "setting.daemon_answered": "clawdline setting : le daemon a répondu %d : %s\n",
   "setting.daemon_unreachable": "le daemon n’a pas répondu : %w",
   "setting.invalid_key": "clawdline setting : %q n’est pas une clé que cette commande peut définir\n",
-  "setting.invalid_response": "clawdline setting : la réponse du daemon ne contenait pas les paramètres",
+  "setting.invalid_response": "clawdline setting : la réponse du daemon n’était pas une réponse de paramètres valide",
   "setting.invalid_value": "clawdline setting : %s doit être %s, et non %q\n",
   "setting.model_default": "valeur par défaut de %s",
   "setting.refused": "clawdline setting : refusé, %d %s : %s\n",

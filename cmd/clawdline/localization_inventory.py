@@ -2,7 +2,8 @@
 """Rebuild the daemon/CLI output-site inventory from source, without network access.
 
 Run at the repository root: python3 cmd/clawdline/localization_inventory.py
-The TSV is a search index, not an assertion that a candidate is translated.
+The TSV is a search index. Reviewed sites are tied to their exact source
+excerpt; an edited call returns to pending until its contract is checked again.
 """
 
 from pathlib import Path
@@ -15,6 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = (ROOT / "cmd/clawdline", ROOT / "internal/app", ROOT / "internal/transport/http", ROOT / "internal/domain/capacity", ROOT / "internal/productcopy")
 OUTPUT = ROOT / "cmd/clawdline/localization_matrix.tsv"
+SITE_REVIEWS = ROOT / "cmd/clawdline/localization_site_reviews.jsonl"
 HTTP_ENGLISH = json.loads((ROOT / "internal/productcopy/http_refusals/en.json").read_text())
 CLOUD_MESSAGE = re.compile(r'Message:\s*("(?:\\.|[^"\\])*")')
 CLI = re.compile(r"\b(?:fmt\.(?:Print|Fprint)(?:f|ln)?|log\.(?:Print|Fatal)(?:f|ln)?)\s*\(")
@@ -35,7 +37,23 @@ def cells(*values):
     return "\t".join(str(value).replace("\t", " ").replace("\n", " ") for value in values)
 
 
+def site_reviews():
+    if not SITE_REVIEWS.exists():
+        return {}
+    reviews = {}
+    for line in SITE_REVIEWS.read_text().splitlines():
+        review = json.loads(line)
+        site = review["site"]
+        if site in reviews:
+            raise ValueError("duplicate site review: " + site)
+        if review["coverage"] not in {"covered", "preserve"}:
+            raise ValueError("invalid site review coverage: " + site)
+        reviews[site] = review
+    return reviews
+
+
 def rows():
+    reviews = site_reviews()
     for folder in SOURCES:
         for path in sorted(folder.rglob("*.go")):
             if "testdata" in path.parts or path.name.endswith("_test.go") or path.name.startswith("zz_generated"):
@@ -183,6 +201,11 @@ def rows():
                     coverage = "pending"
                 else:
                     coverage = "preserve"
+                if coverage == "pending":
+                    review = reviews.get(site)
+                    if review and review["excerpt_sha256"] == hashlib.sha256(excerpt.encode()).hexdigest():
+                        coverage = review["coverage"]
+                        contract += "+reviewed_" + review["kind"]
                 yield cells(site, function, code, category, channel, contract, coverage, "daemon_cli", excerpt)
 
 
@@ -196,6 +219,10 @@ def main():
         print(f"localization matrix current: {data.count(chr(10)) - 1} sites")
         return
     OUTPUT.write_text(data)
+    if "--check-review" in sys.argv:
+        pending = sum(row.split("\t")[6] == "pending" for row in data.splitlines()[1:])
+        if pending:
+            raise SystemExit(f"{pending} output sites still need source review")
     print(f"wrote {OUTPUT.relative_to(ROOT)}: {data.count(chr(10)) - 1} sites")
 
 

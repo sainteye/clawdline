@@ -94,7 +94,7 @@ func inspectAndBindCoordinator(stdout, stderr io.Writer, b *broker, conversation
 			if state.Coordinator.Status == contract.CoordinatorStatusUnknown && canRetry {
 				return 1, true
 			}
-			fmt.Fprintf(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_old_role.d61e6b9a", "clawdline coordinator bind: old role is %s; only a proven offline holder may be replaced\n"), state.Coordinator.Status)
+			fmt.Fprintf(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_old_role.d61e6b9a", "clawdline coordinator bind: old role has status %s; only a proven offline holder may be replaced\n"), state.Coordinator.Status)
 			return 1, false
 		}
 		path = "/v1/orchestrator/coordinator/rebind"

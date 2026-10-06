@@ -50,8 +50,8 @@ func loadHTTPRefusals() {
 		}
 		httpRefusalBaseline[key] = true
 	}
-	if len(httpRefusalBaseline) != 677 {
-		panic(fmt.Errorf("embedded HTTP refusal baseline has %d keys, want 677", len(httpRefusalBaseline)))
+	if len(httpRefusalBaseline) != 1192 {
+		panic(fmt.Errorf("embedded HTTP refusal baseline has %d keys, want 1192", len(httpRefusalBaseline)))
 	}
 	httpRefusalLocales = make(map[string]map[string]string)
 	for _, language := range Languages[1:] {

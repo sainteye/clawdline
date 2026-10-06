@@ -55,7 +55,7 @@
   "land.landing_infix": " con integración ",
   "land.no_record": "clawdline task land: la respuesta del daemon no incluyó la integración registrada",
   "land.on_infix": " en ",
-  "land.recorded_prefix": "registrada ",
+  "land.recorded_prefix": "registrado: ",
   "notice.closed": "aviso:        cerrado (leído)",
   "notice.refused": "clawdline %s: no se cerró el aviso de finalización %s de %s: rechazado, %s: %s\n",
   "show.id_required": "clawdline task show: se requiere el ID de tarea",

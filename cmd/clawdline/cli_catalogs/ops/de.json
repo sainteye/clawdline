@@ -3,6 +3,7 @@
   "capacity.dir": "Verzeichnis %s\n",
   "capacity.dir_in_use": "%s ist ein verwendetes Statusverzeichnis, kein einmaliges",
   "capacity.dir_not_empty": "%s ist nicht leer; der Testlauf füllt nur ein eigens dafür angelegtes Verzeichnis",
+  "capacity.drill_subscription_not_accepted": "Das Push-Abonnement des Kapazitätstests wurde von FromBrowser nicht angenommen",
   "capacity.error": "Fehler    %v\n",
   "capacity.failed": "Ergebnis  FEHLER: Der Eintrag durchlief ok → warn → critical → full nicht, die Aktion (%s) geschah nicht genau einmal oder es gab nicht genau einen Hinweis\n",
   "capacity.flag.dir": "Einmaliges Statusverzeichnis, leer oder noch nicht vorhanden (Standard: neues temporäres Verzeichnis)",

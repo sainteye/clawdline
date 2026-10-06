@@ -14,7 +14,7 @@
   "callback.warning.47578bd3": "warning:",
   "callback.work_id_invalid": "--work-id %q is not a lowercase UUID",
   "coordinator.clawdline_coordinator_bind.261adc78": "clawdline coordinator bind:",
-  "coordinator.clawdline_coordinator_bind_old_role.d61e6b9a": "clawdline coordinator bind: old role is %s; only a proven offline holder may be replaced\n",
+  "coordinator.clawdline_coordinator_bind_old_role.d61e6b9a": "clawdline coordinator bind: old role has status %s; only a proven offline holder may be replaced\n",
   "coordinator.clawdline_coordinator_bind_pass_con.cfa52d1a": "clawdline coordinator bind: pass --conversation <this assistant's conversation id>; no role was changed",
   "coordinator.clawdline_coordinator_bind_role_ins.c8330b67": "clawdline coordinator bind: role inspection was unreadable; no role was changed",
   "coordinator.clawdline_coordinator_bind_s_no_rol.9f393468": "clawdline coordinator bind: %s No role was changed.\n",

@@ -70,7 +70,7 @@
   "pair.failed": "clawdline: no se completó el emparejamiento: %s\n",
   "pair.phase": "emparejamiento %s\n",
   "devices.none": "ningún navegador está emparejado con esta máquina",
-  "devices.pair_hint": "ejecuta `clawdline cloud pair` para mostrar un enlace a uno",
+  "devices.pair_hint": "ejecuta `clawdline cloud pair` para mostrar un enlace a un navegador",
   "devices.roster_only": "solo en el registro",
   "devices.revoked_here": "revocado aquí",
   "devices.pinned_here": "fijado aquí",
@@ -80,11 +80,11 @@
   "revoke.refusal": "           aquí se rechazará su próximo sobre, independientemente de lo que diga el registro de la cuenta",
   "rotate.yes_help": "no pedir confirmación",
   "rotate.warning_1": "Al cambiar la clave de firma de esta máquina, estos navegadores ya no podrán",
-  "rotate.warning_2": "verificarla. Cada uno deberá emparejarse de nuevo:",
+  "rotate.warning_2": "verificar esta máquina. Cada uno deberá emparejarse de nuevo:",
   "rotate.none": "No hay navegadores emparejados con esta máquina, así que no hace falta reparar nada.",
   "rotate.prompt": "¿Cambiar la clave de todos modos? [y/N] ",
   "rotate.cancelled": "no se cambió ninguna clave",
   "rotate.rotated": "cambiada   %s (antes %s)\n",
-  "rotate.epoch": "versión    clave %d, identidad %d\n",
+  "rotate.epoch": "generación  clave %d, identidad %d\n",
   "rotate.reconnecting": "           la conexión se cerró y se está restableciendo con la clave nueva"
 }

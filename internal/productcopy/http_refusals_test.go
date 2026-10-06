@@ -34,7 +34,7 @@ func TestHTTPRefusalTextRequiresExactWireDetailAndKnownKey(t *testing.T) {
 			t.Errorf("%+v rendered %q", test, got)
 		}
 	}
-	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 677 || total != 677 {
+	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1192 || total != 1192 {
 		t.Fatalf("Traditional Chinese coverage = %d/%d", translated, total)
 	}
 }
