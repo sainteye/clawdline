@@ -275,7 +275,7 @@ func TestAHeldNoticeIsBoundedAndSaysWhyInItsPush(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(bodies) != 1 || !strings.Contains(bodies[0], heldReason(holdComposer.Code)) {
+	if len(bodies) != 1 || !strings.Contains(bodies[0], heldReasonLanguage("en", holdComposer.Code)) {
 		t.Fatalf("the push does not say why nothing was typed: %+v", bodies)
 	}
 	if strings.Contains(bodies[0], "都沒有被收下") {
@@ -426,7 +426,7 @@ func TestAMenuHoldHasACeilingAndSaysSo(t *testing.T) {
 		t.Fatal("the dead letter's push never finished")
 	}
 	mu.Lock()
-	if len(bodies) != 1 || !strings.Contains(bodies[0], heldReason(holdChoosing.Code)) {
+	if len(bodies) != 1 || !strings.Contains(bodies[0], heldReasonLanguage("en", holdChoosing.Code)) {
 		t.Fatalf("the push does not say the root was waiting on an answer: %+v", bodies)
 	}
 	mu.Unlock()

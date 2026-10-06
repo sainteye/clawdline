@@ -73,6 +73,23 @@ var settingKeys = map[string]struct {
 	},
 	"planning_gate": {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"verify_gate":   {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"product_language": {
+		parse: func(s string) (any, bool) {
+			for _, language := range nextconfig.ProductLanguages {
+				if s == language {
+					return s, true
+				}
+			}
+			return nil, false
+		},
+		show: func(raw json.RawMessage) string {
+			if len(raw) == 0 {
+				return "en"
+			}
+			return nextconfig.ProductLanguage(nextconfig.Values{Raw: map[string]json.RawMessage{"product_language": raw}})
+		},
+		takes: "en, zh-Hant, ja, zh-Hans, ko, es, pt-BR, fr or de",
+	},
 }
 
 func modelSetting(assistant string) struct {

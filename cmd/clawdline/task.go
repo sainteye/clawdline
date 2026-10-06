@@ -80,8 +80,8 @@ func taskCommand(args []string) {
 	}
 	fs := flag.NewFlagSet("task finish", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 0, "the port of the daemon that dispatched this task (default CLAWDLINE_NEXT_PORT, else 7727)")
-	noCollect := fs.Bool("no-collect", false, "put result.json in place and do not ask the broker to collect it now")
+	port := fs.Int("port", 0, cliCopy("task", "flag.finish.port", "the port of the daemon that dispatched this task (default CLAWDLINE_NEXT_PORT, else 7727)"))
+	noCollect := fs.Bool("no-collect", false, cliCopy("task", "flag.finish.no_collect", "put result.json in place and do not ask the broker to collect it now"))
 	// Flags may come before or after the directory.
 	if err := fs.Parse(args[1:]); err != nil {
 		taskUsage()
@@ -106,31 +106,31 @@ func taskCommand(args []string) {
 }
 
 func taskUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline task accept [--port n] <task dir>")
-	fmt.Fprintln(os.Stderr, "  signs for a child's briefing, with the secret from "+orchestrator.AcceptSecretEnv+" or stdin")
-	fmt.Fprintln(os.Stderr, "       clawdline task finish [--port n] [--no-collect] <task dir>")
-	fmt.Fprintln(os.Stderr, "  validates <task dir>/result.json.tmp and publishes it as result.json, then asks the broker to collect it")
-	fmt.Fprintln(os.Stderr, "       clawdline task show [--port n] [--json] <task id>")
-	fmt.Fprintln(os.Stderr, "  one child task, compactly: state, summary, leftovers, verification, landing, checkout;")
-	fmt.Fprintln(os.Stderr, "  reading a finished one closes its completion notice")
-	fmt.Fprintln(os.Stderr, "       clawdline task wait [--port n] [--timeout 9m] [--any] <task id>...")
-	fmt.Fprintln(os.Stderr, "  waits until every task (--any: one) has finished, at most --timeout (default 9m, under a 10m tool call;")
-	fmt.Fprintln(os.Stderr, "  at most 2h), then shows each finished one as task show does and closes its notice;")
-	fmt.Fprintln(os.Stderr, "  exit 0 all succeeded, 1 one failed, 5 one was cancelled (and none failed otherwise), 3 timed out,")
-	fmt.Fprintln(os.Stderr, "  4 a task could not be read; 4 over 3 over 1 over 5")
-	fmt.Fprintln(os.Stderr, "       clawdline task cancel [--port n] [--conversation id] [--key k] --reason \"…\" <task id>")
-	fmt.Fprintln(os.Stderr, "  stops a child its root dispatched by mistake (wrong brief, wrong scope, duplicate): its tab is closed,")
-	fmt.Fprintln(os.Stderr, "  its claims released, and a branch with commits is kept as a pending landing; only its root Session")
-	fmt.Fprintln(os.Stderr, "  or the person may; the same cancel sent again answers the same success")
-	fmt.Fprintln(os.Stderr, "       clawdline task ack [--port n] <task id> <notice id>")
-	fmt.Fprintln(os.Stderr, "  acknowledges a completion notice by hand; rarely needed, since task show and task wait close it")
-	fmt.Fprintln(os.Stderr, "       clawdline task land [--port n] <task id> <landed|incorporated|abandoned|nothing_to_land|pending>")
-	fmt.Fprintln(os.Stderr, "                           [--target b] [--commit c] [--carrier-task id] [--note t]")
-	fmt.Fprintln(os.Stderr, "  records a child's landing by hand, with the orchestrator token; a merge into its target records itself")
-	fmt.Fprintln(os.Stderr, "       clawdline task gate-evidence --artifact id --media-type type [--port n] <task dir> <file>")
-	fmt.Fprintln(os.Stderr, "  streams one bounded verification artifact with the secret from "+orchestrator.AcceptSecretEnv)
-	fmt.Fprintln(os.Stderr, "       clawdline task gate-result [--port n] <task dir> <json file>")
-	fmt.Fprintln(os.Stderr, "  submits the closed verification verdict with the secret from "+orchestrator.AcceptSecretEnv)
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.accept", "usage: clawdline task accept [--port n] <task dir>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.accept_explain_prefix", "  signs for a child's briefing, with the secret from ")+orchestrator.AcceptSecretEnv+cliCopy("task", "usage.accept_explain_suffix", " or stdin"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.finish", "       clawdline task finish [--port n] [--no-collect] <task dir>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.finish_explain", "  validates <task dir>/result.json.tmp and publishes it as result.json, then asks the broker to collect it"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.show", "       clawdline task show [--port n] [--json] <task id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.show_explain", "  one child task, compactly: state, summary, leftovers, verification, landing, checkout;"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.show_notice", "  reading a finished one closes its completion notice"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.wait", "       clawdline task wait [--port n] [--timeout 9m] [--any] <task id>..."))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.wait_explain_1", "  waits until every task (--any: one) has finished, at most --timeout (default 9m, under a 10m tool call;"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.wait_explain_2", "  at most 2h), then shows each finished one as task show does and closes its notice;"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.wait_exit_1", "  exit 0 all succeeded, 1 one failed, 5 one was cancelled (and none failed otherwise), 3 timed out,"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.wait_exit_2", "  4 a task could not be read; 4 over 3 over 1 over 5"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.cancel", "       clawdline task cancel [--port n] [--conversation id] [--key k] --reason \"…\" <task id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.cancel_explain_1", "  stops a child its root dispatched by mistake (wrong brief, wrong scope, duplicate): its tab is closed,"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.cancel_explain_2", "  its claims released, and a branch with commits is kept as a pending landing; only its root Session"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.cancel_explain_3", "  or the person may; the same cancel sent again answers the same success"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.ack", "       clawdline task ack [--port n] <task id> <notice id>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.ack_explain", "  acknowledges a completion notice by hand; rarely needed, since task show and task wait close it"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.land", "       clawdline task land [--port n] <task id> <landed|incorporated|abandoned|nothing_to_land|pending>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.land_flags", "                           [--target b] [--commit c] [--carrier-task id] [--note t]"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.land_explain", "  records a child's landing by hand, with the orchestrator token; a merge into its target records itself"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.gate_evidence", "       clawdline task gate-evidence --artifact id --media-type type [--port n] <task dir> <file>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.gate_evidence_prefix", "  streams one bounded verification artifact with the secret from ")+orchestrator.AcceptSecretEnv)
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.gate_result", "       clawdline task gate-result [--port n] <task dir> <json file>"))
+	fmt.Fprintln(os.Stderr, cliCopy("task", "usage.gate_result_prefix", "  submits the closed verification verdict with the secret from ")+orchestrator.AcceptSecretEnv)
 	os.Exit(2)
 }
 
@@ -175,11 +175,11 @@ func submitGateEvidence(stdout, stderr io.Writer, dir, path, artifact, mediaType
 		return 1
 	}
 	if byteCount > contract.WorkGateEvidenceArtifactBytesLimit {
-		fmt.Fprintf(stderr, "clawdline task gate-evidence: artifact is more than %d bytes\n", contract.WorkGateEvidenceArtifactBytesLimit)
+		fmt.Fprintf(stderr, cliCopy("task", "gate_evidence.too_large", "clawdline task gate-evidence: artifact is more than %d bytes\n"), contract.WorkGateEvidenceArtifactBytesLimit)
 		return 1
 	}
 	if _, err := source.Seek(0, io.SeekStart); err != nil {
-		fmt.Fprintln(stderr, "clawdline task gate-evidence: artifact cannot be streamed:", err)
+		fmt.Fprintln(stderr, cliCopy("task", "gate_evidence.unstreamable", "clawdline task gate-evidence: artifact cannot be streamed:"), err)
 		return 1
 	}
 	hexDigest := hex.EncodeToString(digest.Sum(nil))
@@ -211,16 +211,16 @@ func submitGateEvidence(stdout, stderr io.Writer, dir, path, artifact, mediaType
 	defer res.Body.Close()
 	answer, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		fmt.Fprintf(stderr, "clawdline task gate-evidence: refused, %s: %s\n", res.Status, strings.TrimSpace(string(answer)))
+		fmt.Fprintf(stderr, cliCopy("task", "gate_evidence.refused", "clawdline task gate-evidence: refused, %s: %s\n"), res.Status, strings.TrimSpace(string(answer)))
 		return 1
 	}
 	var receipt contract.WorkGateEvidenceReceipt
 	if json.Unmarshal(answer, &receipt) != nil || receipt.AcceptedAt <= 0 || receipt.TaskID != id || receipt.ArtifactID != artifact ||
 		receipt.ByteCount != byteCount || receipt.MediaType != mediaType || receipt.Sha256 != hexDigest {
-		fmt.Fprintln(stderr, "clawdline task gate-evidence: the broker returned no matching durable receipt")
+		fmt.Fprintln(stderr, cliCopy("task", "gate_evidence.no_receipt", "clawdline task gate-evidence: the broker returned no matching durable receipt"))
 		return 1
 	}
-	fmt.Fprintf(stdout, "gate evidence %s accepted (%d bytes, sha256 %s, replayed=%t)\n", receipt.ArtifactID, receipt.ByteCount, receipt.Sha256, receipt.Replayed)
+	fmt.Fprintf(stdout, cliCopy("task", "gate_evidence.accepted", "gate evidence %s accepted (%d bytes, sha256 %s, replayed=%t)\n"), receipt.ArtifactID, receipt.ByteCount, receipt.Sha256, receipt.Replayed)
 	return 0
 }
 
@@ -257,11 +257,11 @@ func submitGateResult(stdout, stderr io.Writer, dir, path, secret string, port i
 	}
 	result, err := contract.DecodeWorkGateResult(body)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline task gate-result: invalid closed gate result:", err)
+		fmt.Fprintln(stderr, cliCopy("task", "gate_result.invalid", "clawdline task gate-result: invalid closed gate result:"), err)
 		return 1
 	}
 	if result.TaskID != id {
-		fmt.Fprintln(stderr, "clawdline task gate-result: result task_id does not match the task directory")
+		fmt.Fprintln(stderr, cliCopy("task", "gate_result.mismatched_task", "clawdline task gate-result: result task_id does not match the task directory"))
 		return 1
 	}
 	digest := sha256.Sum256(body)
@@ -289,16 +289,16 @@ func submitGateResult(stdout, stderr io.Writer, dir, path, secret string, port i
 	defer res.Body.Close()
 	answer, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
 	if res.StatusCode != http.StatusAccepted {
-		fmt.Fprintf(stderr, "clawdline task gate-result: refused, %s: %s\n", res.Status, strings.TrimSpace(string(answer)))
+		fmt.Fprintf(stderr, cliCopy("task", "gate_result.refused", "clawdline task gate-result: refused, %s: %s\n"), res.Status, strings.TrimSpace(string(answer)))
 		return 1
 	}
 	var receipt contract.WorkGateResultReceipt
 	if json.Unmarshal(answer, &receipt) != nil || receipt.AcceptedAt <= 0 || receipt.TaskID != id || receipt.ByteCount != int64(len(body)) ||
 		receipt.Sha256 != hexDigest || receipt.Verdict != result.Verdict {
-		fmt.Fprintln(stderr, "clawdline task gate-result: the broker returned no matching durable receipt")
+		fmt.Fprintln(stderr, cliCopy("task", "gate_result.no_receipt", "clawdline task gate-result: the broker returned no matching durable receipt"))
 		return 1
 	}
-	fmt.Fprintf(stdout, "gate verdict %s accepted (sha256 %s, replayed=%t)\n", receipt.Verdict, receipt.Sha256, receipt.Replayed)
+	fmt.Fprintf(stdout, cliCopy("task", "gate_result.accepted", "gate verdict %s accepted (sha256 %s, replayed=%t)\n"), receipt.Verdict, receipt.Sha256, receipt.Replayed)
 	return 0
 }
 
@@ -309,7 +309,7 @@ func submitGateResult(stdout, stderr io.Writer, dir, path, secret string, port i
 func ackCommand(args []string) {
 	fs := flag.NewFlagSet("task ack", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
+	port := fs.Int("port", 0, cliCopy("task", "flag.daemon_port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
 	if err := fs.Parse(args); err != nil {
 		taskUsage()
 	}
@@ -328,7 +328,7 @@ func ackCommand(args []string) {
 func ackTask(stdout, stderr io.Writer, b *broker, id, notice string) int {
 	id, notice = strings.TrimSpace(id), strings.TrimSpace(notice)
 	if id == "" || notice == "" {
-		fmt.Fprintln(stderr, "clawdline task ack: both the task id and the notice id are required")
+		fmt.Fprintln(stderr, cliCopy("task", "ack.ids_required", "clawdline task ack: both the task id and the notice id are required"))
 		return 2
 	}
 	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(id)+"/completion/ack", nil,
@@ -343,9 +343,9 @@ func ackTask(stdout, stderr io.Writer, b *broker, id, notice string) int {
 	var got contract.BrokerAckResult
 	_ = json.Unmarshal(a.Body, &got)
 	if got.Changed {
-		fmt.Fprintf(stdout, "acknowledged %s notice %s\n", id, got.NoticeID)
+		fmt.Fprintf(stdout, cliCopy("task", "ack.acknowledged", "acknowledged %s notice %s\n"), id, got.NoticeID)
 	} else {
-		fmt.Fprintf(stdout, "acknowledged %s notice %s (already acknowledged)\n", id, got.NoticeID)
+		fmt.Fprintf(stdout, cliCopy("task", "ack.already_acknowledged", "acknowledged %s notice %s (already acknowledged)\n"), id, got.NoticeID)
 	}
 	return 0
 }
@@ -370,11 +370,11 @@ type landInvocation struct {
 func landArgs(args []string) (landInvocation, error) {
 	fs := flag.NewFlagSet("task land", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
-	target := fs.String("target", "", "the branch the delivery landed on")
-	commit := fs.String("commit", "", "the commit on the target that carries the delivery")
-	carrier := fs.String("carrier-task", "", "for incorporated: the task whose verified landing carried this one")
-	note := fs.String("note", "", "what the record should say")
+	port := fs.Int("port", 0, cliCopy("task", "flag.daemon_port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
+	target := fs.String("target", "", cliCopy("task", "flag.land.target", "the branch the delivery landed on"))
+	commit := fs.String("commit", "", cliCopy("task", "flag.land.commit", "the commit on the target that carries the delivery"))
+	carrier := fs.String("carrier-task", "", cliCopy("task", "flag.land.carrier", "for incorporated: the task whose verified landing carried this one"))
+	note := fs.String("note", "", cliCopy("task", "flag.land.note", "what the record should say"))
 	var words []string
 	for {
 		if err := fs.Parse(args); err != nil {
@@ -388,18 +388,18 @@ func landArgs(args []string) (landInvocation, error) {
 		args = args[1:]
 	}
 	if len(words) != 2 {
-		return landInvocation{}, errors.New("a task id and a landing state are required")
+		return landInvocation{}, errors.New(cliCopy("task", "land.id_state_required", "a task id and a landing state are required"))
 	}
 	id, state := strings.TrimSpace(words[0]), strings.TrimSpace(words[1])
 	if !orchestrator.IsTaskID(id) {
-		return landInvocation{}, fmt.Errorf("%q is not a task id", id)
+		return landInvocation{}, fmt.Errorf(cliCopy("task", "land.invalid_id", "%q is not a task id"), id)
 	}
 	switch orchestrator.LandingState(state) {
 	case orchestrator.LandingPending, orchestrator.LandingLanded, orchestrator.LandingIncorporated,
 		orchestrator.LandingAbandoned, orchestrator.LandingNothingToLand:
 	default:
-		return landInvocation{}, fmt.Errorf("%q is not a landing state: landed, incorporated, abandoned, "+
-			"nothing_to_land or pending", state)
+		return landInvocation{}, fmt.Errorf(cliCopy("task", "land.invalid_state_prefix", "%q is not a landing state: landed, incorporated, abandoned, ")+
+			cliCopy("task", "land.invalid_state_suffix", "nothing_to_land or pending"), state)
 	}
 	body := map[string]string{"state": state}
 	for key, v := range map[string]string{"target": *target, "commit": *commit, "carrier_task": *carrier, "note": *note} {
@@ -437,16 +437,16 @@ func landTask(stdout, stderr io.Writer, b *broker, inv landInvocation) int {
 	}
 	var got contract.BrokerProgressResult
 	if json.Unmarshal(a.Body, &got) != nil || got.Task.Landing == nil {
-		fmt.Fprintln(stderr, "clawdline task land: the daemon answered without the landing it recorded")
+		fmt.Fprintln(stderr, cliCopy("task", "land.no_record", "clawdline task land: the daemon answered without the landing it recorded"))
 		return 1
 	}
 	l := got.Task.Landing
-	line := "recorded " + inv.id + " landing " + string(l.State)
+	line := cliCopy("task", "land.recorded_prefix", "recorded ") + inv.id + cliCopy("task", "land.landing_infix", " landing ") + string(l.State)
 	if l.Target != "" {
-		line += " on " + l.Target
+		line += cliCopy("task", "land.on_infix", " on ") + l.Target
 	}
 	if l.Commit != "" {
-		line += " at " + l.Commit
+		line += cliCopy("task", "land.at_infix", " at ") + l.Commit
 	}
 	fmt.Fprintln(stdout, line)
 	return 0
@@ -470,20 +470,20 @@ func finishTask(stdout, stderr io.Writer, dir string, port int, collect bool, cl
 		for _, more := range lines[1:] {
 			fmt.Fprintln(stderr, "  - "+more)
 		}
-		fmt.Fprintln(stderr, "Nothing was written. Correct result.json.tmp and run this again.")
+		fmt.Fprintln(stderr, cliCopy("task", "finish.invalid_retry", "Nothing was written. Correct result.json.tmp and run this again."))
 		return 1
 	case err != nil:
 		fmt.Fprintln(stderr, "clawdline task finish:", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, "task result preflight: valid")
+	fmt.Fprintln(stdout, cliCopy("task", "finish.preflight_valid", "task result preflight: valid"))
 	if done.Already {
-		fmt.Fprintf(stdout, "result.json was already in place with these exact bytes: %s\n", done.Path)
+		fmt.Fprintf(stdout, cliCopy("task", "finish.already_in_place", "result.json was already in place with these exact bytes: %s\n"), done.Path)
 	} else {
-		fmt.Fprintf(stdout, "result.json is in place: %s\n", done.Path)
+		fmt.Fprintf(stdout, cliCopy("task", "finish.in_place", "result.json is in place: %s\n"), done.Path)
 	}
 	if !collect {
-		fmt.Fprintln(stdout, "Not asking the broker to collect it now; it reads result.json at its next look.")
+		fmt.Fprintln(stdout, cliCopy("task", "finish.no_collect", "Not asking the broker to collect it now; it reads result.json at its next look."))
 		return 0
 	}
 	return askCollect(stdout, stderr, done, port, client)
@@ -521,16 +521,16 @@ func askCollect(stdout, stderr io.Writer, done taskdir.Finished, port int, clien
 	}
 	switch {
 	case res.StatusCode == http.StatusOK:
-		fmt.Fprintln(stdout, "The broker collected it: this task is settled on result.json.")
+		fmt.Fprintln(stdout, cliCopy("task", "finish.collected", "The broker collected it: this task is settled on result.json."))
 		return 0
 	case code == "already_done":
-		fmt.Fprintln(stdout, "The broker had already collected it.")
+		fmt.Fprintln(stdout, cliCopy("task", "finish.already_collected", "The broker had already collected it."))
 		return 0
 	case code == "result_rejected" || code == "result_unreadable" || code == "forbidden":
 		// Published, and refused: the broker will never settle on this file,
 		// and finish does not replace a result.json. Say how to get out.
-		fmt.Fprintf(stderr, "The broker refused result.json (%s): %s\n", code, message)
-		fmt.Fprintf(stderr, "It stays where it is. To replace it, delete %s, write result.json.tmp again and run this again.\n",
+		fmt.Fprintf(stderr, cliCopy("task", "finish.refused", "The broker refused result.json (%s): %s\n"), code, message)
+		fmt.Fprintf(stderr, cliCopy("task", "finish.replace", "It stays where it is. To replace it, delete %s, write result.json.tmp again and run this again.\n"),
 			done.Path)
 		return 1
 	}
@@ -538,8 +538,8 @@ func askCollect(stdout, stderr io.Writer, done taskdir.Finished, port int, clien
 	if code != "" {
 		said = code + ": " + strings.TrimSpace(message)
 	}
-	fmt.Fprintf(stdout, "The broker did not collect it now (%s). result.json is in place, and the broker reads it "+
-		"at its next look.\n", said)
+	fmt.Fprintf(stdout, cliCopy("task", "finish.not_collected_prefix", "The broker did not collect it now (%s). result.json is in place, and the broker reads it ")+
+		cliCopy("task", "finish.not_collected_suffix", "at its next look.\n"), said)
 	return 0
 }
 
@@ -594,15 +594,15 @@ func acceptArgs(args []string) (string, int, error) {
 	}
 	rest := fs.Args()
 	if len(rest) == 0 {
-		return "", 0, errors.New("the task directory is required")
+		return "", 0, errors.New(cliCopy("task", "accept.directory_required", "the task directory is required"))
 	}
 	dir := rest[0]
 	if err := fs.Parse(rest[1:]); err != nil {
 		return "", 0, err
 	}
 	if fs.NArg() != 0 {
-		return "", 0, errors.New("it takes one task directory and nothing else; the secret is never taken on the " +
-			"command line — set " + orchestrator.AcceptSecretEnv + " or pipe it on stdin")
+		return "", 0, errors.New(cliCopy("task", "accept.one_directory_prefix", "it takes one task directory and nothing else; the secret is never taken on the ") +
+			cliCopy("task", "accept.one_directory_suffix", "command line — set ") + orchestrator.AcceptSecretEnv + cliCopy("task", "accept.secret_or_stdin", " or pipe it on stdin"))
 	}
 	return dir, *port, nil
 }
@@ -618,11 +618,11 @@ func acceptSecret(getenv func(string) string, stdin io.Reader) (string, error) {
 		secret = strings.TrimSpace(string(data))
 	}
 	if secret == "" {
-		return "", errors.New("no task secret: set " + orchestrator.AcceptSecretEnv + " or pipe it on stdin")
+		return "", errors.New(cliCopy("task", "accept.no_secret_prefix", "no task secret: set ") + orchestrator.AcceptSecretEnv + cliCopy("task", "accept.secret_or_stdin", " or pipe it on stdin"))
 	}
 	if !isTaskSecret(secret) {
-		return "", errors.New("the task secret must be 64 lowercase hexadecimal characters — the TASK_SECRET " +
-			"value from your first message")
+		return "", errors.New(cliCopy("task", "accept.secret_format_prefix", "the task secret must be 64 lowercase hexadecimal characters — the TASK_SECRET ") +
+			cliCopy("task", "accept.secret_format_suffix", "value from your first message"))
 	}
 	return secret, nil
 }
@@ -670,7 +670,7 @@ func acceptTask(stdout, stderr io.Writer, dir string, port int, secret string, c
 		body, _ := io.ReadAll(io.LimitReader(res.Body, collectAnswerLimit))
 		switch {
 		case res.StatusCode >= 200 && res.StatusCode < 300:
-			fmt.Fprintf(stdout, "Signed: the broker has the receipt for task %s.\n", id)
+			fmt.Fprintf(stdout, cliCopy("task", "accept.signed", "Signed: the broker has the receipt for task %s.\n"), id)
 			return 0
 		case res.StatusCode < 500:
 			code, message := res.Status, ""
@@ -678,7 +678,7 @@ func acceptTask(stdout, stderr io.Writer, dir string, port int, secret string, c
 			if json.Unmarshal(body, &refusal) == nil && refusal.Error.Code != "" {
 				code, message = refusal.Error.Code, refusal.Error.Message
 			}
-			fmt.Fprintf(stderr, "clawdline task accept: refused, %d %s: %s\n", res.StatusCode, code, message)
+			fmt.Fprintf(stderr, cliCopy("task", "accept.refused", "clawdline task accept: refused, %d %s: %s\n"), res.StatusCode, code, message)
 			return 1
 		}
 		why = res.Status
@@ -694,8 +694,8 @@ func acceptTask(stdout, stderr io.Writer, dir string, port int, secret string, c
 			"and the receipt could not be written: %v\n", port, why, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "The broker at 127.0.0.1:%d could not be reached (%s). Signed all the same: the receipt "+
-		"is at %s, and the broker collects it at its next look.\n", port, why, path)
+	fmt.Fprintf(stdout, cliCopy("task", "accept.unreachable_prefix", "The broker at 127.0.0.1:%d could not be reached (%s). Signed all the same: the receipt ")+
+		cliCopy("task", "accept.unreachable_suffix", "is at %s, and the broker collects it at its next look.\n"), port, why, path)
 	return 0
 }
 
@@ -703,13 +703,13 @@ func acceptTask(stdout, stderr io.Writer, dir string, port int, secret string, c
 func taskIDIn(dir string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "task.json"))
 	if err != nil {
-		return "", fmt.Errorf("no readable task.json in %s: %w", dir, err)
+		return "", fmt.Errorf(cliCopy("task", "task_dir.unreadable", "no readable task.json in %s: %w"), dir, err)
 	}
 	var brief struct {
 		TaskID string `json:"task_id"`
 	}
 	if err := json.Unmarshal(data, &brief); err != nil || brief.TaskID == "" || strings.ContainsAny(brief.TaskID, "/\\ ") {
-		return "", fmt.Errorf("%s names no usable task_id", filepath.Join(dir, "task.json"))
+		return "", fmt.Errorf(cliCopy("task", "task_dir.invalid_id", "%s names no usable task_id"), filepath.Join(dir, "task.json"))
 	}
 	return brief.TaskID, nil
 }
@@ -744,8 +744,8 @@ func writePrivate(path string, body []byte) error {
 func showCommand(args []string) {
 	fs := flag.NewFlagSet("task show", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
-	asJSON := fs.Bool("json", false, "print the daemon's whole answer")
+	port := fs.Int("port", 0, cliCopy("task", "flag.daemon_port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
+	asJSON := fs.Bool("json", false, cliCopy("task", "flag.show.json", "print the daemon's whole answer"))
 	if err := fs.Parse(args); err != nil {
 		taskUsage()
 	}
@@ -768,7 +768,7 @@ func showCommand(args []string) {
 func showTask(stdout, stderr io.Writer, b *broker, id string, asJSON bool) int {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		fmt.Fprintln(stderr, "clawdline task show: the task id is required")
+		fmt.Fprintln(stderr, cliCopy("task", "show.id_required", "clawdline task show: the task id is required"))
 		return 2
 	}
 	a, err := b.request(http.MethodGet, "/v1/orchestrator/tasks/"+url.PathEscape(id), nil, nil, "")
@@ -789,7 +789,7 @@ func showTask(stdout, stderr io.Writer, b *broker, id string, asJSON bool) int {
 		return code
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline task show: the daemon's answer could not be read:", err)
+		fmt.Fprintln(stderr, cliCopy("task", "show.unreadable_answer", "clawdline task show: the daemon's answer could not be read:"), err)
 		return 1
 	}
 	writeTaskView(stdout, got.Task)
@@ -830,12 +830,12 @@ func closeNotice(stdout, stderr io.Writer, b *broker, name string, t contract.Br
 		if code == "" {
 			code, message = strconv.Itoa(a.Status), strings.TrimSpace(string(a.Body))
 		}
-		fmt.Fprintf(stderr, "clawdline %s: the completion notice %s of %s was not closed: refused, %s: %s\n",
+		fmt.Fprintf(stderr, cliCopy("task", "notice.refused", "clawdline %s: the completion notice %s of %s was not closed: refused, %s: %s\n"),
 			name, n.NoticeID, t.ID, code, message)
 		return false
 	}
 	if line {
-		fmt.Fprintln(stdout, "notice:       closed (read)")
+		fmt.Fprintln(stdout, cliCopy("task", "notice.closed", "notice:       closed (read)"))
 	}
 	return true
 }
@@ -849,7 +849,7 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 	if t.Verdict != "" {
 		state += " — " + t.Verdict
 	}
-	fmt.Fprintf(w, "state:        %s\n", state)
+	fmt.Fprintf(w, cliCopy("task", "view.state", "state:        %s\n"), state)
 	// A callback is a command, not a child: its verdict is the whole story —
 	// exit status and the end of its output — and it writes no result,
 	// owes no landing and has no branch.
@@ -860,58 +860,58 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 	r := t.Result
 	switch {
 	case r == nil:
-		fmt.Fprintln(w, "result:       none — the child wrote no result.json")
+		fmt.Fprintln(w, cliCopy("task", "view.no_result", "result:       none — the child wrote no result.json"))
 	default:
 		if r.Verification != nil {
-			fmt.Fprintf(w, "verification: %d runs, last %s: %s\n", r.Verification.Runs, r.Verification.Last,
+			fmt.Fprintf(w, cliCopy("task", "view.verification_runs", "verification: %d runs, last %s: %s\n"), r.Verification.Runs, r.Verification.Last,
 				r.Verification.Scope)
 			if r.Verification.Last == "fail" {
-				fmt.Fprintln(w, "rerun:        resolve the failure, then rerun the check named above")
+				fmt.Fprintln(w, cliCopy("task", "view.rerun", "rerun:        resolve the failure, then rerun the check named above"))
 			}
 		} else {
-			fmt.Fprintln(w, "verification: none reported")
+			fmt.Fprintln(w, cliCopy("task", "view.no_verification", "verification: none reported"))
 		}
-		fmt.Fprintf(w, "symbols:      %d symbols, %d artifacts (--json lists them)\n", len(r.Symbols), len(r.Artifacts))
+		fmt.Fprintf(w, cliCopy("task", "view.symbols", "symbols:      %d symbols, %d artifacts (--json lists them)\n"), len(r.Symbols), len(r.Artifacts))
 		if r.Status == "failure" {
 			for _, path := range r.Artifacts {
-				fmt.Fprintf(w, "changed file:  %s\n", path)
+				fmt.Fprintf(w, cliCopy("task", "view.changed_file", "changed file:  %s\n"), path)
 			}
 		}
 	}
 
 	switch l := t.Landing; {
 	case l == nil:
-		fmt.Fprintln(w, "landing:      none owed")
+		fmt.Fprintln(w, cliCopy("task", "view.no_landing", "landing:      none owed"))
 	case t.State == contract.TaskStateCancelled && l.Settlement == contract.BrokerLandingSettlementBranchCarriesCommits:
 		// A cancelled child's landing says what became of its branch: kept,
 		// and how many commits are on it (orchestrator.cancelledBranchNote).
-		fmt.Fprintf(w, "landing:      %s (%s) — %s\n", l.State, l.Settlement, l.Note)
+		fmt.Fprintf(w, cliCopy("task", "view.landing_with_note", "landing:      %s (%s) — %s\n"), l.State, l.Settlement, l.Note)
 	case l.Settlement != "":
-		fmt.Fprintf(w, "landing:      %s (%s)\n", l.State, l.Settlement)
+		fmt.Fprintf(w, cliCopy("task", "view.landing_settlement", "landing:      %s (%s)\n"), l.State, l.Settlement)
 		// The completion notice says a merge records this by itself and
 		// leaves the other way to here.
 		if l.State == contract.BrokerLandingStatePending && l.Settlement == contract.BrokerLandingSettlementBranchCarriesCommits {
 			fmt.Fprintf(w, "              %s\n", orchestrator.CarriedByHand(t.ID))
 		}
 	default:
-		fmt.Fprintf(w, "landing:      %s\n", l.State)
+		fmt.Fprintf(w, cliCopy("task", "view.landing_state", "landing:      %s\n"), l.State)
 	}
 	if wt := t.Worktree; wt != nil {
-		fmt.Fprintf(w, "worktree:     %s (branch %s)\n", wt.Path, wt.Branch)
+		fmt.Fprintf(w, cliCopy("task", "view.worktree", "worktree:     %s (branch %s)\n"), wt.Path, wt.Branch)
 		if wt.Commits != nil {
-			fmt.Fprintf(w, "branch:       %d delivery commit(s)\n", *wt.Commits)
+			fmt.Fprintf(w, cliCopy("task", "view.branch_commits", "branch:       %d delivery commit(s)\n"), *wt.Commits)
 		} else {
-			fmt.Fprintln(w, "branch:       commit count unknown")
+			fmt.Fprintln(w, cliCopy("task", "view.unknown_commits", "branch:       commit count unknown"))
 		}
 		if wt.Dirty != nil {
-			fmt.Fprintf(w, "uncommitted:  %t\n", *wt.Dirty)
+			fmt.Fprintf(w, cliCopy("task", "view.uncommitted", "uncommitted:  %t\n"), *wt.Dirty)
 		} else {
-			fmt.Fprintln(w, "uncommitted:  unknown")
+			fmt.Fprintln(w, cliCopy("task", "view.unknown_dirty", "uncommitted:  unknown"))
 		}
 	}
 
 	if r != nil && len(r.Leftovers) > 0 {
-		fmt.Fprintf(w, "leftovers:    %d (their reasons: --json)\n", len(r.Leftovers))
+		fmt.Fprintf(w, cliCopy("task", "view.leftovers", "leftovers:    %d (their reasons: --json)\n"), len(r.Leftovers))
 		for _, l := range r.Leftovers {
 			fmt.Fprintf(w, "  - %s\n", l.Title)
 		}
@@ -922,6 +922,6 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 		summary = r.Summary
 	}
 	if summary != "" {
-		fmt.Fprintf(w, "summary:\n%s\n", strings.TrimRight(summary, "\n"))
+		fmt.Fprintf(w, cliCopy("task", "view.summary", "summary:\n%s\n"), strings.TrimRight(summary, "\n"))
 	}
 }

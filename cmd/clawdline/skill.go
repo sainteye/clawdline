@@ -70,7 +70,7 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 			return 2
 		}
 	}
-	lang, part := "", ""
+	lang, part := currentCLILanguage(), ""
 	refused := false
 	code := ""
 	if len(args) == 2 && args[0] == "refused" {
@@ -83,10 +83,10 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 	}
 	switch len(args) {
 	case 1:
-		if isLanguage(args[0]) {
-			lang = args[0]
-		} else {
+		if isGuideSection(args[0]) {
 			part = args[0]
+		} else {
+			lang = args[0]
 		}
 	case 2:
 		lang, part = args[0], args[1]
@@ -119,8 +119,11 @@ func printGuide(stdout, stderr io.Writer, args []string) int {
 	return 0
 }
 
-func isLanguage(v string) bool {
-	for _, t := range skills.Topics() {
+func isGuideSection(v string) bool {
+	if v == "all" {
+		return true
+	}
+	for _, t := range skills.SectionNames() {
 		if t == v {
 			return true
 		}

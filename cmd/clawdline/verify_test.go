@@ -136,3 +136,48 @@ func jsonNumber(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+func TestVerifyHumanCopyUsesProductLocaleWithoutChangingDataOrJSON(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "zh-Hant"
+	t.Cleanup(func() { commandLanguage = previous })
+	now := time.Unix(1_790_000_000, 0)
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/v1/verifications" {
+			return 200, `{"at":1790000000,"verifications":[]}`
+		}
+		return 200, verifyRecordAnswer
+	})
+	var out, errs bytes.Buffer
+	if code := runVerify(&out, &errs, b, "list", nil, envOf(nil), now); code != 0 || !strings.Contains(out.String(), "目前沒有待驗證項目") {
+		t.Fatalf("localized empty list: code %d, out %q, err %q", code, out.String(), errs.String())
+	}
+	out.Reset()
+	if code := runVerify(&out, &errs, b, "show", []string{"v-1"}, envOf(nil), now); code != 0 ||
+		!strings.Contains(out.String(), "開始於 ") || !strings.Contains(out.String(), "筆記 ") ||
+		!strings.Contains(out.String(), "a check") || !strings.Contains(out.String(), "because") || !strings.Contains(out.String(), "readout") {
+		t.Fatalf("localized detail lost original data: code %d, out %q, err %q", code, out.String(), errs.String())
+	}
+	out.Reset()
+	code := runVerify(&out, &errs, b, "show", []string{"v-1", "--json"}, envOf(nil), now)
+	var raw struct {
+		Verification struct {
+			Title string `json:"title"`
+			Why   string `json:"why"`
+		} `json:"verification"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &raw); code != 0 || err != nil ||
+		raw.Verification.Title != "a check" || raw.Verification.Why != "because" ||
+		strings.Contains(out.String(), "開始於 ") {
+		t.Fatalf("JSON data changed: code %d, parse %v, out %q", code, err, out.String())
+	}
+	if len(s.requests()) != 3 {
+		t.Fatalf("verify requests = %d", len(s.requests()))
+	}
+	out.Reset()
+	errs.Reset()
+	if code := runVerify(&out, &errs, b, "list", []string{"extra"}, envOf(nil), now); code != 2 ||
+		!strings.Contains(errs.String(), "只接受 --json") || len(s.requests()) != 3 {
+		t.Fatalf("localized misuse: code %d, err %q", code, errs.String())
+	}
+}

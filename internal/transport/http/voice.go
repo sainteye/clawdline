@@ -322,9 +322,8 @@ func (s *Server) whisper() whisper.Transcriber {
 }
 
 // voiceFollow is who `auto` asks, in order: Clawdline's own language when the
-// file names one, this machine's languages, and last the catalog this daemon
-// serves, which is what every page it draws is written in when nothing
-// narrows it.
+// file names one, this machine's languages, and last the pre-localization
+// fallback. Changing product copy to English must not change dictation.
 func voiceFollow(values nextconfig.Values, readable bool) []whisper.Answer {
 	follow := []whisper.Answer{}
 	if readable {
@@ -333,7 +332,7 @@ func voiceFollow(values nextconfig.Values, readable bool) []whisper.Answer {
 		}
 	}
 	follow = append(follow, voiceMachine.Languages(context.Background())...)
-	return append(follow, whisper.Answer{Tag: defaultCatalog, Source: whisper.FromCatalog})
+	return append(follow, whisper.Answer{Tag: agentVoiceFallbackLanguage, Source: whisper.FromCatalog})
 }
 
 // voiceLanguageRoute is GET /v1/voice/language: what the next recording will
