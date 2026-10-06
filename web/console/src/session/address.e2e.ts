@@ -120,6 +120,7 @@ let namingAssistant = "claude"
 let smartTitleNamedBy = ""
 let interruptRequests: { id: string; key: string }[] = []
 let requestedPaths: string[] = []
+let refusedCatalog: string | null = null
 let failPlacesOnRequest = 0
 // The machine's persona catalog, as many roles as the daemon compiles in and
 // with its longest names: the assignment row lays every one of them out on a
@@ -209,6 +210,13 @@ function daemon(): Server {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
     requestedPaths.push(`${req.method} ${path}`)
+    if (path === "/v1/strings") {
+      const tag = url.searchParams.get("lang") || "en"
+      if (tag === refusedCatalog) return json(res, 200, { lang: tag, dir: "ltr", broken: "not a catalog" })
+      const file = join(dist, "catalogs", `${tag}.json`)
+      if (!existsSync(file)) return json(res, 404, { error: "catalog_missing" })
+      return json(res, 200, JSON.parse(readFileSync(file, "utf8")))
+    }
     if (path === "/v1/sessions") return json(res, 200, snapshot())
     if (path === "/v1/settings/default-models" && req.method === "GET") return json(res, 200, machineSettings)
     if (path === "/v1/settings/default-models" && req.method === "POST") {
@@ -725,6 +733,67 @@ test("desk: opening a session writes it into the address, and a reload comes bac
     await tab.reload()
     await tab.until("the reload opens the same session", (s) => s.rows === ROWS.length && s.open === TTY)
     assert.equal((await tab.seen()).hash, FRAGMENT[TTY])
+  }))
+
+test("browser language selector survives reload and a broken catalog falls back atomically", () =>
+  inTab(DESK, async (tab) => {
+    await tab.go("/#page=settings")
+    const readyBy = Date.now() + 5000
+    while (!await tab.run(`!!document.getElementById("settings-ui-language-select")`)) {
+      if (Date.now() > readyBy) assert.fail("Settings browser language selector did not appear")
+      await new Promise((ok) => setTimeout(ok, 50))
+    }
+    await tab.run(`localStorage.setItem("language", "fixture-agent-language")`)
+    const select = async (tag: string) => {
+      await tab.run(`(() => {
+        const input = document.getElementById("settings-ui-language-select")
+        input.value = ${JSON.stringify(tag)}
+        input.dispatchEvent(new Event("change", { bubbles: true }))
+      })()`)
+      const until = Date.now() + 5000
+      for (;;) {
+        const seen = await tab.run(`({ tag: document.documentElement.lang, booting: document.documentElement.classList.contains("booting"), saved: localStorage.getItem("ui_language") })`)
+        if (seen.saved === tag && !seen.booting && seen.tag === tag) break
+        if (Date.now() > until) assert.fail(`selection ${tag} did not load: ${JSON.stringify(seen)}`)
+        await new Promise((ok) => setTimeout(ok, 50))
+      }
+    }
+    await select("zh-Hant")
+    assert.equal(await tab.run(`localStorage.getItem("language")`), "fixture-agent-language")
+    await tab.reload()
+    const zhReadyBy = Date.now() + 5000
+    for (;;) {
+      const seen = await tab.run(`({ tag: document.documentElement.lang, booting: document.documentElement.classList.contains("booting") })`)
+      if (seen.tag === "zh-Hant" && !seen.booting) break
+      if (Date.now() > zhReadyBy) assert.fail(`Traditional Chinese did not survive reload: ${JSON.stringify(seen)}`)
+      await new Promise((ok) => setTimeout(ok, 50))
+    }
+    for (const tag of ["ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de", "en"] as const) {
+      await tab.run(`localStorage.setItem("ui_language", ${JSON.stringify(tag)})`)
+      await tab.reload()
+      const until = Date.now() + 5000
+      for (;;) {
+        const seen = await tab.run(`({ tag: document.documentElement.lang, booting: document.documentElement.classList.contains("booting") })`)
+        if (seen.tag === tag && !seen.booting) break
+        if (Date.now() > until) assert.fail(`${tag} did not load: ${JSON.stringify(seen)}`)
+        await new Promise((ok) => setTimeout(ok, 50))
+      }
+    }
+    refusedCatalog = "ja"
+    try {
+      await tab.run(`localStorage.setItem("ui_language", "ja")`)
+      await tab.reload()
+      const until = Date.now() + 5000
+      for (;;) {
+        const seen = await tab.run(`({ tag: document.documentElement.lang, booting: document.documentElement.classList.contains("booting") })`)
+        if (seen.tag === "en" && !seen.booting) break
+        if (Date.now() > until) assert.fail(`broken Japanese catalog did not fall back: ${JSON.stringify(seen)}`)
+        await new Promise((ok) => setTimeout(ok, 50))
+      }
+      assert.equal(await tab.run(`localStorage.getItem("ui_language")`), "ja")
+    } finally {
+      refusedCatalog = null
+    }
   }))
 
 test("Session Info opens a role detail dialog and restores focus when it closes", async () => {

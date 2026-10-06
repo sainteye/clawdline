@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord, currentCatalogTag } from "../../catalog.js"
 import type { CapacityEntry, CapacityPanel, CapacityState } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { client } from "../../client.js"
@@ -16,11 +18,9 @@ import { client } from "../../client.js"
  * Nothing here touches the DOM, so every sentence can be checked without one.
  */
 
-/** `words(en, zh)`, as `BoardBlock` says it: the page's language decides. */
-export function words(en: string, zh: string): string {
-  const lang = typeof document === "undefined" ? "" : document.documentElement.lang
-  const nav = typeof navigator === "undefined" ? "" : navigator.language
-  return /^zh/i.test(lang || nav || "") ? zh : en
+/** Existing callers pass source English and the current catalog's translated copy. */
+export function words(_english: string, localized: string): string {
+  return localized
 }
 
 export function readCapacity(): Promise<CapacityPanel> {
@@ -62,15 +62,15 @@ export function bySeverity(a: CapacityEntry, b: CapacityEntry): number {
 export function stateWord(state: CapacityState): string {
   switch (state) {
     case "ok":
-      return words("OK", "正常")
+      return catalogWord("literal", "499be85f5b3b")
     case "warn":
-      return words("Filling", "注意")
+      return catalogWord("literal", "7c2553d0f0f2")
     case "critical":
-      return words("Nearly full", "快滿了")
+      return catalogWord("literal", "959dd5060ea6")
     case "full":
-      return words("Full", "滿了")
+      return catalogWord("literal", "6a0d24a2797e")
     default:
-      return words("Not measured", "量不到")
+      return catalogWord("literal", "74d2b141f0a6")
   }
 }
 
@@ -79,9 +79,9 @@ export function stateWord(state: CapacityState): string {
  * their register row names — the words `capacity.amountOf` gives a push.
  */
 export function amount(unit: CapacityEntry["unit"], n: number): string {
-  if (unit === "characters") return words(`${n} chars`, `${n} 字`)
-  if (unit === "seconds") return words(`${n} s`, `${n} 秒`)
-  if (unit === "rows") return words(`${n}`, `${n} 筆`)
+  if (unit === "characters") return words(`${n} chars`, catalogFormat("template", "5c5e1d37c1ed", [n]))
+  if (unit === "seconds") return words(`${n} s`, catalogFormat("template", "49c70f219483", [n]))
+  if (unit === "rows") return words(`${n}`, catalogFormat("template", "86ef4744daea", [n]))
   const k = 1024
   if (n >= k * k * k) return `${(n / (k * k * k)).toFixed(1)} GiB`
   if (n >= k * k) return `${(n / (k * k)).toFixed(1)} MiB`
@@ -92,7 +92,7 @@ export function amount(unit: CapacityEntry["unit"], n: number): string {
 /** "used / limit · pct%", or the limit alone when nothing was read: unknown is not empty. */
 export function reading(row: CapacityEntry): string {
   const limit = amount(row.unit, row.limit)
-  if (row.used == null) return words(`limit ${limit}`, `上限 ${limit}`)
+  if (row.used == null) return words(`limit ${limit}`, catalogFormat("template", "cad071062b9f", [limit]))
   const pct = row.ratio == null ? "" : ` · ${Math.floor(row.ratio * 100)}%`
   return `${amount(row.unit, row.used)} / ${limit}${pct}`
 }
@@ -102,47 +102,47 @@ export function evicts(row: CapacityEntry): string {
   if (row.evicted_by === "person") {
     switch (row.at_limit) {
       case "rotate":
-        return words("Rotates when full; only you delete old segments", "滿了輪替，舊的分段只有你能刪")
+        return catalogWord("literal", "a409c44179a1")
       case "refuse":
-        return words("Refuses new entries when full; only you can make room", "滿了拒絕新的，只有你能騰出空間")
+        return catalogWord("literal", "a7632813e591")
       default:
-        return words("Only reports when full, refuses nothing yet; only you can make room", "滿了只回報、還不會拒絕，只有你能騰出空間")
+        return catalogWord("literal", "24be634bc511")
     }
   }
   switch (row.at_limit) {
     case "refuse":
-      return words("Refuses new entries when full; keeps what it has", "滿了拒絕新的，daemon 不丟已有的")
+      return catalogWord("literal", "56ce6ed5b735")
     case "evict_oldest":
-      return words("The daemon drops the oldest when full", "滿了由 daemon 淘汰最舊的")
+      return catalogWord("literal", "fd71625e8c36")
     case "expire":
-      return words("The daemon expires entries past their window", "過了視窗由 daemon 讓它過期")
+      return catalogWord("literal", "41b7b78d5589")
     case "rotate":
-      return words("The daemon rotates and deletes the oldest segment", "滿了由 daemon 輪替、刪最舊的分段")
+      return catalogWord("literal", "64f36331b69f")
     case "coalesce":
-      return words("Keeps only the latest value", "滿了只留最新的值")
+      return catalogWord("literal", "2f810d174492")
     case "disconnect":
-      return words("Disconnects readers that cannot keep up", "滿了斷開跟不上的讀者")
+      return catalogWord("literal", "603cabc2847f")
     case "summarize":
-      return words("Summarizes before moving entries out", "滿了先摘要再移走")
+      return catalogWord("literal", "8eb312e5c44d")
     default:
-      return words("Only reports when full", "滿了只回報，不拒絕也不淘汰")
+      return catalogWord("literal", "b2f7a693e69e")
   }
 }
 
 function pushWord(push: NonNullable<CapacityEntry["last_push"]>["push"]): string {
   switch (push) {
     case "pending":
-      return words("push queued", "推播待送")
+      return catalogWord("literal", "f8d802ee3b49")
     case "sending":
-      return words("push sending", "推播送出中")
+      return catalogWord("literal", "4abc45706b7c")
     case "pushed":
-      return words("pushed", "已推播")
+      return catalogWord("literal", "2c5109559831")
     case "not_subscribed":
-      return words("no device subscribed to pushes", "沒有裝置訂閱推播")
+      return catalogWord("literal", "682e873e7cdf")
     case "failed":
-      return words("push could not be sent", "推播送不出去")
+      return catalogWord("literal", "f90cd1fa096f")
     default:
-      return words("not known whether the push went out", "不確定推播有沒有送出")
+      return catalogWord("literal", "7ddacedc1cff")
   }
 }
 
@@ -155,7 +155,7 @@ function age(seconds: number): string {
 
 function ago(unix: number, now: number): string {
   const span = age(Math.max(0, Math.floor(now / 1000) - unix))
-  return words(`${span} ago`, `${span} 前`)
+  return words(`${span} ago`, catalogFormat("template", "4d35c17ea7eb", [span]))
 }
 
 /** When the row last told anybody, and whether that reached a push service. */
@@ -164,15 +164,16 @@ export function lastAlert(row: CapacityEntry, now = Date.now()): string {
   const pushed = row.last_push?.at ?? 0
   const noticed = row.last_notice_at ?? 0
   if (!pushed && !noticed) {
-    return tells ? words("Never alerted", "沒有告警過") : words("Not pushed; recorded in diagnostics only", "不推播，只記在 diagnostics")
+    return tells ? catalogWord("literal", "e0390e103f88") : catalogWord("literal", "79be3075d69a")
   }
   const at = Math.max(pushed, noticed)
-  const push = row.last_push ? words(", ", "，") + pushWord(row.last_push.push) : tells ? "" : words(", not pushed", "，不推播")
+  const separator = currentCatalogTag().startsWith("zh") ? "，" : ", "
+  const push = row.last_push ? separator + pushWord(row.last_push.push) : tells ? "" : catalogWord("literal", "78f1213394fc")
   const held =
     row.notices_suppressed > 0
-      ? words(` (${row.notices_suppressed} more held by the one-a-day rule)`, `（另有 ${row.notices_suppressed} 則被一天一則擋下）`)
+      ? words(` (${row.notices_suppressed} more held by the one-a-day rule)`, catalogFormat("template", "0ebfc47d96d4", [row.notices_suppressed]))
       : ""
-  return words("Last alert ", "上次告警 ") + ago(at, now) + push + held
+  return catalogWord("literal", "9034aceb6633") + ago(at, now) + push + held
 }
 
 /** What the row has let go of or refused since counting began. Empty when nothing. */
@@ -181,26 +182,26 @@ export function counters(row: CapacityEntry): string {
   const add = (n: number, en: string, zh: string) => {
     if (n) parts.push(words(`${en} ${n}`, `${zh} ${n}`))
   }
-  add(row.refused, "refused", "拒絕")
-  add(row.evicted, "evicted", "淘汰")
-  add(row.expired, "expired", "過期")
-  add(row.rotated, "rotated", "輪替")
-  add(row.dropped, "dropped", "丟掉")
-  add(row.coalesced, "coalesced", "合併")
-  add(row.disconnected, "disconnected", "斷線")
-  add(row.write_errors, "write errors", "寫入失敗")
+  add(row.refused, "refused", catalogWord("literal", "ac2ddfb95017"))
+  add(row.evicted, "evicted", catalogWord("literal", "3d1666fc258f"))
+  add(row.expired, "expired", catalogWord("literal", "88fefceaa267"))
+  add(row.rotated, "rotated", catalogWord("literal", "55c4eda8a6e9"))
+  add(row.dropped, "dropped", catalogWord("literal", "ee94960e6f12"))
+  add(row.coalesced, "coalesced", catalogWord("literal", "c4fd4486315f"))
+  add(row.disconnected, "disconnected", catalogWord("literal", "9c405ef85bd2"))
+  add(row.write_errors, "write errors", catalogWord("literal", "d8007d80c5de"))
   return parts.join(" · ")
 }
 
 /** When the row fills at its current rate, in this browser's clock. */
 export function fullBy(unix: number): string {
   const at = new Date(unix * 1000).toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-  return words(`Full by ${at} at this rate`, `照目前速度 ${at} 會滿`)
+  return words(`Full by ${at} at this rate`, catalogFormat("template", "73fb5e35d2a0", [at]))
 }
 
 /** The block's one-line count: how many rows want a look, or that all of them are fine. */
 export function summary(rows: CapacityEntry[]): string {
   const loud = rows.filter((r) => r.state !== "ok").length
-  if (loud > 0) return words(`${loud} of ${rows.length} rows need a look`, `${rows.length} 列裡有 ${loud} 列要注意`)
-  return words(`All ${rows.length} rows are fine`, `${rows.length} 列都正常`)
+  if (loud > 0) return words(`${loud} of ${rows.length} rows need a look`, catalogFormat("template", "211ae3476e5f", [rows.length, loud]))
+  return words(`All ${rows.length} rows are fine`, catalogFormat("template", "614443bb7374", [rows.length]))
 }

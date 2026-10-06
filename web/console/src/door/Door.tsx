@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import App from "../App.js"
 import { BRAND_MARK } from "../brand-mark.js"
-import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
+import { bootLocalCatalog } from "../catalog.js"
 import { toast } from "../overlays/toast.js"
 import { doorApi, type DoorFailure } from "./api.js"
 import { passwordFailureSentence } from "./failure.js"
@@ -84,8 +84,7 @@ export function DoorGate() {
   // The catalog, as App reads it (the slot the daemon filled, else
   // /v1/strings): the door is drawn in the reader's words or not at all.
   useEffect(() => {
-    const inline = (window as { __strings?: Record<string, string> }).__strings
-    void L.loadStrings(async () => inline ?? (await client.strings())).finally(() => setWords(true))
+    void bootLocalCatalog().finally(() => setWords(true))
     void check()
   }, [check])
 

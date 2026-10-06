@@ -1,3 +1,4 @@
+import { catalogWord } from "../../../catalog.js"
 export interface GateModeOption {
   id: "nexus" | "planning" | "verification" | "standard"
   label: string
@@ -10,17 +11,17 @@ export interface GateModeOption {
 export function gateModeOptions(planning: boolean, verification: boolean): GateModeOption[] {
   const current = planning && verification ? "nexus" : planning ? "planning" : verification ? "verification" : "standard"
   return [
-    { id: "nexus", label: "NEXUS", description: "規劃檢查＋獨立驗證", current: current === "nexus" },
-    { id: "planning", label: "規劃", description: "只要求規劃檢查（預設）", current: current === "planning", default: true },
-    { id: "verification", label: "獨立驗證", description: "只要求 maker／checker 驗證", current: current === "verification" },
-    { id: "standard", label: "一般流程", description: "不強制規劃或獨立驗證", current: current === "standard" },
+    { id: "nexus", label: "NEXUS", description: catalogWord("literal", "4f066af02920"), current: current === "nexus" },
+    { id: "planning", label: catalogWord("literal", "5cddfd18b35f"), description: catalogWord("literal", "bfa73268a872"), current: current === "planning", default: true },
+    { id: "verification", label: catalogWord("literal", "b9b69876ed00"), description: catalogWord("literal", "b5ecad888fc4"), current: current === "verification" },
+    { id: "standard", label: catalogWord("literal", "9f758b115a39"), description: catalogWord("literal", "38759b4f9a8d"), current: current === "standard" },
   ]
 }
 
 /** One sentence for every settings combination; a cycle keeps the pair it captured on assignment. */
 export function gateModeText(planning: boolean, verification: boolean): string {
-  if (planning && verification) return "NEXUS：指派時擷取規劃與獨立驗證。Feature 和 Epic 先完成計劃檢查，完成程式後須由獨立 checker 通過才可合併；Issue 不需計劃檢查。"
-  if (planning) return "指派時只擷取規劃：Feature 和 Epic 先完成計劃檢查；合併沿用一般驗證紀錄。Issue 不需計劃檢查。"
-  if (verification) return "指派時只擷取獨立驗證：Epic 也略過強制計劃檢查；完成程式後仍須由獨立 checker 通過才可合併。"
-  return "兩道 gate 都關閉：Epic 也略過強制計劃檢查；工作沿用一般執行與驗證流程。"
+  if (planning && verification) return catalogWord("literal", "3f3878d54702")
+  if (planning) return catalogWord("literal", "5cea22b9e003")
+  if (verification) return catalogWord("literal", "5a2c278484d7")
+  return catalogWord("literal", "14337b315281")
 }

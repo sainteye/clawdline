@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import { useCallback, useEffect, useState } from "react"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
@@ -101,7 +102,7 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
           value={modelOf(snapshot, "codex_default_effort")} disabled={disabled}
           onChange={(event) => commit("codex_default_effort", event.currentTarget.value)}>
           <option value="">{nextWord("defaultModelPlaceholder")}</option>
-          <option value="high">high</option><option value="xhigh">xhigh</option>
+          <option value="high">{catalogWord("inline", "6ef7c9b15ecd")}</option><option value="xhigh">{catalogWord("inline", "b5255978be8e")}</option>
         </select>
       </div>
       {picker("claude", "claude_default_model", nextWord("defaultClaudeModel"))}

@@ -1,3 +1,5 @@
+import { catalogFormat } from "../catalog.js"
+import { catalogWord } from "../catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
@@ -105,11 +107,11 @@ function stateLine(row: SessionRow): { html: string; shape: string } {
     ? `<span class="session-work-copy retained-reading" title="${L.escapeHTML(retained)}">${L.escapeHTML(retained)}</span>`
     : ""
   const pausedSaid = row.source?.freshness === "unverified"
-    ? `<span class="session-work-copy retained-reading">${sessionReadingChinese() ? "驗證暫停" : "Verification paused"} · ${L.escapeHTML(new Date(row.source.observed_at * 1000).toLocaleTimeString())}</span>`
+    ? `<span class="session-work-copy retained-reading">${L.escapeHTML(catalogWord("literal", "1ebe900add97"))} · ${L.escapeHTML(new Date(row.source.observed_at * 1000).toLocaleTimeString())}</span>`
     : ""
   const attention = row.attention_count
   const attentionSaid = typeof attention === "number" && attention > 0
-    ? `<span class="session-attention" aria-label="關注，待處理 ${attention} 筆便條"><span class="session-attention-dot" aria-hidden="true"></span>關注 · 待處理 ${attention}</span>`
+    ? `<span class="session-attention" aria-label="${L.escapeHTML(catalogFormat("session", "attentionAria", [attention]))}"><span class="session-attention-dot" aria-hidden="true"></span>${L.escapeHTML(catalogFormat("session", "attentionText", [attention]))}</span>`
     : ""
   // Closeability is not drawn in the list: a lock and "N still open" beside
   // every row told the person nothing they act on there. The swipe's close
@@ -217,9 +219,9 @@ function taskPlace(row: SessionRow, depth: number): {
       },
     }
   }
-  if (featureRoot) return { depth, chip: { text: featureRoot.text, title: featureRoot.title + (depth && row.epic_parent ? "\n隸屬於 Epic 負責人的工作樹" : ""), live: featureRoot.live } }
+  if (featureRoot) return { depth, chip: { text: featureRoot.text, title: featureRoot.title + (catalogWord("literal", "788337506c75")), live: featureRoot.live } }
   if (row.epic_parent && depth) return { depth, chip: { text: T.webTaskRoot + " · " + roots.length,
-    title: "隸屬於 Epic 負責人的工作樹", live: roots.some(L.taskLive) } }
+    title: catalogWord("literal", "f1eb32348be4"), live: roots.some(L.taskLive) } }
   if (roots.length) {
     return { depth: 0, chip: { text: T.webTaskRoot + " · " + roots.length, title: titles(), live: roots.some(L.taskLive) } }
   }
@@ -348,7 +350,7 @@ export function Row({
     >
       <span className="kid" hidden={!place.depth} aria-hidden="true" />
       {ancestorThrough ? <span className="tree-ancestor" aria-hidden="true" /> : null}
-      {row.epic_parent && depth ? <span className="sr-only">隸屬於 Epic 負責人的工作樹</span> : null}
+      {row.epic_parent && depth ? <span className="sr-only">{catalogWord("inline", "9ba541d50c44")}</span> : null}
       {coordinator ? (
         // The machine steward's identity is visible without promising a
         // command panel that this console does not provide.

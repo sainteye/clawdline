@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { isPicture } from "../../legacy/shots-bridge.js"
@@ -50,7 +52,7 @@ export function PendingPictures({ images, busy, note, onChange }: {
   useEffect(() => () => { for (const url of previews) URL.revokeObjectURL(url) }, [previews])
   const markingFile = marking >= 0 ? images[marking] : undefined
   return <div className="work-modal-images">
-    <span>參考圖片</span>
+    <span>{catalogWord("inline", "0d8b8b072dbd")}</span>
     <input ref={picker} type="file" accept="image/*,.heic,.heif" multiple hidden onChange={(event) => {
       const selected = Array.from(event.currentTarget.files ?? []).filter(isPicture)
       event.currentTarget.value = ""
@@ -58,18 +60,18 @@ export function PendingPictures({ images, busy, note, onChange }: {
     }} />
     <div className="work-modal-image-tools">
       <button className="chip" type="button" disabled={busy || images.length >= MAX_REFERENCE_PICTURES}
-        onClick={() => picker.current?.click()}>＋ 加入參考圖片</button>
+        onClick={() => picker.current?.click()}>{catalogWord("inline", "1d961cda78c7")}</button>
       <small>{images.length} / {MAX_REFERENCE_PICTURES} · {note}</small>
     </div>
     {!!images.length && <ul className="work-modal-image-list work-pending-pictures">{images.map((file, index) =>
       <li key={`${file.name}-${file.lastModified}-${index}`}>
         <button className="work-pending-picture" type="button" disabled={busy} title={file.name}
-          aria-label={`用紅筆標記 ${file.name}`} onClick={() => setMarking(index)}>
+          aria-label={catalogFormat("template", "171792601a92", [file.name])} onClick={() => setMarking(index)}>
           <img src={previews[index]} alt="" />
           <span>{file.name}</span>
           <span className="work-pending-picture-pen" aria-hidden="true"><WorkIcon name="edit" /></span>
         </button>
-        <button type="button" disabled={busy} aria-label={`移除 ${file.name}`}
+        <button type="button" disabled={busy} aria-label={catalogFormat("template", "f7068e40108f", [file.name])}
           onClick={() => onChange(images.filter((_, at) => at !== index))}><WorkIcon name="close" /></button>
       </li>)}</ul>}
     {markingFile && <PictureMarkup picture={{ id: `${marking}-${markingFile.lastModified}`, url: previews[marking] }}

@@ -1,3 +1,6 @@
+import { localizedLiteralMap } from "../../catalog.js"
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react"
 import { createPortal } from "react-dom"
 import type { Icon } from "@clawdline/contract"
@@ -17,20 +20,20 @@ import {
 } from "./project-setup.js"
 import "./icon-copy.css"
 
-const toneWords: Record<SetupTone, string> = {
-  ready: "已完成",
-  missing: "待補",
-  attention: "需檢查",
-  "not-applicable": "不適用",
-  unknown: "未知",
-}
+const toneWords: Record<SetupTone, string> = localizedLiteralMap({
+  ready: "83799bb51f05",
+  missing: "54c58892d432",
+  attention: "f81fb7eed946",
+  "not-applicable": "fa463019faec",
+  unknown: "944f88e4f77b",
+})
 
 function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place: ProjectPlace): void }) {
   const capabilities = projectSetupCapabilities(place)
   const progress = projectSetupProgress(place)
   const needsAttention = capabilities.some(row => row.tone === "attention")
   const incomplete = capabilities.some(row => row.applicable && !row.complete)
-  const action = needsAttention ? "檢查設定" : incomplete ? "補齊設定" : "重新檢視"
+  const action = needsAttention ? catalogWord("literal", "0a98c973ad81") : incomplete ? catalogWord("literal", "7ef8b05c48f0") : catalogWord("literal", "1b6d43720612")
   return <li className="project-readiness-card">
     <div className="project-readiness-identity">
       <span className="project-readiness-mark" aria-hidden="true">
@@ -40,7 +43,7 @@ function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place
         <strong>{place.label}</strong>
         <span className="project-readiness-path">{place.path}</span>
       </span>
-      <span className="project-readiness-score" aria-label={progress ? `${progress.total} 項中已完成 ${progress.complete} 項` : "健檢資料未知"}>
+      <span className="project-readiness-score" aria-label={progress ? catalogFormat("template", "e50de8226de9", [progress.total, progress.complete]) : catalogWord("literal", "738cc5207e7d")}>
         {progress ? `${progress.complete}/${progress.total}` : "—"}
       </span>
     </div>
@@ -83,8 +86,8 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
   const mayLeave = useCallback(() => {
     if (!dialog.current?.open) return true
-    if (filesState.current.busy) { setCloseNotice("檔案正在儲存，請等操作完成後再關閉。"); return false }
-    if (filesState.current.dirty && !window.confirm("放棄尚未儲存的檔案內容？")) {
+    if (filesState.current.busy) { setCloseNotice(catalogWord("literal", "167e00adca12")); return false }
+    if (filesState.current.dirty && !window.confirm(catalogWord("literal", "1167bc91fa0c"))) {
       dialog.current?.querySelector<HTMLTextAreaElement>(".project-files-editor textarea")?.focus()
       return false
     }
@@ -107,7 +110,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       setPlaces(answer.places)
     } catch (reason) {
       setPlaces([])
-      setError(failureSentence(reason, "讀不到專案配置健檢，請重試。"))
+      setError(failureSentence(reason, catalogWord("literal", "df0d05d31c79")))
     } finally {
       setLoading(false)
     }
@@ -149,17 +152,17 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   }
 
   const summary = loading
-    ? "讀取專案配置中…"
+    ? catalogWord("literal", "77fe4c2aa7e2")
     : error
-      ? "目前讀不到配置狀態"
+      ? catalogWord("literal", "a95e9e07a847")
       : places.length > 0
-        ? `${complete}/${places.length} 個專案配置完整`
-        : "目前沒有可檢查的專案"
+        ? catalogFormat("template", "54ab1dddbd2b", [complete, places.length])
+        : catalogWord("literal", "1cfce0908f3d")
 
   return <><section className="project-setup" hidden={!shown} aria-labelledby="project-setup-launcher-title">
     <div className="project-setup-launcher-copy">
-      <p className="project-setup-eyebrow">專案能力健檢</p>
-      <h2 id="project-setup-launcher-title">專案設定狀況</h2>
+      <p className="project-setup-eyebrow">{catalogWord("inline", "c6325b98fd0c")}</p>
+      <h2 id="project-setup-launcher-title">{catalogWord("inline", "7a181eee912c")}</h2>
       <p className={error ? "is-error" : ""} role={loading ? "status" : undefined}>{summary}</p>
     </div>
     <button
@@ -171,7 +174,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         dialog.current?.showModal()
         dialog.current?.focus({ preventScroll: true })
       }}
-    >查看健檢</button>
+    >{catalogWord("inline", "4ad26221870f")}</button>
   </section>
     {createPortal(<dialog
       className="project-setup-dialog"
@@ -202,41 +205,41 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
     >
       <div className="project-setup-dialog-heading">
         <div>
-          <p className="project-setup-eyebrow">專案能力健檢</p>
-          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || "專案"} · ${view === "files" ? "檔案" : "設定"}` : "還差什麼，一眼看懂"}</h2>
+          <p className="project-setup-eyebrow">{catalogWord("inline", "c6325b98fd0c")}</p>
+          <h2 id="project-setup-title">{projectPath ? `${visiblePlaces[0]?.label || catalogWord("literal", "faec0867e1cc")} · ${view === "files" ? catalogWord("literal", "f207dc293b4f") : catalogWord("literal", "91c1ae775198")}` : catalogWord("literal", "6a6633400d3e")}</h2>
         </div>
-        <button className="project-setup-close" type="button" aria-label="關閉專案設定" onClick={requestClose}>關閉</button>
+        <button className="project-setup-close" type="button" aria-label={catalogWord("inline", "dfc889eaa026")} onClick={requestClose}>{catalogWord("inline", "c7fdddf79eaa")}</button>
       </div>
       <div className="project-setup-dialog-body">
         {closeNotice && <p role="status">{closeNotice}</p>}
-        {projectPath && <div className="project-setup-views" aria-label="專案內容">
-          <button type="button" aria-pressed={view === "settings"} onClick={() => setView("settings")}>設定與指引</button>
+        {projectPath && <div className="project-setup-views" aria-label={catalogWord("inline", "a2d62aa7e4df")}>
+          <button type="button" aria-pressed={view === "settings"} onClick={() => setView("settings")}>{catalogWord("inline", "c57e45ecd648")}</button>
           <button type="button" aria-pressed={view === "files"} onClick={() => {
             if (!mayLeave()) return
             filesState.current = { dirty: false, busy: false }
             setView("files")
-          }}>檔案</button>
+          }}>{catalogWord("inline", "a11ac5efe91d")}</button>
         </div>}
         {view === "files" && projectPath && <>
-          {loading && <p role="status">正在讀取專案…</p>}
-          {!loading && error && <p role="alert">{error} <button type="button" onClick={() => void load()}>重試</button></p>}
-          {!loading && !error && !visiblePlaces[0] && <p role="status">這個專案已不在清單中。請回專案列表重新選擇。</p>}
+          {loading && <p role="status">{catalogWord("inline", "a33893db1b83")}</p>}
+          {!loading && error && <p role="alert">{error} <button type="button" onClick={() => void load()}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
+          {!loading && !error && !visiblePlaces[0] && <p role="status">{catalogWord("inline", "0b2d6de09d19")}</p>}
           {!loading && !error && visiblePlaces[0] && <ProjectExplorer key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
         </>}
         {view === "settings" && <>
         <div className="project-setup-heading">
-          <p>檢視這台機器的專案設定與指令檔案；可在下方編輯現有的專案檔案。缺少的設定仍可先交給 AI 檢查。</p>
-          {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
+          <p>{catalogWord("inline", "9efc27432575")}</p>
+          {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>{catalogWord("inline", "1f18df830a84")}</small></span>}
         </div>
         {projectPath && visiblePlaces[0] && <ProjectUnify key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
         {projectPath && visiblePlaces[0] && <ProjectFiles key={visiblePlaces[0].id} place={visiblePlaces[0]} onState={updateFilesState} />}
-        {loading && <p className="project-setup-loading" role="status">讀取專案配置中…</p>}
+        {loading && <p className="project-setup-loading" role="status">{catalogWord("inline", "db8653492c3a")}</p>}
         {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
           {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} />)}
         </ol>}
-        {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? "目前讀不到這個專案的設定，請重新讀取。" : <>這台機器還沒有可檢查的專案。先在該目錄開過一次 assistant，或用 <code>clawdline project add</code> 登記。</>}</p>}
+        {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? catalogWord("literal", "0e8fb42d973e") : <>{catalogWord("inline", "76d12ea59749")} <code>{catalogWord("inline", "fa482be8fef0")}</code>{catalogWord("inline", "7aa0955db160")}</>}</p>}
         {error && <p role="alert">{error}</p>}
-        <button className="project-setup-refresh" type="button" disabled={loading} onClick={() => void load()}>重新讀取</button>
+        <button className="project-setup-refresh" type="button" disabled={loading} onClick={() => void load()}>{catalogWord("inline", "358a13c304aa")}</button>
         </>}
       </div>
     </dialog>, document.body)}

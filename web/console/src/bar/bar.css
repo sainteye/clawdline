@@ -504,3 +504,4 @@ body {
 .bar-keys .said {
     color: var(--bar-label-3);
 }
+html.booting body { visibility: hidden; }

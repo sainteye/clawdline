@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import type { SessionAgent, SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
@@ -30,7 +31,7 @@ export function WorkTree({
     <section className="agents" aria-label={L.strings.webAgents}>
       <div className="head"><span>{L.strings.webAgents}</span><span className="n">{providerReason || nodes.length}</span></div>
       <button className="one root" type="button" aria-current={!selected} onClick={() => onProvider(null)}>
-        <span className="mark"/><span className="kind">session</span><span className="what">{row.label || row.id}</span>
+        <span className="mark"/><span className="kind">{catalogWord("inline", "3f3af1ecebbd")}</span><span className="what">{row.label || row.id}</span>
       </button>
       {nodes.map((node, index) => {
         const what = agentName(node.agent, row.assistant, index + 1)
@@ -75,8 +76,5 @@ function agentStarted(at: number): string {
 }
 
 function agentWords(): { codexMissing: string; claudeRunning: string; started: string } {
-  const lang = (document.documentElement.lang || navigator.language || "en").toLowerCase()
-  return lang.startsWith("zh")
-    ? { codexMissing: "Codex 沒有記下這個 thread 在做什麼", claudeRunning: "推測仍在跑", started: "開始" }
-    : { codexMissing: "Codex did not record what this thread is doing", claudeRunning: "appears to be running", started: "started" }
+  return { codexMissing: catalogWord("literal", "398bedfd1dd3"), claudeRunning: catalogWord("literal", "6de919644531"), started: catalogWord("literal", "05439464f4fe") }
 }

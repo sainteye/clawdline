@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node runs epic-gate.test.ts against this source file.
+import { catalogWord } from "../../catalog.ts"
 import type { WorkV2Document, WorkV2Item } from "./api.js"
 import { documentsNewestFirst } from "./completion-report-order.js"
 
@@ -17,8 +19,8 @@ export interface EpicGate {
   ready: boolean
 }
 
-export const EPIC_GATE_HINT = "本輪已啟用規劃 gate：Epic 要先寫計劃書、經 Child Session review，才能開始實作"
-export const FEATURE_GATE_HINT = "本輪已啟用規劃 gate，且這個項目需要獨立審查：要先寫計劃書、經 Child Session review，才能開始實作"
+export const EPIC_GATE_HINT = () => catalogWord("literal", "b1239e2ae8ce")
+export const FEATURE_GATE_HINT = () => catalogWord("literal", "c5be988f8030")
 
 /** A Refactor follows a Feature's rules: the same phases, gate and review switch. */
 export function featureLike(item: Pick<WorkV2Item, "kind">): boolean {
@@ -59,7 +61,7 @@ export function epicGateShown(item: Pick<WorkV2Item, "kind" | "review_required" 
 
 /** The sentence under an unfinished checklist, naming why this item needs it. */
 export function planGateHint(item: Pick<WorkV2Item, "kind">): string {
-  return isEpic(item) ? EPIC_GATE_HINT : FEATURE_GATE_HINT
+  return isEpic(item) ? EPIC_GATE_HINT() : FEATURE_GATE_HINT()
 }
 
 /**

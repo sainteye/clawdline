@@ -1,0 +1,1796 @@
+[
+  {
+    "id": "template.7e8b4dfff169",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 134,
+    "zh-Hant": "{arg0} 核 · {arg1} 記憶體",
+    "en": "{arg0} cores · {arg1} memory",
+    "expressions": [
+      "usage.cores",
+      "bytes(usage.memory_total_bytes)"
+    ],
+    "context": " {usage ? ( <> {zh ? `${usage.cores} 核 · ${bytes(usage.memory_total_bytes)} 記憶體` : `${usage.cores} cores · ${bytes(usage.memory_total_b"
+  },
+  {
+    "id": "template.b8faa287adb9",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 210,
+    "zh-Hant": "已用 {arg0}",
+    "en": "{arg0} used",
+    "expressions": [
+      "bytes(usage.memory_used_bytes)"
+    ],
+    "context": " className=\"machine-scale\"> <span>{zh ? `已用 ${bytes(usage.memory_used_bytes)}` : `${bytes(usage.memory_used_bytes)} used`}</span> "
+  },
+  {
+    "id": "template.ca37c38d230b",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 211,
+    "zh-Hant": "可用 {arg0}",
+    "en": "{arg0} available",
+    "expressions": [
+      "bytes(usage.memory_available_bytes)"
+    ],
+    "context": "_used_bytes)} used`}</span> <span>{zh ? `可用 ${bytes(usage.memory_available_bytes)}` : `${bytes(usage.memory_available_bytes)} available`}<"
+  },
+  {
+    "id": "template.82697b4e4f82",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 217,
+    "zh-Hant": "各 session（{arg0}）",
+    "en": "Sessions ({arg0})",
+    "expressions": [
+      "list.filter((r) => r.kind === \"session\").length"
+    ],
+    "context": "sName=\"machine-section-head\"> <h3>{zh ? `各 session（${list.filter((r) => r.kind === \"session\").length}）` : `Sessions (${list.filter((r) => r.kind === \"session\""
+  },
+  {
+    "id": "template.c4e5c8cf3d7b",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 267,
+    "zh-Hant": "{arg0} 個",
+    "en": "×{arg0}",
+    "expressions": [
+      "o.processes"
+    ],
+    "context": " <span className=\"machine-detail\">{zh ? `${o.processes} 個` : `×${o.processes}`}</span> <spa"
+  },
+  {
+    "id": "template.37d294810b2a",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 278,
+    "zh-Hant": "CPU 是最近 {arg0} 秒的平均，以整台機器 {arg1} 核為 100%。每個 session 包含它開的 shell 和編譯等子程序；程序間共用的記憶體會重複計入。",
+    "en": "CPU is the average over the last {arg0} s, with all {arg1} cores as 100%. A session includes the shells and builds it started; memory shared between processes is counted in each.",
+    "expressions": [
+      "(usage.interval_ms / 1000).toFixed(1)",
+      "usage.cores"
+    ],
+    "context": "ame=\"machine-note\"> {zh ? `CPU 是最近 ${(usage.interval_ms / 1000).toFixed(1)} 秒的平均，以整台機器 ${usage.cores} 核為 100%。每個 session 包含它開的 shell 和編譯等子程序；程序間共用的記憶體會重複計入。` : `CPU is the average over the last ${"
+  },
+  {
+    "id": "template.70ebbddc796d",
+    "file": "src/machine/model.ts",
+    "line": 96,
+    "zh-Hant": "記憶體不夠：只剩 {arg0}，已有 {arg1} 被換到 swap。所有東西都在等磁碟——關掉閒置的 session 或停掉編譯。",
+    "en": "",
+    "expressions": [
+      "avail",
+      "bytes(u.swap_used_bytes)"
+    ],
+    "context": "disk — close idle sessions or stop a build.`, zh: `記憶體不夠：只剩 ${avail}，已有 ${bytes(u.swap_used_bytes)} 被換到 swap。所有東西都在等磁碟——關掉閒置的 session 或停掉編譯。`, } } if (cpu === \"bad\") { return { l"
+  },
+  {
+    "id": "template.87d49771a97c",
+    "file": "src/machine/model.ts",
+    "line": 103,
+    "zh-Hant": "CPU 滿載：使用率 {arg0}%，load {arg1}（{arg2} 核）。工作正在排隊。",
+    "en": "",
+    "expressions": [
+      "Math.round(u.cpu_percent)",
+      "fixed(u.load[0])",
+      "u.cores"
+    ],
+    "context": "on ${u.cores} cores. Work queues behind it.`, zh: `CPU 滿載：使用率 ${Math.round(u.cpu_percent)}%，load ${fixed(u.load[0])}（${u.cores} 核）。工作正在排隊。`, } } if (mem === \"warn\" || swap === \"warn\" || "
+  },
+  {
+    "id": "template.494c3eaecfb0",
+    "file": "src/machine/model.ts",
+    "line": 110,
+    "zh-Hant": "有點忙，但還撐得住：CPU {arg0}%，記憶體還有 {arg1} 可用。",
+    "en": "",
+    "expressions": [
+      "Math.round(u.cpu_percent)",
+      "avail"
+    ],
+    "context": "rcent)}% CPU, ${avail} of memory available.`, zh: `有點忙，但還撐得住：CPU ${Math.round(u.cpu_percent)}%，記憶體還有 ${avail} 可用。`, } } return { level: \"ok\", en: `This m"
+  },
+  {
+    "id": "template.d9b292916aa7",
+    "file": "src/machine/model.ts",
+    "line": 116,
+    "zh-Hant": "機器很從容：CPU {arg0}%，記憶體還有 {arg1} 可用。",
+    "en": "",
+    "expressions": [
+      "Math.round(u.cpu_percent)",
+      "avail"
+    ],
+    "context": "percent)}% CPU, ${avail} of memory available.`, zh: `機器很從容：CPU ${Math.round(u.cpu_percent)}%，記憶體還有 ${avail} 可用。`, } } function fixed(n: number | undefined): string "
+  },
+  {
+    "id": "template.b5bb0404f123",
+    "file": "src/machine/model.ts",
+    "line": 217,
+    "zh-Hant": "{arg0} 個程序",
+    "en": "{arg0} {arg1}",
+    "expressions": [
+      "g.processes"
+    ],
+    "context": "?.tty?.replace(/^\\/dev\\//, \"\") || \"\"] parts.push(zh ? `${g.processes} 個程序` : `${g.processes} ${g.processes === 1 ? \"process\" : \"p"
+  },
+  {
+    "id": "template.0efa5a61894d",
+    "file": "src/pages/Squad.tsx",
+    "line": 33,
+    "zh-Hant": "角色小隊服務暫時無法完成請求{arg0}。請稍後重試；若持續發生，重新整理頁面。",
+    "en": "",
+    "expressions": [
+      "status ? `（HTTP ${status}）` : \"\""
+    ],
+    "context": " { const status = errorStatus(error) return `角色小隊服務暫時無法完成請求${status ? `（HTTP ${status}）` : \"\"}。請稍後重試；若持續發生，重新整理頁面。` } } } function readErrorTitle(code: string): str"
+  },
+  {
+    "id": "template.dec5e1afdd7e",
+    "file": "src/pages/Squad.tsx",
+    "line": 359,
+    "zh-Hant": "版本衝突且無法重讀：{arg0} 你的文字仍保留，請再試一次。",
+    "en": "",
+    "expressions": [
+      "errorDetail(rereadError)"
+    ],
+    "context": "urrentScope.current === requestScope) setNotice({ text: `版本衝突且無法重讀：${errorDetail(rereadError)} 你的文字仍保留，請再試一次。`, error: true }) } } else if (currentScope.curren"
+  },
+  {
+    "id": "template.00ac5e87de81",
+    "file": "src/pages/Squad.tsx",
+    "line": 360,
+    "zh-Hant": "手冊未儲存：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "urrentScope.current === requestScope) setNotice({ text: `手冊未儲存：${errorDetail(error)}`, error: true }) } finally { setBusy(\"\") } } c"
+  },
+  {
+    "id": "template.10f87c17d2f8",
+    "file": "src/pages/Squad.tsx",
+    "line": 374,
+    "zh-Hant": "未能還原繼承：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "urrentScope.current === requestScope) setNotice({ text: `未能還原繼承：${errorDetail(error)}`, error: true }) } finally { setBusy(\"\") } } c"
+  },
+  {
+    "id": "template.dad86b25350d",
+    "file": "src/pages/Squad.tsx",
+    "line": 387,
+    "zh-Hant": "設定未儲存：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "urrentScope.current === requestScope) setNotice({ text: `設定未儲存：${errorDetail(error)}`, error: true }) } finally { setBusy(\"\") } } c"
+  },
+  {
+    "id": "template.10f87c17d2f8",
+    "file": "src/pages/Squad.tsx",
+    "line": 399,
+    "zh-Hant": "未能還原繼承：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "urrentScope.current === requestScope) setNotice({ text: `未能還原繼承：${errorDetail(error)}`, error: true }) } finally { setBusy(\"\") } } c"
+  },
+  {
+    "id": "template.75eb1ec08d49",
+    "file": "src/pages/Squad.tsx",
+    "line": 412,
+    "zh-Hant": "技能設定未儲存：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "entScope.current === requestScope) { const text = `技能設定未儲存：${errorDetail(error)}` setNotice({ text, error: true }); setSkillWriteE"
+  },
+  {
+    "id": "template.fda343356bac",
+    "file": "src/pages/Squad.tsx",
+    "line": 427,
+    "zh-Hant": "重新讀取失敗：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "error) { setSkillWriteError({ ...skillWriteError, text: `重新讀取失敗：${errorDetail(error)}` }) } } const currentChoices = persona?.skills.map("
+  },
+  {
+    "id": "template.ddd756350b15",
+    "file": "src/pages/Squad.tsx",
+    "line": 557,
+    "zh-Hant": "技能已加入並啟用。儲存期間全域技能清單也更新了；此 Project 尚未加入：{arg0}。可從「加入已建立技能」補入，或還原全域繼承。",
+    "en": "",
+    "expressions": [
+      "missingNames.join(\"、\") || catalogWord(\"literal\", \"a2ebfc6e487d\")"
+    ],
+    "context": "Id(target.id) setNotice({ text: globalChanged ? `技能已加入並啟用。儲存期間全域技能清單也更新了；此 Project 尚未加入：${missingNames.join(\"、\") || catalogWord(\"literal\", \"a2ebfc6e487d\")}。可從「加入已建立技能」補入，或還原全域繼承。` : catalogWord(\"literal\", \"fecb7d98be72\") }) } "
+  },
+  {
+    "id": "template.f8ba53a245d4",
+    "file": "src/pages/Squad.tsx",
+    "line": 563,
+    "zh-Hant": "{arg0}{arg1} 請重試；已輸入內容仍保留。",
+    "en": "",
+    "expressions": [
+      "skillTransaction.current?.catalogSaved ? catalogWord(\"literal\", \"d356ce36d4f9\") : catalogWord(\"literal\", \"5c64311ba406\")",
+      "errorDetail(error)"
+    ],
+    "context": "gOpen(false) } catch (error) { setSkillError(`${skillTransaction.current?.catalogSaved ? catalogWord(\"literal\", \"d356ce36d4f9\") : catalogWord(\"literal\", \"5c64311ba406\")}${errorDetail(error)} 請重試；已輸入內容仍保留。`) } finally { setSkillBusy(false) } } const mov"
+  },
+  {
+    "id": "template.403eadebb370",
+    "file": "src/pages/Squad.tsx",
+    "line": 581,
+    "zh-Hant": "未能還原技能繼承：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "urrentScope.current === requestScope) setNotice({ text: `未能還原技能繼承：${errorDetail(error)}`, error: true }) } finally { setBusy(\"\") } } c"
+  },
+  {
+    "id": "template.9d654f40d3f4",
+    "file": "src/pages/Squad.tsx",
+    "line": 603,
+    "zh-Hant": "無法預覽資料包：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "eConfirm(false) } catch (error) { setPackError(`無法預覽資料包：${errorDetail(error)}`) } finally { setBusy(\"\") } } const adoptPack ="
+  },
+  {
+    "id": "template.4cc0e44397c7",
+    "file": "src/pages/Squad.tsx",
+    "line": 613,
+    "zh-Hant": "資料包未採納：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": "rd(\"literal\", \"be71ec45cc65\")) else setPackError(`資料包未採納：${errorDetail(error)}`) if ([\"version_conflict\", \"settings_changed\", \"p"
+  },
+  {
+    "id": "template.2ee62aa05e92",
+    "file": "src/pages/Squad.tsx",
+    "line": 626,
+    "zh-Hant": "無法匯出資料包：{arg0}",
+    "en": "",
+    "expressions": [
+      "errorDetail(error)"
+    ],
+    "context": " \"3445e3bbfc67\") }) } catch (error) { setPackError(`無法匯出資料包：${errorDetail(error)}`) } finally { setBusy(\"\") } } useEffect(() => "
+  },
+  {
+    "id": "template.5c513a465185",
+    "file": "src/pages/Squad.tsx",
+    "line": 699,
+    "zh-Hant": "允許管理 agent 自動指派：{arg0}",
+    "en": "",
+    "expressions": [
+      "persona.enabled.value ? catalogWord(\"literal\", \"fad748d33598\") : catalogWord(\"literal\", \"f4cd146147ab\")"
+    ],
+    "context": "Name=\"squad-switch\"><input type=\"checkbox\" aria-label={`允許管理 agent 自動指派：${persona.enabled.value ? catalogWord(\"literal\", \"fad748d33598\") : catalogWord(\"literal\", \"f4cd146147ab\")}`} checked={persona.enabled.value} disabled={!canWrite |"
+  },
+  {
+    "id": "template.697a707c20a0",
+    "file": "src/pages/Squad.tsx",
+    "line": 704,
+    "zh-Hant": "{arg0} 手冊",
+    "en": "",
+    "expressions": [
+      "scopeLabel"
+    ],
+    "context": " <label className=\"squad-handbook-editor\">{scope ? `${scopeLabel} 手冊` : catalogWord(\"literal\", \"1e4888cc9d8d\")}<textarea val"
+  },
+  {
+    "id": "template.4308c1893804",
+    "file": "src/pages/Squad.tsx",
+    "line": 724,
+    "zh-Hant": "技能使用動畫：{arg0}",
+    "en": "",
+    "expressions": [
+      "data.motion.value ? catalogWord(\"literal\", \"f423cf998c53\") : catalogWord(\"literal\", \"53bb291bfdd8\")"
+    ],
+    "context": "Name=\"squad-switch\"><input type=\"checkbox\" aria-label={`技能使用動畫：${data.motion.value ? catalogWord(\"literal\", \"f423cf998c53\") : catalogWord(\"literal\", \"53bb291bfdd8\")}`} checked={data.motion.value} disabled={!canWrite || !!"
+  },
+  {
+    "id": "template.8f1566b07b7d",
+    "file": "src/pages/Squad.tsx",
+    "line": 749,
+    "zh-Hant": "、{arg0} 私人設定",
+    "en": "",
+    "expressions": [
+      "data?.projects.find((project) => project.id === id)?.name ?? id"
+    ],
+    "context": "\"literal\", \"4572689872bb\")}{includeProjects.map((id) => `、${data?.projects.find((project) => project.id === id)?.name ?? id} 私人設定`).join(\"\")}</div> {data?.catalogSkills.so"
+  },
+  {
+    "id": "template.6eac929a1893",
+    "file": "src/pages/Squad.tsx",
+    "line": 781,
+    "zh-Hant": "會列出{arg0} 的個人、擴充與目前 Project 技能。",
+    "en": "",
+    "expressions": [
+      "importSource === \"codex\" ? \" Codex\" : \" Claude Code\""
+    ],
+    "context": "== \"project\" ? catalogWord(\"literal\", \"a078de280d6e\") : `會列出${importSource === \"codex\" ? \" Codex\" : \" Claude Code\"} 的個人、擴充與目前 Project 技能。`}{catalogWord(\"inline\", \"be530b5551a2\")}</p> "
+  },
+  {
+    "id": "template.c18a3d5d3927",
+    "file": "src/pages/Squad.tsx",
+    "line": 795,
+    "zh-Hant": "，另含 {arg0} 個附檔",
+    "en": "",
+    "expressions": [
+      "importAttachedFiles.length"
+    ],
+    "context": "16cf\")}{importKind === \"folder\" && !sourceFolderError ? `，另含 ${importAttachedFiles.length} 個附檔` : \"\"}{catalogWord(\"inline\", \"dd6ebd6aaecd\")}</p> "
+  },
+  {
+    "id": "template.40fa08f129b0",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 60,
+    "zh-Hant": "已將圖示儲存到 {arg0}。",
+    "en": "",
+    "expressions": [
+      "place.label"
+    ],
+    "context": "d ? { ...p, icon: result.icon } : p)) setMessage(`已將圖示儲存到 ${place.label}。`) changed() } catch (e) { setError(e in"
+  },
+  {
+    "id": "template.b744f91deceb",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 113,
+    "zh-Hant": "{arg0} 的檔案樹",
+    "en": "",
+    "expressions": [
+      "place.label"
+    ],
+    "context": "ref={nav} className=\"project-explorer-nav\" aria-label={`${place.label} 的檔案樹`}> <strong className=\"project-explorer-root\">{p"
+  },
+  {
+    "id": "template.f5dc01fdffbd",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 153,
+    "zh-Hant": "無法確認是否已儲存：{arg0} 草稿仍在這裡；恢復後請重新讀取。",
+    "en": "",
+    "expressions": [
+      "describe(rereadReason)"
+    ],
+    "context": "ereadReason) { if (ticket === serial.current) setError(`無法確認是否已儲存：${describe(rereadReason)} 草稿仍在這裡；恢復後請重新讀取。`) } } else setError(describe(reason)) } final"
+  },
+  {
+    "id": "template.e50de8226de9",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 44,
+    "zh-Hant": "{arg0} 項中已完成 {arg1} 項",
+    "en": "",
+    "expressions": [
+      "progress.total",
+      "progress.complete"
+    ],
+    "context": "ssName=\"project-readiness-score\" aria-label={progress ? `${progress.total} 項中已完成 ${progress.complete} 項` : catalogWord(\"literal\", \"738cc5207e7d\")}> {pr"
+  },
+  {
+    "id": "template.54ab1dddbd2b",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 157,
+    "zh-Hant": "{arg0}/{arg1} 個專案配置完整",
+    "en": "",
+    "expressions": [
+      "complete",
+      "places.length"
+    ],
+    "context": "l\", \"a95e9e07a847\") : places.length > 0 ? `${complete}/${places.length} 個專案配置完整` : catalogWord(\"literal\", \"1cfce0908f3d\") re"
+  },
+  {
+    "id": "template.407ed506af73",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 41,
+    "zh-Hant": "寫入 {arg0} 個檔案",
+    "en": "",
+    "expressions": [
+      "r.written.length"
+    ],
+    "context": ".state] ?? r.state] if (r.written.length) parts.push(`寫入 ${r.written.length} 個檔案`) if (r.deleted.length) parts.push(`移除 ${r.deleted.le"
+  },
+  {
+    "id": "template.be0401614399",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 42,
+    "zh-Hant": "移除 {arg0} 個檔案",
+    "en": "",
+    "expressions": [
+      "r.deleted.length"
+    ],
+    "context": "itten.length} 個檔案`) if (r.deleted.length) parts.push(`移除 ${r.deleted.length} 個檔案`) for (const k of r.kept) parts.push(`${k.path}：${KEP"
+  },
+  {
+    "id": "template.8861d1642b3c",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 116,
+    "zh-Hant": "{arg0} 目前離線，上線後打開這頁就會更新。",
+    "en": "",
+    "expressions": [
+      "name"
+    ],
+    "context": " } } const offline = [...waiting].map((name) => `${name} 目前離線，上線後打開這頁就會更新。`) if (done.length || offline.length) setLines([...("
+  },
+  {
+    "id": "template.68c86e0aae21",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 179,
+    "zh-Hant": "{arg0} 已改回這台自己的設定。",
+    "en": "",
+    "expressions": [
+      "repo"
+    ],
+    "context": " await detachProjectMirror(repo) setLines([`${repo} 已改回這台自己的設定。`]) changed() await reload() } catch (e)"
+  },
+  {
+    "id": "template.49c393ba6a87",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 252,
+    "zh-Hant": "同步所選的 {arg0} 個專案",
+    "en": "",
+    "expressions": [
+      "picked.size"
+    ],
+    "context": " {busy ? catalogWord(\"literal\", \"d2dca5f96f16\") : `同步所選的 ${picked.size} 個專案`} </button> </div> </div>} {line"
+  },
+  {
+    "id": "template.bd6a78a26209",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 56,
+    "zh-Hant": "{arg0} {arg1}到 {arg2}",
+    "en": "",
+    "expressions": [
+      "picture.skill.from",
+      "picture.skill.caption",
+      "picture.skill.to"
+    ],
+    "context": "-${picture.skill.arrow}`} role=\"img\" aria-label={`${picture.skill.from} ${picture.skill.caption}到 ${picture.skill.to}`}> <code>{picture.skill.from}</code> <span "
+  },
+  {
+    "id": "template.e3650f6f3874",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 165,
+    "zh-Hant": "已套用 {arg0} 項變更，目前狀態：{arg1}。下方的檔案清單請按「重新讀取清單」更新。",
+    "en": "",
+    "expressions": [
+      "answer.ran.length",
+      "line.text"
+    ],
+    "context": " line = unifyStatusLine(answer.plan) setNotice(`已套用 ${answer.ran.length} 項變更，目前狀態：${line.text}。下方的檔案清單請按「重新讀取清單」更新。`) } } catch (reason) { if (ticket !== s"
+  },
+  {
+    "id": "template.9897d5449ea1",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 178,
+    "zh-Hant": "無法確認是否已套用。重新讀取的結果是「{arg0}」，請看下方預覽再決定。",
+    "en": "",
+    "expressions": [
+      "unifyStatusLine(next).text"
+    ],
+    "context": "9297a379c744\")) else { setNotice(\"\"); setError(`無法確認是否已套用。重新讀取的結果是「${unifyStatusLine(next).text}」，請看下方預覽再決定。`) } } else if (reason instanceof ProjectFileError"
+  },
+  {
+    "id": "template.31c3f09e85c7",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 181,
+    "zh-Hant": "沒有套用任何東西：{arg0}",
+    "en": "",
+    "expressions": [
+      "describe(reason)"
+    ],
+    "context": "reason.code)) { setNotice(\"\") setError(`沒有套用任何東西：${describe(reason)}`) if (reason.code === \"plan_unknown\") void relo"
+  },
+  {
+    "id": "template.8dc58842b93c",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 189,
+    "zh-Hant": "套用沒有完成：{arg0} 可能已完成其中幾項；{arg1}",
+    "en": "",
+    "expressions": [
+      "describe(reason)",
+      "next ? `重新讀取的結果是「${unifyStatusLine(next).text}」，請看下方預覽。` : catalogWord(\"literal\", \"04b8ab6d287d\")"
+    ],
+    "context": ") const next = await reload() setError(`套用沒有完成：${describe(reason)} 可能已完成其中幾項；${next ? `重新讀取的結果是「${unifyStatusLine(next).text}」，請看下方預覽。` : catalogWord(\"literal\", \"04b8ab6d287d\")}`) } } finally { setApplying(false) } } c"
+  },
+  {
+    "id": "template.5b1772732dce",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 196,
+    "zh-Hant": "無法判斷（讀不到共用狀態：{arg0}）",
+    "en": "",
+    "expressions": [
+      "loadError"
+    ],
+    "context": "atalogWord(\"literal\", \"5a02558d001a\") : loadError ? `無法判斷（讀不到共用狀態：${loadError}）` : line?.text ?? \"\" const tone = loadError ? \"u"
+  },
+  {
+    "id": "template.aed581d1c3af",
+    "file": "src/pages/projects/project-setup.ts",
+    "line": 33,
+    "zh-Hant": "進度已接上 · {arg0}",
+    "en": "",
+    "expressions": [
+      "activityWords[setup.deploy_activity]"
+    ],
+    "context": "y const deployDetail = setup.deploy === \"ready\" ? `進度已接上 · ${activityWords[setup.deploy_activity]}` : setup.deploy === \"attention\" ? catalogWord(\"lite"
+  },
+  {
+    "id": "template.10f186c469ac",
+    "file": "src/pages/projects/project-setup.ts",
+    "line": 38,
+    "zh-Hant": "已宣告 {arg0} 個開發服務",
+    "en": "",
+    "expressions": [
+      "setup.server_count"
+    ],
+    "context": " const serverDetail = setup.servers === \"ready\" ? `已宣告 ${setup.server_count} 個開發服務` : setup.servers === \"attention\" ? catalogWord(\"lit"
+  },
+  {
+    "id": "template.767c7030f872",
+    "file": "src/pages/projects/project-setup.ts",
+    "line": 68,
+    "zh-Hant": "Project 名稱：{arg0}",
+    "en": "",
+    "expressions": [
+      "JSON.stringify(place.label)"
+    ],
+    "context": "n [ catalogWord(\"literal\", \"7e545a6a9b17\"), \"\", `Project 名稱：${JSON.stringify(place.label)}`, `Project root：${JSON.stringify(place.path)}`, "
+  },
+  {
+    "id": "template.bf557dd5d65c",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 89,
+    "zh-Hant": "讀不到 {arg0}",
+    "en": "",
+    "expressions": [
+      "paths[0]"
+    ],
+    "context": "eral\", \"67ba4a3f606c\") if (paths.length === 1) return `讀不到 ${paths[0]}` return `讀不到 ${paths[0]} 等 ${paths.length} 個項目` } /*"
+  },
+  {
+    "id": "template.1971a299186d",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 90,
+    "zh-Hant": "讀不到 {arg0} 等 {arg1} 個項目",
+    "en": "",
+    "expressions": [
+      "paths[0]",
+      "paths.length"
+    ],
+    "context": " (paths.length === 1) return `讀不到 ${paths[0]}` return `讀不到 ${paths[0]} 等 ${paths.length} 個項目` } /** How many things differ: each planned change and"
+  },
+  {
+    "id": "template.56c4350d4c99",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 102,
+    "zh-Hant": "有落差（{arg0} 項）",
+    "en": "",
+    "expressions": [
+      "driftCount(plan)"
+    ],
+    "context": " case \"drifting\": return { tone: \"attention\", text: `有落差（${driftCount(plan)} 項）` } default: return { tone: \"unknown\", text: `無法判斷（$"
+  },
+  {
+    "id": "template.c21648fe8edd",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 103,
+    "zh-Hant": "無法判斷（{arg0}）",
+    "en": "",
+    "expressions": [
+      "unknownReason(plan)"
+    ],
+    "context": "an)} 項）` } default: return { tone: \"unknown\", text: `無法判斷（${unknownReason(plan)}）` } } } /** Apply is offered only for a plan that has"
+  },
+  {
+    "id": "template.04eb2d98c178",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 218,
+    "zh-Hant": "在 {arg0} 建一個連結指向 {arg1}，讓 Claude 也看得到 Codex 已經看得到的 skill「{arg2}」。",
+    "en": "",
+    "expressions": [
+      "skill!.from",
+      "skill!.to",
+      "skill!.name"
+    ],
+    "context": "l\", \"c08f09bed8ec\") case \"skill_link\": return `在 ${skill!.from} 建一個連結指向 ${skill!.to}，讓 Claude 也看得到 Codex 已經看得到的 skill「${skill!.name}」。` case \"skill_move_and_link\": return `把 ${skil"
+  },
+  {
+    "id": "template.34222c185d1a",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 220,
+    "zh-Hant": "把 {arg0} 搬到 {arg1}，原處留一個連結，讓 Codex 也看得到 skill「{arg2}」。",
+    "en": "",
+    "expressions": [
+      "skill!.from",
+      "skill!.to",
+      "skill!.name"
+    ],
+    "context": "!.name}」。` case \"skill_move_and_link\": return `把 ${skill!.from} 搬到 ${skill!.to}，原處留一個連結，讓 Codex 也看得到 skill「${skill!.name}」。` case \"skill_replace_copy_with_link\": return "
+  },
+  {
+    "id": "template.61465ed010f6",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 222,
+    "zh-Hant": "{arg0} 和 {arg1} 內容完全相同；把 {arg2} 這份副本換成指向 {arg3} 的連結。",
+    "en": "",
+    "expressions": [
+      "skill!.from",
+      "skill!.to",
+      "skill!.from",
+      "skill!.to"
+    ],
+    "context": "` case \"skill_replace_copy_with_link\": return `${skill!.from} 和 ${skill!.to} 內容完全相同；把 ${skill!.from} 這份副本換成指向 ${skill!.to} 的連結。` case \"skill_copy\": return `把 ${skill!.from} "
+  },
+  {
+    "id": "template.3b2adf429bd8",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 224,
+    "zh-Hant": "把 {arg0} 複製到 {arg1}（這台機器不能建立連結），之後的檢查會比對兩份是否一致。",
+    "en": "",
+    "expressions": [
+      "skill!.from",
+      "skill!.to"
+    ],
+    "context": " ${skill!.to} 的連結。` case \"skill_copy\": return `把 ${skill!.from} 複製到 ${skill!.to}（這台機器不能建立連結），之後的檢查會比對兩份是否一致。` default: return action.description } } ex"
+  },
+  {
+    "id": "template.712e3e1175ee",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 253,
+    "zh-Hant": "唯一會移除的是 {arg0} 份與 .agents/skills 完全相同的副本（{arg1}），原處換成連結，內容仍在。",
+    "en": "",
+    "expressions": [
+      "removedCopies.length",
+      "removedCopies.join(\"、\")"
+    ],
+    "context": "== 0 ? catalogWord(\"literal\", \"74df92b721ee\") : `唯一會移除的是 ${removedCopies.length} 份與 .agents/skills 完全相同的副本（${removedCopies.join(\"、\")}），原處換成連結，內容仍在。` return { moved, created, removedCopies, sentence } }"
+  },
+  {
+    "id": "template.e08a0f1557ad",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 274,
+    "zh-Hant": "CLAUDE.md 有 {arg0} 行只有 Claude 看得到，Codex 看不到。",
+    "en": "",
+    "expressions": [
+      "lines.length"
+    ],
+    "context": "= plan.rules.claude_only_lines return { sentence: `CLAUDE.md 有 ${lines.length} 行只有 Claude 看得到，Codex 看不到。`, remedy: catalogWord(\"literal\", \"a35624ea0763\""
+  },
+  {
+    "id": "template.395d57f8f142",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 280,
+    "zh-Hant": "{arg0} 是一個連結，unify 不會更動它。",
+    "en": "",
+    "expressions": [
+      "path"
+    ],
+    "context": "s: [] } case \"rules_link\": return { sentence: `${path} 是一個連結，unify 不會更動它。`, remedy: catalogWord(\"literal\", \"6aa72e4fdef8\"), lines"
+  },
+  {
+    "id": "template.c79d0687f211",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 282,
+    "zh-Hant": "skill「{arg0}」在 Claude 和 Codex 兩邊的內容不同。",
+    "en": "",
+    "expressions": [
+      "baseName(path)"
+    ],
+    "context": "[] } case \"skill_differs\": return { sentence: `skill「${baseName(path)}」在 Claude 和 Codex 兩邊的內容不同。`, remedy: `留一份在 .agents/skills/${baseName(path)}，移除另一份，"
+  },
+  {
+    "id": "template.74b6e4bba30b",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 282,
+    "zh-Hant": "留一份在 .agents/skills/{arg0}，移除另一份，再重新檢查。",
+    "en": "",
+    "expressions": [
+      "baseName(path)"
+    ],
+    "context": "l「${baseName(path)}」在 Claude 和 Codex 兩邊的內容不同。`, remedy: `留一份在 .agents/skills/${baseName(path)}，移除另一份，再重新檢查。`, lines: [] } case \"skill_link_elsewhere\": re"
+  },
+  {
+    "id": "template.676bac47a5f4",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 284,
+    "zh-Hant": "{arg0} 是連到別處的連結，unify 不會跟著它或改它。",
+    "en": "",
+    "expressions": [
+      "path"
+    ],
+    "context": " case \"skill_link_elsewhere\": return { sentence: `${path} 是連到別處的連結，unify 不會跟著它或改它。`, remedy: catalogWord(\"literal\", \"292b7755b937\"), lines"
+  },
+  {
+    "id": "template.b9db3e2cd844",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 286,
+    "zh-Hant": "{arg0} 整個資料夾是一個連結，unify 不會更動它。",
+    "en": "",
+    "expressions": [
+      "path"
+    ],
+    "context": " case \"skills_directory_link\": return { sentence: `${path} 整個資料夾是一個連結，unify 不會更動它。`, remedy: catalogWord(\"literal\", \"e094f3526875\"), lines"
+  },
+  {
+    "id": "template.c77dd85e5dac",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 288,
+    "zh-Hant": "{arg0} 已經有別的東西用了這個名字。",
+    "en": "",
+    "expressions": [
+      "path"
+    ],
+    "context": "s: [] } case \"name_taken\": return { sentence: `${path} 已經有別的東西用了這個名字。`, remedy: catalogWord(\"literal\", \"9dd0e6117357\"), lines"
+  },
+  {
+    "id": "template.f56ee5f2d93c",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 290,
+    "zh-Hant": "{arg0} 太大，unify 讀不完。",
+    "en": "",
+    "expressions": [
+      "path"
+    ],
+    "context": "es: [] } case \"too_large\": return { sentence: `${path} 太大，unify 讀不完。`, remedy: catalogWord(\"literal\", \"062b9a10a6f1\"), lines"
+  },
+  {
+    "id": "template.aaa57deb124f",
+    "file": "src/pages/projects/project-unify.ts",
+    "line": 292,
+    "zh-Hant": "讀不到 {arg0}。",
+    "en": "",
+    "expressions": [
+      "path"
+    ],
+    "context": "s: [] } case \"unreadable\": return { sentence: `讀不到 ${path}。`, remedy: catalogWord(\"literal\", \"8f8136f76819\"), lines"
+  },
+  {
+    "id": "template.78b00d86df37",
+    "file": "src/pages/projects.tsx",
+    "line": 138,
+    "zh-Hant": "專案設定：{arg0}",
+    "en": "",
+    "expressions": [
+      "wrapper.querySelector(\".project-row-name\")?.textContent || catalogWord(\"literal\", \"fb67023ade0c\")"
+    ],
+    "context": "\"00186c9a0293\") gear.setAttribute(\"aria-label\", `專案設定：${wrapper.querySelector(\".project-row-name\")?.textContent || catalogWord(\"literal\", \"fb67023ade0c\")}`) gear.setAttribute(\"aria-haspopup\", \"dialog\") "
+  },
+  {
+    "id": "template.d4bddd9e5d03",
+    "file": "src/pages/settings/CapacityBlock.tsx",
+    "line": 130,
+    "zh-Hant": "{arg0} 則完成通知送到最後都沒被收下（dead letter）；當時已推播過一次。",
+    "en": "",
+    "expressions": [
+      "dead"
+    ],
+    "context": "(dead letter); each was pushed once when it happened.`, `${dead} 則完成通知送到最後都沒被收下（dead letter）；當時已推播過一次。`, )} </p> )} {panel && lo"
+  },
+  {
+    "id": "template.6b7df3d81439",
+    "file": "src/pages/settings/CapacityBlock.tsx",
+    "line": 149,
+    "zh-Hant": "展開全部 {arg0} 列",
+    "en": "",
+    "expressions": [
+      "rows.length"
+    ],
+    "context": ") : words(`Show all ${rows.length} rows`, `展開全部 ${rows.length} 列`)} </button> </div> )} </di"
+  },
+  {
+    "id": "template.5c5e1d37c1ed",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 83,
+    "zh-Hant": "{arg0} 字",
+    "en": "",
+    "expressions": [
+      "n"
+    ],
+    "context": " if (unit === \"characters\") return words(`${n} chars`, `${n} 字`) if (unit === \"seconds\") return words(`${n} s`, `${n"
+  },
+  {
+    "id": "template.49c70f219483",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 84,
+    "zh-Hant": "{arg0} 秒",
+    "en": "",
+    "expressions": [
+      "n"
+    ],
+    "context": "n} 字`) if (unit === \"seconds\") return words(`${n} s`, `${n} 秒`) if (unit === \"rows\") return words(`${n}`, `${n} 筆`)"
+  },
+  {
+    "id": "template.86ef4744daea",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 85,
+    "zh-Hant": "{arg0} 筆",
+    "en": "",
+    "expressions": [
+      "n"
+    ],
+    "context": ", `${n} 秒`) if (unit === \"rows\") return words(`${n}`, `${n} 筆`) const k = 1024 if (n >= k * k * k) return `${(n /"
+  },
+  {
+    "id": "template.cad071062b9f",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 96,
+    "zh-Hant": "上限 {arg0}",
+    "en": "",
+    "expressions": [
+      "limit"
+    ],
+    "context": " if (row.used == null) return words(`limit ${limit}`, `上限 ${limit}`) const pct = row.ratio == null ? \"\" : ` · ${Math.flo"
+  },
+  {
+    "id": "template.4d35c17ea7eb",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 159,
+    "zh-Hant": "{arg0} 前",
+    "en": "",
+    "expressions": [
+      "span"
+    ],
+    "context": "loor(now / 1000) - unix)) return words(`${span} ago`, `${span} 前`) } /** When the row last told anybody, and whether th"
+  },
+  {
+    "id": "template.0ebfc47d96d4",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 174,
+    "zh-Hant": "（另有 {arg0} 則被一天一則擋下）",
+    "en": "",
+    "expressions": [
+      "row.notices_suppressed"
+    ],
+    "context": ".notices_suppressed} more held by the one-a-day rule)`, `（另有 ${row.notices_suppressed} 則被一天一則擋下）`) : \"\" return catalogWord(\"literal\", \"9034aceb6"
+  },
+  {
+    "id": "template.73fb5e35d2a0",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 199,
+    "zh-Hant": "照目前速度 {arg0} 會滿",
+    "en": "",
+    "expressions": [
+      "at"
+    ],
+    "context": "-digit\" }) return words(`Full by ${at} at this rate`, `照目前速度 ${at} 會滿`) } /** The block's one-line count: how many rows want"
+  },
+  {
+    "id": "template.211ae3476e5f",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 205,
+    "zh-Hant": "{arg0} 列裡有 {arg1} 列要注意",
+    "en": "",
+    "expressions": [
+      "rows.length",
+      "loud"
+    ],
+    "context": "urn words(`${loud} of ${rows.length} rows need a look`, `${rows.length} 列裡有 ${loud} 列要注意`) return words(`All ${rows.length} rows are fine`, `$"
+  },
+  {
+    "id": "template.614443bb7374",
+    "file": "src/pages/settings/capacity.ts",
+    "line": 206,
+    "zh-Hant": "{arg0} 列都正常",
+    "en": "",
+    "expressions": [
+      "rows.length"
+    ],
+    "context": "注意`) return words(`All ${rows.length} rows are fine`, `${rows.length} 列都正常`) } "
+  },
+  {
+    "id": "template.75357881ddad",
+    "file": "src/pages/settings/cloud.ts",
+    "line": 136,
+    "zh-Hant": "{arg0} 回答 {arg1}",
+    "en": "",
+    "expressions": [
+      "path",
+      "res.status"
+    ],
+    "context": "salError(res.status, parsed, path) throw new Error(`${path} 回答 ${res.status}`) } return parsed as T } /** Show a fresh one-time"
+  },
+  {
+    "id": "template.24bd559cca30",
+    "file": "src/pages/settings/window/copy.ts",
+    "line": 382,
+    "zh-Hant": " {arg0} 環境變數",
+    "en": "",
+    "expressions": [
+      "source"
+    ],
+    "context": " Latin. return fill(W.voiceWhyMachine, { where: ` ${source} 環境變數`, tag: tag(value) }) } } const script = (value:"
+  },
+  {
+    "id": "template.145cded61d7b",
+    "file": "src/pages/settings/window/copy.ts",
+    "line": 388,
+    "zh-Hant": "{arg0}中文",
+    "en": "",
+    "expressions": [
+      "script(v.script)"
+    ],
+    "context": "l(W.voiceLanguageFixed, { name: v.code === \"zh\" ? `${script(v.script)}中文` : tag(v.tag), }) } if (v.code === \"zh\") { "
+  },
+  {
+    "id": "template.145cded61d7b",
+    "file": "src/pages/settings/window/copy.ts",
+    "line": 392,
+    "zh-Hant": "{arg0}中文",
+    "en": "",
+    "expressions": [
+      "script(v.script)"
+    ],
+    "context": "\"zh\") { return fill(W.voiceLanguageChinese, { name: `${script(v.script)}中文`, why: why(v.source, v.tag) }) } if (!v.source) ret"
+  },
+  {
+    "id": "template.d4763f644521",
+    "file": "src/pages/settings/window/copy.ts",
+    "line": 430,
+    "zh-Hant": "{arg0} 秒",
+    "en": "",
+    "expressions": [
+      "value.toFixed(1)"
+    ],
+    "context": "port function seconds(value: number): string { return `${value.toFixed(1)} 秒` } /** `Assistant.label` (`Assistant.swift`), the two "
+  },
+  {
+    "id": "template.7646119625b7",
+    "file": "src/pages/settings/window/copy.ts",
+    "line": 444,
+    "zh-Hant": "語音：Apple，之後 Whisper（{arg0}）",
+    "en": "",
+    "expressions": [
+      "status.model ?? \"\""
+    ],
+    "context": " switch (status.kind) { case \"ready\": return `語音：Apple，之後 Whisper（${status.model ?? \"\"}）` case \"noModel\": return \"語音：只有 Apple——whisper"
+  },
+  {
+    "id": "template.5a514cd850be",
+    "file": "src/pages/settings/window/copy.ts",
+    "line": 454,
+    "zh-Hant": "{arg0} 註冊不起來",
+    "en": "",
+    "expressions": [
+      "combo"
+    ],
+    "context": "ion hotkeyFailedTitle(combo: string): string { return `${combo} 註冊不起來` } /** * What is said under the hotkey chip for the s"
+  },
+  {
+    "id": "template.171792601a92",
+    "file": "src/pages/work/ReferencePictures.tsx",
+    "line": 68,
+    "zh-Hant": "用紅筆標記 {arg0}",
+    "en": "",
+    "expressions": [
+      "file.name"
+    ],
+    "context": "isabled={busy} title={file.name} aria-label={`用紅筆標記 ${file.name}`} onClick={() => setMarking(index)}> <img src"
+  },
+  {
+    "id": "template.f7068e40108f",
+    "file": "src/pages/work/ReferencePictures.tsx",
+    "line": 73,
+    "zh-Hant": "移除 {arg0}",
+    "en": "",
+    "expressions": [
+      "file.name"
+    ],
+    "context": " <button type=\"button\" disabled={busy} aria-label={`移除 ${file.name}`} onClick={() => onChange(images.filter((_, a"
+  },
+  {
+    "id": "template.9a81824f07e6",
+    "file": "src/pages/work/WorkCompletionReport.tsx",
+    "line": 28,
+    "zh-Hant": "Child Session 對計劃書的 review{arg0}",
+    "en": "",
+    "expressions": [
+      "document.reference ? ` · Task ${document.reference.slice(0, 8)}` : \"\""
+    ],
+    "context": "={(document) => document.role === \"plan_review\" ? `Child Session 對計劃書的 review${document.reference ? ` · Task ${document.reference.slice(0, 8)}` : \"\"}` : catalogWord(\"literal\", \"79fd72ac8a6c\")} /> } "
+  },
+  {
+    "id": "template.1eeb4ffcc2cd",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 108,
+    "zh-Hant": "已準備下載 {arg0} 輪驗證詳情；確認檔案已保存後才可清除。",
+    "en": "",
+    "expressions": [
+      "answer.manifest.round_count"
+    ],
+    "context": "(url), 60_000) setExported(answer) setSaid(`已準備下載 ${answer.manifest.round_count} 輪驗證詳情；確認檔案已保存後才可清除。`) } catch (error) { setFailure(failureWords(error))"
+  },
+  {
+    "id": "template.0d6f06c58208",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 178,
+    "zh-Hant": "第 {arg0} 輪 · {arg1}",
+    "en": "",
+    "expressions": [
+      "item.gate_snapshot_cycle",
+      "gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)"
+    ],
+    "context": "d(\"inline\", \"a24529fd35aa\")}{item.gate_snapshot_cycle ? `第 ${item.gate_snapshot_cycle} 輪 · ${gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}` : catalogWord(\"literal\", \"cd8db91c094e\")}{catalogWord("
+  },
+  {
+    "id": "template.540813eb6da2",
+    "file": "src/pages/work/WorkSteps.tsx",
+    "line": 8,
+    "zh-Hant": "項目 TODO，已完成 {arg0} / {arg1}",
+    "en": "",
+    "expressions": [
+      "done",
+      "steps.length"
+    ],
+    "context": "eturn <section className=\"work-item-steps\" aria-label={`項目 TODO，已完成 ${done} / ${steps.length}`}> <p>{catalogWord(\"inline\", \"457bc48e85a9\")} {done"
+  },
+  {
+    "id": "template.e3ac6cdc91b5",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 353,
+    "zh-Hant": "回答未被接受：{arg0}",
+    "en": "",
+    "expressions": [
+      "failureWords(error)"
+    ],
+    "context": "t, [decisionID]: { ...base, phase: \"rejected\", message: `回答未被接受：${failureWords(error)}` } })) } return false } finally { submi"
+  },
+  {
+    "id": "template.1619c02fca4b",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 415,
+    "zh-Hant": "找不到包含「{arg0}」的項目。",
+    "en": "",
+    "expressions": [
+      "search"
+    ],
+    "context": "logWord(\"literal\", \"000c45f69d2f\") : search ? `找不到包含「${search}」的項目。` : status === \"done\" ? catalogWord(\"literal\", \"6bb45a6f"
+  },
+  {
+    "id": "template.d03a9f051a31",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 610,
+    "zh-Hant": "從「{arg0}」延伸",
+    "en": "",
+    "expressions": [
+      "source.title"
+    ],
+    "context": "_work_id) : undefined const sourceLine = source ? `從「${source.title}」延伸` : proposal.source_work_id ? `來自看板項目 #${proposa"
+  },
+  {
+    "id": "template.029ac348ef8a",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 611,
+    "zh-Hant": "來自看板項目 #{arg0}",
+    "en": "",
+    "expressions": [
+      "proposal.source_work_id.slice(0, 8)"
+    ],
+    "context": "${source.title}」延伸` : proposal.source_work_id ? `來自看板項目 #${proposal.source_work_id.slice(0, 8)}` : proposal.source_todo_id ? catalogWord(\"lit"
+  },
+  {
+    "id": "template.9e9521d6a3b6",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 625,
+    "zh-Hant": "處理提案「{arg0}」",
+    "en": "",
+    "expressions": [
+      "proposal.title"
+    ],
+    "context": "sName=\"work-actions work-proposal-actions\" aria-label={`處理提案「${proposal.title}」`}> <button className=\"chip on\" type=\"button\" "
+  },
+  {
+    "id": "template.1bc187210168",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 660,
+    "zh-Hant": "回答「{arg0}」",
+    "en": "",
+    "expressions": [
+      "decision.question"
+    ],
+    "context": "<div className=\"work-actions\" role=\"group\" aria-label={`回答「${decision.question}」`}> {decision.options.map((option) => <button "
+  },
+  {
+    "id": "template.34bb2cdffe3e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 667,
+    "zh-Hant": "正在送出「{arg0}」…",
+    "en": "",
+    "expressions": [
+      "feedback.label"
+    ],
+    "context": "ive=\"polite\"> {feedback.phase === \"pending\" ? `正在送出「${feedback.label}」…` : feedback.message} </p>} </div> })}"
+  },
+  {
+    "id": "template.1640b97725ed",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 727,
+    "zh-Hant": "查看「{arg0}」{arg1}，{arg2}",
+    "en": "",
+    "expressions": [
+      "item.title",
+      "attention ? catalogWord(\"literal\", \"0ec51d2f1b3c\") : catalogWord(\"literal\", \"87a8d926d9e7\")",
+      "phaseName(item.phase)"
+    ],
+    "context": "type=\"button\" aria-haspopup=\"dialog\" aria-label={`查看「${item.title}」${attention ? catalogWord(\"literal\", \"0ec51d2f1b3c\") : catalogWord(\"literal\", \"87a8d926d9e7\")}，${phaseName(item.phase)}`} aria-describedby={describedBy} onClick={onOpen}> "
+  },
+  {
+    "id": "template.b6aa195d5775",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 734,
+    "zh-Hant": " · {arg0} 個問題",
+    "en": "",
+    "expressions": [
+      "decisions.length"
+    ],
+    "context": "gWord(\"inline\", \"c85c228e97c0\")}{decisions.length > 1 ? ` · ${decisions.length} 個問題` : \"\"}</span>} {item.condition && <span id={condi"
+  },
+  {
+    "id": "template.966e0c24f6bc",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 743,
+    "zh-Hant": "完成 {arg0}",
+    "en": "",
+    "expressions": [
+      "when(item.closed_at)"
+    ],
+    "context": "ork-card-summary-foot\"> <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span> <span "
+  },
+  {
+    "id": "template.d15f0c565e65",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 743,
+    "zh-Hant": "更新 {arg0}",
+    "en": "",
+    "expressions": [
+      "when(item.updated_at)"
+    ],
+    "context": " <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span> <span className=\"work-card-open\">{item"
+  },
+  {
+    "id": "template.fe204a407a5a",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 851,
+    "zh-Hant": "把 {arg0} 轉成 Plan",
+    "en": "",
+    "expressions": [
+      "KIND_META[item.kind].label"
+    ],
+    "context": "-label={plan ? catalogWord(\"literal\", \"43500bdb3e8e\") : `把 ${KIND_META[item.kind].label} 轉成 Plan`}> <div><strong>{plan ? catalogWord(\"literal\", \"e30"
+  },
+  {
+    "id": "template.06453a1153b7",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 866,
+    "zh-Hant": "確認轉成 {arg0}",
+    "en": "",
+    "expressions": [
+      "plan ? KIND_META[conversionKind].label : \"Plan\""
+    ],
+    "context": "-${item.id}` ? catalogWord(\"literal\", \"729d5136c5cb\") : `確認轉成 ${plan ? KIND_META[conversionKind].label : \"Plan\"}`}</button> <button className=\"chip\" type=\"button\""
+  },
+  {
+    "id": "template.ab717b6453b6",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 990,
+    "zh-Hant": "正在開啟 {arg0} Session…",
+    "en": "",
+    "expressions": [
+      "assistantName(assistant)"
+    ],
+    "context": " : busy === item.id && assigningRoute === \"new\" ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button> "
+  },
+  {
+    "id": "template.c8e602657653",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 990,
+    "zh-Hant": "開新 {arg0} Session",
+    "en": "",
+    "expressions": [
+      "assistantName(assistant)"
+    ],
+    "context": "= \"new\" ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button> </section> {busy === item.id && "
+  },
+  {
+    "id": "template.966e0c24f6bc",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1028,
+    "zh-Hant": "完成 {arg0}",
+    "en": "",
+    "expressions": [
+      "when(item.closed_at)"
+    ],
+    "context": "ditionWords(item)}</span> <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span> {owner ?"
+  },
+  {
+    "id": "template.d15f0c565e65",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1028,
+    "zh-Hant": "更新 {arg0}",
+    "en": "",
+    "expressions": [
+      "when(item.updated_at)"
+    ],
+    "context": " <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span> {owner ? <a className=\"work-session-link"
+  },
+  {
+    "id": "template.e0059ef8ad57",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1030,
+    "zh-Hant": "前往正在實作「{arg0}」的 Session",
+    "en": "",
+    "expressions": [
+      "item.title"
+    ],
+    "context": "\" href={sessionFragment(owner.id)} aria-label={`前往正在實作「${item.title}」的 Session`}>{catalogWord(\"inline\", \"31d7501ec843\")} {owner.label "
+  },
+  {
+    "id": "template.4ce1db07d816",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1217,
+    "zh-Hant": "{arg0} 看板 · {arg1} TODO",
+    "en": "",
+    "expressions": [
+      "counts.board",
+      "counts.todos"
+    ],
+    "context": "catalogWord(\"literal\", \"40e3c0a7bbd8\") : counts ? `${counts.board} 看板 · ${counts.todos} TODO` : \"—\"}</span> </button> } function SessionStateDot("
+  },
+  {
+    "id": "template.ecd25f9c83f5",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1228,
+    "zh-Hant": "{arg0} 的狀況",
+    "en": "",
+    "expressions": [
+      "session.label || session.id"
+    ],
+    "context": "n <section className=\"work-session-detail\" aria-label={`${session.label || session.id} 的狀況`} aria-live=\"polite\"> <div className=\"work-session-"
+  },
+  {
+    "id": "template.b6b8b9faacfb",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1240,
+    "zh-Hant": "{arg0} · 完成 {arg1}",
+    "en": "",
+    "expressions": [
+      "item.project.label",
+      "when(item.closed_at)"
+    ],
+    "context": "em) => ({ id: item.id, title: item.title, meta: `${item.project.label} · 完成 ${when(item.closed_at)}`, }))} /> {page.truncated && <small classNa"
+  },
+  {
+    "id": "template.337439125770",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1456,
+    "zh-Hant": "用紅筆標記參考圖片 {arg0}",
+    "en": "",
+    "expressions": [
+      "image.title"
+    ],
+    "context": "type=\"button\" disabled={!!busy || opening} aria-label={`用紅筆標記參考圖片 ${image.title}`} title={catalogWord(\"inline\", \"cf3c6f547bd1\")}"
+  },
+  {
+    "id": "template.37ba92bd09dc",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1460,
+    "zh-Hant": "開啟參考圖片 {arg0}",
+    "en": "",
+    "expressions": [
+      "image.title"
+    ],
+    "context": "| source} target=\"_blank\" rel=\"noreferrer\" aria-label={`開啟參考圖片 ${image.title}`} onClick={openFull}> <img src={source} alt={im"
+  },
+  {
+    "id": "template.da1cebd6b045",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1465,
+    "zh-Hant": "移除參考圖片 {arg0}",
+    "en": "",
+    "expressions": [
+      "image.title"
+    ],
+    "context": "Name=\"work-reference-remove\" type=\"button\" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy} onClick={() => void run(`imag"
+  },
+  {
+    "id": "template.9aad7f980e59",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 38,
+    "zh-Hant": "等你決定：{arg0}",
+    "en": "",
+    "expressions": [
+      "decision.question"
+    ],
+    "context": ") => row.id === item.decision_id) return decision ? `等你決定：${decision.question}` : catalogWord(\"literal\", \"712a6cdf60cf\") } return "
+  },
+  {
+    "id": "template.56db22485fa2",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 40,
+    "zh-Hant": "下一步：{arg0}",
+    "en": "",
+    "expressions": [
+      "item.user_action"
+    ],
+    "context": "teral\", \"712a6cdf60cf\") } return item.user_action ? `下一步：${item.user_action}` : \"\" } export function phaseStayWords(enteredAt: numb"
+  },
+  {
+    "id": "template.8ecdad22ecbb",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 47,
+    "zh-Hant": "停留 {arg0} 分鐘",
+    "en": "",
+    "expressions": [
+      "minutes"
+    ],
+    "context": "d(\"literal\", \"3e9f7d914950\") if (minutes < 60) return `停留 ${minutes} 分鐘` const hours = Math.floor(minutes / 60) if (hours <"
+  },
+  {
+    "id": "template.26a0dc9801c8",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 49,
+    "zh-Hant": "停留 {arg0} 小時{arg1}",
+    "en": "",
+    "expressions": [
+      "hours",
+      "minutes % 60 ? ` ${minutes % 60} 分鐘` : \"\""
+    ],
+    "context": "urs = Math.floor(minutes / 60) if (hours < 24) return `停留 ${hours} 小時${minutes % 60 ? ` ${minutes % 60} 分鐘` : \"\"}` return `停留 ${Math.floor(hours / 24)} 天 ${hours % 24}"
+  },
+  {
+    "id": "template.f49a26639528",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 50,
+    "zh-Hant": "停留 {arg0} 天 {arg1} 小時",
+    "en": "",
+    "expressions": [
+      "Math.floor(hours / 24)",
+      "hours % 24"
+    ],
+    "context": "時${minutes % 60 ? ` ${minutes % 60} 分鐘` : \"\"}` return `停留 ${Math.floor(hours / 24)} 天 ${hours % 24} 小時` } export function ownerOnlineWords(ownerSession: stri"
+  },
+  {
+    "id": "template.65519076782c",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 63,
+    "zh-Hant": "部署證據：{arg0}",
+    "en": "",
+    "expressions": [
+      "evidence"
+    ],
+    "context": "d((line) => line.trim())?.trim() if (evidence) return `部署證據：${evidence}` const reason = item.no_deployment_reason?.split(/\\r?"
+  },
+  {
+    "id": "template.292c86e4825b",
+    "file": "src/pages/work/board-card-facts.ts",
+    "line": 65,
+    "zh-Hant": "未部署：{arg0}",
+    "en": "",
+    "expressions": [
+      "reason"
+    ],
+    "context": ").find((line) => line.trim())?.trim() return reason ? `未部署：${reason}` : catalogWord(\"literal\", \"dc8d685a64b5\") } "
+  },
+  {
+    "id": "template.61504537731d",
+    "file": "src/pages/work/complete-item.ts",
+    "line": 15,
+    "zh-Hant": "還有 {arg0} 個步驟未完成，仍要標記完成嗎？",
+    "en": "",
+    "expressions": [
+      "open"
+    ],
+    "context": "ng { const open = openSteps(item) return open > 0 ? `還有 ${open} 個步驟未完成，仍要標記完成嗎？` : catalogWord(\"literal\", \"ee952fba0441\") } "
+  },
+  {
+    "id": "template.7e807e36364d",
+    "file": "src/pages/work/epic-family.ts",
+    "line": 48,
+    "zh-Hant": "{arg0} / {arg1} 已完成",
+    "en": "",
+    "expressions": [
+      "progress.done",
+      "progress.total"
+    ],
+    "context": "Words(progress: EpicProgress): string { const words = `${progress.done} / ${progress.total} 已完成` return progress.cancelled ? `${words} · ${progress.c"
+  },
+  {
+    "id": "template.d11ed4fee18a",
+    "file": "src/pages/work/epic-family.ts",
+    "line": 49,
+    "zh-Hant": "{arg0} · {arg1} 已取消",
+    "en": "",
+    "expressions": [
+      "words",
+      "progress.cancelled"
+    ],
+    "context": " / ${progress.total} 已完成` return progress.cancelled ? `${words} · ${progress.cancelled} 已取消` : words } export interface EpicParent { id: string "
+  },
+  {
+    "id": "template.92dfded7689f",
+    "file": "src/pages/work/gate-status.ts",
+    "line": 15,
+    "zh-Hant": "規劃{arg0} · 獨立驗證{arg1}",
+    "en": "",
+    "expressions": [
+      "planning ? catalogWord(\"literal\", \"09b410f51b19\") : catalogWord(\"literal\", \"862364ba6811\")",
+      "verification ? catalogWord(\"literal\", \"09b410f51b19\") : catalogWord(\"literal\", \"862364ba6811\")"
+    ],
+    "context": " return catalogWord(\"literal\", \"731141a1b815\") return `規劃${planning ? catalogWord(\"literal\", \"09b410f51b19\") : catalogWord(\"literal\", \"862364ba6811\")} · 獨立驗證${verification ? catalogWord(\"literal\", \"09b410f51b19\") : catalogWord(\"literal\", \"862364ba6811\")}` } export function gateStatus(gate?: WorkGateCompactRe"
+  },
+  {
+    "id": "template.19566a87444b",
+    "file": "src/pages/work/session-assignment.ts",
+    "line": 42,
+    "zh-Hant": "待驗收 · {arg0}{arg1}",
+    "en": "",
+    "expressions": [
+      "acceptance.title",
+      "(acceptance.count ?? 0) > 1 ? ` · 共 ${acceptance.count} 項` : \"\""
+    ],
+    "context": "?.state === \"pending\" && acceptance.title) { return `待驗收 · ${acceptance.title}${(acceptance.count ?? 0) > 1 ? ` · 共 ${acceptance.count} 項` : \"\"}` } const said = row.work_state === \"work_complete\" "
+  },
+  {
+    "id": "template.3d747201508d",
+    "file": "src/pages/work/session-assignment.ts",
+    "line": 46,
+    "zh-Hant": "{arg0} · 讀不到是否有待驗收項目",
+    "en": "",
+    "expressions": [
+      "said"
+    ],
+    "context": " is not. return acceptance?.state === \"none\" ? said : `${said} · 讀不到是否有待驗收項目` } /** The phases in which an item waits for the perso"
+  },
+  {
+    "id": "template.f02affbcd988",
+    "file": "src/session/Interventions.tsx",
+    "line": 139,
+    "zh-Hant": "回覆沒有送出，便條仍待處理。{arg0}{arg1}",
+    "en": "",
+    "expressions": [
+      "pendingFailureSentence(code)",
+      "catalogWord(\"literal\", \"94e5b8af285e\")"
+    ],
+    "context": "tatus(\"\") setActionError(failed ? `回覆沒有送出，便條仍待處理。${pendingFailureSentence(code)}${catalogWord(\"literal\", \"94e5b8af285e\")}` : `無法確認回覆是否送出，便條仍待處理。請先在對話中查看這則訊息，確認沒送出再重試"
+  },
+  {
+    "id": "template.a11c575f16d3",
+    "file": "src/session/Interventions.tsx",
+    "line": 140,
+    "zh-Hant": "無法確認回覆是否送出，便條仍待處理。請先在對話中查看這則訊息，確認沒送出再重試。{arg0}",
+    "en": "",
+    "expressions": [
+      "pendingFailureSentence(code)"
+    ],
+    "context": "{catalogWord(\"literal\", \"94e5b8af285e\")}` : `無法確認回覆是否送出，便條仍待處理。請先在對話中查看這則訊息，確認沒送出再重試。${pendingFailureSentence(code)}`) } return } onReplySent?.("
+  },
+  {
+    "id": "template.e22e6512792a",
+    "file": "src/session/Interventions.tsx",
+    "line": 156,
+    "zh-Hant": "回覆已送出，但便條仍待處理：{arg0} 請按「移到已處理」重試，不必再送一次回覆。",
+    "en": "",
+    "expressions": [
+      "failureWords(error)"
+    ],
+    "context": " setActionStatus(\"\") setActionError(`回覆已送出，但便條仍待處理：${failureWords(error)} 請按「移到已處理」重試，不必再送一次回覆。`) await load(destination) } } "
+  },
+  {
+    "id": "template.f16df8b87a41",
+    "file": "src/session/Interventions.tsx",
+    "line": 175,
+    "zh-Hant": "需要你關注，{arg0} 筆未處理便條",
+    "en": "",
+    "expressions": [
+      "active.length"
+    ],
+    "context": "rror ? catalogWord(\"literal\", \"ff569bc2e31d\") : shown ? `需要你關注，${active.length} 筆未處理便條` : catalogWord(\"literal\", \"e44c005aa593\") const head "
+  },
+  {
+    "id": "template.8b0fd67c1487",
+    "file": "src/session/Interventions.tsx",
+    "line": 248,
+    "zh-Hant": "(Clawdline 便條 {arg0}：「{arg1}」；待回覆事項：{arg2})",
+    "en": "",
+    "expressions": [
+      "note.id",
+      "note.title",
+      "note.action"
+    ],
+    "context": "erventionV2, draft: string): string { const context = `(Clawdline 便條 ${note.id}：「${note.title}」；待回覆事項：${note.action})` return `${draft.replace(/[\\r\\n]+$/, \"\")}\\n\\n${contex"
+  },
+  {
+    "id": "template.b6e64400bab8",
+    "file": "src/session/List.tsx",
+    "line": 113,
+    "zh-Hant": "<span class=\"session-attention\" aria-label=\"關注，待處理 {arg0} 筆便條\"><span class=\"session-attention-dot\" aria-hidden=\"true\"></span>關注 · 待處理 {arg1}</span>",
+    "en": "",
+    "expressions": [
+      "attention",
+      "attention"
+    ],
+    "context": " = typeof attention === \"number\" && attention > 0 ? `<span class=\"session-attention\" aria-label=\"關注，待處理 ${attention} 筆便條\"><span class=\"session-attention-dot\" aria-hidden=\"true\"></span>關注 · 待處理 ${attention}</span>` : \"\" // Closeability is not drawn in the list: a"
+  },
+  {
+    "id": "template.3ab185f67611",
+    "file": "src/session/Todos.tsx",
+    "line": 238,
+    "zh-Hant": "已回答：{arg0}",
+    "en": "",
+    "expressions": [
+      "option.label"
+    ],
+    "context": " setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` })) onAnswered?.() } catch (error) { /"
+  },
+  {
+    "id": "template.3ab185f67611",
+    "file": "src/session/Todos.tsx",
+    "line": 248,
+    "zh-Hant": "已回答：{arg0}",
+    "en": "",
+    "expressions": [
+      "option.label"
+    ],
+    "context": " setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` })) onAnswered?.() } else if (la"
+  },
+  {
+    "id": "template.ad7d5cc31425",
+    "file": "src/session/Todos.tsx",
+    "line": 256,
+    "zh-Hant": "送出結果尚未確認，請稍後查看決定。{arg0}",
+    "en": "",
+    "expressions": [
+      "failureWords(readError)"
+    ],
+    "context": " setErrors((current) => ({ ...current, [decision.id]: `送出結果尚未確認，請稍後查看決定。${failureWords(readError)}` })) } } } finally { submitting.curre"
+  },
+  {
+    "id": "template.1f5e91ec371f",
+    "file": "src/session/Todos.tsx",
+    "line": 263,
+    "zh-Hant": "開啟「{arg0}」的結案報告",
+    "en": "",
+    "expressions": [
+      "item.title"
+    ],
+    "context": "\"button\" onClick={onOpen} aria-label={hasReport ? `開啟「${item.title}」的結案報告` : `查看「${item.title}」的項目詳情`}> <Mark icon={item.pr"
+  },
+  {
+    "id": "template.ef7d5e84ea0c",
+    "file": "src/session/Todos.tsx",
+    "line": 263,
+    "zh-Hant": "查看「{arg0}」的項目詳情",
+    "en": "",
+    "expressions": [
+      "item.title"
+    ],
+    "context": " aria-label={hasReport ? `開啟「${item.title}」的結案報告` : `查看「${item.title}」的項目詳情`}> <Mark icon={item.project.icon as SessionRow[\"i"
+  },
+  {
+    "id": "template.0452d5f2c3a3",
+    "file": "src/session/Todos.tsx",
+    "line": 265,
+    "zh-Hant": "已完成 {arg0}",
+    "en": "",
+    "expressions": [
+      "when(item.closed_at)"
+    ],
+    "context": "small>{item.project.label} · {item.kind} · {completed ? `已完成 ${when(item.closed_at)}` : phaseName(item.phase)} {item.condition ? <sp"
+  },
+  {
+    "id": "template.753c4151ac3b",
+    "file": "src/session/Todos.tsx",
+    "line": 312,
+    "zh-Hant": "完成 {arg0}",
+    "en": "",
+    "expressions": [
+      "when(todo.completed_at!)"
+    ],
+    "context": "button>} <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} {own && <span className"
+  },
+  {
+    "id": "template.8dfb0e13886c",
+    "file": "src/session/Todos.tsx",
+    "line": 335,
+    "zh-Hant": "開啟參考圖片 {arg0}",
+    "en": "",
+    "expressions": [
+      "image.title"
+    ],
+    "context": "urce} target=\"_blank\" rel=\"noreferrer\" aria-label={`開啟參考圖片 ${image.title}`} title={image.title} onClick={openFull}> <span>{im"
+  },
+  {
+    "id": "template.8dfb0e13886c",
+    "file": "src/session/Todos.tsx",
+    "line": 341,
+    "zh-Hant": "開啟參考圖片 {arg0}",
+    "en": "",
+    "expressions": [
+      "image.title"
+    ],
+    "context": "| source} target=\"_blank\" rel=\"noreferrer\" aria-label={`開啟參考圖片 ${image.title}`} onClick={openFull}> <img src={source} alt={imag"
+  },
+  {
+    "id": "template.ff865ce6ed4f",
+    "file": "src/session/agent-report.ts",
+    "line": 43,
+    "zh-Hant": "來源是 {arg0}，這台機器不認得它",
+    "en": "Source: {arg0}; this machine does not recognize it",
+    "expressions": [
+      "shown"
+    ],
+    "context": " false, label: shown, speaker, detail: zh ? `來源是 ${shown}，這台機器不認得它` : `Source: ${shown}; this machine does not recognize i"
+  },
+  {
+    "id": "template.4dbf3fcfea8a",
+    "file": "src/session/todo-progress.ts",
+    "line": 42,
+    "zh-Hant": "{arg0} 個待辦：{arg1} 個完成、{arg2} 個進行中、{arg3} 個未開始",
+    "en": "",
+    "expressions": [
+      "total",
+      "p.done",
+      "p.active",
+      "p.waiting"
+    ],
+    "context": " const total = p.done + p.active + p.waiting return `${total} 個待辦：${p.done} 個完成、${p.active} 個進行中、${p.waiting} 個未開始` } "
+  },
+  {
+    "id": "template.9fd6ec6e8a4d",
+    "file": "src/session-reading.ts",
+    "line": 8,
+    "zh-Hant": "{arg0} 天",
+    "en": "{arg0}d",
+    "expressions": [
+      "days"
+    ],
+    "context": "Math.floor(s / 86400) if (days >= 1) return chinese ? `${days} 天` : `${days}d` const hours = Math.floor(s / 3600) if"
+  },
+  {
+    "id": "template.4e22c21b2072",
+    "file": "src/session-reading.ts",
+    "line": 10,
+    "zh-Hant": "{arg0} 小時",
+    "en": "{arg0}h",
+    "expressions": [
+      "hours"
+    ],
+    "context": "Math.floor(s / 3600) if (hours >= 1) return chinese ? `${hours} 小時` : `${hours}h` const minutes = Math.floor(s / 60) i"
+  },
+  {
+    "id": "template.4e237583c0c9",
+    "file": "src/session-reading.ts",
+    "line": 12,
+    "zh-Hant": "{arg0} 分鐘",
+    "en": "{arg0}m",
+    "expressions": [
+      "minutes"
+    ],
+    "context": "Math.floor(s / 60) if (minutes >= 1) return chinese ? `${minutes} 分鐘` : `${minutes}m` return chinese ? `${s} 秒` : `${s}s` "
+  },
+  {
+    "id": "template.6d09f003ee65",
+    "file": "src/session-reading.ts",
+    "line": 13,
+    "zh-Hant": "{arg0} 秒",
+    "en": "{arg0}s",
+    "expressions": [
+      "s"
+    ],
+    "context": "se ? `${minutes} 分鐘` : `${minutes}m` return chinese ? `${s} 秒` : `${s}s` } // The list normally reads again every te"
+  },
+  {
+    "id": "template.19ebca4cf0e3",
+    "file": "src/session-reading.ts",
+    "line": 41,
+    "zh-Hant": "{arg0}前在跑",
+    "en": "",
+    "expressions": [
+      "age"
+    ],
+    "context": " if (chinese) { if (row.state === \"working\") return `${age}前在跑` if (row.state === \"waiting\") return `${age}前在等你回答`"
+  },
+  {
+    "id": "template.08166fe2eeb1",
+    "file": "src/session-reading.ts",
+    "line": 42,
+    "zh-Hant": "{arg0}前在等你回答",
+    "en": "",
+    "expressions": [
+      "age"
+    ],
+    "context": "urn `${age}前在跑` if (row.state === \"waiting\") return `${age}前在等你回答` if (row.state === \"idle\") return `${age}前沒有新輸出` "
+  },
+  {
+    "id": "template.d1a333c2a48d",
+    "file": "src/session-reading.ts",
+    "line": 43,
+    "zh-Hant": "{arg0}前沒有新輸出",
+    "en": "",
+    "expressions": [
+      "age"
+    ],
+    "context": "urn `${age}前在等你回答` if (row.state === \"idle\") return `${age}前沒有新輸出` return `${age}前讀到` } if (row.state === \"workin"
+  },
+  {
+    "id": "template.1696f81987f7",
+    "file": "src/session-reading.ts",
+    "line": 44,
+    "zh-Hant": "{arg0}前讀到",
+    "en": "",
+    "expressions": [
+      "age"
+    ],
+    "context": "(row.state === \"idle\") return `${age}前沒有新輸出` return `${age}前讀到` } if (row.state === \"working\") return `working ${a"
+  },
+  {
+    "id": "template.0e6efad65a6c",
+    "file": "src/session-reading.ts",
+    "line": 62,
+    "zh-Hant": "這次沒有讀完整；其中保留的內容最後在 {arg0}前讀到。",
+    "en": "This pass did not finish; retained parts were last read {arg0} ago.",
+    "expressions": [
+      "age"
+    ],
+    "context": "ource.observed_at), chinese) return chinese ? `這次沒有讀完整；其中保留的內容最後在 ${age}前讀到。` : `This pass did not finish; retained parts were"
+  },
+  {
+    "id": "template.ad648d394b80",
+    "file": "src/session-reading.ts",
+    "line": 88,
+    "zh-Hant": "Clawdline 在 {arg0} 找到 tmux，但 daemon 的 PATH 沒有它；這次無法確認 tmux 的 session 清單。",
+    "en": "Clawdline found tmux at {arg0}, but it is not on the daemon's PATH, so this pass could not verify the tmux session list.",
+    "expressions": [
+      "outside[1]"
+    ],
+    "context": "note) if (outside) { return chinese ? `Clawdline 在 ${outside[1]} 找到 tmux，但 daemon 的 PATH 沒有它；這次無法確認 tmux 的 session 清單。` : `Clawdline found tmux at ${outside[1]}, but "
+  },
+  {
+    "id": "template.cdf164a88db5",
+    "file": "src/session-reading.ts",
+    "line": 104,
+    "zh-Hant": "{arg0} 沒有完成 session 清單讀取；空白不代表沒有 session。",
+    "en": "{arg0} did not finish reading its session list; a blank list does not mean there are no sessions.",
+    "expressions": [
+      "incomplete.source"
+    ],
+    "context": "omplete) if (incomplete) { return chinese ? `${incomplete.source} 沒有完成 session 清單讀取；空白不代表沒有 session。` : `${incomplete.source} did not finish reading i"
+  },
+  {
+    "id": "template.df6b2970b6cb",
+    "file": "src/session-reading.ts",
+    "line": 113,
+    "zh-Hant": "{arg0} 個 session",
+    "en": "",
+    "expressions": [
+      "total"
+    ],
+    "context": "ogWord(\"literal\", \"dee6ddd8236d\") if (chinese) return `${total} 個 session` return `${total} ${total === 1 ? \"session\" : \"sessio"
+  }
+]

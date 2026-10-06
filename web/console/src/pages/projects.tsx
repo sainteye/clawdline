@@ -1,10 +1,12 @@
+import { catalogFormat, catalogWord, catalogWordLanguage, currentCatalogTag } from "../catalog.js"
 import { createPortal } from "react-dom"
 import { ProjectTools } from "./projects/ProjectTools.js"
 import type { ProjectSetupHandle } from "./projects/ProjectSetup.js"
-import { activityUnknownScope, projectListWords, replaceSuffix } from "./projects/project-list.js"
+import { activityUnknownScope, localizePinnedProjectStatus, projectActivityUsesEnglishFallback, projectActivityWords, projectListWords, projectOpenLabel, replaceSuffix } from "./projects/project-list.js"
+import { decoratePinnedWorktree } from "./projects/pinned-worktree-copy.js"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
-import { bindProjects, type ProjectsPage } from "../legacy/projects-bridge.js"
+import { bindProjects, worktreeSourceRow, type ProjectsPage } from "../legacy/projects-bridge.js"
 import {
   registerRetiredBoardProjectFallback,
   type RetiredBoardProject,
@@ -15,7 +17,15 @@ import { nextWord, type NextWord } from "../next-strings.js"
 import { workPageHash } from "../page-route.js"
 import { openTerminalPage } from "./terminal/navigate.js"
 
-type ProjectTarget = RetiredBoardProject & { id?: string; label?: string; path?: string }
+type ProjectTarget = RetiredBoardProject & {
+  id?: string
+  label?: string
+  path?: string
+  activeItemCount?: number
+  summaryCoverage?: unknown
+  activitySourcePartial?: boolean
+  activityReadStatus?: string
+}
 type BoundProjects = ProjectsPage & {
   state: ProjectsPage["state"] & { places?: ProjectTarget[] | null }
   openProject(project: RetiredBoardProject): Promise<void>
@@ -94,16 +104,38 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   }, [])
 
   useLayoutEffect(() => {
+    const lifecycle = document.getElementById("project-worktree-lifecycle")
+    if (!lifecycle) return
+    const decorate = () => decoratePinnedWorktree(lifecycle, worktreeSourceRow)
+    const observer = new MutationObserver(decorate)
+    observer.observe(lifecycle, { childList: true, subtree: true })
+    decorate()
+    return () => observer.disconnect()
+  }, [])
+
+  useLayoutEffect(() => {
     const rows = document.getElementById("projects-rows")
     const help = document.getElementById("projects-activity-help")
-    if (!rows || !help) return
+    const status = document.getElementById("projects-status")
+    if (!rows || !help || !status) return
     const decorate = () => {
       const words = projectListWords(document.documentElement.lang || navigator.language || "")
       const unknownActivities: HTMLElement[] = []
-      for (const activity of rows.querySelectorAll<HTMLElement>(".project-row-activity.is-unknown")) {
-        if (activity.textContent?.trim() === words.unknownBefore) activity.textContent = words.unknownAfter
-        if (activity.textContent?.trim() !== words.unknownAfter) continue
-        unknownActivities.push(activity)
+      for (const button of rows.querySelectorAll<HTMLButtonElement>("button.project-row[data-place-id]")) {
+        const place = page.current?.state.places?.find((candidate) => candidate.id === button.dataset.placeId)
+        if (!place) continue
+        const activity = projectActivityWords(place)
+        const badge = button.querySelector<HTMLElement>(".project-row-activity")
+        if (badge && activity) {
+          if (badge.textContent !== activity.text) badge.textContent = activity.text
+          badge.className = `project-row-activity is-${activity.tone}`
+          if (projectActivityUsesEnglishFallback(place)) badge.lang = "en"
+          if (activity.tone === "unknown") unknownActivities.push(badge)
+        }
+        const name = place.label || place.path || ""
+        const label = projectOpenLabel(name, activity?.text ?? null, false)
+        if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label)
+        if (projectActivityUsesEnglishFallback(place) || (catalogWordLanguage("legacy", "webProjectOpenLabel") === "en" && currentCatalogTag() !== "en")) button.lang = "en"
       }
       const rowCount = rows.querySelectorAll("button.project-row[data-place-id]").length
       const scope = activityUnknownScope(rowCount, unknownActivities.length)
@@ -111,30 +143,39 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         activity.hidden = scope === "list"
         const button = activity.closest<HTMLButtonElement>("button.project-row")
         if (!button) continue
-        const label = button.getAttribute("aria-label")
-        if (label?.includes(words.unknownBefore)) {
-          button.setAttribute("aria-label", label.replace(words.unknownBefore, words.unknownAfter))
-        }
         if (scope === "list") {
           const current = button.getAttribute("aria-label") ?? ""
-          button.setAttribute("aria-label", replaceSuffix(current, ", " + words.unknownAfter, ""))
+          const next = projectOpenLabel(button.querySelector(".project-row-name")?.textContent ?? "", activity.textContent, true)
+          if (next !== current) button.setAttribute("aria-label", next)
         }
         button.setAttribute("aria-describedby", help.id)
       }
-      for (const line of rows.querySelectorAll<HTMLElement>(".project-row-path")) {
+      for (const project of rows.querySelectorAll<HTMLButtonElement>("button.project-row[data-place-id]")) {
+        const lines = project.querySelectorAll<HTMLElement>(".project-row-path")
+        if (lines.length < 2) continue // The first line is the user's actual path.
+        const line = lines[lines.length - 1]
         const value = line.textContent ?? ""
         const next = replaceSuffix(value, words.boardBefore, words.boardAfter)
         if (next !== value) line.textContent = next
+        if (catalogWordLanguage("literal", "28ce0b145abb") === "en" && currentCatalogTag() !== "en") line.lang = "en"
       }
       for (const project of rows.querySelectorAll<HTMLButtonElement>(".project-row[data-place-id]")) {
         const wrapper = project.closest<HTMLElement>(".project-row-wrap")
+        const worktrees = wrapper?.querySelector<HTMLButtonElement>(".project-row-worktrees")
+        if (worktrees) {
+          const word = catalogWord("next", "projectsWorktrees")
+          const name = wrapper?.querySelector(".project-row-name")?.textContent || ""
+          worktrees.title = word
+          worktrees.setAttribute("aria-label", `${word}: ${name}`)
+          if (catalogWordLanguage("next", "projectsWorktrees") === "en" && currentCatalogTag() !== "en") worktrees.lang = "en"
+        }
         if (!wrapper || !project || wrapper.querySelector(".project-row-settings")) continue
         const gear = document.createElement("button")
         gear.type = "button"
         gear.className = "project-row-settings"
         gear.dataset.placeId = project.dataset.placeId
-        gear.title = "專案設定"
-        gear.setAttribute("aria-label", `專案設定：${wrapper.querySelector(".project-row-name")?.textContent || "專案"}`)
+        gear.title = catalogWord("literal", "00186c9a0293")
+        gear.setAttribute("aria-label", catalogFormat("template", "78b00d86df37", [wrapper.querySelector(".project-row-name")?.textContent || catalogWord("literal", "fb67023ade0c")]))
         gear.setAttribute("aria-haspopup", "dialog")
         gear.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <path d="M10.09 4.54h3.82l.54 1.66 1.35.77 1.71-.35 1.9 3.3-1.16 1.3v1.56l1.16 1.3-1.9 3.3-1.71-.35-1.35.77-.54 1.66h-3.82l-.54-1.66-1.35-.77-1.71.35-1.9-3.3 1.16-1.3v-1.56l-1.16-1.3 1.9-3.3 1.71.35 1.35-.77Z"/>
@@ -157,6 +198,8 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         wrapper.appendChild(terminal)
       }
       help.hidden = scope === "none"
+      const localizedStatus = localizePinnedProjectStatus(status.textContent ?? "")
+      if (localizedStatus !== status.textContent) status.textContent = localizedStatus
     }
     const onSettings = (ev: Event) => {
       const gear = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row-settings[data-place-id]")
@@ -176,6 +219,7 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
     rows.addEventListener("click", onTerminal)
     const observer = new MutationObserver(decorate)
     observer.observe(rows, { childList: true, subtree: true })
+    observer.observe(status, { childList: true })
     decorate()
     return () => {
       observer.disconnect()

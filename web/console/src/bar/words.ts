@@ -1,39 +1,18 @@
-// The words the input bar says.
-//
-// Copied from the Swift app's `Sources/Copy+Chinese.swift` (`TraditionalChinese`),
-// property for property and under the same names — the arrangement
-// `shell/darwin/Copy.swift` already uses for the menus. Nothing here is written
-// fresh: a word the original does not have is not in this file. The server
-// list says a few things the Swift row never had to — that this app runs none
-// of a project's commands — and those come from `../next-strings.ts` (D35).
-//
-// **Why not the catalog.** The console's words come from
-// `web/console/public/strings/zh-Hant.json`, which is a byte-for-byte copy of the
-// Swift app's web catalog and is guarded as one (`tools/check-legacy-css.sh`).
-// That catalog has four of the bar's words (`placeholder`, `hintList`,
-// `hintOrder`, `hintKeys`) and not the other eleven, because in the Swift app the
-// bar was a native panel and was never on a web page. Adding them would mean
-// editing a guarded copy; inventing them would mean inventing Chinese. So they
-// are copied here, from the place the Swift app keeps them, and this file is the
-// bar's whole vocabulary — including the four the catalog happens to have, so
-// that one screen reads from one list.
-//
-// Only Traditional Chinese, as `shell/darwin/Copy.swift` carries only that. The
-// Swift app follows `language: auto` across fourteen; that is not ported.
-//
-// Kept in the page rather than handed over by the shell (which is how
-// `pages/settings/shell.ts` gets the native settings window's words). The bar's
-// words belong to the bar, and a Linux or Windows shell should not have to carry
-// a copy of a Chinese catalog to put a card on screen — see
-// `docs/cross-platform.md`.
+// The bar's original Taiwan Chinese copy came from the archived Swift panel.
+// The guarded Swift web catalog stays unchanged; maintained words for this
+// bar now live in `public/catalogs/<tag>.json` for every supported language.
+// The browser's `ui_language` choice controls them, independently of the
+// daemon's Agent and voice language setting.
 
 /** `Assistant.label`: what a person calls it. Product names, not translated. */
+import { catalogWord } from "../catalog.js"
+
 export const ASSISTANT_LABEL: Record<string, string> = {
   claude: "Claude Code",
   codex: "Codex",
 }
 
-export const words = {
+const baseWords = {
   /** `placeholder` */
   placeholder: "跟 Claude 說⋯⋯",
 
@@ -83,6 +62,12 @@ export const words = {
   /** `stackTip(up:total:)`, with `{total}` and `{up}` */
   stackTip: "{total} 個伺服器，{up} 個活著——⌘S 打開清單",
 } as const
+
+export const words = new Proxy(baseWords, {
+  get(target, key, receiver) {
+    return typeof key === "string" && key in target ? catalogWord("bar", key) : Reflect.get(target, key, receiver)
+  },
+})
 
 /**
  * `Assistant.promptPlaceholder(from:)` (`AssistantPlaceholder.swift`).
