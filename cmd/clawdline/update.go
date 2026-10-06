@@ -45,12 +45,12 @@ func updateExit(s contract.UpdateState) int {
 func updateCommand(args []string) {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
-	asJSON := fs.Bool("json", false, "print GET /v1/update's body")
-	apply := fs.Bool("apply", false, "deploy the latest build (Linux, inside a source checkout)")
-	force := fs.Bool("force", false, "with --apply: deploy even when this machine is current or ahead")
+	port := fs.Int("port", 0, cliCopy("ops", "update.flag.port", "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)"))
+	asJSON := fs.Bool("json", false, cliCopy("ops", "update.flag.json", "print GET /v1/update's body"))
+	apply := fs.Bool("apply", false, cliCopy("ops", "update.flag.apply", "deploy the latest build (Linux, inside a source checkout)"))
+	force := fs.Bool("force", false, cliCopy("ops", "update.flag.force", "with --apply: deploy even when this machine is current or ahead"))
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: clawdline update [--json] [--apply [--force]] [--port n]")
+		fmt.Fprintln(os.Stderr, cliCopy("ops", "update.usage", "usage: clawdline update [--json] [--apply [--force]] [--port n]"))
 		os.Exit(2)
 	}
 	st := updateStatus(*port)
@@ -90,24 +90,24 @@ func printUpdate(w io.Writer, st contract.UpdateStatus) {
 	line := func(name string, b contract.BuildStamp) {
 		stamp, at := b.Stamp, b.CommittedAt
 		if stamp == "" {
-			stamp = "(unknown)"
+			stamp = cliCopy("ops", "update.unknown_stamp", "(unknown)")
 		}
 		if at == "" {
-			at = "time unknown"
+			at = cliCopy("ops", "update.unknown_time", "time unknown")
 		}
 		fmt.Fprintf(w, "%-8s %s  (%s)\n", name, stamp, at)
 	}
-	line("running", st.Running)
-	line("latest", st.Latest)
-	fmt.Fprintf(w, "state    %s", st.State)
+	line(cliCopy("ops", "update.running", "running"), st.Running)
+	line(cliCopy("ops", "update.latest", "latest"), st.Latest)
+	fmt.Fprintf(w, cliCopy("ops", "update.state", "state    %s"), st.State)
 	if st.Reason != "" {
 		fmt.Fprintf(w, " — %s", st.Reason)
 	}
 	fmt.Fprintln(w)
 	if st.Error != "" {
-		fmt.Fprintf(w, "last check failed: %s\n", st.Error)
+		fmt.Fprintf(w, cliCopy("ops", "update.last_check_failed", "last check failed: %s\n"), st.Error)
 	}
-	fmt.Fprintf(w, "source   %s\n", st.SourceURL)
+	fmt.Fprintf(w, cliCopy("ops", "update.source", "source   %s\n"), st.SourceURL)
 }
 
 // runner runs a command in dir; a test replaces it.
@@ -129,42 +129,42 @@ func (execRunner) run(dir string, stdout, stderr io.Writer, name string, args ..
 func applyUpdate(stdout, stderr io.Writer, st contract.UpdateStatus, force bool, goos, dir string, r runner) int {
 	stamp := st.Latest.Stamp
 	if stamp == "" {
-		fmt.Fprintln(stderr, "clawdline: the cloud's latest build is not known, so there is nothing to apply")
+		fmt.Fprintln(stderr, cliCopy("ops", "update.latest_unknown", "clawdline: the cloud's latest build is not known, so there is nothing to apply"))
 		return updateExitUnknown
 	}
 	if (st.State == contract.UpdateStateCurrent || st.State == contract.UpdateStateAhead) && !force {
-		fmt.Fprintf(stderr, "clawdline: this machine is %s; nothing to apply (--force deploys %s anyway)\n", st.State, stamp)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.nothing_to_apply", "clawdline: this machine is %s; nothing to apply (--force deploys %s anyway)\n"), st.State, stamp)
 		return 1
 	}
 	switch goos {
 	case "linux":
 	case "darwin":
-		fmt.Fprintln(stderr, "clawdline: --apply does not replace an app bundle; run these from a source checkout:")
+		fmt.Fprintln(stderr, cliCopy("ops", "update.bundle_instructions", "clawdline: --apply does not replace an app bundle; run these from a source checkout:"))
 		fmt.Fprintf(stdout, "git fetch origin main\n")
 		fmt.Fprintf(stdout, "git worktree add -f \"$TMPDIR/clawdline-%s\" %s\n", short(stamp), stamp)
 		fmt.Fprintf(stdout, "cd \"$TMPDIR/clawdline-%s\" && tools/package-macos.sh\n", short(stamp))
 		return 1
 	default:
-		fmt.Fprintf(stderr, "clawdline: --apply is built for Linux only, not %s (docs/updates.md)\n", goos)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.linux_only", "clawdline: --apply is built for Linux only, not %s (docs/updates.md)\n"), goos)
 		return 1
 	}
 	var top strings.Builder
 	if err := r.run(dir, &top, io.Discard, "git", "rev-parse", "--show-toplevel"); err != nil {
-		fmt.Fprintln(stderr, "clawdline: --apply runs inside a Clawdline source checkout, and this directory is not one")
+		fmt.Fprintln(stderr, cliCopy("ops", "update.not_checkout", "clawdline: --apply runs inside a Clawdline source checkout, and this directory is not one"))
 		return 1
 	}
 	root := strings.TrimSpace(top.String())
 	deploy := filepath.Join(root, "tools", "deploy-linux-user.sh")
 	if _, err := os.Stat(deploy); err != nil {
-		fmt.Fprintf(stderr, "clawdline: --apply runs inside a Clawdline source checkout; %s has no tools/deploy-linux-user.sh\n", root)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.no_deploy_script", "clawdline: --apply runs inside a Clawdline source checkout; %s has no tools/deploy-linux-user.sh\n"), root)
 		return 1
 	}
 	if err := r.run(root, stdout, stderr, "git", "fetch", "origin", "main"); err != nil {
-		fmt.Fprintf(stderr, "clawdline: git fetch origin main failed: %v\n", err)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.fetch_failed", "clawdline: git fetch origin main failed: %v\n"), err)
 		return 1
 	}
 	if err := r.run(root, io.Discard, io.Discard, "git", "merge-base", "--is-ancestor", stamp, "origin/main"); err != nil {
-		fmt.Fprintf(stderr, "clawdline: %s is not on origin/main; refusing to deploy it\n", stamp)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.refuse_unmerged", "clawdline: %s is not on origin/main; refusing to deploy it\n"), stamp)
 		return 1
 	}
 	if err := r.run(root, stdout, stderr, deploy, "--rev", stamp); err != nil {
@@ -172,7 +172,7 @@ func applyUpdate(stdout, stderr io.Writer, st contract.UpdateStatus, force bool,
 		if errors.As(err, &ee) {
 			return ee.ExitCode()
 		}
-		fmt.Fprintf(stderr, "clawdline: %s: %v\n", deploy, err)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.deploy_failed", "clawdline: %s: %v\n"), deploy, err)
 		return 1
 	}
 	return 0
