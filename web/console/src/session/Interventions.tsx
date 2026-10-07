@@ -14,6 +14,9 @@ import { pendingFailureCanRetry, pendingFailureSentence } from "./pending-copy.j
 import { deliverUntilSeen, pendingSends } from "./send.js"
 import { browserRefreshEnvironment, readWithOneRetry, watchTodoRefresh } from "./todo-refresh.js"
 import { onWorkItemChanged } from "../pages/work/item-changed.js"
+import { samePageTarget } from "../same-page-links.js"
+import { hasDocumentIntent } from "../legacy/documents-bridge.js"
+import { requestPage } from "../overlays/index.js"
 import "./interventions.css"
 
 /** Keep the attention entry in the todo header while its panel stays independent. */
@@ -223,13 +226,22 @@ function InterventionCard({ note, disabled, sending, onAction, onReply, onCompos
   const fromAnotherSession = note.source_conversation !== note.target_conversation
   const isReading = note.kind === "read" || note.kind === "report"
   const composeOnly = note.options.length <= 1
+  const documentHere = note.document_url ? samePageTarget(note.document_url, window.location) : null
+  const internalDocument = documentHere && hasDocumentIntent(documentHere.hash)
   return <article className="human-intervention-card" data-intervention-id={note.id} tabIndex={-1} aria-label={note.title}>
     <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? catalogWord("literal", "927c9ed33728") : catalogWord("literal", "77f6d2cceedd")}</span><time className="human-intervention-created" dateTime={new Date(note.created_at * 1000).toISOString()}>{catalogWord("inline", "0f6f6df015c6")} {when(note.created_at)}</time></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? catalogWord("literal", "3d9157962dd2") : note.kind === "answer" ? catalogWord("literal", "e12820431ff9") : catalogWord("literal", "5a15e03eaa4a")}</span></div>
     {fromAnotherSession && <p className="human-intervention-source">{catalogWord("inline", "afc7f76a7d4f")} {note.source_label || catalogWord("literal", "92018c889270")}</p>}
     <p>{note.summary}</p>
     <p><b>{catalogWord("inline", "7ed8d242eabd")}</b>{note.action}</p>
     <p className="human-intervention-reason">{catalogWord("inline", "b9fbb8ede4cb")}{note.reason}</p>
-    {note.document_url && <p><a className="human-intervention-document" href={note.document_url} target="_blank" rel="noopener noreferrer"><WorkIcon name="file" />{catalogWord("inline", "740cf7e11430")}</a></p>}
+    {note.document_url && <p><a className="human-intervention-document" href={note.document_url}
+      target={internalDocument ? undefined : "_blank"} rel="noopener noreferrer"
+      onClick={(event) => {
+        if (!documentHere || !internalDocument || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        requestPage({ page: "documents", hash: false })
+        window.location.hash = documentHere.hash
+      }}><WorkIcon name="file" />{catalogWord("inline", "740cf7e11430")}</a></p>}
     {note.detail && <details className="human-intervention-more"><summary>{catalogWord("inline", "61e5b2be1827")}</summary><div className="human-intervention-detail" dangerouslySetInnerHTML={{ __html: L.richTextHTML(note.detail) }} /></details>}
     <div className="human-intervention-drafts" role="group" aria-label={catalogWord("inline", "c4636462e1de")} aria-busy={sending}>
       <h4>{catalogWord("inline", "c4636462e1de")}</h4>

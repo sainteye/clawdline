@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 4715,
-  "riskKeys": 2060,
-  "nonRiskCount": 2655,
+  "riskKeys": 2059,
+  "nonRiskCount": 2656,
   "groups": [
     {
       "name": "bar / other",
@@ -2396,7 +2396,7 @@
     },
     {
       "name": "Session / Interventions",
-      "count": 28,
+      "count": 29,
       "sources": [
         "src/session/Interventions.tsx"
       ],
@@ -2406,6 +2406,7 @@
         "inline.507ec6638095",
         "inline.61e5b2be1827",
         "inline.656c48dad32b",
+        "inline.740cf7e11430",
         "inline.7ed8d242eabd",
         "inline.a4f8e0fcaaf8",
         "inline.afc7f76a7d4f",

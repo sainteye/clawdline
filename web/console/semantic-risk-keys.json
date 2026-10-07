@@ -3,12 +3,12 @@
   "englishKeys": 4715,
   "counts": {
     "negation": 1393,
-    "state": 656,
+    "state": 655,
     "permission": 250,
     "deletion": 83,
     "uncertainty": 133
   },
-  "unionCount": 2060,
+  "unionCount": 2059,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1554,7 +1554,6 @@
       "inline.52144edb58e1",
       "inline.684134665ec0",
       "inline.73c3351b4ca4",
-      "inline.740cf7e11430",
       "inline.76d12ea59749",
       "inline.955dc54b5b20",
       "inline.9aaa26b21b0c",
@@ -3227,7 +3226,6 @@
     "inline.68a78ae9f308",
     "inline.6b4db2323869",
     "inline.73c3351b4ca4",
-    "inline.740cf7e11430",
     "inline.7633dc8d1def",
     "inline.76d12ea59749",
     "inline.7713cf1052e8",
