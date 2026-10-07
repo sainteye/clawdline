@@ -341,6 +341,28 @@ const prompted = (s: Seen) => s.rows.some((r) => r.includes(fixture))
 const YOU = "你（這個分頁）"
 const OTHER_TAB = "另一個分頁"
 
+test("the start sheet defaults to the current Session or Terminal list", { skip }, async () => {
+  const tab = await Tab.open(browser, true)
+  await tab.go("#page=sessions")
+  await tab.run(`new Promise((ok, fail) => { const end = setTimeout(() => fail(new Error("Session toolbar did not render")), 5000); const look = () => document.querySelector("#start-go") ? (clearTimeout(end), ok(true)) : setTimeout(look, 50); look() })`)
+  await tab.run(`localStorage.setItem("clawdline.start.mode", "terminal")`)
+  await tab.press("#start-go")
+  assert.equal(await tab.run(`document.querySelector("#start-session-tab")?.getAttribute("aria-selected")`), "true", "the old stored choice does not override the Session list")
+  await tab.press("#start-terminal-tab")
+  await tab.press("#start-close")
+  await tab.press("#start-go")
+  assert.equal(await tab.run(`document.querySelector("#start-session-tab")?.getAttribute("aria-selected")`), "true", "the last sheet choice does not override the Session list")
+  await tab.press("#start-close")
+  await tab.press(".session-mode-choice:last-child")
+  await tab.run(`localStorage.setItem("clawdline.start.mode", "session")`)
+  await tab.press("#start-go")
+  assert.equal(await tab.run(`document.querySelector("#start-terminal-tab")?.getAttribute("aria-selected")`), "true", "the old stored choice does not override the Terminal list")
+  await tab.press("#start-session-tab")
+  await tab.press("#start-close")
+  await tab.press("#start-go")
+  assert.equal(await tab.run(`document.querySelector("#start-terminal-tab")?.getAttribute("aria-selected")`), "true", "the last sheet choice does not override the Terminal list")
+})
+
 test("Session list opens terminals beside it, remembers its mode, and filters", { skip }, async () => {
   const tab = await Tab.open(browser, true)
   await tab.go("#page=sessions")

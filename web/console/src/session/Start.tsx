@@ -103,10 +103,6 @@ let landed: string | null = null
 let opener: HTMLElement | null = null
 let machineOnly = false
 type StartMode = "session" | "terminal"
-const MODE_KEY = "clawdline.start.mode"
-function savedMode(): StartMode {
-  try { return localStorage.getItem(MODE_KEY) === "terminal" ? "terminal" : "session" } catch { return "session" }
-}
 let mode: StartMode = "session"
 let terminalAccess: { state: "loading" | "ready" | "blocked"; reason: string } = { state: "loading", reason: "" }
 let terminalGeneration = 0
@@ -137,7 +133,6 @@ function checkTerminalAccess(): void {
 function setMode(next: StartMode): void {
   if (pressing || wait || machineOnly) return
   mode = next
-  try { localStorage.setItem(MODE_KEY, next) } catch { /* storage is optional */ }
   leave()
   if (next === "terminal") checkTerminalAccess()
   else {
@@ -812,12 +807,11 @@ function hideBand(): void {
   L.setBandSpin(null)
 }
 
-function openMode(machine: boolean, requested?: StartMode): void {
+function openMode(machine: boolean, requested: StartMode = "session"): void {
   const active = document.activeElement
   opener = machine ? el("counts") : active instanceof HTMLElement && active !== document.body ? active : el("start-go")
   machineOnly = machine
-  mode = machine ? "session" : requested ?? savedMode()
-  if (requested) try { localStorage.setItem(MODE_KEY, requested) } catch { /* storage is optional */ }
+  mode = machine ? "session" : requested
   el("start-title").textContent = machine ? "Clawdfather" : T().webStart
   el("start").hidden = false
   said("")
