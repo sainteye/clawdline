@@ -101,8 +101,12 @@ export interface WorktreeSourceRow {
   worktreeId?: string
   branch?: string
   target?: string
-  owner?: { title?: string } | null
-  context?: { purpose?: string; state?: string; originSession?: { title?: string } } | null
+  owner?: { title?: string; evidence?: string } | null
+  context?: {
+    purpose?: string; note?: string; currentStatus?: string; state?: string
+    createdAt?: string; startedAt?: string; finishedAt?: string
+    originSession?: { title?: string }
+  } | null
   cleanup?: { blockers?: Array<{ code?: string }> } | null
 }
 let latestWorktreeRows = new Map<string, WorktreeSourceRow>()
