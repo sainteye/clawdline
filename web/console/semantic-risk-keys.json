@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4671,
+  "englishKeys": 4680,
   "counts": {
     "negation": 1388,
-    "state": 649,
+    "state": 651,
     "permission": 250,
     "deletion": 83,
     "uncertainty": 131
   },
-  "unionCount": 2048,
+  "unionCount": 2050,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -2026,6 +2026,8 @@
       "work.failedNetwork",
       "work.opDoneElsewhere",
       "work.openItemFailed",
+      "work.phaseCancelled",
+      "work.phaseDone",
       "work.reasonAccepted",
       "work.reasonAttemptsFailed",
       "work.reasonDoneElsewhere",
@@ -4506,6 +4508,8 @@
     "work.opDiscard",
     "work.opDoneElsewhere",
     "work.openItemFailed",
+    "work.phaseCancelled",
+    "work.phaseDone",
     "work.placesOnlyProjects",
     "work.projectDirectoryUnreadable",
     "work.proposalKindLeftover",

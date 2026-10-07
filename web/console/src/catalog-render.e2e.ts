@@ -16,6 +16,7 @@ const shots = process.env.CLAWDLINE_SHOTS || ""
 const tags = ["en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"]
 const keys = ["skillFoldersSkipped", "unfinishedWork", "squadSkills", "squadGroups", "squadRoles", "squadItems", "squadSkillSources", "recentInterventions", "prunedInterventions", "pendingInterventions", "localFiles", "unsyncedProjects", "exportRounds"]
 const machineKeys = ["legacy.webFailNotFound", "legacy.webShowOnMac", "settings.webCloudPairOrderScan"]
+const phases = ["created", "assigning", "assigned", "implementing", "verifying", "merging", "deploying", "done", "cancelled"]
 
 function fixture(): string {
   return `<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px system-ui;margin:0;padding:12px}p{max-width:100%;overflow-wrap:anywhere}</style><body><script src="/catalog.js"></script><script>
@@ -24,6 +25,7 @@ function fixture(): string {
     const tags = ${JSON.stringify(tags)}
     const keys = ${JSON.stringify(keys)}
     const machineKeys = ${JSON.stringify(machineKeys)}
+    const phases = ${JSON.stringify(phases)}
     for (const tag of tags) {
       const catalog = await (await fetch('/catalogs/' + tag + '.json')).json()
       if (Catalog.activateCatalog(catalog, tag) !== tag) errors.push(tag + ': fallback')
@@ -48,6 +50,19 @@ function fixture(): string {
         if (/\\b[M]acs?\\b/u.test(paragraph.textContent) || (tag === 'ko' && /\uB9E5/u.test(paragraph.textContent))) errors.push(tag + ':' + key + ': hardware-only term')
         if (!paragraph.textContent.trim()) errors.push(tag + ':' + key + ': blank')
       }
+      for (const phase of phases) {
+        const paragraph = document.createElement('p')
+        paragraph.lang = tag
+        paragraph.textContent = Catalog.phaseName(phase)
+        paragraph.setAttribute('aria-label', Catalog.catalogFormat('template', '1640b97725ed', ['Example item', 'attention', paragraph.textContent]))
+        paragraph.dataset.phase = phase
+        document.body.append(paragraph)
+        const key = 'work.phase' + phase[0].toUpperCase() + phase.slice(1)
+        if (paragraph.textContent !== catalog[key]) errors.push(tag + ':' + phase + ': wrong phase label')
+        if (!paragraph.getAttribute('aria-label').includes(paragraph.textContent)) errors.push(tag + ':' + phase + ': inaccessible phase label')
+      }
+      if (Catalog.phaseName('created') === Catalog.catalogWord('literal', 'c5d8aaa266d8')) errors.push(tag + ': create action reused as state')
+      if (Catalog.phaseName('cancelled') === Catalog.catalogWord('literal', 'dc47baa800c8')) errors.push(tag + ': cancel action reused as state')
     }
     document.body.dataset.errors = errors.join('|')
     document.body.dataset.ready = 'true'
@@ -108,7 +123,10 @@ async function browserConnect(endpoint: string): Promise<Browser> {
 
 test("nine catalogs render numeric sentences at phone and desktop widths", async () => {
   assert.ok(existsSync(chrome), "Chrome is unavailable")
-  const compiled = await build({ entryPoints: [join(root, "src/catalog.ts")], bundle: true, platform: "browser", format: "iife", globalName: "Catalog", write: false })
+  const compiled = await build({ stdin: {
+    contents: 'export * from "./src/catalog.ts"; export { phaseName } from "./src/pages/work/phase-name.ts"',
+    resolveDir: root, sourcefile: "catalog-render-entry.ts", loader: "ts",
+  }, bundle: true, platform: "browser", format: "iife", globalName: "Catalog", write: false })
   const script = compiled.outputFiles[0].text
   const server = createServer((req, res) => {
     const path = new URL(req.url || "/", "http://fixture").pathname
@@ -139,7 +157,7 @@ test("nine catalogs render numeric sentences at phone and desktop widths", async
       for (;;) {
         try {
           const answer = await browser.send("Runtime.evaluate", {
-            expression: `({ready:document.body?.dataset.ready,errors:document.body?.dataset.errors,error:document.body?.dataset.error,scrollWidth:document.documentElement.scrollWidth,innerWidth:innerWidth,paragraphs:document.querySelectorAll('p[data-key]').length})`,
+            expression: `({ready:document.body?.dataset.ready,errors:document.body?.dataset.errors,error:document.body?.dataset.error,scrollWidth:document.documentElement.scrollWidth,innerWidth:innerWidth,paragraphs:document.querySelectorAll('p[data-key],p[data-phase]').length})`,
             returnByValue: true,
           }, sessionId)
           state = answer.result.value
@@ -151,7 +169,7 @@ test("nine catalogs render numeric sentences at phone and desktop widths", async
       console.log(JSON.stringify({ origin, width, fixture: "catalog.ts + public/catalogs/*.json", ...state }))
       assert.equal(state.error, undefined)
       assert.equal(state.errors, "")
-      assert.equal(state.paragraphs, tags.length * (keys.length * 3 + machineKeys.length))
+      assert.equal(state.paragraphs, tags.length * (keys.length * 3 + machineKeys.length + phases.length))
       assert.equal(state.innerWidth, width)
       assert.ok(state.scrollWidth <= width, `horizontal overflow at ${width}px: ${state.scrollWidth}px`)
       if (shots) {
