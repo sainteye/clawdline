@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -334,9 +335,181 @@ func TestNoMemoryReaderIsNoWait(t *testing.T) {
 func TestAHeavyInsideAHeavyRunsDirectly(t *testing.T) {
 	s, b := newStandIn(t, func(r *http.Request) (int, string) { return 200, "{}" })
 	h := &heavyHarness{exit: 5}
-	code := runHeavy(heavyOptions{wait: time.Hour}, []string{"go", "vet"}, h.deps(b, map[string]string{heavyEnv: "parent-id"}))
+	code := runHeavy(heavyOptions{wait: time.Hour, handoff: true}, []string{"go", "vet"}, h.deps(b, map[string]string{heavyEnv: "parent-id"}))
 	if code != 5 || len(s.requests()) != 0 || len(h.ran) != 1 || h.env[0][0] != heavyEnv+"=parent-id" {
 		t.Fatalf("exit %d asked %v ran %v env %v", code, paths(s), h.ran, h.env)
+	}
+}
+
+func TestHeavyHandoff(t *testing.T) {
+	const callbackID = "a5000000-0000-4000-8000-000000000002"
+	for _, tc := range []struct {
+		name, lease, callback string
+		env                   map[string]string
+		memoryShort           bool
+		noSlot                bool
+		wantHandoff           bool
+		wait                  time.Duration
+	}{
+		{name: "free slot", lease: "granted", env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "busy slot", lease: "queued", callback: "ok", env: map[string]string{"CODEX_THREAD_ID": thinConversation}, wantHandoff: true},
+		{name: "short memory", lease: "granted", callback: "ok", env: map[string]string{"CODEX_THREAD_ID": thinConversation}, memoryShort: true, wantHandoff: true},
+		{name: "memory without slot", callback: "ok", env: map[string]string{"CODEX_THREAD_ID": thinConversation}, memoryShort: true, noSlot: true, wantHandoff: true},
+		{name: "no conversation", lease: "queued"},
+		{name: "child", lease: "queued", env: map[string]string{"CODEX_THREAD_ID": thinConversation, "CLAWDLINE_TASK_SECRET": "child"}},
+		{name: "callback capacity", lease: "queued", callback: "callback_capacity", env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "root unresolved", lease: "queued", callback: "root_unresolved", env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "unsupported callback", lease: "queued", callback: "no_callback_capability", env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "unreachable callback", lease: "queued", callback: "unreachable", env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "other callback refusal", lease: "queued", callback: "bad_task", env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "custom state directory", lease: "queued", env: map[string]string{"CODEX_THREAD_ID": thinConversation, "CLAWDLINE_NEXT_DIR": "/elsewhere"}},
+		{name: "daemon unreachable", lease: "none", memoryShort: true, env: map[string]string{"CODEX_THREAD_ID": thinConversation}},
+		{name: "callback timeout cap", lease: "queued", callback: "ok", env: map[string]string{"CODEX_THREAD_ID": thinConversation}, wantHandoff: true, wait: 220 * time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asks, callbacks := 0, 0
+			s, b := newStandIn(t, func(r *http.Request) (int, string) {
+				switch r.URL.Path {
+				case "/v1/orchestrator/leases":
+					asks++
+					state := tc.lease
+					if asks > 1 {
+						state = "granted"
+					}
+					return 200, `{"ok":true,"state":"` + state + `","position":3,"lease":{"resource":"heavy_compile","key":"machine","holder":null,"queue":[]}}`
+				case "/v1/orchestrator/callbacks":
+					callbacks++
+					if tc.callback != "ok" {
+						return 429, `{"error":{"code":"` + tc.callback + `","message":"refused"}}`
+					}
+					return 200, `{"ok":true,"task":{"id":"` + callbackID + `","state":"briefed"}}`
+				default:
+					return 200, `{"ok":true}`
+				}
+			})
+			if tc.callback == "unreachable" {
+				b.client.Transport = heavyRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+					if r.URL.Path == "/v1/orchestrator/callbacks" {
+						return nil, errors.New("connection lost")
+					}
+					return http.DefaultTransport.RoundTrip(r)
+				})
+			}
+			h := &heavyHarness{}
+			if tc.memoryShort {
+				h.samples = []func() (machineusage.Sample, error){func() (machineusage.Sample, error) {
+					return machineusage.Sample{MemTotal: 4 << 30, MemAvailable: 100 << 20}, nil
+				}, roomy}
+			}
+			d := h.deps(b, tc.env)
+			if tc.lease == "none" {
+				d.broker = nil
+			}
+			d.executable = "/usr/local/bin/clawdline"
+			d.cwd = "/repo"
+			wait := tc.wait
+			if wait == 0 {
+				wait = 40 * time.Minute
+			}
+			code := runHeavy(heavyOptions{wait: wait, handoff: true, noSlot: tc.noSlot, reason: "checks", port: 7727}, []string{"go", "test", "./..."}, d)
+			if tc.wantHandoff {
+				if code != 76 || callbacks != 1 || len(h.ran) != 0 || len(h.slept) != 0 || !strings.Contains(h.stderr.String(), callbackID) || !strings.Contains(h.stderr.String(), "End your turn") {
+					t.Fatalf("exit %d callbacks %d ran %v slept %v stderr %q", code, callbacks, h.ran, h.slept, h.stderr.String())
+				}
+				var body map[string]any
+				for _, request := range s.requests() {
+					if request.EscapedPath == "/v1/orchestrator/callbacks" {
+						_ = json.Unmarshal(request.Body, &body)
+					}
+				}
+				wantTimeout := float64(100)
+				if tc.wait > 0 {
+					wantTimeout = 240
+				}
+				if body["timeout_minutes"] != wantTimeout || body["root"].(map[string]any)["session_id"] != thinConversation {
+					t.Fatalf("callback body %v", body)
+				}
+				argv := body["argv"].([]any)
+				if strings.Join([]string{argv[0].(string), argv[1].(string)}, " ") != "/usr/local/bin/clawdline heavy" || strings.Contains(strings.Join(anyStrings(argv), " "), "--handoff") || argv[len(argv)-3] != "go" {
+					t.Fatalf("callback argv %v", argv)
+				}
+				if tc.name == "busy slot" {
+					t.Logf("exit 76: %s", strings.TrimSpace(h.stderr.String()))
+				}
+				if tc.noSlot {
+					for _, path := range paths(s) {
+						if path == "/v1/orchestrator/leases" {
+							t.Fatal("--no-slot asked for a lease")
+						}
+					}
+				}
+			} else if code != 0 || len(h.ran) != 1 || len(h.slept) != map[bool]int{true: 1, false: 0}[tc.lease == "queued" || tc.memoryShort] {
+				t.Fatalf("exit %d callbacks %d ran %v slept %v stderr %q", code, callbacks, h.ran, h.slept, h.stderr.String())
+			} else {
+				wantCallbacks := 0
+				if tc.callback != "" && tc.callback != "unreachable" {
+					wantCallbacks = 1
+				}
+				if callbacks != wantCallbacks || ((tc.lease == "queued" || tc.memoryShort) && !strings.Contains(h.stderr.String(), "handoff unavailable")) {
+					t.Fatalf("callbacks %d want %d stderr %q", callbacks, wantCallbacks, h.stderr.String())
+				}
+			}
+		})
+	}
+}
+
+type heavyRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f heavyRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func anyStrings(a []any) []string {
+	out := make([]string, len(a))
+	for i, v := range a {
+		out[i], _ = v.(string)
+	}
+	return out
+}
+
+func TestAChildWorktreeCannotHandOff(t *testing.T) {
+	home := t.TempDir()
+	state := filepath.Join(home, ".config", "clawdline-next")
+	id := "a5000000-0000-4000-8000-000000000003"
+	cwd := filepath.Join(state, "worktrees", "group", id)
+	if err := os.MkdirAll(cwd, 0700); err != nil {
+		t.Fatal(err)
+	}
+	brief := filepath.Join(state, "tasks", id, "CHILD.md")
+	if err := os.MkdirAll(filepath.Dir(brief), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(brief, []byte("child"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !heavyChildWorktree(cwd, envOf(map[string]string{"HOME": home})) {
+		t.Fatal("the child worktree was not recognised")
+	}
+	if heavyChildWorktree(filepath.Join(state, "worktrees", "group", "not-a-task"), envOf(map[string]string{"HOME": home})) {
+		t.Fatal("an unrelated worktree was recognised as a child")
+	}
+	asks := 0
+	_, b := newStandIn(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/v1/orchestrator/leases" {
+			asks++
+			if asks == 1 {
+				return 200, `{"ok":true,"state":"queued","position":1}`
+			}
+			return 200, `{"ok":true,"state":"granted"}`
+		}
+		if r.URL.Path == "/v1/orchestrator/callbacks" {
+			t.Fatal("a child started a callback")
+		}
+		return 200, `{"ok":true}`
+	})
+	h := &heavyHarness{}
+	d := h.deps(b, map[string]string{"HOME": home, "CODEX_THREAD_ID": thinConversation})
+	d.cwd, d.executable = cwd, "/usr/local/bin/clawdline"
+	if code := runHeavy(heavyOptions{wait: time.Minute, handoff: true}, []string{"make"}, d); code != 0 || len(h.ran) != 1 || len(h.slept) != 1 {
+		t.Fatalf("exit %d ran %v slept %v stderr %q", code, h.ran, h.slept, h.stderr.String())
 	}
 }
 

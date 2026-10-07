@@ -160,6 +160,25 @@ func TestBothGuidesKeepLongCommandWaitAdvice(t *testing.T) {
 	}
 }
 
+func TestBothGuidesPutCallbackBeforeInTurnWaiting(t *testing.T) {
+	for _, topic := range []string{"en", "zh-Hant"} {
+		guide, err := Guide(topic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		section := strings.SplitN(string(guide), "- **Claude Code", 2)[0]
+		start := strings.LastIndex(section, "**Waiting on a long command.")
+		endTurn := "end your turn"
+		if topic == "zh-Hant" {
+			start = strings.LastIndex(section, "**等一個跑很久的指令。")
+			endTurn = "結束這個 turn"
+		}
+		if start < 0 || !strings.Contains(section[start:], "clawdline callback") || !strings.Contains(section[start:], endTurn) {
+			t.Errorf("guide %s must recommend callback and %q before Claude Code's in-turn wait", topic, endTurn)
+		}
+	}
+}
+
 // The default is English, the list is fixed, and unknown language tags
 // resolve to English.
 func TestTopics(t *testing.T) {

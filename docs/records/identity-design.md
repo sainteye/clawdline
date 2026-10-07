@@ -1,12 +1,13 @@
+<!-- clawdline-doc: kind=record audience=both -->
 # Session 身分：生命週期、告知、守衛
 
 > 問的是：**一個 session 的「它是哪一段對話」，今天是每一趟盤點重新猜出來的純函數。**
 > 使用者 2026-09-20 看著一個認不出來的 Codex session 說：「我們可能不是要單純解決問題，
 > 而是要去思考我們的整個設計是否有問題。」看完分析後拍板 A／B／C 三個方向全做。
 >
-> 判準沿用 [`docs/design-decisions.md`](design-decisions.md) §1：(a) 使用者說過的話 >
+> 判準沿用 [`docs/design-decisions.md`](../design-decisions.md) §1：(a) 使用者說過的話 >
 > (b) 有量測的 > (c) 使用量為 0 的不投資 > (d) 沒有相容包袱時選簡單的。
-> 原則是 [`docs/design-guidelines.md`](design-guidelines.md)，DG 回答在 §7。
+> 原則是 [`docs/design-guidelines.md`](../design-guidelines.md)，DG 回答在 §7。
 >
 > **這份文件只有設計，沒有改任何程式。** 量測於 2026-09-20 16:50–17:40，在使用者這台 Mac 上，
 > codex-cli `0.155.1`、Claude Code registry schema 如 §1.5。base commit `d76cd6b`。

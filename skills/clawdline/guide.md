@@ -69,7 +69,7 @@ the command instead.
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | Reads and advances a Board item you own (`clawdline guide feature-root`, §10) |
 | `clawdline todo add\|list\|done` | This Session's own to-dos, only when the person asks (§10) |
-| `clawdline heavy -- <command…>` | Runs a build or test suite in the machine's one compile slot (§11) |
+| `clawdline heavy [--handoff] -- <command…>` | Runs a build or test suite in the machine's one compile slot; `--handoff` gives a queued wait to a callback (§11) |
 | `clawdline send --to <terminal> "…"` | Relays a message into another session (§8) |
 | `clawdline notify --title "…" --body "…"` | Pushes a notification to the person (§9) |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | Leaves one actionable note above a Session (§9a) |
@@ -112,7 +112,7 @@ ledger has not read, or can no longer read, answers `not_yet_read`, `transcript_
 `unknown_task` or `unknown_item`. Whether the ledger is still reading is `usage` in
 `/v1/diagnostics`.
 
-**Waiting on a long command.** `clawdline heavy`, `clawdline dispatch` and a long test run print
+**Waiting on a long command.** If the wait is for something outside you — a queued `heavy`, CI, or a deploy — and may take more than a few minutes, use `clawdline callback` (or `heavy --handoff` / `tools/check.sh`) and end your turn. Its notice arrives when it finishes; do not poll from later turns, including with `clawdline leases`. For short waits and children, use the in-turn advice below. `clawdline heavy`, `clawdline dispatch` and a long test run print
 nothing while they wait, and end on their own. Wait for one with **one long wait**, not by
 checking it every few seconds: each check is a turn that rereads your whole context, and a token
 review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `heavy` runs.
@@ -141,10 +141,10 @@ review counted 520 such turns (72.2M tokens) over ten items, mostly on queued `h
   ```
 
   For a build, replace the command with `tools/heavy.sh …` and retain its
-  exit code: 75 means the compile-slot or memory wait expired before the build ran.
+  exit code: 75 means the compile-slot or memory wait expired before the build ran; 76 means `heavy --handoff` started a callback, so end your turn and wait for its notice.
 
 `clawdline heavy` waits at most `--max-wait` (default 30m) and then exits 75 without running the
-command; a longer wait than your tool allows is a background run.
+command. With `--handoff`, a queued wait starts a callback and exits 76; `tools/check.sh` requests this by default. A child or a refused callback waits in place with the advice above.
 
 **Curl to an orchestrator route.** Read `<state dir>/orchestrator-token` and send it in the
 `X-Clawdline-Orchestrator` header. Keep the token out of command arguments: use
@@ -311,6 +311,31 @@ elsewhere, or rules Codex does not see are theirs to decide. The routes are
 `{"version"}` and `Idempotency-Key`; refusals are `plan_changed`, `plan_unknown` (part of the
 Project could not be read, so nothing changed) and `name_taken` (a name unify would create already
 exists; nothing is overwritten).
+
+**Shared memory: one store per Project for Claude and Codex.** A lesson about this Project belongs
+in its Clawdline memory, not in your assistant's own memory, so the next Session reads it whichever
+assistant it is. A Session launched by Clawdline is already given the index (one line per entry,
+`name — description`, grouped by type, cut at 8 KiB with a line saying so); read an entry when its
+line is relevant:
+
+```sh
+clawdline memory list                     # the index; --json for the full answer
+clawdline memory show <name>              # one entry, frontmatter and body
+printf '%s\n' "<body>" | clawdline memory add --name <kebab-name> --description "<one line>" --type feedback
+clawdline memory update --name <name> --description "<one line>" --type project --body-file body.md
+clawdline memory forget <name>
+clawdline memory import --from-claude     # a plan; --apply copies, skipping names already stored
+```
+
+`--project <dir>` picks the Project (default: this directory's git top-level; a linked worktree is
+its main repository's Project). The type is one of `user`, `feedback`, `project` or `reference`.
+Exit 0 is done, 1 refused, 2 a usage mistake, 3 unknown (the daemon did not answer: nothing is
+known to be written). The same add twice is `unchanged`; a different entry under a taken name is
+`memory_entry_exists` — `update` it instead. Other refusals are `memory_entry_invalid`,
+`memory_entry_not_found` and `memory_full`; `memory_unreadable` means the store could not be read
+and says nothing about what it holds. The routes are `GET`/`POST /v1/projects/{place}/memory` and
+`GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`. The import only reads Claude Code's
+`~/.claude/projects/<slug>/memory/`; Clawdline never writes there.
 
 ## 2a. A Feature Root's ordinary path
 
@@ -1774,6 +1799,8 @@ before it has the slot and the memory, it gives up its place, does not run the c
 prints one line when the wait starts and one when it ends, nothing in between: wait for it once,
 long (§2, "Waiting on a long command"). A `heavy` inside a `heavy` runs directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
 that has it, `tools/heavy.sh <command>` finds the binary for you.
+
+`heavy --handoff` starts a callback only when it would wait; it then exits **76** with the callback id and queue position when known. End your turn and wait for the notice. `tools/check.sh` enables this by default; a child, missing conversation, refused callback, or unreachable daemon keeps waiting in place.
 
 - `POST /v1/orchestrator/leases` —
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`.

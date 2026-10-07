@@ -78,8 +78,9 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if b.ResolveSquadSnapshot != nil && persona != "" {
 		preflightPersona = ""
 	}
+	memory := b.memoryFor(cwd)
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
-		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir()})
+		Language: b.SessionLanguage(assistant), Persona: preflightPersona, PersonaDir: b.PersonaDir(), Memory: memory})
 	if err != nil {
 		return openedSession{}, err
 	}
@@ -90,7 +91,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 	if prepared.files.PromptPath != "" {
 		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: assistant, Model: model, ReasoningEffort: effort,
 			Language: b.SessionLanguage(assistant), Persona: persona,
-			SquadPromptPath: prepared.files.PromptPath})
+			SquadPromptPath: prepared.files.PromptPath, Memory: memory})
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			return openedSession{}, err
@@ -718,6 +719,14 @@ func AssignmentLabelLimit() int { return assignmentLabelLimit }
 
 // PersonaDir is where the daemon wrote the persona texts every launch names.
 func (b *Broker) PersonaDir() string { return personas.Dir(b.Dir) }
+
+// memoryFor is the shared memory a session launched in dir is given.
+func (b *Broker) memoryFor(dir string) string {
+	if b.Memory == nil {
+		return ""
+	}
+	return b.Memory(dir)
+}
 
 // AssignmentRoot is where Feature Roots' briefs are written.
 func (b *Broker) AssignmentRoot() string { return filepath.Join(b.Dir, "root-assignments") }

@@ -55,7 +55,9 @@ tools/check-private.sh -history -new    # no commit behind it added one either
 
 - **Every compile, test suite or bundle build goes through `tools/heavy.sh`** (`clawdline heavy`).
   Wrap the whole script once; wait for it with one long wait. If it exits 75 before acquiring the
-  slot, run it later. See `docs/working-rules.md` for the incident and procedure.
+  slot, run it later. A queued `tools/check.sh` hands itself to a callback and exits 76: a root
+  ends its turn and waits for the notice; a child waits in place. See `docs/working-rules.md` for
+  the incident and procedure.
 
 - A test that needs a Unix facility asks for it through a per-platform file
   (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.

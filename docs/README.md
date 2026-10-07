@@ -47,6 +47,8 @@ Some historical design and migration records remain in Traditional Chinese.
 
 | Document | Kind | Language | What it is |
 | --- | --- | --- | --- |
+| [ai-squad-contract.md](ai-squad-contract.md) | Public design note | English | Squad contract and role boundaries |
+| [repo-health.md](repo-health.md) | Public design note | English | Proposed governance review and document policy |
 | [token-ledger.md](token-ledger.md) | Public design note | English | What a session's tokens were spent on — board, protocol, rules, work, delegation — and how the ledger measures it |
 | [verifications.md](verifications.md) | Public design note | English | Things waiting to be verified: a change, a date to look again, what would count as it holding and the data it is judged by — the sidebar's 驗收, `clawdline verify`, and a scheduled readout |
 | [design-guidelines.md](design-guidelines.md) | Public design note | English | Ten design rules, each paid for by a failure: a loop that stops says so, everything that accumulates has a limit, unknown is not absent |
@@ -63,7 +65,7 @@ Some historical design and migration records remain in Traditional Chinese.
 | [schedules.md](schedules.md) | Public design note | Chinese, migration in English | Schedules: the file format, the clock, catch-up, and importing |
 | [push.md](push.md) | Public design note | Chinese | Web Push: the three RFCs, what never leaves the machine, retries |
 | [remote.md](remote.md) | Public design note | Chinese | The line between the free product and Cloud, and the pairing promises. Its status table is dated |
-| [cloud-wire.md](cloud-wire.md) | Public design note | Chinese | The Cloud wire specification: envelope, canonical JSON, keys, pairing, commands, and what was measured at each stage |
+| [cloud-wire.md](cloud-wire.md) | Public design note | Chinese | The Cloud wire specification: envelope, canonical JSON, keys, pairing, commands; [dated operation record](records/cloud-operations-2026-09.md) and [dated implementation record](records/cloud-wire-implementation-2026-09.md) |
 | [shell-bridge.md](shell-bridge.md) | Public design note | Chinese | The interface between a native shell and the web console, and the minimum a new platform's shell must implement |
 | [privacy-guard.md](privacy-guard.md) | Public design note | English | What keeps the person's own things out of a public repository: the working-tree scan, the history scan, the four answers, and the checkpoint that makes a daily run affordable |
 | [publishing.md](publishing.md) | Public operations guide | English | CI coverage, the guarded development remote, the filtered publication path, and when GitHub status becomes visible |
@@ -91,4 +93,8 @@ Some historical design and migration records remain in Traditional Chinese.
 
 | Document | Kind | Language | What it is |
 | --- | --- | --- | --- |
-| [first-run-audit.md](first-run-audit.md) | Work list | Chinese | What somebody who is not the author hits the first time, from `git clone` to a phone: 91 findings with file and line, grouped into ten causes to dispatch as ten pieces of work (2026-09-21) |
+| [first-run-audit.md](records/first-run-audit.md) | Historical work list | Chinese | What somebody who is not the author hits the first time, from `git clone` to a phone: 91 findings with file and line, grouped into ten causes to dispatch as ten pieces of work (2026-09-21) |
+
+## Dated records
+
+[Records index](records/README.md) lists retired documents and dated measurements moved from specifications.

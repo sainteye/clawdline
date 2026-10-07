@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -44,7 +46,7 @@ import (
 //     pressure-stall average below a ceiling (machineusage, the same reading
 //     the dashboard draws).
 //
-// **It fails open, on purpose.** docs/machine-resource-scheduling.md records a
+// **It fails open, on purpose.** docs/records/machine-resource-scheduling-2026-09.md records a
 // lease that twice stopped a build from reaching its compiler — on the path
 // taken when the broker was not answering, which is the path after a crash,
 // exactly when somebody needs to rebuild. So a daemon that does not answer, or
@@ -89,6 +91,10 @@ const heavyDefaultWait = 30 * time.Minute
 // sysexits.h, "try again later". Nothing else in this repository exits 75.
 const heavyExitTimedOut = 75
 
+// heavyExitHandedOff means the command was accepted as a callback; end this
+// turn and wait for its notice rather than running another copy.
+const heavyExitHandedOff = 76
+
 // heavyPressureCeiling is the memory stall average (percent of the last ten
 // seconds some task waited on memory) above which a start waits. 10 is where
 // the dashboard calls memory short.
@@ -104,22 +110,26 @@ type heavyOptions struct {
 	minAvailable int64 // bytes; 0 chooses a quarter of the machine, at most heavyFloorCap
 	wait         time.Duration
 	noSlot       bool
+	handoff      bool
+	port         int
 }
 
 // heavyDeps is everything the command touches outside itself, so the test can
 // stand each one in.
 type heavyDeps struct {
-	broker    *broker // nil: no daemon to ask
-	sample    func() (machineusage.Sample, error)
-	sleep     func(time.Duration)
-	now       func() time.Time
-	run       func(argv []string, env []string) (int, error)
-	getenv    func(string) string
-	stderr    io.Writer
-	renew     time.Duration
-	poll      time.Duration
-	pid       int
-	requestID string
+	broker     *broker // nil: no daemon to ask
+	sample     func() (machineusage.Sample, error)
+	sleep      func(time.Duration)
+	now        func() time.Time
+	run        func(argv []string, env []string) (int, error)
+	getenv     func(string) string
+	stderr     io.Writer
+	renew      time.Duration
+	poll       time.Duration
+	pid        int
+	requestID  string
+	executable string
+	cwd        string
 }
 
 func heavyCommand(args []string) {
@@ -129,6 +139,7 @@ func heavyCommand(args []string) {
 	minAvail := fs.String("min-available", "", "memory that must be available first, e.g. 1500M or 1G (default: a quarter of the machine, at most 1G)")
 	wait := fs.Duration("max-wait", heavyDefaultWait, "how long to wait for the slot and memory; past it the command is not run and heavy exits 75")
 	noSlot := fs.Bool("no-slot", false, "check memory only; do not queue for the compile slot")
+	handoff := fs.Bool("handoff", false, "hand a queued wait to a callback and exit 76")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
 		heavyUsage()
@@ -149,20 +160,27 @@ func heavyCommand(args []string) {
 		poll:   heavyPollEvery,
 		pid:    os.Getpid(),
 	}
-	if os.Getenv(heavyEnv) == "" && !*noSlot {
+	deps.executable, _ = os.Executable()
+	deps.cwd, _ = os.Getwd()
+	if *port == 0 {
+		// The callback does not inherit CLAWDLINE_NEXT_PORT, so pin the same
+		// daemon port in the heavy command it runs later.
+		*port, _ = daemonPort()
+	}
+	if os.Getenv(heavyEnv) == "" && (!*noSlot || *handoff) {
 		if b, err := openBroker(*port); err == nil {
 			deps.broker = b
-		} else {
+		} else if !*noSlot {
 			fmt.Fprintf(os.Stderr, cliCopy("misc", "heavy.clawdline_heavy_no_compile_slot_v_r.a110b265", "clawdline heavy: no compile slot (%v); running without one\n"), err)
 		}
 	}
-	os.Exit(runHeavy(heavyOptions{reason: *reason, minAvailable: floor, wait: *wait, noSlot: *noSlot}, fs.Args(), deps))
+	os.Exit(runHeavy(heavyOptions{reason: *reason, minAvailable: floor, wait: *wait, noSlot: *noSlot, handoff: *handoff, port: *port}, fs.Args(), deps))
 }
 
 func heavyUsage() {
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.usage_clawdline_heavy_reason_text_m.a5a3cfe3", "usage: clawdline heavy [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] -- <command> [args…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.usage_handoff", "usage: clawdline heavy [--reason text] [--min-available 1G] [--max-wait 30m] [--no-slot] [--handoff] -- <command> [args…]"))
 	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.waits_for_the_machine_s_compile_slo.6480ade2", "  waits for the machine's compile slot and for memory, then runs the command and gives the slot back"))
-	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.exits_with_the_command_s_own_status.bad52022", "  exits with the command's own status; 75 when --max-wait passed and the command was not run"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "heavy.exit_handoff", "  exits with the command's own status; 75 when --max-wait passed; 76 when a callback took the queued command"))
 	os.Exit(2)
 }
 
@@ -183,8 +201,22 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 	}
 	deadline := d.now().Add(opts.wait)
 	slot := &heavySlot{b: d.broker, id: d.requestID, say: say}
+	attempted := false
+	tryHandoff := func(place string) bool {
+		if !opts.handoff || attempted {
+			return false
+		}
+		attempted = true
+		id, err := heavyHandoff(opts, argv, d)
+		if err != nil {
+			say(cliCopy("misc", "heavy.handoff_unavailable", "handoff unavailable (%v); waiting in place"), err)
+			return false
+		}
+		say(cliCopy("misc", "heavy.callback_started", "callback %s started (%s); End your turn; the notice arrives when it finishes (exit %d)"), id, place, heavyExitHandedOff)
+		return true
+	}
 
-	if slot.b != nil {
+	if slot.b != nil && !opts.noSlot {
 		req := contract.LeaseRequest{
 			RequestID: d.requestID, Resource: contract.LeaseResourceHeavyCompile,
 			Holder: heavyHolder(argv), Reason: heavyReason(opts.reason, argv),
@@ -193,13 +225,13 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 		if at := swiftstore.ProcessStart(d.pid); !at.IsZero() {
 			req.ProcessStart = at.Unix()
 		}
-		if !slot.acquire(req, deadline, opts.wait, d) {
-			return heavyExitTimedOut
+		if code := slot.acquire(req, deadline, opts.wait, d, tryHandoff); code != 0 {
+			return code
 		}
 	}
-	if !waitForMemory(opts, deadline, d, slot, say) {
+	if code := waitForMemory(opts, deadline, d, slot, say, tryHandoff); code != 0 {
 		slot.release()
-		return heavyExitTimedOut
+		return code
 	}
 
 	stop := slot.keepAlive(d.renew)
@@ -218,14 +250,13 @@ type heavySlot struct {
 	held bool
 }
 
-// acquire waits in line for the slot. It answers false only when --max-wait
-// passed first; the place in line is then given up and nothing is run. Every
-// other way out — granted, no daemon, a refusal — answers true.
+// acquire returns 0 when the command can proceed, 75 on timeout, or 76 after
+// a callback accepted the command.
 //
 // While queued it asks again every poll (the broker passes over a waiter that
 // stops asking), and says nothing: one line when it joins the line, one when
 // the slot is its own.
-func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait time.Duration, d heavyDeps) bool {
+func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait time.Duration, d heavyDeps, tryHandoff func(string) bool) int {
 	queued := false
 	since := d.now()
 	for {
@@ -233,7 +264,7 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 		if err != nil {
 			s.say(cliCopy("misc", "heavy.daemon_unanswered", "the daemon did not answer (%v); running without the compile slot"), err)
 			s.b = nil
-			return true
+			return 0
 		}
 		var reply contract.LeaseReply
 		_ = json.Unmarshal(a.Body, &reply)
@@ -243,14 +274,26 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 				s.say(cliCopy("misc", "heavy.slot_acquired", "the compile slot is ours after %s; starting"), d.now().Sub(since).Round(time.Second))
 			}
 			s.held = true
-			return true
+			return 0
 		case a.ok() && reply.State == "queued":
+			place := cliCopy("misc", "heavy.queue_unknown", "queue position unknown")
+			if reply.Position > 0 {
+				place = fmt.Sprintf(cliCopy("misc", "heavy.queue_number", "number %d in line"), reply.Position)
+			}
+			if tryHandoff(place) {
+				s.cancel()
+				return heavyExitHandedOff
+			}
 			if !queued {
 				s.say(cliCopy("misc", "heavy.slot_waiting", "waiting for the compile slot (%s); quiet until it is ours, or %s passes and this exits %d without running"),
 					queueSentence(reply), wait, heavyExitTimedOut)
 				queued = true
 			}
 		case a.Status == 429:
+			if tryHandoff(cliCopy("misc", "heavy.queue_full_handoff", "the queue is full")) {
+				s.cancel()
+				return heavyExitHandedOff
+			}
 			// queue_full: the line is long, not closed.
 			if !queued {
 				s.say(cliCopy("misc", "heavy.slot_queue_full", "waiting for the compile slot (its queue is full); quiet until it is ours, or %s passes and this exits %d without running"),
@@ -261,13 +304,13 @@ func (s *heavySlot) acquire(req contract.LeaseRequest, deadline time.Time, wait 
 			code, message := a.refusal()
 			s.say(cliCopy("misc", "heavy.slot_refused", "the compile slot was refused (%d %s: %s); running without it"), a.Status, code, message)
 			s.b = nil
-			return true
+			return 0
 		}
 		if !d.now().Before(deadline) {
 			s.say(cliCopy("misc", "heavy.slot_timed_out", "waited %s (--max-wait) for the compile slot without getting it; the command was not run (exit %d)"),
 				wait, heavyExitTimedOut)
 			s.cancel()
-			return false
+			return heavyExitTimedOut
 		}
 		pause := d.poll
 		if r := time.Duration(reply.RetryAfterSeconds) * time.Second; r > pause {
@@ -341,34 +384,35 @@ func queueSentence(r contract.LeaseReply) string {
 }
 
 // waitForMemory holds the start until the machine has room, renewing the slot
-// while it waits so nobody else takes the memory it is waiting for. It answers
-// false only when --max-wait passed first. Like the slot, it says one line
-// when it starts waiting and one when the wait ends.
-func waitForMemory(opts heavyOptions, deadline time.Time, d heavyDeps, slot *heavySlot, say func(string, ...any)) bool {
+// while it waits. Its status is 0, 75, or 76 as for acquire.
+func waitForMemory(opts heavyOptions, deadline time.Time, d heavyDeps, slot *heavySlot, say func(string, ...any), tryHandoff func(string) bool) int {
 	waiting := false
 	lastRenew := d.now()
 	for {
 		s, err := d.sample()
 		if errors.Is(err, machineusage.ErrUnsupported) {
-			return true
+			return 0
 		}
 		if err != nil {
 			say(cliCopy("misc", "heavy.memory_unreadable", "memory could not be read (%v); not waiting for it"), err)
-			return true
+			return 0
 		}
 		ok, why := memoryRoom(s, opts.minAvailable)
 		if ok {
 			if waiting {
 				say(cliCopy("misc", "heavy.memory_restored", "memory is back; starting"))
 			}
-			return true
+			return 0
 		}
 		now := d.now()
 		if !now.Before(deadline) {
 			say(cliCopy("misc", "heavy.memory_timed_out", "waited %s (--max-wait) for memory (%s); the command was not run (exit %d)"), opts.wait, why, heavyExitTimedOut)
-			return false
+			return heavyExitTimedOut
 		}
 		if !waiting {
+			if tryHandoff(cliCopy("misc", "heavy.waiting_memory_handoff", "waiting for memory")) {
+				return heavyExitHandedOff
+			}
 			say(cliCopy("misc", "heavy.memory_waiting", "waiting for memory: %s; quiet until it is back, or --max-wait passes and this exits %d without running"),
 				why, heavyExitTimedOut)
 			waiting = true
@@ -379,6 +423,92 @@ func waitForMemory(opts heavyOptions, deadline time.Time, d heavyDeps, slot *hea
 		}
 		d.sleep(d.poll)
 	}
+}
+
+// heavyHandoff starts the same heavy invocation without --handoff. The extra
+// hour lets the daemon cover both the requested queue wait and a substantial
+// compile run; callback itself permits at most four hours.
+func heavyHandoff(opts heavyOptions, argv []string, d heavyDeps) (string, error) {
+	if d.broker == nil {
+		return "", errors.New("the daemon is unreachable")
+	}
+	if state := d.getenv("CLAWDLINE_NEXT_DIR"); state != "" && state != filepath.Join(d.getenv("HOME"), ".config", "clawdline-next") {
+		return "", errors.New("the callback cannot inherit a custom Clawdline state directory")
+	}
+	if d.executable == "" || d.cwd == "" {
+		return "", errors.New("the current executable or directory is unknown")
+	}
+	if d.getenv("CLAWDLINE_TASK_SECRET") != "" || heavyChildWorktree(d.cwd, d.getenv) {
+		return "", errors.New("a Clawdline child must finish its own task")
+	}
+	if id, _, err := conversationFromEnv(d.getenv); err != nil || id == "" {
+		return "", errors.New("no unambiguous conversation id in the environment")
+	}
+	timeout := opts.wait + time.Hour
+	if timeout > 240*time.Minute {
+		timeout = 240 * time.Minute
+	}
+	if timeout < time.Minute {
+		timeout = time.Minute
+	}
+	// Callback timeout is sent in whole minutes, so round up rather than
+	// silently cutting the final partial minute from the run allowance.
+	timeout = (timeout + time.Minute - 1) / time.Minute * time.Minute
+	cmd := []string{"--title", "Queued heavy command finished", "--timeout", timeout.String(), "--dir", d.cwd}
+	if opts.port != 0 {
+		cmd = append(cmd, "--port", strconv.Itoa(opts.port))
+	}
+	cmd = append(cmd, "--", d.executable, "heavy")
+	if opts.reason != "" {
+		cmd = append(cmd, "--reason", opts.reason)
+	}
+	if opts.minAvailable != 0 {
+		cmd = append(cmd, "--min-available", strconv.FormatInt(opts.minAvailable, 10))
+	}
+	cmd = append(cmd, "--max-wait", opts.wait.String())
+	if opts.noSlot {
+		cmd = append(cmd, "--no-slot")
+	}
+	cmd = append(cmd, "--")
+	cmd = append(cmd, argv...)
+	inv, err := callbackArgs(cmd, d.cwd)
+	if err != nil {
+		return "", err
+	}
+	inv.json = true
+	var out, errs bytes.Buffer
+	if code := startCallback(&out, &errs, d.broker, inv, d.getenv); code != 0 {
+		return "", fmt.Errorf("callback refused (exit %d): %s", code, strings.TrimSpace(errs.String()))
+	}
+	var result contract.BrokerDispatchResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.Task.ID == "" {
+		return "", errors.New("callback response did not name its task")
+	}
+	return result.Task.ID, nil
+}
+
+// A dispatched child lives in a task-ID worktree with a matching CHILD.md.
+// The explicit secret handles children that run outside that checkout.
+func heavyChildWorktree(cwd string, getenv func(string) string) bool {
+	state := getenv("CLAWDLINE_NEXT_DIR")
+	if state == "" {
+		state = filepath.Join(getenv("HOME"), ".config", "clawdline-next")
+	}
+	worktrees := filepath.Join(state, "worktrees") + string(os.PathSeparator)
+	if !strings.HasPrefix(cwd, worktrees) {
+		return false
+	}
+	rel := strings.TrimPrefix(cwd, worktrees)
+	parts := strings.Split(rel, string(os.PathSeparator))
+	if len(parts) < 2 {
+		return false
+	}
+	id := parts[1]
+	if len(id) != 36 {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(state, "tasks", id, "CHILD.md"))
+	return err == nil
 }
 
 // memoryRoom says whether a sample leaves room to start, and if not, why.

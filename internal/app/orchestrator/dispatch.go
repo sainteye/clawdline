@@ -658,6 +658,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if b.ResolveSquadSnapshot != nil && r.Persona != "" {
 		preflightPersona = ""
 	}
+	memory := b.memoryFor(cwd)
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
@@ -671,6 +672,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// reason the effort is.
 		Persona:    preflightPersona,
 		PersonaDir: b.PersonaDir(),
+		Memory:     memory,
 	})
 	if err != nil {
 		r.State = StateSpawnFailed
@@ -688,7 +690,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if prepared.files.PromptPath != "" {
 		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: r.Assistant,
 			Model: r.Model, ReasoningEffort: r.ReasoningEffort, Language: b.SessionLanguage(r.Assistant),
-			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath})
+			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath, Memory: memory})
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			r.State = StateSpawnFailed

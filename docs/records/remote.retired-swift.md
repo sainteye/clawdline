@@ -214,7 +214,7 @@ repeating terminal input or signals on every timer beat.
 
 The language is not the phone's to name. `voice_language` on this Mac decides, exactly as it does
 for the bar, and what comes back is put through `voice_vocabulary` the same way — same binary, same
-model, same words this project has taught it. [docs/whisper.md](whisper.md) is where all of that is
+model, same words this project has taught it. [docs/whisper.md](../whisper.md) is where all of that is
 set, and the phone inherits it by not being asked.
 
 **A `429` and a `503` are the two answers that are not filed under the idempotency key**, and
@@ -417,7 +417,7 @@ reporting that it delivered and is waiting for you to look, the second for the l
 fan-out coming back with its count. `push_on_deploy` is off until asked for, and covers a deploy
 that stopped running, whichever way it went.
 
-<img src="assets/web-push.gif" width="390" alt="A notification arriving on a phone: the banner drops over the home screen carrying the app's own mark, sits long enough to be read, and slides away. This one is the test the page can ask for; the ones that arrive unasked name the session task and project that are waiting.">
+<img src="../assets/web-push.gif" width="390" alt="A notification arriving on a phone: the banner drops over the home screen carrying the app's own mark, sits long enough to be read, and slides away. This one is the test the page can ask for; the ones that arrive unasked name the session task and project that are waiting.">
 
 The message is sealed to the device, so the push service carries ciphertext and learns only that
 something went to a subscription. Encryption settles who may read it in transit and settles nothing

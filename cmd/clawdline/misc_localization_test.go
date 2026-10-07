@@ -9,10 +9,18 @@ import (
 )
 
 func TestMiscCatalogShipsCompleteNineLanguageBaseline(t *testing.T) {
+	bundle := cliCatalogGroups["misc"]
+	if len(bundle.baseline) != 217 {
+		t.Fatalf("misc initial baseline has %d keys, expected 217", len(bundle.baseline))
+	}
 	for _, language := range []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 		translated, total := cliCatalogCoverage("misc", language)
-		if total != 217 || translated != total {
-			t.Errorf("misc catalog %s = %d/%d; expected complete initial baseline of 217", language, translated, total)
+		minimum := len(bundle.baseline)
+		if language == "en" || language == "zh-Hant" {
+			minimum = total
+		}
+		if total < len(bundle.baseline) || translated < minimum {
+			t.Errorf("misc catalog %s = %d/%d; expected at least %d translated keys", language, translated, total, minimum)
 		}
 	}
 }

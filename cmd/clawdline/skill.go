@@ -176,45 +176,59 @@ func skillCommand(args []string) {
 
 func skillUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_usage_clawdline_skill_install_uninstall", "usage: clawdline skill <install|uninstall>"))
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_install_write_this_build_s_stub", "  install     write this build's stub to ~/.claude/skills/clawdline/SKILL.md, recording what was there"))
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_uninstall_put_back_what_install_recorded", "  uninstall   put back what install recorded"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_install_dual_claude", "  install     write this build's stub to ~/.claude/skills/clawdline/SKILL.md (Claude Code) and"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_install_codex_target", "              ~/.agents/skills/clawdline/SKILL.md (Codex), recording what was at each"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "skill_uninstall_both", "  uninstall   put back what install recorded, at both"))
 	os.Exit(2)
 }
 
+// installSkill installs the stub at every target, Claude Code's first. Each
+// target has its own record, so one that is refused leaves the other as it
+// went; the exit is 1 when any was refused.
 func installSkill(stdout, stderr io.Writer, paths skillfile.Paths, now time.Time) int {
-	done, err := skillfile.Install(paths, skills.Stub(), now)
-	if err != nil {
-		fmt.Fprintln(stderr, "clawdline skill install:", err)
-		return 1
+	code := 0
+	for _, target := range skillfile.Targets(paths) {
+		done, err := skillfile.Install(target, skills.Stub(), now)
+		if err != nil {
+			fmt.Fprintln(stderr, cliCopy("entry", "skill_install_error", "clawdline skill install:"), err)
+			code = 1
+			continue
+		}
+		switch done.Outcome {
+		case skillfile.AlreadyCurrent:
+			fmt.Fprintf(stdout, cliCopy("entry", "skill_already_installed_s_is_this_build", "Already installed: %s is this build's stub. Nothing was changed.\n"), done.Path)
+			continue
+		case skillfile.Updated:
+			fmt.Fprintf(stdout, cliCopy("entry", "skill_updated_s_to_this_build_s", "Updated %s to this build's stub.\n"), done.Path)
+		default:
+			fmt.Fprintf(stdout, cliCopy("entry", "skill_installed_this_build_s_stub_at", "Installed this build's stub at %s.\n"), done.Path)
+		}
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_what_was_there_before_s_recorded", "What was there before: %s. Recorded in %s.\n"), describePrevious(done.Previous), done.RecordPath)
 	}
-	switch done.Outcome {
-	case skillfile.AlreadyCurrent:
-		fmt.Fprintf(stdout, cliCopy("entry", "skill_already_installed_s_is_this_build", "Already installed: %s is this build's stub. Nothing was changed.\n"), done.Path)
-		return 0
-	case skillfile.Updated:
-		fmt.Fprintf(stdout, cliCopy("entry", "skill_updated_s_to_this_build_s", "Updated %s to this build's stub.\n"), done.Path)
-	default:
-		fmt.Fprintf(stdout, cliCopy("entry", "skill_installed_this_build_s_stub_at", "Installed this build's stub at %s.\n"), done.Path)
+	if code == 0 {
+		fmt.Fprintln(stdout, cliCopy("entry", "skill_summary_both", "`clawdline skill uninstall` puts back what was there. Sessions started from now on load the new stub."))
 	}
-	fmt.Fprintf(stdout, cliCopy("entry", "skill_what_was_there_before_s_recorded", "What was there before: %s. Recorded in %s.\n"), describePrevious(done.Previous), done.RecordPath)
-	fmt.Fprintln(stdout, cliCopy("entry", "skill_clawdline_skill_uninstall_puts_it_back", "`clawdline skill uninstall` puts it back. Sessions started from now on load the new stub."))
-	return 0
+	return code
 }
 
 func uninstallSkill(stdout, stderr io.Writer, paths skillfile.Paths) int {
-	done, err := skillfile.Uninstall(paths)
-	if err != nil {
-		fmt.Fprintln(stderr, "clawdline skill uninstall:", err)
-		return 1
+	code := 0
+	for _, target := range skillfile.Targets(paths) {
+		done, err := skillfile.Uninstall(target)
+		if err != nil {
+			fmt.Fprintln(stderr, cliCopy("entry", "skill_uninstall_error", "clawdline skill uninstall:"), err)
+			code = 1
+			continue
+		}
+		if !done.Recorded {
+			fmt.Fprintf(stdout, cliCopy("entry", "skill_nothing_to_undo_there_is_no", "Nothing to undo: there is no install record at %s. %s was left as it is.\n"),
+				done.RecordPath, done.Path)
+			continue
+		}
+		fmt.Fprintf(stdout, cliCopy("entry", "skill_put_back_what_was_at_s", "Put back what was at %s before the install: %s. The record is removed.\n"),
+			done.Path, describePrevious(done.Restored))
 	}
-	if !done.Recorded {
-		fmt.Fprintf(stdout, cliCopy("entry", "skill_nothing_to_undo_there_is_no", "Nothing to undo: there is no install record at %s. %s was left as it is.\n"),
-			done.RecordPath, done.Path)
-		return 0
-	}
-	fmt.Fprintf(stdout, cliCopy("entry", "skill_put_back_what_was_at_s", "Put back what was at %s before the install: %s. The record is removed.\n"),
-		done.Path, describePrevious(done.Restored))
-	return 0
+	return code
 }
 
 // projectBinary keeps <state dir>/bin/clawdline the same bytes as this

@@ -297,7 +297,7 @@ export const CLOUD_SHELL_BYTES = 64 * 1024
 /**
  * The longest an answer is reused with nothing on its row moving at all. A
  * Swift Mac puts `transcript_signature` on the row and the page re-reads when
- * it changes; the Go daemon does not compute one yet (docs/cloud-wire.md
+ * it changes; the Go daemon does not compute one yet (docs/records/cloud-wire-implementation-2026-09.md
  * §16.6), so a row can stay still while its transcript grows. This is the
  * bound on how stale that can make the page.
  */

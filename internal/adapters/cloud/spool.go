@@ -25,7 +25,7 @@ package cloud
 // burned anyway, and one that matters: the sequence counter. That one is kept
 // on disk by the fence in fence.go, because a restart that reused sequence 0
 // would have every viewer's replay window refuse this machine's snapshots.
-// docs/cloud-wire.md §15 records this.
+// docs/records/cloud-wire-implementation-2026-09.md §15 records this.
 
 import (
 	"errors"

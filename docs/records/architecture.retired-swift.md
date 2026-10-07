@@ -7,7 +7,7 @@ One page for how this system is meant to be shaped, what shape it is actually in
 existing documents say otherwise. The owner set four directions on 2026-09-16; each has a section
 below with what is true today, counted rather than recalled.
 
-The bar this is all held to is [`acceptance.md`](acceptance.md). This page says what to build;
+The bar this is all held to is [`acceptance.md`](../acceptance.md). This page says what to build;
 that one says how you know it worked.
 
 ---
@@ -200,7 +200,7 @@ app.clawdline.com" stop being two separate claims a person has to make twice.
 
 This is the direction with the most work already done and the most measurement behind it. The
 analysis, the mechanisms and the phase order are in
-[`read-path-architecture.md`](read-path-architecture.md); this section is only its standing.
+[`read-path-architecture.md`](../read-path-architecture.md); this section is only its standing.
 
 **Measured 2026-09-16.** `GET /v1/board?project=<id>` was 1,000,265 bytes and silently dropped 58
 items to a byte budget (62 by the afternoon — the loss grows). `GET /v1/orchestrator/tasks` is

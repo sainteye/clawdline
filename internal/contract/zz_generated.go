@@ -3912,6 +3912,74 @@ type ProjectLinksReply struct {
 	Unreadable ProjectGitFailure `json:"unreadable,omitempty"`
 }
 
+// One entry in full: the body of POST /v1/projects/:id/memory and of PUT
+// /v1/projects/:id/memory/:name, whose name must be the path's, and the answer
+// to GET /v1/projects/:id/memory/:name.
+type ProjectMemoryEntry struct {
+	// Markdown, at most 64 KiB.
+	Body        string            `json:"body"`
+	Description string            `json:"description"`
+	Name        string            `json:"name"`
+	Type        ProjectMemoryType `json:"type"`
+}
+
+// GET /v1/projects/:id/memory: every entry, and the index a launched session is
+// given. An index cut at its 8 KiB bound says so in index_cut and in its last
+// line; entries always lists every entry.
+type ProjectMemoryList struct {
+	Entries []ProjectMemorySummary `json:"entries"`
+
+	// Empty when there are no entries.
+	Index    string `json:"index"`
+	IndexCut bool   `json:"index_cut"`
+
+	// The repository key the store is filed under: the key the broker names worktree
+	// directories by.
+	ProjectKey string `json:"project_key"`
+}
+
+// What a write did. `unchanged` is the same entry sent again, which is how a
+// retried add or update is answered.
+type ProjectMemoryOutcome string
+
+const (
+	ProjectMemoryOutcomeCreated   ProjectMemoryOutcome = "created"
+	ProjectMemoryOutcomeUpdated   ProjectMemoryOutcome = "updated"
+	ProjectMemoryOutcomeUnchanged ProjectMemoryOutcome = "unchanged"
+	ProjectMemoryOutcomeForgotten ProjectMemoryOutcome = "forgotten"
+)
+
+// ProjectMemoryOutcomeValues is every value the contract allows, in contract order.
+var ProjectMemoryOutcomeValues = []ProjectMemoryOutcome{ProjectMemoryOutcomeCreated, ProjectMemoryOutcomeUpdated, ProjectMemoryOutcomeUnchanged, ProjectMemoryOutcomeForgotten}
+
+// One entry as a listing shows it, without its body.
+type ProjectMemorySummary struct {
+	// One line, at most 512 bytes.
+	Description string `json:"description"`
+
+	// Lowercase letters, digits and single hyphens, at most 64 bytes.
+	Name string            `json:"name"`
+	Type ProjectMemoryType `json:"type"`
+}
+
+// An entry's kind, the four Claude Code's auto-memory uses.
+type ProjectMemoryType string
+
+const (
+	ProjectMemoryTypeUser      ProjectMemoryType = "user"
+	ProjectMemoryTypeFeedback  ProjectMemoryType = "feedback"
+	ProjectMemoryTypeProject   ProjectMemoryType = "project"
+	ProjectMemoryTypeReference ProjectMemoryType = "reference"
+)
+
+// ProjectMemoryTypeValues is every value the contract allows, in contract order.
+var ProjectMemoryTypeValues = []ProjectMemoryType{ProjectMemoryTypeUser, ProjectMemoryTypeFeedback, ProjectMemoryTypeProject, ProjectMemoryTypeReference}
+
+type ProjectMemoryWriteAnswer struct {
+	Name    string               `json:"name"`
+	Outcome ProjectMemoryOutcome `json:"outcome"`
+}
+
 // What the one git read found, which is a different question from what it
 // produced. A deploy row is a file named after the repository's GitHub remote,
 // so four of these five answers produce no deploy row — and only `unreadable`

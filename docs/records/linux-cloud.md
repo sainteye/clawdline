@@ -1,3 +1,4 @@
+<!-- clawdline-doc: kind=record audience=both -->
 # Putting a Linux machine on a Clawdline Cloud account
 
 Measured on 2026-09-20 on a headless Ubuntu 24.04 server (amd64, 2 vCPU, 4 GiB, tmux 3.4, no
@@ -249,7 +250,7 @@ answer.
 
 ### 3.3 Where the path actually stops, measured 2026-09-21
 
-`docs/linux-cloud.md` was written the day before this machine was approved. It has been approved
+`docs/records/linux-cloud.md` was written the day before this machine was approved. It has been approved
 since: the line is up, the switch and the command switch are both on, and the machine publishes.
 The question this section answers is the next one — **a person on a phone, at the hosted console,
 tries to open a session on this machine and nothing arrives here.** Every fact below was read on
@@ -372,35 +373,20 @@ In order, and only the person can do 1 and 3:
 4. On the machine, if the phone is to act and not only watch: `clawdline cloud commands on`.
 5. Optionally, bring the projects over: in the hosted console, open this machine's **Projects**
    page and use 專案設定同步 with the workstation as the source, or `clawdline project export` /
-   `import` by hand ([getting-started.md §7](getting-started.md#7-bring-your-projects-to-another-machine)).
+   `import` by hand ([getting-started.md §7](../getting-started.md#7-bring-your-projects-to-another-machine)).
    Step 4 is what lets the console write them here.
 
 It is not one button. It is two approvals and two switches, and the two switches are the machine's
 own — the shape `docs/cloud-cutover.md` already describes, with no desktop to show either half.
 
-## 5. What it costs
+## 5. Cost evidence
 
-Prices read from the AWS Pricing API on 2026-09-20 for `ap-east-2` (Asia Pacific, Taipei), Linux,
-shared tenancy:
-
-| Item | Rate | Per day | Per 30 days |
-|---|---|---|---|
-| `t3.medium`, on demand, running | $0.0490 /hr | $1.176 | $35.28 |
-| gp3 storage, 52 GB attached | $0.0864 /GB-month | $0.150 | $4.49 |
-| one in-use public IPv4 address | $0.0050 /hr | $0.120 | $3.60 |
-| SSM Session Manager, including the port forward that carried 15 MB | no charge | — | — |
-| **Total, left running** | **$0.0604 /hr** | **$1.45** | **$43.37** |
-
-Stopping the instance removes the compute and the address and leaves the storage: **$4.49 per 30
-days** to keep it stopped. Cost Explorer for the whole region reports `$3.2832` of EC2 compute and
-`$0.3803` of EC2-Other per day, unchanged across 2026-09-17, 09-18 and 09-19 — that is the region,
-not this machine; resource-level granularity is an opt-in the payer account has not turned on, so
-this machine's own line cannot be read back from the bill and the table above is the rate card
-times the hours.
+This public record omits the dated cloud price calculation and account usage amounts. The original
+tracked revision before this relocation preserves that evidence. Current prices need a new check.
 
 ## 6. Not run
 
-**On 2026-09-20**, when §1–§5 were measured: the approval itself, and therefore everything behind it —
+**On 2026-09-20**, when §1–§4 were measured: the approval itself, and therefore everything behind it —
 the device token, the relay handshake, the first publish, the machine appearing in the phone's
 chooser, the pairing handover, and whether the plan has a slot. Reboot survival. The hosted console
 against this machine. Claude Code — it is installed on this machine and **not signed in**

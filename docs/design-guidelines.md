@@ -144,7 +144,7 @@ A rule that finds no place on this picture has no structure in common with the o
 ### DG-5 One spelling (one thing ≠ two spellings)
 
 - Refusals had two envelopes, `{"error":{"code","message"}}` and `{"error":"<code>","detail"}`; a client that read only the first turned
-  `session_unknown` into `command_failed` and lost `reasons` entirely (`cloud-wire.md` §10.5).
+  `session_unknown` into `command_failed` and lost `reasons` entirely (`records/cloud-wire-implementation-2026-09.md` §10.5).
 - Two fields both called session id wanted opposite values: `root.session_id` was given a terminal id, dispatch accepted it, the child did the work, and `notifyRoot` found no one and logged nothing,
   so four tasks were orphaned (old repository `8dffbe49`); the landing slot's holder was named by conversation id and looked up by terminal id, so `advance` was never once delivered (`broker-design.md` §5 O2).
 - One name for two things: `pending` meant both "someone is working on it" and "the executor is dead", and a line waited behind it for 14 hours (`broker-design.md` §5 O1);
@@ -184,7 +184,7 @@ A rule that finds no place on this picture has no structure in common with the o
 - Unequal conditions: Chrome zooms `localhost` to 110% by default, so the two sides had dpr 2.2 against 2.0 (a task report); Cloud's "end to end" test
   used devtools to plant keys in IndexedDB and skip pairing, which proved the transport, not the pairing (`cutover.md` §4.2).
 - Green that never ran: "1 of 7716 checks failed" against a tree with 8,218 checks, more than five hundred of which never ran (old repository
-  `docs/machine-resource-scheduling.md`); the native shell had not compiled since the voice wave, until another child ran into it and it was fixed (introduced in `8ede06e`, fixed in `5e9115f`).
+  `docs/records/machine-resource-scheduling-2026-09.md`); the native shell had not compiled since the voice wave, until another child ran into it and it was fixed (introduced in `8ede06e`, fixed in `5e9115f`).
 - **Criterion**: every row of an acceptance record says "control: …, result: red"; a regression test comes with "ran on the code before the fix, and failed"
   (`15ff376`: 8 of the 12 old spellings returned 200); a comparison of two sides lists width, dpr, zoom and data set, and proves they are the same.
 

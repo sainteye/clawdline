@@ -80,6 +80,9 @@ missing and says so. If `--max-wait` (default 30m) passes before it gets the slo
 does not run the command and exits 75; run it again later. It prints one line when waiting starts
 and one when waiting ends, so use one long wait rather than repeated short polls. Wrap the whole
 script once; a nested `heavy` runs directly.
+`heavy --handoff` gives a queued wait to a callback and exits 76 with its id; `tools/check.sh`
+enables it by default for roots. End that turn and wait for the notice. Children and failed
+handoffs keep the in-turn wait.
 
 ## The public repository in full
 
