@@ -88,6 +88,8 @@ func statusWith(t *testing.T, door localDoor, token, path string) int {
 func TestDevicesRevokeRefusesTheBrowsersToken(t *testing.T) {
 	door := realDoor(t)
 	browser := openBrowser(t, door)
+	// Credential revocation is independent of the terminal inventory, whose
+	// iTerm2 Apple Event can outlast this test's HTTP deadline.
 	if code := statusWith(t, door, browser.Token, "/v1/settings"); code != http.StatusOK {
 		t.Fatalf("the new browser was not let in: %d", code)
 	}

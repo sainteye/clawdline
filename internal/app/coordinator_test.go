@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,6 +190,36 @@ func TestTheRoleMovesOnlyWhenTheBoundSessionIsProvablyGone(t *testing.T) {
 	stale.Generation = 3
 	if err := c.Store.CommitCoordinator(ctx, &store.CoordinatorExpect{ID: id, Generation: 1}, stale, nil); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("a stale write reached the row: %v", err)
+	}
+}
+
+func TestAnAbsentITermBindingUsesItsOwnSourceToProveOffline(t *testing.T) {
+	c, m, now := newRole(t)
+	ctx := context.Background()
+	old := row("%1", convA, 101)
+	old.ID = strings.ToUpper(convA)
+	old.Backend = session.BackendITerm
+	m.sources["iterm"] = true
+	m.rows = []session.Session{old}
+	bound, _, err := c.Register(ctx, convA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(time.Minute)
+	m.at = *now
+	m.rows = []session.Session{row("%2", convB, 102)}
+	m.complete = false // Another source cannot answer; iTerm still can.
+	m.sources["ps"] = false
+	if state, err := c.State(ctx); err != nil || state.Liveness != coordinator.Offline {
+		t.Fatalf("the absent iTerm id was not proved offline: state=%+v err=%v", state, err)
+	}
+	m.sources["iterm"] = false
+	if _, _, err := c.Rebind(ctx, bound.Record.ID, 1, convB); code(err) != "coordinator_liveness_unknown" {
+		t.Fatalf("an unreadable iTerm source allowed takeover: %v", err)
+	}
+	m.sources["iterm"] = true
+	if _, moved, err := c.Rebind(ctx, bound.Record.ID, 1, convB); err != nil || !moved {
+		t.Fatalf("an absent iTerm binding could not move: moved=%v err=%v", moved, err)
 	}
 }
 

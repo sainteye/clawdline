@@ -14,7 +14,8 @@ import (
 )
 
 // A scan in progress may briefly make the old holder's liveness unknown.
-// Every attempt inspects afresh; no unknown reading authorizes a takeover.
+// The rebind route takes its own fresh reading before deciding; a cached
+// unknown inspection never authorizes a takeover by itself.
 const coordinatorBindAttemptLimit = 6
 
 // coordinator bind registers the caller's exact conversation, or rebinds an
@@ -90,13 +91,14 @@ func inspectAndBindCoordinator(stdout, stderr io.Writer, b *broker, conversation
 	body := any(map[string]any{"session_id": conversation})
 	if state.Coordinator.Configured && state.Coordinator.Session != nil &&
 		state.Coordinator.Session.SessionID != conversation {
-		if state.Coordinator.Status != contract.CoordinatorStatusOffline {
-			if state.Coordinator.Status == contract.CoordinatorStatusUnknown && canRetry {
-				return 1, true
-			}
+		if state.Coordinator.Status != contract.CoordinatorStatusOffline &&
+			state.Coordinator.Status != contract.CoordinatorStatusUnknown {
 			fmt.Fprintf(stderr, cliCopy("misc", "coordinator.clawdline_coordinator_bind_old_role.d61e6b9a", "clawdline coordinator bind: old role has status %s; only a proven offline holder may be replaced\n"), state.Coordinator.Status)
 			return 1, false
 		}
+		// Inspection is drawn from the console's fast, possibly stale reading.
+		// Rebind is the authority: it scans afresh and refuses an online or
+		// still unknown holder without changing the role.
 		path = "/v1/orchestrator/coordinator/rebind"
 		body = map[string]any{"expected_coordinator_id": state.Coordinator.ID,
 			"expected_generation": state.Coordinator.Generation, "session_id": conversation}
