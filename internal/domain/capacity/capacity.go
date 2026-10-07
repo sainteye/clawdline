@@ -334,6 +334,10 @@ const (
 	MemoryEntryBytes       = "memory.entry_bytes"
 	MemoryDescriptionBytes = "memory.description_bytes"
 	MemoryNameBytes        = "memory.name_bytes"
+	// How many groups one Project's memory holds, and the length of the
+	// one line that says when to read each.
+	MemoryGroups                = "memory.groups"
+	MemoryGroupDescriptionBytes = "memory.group_description_bytes"
 	// Which conversations were open in this boot and the one before it, so
 	// they can be offered back after a reboot (docs/session-restore.md).
 	SessionsRestoreRows    = "sessions.restore_rows"
@@ -1842,6 +1846,28 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Sender},
 			EvictedBy: Daemon,
 			Sources:   []string{"internal/adapters/memory.nameByteLimit"},
+		},
+		{
+			// <state dir>/memory/<repo key>/GROUPS.json: the groups an
+			// entry may be filed under. The index a launch carries names
+			// every group, so the bound is what fits in it with room for
+			// resident entries; one more is refused with 409 memory_full.
+			Name: MemoryGroups, Class: Evidence, Unit: Rows,
+			Limit: 16, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/memory.GroupCountLimit"},
+		},
+		{
+			// One group's "read this when" line, which the index repeats.
+			// The groups file read and a group request body are bounded
+			// with room for every group at this length.
+			Name: MemoryGroupDescriptionBytes, Class: Buffer, Unit: Bytes,
+			Limit: 256, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/memory.GroupDescriptionByteLimit", "internal/adapters/memory.groupsFileReadLimit",
+				"internal/transport/http.memoryGroupRequestBodyLimit"},
 		},
 		{
 			// Conversations one boot records. They are read again from the

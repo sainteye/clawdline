@@ -3918,21 +3918,53 @@ type ProjectLinksReply struct {
 // to GET /v1/projects/:id/memory/:name.
 type ProjectMemoryEntry struct {
 	// Markdown, at most 64 KiB.
-	Body        string            `json:"body"`
-	Description string            `json:"description"`
-	Name        string            `json:"name"`
-	Type        ProjectMemoryType `json:"type"`
+	Body        string `json:"body"`
+	Description string `json:"description"`
+
+	// A group set with PUT /v1/projects/:id/memory-groups/:slug; absent or empty for a
+	// resident entry. An unknown group is refused with memory_group_not_found.
+	Group string            `json:"group,omitempty"`
+	Name  string            `json:"name"`
+	Type  ProjectMemoryType `json:"type"`
 }
 
-// GET /v1/projects/:id/memory: every entry, and the index a launched session is
-// given. An index cut at its 8 KiB bound says so in index_cut and in its last
-// line; entries always lists every entry.
+// A group of entries the index a launch carries names in one line instead of
+// entry by entry.
+type ProjectMemoryGroup struct {
+	// One line saying when to read the group, at most 256 bytes. Empty for a group an
+	// entry names that nobody described.
+	Description string `json:"description"`
+
+	// How many entries name the group.
+	Entries int64 `json:"entries"`
+
+	// Lowercase letters, digits and single hyphens, at most 64 bytes.
+	Slug string `json:"slug"`
+}
+
+// PUT /v1/projects/:id/memory-groups/:slug: the group's one-line description.
+// The answer is a ProjectMemoryWriteAnswer whose name is the slug: created,
+// updated or unchanged. A seventeenth group is refused with memory_full.
+type ProjectMemoryGroupSet struct {
+	Description string `json:"description"`
+}
+
+// GET /v1/projects/:id/memory: every entry, every group, and the index a
+// launched session is given. The index lists resident entries and one line per
+// group; when resident entries alone would pass its 8 KiB bound they are cut,
+// which index_cut and the index's own note say, and the group lines are kept.
+// entries always lists every entry.
 type ProjectMemoryList struct {
 	Entries []ProjectMemorySummary `json:"entries"`
 
+	// Sorted by slug, at most 16.
+	Groups []ProjectMemoryGroup `json:"groups"`
+
 	// Empty when there are no entries.
-	Index    string `json:"index"`
-	IndexCut bool   `json:"index_cut"`
+	Index string `json:"index"`
+
+	// Whether the index left resident entries out.
+	IndexCut bool `json:"index_cut"`
 
 	// The repository key the store is filed under: the key the broker names worktree
 	// directories by.
@@ -3957,6 +3989,10 @@ var ProjectMemoryOutcomeValues = []ProjectMemoryOutcome{ProjectMemoryOutcomeCrea
 type ProjectMemorySummary struct {
 	// One line, at most 512 bytes.
 	Description string `json:"description"`
+
+	// The group the entry is filed under; absent for a resident entry, which the index
+	// lists by name.
+	Group string `json:"group,omitempty"`
 
 	// Lowercase letters, digits and single hyphens, at most 64 bytes.
 	Name string            `json:"name"`

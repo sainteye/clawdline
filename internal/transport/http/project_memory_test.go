@@ -128,3 +128,60 @@ func TestProjectMemoryThatCannotBeReadIsNotAnEmptyList(t *testing.T) {
 		t.Fatalf("a launch was handed %q from a store that could not be read", got)
 	}
 }
+
+// A group is set with PUT …/memory-groups/<slug>; an entry naming a group
+// nobody set is refused with its own code; the list carries every group with
+// its count and an index line for it.
+func TestProjectMemoryGroupsAreSetThenNamedByEntries(t *testing.T) {
+	s := iconCloudStandIn(t)
+	request := func(method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, "http://127.0.0.1:7757"+path, strings.NewReader(body))
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		out := httptest.NewRecorder()
+		s.handler.ServeHTTP(out, req)
+		return out
+	}
+	session := map[string]string{"X-Clawdline-Orchestrator": s.machine}
+	base := "/v1/projects/" + s.place + "/memory"
+	group := "/v1/projects/" + s.place + "/memory-groups/release-steps"
+	entry := `{"name":"tag-first","description":"invented","type":"project","group":"release-steps","body":"Invented.\n"}`
+
+	if out := request("PUT", group, `{"description":"before cutting a release"}`, nil); out.Code < 400 {
+		t.Fatalf("a group set without a credential was answered %d", out.Code)
+	}
+	if out := request("POST", base, entry, session); out.Code != 400 || !strings.Contains(out.Body.String(), "memory_group_not_found") {
+		t.Fatalf("an entry naming an unset group: %d %s", out.Code, out.Body.String())
+	}
+	if out := request("PUT", group, `{"description":"before cutting a release"}`, session); out.Code != 201 {
+		t.Fatalf("group set: %d %s", out.Code, out.Body.String())
+	}
+	if out := request("PUT", group, `{"description":"before cutting a release"}`, session); out.Code != 200 || !strings.Contains(out.Body.String(), `"unchanged"`) {
+		t.Fatalf("the same group again: %d %s", out.Code, out.Body.String())
+	}
+	if out := request("PUT", group, `{"description":""}`, session); out.Code != 400 || !strings.Contains(out.Body.String(), "memory_entry_invalid") {
+		t.Fatalf("an empty description: %d %s", out.Code, out.Body.String())
+	}
+	if out := request("GET", group, "", session); out.Code != 405 {
+		t.Fatalf("GET on a group: %d", out.Code)
+	}
+	if out := request("POST", base, entry, session); out.Code != 201 {
+		t.Fatalf("a grouped add: %d %s", out.Code, out.Body.String())
+	}
+	var list contract.ProjectMemoryList
+	listed := request("GET", base, "", session)
+	if json.Unmarshal(listed.Body.Bytes(), &list) != nil || len(list.Groups) != 1 || list.Groups[0].Entries != 1 ||
+		list.Entries[0].Group != "release-steps" ||
+		!strings.Contains(list.Index, "- release-steps — before cutting a release — 1 entries: `clawdline memory list --group release-steps`") {
+		t.Fatalf("list: %s", listed.Body.String())
+	}
+	var shown contract.ProjectMemoryEntry
+	if out := request("GET", base+"/tag-first", "", session); json.Unmarshal(out.Body.Bytes(), &shown) != nil || shown.Group != "release-steps" {
+		t.Fatalf("show: %s", out.Body.String())
+	}
+}

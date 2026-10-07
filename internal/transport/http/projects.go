@@ -340,6 +340,10 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.projectMemoryRoute(w, r, parts[0], name)
 		return
 	}
+	if len(parts) == 3 && parts[0] != "" && parts[1] == "memory-groups" && parts[2] != "" {
+		s.projectMemoryGroupRoute(w, r, parts[0], parts[2])
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "unify" {
 		s.projectUnifyRoute(w, r, parts[0])
 		return

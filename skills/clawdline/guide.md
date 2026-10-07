@@ -314,16 +314,21 @@ exists; nothing is overwritten).
 
 **Shared memory: one store per Project for Claude and Codex.** A lesson about this Project belongs
 in its Clawdline memory, not in your assistant's own memory, so the next Session reads it whichever
-assistant it is. A Session launched by Clawdline is already given the index (one line per entry,
-`name — description`, grouped by type, cut at 8 KiB with a line saying so); read an entry when its
-line is relevant:
+assistant it is. A Session launched by Clawdline is already given the index: one line per resident
+entry, `name — description`, under its type, then one line per group saying when to read it, how
+many entries it holds and the command that lists them. It stays within 8 KiB; when the resident
+entries alone pass that, they are cut with a line saying so and every group line is kept. Read an
+entry when its line is relevant, and list a group when its description applies:
 
 ```sh
-clawdline memory list                     # the index; --json for the full answer
+clawdline memory list                     # resident entries and every group; --json for the full answer
+clawdline memory list --group <slug>      # one group's entries
 clawdline memory show <name>              # one entry, frontmatter and body
 printf '%s\n' "<body>" | clawdline memory add --name <kebab-name> --description "<one line>" --type feedback
-clawdline memory update --name <name> --description "<one line>" --type project --body-file body.md
+clawdline memory update --name <name> --description "<one line>" --type project --group <slug> --body-file body.md
 clawdline memory forget <name>
+clawdline memory group set <slug> --description "<when to read it>"
+clawdline memory group list
 clawdline memory import --from-claude     # a plan; --apply copies, skipping names already stored
 ```
 
@@ -333,9 +338,15 @@ Exit 0 is done, 1 refused, 2 a usage mistake, 3 unknown (the daemon did not answ
 known to be written). The same add twice is `unchanged`; a different entry under a taken name is
 `memory_entry_exists` — `update` it instead. Other refusals are `memory_entry_invalid`,
 `memory_entry_not_found` and `memory_full`; `memory_unreadable` means the store could not be read
-and says nothing about what it holds. The routes are `GET`/`POST /v1/projects/{place}/memory` and
-`GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`. The import only reads Claude Code's
-`~/.claude/projects/<slug>/memory/`; Clawdline never writes there.
+and says nothing about what it holds. An entry with no `--group` is resident; `--group` names a group
+already made with `group set`, or the write is refused with `memory_group_not_found`. A Project
+holds at most 16 groups, each described in one line of at most 256 bytes. The routes are
+`GET`/`POST /v1/projects/{place}/memory`, `GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`
+and `PUT /v1/projects/{place}/memory-groups/{slug}`. The import only reads Claude Code's
+`~/.claude/projects/<slug>/memory/`; Clawdline never writes there. It keeps the shape of that
+directory's `MEMORY.md`: an entry it links is resident, a sub-index it links becomes a group with
+the sub-index's description and every entry the sub-index links, an index is never imported as an
+entry, and an entry linked from nowhere is imported as resident and named in the plan.
 
 ## 2a. A Feature Root's ordinary path
 

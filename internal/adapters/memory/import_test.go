@@ -37,10 +37,11 @@ func claudeMemoryFixture(t *testing.T) string {
 func TestReadClaudeTakesEntriesAndSaysWhyItSkipsTheRest(t *testing.T) {
 	dir := claudeMemoryFixture(t)
 	before := snapshot(t, dir)
-	entries, skipped, err := ReadClaude(dir)
+	plan, err := ReadClaude(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	entries, skipped := plan.Entries, plan.Skipped
 	if len(entries) != 2 || entries[0].Name != "nested-type" || entries[0].Type != TypeFeedback ||
 		entries[1].Name != "top-level-type" || entries[1].Type != TypeProject ||
 		entries[1].Description != "folded over two lines" || entries[1].Body != "Another invented body.\n" {
@@ -50,7 +51,7 @@ func TestReadClaudeTakesEntriesAndSaysWhyItSkipsTheRest(t *testing.T) {
 	for _, s := range skipped {
 		why[s.File] = s.Reason
 	}
-	if len(skipped) != 4 || !strings.Contains(why["MEMORY.md"], "not an entry") ||
+	if len(skipped) != 4 || !strings.Contains(why["MEMORY.md"], "the index") ||
 		!strings.Contains(why["index-topic.md"], "not an entry") || !strings.Contains(why["Bad Name.md"], "name") ||
 		!strings.Contains(why["missing-type.md"], "type") {
 		t.Fatalf("skipped %+v", skipped)
@@ -61,7 +62,7 @@ func TestReadClaudeTakesEntriesAndSaysWhyItSkipsTheRest(t *testing.T) {
 }
 
 func TestReadClaudeOfAMissingDirectoryIsNotAnEmptyAnswer(t *testing.T) {
-	if _, _, err := ReadClaude(filepath.Join(t.TempDir(), "absent")); !os.IsNotExist(err) {
+	if _, err := ReadClaude(filepath.Join(t.TempDir(), "absent")); !os.IsNotExist(err) {
 		t.Fatalf("%v", err)
 	}
 }
