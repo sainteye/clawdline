@@ -446,9 +446,11 @@ func (s *Server) taskProjectDirs() []string {
 	for _, t := range s.swift.Read().Tasks {
 		dirs = append(dirs, t.ProjectDir)
 	}
-	if records, _, err := s.broker.Records(context.Background()); err == nil {
-		for _, r := range records {
-			dirs = append(dirs, r.ProjectDir)
+	if s.broker != nil {
+		if records, _, err := s.broker.Records(context.Background()); err == nil {
+			for _, r := range records {
+				dirs = append(dirs, r.ProjectDir)
+			}
 		}
 	}
 	return dirs

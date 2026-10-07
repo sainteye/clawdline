@@ -48,10 +48,27 @@ func TestExplicitPlaceIsListedWithoutAssistantHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &Server{cfg: config.Config{Dir: state}, broker: &orchestrator.Broker{Dir: state}, icons: &icon.Registry{}}
+	s := &Server{cfg: config.Config{Dir: state}, icons: &icon.Registry{}}
 	list := s.projectReaders().places.List(nil, 40)
 	if len(list) != 1 || list[0].Path != dir {
 		t.Fatalf("places = %#v, want the explicitly registered directory", list)
+	}
+	rec := httptest.NewRecorder()
+	s.placesRoute(rec, httptest.NewRequest("GET", "/v1/places", nil))
+	var answer struct {
+		Places []struct {
+			ID        string `json:"id"`
+			ProjectID string `json:"projectId"`
+		} `json:"places"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil || rec.Code != 200 {
+		t.Fatalf("places route = %d %s: %v", rec.Code, rec.Body.String(), err)
+	}
+	if len(answer.Places) != 1 || answer.Places[0].ProjectID == "" || answer.Places[0].ID == answer.Places[0].ProjectID {
+		t.Fatalf("place and repository identities = %#v", answer.Places)
+	}
+	if _, err := s.projectReaders().lifecycle.Resolve(answer.Places[0].ProjectID); err != nil {
+		t.Fatalf("registered Project cannot open repository detail: %v", err)
 	}
 }
 

@@ -242,7 +242,7 @@ export function ProjectUnify({ place, openRequest = 0 }: { place: ProjectPlace; 
       onCancel={event => { event.stopPropagation(); if (applying) event.preventDefault() }}
       onClose={() => opener.current?.focus({ preventScroll: true })}>
       <div className="project-unify-dialog-heading">
-        <h2 id="project-unify-dialog-title" ref={heading} tabIndex={-1}>{place.label}{catalogWord("inline", "b622a21f5371")}</h2>
+        <h2 id="project-unify-dialog-title" ref={heading} tabIndex={-1}>{place.label} {catalogWord("inline", "b622a21f5371")}</h2>
         <button type="button" className="project-unify-close" disabled={applying} onClick={() => dialog.current?.close()}>{catalogWord("inline", "c7fdddf79eaa")}</button>
       </div>
       <div className="project-unify-dialog-body">
