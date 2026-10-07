@@ -273,6 +273,11 @@ type op struct {
 	// shape turns an answer that is not JSON — a picture, a document — into
 	// something an envelope can carry.
 	shape func(p plan, res LocalResponse) (json.RawMessage, Refusal)
+	// partial reads a refusal that is also an answer: a route that stopped
+	// part-way and says what it did. It returns that body when the response
+	// is one, and the body crosses whole beside the refusal's status instead
+	// of as an `error`, whose fields the reader filters by code (§11.6).
+	partial func(res LocalResponse) (json.RawMessage, bool)
 	// sessions marks the one read that is answered by this machine's Session
 	// publisher rather than by a local route (Bridge.Sessions): its answer is
 	// the rows it puts back on their own channels, which no route can send.
@@ -1685,7 +1690,8 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/projects/" + segment(p.project) + "/unify"}
 			}},
 		op{name: "project-unify-apply",
-			decode: decodeProjectUnifyApply,
+			decode:  decodeProjectUnifyApply,
+			partial: stoppedUnify,
 			route: func(p plan) LocalRequest {
 				return LocalRequest{Method: "POST", Path: "/v1/projects/" + segment(p.project) + "/unify",
 					Body: p.document, Header: asDevice()}

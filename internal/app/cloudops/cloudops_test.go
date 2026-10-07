@@ -1330,6 +1330,59 @@ func TestProjectUnifyCloudPlanIsAReadAndApplyNeedsTheWriteGate(t *testing.T) {
 	}
 }
 
+// A unify apply that stopped after one action answers what ran, what failed
+// and the plan read again, as the local route does. Over Cloud that crosses as
+// the body beside the refusal's status: an `error` would reach the phone as
+// the code alone, and the person would see only that it failed.
+func TestAStoppedUnifyApplyCrossesWithWhatRanAndThePlan(t *testing.T) {
+	stopped := `{"outcome":"stopped",` +
+		`"ran":[{"kind":"rules_add_import","paths":["CLAUDE.md"],"description":"Add the import.","edits":[]}],` +
+		`"failed":{"kind":"skill_link","paths":[".claude/skills/review"],"description":"Link review.","link_target":"../../.agents/skills/review","edits":[]},` +
+		`"plan":{"status":"drifting","version":"v2","links_available":true,"rules":{},"skills":[],"actions":[],"conflicts":[]},` +
+		`"error":"file_permission","detail":"Unify stopped: A file or directory could not be written with this machine's permissions."}`
+	r := &router{status: 500, body: stopped}
+	open := Bridge{MachineID: "mac-01", Router: r, AllowCommands: func() bool { return true }}
+	answer := open.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "project-unify-apply",
+		"session": MachineReplySession, "request": "apply-1", "project": "p1", "item": map[string]any{"version": "v1"}}))
+	if answer.Status != 500 || answer.Code != "file_permission" {
+		t.Fatalf("stopped apply: status %d code %q", answer.Status, answer.Code)
+	}
+	var payload struct {
+		Status int            `json:"status"`
+		Error  map[string]any `json:"error"`
+		Body   struct {
+			Outcome string           `json:"outcome"`
+			Ran     []map[string]any `json:"ran"`
+			Failed  map[string]any   `json:"failed"`
+			Plan    map[string]any   `json:"plan"`
+			Error   string           `json:"error"`
+			Detail  string           `json:"detail"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(answer.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Status != 500 || payload.Error != nil {
+		t.Fatalf("payload status %d error %v", payload.Status, payload.Error)
+	}
+	got := payload.Body
+	if got.Outcome != "stopped" || len(got.Ran) != 1 || got.Ran[0]["kind"] != "rules_add_import" ||
+		got.Failed["kind"] != "skill_link" || got.Plan["version"] != "v2" ||
+		got.Error != "file_permission" || !strings.HasPrefix(got.Detail, "Unify stopped: ") {
+		t.Fatalf("stopped body did not cross whole: %s", answer.Payload)
+	}
+
+	// Any other refusal of the same word is still a refusal, filtered by code.
+	r.body = `{"error":"plan_changed","detail":"The plan changed.","plan":{"version":"v3"}}`
+	r.status = 409
+	refused := open.Handle(context.Background(), request(t, ClassCtl, map[string]any{"type": "project-unify-apply",
+		"session": MachineReplySession, "request": "apply-2", "project": "p1", "item": map[string]any{"version": "v1"}}))
+	if refused.Code != "plan_changed" || strings.Contains(string(refused.Payload), `"body"`) ||
+		strings.Contains(string(refused.Payload), `"v3"`) {
+		t.Fatalf("plan_changed: %s", refused.Payload)
+	}
+}
+
 // TestAMalformedBodyIsRefusedWhereItSafelyNames walks the shapes a viewer can
 // get wrong. Each one is refused, and each refusal goes only where the body's
 // own identity fields safely say it would have gone.

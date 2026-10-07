@@ -25,7 +25,9 @@ const toneWords: Record<SetupTone, string> = {
   unknown: "未知",
 }
 
-function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place: ProjectPlace): void }) {
+function ProjectReadiness({ place, select, openUnify }: {
+  place: ProjectPlace; select(place: ProjectPlace): void; openUnify(place: ProjectPlace): void
+}) {
   const capabilities = projectSetupCapabilities(place)
   const progress = projectSetupProgress(place)
   const needsAttention = capabilities.some(row => row.tone === "attention")
@@ -45,13 +47,15 @@ function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place
       </span>
     </div>
     <ul className="project-readiness-capabilities">
-      {capabilities.map(row => <li key={row.key} className={`project-readiness-capability is-${row.tone}`}>
+      {capabilities.map(row => <li key={row.key} className={`project-readiness-capability is-${row.tone}${row.action ? " has-action" : ""}`}>
         <span className="project-readiness-dot" aria-hidden="true" />
         <span>
           <strong>{row.label}</strong>
           <span>{row.detail}</span>
         </span>
         <span className="project-readiness-state">{toneWords[row.tone]}</span>
+        {row.action === "unify" && <button className="project-readiness-row-action" type="button"
+          aria-label={`檢視 ${place.label} 的 Claude／Codex 共用`} onClick={() => openUnify(place)}>檢視共用</button>}
       </li>)}
     </ul>
     <button className="project-readiness-action" type="button" onClick={() => select(place)}>{action}</button>
@@ -78,6 +82,9 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const scopedTrigger = useRef<HTMLButtonElement | null>(null)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [view, setView] = useState<"settings" | "files">("settings")
+  // A readiness row's 檢視共用 press: which Project's unify preview to open,
+  // and a count so a second press on the same one opens it again.
+  const [unifyRequest, setUnifyRequest] = useState({ place: "", count: 0 })
   const filesState = useRef({ dirty: false, busy: false })
   const [closeNotice, setCloseNotice] = useState("")
   const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
@@ -129,6 +136,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       setCloseNotice("")
       setProjectPath(path)
       setView("settings")
+      setUnifyRequest({ place: "", count: 0 })
       void load()
       dialog.current?.showModal()
       dialog.current?.focus({ preventScroll: true })
@@ -140,6 +148,14 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
     return progress && progress.complete === progress.total
   }).length
   const visiblePlaces = projectPath ? places.filter(place => place.path === projectPath) : places
+
+  const openUnify = (place: ProjectPlace) => {
+    if (!mayLeave()) return
+    filesState.current = { dirty: false, busy: false }
+    setProjectPath(place.path)
+    setView("settings")
+    setUnifyRequest(previous => ({ place: place.id, count: previous.count + 1 }))
+  }
 
   const select = (place: ProjectPlace) => {
     if (!mayLeave()) return
@@ -186,6 +202,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         filesState.current = { dirty: false, busy: false }
         setCloseNotice("")
         setProjectPath(null)
+        setUnifyRequest({ place: "", count: 0 })
         if (place) {
           restoreTrigger.current = true
           scopedTrigger.current = null
@@ -228,11 +245,12 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
           <p>檢視這台機器的專案設定與指令檔案；可在下方編輯現有的專案檔案。缺少的設定仍可先交給 AI 檢查。</p>
           {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>配置完整</small></span>}
         </div>
-        {projectPath && visiblePlaces[0] && <ProjectUnify key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
+        {projectPath && visiblePlaces[0] && <ProjectUnify key={visiblePlaces[0].id} place={visiblePlaces[0]}
+          openRequest={unifyRequest.place === visiblePlaces[0].id ? unifyRequest.count : 0} />}
         {projectPath && visiblePlaces[0] && <ProjectFiles key={visiblePlaces[0].id} place={visiblePlaces[0]} onState={updateFilesState} />}
         {loading && <p className="project-setup-loading" role="status">讀取專案配置中…</p>}
         {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
-          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} />)}
+          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} openUnify={openUnify} />)}
         </ol>}
         {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? "目前讀不到這個專案的設定，請重新讀取。" : <>這台機器還沒有可檢查的專案。先在該目錄開過一次 assistant，或用 <code>clawdline project add</code> 登記。</>}</p>}
         {error && <p role="alert">{error}</p>}

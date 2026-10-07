@@ -73,3 +73,47 @@ test("an older daemon is shown as unknown instead of making up missing configura
   assert.equal(projectSetupProgress(place), null)
   assert.equal(projectSetupCapabilities(place)[0]?.tone, "unknown")
 })
+
+const base = {
+  icon: "override" as const, deploy: "not_applicable" as const, deploy_activity: "unknown" as const,
+  servers: "ready" as const, server_count: 1, sync: "ready" as const,
+}
+
+test("the Claude／Codex 共用 row says 已共用, 有落差 with its count, or 未知, and opens the unify preview", () => {
+  const row = (setup: object) => projectSetupCapabilities({ id: "shop", label: "Shop", path: "/work/shop", setup: setup as any })
+    .find(capability => capability.key === "unify")
+  const unified = row({ ...base, unify: "unified" })
+  assert.equal(unified?.label, "Claude／Codex 共用")
+  assert.equal(unified?.detail, "已共用")
+  assert.equal(unified?.tone, "ready")
+  assert.equal(unified?.action, "unify")
+  const drifting = row({ ...base, unify: "drifting", unify_count: 3 })
+  assert.equal(drifting?.detail, "有落差（3 項）")
+  assert.equal(drifting?.tone, "attention")
+  assert.equal(drifting?.complete, false)
+  assert.equal(drifting?.action, "unify")
+  const unknown = row({ ...base, unify: "unknown" })
+  assert.match(unknown?.detail ?? "", /^未知/)
+  assert.equal(unknown?.tone, "unknown")
+  assert.equal(unknown?.action, "unify", "the preview says what could not be read")
+  assert.deepEqual(projectSetupProgress({ id: "shop", label: "Shop", path: "/work/shop", setup: { ...base, unify: "drifting", unify_count: 3 } as any }),
+    { complete: 3, total: 4 }, "drifting counts against the score")
+})
+
+test("a machine that sends no unify status shows 未知, never 已共用 or a zero count, and is left out of the score", () => {
+  const place = { id: "shop", label: "Shop", path: "/work/shop", setup: base }
+  const row = projectSetupCapabilities(place).find(capability => capability.key === "unify")
+  assert.match(row?.detail ?? "", /^未知/)
+  assert.doesNotMatch(row?.detail ?? "", /0/)
+  assert.equal(row?.tone, "unknown")
+  assert.equal(row?.applicable, false)
+  assert.equal(row?.action, undefined, "an older machine has no unify route to open")
+  assert.deepEqual(projectSetupProgress(place), { complete: 3, total: 3 })
+})
+
+test("the readiness card's unify row opens the scoped Project view and its unify preview", () => {
+  const source = readFileSync(new URL("./ProjectSetup.tsx", import.meta.url), "utf8")
+  assert.match(source, /row\.action === "unify"/)
+  assert.match(source, /openUnify\(place\)/)
+  assert.match(source, /<ProjectUnify [^>]*openRequest=/)
+})

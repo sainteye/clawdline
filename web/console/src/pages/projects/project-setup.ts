@@ -1,7 +1,33 @@
+import type { ProjectSetup, ProjectUnifyStatus } from "@clawdline/contract"
 import type { ProjectPlace, ProjectSetupEvidence } from "../work/api.js"
 
 export type SetupTone = "ready" | "missing" | "attention" | "not-applicable" | "unknown"
-export interface SetupCapability { key: string; label: string; detail: string; tone: SetupTone; complete: boolean; applicable: boolean }
+/** `action: "unify"` is a row whose button opens that Project's unify preview. */
+export interface SetupCapability {
+  key: string; label: string; detail: string; tone: SetupTone; complete: boolean; applicable: boolean; action?: "unify"
+}
+
+/** The places answer's setup with the unify fields the machine adds (api/v1 ProjectSetup). */
+type SetupWithUnify = ProjectSetupEvidence & Pick<ProjectSetup, "unify" | "unify_count">
+
+const unifyTone: Record<ProjectUnifyStatus, SetupTone> = { unified: "ready", drifting: "attention", unknown: "unknown" }
+
+/**
+ * Whether this Project's Claude and Codex sessions read the same rules and
+ * skills, from the machine's unify plan. A daemon older than the field sends
+ * none: that is 未知 and left out of the score, never 已共用. A count the
+ * machine did not send is not shown as 0.
+ */
+function unifyCapability(setup: SetupWithUnify): SetupCapability {
+  const status = setup.unify
+  const detail = status === "unified" ? "已共用"
+    : status === "drifting" ? (typeof setup.unify_count === "number" && setup.unify_count > 0 ? `有落差（${setup.unify_count} 項）` : "有落差")
+      : status === "unknown" ? "未知：有規則檔或 skill 讀不到" : "未知：這台機器的 Clawdline 還不會回報"
+  return {
+    key: "unify", label: "Claude／Codex 共用", detail, tone: status ? unifyTone[status] : "unknown",
+    complete: status === "unified", applicable: status !== undefined, action: status ? "unify" : undefined,
+  }
+}
 
 const iconWords: Record<ProjectSetupEvidence["icon"], string> = {
   mirrored: "已從來源機器同步",
@@ -18,7 +44,7 @@ const activityWords: Record<ProjectSetupEvidence["deploy_activity"], string> = {
   unknown: "尚無目前狀態",
 }
 
-/** The four visible facts and their human consequence, kept out of JSX so
+/** The visible facts and their human consequence, kept out of JSX so
  * loading an older daemon can be tested as an explicit unknown state. */
 export function projectSetupCapabilities(place: ProjectPlace): SetupCapability[] {
   const setup = place.setup
@@ -43,6 +69,7 @@ export function projectSetupCapabilities(place: ProjectPlace): SetupCapability[]
     { key: "deploy", label: "Deploy 進度", detail: deployDetail, tone: deployTone, complete: setup.deploy === "ready", applicable: setup.deploy !== "not_applicable" },
     { key: "servers", label: "開發服務", detail: serverDetail, tone: setup.servers === "ready" ? "ready" : setup.servers === "attention" ? "attention" : "missing", complete: setup.servers === "ready", applicable: true },
     { key: "sync", label: "跨機器識別", detail: setup.sync === "ready" ? "已用 origin 對應同一個 Project" : "尚未設定 origin", tone: setup.sync, complete: setup.sync === "ready", applicable: true },
+    unifyCapability(setup),
   ]
 }
 

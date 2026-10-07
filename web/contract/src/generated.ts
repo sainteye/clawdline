@@ -4696,6 +4696,20 @@ export interface ProjectSetup {
   server_count: number
   servers: ProjectServerSetup
   sync: ProjectSyncSetup
+
+  /**
+   * Whether this Project's Claude and Codex sessions read the same rules and
+   * skills: the status of the unify plan (GET /v1/projects/:id/unify), read from
+   * disk with the same bounded, read-only Plan. Absent from a daemon older than
+   * this field, which a console shows as unknown.
+   */
+  unify?: ProjectUnifyStatus
+
+  /**
+   * With `unify: drifting`, how many planned changes and conflicts the plan holds;
+   * each counts once. Absent otherwise.
+   */
+  unify_count?: number
 }
 
 /**

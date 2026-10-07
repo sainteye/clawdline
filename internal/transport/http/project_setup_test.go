@@ -3,6 +3,7 @@ package http
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/contract"
@@ -69,5 +70,48 @@ func TestProjectSetupNamesInapplicableAndBrokenEvidence(t *testing.T) {
 	}
 	if setup.Sync != contract.ProjectSyncSetupReady {
 		t.Errorf("remote identity = %q", setup.Sync)
+	}
+}
+
+// The readiness card's unify row is the unify plan's own status: shared,
+// drifting with how many items, or unknown when the plan could not read
+// something — never shared by default.
+func TestProjectSetupCarriesTheUnifyStatusOfThePlan(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAWDLINE_SWIFT_DIR", filepath.Join(home, "absent-swift"))
+	write := func(dir, name, text string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	unified := filepath.Join(home, "unified")
+	write(unified, "AGENTS.md", "# Rules\n")
+	if got := projectSetup(unified, "", icon.SourceGenerated); got.Unify != contract.ProjectUnifyStatusUnified || got.UnifyCount != 0 {
+		t.Errorf("AGENTS.md alone: unify %q count %d", got.Unify, got.UnifyCount)
+	}
+
+	// CLAUDE.md without the import is one action (add the import); a skill
+	// only Claude has is another.
+	drifting := filepath.Join(home, "drifting")
+	write(drifting, "AGENTS.md", "# Rules\n")
+	write(drifting, "CLAUDE.md", "")
+	write(filepath.Join(drifting, ".claude", "skills", "review"), "SKILL.md", "---\nname: review\n---\n")
+	if got := projectSetup(drifting, "", icon.SourceGenerated); got.Unify != contract.ProjectUnifyStatusDrifting || got.UnifyCount != 2 {
+		t.Errorf("an import and a skill to share: unify %q count %d", got.Unify, got.UnifyCount)
+	}
+
+	tooLarge := filepath.Join(home, "too-large")
+	write(tooLarge, "AGENTS.md", strings.Repeat("x", 129<<10))
+	if got := projectSetup(tooLarge, "", icon.SourceGenerated); got.Unify != contract.ProjectUnifyStatusUnknown || got.UnifyCount != 0 {
+		t.Errorf("an AGENTS.md past the read limit: unify %q count %d", got.Unify, got.UnifyCount)
+	}
+	if got := projectSetup(filepath.Join(home, "gone"), "", icon.SourceGenerated); got.Unify != contract.ProjectUnifyStatusUnknown {
+		t.Errorf("a place no longer on disk: unify %q", got.Unify)
 	}
 }
