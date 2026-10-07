@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 // @ts-expect-error -- `.ts` paths let Node's strip-types runner execute this test.
-import { decoratePinnedWorktree, fixedWorktreeWord, localizeWorktreeStatus } from "./pinned-worktree-copy.ts"
+import { decoratePinnedWorktree, fixedWorktreeWord, hideUnrecordedWorktreeFacts, localizeWorktreeStatus } from "./pinned-worktree-copy.ts"
 
 test("worktree labels from both pinned branches resolve to one catalog key", () => {
   assert.deepEqual(fixedWorktreeWord("已落地、內容相同的殘留工作樹", ["landedIdentical"]),
@@ -42,4 +42,50 @@ test("the pinned lifecycle adapter settles after one mutation and keeps counts",
   assert.deepEqual([summary.writes, status.writes], [1, 1])
   decorate()
   assert.deepEqual([summary.writes, status.writes], [1, 1])
+})
+
+test("foreign worktrees lose unrecorded task fields without losing observed facts", () => {
+  const make = () => ({ removed: false, dataset: {}, remove() { this.removed = true } })
+  const owner = make(), purpose = make(), story = make(), lifecycle = make(), nextOwner = make()
+  const facts = Array.from({ length: 5 }, make)
+  const nodes: Record<string, ReturnType<typeof make>> = {
+    ".worktree-owner, .worktree-owner-link": owner,
+    ".worktree-purpose": purpose,
+    ".worktree-story": story,
+    ".worktree-lifecycle-facts": lifecycle,
+    ".worktree-next-owner": nextOwner,
+  }
+  const card = {
+    querySelector(selector: string) { return nodes[selector]?.removed ? null : nodes[selector] ?? null },
+    querySelectorAll(selector: string) {
+      return selector === ".worktree-lifecycle-facts .worktree-fact"
+        ? facts.filter(fact => !fact.removed) : []
+    },
+  }
+  const row = {
+    owner: { title: "", evidence: "not_a_clawdline_managed_worktree" },
+    context: { purpose: "", state: "unknown", originSession: { title: "" } },
+  }
+  hideUnrecordedWorktreeFacts(card as never, row)
+  hideUnrecordedWorktreeFacts(card as never, row)
+  assert.deepEqual([owner, purpose, story, lifecycle, nextOwner].map(node => node.removed),
+    [true, true, true, true, true])
+  assert.equal(facts.every(fact => fact.removed), true)
+})
+
+test("recorded worktree facts survive repeated decoration even with missing dates", () => {
+  const make = () => ({ removed: false, dataset: {} as Record<string, string>, remove() { this.removed = true } })
+  const facts = Array.from({ length: 5 }, make)
+  const card = {
+    querySelector() { return null },
+    querySelectorAll() { return facts.filter(fact => !fact.removed) },
+  }
+  const row = {
+    owner: { title: "Release root", evidence: "exact_task_worktree_record" },
+    context: { purpose: "Release", createdAt: "2026-10-08T00:00:00Z", state: "success",
+      originSession: { title: "Release root" } },
+  }
+  hideUnrecordedWorktreeFacts(card as never, row)
+  hideUnrecordedWorktreeFacts(card as never, row)
+  assert.deepEqual(facts.map(fact => fact.removed), [false, true, true, false, false])
 })
