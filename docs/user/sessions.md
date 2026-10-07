@@ -69,6 +69,20 @@ The **⋯** menu (**Session 快捷動作**) holds the rest:
 
 **Check:** your message appears in the transcript, and the row goes back to working.
 
+## Attention notes from Agents
+
+An Agent can leave a concrete request for you above a Session conversation: something to read,
+answer or do. Open the **關注** (attention) control in the Session header when it has a red dot.
+The card explains the action and why the Agent needs you. With multiple suggested replies,
+tapping one sends that message to the Session and resolves the note after the send is accepted.
+With one suggestion or none, the button fills the message box; you can edit it and press
+**送出** yourself. You can also mark a note **移到已處理** (handled), which clears it without
+sending or approving anything. The Agent can continue unrelated work while the note waits.
+
+These notes are separate from a terminal permission prompt and from a Board decision with a
+deadline. A note alone does not send a push notification; if the Agent is blocked, its Session
+still needs a waiting state and an attention notification. [Human intervention notes](../human-interventions.md)
+
 ## Dictate
 
 Press the microphone (**用說的寫一則訊息**, dictate a message), speak, and press it again

@@ -24,13 +24,13 @@ Some historical design and migration records remain in Traditional Chinese.
 | --- | --- | --- | --- |
 | [user/install.md](user/install.md) | User page | English | Build, start the daemon, open the console, and see a session in the list |
 | [user/platforms.md](user/platforms.md) | User page | English | The macOS app, a Linux `systemd --user` service, and what Windows can do |
-| [user/sessions.md](user/sessions.md) | User page | English | Read the list, open a session, answer, send pictures and snippets, dictate, start, stop and close |
+| [user/sessions.md](user/sessions.md) | User page | English | Read the list, answer Agent attention notes, send messages, start, stop and close Sessions |
 | [user/keyboard-shortcuts.md](user/keyboard-shortcuts.md) | User page | English | Every key the console answers to |
 | [user/notifications.md](user/notifications.md) | User page | English | Web Push on a computer or phone: turning it on, what you are told about, a test |
 | [user/remote-access.md](user/remote-access.md) | User page | English | Another computer over SSH, a phone over your own tunnel, and Clawdline Cloud pairing and permissions |
 | [user/schedules.md](user/schedules.md) | User page | English | Scheduled tasks on the local clock, and schedule webhooks on Cloud Pro |
-| [user/board.md](user/board.md) | User page | English | The Board, session to-dos and things waiting to be verified |
-| [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The agent skill, dispatching children, landing, handoff, and the machine-workspace coordinator |
+| [user/board.md](user/board.md) | User page | English | The Board, direct Session to-dos that wait without interrupting a turn, and later verification |
+| [user/clawdfather-and-dispatch.md](user/clawdfather-and-dispatch.md) | User page | English | The Agent skill, dispatching children, callbacks for long commands, landing, handoff, and machine coordination |
 | [clawdfather-role.md](clawdfather-role.md) | Decision | English | Board ownership and Clawdfather machine stewardship |
 | [user/projects.md](user/projects.md) | User page | English | Adding projects, the Projects page, and bringing project settings to another machine |
 | [user/usage.md](user/usage.md) | User page | English | Token bills by category, assistant quotas, the compaction window and capacity |

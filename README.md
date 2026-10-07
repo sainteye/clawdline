@@ -13,6 +13,11 @@ session hand work to another and prove that it landed. Your agents and code stay
 optional Clawdline Cloud reaches it from a phone or other machines through an end-to-end encrypted
 relay.
 
+Work does not have to occupy one long turn. A Session can leave a long-running command with the
+daemon and return when it finishes; an Agent can leave a concrete request for you in the Session's
+attention panel; and you can save future work as a Session to-do without interrupting its current
+turn.
+
 <p align="center">
   <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline updating the state of several Claude Code and Codex sessions.">
 </p>
@@ -42,6 +47,16 @@ relay.
   gets the result back, or hands its whole line of work to a successor. Claims stop overlapping
   writes, and Clawdline records whether the work actually reached the branch, not only that the
   child finished. [Dispatch and landing](docs/user/clawdfather-and-dispatch.md)
+- **Callbacks for long waits.** A Session can hand a long-running command to the daemon, end its
+  turn, and receive a completion notice. This replaces repeated polling with a completion
+  follow-up; actual token savings depend on the provider, context size and cache pricing. A callback
+  does not start a child Session. [Callbacks](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
+- **Notes when a person is needed.** An Agent can leave a concrete question or action in a
+  Session's attention panel, with suggested replies when there is a choice. You can answer from
+  there; the Agent continues independent work in the meantime. [Attention notes](docs/user/sessions.md#attention-notes-from-agents)
+- **To-dos for later.** Add a direct to-do to a Session while it is busy. The row stays there for
+  the Session to pick up later; adding it does not send a message or wake the Session.
+  [Session to-dos](docs/user/board.md#session-to-dos)
 - **A Board that follows delivery.** Assign a Feature, Issue or Epic to a session and follow it
   through implementation, verification, merge and deployment, each phase with evidence. Planning
   is on by default: Features and Epics need a plan and an independent review before work starts.
@@ -112,7 +127,10 @@ schedules — when the hard part is running several agents reliably over time.
   [Remote access](docs/user/remote-access.md) · [Notifications](docs/user/notifications.md) ·
   [Usage](docs/user/usage.md)
 - Coordinate work: [Dispatch and landing](docs/user/clawdfather-and-dispatch.md) ·
-  [Board](docs/user/board.md) · [Schedules](docs/user/schedules.md)
+  [Callbacks](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands) ·
+  [Attention notes](docs/user/sessions.md#attention-notes-from-agents) ·
+  [Session to-dos](docs/user/board.md#session-to-dos) · [Board](docs/user/board.md) ·
+  [Schedules](docs/user/schedules.md)
 - Projects and machines: [Projects](docs/user/projects.md) · [Updates](docs/updates.md)
 - Website guides: [clawdline.com/docs](https://clawdline.com/docs/)
 - Building on it: [architecture.md](docs/architecture.md), [AGENTS.md](AGENTS.md),

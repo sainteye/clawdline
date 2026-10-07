@@ -81,6 +81,22 @@ the console:
 clawdline session report --summary "The parser test is in and passing"
 ```
 
+## Callbacks for long commands
+
+When a command such as a build, test run or deployment will take longer than the current turn,
+the owning Session can hand it to the daemon with `clawdline callback`. The Session ends its turn;
+the daemon runs the command once and sends a completion notice with its exit result. The Session
+then checks that task's result with `clawdline task show` before reporting an outcome. A callback
+uses no child Session slot and makes no Git landing claim.
+
+Use this when the work is a command that can run without Agent decisions. It avoids repeated
+polling turns and their context reloads, replacing them with a completion follow-up; it does not
+guarantee a fixed token or price saving.
+Timeout or cancellation settles the callback; a failed or uncertain command needs inspection
+before any retry. Callbacks run on macOS and Linux; Windows reports
+`no_callback_capability`. The installed Agent guide has the current command syntax:
+`clawdline guide callback`.
+
 ## 4. Hand off a line of work
 
 When a session is too full or should stop, it can hand its line of work to a new session. It

@@ -12,6 +12,10 @@ Clawdline 是在 macOS 與 Linux 上執行的本機 daemon，附網頁主控台�
 把工作交給另一個，並證明結果真的合併進去了。Agent 與程式碼都留在你的機器上；選用的
 Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回來。
 
+工作不必一直占著同一輪對話。Session 可以把耗時命令交給常駐服務，等完成時再回來；Agent
+可以在 Session 的「關注」面板留下需要你處理的事；你也能先替忙碌中的 Session 記下待辦，
+不打斷它眼前的工作。
+
 <p align="center">
   <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline 即時更新多個 Claude Code 與 Codex Session 的狀態。">
 </p>
@@ -39,6 +43,15 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 - **派工，並留下合併證據。** Session 可以把範圍明確的工作派給子 Session、收回結果，或把整條
   工作線交接給新的 Session。寫入範圍（claims）會擋住彼此重疊的修改；Clawdline 記錄的是工作
   有沒有真的進到分支，而不只是子 Session 說它做完了。[派工與合併確認](docs/user/clawdfather-and-dispatch.md)
+- **耗時工作交給 callback 等結果。** Session 把命令交給常駐服務後可以結束這一輪，完成時再由
+  通知接續；以完成後的一次接續取代反覆查詢。實際省下多少 token 仍取決於模型供應商、
+  context 大小與快取價格。
+  Callback 不會另開子 Session。[Callback](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
+- **Agent 用便條紙請你處理。** Agent 可以在 Session 的「關注」面板留下具體問題或動作；需要
+  選擇時附上建議回覆。你可在那裡回覆，Agent 也能先做不依賴答案的事。
+  [關注便條紙](docs/user/sessions.md#attention-notes-from-agents)
+- **替稍後的工作記待辦。** 在 Session 忙碌時直接新增待辦，留給它稍後領取；新增待辦不會
+  傳訊息，也不會喚醒 Session。[Session 待辦](docs/user/board.md#session-to-dos)
 - **一路追到交付的看板。** 把 Feature、Issue 或 Epic 指派給 Session，跟著它經過實作、驗證、
   合併與部署，每個階段都要附證據。規劃預設開啟：Feature 與 Epic 開工前要先有計畫，並通過獨立
   審查。需要你決定的問題會直接出現在卡片上。看板本身預設關閉，要先在設定裡開啟。
@@ -125,7 +138,10 @@ IDE，也不取代 Claude Code 或 Codex：它管理你本來就會開的 Sessio
   [疑難排解](docs/user/troubleshooting.md)
 - 基本功能：[Session](docs/user/sessions.md)・[快捷鍵](docs/user/keyboard-shortcuts.md)・
   [遠端連線](docs/user/remote-access.md)・[通知](docs/user/notifications.md)・[用量](docs/user/usage.md)
-- 協調工作：[派工與合併確認](docs/user/clawdfather-and-dispatch.md)・[看板](docs/user/board.md)・
+- 協調工作：[派工與合併確認](docs/user/clawdfather-and-dispatch.md)・
+  [Callback](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)・
+  [關注便條紙](docs/user/sessions.md#attention-notes-from-agents)・
+  [Session 待辦](docs/user/board.md#session-to-dos)・[看板](docs/user/board.md)・
   [排程](docs/user/schedules.md)
 - 專案與多台機器：[專案](docs/user/projects.md)・[更新](docs/updates.md)
 - 網站指南：[clawdline.com/docs](https://clawdline.com/docs/)

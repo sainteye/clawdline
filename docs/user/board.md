@@ -88,6 +88,11 @@ Open a session and use the **Session 待辦** (session to-dos) fold: it lists th
 ones it recently finished, and direct to-dos. Press **+** to add one. Press an empty checkbox to
 complete a direct to-do, or its checked checkbox to restore it as unfinished.
 
+A direct to-do is a pull queue for future work. Adding one records your intent without sending a
+conversation message or interrupting the current turn. The Session can pick it up when it next
+checks its work. An idle Session cannot poll its to-dos by itself: if you need it to act now, use
+**送出** (Send) in the conversation instead. Keep larger, independently tracked work on the Board.
+
 A session adds its own to-dos only when you ask it to, with:
 
 ```sh
