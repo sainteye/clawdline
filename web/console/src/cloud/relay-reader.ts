@@ -1757,11 +1757,11 @@ function json(status: number, body: unknown): Response {
 
 /**
  * A relay row as the console's list takes it. The machine's own row is kept whole;
- * the relay's routing key is dropped, and `machine` stays, so the list can say
- * which machine a row is on rather than "this machine" (`legacy/bridge.ts`).
+ * the relay's routing key stays as an explicit identity for actions such as
+ * opening documents. `machine` also stays so the list can name the machine.
  */
 function consoleRow(row: CloudRow): SessionRow {
-  const { identity: _identity, optimisticIdentity: _optimistic, ...rest } = row as CloudRow & { optimisticIdentity?: unknown }
+  const { optimisticIdentity: _optimistic, ...rest } = row as CloudRow & { optimisticIdentity?: unknown }
   return { ...rest, id: typeof row.id === "string" && row.id ? row.id : String(row.session ?? "") } as unknown as SessionRow
 }
 

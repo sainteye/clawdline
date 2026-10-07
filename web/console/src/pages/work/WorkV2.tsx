@@ -910,6 +910,10 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     <ClaimedViaNote item={item} />
     {!plan && conversionPanel}
     {foldDescription ? <WorkDescription key={item.id} description={item.description} id={item.id} /> : <p>{item.description}</p>}
+    {!epic && !!item.acceptance_criteria?.trim() && <section className="work-item-acceptance" aria-label="驗收條件">
+      <h4>驗收條件 <small>版本 {item.acceptance_version}</small></h4>
+      <div dangerouslySetInnerHTML={{ __html: L.richTextHTML(item.acceptance_criteria) }} />
+    </section>}
     {convertible && plan && <div className="work-convert-entry">
       <button className="work-convert-cta" type="button" disabled={!!busy} aria-expanded={converting}
         aria-controls={`work-convert-${item.id}`}

@@ -674,7 +674,7 @@ function SquadPageView({ shown, api = squadApi }: { shown: boolean; api?: SquadA
         <aside className="squad-rail" aria-labelledby="squad-teams-title"><div className="squad-panel-head"><h2 id="squad-teams-title">小隊</h2><span>{data.teams.length} 組</span></div>
           <div className="squad-teams" role="group" aria-label="小隊篩選"><button type="button" aria-pressed={!team} onClick={() => setTeam("")}>全部角色 <small>{data.personas.length}</small></button>
             {data.teams.map((item) => <button key={item.id} type="button" aria-pressed={team === item.id} onClick={() => setTeam(item.id)}>{item.name}<small>{data.personas.filter((row) => row.teamIds.includes(item.id)).length}</small></button>)}
-          </div><div className="squad-pack-actions"><h3>技能資料包</h3><p>讀入前會預覽來源、授權與衝突；預設匯出不含私人設定。</p>
+          </div><p className="squad-scroll-hint">左右捲動查看更多小隊</p><div className="squad-pack-actions"><h3>技能資料包</h3><p>讀入前會預覽來源、授權與衝突；預設匯出不含私人設定。</p>
             <button type="button" onClick={(event) => openPack("import", event.currentTarget)}>讀入資料包</button>
             <button type="button" onClick={(event) => openPack("export", event.currentTarget)}>匯出資料包</button></div></aside>
         <div className="squad-roster" aria-labelledby="squad-roster-title"><div className="squad-panel-head"><div><h2 id="squad-roster-title">角色名冊</h2><p>選一位角色查看完整定義與技能。</p></div><span>{shownPersonas.length} 位角色</span></div>

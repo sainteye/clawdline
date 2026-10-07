@@ -31,6 +31,7 @@
 .squad-teams button { display: flex; justify-content: space-between; align-items: center; gap: 7px; width: 100%; padding: 8px 12px; border-color: transparent; background: transparent; text-align: left; font-size: 13px; }
 .squad-teams button[aria-pressed="true"] { border-color: var(--accent-ed); background: var(--accent-in); }
 .squad-teams small { color: var(--dim); font: 11px var(--mono); }
+.squad-scroll-hint { display: none; }
 .squad-pack-actions { display: grid; gap: 8px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .squad-pack-actions h3 { margin: 0; font-size: 13px; }
 .squad-pack-actions p { margin: 0; color: var(--dim); font-size: 12px; }
@@ -176,6 +177,7 @@
   .squad-rail { margin-bottom: 18px; padding: 12px; }
   .squad-teams { display: flex; overflow-x: auto; gap: 5px; padding-bottom: 7px; }
   .squad-teams button { flex: none; width: auto; white-space: nowrap; }
+  .squad-scroll-hint { display: block; margin: 0 0 12px; color: var(--dim); font-size: 11px; }
   .squad-pack-actions { grid-template-columns: 1fr 1fr; align-items: center; }
   .squad-pack-actions h3, .squad-pack-actions p { grid-column: 1 / -1; }
   .squad-roster { margin-bottom: 18px; }

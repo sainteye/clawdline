@@ -200,7 +200,8 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
   const offered = (id: string) => ready(id) && !tooOld(id)
   const tooOldTitle = (id: string) => tooOld(id) ? nextWord("machineNeedsUpdate") : undefined
   const tooOldMark = (id: string) => tooOld(id) ? <small className="sidebar-needs-update"> · {nextWord("machineNeedsUpdateShort")}</small> : null
-  const [page, setPage] = useState<Page>(() => hasDocumentIntent(location.hash) ? "documents" : "sessions")
+  const [page, setPage] = useState<Page>(() => location.pathname === "/billing/done"
+    ? "plan" : hasDocumentIntent(location.hash) ? "documents" : "sessions")
   const [menu, setMenu] = useState(false)
   // The machine dashboard, opened from the counts (machine/MachineDashboard.tsx).
   const [machine, setMachine] = useState(false)
@@ -972,6 +973,8 @@ function Counts({
       id="counts"
       role="button"
       tabIndex={0}
+      data-waiting={waiting > 0 ? "true" : undefined}
+      aria-label={bits.map((bit) => bit.text).join(" · ")}
       title={sessionReadingChinese() ? "機器負載：CPU、記憶體與各 session 的用量" : "Machine load: CPU, memory and each session's share"}
       onClick={onOpen}
       onKeyDown={(event) => {

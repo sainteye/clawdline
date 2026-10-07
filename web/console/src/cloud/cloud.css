@@ -26,6 +26,19 @@
 .cloud-switcher {
     position: relative; flex: 0 1000 auto; min-width: 84px; max-width: 34vw;
 }
+@media (max-width: 390px) {
+    /* Keep the request for attention legible in the narrow Cloud header. */
+    .counts[data-waiting="true"] .part:not(.waiting) { display: none; }
+    .counts[data-waiting="true"] { overflow: visible; text-overflow: clip; }
+    .counts[data-waiting="true"] .waiting::before { content: none; padding: 0; }
+}
+@media (max-width: 360px) {
+    :root { --head-h: 76px; }
+    .top { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 32px 20px; align-content: center; row-gap: 2px; }
+    .top .brand { grid-column: 1; grid-row: 1; }
+    .top .counts { grid-column: 1 / -1; grid-row: 2; }
+    .top .cloud-switcher { grid-column: 2; grid-row: 1; justify-self: end; width: 100%; max-width: none; }
+}
 .cloud-switch {
     display: flex; align-items: center; gap: 6px;
     width: 100%; min-width: 0;
@@ -111,7 +124,6 @@
     .cloud-switcher { max-width: 42vw; }
     .cloud-switch-menu { position: fixed; top: calc(var(--head-h) + 8px); right: 8px; }
 }
-
 /* Forgetting a machine. The gate has no sheet furniture of its own, so this is
    `sheets.css`'s written again in the door's tokens: the destructive chip on
    the far side of the row it acts on, and the question's two answers laid out

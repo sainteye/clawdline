@@ -2,19 +2,17 @@
 //
 // `js/view/plan.js` is the Swift app's, byte for byte, and so is the one module
 // it imports, `js/net/billing.js` (for the simulation panel's words). It is
-// bound here as that app's `main.js` binds it on the page the Mac serves:
+// bound here as that app's `main.js` binds it for the two environments:
 //
-// - `billing` is null. That is the local transport's answer and not a failure:
-//   this copy of the page has no Cloud account to charge, and the module draws
-//   its `not_here` state — Free, a sentence saying so, and a link to the hosted
-//   console — with no button that could start a payment.
-// - `signInURL` answers the empty string, which the module takes as "nowhere
-//   to go".
+// - A hosted, signed-in browser uses its Cloud account's API origin for plan
+//   reads and the existing checkout/portal controls.
+// - A page served by a machine has no Cloud account and keeps the copied
+//   module's `not_here` state.
 // - `consoleOrigin` is the hosted console's, as the original's is when it has no
 //   Cloud configuration.
-// - `navigate` is left to the module's default. With no billing client nothing
-//   calls it.
+// - `navigate` is left to the module's default for checkout and portal URLs.
 import { bindPlanPage as bindPlanPageOriginal } from "./js/view/plan.js"
+import { createBillingClient } from "./js/net/billing.js"
 
 /** What `bindPlanPage` hands back. */
 export interface PlanPage {
@@ -55,15 +53,18 @@ export const PLAN_ELEMENT_IDS = [
 /** `main.js`'s default when there is no Cloud configuration. */
 export const PLAN_CONSOLE_ORIGIN = "https://app.clawdline.com"
 
-/** Bind the page once its markup is in the document, with the local seams. */
-export function bindPlan(doc: Document): PlanPage {
+/** Bind the page once its markup is in the document, with the account if there is one. */
+export function bindPlan(doc: Document, apiOrigin: string | null = null): PlanPage {
   const elements: Record<string, HTMLElement | null> = {}
   for (const id of PLAN_ELEMENT_IDS) elements[id] = doc.getElementById(id)
+  const billing = apiOrigin ? createBillingClient({ apiOrigin }) : null
   return (bindPlanPageOriginal as (elements: Record<string, HTMLElement | null>, seams: Record<string, unknown>) => PlanPage)(
     elements,
     {
-      billing: null,
-      signInURL: () => "",
+      billing,
+      signInURL: () => apiOrigin
+        ? `${apiOrigin}/v1/auth/oauth/start?return_to=${encodeURIComponent(location.origin + "/#page=plan")}`
+        : "",
       consoleOrigin: PLAN_CONSOLE_ORIGIN,
     },
   )

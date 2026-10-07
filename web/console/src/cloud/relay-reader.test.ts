@@ -6,6 +6,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import type { SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
+import { documentIdentityForSession } from "../legacy/js/net/document-links.js"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, headerReadDiagnostics, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
 
@@ -161,14 +162,15 @@ async function body<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-test("the list is the chosen machine's rows, with the machine kept and the relay's key dropped", async () => {
+test("the list keeps each selected row's document identity", async () => {
   const client = new FakeClient()
   client.rows = [row("mac-a", "s1"), row("mac-b", "s2"), row("mac-a", "s3")]
   const r = reader(client, { t: 1000 })
   const snap = await body<SessionsSnapshot>(await r.fetch("/v1/sessions"))
   assert.deepEqual(snap.sessions.map((s) => s.id), ["s1", "s3"])
   assert.equal((snap.sessions[0] as unknown as { machine: string }).machine, "mac-a")
-  assert.equal("identity" in snap.sessions[0], false)
+  assert.deepEqual(snap.sessions[0].identity, { machine: "mac-a", session: "s1" })
+  assert.deepEqual(documentIdentityForSession(snap.sessions, "s1", "cloud"), { machine: "mac-a", session: "s1" })
 })
 
 test("refresh asks the machine to restate quiet Sessions after the first list", async () => {

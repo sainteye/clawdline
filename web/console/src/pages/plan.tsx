@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type MouseEvent } from "react"
 import type { PageModule } from "./types.js"
 import { bindPlan, type PlanPage } from "../legacy/plan-bridge.js"
+import { useCloudAccount } from "../cloud/account-context.js"
 import sectionMarkup from "./plan/section.html?raw"
 
 /**
@@ -11,10 +12,8 @@ import sectionMarkup from "./plan/section.html?raw"
  * (index.html lines 960–1001), whitespace included, and the copied module
  * fills it. React owns the section element and nothing inside it.
  *
- * This is the page the Mac serves, so there is no billing client, and the
- * module draws the state it draws for exactly that: `not_here` — Free, the
- * sentence that plans are managed in the hosted console, and a link there.
- * No control on it can start a payment. See legacy/plan-bridge.ts.
+ * A hosted browser uses its signed-in Cloud account to read its real plan;
+ * the local console keeps the copied module's `not_here` state.
  *
  * What the original's `main.js` and page registry do for this page is done
  * here: bind once, `enter` on arrival, `leave` on departure, the keyboard lands
@@ -22,31 +21,40 @@ import sectionMarkup from "./plan/section.html?raw"
  * `data-page-to` goes where it says. Escape is App's, as for every page but the
  * list.
  *
- * Not carried over, because both are the hosted console's: the wait for a
- * checkout webhook (`returning`, which with no billing client ends in the same
- * `not_here` state) and holding the Cloud door back while the page is open.
+ * The hosted checkout returns to `/billing/done`. This page recognizes that
+ * arrival and lets the copied module wait for the entitlement webhook.
  */
 function PlanPageView({ shown }: { shown: boolean }) {
+  const account = useCloudAccount()
   const page = useRef<PlanPage | null>(null)
-  const was = useRef(false)
+  const boundOrigin = useRef<string | null>(null)
+  const entered = useRef(false)
+  const checkoutReturn = useRef(location.pathname === "/billing/done")
 
   useLayoutEffect(() => {
-    if (!page.current) page.current = bindPlan(document)
-  }, [])
-
-  useLayoutEffect(() => {
-    if (shown === was.current) return
-    was.current = shown
+    const origin = account?.apiOrigin ?? null
+    if (!page.current || boundOrigin.current !== origin) {
+      page.current?.leave()
+      page.current = bindPlan(document, origin)
+      boundOrigin.current = origin
+      entered.current = false
+    }
     if (!shown) {
       page.current?.leave()
+      entered.current = false
       return
     }
+    const returning = !!account && checkoutReturn.current
+    if (returning) history.replaceState(history.state, "", "/#page=plan")
+    if (entered.current) return
     // `enter` paints the page's furniture from the catalog, so on a cold start
     // at `#page=plan` it waits for the words, as the original's `paintLabels`
     // is written to.
     const arrive = () => {
-      if (!was.current) return
-      void page.current?.enter()
+      if (!shown || entered.current) return
+      entered.current = true
+      checkoutReturn.current = false
+      void page.current?.enter({ returning })
       document.getElementById("plan-title")?.focus({ preventScroll: true })
     }
     const root = document.documentElement
@@ -61,7 +69,7 @@ function PlanPageView({ shown }: { shown: boolean }) {
     })
     watch.observe(root, { attributes: true, attributeFilter: ["class"] })
     return () => watch.disconnect()
-  }, [shown])
+  }, [shown, account?.apiOrigin])
 
   return (
     <section
