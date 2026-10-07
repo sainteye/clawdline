@@ -59,7 +59,7 @@ var Order = []string{
 	"architect", "backend", "frontend", "minimal-change",
 	"code-reviewer", "reality-checker", "security", "technical-writer",
 	"seo", "content-writer", "ai-search", "social-media",
-	"instagram", "email", "growth", "pr",
+	"instagram", "email", "growth", "pr", "zh-editor",
 	"product-manager",
 	"sprint-prioritizer",
 	"feedback-synthesizer",
