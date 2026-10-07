@@ -1,7 +1,9 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
@@ -44,6 +46,44 @@ func TestAFreshCodexIsOnTheWireWithBothAPlaceAndAReason(t *testing.T) {
 	fresh.Binding = ""
 	if _, ok := wire(t, s.sessionRow(rowInput{item: fresh}).SessionRow)["identity"]; ok {
 		t.Fatal("identity is present on a row no source answered for")
+	}
+}
+
+func TestAnUnstartedCodexCanCloseWithoutAConversation(t *testing.T) {
+	p := archivePane("")
+	p.s.Assistant = session.AssistantCodex
+	p.s.Binding = session.BindingNoRecord
+	s := archiveServer(t, p)
+	c := s.sessionsPayloadFrom(context.Background(), s.freshReading(context.Background())).Sessions[0].Closeability
+	if c.State != "safe" || len(c.Reasons) != 0 {
+		t.Fatalf("unstarted Codex closeability = %s %+v", c.State, c.Reasons)
+	}
+	closed := act(t, s, "close", "%4", "close-empty-codex", `{"expected_closeability_version":"`+c.Version+`"}`)
+	if closed.Code != http.StatusOK || len(p.done()) != 1 {
+		t.Fatalf("close: %d %s, terminal=%q", closed.Code, closed.Body, p.done())
+	}
+}
+
+func TestAnUnboundProcessWithoutProofOfAnUnstartedCodexStaysUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*session.Session)
+	}{
+		{"unreadable Codex record", func(p *session.Session) { p.Binding = session.BindingUnreadable }},
+		{"missing process identity", func(p *session.Session) { p.PID = 0 }},
+		{"another assistant", func(p *session.Session) { p.Assistant = session.AssistantClaude }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := archivePane("")
+			p.s.Assistant = session.AssistantCodex
+			p.s.Binding = session.BindingNoRecord
+			tc.change(&p.s)
+			s := archiveServer(t, p)
+			c := s.sessionsPayloadFrom(context.Background(), s.freshReading(context.Background())).Sessions[0].Closeability
+			if c.State != "unknown" || len(c.Reasons) != 1 || c.Reasons[0].Code != "session_identity_unbound" {
+				t.Fatalf("closeability = %s %+v", c.State, c.Reasons)
+			}
+		})
 	}
 }
 
