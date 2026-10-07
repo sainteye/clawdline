@@ -101,7 +101,7 @@ var drills = map[string]drill{
 				},
 			}, fmt.Sprintf("drill%d", n), fmt.Sprintf("drill-device-%d", n), "")
 			if !ok {
-				return errors.New("the drill's subscription was not accepted by FromBrowser")
+				return errors.New(cliCopy("ops", "capacity.drill_subscription_not_accepted", "the drill's subscription was not accepted by FromBrowser"))
 			}
 			return store.Add(sub)
 		}, store.Reading, nil

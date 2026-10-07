@@ -310,13 +310,13 @@ func decodeClosed(w http.ResponseWriter, r *http.Request, into any, allowed ...s
 	}
 	if len(unknown) > 0 {
 		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusBadRequest, Code: "bad_request",
-			Message: "Unknown field(s): " + strings.Join(sortedStrings(unknown), ", ") + "."})
+			Message: "Unknown field(s): " + strings.Join(sortedStrings(unknown), ", ") + ".", RawMessage: true})
 		return false
 	}
 	encoded, _ := json.Marshal(raw)
 	if err := json.Unmarshal(encoded, into); err != nil {
 		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusBadRequest, Code: "bad_request",
-			Message: "A field has the wrong type: " + err.Error()})
+			Message: "A field has the wrong type: " + err.Error(), RawMessage: true})
 		return false
 	}
 	return true
@@ -325,7 +325,7 @@ func decodeClosed(w http.ResponseWriter, r *http.Request, into any, allowed ...s
 func writeCoordinatorError(w http.ResponseWriter, err error) {
 	var ref app.RoleRefusal
 	if errors.As(err, &ref) {
-		writeBrokerRefusal(w, orchestrator.Refusal{Status: ref.Status, Code: ref.Code, Message: ref.Message, Extra: ref.Extra})
+		writeBrokerRefusal(w, orchestrator.Refusal{Status: ref.Status, Code: ref.Code, Message: ref.Message, RawMessage: ref.RawMessage, Extra: ref.Extra})
 		return
 	}
 	writeBrokerError(w, err)

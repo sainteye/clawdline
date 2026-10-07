@@ -23,6 +23,16 @@ func (b *Broker) DisplayLanguage() string {
 	return displayLanguage(setting, (whisper.Machine{}).Languages(context.Background()), b.Language)
 }
 
+// ProductLanguage is only for daemon-authored notifications. It never enters
+// SessionLanguage or dictation's voice-language selection.
+func (b *Broker) ProductLanguage() string {
+	values, err := nextconfig.Open(b.Dir).Read()
+	if err != nil {
+		return "en"
+	}
+	return nextconfig.ProductLanguage(values)
+}
+
 func displayLanguage(setting string, machine []whisper.Answer, catalog string) string {
 	if whisper.Usable(setting) {
 		return setting

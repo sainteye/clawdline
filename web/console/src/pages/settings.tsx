@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { PageModule } from "./types.js"
 import * as L from "../legacy/bridge.js"
@@ -20,6 +21,7 @@ import { asksForUpdatePanel } from "../machine/update-model.js"
 import { DefaultModelsBlock } from "./settings/DefaultModelsBlock.js"
 import { GateSettingsBlock } from "./settings/GateSettingsBlock.js"
 import { nextWord } from "../next-strings.js"
+import { BrowserLanguageControl } from "../ui-language/BrowserLanguageControl.js"
 import {
   DEFAULT_FONT_SCALE,
   FONT_SCALE_STEPS,
@@ -232,6 +234,10 @@ function SettingsPage({ shown }: { shown: boolean }) {
       <div className="sheet" id="settings-sheet">
         <h2 id="settings-title">{T.webSettings}</h2>
 
+        <div className="block" id="settings-ui-language">
+          <BrowserLanguageControl id="settings-ui-language-select" />
+        </div>
+
         <ShellBlocks shown={shown} />
 
         <DefaultModelsBlock shown={shown} />
@@ -385,9 +391,9 @@ function SettingsPage({ shown }: { shown: boolean }) {
         <BoardBlock shown={shown} goToPage={goToPage} />
         <GateSettingsBlock shown={shown} />
         <div className="block" id="settings-timeline">
-          <b id="settings-timeline-title">{timelineWords("Enable Project Timeline", "啟用專案時間軸")}</b>
+          <b id="settings-timeline-title">{timelineWords("Enable Project Timeline", catalogWord("literal", "b593e064f518"))}</b>
           <p className="say" id="settings-timeline-say">
-            {timelineWords("Keep a traceable history of deliveries and availability.", "保留可追溯的交付與上線紀錄。")}
+            {timelineWords("Keep a traceable history of deliveries and availability.", catalogWord("literal", "acc0b43a1d07"))}
           </p>
           <button className="chip" id="settings-timeline-toggle" type="button" aria-pressed="false" disabled>
             {nextWord("timelineSetPerProject")}
@@ -398,7 +404,7 @@ function SettingsPage({ shown }: { shown: boolean }) {
             type="button"
             onClick={() => goToPage("projects")}
           >
-            {timelineWords("Open timeline", "開啟時間軸")}
+            {timelineWords("Open timeline", catalogWord("literal", "6f1c2c5c46b4"))}
           </button>
           <p className="say" id="settings-timeline-status" role="status"></p>
         </div>

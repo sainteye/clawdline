@@ -9,7 +9,9 @@ from the read-only legacy snapshot and Go records (`internal/transport/http/sess
 `expected_closeability_version`; a changed reading is refused. The legacy closure attestation
 has no writer in the Go daemon and is no longer required. A Session completion report alone
 does not close a Session. Unknown identity, unreadable records, active work, or an explicit
-Session debt still prevent ordinary close. The design below documents the retired Swift policy,
+Session debt still prevent ordinary close. A fresh, idle Codex process with `no_record` binding,
+an exact PID and start time, and no obligations can close before its first message; unreadable
+or ambiguous bindings cannot. The design below documents the retired Swift policy,
 including its attestation route, and is retained as historical evidence.
 The Go version covers the sorted reason set, including Board and TODO IDs, so a new obligation
 invalidates a previously displayed forced-close decision even when both readings are `blocked`.

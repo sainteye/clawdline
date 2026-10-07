@@ -106,16 +106,16 @@ func ParseLeftovers(in []Leftover) ([]Leftover, error) {
 		lo.Title, lo.Why, lo.Acceptance = oneLine(lo.Title), oneLine(lo.Why), oneLine(lo.Acceptance)
 		switch {
 		case lo.Title == "" || utf8.RuneCountInString(lo.Title) > LeftoverTitleLimit:
-			return nil, refuse(400, "invalid_leftover",
+			return nil, refuseFixed(400, "invalid_leftover",
 				"Each leftover has a title of 1 to %d characters.", LeftoverTitleLimit)
 		case OutcomeTitleRefusal(lo.Title) != "":
 			return nil, refuse(400, "invalid_leftover",
 				"A leftover title must name its completed result. %s", OutcomeTitleRefusal(lo.Title))
 		case utf8.RuneCountInString(lo.Why) > LeftoverWhyLimit:
-			return nil, refuse(400, "invalid_leftover",
+			return nil, refuseFixed(400, "invalid_leftover",
 				"A leftover's why is at most %d characters.", LeftoverWhyLimit)
 		case utf8.RuneCountInString(lo.Acceptance) > LeftoverAcceptanceLimit:
-			return nil, refuse(400, "invalid_leftover",
+			return nil, refuseFixed(400, "invalid_leftover",
 				"A leftover's suggested_acceptance is at most %d characters.", LeftoverAcceptanceLimit)
 		case seen[lo.Title]:
 			// A leftover is named by its title when it is proposed, so two of

@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import { useCallback, useEffect, useState } from "react"
 import type { WorkGateSettingsSnapshot } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
@@ -7,44 +8,28 @@ import "./gate-settings.css"
 
 type GateKey = keyof WorkGateSettingsSnapshot
 
-function words(en: string, zh: string): string {
-  return /^zh(?:-|$)/i.test(document.documentElement.lang || navigator.language || "") ? zh : en
-}
-
 function mode(planning: boolean, verification: boolean): { label: string; description: string } {
   if (planning && verification) {
     return {
       label: "NEXUS",
-      description: words(
-        "Planning review and independent verification are both required.",
-        "同時要求規劃檢查與獨立驗證。",
-      ),
+      description: catalogWord("literal", "09fc8876cbf4"),
     }
   }
   if (planning) {
     return {
-      label: words("Planning", "規劃"),
-      description: words(
-        "Features and Epics require a reviewed plan; independent verification is not required.",
-        "Feature 與 Epic 要先通過規劃檢查；不要求獨立驗證。",
-      ),
+      label: catalogWord("literal", "f02322e08ccd"),
+      description: catalogWord("literal", "dae4fe00826a"),
     }
   }
   if (verification) {
     return {
-      label: words("Independent verification", "獨立驗證"),
-      description: words(
-        "A maker/checker gate is required; even Epics skip the forced planning review.",
-        "要求 maker／checker 獨立驗證；Epic 也略過強制規劃檢查。",
-      ),
+      label: catalogWord("literal", "c07c2d8f4a0d"),
+      description: catalogWord("literal", "8a6f40cf0be9"),
     }
   }
   return {
-    label: words("Standard workflow", "一般流程"),
-    description: words(
-      "No planning review or independent verification is forced.",
-      "不強制規劃檢查或獨立驗證。",
-    ),
+    label: catalogWord("literal", "7c1f5f313fa9"),
+    description: catalogWord("literal", "d6b66e033d46"),
   }
 }
 
@@ -64,7 +49,7 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
       },
       (error: unknown) => {
         setBusy(null)
-        setSaid(L.failureSentence(error, words("Gate settings unavailable", "無法讀取 gate 設定")))
+        setSaid(L.failureSentence(error, catalogWord("literal", "b505f585baf9")))
       },
     )
   }, [])
@@ -81,11 +66,11 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
       (answer) => {
         setSnapshot(answer)
         setBusy(null)
-        setSaid(words("Saved for future assignments", "已儲存，套用於之後的指派"))
+        setSaid(catalogWord("literal", "bc1c88162612"))
       },
       (error: unknown) => {
         setBusy(null)
-        setSaid(L.failureSentence(error, words("Gate settings could not be saved", "無法儲存 gate 設定")))
+        setSaid(L.failureSentence(error, catalogWord("literal", "f201e051e1ac")))
       },
     )
   }
@@ -105,7 +90,7 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
           labelledBy={title}
           describedBy={say}
           on={on}
-          stateText={snapshot ? (on ? words("On", "開") : words("Off", "關")) : words("Loading…", "讀取中…")}
+          stateText={snapshot ? (on ? catalogWord("literal", "09b410f51b19") : catalogWord("literal", "862364ba6811")) : catalogWord("literal", "af53543a73b6")}
           disabled={!snapshot || busy !== null}
           onToggle={() => commit(key)}
         />
@@ -115,31 +100,28 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
 
   return (
     <div className="block settings-gates" id="settings-work-gates" aria-busy={busy !== null}>
-      <b id="settings-work-gates-title">{words("Planning and verification gates", "規劃與驗證 gate")}</b>
+      <b id="settings-work-gates-title">{catalogWord("literal", "6eded7a7db6a")}</b>
       <p className="say">
-        {words(
-          "These machine-wide defaults are captured when a Board item is successfully assigned. Changing them does not rewrite work already in flight.",
-          "這是整台機器的全域預設值，只在看板項目成功指派時擷取；之後修改不會改動進行中的工作。",
-        )}
+        {catalogWord("literal", "dff03055ebea")}
       </p>
       {toggle(
         "planning_gate",
-        words("Planning gate", "規劃 gate"),
-        words("Require a reviewed plan for newly assigned Features and Epics. Issues are exempt.", "新指派的 Feature 與 Epic 必須先完成獨立審查的 Plan；Issue 不受影響。"),
+        catalogWord("literal", "2df24b862ead"),
+        catalogWord("literal", "3a75f2cb35d9"),
       )}
       {toggle(
         "verify_gate",
-        words("Independent verification gate", "獨立驗證 gate"),
-        words("Require an independent checker to pass the fixed Git candidate before merging.", "合併前必須由獨立 checker 對固定 Git 候選提交驗證通過。"),
+        catalogWord("literal", "f7b57f4896e3"),
+        catalogWord("literal", "c2a3e5a9d8e2"),
       )}
       {current ? (
         <div className="settings-gate-mode" role="status" aria-live="polite">
-          <strong>{words("Current mode", "目前模式")}：{current.label}</strong>
+          <strong>{catalogWord("literal", "cd9dd176be81")}：{current.label}</strong>
           <span>{current.description}</span>
         </div>
       ) : (
         <button className="chip" type="button" disabled={busy === "read"} onClick={read}>
-          {words("Retry", "重試")}
+          {catalogWord("literal", "a0747c50f20b")}
         </button>
       )}
       <p className="said" role="status" aria-live="polite">{said}</p>

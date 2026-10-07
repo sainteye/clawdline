@@ -48,6 +48,7 @@ tools/heavy.sh go test ./...
 go run ./tools/contract-gen -check      # Go and TypeScript are generated together
 tools/check-legacy-css.sh               # the byte-for-byte copies still match
 tools/check-machine-words.sh            # no shown sentence calls the machine a Mac
+tools/check-shell-expansions.sh         # no $name runs into a non-ASCII character
 tools/check-private.sh                  # nothing of the person's is in a public repo
 tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && ../tools/heavy.sh npm run build )   # when anything under web/ changed
@@ -89,6 +90,17 @@ directory. Do not recursively enumerate `~`, `~/Library`, `~/Documents`, `~/Down
 or the Photos library to discover files for a repository task. Open a protected location only when
 the task actually requires it and its exact path is known. The observed attribution and the
 permission prompts it caused are in `docs/working-rules.md`.
+
+## Maintaining product translations
+
+When changing product-generated, person-facing copy, update English and Taiwan Traditional Chinese
+in the same change. Other shipped languages may be translated in batches; do not require their
+files to change with every code edit. A missing newer translation falls back to English and is
+counted in the localization coverage report. Keep placeholders, plural forms, and markup valid in
+every existing translation. An outdated translated guide section falls back to its current English
+section so it cannot show obsolete commands. The first multilingual release requires a complete
+baseline in every shipped language; later routine changes use the two-language gate. The resolver,
+fallback and release checks are in [docs/localization.md](docs/localization.md).
 
 ## How a commit reads here
 

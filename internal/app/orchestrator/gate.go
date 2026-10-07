@@ -27,6 +27,9 @@ func admitGateOrigin(raw json.RawMessage, kind, assistant, isolation string, cla
 	bad := func(message string) (*GateOrigin, error) {
 		return nil, refuse(http.StatusUnprocessableEntity, "bad_gate_origin", message)
 	}
+	badRaw := func(message string) (*GateOrigin, error) {
+		return nil, refuseRaw(http.StatusUnprocessableEntity, "bad_gate_origin", message)
+	}
 	if kind != TaskKindVerificationGate {
 		if len(raw) != 0 && string(raw) != "null" {
 			return bad("verification_gate metadata is valid only when kind is verification_gate.")
@@ -40,7 +43,7 @@ func admitGateOrigin(raw json.RawMessage, kind, assistant, isolation string, cla
 	dec.DisallowUnknownFields()
 	var gate GateOrigin
 	if err := dec.Decode(&gate); err != nil {
-		return bad("verification_gate origin is not the closed checker origin: " + err.Error())
+		return badRaw("verification_gate origin is not the closed checker origin: " + err.Error())
 	}
 	if err := expectGateEOF(dec); err != nil {
 		return bad("verification_gate origin must contain one JSON object.")
@@ -225,7 +228,7 @@ func (b *Broker) validateGateArtifacts(taskID string, result contract.WorkGateRe
 			if _, _, err := b.Tasks.ReadGateEvidence(taskID, artifactID); err != nil {
 				var storage *taskdir.GateStorageError
 				if errors.As(err, &storage) && storage.Code == "gate_evidence_not_found" {
-					return refuse(http.StatusUnprocessableEntity, "gate_evidence_not_found", "The result names evidence that was not durably uploaded: "+artifactID+".")
+					return refuseRaw(http.StatusUnprocessableEntity, "gate_evidence_not_found", "The result names evidence that was not durably uploaded: "+artifactID+".")
 				}
 				return gateStoreFailure(err)
 			}
@@ -259,7 +262,7 @@ func (b *Broker) collectGate(ctx context.Context, r Record) (bool, error) {
 	}
 	snapshot, err := b.Git.SnapshotCheckout(ctx, r.Worktree.Path)
 	if err != nil {
-		return false, refuse(http.StatusConflict, "gate_checkout_unreadable", "The checker checkout could not be independently read: "+err.Error())
+		return false, refuseRaw(http.StatusConflict, "gate_checkout_unreadable", "The checker checkout could not be independently read: "+err.Error())
 	}
 	if snapshot.Head != r.Gate.Candidate.Commit || snapshot.HeadTree != r.Gate.Candidate.Tree || snapshot.Tree != r.Gate.Candidate.Tree {
 		return false, refuseWith(http.StatusConflict, "gate_candidate_changed",
@@ -282,7 +285,7 @@ func gateContractFailure(err error) error {
 	if errors.As(err, &contractErr) {
 		code = contractErr.Code
 	}
-	return refuse(http.StatusUnprocessableEntity, code, err.Error())
+	return refuseRaw(http.StatusUnprocessableEntity, code, err.Error())
 }
 
 func gateStoreFailure(err error) error {
@@ -292,7 +295,7 @@ func gateStoreFailure(err error) error {
 		if strings.HasPrefix(storage.Code, "invalid_") || strings.Contains(storage.Code, "mismatch") || strings.HasSuffix(storage.Code, "too_large") {
 			status = http.StatusUnprocessableEntity
 		}
-		return refuse(status, storage.Code, storage.Code)
+		return refuseRaw(status, storage.Code, storage.Code)
 	}
 	return fmt.Errorf("gate durable store: %w", err)
 }

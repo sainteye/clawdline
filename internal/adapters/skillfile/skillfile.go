@@ -88,6 +88,34 @@ func StubPath(home string) string {
 	return filepath.Join(home, ".claude", "skills", "clawdline", "SKILL.md")
 }
 
+// AgentsStubPath is where Codex looks for the clawdline skill under home:
+// the user-scope `.agents/skills` directory, which Codex 0.160.1 loads as it
+// loads a repository's (measured 2026-10-07, docs/project-memory.md).
+func AgentsStubPath(home string) string {
+	return filepath.Join(home, ".agents", "skills", "clawdline", "SKILL.md")
+}
+
+// Target is which assistant's skill directory an installation writes.
+type Target string
+
+const (
+	// TargetClaude is ~/.claude/skills. It is the zero value, so a Paths
+	// written before there were two targets still means Claude Code's, and
+	// its record stays where it always was.
+	TargetClaude Target = ""
+	// TargetAgents is ~/.agents/skills, which Codex reads. Its record and
+	// backup are kept apart from Claude Code's, under RecordDir/agents.
+	TargetAgents Target = "agents"
+)
+
+// Targets is every place `clawdline skill install` writes, Claude Code's
+// first: p once per target.
+func Targets(p Paths) []Paths {
+	claude, agents := p, p
+	claude.Target, agents.Target = TargetClaude, TargetAgents
+	return []Paths{claude, agents}
+}
+
 // Previous is what the install found at the stub's path.
 type Previous struct {
 	Kind string `json:"kind"`
@@ -148,10 +176,23 @@ type Paths struct {
 	// Foreign are directories the record must never be written into: the
 	// Swift app's settings directory.
 	Foreign []string
+	// Target is which assistant's skill directory; zero is Claude Code's.
+	Target Target
 }
 
-func (p Paths) stub() string      { return StubPath(p.Home) }
-func (p Paths) recordDir() string { return filepath.Join(p.StateDir, RecordDir) }
+func (p Paths) stub() string {
+	if p.Target == TargetAgents {
+		return AgentsStubPath(p.Home)
+	}
+	return StubPath(p.Home)
+}
+
+func (p Paths) recordDir() string {
+	if p.Target == TargetAgents {
+		return filepath.Join(p.StateDir, RecordDir, string(TargetAgents))
+	}
+	return filepath.Join(p.StateDir, RecordDir)
+}
 func (p Paths) record() string    { return filepath.Join(p.recordDir(), RecordFile) }
 func (p Paths) backup() string    { return filepath.Join(p.recordDir(), BackupFile) }
 func (p Paths) skillDir() string  { return filepath.Dir(p.stub()) }

@@ -3,8 +3,9 @@
 For an assistant session — Claude Code or Codex — on a machine where **Clawdline Next** runs. It
 covers what this daemon serves today, and nothing else: every route below is registered by the
 build that printed this guide, and a test fails when one is not. Print it again with
-`clawdline guide` rather than trusting a copy; `clawdline guide zh-TW` is the same guide in
-Traditional Chinese. `clawdline guide` prints the core and names the other parts; print a part
+`clawdline guide` rather than trusting a copy; `clawdline guide zh-Hant` prints the Taiwan
+Traditional Chinese guide (`zh-TW` remains an alias). `clawdline guide` prints the core and names
+the other parts; print a part
 (`clawdline guide dispatch`) when you reach the work it covers, or `clawdline guide all` for
 the full text. Whatever it prints, the core included, starts with `guide-version: <sha256>`;
 run the same command with `--since <hash>` and, when that text is unchanged, it prints the one
@@ -62,7 +63,7 @@ the command instead.
 
 | Command | What it does |
 |---|---|
-| `clawdline guide [zh-TW]` | This guide. No daemon needed |
+| `clawdline guide [lang]` | This guide. No daemon needed |
 | `clawdline session report --summary "…"` | Records your finished turn (§7) |
 | `clawdline session close [--dry-run] [--terminal id]` | Audits and closes a finished Session, never by force (§2a) |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | Dispatches an owned child (§4) |
@@ -86,6 +87,12 @@ the command instead.
 | `clawdline task accept <task dir>` | A child signing for its briefing. Roots never run it |
 | `clawdline task finish <task dir>` | A child's completion. Roots never run it |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | Starts a schedule through its Cloud webhook, on any machine, and waits for its result; the exit code says how it ended ("Schedule future work"). No daemon needed |
+
+With no explicit guide tag, CLI language follows `--lang <tag>` before the command, then
+`CLAWDLINE_LANG`, saved `product_language`, and English. An explicit `clawdline guide <tag>`
+overrides that choice; an unsupported tag shows English. `clawdline guide -list` names the nine
+shipped tags. This preference changes human-readable CLI text, not protocol fields or an Agent's
+language.
 
 The orchestration commands above (not `webhook fire`) print the daemon's JSON on success; on a refusal they print
 `refused, <status> <code>: <message>`, then each scalar the refusal carries as `key: value`, one per
@@ -304,6 +311,31 @@ elsewhere, or rules Codex does not see are theirs to decide. The routes are
 `{"version"}` and `Idempotency-Key`; refusals are `plan_changed`, `plan_unknown` (part of the
 Project could not be read, so nothing changed) and `name_taken` (a name unify would create already
 exists; nothing is overwritten).
+
+**Shared memory: one store per Project for Claude and Codex.** A lesson about this Project belongs
+in its Clawdline memory, not in your assistant's own memory, so the next Session reads it whichever
+assistant it is. A Session launched by Clawdline is already given the index (one line per entry,
+`name — description`, grouped by type, cut at 8 KiB with a line saying so); read an entry when its
+line is relevant:
+
+```sh
+clawdline memory list                     # the index; --json for the full answer
+clawdline memory show <name>              # one entry, frontmatter and body
+printf '%s\n' "<body>" | clawdline memory add --name <kebab-name> --description "<one line>" --type feedback
+clawdline memory update --name <name> --description "<one line>" --type project --body-file body.md
+clawdline memory forget <name>
+clawdline memory import --from-claude     # a plan; --apply copies, skipping names already stored
+```
+
+`--project <dir>` picks the Project (default: this directory's git top-level; a linked worktree is
+its main repository's Project). The type is one of `user`, `feedback`, `project` or `reference`.
+Exit 0 is done, 1 refused, 2 a usage mistake, 3 unknown (the daemon did not answer: nothing is
+known to be written). The same add twice is `unchanged`; a different entry under a taken name is
+`memory_entry_exists` — `update` it instead. Other refusals are `memory_entry_invalid`,
+`memory_entry_not_found` and `memory_full`; `memory_unreadable` means the store could not be read
+and says nothing about what it holds. The routes are `GET`/`POST /v1/projects/{place}/memory` and
+`GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`. The import only reads Claude Code's
+`~/.claude/projects/<slug>/memory/`; Clawdline never writes there.
 
 ## 2a. A Feature Root's ordinary path
 

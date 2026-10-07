@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,14 +19,14 @@ const squadCapabilityEnv = "CLAWDLINE_SQUAD_CAPABILITY_FILE"
 
 func readSquadCapability(path string) (string, error) {
 	if path == "" {
-		return "", fmt.Errorf("%s is not set for this Session", squadCapabilityEnv)
+		return "", fmt.Errorf(cliCopy("core", "squad.capability_unset", "%s is not set for this Session"), squadCapabilityEnv)
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
-		return "", fmt.Errorf("session capability is not a regular file")
+		return "", errors.New(cliCopy("core", "squad.capability_not_file", "session capability is not a regular file"))
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -38,14 +39,14 @@ func readSquadCapability(path string) (string, error) {
 	}
 	capability := strings.TrimSpace(string(data))
 	if len(data) > brokerTokenLimit || capability == "" || strings.ContainsAny(capability, " \t\r\n") {
-		return "", fmt.Errorf("session capability file is invalid")
+		return "", errors.New(cliCopy("core", "squad.capability_invalid", "session capability file is invalid"))
 	}
 	return capability, nil
 }
 
 func squadCommand(args []string) {
 	if len(args) == 0 || args[0] != "skill-event" {
-		fmt.Fprintln(os.Stderr, "usage: clawdline squad skill-event --skill ID --version VERSION --status read|applied|failed [--event-id ID] [--failure-code CODE]")
+		fmt.Fprintln(os.Stderr, cliCopy("core", "squad.usage", "usage: clawdline squad skill-event --skill ID --version VERSION --status read|applied|failed [--event-id ID] [--failure-code CODE]"))
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("squad skill-event", flag.ExitOnError)
@@ -57,7 +58,7 @@ func squadCommand(args []string) {
 	_ = fs.Parse(args[1:])
 	if fs.NArg() != 0 || *skillID == "" || *version == "" ||
 		(*status != "read" && *status != "applied" && *status != "failed") {
-		fmt.Fprintln(os.Stderr, "clawdline: invalid squad skill event arguments")
+		fmt.Fprintln(os.Stderr, cliCopy("core", "squad.invalid_args", "clawdline: invalid squad skill event arguments"))
 		os.Exit(2)
 	}
 	if *eventID == "" {
@@ -89,7 +90,7 @@ func squadCommand(args []string) {
 		fail(err)
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		fmt.Fprintln(os.Stderr, "clawdline:", res.StatusCode, string(answer))
+		fmt.Fprintln(os.Stderr, "clawdline:", res.StatusCode, humanHTTPAnswer(answer))
 		os.Exit(1)
 	}
 	fmt.Print(string(answer))

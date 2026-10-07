@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord, catalogWordLanguage } from "../../catalog.js"
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
@@ -87,11 +89,11 @@ const KINDS: WorkV2Kind[] = ["feature", "issue", "epic", "refactor", "plan"]
 const EXECUTABLE_KINDS: WorkV2ExecutableKind[] = ["feature", "issue", "epic", "refactor"]
 const PHASES = ["assigning", "assigned", "implementing", "verifying", "merging", "deploying"]
 const KIND_META: Record<WorkV2Kind, { icon: string; label: string; description: string }> = {
-  feature: { icon: "✦", label: "Feature", description: "加入一項使用者可以感受到的新能力" },
-  issue: { icon: "!", label: "Issue", description: "修正錯誤、異常或不符合預期的行為" },
-  epic: { icon: "◆", label: "Epic", description: "可指派的大型工作；指派時若啟用規劃 gate，Session 要先寫計劃書並經 Child Session review" },
-  refactor: { icon: "↻", label: "Refactor", description: "不改變外部行為的內部結構改善；和 Feature 一樣可以指派、寫步驟與驗收" },
-  plan: { icon: "≡", label: "Plan", description: "先放在規劃區的研究或實作計畫" },
+  feature: { icon: "✦", label: "Feature", description: "56f8e506038b" },
+  issue: { icon: "!", label: "Issue", description: "33ca73248c20" },
+  epic: { icon: "◆", label: "Epic", description: "7ef41cddac8e" },
+  refactor: { icon: "↻", label: "Refactor", description: "728f2c662e96" },
+  plan: { icon: "≡", label: "Plan", description: "ba5eb53b1697" },
 }
 
 export function WorkV2Page({ shown }: { shown: boolean }) {
@@ -344,13 +346,13 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
           const observed = (await readDecision(decisionID)).decision
           if (matchingDecisionAnswer(observed, optionID)) { confirmed(); announceWorkItemChanged(); void load(); return true }
           if (observed.state === "answered") {
-            setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: "這題已收到另一個選項的回答，請重新整理查看。" } }))
+            setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: catalogWord("literal", "5aabeb560dbd") } }))
             return false
           }
         } catch { /* A failed read cannot prove whether the POST arrived. */ }
-        setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "retry", message: "尚未確認回答是否送達；請重試或重新整理查看。" } }))
+        setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "retry", message: catalogWord("literal", "e2379153f479") } }))
       } else {
-        setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: `回答未被接受：${failureWords(error)}` } }))
+        setDecisionAnswers((current) => ({ ...current, [decisionID]: { ...base, phase: "rejected", message: catalogFormat("template", "e3ac6cdc91b5", [failureWords(error)]) } }))
       }
       return false
     } finally { submittingDecisionIDs.current.delete(decisionID) }
@@ -368,55 +370,55 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
   <section ref={board} id="work" className="page board-page work-page" data-page-view="work" hidden={!shown} aria-labelledby="work-v2-title"
     aria-busy={loading || refreshing || paging ? "true" : undefined}>
     <header className="board-head">
-      <div><p className="board-eyebrow">WORK SYSTEM V2</p><h1 id="work-v2-title">看板</h1></div>
+      <div><p className="board-eyebrow">{catalogWord("inline", "68441095f928")}</p><h1 id="work-v2-title">{catalogWord("inline", "0072da457a09")}</h1></div>
       <div className="work-head-tools">
-        <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreateDraft({}); setCreating(true) }}>＋ 建立項目</button>
+        <button className="board-button" type="button" onClick={() => { setFailure(""); setCreatedItem(null); setCreateDraft({}); setCreating(true) }}>{catalogWord("inline", "e5a0a01cc43c")}</button>
         <button className="board-button" type="button" disabled={!!busy || loading || refreshing || paging}
-          aria-busy={refreshing ? "true" : undefined} aria-label={refreshing ? "正在重新整理看板" : undefined}
+          aria-busy={refreshing ? "true" : undefined} aria-label={refreshing ? catalogWord("literal", "8e0d15ad92d4") : undefined}
           onClick={() => { rearrange.current = true; void load(true) }}>{L.strings.webInfoRefresh}</button>
       </div>
     </header>
     <div className="work-wrap">
-      <p className="work-lede">所有項目由你建立與指派；Session 負責推進實作、驗證、合併與部署。</p>
+      <p className="work-lede">{catalogWord("inline", "984a81d05631")}</p>
       <div className="work-filter-bar">
         <ProjectPicker places={places} value={project} onChange={(value) => setRouteProject(value)} onOpen={refreshPlaces} allowAll />
         <div className="work-filter-controls">
-          <div className="work-status-filter" role="group" aria-label="篩選項目狀態">
-            {([['open', '進行中'], ['done', '已完成'], ['all', '全部']] as [WorkV2Status, string][]).map(([value, label]) =>
+          <div className="work-status-filter" role="group" aria-label={catalogWord("inline", "ce34a838f587")}>
+            {([['open', catalogWord("literal", "8f643bcd5a10")], ['done', catalogWord("literal", "20df2a7775cd")], ['all', catalogWord("literal", "aa44a36dc811")]] as [WorkV2Status, string][]).map(([value, label]) =>
               <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)}>{label}</button>)}
           </div>
           <button className="work-plan-toggle" type="button" aria-pressed={showPlans}
-            onClick={() => setShowPlans((current) => !current)}>顯示 Plan</button>
+            onClick={() => setShowPlans((current) => !current)}>{catalogWord("inline", "187097a69436")}</button>
         </div>
         <label className="work-search">
           <WorkIcon name="search" />
-          <input type="search" aria-label="搜尋標題與內容" placeholder="搜尋標題與內容" maxLength={1024} value={searchInput}
+          <input type="search" aria-label={catalogWord("inline", "60005ee63c14")} placeholder={catalogWord("inline", "60005ee63c14")} maxLength={1024} value={searchInput}
             onChange={(event) => setSearchInput(event.currentTarget.value)} />
-          {searchInput && <button type="button" aria-label="清除搜尋" onClick={() => setSearchInput("")}><WorkIcon name="close" /></button>}
+          {searchInput && <button type="button" aria-label={catalogWord("inline", "0c2d1a3aeaff")} onClick={() => setSearchInput("")}><WorkIcon name="close" /></button>}
         </label>
       </div>
       <TerminalEntry key={project} project={project} label={places.find((place) => place.id === project)?.label ?? ""} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
       {loading ? <BoardSkeleton /> : <>
       {visibleProposals.length > 0 && <ProposalQueue proposals={visibleProposals} items={items} places={places} busy={busy} run={run} />}
-      <BoardRegion title="規劃區" items={planning} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
-      <BoardRegion title="待指派" items={unassigned} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
+      <BoardRegion title={catalogWord("inline", "944fa4126f45")} items={planning} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
+      <BoardRegion title={catalogWord("inline", "109be039b4c0")} items={unassigned} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />
       {PHASES.map((phase) => <BoardRegion key={phase} title={phaseName(phase)}
         items={visibleItems.filter((item) => item.area === phase && !item.closed_at)} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />)}
-      {done.length > 0 && status === "done" && <BoardRegion title="已完成" items={done} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />}
-      {done.length > 0 && status !== "done" && search && <BoardRegion title="已關閉" items={done} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />}
-      {done.length > 0 && status !== "done" && !search && <details className="work-section work-done"><summary><div className="work-section-head"><h2>已關閉</h2><span className="work-count">{done.length}</span></div></summary>
+      {done.length > 0 && status === "done" && <BoardRegion title={catalogWord("inline", "f28461bb49c8")} items={done} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />}
+      {done.length > 0 && status !== "done" && search && <BoardRegion title={catalogWord("inline", "075493f7aa67")} items={done} sessions={sessions} nowSeconds={nowSeconds} decisions={decisions} onOpen={openItem} />}
+      {done.length > 0 && status !== "done" && !search && <details className="work-section work-done"><summary><div className="work-section-head"><h2>{catalogWord("inline", "075493f7aa67")}</h2><span className="work-count">{done.length}</span></div></summary>
         <div className="work-cards">{done.map((item) => <CompactWorkCard key={item.id} item={item}
           sessions={sessions} nowSeconds={nowSeconds} decisions={decisionsForWorkItem(decisions, item.id)} onOpen={() => openItem(item)} />)}</div>
       </details>}
       {loaded && !failure && visibleItems.length === 0 && <p className="work-empty work-filter-empty" role="status">
         {!showPlans && hiddenPlans > 0
-          ? search ? "符合搜尋的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。" : "這個範圍的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。"
-          : search ? `找不到包含「${search}」的項目。` : status === "done" ? "還沒有已完成的項目。" : "這個範圍目前沒有項目。"}
+          ? search ? catalogWord("literal", "f653840acc04") : catalogWord("literal", "000c45f69d2f")
+          : search ? catalogFormat("template", "1619c02fca4b", [search]) : status === "done" ? catalogWord("literal", "6bb45a6f3d11") : catalogWord("literal", "9c2aa7fb1748")}
       </p>}
       {nextCursor && <div className="work-pagination">
         <button className="board-button work-more" type="button" disabled={paging} aria-busy={paging ? "true" : undefined}
-          onClick={() => void loadMore()}>{paging ? "正在載入…" : "載入更多項目"}</button>
+          onClick={() => void loadMore()}>{paging ? catalogWord("literal", "223a19c135b4") : catalogWord("literal", "70ee17f5b118")}</button>
       </div>}
       </>}
     </div>
@@ -514,18 +516,18 @@ function EpicChildren({ item, sessions }: { item: WorkV2Item; sessions: SessionR
   if (!children.length) return null
   const progress = epicProgress(children)
   const complete = progress.total > 0 && progress.done === progress.total
-  return <section className="work-epic-children" aria-label="子項目" data-complete={complete ? "" : undefined}>
+  return <section className="work-epic-children" aria-label={catalogWord("inline", "c89d5d10a699")} data-complete={complete ? "" : undefined}>
     <div className="work-epic-children-head">
-      <strong>子項目</strong>
-      <span>{epicProgressWords(progress)}{family.truncated && " · 清單不完整"}</span>
+      <strong>{catalogWord("inline", "c89d5d10a699")}</strong>
+      <span>{epicProgressWords(progress)}{family.truncated && catalogWord("literal", "94d08f62dcc8")}</span>
     </div>
-    {progress.total > 0 && <div className="work-epic-progress" role="progressbar" aria-label="子項目完成度"
+    {progress.total > 0 && <div className="work-epic-progress" role="progressbar" aria-label={catalogWord("inline", "01f6acc771a3")}
       aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done}>
       <i style={{ width: `${(progress.done / progress.total) * 100}%` }} />
     </div>}
     <ul>{children.map((child) => {
       const owner = child.owner_session ? sessions.find((session) => session.sessionId === child.owner_session) : undefined
-      const who = owner ? (owner.label || owner.id) : child.owner_session ? `Session ${child.owner_session.slice(0, 8)}` : "未指派"
+      const who = owner ? (owner.label || owner.id) : child.owner_session ? `Session ${child.owner_session.slice(0, 8)}` : catalogWord("literal", "f40cef79943e")
       const ownerPersona = personaById(personas, owner?.persona)
       return <li key={child.id} data-phase={child.phase}>
         <button className="work-epic-child" type="button" onClick={() => { setFailure(""); void family.open(child.id).then(setFailure) }}>
@@ -548,7 +550,7 @@ function EpicParentLine({ item }: { item: WorkV2Item }) {
   const parent = epicParent(item, family.rows)
   if (!parent) return null
   return <>
-    <p className="work-epic-parent">屬於 Epic：<button className="work-epic-parent-link" type="button"
+    <p className="work-epic-parent">{catalogWord("inline", "f738987d8bdc")}<button className="work-epic-parent-link" type="button"
       onClick={() => { setFailure(""); void family.open(parent.id).then(setFailure) }}>
       {parent.title ? `〈${parent.title}〉` : <code>{shortWorkID(parent.id)}</code>}</button></p>
     {failure && <p className="work-note" role="alert">{workWord("openItemFailed", { reason: failure })}</p>}
@@ -602,31 +604,31 @@ function ProposalQueue({ proposals, items, places, busy, run }: {
   run: (key: string, task: () => Promise<unknown>) => Promise<boolean>
 }) {
   return <details className="work-fold work-proposal-fold" open>
-    <summary><strong>Agent 提案</strong><span className="work-count">{proposals.length}</span>
-      <span className="work-fold-hint">先用白話說清楚，需要時再 Explain</span></summary>
+    <summary><strong>{catalogWord("inline", "90b290a48f82")}</strong><span className="work-count">{proposals.length}</span>
+      <span className="work-fold-hint" lang={catalogWordLanguage("inline", "2be2b494050d")}>{catalogWord("inline", "2be2b494050d")}</span></summary>
     <div className="work-fold-body"><ul className="work-proposals">{proposals.map((proposal) => {
       const project = places.find((place) => place.id === proposal.project_id)
       const source = proposal.source_work_id ? items.find((item) => item.id === proposal.source_work_id) : undefined
-      const sourceLine = source ? `從「${source.title}」延伸`
-        : proposal.source_work_id ? `來自看板項目 #${proposal.source_work_id.slice(0, 8)}`
-          : proposal.source_todo_id ? "來自 Session 待辦" : "來源資料不完整"
+      const sourceLine = source ? catalogFormat("template", "d03a9f051a31", [source.title])
+        : proposal.source_work_id ? catalogFormat("template", "029ac348ef8a", [proposal.source_work_id.slice(0, 8)])
+          : proposal.source_todo_id ? catalogWord("literal", "89d0cc30dc8b") : catalogWord("literal", "15d308223697")
       return <li key={proposal.id} className="work-proposal" data-proposal-id={proposal.id}>
         <div className="work-proposal-main">
-          <span className="work-state">建議建立 {KIND_META[proposal.kind].label}</span>
+          <span className="work-state">{catalogWord("inline", "e9dfb2772400")} {KIND_META[proposal.kind].label}</span>
           <h3>{proposal.title}</h3>
           <p className="work-proposal-context">{project?.label ?? proposal.project_id} · {sourceLine}</p>
-          <p className="work-proposal-reason"><strong>為什麼要做</strong><span>{proposal.reason}</span></p>
+          <p className="work-proposal-reason"><strong>{catalogWord("inline", "0dc513d1a44e")}</strong><span>{proposal.reason}</span></p>
           <details className="work-proposal-detail">
-            <summary><span lang="en">Explain</span><span>詳細說明</span></summary>
-            <dl><div><dt>會改什麼</dt><dd>{proposal.description}</dd></div>
-              <div><dt>完成後會看到什麼</dt><dd>{proposal.suggested_acceptance || "這筆舊提案沒有記下可觀察的完成結果。"}</dd></div></dl>
+            <summary><span lang={catalogWordLanguage("inline", "3b61e4e93652")}>{catalogWord("inline", "3b61e4e93652")}</span><span lang={catalogWordLanguage("inline", "b3b7ae4f6384")}>{catalogWord("inline", "b3b7ae4f6384")}</span></summary>
+            <dl><div><dt>{catalogWord("inline", "e78cea7271c7")}</dt><dd>{proposal.description}</dd></div>
+              <div><dt>{catalogWord("inline", "e2a4b9a60cac")}</dt><dd>{proposal.suggested_acceptance || catalogWord("literal", "865569dfdfe1")}</dd></div></dl>
           </details>
         </div>
-        <div className="work-actions work-proposal-actions" aria-label={`處理提案「${proposal.title}」`}>
+        <div className="work-actions work-proposal-actions" aria-label={catalogFormat("template", "9e9521d6a3b6", [proposal.title])}>
           <button className="chip on" type="button" disabled={!!busy}
-            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "accept"))}>接受並建立</button>
+            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "accept"))}>{catalogWord("inline", "44ae4672eed2")}</button>
           <button className="chip danger" type="button" disabled={!!busy}
-            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "reject"))}>拒絕</button>
+            onClick={() => void run(proposal.id, () => resolveWorkV2Proposal(proposal.id, "reject"))}>{catalogWord("inline", "0f7e826a2f9f")}</button>
         </div>
       </li>
     })}</ul></div>
@@ -644,27 +646,27 @@ function WorkItemDecisions({ decisions, decisionAnswers, waitingOn, busy, answer
 }) {
   const receipts = Object.entries(decisionAnswers).filter(([id, status]) => status.phase === "confirmed" && !decisions.some((decision) => decision.id === id))
   if (!decisions.length && !receipts.length) return null
-  return <section className="work-item-decisions" aria-label="這個項目需要你回答的問題">
-    <div className="work-item-decisions-head"><strong>{decisions.length ? "需要你決定" : "回答結果"}</strong><span>{decisions.length || ""}</span></div>
+  return <section className="work-item-decisions" aria-label={catalogWord("inline", "60ec1b4faaf6")}>
+    <div className="work-item-decisions-head"><strong>{decisions.length ? catalogWord("literal", "06e9721c22a0") : catalogWord("literal", "da65d95a49fd")}</strong><span>{decisions.length || ""}</span></div>
     {receipts.map(([id, receipt]) => <div className="work-item-decision" key={id} id={`work-decision-${id}`}>
-      <h4>{receipt.question}</h4><p className="work-decision-feedback" role="status" aria-live="polite">已收到回答：「{receipt.label}」</p>
+      <h4>{receipt.question}</h4><p className="work-decision-feedback" role="status" aria-live="polite">{catalogWord("inline", "e3de4a9b5b50")}{receipt.label}」</p>
     </div>)}
     {decisions.map((decision) => {
       const fallback = decision.options.find((option) => option.id === decision.default)?.label ?? decision.default
       const feedback = decisionAnswers[decision.id]
       return <div className="work-item-decision" key={decision.id} data-decision-id={decision.id} id={`work-decision-${decision.id}`}>
-        <p className="work-item-decision-state">{decision.id === waitingOn ? "負責的 Session 正在等這個答案，回答後就會繼續"
-          : decision.blocking ? "回答前，這個項目的工作暫停" : "這個問題不會暫停工作"}</p>
+        <p className="work-item-decision-state">{decision.id === waitingOn ? catalogWord("literal", "cbc015194d93")
+          : decision.blocking ? catalogWord("literal", "b81539b6dfef") : catalogWord("literal", "29feba66a834")}</p>
         <h4>{decision.question}</h4>
-        <p className="work-clock">到 {when(decision.due_at)} 還沒回答，就採用「{fallback}」</p>
-        <div className="work-actions" role="group" aria-label={`回答「${decision.question}」`}>
+        <p className="work-clock">{catalogWord("inline", "b56f36b529db")} {when(decision.due_at)}{catalogWord("inline", "2220fdf0d620")}{fallback}」</p>
+        <div className="work-actions" role="group" aria-label={catalogFormat("template", "1bc187210168", [decision.question])}>
           {decision.options.map((option) => <button key={option.id} type="button"
             className="chip" disabled={busy || feedback?.phase === "pending"}
             aria-pressed={feedback?.option === option.id && feedback.phase === "pending"}
             onClick={() => void answerWorkDecision(decision.id, option.id)}>{option.label}</button>)}
         </div>
         {feedback && <p className={`work-decision-feedback ${feedback.phase}`} role={feedback.phase === "rejected" ? "alert" : "status"} aria-live="polite">
-          {feedback.phase === "pending" ? `正在送出「${feedback.label}」…` : feedback.message}
+          {feedback.phase === "pending" ? catalogFormat("template", "34bb2cdffe3e", [feedback.label]) : feedback.message}
         </p>}
       </div>
     })}
@@ -724,24 +726,24 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
   return <article className={epic ? "work-card work-v2-card work-summary-card work-epic-card" : "work-card work-v2-card work-summary-card"}
     data-work-id={item.id} data-phase={item.phase} data-kind={item.kind} data-origin={originSentence ? origin : undefined} tabIndex={-1}>
     <button className="work-card-summary" type="button" aria-haspopup="dialog"
-      aria-label={`查看「${item.title}」${attention ? "的下一步" : "的完整內容"}，${phaseName(item.phase)}`} aria-describedby={describedBy} onClick={onOpen}>
+      aria-label={catalogFormat("template", "1640b97725ed", [item.title, attention ? catalogWord("literal", "0ec51d2f1b3c") : catalogWord("literal", "87a8d926d9e7"), phaseName(item.phase)])} aria-describedby={describedBy} onClick={onOpen}>
       <span className="work-card-summary-top">
         <span className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></span>
         {originSentence && <span className="work-card-origin" title={originSentence}><AgentGlyph />{workWord("agentMadeBadge")}</span>}
-        <span className={epic ? "work-state work-epic-label" : "work-state"}>{epic ? "EPIC · " : `${item.kind} · `}{phaseName(item.phase)}</span>
+        <span className={epic ? "work-state work-epic-label" : "work-state"}>{KIND_META[item.kind].label} · {phaseName(item.phase)}</span>
       </span>
       <span className="work-card-summary-title">{item.title}</span>
-      {attention && <span id={attentionDescriptionID} className="work-card-attention">需要你處理{decisions.length > 1 ? ` · ${decisions.length} 個問題` : ""}</span>}
+      {attention && <span id={attentionDescriptionID} className="work-card-attention">{catalogWord("inline", "c85c228e97c0")}{decisions.length > 1 ? catalogFormat("template", "b6aa195d5775", [decisions.length]) : ""}</span>}
       {item.condition && <span id={conditionDescriptionID} className="work-card-condition">{conditionWords(item)}</span>}
       {nextAction && <span id={actionDescriptionID} className="work-card-next-action">{nextAction}</span>}
       <span className="work-card-summary-description">{item.description}</span>
       {activePhase && <span id={progressDescriptionID} className="work-card-progress">{phaseStayWords(item.phase_entered_at, nowSeconds)} · {ownerOnlineWords(item.owner_session, sessions)}</span>}
       {item.phase === "done" && <span id={deploymentDescriptionID} className="work-card-deployment">{deploymentWords(item)}</span>}
       {gateShown && <><WorkGateLine item={item} id={gateDescriptionID} />
-        <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">本輪：{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
+        <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">{catalogWord("inline", "947720d10478")}{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
       <span className="work-card-summary-foot">
-        <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
-        <span className="work-card-open">{item.decision_id ? "回答問題" : attention ? "查看下一步" : "查看完整內容"} <WorkIcon name="open" /></span>
+        <span>{item.closed_at ? catalogFormat("template", "966e0c24f6bc", [when(item.closed_at)]) : catalogFormat("template", "d15f0c565e65", [when(item.updated_at)])}</span>
+        <span className="work-card-open">{item.decision_id ? catalogWord("literal", "8722de1b1769") : attention ? catalogWord("literal", "b8f8e3ceb51b") : catalogWord("literal", "bfc3ff801ec6")} <WorkIcon name="open" /></span>
       </span>
       {originSentence && <span id={originDescriptionID} className="work-card-origin-sentence">{originSentence}</span>}
     </button>
@@ -797,7 +799,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
       if (answer.outcome === "recommend") {
         const picked = personaById(personas, answer.persona_id)
         if (!picked) {
-          setAISuggestionFailure("AI 回傳的角色不在目前清單中，因此沒有變更選擇。")
+          setAISuggestionFailure(catalogWord("literal", "e2d3fee22432"))
           return
         }
         const nextTeam = shownTeam(personas, picked.id, team)
@@ -848,10 +850,10 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
   const cardClass = epic ? "work-card work-v2-card work-epic-card"
     : plan ? "work-card work-v2-card work-plan-card" : "work-card work-v2-card"
   const conversionPanel = converting && convertible ? <section id={`work-convert-${item.id}`} className="work-plan-convert"
-    aria-label={plan ? "把 Plan 轉成可執行項目" : `把 ${KIND_META[item.kind].label} 轉成 Plan`}>
-    <div><strong>{plan ? "準備執行這份 Plan" : "移到規劃區"}</strong>
-      <p>{plan ? "轉換後會移到「待指派」" : "轉換後會移到「規劃區」"}；若已指派，會解除目前指派。標題、描述、圖片、步驟與歷史紀錄都會保留。</p></div>
-    {plan && <fieldset className="work-plan-kind-field"><legend>轉換後的項目類型</legend>
+    aria-label={plan ? catalogWord("literal", "43500bdb3e8e") : catalogFormat("template", "fe204a407a5a", [KIND_META[item.kind].label])}>
+    <div><strong>{plan ? catalogWord("literal", "e30e9ddc70f5") : catalogWord("literal", "a2e583309304")}</strong>
+      <p>{plan ? catalogWord("literal", "aa49b8a6ba21") : catalogWord("literal", "24f7f6ef66e1")}{catalogWord("inline", "9596ec6c7c96")}</p></div>
+    {plan && <fieldset className="work-plan-kind-field"><legend>{catalogWord("inline", "bccb6492eb93")}</legend>
       <div className="work-plan-kind-list">
         {EXECUTABLE_KINDS.map((kind) => <label key={kind} className="work-plan-kind-option">
           <input type="radio" name={`plan-conversion-${item.id}`} value={kind} checked={conversionKind === kind}
@@ -863,47 +865,47 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     <div className="work-actions">
       <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `convert-${item.id}`}
         onClick={() => { void run(`convert-${item.id}`, () => convertWorkV2(item, plan ? conversionKind : "plan")).then((ok) => { if (ok) setConverting(false) }) }}>
-        {busy === `convert-${item.id}` ? "轉換中…" : `確認轉成 ${plan ? KIND_META[conversionKind].label : "Plan"}`}</button>
-      <button className="chip" type="button" disabled={!!busy} onClick={() => setConverting(false)}>取消</button>
+        {busy === `convert-${item.id}` ? catalogWord("literal", "729d5136c5cb") : catalogFormat("template", "06453a1153b7", [plan ? KIND_META[conversionKind].label : "Plan"])}</button>
+      <button className="chip" type="button" disabled={!!busy} onClick={() => setConverting(false)}>{catalogWord("inline", "2cd0f3be8738")}</button>
     </div>
-    {failure && <p className="work-note" role="alert">轉換失敗：{failure}</p>}
+    {failure && <p className="work-note" role="alert">{catalogWord("inline", "c82438204056")}{failure}</p>}
   </section> : null
   return <article className={cardClass} data-work-id={item.id}
     data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
     <div className="work-card-toolbar">
       <div className="work-v2-project"><Mark icon={item.project.icon as SessionRow["icon"]} cellPx={4} /><span title={item.project.label}>{item.project.label}</span></div>
-      <div className="work-card-controls" aria-label="項目操作">
+      <div className="work-card-controls" aria-label={catalogWord("inline", "6c459fe37882")}>
         {!!item.owner_session && !item.closed_at && <button type="button" disabled={!!busy}
           onClick={() => { clearFailure(); setReminded(false); void run(`remind-${item.id}`, () => remindWorkV2(item)).then(setReminded) }}>
-          <WorkIcon name={reminded ? "check" : "remind"} /> {reminded ? "已提醒" : "提醒 Session"}
+          <WorkIcon name={reminded ? "check" : "remind"} /> {reminded ? catalogWord("literal", "635c296257d2") : catalogWord("literal", "ca263b730ae8")}
         </button>}
         {reassignable && <button type="button" disabled={!!busy} aria-expanded={reassigning}
           onClick={() => { clearFailure(); setAssignFailed(false); setTerminal(""); setReassigning((shown) => !shown) }}>
-          <WorkIcon name="reassign" /> 改派</button>}
+          <WorkIcon name="reassign" />{catalogWord("inline", "1ac7cfab4805")}</button>}
         {!item.closed_at && <button type="button" disabled={!!busy}
-          onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" /> 完成</button>}
-        <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" /> 編輯</button>
+          onClick={() => { clearFailure(); setCompleting(true) }}><WorkIcon name="check" />{catalogWord("inline", "c0b3fbff51cc")}</button>}
+        <button type="button" disabled={!!busy} onClick={() => { clearFailure(); setEditing(true) }}><WorkIcon name="edit" />{catalogWord("inline", "e0d4485966bd")}</button>
         {convertible && !plan && <button type="button" disabled={!!busy} aria-expanded={converting}
           aria-controls={`work-convert-${item.id}`}
-          onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>轉成 Plan</button>}
+          onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>{catalogWord("inline", "827a48d61eb8")}</button>}
         {!item.closed_at && <button className="danger" type="button" disabled={!!busy}
-          onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" /> 刪除</button>}
+          onClick={() => { clearFailure(); setDeleting(true) }}><WorkIcon name="delete" />{catalogWord("inline", "3c8f5b363ab3")}</button>}
       </div>
     </div>
     {/* The person's override closes the item without the owning Session's
         evidence, so it asks once more, here on the card, before it does. */}
-    {completing && !item.closed_at && <div className="work-actions" role="group" aria-label="確認標記完成">
+    {completing && !item.closed_at && <div className="work-actions" role="group" aria-label={catalogWord("inline", "5b58c9188a2f")}>
       <p className="work-note">{completeConfirmWords(item)}</p>
       <button className="chip on" type="button" disabled={!!busy} aria-busy={busy === `complete-${item.id}`}
         onClick={() => { void run(`complete-${item.id}`, () => completeWorkV2(item)).then((ok) => { if (ok) setCompleting(false) }) }}>
-        <WorkIcon name="check" />{busy === `complete-${item.id}` ? "標記中…" : "確認標記完成"}</button>
-      <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>取消</button>
-      {failure && <p className="work-note" role="alert">標記完成失敗：{failure}</p>}
+        <WorkIcon name="check" />{busy === `complete-${item.id}` ? catalogWord("literal", "935d3ef2ee45") : catalogWord("literal", "5a651fa3c7ca")}</button>
+      <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>{catalogWord("inline", "2cd0f3be8738")}</button>
+      {failure && <p className="work-note" role="alert">{catalogWord("inline", "a7042be56aeb")}{failure}</p>}
     </div>}
     {epic
-      ? <span className="work-state work-epic-label"><b>EPIC · 大型項目</b> · {phaseName(item.phase)}</span>
-      : plan ? <span className="work-state work-plan-label"><b>PLAN · 未排入執行</b></span>
-      : <span className="work-state">{item.kind} · {phaseName(item.phase)}</span>}
+      ? <span className="work-state work-epic-label"><b>{catalogWord("inline", "64d13f155730")}</b> · {phaseName(item.phase)}</span>
+      : plan ? <span className="work-state work-plan-label"><b>{catalogWord("inline", "589939ed89dd")}</b></span>
+      : <span className="work-state">{KIND_META[item.kind].label} · {phaseName(item.phase)}</span>}
     <h3 id={`work-card-title-${item.id}`}>{item.title}</h3>
     <EpicParentLine item={item} />
     <CreatedViaNote item={item} />
@@ -913,7 +915,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     {convertible && plan && <div className="work-convert-entry">
       <button className="work-convert-cta" type="button" disabled={!!busy} aria-expanded={converting}
         aria-controls={`work-convert-${item.id}`}
-        onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>轉成可執行項目</button>
+        onClick={() => { clearFailure(); setConverting((shown) => !shown) }}>{catalogWord("inline", "437b148fabf3")}</button>
     </div>}
     {plan && conversionPanel}
     {epicGateDetailShown(item) && <WorkGateDetail item={item} loading={detailLoading} error={detailError}
@@ -930,31 +932,30 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     {reviewRequiredFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     {epicGateShown(item) && <EpicGateChecklist item={item} />}
     {epic && <EpicChildren item={item} sessions={sessions} />}
-    {item.decision_id ? <section className="work-user-action" aria-label="需要你做的事">
-      <strong>需要你做的事</strong>
+    {item.decision_id ? <section className="work-user-action" aria-label={catalogWord("inline", "ee001bfec7fe")}>
+      <strong>{catalogWord("inline", "ee001bfec7fe")}</strong>
       <p>{nextActionWords(item, decisions)}{decisionsForWorkItem(decisions, item.id).some((d) => d.id === item.decision_id)
         ? <> · <button type="button" className="chip" onClick={() =>
-          document.getElementById(`work-decision-${item.decision_id}`)?.scrollIntoView({ block: "nearest" })}>前往回答</button></> : null}</p>
-    </section> : item.user_action && <section className="work-user-action" aria-label="需要你做的事">
-      <strong>需要你做的事</strong><p>{item.user_action}</p>
+          document.getElementById(`work-decision-${item.decision_id}`)?.scrollIntoView({ block: "nearest" })}>{catalogWord("inline", "77ba6068fc8e")}</button></> : null}</p>
+    </section> : item.user_action && <section className="work-user-action" aria-label={catalogWord("inline", "ee001bfec7fe")}>
+      <strong>{catalogWord("inline", "ee001bfec7fe")}</strong><p>{item.user_action}</p>
     </section>}
     {/* Choosing who does the work is what an unassigned card is for, so the
         picker sits under what the work is, above its progress and pictures. */}
     {(assignable || (reassignable && reassigning)) && <div className="work-assignment">
-      {epic && <p className="work-epic-assign-note">若指派時規劃 gate 開啟，Session 須先寫計劃書並請 Child Session review，通過後才開始實作；關閉時可略過。</p>}
-      {reassignable && <p className="work-reassign-note">改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session
-        會被告知從哪裡接手；原本的 Session 會收到停止通知。</p>}
+      {epic && <p className="work-epic-assign-note">{catalogWord("inline", "b5e4c6c82f31")}</p>}
+      {reassignable && <p className="work-reassign-note">{catalogWord("inline", "58f4894c12b1")}</p>}
       <section className="work-assignment-route" aria-labelledby={`work-assign-existing-${item.id}`}>
-        <h4 id={`work-assign-existing-${item.id}`}>指派給既有 Session</h4>
+        <h4 id={`work-assign-existing-${item.id}`}>{catalogWord("inline", "c8232bd59817")}</h4>
         <SessionAssignmentPicker sessions={eligible} value={terminal} onChange={setTerminal} autoFocus={focusAssignment || (epic && reassigning)} />
         {terminal && <button className="chip on work-assignment-action" type="button" disabled={!!busy} aria-busy={busy === item.id && assigningRoute === "existing"}
           onClick={() => assign("existing", () => assignWorkV2(item, terminal))}>
           {busy === item.id && assigningRoute === "existing" && <span className="work-assignment-spinner" aria-hidden="true" />}
-          {busy === item.id && assigningRoute === "existing" ? "正在指派給所選 Session…" : "指派給所選 Session"}</button>}
+          {busy === item.id && assigningRoute === "existing" ? catalogWord("literal", "c147921b47db") : catalogWord("literal", "d87caeb7f606")}</button>}
       </section>
       <section className="work-assignment-route" aria-labelledby={`work-assign-new-${item.id}`}>
-        <h4 id={`work-assign-new-${item.id}`}>開啟新 Session</h4>
-        <div className="work-new-session" role="radiogroup" aria-label="新 Session 使用的助理">
+        <h4 id={`work-assign-new-${item.id}`}>{catalogWord("inline", "ae3df530a0ca")}</h4>
+        <div className="work-new-session" role="radiogroup" aria-label={catalogWord("inline", "d7c6293edaf2")}>
         {/* The product mark alone: the button beside it already spells out the
             chosen assistant, so the name is kept for the label and tooltip. */}
         {NEW_SESSION_ASSISTANTS.map((choice) => <button key={choice} className={`chip${choice === assistant ? " on" : ""}`} type="button"
@@ -965,13 +966,13 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
         </div>
         {personas.length > 0 && <button className="chip work-persona-ai-button" type="button" disabled={!!busy || aiSuggestionBusy}
           aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
-          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? "AI 建議中…" : "AI 建議"}</button>}
+          onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>}
         {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>AI 建議：{personaName(aiPersona)}</strong>
-          <span>{aiSuggestionOverridden ? "目前已改選其他角色" : "已預先選取，仍可手動改選"}</span>
+          <strong>{catalogWord("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
+          <span>{aiSuggestionOverridden ? catalogWord("literal", "74a97b8b8227") : catalogWord("literal", "c1083b6ca5e0")}</span>
         </p>}
         {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>AI 無法可靠判斷</strong><span>保留目前的角色選擇，請手動決定。</span>
+          <strong>{catalogWord("inline", "b4933eb2248e")}</strong><span>{catalogWord("inline", "56eb16ed4470")}</span>
         </p>}
         {aiSuggestionFailure && <p className="work-note" role="alert">{aiSuggestionFailure}</p>}
         {personas.length > 0 && <RoleRow className="work-new-session work-new-persona" personas={personas} chosen={persona?.id ?? ""}
@@ -988,10 +989,10 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
           {busy === item.id && assigningRoute === "new" && <span className="work-assignment-spinner" aria-hidden="true" />}
           {persona
             ? nextWord(busy === item.id && assigningRoute === "new" ? "personaOpeningSession" : "personaNewSession", { assistant: assistantName(assistant), persona: personaName(persona) })
-            : busy === item.id && assigningRoute === "new" ? `正在開啟 ${assistantName(assistant)} Session…` : `開新 ${assistantName(assistant)} Session`}</button>
+            : busy === item.id && assigningRoute === "new" ? catalogFormat("template", "ab717b6453b6", [assistantName(assistant)]) : catalogFormat("template", "c8e602657653", [assistantName(assistant)])}</button>
       </section>
-      {busy === item.id && <p className="work-assignment-status" role="status">正在處理指派；你可以關閉視窗，完成後看板會更新。</p>}
-      {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>取消</button>}
+      {busy === item.id && <p className="work-assignment-status" role="status">{catalogWord("inline", "cf865cda2b1b")}</p>}
+      {reassignable && <button className="chip" type="button" disabled={!!busy} onClick={() => setReassigning(false)}>{catalogWord("inline", "2cd0f3be8738")}</button>}
       {assignFailed && failure && <p className="work-note" role="alert">{failure}</p>}
     </div>}
     <WorkEpicPlanDocuments item={item} />
@@ -1000,7 +1001,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
     <WorkMilestones phase={item.phase} verifyGate={item.verify_gate} />
     <WorkItemDocuments item={item} placement="after_steps" />
     <WorkCompletionReports item={item} expanded={reportsExpanded} />
-    {!!item.images?.length && <div className="work-reference-images" role="group" aria-label="參考圖片">
+    {!!item.images?.length && <div className="work-reference-images" role="group" aria-label={catalogWord("inline", "0d8b8b072dbd")}>
       {item.images.map((image) => <WorkReferenceImage key={image.id} item={item} image={image} busy={busy} run={run} />)}
     </div>}
     {!item.closed_at && <div className="work-reference-tools">
@@ -1021,15 +1022,15 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
         })
       }} />
       <button className="chip" type="button" disabled={!!busy || (item.images?.length ?? 0) >= 6}
-        onClick={() => imagePicker.current?.click()}>＋ 參考圖片</button>
+        onClick={() => imagePicker.current?.click()}>{catalogWord("inline", "e17357ea2310")}</button>
       <small>{item.images?.length ?? 0} / 6</small>
     </div>}
     <ItemUsageCard itemId={item.id} version={item.version} />
     <div className="work-meta"><span>{conditionWords(item)}</span>
-      <span>{item.closed_at ? `完成 ${when(item.closed_at)}` : `更新 ${when(item.updated_at)}`}</span>
+      <span>{item.closed_at ? catalogFormat("template", "966e0c24f6bc", [when(item.closed_at)]) : catalogFormat("template", "d15f0c565e65", [when(item.updated_at)])}</span>
       {owner ? <a className="work-session-link" href={sessionFragment(owner.id)}
-        aria-label={`前往正在實作「${item.title}」的 Session`}>前往 Session · {owner.label || owner.id}<WorkIcon name="open" /></a>
-        : item.owner_session && <span>Session {item.owner_session.slice(0, 8)}</span>}
+        aria-label={catalogFormat("template", "e0059ef8ad57", [item.title])}>{catalogWord("inline", "31d7501ec843")} {owner.label || owner.id}<WorkIcon name="open" /></a>
+        : item.owner_session && <span>{catalogWord("inline", "6959b4159575")} {item.owner_session.slice(0, 8)}</span>}
     </div>
     {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
       void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
@@ -1057,7 +1058,7 @@ function WorkDescription({ description, id }: { description: string; id: string 
     <p ref={paragraph} id={`work-description-${id}`} className="work-card-description" data-expanded={expanded}>{description}</p>
     {long && <button className="work-description-toggle" type="button" aria-expanded={expanded}
       aria-controls={`work-description-${id}`} onClick={() => setExpanded((shown) => !shown)}>
-      {expanded ? "收合描述" : "顯示完整描述"}
+      {expanded ? catalogWord("literal", "0e8fa59ff18e") : catalogWord("literal", "7b47ff3dceba")}
     </button>}
   </>
 }
@@ -1065,12 +1066,12 @@ function WorkDescription({ description, id }: { description: string; id: string 
 function personaAIError(error: unknown): string {
   if (error instanceof RefusalError) {
     switch (error.code) {
-      case "ai_consent_required": return "這台機器仍使用需要另行設定的舊版 AI 建議；請先更新 Clawdline。"
-      case "no_persona_suggester": return "這台機器沒有可用的 Codex，因此沒有變更角色。"
-      case "persona_suggester_out_of_quota": return "Codex 目前沒有可用額度，因此沒有變更角色。"
-      case "persona_suggestion_failed": return "AI 沒有回傳可用的角色，因此保留目前選擇。"
-      case "busy": return "這台機器正在處理其他 AI 工作，請稍後再按一次。"
-      case "version_conflict": return "項目內容已更新；請確認最新內容後再用 AI 判斷。"
+      case "ai_consent_required": return catalogWord("literal", "038bac9c971f")
+      case "no_persona_suggester": return catalogWord("literal", "de75668d4759")
+      case "persona_suggester_out_of_quota": return catalogWord("literal", "d5c34e496d87")
+      case "persona_suggestion_failed": return catalogWord("literal", "15266fe5c659")
+      case "busy": return catalogWord("literal", "4a77fbfcb87e")
+      case "version_conflict": return catalogWord("literal", "bb8e3857f2cf")
     }
   }
   return failureWords(error)
@@ -1114,10 +1115,10 @@ function ClaimedViaNote({ item }: { item: WorkV2Item }) {
 /** Where an Epic, or a Feature that needs independent review, stands against the plan gate before it may start implementing. */
 function EpicGateChecklist({ item }: { item: WorkV2Item }) {
   const gate = epicGate(item.documents)
-  return <section className="work-epic-gate" aria-label={isEpic(item) ? "Epic 實作前檢查" : "Feature 實作前檢查"} data-ready={gate.ready ? "" : undefined}>
+  return <section className="work-epic-gate" aria-label={isEpic(item) ? catalogWord("literal", "dbf828033b91") : catalogWord("literal", "c67e7799cd48")} data-ready={gate.ready ? "" : undefined}>
     <ul>
-      <li data-state={gate.plan ? "done" : "open"}><WorkIcon name={gate.plan ? "check" : "circle"} />計劃書</li>
-      <li data-state={gate.review ? "done" : "open"}><WorkIcon name={gate.review ? "check" : "circle"} />Child Review</li>
+      <li data-state={gate.plan ? "done" : "open"}><WorkIcon name={gate.plan ? "check" : "circle"} />{catalogWord("inline", "1aaa1e3eda43")}</li>
+      <li data-state={gate.review ? "done" : "open"}><WorkIcon name={gate.review ? "check" : "circle"} />{catalogWord("inline", "4f468f5b65d4")}</li>
     </ul>
     {!gate.ready && <p>{planGateHint(item)}</p>}
   </section>
@@ -1188,17 +1189,17 @@ function SessionAssignmentPicker({ sessions, value, onChange, autoFocus = false 
     {/* The menu hangs from the trigger alone: anchored to the whole picker, it
         opened under the selected Session's detail instead of under the button. */}
     <div className="work-session-anchor">
-    <button className="work-session-trigger" type="button" aria-label="指派既有 Session" aria-haspopup="listbox"
+    <button className="work-session-trigger" type="button" aria-label={catalogWord("inline", "c4bde41c6d80")} aria-haspopup="listbox"
       aria-expanded={open} autoFocus={autoFocus} onClick={() => setOpen((shown) => !shown)}>
       {selected ? <><SessionStateDot session={selected} /><span><b>{selected.label || selected.id}</b><PersonaTag id={selected.persona} personas={personas} />
         <small>{assistantName(selected.assistant)} · {sessionActivityName(selected.state)} · {sessionWorkLabel(selected)}</small></span></>
-        : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>選擇既有 Session</span></>}
+        : <><span className="work-session-placeholder" aria-hidden="true">◌</span><span>{catalogWord("inline", "b7efeae38921")}</span></>}
       <span className="work-project-chevron" aria-hidden="true">⌄</span>
     </button>
-    {open && <div className="work-session-menu" role="listbox" aria-label="可指派的 Session">
+    {open && <div className="work-session-menu" role="listbox" aria-label={catalogWord("inline", "498ac2845b60")}>
       {sessions.map((session) => <SessionChoice key={session.id} session={session} reading={readings[session.id]}
         selected={session.id === value} onChoose={() => choose(session.id)} />)}
-      {!sessions.length && <p className="work-project-empty">這個 Project 目前沒有可用的 Session。</p>}
+      {!sessions.length && <p className="work-project-empty">{catalogWord("inline", "7b9c3fe68d48")}</p>}
     </div>}
     </div>
     {selected && <SessionAssignmentDetail session={selected} reading={selectedReading} />}
@@ -1216,8 +1217,8 @@ function SessionChoice({ session, reading, selected, onChoose }: {
   return <button className="work-session-option" type="button" role="option" aria-selected={selected} onClick={onChoose}>
     <SessionStateDot session={session} />
     <span><b>{session.label || session.id}</b><PersonaTag id={session.persona} personas={personas} /><small>{assistantName(session.assistant)} · {sessionActivityName(session.state)} · {sessionWorkLabel(session)}</small></span>
-    <span className="work-session-counts">{reading?.loading ? "讀取中…" : reading?.update ? nextWord("machineNeedsUpdateShort") : reading?.error ? "讀不到工作" : counts
-      ? `${counts.board} 看板 · ${counts.todos} TODO` : "—"}</span>
+    <span className="work-session-counts">{reading?.loading ? catalogWord("literal", "58ea8fb4addc") : reading?.update ? nextWord("machineNeedsUpdateShort") : reading?.error ? catalogWord("literal", "40e3c0a7bbd8") : counts
+      ? catalogFormat("template", "4ce1db07d816", [counts.board, counts.todos]) : "—"}</span>
   </button>
 }
 
@@ -1228,22 +1229,22 @@ function SessionStateDot({ session }: { session: SessionRow }) {
 function SessionAssignmentDetail({ session, reading }: { session: SessionRow; reading?: SessionWorkReading }) {
   const page = reading?.page
   const counts = page ? sessionWorkCounts(page) : null
-  return <section className="work-session-detail" aria-label={`${session.label || session.id} 的狀況`} aria-live="polite">
-    <div className="work-session-detail-head"><strong>Session 狀況</strong><span>{sessionActivityName(session.state)} · {sessionWorkLabel(session)}</span></div>
+  return <section className="work-session-detail" aria-label={catalogFormat("template", "ecd25f9c83f5", [session.label || session.id])} aria-live="polite">
+    <div className="work-session-detail-head"><strong>{catalogWord("inline", "3f44b79c30e6")}</strong><span>{sessionActivityName(session.state)} · {sessionWorkLabel(session)}</span></div>
     {(session.line || session.work_note) && <p>{session.line || session.work_note}</p>}
-    {reading?.loading && !page ? <p>正在讀取看板與 TODO…</p> : reading?.update ? <NeedsUpdate update={reading.update} /> : reading?.error ? <p className="work-note" role="alert">工作資訊讀取失敗：{reading.error}</p> : page ? <>
-      <p>尚未完成：{counts?.board ?? 0} 個看板項目 · {counts?.todos ?? 0} 個 TODO</p>
-      <SessionWorkList title="還在做" empty="目前沒有負責中的看板項目。" rows={page.assigned_items.map((item) => ({
+    {reading?.loading && !page ? <p>{catalogWord("inline", "926adfdf9989")}</p> : reading?.update ? <NeedsUpdate update={reading.update} /> : reading?.error ? <p className="work-note" role="alert">{catalogWord("inline", "e85c2c330c2e")}{reading.error}</p> : page ? <>
+      <p>{catalogFormat("count", "unfinishedWork", [counts?.board ?? 0, counts?.todos ?? 0])}</p>
+      <SessionWorkList title={catalogWord("inline", "7cd8f523be1c")} empty={catalogWord("literal", "4a085d55298e")} rows={page.assigned_items.map((item) => ({
         id: item.id, title: item.title, meta: `${item.project.label} · ${phaseName(item.phase)}${item.condition ? ` · ${conditionWords(item)}` : ""}`,
       }))} />
-      <SessionWorkList title="直接待辦" empty="目前沒有未完成的 TODO。" rows={page.direct_todos.map((todo) => ({
-        id: todo.id, title: todo.text, meta: todo.read_at ? "已讀" : todo.sent_at ? "已傳送" : "尚未傳送",
+      <SessionWorkList title={catalogWord("inline", "fc3806d4036b")} empty={catalogWord("literal", "f5520c76f525")} rows={page.direct_todos.map((todo) => ({
+        id: todo.id, title: todo.text, meta: todo.read_at ? catalogWord("literal", "d2defbef2b6a") : todo.sent_at ? catalogWord("literal", "a5d037c48e9f") : catalogWord("literal", "1c39ef00f1ce"),
       }))} />
-      <SessionWorkList title="最近完成" empty="目前沒有最近完成的看板項目。" rows={(page.recent_items ?? []).map((item) => ({
-        id: item.id, title: item.title, meta: `${item.project.label} · 完成 ${when(item.closed_at)}`,
+      <SessionWorkList title={catalogWord("inline", "684134665ec0")} empty={catalogWord("literal", "5aa68b48f74d")} rows={(page.recent_items ?? []).map((item) => ({
+        id: item.id, title: item.title, meta: catalogFormat("template", "b6b8b9faacfb", [item.project.label, when(item.closed_at)]),
       }))} />
-      {page.truncated && <small className="work-session-truncated">還有更多工作未列出；請進入 Session 查看完整清單。</small>}
-    </> : <p>展開 Session 清單後讀取它的工作資訊。</p>}
+      {page.truncated && <small className="work-session-truncated">{catalogWord("inline", "ee52fbed3fad")}</small>}
+    </> : <p>{catalogWord("inline", "1a1328fe795c")}</p>}
   </section>
 }
 
@@ -1285,9 +1286,9 @@ function CreatedWorkModal({ item, created = true, back, sessions, decisions, dec
     role="dialog" aria-modal="true" aria-labelledby={`work-created-title-${item.id} work-card-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
     <div className={created ? "work-created-panel" : "work-created-panel work-item-detail-panel"}>
-      <div className="work-modal-head"><div><p className="board-eyebrow">{created ? "WORK ITEM CREATED" : "BOARD ITEM"}</p>
-        <h2 id={`work-created-title-${item.id}`}>{created ? "看板項目已建立" : "看板項目"}</h2></div>
-        <button ref={initialFocus} className="work-modal-close" type="button" aria-label="關閉" onClick={onClose}><WorkIcon name="close" /></button></div>
+      <div className="work-modal-head"><div><p className="board-eyebrow">{created ? catalogWord("ui", "workItemCreated") : catalogWord("ui", "boardItem")}</p>
+        <h2 id={`work-created-title-${item.id}`}>{created ? catalogWord("literal", "935ee1ab45ca") : catalogWord("literal", "79a3cb6e5cdb")}</h2></div>
+        <button ref={initialFocus} className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} onClick={onClose}><WorkIcon name="close" /></button></div>
       {failure && <p className="work-note" role="alert">{failure}</p>}
       <WorkCard item={item} sessions={sessions} decisions={decisions} decisionAnswers={decisionAnswers} busy={busy} failure={failure} clearFailure={clearFailure} run={run} answerWorkDecision={answerWorkDecision}
         detailLoading={detailLoading} detailError={detailError} retryDetail={retryDetail} focusAssignment={created} reportsExpanded={!created} foldDescription={!created} />
@@ -1324,13 +1325,13 @@ function EditWorkModal({ item, busy, failure, onClose, onSave }: {
   return <div className="session-todo-modal work-edit-modal" role="dialog" aria-modal="true" aria-labelledby={`work-edit-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
-      <div className="work-modal-head"><div><p className="board-eyebrow">EDIT WORK ITEM</p><h2 id={`work-edit-title-${item.id}`}>編輯看板項目</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
-      <label>標題<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
-      <VoiceTextarea label="描述" value={description} maxLength={65536} onValue={setDescription} />
+      <div className="work-modal-head"><div><p className="board-eyebrow">{catalogWord("inline", "308278979452")}</p><h2 id={`work-edit-title-${item.id}`}>{catalogWord("inline", "9293ae04361c")}</h2></div>
+        <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
+      <label>{catalogWord("inline", "6fe38ed1ee10")}<input className="work-input" value={title} maxLength={240} autoFocus onChange={(event) => setTitle(event.target.value)} /></label>
+      <VoiceTextarea label={catalogWord("literal", "8561515b8b34")} value={description} maxLength={65536} onValue={setDescription} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "儲存中…" : "儲存變更"}</button>
-        <button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
+      <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? catalogWord("literal", "21aa64dd7446") : catalogWord("literal", "9a8097d8f563")}</button>
+        <button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
     </form>
   </div>
 }
@@ -1346,12 +1347,12 @@ function DeleteWorkModal({ item, busy, failure, onClose, onDelete }: {
   return <div className="session-todo-modal work-delete-modal" role="dialog" aria-modal="true" aria-labelledby={`work-delete-title-${item.id}`}
     onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <form onSubmit={(event) => { event.preventDefault(); onDelete() }}>
-      <div className="work-modal-head"><div><p className="board-eyebrow">DELETE WORK ITEM</p><h2 id={`work-delete-title-${item.id}`}>刪除看板項目？</h2></div>
-        <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
-      <p><strong>{item.title}</strong> 會從看板與負責 Session 的待辦移除。執行紀錄仍會保留，避免工作憑空消失。</p>
+      <div className="work-modal-head"><div><p className="board-eyebrow">{catalogWord("inline", "2f1f9c448f96")}</p><h2 id={`work-delete-title-${item.id}`}>{catalogWord("inline", "4d05a8ee3b50")}</h2></div>
+        <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
+      <p><strong>{item.title}</strong>{catalogWord("inline", "8e71e614ab8e")}</p>
       {failure && <p className="work-note" role="alert">{failure}</p>}
-      <div className="work-actions"><button className="chip danger" type="submit" disabled={busy}>{busy ? "刪除中…" : "確認刪除"}</button>
-        <button className="chip" type="button" disabled={busy} onClick={onClose}>保留項目</button></div>
+      <div className="work-actions"><button className="chip danger" type="submit" disabled={busy}>{busy ? catalogWord("literal", "a5df1fce3ed1") : catalogWord("literal", "2f1a94aefc74")}</button>
+        <button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "ec3a32317a03")}</button></div>
     </form>
   </div>
 }
@@ -1456,16 +1457,16 @@ function WorkReferenceImage({ item, image, busy, run }: {
   }
   return <figure className="work-reference-image">
     {source ? editable
-      ? <button className="work-reference-open" type="button" disabled={!!busy || opening} aria-label={`用紅筆標記參考圖片 ${image.title}`}
-        title="用紅筆標記" onClick={mark}>
+      ? <button className="work-reference-open" type="button" disabled={!!busy || opening} aria-label={catalogFormat("template", "337439125770", [image.title])}
+        title={catalogWord("inline", "cf3c6f547bd1")} onClick={mark}>
         <img src={source} alt={image.title} width={image.width} height={image.height} />
       </button>
-      : <a href={full || source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`} onClick={openFull}>
+      : <a href={full || source} target="_blank" rel="noreferrer" aria-label={catalogFormat("template", "37ba92bd09dc", [image.title])} onClick={openFull}>
         <img src={source} alt={image.title} width={image.width} height={image.height} />
-      </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
+      </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || catalogWord("literal", "7ae221f38b02")}</div>}
     <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
     {marking && full && <PictureMarkup picture={{ id: image.id, url: full }} onCancel={() => setMarking(false)} onSave={replaceWithMarks} />}
-    {!item.closed_at && <button className="work-reference-remove" type="button" aria-label={`移除參考圖片 ${image.title}`} disabled={!!busy}
+    {!item.closed_at && <button className="work-reference-remove" type="button" aria-label={catalogFormat("template", "da1cebd6b045", [image.title])} disabled={!!busy}
       onClick={() => void run(`image-delete-${image.id}`, () => deleteWorkV2Image(item, image.id))}><WorkIcon name="close" /></button>}
   </figure>
 }
@@ -1505,21 +1506,21 @@ function ProjectPicker({ places, value, onChange, onOpen, allowAll = false }: {
     void onOpen().catch(() => {}).finally(() => setRefreshing(false))
   }
   return <div className="work-project-picker" ref={root}>
-    <button className="work-project-trigger" type="button" aria-label="Project" aria-haspopup="listbox"
+    <button className="work-project-trigger" type="button" aria-label={catalogWord("inline", "985959785319")} aria-haspopup="listbox"
       aria-expanded={open} onClick={toggle}>
       {selected ? <Mark icon={selected.icon as SessionRow["icon"]} cellPx={3} /> : <span className="work-project-placeholder" aria-hidden="true">▦</span>}
-      <span>{selected?.label || (allowAll ? "所有 Project" : "選擇 Project")}</span>
+      <span>{selected?.label || (allowAll ? catalogWord("literal", "b2ee45d95857") : catalogWord("literal", "ef8fe1c8ac54"))}</span>
       <span className="work-project-chevron" aria-hidden="true">⌄</span>
     </button>
-    {open && <div className="work-project-menu" role="listbox" aria-label="Project">
+    {open && <div className="work-project-menu" role="listbox" aria-label={catalogWord("inline", "985959785319")}>
       {allowAll && <button type="button" role="option" aria-selected={!value} className="work-project-option"
-        onClick={() => choose("")}><span className="work-project-placeholder" aria-hidden="true">▦</span><span>所有 Project</span></button>}
+        onClick={() => choose("")}><span className="work-project-placeholder" aria-hidden="true">▦</span><span>{catalogWord("inline", "24926b27517e")}</span></button>}
       {places.map((place) => <button type="button" role="option" aria-selected={place.id === value}
         className="work-project-option" key={place.id} onClick={() => choose(place.id)}>
         <Mark icon={place.icon as SessionRow["icon"]} cellPx={3} /><span>{place.label}</span>
         {place.id === value && <span className="work-project-check"><WorkIcon name="check" /></span>}
       </button>)}
-      {!places.length && <p className="work-project-empty">{refreshing ? "正在讀取 Project…" : "目前沒有可用的 Project。"}</p>}
+      {!places.length && <p className="work-project-empty">{refreshing ? catalogWord("literal", "eec20299e1b1") : catalogWord("literal", "dc9a2139ef07")}</p>}
     </div>}
   </div>
 }
@@ -1547,24 +1548,24 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     createDecision.current = decision
     onCreate(body, images, decision.key)
   }}>
-    <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? "REVIEW WORK ITEM" : "NEW WORK ITEM"}</p><h2 id="work-new-v2-title">{reviewingDraft ? "確認看板項目" : "建立看板項目"}</h2></div>
-      <button className="work-modal-close" type="button" aria-label="關閉" disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
-    {reviewingDraft && <p className="work-note">語音已填入草稿；按「建立」前不會新增看板項目。</p>}
-    <div className="work-modal-field"><span>Project</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} onOpen={onRefreshPlaces} /></div>
-    <fieldset className="work-kind-field"><legend>類型</legend><div className="work-kind-list">
+    <div className="work-modal-head"><div><p className="board-eyebrow">{reviewingDraft ? catalogWord("ui", "reviewWorkItem") : catalogWord("ui", "newWorkItem")}</p><h2 id="work-new-v2-title">{reviewingDraft ? catalogWord("literal", "30947e72b04b") : catalogWord("literal", "e2956f80c3ac")}</h2></div>
+      <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
+    {reviewingDraft && <p className="work-note">{catalogWord("inline", "a2d091d25a73")}</p>}
+    <div className="work-modal-field"><span>{catalogWord("inline", "985959785319")}</span><ProjectPicker places={projectPlaces} value={projectID} onChange={setProjectID} onOpen={onRefreshPlaces} /></div>
+    <fieldset className="work-kind-field"><legend>{catalogWord("inline", "1588dd8c9e73")}</legend><div className="work-kind-list">
       {KINDS.map((value) => { const meta = KIND_META[value]; return <button key={value} type="button" className="work-kind-option"
         aria-pressed={kind === value} onClick={() => setKind(value)}><span className="work-kind-icon" aria-hidden="true">{meta.icon}</span>
-        <span><b>{meta.label}</b><small>{meta.description}</small></span><span className="work-kind-radio"><WorkIcon name={kind === value ? "radio" : "circle"} /></span></button> })}
+        <span><b>{meta.label}</b><small>{catalogWord("literal", meta.description)}</small></span><span className="work-kind-radio"><WorkIcon name={kind === value ? "radio" : "circle"} /></span></button> })}
     </div></fieldset>
-    <label>標題<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
-    <VoiceTextarea label="描述" value={description} onValue={setDescription} />
+    <label>{catalogWord("inline", "6fe38ed1ee10")}<input className="work-input" value={title} maxLength={240} onChange={(e) => setTitle(e.target.value)} /></label>
+    <VoiceTextarea label={catalogWord("literal", "8561515b8b34")} value={description} onValue={setDescription} />
     {featureLike({ kind }) && <ReviewRequiredField id="work-new-review-required" checked={reviewRequired} disabled={busy} onChange={setReviewRequired} />}
-    <PendingPictures images={images} busy={busy} note="建立項目後上傳" onChange={setImages} />
+    <PendingPictures images={images} busy={busy} note={catalogWord("literal", "983dac4efa86")} onChange={setImages} />
     {failure && <p className="work-note" role="alert">{failure}</p>}
-    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? "建立中…" : "建立"}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>取消</button></div>
+    <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
   </form></div>
 }
 
 function phaseName(phase: string): string {
-  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "合併", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
+  return ({ created: catalogWord("literal", "c5d8aaa266d8"), assigning: catalogWord("literal", "4b623c82cb16"), assigned: catalogWord("literal", "dc759c07b306"), implementing: catalogWord("literal", "8bbd4591bf7e"), verifying: catalogWord("literal", "b6164286b3c0"), merging: catalogWord("literal", "0ac70837dd33"), deploying: catalogWord("literal", "059b1cdc97bd"), done: catalogWord("literal", "05c50e80b5d9"), cancelled: catalogWord("literal", "dc47baa800c8") } as Record<string, string>)[phase] ?? phase
 }

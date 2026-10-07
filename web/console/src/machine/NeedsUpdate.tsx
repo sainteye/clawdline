@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react"
 import type { MachineNeedsUpdate } from "@clawdline/core"
+import { catalogWordLanguage } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
 import { needsUpdateWords, sameMachineVersion, type MachineVersion } from "./needs-update-model.js"
 
@@ -39,9 +40,9 @@ export function NeedsUpdate({ update, className = "work-note" }: { update: Machi
   const words = needsUpdateWords(update, known, nextWord)
   return (
     <p className={className} role="status" data-needs-update={update?.code ?? ""} style={{ overflowWrap: "anywhere" }}>
-      {words.sentence}
-      {words.version ? <> {words.version}</> : null}{" "}
-      <a href={words.href}>{words.link}</a>
+      <span lang={catalogWordLanguage("next", "machineNeedsUpdate")}>{words.sentence}</span>
+      {words.version ? <> <span lang={catalogWordLanguage("next", "machineNeedsUpdateVersion")}>{words.version}</span></> : null}{" "}
+      <a href={words.href} lang={catalogWordLanguage("next", "machineNeedsUpdateLink")}>{words.link}</a>
     </p>
   )
 }

@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import type { SessionWorkV2 } from "./api.js"
 
@@ -9,21 +11,21 @@ export interface SessionWorkCounts {
 
 /** The terminal observation answers whether a Session is working right now. */
 export function sessionActivityName(state: SessionRow["state"]): string {
-  return ({ working: "Working", waiting: "等待中", idle: "Idle", unknown: "狀況不明" } as const)[state] ?? "狀況不明"
+  return ({ working: "Working", waiting: catalogWord("literal", "ad8aadf7bf19"), idle: "Idle", unknown: catalogWord("literal", "68c054f499d6") } as const)[state] ?? catalogWord("literal", "68c054f499d6")
 }
 
 /** Work state explains what the Session needs even when its terminal is idle. */
 export function sessionWorkStateName(state: SessionRow["work_state"]): string {
   return ({
-    working: "執行中",
-    waiting_you: "等你回應",
-    waiting_session: "等待其他 Session",
-    holding: "暫停中",
-    milestone_complete: "待驗收",
-    work_complete: "工作已完成",
-    ready: "可接工作",
-    unknown: "工作狀況不明",
-  } as const)[state] ?? "工作狀況不明"
+    working: catalogWord("literal", "6db78eb344c7"),
+    waiting_you: catalogWord("literal", "098adc2b04e2"),
+    waiting_session: catalogWord("literal", "619d09f68466"),
+    holding: catalogWord("literal", "92d2ca17aee9"),
+    milestone_complete: catalogWord("literal", "f3a995d001b1"),
+    work_complete: catalogWord("literal", "389a958c1c0b"),
+    ready: catalogWord("literal", "65901131fccc"),
+    unknown: catalogWord("literal", "6815fa90cb2c"),
+  } as const)[state] ?? catalogWord("literal", "6815fa90cb2c")
 }
 
 /**
@@ -38,11 +40,11 @@ export function sessionWorkLabel(row: Pick<SessionRow, "work_state" | "dispositi
   if (!finished || row.disposition?.scope !== "session") return sessionWorkStateName(row.work_state)
   const acceptance = row.acceptance
   if (acceptance?.state === "pending" && acceptance.title) {
-    return `待驗收 · ${acceptance.title}${(acceptance.count ?? 0) > 1 ? ` · 共 ${acceptance.count} 項` : ""}`
+    return catalogFormat("template", "19566a87444b", [acceptance.title, (acceptance.count ?? 0) > 1 ? catalogFormat("template", "b98d29fea593", [acceptance.count]) : ""])
   }
-  const said = row.work_state === "work_complete" ? sessionWorkStateName(row.work_state) : "本輪已回報"
+  const said = row.work_state === "work_complete" ? sessionWorkStateName(row.work_state) : catalogWord("literal", "8b456ffd3d10")
   // Only a reading of none is none: a missing field (an older daemon) is not.
-  return acceptance?.state === "none" ? said : `${said} · 讀不到是否有待驗收項目`
+  return acceptance?.state === "none" ? said : catalogFormat("template", "3d747201508d", [said])
 }
 
 /** The phases in which an item waits for the person to look at what was delivered. */
@@ -75,7 +77,7 @@ export const NEW_SESSION_ASSISTANTS: readonly Assistant[] = ["codex", "claude"]
 
 /** Which company's assistant a Session runs, as the person reads it. */
 export function assistantName(assistant: SessionRow["assistant"]): string {
-  return assistant === "claude" ? "Claude Code" : assistant === "codex" ? "Codex" : "助理不明"
+  return assistant === "claude" ? "Claude Code" : assistant === "codex" ? "Codex" : catalogWord("literal", "1d6ea8ca2af5")
 }
 
 const LAST_ASSISTANT = "clawdline.work.new-session-assistant"

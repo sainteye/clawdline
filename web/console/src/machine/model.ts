@@ -1,3 +1,5 @@
+import { catalogFormat } from "../catalog.js"
+import { catalogWord } from "../catalog.js"
 import type { MachineUsage, MachineUsageGroup, SessionRow } from "@clawdline/contract"
 
 /**
@@ -92,27 +94,27 @@ export function verdict(u: MachineUsage): Verdict {
     return {
       level: "bad",
       en: `Memory is short: ${avail} left and ${bytes(u.swap_used_bytes)} swapped out. Everything waits on the disk — close idle sessions or stop a build.`,
-      zh: `記憶體不夠：只剩 ${avail}，已有 ${bytes(u.swap_used_bytes)} 被換到 swap。所有東西都在等磁碟——關掉閒置的 session 或停掉編譯。`,
+      zh: catalogFormat("template", "70ebbddc796d", [avail, bytes(u.swap_used_bytes)]),
     }
   }
   if (cpu === "bad") {
     return {
       level: "bad",
       en: `The CPU is saturated: ${Math.round(u.cpu_percent)}% busy, load ${fixed(u.load[0])} on ${u.cores} cores. Work queues behind it.`,
-      zh: `CPU 滿載：使用率 ${Math.round(u.cpu_percent)}%，load ${fixed(u.load[0])}（${u.cores} 核）。工作正在排隊。`,
+      zh: catalogFormat("template", "87d49771a97c", [Math.round(u.cpu_percent), fixed(u.load[0]), u.cores]),
     }
   }
   if (mem === "warn" || swap === "warn" || cpu === "warn") {
     return {
       level: "warn",
       en: `Busy but keeping up: ${Math.round(u.cpu_percent)}% CPU, ${avail} of memory available.`,
-      zh: `有點忙，但還撐得住：CPU ${Math.round(u.cpu_percent)}%，記憶體還有 ${avail} 可用。`,
+      zh: catalogFormat("template", "494c3eaecfb0", [Math.round(u.cpu_percent), avail]),
     }
   }
   return {
     level: "ok",
     en: `This machine has room: ${Math.round(u.cpu_percent)}% CPU, ${avail} of memory available.`,
-    zh: `機器很從容：CPU ${Math.round(u.cpu_percent)}%，記憶體還有 ${avail} 可用。`,
+    zh: catalogFormat("template", "d9b292916aa7", [Math.round(u.cpu_percent), avail]),
   }
 }
 
@@ -189,7 +191,7 @@ export function rows(u: MachineUsage, sessions: readonly SessionRow[], slots: Re
       kind: g.kind,
       id: g.id,
       title: daemon ? "Clawdline" : known?.label || g.label || terminal(g) || g.id,
-      detail: daemon ? (zh ? "這個服務本身" : "this service itself") : detail(g, known, zh),
+      detail: daemon ? (catalogWord("literal", "3167aacb70d1")) : detail(g, known, zh),
       icon: daemon ? undefined : known?.icon,
       color: daemon ? MORE : known?.icon?.accent || (slot === undefined ? MORE : SLOTS[slot]),
       cpu: g.cpu_percent,
@@ -213,7 +215,7 @@ function terminal(g: MachineUsageGroup): string {
 
 function detail(g: MachineUsageGroup, known: SessionRow | undefined, zh: boolean): string {
   const parts = [terminal(g) || known?.tty?.replace(/^\/dev\//, "") || ""]
-  parts.push(zh ? `${g.processes} 個程序` : `${g.processes} ${g.processes === 1 ? "process" : "processes"}`)
+  parts.push(catalogFormat("template", "b5bb0404f123", [g.processes]))
   return parts.filter(Boolean).join(" · ")
 }
 
@@ -248,7 +250,7 @@ export function memorySegments(u: MachineUsage, list: Row[], zh: boolean): Segme
   }))
   const other = Math.max(0, used - counted * scale)
   if (other > 0) {
-    out.push({ key: "other", label: zh ? "其他程序與系統" : "other processes and the system", color: "#3a3a44", bytes: other, percent: share(other, total) })
+    out.push({ key: "other", label: catalogWord("literal", "1c22cfe1e037"), color: "#3a3a44", bytes: other, percent: share(other, total) })
   }
   return out
 }

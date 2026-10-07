@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // A notice, said to a person (docs/limits.md §4.5, design-decisions C4).
@@ -50,29 +52,36 @@ func PushTag(name string) string { return "capacity-" + name }
 // entered it. full is when the row is projected to reach its limit, zero when
 // it is not projected. loc is where the date is written for; nil is UTC.
 func NoticeText(e Entry, state State, used, limit int64, full time.Time, loc *time.Location) (title, body string) {
-	amount := amountOf(e.Unit, used) + "／" + amountOf(e.Unit, limit) + "（" + percent(used, limit) + "）"
+	return NoticeTextLanguage("zh-Hant", e, state, used, limit, full, loc)
+}
+
+// NoticeTextLanguage renders fixed copy in the selected product language.
+func NoticeTextLanguage(language string, e Entry, state State, used, limit int64, full time.Time, loc *time.Location) (title, body string) {
+	amount := productcopy.Format(language, "capacity.amount", map[string]string{
+		"used": amountOfLanguage(language, e.Unit, used), "limit": amountOfLanguage(language, e.Unit, limit), "percent": percent(used, limit),
+	})
 	if state == OK {
-		return "容量已恢復：" + e.Name,
-			e.Name + " 回到 " + amount + "，已經低於告警門檻，不用做什麼。"
+		return productcopy.Format(language, "capacity.recovered.title", map[string]string{"name": e.Name}),
+			productcopy.Format(language, "capacity.recovered.body", map[string]string{"name": e.Name, "amount": amount})
 	}
 	if e.Name == ArtifactsDropsYoung {
-		return youngDrops(used)
+		return youngDrops(language, used)
 	}
-	title = "容量快滿了：" + e.Name + "（" + percent(used, limit) + "）"
+	title = productcopy.Format(language, "capacity.critical.title", map[string]string{"name": e.Name, "percent": percent(used, limit)})
 	if state == Full {
-		title = "容量已滿：" + e.Name
+		title = productcopy.Format(language, "capacity.full.title", map[string]string{"name": e.Name})
 	}
-	body = e.Name + " 用了 " + amount + "。" + consequence(e) + "。"
+	body = productcopy.Format(language, "capacity.used", map[string]string{"name": e.Name, "amount": amount, "consequence": consequence(language, e)})
 	if state != Full && !full.IsZero() {
 		if loc == nil {
 			loc = time.UTC
 		}
-		body += "照最近的速度，" + full.In(loc).Format("01-02 15:04") + " 會滿。"
+		body += productcopy.Format(language, "capacity.projected", map[string]string{"at": full.In(loc).Format("01-02 15:04")})
 	}
 	if e.EvictedBy == Person {
-		body += "要騰出空間得由你決定；細節在設定頁的「容量」。"
+		body += productcopy.Format(language, "capacity.person", nil)
 	} else {
-		body += "daemon 會照上面的規則自己處理；細節在設定頁的「容量」。"
+		body += productcopy.Format(language, "capacity.daemon", nil)
 	}
 	return title, body
 }
@@ -81,57 +90,64 @@ func NoticeText(e Entry, state State, used, limit int64, full time.Time, loc *ti
 // reading is something that already happened rather than how full a thing is:
 // pictures the drop cache's byte cap removed before they were a day old. What
 // a person can do is send the picture again when a session cannot read it.
-func youngDrops(used int64) (title, body string) {
-	return "圖片快取太小：" + ArtifactsDropsYoung,
-		ArtifactsDropsYoung + "：過去一天有 " + strconv.FormatInt(used, 10) + " 張送出不到一天的圖，被 " + ArtifactsDrops +
-			" 的位元組上限提早刪掉了。這些路徑已經打進對話，assistant 之後回頭讀（例如 compact 或 resume 之後）會讀不到；需要時請重新貼一次。細節在設定頁的「容量」。"
+func youngDrops(language string, used int64) (title, body string) {
+	return productcopy.Format(language, "capacity.young.title", map[string]string{"name": ArtifactsDropsYoung}),
+		productcopy.Format(language, "capacity.young.body", map[string]string{"name": ArtifactsDropsYoung, "count": strconv.FormatInt(used, 10), "drops": ArtifactsDrops})
 }
 
 // consequence is what the row does at its limit, in the words a person needs:
 // what stops working, or what is let go.
-func consequence(e Entry) string {
+func consequence(language string, e Entry) string {
+	key := "capacity.none"
 	switch e.AtLimit {
 	case Refuse:
 		if e.EvictedBy == Person {
 			if e.Class == Evidence {
-				return "滿了之後新的寫入會被拒絕，/v1/health 會回 capacity_exhausted，daemon 不會自己刪任何東西"
+				key = "capacity.refuse.evidence"
+			} else {
+				key = "capacity.refuse.person"
 			}
-			return "滿了之後新的會被拒絕，daemon 不會自己刪任何東西"
+		} else {
+			key = "capacity.refuse.other"
 		}
-		return "滿了之後新的請求會被拒絕、請對方稍後再試，已經在裡面的不會被丟掉"
 	case EvictOldest:
-		return "滿了之後會淘汰最舊的"
+		key = "capacity.evict"
 	case Expire:
-		return "滿了之後過了重試視窗的會過期"
+		key = "capacity.expire"
 	case Rotate:
 		if e.Class == SecurityAudit {
-			return "滿了之後會輪替成新的分段，舊的分段不刪"
+			key = "capacity.rotate.audit"
+		} else {
+			key = "capacity.rotate"
 		}
-		return "滿了之後會輪替成新的分段，最舊的分段會被刪掉"
 	case Summarize:
-		return "滿了之後會先摘要再移走原文"
+		key = "capacity.summarize"
 	case Coalesce:
-		return "滿了之後只留最新的值"
+		key = "capacity.coalesce"
 	case Disconnect:
-		return "滿了之後跟不上的讀者會被斷線、重新讀取"
+		key = "capacity.disconnect"
+	default:
+		if e.Class == Evidence {
+			key = "capacity.none.evidence"
+		}
 	}
-	// Nothing: a row that only reports its limit (it carries a Deviation).
-	if e.Class == Evidence {
-		return "目前滿了也不會拒絕寫入，只有 /v1/health 會回 capacity_exhausted"
-	}
-	return "目前滿了也不會拒絕或淘汰任何東西"
+	return productcopy.Format(language, key, nil)
 }
 
 // amountOf is a reading in the row's unit: bytes in binary units, the others
 // as the count their register row names.
 func amountOf(u Unit, n int64) string {
+	return amountOfLanguage("en", u, n)
+}
+
+func amountOfLanguage(language string, u Unit, n int64) string {
 	switch u {
 	case Characters:
-		return strconv.FormatInt(n, 10) + " 字"
+		return strconv.FormatInt(n, 10) + productcopy.Format(language, "capacity.unit.characters", nil)
 	case Seconds:
-		return strconv.FormatInt(n, 10) + " 秒"
+		return strconv.FormatInt(n, 10) + productcopy.Format(language, "capacity.unit.seconds", nil)
 	case Rows:
-		return strconv.FormatInt(n, 10) + " 筆"
+		return strconv.FormatInt(n, 10) + productcopy.Format(language, "capacity.unit.rows", nil)
 	}
 	const k = 1 << 10
 	switch {

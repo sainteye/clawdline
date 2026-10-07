@@ -146,7 +146,7 @@ func (s *Server) usageCompareCompaction(w http.ResponseWriter, r *http.Request) 
 	}
 	got, err := s.usageLedger().CompareCompactionSince(r.Context(), q.Get("since"))
 	if errors.Is(err, app.ErrCompareSince) {
-		writeRefusal(w, http.StatusBadRequest, "bad_request", "since: "+err.Error()+".")
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", "since: "+err.Error()+".")
 		return
 	}
 	if err != nil {
@@ -170,7 +170,7 @@ func (s *Server) usageCompareHandoff(w http.ResponseWriter, r *http.Request) {
 	}
 	got, err := s.usageLedger().CompareHandoffSince(r.Context(), q.Get("since"))
 	if errors.Is(err, app.ErrCompareSince) {
-		writeRefusal(w, http.StatusBadRequest, "bad_request", "since: "+err.Error()+".")
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", "since: "+err.Error()+".")
 		return
 	}
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *Server) usageWorkSamples(w http.ResponseWriter, r *http.Request) {
 	u := s.usageLedger()
 	got, err := u.WorkSamplesSince(r.Context(), q.Get("since"), q.Get("until"))
 	if errors.Is(err, app.ErrCompareSince) || errors.Is(err, app.ErrWorkUntil) {
-		writeRefusal(w, http.StatusBadRequest, "bad_request", err.Error()+".")
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", err.Error()+".")
 		return
 	}
 	if err != nil {
@@ -265,7 +265,7 @@ func (s *Server) usageSession(ctx context.Context, w http.ResponseWriter, u *app
 		}
 	}
 	if !own && parent != "" {
-		writeRefusal(w, http.StatusNotFound, "unknown_session",
+		writeRawRefusal(w, http.StatusNotFound, "unknown_session",
 			"That conversation is a subagent; its bill is in its session's delegate: /v1/usage/sessions/"+parent)
 		return
 	}

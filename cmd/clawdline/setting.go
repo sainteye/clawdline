@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
-	"github.com/sainteye/clawdline/internal/contract"
 )
 
 // `clawdline setting get|set <key> [value]`: one of this machine's settings
@@ -65,15 +64,32 @@ var settingKeys = map[string]struct {
 		show: func(raw json.RawMessage) string {
 			var n *int64
 			if json.Unmarshal(raw, &n) != nil || n == nil || *n == 0 {
-				return "off (Claude Code compacts near its own window)"
+				return cliCopy("core", "setting.compaction_off", "off (Claude Code compacts near its own window)")
 			}
-			return strconv.FormatInt(*n, 10) + " tokens"
+			return fmt.Sprintf(cliCopy("core", "setting.tokens", "%d tokens"), *n)
 		},
 		takes: "a number of tokens from 50000 to 1000000, or off",
 	},
 	"planning_gate":     {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"verify_gate":       {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"update_auto_apply": {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"product_language": {
+		parse: func(s string) (any, bool) {
+			for _, language := range nextconfig.ProductLanguages {
+				if s == language {
+					return s, true
+				}
+			}
+			return nil, false
+		},
+		show: func(raw json.RawMessage) string {
+			if len(raw) == 0 {
+				return "en"
+			}
+			return nextconfig.ProductLanguage(nextconfig.Values{Raw: map[string]json.RawMessage{"product_language": raw}})
+		},
+		takes: "en, zh-Hant, ja, zh-Hans, ko, es, pt-BR, fr or de",
+	},
 }
 
 func modelSetting(assistant string) struct {
@@ -97,7 +113,7 @@ func modelSetting(assistant string) struct {
 		show: func(raw json.RawMessage) string {
 			var model *string
 			if json.Unmarshal(raw, &model) != nil || model == nil || *model == "" {
-				return assistant + " default"
+				return fmt.Sprintf(cliCopy("core", "setting.model_default", "%s default"), assistant)
 			}
 			return *model
 		},
@@ -122,7 +138,7 @@ func daemonSettings(method string, body any) (int, []byte, error) {
 	}
 	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("the daemon did not answer: %w", err)
+		return 0, nil, fmt.Errorf(cliCopy("core", "setting.daemon_unreachable", "the daemon did not answer: %w"), err)
 	}
 	defer res.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
@@ -130,11 +146,25 @@ func daemonSettings(method string, body any) (int, []byte, error) {
 }
 
 func settingUsage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "usage: clawdline setting get <key> | clawdline setting set <key> <value>")
+	fmt.Fprintln(stderr, cliCopy("core", "setting.usage", "usage: clawdline setting get <key> | clawdline setting set <key> <value>"))
 	for key, k := range settingKeys {
-		fmt.Fprintf(stderr, "  %s: %s\n", key, k.takes)
+		fmt.Fprintf(stderr, "  %s: %s\n", key, settingTakes(key, k.takes))
 	}
 	return 2
+}
+
+func settingTakes(key, english string) string {
+	switch key {
+	case "codex_default_model", "claude_default_model":
+		return cliCopy("core", "setting.takes_model", english)
+	case "claude_auto_compact_window":
+		return cliCopy("core", "setting.takes_tokens", english)
+	case "planning_gate", "verify_gate":
+		return cliCopy("core", "setting.takes_bool", english)
+	case "product_language":
+		return cliCopy("core", "setting.takes_language", english)
+	}
+	return english
 }
 
 // runSetting is the command, answering its exit status.
@@ -145,7 +175,7 @@ func runSetting(stdout, stderr io.Writer, args []string, call settingsCall) int 
 	verb, key := args[0], args[1]
 	k, known := settingKeys[key]
 	if !known {
-		fmt.Fprintf(stderr, "clawdline setting: %q is not a key this command sets\n", key)
+		fmt.Fprintf(stderr, cliCopy("core", "setting.invalid_key", "clawdline setting: %q is not a key this command sets\n"), key)
 		return settingUsage(stderr)
 	}
 	var body any
@@ -154,7 +184,7 @@ func runSetting(stdout, stderr io.Writer, args []string, call settingsCall) int 
 	case verb == "set" && len(args) == 3:
 		value, ok := k.parse(args[2])
 		if !ok {
-			fmt.Fprintf(stderr, "clawdline setting: %s is %s, not %q\n", key, k.takes, args[2])
+			fmt.Fprintf(stderr, cliCopy("core", "setting.invalid_value", "clawdline setting: %s is %s, not %q\n"), key, settingTakes(key, k.takes), args[2])
 			return 2
 		}
 		body = map[string]any{key: value}
@@ -172,22 +202,17 @@ func runSetting(stdout, stderr io.Writer, args []string, call settingsCall) int 
 	}
 	if status != http.StatusOK {
 		// The route's refusal is `{error, detail}`; the gate's, before it, is
-		// the Swift envelope `{error: {code, message}}`.
-		var flat contract.Refusal
-		var nested contract.AuthRefusal
-		switch {
-		case json.Unmarshal(data, &flat) == nil && flat.Error != "":
-			fmt.Fprintf(stderr, "clawdline setting: refused, %d %s: %s\n", status, flat.Error, flat.Detail)
-		case json.Unmarshal(data, &nested) == nil && nested.Error.Code != "":
-			fmt.Fprintf(stderr, "clawdline setting: refused, %d %s: %s\n", status, nested.Error.Code, nested.Error.Message)
-		default:
-			fmt.Fprintf(stderr, "clawdline setting: the daemon answered %d: %s\n", status, strings.TrimSpace(string(data)))
+		// the nested envelope `{error: {code, message}}`.
+		if refusal, ok := parseCLIHTTPRefusal(data); ok {
+			fmt.Fprintf(stderr, cliCopy("core", "setting.refused", "clawdline setting: refused, %d %s: %s\n"), status, refusal.Code, refusal.humanDetail(currentCLILanguage()))
+		} else {
+			fmt.Fprintf(stderr, cliCopy("core", "setting.daemon_answered", "clawdline setting: the daemon answered %d: %s\n"), status, strings.TrimSpace(string(data)))
 		}
 		return 1
 	}
 	var snapshot map[string]json.RawMessage
 	if json.Unmarshal(data, &snapshot) != nil {
-		fmt.Fprintln(stderr, "clawdline setting: the daemon's answer was not the settings")
+		fmt.Fprintln(stderr, cliCopy("core", "setting.invalid_response", "clawdline setting: the daemon's answer was not the settings"))
 		return 1
 	}
 	fmt.Fprintf(stdout, "%s: %s\n", key, k.show(snapshot[key]))

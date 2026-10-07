@@ -56,7 +56,7 @@ func (b *Broker) DispatchGate(ctx context.Context, in GateDispatch) (Dispatched,
 			existing.Kind != TaskKindVerificationGate || existing.Assistant != "codex" || existing.Isolation != IsolationWorktree ||
 			existing.ProjectDir != in.Gate.Candidate.Repository || existing.WorkID != in.WorkID || existing.Persona != in.Persona ||
 			len(existing.Claims) != 0 || !reflect.DeepEqual(existingGate, in.Gate) {
-			return Dispatched{}, refuse(409, "gate_replay_mismatch",
+			return Dispatched{}, refuseRaw(409, "gate_replay_mismatch",
 				fmt.Sprintf("Task %s already has a different immutable checker identity.", in.TaskID))
 		}
 	}

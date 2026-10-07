@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/productcopy"
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
@@ -35,14 +36,8 @@ import (
 // internal/adapters/push.FromBrowser, beside the reason for it.
 
 const (
-	// pushTestTitle and pushTestBody are the Swift app's `"Clawdline"` and
-	// `L.t.pushTest` (`Copy+Chinese.swift`). They are written here rather than
-	// read from the console's catalog because this is a *server* string: the
-	// catalog under web/console is the page's, and nothing in this daemon
-	// speaks a language yet. When it does, this is one of the strings that
-	// moves.
+	// A test notification keeps the product name as its title.
 	pushTestTitle = "Clawdline"
-	pushTestBody  = "這是一則測試通知，該接的都接好了。"
 
 	// pushSendDeadline is how long a route that owes its caller a delivery
 	// result will wait for the fan-out. Every individual request already has
@@ -237,7 +232,7 @@ func (s *Server) pushTestRoute(w http.ResponseWriter, r *http.Request) {
 	// session that needs you, so it carries no project and nothing that would
 	// replace a real notification already on the phone.
 	delivery, err := sender.Send(ctx, adapterpush.Notification{
-		Title: pushTestTitle, Body: pushTestBody, URL: url,
+		Title: pushTestTitle, Body: productcopy.Format(s.productLanguage(), "push.test", nil), URL: url,
 	}, device)
 	if err != nil {
 		writePushStoreFailure(w, err)

@@ -7,19 +7,19 @@ import { projectSetupCapabilities, projectSetupInstructions, projectSetupProgres
 test("a Project setup Session receives the portable guide, all visible layers and the operational boundary", () => {
   const words = projectSetupInstructions({ label: "Sample", path: "/work/sample" })
   assert.match(words, /clawdline guide zh-TW project/)
-  assert.match(words, /Project 名稱："Sample"/)
-  assert.match(words, /Project root："\/work\/sample"/)
-  assert.match(words, /名稱與像素圖示/)
-  assert.match(words, /deploy／CI/)
+  assert.match(words, /Project name: "Sample"/)
+  assert.match(words, /Project root: "\/work\/sample"/)
+  assert.match(words, /name and pixel icon/)
+  assert.match(words, /deploy\/CI/)
   assert.match(words, /\.devstack\.json/)
-  assert.match(words, /不要啟動、停止、重啟或部署/)
-  assert.match(words, /仍無法驗證/)
+  assert.match(words, /do not start, stop, restart, or deploy/)
+  assert.match(words, /could not be verified/)
 })
 
 test("labels and paths are quoted as data rather than interpolated as new instructions", () => {
   const words = projectSetupInstructions({ label: "line\nbreak", path: "/work/`odd`" })
-  assert.match(words, /Project 名稱："line\\nbreak"/)
-  assert.match(words, /Project root："\/work\/`odd`"/)
+  assert.match(words, /Project name: "line\\nbreak"/)
+  assert.match(words, /Project root: "\/work\/`odd`"/)
 })
 
 test("the setup dialog gives both unreadable and empty Project lists an actionable next step", () => {
@@ -48,7 +48,7 @@ test("the readiness model separates configured deploy progress from a failed cur
   const deploy = rows.find(row => row.key === "deploy")
   assert.equal(deploy?.complete, true, "the producer is configured")
   assert.equal(deploy?.tone, "attention", "the current failure still asks for attention")
-  assert.match(deploy?.detail ?? "", /最近失敗/)
+  assert.match(deploy?.detail ?? "", /Recently failed/)
   assert.deepEqual(projectSetupProgress(place), { complete: 3, total: 4 })
 })
 
@@ -72,4 +72,48 @@ test("an older daemon is shown as unknown instead of making up missing configura
   const place = { id: "shop", label: "Shop", path: "/work/shop" }
   assert.equal(projectSetupProgress(place), null)
   assert.equal(projectSetupCapabilities(place)[0]?.tone, "unknown")
+})
+
+const base = {
+  icon: "override" as const, deploy: "not_applicable" as const, deploy_activity: "unknown" as const,
+  servers: "ready" as const, server_count: 1, sync: "ready" as const,
+}
+
+test("the Claude and Codex sharing row distinguishes shared, drifting, and unknown", () => {
+  const row = (setup: object) => projectSetupCapabilities({ id: "shop", label: "Shop", path: "/work/shop", setup: setup as any })
+    .find(capability => capability.key === "unify")
+  const unified = row({ ...base, unify: "unified" })
+  assert.equal(unified?.label, "Claude and Codex share rules and skills")
+  assert.equal(unified?.detail, "Shared")
+  assert.equal(unified?.tone, "ready")
+  assert.equal(unified?.action, "unify")
+  const drifting = row({ ...base, unify: "drifting", unify_count: 3 })
+  assert.equal(drifting?.detail, "Differences found (3)")
+  assert.equal(drifting?.tone, "attention")
+  assert.equal(drifting?.complete, false)
+  assert.equal(drifting?.action, "unify")
+  const unknown = row({ ...base, unify: "unknown" })
+  assert.match(unknown?.detail ?? "", /^Unknown/)
+  assert.equal(unknown?.tone, "unknown")
+  assert.equal(unknown?.action, "unify", "the preview says what could not be read")
+  assert.deepEqual(projectSetupProgress({ id: "shop", label: "Shop", path: "/work/shop", setup: { ...base, unify: "drifting", unify_count: 3 } as any }),
+    { complete: 3, total: 4 }, "drifting counts against the score")
+})
+
+test("a machine that sends no unify status shows unknown without a zero count", () => {
+  const place = { id: "shop", label: "Shop", path: "/work/shop", setup: base }
+  const row = projectSetupCapabilities(place).find(capability => capability.key === "unify")
+  assert.match(row?.detail ?? "", /^Unknown/)
+  assert.doesNotMatch(row?.detail ?? "", /0/)
+  assert.equal(row?.tone, "unknown")
+  assert.equal(row?.applicable, false)
+  assert.equal(row?.action, undefined, "an older machine has no unify route to open")
+  assert.deepEqual(projectSetupProgress(place), { complete: 3, total: 3 })
+})
+
+test("the readiness card's unify row opens the scoped Project view and its unify preview", () => {
+  const source = readFileSync(new URL("./ProjectSetup.tsx", import.meta.url), "utf8")
+  assert.match(source, /row\.action === "unify"/)
+  assert.match(source, /openUnify\(place\)/)
+  assert.match(source, /<ProjectUnify [^>]*openRequest=/)
 })

@@ -1,40 +1,43 @@
+import { localizedLiteralMap } from "../../catalog.js"
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import type { WorkGateCompactRead, WorkGateRoundSummary } from "@clawdline/contract"
 
-export const AUTHORITY: Record<string, string> = {
-  pass: "獨立 checker PASS",
-  ai_override: "AI（Epic owner）人工覆核通過 · 非 checker PASS",
-  person_override: "你決定覆核通過 · 非 checker PASS",
-  technical_ai_override: "AI（Epic owner）技術覆核通過 · 未取得 checker PASS",
-  technical_person_override: "你決定技術覆核通過 · 未取得 checker PASS",
-}
+export const AUTHORITY: Record<string, string> = localizedLiteralMap({
+  pass: "5418f86ba3ea",
+  ai_override: "a5ef9ebb1095",
+  person_override: "f6eb09d61a5d",
+  technical_ai_override: "28d16292ace1",
+  technical_person_override: "9d2f7c1f283b",
+})
 
 /** Names both immutable switch values so a compact card never hides which gate was captured. */
 export function gateSnapshotText(cycle: number, planning: boolean, verification: boolean): string {
-  if (cycle === 0) return "成功指派後擷取"
-  return `規劃${planning ? "開" : "關"} · 獨立驗證${verification ? "開" : "關"}`
+  if (cycle === 0) return catalogWord("literal", "731141a1b815")
+  return catalogFormat("template", "92dfded7689f", [planning ? catalogWord("literal", "09b410f51b19") : catalogWord("literal", "862364ba6811"), verification ? catalogWord("literal", "09b410f51b19") : catalogWord("literal", "862364ba6811")])
 }
 
 export function gateStatus(gate?: WorkGateCompactRead): string {
-  if (!gate || gate.gate_snapshot_cycle === 0) return "Gate 設定尚未擷取"
+  if (!gate || gate.gate_snapshot_cycle === 0) return catalogWord("literal", "b2a1c6bc47a4")
   const authority = gate.current_authorization
-  if (authority) return AUTHORITY[authority.kind] ?? "驗證授權種類未知 · 請查看詳情"
+  if (authority) return AUTHORITY[authority.kind] ?? catalogWord("literal", "a8c1da282b1b")
   const escalation = gate.escalation
   if (escalation && escalation.state !== "resolved") {
-    return escalation.state === "waiting_user" ? "驗證升級 · 等你決定" : "驗證升級 · 等 Epic owner 決定"
+    return escalation.state === "waiting_user" ? catalogWord("literal", "7314e95c4cbb") : catalogWord("literal", "e4c7f6e1f371")
   }
-  if (!gate.verify_gate) return gate.planning_gate ? "規劃 gate 開啟 · 未要求獨立驗證" : "兩道 gate 均關閉"
+  if (!gate.verify_gate) return gate.planning_gate ? catalogWord("literal", "ce0c89b0dbf3") : catalogWord("literal", "d85a2ae65148")
   const round = gate.latest_round
-  if (!round) return "獨立驗證尚未開始"
-  if (round.state === "complete" && round.verdict === "PASS") return "checker 回報 PASS · 尚無有效合併授權"
+  if (!round) return catalogWord("literal", "d1e4a07bc098")
+  if (round.state === "complete" && round.verdict === "PASS") return catalogWord("literal", "e7f7f95a735c")
   return roundStatus(round)
 }
 
 export function roundStatus(round: WorkGateRoundSummary): string {
-  if (round.state === "stale") return "驗證已過期 · 不能當作 PASS"
-  if (round.state === "technical_failure") return "驗證技術失敗 · 上層 Epic owner 修復後重試；沒有上層時由你決定"
-  if (round.state !== "complete") return ({ queued: "驗證待派送", dispatching: "驗證派送中", running: "獨立驗證中" } as Record<string, string>)[round.state] ?? "驗證狀態未知"
-  if (round.verdict === "PASS") return "獨立驗證 PASS"
-  if (round.verdict === "FAIL") return "獨立驗證 FAIL · 負責 Session 修正後提交新候選"
-  if (round.verdict === "NEEDS_WORK") return "NEEDS_WORK · 負責 Session 須補證或重新送驗"
-  return "驗證結果未知 · 負責 Session 檢查結果後重新送驗"
+  if (round.state === "stale") return catalogWord("literal", "80916f71df75")
+  if (round.state === "technical_failure") return catalogWord("literal", "ee97a405ed90")
+  if (round.state !== "complete") return ({ queued: catalogWord("literal", "16c749fb7cd0"), dispatching: catalogWord("literal", "d9715e0f7ae6"), running: catalogWord("literal", "9d7cb46b6e3a") } as Record<string, string>)[round.state] ?? catalogWord("literal", "1c2daefcb904")
+  if (round.verdict === "PASS") return catalogWord("literal", "583482996f34")
+  if (round.verdict === "FAIL") return catalogWord("literal", "4f214c6fa008")
+  if (round.verdict === "NEEDS_WORK") return catalogWord("literal", "3ad19c8935c2")
+  return catalogWord("literal", "4ed38be26870")
 }

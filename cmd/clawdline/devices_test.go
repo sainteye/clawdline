@@ -83,12 +83,13 @@ func statusWith(t *testing.T, door localDoor, token, path string) int {
 }
 
 // A browser `clawdline open` signed in is in `clawdline devices`, and after
-// `clawdline devices revoke` its token is refused. Use an authenticated local
-// settings read to prove that, without asking iTerm2 for an unrelated session
-// inventory that can stall or prompt for Automation during this test.
+// `clawdline devices revoke` its token is refused. The settings read exercises
+// the same paired-device gate without waiting for the machine's session scan.
 func TestDevicesRevokeRefusesTheBrowsersToken(t *testing.T) {
 	door := realDoor(t)
 	browser := openBrowser(t, door)
+	// Credential revocation is independent of the terminal inventory, whose
+	// iTerm2 Apple Event can outlast this test's HTTP deadline.
 	if code := statusWith(t, door, browser.Token, "/v1/settings"); code != http.StatusOK {
 		t.Fatalf("the new browser was not let in: %d", code)
 	}

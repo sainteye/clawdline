@@ -1,0 +1,920 @@
+{
+  "template.7e8b4dfff169": {
+    "include": true,
+    "en": "{arg0} cores · {arg1} memory",
+    "zh-Hant": "{arg0} 核 · {arg1} 記憶體",
+    "reason": ""
+  },
+  "template.b8faa287adb9": {
+    "include": true,
+    "en": "{arg0} used",
+    "zh-Hant": "已用 {arg0}",
+    "reason": ""
+  },
+  "template.ca37c38d230b": {
+    "include": true,
+    "en": "{arg0} available",
+    "zh-Hant": "可用 {arg0}",
+    "reason": ""
+  },
+  "template.82697b4e4f82": {
+    "include": true,
+    "en": "Sessions ({arg0})",
+    "zh-Hant": "各 session（{arg0}）",
+    "reason": ""
+  },
+  "template.c4e5c8cf3d7b": {
+    "include": true,
+    "en": "×{arg0}",
+    "zh-Hant": "{arg0} 個",
+    "reason": ""
+  },
+  "template.37d294810b2a": {
+    "include": true,
+    "en": "CPU is the average over the last {arg0} s, with all {arg1} cores as 100%. A session includes the shells and builds it started; memory shared between processes is counted in each.",
+    "zh-Hant": "CPU 是最近 {arg0} 秒的平均，以整台機器 {arg1} 核為 100%。每個 session 包含它開的 shell 和編譯等子程序；程序間共用的記憶體會重複計入。",
+    "reason": ""
+  },
+  "template.70ebbddc796d": {
+    "include": true,
+    "en": "Not enough memory: only {arg0} available, with {arg1} already moved to swap. Everything is waiting on the disk—close idle sessions or stop a build.",
+    "zh-Hant": "記憶體不夠：只剩 {arg0}，已有 {arg1} 被換到 swap。所有東西都在等磁碟——關掉閒置的 session 或停掉編譯。",
+    "reason": ""
+  },
+  "template.87d49771a97c": {
+    "include": true,
+    "en": "CPU at capacity: {arg0}% usage, load {arg1} ({arg2} cores). Work is queued.",
+    "zh-Hant": "CPU 滿載：使用率 {arg0}%，load {arg1}（{arg2} 核）。工作正在排隊。",
+    "reason": ""
+  },
+  "template.494c3eaecfb0": {
+    "include": true,
+    "en": "The machine is busy but holding up: CPU {arg0}%, {arg1} memory available.",
+    "zh-Hant": "有點忙，但還撐得住：CPU {arg0}%，記憶體還有 {arg1} 可用。",
+    "reason": ""
+  },
+  "template.d9b292916aa7": {
+    "include": true,
+    "en": "The machine has plenty of headroom: CPU {arg0}%, {arg1} memory available.",
+    "zh-Hant": "機器很從容：CPU {arg0}%，記憶體還有 {arg1} 可用。",
+    "reason": ""
+  },
+  "template.b5bb0404f123": {
+    "include": true,
+    "en": "Processes: {arg0}",
+    "zh-Hant": "{arg0} 個程序",
+    "reason": ""
+  },
+  "template.0efa5a61894d": {
+    "include": true,
+    "en": "The Squad service temporarily could not complete the request{arg0}. Try again later; if this continues, refresh the page.",
+    "zh-Hant": "角色小隊服務暫時無法完成請求{arg0}。請稍後重試；若持續發生，重新整理頁面。",
+    "reason": ""
+  },
+  "template.dec5e1afdd7e": {
+    "include": true,
+    "en": "Version conflict and unable to reload: {arg0} Your text is still here; try again.",
+    "zh-Hant": "版本衝突且無法重讀：{arg0} 你的文字仍保留，請再試一次。",
+    "reason": ""
+  },
+  "template.00ac5e87de81": {
+    "include": true,
+    "en": "Handbook was not saved: {arg0}",
+    "zh-Hant": "手冊未儲存：{arg0}",
+    "reason": ""
+  },
+  "template.10f87c17d2f8": {
+    "include": true,
+    "en": "Could not restore inheritance: {arg0}",
+    "zh-Hant": "未能還原繼承：{arg0}",
+    "reason": ""
+  },
+  "template.dad86b25350d": {
+    "include": true,
+    "en": "Settings were not saved: {arg0}",
+    "zh-Hant": "設定未儲存：{arg0}",
+    "reason": ""
+  },
+  "template.75eb1ec08d49": {
+    "include": true,
+    "en": "Skill settings were not saved: {arg0}",
+    "zh-Hant": "技能設定未儲存：{arg0}",
+    "reason": ""
+  },
+  "template.fda343356bac": {
+    "include": true,
+    "en": "Reload failed: {arg0}",
+    "zh-Hant": "重新讀取失敗：{arg0}",
+    "reason": ""
+  },
+  "template.ddd756350b15": {
+    "include": true,
+    "en": "The skill was added and enabled. The global skill list changed during saving; this Project has not added: {arg0}. Add it through \"Add existing skill\" or restore global inheritance.",
+    "zh-Hant": "技能已加入並啟用。儲存期間全域技能清單也更新了；此 Project 尚未加入：{arg0}。可從「加入已建立技能」補入，或還原全域繼承。",
+    "reason": ""
+  },
+  "template.f8ba53a245d4": {
+    "include": true,
+    "en": "{arg0}{arg1} Try again; your input is still here.",
+    "zh-Hant": "{arg0}{arg1} 請重試；已輸入內容仍保留。",
+    "reason": ""
+  },
+  "template.403eadebb370": {
+    "include": true,
+    "en": "Could not restore skill inheritance: {arg0}",
+    "zh-Hant": "未能還原技能繼承：{arg0}",
+    "reason": ""
+  },
+  "template.9d654f40d3f4": {
+    "include": true,
+    "en": "Could not preview the bundle: {arg0}",
+    "zh-Hant": "無法預覽資料包：{arg0}",
+    "reason": ""
+  },
+  "template.4cc0e44397c7": {
+    "include": true,
+    "en": "The bundle was not adopted: {arg0}",
+    "zh-Hant": "資料包未採納：{arg0}",
+    "reason": ""
+  },
+  "template.2ee62aa05e92": {
+    "include": true,
+    "en": "Could not export the bundle: {arg0}",
+    "zh-Hant": "無法匯出資料包：{arg0}",
+    "reason": ""
+  },
+  "template.5c513a465185": {
+    "include": true,
+    "en": "Allow the managing agent to assign automatically: {arg0}",
+    "zh-Hant": "允許管理 agent 自動指派：{arg0}",
+    "reason": ""
+  },
+  "template.697a707c20a0": {
+    "include": true,
+    "en": "{arg0} handbook",
+    "zh-Hant": "{arg0} 手冊",
+    "reason": ""
+  },
+  "template.4308c1893804": {
+    "include": true,
+    "en": "Skill use animation: {arg0}",
+    "zh-Hant": "技能使用動畫：{arg0}",
+    "reason": ""
+  },
+  "template.8f1566b07b7d": {
+    "include": true,
+    "en": ", {arg0} private settings",
+    "zh-Hant": "、{arg0} 私人設定",
+    "reason": ""
+  },
+  "template.6eac929a1893": {
+    "include": true,
+    "en": "Lists personal, extension, and current Project skills for{arg0}.",
+    "zh-Hant": "會列出{arg0} 的個人、擴充與目前 Project 技能。",
+    "reason": ""
+  },
+  "template.c18a3d5d3927": {
+    "include": true,
+    "en": ", plus {arg0} attached files",
+    "zh-Hant": "，另含 {arg0} 個附檔",
+    "reason": ""
+  },
+  "template.40fa08f129b0": {
+    "include": true,
+    "en": "Icon saved to {arg0}.",
+    "zh-Hant": "已將圖示儲存到 {arg0}。",
+    "reason": ""
+  },
+  "template.b744f91deceb": {
+    "include": true,
+    "en": "File tree for {arg0}",
+    "zh-Hant": "{arg0} 的檔案樹",
+    "reason": ""
+  },
+  "template.f5dc01fdffbd": {
+    "include": true,
+    "en": "Could not confirm whether it was saved: {arg0} Your draft is still here; reload after recovery.",
+    "zh-Hant": "無法確認是否已儲存：{arg0} 草稿仍在這裡；恢復後請重新讀取。",
+    "reason": ""
+  },
+  "template.e50de8226de9": {
+    "include": true,
+    "en": "{arg1} of {arg0} items complete",
+    "zh-Hant": "{arg0} 項中已完成 {arg1} 項",
+    "reason": ""
+  },
+  "template.54ab1dddbd2b": {
+    "include": true,
+    "en": "{arg0}/{arg1} Projects fully configured",
+    "zh-Hant": "{arg0}/{arg1} 個專案配置完整",
+    "reason": ""
+  },
+  "template.407ed506af73": {
+    "include": true,
+    "en": "Wrote {arg0} files",
+    "zh-Hant": "寫入 {arg0} 個檔案",
+    "reason": ""
+  },
+  "template.be0401614399": {
+    "include": true,
+    "en": "Removed {arg0} files",
+    "zh-Hant": "移除 {arg0} 個檔案",
+    "reason": ""
+  },
+  "template.8861d1642b3c": {
+    "include": true,
+    "en": "{arg0} is offline. Open this page after it comes online to update it.",
+    "zh-Hant": "{arg0} 目前離線，上線後打開這頁就會更新。",
+    "reason": ""
+  },
+  "template.68c86e0aae21": {
+    "include": true,
+    "en": "{arg0} now uses this machine's own settings again.",
+    "zh-Hant": "{arg0} 已改回這台自己的設定。",
+    "reason": ""
+  },
+  "template.49c393ba6a87": {
+    "include": true,
+    "en": "Sync the {arg0} selected Projects",
+    "zh-Hant": "同步所選的 {arg0} 個專案",
+    "reason": ""
+  },
+  "template.bd6a78a26209": {
+    "include": true,
+    "en": "{arg0} {arg1} to {arg2}",
+    "zh-Hant": "{arg0} {arg1}到 {arg2}",
+    "reason": ""
+  },
+  "template.e3650f6f3874": {
+    "include": true,
+    "en": "Applied {arg0} changes. Current status: {arg1}. Use \"Reload list\" to update the files below.",
+    "zh-Hant": "已套用 {arg0} 項變更，目前狀態：{arg1}。下方的檔案清單請按「重新讀取清單」更新。",
+    "reason": ""
+  },
+  "template.9897d5449ea1": {
+    "include": true,
+    "en": "Could not confirm whether changes were applied. The reload returned \"{arg0}\"; review the preview below before deciding.",
+    "zh-Hant": "無法確認是否已套用。重新讀取的結果是「{arg0}」，請看下方預覽再決定。",
+    "reason": ""
+  },
+  "template.31c3f09e85c7": {
+    "include": true,
+    "en": "Nothing was applied: {arg0}",
+    "zh-Hant": "沒有套用任何東西：{arg0}",
+    "reason": ""
+  },
+  "template.8dc58842b93c": {
+    "include": true,
+    "en": "Apply did not finish: {arg0} Some changes may have been applied; {arg1}",
+    "zh-Hant": "套用沒有完成：{arg0} 可能已完成其中幾項；{arg1}",
+    "reason": ""
+  },
+  "template.5b1772732dce": {
+    "include": true,
+    "en": "Unable to determine (could not read shared state: {arg0})",
+    "zh-Hant": "無法判斷（讀不到共用狀態：{arg0}）",
+    "reason": ""
+  },
+  "template.aed581d1c3af": {
+    "include": true,
+    "en": "Progress connected · {arg0}",
+    "zh-Hant": "進度已接上 · {arg0}",
+    "reason": ""
+  },
+  "template.10f186c469ac": {
+    "include": true,
+    "en": "Declared {arg0} development servers",
+    "zh-Hant": "已宣告 {arg0} 個開發服務",
+    "reason": ""
+  },
+  "template.767c7030f872": {
+    "include": true,
+    "en": "Project name: {arg0}",
+    "zh-Hant": "Project 名稱：{arg0}",
+    "reason": ""
+  },
+  "template.bf557dd5d65c": {
+    "include": true,
+    "en": "Could not read {arg0}",
+    "zh-Hant": "讀不到 {arg0}",
+    "reason": ""
+  },
+  "template.1971a299186d": {
+    "include": true,
+    "en": "Could not read {arg0} and {arg1} other items",
+    "zh-Hant": "讀不到 {arg0} 等 {arg1} 個項目",
+    "reason": ""
+  },
+  "template.56c4350d4c99": {
+    "include": true,
+    "en": "Differences found ({arg0} items)",
+    "zh-Hant": "有落差（{arg0} 項）",
+    "reason": ""
+  },
+  "template.c21648fe8edd": {
+    "include": true,
+    "en": "Unable to determine ({arg0})",
+    "zh-Hant": "無法判斷（{arg0}）",
+    "reason": ""
+  },
+  "template.04eb2d98c178": {
+    "include": true,
+    "en": "Create a link at {arg0} pointing to {arg1} so Claude can also see the skill \"{arg2}\" that Codex already sees.",
+    "zh-Hant": "在 {arg0} 建一個連結指向 {arg1}，讓 Claude 也看得到 Codex 已經看得到的 skill「{arg2}」。",
+    "reason": ""
+  },
+  "template.34222c185d1a": {
+    "include": true,
+    "en": "Move {arg0} to {arg1} and leave a link at the original location so Codex can also see the skill \"{arg2}\".",
+    "zh-Hant": "把 {arg0} 搬到 {arg1}，原處留一個連結，讓 Codex 也看得到 skill「{arg2}」。",
+    "reason": ""
+  },
+  "template.61465ed010f6": {
+    "include": true,
+    "en": "{arg0} and {arg1} have identical contents; replace the copy at {arg2} with a link to {arg3}.",
+    "zh-Hant": "{arg0} 和 {arg1} 內容完全相同；把 {arg2} 這份副本換成指向 {arg3} 的連結。",
+    "reason": ""
+  },
+  "template.3b2adf429bd8": {
+    "include": true,
+    "en": "Copy {arg0} to {arg1} (this machine cannot create links). Later checks will compare the two copies.",
+    "zh-Hant": "把 {arg0} 複製到 {arg1}（這台機器不能建立連結），之後的檢查會比對兩份是否一致。",
+    "reason": ""
+  },
+  "template.712e3e1175ee": {
+    "include": true,
+    "en": "Only {arg0} copies identical to .agents/skills will be removed ({arg1}). They will be replaced by links, and the contents will remain.",
+    "zh-Hant": "唯一會移除的是 {arg0} 份與 .agents/skills 完全相同的副本（{arg1}），原處換成連結，內容仍在。",
+    "reason": ""
+  },
+  "template.e08a0f1557ad": {
+    "include": true,
+    "en": "CLAUDE.md has {arg0} lines visible to Claude but not Codex.",
+    "zh-Hant": "CLAUDE.md 有 {arg0} 行只有 Claude 看得到，Codex 看不到。",
+    "reason": ""
+  },
+  "template.395d57f8f142": {
+    "include": true,
+    "en": "{arg0} is a link; unify will leave it unchanged.",
+    "zh-Hant": "{arg0} 是一個連結，unify 不會更動它。",
+    "reason": ""
+  },
+  "template.c79d0687f211": {
+    "include": true,
+    "en": "The skill \"{arg0}\" has different contents in Claude and Codex.",
+    "zh-Hant": "skill「{arg0}」在 Claude 和 Codex 兩邊的內容不同。",
+    "reason": ""
+  },
+  "template.74b6e4bba30b": {
+    "include": true,
+    "en": "Keep one copy in .agents/skills/{arg0}, remove the other, then check again.",
+    "zh-Hant": "留一份在 .agents/skills/{arg0}，移除另一份，再重新檢查。",
+    "reason": ""
+  },
+  "template.676bac47a5f4": {
+    "include": true,
+    "en": "{arg0} is a link to another location; unify will neither follow nor change it.",
+    "zh-Hant": "{arg0} 是連到別處的連結，unify 不會跟著它或改它。",
+    "reason": ""
+  },
+  "template.b9db3e2cd844": {
+    "include": true,
+    "en": "The entire {arg0} folder is a link; unify will leave it unchanged.",
+    "zh-Hant": "{arg0} 整個資料夾是一個連結，unify 不會更動它。",
+    "reason": ""
+  },
+  "template.c77dd85e5dac": {
+    "include": true,
+    "en": "Something else already uses the name {arg0}.",
+    "zh-Hant": "{arg0} 已經有別的東西用了這個名字。",
+    "reason": ""
+  },
+  "template.f56ee5f2d93c": {
+    "include": true,
+    "en": "{arg0} is too large for unify to read completely.",
+    "zh-Hant": "{arg0} 太大，unify 讀不完。",
+    "reason": ""
+  },
+  "template.aaa57deb124f": {
+    "include": true,
+    "en": "Could not read {arg0}.",
+    "zh-Hant": "讀不到 {arg0}。",
+    "reason": ""
+  },
+  "template.78b00d86df37": {
+    "include": true,
+    "en": "Project settings: {arg0}",
+    "zh-Hant": "專案設定：{arg0}",
+    "reason": ""
+  },
+  "template.d4bddd9e5d03": {
+    "include": true,
+    "en": "{arg0} completion notifications reached dead letter without being accepted; each had already been pushed once.",
+    "zh-Hant": "{arg0} 則完成通知送到最後都沒被收下（dead letter）；當時已推播過一次。",
+    "reason": ""
+  },
+  "template.6b7df3d81439": {
+    "include": true,
+    "en": "Expand all {arg0} rows",
+    "zh-Hant": "展開全部 {arg0} 列",
+    "reason": ""
+  },
+  "template.5c5e1d37c1ed": {
+    "include": true,
+    "en": "{arg0} characters",
+    "zh-Hant": "{arg0} 字",
+    "reason": ""
+  },
+  "template.49c70f219483": {
+    "include": true,
+    "en": "{arg0} s",
+    "zh-Hant": "{arg0} 秒",
+    "reason": ""
+  },
+  "template.86ef4744daea": {
+    "include": true,
+    "en": "{arg0} rows",
+    "zh-Hant": "{arg0} 筆",
+    "reason": ""
+  },
+  "template.cad071062b9f": {
+    "include": true,
+    "en": "Limit {arg0}",
+    "zh-Hant": "上限 {arg0}",
+    "reason": ""
+  },
+  "template.4d35c17ea7eb": {
+    "include": true,
+    "en": "{arg0} ago",
+    "zh-Hant": "{arg0} 前",
+    "reason": ""
+  },
+  "template.0ebfc47d96d4": {
+    "include": true,
+    "en": "(another {arg0} held back by the one-per-day rule)",
+    "zh-Hant": "（另有 {arg0} 則被一天一則擋下）",
+    "reason": ""
+  },
+  "template.73fb5e35d2a0": {
+    "include": true,
+    "en": "At the current rate, {arg0} will be full",
+    "zh-Hant": "照目前速度 {arg0} 會滿",
+    "reason": ""
+  },
+  "template.211ae3476e5f": {
+    "include": true,
+    "en": "{arg1} of {arg0} rows need attention",
+    "zh-Hant": "{arg0} 列裡有 {arg1} 列要注意",
+    "reason": ""
+  },
+  "template.614443bb7374": {
+    "include": true,
+    "en": "All {arg0} rows are normal",
+    "zh-Hant": "{arg0} 列都正常",
+    "reason": ""
+  },
+  "template.75357881ddad": {
+    "include": true,
+    "en": "{arg0} returned {arg1}",
+    "zh-Hant": "{arg0} 回答 {arg1}",
+    "reason": ""
+  },
+  "template.24bd559cca30": {
+    "include": true,
+    "en": " {arg0} environment variable",
+    "zh-Hant": " {arg0} 環境變數",
+    "reason": ""
+  },
+  "template.145cded61d7b": {
+    "include": true,
+    "en": "{arg0} Chinese",
+    "zh-Hant": "{arg0}中文",
+    "reason": ""
+  },
+  "template.d4763f644521": {
+    "include": true,
+    "en": "{arg0} seconds",
+    "zh-Hant": "{arg0} 秒",
+    "reason": ""
+  },
+  "template.7646119625b7": {
+    "include": true,
+    "en": "Voice: Apple, then Whisper ({arg0})",
+    "zh-Hant": "語音：Apple，之後 Whisper（{arg0}）",
+    "reason": ""
+  },
+  "template.5a514cd850be": {
+    "include": true,
+    "en": "Could not register {arg0}",
+    "zh-Hant": "{arg0} 註冊不起來",
+    "reason": ""
+  },
+  "template.171792601a92": {
+    "include": true,
+    "en": "Mark {arg0} in red",
+    "zh-Hant": "用紅筆標記 {arg0}",
+    "reason": ""
+  },
+  "template.f7068e40108f": {
+    "include": true,
+    "en": "Remove {arg0}",
+    "zh-Hant": "移除 {arg0}",
+    "reason": ""
+  },
+  "template.9a81824f07e6": {
+    "include": true,
+    "en": "Child Session review of the plan{arg0}",
+    "zh-Hant": "Child Session 對計劃書的 review{arg0}",
+    "reason": ""
+  },
+  "template.1eeb4ffcc2cd": {
+    "include": true,
+    "en": "Download prepared for {arg0} verification rounds. Confirm the file is saved before clearing them.",
+    "zh-Hant": "已準備下載 {arg0} 輪驗證詳情；確認檔案已保存後才可清除。",
+    "reason": ""
+  },
+  "template.0d6f06c58208": {
+    "include": true,
+    "en": "Round {arg0} · {arg1}",
+    "zh-Hant": "第 {arg0} 輪 · {arg1}",
+    "reason": ""
+  },
+  "template.540813eb6da2": {
+    "include": true,
+    "en": "Item TODOs: {arg0} / {arg1} complete",
+    "zh-Hant": "項目 TODO，已完成 {arg0} / {arg1}",
+    "reason": ""
+  },
+  "template.e3ac6cdc91b5": {
+    "include": true,
+    "en": "Answer was not accepted: {arg0}",
+    "zh-Hant": "回答未被接受：{arg0}",
+    "reason": ""
+  },
+  "template.1619c02fca4b": {
+    "include": true,
+    "en": "No item containing \"{arg0}\" was found.",
+    "zh-Hant": "找不到包含「{arg0}」的項目。",
+    "reason": ""
+  },
+  "template.d03a9f051a31": {
+    "include": true,
+    "en": "Follow up on \"{arg0}\"",
+    "zh-Hant": "從「{arg0}」延伸",
+    "reason": ""
+  },
+  "template.029ac348ef8a": {
+    "include": true,
+    "en": "From Board item #{arg0}",
+    "zh-Hant": "來自看板項目 #{arg0}",
+    "reason": ""
+  },
+  "template.9e9521d6a3b6": {
+    "include": true,
+    "en": "Handle proposal \"{arg0}\"",
+    "zh-Hant": "處理提案「{arg0}」",
+    "reason": ""
+  },
+  "template.1bc187210168": {
+    "include": true,
+    "en": "Answer \"{arg0}\"",
+    "zh-Hant": "回答「{arg0}」",
+    "reason": ""
+  },
+  "template.34bb2cdffe3e": {
+    "include": true,
+    "en": "Submitting \"{arg0}\"…",
+    "zh-Hant": "正在送出「{arg0}」…",
+    "reason": ""
+  },
+  "template.1640b97725ed": {
+    "include": true,
+    "en": "View \"{arg0}\"{arg1}, {arg2}",
+    "zh-Hant": "查看「{arg0}」{arg1}，{arg2}",
+    "reason": ""
+  },
+  "template.b6aa195d5775": {
+    "include": true,
+    "en": " · {arg0} questions",
+    "zh-Hant": " · {arg0} 個問題",
+    "reason": ""
+  },
+  "template.966e0c24f6bc": {
+    "include": true,
+    "en": "Completed {arg0}",
+    "zh-Hant": "完成 {arg0}",
+    "reason": ""
+  },
+  "template.d15f0c565e65": {
+    "include": true,
+    "en": "Updated {arg0}",
+    "zh-Hant": "更新 {arg0}",
+    "reason": ""
+  },
+  "template.fe204a407a5a": {
+    "include": true,
+    "en": "Convert {arg0} to a Plan",
+    "zh-Hant": "把 {arg0} 轉成 Plan",
+    "reason": ""
+  },
+  "template.06453a1153b7": {
+    "include": true,
+    "en": "Confirm conversion to {arg0}",
+    "zh-Hant": "確認轉成 {arg0}",
+    "reason": ""
+  },
+  "template.ab717b6453b6": {
+    "include": true,
+    "en": "Opening {arg0} Session…",
+    "zh-Hant": "正在開啟 {arg0} Session…",
+    "reason": ""
+  },
+  "template.c8e602657653": {
+    "include": true,
+    "en": "Open a new {arg0} Session",
+    "zh-Hant": "開新 {arg0} Session",
+    "reason": ""
+  },
+  "template.e0059ef8ad57": {
+    "include": true,
+    "en": "Go to the Session implementing \"{arg0}\"",
+    "zh-Hant": "前往正在實作「{arg0}」的 Session",
+    "reason": ""
+  },
+  "template.4ce1db07d816": {
+    "include": true,
+    "en": "{arg0} Board items · {arg1} TODOs",
+    "zh-Hant": "{arg0} 看板 · {arg1} TODO",
+    "reason": ""
+  },
+  "template.ecd25f9c83f5": {
+    "include": true,
+    "en": "Status of {arg0}",
+    "zh-Hant": "{arg0} 的狀況",
+    "reason": ""
+  },
+  "template.b6b8b9faacfb": {
+    "include": true,
+    "en": "{arg0} · Completed {arg1}",
+    "zh-Hant": "{arg0} · 完成 {arg1}",
+    "reason": ""
+  },
+  "template.337439125770": {
+    "include": true,
+    "en": "Mark reference picture {arg0} in red",
+    "zh-Hant": "用紅筆標記參考圖片 {arg0}",
+    "reason": ""
+  },
+  "template.37ba92bd09dc": {
+    "include": true,
+    "en": "Open reference picture {arg0}",
+    "zh-Hant": "開啟參考圖片 {arg0}",
+    "reason": ""
+  },
+  "template.da1cebd6b045": {
+    "include": true,
+    "en": "Remove reference picture {arg0}",
+    "zh-Hant": "移除參考圖片 {arg0}",
+    "reason": ""
+  },
+  "template.9aad7f980e59": {
+    "include": true,
+    "en": "Waiting for your decision: {arg0}",
+    "zh-Hant": "等你決定：{arg0}",
+    "reason": ""
+  },
+  "template.56db22485fa2": {
+    "include": true,
+    "en": "Next step: {arg0}",
+    "zh-Hant": "下一步：{arg0}",
+    "reason": ""
+  },
+  "template.8ecdad22ecbb": {
+    "include": true,
+    "en": "In this phase for {arg0} minutes",
+    "zh-Hant": "停留 {arg0} 分鐘",
+    "reason": ""
+  },
+  "template.26a0dc9801c8": {
+    "include": true,
+    "en": "In this phase for {arg0} hours{arg1}",
+    "zh-Hant": "停留 {arg0} 小時{arg1}",
+    "reason": ""
+  },
+  "template.f49a26639528": {
+    "include": true,
+    "en": "In this phase for {arg0} days {arg1} hours",
+    "zh-Hant": "停留 {arg0} 天 {arg1} 小時",
+    "reason": ""
+  },
+  "template.65519076782c": {
+    "include": true,
+    "en": "Deployment evidence: {arg0}",
+    "zh-Hant": "部署證據：{arg0}",
+    "reason": ""
+  },
+  "template.292c86e4825b": {
+    "include": true,
+    "en": "Not deployed: {arg0}",
+    "zh-Hant": "未部署：{arg0}",
+    "reason": ""
+  },
+  "template.61504537731d": {
+    "include": true,
+    "en": "There are {arg0} unfinished steps. Mark this item complete anyway?",
+    "zh-Hant": "還有 {arg0} 個步驟未完成，仍要標記完成嗎？",
+    "reason": ""
+  },
+  "template.7e807e36364d": {
+    "include": true,
+    "en": "{arg0} / {arg1} complete",
+    "zh-Hant": "{arg0} / {arg1} 已完成",
+    "reason": ""
+  },
+  "template.d11ed4fee18a": {
+    "include": true,
+    "en": "{arg0} · {arg1} cancelled",
+    "zh-Hant": "{arg0} · {arg1} 已取消",
+    "reason": ""
+  },
+  "template.92dfded7689f": {
+    "include": true,
+    "en": "Planning{arg0} · Independent verification{arg1}",
+    "zh-Hant": "規劃{arg0} · 獨立驗證{arg1}",
+    "reason": ""
+  },
+  "template.19566a87444b": {
+    "include": true,
+    "en": "Awaiting acceptance · {arg0}{arg1}",
+    "zh-Hant": "待驗收 · {arg0}{arg1}",
+    "reason": ""
+  },
+  "template.3d747201508d": {
+    "include": true,
+    "en": "{arg0} · Could not determine whether any items await acceptance",
+    "zh-Hant": "{arg0} · 讀不到是否有待驗收項目",
+    "reason": ""
+  },
+  "template.f02affbcd988": {
+    "include": true,
+    "en": "The reply was not sent; the note is still pending. {arg0}{arg1}",
+    "zh-Hant": "回覆沒有送出，便條仍待處理。{arg0}{arg1}",
+    "reason": ""
+  },
+  "template.a11c575f16d3": {
+    "include": true,
+    "en": "Could not confirm whether the reply was sent; the note is still pending. Check the conversation for this message before trying again. {arg0}",
+    "zh-Hant": "無法確認回覆是否送出，便條仍待處理。請先在對話中查看這則訊息，確認沒送出再重試。{arg0}",
+    "reason": ""
+  },
+  "template.e22e6512792a": {
+    "include": true,
+    "en": "The reply was sent, but the note is still pending: {arg0} Click \"Move to handled\" to try again; do not send the reply twice.",
+    "zh-Hant": "回覆已送出，但便條仍待處理：{arg0} 請按「移到已處理」重試，不必再送一次回覆。",
+    "reason": ""
+  },
+  "template.f16df8b87a41": {
+    "include": true,
+    "en": "Needs your attention: {arg0} pending notes",
+    "zh-Hant": "需要你關注，{arg0} 筆未處理便條",
+    "reason": ""
+  },
+  "template.8b0fd67c1487": {
+    "include": false,
+    "en": "(Clawdline note {arg0}: \"{arg1}\"; pending reply: {arg2})",
+    "zh-Hant": "(Clawdline 便條 {arg0}：「{arg1}」；待回覆事項：{arg2})",
+    "reason": "Appended to an outgoing reply as agent context; this is not Console UI copy."
+  },
+  "template.b6e64400bab8": {
+    "include": true,
+    "en": "<span class=\"session-attention\" aria-label=\"Attention, {arg0} pending notes\"><span class=\"session-attention-dot\" aria-hidden=\"true\"></span>Attention · {arg1} pending</span>",
+    "zh-Hant": "<span class=\"session-attention\" aria-label=\"關注，待處理 {arg0} 筆便條\"><span class=\"session-attention-dot\" aria-hidden=\"true\"></span>關注 · 待處理 {arg1}</span>",
+    "reason": ""
+  },
+  "template.3ab185f67611": {
+    "include": true,
+    "en": "Answered: {arg0}",
+    "zh-Hant": "已回答：{arg0}",
+    "reason": ""
+  },
+  "template.ad7d5cc31425": {
+    "include": true,
+    "en": "The submission result is still unconfirmed. Check the decision later. {arg0}",
+    "zh-Hant": "送出結果尚未確認，請稍後查看決定。{arg0}",
+    "reason": ""
+  },
+  "template.1f5e91ec371f": {
+    "include": true,
+    "en": "Open the completion report for \"{arg0}\"",
+    "zh-Hant": "開啟「{arg0}」的結案報告",
+    "reason": ""
+  },
+  "template.ef7d5e84ea0c": {
+    "include": true,
+    "en": "View details for \"{arg0}\"",
+    "zh-Hant": "查看「{arg0}」的項目詳情",
+    "reason": ""
+  },
+  "template.0452d5f2c3a3": {
+    "include": true,
+    "en": "Completed {arg0}",
+    "zh-Hant": "已完成 {arg0}",
+    "reason": ""
+  },
+  "template.753c4151ac3b": {
+    "include": true,
+    "en": "Completed {arg0}",
+    "zh-Hant": "完成 {arg0}",
+    "reason": ""
+  },
+  "template.8dfb0e13886c": {
+    "include": true,
+    "en": "Open reference picture {arg0}",
+    "zh-Hant": "開啟參考圖片 {arg0}",
+    "reason": ""
+  },
+  "template.ff865ce6ed4f": {
+    "include": true,
+    "en": "Source: {arg0}; this machine does not recognize it",
+    "zh-Hant": "來源是 {arg0}，這台機器不認得它",
+    "reason": ""
+  },
+  "template.4dbf3fcfea8a": {
+    "include": true,
+    "en": "{arg0} to-dos: {arg1} done, {arg2} in progress, {arg3} not started",
+    "zh-Hant": "{arg0} 個待辦：{arg1} 個完成、{arg2} 個進行中、{arg3} 個未開始",
+    "reason": ""
+  },
+  "template.9fd6ec6e8a4d": {
+    "include": true,
+    "en": "{arg0}d",
+    "zh-Hant": "{arg0} 天",
+    "reason": ""
+  },
+  "template.4e22c21b2072": {
+    "include": true,
+    "en": "{arg0}h",
+    "zh-Hant": "{arg0} 小時",
+    "reason": ""
+  },
+  "template.4e237583c0c9": {
+    "include": true,
+    "en": "{arg0}m",
+    "zh-Hant": "{arg0} 分鐘",
+    "reason": ""
+  },
+  "template.6d09f003ee65": {
+    "include": true,
+    "en": "{arg0}s",
+    "zh-Hant": "{arg0} 秒",
+    "reason": ""
+  },
+  "template.19ebca4cf0e3": {
+    "include": true,
+    "en": "working {arg0} ago",
+    "zh-Hant": "{arg0}前在跑",
+    "reason": ""
+  },
+  "template.08166fe2eeb1": {
+    "include": true,
+    "en": "waiting for you {arg0} ago",
+    "zh-Hant": "{arg0}前在等你回答",
+    "reason": ""
+  },
+  "template.d1a333c2a48d": {
+    "include": true,
+    "en": "no new output {arg0} ago",
+    "zh-Hant": "{arg0}前沒有新輸出",
+    "reason": ""
+  },
+  "template.1696f81987f7": {
+    "include": true,
+    "en": "read {arg0} ago",
+    "zh-Hant": "{arg0}前讀到",
+    "reason": ""
+  },
+  "template.0e6efad65a6c": {
+    "include": true,
+    "en": "This pass did not finish; retained parts were last read {arg0} ago.",
+    "zh-Hant": "這次沒有讀完整；其中保留的內容最後在 {arg0}前讀到。",
+    "reason": ""
+  },
+  "template.ad648d394b80": {
+    "include": true,
+    "en": "Clawdline found tmux at {arg0}, but it is not on the daemon's PATH, so this pass could not verify the tmux session list.",
+    "zh-Hant": "Clawdline 在 {arg0} 找到 tmux，但 daemon 的 PATH 沒有它；這次無法確認 tmux 的 session 清單。",
+    "reason": ""
+  },
+  "template.cdf164a88db5": {
+    "include": true,
+    "en": "{arg0} did not finish reading its session list; a blank list does not mean there are no sessions.",
+    "zh-Hant": "{arg0} 沒有完成 session 清單讀取；空白不代表沒有 session。",
+    "reason": ""
+  },
+  "template.df6b2970b6cb": {
+    "include": true,
+    "en": "{arg0} sessions",
+    "zh-Hant": "{arg0} 個 session",
+    "reason": ""
+  }
+}

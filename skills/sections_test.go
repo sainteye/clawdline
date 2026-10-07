@@ -10,26 +10,54 @@ import (
 	"testing"
 )
 
-// Commands and flags are a language-neutral contract: the two guides name the
-// same set of `clawdline <command> <subcommand>` and `--flag`. The language
-// argument is the one place they differ by design, so `clawdline guide zh-TW
-// x` counts as `clawdline guide x`.
+// Commands and flags are a language-neutral contract. A guide language
+// argument is the one place they differ by design.
 func TestGuideCommandsAndFlagsStayInSync(t *testing.T) {
 	ec, ef := commandsAndFlags(t, "en")
-	zc, zf := commandsAndFlags(t, "zh-TW")
-	if d := setDifference(ec, zc); d != "" {
-		t.Errorf("commands differ between en and zh-TW:\n%s", d)
-	}
-	if d := setDifference(ef, zf); d != "" {
-		t.Errorf("flags differ between en and zh-TW:\n%s", d)
+	for _, lang := range Topics() {
+		commands, flags := commandsAndFlags(t, lang)
+		if d := setDifference(ec, commands); d != "" {
+			t.Errorf("commands differ between en and %s:\n%s", lang, d)
+		}
+		if d := setDifference(ef, flags); d != "" {
+			t.Errorf("flags differ between en and %s:\n%s", lang, d)
+		}
 	}
 }
 
 var (
 	guideCommand  = regexp.MustCompile(`clawdline [a-z][a-z-]*(?: [a-z][a-z-]*)?`)
 	guideFlag     = regexp.MustCompile(`--[a-z][a-z-]*`)
-	guideLanguage = regexp.MustCompile(`clawdline guide (?:` + strings.Join(Topics(), "|") + `)\b ?`)
+	guideLanguage = regexp.MustCompile(`clawdline guide (?:` + strings.Join(append(Topics(), "zh-TW"), "|") + `)\b ?`)
+	guideFence    = regexp.MustCompile("(?ms)^```[^\\n]*\\n.*?^```")
 )
+
+func TestGuideCodeExamplesStayInSync(t *testing.T) {
+	english, err := Guide("en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := guideFence.FindAll(english, -1)
+	if len(want) != 42 {
+		t.Fatalf("English guide has %d code examples, expected 42", len(want))
+	}
+	for _, lang := range Topics() {
+		guide, err := Guide(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := guideFence.FindAll(guide, -1)
+		if len(got) != len(want) {
+			t.Errorf("%s has %d code examples, want %d", lang, len(got), len(want))
+			continue
+		}
+		for i := range want {
+			if !bytes.Equal(got[i], want[i]) {
+				t.Errorf("%s code example %d differs from English", lang, i+1)
+			}
+		}
+	}
+}
 
 func commandsAndFlags(t *testing.T, lang string) (commands, flags map[string]bool) {
 	t.Helper()
@@ -48,13 +76,13 @@ func commandsAndFlags(t *testing.T, lang string) (commands, flags map[string]boo
 	return commands, flags
 }
 
-// setDifference says what only en has and what only zh-TW has, or "".
-func setDifference(en, zh map[string]bool) string {
+// setDifference says what only the reference or comparison has, or "".
+func setDifference(en, other map[string]bool) string {
 	var b strings.Builder
 	for _, side := range []struct {
 		name      string
 		have, not map[string]bool
-	}{{"only en", en, zh}, {"only zh-TW", zh, en}} {
+	}{{"only en", en, other}, {"only translated guide", other, en}} {
 		var only []string
 		for k := range side.have {
 			if !side.not[k] {
@@ -107,11 +135,12 @@ func TestRefusalCodesFindTheirOwningPart(t *testing.T) {
 }
 
 // Every code the refusal part names in backticks resolves to a part, and to
-// the same part in both languages. `error` and `retry_after` are the answer's
+// the same part in every language. `error` and `retry_after` are the answer's
 // field names, which that part also backticks; they are not codes.
 func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
 	span := regexp.MustCompile("`(?:[0-9]{3} )?([a-z][a-z0-9_]*)`")
-	fields := map[string]bool{"error": true, "retry_after": true}
+	// These are response fields or an unreadable state, not refusal codes.
+	fields := map[string]bool{"error": true, "retry_after": true, "unknown": true}
 	codes := map[string]bool{}
 	for _, lang := range Topics() {
 		part, err := Section(lang, "refused")
@@ -124,14 +153,16 @@ func TestEveryRefusalCodeHasTheSameOwnerInBothLanguages(t *testing.T) {
 			}
 		}
 	}
-	if len(codes) < 4 {
+	if len(codes) < 3 {
 		t.Fatalf("found only %d codes in the refusal part: %v", len(codes), codes)
 	}
 	for code := range codes {
 		en, _, errEN := RefusedSection("en", code)
-		zh, _, errZH := RefusedSection("zh-TW", code)
-		if errEN != nil || errZH != nil || en != zh {
-			t.Errorf("%s: en=%q (%v) zh-TW=%q (%v)", code, en, errEN, zh, errZH)
+		for _, lang := range Topics() {
+			other, _, errOther := RefusedSection(lang, code)
+			if errEN != nil || errOther != nil || en != other {
+				t.Errorf("%s: en=%q (%v) %s=%q (%v)", code, en, errEN, lang, other, errOther)
+			}
 		}
 	}
 }
@@ -153,7 +184,7 @@ func TestGuideUsesOneOutwardNameForEachConcept(t *testing.T) {
 			`\bclaims\b`, `(?i)\bdeclared writes\b`, // writes
 			`(?i)\bsections?\b`, `(?i)\btopics?\b`, // part
 		},
-		"zh-TW": {
+		"zh-Hant": {
 			`TODO`, `子任務`, `待辦事項`, // step
 			`\bclaims\b`, `宣告的寫入`, // writes
 			`(?i)assignment`, `分派`, `分配`, // 指派
@@ -161,8 +192,8 @@ func TestGuideUsesOneOutwardNameForEachConcept(t *testing.T) {
 		},
 	}
 	quoted := map[string][]string{
-		"en":    {"TODO / 待辦 / 土度", "TODO: draft"},
-		"zh-TW": {"TODO／待辦／土度", "TODO：起草"},
+		"en":      {"TODO / 待辦 / 土度", "TODO: draft"},
+		"zh-Hant": {"TODO／待辦／土度", "TODO：起草"},
 	}
 	for _, lang := range Topics() {
 		guide, err := Guide(lang)
@@ -204,7 +235,7 @@ func proseLines(text string) []string {
 	return lines
 }
 
-// Both guides cut into the same nineteen parts, and the parts put back
+// All guides cut into the same twenty parts, and the parts put back
 // together are the whole guide, byte for byte: printing the guide in parts
 // must not lose a sentence that printing it whole carried.
 func TestThePartsAreTheWholeGuide(t *testing.T) {
@@ -230,7 +261,7 @@ func TestThePartsAreTheWholeGuide(t *testing.T) {
 	}
 }
 
-// Each named part opens with the heading it is named for, in both languages:
+// Each named part opens with the heading it is named for, in every language:
 // the table is matched by order, so a heading added to one guide only would
 // shift every name after it.
 func TestBothGuidesHaveTheSameSections(t *testing.T) {
@@ -284,6 +315,32 @@ func TestTheCoreNamesEveryOtherPart(t *testing.T) {
 	}
 }
 
+func TestCoreIndexUsesTheGuideLanguage(t *testing.T) {
+	english := coreIndexCopy[DefaultTopic]
+	for _, lang := range Topics() {
+		if lang == DefaultTopic {
+			continue
+		}
+		core, err := Core(lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		copy, ok := coreIndexCopy[lang]
+		if !ok || copy.heading == "" || copy.instruction == "" || copy.all == "" {
+			t.Errorf("%s has no complete core index copy", lang)
+			continue
+		}
+		for _, want := range []string{copy.heading, copy.instruction, copy.all} {
+			if !bytes.Contains(core, []byte(want)) {
+				t.Errorf("%s core omits translated index copy %q", lang, want)
+			}
+		}
+		if bytes.Contains(core, []byte(english.heading)) {
+			t.Errorf("%s core still carries the English index heading", lang)
+		}
+	}
+}
+
 // A Feature Root reads one short part for its ordinary lifecycle instead of
 // the board part. Measured on 2026-10-02, one Feature Root spent about a
 // quarter of its re-read tool output on guide text, most of it `guide board`'s
@@ -332,7 +389,7 @@ func TestTheFeatureRootPathIsShortAndComplete(t *testing.T) {
 					t.Errorf("%s: direct Feature path lacks %q", lang, want)
 				}
 			}
-		} else {
+		} else if lang == "zh-Hant" {
 			for _, want := range []string{"預設由本 Session 完成", "只有具體需要", "--commit <sha> --target main --remote origin"} {
 				if !strings.Contains(string(part), want) {
 					t.Errorf("%s: direct Feature path lacks %q", lang, want)

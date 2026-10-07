@@ -89,19 +89,16 @@ func (s *Server) agentCloseSession(w http.ResponseWriter, r *http.Request, termi
 	}
 	switch {
 	case audit.State == string(contract.CloseabilityStateBlocked):
+		markFixedRefusalKey(w, fixedRefusalKey("This Session still has unfinished work."))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(contract.CloseRefusal{
-			Error: "close_blocked", Detail: "This Session still has unfinished work.", Reasons: audit.Reasons,
-		})
+		_ = json.NewEncoder(w).Encode(closeRefusalWire("close_blocked", "This Session still has unfinished work.", audit.Reasons))
 		return
 	case audit.State != string(contract.CloseabilityStateSafe):
+		markFixedRefusalKey(w, fixedRefusalKey("What this Session owes could not be read clearly enough to close it."))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(contract.CloseRefusal{
-			Error: "closeability_unknown", Detail: "What this Session owes could not be read clearly enough to close it.",
-			Reasons: audit.Reasons,
-		})
+		_ = json.NewEncoder(w).Encode(closeRefusalWire("closeability_unknown", "What this Session owes could not be read clearly enough to close it.", audit.Reasons))
 		return
 	case body.ExpectedCloseabilityVersion != "" && body.ExpectedCloseabilityVersion != audit.Version:
 		writeRefusal(w, http.StatusConflict, "close_not_proven",

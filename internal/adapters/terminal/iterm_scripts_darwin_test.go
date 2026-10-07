@@ -97,7 +97,8 @@ func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
 	}
 
 	first, err := it.Inventory(context.Background())
-	if err != nil || first.Complete || calls != 1 || !strings.Contains(strings.Join(first.Notes, " "), "apple event failed") {
+	if err != nil || first.Complete || calls != 1 || !strings.Contains(strings.Join(first.Notes, " "), "apple event failed") ||
+		len(first.Gaps) != 1 || first.Gaps[0].Source != "iterm" || first.Gaps[0].Scope != "listing" {
 		t.Fatalf("first failure: calls=%d inventory=%+v err=%v", calls, first, err)
 	}
 	inside, err := it.Inventory(context.Background())
@@ -108,7 +109,8 @@ func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
 
 	clock = clock.Add(time.Second)
 	second, err := it.Inventory(context.Background())
-	if err != nil || second.Complete || calls != 2 {
+	if err != nil || second.Complete || calls != 2 || len(second.Gaps) != 1 ||
+		second.Gaps[0].Source != "iterm" || second.Gaps[0].Scope != "listing" {
 		t.Fatalf("second failure: calls=%d inventory=%+v err=%v", calls, second, err)
 	}
 	clock = clock.Add(time.Second)
@@ -122,6 +124,17 @@ func TestFailedITermListingsBackOffAndNameTheDegradedSource(t *testing.T) {
 	}
 	if _, err := it.Inventory(context.Background()); err != nil || calls != 4 {
 		t.Fatalf("success did not clear backoff: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestUnreadableITermListingNamesTheGap(t *testing.T) {
+	it := NewITerm()
+	it.list = func(context.Context) ([]byte, error) { return []byte(`not json`), nil }
+	inv, err := it.Inventory(context.Background())
+	if err != nil || inv.Complete || len(inv.Gaps) != 1 ||
+		inv.Gaps[0].Source != "iterm" || inv.Gaps[0].Scope != "listing" ||
+		!strings.Contains(strings.Join(inv.Notes, " "), "answer was unreadable") {
+		t.Fatalf("unreadable listing: inventory=%+v err=%v", inv, err)
 	}
 }
 

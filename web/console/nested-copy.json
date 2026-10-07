@@ -1,0 +1,7 @@
+{
+  "template.bda857e28d78": { "en": "The refreshed status is “{arg0}”; check the preview below before deciding.", "zh-Hant": "重新讀取的結果是「{arg0}」，請看下方預覽再決定。" },
+  "template.f7011fada0cd": { "en": " {arg0} min", "zh-Hant": " {arg0} 分鐘" },
+  "template.b98d29fea593": { "en": " · {arg0} items", "zh-Hant": " · 共 {arg0} 項" },
+  "session.attentionAria": { "en": "Attention, {arg0} pending notes", "zh-Hant": "關注，待處理 {arg0} 筆便條" },
+  "session.attentionText": { "en": "Attention · {arg0} pending", "zh-Hant": "關注 · 待處理 {arg0}" }
+}

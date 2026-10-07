@@ -1,3 +1,4 @@
+import { catalogFormat } from "../catalog.js"
 /**
  * How far along a Session's to-dos are, in the three states a person asks
  * about at a glance: finished, being worked on, not yet started.
@@ -39,5 +40,5 @@ export function todoProgress(page: {
 /** The sentence a screen reader hears for the three counts. */
 export function todoProgressLabel(p: TodoProgress): string {
   const total = p.done + p.active + p.waiting
-  return `${total} 個待辦：${p.done} 個完成、${p.active} 個進行中、${p.waiting} 個未開始`
+  return catalogFormat("template", "4dbf3fcfea8a", [total, p.done, p.active, p.waiting])
 }

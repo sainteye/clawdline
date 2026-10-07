@@ -14,13 +14,13 @@ const contrast = (a: number[], b: number[]) => {
   return (light + 0.05) / (dark + 0.05)
 }
 
-test("phone settings keep all six tabs in readable two-column cells", () => {
+test("phone settings keep all six tabs in two columns and allow long names to wrap", () => {
   const start = styles.indexOf("@media (max-width: 460px)")
   const phone = styles.slice(start, styles.indexOf(".sw-gate-mode", start))
   assert.match(phone, /\.sw-strip \{[\s\S]*height: auto;/)
   assert.match(phone, /grid-template-columns: 22px repeat\(2, minmax\(0, 1fr\)\);/)
   assert.match(phone, /\.sw-strip-mark \{[\s\S]*grid-row: 1 \/ span 3;/)
-  assert.match(phone, /\.sw-tab \{[\s\S]*min-height: 30px;[\s\S]*white-space: nowrap;/)
+  assert.match(phone, /\.sw-tab \{[\s\S]*min-height: 30px;[\s\S]*white-space: normal;[\s\S]*overflow-wrap: anywhere;/)
 })
 
 test("settings tabs retain roving keyboard focus and pointer activation", () => {

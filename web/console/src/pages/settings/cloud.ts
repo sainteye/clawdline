@@ -1,3 +1,4 @@
+import { catalogFormat } from "../../catalog.js"
 import { client } from "../../client.js"
 import { RefusalError, isRefusal } from "@clawdline/core"
 
@@ -133,7 +134,7 @@ async function cloudCall<T>(method: string, path: string, body?: unknown): Promi
   }
   if (!res.ok) {
     if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
-    throw new Error(`${path} 回答 ${res.status}`)
+    throw new Error(catalogFormat("template", "75357881ddad", [path, res.status]))
   }
   return parsed as T
 }

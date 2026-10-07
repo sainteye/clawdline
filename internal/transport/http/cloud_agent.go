@@ -78,7 +78,7 @@ func (s *Server) cloudPairingAgentRoute(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if _, err := pairing.CheckOffer(offer); err != nil {
-		writeAuthRefusal(w, http.StatusBadRequest, "bad_offer",
+		writeRawAuthRefusal(w, http.StatusBadRequest, "bad_offer",
 			"That is not a pairing code a browser on this account is showing now: "+err.Error())
 		return
 	}

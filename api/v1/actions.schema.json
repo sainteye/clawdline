@@ -57,6 +57,7 @@
       "required": ["detail", "error", "reasons"],
       "properties": {
         "detail": { "type": "string" },
+        "detail_key": { "description": "Optional stable catalog key for this exact fixed English detail. Dynamic details have no key.", "type": "string" },
         "error": { "type": "string" },
         "reasons": { "type": "array", "items": { "$ref": "sessions.schema.json#/$defs/CloseReason" } }
       }

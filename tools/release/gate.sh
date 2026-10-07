@@ -28,7 +28,11 @@ done
 [ "$publish" = 0 ] || [ -z "$dir" ] || { echo "--publish is for a drafted GitHub release, not --dir" >&2; exit 2; }
 
 work=$(mktemp -d)
-trap 'rm -rf -- "$work"' EXIT
+# finished: macOS's /bin/bash 3.2 exits 0 after an unbound-variable error when
+# an EXIT trap runs, so a build that stopped half-way reported success
+# (v0.10.0, 2026-10-07). A run that did not reach its last line fails.
+finished=0
+trap 's=$?; rm -rf -- "$work"; if [ "$finished" != 1 ] && [ "$s" = 0 ]; then exit 1; fi' EXIT
 if [ -z "$dir" ]; then
   draft=$(gh release view "$version" -R sainteye/clawdline --json isDraft -q .isDraft)
   [ "$draft" = true ] || { echo "$version is not a draft; nothing to gate" >&2; exit 1; }
@@ -66,3 +70,4 @@ if [ "$publish" = 1 ]; then
 else
   echo "gate passed; publish with: tools/release/gate.sh $version --publish"
 fi
+finished=1

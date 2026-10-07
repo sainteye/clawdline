@@ -151,7 +151,7 @@ main() {
     base=$repo_url/releases/latest/download
   fi
 
-  say "Downloading Clawdline for $os/$arch…"
+  say "Downloading Clawdline for ${os}/${arch}…"
   detail "from $base"
   for f in SHA256SUMS manifest.json manifest.sig.json; do
     status=0

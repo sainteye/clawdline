@@ -190,6 +190,19 @@ func (s *Server) restoreWriting(w http.ResponseWriter, r *http.Request, body fun
 
 // conversationsOf reads `{conversations: [...]}`. present is false when the
 // key is absent, which dismiss reads as "all"; an unknown key is refused.
+type unknownConversationField string
+
+func (e unknownConversationField) Error() string { return "unknown field " + string(e) }
+
+func writeConversationsRefusal(w http.ResponseWriter, err error) {
+	var unknown unknownConversationField
+	if errors.As(err, &unknown) {
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	writeRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
+}
+
 func conversationsOf(raw []byte) (ids []string, present bool, err error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, false, nil
@@ -200,7 +213,7 @@ func conversationsOf(raw []byte) (ids []string, present bool, err error) {
 	}
 	for name := range fields {
 		if name != "conversations" {
-			return nil, false, errors.New("unknown field " + name)
+			return nil, false, unknownConversationField(name)
 		}
 	}
 	list, ok := fields["conversations"]
@@ -219,7 +232,7 @@ func (s *Server) restoreSessions(w http.ResponseWriter, raw []byte) {
 		if err == nil {
 			err = errors.New("conversations is required")
 		}
-		writeRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
+		writeConversationsRefusal(w, err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -230,7 +243,7 @@ func (s *Server) restoreSessions(w http.ResponseWriter, raw []byte) {
 		return s.resumeRestorable(ctx, reading, row)
 	})
 	if errors.Is(err, app.ErrRestoreBatch) {
-		writeRefusal(w, http.StatusBadRequest, "restore_batch_too_large",
+		writeRawRefusal(w, http.StatusBadRequest, "restore_batch_too_large",
 			"One restore may name at most "+strconv.FormatInt(CapacityLimit(capacity.SessionsRestoreBatch), 10)+" conversations.")
 		return
 	}
@@ -308,7 +321,7 @@ func (s *Server) resumeConversation(ctx context.Context, reading startReading, t
 func (s *Server) dismissRestorable(w http.ResponseWriter, raw []byte) {
 	ids, present, err := conversationsOf(raw)
 	if err != nil {
-		writeRefusal(w, http.StatusBadRequest, "bad_request", err.Error())
+		writeConversationsRefusal(w, err)
 		return
 	}
 	if !present {

@@ -235,13 +235,13 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			}
 		}
 		if mine >= b.maxChildren() {
-			return Dispatched{}, refuseWith(http.StatusTooManyRequests, "over_capacity",
+			return Dispatched{}, refuseRawWith(http.StatusTooManyRequests, "over_capacity",
 				fmt.Sprintf("All %d child slots for this session are busy; retry when one finishes.", b.maxChildren()),
 				map[string]any{"retry_after": 60})
 		}
 	}
 	if len(children) >= b.machineChildren() {
-		return Dispatched{}, refuseWith(http.StatusTooManyRequests, "over_capacity",
+		return Dispatched{}, refuseRawWith(http.StatusTooManyRequests, "over_capacity",
 			fmt.Sprintf("All %d child sessions on this machine are busy; retry when one finishes.", b.machineChildren()),
 			map[string]any{"retry_after": 60})
 	}
@@ -538,7 +538,7 @@ func (b *Broker) checkGeneration(ctx context.Context, project string, req Dispat
 	if !req.Offered || req.Generation == "" {
 		clause = "This dispatch carried no inventory_generation."
 	}
-	return refuseWith(http.StatusConflict, "stale_inventory",
+	return refuseRawWith(http.StatusConflict, "stale_inventory",
 		clause+" GET /v1/orchestrator/inventory?project="+inv.Repository+" answers "+inv.Generation+
 			"; the whole of it is in this error, so read it and resend with that value.",
 		withRemedy(map[string]any{
@@ -579,7 +579,7 @@ func (b *Broker) planWorktree(ctx context.Context, r Record) (*Worktree, []Warni
 	}
 	branch := BranchName(r.ID)
 	if exists, known := b.Git.BranchExists(ctx, repo, branch); !known || exists {
-		return nil, nil, refuse(http.StatusConflict, "worktree_unavailable",
+		return nil, nil, refuseRaw(http.StatusConflict, "worktree_unavailable",
 			"The delivery branch "+branch+" already exists, or this machine could not tell whether it does.")
 	}
 	warnings := []Warning{}
@@ -658,6 +658,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if b.ResolveSquadSnapshot != nil && r.Persona != "" {
 		preflightPersona = ""
 	}
+	memory := b.memoryFor(cwd)
 	launch, err := projects.Admit(projects.LaunchRequest{
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
@@ -671,6 +672,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// reason the effort is.
 		Persona:    preflightPersona,
 		PersonaDir: b.PersonaDir(),
+		Memory:     memory,
 	})
 	if err != nil {
 		r.State = StateSpawnFailed
@@ -688,7 +690,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if prepared.files.PromptPath != "" {
 		launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: cwd, Assistant: r.Assistant,
 			Model: r.Model, ReasoningEffort: r.ReasoningEffort, Language: b.SessionLanguage(r.Assistant),
-			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath})
+			Persona: r.Persona, SquadPromptPath: prepared.files.PromptPath, Memory: memory})
 		if err != nil {
 			_ = b.Store.FailSquadLaunch(ctx, prepared.launch.ID)
 			r.State = StateSpawnFailed

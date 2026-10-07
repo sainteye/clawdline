@@ -161,7 +161,7 @@ func TestBothGuidesKeepLongCommandWaitAdvice(t *testing.T) {
 }
 
 func TestBothGuidesPutCallbackBeforeInTurnWaiting(t *testing.T) {
-	for _, topic := range Topics() {
+	for _, topic := range []string{"en", "zh-Hant"} {
 		guide, err := Guide(topic)
 		if err != nil {
 			t.Fatal(err)
@@ -169,7 +169,7 @@ func TestBothGuidesPutCallbackBeforeInTurnWaiting(t *testing.T) {
 		section := strings.SplitN(string(guide), "- **Claude Code", 2)[0]
 		start := strings.LastIndex(section, "**Waiting on a long command.")
 		endTurn := "end your turn"
-		if topic == "zh-TW" {
+		if topic == "zh-Hant" {
 			start = strings.LastIndex(section, "**等一個跑很久的指令。")
 			endTurn = "結束這個 turn"
 		}
@@ -179,10 +179,10 @@ func TestBothGuidesPutCallbackBeforeInTurnWaiting(t *testing.T) {
 	}
 }
 
-// The default is English, the list is fixed, and an unknown topic is refused
-// by name.
+// The default is English, the list is fixed, and unknown language tags
+// resolve to English.
 func TestTopics(t *testing.T) {
-	if got := strings.Join(Topics(), ","); got != "en,zh-TW" {
+	if got := strings.Join(Topics(), ","); got != "en,zh-Hant,ja,zh-Hans,ko,es,pt-BR,fr,de" {
 		t.Fatalf("topics = %s", got)
 	}
 	def, err := Guide("")
@@ -193,8 +193,29 @@ func TestTopics(t *testing.T) {
 	if !bytes.Equal(def, en) {
 		t.Fatal("the default guide is not the English one")
 	}
-	if _, err := Guide("fr"); err == nil || !strings.Contains(err.Error(), "en, zh-TW") {
-		t.Fatalf("unknown topic = %v", err)
+	for input, want := range map[string]string{
+		"": "en", "en-US": "en", "zh-Hant": "zh-Hant", "zh-Hant-TW": "zh-Hant",
+		"zh-TW": "zh-Hant", "zh-HK": "zh-Hant", "zh-MO": "zh-Hant",
+		"zh_MO": "zh-Hant", "zh-Hans": "zh-Hans",
+		"zh-Hans-CN": "zh-Hans", "zh-Hans-TW": "zh-Hans",
+		"zh-Hant-CN": "zh-Hant", "zh-CN": "zh-Hans", "zh-SG": "zh-Hans",
+		"zh": "en", "zh-Latn-TW": "en", "ja-JP": "ja", "pt": "pt-BR",
+		"pt-PT": "pt-BR", "pt-BR": "pt-BR", "es-MX": "es", "fr-CA": "fr",
+		"de-AT": "de", "ko-KR": "ko", "ja_JP": "ja", "ru": "en", "bad_thing": "en",
+		" ja-JP": "en", "ja-JP ": "en", "zh--TW": "en", "zh-": "en",
+	} {
+		if got := ResolveTopic(input); got != want {
+			t.Errorf("ResolveTopic(%q) = %q, want %q", input, got, want)
+		}
+		guide, err := Guide(input)
+		if err != nil {
+			t.Errorf("Guide(%q): %v", input, err)
+			continue
+		}
+		original, err := Guide(want)
+		if err != nil || !bytes.Equal(guide, original) {
+			t.Errorf("Guide(%q) does not match %s: %v", input, want, err)
+		}
 	}
 }
 
@@ -208,7 +229,7 @@ func TestTheStubCarriesNoRoutes(t *testing.T) {
 	if routes := guideRoutes(stub); len(routes) != 0 {
 		t.Fatalf("the stub names routes: %v", routes)
 	}
-	for _, want := range []string{"guide zh-TW", "CLAWDLINE_SKILL_READER", "bin/clawdline"} {
+	for _, want := range []string{"guide zh-Hant", "CLAWDLINE_SKILL_READER", "bin/clawdline"} {
 		if !bytes.Contains(stub, []byte(want)) {
 			t.Errorf("the stub does not say %q", want)
 		}
@@ -225,8 +246,6 @@ func TestEveryGuideExplainsCloudPairing(t *testing.T) {
 		"clawdline cloud pair -offer '<code>'",
 		"clawdline cloud devices",
 		"clawdline cloud revoke <device-id>",
-		"browser fingerprint",
-		"machine fingerprint",
 		"commands",
 	}
 	for _, topic := range Topics() {
@@ -292,7 +311,6 @@ func TestEveryGuideExplainsDeferredBoardAssignments(t *testing.T) {
 		"waiting_user_requires_decision",
 		"decision_withdrawn",
 		"completion_report",
-		"root cause",
 	}
 	for _, topic := range Topics() {
 		guide, err := Guide(topic)
@@ -325,8 +343,6 @@ func TestEveryGuideExplainsSessionOwnTodosAndBoardProposals(t *testing.T) {
 		`"source_todo_id"`,
 		"source_todo_id",
 		"suggested_acceptance",
-		"plain language",
-		"Explain",
 		"child_session",
 		"direct_todos_full",
 		"`description`",
@@ -390,8 +406,8 @@ func TestEveryGuideExplainsCreatingABoardItemFromThePersonsMessage(t *testing.T)
 		"no_run",
 	}
 	rule := map[string]string{
-		"en":    "TODO / 待辦 / 土度 said together with a Board item means that item's steps.",
-		"zh-TW": "TODO／待辦／土度跟看板項目一起講，指的就是那個項目的 steps。",
+		"en":      "TODO / 待辦 / 土度 said together with a Board item means that item's steps.",
+		"zh-Hant": "TODO／待辦／土度跟看板項目一起講，指的就是那個項目的 steps。",
 	}
 	for _, topic := range Topics() {
 		guide, err := Guide(topic)
@@ -403,12 +419,7 @@ func TestEveryGuideExplainsCreatingABoardItemFromThePersonsMessage(t *testing.T)
 				t.Errorf("guide %s does not explain creating a Board item from the person's message with %q", topic, want)
 			}
 		}
-		phrase, ok := rule[topic]
-		if !ok {
-			t.Errorf("guide %s has no TODO-means-steps rule on record here", topic)
-			continue
-		}
-		if !bytes.Contains(guide, []byte(phrase)) {
+		if phrase := rule[topic]; phrase != "" && !bytes.Contains(guide, []byte(phrase)) {
 			t.Errorf("guide %s does not state %q", topic, phrase)
 		}
 	}

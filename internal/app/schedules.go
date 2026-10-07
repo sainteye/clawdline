@@ -52,10 +52,11 @@ func (a ScheduleAuthority) audit(fields map[string]string) map[string]string {
 // ScheduleReply is one answer, in the envelope every route here uses: a body on
 // success, a status, a code and a sentence otherwise.
 type ScheduleReply struct {
-	Status  int
-	Code    string
-	Message string
-	Body    map[string]any
+	Status     int
+	Code       string
+	Message    string
+	RawMessage bool
+	Body       map[string]any
 	// Extra is what a broker refusal carries inside its error object — the
 	// blocking task of a `workspace_busy`, the `retry_after` of an
 	// `over_capacity` — passed through as the broker said it, so a manual
@@ -70,6 +71,10 @@ func answered(body map[string]any) ScheduleReply { return ScheduleReply{Status: 
 
 func refusedSchedule(status int, code, message string) ScheduleReply {
 	return ScheduleReply{Status: status, Code: code, Message: message}
+}
+
+func refusedScheduleRaw(status int, code, message string) ScheduleReply {
+	return ScheduleReply{Status: status, Code: code, Message: message, RawMessage: true}
 }
 
 // ScheduleBook is every schedule this daemon holds and every way one changes:
@@ -478,7 +483,7 @@ func createTemplate(body map[string]any) (map[string]any, map[string]any, *Sched
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		r := refusedSchedule(400, "bad_request", "unknown template field: "+strings.Join(unknown, ", "))
+		r := refusedScheduleRaw(400, "bad_request", "unknown template field: "+strings.Join(unknown, ", "))
 		return nil, nil, &r
 	}
 	return form, tmpl, nil
@@ -503,7 +508,7 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		r := refusedSchedule(400, "bad_request", "unknown field: "+strings.Join(unknown, ", "))
+		r := refusedScheduleRaw(400, "bad_request", "unknown field: "+strings.Join(unknown, ", "))
 		return nil, schedule.Schedule{}, &r
 	}
 	placeID, _ := body["place_id"].(string)
@@ -615,7 +620,7 @@ func (b *ScheduleBook) build(ctx context.Context, body map[string]any, id string
 	}
 	made, err := b.parseObject(obj, id)
 	if err != nil {
-		r := refusedSchedule(400, "bad_request", err.Error())
+		r := refusedScheduleRaw(400, "bad_request", err.Error())
 		return nil, schedule.Schedule{}, &r
 	}
 	return obj, made, nil
@@ -825,7 +830,7 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 	moves := !made.When.Same(existing.s.When) || made.TimeZone != existing.s.TimeZone
 	if made.When.Once() != existing.s.When.Once() {
 		if existing.s.When.On != nil {
-			return refusedSchedule(400, "bad_request", "This schedule runs once, on "+existing.s.When.On.String()+
+			return refusedScheduleRaw(400, "bad_request", "This schedule runs once, on "+existing.s.When.On.String()+
 				". A save may change when it runs, not whether it repeats: send when.on, or remove it and make a new one.")
 		}
 		if existing.s.When.TriggerOnly {
@@ -836,7 +841,7 @@ func (b *ScheduleBook) Update(ctx context.Context, id string, body map[string]an
 			"not whether it repeats: send when.days, or remove it and make a new one.")
 	}
 	if !existing.s.FiredAt.IsZero() && moves {
-		return refusedSchedule(409, "schedule_spent", fmt.Sprintf("This schedule was made to run once and already "+
+		return refusedScheduleRaw(409, "schedule_spent", fmt.Sprintf("This schedule was made to run once and already "+
 			"ran at %d. A save may still change its title or what its session is told to do; moving when it runs "+
 			"would be asking a schedule that has run for a second run. Make a new one.", existing.s.FiredAt.Unix()))
 	}
@@ -927,7 +932,7 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 		return refusedSchedule(404, "not_found", "No schedule named that")
 	}
 	if !h.s.FiredAt.IsZero() {
-		return refusedSchedule(409, "schedule_spent", fmt.Sprintf(
+		return refusedScheduleRaw(409, "schedule_spent", fmt.Sprintf(
 			"This schedule was made to run once and already ran at %d. Make a new one.", h.s.FiredAt.Unix()))
 	}
 	if h.s.When.TriggerOnly && !h.s.Enabled {
@@ -970,10 +975,11 @@ func (b *ScheduleBook) Run(ctx context.Context, id string) ScheduleReply {
 				status = 500
 			}
 			r := refusedSchedule(status, refusal.Code, refusal.Message)
+			r.RawMessage = refusal.RawMessage
 			r.Extra = refusal.Extra
 			return r
 		}
-		return refusedSchedule(500, "dispatch_failed", err.Error())
+		return refusedScheduleRaw(500, "dispatch_failed", err.Error())
 	}
 	if !consumed.IsZero() && h.s.When.Once() {
 		b.markFired(ctx, id, consumed)
@@ -1033,10 +1039,11 @@ func (b *ScheduleBook) RunWebhook(ctx context.Context, id, taskID string) Schedu
 				status = 500
 			}
 			r := refusedSchedule(status, refusal.Code, refusal.Message)
+			r.RawMessage = refusal.RawMessage
 			r.Extra = refusal.Extra
 			return r
 		}
-		return refusedSchedule(500, "dispatch_failed", err.Error())
+		return refusedScheduleRaw(500, "dispatch_failed", err.Error())
 	}
 	if h.s.When.Once() {
 		b.markFired(ctx, h.s.ID, b.now())

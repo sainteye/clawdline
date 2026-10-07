@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestCoordinatorBindRegistersOrRebindsOnlyAnOfflineRole(t *testing.T) {
+func TestCoordinatorBindDelegatesUnknownLivenessToFreshRebind(t *testing.T) {
 	for _, tc := range []struct {
 		name, inspection, path string
 		posts                  int
@@ -15,7 +15,7 @@ func TestCoordinatorBindRegistersOrRebindsOnlyAnOfflineRole(t *testing.T) {
 		{"first", `{"coordinator":{"configured":false,"status":"unregistered"}}`, "/v1/orchestrator/coordinator/register", 1},
 		{"offline", `{"coordinator":{"configured":true,"status":"offline","id":"role-1","generation":3,"session":{"session_id":"old"}}}`, "/v1/orchestrator/coordinator/rebind", 1},
 		{"online", `{"coordinator":{"configured":true,"status":"online","id":"role-1","generation":3,"session":{"session_id":"old"}}}`, "", 0},
-		{"unknown", `{"coordinator":{"configured":true,"status":"unknown","id":"role-1","generation":3,"session":{"session_id":"old"}}}`, "", 0},
+		{"unknown", `{"coordinator":{"configured":true,"status":"unknown","id":"role-1","generation":3,"session":{"session_id":"old"}}}`, "/v1/orchestrator/coordinator/rebind", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stand, broker := newStandIn(t, func(r *http.Request) (int, string) {
@@ -30,11 +30,7 @@ func TestCoordinatorBindRegistersOrRebindsOnlyAnOfflineRole(t *testing.T) {
 				t.Fatalf("exit %d output=%q error=%q", code, out.String(), errs.String())
 			}
 			seen := stand.requests()
-			reads := 1
-			if tc.name == "unknown" {
-				reads = coordinatorBindAttemptLimit
-			}
-			if len(seen) != reads+tc.posts || seen[0].EscapedPath != "/v1/orchestrator/coordinator" {
+			if len(seen) != 1+tc.posts || seen[0].EscapedPath != "/v1/orchestrator/coordinator" {
 				t.Fatalf("requests: %+v", seen)
 			}
 			if tc.posts == 0 {
@@ -47,14 +43,15 @@ func TestCoordinatorBindRegistersOrRebindsOnlyAnOfflineRole(t *testing.T) {
 			if err := json.Unmarshal(seen[1].Body, &body); err != nil || body["session_id"] != thinConversation {
 				t.Fatalf("bind body: %s", seen[1].Body)
 			}
-			if tc.name == "offline" && (body["expected_coordinator_id"] != "role-1" || body["expected_generation"] != float64(3)) {
+			if tc.path == "/v1/orchestrator/coordinator/rebind" &&
+				(body["expected_coordinator_id"] != "role-1" || body["expected_generation"] != float64(3)) {
 				t.Fatalf("rebind lost its guard: %#v", body)
 			}
 		})
 	}
 }
 
-func TestCoordinatorBindWaitsForProvenOfflineAndReinspectsAfterTransientPostRefusal(t *testing.T) {
+func TestCoordinatorBindReinspectsAfterFreshRebindCannotProveLiveness(t *testing.T) {
 	reads, posts := 0, 0
 	stand, broker := newStandIn(t, func(r *http.Request) (int, string) {
 		if r.Method == http.MethodGet {
@@ -74,29 +71,26 @@ func TestCoordinatorBindWaitsForProvenOfflineAndReinspectsAfterTransientPostRefu
 	if code := bindCoordinatorWithWait(&out, &errs, broker, thinConversation, envOf(nil), func() {}); code != 0 {
 		t.Fatalf("exit %d output=%q error=%q", code, out.String(), errs.String())
 	}
-	if reads != 3 || posts != 2 {
+	if reads != 2 || posts != 2 {
 		t.Fatalf("reads=%d posts=%d requests=%+v", reads, posts, stand.requests())
 	}
 }
 
-func TestCoordinatorBindNeverPostsAfterUnknownTurnsOnline(t *testing.T) {
-	reads := 0
+func TestCoordinatorBindCannotReplaceAnOnlineHolderAfterUnknownInspection(t *testing.T) {
+	reads, posts := 0, 0
 	stand, broker := newStandIn(t, func(r *http.Request) (int, string) {
-		if r.Method != http.MethodGet {
-			t.Fatal("online holder was replaced")
+		if r.Method == http.MethodPost {
+			posts++
+			return 409, `{"error":{"code":"coordinator_online","message":"holder is still online"}}`
 		}
 		reads++
-		status := "unknown"
-		if reads == 2 {
-			status = "online"
-		}
-		return 200, `{"coordinator":{"configured":true,"status":"` + status + `","id":"role-1","generation":3,"session":{"session_id":"old"}}}`
+		return 200, `{"coordinator":{"configured":true,"status":"unknown","id":"role-1","generation":3,"session":{"session_id":"old"}}}`
 	})
 	var out, errs bytes.Buffer
 	if code := bindCoordinatorWithWait(&out, &errs, broker, thinConversation, envOf(nil), func() {}); code == 0 {
 		t.Fatalf("online role replaced: %q", out.String())
 	}
-	if len(stand.requests()) != 2 {
+	if reads != 1 || posts != 1 || len(stand.requests()) != 2 {
 		t.Fatalf("unexpected requests: %+v", stand.requests())
 	}
 }

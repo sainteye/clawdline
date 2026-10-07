@@ -1,3 +1,6 @@
+import { localizedLiteralMap } from "../../catalog.js"
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { Icon } from "@clawdline/contract"
 import { Mark } from "../../session/List.js"
@@ -9,36 +12,36 @@ import {
 } from "../work/api.js"
 import "./project-sync.css"
 
-const FAILED = "無法完成專案同步，請重試。"
+const failed = () => catalogWord("literal", "796b25ecda67")
 
-const STATE_WORDS: Record<string, string> = {
-  applied: "已同步",
-  unchanged: "已是最新",
-  missing: "這台沒有這個 repo",
-  cloning: "正在 clone",
-  clone_failed: "clone 失敗",
-}
+const STATE_WORDS: Record<string, string> = localizedLiteralMap({
+  applied: "3d74d47e0b33",
+  unchanged: "860ee16cc39a",
+  missing: "ea1537ae1e96",
+  cloning: "8b07863dbce6",
+  clone_failed: "75615ead8829",
+})
 
-const KEPT_WORDS: Record<string, string> = {
-  local_edit: "這台已修改過，保留",
-  tracked: "由 git 追蹤，不覆寫",
-  unsafe_path: "路徑經過連結或無法寫入，略過",
-}
+const KEPT_WORDS: Record<string, string> = localizedLiteralMap({
+  local_edit: "fbf7406f4710",
+  tracked: "7e64e54d2baa",
+  unsafe_path: "1d9552acce79",
+})
 
-const SKIP_WORDS: Record<string, string> = {
-  no_remote: "沒有 origin remote",
-  not_a_repository: "不是 git repo",
-  remote_not_portable: "origin 是本機路徑，其他機器無法取得",
-  mirrored_here: "這台本身就是鏡像",
-  unreadable: "讀不到 git 資訊",
-  duplicate_repository: "同一個 repo 的另一份 checkout",
-  manifest_full: "超過一次可同步的專案數",
-}
+const SKIP_WORDS: Record<string, string> = localizedLiteralMap({
+  no_remote: "00fae213888a",
+  not_a_repository: "4367608ea369",
+  remote_not_portable: "bb0979aecd71",
+  mirrored_here: "fa9704b1899c",
+  unreadable: "6ee5a00c192a",
+  duplicate_repository: "7b0ab080b9e0",
+  manifest_full: "de1c2e60a0be",
+})
 
 function describe(r: SyncResult): string {
   const parts = [STATE_WORDS[r.state] ?? r.state]
-  if (r.written.length) parts.push(`寫入 ${r.written.length} 個檔案`)
-  if (r.deleted.length) parts.push(`移除 ${r.deleted.length} 個檔案`)
+  if (r.written.length) parts.push(catalogFormat("template", "407ed506af73", [r.written.length]))
+  if (r.deleted.length) parts.push(catalogFormat("template", "be0401614399", [r.deleted.length]))
   for (const k of r.kept) parts.push(`${k.path}：${KEPT_WORDS[k.reason] ?? k.reason}`)
   return parts.join("，")
 }
@@ -109,11 +112,11 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
         }
       } catch (e) {
         const name = others.find((x) => x.id === machine)?.name || records[0]?.source.name || machine
-        done.push(`${name}：${failureSentence(e, FAILED)}`)
+        done.push(`${name}：${failureSentence(e, failed())}`)
       }
     }
-    const offline = [...waiting].map((name) => `${name} 目前離線，上線後打開這頁就會更新。`)
-    if (done.length || offline.length) setLines([...(done.length ? ["已從主要機器更新：", ...done] : []), ...offline])
+    const offline = [...waiting].map((name) => catalogFormat("template", "8861d1642b3c", [name]))
+    if (done.length || offline.length) setLines([...(done.length ? [catalogWord("literal", "8239a6a8f0e7"), ...done] : []), ...offline])
     if (done.length) {
       changed()
       await reload()
@@ -130,7 +133,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       if (!active || refreshed.current) return
       refreshed.current = true
       await follow(got.mirror, got.machines)
-    }).catch((e) => { if (active) setError(failureSentence(e, FAILED)) })
+    }).catch((e) => { if (active) setError(failureSentence(e, failed())) })
     return () => { active = false }
   }, [shown, reload, follow])
 
@@ -142,7 +145,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       setManifest(offer)
       setPicked(new Set(offer.projects.map((p) => p.repo)))
     } catch (e) {
-      setError(`${source.name}：${failureSentence(e, FAILED)}`)
+      setError(`${source.name}：${failureSentence(e, failed())}`)
     } finally { setBusy(false) }
   }
 
@@ -156,18 +159,18 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       try {
         // A failed read is the source's; name it so the line says which machine did not answer.
         const entry = await seam.read<{ project: SyncEntry }>(source.id, "project-entry", { repo: p.repo })
-          .catch((e) => { throw Object.assign(new Error(`${source.name}：${failureSentence(e, FAILED)}`), { named: true }) })
+          .catch((e) => { throw Object.assign(new Error(`${source.name}：${failureSentence(e, failed())}`), { named: true }) })
         const answer = await applyProjectMirror(from, entry.project, clone)
         out.push(`${p.label}（${p.repo}）：${describe(answer.result)}`)
       } catch (e) {
-        const why = (e as { named?: boolean }).named ? (e as Error).message : failureSentence(e, FAILED)
+        const why = (e as { named?: boolean }).named ? (e as Error).message : failureSentence(e, failed())
         out.push(`${p.label}（${p.repo}）：${why}`)
       }
       setLines([...out])
     }
     setBusy(false)
     changed()
-    await reload().catch((e) => setError(failureSentence(e, FAILED)))
+    await reload().catch((e) => setError(failureSentence(e, failed())))
   }
 
   async function detach(repo: string) {
@@ -175,33 +178,30 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
     setBusy(true); setError("")
     try {
       await detachProjectMirror(repo)
-      setLines([`${repo} 已改回這台自己的設定。`])
+      setLines([catalogFormat("template", "68c86e0aae21", [repo])])
       changed()
       await reload()
     } catch (e) {
-      setError(failureSentence(e, FAILED))
+      setError(failureSentence(e, failed()))
     } finally { setBusy(false) }
   }
 
   const mirrored = new Map((mirror?.projects ?? []).map((p) => [p.repo, p]))
 
   return <details className="project-sync" hidden={!shown}>
-    <summary>專案設定同步</summary>
-    <p>
-      選一台主要機器，這台會讀取它的專案名稱、圖示，以及沒有進 git 的
-      <code>.claude/skills</code>、<code>.claude/commands</code>、<code>.claude/agents</code> 與 <code>CLAUDE.local.md</code>，
-      存成唯讀鏡像：之後在主要機器修改，打開這一頁就會更新過來。專案以 git <code>origin</code> 對應，不看資料夾名稱。
-      <code>.claude/settings.local.json</code> 含有這台的權限設定，不會同步。
+    <summary>{catalogWord("inline", "58b55ad71df6")}</summary>
+    <p>{catalogWord("inline", "efd366b4e300")}
+      <code>{catalogWord("inline", "791c5105d4bf")}</code>、<code>{catalogWord("inline", "84daedef39b3")}</code>、<code>{catalogWord("inline", "a8532c746aa9")}</code>{catalogWord("inline", "2b30dbf16241")} <code>{catalogWord("inline", "13230e1aea91")}</code>{catalogWord("inline", "955dc54b5b20")} <code>{catalogWord("inline", "181fdd46fc4a")}</code>{catalogWord("inline", "fc80320b2ca5")}
+      <code>{catalogWord("inline", "fca16cae5b0e")}</code>{catalogWord("inline", "7633dc8d1def")}
     </p>
-    {!seam && <p>跨機器同步需要從 Clawdline Cloud 開啟。也可以在主要機器執行 <code>clawdline project export --out projects.json</code>，
-      再到這台執行 <code>clawdline project import projects.json</code>。</p>}
+    {!seam && <p>{catalogWord("inline", "e9bebcc7e5af")} <code>{catalogWord("inline", "5f25c3304e10")}</code>{catalogWord("inline", "92da784ad71b")} <code>{catalogWord("inline", "321e64eaf5eb")}</code>。</p>}
 
     {mirror && mirror.projects.length > 0 && <div className="project-sync-list">
-      <h4>這台正在鏡像的專案</h4>
+      <h4>{catalogWord("inline", "12bc87aee711")}</h4>
       {mirror.projects.map((p) => <div className="project-sync-row" key={p.repo}>
         <Mark icon={p.icon as Icon} cellPx={3} />
-        <span><strong>{p.label}</strong> <small>{p.repo} · 來自 {p.source.name || p.source.machine} · {when(p.applied_at)}</small></span>
-        <button type="button" disabled={busy} onClick={() => void detach(p.repo)}>改回本機設定</button>
+        <span><strong>{p.label}</strong> <small>{p.repo}{catalogWord("inline", "752c8278d622")} {p.source.name || p.source.machine} · {when(p.applied_at)}</small></span>
+        <button type="button" disabled={busy} onClick={() => void detach(p.repo)}>{catalogWord("inline", "fd63b0b7a79b")}</button>
       </div>)}
     </div>}
     {mirror && mirror.clones.length > 0 && <div className="project-sync-list">
@@ -211,19 +211,19 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
     </div>}
 
     {seam && <>
-      <label>主要機器
+      <label>{catalogWord("inline", "0622fb891fd0")}
         <select value={sourceID} disabled={busy} onChange={(e) => { setSourceID(e.target.value); setManifest(null); setLines([]) }}>
-          <option value="">選擇機器</option>
+          <option value="">{catalogWord("inline", "106a58cc83a1")}</option>
           {machines.map((m) => <option key={m.id} value={m.id} disabled={m.offers === false}>
-            {m.name}{m.offers === false ? "（需要更新 Clawdline）" : m.online === false ? "（離線）" : ""}
+            {m.name}{m.offers === false ? catalogWord("literal", "3c07629e48a7") : catalogWord("literal", "e2a511758f17")}
           </option>)}
         </select>
       </label>
       {source?.online === false && <p className="project-sync-offline" role="status">
-        「{source.name}」目前離線，要等它上線才能讀取它的專案。可以在「裝置」頁查看它的狀態。
+        「{source.name}{catalogWord("inline", "bee4fb5a17bb")}
       </p>}
       <div className="project-sync-actions">
-        <button type="button" disabled={!source || source.online === false || busy} onClick={() => void readSource()}>{busy && !manifest ? "讀取中…" : "讀取它的專案"}</button>
+        <button type="button" disabled={!source || source.online === false || busy} onClick={() => void readSource()}>{busy && !manifest ? catalogWord("literal", "0d6fca356d81") : catalogWord("literal", "672c0aa99301")}</button>
       </div>
     </>}
 
@@ -237,21 +237,21 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
             setPicked(next)
           }} />
           <Mark icon={p.icon as Icon} cellPx={3} />
-          <span><strong>{p.label}</strong> <small>{p.repo} · {p.files.length} 個本機檔案
-            {had ? (had.revision === p.revision ? " · 已是最新" : " · 有更新") : ""}</small></span>
+          <span><strong>{p.label}</strong> <small>{p.repo} · {catalogFormat("count", "localFiles", [p.files.length])}
+            {had ? (had.revision === p.revision ? catalogWord("literal", "ebdff2f8a427") : catalogWord("literal", "7e6a49246391")) : ""}</small></span>
         </label>
       })}
       {manifest.skipped.length > 0 && <details>
-        <summary>不會同步的專案（{manifest.skipped.length}）</summary>
+        <summary>{catalogFormat("count", "unsyncedProjects", [manifest.skipped.length])}</summary>
         {manifest.skipped.map((s) => <p key={s.path}>{s.label}：{SKIP_WORDS[s.reason] ?? s.reason}</p>)}
       </details>}
       <label className="project-sync-row">
         <input type="checkbox" checked={clone} disabled={busy} onChange={(e) => setClone(e.target.checked)} />
-        <span>這台還沒有的 repo，clone 到 <code>{mirror?.clone_root || "（未知）"}</code></span>
+        <span>{catalogWord("inline", "c1f001d63fef")} <code>{mirror?.clone_root || catalogWord("literal", "469e3fc18f6a")}</code></span>
       </label>
       <div className="project-sync-actions">
         <button type="button" disabled={busy || picked.size === 0} onClick={() => void syncPicked()}>
-          {busy ? "同步中…" : `同步所選的 ${picked.size} 個專案`}
+          {busy ? catalogWord("literal", "d2dca5f96f16") : catalogFormat("template", "49c393ba6a87", [picked.size])}
         </button>
       </div>
     </div>}

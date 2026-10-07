@@ -31,7 +31,7 @@ func daemonLog(cfg config.Config) {
 	if stderrIsTerminal() {
 		w.SetMirror(os.Stderr)
 	}
-	fmt.Fprintf(os.Stderr, "clawdline: logging to %s\n", w.Path())
+	fmt.Fprintf(os.Stderr, cliCopy("misc", "daemonlog.clawdline_logging_to_s.f1cb13bc", "clawdline: logging to %s\n"), w.Path())
 	log.SetOutput(w)
 	// After the move, so that anything resolving the overrides says so in
 	// the file.

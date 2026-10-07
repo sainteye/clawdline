@@ -32,6 +32,7 @@
  * Nothing is imported at run time, so `node --test` loads it as it is.
  */
 import type { Outcome } from "./outcome.js"
+import { catalogRefusalDetail } from "../catalog.js"
 
 /** How long an answered press holds its question once the machine said yes. */
 export const PRESS_SETTLED_MS = 10_000
@@ -156,12 +157,12 @@ export async function postPress(doFetch: typeof fetch, id: string, key: string, 
   if (res.ok) return data ? { ok: true, body: data } : { ok: false, status: res.status, code: "not_json", message: "" }
   const raw = data?.error
   if (typeof raw === "string") {
-    return { ok: false, status: res.status, code: raw, message: typeof data?.detail === "string" ? data.detail : raw, outcome: data?.outcome }
+    return { ok: false, status: res.status, code: raw, message: catalogRefusalDetail(data)?.text || raw, outcome: data?.outcome }
   }
   if (raw && typeof raw === "object") {
     const e = raw as { code?: unknown; message?: unknown; outcome?: unknown }
     const code = typeof e.code === "string" ? e.code : "http_" + res.status
-    return { ok: false, status: res.status, code, message: typeof e.message === "string" ? e.message : code, outcome: e.outcome }
+    return { ok: false, status: res.status, code, message: catalogRefusalDetail(data)?.text || code, outcome: e.outcome }
   }
   return { ok: false, status: res.status, code: "http_" + res.status, message: res.statusText }
 }

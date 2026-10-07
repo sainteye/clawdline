@@ -1,3 +1,4 @@
+import { catalogWord } from "../../catalog.js"
 import type { Icon } from "@clawdline/contract"
 import type { NewSquadSkill } from "./api.js"
 import type { SquadPersona, SquadView } from "./model.js"
@@ -28,8 +29,8 @@ export function makeSkill(name: string, purpose: string, content: string, icon: 
 }
 
 export function skillInputError(name: string, purpose: string, content: string): string {
-  if (!name.trim() || !purpose.trim() || !content.trim()) return "請填寫名稱、用途與技能內容。"
-  if (bytes(content.trim()) > SKILL_BODY_BYTES) return "技能內容超過 64 KiB，請縮短後重試。"
+  if (!name.trim() || !purpose.trim() || !content.trim()) return catalogWord("literal", "ea38578dd6df")
+  if (bytes(content.trim()) > SKILL_BODY_BYTES) return catalogWord("literal", "b25dc4eefbd9")
   return ""
 }
 

@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import { useLayoutEffect, useRef } from "react"
 import type { PageModule } from "./types.js"
 import { bindTimeline, requestedTimeline, timelineReturn, type TimelinePage } from "../legacy/timeline-bridge.js"
@@ -113,7 +114,7 @@ function TimelinePageView({ shown }: { shown: boolean }) {
       className="page timeline-page"
       id="timeline"
       data-page-view="timeline"
-      aria-label="Project Timeline"
+      aria-label={catalogWord("inline", "da2fd084302a")}
       hidden={!shown}
       dangerouslySetInnerHTML={{ __html: sectionMarkup }}
     />

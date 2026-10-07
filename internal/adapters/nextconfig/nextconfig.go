@@ -451,6 +451,8 @@ var Settables = []Settable{
 		Because: "scope_app is bundle identifiers separated by commas"},
 	{Name: "language", Kind: "string", Choices: Languages, Refusal: "invalid_language",
 		Because: "auto, or a tag the catalog resolves"},
+	{Name: "product_language", Kind: "string", Choices: ProductLanguages, Refusal: "invalid_product_language",
+		Because: "one of en, zh-Hant, ja, zh-Hans, ko, es, pt-BR, fr or de"},
 	{Name: "mascot", Kind: "string", Check: ValidName, Refusal: "invalid_mascot",
 		Because: "a pack name: letters, digits, dot, dash or underscore"},
 	{Name: "terminal", Kind: "string", Choices: projects.TerminalChoices,
@@ -574,6 +576,21 @@ func SettableByName(name string) (Settable, bool) {
 // the key is still written so that a build with more reads it.
 var Languages = []string{"auto", "en", "zh-Hant", "zh-Hans", "ja", "ko", "es", "pt", "fr", "de",
 	"ru", "it", "hi", "id", "tr"}
+
+// ProductLanguages is the shipped language set for daemon-authored copy. It
+// is separate from Languages: that older setting continues to govern agent
+// and Board instructions and voice auto fallback, including its old values.
+var ProductLanguages = []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"}
+
+// ProductLanguage resolves a saved setting without modifying it. A malformed
+// or pre-existing unsupported value is rendered in English.
+func ProductLanguage(values Values) string {
+	language, ok := values.String("product_language")
+	if ok {
+		return ResolveProductLanguage(language)
+	}
+	return "en"
+}
 
 // ValidLanguageTag reports whether s is `auto` or could be a language tag:
 // letters first, then letters, digits, dashes and underscores, as BCP 47 and

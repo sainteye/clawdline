@@ -111,10 +111,10 @@ func webhookCommand(args []string) {
 }
 
 func webhookFireUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: clawdline webhook fire [--url-file path] [--deliver-within 60s] [--timeout 60m] [--no-wait]")
-	fmt.Fprintln(w, "  start a schedule through its webhook; no daemon needed. The URL is read from --url-file or "+webhookURLEnv+", never from an argument")
+	fmt.Fprintln(w, cliCopy("misc", "webhook_fire.usage_clawdline_webhook_fire_url_fi.fb14730c", "usage: clawdline webhook fire [--url-file path] [--deliver-within 60s] [--timeout 60m] [--no-wait]"))
+	fmt.Fprintf(w, cliCopy("misc", "webhook_fire.usage_source", "  start a schedule through its webhook; no daemon needed. The URL is read from --url-file or %s, never from an argument\n"), webhookURLEnv)
 	fmt.Fprintln(w, "  stdout, one line: success|failed|not_delivered|refused|gave_up delivery=<id|-> [state=<s>] [outcome=<o>] [refusal_code=<c>] [code=<c> status=<n>] [reason=unreachable]")
-	fmt.Fprintln(w, "  --no-wait prints only the delivery id. Exit: 0 success, 1 failed, 2 never reached the machine, 3 refused, 4 gave up waiting, 64 usage")
+	fmt.Fprintln(w, cliCopy("misc", "webhook_fire.no_wait_prints_only_the_delivery_id.8324d81b", "  --no-wait prints only the delivery id. Exit: 0 success, 1 failed, 2 never reached the machine, 3 refused, 4 gave up waiting, 64 usage"))
 }
 
 // runWebhookFire is the command, answering its exit status.
@@ -128,30 +128,30 @@ func runWebhookFire(stdout, stderr io.Writer, args []string, getenv func(string)
 	// A parse error's text can quote the argument it did not understand, and
 	// that argument may be the URL; it is never printed.
 	if err := fs.Parse(args); err != nil {
-		fmt.Fprintln(stderr, "clawdline webhook fire: a flag could not be read")
+		fmt.Fprintln(stderr, cliCopy("misc", "webhook_fire.clawdline_webhook_fire_a_flag_could.74b17d20", "clawdline webhook fire: a flag could not be read"))
 		webhookFireUsage(stderr)
 		return webhookExitUsage
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "clawdline webhook fire: takes no arguments. The webhook URL is a credential: "+
-			"put it in a file for --url-file, or in "+webhookURLEnv+"")
+		fmt.Fprintf(stderr, cliCopy("misc", "webhook_fire.credential_argument", "clawdline webhook fire: takes no arguments. The webhook URL is a credential: "+
+			"put it in a file for --url-file, or in %s\n"), webhookURLEnv)
 		webhookFireUsage(stderr)
 		return webhookExitUsage
 	}
 	withinSeconds, ok := webhookWithinSeconds(*within)
 	if !ok {
-		fmt.Fprintf(stderr, "clawdline webhook fire: --deliver-within must be a duration from %ds to %ds, in whole seconds\n",
+		fmt.Fprintf(stderr, cliCopy("misc", "webhook_fire.clawdline_webhook_fire_deliver_with.f74a0534", "clawdline webhook fire: --deliver-within must be a duration from %ds to %ds, in whole seconds\n"),
 			webhookMinWithin, webhookMaxWithin)
 		return webhookExitUsage
 	}
 	wait, err := time.ParseDuration(*timeout)
 	if err != nil || wait <= 0 {
-		fmt.Fprintln(stderr, "clawdline webhook fire: --timeout must be a positive duration, like 60m")
+		fmt.Fprintln(stderr, cliCopy("misc", "webhook_fire.clawdline_webhook_fire_timeout_must.515b0e25", "clawdline webhook fire: --timeout must be a positive duration, like 60m"))
 		return webhookExitUsage
 	}
 	raw, problem := webhookURL(*urlFile, getenv)
 	if problem != "" {
-		fmt.Fprintln(stderr, "clawdline webhook fire:", problem)
+		fmt.Fprintln(stderr, cliCopy("misc", "webhook_fire.clawdline_webhook_fire.76515ede", "clawdline webhook fire:"), problem)
 		return webhookExitUsage
 	}
 	f := &webhookFire{
@@ -184,32 +184,32 @@ func webhookURL(file string, getenv func(string) string) (string, string) {
 	if file != "" {
 		fh, err := os.Open(file)
 		if err != nil {
-			return "", "--url-file could not be read: " + err.Error()
+			return "", cliCopy("misc", "webhook_fire.file_unreadable", "--url-file could not be read: ") + err.Error()
 		}
 		data, err := io.ReadAll(io.LimitReader(fh, webhookURLFileLimit+1))
 		_ = fh.Close()
 		if err != nil {
-			return "", "--url-file could not be read: " + err.Error()
+			return "", cliCopy("misc", "webhook_fire.file_unreadable", "--url-file could not be read: ") + err.Error()
 		}
 		if len(data) > webhookURLFileLimit {
-			return "", fmt.Sprintf("--url-file is larger than %d bytes; it should hold one URL", webhookURLFileLimit)
+			return "", fmt.Sprintf(cliCopy("misc", "webhook_fire.file_too_large", "--url-file is larger than %d bytes; it should hold one URL"), webhookURLFileLimit)
 		}
 		raw = strings.TrimSpace(string(data))
 		if raw == "" {
-			return "", "--url-file is empty"
+			return "", cliCopy("misc", "webhook_fire.file_empty", "--url-file is empty")
 		}
 	} else {
 		raw = strings.TrimSpace(getenv(webhookURLEnv))
 		if raw == "" {
-			return "", "no webhook URL: pass --url-file <path>, or set " + webhookURLEnv
+			return "", fmt.Sprintf(cliCopy("misc", "webhook_fire.url_missing", "no webhook URL: pass --url-file <path>, or set %s"), webhookURLEnv)
 		}
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return "", "the webhook URL could not be read as a URL"
+		return "", cliCopy("misc", "webhook_fire.url_unreadable", "the webhook URL could not be read as a URL")
 	}
 	if u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return "", "the webhook URL has a query, a fragment or a user name; the webhook's URL has none"
+		return "", cliCopy("misc", "webhook_fire.url_parts_forbidden", "the webhook URL has a query, a fragment or a user name; the webhook's URL has none")
 	}
 	switch {
 	case u.Scheme == "https":
@@ -217,7 +217,7 @@ func webhookURL(file string, getenv func(string) string) (string, string) {
 		// Plain http only to this machine itself, where nothing on a network
 		// can read the token: a local test server.
 	default:
-		return "", "the webhook URL must be https (plain http only to this machine itself)"
+		return "", cliCopy("misc", "webhook_fire.url_scheme", "the webhook URL must be https (plain http only to this machine itself)")
 	}
 	return strings.TrimRight(raw, "/"), ""
 }
@@ -257,7 +257,7 @@ type webhookFire struct {
 
 // say writes one line on stderr with anything secret taken out of it.
 func (f *webhookFire) say(format string, args ...any) {
-	fmt.Fprintln(f.stderr, f.redact(fmt.Sprintf("clawdline webhook fire: "+format, args...)))
+	fmt.Fprintln(f.stderr, f.redact(fmt.Sprintf(cliCopy("misc", "webhook_fire.clawdline_webhook_fire.f5bb94fc", "clawdline webhook fire: ")+format, args...)))
 }
 
 // result writes the one stdout line.
@@ -302,9 +302,9 @@ func (f *webhookFire) run(withinSeconds int, wait time.Duration, noWait bool) in
 		return webhookExitSuccess
 	}
 	if accepted.DeliverBy != "" {
-		f.say("delivery %s: accepted, to reach the machine by %s", id, webhookWord(accepted.DeliverBy))
+		f.say(cliCopy("misc", "webhook_fire.say_delivery_s_accepted_to_reach_the_m.10ab38a1", "delivery %s: accepted, to reach the machine by %s"), id, webhookWord(accepted.DeliverBy))
 	} else {
-		f.say("delivery %s: accepted", id)
+		f.say(cliCopy("misc", "webhook_fire.say_delivery_s_accepted.3a00eda0", "delivery %s: accepted"), id)
 	}
 	return f.poll(accepted, wait)
 }
@@ -321,7 +321,7 @@ func (f *webhookFire) trigger(withinSeconds int) (webhookAccepted, int) {
 	for attempt := 1; ; attempt++ {
 		req, err := http.NewRequest(http.MethodPost, f.url, bytes.NewReader(body))
 		if err != nil {
-			f.say("the request could not be made")
+			f.say(cliCopy("misc", "webhook_fire.say_the_request_could_not_be_made.5748132c", "the request could not be made"))
 			return webhookAccepted{}, webhookExitUsage
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -331,14 +331,14 @@ func (f *webhookFire) trigger(withinSeconds int) (webhookAccepted, int) {
 		case why == "" && status >= 200 && status < 300:
 			var a webhookAccepted
 			if json.Unmarshal(answer, &a) != nil || !webhookToken(a.DeliveryID) {
-				f.say("the trigger was accepted (%d) but its answer names no delivery id; its outcome cannot be followed", status)
+				f.say(cliCopy("misc", "webhook_fire.say_the_trigger_was_accepted_d_but_its.0f65c4c9", "the trigger was accepted (%d) but its answer names no delivery id; its outcome cannot be followed"), status)
 				f.result("failed delivery=- reason=unreadable_answer")
 				return webhookAccepted{}, webhookExitFailed
 			}
 			return a, -1
 		case why == "" && status < 500:
 			code := webhookErrorCode(answer)
-			f.say("the trigger was refused: %d %s", status, code)
+			f.say(cliCopy("misc", "webhook_fire.say_the_trigger_was_refused_d_s.f9b3059d", "the trigger was refused: %d %s"), status, code)
 			f.result(fmt.Sprintf("refused delivery=- code=%s status=%d", code, status))
 			return webhookAccepted{}, webhookExitRefused
 		}
@@ -346,11 +346,11 @@ func (f *webhookFire) trigger(withinSeconds int) (webhookAccepted, int) {
 			why = fmt.Sprintf("%d %s", status, webhookErrorCode(answer))
 		}
 		if !f.clock.now().Add(backoff).Before(deadline) {
-			f.say("attempt %d failed (%s); the deliver-within deadline leaves no time for another", attempt, why)
+			f.say(cliCopy("misc", "webhook_fire.say_attempt_d_failed_s_the_deliver_wit.09414794", "attempt %d failed (%s); the deliver-within deadline leaves no time for another"), attempt, why)
 			f.result("not_delivered delivery=- reason=unreachable")
 			return webhookAccepted{}, webhookExitNotThere
 		}
-		f.say("attempt %d failed (%s); sending it again in %s with the same Idempotency-Key", attempt, why, backoff)
+		f.say(cliCopy("misc", "webhook_fire.say_attempt_d_failed_s_sending_it_agai.0152fed6", "attempt %d failed (%s); sending it again in %s with the same Idempotency-Key"), attempt, why, backoff)
 		f.clock.sleep(backoff)
 		backoff = min(2*backoff, f.clock.retryMax)
 	}
@@ -369,7 +369,7 @@ func (f *webhookFire) poll(accepted webhookAccepted, wait time.Duration) int {
 	for {
 		remaining := deadline.Sub(f.clock.now())
 		if remaining <= 0 {
-			f.say("delivery %s: gave up waiting after %s; it was last %s", id, wait, last)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_gave_up_waiting_after_s.7d8d2070", "delivery %s: gave up waiting after %s; it was last %s"), id, wait, last)
 			f.result(fmt.Sprintf("gave_up delivery=%s state=%s", id, last))
 			return webhookExitGaveUp
 		}
@@ -378,23 +378,23 @@ func (f *webhookFire) poll(accepted webhookAccepted, wait time.Duration) int {
 
 		req, err := http.NewRequest(http.MethodGet, statusURL, nil)
 		if err != nil {
-			f.say("the request could not be made")
+			f.say(cliCopy("misc", "webhook_fire.say_the_request_could_not_be_made.5748132c", "the request could not be made"))
 			return webhookExitFailed
 		}
 		status, answer, why := f.send(req)
 		switch {
 		case why != "":
-			f.say("delivery %s: status could not be read (%s); still waiting", id, why)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_status_could_not_be_rea.bc22e5ab", "delivery %s: status could not be read (%s); still waiting"), id, why)
 			continue
 		case status >= 500:
-			f.say("delivery %s: status could not be read (%d); still waiting", id, status)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_status_could_not_be_rea.24ba6caf", "delivery %s: status could not be read (%d); still waiting"), id, status)
 			continue
 		case status == http.StatusTooManyRequests:
 			// The status read has its own fence (120 a minute), far above
 			// this poll's rate; if it is reached anyway, slow down and keep
 			// reading rather than give up on a delivery that may be running.
 			interval = f.clock.pollMax
-			f.say("delivery %s: status reads are being limited; reading less often", id)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_status_reads_are_being.acdec31e", "delivery %s: status reads are being limited; reading less often"), id)
 			continue
 		case status == http.StatusNotFound:
 			code := webhookErrorCode(answer)
@@ -404,27 +404,27 @@ func (f *webhookFire) poll(accepted webhookAccepted, wait time.Duration) int {
 				// moments ago, so the one reading that fits is that it was
 				// dropped before reaching the machine: exit 2, not 3, since
 				// nothing refused it.
-				f.say("delivery %s: Cloud has no record of it", id)
+				f.say(cliCopy("misc", "webhook_fire.say_delivery_s_cloud_has_no_record_of.74017dee", "delivery %s: Cloud has no record of it"), id)
 				f.result(fmt.Sprintf("not_delivered delivery=%s state=unknown code=not_found", id))
 				return webhookExitNotThere
 			}
-			f.say("delivery %s: status refused: 404 %s", id, code)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_status_refused_404_s.2dbb798c", "delivery %s: status refused: 404 %s"), id, code)
 			f.result(fmt.Sprintf("refused delivery=%s code=%s status=404", id, code))
 			return webhookExitRefused
 		case status < 200 || status >= 300:
 			code := webhookErrorCode(answer)
-			f.say("delivery %s: status refused: %d %s", id, status, code)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_status_refused_d_s.8d52a848", "delivery %s: status refused: %d %s"), id, status, code)
 			f.result(fmt.Sprintf("refused delivery=%s code=%s status=%d", id, code, status))
 			return webhookExitRefused
 		}
 		var st webhookStatus
 		if json.Unmarshal(answer, &st) != nil || !webhookToken(st.State) {
-			f.say("delivery %s: a status answer could not be read; still waiting", id)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_a_status_answer_could_n.324cfa1c", "delivery %s: a status answer could not be read; still waiting"), id)
 			continue
 		}
 		if st.State != last {
 			last = st.State
-			f.say("delivery %s: %s", id, last)
+			f.say(cliCopy("misc", "webhook_fire.say_delivery_s_s.dcf82996", "delivery %s: %s"), id, last)
 		}
 		if code, done := f.final(id, st); done {
 			return code

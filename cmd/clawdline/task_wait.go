@@ -98,13 +98,13 @@ func waitArgs(args []string) (waitOptions, error) {
 	}
 	switch {
 	case len(ids) == 0:
-		return waitOptions{}, fmt.Errorf("at least one task id is required")
+		return waitOptions{}, fmt.Errorf("%s", cliCopy("misc", "task_wait.id_required", "at least one task id is required"))
 	case len(ids) > waitIDLimit:
-		return waitOptions{}, fmt.Errorf("%d task ids; one wait follows at most %d", len(ids), waitIDLimit)
+		return waitOptions{}, fmt.Errorf(cliCopy("misc", "task_wait.too_many_ids", "%d task ids; one wait follows at most %d"), len(ids), waitIDLimit)
 	case *timeout <= 0:
-		return waitOptions{}, fmt.Errorf("--timeout must be positive")
+		return waitOptions{}, fmt.Errorf("%s", cliCopy("misc", "task_wait.timeout_positive", "--timeout must be positive"))
 	case *timeout > waitTimeoutLimit:
-		return waitOptions{}, fmt.Errorf("--timeout %s is longer than %s", *timeout, waitTimeoutLimit)
+		return waitOptions{}, fmt.Errorf(cliCopy("misc", "task_wait.timeout_too_long", "--timeout %s is longer than %s"), *timeout, waitTimeoutLimit)
 	}
 	return waitOptions{port: *port, ids: ids, timeout: *timeout, any: *anyOne}, nil
 }
@@ -112,7 +112,7 @@ func waitArgs(args []string) (waitOptions, error) {
 func waitCommand(args []string) {
 	opts, err := waitArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline task wait:", err)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "task_wait.clawdline_task_wait.758f95fb", "clawdline task wait:"), err)
 		taskUsage()
 	}
 	b, err := openBroker(opts.port)
@@ -146,7 +146,7 @@ func waitTasks(stdout, stderr io.Writer, b *broker, opts waitOptions, clock wait
 			if err != nil {
 				misses[id]++
 				if !transient || misses[id] >= waitReadLimit {
-					fmt.Fprintf(stderr, "clawdline task wait: could not read task %s: %v\n", id, err)
+					fmt.Fprintf(stderr, cliCopy("misc", "task_wait.clawdline_task_wait_could_not_read.15268251", "clawdline task wait: could not read task %s: %v\n"), id, err)
 					return 4
 				}
 				continue
@@ -191,14 +191,14 @@ func waitTasks(stdout, stderr io.Writer, b *broker, opts waitOptions, clock wait
 		}
 		running++
 		if t, ok := last[id]; ok {
-			fmt.Fprintf(stdout, "still running: %s  %s (%s)\n", id, t.Title, t.State)
+			fmt.Fprintf(stdout, cliCopy("misc", "task_wait.still_running_s_s_s.2eef2e2a", "still running: %s  %s (%s)\n"), id, t.Title, t.State)
 		} else {
-			fmt.Fprintf(stdout, "still running: %s (not read yet)\n", id)
+			fmt.Fprintf(stdout, cliCopy("misc", "task_wait.still_running_s_not_read_yet.861d2e8e", "still running: %s (not read yet)\n"), id)
 		}
 	}
 	switch {
 	case len(settled) == 0 || (!opts.any && running > 0):
-		fmt.Fprintf(stderr, "clawdline task wait: timed out after %s with %d of %d task(s) still running\n",
+		fmt.Fprintf(stderr, cliCopy("misc", "task_wait.clawdline_task_wait_timed_out_after.89c87cdd", "clawdline task wait: timed out after %s with %d of %d task(s) still running\n"),
 			opts.timeout, running, len(opts.ids))
 		return 3
 	case failed:
@@ -220,17 +220,17 @@ func readWaitedTask(b *broker, id string) (contract.BrokerTask, bool, error) {
 	if !a.ok() {
 		code, message := a.refusal()
 		if code == "" {
-			return contract.BrokerTask{}, false, fmt.Errorf("the daemon answered %d: %s", a.Status,
+			return contract.BrokerTask{}, false, fmt.Errorf(cliCopy("misc", "task_wait.daemon_answered", "the daemon answered %d: %s"), a.Status,
 				strings.TrimSpace(string(a.Body)))
 		}
-		return contract.BrokerTask{}, false, fmt.Errorf("refused, %d %s: %s", a.Status, code, message)
+		return contract.BrokerTask{}, false, fmt.Errorf(cliCopy("misc", "task_wait.refused", "refused, %d %s: %s"), a.Status, code, message)
 	}
 	var got contract.BrokerTaskEnvelope
 	if err := json.Unmarshal(a.Body, &got); err != nil {
-		return contract.BrokerTask{}, false, fmt.Errorf("the daemon's answer could not be read: %w", err)
+		return contract.BrokerTask{}, false, fmt.Errorf(cliCopy("misc", "task_wait.answer_unreadable", "the daemon's answer could not be read: %w"), err)
 	}
 	if got.Task.State == contract.TaskStateUnreadable {
-		return contract.BrokerTask{}, false, fmt.Errorf("the daemon could not read the task's record (state unreadable)")
+		return contract.BrokerTask{}, false, fmt.Errorf("%s", cliCopy("misc", "task_wait.record_unreadable", "the daemon could not read the task's record (state unreadable)"))
 	}
 	return got.Task, false, nil
 }

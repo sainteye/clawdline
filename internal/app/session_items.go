@@ -188,7 +188,7 @@ func explicitSteps(in []string) ([]string, error) {
 			continue
 		}
 		if len(s) > workV2TitleLimit || !utf8.ValidString(s) {
-			return nil, workV2Error(http.StatusBadRequest, "invalid_step",
+			return nil, workV2ErrorRaw(http.StatusBadRequest, "invalid_step",
 				fmt.Sprintf("Step %d is over 240 bytes; nothing was created.", len(out)+1))
 		}
 		out = append(out, s)
@@ -222,6 +222,9 @@ func addSessionItemSteps(tx *store.WorkV2Tx, item work.ItemV2, titles []string, 
 
 func relayRefusal(err error) error {
 	if refused, ok := err.(*work.Refusal); ok {
+		if refused.RawMessage {
+			return workV2ErrorRaw(refused.Status, refused.Code, refused.Message)
+		}
 		return workV2Error(refused.Status, refused.Code, refused.Message)
 	}
 	return err

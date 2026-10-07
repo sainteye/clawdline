@@ -51,10 +51,11 @@ func (c *Coordinator) now() time.Time {
 // RoleRefusal is a typed no from the coordinator routes. Extra is placed
 // inside the error envelope, as every broker refusal's is.
 type RoleRefusal struct {
-	Status  int
-	Code    string
-	Message string
-	Extra   map[string]any
+	Status     int
+	Code       string
+	Message    string
+	RawMessage bool
+	Extra      map[string]any
 }
 
 func (r RoleRefusal) Error() string { return r.Code + ": " + r.Message }
@@ -101,25 +102,22 @@ func (c *Coordinator) identity(s session.Session) coordinator.Identity {
 // over every source: on a Mac whose iTerm2 cannot be asked that AND is never
 // true, and a role bound to a tmux pane would then never be provably offline
 // (design-decisions D05 ③).
-func (s Seen) reading(backend session.Backend) coordinator.Reading {
+func (s Seen) reading(source string) coordinator.Reading {
 	complete := s.Inventory.Complete
-	if said, ok := s.Inventory.Sources[string(backend)]; ok && backend != "" {
+	if said, ok := s.Inventory.Sources[source]; ok && source != "" {
 		complete = said
 	}
 	return coordinator.Reading{Sessions: s.tuples, Complete: complete, ObservedAt: s.Inventory.ObservedAt}
 }
 
-// backendOf is the backend a terminal id belongs to, as the last reading that
-// listed it said; empty when no reading here lists it.
-func (s Seen) backendOf(terminal string) session.Backend {
+// sourceOf is the source a terminal id belongs to, including when that source
+// has just proved the terminal absent and therefore supplied no row. Each
+// source's id shape is unique; an unrecognised id still needs the whole read.
+func (s Seen) sourceOf(terminal string) string {
 	if row, ok := s.Sessions[terminal]; ok {
-		return row.Backend
+		return session.SourceFor(row.Backend)
 	}
-	// A tmux pane id is `%<n>`; the Go inventory lists tmux panes under it.
-	if len(terminal) > 1 && terminal[0] == '%' {
-		return session.BackendTmux
-	}
-	return ""
+	return session.SourceForID(terminal)
 }
 
 // State is the role as one reading sees it.
@@ -139,7 +137,7 @@ func (c *Coordinator) State(ctx context.Context) (State, error) {
 	seen := c.seeing(ctx)
 	st := State{Status: status, Record: rec, Seen: seen, Liveness: coordinator.Unknown}
 	if rec != nil {
-		st.Liveness = coordinator.LivenessOf(*rec, seen.reading(seen.backendOf(rec.TerminalID)))
+		st.Liveness = coordinator.LivenessOf(*rec, seen.reading(seen.sourceOf(rec.TerminalID)))
 	}
 	return st, nil
 }
@@ -180,7 +178,7 @@ func (c *Coordinator) Register(ctx context.Context, conversation string) (State,
 	if st.Status == store.CoordinatorCorrupt || st.Status == store.CoordinatorUnsupported {
 		return st, false, RoleRefusal{Status: http.StatusConflict, Code: "coordinator_store_invalid",
 			Message: "The stored role is not a record this daemon can vouch for (" + string(st.Status) +
-				"); it is left as it is for a person to look at, and nothing was registered."}
+				"); it is left as it is for a person to look at, and nothing was registered.", RawMessage: true}
 	}
 	live, err := c.resolve(st.Seen, conversation)
 	if err != nil && st.Record == nil {
@@ -196,7 +194,7 @@ func (c *Coordinator) Register(ctx context.Context, conversation string) (State,
 	} else {
 		id = orchestrator.NewUUID()
 	}
-	next, created, err := coordinator.Register(st.Record, candidate, st.Seen.reading(live.Backend), id, c.now())
+	next, created, err := coordinator.Register(st.Record, candidate, st.Seen.reading(session.SourceFor(live.Backend)), id, c.now())
 	if err != nil {
 		return st, false, c.refusal(err, st)
 	}
@@ -238,11 +236,11 @@ func (c *Coordinator) Rebind(ctx context.Context, expectID string, expectGenerat
 		return st, false, err
 	}
 	candidate := c.identity(live)
-	var backend session.Backend
+	var source string
 	if st.Record != nil {
-		backend = st.Seen.backendOf(st.Record.TerminalID)
+		source = st.Seen.sourceOf(st.Record.TerminalID)
 	}
-	next, moved, err := coordinator.Rebind(st.Record, expectID, expectGeneration, candidate, st.Seen.reading(backend), c.now())
+	next, moved, err := coordinator.Rebind(st.Record, expectID, expectGeneration, candidate, st.Seen.reading(source), c.now())
 	if err != nil {
 		return st, false, c.refusal(err, st)
 	}

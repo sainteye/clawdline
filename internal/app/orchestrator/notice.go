@@ -459,7 +459,10 @@ func (b *Broker) moveNoticeWith(ctx context.Context, taskID string, seen Notice,
 	// intent in the move's own transaction and sent after it commits.
 	var effects []store.Effect
 	if next.State == NoticeDeadLetter && seen.State != NoticeDeadLetter {
-		body, _ := json.Marshal(deadLetterEffect{Notice: seen.ID, Attempts: next.Attempts, Reason: errorCode(next.LastError)})
+		body, _ := json.Marshal(deadLetterEffect{
+			Notice: seen.ID, Attempts: next.Attempts, Reason: errorCode(next.LastError),
+			Language: b.ProductLanguage(),
+		})
 		effects = append(effects, store.Effect{Kind: EffectDeadLetterPush, Subject: taskID, Payload: body})
 	}
 	applied, ids, err := b.Store.UpdateBrokerNoticeWith(ctx,

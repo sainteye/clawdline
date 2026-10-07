@@ -103,7 +103,7 @@ func TestANoticeOwesOnePushSentAfterItsCommit(t *testing.T) {
 	passAndSend(b)
 
 	got := p.sent()
-	if len(got) != 1 || !strings.HasPrefix(got[0], "capacity-store.db 容量已滿：store.db") {
+	if len(got) != 1 || !strings.HasPrefix(got[0], "capacity-store.db Capacity full: store.db") {
 		t.Fatalf("pushed %q", got)
 	}
 	if eventCount(t, s, capacity.EventNotify) != 1 || eventCount(t, s, "capacity.notify.pushed") != 1 {
@@ -127,6 +127,32 @@ func TestANoticeOwesOnePushSentAfterItsCommit(t *testing.T) {
 	}
 	if len(p.sent()) != 1 {
 		t.Fatalf("a pass that saw nothing new pushed: %q", p.sent())
+	}
+}
+
+func TestCapacityPushKeepsLanguageChosenAtIntent(t *testing.T) {
+	s := capacityServer(t)
+	p := &pushes{}
+	b := pushBeat(t, s, map[string]capacity.Reading{capacity.StoreDB: {Known: true, Used: 10}},
+		map[string]int64{capacity.StoreDB: 10}, p, true)
+	language := "ja"
+	b.language = func() string { return language }
+	passAndSend(b)
+	effects, err := s.store.Effects(context.Background(), orchestrator.EffectCapacityPush, capacity.StoreDB)
+	if err != nil || len(effects) != 1 {
+		t.Fatalf("effects: %+v %v", effects, err)
+	}
+	var before orchestrator.CapacityPush
+	if err := json.Unmarshal(effects[0].Payload, &before); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(before.Title, "容量が満杯") || before.Tag != capacity.PushTag(capacity.StoreDB) {
+		t.Fatalf("Japanese intent: %+v", before)
+	}
+	language = "de"
+	var after orchestrator.CapacityPush
+	if err := json.Unmarshal(effects[0].Payload, &after); err != nil || after != before {
+		t.Fatalf("saved text changed after preference: %+v %v", after, err)
 	}
 }
 

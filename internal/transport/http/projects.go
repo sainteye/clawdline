@@ -328,6 +328,18 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		s.projectTreeRoute(w, r, parts[0], len(parts) == 3)
 		return
 	}
+	if len(parts) >= 2 && parts[0] != "" && parts[1] == "memory" && len(parts) <= 3 {
+		name := ""
+		if len(parts) == 3 {
+			if parts[2] == "" {
+				writeNoSuchRoute(w, r)
+				return
+			}
+			name = parts[2]
+		}
+		s.projectMemoryRoute(w, r, parts[0], name)
+		return
+	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "unify" {
 		s.projectUnifyRoute(w, r, parts[0])
 		return
@@ -399,7 +411,7 @@ func (s *Server) projectsRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "worktree_lifecycle_failed", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "worktree_lifecycle_failed", err.Error())
 		return
 	}
 	writeJSON(w, struct {

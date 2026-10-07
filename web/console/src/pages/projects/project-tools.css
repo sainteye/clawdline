@@ -17,14 +17,15 @@
 }
 
 .project-tools > summary::-webkit-details-marker { display: none; }
-.project-tools > summary::after {
-  content: "展開";
+.project-tools-toggle {
   flex: none;
   color: var(--accent);
   font-size: 12px;
   font-weight: 650;
 }
-.project-tools[open] > summary::after { content: "收合"; }
+.project-tools-collapse,
+.project-tools[open] .project-tools-expand { display: none; }
+.project-tools[open] .project-tools-collapse { display: inline; }
 .project-tools-summary-copy { display: grid; min-width: 0; gap: 3px; }
 .project-tools-summary-copy strong { font-size: 15px; }
 .project-tools-summary-copy span { color: var(--dim); font-size: 12px; }

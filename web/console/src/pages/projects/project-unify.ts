@@ -1,3 +1,6 @@
+import { localizedLiteralMap } from "../../catalog.js"
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 // What the unify preview shows, computed from the machine's plan and nothing
 // else (docs/project-files.md, Unify). Kept out of JSX so each picture can be
 // tested as data: who sees which file now and after, what each action does to
@@ -15,12 +18,12 @@ export type Assistant = "claude" | "codex"
 /** 不變 / 新增（套用後才看得到）/ 看不到（這是落差）; `lost` is a plan that would hide something, which unify never plans. */
 export type SeenMark = "same" | "added" | "missing" | "lost"
 
-export const MARK_WORDS: Record<SeenMark, string> = {
-  same: "不變",
-  added: "新增（套用後才看得到）",
-  missing: "看不到（這是落差）",
-  lost: "套用後看不到",
-}
+export const MARK_WORDS: Record<SeenMark, string> = localizedLiteralMap({
+  same: "920a83370e34",
+  added: "fef5e42dbb55",
+  missing: "bd3837042be2",
+  lost: "8f94e36cd835",
+})
 
 export interface SeenRow {
   key: string
@@ -63,14 +66,13 @@ export function unifyColumns(plan: ProjectUnifyPlan): SeenColumn[] {
     if (assistant === "claude") {
       for (const file of plan.rules.claude_only_files) {
         if (rows.some(row => row.name === file)) continue
-        rows.push({ key: `rules:${file}`, kind: "rules", name: file, now: true, after: true, mark: "same", note: "只給 Claude，unify 不更動" })
+        rows.push({ key: `rules:${file}`, kind: "rules", name: file, now: true, after: true, mark: "same", note: catalogWord("literal", "de4050822523") })
       }
     }
     for (const skill of plan.skills) {
       const now = skill.now[assistant], after = skill.after[assistant]
-      const note = differs.has(skill.name) ? "兩邊內容不同"
-        : skill.copy ? "以副本共用（這台機器不能建立連結）"
-          : ""
+      const note = differs.has(skill.name) ? catalogWord("literal", "e83e668845a4")
+        : catalogWord("literal", "a24619afa16e")
       rows.push({ key: `skill:${skill.name}`, kind: "skill", name: skill.name, now, after, mark: markOf(now, after), note })
     }
     return { assistant, title: assistant === "claude" ? "Claude" : "Codex", rows }
@@ -85,9 +87,9 @@ export function unknownReason(plan: ProjectUnifyPlan): string {
   for (const [file, state] of [["AGENTS.md", plan.rules.agents], ["CLAUDE.md", plan.rules.claude]] as const) {
     if (state === "unreadable" && !paths.includes(file)) paths.push(file)
   }
-  if (paths.length === 0) return "有檔案讀不到"
-  if (paths.length === 1) return `讀不到 ${paths[0]}`
-  return `讀不到 ${paths[0]} 等 ${paths.length} 個項目`
+  if (paths.length === 0) return catalogWord("literal", "67ba4a3f606c")
+  if (paths.length === 1) return catalogFormat("template", "bf557dd5d65c", [paths[0]])
+  return catalogFormat("template", "1971a299186d", [paths[0], paths.length])
 }
 
 /** How many things differ: each planned change and each conflict counts once. */
@@ -98,9 +100,9 @@ export function driftCount(plan: ProjectUnifyPlan): number {
 /** The block's one line: 已共用 / 有落差（n 項）/ 無法判斷（原因）. */
 export function unifyStatusLine(plan: ProjectUnifyPlan): { tone: UnifyTone; text: string } {
   switch (plan.status) {
-    case "unified": return { tone: "ready", text: "已共用" }
-    case "drifting": return { tone: "attention", text: `有落差（${driftCount(plan)} 項）` }
-    default: return { tone: "unknown", text: `無法判斷（${unknownReason(plan)}）` }
+    case "unified": return { tone: "ready", text: catalogWord("literal", "97db2287057d") }
+    case "drifting": return { tone: "attention", text: catalogFormat("template", "56c4350d4c99", [driftCount(plan)]) }
+    default: return { tone: "unknown", text: catalogFormat("template", "c21648fe8edd", [unknownReason(plan)]) }
   }
 }
 
@@ -193,14 +195,14 @@ function skillPicture(action: ProjectUnifyAction): SkillPicture | null {
     case "skill_link": {
       // The link's own place is the only path; where it points is under .agents/skills.
       const name = baseName(first)
-      return { name, from: first, to: second ?? `.agents/skills/${name}`, arrow: "link", caption: "連結" }
+      return { name, from: first, to: second ?? `.agents/skills/${name}`, arrow: "link", caption: catalogWord("literal", "0e65ca077795") }
     }
     case "skill_move_and_link":
-      return { name: baseName(first), from: first, to: second, arrow: "move", caption: "搬過去，原處留連結" }
+      return { name: baseName(first), from: first, to: second, arrow: "move", caption: catalogWord("literal", "71669d600a21") }
     case "skill_replace_copy_with_link":
-      return { name: baseName(first), from: first, to: second, arrow: "replace", caption: "相同的副本換成連結" }
+      return { name: baseName(first), from: first, to: second, arrow: "replace", caption: catalogWord("literal", "e9fdcd2c600d") }
     case "skill_copy":
-      return { name: baseName(first), from: first, to: second, arrow: "copy", caption: "複製" }
+      return { name: baseName(first), from: first, to: second, arrow: "copy", caption: catalogWord("literal", "dc5f1e4f6042") }
     default:
       return null
   }
@@ -211,17 +213,17 @@ export function actionSentence(action: ProjectUnifyAction): string {
   const skill = skillPicture(action)
   switch (action.kind) {
     case "rules_create_agents":
-      return "把 CLAUDE.md 的規則搬到新的 AGENTS.md，CLAUDE.md 只留一行 @AGENTS.md 引用它。規則沒有刪掉，只是換了位置，兩邊都讀得到。"
+      return catalogWord("literal", "0a9316607f27")
     case "rules_add_import":
-      return "在 CLAUDE.md 最上面加一行 @AGENTS.md，讓 Claude 也讀 AGENTS.md；CLAUDE.md 其他內容不動。"
+      return catalogWord("literal", "c08f09bed8ec")
     case "skill_link":
-      return `在 ${skill!.from} 建一個連結指向 ${skill!.to}，讓 Claude 也看得到 Codex 已經看得到的 skill「${skill!.name}」。`
+      return catalogFormat("template", "04eb2d98c178", [skill!.from, skill!.to, skill!.name])
     case "skill_move_and_link":
-      return `把 ${skill!.from} 搬到 ${skill!.to}，原處留一個連結，讓 Codex 也看得到 skill「${skill!.name}」。`
+      return catalogFormat("template", "34222c185d1a", [skill!.from, skill!.to, skill!.name])
     case "skill_replace_copy_with_link":
-      return `${skill!.from} 和 ${skill!.to} 內容完全相同；把 ${skill!.from} 這份副本換成指向 ${skill!.to} 的連結。`
+      return catalogFormat("template", "61465ed010f6", [skill!.from, skill!.to, skill!.from, skill!.to])
     case "skill_copy":
-      return `把 ${skill!.from} 複製到 ${skill!.to}（這台機器不能建立連結），之後的檢查會比對兩份是否一致。`
+      return catalogFormat("template", "3b2adf429bd8", [skill!.from, skill!.to])
     default:
       return action.description
   }
@@ -244,13 +246,13 @@ export function movesSummary(plan: ProjectUnifyPlan): { moved: string[]; created
   const moved: string[] = [], created: string[] = [], removedCopies: string[] = []
   for (const action of plan.actions) {
     if (action.kind === "skill_move_and_link") moved.push(`${action.paths[0]} → ${action.paths[1]}`)
-    if (action.kind === "rules_create_agents") moved.push("CLAUDE.md 的規則 → AGENTS.md")
+    if (action.kind === "rules_create_agents") moved.push(catalogWord("literal", "bf74f7ef840d"))
     if (action.kind === "skill_replace_copy_with_link") removedCopies.push(action.paths[0])
     for (const edit of action.edits) if (edit.before === null) created.push(edit.path)
   }
   const sentence = removedCopies.length === 0
-    ? "不會刪除任何東西。"
-    : `唯一會移除的是 ${removedCopies.length} 份與 .agents/skills 完全相同的副本（${removedCopies.join("、")}），原處換成連結，內容仍在。`
+    ? catalogWord("literal", "74df92b721ee")
+    : catalogFormat("template", "712e3e1175ee", [removedCopies.length, removedCopies.join("、")])
   return { moved, created, removedCopies, sentence }
 }
 
@@ -271,26 +273,26 @@ function conflictWords(conflict: ProjectUnifyConflict, plan: ProjectUnifyPlan): 
   switch (conflict.kind) {
     case "claude_only_lines": {
       const lines = plan.rules.claude_only_lines
-      return { sentence: `CLAUDE.md 有 ${lines.length} 行只有 Claude 看得到，Codex 看不到。`,
-        remedy: "把兩邊都需要的內容搬進 AGENTS.md；只給 Claude 的可以留著。", lines }
+      return { sentence: catalogFormat("template", "e08a0f1557ad", [lines.length]),
+        remedy: catalogWord("literal", "a35624ea0763"), lines }
     }
     case "import_without_agents":
-      return { sentence: "CLAUDE.md 引用了 AGENTS.md，但 AGENTS.md 不存在。", remedy: "把共用的規則寫進 AGENTS.md，再重新檢查。", lines: [] }
+      return { sentence: catalogWord("literal", "c39a8e57dbfc"), remedy: catalogWord("literal", "ad1250f9023e"), lines: [] }
     case "rules_link":
-      return { sentence: `${path} 是一個連結，unify 不會更動它。`, remedy: "在機器上確認它指向哪裡；要共用的話改成一般檔案，再重新檢查。", lines: [] }
+      return { sentence: catalogFormat("template", "395d57f8f142", [path]), remedy: catalogWord("literal", "6aa72e4fdef8"), lines: [] }
     case "skill_differs":
-      return { sentence: `skill「${baseName(path)}」在 Claude 和 Codex 兩邊的內容不同。`, remedy: `留一份在 .agents/skills/${baseName(path)}，移除另一份，再重新檢查。`, lines: [] }
+      return { sentence: catalogFormat("template", "c79d0687f211", [baseName(path)]), remedy: catalogFormat("template", "74b6e4bba30b", [baseName(path)]), lines: [] }
     case "skill_link_elsewhere":
-      return { sentence: `${path} 是連到別處的連結，unify 不會跟著它或改它。`, remedy: "在機器上檢查這個連結；要共用就讓它指向 .agents/skills 裡的同名資料夾。", lines: [] }
+      return { sentence: catalogFormat("template", "676bac47a5f4", [path]), remedy: catalogWord("literal", "292b7755b937"), lines: [] }
     case "skills_directory_link":
-      return { sentence: `${path} 整個資料夾是一個連結，unify 不會更動它。`, remedy: "在機器上檢查這個資料夾連結。", lines: [] }
+      return { sentence: catalogFormat("template", "b9db3e2cd844", [path]), remedy: catalogWord("literal", "e094f3526875"), lines: [] }
     case "name_taken":
-      return { sentence: `${path} 已經有別的東西用了這個名字。`, remedy: "先把它移走或改名，再重新檢查。", lines: [] }
+      return { sentence: catalogFormat("template", "c77dd85e5dac", [path]), remedy: catalogWord("literal", "9dd0e6117357"), lines: [] }
     case "too_large":
-      return { sentence: `${path} 太大，unify 讀不完。`, remedy: "在機器上檢查這個檔案或資料夾。", lines: [] }
+      return { sentence: catalogFormat("template", "f56ee5f2d93c", [path]), remedy: catalogWord("literal", "062b9a10a6f1"), lines: [] }
     case "unreadable":
-      return { sentence: `讀不到 ${path}。`, remedy: "在機器上檢查它的權限或編碼（需要 UTF-8 文字）。", lines: [] }
+      return { sentence: catalogFormat("template", "aaa57deb124f", [path]), remedy: catalogWord("literal", "8f8136f76819"), lines: [] }
     default:
-      return { sentence: `${path}：${conflict.detail}`, remedy: "在機器上檢查。", lines: [] }
+      return { sentence: `${path}：${conflict.detail}`, remedy: catalogWord("literal", "6e9be990a363"), lines: [] }
   }
 }

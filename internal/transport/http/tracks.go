@@ -167,7 +167,7 @@ func (s *Server) boardTracks(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := json.Marshal(map[string]any{"tracks": body})
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "internal", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

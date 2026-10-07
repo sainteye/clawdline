@@ -145,7 +145,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			}
 			title := normalizedSessionTitle(body.Title)
 			if !titleWithinLimit(title) {
-				writeRefusal(w, http.StatusBadRequest, "bad_request",
+				writeRawRefusal(w, http.StatusBadRequest, "bad_request",
 					fmt.Sprintf("title must be at most %d characters", CapacityLimit(capacity.SessionTitleCharacters)))
 				return
 			}
@@ -243,11 +243,10 @@ func (s *Server) closeEvidence(w http.ResponseWriter, ctx context.Context, id, e
 			writeRefusal(w, http.StatusConflict, "close_not_proven", "The Session changed since it was shown. Read it again before closing.")
 			return false
 		case "close_blocked":
+			markFixedRefusalKey(w, fixedRefusalKey("This Session still has unfinished work."))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(contract.CloseRefusal{
-				Error: "close_blocked", Detail: "This Session still has unfinished work.", Reasons: c.Reasons,
-			})
+			_ = json.NewEncoder(w).Encode(closeRefusalWire("close_blocked", "This Session still has unfinished work.", c.Reasons))
 			return false
 		case "closeability_unknown":
 			writeRefusal(w, http.StatusConflict, "closeability_unknown", "The Session cannot be read clearly enough to close.")
@@ -348,7 +347,7 @@ func (s *Server) sessionWrite(w http.ResponseWriter, r *http.Request, limit int6
 			if r.ContentLength > 0 {
 				size = fmt.Sprint(r.ContentLength)
 			}
-			writeRefusal(w, http.StatusRequestEntityTooLarge, "too_large", tooLargeWords(size, tooLarge.Limit))
+			writeRawRefusal(w, http.StatusRequestEntityTooLarge, "too_large", tooLargeWords(size, tooLarge.Limit))
 			return
 		}
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body could not be read")
@@ -468,7 +467,7 @@ func (s *Server) releaseUnstarted(ctx context.Context, conversation, actor strin
 func writeActionRefusal(w http.ResponseWriter, err error) {
 	ref, ok := err.(app.Refusal)
 	if !ok {
-		writeRefusal(w, http.StatusInternalServerError, "internal", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	status := actionStatus(ref.Code)
@@ -485,9 +484,16 @@ func writeActionRefusal(w http.ResponseWriter, err error) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(contract.CloseRefusal{
-			Error: ref.Code, Detail: ref.Detail, Reasons: reasons,
-		})
+		wire := closeRefusalWire(ref.Code, ref.Detail, reasons)
+		if ref.RawDetail || ref.Cause != nil {
+			wire = closeRefusalWireRaw(ref.Code, ref.Detail, reasons)
+		}
+		markFixedRefusalKey(w, wire.DetailKey)
+		_ = json.NewEncoder(w).Encode(wire)
+		return
+	}
+	if ref.RawDetail || ref.Cause != nil {
+		writeRawRefusal(w, status, ref.Code, ref.Detail)
 		return
 	}
 	writeRefusal(w, status, ref.Code, ref.Detail)

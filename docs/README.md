@@ -74,6 +74,7 @@ Some historical design and migration records remain in Traditional Chinese.
 | [updates.md](updates.md) | Public design note | English | Whether this machine trails the cloud's latest build, `clawdline update`, dev sync, and the not-built auto-update design |
 | [squad-packages.md](squad-packages.md) | Public design note | English | Offline squad ZIP format, contribution example, validation, preview, adoption and private export boundaries |
 | [cross-platform.md](cross-platform.md) | Public design note | English | Every feature on macOS, Linux and Windows, and what a platform shows when it cannot do something |
+| [localization.md](localization.md) | Public design note | English | Shipped languages, separate language preferences, catalog fallback and delivery checks |
 
 ## How it got here
 

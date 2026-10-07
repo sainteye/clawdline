@@ -26,6 +26,7 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
+import { authenticatedRefusalKey } from "./refusal-client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
 export interface CloudIdentity {
@@ -1058,10 +1059,8 @@ export class RelayReader {
         throw new TypeError(`${code}: ${message}`)
       }
       const status = typeof failure?.status === "number" && failure.status >= 400 && failure.status < 600 ? failure.status : 502
-      // A machine too old for the word: the refusal carries the machine's own
-      // version when its descriptor said one, so the screen can name it.
       const version = MACHINE_LACKS_WORD.has(code) && this.client ? machineApp(this.client, this.machine).version : undefined
-      return this.refuse(method, path, status, code, message, version)
+      return this.refuse(method, path, status, code, message, authenticatedRefusalKey(error), version)
     }
   }
 
@@ -1547,9 +1546,9 @@ export class RelayReader {
     )
   }
 
-  private refuse(method: string, path: string, status: number, code: string, detail: string, version?: string): Response {
+  private refuse(method: string, path: string, status: number, code: string, detail: string, detailKey: string | null = null, version?: string): Response {
     this.note(method, path, "refused", code)
-    return json(status, { error: code, detail, route: path, ...(version ? { version } : {}) })
+    return json(status, { error: code, detail, route: path, ...(detailKey ? { detail_key: detailKey } : {}), ...(version ? { version } : {}) })
   }
 
   private note(method: string, path: string, answer: SeamRow["answer"], code?: string, extra?: Partial<SeamRow>): void {

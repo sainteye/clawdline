@@ -5,6 +5,7 @@ export interface NestedRefusal {
   error: {
     code: string
     message?: string
+    detail_key?: string
     route?: string
     reasons?: CloseReason[]
     [key: string]: unknown
@@ -20,6 +21,7 @@ export type RefusalBody =
 function refusalFields(body: RefusalBody): {
   code: string
   detail: string
+  detailKey?: string
   route?: string
   reasons: readonly CloseReason[]
   source: Record<string, unknown> | null
@@ -32,6 +34,11 @@ function refusalFields(body: RefusalBody): {
     : typeof nested?.message === "string"
       ? nested.message
       : code as string
+  const detailKey = "detail_key" in body && typeof body.detail_key === "string"
+    ? body.detail_key
+    : typeof nested?.detail_key === "string"
+      ? nested.detail_key
+      : undefined
   const reasons = "reasons" in body && Array.isArray(body.reasons)
     ? body.reasons
     : Array.isArray(nested?.reasons)
@@ -40,6 +47,7 @@ function refusalFields(body: RefusalBody): {
   return {
     code: code as string,
     detail,
+    detailKey,
     route: body.route ?? (typeof nested?.route === "string" ? nested.route : undefined),
     reasons,
     source: nested,
@@ -132,6 +140,7 @@ export function asMachineNeedsUpdate(err: unknown): MachineNeedsUpdate | null {
 export class RefusalError extends Error {
   readonly code: string
   readonly detail: string
+  readonly detailKey: string | undefined
   readonly status: number
   readonly route: string | undefined
   /** What a blocked close is blocked by. Empty for every other refusal. */
@@ -152,6 +161,7 @@ export class RefusalError extends Error {
     this.name = "RefusalError"
     this.code = refusal.code
     this.detail = refusal.detail
+    this.detailKey = refusal.detailKey
     this.status = status
     this.route = refusal.route ?? route
     this.reasons = refusal.reasons
@@ -257,17 +267,23 @@ export function makeJSONFetch(config: JSONFetchConfig): JSONFetch {
     }
 
     if (!response.ok) {
-      const refusal = isRefusal(body)
-        ? refusalFields(body)
+      const refusalBody = isRefusal(body) ? body : null
+      const refusal = refusalBody
+        ? refusalFields(refusalBody)
         : {
             code: "http_" + response.status,
             detail: response.statusText || config.words.requestFailed,
+            detailKey: undefined,
             source: null,
           }
       const needsUpdate = machineNeedsUpdate(response.status, refusal.code, "route" in refusal ? refusal.route : undefined)
       const message = needsUpdate && config.words.machineNeedsUpdate ? config.words.machineNeedsUpdate : refusal.detail || refusal.code
       const failed = new Error(message) as Error & Record<string, unknown>
       failed.code = refusal.code
+      if (refusalBody) {
+        failed.detail = refusal.detail
+        if (refusal.detailKey) failed.detailKey = refusal.detailKey
+      }
       if (needsUpdate) {
         failed.machineNeedsUpdate = true
         if ("route" in refusal && refusal.route) failed.route = refusal.route

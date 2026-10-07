@@ -1,6 +1,8 @@
+// @ts-expect-error -- Node runs work-milestones.test.ts against this source file.
+import { localizedLiteralList } from "../../catalog.ts"
 import type { WorkV2Phase } from "./api.js"
 
-export const WORK_MILESTONES = ["實作", "驗證", "合併", "部署", "完成"] as const
+export const WORK_MILESTONES = localizedLiteralList(["b1b5c6f84f09", "56e232762104", "218220af5c8e", "1882d286da02", "ffa731746caa"])
 
 export type WorkMilestoneState = "done" | "current" | "pending"
 
@@ -39,8 +41,6 @@ export function workMilestoneStates(phase: WorkV2Phase): WorkMilestoneState[] {
 
 export type WorkMilestone = { label: (typeof WORK_MILESTONES)[number]; state: WorkMilestoneState }
 
-const GATED_ONLY = new Set<string>(["驗證", "合併"])
-
 /**
  * The milestones an item's own line has. With its captured verify gate off,
  * implementing goes straight to deploying, so 驗證 and 合併 are not shown as
@@ -51,5 +51,5 @@ export function workMilestones(phase: WorkV2Phase, verifyGate: boolean): WorkMil
   const states = workMilestoneStates(phase)
   const full = verifyGate || phase === "verifying" || phase === "merging"
   return WORK_MILESTONES.map((label, index) => ({ label, state: states[index] }))
-    .filter((m) => full || !GATED_ONLY.has(m.label))
+    .filter((_, index) => full || (index !== 1 && index !== 2))
 }

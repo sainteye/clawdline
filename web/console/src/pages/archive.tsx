@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { ArchivedSession } from "@clawdline/contract"
 import { RefusalError } from "@clawdline/core"
+import { catalogRefusalDetail } from "../catalog.js"
 import { client } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
@@ -110,10 +111,11 @@ function ArchivePageView({ shown }: { shown: boolean }) {
         setReopened((r) => [{ conversation, name: archivedName(s), id: result.id }, ...r])
         return
       }
-      setOutcomes((o) => ({ ...o, [conversation]: { kind: "failed", code: result?.code, message: result?.message } }))
+      setOutcomes((o) => ({ ...o, [conversation]: { kind: "failed", code: result?.code, message: result?.message, messageLang: result?.message ? "en" : undefined } }))
     } catch (e) {
       if (e instanceof RefusalError) {
-        setOutcomes((o) => ({ ...o, [conversation]: { kind: "failed", code: e.code, message: e.detail || e.code } }))
+        const detail = catalogRefusalDetail(e)
+        setOutcomes((o) => ({ ...o, [conversation]: { kind: "failed", code: e.code, message: detail?.text || e.code, messageLang: detail?.lang || "en" } }))
         return
       }
       // No answer: whether it opened is not known, so the list is read again
@@ -183,6 +185,8 @@ function ArchivePageView({ shown }: { shown: boolean }) {
               const when = archivedWhen(s.archived_at, now, language())
               const outcome = outcomes[s.conversation_id]
               const line = entryLine(outcome, (key, holes) => nextWord(key, holes))
+              const message = outcome?.kind === "failed" ? outcome.message : undefined
+              const messageAt = message && outcome?.kind === "failed" && outcome.messageLang === "en" ? line.indexOf(message) : -1
               const where = L.path(s.cwd) || s.place_label
               return (
                 <li className="archive-entry" key={s.conversation_id} data-conversation={s.conversation_id}>
@@ -199,7 +203,7 @@ function ArchivePageView({ shown }: { shown: boolean }) {
                     </time>
                     {line ? (
                       <p className="archive-outcome" data-failed={outcome?.kind === "failed" || undefined} role="status">
-                        {line}
+                        {messageAt >= 0 && message ? <>{line.slice(0, messageAt)}<span lang="en">{message}</span>{line.slice(messageAt + message.length)}</> : line}
                       </p>
                     ) : null}
                   </div>

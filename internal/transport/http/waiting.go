@@ -10,6 +10,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The waiting push's wiring (app.Waiting, docs/push.md "有人在等你回答").
@@ -21,7 +22,7 @@ func (s *Server) waiting() *app.Waiting {
 	if w, ok := waitingByServer.Load(s); ok {
 		return w.(*app.Waiting)
 	}
-	w := &app.Waiting{Store: s.store, After: waitingAfter(), Enabled: s.agentNotifyEnabled}
+	w := &app.Waiting{Store: s.store, After: waitingAfter(), Enabled: s.agentNotifyEnabled, Language: s.productLanguage}
 	if s.broker != nil {
 		// The push goes out the way the capacity push does: recorded with its
 		// decision in one transaction, then run by the broker's outbox, whose
@@ -31,6 +32,17 @@ func (s *Server) waiting() *app.Waiting {
 	}
 	got, _ := waitingByServer.LoadOrStore(s, w)
 	return got.(*app.Waiting)
+}
+
+// productLanguage is independent of the agent and voice language settings.
+// An absent or unreadable setting uses the English source catalog.
+func (s *Server) productLanguage() string {
+	values, err := nextconfig.Open(s.cfg.Dir).Read()
+	if err != nil {
+		return "en"
+	}
+	language, _ := values.String("product_language")
+	return productcopy.Resolve(language)
 }
 
 // agentNotifyEnabled is the person's `orchestrator_agent_notify` switch, read

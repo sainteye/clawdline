@@ -132,14 +132,14 @@ func setupCommand(args []string) {
 	fs.IntVar(&o.port, "port", 0, "")
 	err := fs.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {
-		fmt.Println(setupUsage)
+		fmt.Println(cliCopy("setup", "usage", setupUsage))
 		return
 	}
 	if err != nil || fs.NArg() != 0 {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "clawdline setup:", err)
 		}
-		fmt.Fprintln(os.Stderr, setupUsage)
+		fmt.Fprintln(os.Stderr, cliCopy("setup", "usage", setupUsage))
 		os.Exit(2)
 	}
 	fs.Visit(func(f *flag.Flag) {
@@ -151,11 +151,11 @@ func setupCommand(args []string) {
 		o.channel = "stable"
 	}
 	if o.channel != "stable" && o.channel != "beta" {
-		fmt.Fprintln(os.Stderr, "clawdline setup: --channel is stable or beta")
+		fmt.Fprintln(os.Stderr, cliCopy("setup", "channel_invalid", "clawdline setup: --channel is stable or beta"))
 		os.Exit(2)
 	}
 	if o.purge && !o.uninstall {
-		fmt.Fprintln(os.Stderr, "clawdline setup: --purge goes with --uninstall")
+		fmt.Fprintln(os.Stderr, cliCopy("setup", "purge_requires_uninstall", "clawdline setup: --purge goes with --uninstall"))
 		os.Exit(2)
 	}
 	if o.port == 0 {
@@ -166,7 +166,7 @@ func setupCommand(args []string) {
 		o.port = p
 	}
 	if o.port <= 0 || o.port > 65535 {
-		fmt.Fprintln(os.Stderr, "clawdline setup: --port is 1 to 65535")
+		fmt.Fprintln(os.Stderr, cliCopy("setup", "port_invalid", "clawdline setup: --port is 1 to 65535"))
 		os.Exit(2)
 	}
 	h := realSetupHost()
@@ -220,19 +220,47 @@ func setupRefuse(h setupHost, err error) int {
 	var rel *release.Error
 	switch {
 	case errors.As(err, &r):
-		fmt.Fprintf(h.errOut, "clawdline setup: %s\n  (%s)\n", r.Detail, r.Code)
+		if summary := setupRefusalSummary(r.Code); summary != "" {
+			fmt.Fprintf(h.errOut, cliCopy("setup", "refusal_with_diagnostic", "clawdline setup: %s. Original diagnostic: %s\n  (%s)\n"), summary, r.Detail, r.Code)
+		} else {
+			fmt.Fprintf(h.errOut, "clawdline setup: %s\n  (%s)\n", r.Detail, r.Code)
+		}
 	case errors.As(err, &rel):
-		fmt.Fprintf(h.errOut, "clawdline setup: the release was not installed: %s\n  (%s)\n", rel.Detail, rel.Code)
+		fmt.Fprintf(h.errOut, cliCopy("setup", "release_not_installed", "clawdline setup: the release was not installed: %s\n  (%s)\n"), rel.Detail, rel.Code)
 	default:
 		fmt.Fprintln(h.errOut, "clawdline setup:", err)
 	}
 	return 1
 }
 
+func setupRefusalSummary(code string) string {
+	if currentCLILanguage() != "zh-Hant" {
+		return ""
+	}
+	switch code {
+	case install.CodePortHeld:
+		return cliCopy("setup", "refusal_port_held", "Another process owns this port; setup changed nothing. Quit it first or choose another --port")
+	case install.CodeSourceDeploy:
+		return cliCopy("setup", "refusal_source_deploy", "This machine uses a source deployment; setup changed nothing. Use setup --adopt to switch to signed releases")
+	case install.CodeSignature, install.CodeTreeMismatch:
+		return cliCopy("setup", "refusal_unverified", "The release could not be verified; it was not installed")
+	case install.CodeChannelMismatch:
+		return cliCopy("setup", "refusal_channel", "This release is on another channel; choose the matching --channel")
+	case install.CodeUnsupported:
+		return cliCopy("setup", "refusal_platform", "This platform is not supported for setup")
+	case install.CodeServiceFailed, install.CodeNoUserManager:
+		return cliCopy("setup", "refusal_service", "The user service could not start; inspect the service manager and try again")
+	case install.CodeHealthFailed, install.CodeSessionCheck:
+		return cliCopy("setup", "refusal_health", "The installation did not pass its startup check; inspect the diagnostic before using it")
+	default:
+		return ""
+	}
+}
+
 func runSetup(h setupHost, o setupOptions) int {
 	if !supportedPlatform(h.goos, h.goarch) {
 		return setupRefuse(h, &install.Refusal{Code: install.CodeUnsupported,
-			Detail: fmt.Sprintf("Clawdline installs on macOS and Linux (amd64 or arm64); this is %s/%s", h.goos, h.goarch)})
+			Detail: fmt.Sprintf(cliCopy("setup", "platform_unsupported", "Clawdline installs on macOS and Linux (amd64 or arm64); this is %s/%s"), h.goos, h.goarch)})
 	}
 	place, err := resolvePlace(h, o.port)
 	if err != nil {
@@ -250,12 +278,12 @@ func runSetup(h setupHost, o setupOptions) int {
 	if err != nil {
 		return setupRefuse(h, err)
 	}
-	fmt.Fprintf(h.out, "✓ signature verified (%s)\n", m.Version)
-	o.detail(h, "  release %s, commit %s, from %s\n", m.Version, m.Commit[:12], filepath.Dir(exe))
+	fmt.Fprintf(h.out, cliCopy("setup", "signature_verified", "✓ signature verified (%s)\n"), m.Version)
+	o.detail(h, cliCopy("setup", "verbose_release", "  release %s, commit %s, from %s\n"), m.Version, m.Commit[:12], filepath.Dir(exe))
 	if o.channel == "stable" && m.Channel == "beta" {
 		if o.channelSet {
 			return setupRefuse(h, &install.Refusal{Code: install.CodeChannelMismatch,
-				Detail: m.Version + " is a beta release; install it with --channel beta"})
+				Detail: m.Version + cliCopy("setup", "channel_beta", " is a beta release; install it with --channel beta")})
 		}
 		o.channel = "beta"
 	}
@@ -264,13 +292,17 @@ func runSetup(h setupHost, o setupOptions) int {
 	found, pm := findTools(h)
 	report := install.Prereqs{Found: found, PackageManager: pm}.Check(h.goos)
 	for _, line := range report.Lines {
-		fmt.Fprintln(h.out, line)
+		fmt.Fprintln(h.out, setupPrereqCopy(line))
 	}
 	if report.Stop {
-		fmt.Fprintf(h.errOut, "%s\n  (%s)\n", report.StopLine, install.CodeTmuxMissing)
+		stopLine := report.StopLine
+		if currentCLILanguage() == "zh-Hant" {
+			stopLine = fmt.Sprintf(cliCopy("setup", "tmux_missing", "Clawdline needs tmux. Install it with: %s then run the same install command again. Nothing was installed."), install.TmuxInstallCommand(h.goos, pm))
+		}
+		fmt.Fprintf(h.errOut, "%s\n  (%s)\n", stopLine, install.CodeTmuxMissing)
 		return 1
 	}
-	fmt.Fprintln(h.out, "✓ tmux found")
+	fmt.Fprintln(h.out, cliCopy("setup", "tmux_found", "✓ tmux found"))
 	for _, line := range report.Found {
 		o.detail(h, "  %s\n", line)
 	}
@@ -293,7 +325,7 @@ func runSetup(h setupHost, o setupOptions) int {
 		return setupRefuse(h, err)
 	}
 	if ex.CurrentKind == install.KindSourceDeploy {
-		fmt.Fprintf(h.out, "adopting the source deploy releases/%s; it stays for rollback\n", ex.Current)
+		fmt.Fprintf(h.out, cliCopy("setup", "adopting_source", "adopting the source deploy releases/%s; it stays for rollback\n"), ex.Current)
 	}
 
 	// d. Activate.
@@ -305,9 +337,9 @@ func runSetup(h setupHost, o setupOptions) int {
 	// short name once its directory is on PATH, the whole path until then.
 	command := tilde(h, filepath.Join(place.layout.Current, "clawdline"))
 	if err := linkBin(place.layout); err != nil {
-		fmt.Fprintf(h.errOut, "warning: %v\n", err)
+		fmt.Fprintf(h.errOut, cliCopy("setup", "warning", "warning: %v\n"), err)
 	} else {
-		o.detail(h, "  linked %s\n", place.layout.BinLink)
+		o.detail(h, cliCopy("setup", "verbose_linked", "  linked %s\n"), place.layout.BinLink)
 		command = tilde(h, place.layout.BinLink)
 		binDir := filepath.Dir(place.layout.BinLink)
 		if install.OnPath(h.getenv("PATH"), binDir) {
@@ -340,7 +372,7 @@ func runSetup(h setupHost, o setupOptions) int {
 		gui = isGUI
 		sf.Supervisor, sf.Name, sf.Domain = "launchd", install.LaunchdLabel(place.suffix), domain
 		if !isGUI {
-			fmt.Fprintf(h.out, "no desktop login session (launchctl print gui/%d failed): the service goes into %s and runs while this user is logged in\n", h.uid, domain)
+			fmt.Fprintf(h.out, cliCopy("setup", "no_desktop", "no desktop login session (launchctl print gui/%d failed): the service goes into %s and runs while this user is logged in\n"), h.uid, domain)
 		}
 		if err := installLaunchAgent(h, unitFile, sf.Name, domain, spec); err != nil {
 			return setupRefuse(h, err)
@@ -358,7 +390,7 @@ func runSetup(h setupHost, o setupOptions) int {
 	}
 	if h.goos == "darwin" && desktop && !o.noApp {
 		if app, err := installApp(h, place.layout, m); err != nil {
-			fmt.Fprintf(h.errOut, "warning: the app was not installed: %v\n", err)
+			fmt.Fprintf(h.errOut, cliCopy("setup", "app_warning", "warning: the app was not installed: %v\n"), err)
 		} else if app != "" {
 			sf.App = app
 		}
@@ -366,17 +398,17 @@ func runSetup(h setupHost, o setupOptions) int {
 	if err := install.WriteServiceFile(place.stateDir, sf); err != nil {
 		return setupRefuse(h, err)
 	}
-	fmt.Fprintln(h.out, "✓ service started")
-	o.detail(h, "  %s (%s), written to %s\n", sf.Name, sf.Supervisor, unitFile)
+	fmt.Fprintln(h.out, cliCopy("setup", "service_started", "✓ service started"))
+	o.detail(h, cliCopy("setup", "verbose_service", "  %s (%s), written to %s\n"), sf.Name, sf.Supervisor, unitFile)
 
 	// h. Prove it.
 	if err := proveInstall(h, place, o, m.Commit); err != nil {
 		var r *install.Refusal
 		log := tilde(h, filepath.Join(place.stateDir, "logs", "daemon.log"))
 		if errors.As(err, &r) && r.Code == install.CodeSessionCheck {
-			fmt.Fprintf(h.errOut, "Clawdline is running, but could not start a test terminal in tmux. See why: %s doctor (log: %s)\n", command, log)
+			fmt.Fprintf(h.errOut, cliCopy("setup", "terminal_check_failed", "Clawdline is running, but could not start a test terminal in tmux. See why: %s doctor (log: %s)\n"), command, log)
 		} else {
-			fmt.Fprintf(h.errOut, "Clawdline was installed but did not start within %d seconds. See why: %s doctor (log: %s)\n",
+			fmt.Fprintf(h.errOut, cliCopy("setup", "start_timeout", "Clawdline was installed but did not start within %d seconds. See why: %s doctor (log: %s)\n"),
 				setupHealthSeconds, command, log)
 		}
 		return setupRefuse(h, err)
@@ -384,6 +416,20 @@ func runSetup(h setupHost, o setupOptions) int {
 	opened, address := openConsole(h, place, o, desktop, sf.App)
 	printNext(h, o, nextStep{version: m.Version, command: command, opened: opened, address: address, found: found})
 	return 0
+}
+
+func setupPrereqCopy(line string) string {
+	switch line {
+	case "warning: neither Claude Code nor Codex is installed; Clawdline needs one of them to start an assistant. Install either:":
+		return cliCopy("setup", "assistant_missing", line)
+	case "note: Claude Code is not installed (optional while Codex is). To add it:":
+		return cliCopy("setup", "claude_missing", line)
+	case "note: Codex is not installed (optional while Claude Code is). To add it:":
+		return cliCopy("setup", "codex_missing", line)
+	default:
+		// Installation commands and their tool names are executable copy.
+		return line
+	}
 }
 
 // detail is a line only --verbose shows: the paths and checks behind each ✓.
@@ -423,7 +469,7 @@ func pathHint(h setupHost, binDir string) string {
 	default:
 		run = fmt.Sprintf(`echo 'export PATH="%s:$PATH"' >> ~/.profile`, dir)
 	}
-	return fmt.Sprintf("%s is not on your PATH. Run once, then open a new terminal:  %s\n  Until then, run Clawdline as %s",
+	return fmt.Sprintf(cliCopy("setup", "path_hint", "%s is not on your PATH. Run once, then open a new terminal:  %s\n  Until then, run Clawdline as %s"),
 		tilde(h, binDir), run, tilde(h, filepath.Join(binDir, "clawdline")))
 }
 
@@ -445,22 +491,22 @@ type nextStep struct {
 func printNext(h setupHost, o setupOptions, n nextStep) {
 	w := h.out
 	port := install.PortFlag(o.port)
-	fmt.Fprintf(w, "\nClawdline %s is running at http://127.0.0.1:%d\n\nNext:\n", n.version, o.port)
+	fmt.Fprintf(w, cliCopy("setup", "next_intro", "\nClawdline %s is running at http://127.0.0.1:%d\n\nNext:\n"), n.version, o.port)
 	switch {
 	case n.opened != "":
-		fmt.Fprintf(w, "  1. Sign in: %s just opened the console on this computer.\n", n.opened)
-		fmt.Fprintf(w, "     Not in front of you? Run   %s open%s\n", n.command, port)
+		fmt.Fprintf(w, cliCopy("setup", "next_opened", "  1. Sign in: %s just opened the console on this computer.\n"), n.opened)
+		fmt.Fprintf(w, cliCopy("setup", "next_open_again", "     Not in front of you? Run   %s open%s\n"), n.command, port)
 	case n.address != "":
-		fmt.Fprintln(w, "  1. Sign in: open this address in a browser on this computer (it contains a key; don't share it)")
+		fmt.Fprintln(w, cliCopy("setup", "next_address", "  1. Sign in: open this address in a browser on this computer (it contains a key; don't share it)"))
 		fmt.Fprintf(w, "       %s\n", n.address)
 		who := "<this machine>"
 		if h.hostname != "" {
 			who = h.username + "@" + h.hostname
 		}
-		fmt.Fprintf(w, "     No browser here? On your laptop run   ssh -L %d:127.0.0.1:%d %s\n", o.port, o.port, who)
-		fmt.Fprintln(w, "     then open the same address there.")
+		fmt.Fprintf(w, cliCopy("setup", "next_ssh", "     No browser here? On your laptop run   ssh -L %d:127.0.0.1:%d %s\n"), o.port, o.port, who)
+		fmt.Fprintln(w, cliCopy("setup", "next_ssh_open", "     then open the same address there."))
 	default:
-		fmt.Fprintf(w, "  1. Sign in: run   %s open --print%s   and open the address it prints in a browser on this computer.\n", n.command, port)
+		fmt.Fprintf(w, cliCopy("setup", "next_open_print", "  1. Sign in: run   %s open --print%s   and open the address it prints in a browser on this computer.\n"), n.command, port)
 	}
 	_, claude := n.found["claude"]
 	_, codex := n.found["codex"]
@@ -473,13 +519,13 @@ func printNext(h setupHost, o setupOptions, n nextStep) {
 	case !claude && !codex:
 		assistant = "claude   (or codex), once one of them is installed"
 	}
-	fmt.Fprintf(w, "  2. Start an assistant inside tmux:   tmux new -s work   then run   %s\n", assistant)
-	fmt.Fprintln(w, "     It appears in the console within a few seconds.")
+	fmt.Fprintf(w, cliCopy("setup", "next_assistant", "  2. Start an assistant inside tmux:   tmux new -s work   then run   %s\n"), assistant)
+	fmt.Fprintln(w, cliCopy("setup", "next_assistant_appears", "     It appears in the console within a few seconds."))
 	fmt.Fprintln(w)
 	if o.noAutostart {
-		fmt.Fprintf(w, "Started now, not at login. Turn on: %s setup%s   Remove: %s setup --uninstall%s\n", n.command, port, n.command, port)
+		fmt.Fprintf(w, cliCopy("setup", "next_autostart_off", "Started now, not at login. Turn on: %s setup%s   Remove: %s setup --uninstall%s\n"), n.command, port, n.command, port)
 	} else {
-		fmt.Fprintf(w, "Starts at login. Turn off: %s setup --no-autostart%s   Remove: %s setup --uninstall%s\n", n.command, port, n.command, port)
+		fmt.Fprintf(w, cliCopy("setup", "next_autostart_on", "Starts at login. Turn off: %s setup --no-autostart%s   Remove: %s setup --uninstall%s\n"), n.command, port, n.command, port)
 	}
 }
 
@@ -503,7 +549,7 @@ func verifyRelease(h setupHost, l install.Layout, exe string, o setupOptions) (r
 	}
 	manifest, err := readBounded(filepath.Join(mdir, "manifest.json"), release.MaxManifestBytes())
 	if err != nil {
-		return release.Manifest{}, "", &install.Refusal{Code: install.CodeSignature, Detail: "no manifest.json beside the release: " + err.Error()}
+		return release.Manifest{}, "", &install.Refusal{Code: install.CodeSignature, Detail: cliCopy("setup", "manifest_missing", "no manifest.json beside the release: ") + err.Error()}
 	}
 	sigs, err := readBounded(filepath.Join(mdir, "manifest.sig.json"), release.MaxSignatureBytes())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -535,7 +581,7 @@ func verifyRelease(h setupHost, l install.Layout, exe string, o setupOptions) (r
 			return release.Manifest{}, "", err
 		}
 	} else {
-		o.detail(h, "  no --archive: the manifest's signature is checked, the unpacked files are taken as installed\n")
+		o.detail(h, "%s", cliCopy("setup", "verbose_no_archive", "  no --archive: the manifest's signature is checked, the unpacked files are taken as installed\n"))
 	}
 	// Kept beside the release, so a later `setup` (a repair) and the updater
 	// can verify what is installed without downloading it again.
@@ -568,7 +614,7 @@ func readBounded(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%s is longer than %d bytes", path, limit)
+		return nil, fmt.Errorf(cliCopy("setup", "path_too_long", "%s is longer than %d bytes"), path, limit)
 	}
 	return b, nil
 }
@@ -640,7 +686,7 @@ func isExecutable(p string) bool {
 func linkBin(l install.Layout) error {
 	target := filepath.Join(l.Current, "clawdline")
 	if info, err := os.Lstat(l.BinLink); err == nil && info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("%s is a file setup did not make; it was left as it is, and %s is the installed command", l.BinLink, target)
+		return fmt.Errorf(cliCopy("setup", "foreign_link", "%s is a file setup did not make; it was left as it is, and %s is the installed command"), l.BinLink, target)
 	}
 	if err := os.MkdirAll(filepath.Dir(l.BinLink), 0o755); err != nil {
 		return err
@@ -741,14 +787,14 @@ func installSystemdUnit(h setupHost, unit, name string, spec install.ServiceSpec
 func linger(h setupHost) {
 	out, _ := h.run("loginctl", "show-user", h.username, "-p", "Linger", "--value")
 	if strings.TrimSpace(string(out)) == "yes" {
-		fmt.Fprintln(h.out, "linger is on: the service starts at boot and keeps running after you log out")
+		fmt.Fprintln(h.out, cliCopy("setup", "linger_on", "linger is on: the service starts at boot and keeps running after you log out"))
 		return
 	}
 	if _, err := h.run("loginctl", "enable-linger", h.username); err == nil {
-		fmt.Fprintln(h.out, "turned linger on: the service starts at boot and keeps running after you log out")
+		fmt.Fprintln(h.out, cliCopy("setup", "linger_enabled", "turned linger on: the service starts at boot and keeps running after you log out"))
 		return
 	}
-	fmt.Fprintf(h.out, "the service runs while %s is logged in. To start it at boot and keep it running after logout, an administrator runs:\n    sudo loginctl enable-linger %s\n", h.username, h.username)
+	fmt.Fprintf(h.out, cliCopy("setup", "linger_admin", "the service runs while %s is logged in. To start it at boot and keep it running after logout, an administrator runs:\n    sudo loginctl enable-linger %s\n"), h.username, h.username)
 }
 
 const appName = "Clawdline Next.app"
@@ -765,12 +811,12 @@ func appsDir(h setupHost) string {
 // installed path, or "" when the release carries no app for this Mac.
 func installApp(h setupHost, l install.Layout, m release.Manifest) (string, error) {
 	if h.goarch != "arm64" {
-		fmt.Fprintln(h.out, "the app is built for Apple silicon; this machine gets the daemon and the browser console")
+		fmt.Fprintln(h.out, cliCopy("setup", "app_apple_silicon", "the app is built for Apple silicon; this machine gets the daemon and the browser console"))
 		return "", nil
 	}
 	a, err := m.Artifact("darwin", "arm64", release.KindApp)
 	if err != nil {
-		fmt.Fprintf(h.out, "release %s carries no app; the console opens in the browser\n", m.Version)
+		fmt.Fprintf(h.out, cliCopy("setup", "no_app", "release %s carries no app; the console opens in the browser\n"), m.Version)
 		return "", nil
 	}
 	if err := os.MkdirAll(l.Staging, 0o755); err != nil {
@@ -794,7 +840,7 @@ func placeApp(h setupHost, archive, target, staging, version string) (string, er
 	defer os.RemoveAll(unpacked)
 	bundle := filepath.Join(unpacked, appName)
 	if _, err := os.Stat(filepath.Join(bundle, "Contents", "MacOS")); err != nil {
-		return "", fmt.Errorf("the app archive holds no %s", appName)
+		return "", fmt.Errorf(cliCopy("setup", "app_archive_missing", "the app archive holds no %s"), appName)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return "", err
@@ -805,7 +851,7 @@ func placeApp(h setupHost, archive, target, staging, version string) (string, er
 		return "", err
 	}
 	if appRunning(h, target) {
-		fmt.Fprintf(h.out, "%s is running, so it was not replaced: the new one is staged as %s. Quit the app and run `clawdline setup` again\n", target, staged)
+		fmt.Fprintf(h.out, cliCopy("setup", "app_running", "%s is running, so it was not replaced: the new one is staged as %s. Quit the app and run `clawdline setup` again\n"), target, staged)
 		return target, nil
 	}
 	old := target + ".old"
@@ -820,7 +866,7 @@ func placeApp(h setupHost, archive, target, staging, version string) (string, er
 		return "", err
 	}
 	_ = os.RemoveAll(old)
-	fmt.Fprintf(h.out, "✓ app installed (%s)\n", tilde(h, target))
+	fmt.Fprintf(h.out, cliCopy("setup", "app_installed", "✓ app installed (%s)\n"), tilde(h, target))
 	return target, nil
 }
 
@@ -867,11 +913,11 @@ func proveInstall(h setupHost, p setupPlace, o setupOptions, commit string) erro
 	for {
 		last = ""
 		if res, err := client.Get(base + "/"); err != nil {
-			last = "GET / failed: " + err.Error()
+			last = cliCopy("setup", "health_get_failed", "GET / failed: ") + err.Error()
 		} else {
 			res.Body.Close()
 			if res.StatusCode != http.StatusOK {
-				last = "GET / answered " + res.Status
+				last = cliCopy("setup", "health_get_status", "GET / answered ") + res.Status
 			}
 		}
 		if last == "" {
@@ -885,7 +931,7 @@ func proveInstall(h setupHost, p setupPlace, o setupOptions, commit string) erro
 				case err != nil:
 					last = "BUILD.json: " + err.Error()
 				case stamp != commit:
-					last = fmt.Sprintf("the console serves build %q, the release is %s — another daemon may hold the port", stamp, commit)
+					last = fmt.Sprintf(cliCopy("setup", "health_wrong_build", "the console serves build %q, the release is %s — another daemon may hold the port"), stamp, commit)
 				}
 			}
 		}
@@ -893,20 +939,20 @@ func proveInstall(h setupHost, p setupPlace, o setupOptions, commit string) erro
 			break
 		}
 		if time.Now().After(deadline) {
-			return &install.Refusal{Code: install.CodeHealthFailed, Detail: fmt.Sprintf("after %ds: %s", setupHealthSeconds, last)}
+			return &install.Refusal{Code: install.CodeHealthFailed, Detail: fmt.Sprintf(cliCopy("setup", "health_after", "after %ds: %s"), setupHealthSeconds, last)}
 		}
 		time.Sleep(time.Second)
 	}
-	fmt.Fprintln(h.out, "✓ console answers")
-	o.detail(h, "  GET / 200, BUILD.json names %s\n", commit[:12])
+	fmt.Fprintln(h.out, cliCopy("setup", "console_answers", "✓ console answers"))
+	o.detail(h, cliCopy("setup", "verbose_health", "  GET / 200, BUILD.json names %s\n"), commit[:12])
 	if o.noSessionCheck {
 		return nil
 	}
 	if err := sessionCheck(base, token, p.stateDir); err != nil {
 		return &install.Refusal{Code: install.CodeSessionCheck, Detail: err.Error()}
 	}
-	fmt.Fprintln(h.out, "✓ tmux works")
-	o.detail(h, "  started and closed one test terminal in tmux through the daemon\n")
+	fmt.Fprintln(h.out, cliCopy("setup", "tmux_works", "✓ tmux works"))
+	o.detail(h, "%s", cliCopy("setup", "verbose_terminal", "  started and closed one test terminal in tmux through the daemon\n"))
 	return nil
 }
 
@@ -943,7 +989,7 @@ func sessionCheck(base, token, stateDir string) error {
 	resolved, _ := capacity.Resolve(capacity.Register(), os.Getenv(capacity.OverrideEnv))
 	registry.SetLimit(capacity.Limit(resolved, capacity.PlacesRegistered))
 	if _, err := registry.Add([]string{dir}, time.Now()); err != nil {
-		return fmt.Errorf("could not register the throwaway project: %w", err)
+		return fmt.Errorf(cliCopy("setup", "test_project_failed", "could not register the throwaway project: %w"), err)
 	}
 	defer func() {
 		_, _ = registry.Remove([]string{dir})
@@ -989,12 +1035,11 @@ func sessionCheck(base, token, stateDir string) error {
 		}
 	}
 	if id == "" {
-		return fmt.Errorf("the daemon does not list the throwaway project %s it was given; a state directory under a "+
-			"temporary directory (/tmp) is never listed as a project, so there pass --no-session-check", dir)
+		return fmt.Errorf(cliCopy("setup", "test_project_not_listed", "the daemon does not list the throwaway project %s it was given; a state directory under a temporary directory (/tmp) is never listed as a project, so pass --no-session-check in that case"), dir)
 	}
 	var t contract.Terminal
 	if err := call(http.MethodPost, "/v1/terminals", contract.TerminalOpenRequest{ProjectID: id, Cols: 80, Rows: 24}, &t); err != nil {
-		return fmt.Errorf("could not start a terminal (is tmux on the service's PATH?): %w", err)
+		return fmt.Errorf(cliCopy("setup", "test_terminal_failed", "could not start a terminal (is tmux on the service's PATH?): %w"), err)
 	}
 	var c contract.TerminalControl
 	if err := call(http.MethodPost, "/v1/terminals/"+t.ID+"/control",
@@ -1020,7 +1065,7 @@ func openConsole(h setupHost, p setupPlace, o setupOptions, desktop bool, app st
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err == nil {
 			o.detail(h, "  %s", out)
-			return "your browser", ""
+			return cliCopy("setup", "your_browser", "your browser"), ""
 		}
 	}
 	cmd := exec.Command(exe, "open", "--print")
@@ -1054,17 +1099,17 @@ func runUninstall(h setupHost, o setupOptions) int {
 	} else if _, err := os.Stat(place.stateDir); err == nil {
 		// The binary is gone now, so the way to delete the rest is one that
 		// needs nothing of Clawdline.
-		kept = append(kept, fmt.Sprintf("%s (your devices, sessions and settings). To delete it too: rm -rf %s",
+		kept = append(kept, fmt.Sprintf(cliCopy("setup", "uninstall_state_kept", "%s (your devices, sessions and settings). To delete it too: rm -rf %s"),
 			tilde(h, place.stateDir), tilde(h, place.stateDir)))
 	}
 	for _, r := range removed {
-		fmt.Fprintln(h.out, "removed "+r)
+		fmt.Fprintf(h.out, cliCopy("setup", "removed", "removed %s\n"), r)
 	}
 	if len(removed) == 0 {
-		fmt.Fprintln(h.out, "nothing of this install was found to remove")
+		fmt.Fprintln(h.out, cliCopy("setup", "nothing_removed", "nothing of this install was found to remove"))
 	}
 	for _, k := range kept {
-		fmt.Fprintln(h.out, "kept "+k)
+		fmt.Fprintf(h.out, cliCopy("setup", "kept", "kept %s\n"), k)
 	}
 	return 0
 }

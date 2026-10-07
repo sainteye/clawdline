@@ -8,6 +8,11 @@ import assert from "node:assert/strict"
 import type { SessionsSnapshot, TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, headerReadDiagnostics, TRANSCRIPT_LINE_REREAD_MS, TRANSCRIPT_MAX_REUSE_MS, type CloudEvent, type CloudIdentity, type CloudReadClient, type CloudRow, type CloudSchedules, type CloudSnippets } from "./relay-reader.ts"
+import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
+import { CatalogCloudClient } from "./refusal-client.js"
+import japanese from "../../public/catalogs/ja.json" with { type: "json" }
+// @ts-expect-error -- Node runs the source test with type stripping.
+import { activateCatalog, catalogRefusalDetail, resetCatalogForTest } from "../catalog.ts"
 
 test("Session header trail distinguishes started, observed, canceled, unavailable and reconnect without identifiers", async () => {
   const saved = globalThis.sessionStorage
@@ -468,6 +473,39 @@ test("the machine's refusal stays typed; a timeout is nobody answering", async (
   assert.equal((await body<{ error: string }>(refused)).error, "not_found")
   client.answer = () => Promise.reject(Object.assign(new Error("the machine did not answer this read"), { code: "cloud_read_timeout" }))
   await assert.rejects(r.fetch("/v1/transcript?session=slow"), /cloud_read_timeout/)
+})
+
+test("a signed Cloud read keeps its explicit detail key without trusting raw lookalikes", async () => {
+  const message = "A timeline is one Project's; name it with ?project=."
+  const key = "http.e5a8008cc3310596"
+  const verified = new CatalogCloudClient({ relayURL: "wss://relay.example.test/v1/connect", deviceToken: "fixture" })
+  let signed: Error | null = null
+  verified.events((event: { type?: string; error?: Error }) => { if (event.type === "read") signed = event.error ?? null })
+  verified._applySnapshot({ kind: "transcript", machine: "mac-a", session: "s1" }, {
+    read: "read:timeline", status: 400,
+    error: { code: "project_required", layer: "mac_route", message, detail_key: key },
+  }, { seq: 5, ts: "2026-10-07T00:00:00Z" }, false)
+  assert.ok(signed, "the copied CloudClient emitted its parsed refusal")
+  const client = new FakeClient()
+  client.readAnswer = async () => { throw signed }
+  const r = reader(client, { t: 1000 })
+  const keyed = await body<{ error: string; detail: string; detail_key?: string }>(await r.fetch("/v1/timeline?upcoming=true"))
+  assert.deepEqual([keyed.error, keyed.detail, keyed.detail_key], ["project_required", message, key])
+  const oldDocument = globalThis.document
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } } })
+  try {
+    assert.equal(activateCatalog(japanese, "ja"), "ja")
+    assert.deepEqual(catalogRefusalDetail(keyed), { text: japanese[key], lang: "ja" })
+  } finally {
+    resetCatalogForTest()
+    Object.defineProperty(globalThis, "document", { configurable: true, value: oldDocument })
+  }
+
+  const raw = failureFromMac({ code: "project_required", layer: "mac_route", message }, 400, null)
+  ;(raw as Error & { detailKey?: string }).detailKey = key
+  client.readAnswer = async () => { throw raw }
+  const untrusted = await body<{ detail_key?: string }>(await r.fetch("/v1/timeline?upcoming=true"))
+  assert.equal(untrusted.detail_key, undefined)
 })
 
 // The Mac's channel filled and the answer could not leave. What the page gets

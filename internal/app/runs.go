@@ -165,6 +165,9 @@ func (r *Runs) Relay(ctx context.Context, id string) (work.Run, error) {
 	if err := work.CheckRun(run, found, r.now()); err != nil {
 		var refused *work.Refusal
 		if errors.As(err, &refused) {
+			if refused.RawMessage {
+				return work.Run{}, workRefusalRaw(refused.Status, refused.Code, refused.Message)
+			}
 			return work.Run{}, workRefusal(refused.Status, refused.Code, refused.Message)
 		}
 		return work.Run{}, err

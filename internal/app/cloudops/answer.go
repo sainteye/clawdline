@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The layers a refusal can be decided at, as the wire spells them
@@ -28,6 +29,9 @@ type Refusal struct {
 	Status  int
 	Code    string
 	Message string
+	// fixedCopy is set only where Message is authored literal copy. External,
+	// composed and route-originated messages must not gain a key by coincidence.
+	fixedCopy bool
 	// Detail is filtered by code before it reaches a viewer (§11.6), so a path
 	// or a title cannot cross inside it by accident.
 	Detail map[string]any
@@ -76,6 +80,15 @@ func errorObject(base map[string]any, code, layer string, sequence uint64, detai
 		switch {
 		case k == "message":
 			out[k] = v
+		case k == "detail_key":
+			// A local writer or an explicitly marked Bridge literal supplied
+			// this key. Equal prose from an external or raw source never
+			// creates a key here.
+			key, keyOK := v.(string)
+			message, messageOK := base["message"].(string)
+			if keyOK && messageOK && productcopy.HTTPRefusalKey(message) == key {
+				out[k] = key
+			}
 		case k == "reasons" && code == "close_blocked":
 			out[k] = closeReasons(v)
 		case allowed[k]:
@@ -170,7 +183,7 @@ func (b Bridge) refuse(cmd Command, parsed body, word string, r Refusal) Answer 
 		return b.notice(cmd, r)
 	}
 	return b.settle(plan{session: session, name: name}, r.Status, r.Code, nil,
-		errorObject(map[string]any{"message": r.Message}, r.Code, r.Layer, cmd.Sequence, r.Detail))
+		errorObject(bridgeRefusalBase(r), r.Code, r.Layer, cmd.Sequence, r.Detail))
 }
 
 // publish answers a decoded request: a refusal this bridge decided, or a body
@@ -180,7 +193,17 @@ func (b Bridge) publish(cmd Command, p plan, r Refusal, ok json.RawMessage) Answ
 		return b.settle(p, 200, "", ok, nil)
 	}
 	return b.settle(p, r.Status, r.Code, nil,
-		errorObject(map[string]any{"message": r.Message}, r.Code, r.Layer, cmd.Sequence, r.Detail))
+		errorObject(bridgeRefusalBase(r), r.Code, r.Layer, cmd.Sequence, r.Detail))
+}
+
+func bridgeRefusalBase(r Refusal) map[string]any {
+	base := map[string]any{"message": r.Message}
+	if r.fixedCopy {
+		if key := productcopy.HTTPRefusalKey(r.Message); key != "" {
+			base["detail_key"] = key
+		}
+	}
+	return base
 }
 
 // answer turns one local route's response into a payload.
@@ -205,17 +228,48 @@ func (b Bridge) answer(cmd Command, p plan, o op, res LocalResponse) Answer {
 			// transport can carry, and calling it one would put a browser in
 			// front of an empty card with nothing to say about it.
 			return b.publish(cmd, p, Refusal{Status: 502, Code: "read_failed",
-				Message: "This read could not be answered.", Layer: layerRoute}, nil)
+				Message: "This read could not be answered.", fixedCopy: true, Layer: layerRoute}, nil)
 		}
 		return b.settle(p, res.Status, "", res.Body, nil)
 	}
 	base := refusalOf(res.Body)
+	if key, _ := base["detail_key"].(string); key == "" || key != res.FixedDetailKey {
+		delete(base, "detail_key")
+	}
 	code, _ := base["code"].(string)
 	if code == "" {
 		code = "command_failed"
 	}
+	if o.partial != nil {
+		if body, ok := o.partial(res); ok {
+			return b.settle(p, res.Status, code, body, nil)
+		}
+	}
 	detail, _ := base["detail"].(map[string]any)
 	return b.settle(p, res.Status, code, nil, errorObject(base, code, layerRoute, cmd.Sequence, detail))
+}
+
+// stoppedUnify is a unify apply that stopped part-way (`500` with
+// `outcome: "stopped"`): the ProjectUnifyApplied body, which says which
+// actions ran, which one failed and what the plan read from disk is now, with
+// the refusal's code and sentence in its own `error` and `detail`. Sent as an
+// `error` it would arrive as the code alone, and a person on a phone would be
+// told only that it failed. The plan is what `project-unify-plan` already
+// carries, and every path in it is relative to the repository root.
+func stoppedUnify(res LocalResponse) (json.RawMessage, bool) {
+	var answer struct {
+		Outcome string            `json:"outcome"`
+		Ran     []json.RawMessage `json:"ran"`
+		Plan    json.RawMessage   `json:"plan"`
+		Error   string            `json:"error"`
+	}
+	if res.Status < 400 || json.Unmarshal(res.Body, &answer) != nil {
+		return nil, false
+	}
+	if answer.Outcome != "stopped" || answer.Ran == nil || len(answer.Plan) == 0 || answer.Error == "" {
+		return nil, false
+	}
+	return res.Body, true
 }
 
 // refusalOf reads this daemon's refusal, which has two spellings.
@@ -323,15 +377,15 @@ const documentsMaximumListed = 200
 func shapeImage(p plan, res LocalResponse) (json.RawMessage, Refusal) {
 	if res.ContentType != "image/png" && res.ContentType != "image/jpeg" {
 		return nil, Refusal{Status: 415, Code: "image_media_type_unsupported",
-			Message: "That artifact is not a PNG or a JPEG and does not cross this connection.", Layer: layerRoute}
+			Message: "That artifact is not a PNG or a JPEG and does not cross this connection.", fixedCopy: true, Layer: layerRoute}
 	}
 	if len(res.Body) == 0 {
 		return nil, Refusal{Status: 502, Code: "image_empty",
-			Message: "That image arrived with no bytes in it.", Layer: layerRoute}
+			Message: "That image arrived with no bytes in it.", fixedCopy: true, Layer: layerRoute}
 	}
 	if limit := imageMaxEncodedBytes(); len(res.Body) > limit {
 		return nil, Refusal{Status: 413, Code: "image_too_large_for_cloud",
-			Message: "That image is larger than one answer on this connection can carry.", Layer: layerRoute,
+			Message: "That image is larger than one answer on this connection can carry.", fixedCopy: true, Layer: layerRoute,
 			Detail: map[string]any{"byte_count": len(res.Body), "limit_bytes": limit}}
 	}
 	return mustJSON(map[string]any{
@@ -347,16 +401,16 @@ func shapeDocument(p plan, res LocalResponse) (json.RawMessage, Refusal) {
 	case "text/markdown; charset=utf-8", "text/plain; charset=utf-8":
 	default:
 		return nil, Refusal{Status: 415, Code: "document_media_type_unsupported",
-			Message: "That file is not an inert Markdown or text document.", Layer: layerRoute}
+			Message: "That file is not an inert Markdown or text document.", fixedCopy: true, Layer: layerRoute}
 	}
 	if len(res.Body) > documentMaximumBytes {
 		return nil, Refusal{Status: 413, Code: "document_too_large",
-			Message: "That document is too large to carry in one encrypted answer.", Layer: layerRoute,
+			Message: "That document is too large to carry in one encrypted answer.", fixedCopy: true, Layer: layerRoute,
 			Detail: map[string]any{"byte_count": len(res.Body), "limit_bytes": documentMaximumBytes}}
 	}
 	if !utf8.Valid(res.Body) {
 		return nil, Refusal{Status: 415, Code: "document_not_utf8",
-			Message: "That document is not valid UTF-8 text.", Layer: layerRoute}
+			Message: "That document is not valid UTF-8 text.", fixedCopy: true, Layer: layerRoute}
 	}
 	out := map[string]any{
 		"scope": p.scope, "path": p.path, "media_type": res.ContentType,
@@ -491,12 +545,12 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 	word, _ := parsed.str("type")
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
-			Message: "This Cloud request addresses another machine."})
+			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
 	full := Refusal{Status: 429, Code: "cloud_read_busy",
-		Message: "This machine answered, and the channel that answer goes on is full; try again shortly.",
-		Detail:  map[string]any{"lane": "egress", "limit": limit, "retry_after": 5},
-		Layer:   layerTransport}
+		Message: "This machine answered, and the channel that answer goes on is full; try again shortly.", fixedCopy: true,
+		Detail: map[string]any{"lane": "egress", "limit": limit, "retry_after": 5},
+		Layer:  layerTransport}
 	if parseErr != nil || word == "" {
 		return b.notice(cmd, full)
 	}
@@ -505,8 +559,8 @@ func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
 		// The effect happened. This is a lost receipt, not a refusal, and it
 		// carries no detail because the reader would drop it anyway.
 		lost := Refusal{Status: 503, Code: "command_answer_undeliverable",
-			Message: "This machine carried out the command and its reply could not be delivered.",
-			Layer:   layerReply}
+			Message: "This machine carried out the command and its reply could not be delivered.", fixedCopy: true,
+			Layer: layerReply}
 		return b.refuse(cmd, parsed, word, lost)
 	}
 	if known && o.read && cmd.Class == ClassCtl {
@@ -522,12 +576,12 @@ func (b Bridge) Busy(cmd Command, limit int) Answer {
 	word, _ := parsed.str("type")
 	if b.MachineID != "" && cmd.Channel != "ctl/"+ChannelSegment(b.MachineID) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
-			Message: "This Cloud request addresses another machine."})
+			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
 	busy := Refusal{Status: 429, Code: "cloud_ingress_busy",
-		Message: "This request was not accepted because Cloud ingress is full; try again shortly.",
-		Detail:  map[string]any{"lane": "ingress", "limit": limit, "retry_after": 1},
-		Layer:   layerTransport}
+		Message: "This request was not accepted because Cloud ingress is full; try again shortly.", fixedCopy: true,
+		Detail: map[string]any{"lane": "ingress", "limit": limit, "retry_after": 1},
+		Layer:  layerTransport}
 	if parseErr != nil || word == "" {
 		return b.notice(cmd, busy)
 	}
@@ -539,7 +593,7 @@ func (b Bridge) Busy(cmd Command, limit int) Answer {
 	}
 	if known && !o.read && !o.readLevel && !b.allowCommands() {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 403, Code: "cloud_commands_disabled",
-			Message: "Cloud commands are disabled on this machine."})
+			Message: "Cloud commands are disabled on this machine.", fixedCopy: true})
 	}
 	return b.refuse(cmd, parsed, word, busy)
 }

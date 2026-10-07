@@ -672,8 +672,8 @@ func (s Snapshot) orchestratorTitle(terminalID string, live []Live) string {
 type CloseInput struct {
 	Live          Live
 	TerminalState string
-	// Bound is RemoteServer's identityBound: assistant, pid, start time and
-	// conversation all known.
+	// Bound is the daemon's exact process identity: assistant, pid, start time
+	// and either a conversation or a verified unstarted Codex process.
 	Bound bool
 	// Matches is how many sessions on screen carry this exact identity.
 	Matches             int

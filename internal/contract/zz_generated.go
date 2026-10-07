@@ -249,8 +249,12 @@ var AssistantUnknownReasonValues = []AssistantUnknownReason{AssistantUnknownReas
 type AuthError struct {
 	// unauthorized, forbidden, wrong_code, expired, rate_limited, bad_request,
 	// not_found, store_unavailable, unsupported_media_type.
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code string `json:"code"`
+
+	// Optional stable catalog key for this exact fixed English message. Dynamic
+	// messages have no key.
+	DetailKey string `json:"detail_key,omitempty"`
+	Message   string `json:"message"`
 
 	// A fresh lowercase UUID per refusal, for finding it in a log.
 	RequestID string `json:"request_id"`
@@ -2140,9 +2144,13 @@ type CloseReason struct {
 // the fleet list was already showing, so the screen and the action never
 // disagree.
 type CloseRefusal struct {
-	Detail  string        `json:"detail"`
-	Error   string        `json:"error"`
-	Reasons []CloseReason `json:"reasons"`
+	Detail string `json:"detail"`
+
+	// Optional stable catalog key for this exact fixed English detail. Dynamic details
+	// have no key.
+	DetailKey string        `json:"detail_key,omitempty"`
+	Error     string        `json:"error"`
+	Reasons   []CloseReason `json:"reasons"`
 }
 
 type CloseRequest struct {
@@ -3904,6 +3912,74 @@ type ProjectLinksReply struct {
 	Unreadable ProjectGitFailure `json:"unreadable,omitempty"`
 }
 
+// One entry in full: the body of POST /v1/projects/:id/memory and of PUT
+// /v1/projects/:id/memory/:name, whose name must be the path's, and the answer
+// to GET /v1/projects/:id/memory/:name.
+type ProjectMemoryEntry struct {
+	// Markdown, at most 64 KiB.
+	Body        string            `json:"body"`
+	Description string            `json:"description"`
+	Name        string            `json:"name"`
+	Type        ProjectMemoryType `json:"type"`
+}
+
+// GET /v1/projects/:id/memory: every entry, and the index a launched session is
+// given. An index cut at its 8 KiB bound says so in index_cut and in its last
+// line; entries always lists every entry.
+type ProjectMemoryList struct {
+	Entries []ProjectMemorySummary `json:"entries"`
+
+	// Empty when there are no entries.
+	Index    string `json:"index"`
+	IndexCut bool   `json:"index_cut"`
+
+	// The repository key the store is filed under: the key the broker names worktree
+	// directories by.
+	ProjectKey string `json:"project_key"`
+}
+
+// What a write did. `unchanged` is the same entry sent again, which is how a
+// retried add or update is answered.
+type ProjectMemoryOutcome string
+
+const (
+	ProjectMemoryOutcomeCreated   ProjectMemoryOutcome = "created"
+	ProjectMemoryOutcomeUpdated   ProjectMemoryOutcome = "updated"
+	ProjectMemoryOutcomeUnchanged ProjectMemoryOutcome = "unchanged"
+	ProjectMemoryOutcomeForgotten ProjectMemoryOutcome = "forgotten"
+)
+
+// ProjectMemoryOutcomeValues is every value the contract allows, in contract order.
+var ProjectMemoryOutcomeValues = []ProjectMemoryOutcome{ProjectMemoryOutcomeCreated, ProjectMemoryOutcomeUpdated, ProjectMemoryOutcomeUnchanged, ProjectMemoryOutcomeForgotten}
+
+// One entry as a listing shows it, without its body.
+type ProjectMemorySummary struct {
+	// One line, at most 512 bytes.
+	Description string `json:"description"`
+
+	// Lowercase letters, digits and single hyphens, at most 64 bytes.
+	Name string            `json:"name"`
+	Type ProjectMemoryType `json:"type"`
+}
+
+// An entry's kind, the four Claude Code's auto-memory uses.
+type ProjectMemoryType string
+
+const (
+	ProjectMemoryTypeUser      ProjectMemoryType = "user"
+	ProjectMemoryTypeFeedback  ProjectMemoryType = "feedback"
+	ProjectMemoryTypeProject   ProjectMemoryType = "project"
+	ProjectMemoryTypeReference ProjectMemoryType = "reference"
+)
+
+// ProjectMemoryTypeValues is every value the contract allows, in contract order.
+var ProjectMemoryTypeValues = []ProjectMemoryType{ProjectMemoryTypeUser, ProjectMemoryTypeFeedback, ProjectMemoryTypeProject, ProjectMemoryTypeReference}
+
+type ProjectMemoryWriteAnswer struct {
+	Name    string               `json:"name"`
+	Outcome ProjectMemoryOutcome `json:"outcome"`
+}
+
 // What the one git read found, which is a different question from what it
 // produced. A deploy row is a file named after the repository's GitHub remote,
 // so four of these five answers produce no deploy row — and only `unreadable`
@@ -3961,6 +4037,16 @@ type ProjectSetup struct {
 	ServerCount    int64                 `json:"server_count"`
 	Servers        ProjectServerSetup    `json:"servers"`
 	Sync           ProjectSyncSetup      `json:"sync"`
+
+	// Whether this Project's Claude and Codex sessions read the same rules and skills:
+	// the status of the unify plan (GET /v1/projects/:id/unify), read from disk with
+	// the same bounded, read-only Plan. Absent from a daemon older than this field,
+	// which a console shows as unknown.
+	Unify ProjectUnifyStatus `json:"unify,omitempty"`
+
+	// With `unify: drifting`, how many planned changes and conflicts the plan holds;
+	// each counts once. Absent otherwise.
+	UnifyCount int64 `json:"unify_count,omitempty"`
 }
 
 // Whether an origin repository gives this checkout an identity that another
@@ -4322,10 +4408,14 @@ var RecordedLandingSourceValues = []RecordedLandingSource{RecordedLandingSourceT
 // Every refusal on this daemon has this shape. A caller reads `error` as the
 // code and never parses `detail`.
 type Refusal struct {
-	Detail   string `json:"detail"`
-	Error    string `json:"error"`
-	Route    string `json:"route,omitempty"`
-	Upstream string `json:"upstream,omitempty"`
+	Detail string `json:"detail"`
+
+	// Optional stable catalog key for this exact fixed English detail. Dynamic details
+	// have no key.
+	DetailKey string `json:"detail_key,omitempty"`
+	Error     string `json:"error"`
+	Route     string `json:"route,omitempty"`
+	Upstream  string `json:"upstream,omitempty"`
 }
 
 // Why nothing can be offered. `boot_unknown`: this machine cannot read its boot
@@ -5546,7 +5636,7 @@ type SettingsRequest struct {
 	// A combination the shell can register (`cmd+shift+k`), or empty for none.
 	Hotkey *string `json:"hotkey"`
 
-	// `auto` or a language tag the catalog resolves.
+	// Existing agent and Board authoring language and voice auto fallback.
 	Language *string `json:"language"`
 
 	// A pack name the shell offers.
@@ -5591,6 +5681,10 @@ type SettingsRequest struct {
 	// Whether future execution cycles capture the planning gate. Null leaves the
 	// stored setting unchanged; absence in the settings file defaults to true.
 	PlanningGate *bool `json:"planning_gate"`
+
+	// One of the nine shipped product-copy tags; changes daemon notifications and
+	// human-readable CLI copy only.
+	ProductLanguage *string `json:"product_language"`
 
 	// Notify when a session reports a delivery.
 	PushOnDelivery *bool `json:"push_on_delivery"`
@@ -5696,8 +5790,8 @@ type SettingsSnapshot struct {
 	// does; an empty string means the person asked for none, and registers nothing.
 	Hotkey *string `json:"hotkey"`
 
-	// `auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships
-	// only zh-Hant; the key is written so a later one can read it.
+	// Existing agent and Board authoring language and voice auto fallback. Its stored
+	// value and behavior are preserved independently of product language.
 	Language *string `json:"language"`
 
 	// Which mascot pack the shell draws.
@@ -5752,6 +5846,10 @@ type SettingsSnapshot struct {
 	// Whether a newly assigned execution cycle captures the planning gate. Absent
 	// means true; a later setting change never rewrites an in-flight cycle's snapshot.
 	PlanningGate *bool `json:"planning_gate"`
+
+	// Daemon notifications and human-readable CLI copy. Absent, malformed or
+	// unsupported saved values render as English.
+	ProductLanguage *string `json:"product_language"`
 
 	// Notify when a session reports a delivery.
 	PushOnDelivery *bool `json:"push_on_delivery"`

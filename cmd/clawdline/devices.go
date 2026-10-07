@@ -65,23 +65,23 @@ func (d localDoor) do(method, path string, out any) error {
 	}
 	res, err := d.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("the daemon did not answer: %w", err)
+		return fmt.Errorf(cliCopy("ops", "devices.daemon_unavailable", "the daemon did not answer: %w"), err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return errors.New(refusalText(res))
 	}
 	if err := json.NewDecoder(res.Body).Decode(out); err != nil {
-		return fmt.Errorf("the daemon's answer could not be read: %w", err)
+		return fmt.Errorf(cliCopy("ops", "devices.unreadable", "the daemon's answer could not be read: %w"), err)
 	}
 	return nil
 }
 
 func devicesUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: clawdline devices [--json]")
-	fmt.Fprintln(w, "       clawdline devices revoke [--yes] <device-id>")
-	fmt.Fprintln(w, "  the browsers and devices signed in to this machine directly (clawdline open, pairing, password);")
-	fmt.Fprintln(w, "  browsers reached through Clawdline Cloud are `clawdline cloud devices`")
+	fmt.Fprintln(w, cliCopy("ops", "devices.usage.list", "usage: clawdline devices [--json]"))
+	fmt.Fprintln(w, cliCopy("ops", "devices.usage.revoke", "       clawdline devices revoke [--yes] <device-id>"))
+	fmt.Fprintln(w, cliCopy("ops", "devices.usage.direct", "  the browsers and devices signed in to this machine directly (clawdline open, pairing, password);"))
+	fmt.Fprintln(w, cliCopy("ops", "devices.usage.cloud", "  browsers reached through Clawdline Cloud are `clawdline cloud devices`"))
 }
 
 func devicesCommand(args []string) {
@@ -100,7 +100,7 @@ func devicesCommand(args []string) {
 func devicesList(out, errs io.Writer, door localDoor, args []string) int {
 	fs := flag.NewFlagSet("devices", flag.ContinueOnError)
 	fs.SetOutput(errs)
-	asJSON := fs.Bool("json", false, "print the daemon's answer as it is")
+	asJSON := fs.Bool("json", false, cliCopy("ops", "devices.flag.json", "print the daemon's answer as it is"))
 	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
 		devicesUsage(errs)
 		return 2
@@ -117,20 +117,20 @@ func devicesList(out, errs io.Writer, door localDoor, args []string) int {
 		return 0
 	}
 	if len(list.Devices) == 0 {
-		fmt.Fprintln(out, "nothing is signed in to this machine but this machine itself")
+		fmt.Fprintln(out, cliCopy("ops", "devices.empty", "nothing is signed in to this machine but this machine itself"))
 	}
 	for _, d := range list.Devices {
-		seen := "never"
+		seen := cliCopy("ops", "devices.never", "never")
 		if d.LastSeen > 0 {
 			seen = time.Unix(d.LastSeen, 0).Format("2006-01-02 15:04")
 		}
-		fmt.Fprintf(out, "%-24s %-10s %-16s last seen %-16s %s\n", d.ID, strings.Join(d.Caps, "+"),
+		fmt.Fprintf(out, cliCopy("ops", "devices.row", "%-24s %-10s %-16s last seen %-16s %s\n"), d.ID, strings.Join(d.Caps, "+"),
 			time.Unix(d.Created, 0).Format("2006-01-02 15:04"), seen, d.Name)
 	}
 	if list.Password {
-		fmt.Fprintln(out, "a password is set: whoever knows it can sign in another device")
+		fmt.Fprintln(out, cliCopy("ops", "devices.password", "a password is set: whoever knows it can sign in another device"))
 	}
-	fmt.Fprintln(out, "this command uses this machine's own key, which is not listed and is not revoked here")
+	fmt.Fprintln(out, cliCopy("ops", "devices.own_key", "this command uses this machine's own key, which is not listed and is not revoked here"))
 	return 0
 }
 
@@ -140,7 +140,7 @@ func devicesList(out, errs io.Writer, door localDoor, args []string) int {
 func devicesRevoke(out, errs io.Writer, in io.Reader, door localDoor, args []string) int {
 	fs := flag.NewFlagSet("devices revoke", flag.ContinueOnError)
 	fs.SetOutput(errs)
-	yes := fs.Bool("yes", false, "do not ask")
+	yes := fs.Bool("yes", false, cliCopy("ops", "devices.flag.yes", "do not ask"))
 	if err := fs.Parse(args); err != nil || fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" {
 		devicesUsage(errs)
 		return 2
@@ -159,15 +159,14 @@ func devicesRevoke(out, errs io.Writer, in io.Reader, door localDoor, args []str
 		}
 	}
 	if found == nil {
-		fmt.Fprintf(errs, "clawdline: no device signed in to this machine has the id %s (see `clawdline devices`)\n", id)
+		fmt.Fprintf(errs, cliCopy("ops", "devices.unknown_id", "clawdline: no device signed in to this machine has the id %s (see `clawdline devices`)\n"), id)
 		return 1
 	}
 	if !*yes {
-		fmt.Fprintf(out, "Revoke %s (%s)? Whatever is signed in with it — this browser too, if it is the one — "+
-			"is refused from its next request. [y/N] ", found.ID, found.Name)
+		fmt.Fprintf(out, cliCopy("ops", "devices.revoke_prompt", "Revoke %s (%s)? Whatever is signed in with it — this browser too, if it is the one — is refused from its next request. [y/N] "), found.ID, found.Name)
 		line, _ := bufio.NewReader(in).ReadString('\n')
 		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
-			fmt.Fprintln(out, "nothing was revoked")
+			fmt.Fprintln(out, cliCopy("ops", "devices.not_revoked", "nothing was revoked"))
 			return 1
 		}
 	}
@@ -176,6 +175,6 @@ func devicesRevoke(out, errs io.Writer, in io.Reader, door localDoor, args []str
 		fmt.Fprintln(errs, "clawdline:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "revoked    %s (%s)\n", found.ID, found.Name)
+	fmt.Fprintf(out, cliCopy("ops", "devices.revoked", "revoked    %s (%s)\n"), found.ID, found.Name)
 	return 0
 }

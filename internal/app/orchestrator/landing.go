@@ -176,6 +176,10 @@ func unverified(reason, message string) Refusal {
 	return refuseWith(http.StatusConflict, "unverified_landing", message, map[string]any{"reason": reason})
 }
 
+func unverifiedRaw(reason, message string) Refusal {
+	return refuseRawWith(http.StatusConflict, "unverified_landing", message, map[string]any{"reason": reason})
+}
+
 // The reasons a landing is not proved.
 const (
 	UnverifiedCommit     = "commit_unresolved"
@@ -239,7 +243,7 @@ func (b *Broker) proveDelivery(ctx context.Context, r Record, commit, target str
 	// The base itself, or anything under it, was in the repository before this
 	// task was admitted, and landing it proves nothing about this task (D51).
 	if under, err := b.Git.IsAncestor(ctx, repo, c, base); err != nil || under {
-		return landingProof{}, branchHead{}, refuseWith(http.StatusConflict, "unverified_landing",
+		return landingProof{}, branchHead{}, refuseRawWith(http.StatusConflict, "unverified_landing",
 			"That commit was already in the repository when this task was dispatched (base "+shortCommit(base)+
 				"), so it is not this task's work. Name the commit that carries the delivery onto the target.",
 			map[string]any{"reason": UnverifiedPredates, "base": base})
@@ -259,18 +263,18 @@ func (b *Broker) proveDelivery(ctx context.Context, r Record, commit, target str
 		h = r.Worktree.Head
 	}
 	if h == "" {
-		return landingProof{}, head, unverified(UnverifiedDelivery,
+		return landingProof{}, head, unverifiedRaw(UnverifiedDelivery,
 			"The delivery branch "+r.Worktree.Branch+" could not be read and no head was recorded when the "+
 				"task settled, so there is no delivery to prove.")
 	}
 	if under, err := b.Git.IsAncestor(ctx, repo, h, base); err != nil || under {
-		return landingProof{}, head, refuseWith(http.StatusConflict, "unverified_landing",
+		return landingProof{}, head, refuseRawWith(http.StatusConflict, "unverified_landing",
 			"The delivery branch "+r.Worktree.Branch+" carries nothing past its base "+shortCommit(base)+
 				"; there is no delivery to land. If this task wrote nothing, record nothing_to_land.",
 			map[string]any{"reason": UnverifiedNothing, "base": base, "delivery_head": h})
 	}
 	if carried, err := b.Git.IsAncestor(ctx, repo, h, c); err != nil || !carried {
-		return landingProof{}, head, refuseWith(http.StatusConflict, "unverified_landing",
+		return landingProof{}, head, refuseRawWith(http.StatusConflict, "unverified_landing",
 			"The commit does not carry this task's delivery head "+shortCommit(h)+
 				"; name the commit on the target that contains the delivery branch.",
 			map[string]any{"reason": UnverifiedNotCarried, "delivery_head": h})
