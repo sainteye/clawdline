@@ -358,3 +358,15 @@ internal/adapters/turnreport.diffLimit # read: one commit's diff of one file in 
 internal/adapters/turnreport.reportLimit # page: the text and diffs one `clawdline report` carries, 12 MiB; past it the largest whole texts, then diffs, go and each is named (limits N77)
 internal/adapters/turnreport.commitsLimit # admission: commits one `clawdline report` reads, 500; more is refused before anything is read (limits N77)
 internal/adapters/turnreport.servedLimit # read: the largest kept report page the daemon answers at /reports/<id>, 48 MiB; a larger one is report_not_found (limits N77)
+
+# A Project's shared memory (2026-10-07, docs/project-memory.md) registered
+# four rows: memory.entries, memory.entry_bytes, memory.description_bytes and
+# memory.name_bytes. The lines it added are the index a launched session is
+# given, cut at a whole line with a closing line that says how many entries it
+# left out while every entry stays in the store and in `memory list` (page),
+# the same bound as a launch admits it (admission), and the files one import
+# from Claude Code's auto-memory reads (read).
+internal/adapters/memory.IndexByteLimit # page: the generated index a launch carries, cut at a line and saying so
+internal/adapters/memory.LaunchTextLimit # page: that index with the sentence before it
+internal/adapters/memory.claudeImportFileLimit # read: files one import lists in Claude Code's memory directory; past it nothing is imported
+internal/adapters/projects.MemoryLaunchLimit # admission: the memory one launch carries; a launch with more is refused

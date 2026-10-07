@@ -159,7 +159,17 @@ type LaunchRequest struct {
 	// persisted launch snapshot. When set it replaces the mutable built-in
 	// persona file. Only daemon launch code may fill this field.
 	SquadPromptPath string
+	// Memory is the Project's shared memory index with the instruction that
+	// introduces it (memory.LaunchText), "" for a Project with none — and ""
+	// launches exactly as a launch did before shared memory existed. Only
+	// daemon launch code fills it, from the store, never from a request.
+	Memory string
 }
+
+// MemoryLaunchLimit is the longest Memory a launch carries: the 8 KiB index
+// and the sentence before it (memory.LaunchTextLimit, which a test there
+// holds below this).
+const MemoryLaunchLimit = 9 << 10
 
 // Launch is ProviderLaunchPlan: the one command a new terminal is given.
 type Launch struct {
@@ -192,6 +202,24 @@ func PersonaArgs(assistant string, p persona.Persona, path string) []string {
 		return codexDeveloperArgs(persona.CodexInstruction(p, path))
 	}
 	return []string{"--append-system-prompt-file", ShellQuoted(path)}
+}
+
+// MemoryArgs is how Claude Code is given a Project's shared memory: one
+// inline `--append-system-prompt`, beside the persona's or squad's
+// `--append-system-prompt-file`. Claude Code 2.1.292 keeps only the last of
+// two `--append-system-prompt-file` flags but applies an inline one and a
+// file one together (measured 2026-10-07, docs/project-memory.md), so the
+// persona file stays as it is and nothing is composed on disk. The value has
+// newlines, which a POSIX single-quoted word carries; a launch line holding
+// one is always run from a script, never typed (terminal.typedLaunchLine).
+//
+// Codex has no such flag: its memory joins the one `developer_instructions`
+// value (Admit), and this answers nothing for it.
+func MemoryArgs(assistant, text string) []string {
+	if assistant != AssistantClaude || text == "" {
+		return nil
+	}
+	return []string{"--append-system-prompt", ShellQuoted(text)}
 }
 
 func codexDeveloperArgs(instructions ...string) []string {
@@ -271,6 +299,9 @@ func Admit(req LaunchRequest) (Launch, error) {
 				errors.New("the response language is not one this machine starts"))
 		}
 	}
+	if len(req.Memory) > MemoryLaunchLimit {
+		return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the Project memory is longer than a launch carries"))
+	}
 	var personaArgs []string
 	var codexInstructions []string
 	if req.SquadPromptPath != "" {
@@ -305,6 +336,12 @@ func Admit(req LaunchRequest) (Launch, error) {
 	}
 	if req.Assistant == AssistantCodex && req.Language != "" {
 		codexInstructions = append(codexInstructions, codexBoardLanguageInstruction(req.Language))
+	}
+	if req.Memory != "" {
+		personaArgs = append(personaArgs, MemoryArgs(req.Assistant, req.Memory)...)
+		if req.Assistant == AssistantCodex {
+			codexInstructions = append(codexInstructions, req.Memory)
+		}
 	}
 	if len(codexInstructions) > 0 {
 		codexInstructions = append(codexInstructions, codexNoteInstruction)

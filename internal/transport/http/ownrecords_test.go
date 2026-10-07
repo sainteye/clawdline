@@ -48,6 +48,29 @@ func TestAnOwnTaskIsTiedOnlyToItsOwnProcess(t *testing.T) {
 	}
 }
 
+// The assistant in a child's tmux session starts as soon as the session
+// exists, and SpawnedAt is stamped only after the tab that shows it has
+// opened. A child whose process predates SpawnedAt by more than the tolerance
+// is still that task's child as long as it started after the task was created.
+func TestAChildStartedBeforeItsTabFinishedOpeningIsStillTheTasksChild(t *testing.T) {
+	r := orchestrator.Record{ID: "t2", Assistant: "codex", State: orchestrator.StateSuccess, ChildTerminalID: "%42",
+		CreatedAt: time.Unix(1000, 0), SpawnedAt: time.Unix(1021, 0), FinishedAt: time.Unix(1055, 0),
+		Landing: &orchestrator.Landing{State: orchestrator.LandingPending}}
+	live := swiftstore.Live{TerminalID: "%42", TTY: "ttys009", Assistant: "codex", PID: 4242,
+		ProcessStart: time.Unix(1002, 0), ConversationID: "c2"}
+
+	got := ownTasks([]orchestrator.Record{r}, map[string]swiftstore.Live{"%42": live})[0]
+	if !got.TranscriptProven || got.ChildPID == nil || *got.ChildPID != 4242 {
+		t.Fatalf("a child that started while its tab was opening was not tied to its task: %+v", got)
+	}
+
+	older := live
+	older.ProcessStart = time.Unix(900, 0)
+	if got := ownTasks([]orchestrator.Record{r}, map[string]swiftstore.Live{"%42": older})[0]; got.TranscriptProven {
+		t.Fatal("a process from before the task existed was taken for its child")
+	}
+}
+
 // The coordination plane names sessions by conversation; a row is a terminal.
 // A conversation exactly one terminal holds is named by it, and one two
 // terminals claim names neither.

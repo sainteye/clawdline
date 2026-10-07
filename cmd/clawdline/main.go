@@ -175,6 +175,9 @@ func main() {
 		boardCommand(os.Args[2:])
 	case "project":
 		projectCommand(os.Args[2:])
+	case "memory":
+		// A Project's shared memory, for Claude and Codex alike (memory.go).
+		memoryCommand(os.Args[2:])
 	case "task":
 		taskCommand(os.Args[2:])
 	case "webhook":
@@ -453,9 +456,9 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|setup|update|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|memory|task|webhook|setup|update|version>")
 	fmt.Fprintln(os.Stderr, "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed")
-	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there")
+	fmt.Fprintln(os.Stderr, "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline and ~/.agents/skills/clawdline, or put back what was there")
 	fmt.Fprintln(os.Stderr, "  report --status <file> [--repo dir] [--open] <commit>…   a turn's status report as one local HTML file; prints its file:// address last")
 	fmt.Fprintln(os.Stderr, "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval")
 	fmt.Fprintln(os.Stderr, "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role")
@@ -484,6 +487,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only")
 	fmt.Fprintln(os.Stderr, "  project <add|remove|list>    explicitly keep directories in the session-start list")
 	fmt.Fprintln(os.Stderr, "  project unify [--apply|--check] [dir]   one rules file and one skills directory for Claude and Codex; --check exits 0 unified, 1 drifting, 3 unknown")
+	fmt.Fprintln(os.Stderr, "  memory <list|show|add|update|forget|import>   the Project's shared memory, one store for Claude and Codex")
 	fmt.Fprintln(os.Stderr, "  task accept [--port n] <task dir>   a child signing for its briefing; secret from CLAWDLINE_TASK_SECRET or stdin")
 	fmt.Fprintln(os.Stderr, "  task finish [--port n] <task dir>   a child's result, validated and put in place; no node needed")
 	fmt.Fprintln(os.Stderr, "  task show [--json] <task id>        one child task, compactly: state, summary, leftovers, landing; reading a finished one closes its notice")

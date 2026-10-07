@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "projects.schema.json",
   "title": "Projects",
-  "description": "What the Projects page reads. GET /v1/places is the Swift app's StartPoints list. GET /v1/projects is the Board store's Project catalog, read-only, joined with those places the way ProjectBoardIntegration joins them. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route. GET and POST /v1/projects/:id/unify plan and apply one rules file and one skills directory for Claude and Codex (docs/project-files.md, Unify).",
+  "description": "What the Projects page reads. GET /v1/places is the Swift app's StartPoints list. GET /v1/projects is the Board store's Project catalog, read-only, joined with those places the way ProjectBoardIntegration joins them. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route. GET and POST /v1/projects/:id/unify plan and apply one rules file and one skills directory for Claude and Codex (docs/project-files.md, Unify). GET and POST /v1/projects/:id/memory list and add the Project's shared memory; GET, PUT and DELETE /v1/projects/:id/memory/:name show, update and forget one entry (docs/project-memory.md).",
   "$defs": {
     "StartAvailability": {
       "description": "AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.",
@@ -559,6 +559,60 @@
         "skills": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifySkill" } },
         "actions": { "description": "In the order apply performs them.", "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyAction" } },
         "conflicts": { "type": "array", "items": { "$ref": "#/$defs/ProjectUnifyConflict" } }
+      }
+    },
+    "ProjectMemoryType": {
+      "description": "An entry's kind, the four Claude Code's auto-memory uses.",
+      "type": "string",
+      "enum": ["user", "feedback", "project", "reference"]
+    },
+    "ProjectMemorySummary": {
+      "description": "One entry as a listing shows it, without its body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "type"],
+      "properties": {
+        "name": { "description": "Lowercase letters, digits and single hyphens, at most 64 bytes.", "type": "string" },
+        "description": { "description": "One line, at most 512 bytes.", "type": "string" },
+        "type": { "$ref": "#/$defs/ProjectMemoryType" }
+      }
+    },
+    "ProjectMemoryEntry": {
+      "description": "One entry in full: the body of POST /v1/projects/:id/memory and of PUT /v1/projects/:id/memory/:name, whose name must be the path's, and the answer to GET /v1/projects/:id/memory/:name.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "type", "body"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "$ref": "#/$defs/ProjectMemoryType" },
+        "body": { "description": "Markdown, at most 64 KiB.", "type": "string" }
+      }
+    },
+    "ProjectMemoryList": {
+      "description": "GET /v1/projects/:id/memory: every entry, and the index a launched session is given. An index cut at its 8 KiB bound says so in index_cut and in its last line; entries always lists every entry.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_key", "entries", "index", "index_cut"],
+      "properties": {
+        "project_key": { "description": "The repository key the store is filed under: the key the broker names worktree directories by.", "type": "string" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/ProjectMemorySummary" } },
+        "index": { "description": "Empty when there are no entries.", "type": "string" },
+        "index_cut": { "type": "boolean" }
+      }
+    },
+    "ProjectMemoryOutcome": {
+      "description": "What a write did. `unchanged` is the same entry sent again, which is how a retried add or update is answered.",
+      "type": "string",
+      "enum": ["created", "updated", "unchanged", "forgotten"]
+    },
+    "ProjectMemoryWriteAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "outcome"],
+      "properties": {
+        "name": { "type": "string" },
+        "outcome": { "$ref": "#/$defs/ProjectMemoryOutcome" }
       }
     },
     "ProjectUnifyApply": {

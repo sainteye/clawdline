@@ -207,15 +207,22 @@ func ownTasks(records []orchestrator.Record, byTerminal map[string]swiftstore.Li
 
 // ownChild is whether the live session in a record's child terminal is that
 // task's child: the same assistant, a fully read process, and a process that
-// was running between the tab's opening and the task's end.
+// was started between the task's creation and its end.
+//
+// The lower bound is the creation, not SpawnedAt. SpawnedAt is stamped after
+// the opener returns, and the assistant in a tmux session starts the moment
+// the session exists: opening the iTerm2 tab that shows it took 19 seconds on
+// 2026-10-07, so every child process looked older than its own tab and every
+// finished child read as "status unknown". A process from before the task
+// existed is still somebody else's.
 func ownChild(r orchestrator.Record, l swiftstore.Live) bool {
 	if l.Assistant == "" || l.Assistant != r.Assistant || l.PID == 0 || l.ProcessStart.IsZero() ||
 		l.ConversationID == "" {
 		return false
 	}
-	opened := r.SpawnedAt
+	opened := r.CreatedAt
 	if opened.IsZero() {
-		opened = r.CreatedAt
+		opened = r.SpawnedAt
 	}
 	if l.ProcessStart.Before(opened.Add(-ownStartTolerance)) {
 		return false
