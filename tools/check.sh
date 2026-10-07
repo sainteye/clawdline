@@ -86,6 +86,7 @@ check "go test ./..." go test ./...
 check "contract-gen -check" go run ./tools/contract-gen -check
 check "check-legacy-css.sh" tools/check-legacy-css.sh
 check "check-machine-words.sh" tools/check-machine-words.sh
+check "check-shell-expansions.sh" tools/check-shell-expansions.sh
 check "check-private.sh" tools/check-private.sh
 check "check-private.sh -history -new" tools/check-private.sh -history -new
 if [ "$web" = yes ]; then

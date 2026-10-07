@@ -63,7 +63,11 @@ unset VITE_HOSTED_CONSOLE CLAWDLINE_WEB_SOURCE || true
 mkdir -p "$out"
 out=$(cd "$out" && pwd -P)
 work=$(mktemp -d)
-trap 'rm -rf -- "$work"' EXIT
+# finished: macOS's /bin/bash 3.2 exits 0 after an unbound-variable error when
+# an EXIT trap runs, so a build that stopped half-way reported success
+# (v0.10.0, 2026-10-07). A run that did not reach its last line fails.
+finished=0
+trap 's=$?; rm -rf -- "$work"; if [ "$finished" != 1 ] && [ "$s" = 0 ]; then exit 1; fi' EXIT
 
 if [ "$tests" = 1 ]; then
   ( umask 022; go test ./... )
@@ -90,7 +94,7 @@ for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64; do
   goos=${target%/*} goarch=${target#*/}
   stage="$work/$goos-$goarch"
   mkdir -p "$stage"
-  echo "building $goos/$goarch…"
+  echo "building ${goos}/${goarch}…"
   CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -trimpath -buildvcs=true -ldflags "$ldflags" \
     -o "$stage/clawdline" ./cmd/clawdline
   cp -R "$dist" "$stage/dist"
@@ -114,3 +118,4 @@ args=(-version "$version" -commit "$commit" -committed-at "$committed_at" -chann
 [ -z "$min_version" ] || args+=(-min-version "$min_version")
 go run ./tools/release manifest "${args[@]}" "$out"
 echo "release $version ($commit) built in $out; sign it with: go run ./tools/release sign -key <file> $out"
+finished=1
