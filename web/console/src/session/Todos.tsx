@@ -1,5 +1,6 @@
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
+import { closingMark } from "../punctuation.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { RefusalError, asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
 import { NeedsUpdate } from "../machine/NeedsUpdate.js"
@@ -287,7 +288,7 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
             aria-busy={pending?.decision === decision.id && pending.option === option.id}
             onClick={() => void answer(decision, option)}>
             {pending?.decision === decision.id && pending.option === option.id ? catalogWord("literal", "84b95f498939") : option.label}</button>)}</div>}
-      {pending?.decision === decision.id && <p role="status" className="session-owned-decision-note">{catalogWord("inline", "56bf73fe1d04")}{pending.label}」…</p>}
+      {pending?.decision === decision.id && <p role="status" className="session-owned-decision-note">{catalogWord("inline", "56bf73fe1d04")}{pending.label}{closingMark(catalogWord("inline", "56bf73fe1d04"))}…</p>}
       {errors[decision.id] && <p role="alert" className="session-owned-decision-note">{errors[decision.id]}</p>}
     </section>)}
     {Object.entries(receipts).filter(([id]) => !decisions.some((decision) => decision.id === id)).map(([id, words]) =>

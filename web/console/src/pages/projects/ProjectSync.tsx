@@ -1,6 +1,7 @@
 import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
+import { clauseSeparator, fullStop, labelled, listSeparator, openingMark, parenthesized, wordGap } from "../../punctuation.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { Icon } from "@clawdline/contract"
 import { Mark } from "../../session/List.js"
@@ -42,8 +43,8 @@ function describe(r: SyncResult): string {
   const parts = [STATE_WORDS[r.state] ?? r.state]
   if (r.written.length) parts.push(catalogFormat("template", "407ed506af73", [r.written.length]))
   if (r.deleted.length) parts.push(catalogFormat("template", "be0401614399", [r.deleted.length]))
-  for (const k of r.kept) parts.push(`${k.path}：${KEPT_WORDS[k.reason] ?? k.reason}`)
-  return parts.join("，")
+  for (const k of r.kept) parts.push(labelled(k.path, KEPT_WORDS[k.reason] ?? k.reason))
+  return parts.join(clauseSeparator())
 }
 
 function when(at: number): string {
@@ -108,11 +109,11 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
           if (!now || now.revision === record.revision) continue
           const entry = await seam.read<{ project: SyncEntry }>(machine, "project-entry", { repo: record.repo })
           const answer = await applyProjectMirror(record.source, entry.project, false)
-          done.push(`${entry.project.label}（${record.repo}）：${describe(answer.result)}`)
+          done.push(labelled(entry.project.label + parenthesized(record.repo), describe(answer.result)))
         }
       } catch (e) {
         const name = others.find((x) => x.id === machine)?.name || records[0]?.source.name || machine
-        done.push(`${name}：${failureSentence(e, failed())}`)
+        done.push(labelled(name, failureSentence(e, failed())))
       }
     }
     const offline = [...waiting].map((name) => catalogFormat("template", "8861d1642b3c", [name]))
@@ -145,7 +146,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       setManifest(offer)
       setPicked(new Set(offer.projects.map((p) => p.repo)))
     } catch (e) {
-      setError(`${source.name}：${failureSentence(e, failed())}`)
+      setError(labelled(source.name, failureSentence(e, failed())))
     } finally { setBusy(false) }
   }
 
@@ -159,12 +160,12 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       try {
         // A failed read is the source's; name it so the line says which machine did not answer.
         const entry = await seam.read<{ project: SyncEntry }>(source.id, "project-entry", { repo: p.repo })
-          .catch((e) => { throw Object.assign(new Error(`${source.name}：${failureSentence(e, failed())}`), { named: true }) })
+          .catch((e) => { throw Object.assign(new Error(labelled(source.name, failureSentence(e, failed()))), { named: true }) })
         const answer = await applyProjectMirror(from, entry.project, clone)
-        out.push(`${p.label}（${p.repo}）：${describe(answer.result)}`)
+        out.push(labelled(p.label + parenthesized(p.repo), describe(answer.result)))
       } catch (e) {
         const why = (e as { named?: boolean }).named ? (e as Error).message : failureSentence(e, failed())
-        out.push(`${p.label}（${p.repo}）：${why}`)
+        out.push(labelled(p.label + parenthesized(p.repo), why))
       }
       setLines([...out])
     }
@@ -190,11 +191,11 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
 
   return <details className="project-sync" hidden={!shown}>
     <summary>{catalogWord("inline", "58b55ad71df6")}</summary>
-    <p>{catalogWord("inline", "efd366b4e300")}
-      <code>{catalogWord("inline", "791c5105d4bf")}</code>、<code>{catalogWord("inline", "84daedef39b3")}</code>、<code>{catalogWord("inline", "a8532c746aa9")}</code>{catalogWord("inline", "2b30dbf16241")} <code>{catalogWord("inline", "13230e1aea91")}</code>{catalogWord("inline", "955dc54b5b20")} <code>{catalogWord("inline", "181fdd46fc4a")}</code>{catalogWord("inline", "fc80320b2ca5")}
-      <code>{catalogWord("inline", "fca16cae5b0e")}</code>{catalogWord("inline", "7633dc8d1def")}
+    <p>{catalogWord("inline", "efd366b4e300")}{wordGap()}
+      <code>{catalogWord("inline", "791c5105d4bf")}</code>{listSeparator()}<code>{catalogWord("inline", "84daedef39b3")}</code>{listSeparator()}<code>{catalogWord("inline", "a8532c746aa9")}</code>{wordGap()}{catalogWord("inline", "2b30dbf16241")} <code>{catalogWord("inline", "13230e1aea91")}</code>{catalogWord("inline", "955dc54b5b20")} <code>{catalogWord("inline", "181fdd46fc4a")}</code>{catalogWord("inline", "fc80320b2ca5")}{wordGap()}
+      <code>{catalogWord("inline", "fca16cae5b0e")}</code>{wordGap()}{catalogWord("inline", "7633dc8d1def")}
     </p>
-    {!seam && <p>{catalogWord("inline", "e9bebcc7e5af")} <code>{catalogWord("inline", "5f25c3304e10")}</code>{catalogWord("inline", "92da784ad71b")} <code>{catalogWord("inline", "321e64eaf5eb")}</code>。</p>}
+    {!seam && <p>{catalogWord("inline", "e9bebcc7e5af")} <code>{catalogWord("inline", "5f25c3304e10")}</code>{wordGap()}{catalogWord("inline", "92da784ad71b")} <code>{catalogWord("inline", "321e64eaf5eb")}</code>{fullStop()}</p>}
 
     {mirror && mirror.projects.length > 0 && <div className="project-sync-list">
       <h4>{catalogWord("inline", "12bc87aee711")}</h4>
@@ -206,7 +207,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
     </div>}
     {mirror && mirror.clones.length > 0 && <div className="project-sync-list">
       {mirror.clones.map((c) => <p key={c.repo} role={c.state === "clone_failed" ? "alert" : "status"}>
-        {c.repo}：{STATE_WORDS[c.state]}{c.error ? `（${c.error}）` : ""} → {c.dest}
+        {labelled(c.repo, STATE_WORDS[c.state] ?? c.state)}{c.error ? parenthesized(c.error) : ""} → {c.dest}
       </p>)}
     </div>}
 
@@ -220,7 +221,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
         </select>
       </label>
       {source?.online === false && <p className="project-sync-offline" role="status">
-        「{source.name}{catalogWord("inline", "bee4fb5a17bb")}
+        {openingMark(catalogWord("inline", "bee4fb5a17bb"))}{source.name}{catalogWord("inline", "bee4fb5a17bb")}
       </p>}
       <div className="project-sync-actions">
         <button type="button" disabled={!source || source.online === false || busy} onClick={() => void readSource()}>{busy && !manifest ? catalogWord("literal", "0d6fca356d81") : catalogWord("literal", "672c0aa99301")}</button>
@@ -243,7 +244,7 @@ export function ProjectSync({ shown, changed }: { shown: boolean; changed: () =>
       })}
       {manifest.skipped.length > 0 && <details>
         <summary>{catalogFormat("count", "unsyncedProjects", [manifest.skipped.length])}</summary>
-        {manifest.skipped.map((s) => <p key={s.path}>{s.label}：{SKIP_WORDS[s.reason] ?? s.reason}</p>)}
+        {manifest.skipped.map((s) => <p key={s.path}>{labelled(s.label, SKIP_WORDS[s.reason] ?? s.reason)}</p>)}
       </details>}
       <label className="project-sync-row">
         <input type="checkbox" checked={clone} disabled={busy} onChange={(e) => setClone(e.target.checked)} />

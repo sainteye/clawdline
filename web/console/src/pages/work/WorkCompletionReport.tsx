@@ -1,5 +1,6 @@
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
+import { catalogLabel } from "../../punctuation.js"
 import * as L from "../../legacy/bridge.js"
 import type { WorkV2Document, WorkV2Item } from "./api.js"
 import { completionReportsNewestFirst } from "./completion-report-order.js"
@@ -75,7 +76,7 @@ function WorkDocuments({ documents, label, heading, authority, expanded = false 
       <p className="work-completion-report-authority">{authority(document)}</p>
       <div className="work-completion-report-body"
         dangerouslySetInnerHTML={{ __html: L.richTextHTML(completionReportText(document.body)) }} />
-      {document.reference && <p className="work-completion-report-reference">{catalogWord("inline", "288dc4aa648d")}{document.reference}</p>}
+      {document.reference && <p className="work-completion-report-reference">{catalogLabel("inline", "288dc4aa648d")}{document.reference}</p>}
     </details>)}
   </section>
 }

@@ -1,4 +1,5 @@
 import { catalogRefusalDetail, catalogWord } from "../../catalog.js"
+import { closingMark, fullStop } from "../../punctuation.js"
 import { client, mayWriteThroughCurrentTransport } from "../../client.js"
 import type { SquadReceipt, SquadSession, SquadView } from "./model.js"
 import { squadView, type WireCatalog, type WireSettings } from "./wire.js"
@@ -83,7 +84,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const body = value as { error?: string | { code?: string; message?: string }; detail?: string }
     const code = typeof body?.error === "string" ? body.error : body?.error?.code ?? "request_failed"
-    const detail = catalogRefusalDetail(body) || { text: catalogWord("literal", "cd4cc76ef07a") + response.status + "）。" }
+    const detail = catalogRefusalDetail(body) || { text: catalogWord("literal", "cd4cc76ef07a") + response.status + closingMark(catalogWord("literal", "cd4cc76ef07a")) + fullStop() }
     throw new SquadError(code, detail.text, response.status)
   }
   return value as T

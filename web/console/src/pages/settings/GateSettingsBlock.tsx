@@ -1,4 +1,5 @@
 import { catalogWord } from "../../catalog.js"
+import { labelled } from "../../punctuation.js"
 import { useCallback, useEffect, useState } from "react"
 import type { WorkGateSettingsSnapshot } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
@@ -116,7 +117,7 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
       )}
       {current ? (
         <div className="settings-gate-mode" role="status" aria-live="polite">
-          <strong>{catalogWord("literal", "cd9dd176be81")}：{current.label}</strong>
+          <strong>{labelled(catalogWord("literal", "cd9dd176be81"), current.label)}</strong>
           <span>{current.description}</span>
         </div>
       ) : (

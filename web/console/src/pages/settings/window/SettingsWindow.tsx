@@ -750,7 +750,7 @@ export function SettingsWindow() {
       const at = new Date(cloud.connected_since * 1000).toLocaleString()
       lines.push({
         text: drops.length
-          ? fill(W.webCloudStatusDropped, { at, list: drops.map(([name, count]) => `${name} ${count}`).join("、") })
+          ? fill(W.webCloudStatusDropped, { at, list: drops.map(([name, count]) => `${name} ${count}`).join(document.documentElement.lang === "zh-Hant" ? "、" : ", ") })
           : fill(W.webCloudStatusNoDrops, { at }),
         dot: drops.length ? "warn" : "idle",
       })

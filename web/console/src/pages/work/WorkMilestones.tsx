@@ -1,4 +1,5 @@
 import { catalogWord } from "../../catalog.js"
+import { labelled } from "../../punctuation.js"
 import type { WorkV2Phase } from "./api.js"
 import { workMilestones, workMilestonesShown } from "./work-milestones.js"
 import { WorkIcon } from "./WorkIcon.js"
@@ -8,7 +9,7 @@ export function WorkMilestones({ phase, verifyGate }: { phase: WorkV2Phase; veri
   return <ol className="work-milestones" aria-label={catalogWord("inline", "7a6e9f7f44ea")}>
     {workMilestones(phase, verifyGate).map(({ label, state }) => {
       return <li key={label} data-state={state}
-        aria-label={`${label}：${state === "done" ? catalogWord("literal", "d9f7294e59ea") : state === "current" ? catalogWord("literal", "2c65ed1ce8be") : catalogWord("literal", "caa636f04eb1")}`}>
+        aria-label={labelled(label, state === "done" ? catalogWord("literal", "d9f7294e59ea") : state === "current" ? catalogWord("literal", "2c65ed1ce8be") : catalogWord("literal", "caa636f04eb1"))}>
         <WorkIcon name={state === "done" ? "check" : state === "current" ? "dot" : "circle"} />{label}
       </li>
     })}
