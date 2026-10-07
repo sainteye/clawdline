@@ -570,6 +570,8 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/waits/"}, s.waitsRoute},
 		{Route{"*", "/v1/orchestrator/leases"}, s.leasesRoute},
 		{Route{"*", "/v1/orchestrator/leases/"}, s.leasesRoute},
+		{Route{"*", "/v1/orchestrator/pauses"}, s.sessionPausesRoute},
+		{Route{"*", "/v1/orchestrator/pauses/"}, s.sessionPausesRoute},
 		{Route{"*", "/v1/orchestrator/completions"}, s.completionsRoute},
 		{Route{"*", "/v1/orchestrator/completions/"}, s.completionsRoute},
 		{Route{"*", "/v1/orchestrator/detached-tasks"}, s.brokerDetached},

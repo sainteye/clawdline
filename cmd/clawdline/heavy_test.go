@@ -430,7 +430,7 @@ func TestHeavyHandoff(t *testing.T) {
 					t.Fatalf("callback body %v", body)
 				}
 				argv := body["argv"].([]any)
-				if strings.Join([]string{argv[0].(string), argv[1].(string)}, " ") != "/usr/local/bin/clawdline heavy" || strings.Contains(strings.Join(anyStrings(argv), " "), "--handoff") || argv[len(argv)-3] != "go" {
+				if strings.Join([]string{argv[0].(string), argv[1].(string)}, " ") != "/usr/local/bin/clawdline heavy" || !strings.Contains(strings.Join(anyStrings(argv), " "), "--handoff=false") || argv[len(argv)-3] != "go" {
 					t.Fatalf("callback argv %v", argv)
 				}
 				if tc.name == "busy slot" {

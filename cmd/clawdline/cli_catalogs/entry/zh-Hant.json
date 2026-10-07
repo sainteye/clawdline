@@ -6,6 +6,7 @@
   "main_clawdline_type_needs_text": "clawdline type 需要文字",
   "main_cloud_status_on_off_login_connect": "  cloud <status|on|off|login|connect>   連接 app.clawdline.com 的通道；預設關閉",
   "main_coordinator_bind_conversation_id_register_this": "  coordinator bind [--conversation id]   註冊此機器工作區的 Session，或重新綁定離線角色",
+  "main_coordination_resources": "  coordination <status|pause|observed|safe|wake|resumed|retry|run>   協調 Session 資源與安全停點暫停",
   "main_devices_revoke_id_the_browsers_and": "  devices [revoke <id>]     直接登入此機器的瀏覽器及裝置；可撤銷其中一個",
   "main_dir_s": "目錄      %s\n",
   "main_dispatch_title_t_claims_a_b": "  dispatch --title <t> --claims a,b < brief   派出所屬子任務：一次完成 task.json、清單及 POST",

@@ -1785,8 +1785,8 @@ message, not a lock or a file watch.
 - `409 owner_busy` and `502 request_delivery_failed` mean **the wait was recorded** but the owner
   was not told yet. `502 release_incomplete` lists who is still pending: send the release again.
 
-**Leases.** Two resources: `heavy_compile` (the machine's one compile slot) and `landing` (one per
-checkout).
+**Leases.** Three resources: `heavy_compile` (the machine's one compile slot), `landing` (one per
+checkout), and `daemon_restart` (one machine-wide restart window).
 
 **Run a build or a test suite through `clawdline heavy -- <command>`**, not bare. It queues for
 `heavy_compile`, waits until the machine has memory available (a quarter of it, at most 1 GB, and
@@ -1800,7 +1800,11 @@ prints one line when the wait starts and one when it ends, nothing in between: w
 long (§2, "Waiting on a long command"). A `heavy` inside a `heavy` runs directly. `--min-available 1500M` asks for more; `--no-slot` checks memory only. In a repository
 that has it, `tools/heavy.sh <command>` finds the binary for you.
 
-`heavy --handoff` starts a callback only when it would wait; it then exits **76** with the callback id and queue position when known. End your turn and wait for the notice. `tools/check.sh` enables this by default; a child, missing conversation, refused callback, or unreachable daemon keeps waiting in place.
+`heavy` starts a callback by default when a Root would wait; it then exits **76** with the callback id and queue position when known. End your turn and wait for the notice. `tools/check.sh` enables this by default; a child, missing conversation, refused callback, or unreachable daemon keeps waiting in place.
+
+**Session pause and wake.** Read `docs/session-resource-coordination.md` before ordering conflicting work. `clawdline coordination status` shows durable pause receipts. `clawdline coordination pause --reason "…" --wake "lease:heavy_compile" <target conversation id>…` accepts a request and tries to deliver it. The receiver finishes important commands, runs `clawdline coordination observed <request id>`, then `clawdline coordination safe <request id>` at a safe turn boundary and ends its model turn. Only that final receiver receipt means paused. Use `wake <request id>` after the condition holds; the receiver runs `resumed <request id>` and still acquires its lease or confirms its wait release before working. `retry <request id>` reattempts failed or uncertain delivery. A new registered Clawdfather can wake its offline predecessor's parked Session. Do not poll from a waiting model turn.
+
+For an exclusive landing or daemon restart, run `clawdline coordination run --resource landing --checkout /absolute/checkout -- <command>` or `--resource daemon_restart -- <command>`. This wrapper refuses to run without a grant, renews while the command runs, and releases afterward. A queued Root operation goes into a callback by default, returns **76**, and wakes the Session with its result. A callback, not a model turn, may keep the queue place alive. Use `heavy` for a build. A restart must still use the established maintenance procedure and verify `GET /` afterward.
 
 - `POST /v1/orchestrator/leases` —
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`.

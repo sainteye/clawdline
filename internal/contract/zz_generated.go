@@ -3196,12 +3196,13 @@ type LeaseRequest struct {
 type LeaseResource string
 
 const (
-	LeaseResourceHeavyCompile LeaseResource = "heavy_compile"
-	LeaseResourceLanding      LeaseResource = "landing"
+	LeaseResourceHeavyCompile  LeaseResource = "heavy_compile"
+	LeaseResourceLanding       LeaseResource = "landing"
+	LeaseResourceDaemonRestart LeaseResource = "daemon_restart"
 )
 
 // LeaseResourceValues is every value the contract allows, in contract order.
-var LeaseResourceValues = []LeaseResource{LeaseResourceHeavyCompile, LeaseResourceLanding}
+var LeaseResourceValues = []LeaseResource{LeaseResourceHeavyCompile, LeaseResourceLanding, LeaseResourceDaemonRestart}
 
 type LeaseWaiter struct {
 	Holder string `json:"holder"`
@@ -5423,6 +5424,43 @@ type SessionModel struct {
 	Command string `json:"command"`
 	ID      string `json:"id"`
 	Name    string `json:"name"`
+}
+
+// One durable pause and wake receipt. Safe point is receiver acknowledged,
+// never inferred from delivery.
+type SessionPause struct {
+	AcceptedAt         int64  `json:"accepted_at"`
+	DeliveredAt        int64  `json:"delivered_at,omitempty"`
+	DeliveryError      string `json:"delivery_error,omitempty"`
+	ID                 string `json:"id"`
+	ObservedAt         int64  `json:"observed_at,omitempty"`
+	Reason             string `json:"reason"`
+	RequesterSessionID string `json:"requester_session_id"`
+	ResumedAt          int64  `json:"resumed_at,omitempty"`
+	SafeAt             int64  `json:"safe_at,omitempty"`
+	State              string `json:"state"`
+	TargetSessionID    string `json:"target_session_id"`
+	WakeCondition      string `json:"wake_condition"`
+	WakeDeliveredAt    int64  `json:"wake_delivered_at,omitempty"`
+	WakeError          string `json:"wake_error,omitempty"`
+	WakeRequestedAt    int64  `json:"wake_requested_at,omitempty"`
+}
+
+// GET /v1/orchestrator/pauses.
+type SessionPauseList struct {
+	At     int64          `json:"at"`
+	Pauses []SessionPause `json:"pauses"`
+	Source string         `json:"source"`
+}
+
+// POST /v1/orchestrator/pauses. Only the registered online coordinator may
+// request a pause. A duplicate request_id with identical details is idempotent.
+type SessionPauseRequest struct {
+	Reason             string `json:"reason"`
+	RequestID          string `json:"request_id"`
+	RequesterSessionID string `json:"requester_session_id"`
+	TargetSessionID    string `json:"target_session_id"`
+	WakeCondition      string `json:"wake_condition"`
 }
 
 // One assistant session. Fields that cannot be supported are absent rather than

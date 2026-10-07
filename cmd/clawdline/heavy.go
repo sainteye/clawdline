@@ -139,7 +139,7 @@ func heavyCommand(args []string) {
 	minAvail := fs.String("min-available", "", "memory that must be available first, e.g. 1500M or 1G (default: a quarter of the machine, at most 1G)")
 	wait := fs.Duration("max-wait", heavyDefaultWait, "how long to wait for the slot and memory; past it the command is not run and heavy exits 75")
 	noSlot := fs.Bool("no-slot", false, "check memory only; do not queue for the compile slot")
-	handoff := fs.Bool("handoff", false, "hand a queued wait to a callback and exit 76")
+	handoff := fs.Bool("handoff", true, "hand a queued wait to a callback and exit 76 (default for a root Session)")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() == 0 {
 		heavyUsage()
@@ -466,6 +466,7 @@ func heavyHandoff(opts heavyOptions, argv []string, d heavyDeps) (string, error)
 		cmd = append(cmd, "--min-available", strconv.FormatInt(opts.minAvailable, 10))
 	}
 	cmd = append(cmd, "--max-wait", opts.wait.String())
+	cmd = append(cmd, "--handoff=false")
 	if opts.noSlot {
 		cmd = append(cmd, "--no-slot")
 	}

@@ -1525,11 +1525,15 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - `409 owner_busy` 和 `502 request_delivery_failed` 表示 **wait 已經記下來了**，只是還沒通知到 owner。
   `502 release_incomplete` 會列出還有誰沒通知到：再送一次 release。
 
-**Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
+**Lease。** 三種資源：`heavy_compile`（整台機器唯一的重度編譯名額）、`landing`（每份 checkout 一個）與 `daemon_restart`（整台機器唯一的重新啟動時段）。
 
 **編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。daemon 沒回應、或被它看不懂的理由拒絕時，它不會因此不編譯：照樣執行指令，並在 stderr 說明。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
 
-`heavy --handoff` 只在需要等待時啟動 callback，並以 **76** 結束，印出 callback ID 與已知的排隊位置。這時結束這個 turn，等待通知。`tools/check.sh` 預設啟用；child、缺少 conversation ID、callback 被拒絕或 daemon 無法連線時，仍在原處等待。
+Root 的 `heavy` 預設在需要等待時啟動 callback，並以 **76** 結束，印出 callback ID 與已知的排隊位置。這時結束這個 turn，等待通知。`tools/check.sh` 預設啟用；child、缺少 conversation ID、callback 被拒絕或 daemon 無法連線時，仍在原處等待。
+
+**Session 暫停與喚醒。** 排列衝突工作前，先讀 `docs/session-resource-coordination.md`。`clawdline coordination status` 顯示持久化的暫停回執。`clawdline coordination pause --reason "…" --wake "lease:heavy_compile" <目標對話 ID>…` 接受指令並嘗試送達。收件 Session 完成重要命令後執行 `clawdline coordination observed <指令 ID>`，到安全停點再執行 `clawdline coordination safe <指令 ID>`，然後結束模型回合。只有最後一筆收件者回執代表已暫停。條件成立後執行 `wake <指令 ID>`；收件者執行 `resumed <指令 ID>`，且仍須先取得租約或確認等待已釋放，才能工作。`retry <指令 ID>` 可重試失敗或結果不明的送達。新的已註冊 Clawdfather 可以喚醒離線前任留下的 Session。候位期間不要讓模型回合定期輪詢。
+
+主線落地或 daemon 重新啟動須使用 `clawdline coordination run --resource landing --checkout /絕對路徑 -- <指令>` 或 `--resource daemon_restart -- <指令>`。沒有授予租約時不會執行，執行期間續租，結束後釋放。Root 候位操作預設交給 callback，以 **76** 結束，完成後通知 Session。callback 可維持候位，模型回合不必留著。編譯用 `heavy`。重新啟動仍須遵守既有 maintenance 流程，並在之後確認 `GET /`。
 
 - `POST /v1/orchestrator/leases`——
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。

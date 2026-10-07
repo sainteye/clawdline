@@ -22,6 +22,8 @@ The current start action opens a neutral Session and returns `registration: pend
 
 The Clawdfather mark opens a short list of machine-stewardship suggestions in place of that Session's ordinary Snippets entry. Choosing one inserts its prompt into the composer for review; it does not send or execute anything.
 
+**Coordinate Session resources** opens a read of Sessions, lease holders and queue positions, file waits, task/callback records and durable pause receipts. Each source keeps its observation time or a named read error. Its suggested request asks Clawdfather to order conflicting operations using the existing leases and waits. The pause protocol waits for the receiver's safe-point receipt before calling it paused; `docs/session-resource-coordination.md` records the flow and recovery rules.
+
 ## Choices and trade-offs
 
 A plain empty directory would need no new server code but would appear as a Project and permit Project assignment. Removing the role would simplify the product but leave no named machine steward for recurring management work. Allowing arbitrary edits to other Projects would be flexible but would erase the boundary between machine management and item ownership. This design keeps the role narrow and uses the existing audited operations.

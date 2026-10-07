@@ -1,8 +1,9 @@
 import { catalogWord } from "../catalog.js"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { SidebarIcon, type SidebarIconName } from "../SidebarIcon.js"
 import { appendToComposer } from "../legacy/snippets-bridge.js"
+import { ResourceCoordination } from "./ResourceCoordination.js"
 import "./clawdfather-suggestions.css"
 
 type Suggestion = { title: string; prompt: string; icon: SidebarIconName }
@@ -17,6 +18,7 @@ const suggestions = [
 
 export function ClawdfatherSuggestions({ onClose }: { onClose: () => void }) {
   const first = useRef<HTMLButtonElement>(null)
+  const [coordination, setCoordination] = useState(false)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
   const rows: Suggestion[] = suggestions.map((item) => ({
@@ -60,11 +62,16 @@ export function ClawdfatherSuggestions({ onClose }: { onClose: () => void }) {
       <div className="sheet clawdfather-suggestions" role="dialog" aria-modal="true"
         aria-labelledby="clawdfather-suggestions-title" onClick={(event) => event.stopPropagation()}>
         <div className="clawdfather-suggestions-head">
-          <h2 id="clawdfather-suggestions-title">{catalogWord("literal", "56aed5587136")}</h2>
+          <h2 id="clawdfather-suggestions-title">{coordination ? catalogWord("resourceCoordination", "title") : catalogWord("literal", "56aed5587136")}</h2>
           <button type="button" className="clawdfather-suggestions-close" onClick={close}
             aria-label={catalogWord("literal", "4d8822d96b94")}>×</button>
         </div>
-        <div className="clawdfather-suggestions-list">
+        {coordination ? <ResourceCoordination onBack={() => setCoordination(false)}
+          onAsk={() => pick(catalogWord("resourceCoordination", "prompt"))} /> : <div className="clawdfather-suggestions-list">
+          <button type="button" onClick={() => setCoordination(true)}>
+            <SidebarIcon name="work" />
+            <span>{catalogWord("resourceCoordination", "title")}</span>
+          </button>
           {rows.map((item, index) => (
             <button key={item.title} type="button" ref={index === 0 ? first : undefined}
               onClick={() => pick(item.prompt)}>
@@ -72,7 +79,7 @@ export function ClawdfatherSuggestions({ onClose }: { onClose: () => void }) {
               <span>{item.title}</span>
             </button>
           ))}
-        </div>
+        </div>}
       </div>
     </div>,
     document.body,

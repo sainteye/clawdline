@@ -98,6 +98,8 @@ Clawdfather does not edit Clawdline or any other Project's source code. When you
 
 Opening the neutral Session is not itself a coordinator registration. In that Session, run `clawdline coordinator bind` after its conversation ID is available. The command registers it or rebinds a proven offline predecessor using its current ID and generation. An online or unreadable old Session cannot be replaced. `clawdline guide coordination` has the request details. Machine Bearings do not require a registered coordinator.
 
+The **Coordinate Session resources** entry shows each current Session reading beside lease holders and queue order, file waits, active tasks/callbacks and pause receipts. It identifies the source and observation time of every read. Clawdfather may request a Session pause; the Session finishes its important command and sends an explicit safe-point receipt before the panel calls it paused. Once the wake condition is met, Clawdfather sends a resume event. Sessions can also use the same leases, file waits and callback handoff while Clawdfather is offline. The command flow and failure states are in [Session resource coordination](../session-resource-coordination.md).
+
 The rationale and limits are in [clawdfather-role.md](../clawdfather-role.md).
 
 ## Troubleshooting

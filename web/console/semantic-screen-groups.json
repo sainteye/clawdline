@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4680,
-  "riskKeys": 2050,
-  "nonRiskCount": 2630,
+  "englishContentKeys": 4712,
+  "riskKeys": 2060,
+  "nonRiskCount": 2652,
   "groups": [
     {
       "name": "bar / other",
@@ -2361,6 +2361,37 @@
         "template.c77dd85e5dac",
         "template.c79d0687f211",
         "template.f56ee5f2d93c"
+      ]
+    },
+    {
+      "name": "resourceCoordination / other",
+      "count": 22,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "resourceCoordination.ask",
+        "resourceCoordination.back",
+        "resourceCoordination.error",
+        "resourceCoordination.holder",
+        "resourceCoordination.leaseGrant",
+        "resourceCoordination.loading",
+        "resourceCoordination.nextWake",
+        "resourceCoordination.pauses",
+        "resourceCoordination.queued",
+        "resourceCoordination.refresh",
+        "resourceCoordination.requestID",
+        "resourceCoordination.resources",
+        "resourceCoordination.resumed",
+        "resourceCoordination.resuming",
+        "resourceCoordination.retryHint",
+        "resourceCoordination.safe_point",
+        "resourceCoordination.sessions",
+        "resourceCoordination.source",
+        "resourceCoordination.stale",
+        "resourceCoordination.tasks",
+        "resourceCoordination.title",
+        "resourceCoordination.waits"
       ]
     },
     {

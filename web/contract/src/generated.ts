@@ -3729,8 +3729,9 @@ export interface LeaseRequest {
 export type LeaseResource =
     "heavy_compile"
   | "landing"
+  | "daemon_restart"
 
-export const LeaseResourceValues: readonly LeaseResource[] = ["heavy_compile", "landing"] as const
+export const LeaseResourceValues: readonly LeaseResource[] = ["heavy_compile", "landing", "daemon_restart"] as const
 
 export interface LeaseWaiter {
   holder: string
@@ -6403,6 +6404,49 @@ export interface SessionModel {
   command: string
   id: string
   name: string
+}
+
+/**
+ * One durable pause and wake receipt. Safe point is receiver acknowledged, never
+ * inferred from delivery.
+ */
+export interface SessionPause {
+  accepted_at: number
+  delivered_at?: number
+  delivery_error?: string
+  id: string
+  observed_at?: number
+  reason: string
+  requester_session_id: string
+  resumed_at?: number
+  safe_at?: number
+  state: string
+  target_session_id: string
+  wake_condition: string
+  wake_delivered_at?: number
+  wake_error?: string
+  wake_requested_at?: number
+}
+
+/**
+ * GET /v1/orchestrator/pauses.
+ */
+export interface SessionPauseList {
+  at: number
+  pauses: SessionPause[]
+  source: string
+}
+
+/**
+ * POST /v1/orchestrator/pauses. Only the registered online coordinator may request
+ * a pause. A duplicate request_id with identical details is idempotent.
+ */
+export interface SessionPauseRequest {
+  reason: string
+  request_id: string
+  requester_session_id: string
+  target_session_id: string
+  wake_condition: string
 }
 
 /**

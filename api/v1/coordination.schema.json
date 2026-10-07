@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "coordination.schema.json",
   "title": "The coordination plane",
-  "description": "The machine role (Clawdfather), the leases (the compile slot and one checkout's landing), file waits between sessions, detached automation and the manual path for a completion notice nobody acknowledged (docs/design-decisions.md §6 W5). A session is named by its conversation id everywhere here (broker-design #36): a terminal id is where a session is, and a value that is not a conversation id is refused as `session_id_is_terminal` rather than read the other way.",
+  "description": "The machine role (Clawdfather), exclusive compile, landing and restart leases, file waits and safe-point pause receipts between sessions, detached automation and the manual path for a completion notice nobody acknowledged (docs/design-decisions.md §6 W5). A session is named by its conversation id everywhere here (broker-design #36): a terminal id is where a session is, and a value that is not a conversation id is refused as `session_id_is_terminal` rather than read the other way.",
   "$defs": {
     "CoordinatorSession": {
       "description": "The bound session. `session_id` is its conversation id; `terminal_id` is the terminal it is in now.",
@@ -168,9 +168,56 @@
         "coordinator": { "$ref": "#/$defs/CoordinatorMetadata" }
       }
     },
+    "SessionPauseRequest": {
+      "description": "POST /v1/orchestrator/pauses. Only the registered online coordinator may request a pause. A duplicate request_id with identical details is idempotent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "requester_session_id", "target_session_id", "reason", "wake_condition"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "requester_session_id": { "type": "string" },
+        "target_session_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "wake_condition": { "type": "string" }
+      }
+    },
+    "SessionPause": {
+      "description": "One durable pause and wake receipt. Safe point is receiver acknowledged, never inferred from delivery.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "target_session_id", "requester_session_id", "reason", "wake_condition", "state", "accepted_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "target_session_id": { "type": "string" },
+        "requester_session_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "wake_condition": { "type": "string" },
+        "state": { "type": "string", "enum": ["accepted", "delivered", "observed", "safe_point", "resuming", "resumed"] },
+        "accepted_at": { "type": "integer" },
+        "delivered_at": { "type": "integer" },
+        "observed_at": { "type": "integer" },
+        "safe_at": { "type": "integer" },
+        "wake_requested_at": { "type": "integer" },
+        "wake_delivered_at": { "type": "integer" },
+        "resumed_at": { "type": "integer" },
+        "delivery_error": { "type": "string" },
+        "wake_error": { "type": "string" }
+      }
+    },
+    "SessionPauseList": {
+      "description": "GET /v1/orchestrator/pauses.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "source", "pauses"],
+      "properties": {
+        "at": { "type": "integer" },
+        "source": { "type": "string" },
+        "pauses": { "type": "array", "items": { "$ref": "#/$defs/SessionPause" } }
+      }
+    },
     "LeaseResource": {
       "type": "string",
-      "enum": ["heavy_compile", "landing"]
+      "enum": ["heavy_compile", "landing", "daemon_restart"]
     },
     "LeaseRequest": {
       "description": "POST /v1/orchestrator/leases: ask, or ask again. Idempotent on `request_id`, which is the one proof of ownership. A holder names what proves it alive: a renewal every 20 seconds, `pid` (with `process_start`, epoch seconds), `session_id` (a conversation id), or any of them.",

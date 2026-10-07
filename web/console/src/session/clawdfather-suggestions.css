@@ -45,6 +45,14 @@
 .clawdfather-suggestions-list button:last-child { border-bottom: 0; }
 .clawdfather-suggestions-list button:hover { background: var(--card-hi); }
 .clawdfather-suggestions button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.resource-coordination { overflow-y: auto; max-height: calc(100dvh - 120px); padding: 12px 20px 24px; font-size: 13px; }
+.resource-coordination-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.resource-coordination-actions button { border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--card-hi); padding: 8px 12px; cursor: pointer; }
+.resource-coordination section { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 8px; overflow-wrap: anywhere; }
+.resource-coordination h3 { margin: 6px 0; font-size: 14px; }
+.resource-coordination small { display: block; color: var(--dim); margin-top: 4px; }
+.resource-coordination ul, .resource-coordination ol { padding-left: 20px; }
+.resource-coordination li { margin: 7px 0; }
 @media (max-width: 560px) {
   .clawdfather-suggestions {
     width: 100%;

@@ -223,5 +223,13 @@
   "webhook_fire.url_scheme": "the webhook URL must be https (plain http only to this machine itself)",
   "webhook_fire.url_unreadable": "the webhook URL could not be read as a URL",
   "webhook_fire.usage_clawdline_webhook_fire_url_fi.fb14730c": "usage: clawdline webhook fire [--url-file path] [--deliver-within 60s] [--timeout 60m] [--no-wait]",
-  "webhook_fire.usage_source": "  start a schedule through its webhook; no daemon needed. The URL is read from --url-file or %s, never from an argument\n"
+  "webhook_fire.usage_source": "  start a schedule through its webhook; no daemon needed. The URL is read from --url-file or %s, never from an argument\n",
+  "coordination.usage": "usage: clawdline coordination <status|pause|observed|safe|wake|resumed|retry> [options] [id or target session ids]",
+  "coordination.unreadable": "Coordination status was unreadable.",
+  "coordination.header": "TARGET\tSTATE\tREASON\tWAKE CONDITION\tERROR",
+  "coordination.identity": "This command needs the caller's conversation ID from its Session environment."
+  ,"coordination.run_usage": "usage: clawdline coordination run --resource landing --checkout /repo [--handoff] -- <command> [args…]; or --resource daemon_restart"
+  ,"coordination.waiting": "Waiting for %s, position %d.\n"
+  ,"coordination.timed_out": "The lease wait ended before a grant; the command did not run."
+  ,"coordination.release_failed": "The lease release could not be confirmed; inspect the holder before another exclusive operation."
 }

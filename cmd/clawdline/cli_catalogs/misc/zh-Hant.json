@@ -223,5 +223,13 @@
   "webhook_fire.url_scheme": "Webhook URL 必須使用 https（一般 http 僅允許連至本機）",
   "webhook_fire.url_unreadable": "無法將 Webhook URL 解析為 URL",
   "webhook_fire.usage_clawdline_webhook_fire_url_fi.fb14730c": "用法：clawdline webhook fire [--url-file path] [--deliver-within 60s] [--timeout 60m] [--no-wait]",
-  "webhook_fire.usage_source": "  透過 Webhook 啟動排程，無須 daemon。URL 從 --url-file 或 %s 讀取，不接受命令參數\n"
+  "webhook_fire.usage_source": "  透過 Webhook 啟動排程，無須 daemon。URL 從 --url-file 或 %s 讀取，不接受命令參數\n",
+  "coordination.usage": "用法：clawdline coordination <status|pause|observed|safe|wake|resumed|retry> [選項] [指令 ID 或目標 Session ID]",
+  "coordination.unreadable": "無法讀取協調狀態。",
+  "coordination.header": "目標\t狀態\t原因\t喚醒條件\t錯誤",
+  "coordination.identity": "此指令需要從目前 Session 環境取得呼叫者的對話 ID。"
+  ,"coordination.run_usage": "用法：clawdline coordination run --resource landing --checkout /repo [--handoff] -- <指令> [參數…]；或 --resource daemon_restart"
+  ,"coordination.waiting": "等待 %s，目前候位第 %d 位。\n"
+  ,"coordination.timed_out": "等候租約期間未取得授權；指令沒有執行。"
+  ,"coordination.release_failed": "無法確認租約已釋放；執行下一個獨占操作前，請檢查持有者。"
 }

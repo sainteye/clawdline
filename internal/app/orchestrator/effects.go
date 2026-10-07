@@ -78,6 +78,8 @@ const (
 	// EffectWaitDelivery types a file wait's request into its owner, or its
 	// release into a waiter (waits.go).
 	EffectWaitDelivery = "wait.delivery"
+	// EffectPauseDelivery asks a Session to park or wake at a safe turn boundary.
+	EffectPauseDelivery = "session.pause.delivery"
 )
 
 // ErrEffectInsideWrite is an effect asked for from inside a write
@@ -210,6 +212,7 @@ var effectHandlers = map[string]effectHandler{
 	// never sends one a second time.
 	EffectDeadLetterPush:        {idempotent: false, run: runDeadLetterPush},
 	EffectWaitDelivery:          {idempotent: false, run: runWaitDelivery},
+	EffectPauseDelivery:         {idempotent: false, run: runPauseDelivery},
 	EffectCapacityPush:          {idempotent: false, run: runCapacityPush},
 	EffectWaitingPush:           {idempotent: false, run: runWaitingPush},
 	EffectWorkItemCompletedPush: {idempotent: false, run: runWorkItemCompletedPush},
