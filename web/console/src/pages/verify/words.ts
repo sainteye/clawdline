@@ -135,7 +135,7 @@ const words = {
     colCompactions: "每個 task 壓縮",
     colAbove: "超過 200k",
     colSuccess: "成功率",
-    colStalled: "Stalled",
+    colStalled: "停滯",
     colRespawns: "重派",
     groupNone: "before-setting",
     costNote: "每個 task 成本是帳本已讀到的 task 的中位數；+ 表示其中有部分沒有價格。",

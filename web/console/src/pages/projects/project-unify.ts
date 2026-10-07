@@ -1,6 +1,7 @@
 import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
+import { labelled, listSeparator } from "../../punctuation.js"
 // What the unify preview shows, computed from the machine's plan and nothing
 // else (docs/project-files.md, Unify). Kept out of JSX so each picture can be
 // tested as data: who sees which file now and after, what each action does to
@@ -252,7 +253,7 @@ export function movesSummary(plan: ProjectUnifyPlan): { moved: string[]; created
   }
   const sentence = removedCopies.length === 0
     ? catalogWord("literal", "74df92b721ee")
-    : catalogFormat("template", "712e3e1175ee", [removedCopies.length, removedCopies.join("、")])
+    : catalogFormat("template", "712e3e1175ee", [removedCopies.length, removedCopies.join(listSeparator())])
   return { moved, created, removedCopies, sentence }
 }
 
@@ -293,6 +294,6 @@ function conflictWords(conflict: ProjectUnifyConflict, plan: ProjectUnifyPlan): 
     case "unreadable":
       return { sentence: catalogFormat("template", "aaa57deb124f", [path]), remedy: catalogWord("literal", "8f8136f76819"), lines: [] }
     default:
-      return { sentence: `${path}：${conflict.detail}`, remedy: catalogWord("literal", "6e9be990a363"), lines: [] }
+      return { sentence: labelled(path, conflict.detail), remedy: catalogWord("literal", "6e9be990a363"), lines: [] }
   }
 }

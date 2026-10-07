@@ -1,5 +1,6 @@
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
+import { catalogLabel, colonMark, listSeparator } from "../../punctuation.js"
 import { useState } from "react"
 import * as L from "../../legacy/bridge.js"
 import type { WorkGateCompactRead, WorkGateDetailRead, WorkGateEscalation, WorkGateDecisionAction } from "@clawdline/contract"
@@ -174,9 +175,9 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
     <h4>{catalogWord("inline", "9737e4f2e725")}</h4>
     <p className="work-gate-current"><WorkGateLine item={item} /></p>
     {loading && <p role="status">{catalogWord("inline", "47d0495491da")}</p>}
-    {error && <p role="alert">{catalogWord("inline", "68a78ae9f308")}{error} <button className="chip" type="button" onClick={retry}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
+    {error && <p role="alert">{catalogLabel("inline", "68a78ae9f308")}{error} <button className="chip" type="button" onClick={retry}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
     {!loading && !error && !detail && <p>{catalogWord("inline", "ce6184e46a66")}<button className="chip" type="button" onClick={retry}>{catalogWord("inline", "aa2938c4e84f")}</button></p>}
-    <p>{catalogWord("inline", "a24529fd35aa")}{item.gate_snapshot_cycle ? catalogFormat("template", "0d6f06c58208", [item.gate_snapshot_cycle, gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)]) : catalogWord("literal", "cd8db91c094e")}{catalogWord("inline", "fa13f75c4f30")}</p>
+    <p>{catalogLabel("inline", "a24529fd35aa")}{item.gate_snapshot_cycle ? catalogFormat("template", "0d6f06c58208", [item.gate_snapshot_cycle, gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)]) : catalogWord("literal", "cd8db91c094e")}{catalogWord("inline", "fa13f75c4f30")}</p>
     <div className="work-gate-acceptance"><strong>{catalogWord("inline", "b1d809e93c19")}</strong>
       <div dangerouslySetInnerHTML={markdown(item.acceptance_criteria)} />
       <small>{catalogWord("inline", "5f76b2bf82dd")} {item.acceptance_version}{catalogWord("inline", "d7e1f4d17c57")} {item.acceptance_digest}</small>
@@ -185,7 +186,7 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
       <div><dt>{catalogWord("inline", "61d8b2decbe9")}</dt><dd>{compact.metrics.rounds}</dd></div><div><dt>{catalogWord("inline", "425305e25df9")}</dt><dd>{compact.metrics.fails}</dd></div>
       <div><dt>{catalogWord("inline", "1dd74b5e1e7c")}</dt><dd>{compact.metrics.findings}</dd></div><div><dt>{catalogWord("inline", "23154087857c")}</dt><dd>{compact.metrics.overrides}</dd></div>
     </dl>}
-    {compact?.current_authorization && <p className="work-gate-authority"><strong>{AUTHORITY[compact.current_authorization.kind] ?? catalogWord("literal", "10da14d9c382")}</strong>：{compact.current_authorization.reason}</p>}
+    {compact?.current_authorization && <p className="work-gate-authority"><strong>{AUTHORITY[compact.current_authorization.kind] ?? catalogWord("literal", "10da14d9c382")}</strong>{colonMark()}{compact.current_authorization.reason}</p>}
     {compact?.escalation && compact.escalation.state !== "resolved" && <GateEscalation item={item}
       escalation={compact.escalation} sessions={sessions} run={run} />}
     {detail && <>
@@ -193,14 +194,14 @@ export function WorkGateDetail({ item, loading, error, sessions, run, retry }: {
       {!detail.recent_rounds.length && <p>{catalogWord("inline", "edd5f8a3232a")}</p>}
       {detail.recent_rounds.map((round) => <details className="work-gate-round" key={round.id}>
         <summary>{roundStatus({ id: round.id, state: round.state, verdict: round.result?.verdict, candidate_commit: round.candidate.commit, criteria_digest: round.acceptance.digest, created_at: round.created_at })} · {when(round.created_at)} · {round.checker_persona}</summary>
-        <p>{catalogWord("inline", "9b4d84c4d0a4")}<code>{round.candidate.commit}</code></p>
-        {round.stale_reason && <p>{catalogWord("inline", "e88de75bf9dc")}{round.stale_reason}</p>}
+        <p>{catalogLabel("inline", "9b4d84c4d0a4")}<code>{round.candidate.commit}</code></p>
+        {round.stale_reason && <p>{catalogLabel("inline", "e88de75bf9dc")}{round.stale_reason}</p>}
         {round.result?.summary && <p>{round.result.summary}</p>}
         {round.result?.claims.map((claim, index) => <div className="work-gate-claim" key={index}>
-          <strong>{claim.state === "passed" ? catalogWord("literal", "0841cf12ec8c") : claim.state === "failed" ? catalogWord("literal", "c0b14e64a4b1") : catalogWord("literal", "ca57dc5b26d8")}：{claim.criterion}</strong>
+          <strong>{claim.state === "passed" ? catalogWord("literal", "0841cf12ec8c") : claim.state === "failed" ? catalogWord("literal", "c0b14e64a4b1") : catalogWord("literal", "ca57dc5b26d8")}{colonMark()}{claim.criterion}</strong>
           {claim.reason && <p>{claim.reason}</p>}
           {claim.evidence.length > 0 && <ul>{claim.evidence.map((evidence, n) => <li key={n}>{evidence}</li>)}</ul>}
-          {claim.evidence_artifacts.length > 0 && <p>{catalogWord("inline", "9af9547ec91b")}{claim.evidence_artifacts.join("、")}</p>}
+          {claim.evidence_artifacts.length > 0 && <p>{catalogLabel("inline", "9af9547ec91b")}{claim.evidence_artifacts.join(listSeparator())}</p>}
         </div>)}
         {!round.result && <p>{catalogWord("inline", "8c5574d18a73")}</p>}
       </details>)}

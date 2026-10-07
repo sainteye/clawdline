@@ -17,6 +17,7 @@ import { onWorkItemChanged } from "../pages/work/item-changed.js"
 import { samePageTarget } from "../same-page-links.js"
 import { hasDocumentIntent } from "../legacy/documents-bridge.js"
 import { requestPage } from "../overlays/index.js"
+import { catalogLabel, clauseSeparator, labelled } from "../punctuation.js"
 import "./interventions.css"
 
 /** Keep the attention entry in the todo header while its panel stays independent. */
@@ -232,8 +233,8 @@ function InterventionCard({ note, disabled, sending, onAction, onReply, onCompos
     <div className="human-intervention-title"><div><h3>{note.title}</h3><span className="human-intervention-stage">{note.resolved_at ? catalogWord("literal", "927c9ed33728") : catalogWord("literal", "77f6d2cceedd")}</span><time className="human-intervention-created" dateTime={new Date(note.created_at * 1000).toISOString()}>{catalogWord("inline", "0f6f6df015c6")} {when(note.created_at)}</time></div><span className="human-intervention-type"><WorkIcon name={isReading ? "eye" : "edit"} />{isReading ? catalogWord("literal", "3d9157962dd2") : note.kind === "answer" ? catalogWord("literal", "e12820431ff9") : catalogWord("literal", "5a15e03eaa4a")}</span></div>
     {fromAnotherSession && <p className="human-intervention-source">{catalogWord("inline", "afc7f76a7d4f")} {note.source_label || catalogWord("literal", "92018c889270")}</p>}
     <p>{note.summary}</p>
-    <p><b>{catalogWord("inline", "7ed8d242eabd")}</b>{note.action}</p>
-    <p className="human-intervention-reason">{catalogWord("inline", "b9fbb8ede4cb")}{note.reason}</p>
+    <p><b>{catalogLabel("inline", "7ed8d242eabd")}</b>{note.action}</p>
+    <p className="human-intervention-reason">{catalogLabel("inline", "b9fbb8ede4cb")}{note.reason}</p>
     {note.document_url && <p><a className="human-intervention-document" href={note.document_url}
       target={internalDocument ? undefined : "_blank"} rel="noopener noreferrer"
       onClick={(event) => {
@@ -248,7 +249,7 @@ function InterventionCard({ note, disabled, sending, onAction, onReply, onCompos
       <p className="human-intervention-hint">{composeOnly ? catalogWord("literal", "981ea9fd14d5") : catalogWord("literal", "3e129c69ac26")}</p>
       {(note.options.length ? note.options : [{ label: catalogWord("literal", "cc6ade09e09b"), draft: note.action }]).map((option, index) =>
         <button className="human-intervention-option" type="button" key={`${index}:${option.label}`}
-          disabled={disabled} aria-label={`${composeOnly ? catalogWord("literal", "e3949613add9") : note.resolved_at ? catalogWord("literal", "7d6cc5d58935") : catalogWord("literal", "2ffd9b695259")}：${option.label}，${option.draft}`} onClick={() => composeOnly ? onCompose(note, option.draft) : onReply(note, interventionReplyText(note, option.draft))}>
+          disabled={disabled} aria-label={labelled(composeOnly ? catalogWord("literal", "e3949613add9") : note.resolved_at ? catalogWord("literal", "7d6cc5d58935") : catalogWord("literal", "2ffd9b695259"), option.label) + clauseSeparator() + option.draft} onClick={() => composeOnly ? onCompose(note, option.draft) : onReply(note, interventionReplyText(note, option.draft))}>
           {note.options.length > 0 && <strong>{option.label}</strong>}
           <span>{option.draft}</span>
         </button>)}

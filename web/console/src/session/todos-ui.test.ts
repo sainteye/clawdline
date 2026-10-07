@@ -134,7 +134,7 @@ test("direct todos explain receipts, allow a read row to be sent again, and reta
   // A read row can be sent again: Send's words and state come from todoSend.
   const send = readFileSync(new URL("./todo-send.ts", import.meta.url), "utf8")
   assert.match(source, /const send = todoSend\(todo, now\)/)
-  assert.match(send, /if \(todo\.read_at\) return \{ kind: "again", label: "再次 Send" \}/)
+  assert.match(send, /if \(todo\.read_at\) return \{ kind: "again", label: catalogWord\("literal", "3aa8e038c09d"\) \}/)
   assert.match(source, /已同步到 Session，尚未完成/)
   assert.match(source, /最近完成的直接待辦/)
   assert.match(source, /session-todo-check completed/)
@@ -271,7 +271,7 @@ test("the Session-added label replaces the sent/read receipt, and the controls s
   // Delete, Complete and Send are not gated on who wrote the row.
   assert.match(source, /<button className="session-todo-delete" type="button" disabled=\{busy\} aria-label="刪除待辦"[\s\S]*?onClick=\{\(\) => onAction\("delete"\)\}><WorkIcon name="delete" \/><\/button>/)
   assert.match(source, /className=\{`chip session-todo-send\$\{send\.kind === "send" \? " on danger" : ""\}`\}[\s\S]*?<WorkIcon name="send" \/>\{send\.label\}/,
-    "only a first Send takes the accent; 再次 Send is a grey chip")
+    "only a first Send takes the accent; Send again is a grey chip")
   assert.doesNotMatch(source, /own && <button|!own && <button/)
 })
 

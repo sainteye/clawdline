@@ -1,5 +1,6 @@
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord, catalogWordLanguage } from "../../catalog.js"
+import { catalogLabel, closingMark, fullWidthPunctuation, quotedTitle } from "../../punctuation.js"
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
@@ -551,9 +552,9 @@ function EpicParentLine({ item }: { item: WorkV2Item }) {
   const parent = epicParent(item, family.rows)
   if (!parent) return null
   return <>
-    <p className="work-epic-parent">{catalogWord("inline", "f738987d8bdc")}<button className="work-epic-parent-link" type="button"
+    <p className="work-epic-parent">{catalogLabel("inline", "f738987d8bdc")}<button className="work-epic-parent-link" type="button"
       onClick={() => { setFailure(""); void family.open(parent.id).then(setFailure) }}>
-      {parent.title ? `〈${parent.title}〉` : <code>{shortWorkID(parent.id)}</code>}</button></p>
+      {parent.title ? quotedTitle(parent.title) : <code>{shortWorkID(parent.id)}</code>}</button></p>
     {failure && <p className="work-note" role="alert">{workWord("openItemFailed", { reason: failure })}</p>}
   </>
 }
@@ -650,7 +651,7 @@ function WorkItemDecisions({ decisions, decisionAnswers, waitingOn, busy, answer
   return <section className="work-item-decisions" aria-label={catalogWord("inline", "60ec1b4faaf6")}>
     <div className="work-item-decisions-head"><strong>{decisions.length ? catalogWord("literal", "06e9721c22a0") : catalogWord("literal", "da65d95a49fd")}</strong><span>{decisions.length || ""}</span></div>
     {receipts.map(([id, receipt]) => <div className="work-item-decision" key={id} id={`work-decision-${id}`}>
-      <h4>{receipt.question}</h4><p className="work-decision-feedback" role="status" aria-live="polite">{catalogWord("inline", "e3de4a9b5b50")}{receipt.label}」</p>
+      <h4>{receipt.question}</h4><p className="work-decision-feedback" role="status" aria-live="polite">{catalogWord("inline", "e3de4a9b5b50")}{receipt.label}{closingMark(catalogWord("inline", "e3de4a9b5b50"))}</p>
     </div>)}
     {decisions.map((decision) => {
       const fallback = decision.options.find((option) => option.id === decision.default)?.label ?? decision.default
@@ -659,7 +660,7 @@ function WorkItemDecisions({ decisions, decisionAnswers, waitingOn, busy, answer
         <p className="work-item-decision-state">{decision.id === waitingOn ? catalogWord("literal", "cbc015194d93")
           : decision.blocking ? catalogWord("literal", "b81539b6dfef") : catalogWord("literal", "29feba66a834")}</p>
         <h4>{decision.question}</h4>
-        <p className="work-clock">{catalogWord("inline", "b56f36b529db")} {when(decision.due_at)}{catalogWord("inline", "2220fdf0d620")}{fallback}」</p>
+        <p className="work-clock">{catalogWord("inline", "b56f36b529db")} {when(decision.due_at)}{fullWidthPunctuation() ? "" : ". "}{catalogWord("inline", "2220fdf0d620")}{fallback}{closingMark(catalogWord("inline", "2220fdf0d620"))}</p>
         <div className="work-actions" role="group" aria-label={catalogFormat("template", "1bc187210168", [decision.question])}>
           {decision.options.map((option) => <button key={option.id} type="button"
             className="chip" disabled={busy || feedback?.phase === "pending"}
@@ -741,7 +742,7 @@ function CompactWorkCard({ item, sessions, nowSeconds, decisions, onOpen }: {
       {activePhase && <span id={progressDescriptionID} className="work-card-progress">{phaseStayWords(item.phase_entered_at, nowSeconds)} · {ownerOnlineWords(item.owner_session, sessions)}</span>}
       {item.phase === "done" && <span id={deploymentDescriptionID} className="work-card-deployment">{deploymentWords(item)}</span>}
       {gateShown && <><WorkGateLine item={item} id={gateDescriptionID} />
-        <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">{catalogWord("inline", "947720d10478")}{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
+        <span id={gateSnapshotDescriptionID} className="work-gate-snapshot">{catalogLabel("inline", "947720d10478")}{gateSnapshotText(item.gate_snapshot_cycle, item.planning_gate, item.verify_gate)}</span></>}
       <span className="work-card-summary-foot">
         <span>{item.closed_at ? catalogFormat("template", "966e0c24f6bc", [when(item.closed_at)]) : catalogFormat("template", "d15f0c565e65", [when(item.updated_at)])}</span>
         <span className="work-card-open">{item.decision_id ? catalogWord("literal", "8722de1b1769") : attention ? catalogWord("literal", "b8f8e3ceb51b") : catalogWord("literal", "bfc3ff801ec6")} <WorkIcon name="open" /></span>
@@ -869,7 +870,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
         {busy === `convert-${item.id}` ? catalogWord("literal", "729d5136c5cb") : catalogFormat("template", "06453a1153b7", [plan ? KIND_META[conversionKind].label : "Plan"])}</button>
       <button className="chip" type="button" disabled={!!busy} onClick={() => setConverting(false)}>{catalogWord("inline", "2cd0f3be8738")}</button>
     </div>
-    {failure && <p className="work-note" role="alert">{catalogWord("inline", "c82438204056")}{failure}</p>}
+    {failure && <p className="work-note" role="alert">{catalogLabel("inline", "c82438204056")}{failure}</p>}
   </section> : null
   return <article className={cardClass} data-work-id={item.id}
     data-phase={item.phase} data-kind={item.kind} tabIndex={-1}>
@@ -901,7 +902,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
         onClick={() => { void run(`complete-${item.id}`, () => completeWorkV2(item)).then((ok) => { if (ok) setCompleting(false) }) }}>
         <WorkIcon name="check" />{busy === `complete-${item.id}` ? catalogWord("literal", "935d3ef2ee45") : catalogWord("literal", "5a651fa3c7ca")}</button>
       <button className="chip" type="button" disabled={busy === `complete-${item.id}`} onClick={() => setCompleting(false)}>{catalogWord("inline", "2cd0f3be8738")}</button>
-      {failure && <p className="work-note" role="alert">{catalogWord("inline", "a7042be56aeb")}{failure}</p>}
+      {failure && <p className="work-note" role="alert">{catalogLabel("inline", "a7042be56aeb")}{failure}</p>}
     </div>}
     {epic
       ? <span className="work-state work-epic-label"><b>{catalogWord("inline", "64d13f155730")}</b> · {phaseName(item.phase)}</span>
@@ -973,7 +974,7 @@ function WorkCard({ item, sessions, decisions, decisionAnswers, busy, failure, c
           aria-busy={aiSuggestionBusy} aria-describedby={aiSuggestion ? aiSuggestionID : undefined}
           onClick={() => void askAIForPersona()}>{aiSuggestionBusy ? catalogWord("literal", "29e124139608") : catalogWord("literal", "2bbea1c41037")}</button>}
         {aiSuggestion?.outcome === "recommend" && aiPersona && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
-          <strong>{catalogWord("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
+          <strong>{catalogLabel("inline", "366cbb69bcce")}{personaName(aiPersona)}</strong>
           <span>{aiSuggestionOverridden ? catalogWord("literal", "74a97b8b8227") : catalogWord("literal", "c1083b6ca5e0")}</span>
         </p>}
         {aiSuggestion?.outcome === "ambiguous" && <p className="work-persona-ai-result" id={aiSuggestionID} role="status">
@@ -1237,7 +1238,7 @@ function SessionAssignmentDetail({ session, reading }: { session: SessionRow; re
   return <section className="work-session-detail" aria-label={catalogFormat("template", "ecd25f9c83f5", [session.label || session.id])} aria-live="polite">
     <div className="work-session-detail-head"><strong>{catalogWord("inline", "3f44b79c30e6")}</strong><span>{sessionActivityName(session.state)} · {sessionWorkLabel(session)}</span></div>
     {(session.line || session.work_note) && <p>{session.line || session.work_note}</p>}
-    {reading?.loading && !page ? <p>{catalogWord("inline", "926adfdf9989")}</p> : reading?.update ? <NeedsUpdate update={reading.update} /> : reading?.error ? <p className="work-note" role="alert">{catalogWord("inline", "e85c2c330c2e")}{reading.error}</p> : page ? <>
+    {reading?.loading && !page ? <p>{catalogWord("inline", "926adfdf9989")}</p> : reading?.update ? <NeedsUpdate update={reading.update} /> : reading?.error ? <p className="work-note" role="alert">{catalogLabel("inline", "e85c2c330c2e")}{reading.error}</p> : page ? <>
       <p>{catalogFormat("count", "unfinishedWork", [counts?.board ?? 0, counts?.todos ?? 0])}</p>
       <SessionWorkList title={catalogWord("inline", "7cd8f523be1c")} empty={catalogWord("literal", "4a085d55298e")} rows={page.assigned_items.map((item) => ({
         id: item.id, title: item.title, meta: `${item.project.label} · ${phaseName(item.phase)}${item.condition ? ` · ${conditionWords(item)}` : ""}`,

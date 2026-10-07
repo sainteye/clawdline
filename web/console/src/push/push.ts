@@ -1,4 +1,5 @@
 import { Diagnostics } from "../legacy/js/core/layout-diagnostics.js"
+import { listSeparator } from "../punctuation.js"
 import * as L from "../legacy/bridge.js"
 import {
   cloudDisable,
@@ -329,11 +330,11 @@ function outcomeWords(outcomes: MachineOutcome[]): { said: string; saidCalm: boo
   const missed = outcomes.filter((row) => !row.ok)
   if (!reached.length && !missed.length) return { said: nextWord("pushCloudNoMachine"), saidCalm: false }
   const parts: string[] = []
-  if (reached.length) parts.push(nextWord("pushCloudReached", { machines: reached.join("、") }))
+  if (reached.length) parts.push(nextWord("pushCloudReached", { machines: reached.join(listSeparator()) }))
   if (missed.length) {
     parts.push(
       nextWord("pushCloudUnreached", {
-        machines: missed.map((row) => row.name).join("、"),
+        machines: missed.map((row) => row.name).join(listSeparator()),
         why: [...new Set(missed.map((row) => row.code || "push_failed"))].join(", "),
       }),
     )
@@ -391,7 +392,7 @@ function disableCloud(seam: CloudPushSeam): void {
         Diagnostics.note("push.disable.untold", { code: untold[0]!.code || "push_failed" })
         publish({
           said: nextWord("pushCloudOffUntold", {
-            machines: untold.map((row) => row.name).join("、"),
+            machines: untold.map((row) => row.name).join(listSeparator()),
             why: [...new Set(untold.map((row) => row.code || "push_failed"))].join(", "),
           }),
         })

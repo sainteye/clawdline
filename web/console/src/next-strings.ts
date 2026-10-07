@@ -1210,7 +1210,7 @@ const words = {
     cloudForgetAskCurrent: "這台機器剛剛還在回報。忘記它會立刻停掉它現在的連線。",
     cloudForgetAskStale: "這台機器已經有一陣子沒有回報了。",
     cloudForgetAskUnknown: "這個瀏覽器沒有看過這台機器回報。",
-    cloudForgetHonest: "routing 會立刻停止。但已經握有主金鑰的裝置，仍然解得開它先前錄下的密文；金鑰輪替是延遲的。",
+    cloudForgetHonest: "轉送會立刻停止。但已經握有主金鑰的裝置，仍然解得開它先前錄下的密文；金鑰輪替是延遲的。",
     cloudForgetting: "正在忘記 {machine}…",
     cloudForgotten: "{machine} 已經忘記了，它不在這個帳號上了。",
     cloudForgetSaid: "Clawdline Cloud 說：{note}",

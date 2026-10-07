@@ -1,5 +1,6 @@
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
+import { catalogLabel, openingMark, wordGap } from "../../punctuation.js"
 import { useEffect, useRef, useState } from "react"
 import type { ProjectUnifyAction, ProjectUnifyPlan } from "@clawdline/contract"
 import type { ProjectPlace } from "../work/api.js"
@@ -62,7 +63,7 @@ function ActionItem({ picture }: { picture: ActionPicture }) {
     {picture.files.map(file => <figure key={file.path} className="project-unify-file">
       <figcaption><code>{file.path}</code>{file.created ? catalogWord("literal", "079d188b7362") : catalogWord("literal", "25efadbde2aa")}</figcaption>
       <pre tabIndex={0}>{file.lines.map((line, index) => "folded" in line
-        ? <span key={index} className="project-unify-line is-folded">…（{line.folded}{catalogWord("inline", "eba3e2db2b11")}</span>
+        ? <span key={index} className="project-unify-line is-folded">…{openingMark(catalogWord("inline", "eba3e2db2b11"))}{line.folded}{wordGap()}{catalogWord("inline", "eba3e2db2b11").trimStart()}</span>
         : <span key={index} className={`project-unify-line is-${line.change}`}>
           <span className="project-unify-line-sign" aria-label={line.change === "added" ? catalogWord("literal", "f592c9a3a866") : line.change === "removed" ? catalogWord("literal", "9b71e94cd03d") : undefined}>{line.change === "added" ? "+" : line.change === "removed" ? "−" : " "}</span>{line.text || " "}
         </span>)}</pre>
@@ -80,15 +81,15 @@ function Preview({ plan }: { plan: ProjectUnifyPlan }) {
   const moves = movesSummary(plan)
   const conflicts = conflictViews(plan)
   return <>
-    {plan.status === "unknown" && <p className="project-unify-verdict is-unknown" role="alert">{catalogWord("inline", "83cc34a2d090")}{unknownReason(plan)}{catalogWord("inline", "846d711dc077")}</p>}
+    {plan.status === "unknown" && <p className="project-unify-verdict is-unknown" role="alert">{catalogLabel("inline", "83cc34a2d090")}{unknownReason(plan)}{catalogWord("inline", "846d711dc077")}</p>}
     <h3 className="project-unify-section">{catalogWord("inline", "da3f4f610025")}</h3>
     <Columns columns={columns} />
     {pictures.length > 0 && <>
       <h3 className="project-unify-section">{catalogWord("inline", "c4dd64880f20")}</h3>
       <ol className="project-unify-actions">{pictures.map(picture => <ActionItem key={picture.key} picture={picture} />)}</ol>
       <div className="project-unify-moves">
-        {moves.moved.length > 0 && <p>{catalogWord("inline", "1cc68b0adf7c")}{moves.moved.map(m => <code key={m}>{m}</code>)}</p>}
-        {moves.created.length > 0 && <p>{catalogWord("inline", "8c25cba32cc1")}{moves.created.map(m => <code key={m}>{m}</code>)}</p>}
+        {moves.moved.length > 0 && <p>{catalogLabel("inline", "1cc68b0adf7c")}{moves.moved.map(m => <code key={m}>{m}</code>)}</p>}
+        {moves.created.length > 0 && <p>{catalogLabel("inline", "8c25cba32cc1")}{moves.created.map(m => <code key={m}>{m}</code>)}</p>}
         <p>{moves.sentence}</p>
       </div>
     </>}
@@ -96,7 +97,7 @@ function Preview({ plan }: { plan: ProjectUnifyPlan }) {
       <h3 className="project-unify-section">{catalogWord("inline", "072bd947d77d")}</h3>
       <ul className="project-unify-conflicts">{conflicts.map(conflict => <li key={conflict.key}>
         <p><strong>{conflict.sentence}</strong></p>
-        <p>{catalogWord("inline", "ca99a33b66f8")}{conflict.remedy}</p>
+        <p>{catalogLabel("inline", "ca99a33b66f8")}{conflict.remedy}</p>
         {conflict.lines.length > 0 && <pre tabIndex={0} aria-label={catalogWord("inline", "e3066f2f2365")}>{conflict.lines.join("\n")}</pre>}
       </li>)}</ul>
     </>}
