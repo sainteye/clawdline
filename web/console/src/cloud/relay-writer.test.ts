@@ -8,6 +8,7 @@
 // handed.
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import type { TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
@@ -44,6 +45,8 @@ class FakeClient implements CloudWriteClient {
   transcriptAsks = 0
   signature = "1-1"
   fail: Record<string, Error | undefined> = {}
+  /** What `_machineRequestAs` settles with, as the copied client resolves a payload's `body`. */
+  machineAnswer: unknown = undefined
   events(_listener: (event: CloudEvent) => void) {
     return () => {}
   }
@@ -148,7 +151,7 @@ class FakeClient implements CloudWriteClient {
   _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
     const args: unknown[] = [request, machine, word, body, kind]
     if (timeoutMs !== undefined) args.push(timeoutMs)
-    return this.act("_machineRequestAs", args, { ok: true })
+    return this.act("_machineRequestAs", args, this.machineAnswer ?? { ok: true })
   }
   updateSchedule(id: string, schedule: unknown) {
     return this.act("updateSchedule", [id, schedule], { ok: true, schedule: { id, title: "a schedule" } })
@@ -1449,6 +1452,35 @@ test("a unify apply keeps its key and Project machine, and carries only the plan
   assert.deepEqual(client.calls, [], "only the first apply reached the machine")
   assert.equal(writeRoute("POST", "/v1/projects/cloud-p1/unify/extra"), null)
   assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/unify"), null)
+})
+
+test("a unify apply that stopped part-way over Cloud carries the local route's stopped answer", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const stopped = {
+    outcome: "stopped",
+    ran: [{ kind: "rules_add_import", paths: ["CLAUDE.md"], description: "Add the import.", edits: [] }],
+    failed: { kind: "skill_link", paths: [".claude/skills/review"], description: "Link review.", edits: [] },
+    plan: { status: "drifting", version: "plan-v2", links_available: true, rules: {}, skills: [], actions: [], conflicts: [] },
+    error: "file_permission",
+    detail: "Unify stopped: A file or directory could not be written with this machine's permissions.",
+  }
+  // `cloudops.stoppedUnify` sends this as the payload's body beside status 500,
+  // and the copied client settles a body whatever the status.
+  client.machineAnswer = stopped
+  const raw = await reader.fetch("/v1/projects/cloud-p1/unify", { ...post({ version: "plan-v1" }), headers: { "Idempotency-Key": "unify-stopped" } })
+  assert.equal(raw.status, 500, "the same status the local route answers")
+  const answer = await raw.json()
+  assert.equal(answer.outcome, "stopped")
+  assert.deepEqual(answer.ran.map((action: { kind: string }) => action.kind), ["rules_add_import"])
+  assert.equal(answer.failed?.kind, "skill_link")
+  assert.equal(answer.plan.version, "plan-v2")
+  assert.equal(answer.error, "file_permission")
+  const api = readFileSync(new URL("../pages/projects/project-files-api.ts", import.meta.url), "utf8")
+  assert.match(api, /data\?\.outcome === "stopped"[\s\S]*return data as ProjectUnifyApplied/)
+  // The screen's stopped view is drawn from exactly that answer.
+  const source = readFileSync(new URL("../pages/projects/ProjectUnify.tsx", import.meta.url), "utf8")
+  assert.match(source, /answer\.outcome === "stopped"[\s\S]*setStopped\(\{ ran: answer\.ran, failed: answer\.failed/)
 })
 
 test("a project settings apply and detach reach the mirror as its own words, and a read reaches the machine", async () => {

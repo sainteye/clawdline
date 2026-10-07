@@ -240,8 +240,36 @@ func (b Bridge) answer(cmd Command, p plan, o op, res LocalResponse) Answer {
 	if code == "" {
 		code = "command_failed"
 	}
+	if o.partial != nil {
+		if body, ok := o.partial(res); ok {
+			return b.settle(p, res.Status, code, body, nil)
+		}
+	}
 	detail, _ := base["detail"].(map[string]any)
 	return b.settle(p, res.Status, code, nil, errorObject(base, code, layerRoute, cmd.Sequence, detail))
+}
+
+// stoppedUnify is a unify apply that stopped part-way (`500` with
+// `outcome: "stopped"`): the ProjectUnifyApplied body, which says which
+// actions ran, which one failed and what the plan read from disk is now, with
+// the refusal's code and sentence in its own `error` and `detail`. Sent as an
+// `error` it would arrive as the code alone, and a person on a phone would be
+// told only that it failed. The plan is what `project-unify-plan` already
+// carries, and every path in it is relative to the repository root.
+func stoppedUnify(res LocalResponse) (json.RawMessage, bool) {
+	var answer struct {
+		Outcome string            `json:"outcome"`
+		Ran     []json.RawMessage `json:"ran"`
+		Plan    json.RawMessage   `json:"plan"`
+		Error   string            `json:"error"`
+	}
+	if res.Status < 400 || json.Unmarshal(res.Body, &answer) != nil {
+		return nil, false
+	}
+	if answer.Outcome != "stopped" || answer.Ran == nil || len(answer.Plan) == 0 || answer.Error == "" {
+		return nil, false
+	}
+	return res.Body, true
 }
 
 // refusalOf reads this daemon's refusal, which has two spellings.

@@ -62,6 +62,7 @@ type ReadingScenario =
   | "epic"
   | "refresh"
   | "safe-cleared"
+  | "unstarted-codex"
   | "session-gap"
 let readingScenario: ReadingScenario = "normal"
 let inlineDecisionFixture = false
@@ -155,6 +156,10 @@ let spareMoved = MOVED.spare
 
 function rows(): Row[] {
   if (readingScenario === "expired") return []
+  if (readingScenario === "unstarted-codex") return [
+    row(SAFE, "Codex has not started", safeCloseability(), 300,
+      { assistant: "codex", isClaude: false, sessionId: "", identity: "no_record" }),
+  ]
   if (readingScenario === "session-gap") {
     const child = row(BLOCKED, "Alpha child", blockedCloseability(), 100, { state: "working" })
     return sessionGap ? [child] : [row(SAFE, "Zulu root", safeCloseability(), 10), child]
@@ -299,6 +304,7 @@ let listReads = 0
 let workProjectReads: string[] = []
 /** `POST /v1/sessions/{id}/close`, with the Idempotency-Key each arrived under. */
 let closes: { id: string; key: string; force: unknown; version: unknown }[] = []
+let sessionWorkReads = 0
 let machineStarts: { path: string; key: string }[] = []
 /** Explicit reminder presses received from an assigned Board item detail. */
 let workReminders = 0
@@ -308,7 +314,7 @@ const streams = new Set<ServerResponse>()
 function snapshot() {
   generation++
   const age = readingScenario === "five" ? 5 : readingScenario === "ninety" ? 90 : 0
-  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "live-crowded" || readingScenario === "epic" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
+  const source = readingScenario === "normal" || readingScenario === "worst" || readingScenario === "live-crowded" || readingScenario === "epic" || readingScenario === "unstarted-codex" || (readingScenario === "session-gap" && (!sessionGap || sessionGapComplete))
     ? { freshness: "current", observed_at: Date.now() / 1000, provenance: "fixture" }
     : readingScenario === "expired"
       ? { freshness: "missing", observed_at: Date.now() / 1000 - 121, provenance: "iterm" }
@@ -551,6 +557,11 @@ function daemon(): Server {
     }
     const sessionWork = /^\/v1\/work\/v2\/session-todos\/(.+)$/.exec(path)
     if (sessionWork && req.method === "GET") {
+      sessionWorkReads++
+      if (readingScenario === "unstarted-codex") {
+        res.writeHead(409, { "content-type": "application/json" })
+        return res.end(JSON.stringify({ error: "session_unavailable" }))
+      }
       const sessionID = decodeURIComponent(sessionWork[1])
       const ownsSafe = sessionID === SAFE || (inlineDecisionFixture && sessionID === "conversation:conversation-" + SAFE)
       const assigned = ownsSafe && readingScenario !== "safe-cleared"
@@ -2228,6 +2239,30 @@ test("the second press is what closes it, once, under a key a retry can be answe
       assert.equal(closes[0].force, false, "the first decision is not forced")
       assert.equal(closes[0].version, "cl1_fixture", "the decision carries the version displayed when the sheet opened")
       assert.ok(closes[0].key.length > 0, "under an Idempotency-Key, so a lost answer is not a second close")
+    } finally {
+      readingScenario = "normal"
+    }
+  }))
+
+test("an unstarted Codex can be confirmed and closed without a conversation work read", () =>
+  inTab(async (tab) => {
+    sessionWorkReads = 0
+    try {
+      await list(tab)
+      readingScenario = "unstarted-codex"
+      pushSessions()
+      await tab.until("only the empty Codex row remains", (s) => s.order.join() === SAFE)
+      const open = await swipeOpen(tab, SAFE)
+      assert.equal(open.actionKind, "safe")
+      await tab.press("li.row[data-swipe='open'] > .swipe-end")
+      const asked = await tab.until("the empty Codex is safe to close", (s) =>
+        s.sheet !== null && s.confirmDisabled === false)
+      assert.match(asked.sheetSay ?? "", /Clawdline 已確認這個 Session 可以安全關閉/)
+      assert.equal(sessionWorkReads, 0, "an unstarted conversation has no conversation work to request")
+      await tab.press("#action-confirm-go")
+      await tab.until("the empty Codex close reaches the daemon", () => closes.length > 0)
+      assert.equal(closes[0].id, SAFE)
+      assert.equal(closes[0].force, false)
     } finally {
       readingScenario = "normal"
     }

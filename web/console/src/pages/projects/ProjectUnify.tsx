@@ -109,7 +109,13 @@ function Preview({ plan }: { plan: ProjectUnifyPlan }) {
  * one status line, and a preview that is itself the confirmation — apply is
  * one press inside it, with no second dialog.
  */
-export function ProjectUnify({ place }: { place: ProjectPlace }) {
+/**
+ * `openRequest` opens the preview by itself: a readiness row's 檢視共用 press
+ * raises it, and the preview opens once the plan is read. A plan that cannot
+ * be read leaves the preview shut and moves focus to this block's status,
+ * which says why.
+ */
+export function ProjectUnify({ place, openRequest = 0 }: { place: ProjectPlace; openRequest?: number }) {
   const [plan, setPlan] = useState<ProjectUnifyPlan | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState("")
@@ -121,6 +127,8 @@ export function ProjectUnify({ place }: { place: ProjectPlace }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const opener = useRef<HTMLButtonElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
+  const statusLine = useRef<HTMLParagraphElement>(null)
+  const pendingOpen = useRef(false)
 
   const reload = async (): Promise<ProjectUnifyPlan | null> => {
     const ticket = ++serial.current
@@ -148,6 +156,20 @@ export function ProjectUnify({ place }: { place: ProjectPlace }) {
     dialog.current?.showModal()
     heading.current?.focus({ preventScroll: true })
   }
+
+  useEffect(() => { if (openRequest > 0) pendingOpen.current = true }, [openRequest])
+  useEffect(() => {
+    if (!pendingOpen.current || loading) return
+    if (plan) {
+      pendingOpen.current = false
+      if (!dialog.current?.open) open()
+    } else if (loadError) {
+      pendingOpen.current = false
+      statusLine.current?.focus({ preventScroll: false })
+    }
+  // `open` reads only refs and setters; the pending press is what this waits on.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest, plan, loadError, loading])
 
   const apply = async () => {
     if (!plan || !mayApply(plan) || applying) return
@@ -182,9 +204,10 @@ export function ProjectUnify({ place }: { place: ProjectPlace }) {
         setError(catalogFormat("template", "31c3f09e85c7", [describe(reason)]))
         if (reason.code === "plan_unknown") void reload()
       } else {
-        // A run that stopped part-way reaches a Cloud page as a bare refusal:
-        // the machine's answer of what ran is not carried, so the screen reads
-        // the plan again and says what disk holds now rather than "nothing".
+        // Any other refusal, or a stopped run from a machine older than the
+        // Cloud word that carries what ran (`cloudops.stoppedUnify`): the
+        // screen reads the plan again and says what disk holds now rather
+        // than "nothing".
         setNotice("")
         const next = await reload()
         setError(catalogFormat("template", "8dc58842b93c", [describe(reason), next ? catalogFormat("template", "bda857e28d78", [unifyStatusLine(next).text]) : catalogWord("literal", "04b8ab6d287d")]))
@@ -208,7 +231,7 @@ export function ProjectUnify({ place }: { place: ProjectPlace }) {
         <button type="button" ref={opener} aria-haspopup="dialog" disabled={!plan} onClick={open}>{catalogWord("inline", "cee2d4509617")}</button>
       </div>
     </div>
-    <p className={`project-unify-status is-${tone}`} role="status">
+    <p className={`project-unify-status is-${tone}`} role="status" ref={statusLine} tabIndex={-1}>
       <span className="project-unify-dot" aria-hidden="true" />{status}
     </p>
     <dialog className="project-unify-dialog" ref={dialog} aria-labelledby="project-unify-dialog-title"

@@ -76,8 +76,12 @@ let applies: { key: string; version: unknown; status: number }[] = []
 let refusePlaces: "raw" | "keyed" | null = null
 let refuseWorktrees = false
 
+// What `/v1/places` says in `setup` about unify: the readiness card's row.
+let placeUnify: Record<string, unknown> = {}
+
 function reset() {
   unifyState = "drifting"; unifyVersion = "plan-one"; failPlanReads = 0; changeBeforeNextApply = false; nextApply = "apply"; applies = []; refusePlaces = null; refuseWorktrees = false
+  placeUnify = { unify: "drifting", unify_count: 4 }
 }
 
 const TYPES: Record<string, string> = {
@@ -134,7 +138,7 @@ function daemon(): Server {
         boardProjectId: "fixture-place", itemCount: 0,
         icon: { accent: "#D97757", cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]] },
         repo: "github.com/example/project",
-        setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready" } }],
+        setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready", ...placeUnify } }],
     })
     if (path === "/v1/projects/fixture-place/files" && req.method === "GET") return json(res, 200, { files: [
       { id: "agents-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true },
@@ -259,7 +263,7 @@ class Browser {
   close() { this.ws.close() }
 }
 
-type Size = { width: number; height: number; mobile: boolean }
+type Size = { width: number; height: number; mobile: boolean; scheme?: "light" | "dark" }
 
 class Tab {
   private b: Browser
@@ -279,8 +283,9 @@ class Tab {
     const { sessionId } = await b.send("Target.attachToTarget", { targetId, flatten: true })
     await b.send("Page.enable", {}, sessionId)
     await b.send("Runtime.enable", {}, sessionId)
-    await b.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 1 }, sessionId)
-    await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, sessionId)
+    const { scheme = "dark", ...metrics } = size
+    await b.send("Emulation.setDeviceMetricsOverride", { ...metrics, deviceScaleFactor: 1 }, sessionId)
+    await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, sessionId)
     return new Tab(b, sessionId, targetId, origin)
   }
 
@@ -622,4 +627,71 @@ test("desk: a lost apply answer rereads the plan and says 已共用 only because
     await tab.until("the reread confirms", `document.querySelector(".project-unify-notice")?.textContent === "重新讀取後確認：已共用。"`)
     assert.equal(await tab.run(STATUS), "已共用")
     assert.deepEqual(applies.map(a => a.status), [504])
+  }))
+
+// ---- the readiness card's 「Claude／Codex 共用」 row
+
+/** Opens the health check's full list, as the Projects page's 查看健檢 does. */
+async function openHealthCheck(tab: Tab) {
+  await tab.go("/#page=projects")
+  await tab.until("查看健檢 appears", `(() => { const b = document.querySelector("button.project-setup-open"); if (!b) return false; b.click(); return true })()`)
+  await tab.until("the health check opens", `document.querySelector(".project-setup-dialog")?.open`)
+}
+
+const UNIFY_ROW = `(() => { const row = [...document.querySelectorAll(".project-readiness-capability")].find(r => r.querySelector("strong")?.textContent === "Claude／Codex 共用")
+  return row && { text: row.querySelector("strong + span")?.textContent, state: row.querySelector(".project-readiness-state")?.textContent,
+    button: row.querySelector("button")?.textContent ?? null, right: Math.round(row.getBoundingClientRect().right),
+    buttonRight: Math.round(row.querySelector("button")?.getBoundingClientRect().right ?? 0) } })()`
+
+const SIDEWAYS = `(() => { const body = document.querySelector(".project-setup-dialog-body")
+  return { page: document.documentElement.scrollWidth > innerWidth, body: body.scrollWidth > body.clientWidth } })()`
+
+for (const [name, size] of [["phone", PHONE], ["desk light", { ...DESK, scheme: "light" as const }]] as const) {
+  test(`${name}: the readiness row says 有落差（4 項）, and 檢視共用 from the keyboard opens that Project's preview`, () =>
+    inTab(size, async (tab) => {
+      reset()
+      await openHealthCheck(tab)
+      const row = await tab.until("the unify row is drawn", UNIFY_ROW)
+      assert.equal(row.text, "有落差（4 項）")
+      assert.equal(row.state, "需檢查")
+      assert.equal(row.button, "檢視共用")
+      assert.ok(row.buttonRight <= row.right, "the button stays inside its row: " + JSON.stringify(row))
+      assert.deepEqual(await tab.run(SIDEWAYS), { page: false, body: false }, "nothing scrolls sideways")
+      await tab.run(`[...document.querySelectorAll(".project-readiness-capability")].find(r => r.querySelector("button"))?.scrollIntoView({ block: "center" })`)
+      await tab.shot(`unify-row-${name.replace(" ", "-")}-1-card`)
+      await tab.until("檢視共用 takes focus", `(() => { const b = ${button("檢視共用")}; if (!b) return false; b.focus(); return document.activeElement === b })()`)
+      await tab.press("Enter")
+      await tab.until("the preview opens", `document.querySelector(".project-unify-dialog")?.open`)
+      assert.match(await tab.run(`document.querySelector(".project-unify-dialog-title, #project-unify-dialog-title").textContent`), /Example project · Claude 與 Codex 共用/)
+      assert.match(await tab.run(`document.querySelector("#project-setup-title").textContent`), /Example project · 設定/, "the settings view is scoped to that Project")
+      await tab.shot(`unify-row-${name.replace(" ", "-")}-2-preview`)
+      await tab.press("Escape")
+      await tab.until("focus returns to 檢視變更", `document.activeElement?.textContent === "檢視變更"`)
+    }))
+}
+
+test("phone: a machine that cannot plan says 未知, and its preview says what could not be read", () =>
+  inTab(PHONE, async (tab) => {
+    reset()
+    unifyState = "unknown"
+    placeUnify = { unify: "unknown" }
+    await openHealthCheck(tab)
+    const row = await tab.until("the unify row is drawn", UNIFY_ROW)
+    assert.match(row.text, /^未知/)
+    assert.equal(row.state, "未知")
+    await tab.run(`${button("檢視共用")}.click()`)
+    await tab.until("the preview opens", `document.querySelector(".project-unify-dialog")?.open`)
+    assert.match(await tab.run(`document.querySelector(".project-unify-verdict.is-unknown").textContent`), /讀不到 CLAUDE\.md/)
+    await tab.shot("unify-row-phone-3-unknown")
+  }))
+
+test("phone: an older machine that sends no unify status shows 未知 and offers no button", () =>
+  inTab(PHONE, async (tab) => {
+    reset()
+    placeUnify = {}
+    await openHealthCheck(tab)
+    const row = await tab.until("the unify row is drawn", UNIFY_ROW)
+    assert.match(row.text, /^未知/)
+    assert.equal(row.button, null)
+    await tab.shot("unify-row-phone-4-older")
   }))

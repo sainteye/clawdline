@@ -28,7 +28,9 @@ const toneWords: Record<SetupTone, string> = localizedLiteralMap({
   unknown: "944f88e4f77b",
 })
 
-function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place: ProjectPlace): void }) {
+function ProjectReadiness({ place, select, openUnify }: {
+  place: ProjectPlace; select(place: ProjectPlace): void; openUnify(place: ProjectPlace): void
+}) {
   const capabilities = projectSetupCapabilities(place)
   const progress = projectSetupProgress(place)
   const needsAttention = capabilities.some(row => row.tone === "attention")
@@ -48,13 +50,16 @@ function ProjectReadiness({ place, select }: { place: ProjectPlace; select(place
       </span>
     </div>
     <ul className="project-readiness-capabilities">
-      {capabilities.map(row => <li key={row.key} className={`project-readiness-capability is-${row.tone}`}>
+      {capabilities.map(row => <li key={row.key} className={`project-readiness-capability is-${row.tone}${row.action ? " has-action" : ""}`}>
         <span className="project-readiness-dot" aria-hidden="true" />
         <span>
           <strong>{row.label}</strong>
           <span>{row.detail}</span>
         </span>
         <span className="project-readiness-state">{toneWords[row.tone]}</span>
+        {row.action === "unify" && <button className="project-readiness-row-action" type="button"
+          aria-label={catalogFormat("projects", "setupViewSharingFor", [place.label])}
+          onClick={() => openUnify(place)}>{catalogWord("projects", "setupViewSharing")}</button>}
       </li>)}
     </ul>
     <button className="project-readiness-action" type="button" onClick={() => select(place)}>{action}</button>
@@ -81,6 +86,9 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
   const scopedTrigger = useRef<HTMLButtonElement | null>(null)
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [view, setView] = useState<"settings" | "files">("settings")
+  // A readiness row's sharing press: which Project's unify preview to open,
+  // and a count so a second press on the same one opens it again.
+  const [unifyRequest, setUnifyRequest] = useState({ place: "", count: 0 })
   const filesState = useRef({ dirty: false, busy: false })
   const [closeNotice, setCloseNotice] = useState("")
   const updateFilesState = useCallback((state: { dirty: boolean; busy: boolean }) => { filesState.current = state }, [])
@@ -132,6 +140,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
       setCloseNotice("")
       setProjectPath(path)
       setView("settings")
+      setUnifyRequest({ place: "", count: 0 })
       void load()
       dialog.current?.showModal()
       dialog.current?.focus({ preventScroll: true })
@@ -143,6 +152,14 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
     return progress && progress.complete === progress.total
   }).length
   const visiblePlaces = projectPath ? places.filter(place => place.path === projectPath) : places
+
+  const openUnify = (place: ProjectPlace) => {
+    if (!mayLeave()) return
+    filesState.current = { dirty: false, busy: false }
+    setProjectPath(place.path)
+    setView("settings")
+    setUnifyRequest(previous => ({ place: place.id, count: previous.count + 1 }))
+  }
 
   const select = (place: ProjectPlace) => {
     if (!mayLeave()) return
@@ -189,6 +206,7 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
         filesState.current = { dirty: false, busy: false }
         setCloseNotice("")
         setProjectPath(null)
+        setUnifyRequest({ place: "", count: 0 })
         if (place) {
           restoreTrigger.current = true
           scopedTrigger.current = null
@@ -231,11 +249,12 @@ export function ProjectSetup({ shown, ref }: { shown: boolean; ref?: Ref<Project
           <p>{catalogWord("inline", "9efc27432575")}</p>
           {!projectPath && !loading && places.length > 0 && <span className="project-setup-total">{complete}/{places.length}<small>{catalogWord("inline", "1f18df830a84")}</small></span>}
         </div>
-        {projectPath && visiblePlaces[0] && <ProjectUnify key={visiblePlaces[0].id} place={visiblePlaces[0]} />}
+        {projectPath && visiblePlaces[0] && <ProjectUnify key={visiblePlaces[0].id} place={visiblePlaces[0]}
+          openRequest={unifyRequest.place === visiblePlaces[0].id ? unifyRequest.count : 0} />}
         {projectPath && visiblePlaces[0] && <ProjectFiles key={visiblePlaces[0].id} place={visiblePlaces[0]} onState={updateFilesState} />}
         {loading && <p className="project-setup-loading" role="status">{catalogWord("inline", "db8653492c3a")}</p>}
         {!loading && !error && visiblePlaces.length > 0 && <ol className="project-readiness-list">
-          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} />)}
+          {visiblePlaces.map(place => <ProjectReadiness key={place.id} place={place} select={select} openUnify={openUnify} />)}
         </ol>}
         {!loading && !error && visiblePlaces.length === 0 && <p className="project-setup-empty" role="status">{projectPath ? catalogWord("literal", "0e8fb42d973e") : <>{catalogWord("inline", "76d12ea59749")} <code>{catalogWord("inline", "fa482be8fef0")}</code>{catalogWord("inline", "7aa0955db160")}</>}</p>}
         {error && <p role="alert">{error}</p>}

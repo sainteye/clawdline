@@ -106,5 +106,41 @@
   "count.exportRounds": {
     "en": "Export rounds: {arg0} · SHA-256: ",
     "zh-Hant": "匯出輪數：{arg0} · SHA-256："
+  },
+  "projects.setupUnifyLabel": {
+    "en": "Claude and Codex share rules and skills",
+    "zh-Hant": "Claude／Codex 共用"
+  },
+  "projects.setupUnifyShared": {
+    "en": "Shared",
+    "zh-Hant": "已共用"
+  },
+  "projects.setupUnifyDrift": {
+    "en": "Differences found",
+    "zh-Hant": "有落差"
+  },
+  "projects.setupUnifyDriftCount": {
+    "en": "Differences found ({arg0})",
+    "zh-Hant": "有落差（{arg0} 項）"
+  },
+  "projects.setupUnifyUnreadable": {
+    "en": "Unknown: a rules file or skill could not be read",
+    "zh-Hant": "未知：有規則檔或技能讀不到"
+  },
+  "projects.setupUnifyUnsupported": {
+    "en": "Unknown: this machine does not report sharing yet",
+    "zh-Hant": "未知：這台機器的 Clawdline 尚未回報共用狀態"
+  },
+  "projects.setupProjectRoot": {
+    "en": "Project root: {arg0}",
+    "zh-Hant": "Project 根目錄：{arg0}"
+  },
+  "projects.setupViewSharing": {
+    "en": "View sharing",
+    "zh-Hant": "檢視共用"
+  },
+  "projects.setupViewSharingFor": {
+    "en": "View Claude and Codex sharing for {arg0}",
+    "zh-Hant": "檢視 {arg0} 的 Claude／Codex 共用"
   }
 }

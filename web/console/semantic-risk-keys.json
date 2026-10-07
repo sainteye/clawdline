@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 4662,
+  "englishKeys": 4671,
   "counts": {
-    "negation": 1386,
+    "negation": 1388,
     "state": 649,
     "permission": 250,
     "deletion": 83,
-    "uncertainty": 129
+    "uncertainty": 131
   },
-  "unionCount": 2046,
+  "unionCount": 2048,
   "categories": {
     "negation": [
       "bar.noSession",
@@ -1250,6 +1250,8 @@
       "next.updateSourceCheckout",
       "next.updateSourceDeploy",
       "projects.activityNone",
+      "projects.setupUnifyUnreadable",
+      "projects.setupUnifyUnsupported",
       "projects.statusBoardUnavailable",
       "settings.settingsCodexAutoNameHint",
       "settings.settingsCodexDefaultEffortHint",
@@ -2501,6 +2503,8 @@
       "next.terminalAllMachineAccessDenied",
       "next.terminalKeysNotSentUnknown",
       "next.updateUnknownVersion",
+      "projects.setupUnifyUnreadable",
+      "projects.setupUnifyUnsupported",
       "projects.statusBoardUnavailable",
       "projects.statusUnavailable",
       "template.ad7d5cc31425",
@@ -4297,6 +4301,8 @@
     "next.updateSourceDeploy",
     "next.updateUnknownVersion",
     "projects.activityNone",
+    "projects.setupUnifyUnreadable",
+    "projects.setupUnifyUnsupported",
     "projects.statusBoardUnavailable",
     "projects.statusUnavailable",
     "projects.statusUpdateFailed",

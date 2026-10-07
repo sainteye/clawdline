@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4662,
-  "riskKeys": 2046,
-  "nonRiskCount": 2616,
+  "englishContentKeys": 4671,
+  "riskKeys": 2048,
+  "nonRiskCount": 2623,
   "groups": [
     {
       "name": "bar / other",
@@ -2132,7 +2132,7 @@
     },
     {
       "name": "projects / other",
-      "count": 8,
+      "count": 15,
       "sources": [
         "src/pages/projects/project-list.ts"
       ],
@@ -2141,6 +2141,13 @@
         "projects.activityLastKnown",
         "projects.activityPartial",
         "projects.boardLede",
+        "projects.setupProjectRoot",
+        "projects.setupUnifyDrift",
+        "projects.setupUnifyDriftCount",
+        "projects.setupUnifyLabel",
+        "projects.setupUnifyShared",
+        "projects.setupViewSharing",
+        "projects.setupViewSharingFor",
         "projects.statusPreparing",
         "projects.statusRetained",
         "projects.toolsCollapse",

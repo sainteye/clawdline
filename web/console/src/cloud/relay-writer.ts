@@ -956,6 +956,11 @@ export class RelayWriter {
       // An archive is a close first: its answer is the same existence fact.
       if (route.op === "end" || route.op === "archive") this.host.closed(route.session)
       this.host.note({ method, path, answer: "relay", word: route.word, ms })
+      // A unify apply that stopped part-way crosses as its body beside a 500
+      // (`cloudops.stoppedUnify`), so the copied client settles it rather than
+      // filtering it to a code. It is the local route's answer again: a 500
+      // whose body says what ran, what failed and the plan read again.
+      if (route.op === "project-unify-apply" && isStoppedUnify(body)) return json(500, cleanAnswer(body))
       return json(200, cleanAnswer(body))
     } catch (error) {
       return this.refuse(route, method, path, started, spelling, error as CloudFailureLike)
@@ -1864,6 +1869,13 @@ function refOf(error: CloudFailureLike): string | null {
   if (!ref || !Number.isSafeInteger(ref.seq)) return null
   const sender = String(ref.sender ?? "").replace(/^web_/, "").slice(0, 8)
   return (sender ? sender + "·" : "") + String(ref.seq)
+}
+
+/** A unify apply's answer that says it stopped part-way: the shape `applyUnify` reads as one. */
+function isStoppedUnify(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false
+  const answer = body as Record<string, unknown>
+  return answer.outcome === "stopped" && Array.isArray(answer.ran) && !!answer.plan && typeof answer.plan === "object"
 }
 
 /** A successful answer as the local route gives it: the client's own bookkeeping taken off. */

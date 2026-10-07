@@ -55,7 +55,16 @@
         "deploy_activity": { "$ref": "#/$defs/ProjectDeployActivity" },
         "servers": { "$ref": "#/$defs/ProjectServerSetup" },
         "server_count": { "type": "integer", "minimum": 0 },
-        "sync": { "$ref": "#/$defs/ProjectSyncSetup" }
+        "sync": { "$ref": "#/$defs/ProjectSyncSetup" },
+        "unify": {
+          "description": "Whether this Project's Claude and Codex sessions read the same rules and skills: the status of the unify plan (GET /v1/projects/:id/unify), read from disk with the same bounded, read-only Plan. Absent from a daemon older than this field, which a console shows as unknown.",
+          "$ref": "#/$defs/ProjectUnifyStatus"
+        },
+        "unify_count": {
+          "description": "With `unify: drifting`, how many planned changes and conflicts the plan holds; each counts once. Absent otherwise.",
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "StartPlace": {

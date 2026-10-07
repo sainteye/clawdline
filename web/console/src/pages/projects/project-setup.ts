@@ -1,10 +1,36 @@
-import { localizedLiteralMap } from "../../catalog.js"
-import { catalogFormat } from "../../catalog.js"
-import { catalogWord } from "../../catalog.js"
+import { catalogFormat, catalogWord, localizedLiteralMap } from "../../catalog.js"
+import type { ProjectSetup, ProjectUnifyStatus } from "@clawdline/contract"
 import type { ProjectPlace, ProjectSetupEvidence } from "../work/api.js"
 
 export type SetupTone = "ready" | "missing" | "attention" | "not-applicable" | "unknown"
-export interface SetupCapability { key: string; label: string; detail: string; tone: SetupTone; complete: boolean; applicable: boolean }
+/** `action: "unify"` is a row whose button opens that Project's unify preview. */
+export interface SetupCapability {
+  key: string; label: string; detail: string; tone: SetupTone; complete: boolean; applicable: boolean; action?: "unify"
+}
+
+/** The places answer's setup with the unify fields the machine adds (api/v1 ProjectSetup). */
+type SetupWithUnify = ProjectSetupEvidence & Pick<ProjectSetup, "unify" | "unify_count">
+
+const unifyTone: Record<ProjectUnifyStatus, SetupTone> = { unified: "ready", drifting: "attention", unknown: "unknown" }
+
+/**
+ * Whether this Project's Claude and Codex sessions read the same rules and
+ * skills, from the machine's unify plan. A daemon older than the field sends
+ * none: that is unknown and left out of the score, never shared. A count the
+ * machine did not send is not shown as 0.
+ */
+function unifyCapability(setup: SetupWithUnify): SetupCapability {
+  const status = setup.unify
+  const detail = status === "unified" ? catalogWord("projects", "setupUnifyShared")
+    : status === "drifting" ? (typeof setup.unify_count === "number" && setup.unify_count > 0
+      ? catalogFormat("projects", "setupUnifyDriftCount", [setup.unify_count])
+      : catalogWord("projects", "setupUnifyDrift"))
+      : status === "unknown" ? catalogWord("projects", "setupUnifyUnreadable") : catalogWord("projects", "setupUnifyUnsupported")
+  return {
+    key: "unify", label: catalogWord("projects", "setupUnifyLabel"), detail, tone: status ? unifyTone[status] : "unknown",
+    complete: status === "unified", applicable: status !== undefined, action: status ? "unify" : undefined,
+  }
+}
 
 const iconWords: Record<ProjectSetupEvidence["icon"], string> = localizedLiteralMap({
   mirrored: "cc665d77a525",
@@ -21,7 +47,7 @@ const activityWords: Record<ProjectSetupEvidence["deploy_activity"], string> = l
   unknown: "b176bc03af47",
 })
 
-/** The four visible facts and their human consequence, kept out of JSX so
+/** The visible facts and their human consequence, kept out of JSX so
  * loading an older daemon can be tested as an explicit unknown state. */
 export function projectSetupCapabilities(place: ProjectPlace): SetupCapability[] {
   const setup = place.setup
@@ -46,6 +72,7 @@ export function projectSetupCapabilities(place: ProjectPlace): SetupCapability[]
     { key: "deploy", label: catalogWord("literal", "6ae06f64f8fa"), detail: deployDetail, tone: deployTone, complete: setup.deploy === "ready", applicable: setup.deploy !== "not_applicable" },
     { key: "servers", label: catalogWord("literal", "7d6a2964df09"), detail: serverDetail, tone: setup.servers === "ready" ? "ready" : setup.servers === "attention" ? "attention" : "missing", complete: setup.servers === "ready", applicable: true },
     { key: "sync", label: catalogWord("literal", "f3e136131a7e"), detail: setup.sync === "ready" ? catalogWord("literal", "9391584df834") : catalogWord("literal", "d14c93fd8dbe"), tone: setup.sync, complete: setup.sync === "ready", applicable: true },
+    unifyCapability(setup),
   ]
 }
 
@@ -68,7 +95,7 @@ export function projectSetupInstructions(place: Pick<ProjectPlace, "label" | "pa
     catalogWord("literal", "7e545a6a9b17"),
     "",
     catalogFormat("template", "767c7030f872", [JSON.stringify(place.label)]),
-    `Project root：${JSON.stringify(place.path)}`,
+    catalogFormat("projects", "setupProjectRoot", [JSON.stringify(place.path)]),
     "",
     catalogWord("literal", "0272dbb4a00f"),
     "",
