@@ -10,7 +10,7 @@ import { activateCatalog, catalogWord, resetCatalogForTest } from "./catalog.ts"
 // @ts-expect-error -- Node's strip-types test runner needs the source extension.
 import { catalogLabel, closingMark, colonMark, fullStop, labelled, listSeparator, openingMark, parenthesized, quotedTitle, wordGap } from "./punctuation.ts"
 
-function inLanguage(catalog: Record<string, string>, tag: string, run: () => void) {
+function inLanguage(catalog: Record<string, string>, tag: Parameters<typeof activateCatalog>[1], run: () => void) {
   const oldDocument = globalThis.document
   Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } } })
   try {
