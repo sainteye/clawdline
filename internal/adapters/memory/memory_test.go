@@ -178,7 +178,7 @@ func TestAnIndexPastItsBoundIsCutAtALineAndSaysSo(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	last := lines[len(lines)-1]
 	listed := strings.Count(text, "\n- lesson-")
-	if want := fmt.Sprintf("… %d more entries are not shown", 200-listed); !strings.HasPrefix(last, want) {
+	if want := fmt.Sprintf("… %d more resident entries are not shown", 200-listed); !strings.HasPrefix(last, want) {
 		t.Fatalf("the last line is %q, want it to start %q", last, want)
 	}
 	for _, l := range lines[:len(lines)-1] {

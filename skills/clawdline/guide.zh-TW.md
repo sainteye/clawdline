@@ -280,15 +280,19 @@ skill、指向別處的連結、Codex 看不到的規則，都由他決定。路
 
 **共用記憶：每個 Project 一份，Claude 與 Codex 共用。** 關於這個 Project 的教訓寫進它的 Clawdline
 memory，不要寫進你這個助理自己的記憶，下一個 Session 不論是哪個助理都讀得到。Clawdline 啟動的 Session
-已經拿到索引（每筆一行 `name — description`，依 type 分組，超過 8 KiB 會截斷並寫一行說明）；某行跟手上
-的事有關時再讀那一筆：
+已經拿到索引：每筆常駐項目一行 `name — description`，依 type 分組；接著每個 group 一行，寫明何時該讀、
+有幾筆、用哪個指令列出。索引上限 8 KiB；光是常駐項目就超過時，常駐項目會截斷並寫一行說明，group 行
+全部保留。某行跟手上的事有關時再讀那一筆；某個 group 的說明符合手上的事時，就列出那個 group：
 
 ```sh
-clawdline memory list                     # the index; --json for the full answer
+clawdline memory list                     # resident entries and every group; --json for the full answer
+clawdline memory list --group <slug>      # one group's entries
 clawdline memory show <name>              # one entry, frontmatter and body
 printf '%s\n' "<body>" | clawdline memory add --name <kebab-name> --description "<one line>" --type feedback
-clawdline memory update --name <name> --description "<one line>" --type project --body-file body.md
+clawdline memory update --name <name> --description "<one line>" --type project --group <slug> --body-file body.md
 clawdline memory forget <name>
+clawdline memory group set <slug> --description "<when to read it>"
+clawdline memory group list
 clawdline memory import --from-claude     # a plan; --apply copies, skipping names already stored
 ```
 
@@ -296,9 +300,15 @@ clawdline memory import --from-claude     # a plan; --apply copies, skipping nam
 Project）。type 是 `user`、`feedback`、`project`、`reference` 其中之一。exit 0 完成、1 被拒、2 用法錯、
 3 未知（daemon 沒回應：不能當作已寫入）。同一筆 add 兩次是 `unchanged`；名稱已被別的內容用掉是
 `memory_entry_exists`——改用 `update`。其他拒絕碼有 `memory_entry_invalid`、`memory_entry_not_found`
-與 `memory_full`；`memory_unreadable` 表示 store 讀不到，不代表裡面是空的。路由是
-`GET`/`POST /v1/projects/{place}/memory` 與 `GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`。
-import 只讀 Claude Code 的 `~/.claude/projects/<slug>/memory/`；Clawdline 從不寫那裡。
+與 `memory_full`；`memory_unreadable` 表示 store 讀不到，不代表裡面是空的。沒有 `--group` 的項目是常駐
+項目；`--group` 必須指向已經用 `group set` 建立的 group，否則寫入會以 `memory_group_not_found` 拒絕。
+一個 Project 最多 16 個 group，每個 group 的說明是一行、最多 256 bytes。路由是
+`GET`/`POST /v1/projects/{place}/memory`、`GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`
+與 `PUT /v1/projects/{place}/memory-groups/{slug}`。import 只讀 Claude Code 的
+`~/.claude/projects/<slug>/memory/`；Clawdline 從不寫那裡。它保留該目錄 `MEMORY.md` 的結構：
+`MEMORY.md` 直接連到的項目是常駐項目；它連到的子索引變成一個 group，說明取自子索引的 description，
+子索引連到的每筆項目都歸入該 group；索引檔本身從不匯入成項目；哪裡都沒連到的項目以常駐項目匯入，
+並在計畫裡列出名稱。
 
 ## 2a. Feature Root 的一般流程
 

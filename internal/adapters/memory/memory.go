@@ -19,6 +19,7 @@ package memory
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,8 +46,19 @@ const (
 	EntryCountLimit = 512
 	// DescriptionByteLimit is the longest one-line description.
 	DescriptionByteLimit = 512
-	// nameByteLimit is the longest entry name.
+	// nameByteLimit is the longest entry name, and the longest group slug.
 	nameByteLimit = 64
+	// GroupCountLimit is how many groups one Project holds. The index a
+	// launch carries always names every group, so the groups together must
+	// fit in it with room left for resident entries: sixteen of the longest
+	// lines are about 6 KiB of the 8 KiB.
+	GroupCountLimit = 16
+	// GroupDescriptionByteLimit is the longest "read this when" line of a
+	// group.
+	GroupDescriptionByteLimit = 256
+	// groupsFileReadLimit is the most of the groups file read: every group
+	// at its longest, JSON-escaped, with room to spare.
+	groupsFileReadLimit = 64 << 10
 	// entryFileReadLimit is the most of one entry file read: the body bound
 	// and room for its frontmatter.
 	entryFileReadLimit = EntryBodyLimit + 4<<10
@@ -54,6 +66,10 @@ const (
 
 // IndexFile is the generated index in each Project's directory.
 const IndexFile = "INDEX.md"
+
+// GroupsFile holds each group's slug and description. Membership is not in
+// it: an entry names its own group in its frontmatter.
+const GroupsFile = "GROUPS.json"
 
 // Type is an entry's kind, the four Claude Code's auto-memory uses.
 type Type string
@@ -78,12 +94,24 @@ func KnownType(t Type) bool {
 	return false
 }
 
-// Entry is one memory. Body is empty in a listing.
+// Entry is one memory. Body is empty in a listing. An entry with no Group
+// is resident: the index a launch carries lists it by name. An entry in a
+// group is listed by `clawdline memory list --group <slug>`, and the index
+// carries one line for the whole group.
 type Entry struct {
 	Name        string
 	Description string
 	Type        Type
+	Group       string
 	Body        string
+}
+
+// Group is a named set of entries a session reads when its description
+// applies. Entries is how many entries name it.
+type Group struct {
+	Slug        string
+	Description string
+	Entries     int
 }
 
 // The typed refusals. A caller branches on these with errors.Is; anything
@@ -94,6 +122,8 @@ var (
 	ErrNotFound  = errors.New("memory_entry_not_found")
 	ErrFull      = errors.New("memory_full")
 	ErrBadKey    = errors.New("memory_project_key_invalid")
+	// ErrNoGroup is an entry that names a group nobody has set.
+	ErrNoGroup = errors.New("memory_group_not_found")
 )
 
 var nameShape = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -119,6 +149,8 @@ func Validate(e Entry) error {
 		return fmt.Errorf("%w: a description is at most %d bytes", ErrInvalid, DescriptionByteLimit)
 	case !KnownType(e.Type):
 		return fmt.Errorf("%w: the type is one of user, feedback, project, reference", ErrInvalid)
+	case e.Group != "" && !ValidName(e.Group):
+		return fmt.Errorf("%w: a group is lowercase letters, digits and single hyphens, at most %d bytes", ErrInvalid, nameByteLimit)
 	case strings.TrimSpace(e.Body) == "":
 		return fmt.Errorf("%w: the body is empty", ErrInvalid)
 	case len(e.Body) > EntryBodyLimit:
@@ -230,6 +262,31 @@ func (s *Store) MostEntries() (int, error) {
 	return most, nil
 }
 
+// MostGroups is the number of groups in the Project with the most, which is
+// what the memory.groups row reports. No store is a known zero; a groups
+// file that cannot be read is an error.
+func (s *Store) MostGroups() (int, error) {
+	keys, err := os.ReadDir(s.root)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	most := 0
+	for _, k := range keys {
+		if !k.IsDir() || !keyShape.MatchString(k.Name()) {
+			continue
+		}
+		groups, err := readGroups(filepath.Join(s.root, k.Name()))
+		if err != nil {
+			return 0, err
+		}
+		most = max(most, len(groups))
+	}
+	return most, nil
+}
+
 func list(dir string) ([]Entry, error) {
 	names, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -331,6 +388,15 @@ func (s *Store) write(key string, e Entry, replace bool) (Outcome, error) {
 	if exists && old == e {
 		return Unchanged, nil
 	}
+	if e.Group != "" {
+		groups, err := readGroups(dir)
+		if err != nil {
+			return "", err
+		}
+		if _, ok := groups[e.Group]; !ok {
+			return "", fmt.Errorf("%w: %s; create it first with `clawdline memory group set %s --description \"…\"`", ErrNoGroup, e.Group, e.Group)
+		}
+	}
 	if exists && !replace {
 		return "", fmt.Errorf("%w: %s; use update to change it", ErrDuplicate, e.Name)
 	}
@@ -385,48 +451,257 @@ func (s *Store) Forget(key, name string) (Outcome, error) {
 	return Forgotten, nil
 }
 
-// Index is the generated index of one Project, cut to IndexByteLimit, with
-// how many entries it lists and whether it was cut. No entries is "".
-func (s *Store) Index(key string) (text string, entries int, cut bool, err error) {
+// Listing is everything a Project's memory route answers: every entry
+// without its body, every group with its count, and the index a launch is
+// given.
+type Listing struct {
+	Entries []Entry
+	Groups  []Group
+	Index   string
+	// Cut is whether the index left resident entries out.
+	Cut bool
+}
+
+// Listing is one Project's entries, groups and index. A Project with no
+// directory has none of them; one that cannot be read is an error.
+func (s *Store) Listing(key string) (Listing, error) {
 	dir, err := s.Dir(key)
 	if err != nil {
-		return "", 0, false, err
+		return Listing{}, err
 	}
-	all, err := list(dir)
+	return listing(dir)
+}
+
+func listing(dir string) (Listing, error) {
+	entries, err := list(dir)
+	if err != nil {
+		return Listing{}, err
+	}
+	described, err := readGroups(dir)
+	if err != nil {
+		return Listing{}, err
+	}
+	groups := countGroups(entries, described)
+	text, cut := RenderIndex(entries, groups)
+	return Listing{Entries: entries, Groups: groups, Index: text, Cut: cut}, nil
+}
+
+// countGroups is every group that is described or named by an entry,
+// sorted by slug, with how many entries name it. A group an entry names but
+// nobody described is still listed, so its entries stay reachable.
+func countGroups(entries []Entry, described map[string]string) []Group {
+	count := map[string]int{}
+	for _, e := range entries {
+		if e.Group != "" {
+			count[e.Group]++
+		}
+	}
+	slugs := make([]string, 0, len(described)+len(count))
+	for slug := range described {
+		slugs = append(slugs, slug)
+	}
+	for slug := range count {
+		if _, ok := described[slug]; !ok {
+			slugs = append(slugs, slug)
+		}
+	}
+	sort.Strings(slugs)
+	out := make([]Group, 0, len(slugs))
+	for _, slug := range slugs {
+		out = append(out, Group{Slug: slug, Description: described[slug], Entries: count[slug]})
+	}
+	return out
+}
+
+// Groups is every group of one Project with its entry count.
+func (s *Store) Groups(key string) ([]Group, error) {
+	l, err := s.Listing(key)
+	return l.Groups, err
+}
+
+// ValidateGroup is every refusal a group's slug and description can earn.
+func ValidateGroup(slug, description string) error {
+	switch {
+	case !ValidName(slug):
+		return fmt.Errorf("%w: a group is lowercase letters, digits and single hyphens, at most %d bytes", ErrInvalid, nameByteLimit)
+	case strings.TrimSpace(description) == "":
+		return fmt.Errorf("%w: a group's description says when to read it, and is required", ErrInvalid)
+	case strings.ContainsAny(description, "\r\n"):
+		return fmt.Errorf("%w: a group's description is one line", ErrInvalid)
+	case len(description) > GroupDescriptionByteLimit:
+		return fmt.Errorf("%w: a group's description is at most %d bytes", ErrInvalid, GroupDescriptionByteLimit)
+	}
+	return nil
+}
+
+// SetGroup creates a group or changes its description. The same description
+// again is Unchanged; one group more than GroupCountLimit is ErrFull.
+func (s *Store) SetGroup(key, slug, description string) (Outcome, error) {
+	if err := ValidateGroup(slug, description); err != nil {
+		return "", err
+	}
+	dir, err := s.Dir(key)
+	if err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	groups, err := readGroups(dir)
+	if err != nil {
+		return "", err
+	}
+	old, exists := groups[slug]
+	if exists && old == description {
+		return Unchanged, nil
+	}
+	if !exists && len(groups) >= GroupCountLimit {
+		return "", fmt.Errorf("%w: this Project already holds %d groups", ErrFull, GroupCountLimit)
+	}
+	groups[slug] = description
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := writeGroups(dir, groups); err != nil {
+		return "", err
+	}
+	if err := writeIndex(dir); err != nil {
+		return "", err
+	}
+	if exists {
+		return Updated, nil
+	}
+	return Created, nil
+}
+
+type groupsFile struct {
+	Groups []groupRecord `json:"groups"`
+}
+
+type groupRecord struct {
+	Slug        string `json:"slug"`
+	Description string `json:"description"`
+}
+
+// readGroups is each described group's description by slug. No file is no
+// groups; a file that cannot be read or parsed is an error.
+func readGroups(dir string) (map[string]string, error) {
+	f, err := os.Open(filepath.Join(dir, GroupsFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, groupsFileReadLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > groupsFileReadLimit {
+		return nil, fmt.Errorf("%s is larger than the groups file may be", GroupsFile)
+	}
+	var file groupsFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return nil, fmt.Errorf("%s: %w", GroupsFile, err)
+	}
+	out := map[string]string{}
+	for _, g := range file.Groups {
+		if ValidateGroup(g.Slug, g.Description) != nil {
+			return nil, fmt.Errorf("%s holds a group this store would refuse: %q", GroupsFile, g.Slug)
+		}
+		out[g.Slug] = g.Description
+	}
+	return out, nil
+}
+
+func writeGroups(dir string, groups map[string]string) error {
+	file := groupsFile{Groups: []groupRecord{}}
+	for slug, description := range groups {
+		file.Groups = append(file.Groups, groupRecord{Slug: slug, Description: description})
+	}
+	sort.Slice(file.Groups, func(i, j int) bool { return file.Groups[i].Slug < file.Groups[j].Slug })
+	data, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(dir, GroupsFile), append(data, '\n'))
+}
+
+// Index is the generated index of one Project, within IndexByteLimit, with
+// how many entries the Project holds and whether resident entries were cut.
+// No entries is "".
+func (s *Store) Index(key string) (text string, entries int, cut bool, err error) {
+	l, err := s.Listing(key)
 	if err != nil {
 		return "", 0, false, err
 	}
-	text, cut = RenderIndex(all)
-	return text, len(all), cut, nil
+	return l.Index, len(l.Entries), l.Cut, nil
 }
 
 const indexHeading = "# Project memory index\n\nGenerated by Clawdline from the entries; do not edit.\n"
 
-// RenderIndex is the index text for entries already in index order: one
-// line per entry, `name — description`, under a heading per type. Past
-// IndexByteLimit it stops at a whole line and says how many it left out.
-func RenderIndex(entries []Entry) (string, bool) {
+const groupsHeading = "\n## Groups\n\nEach group holds more entries. When a group's description applies, list it with " +
+	"`clawdline memory list --group <slug>` and read the entries that matter.\n\n"
+
+// GroupLine is one group's line in the index.
+func GroupLine(g Group) string {
+	description := g.Description
+	if description == "" {
+		description = "(no description)"
+	}
+	return fmt.Sprintf("- %s — %s — %d entries: `clawdline memory list --group %s`\n", g.Slug, description, g.Entries, g.Slug)
+}
+
+// RenderIndex is the index text for entries already in index order. Every
+// resident entry (one with no group) is one line, `name — description`,
+// under a heading per type; then every group with entries or a description
+// is one line saying when to read it, how many entries it holds and the
+// command that lists them. The group lines are always kept: when the
+// resident lines would push the index past IndexByteLimit, they stop at a
+// whole line and say how many they left out, and cut is true.
+func RenderIndex(entries []Entry, groups []Group) (string, bool) {
 	if len(entries) == 0 {
 		return "", false
 	}
+	var tail strings.Builder
+	if len(groups) > 0 {
+		tail.WriteString(groupsHeading)
+		for i, g := range groups {
+			line := GroupLine(g)
+			// The group bounds keep this from happening; if it ever did,
+			// the index still ends within its bound and says what is left.
+			if len(indexHeading)+tail.Len()+len(line)+256 > IndexByteLimit {
+				fmt.Fprintf(&tail, "\n… %d more groups are not shown; run `clawdline memory group list` for all of them.\n", len(groups)-i)
+				break
+			}
+			tail.WriteString(line)
+		}
+	}
+	var residents []Entry
+	for _, e := range entries {
+		if e.Group == "" {
+			residents = append(residents, e)
+		}
+	}
 	var b strings.Builder
 	b.WriteString(indexHeading)
-	var group Type
-	for i, e := range entries {
+	var heading Type
+	for i, e := range residents {
 		var chunk strings.Builder
-		if e.Type != group {
-			group = e.Type
-			chunk.WriteString("\n## " + string(group) + "\n\n")
+		if e.Type != heading {
+			heading = e.Type
+			chunk.WriteString("\n## " + string(heading) + "\n\n")
 		}
 		chunk.WriteString("- " + e.Name + " — " + e.Description + "\n")
-		left := len(entries) - i
-		tail := fmt.Sprintf("\n… %d more entries are not shown; run `clawdline memory list` for all of them.\n", left)
-		if b.Len()+chunk.Len()+len(tail) > IndexByteLimit {
-			b.WriteString(tail)
+		note := fmt.Sprintf("\n… %d more resident entries are not shown; run `clawdline memory list` for all of them.\n", len(residents)-i)
+		if b.Len()+chunk.Len()+len(note)+tail.Len() > IndexByteLimit {
+			b.WriteString(note)
+			b.WriteString(tail.String())
 			return b.String(), true
 		}
 		b.WriteString(chunk.String())
 	}
+	b.WriteString(tail.String())
 	return b.String(), false
 }
 
@@ -455,11 +730,11 @@ func (s *Store) LaunchText(dir string) (string, error) {
 const LaunchTextLimit = len(LaunchInstruction) + 2 + IndexByteLimit
 
 func writeIndex(dir string) error {
-	all, err := list(dir)
+	l, err := listing(dir)
 	if err != nil {
 		return err
 	}
-	text, _ := RenderIndex(all)
+	text := l.Index
 	if text == "" {
 		err := os.Remove(filepath.Join(dir, IndexFile))
 		if errors.Is(err, os.ErrNotExist) {
@@ -524,8 +799,12 @@ func Format(e Entry) string {
 		strings.HasPrefix(description, ">") || strings.HasPrefix(description, "|") {
 		description = `"` + description + `"`
 	}
+	group := ""
+	if e.Group != "" {
+		group = "\n  group: " + e.Group
+	}
 	return "---\nname: " + e.Name + "\ndescription: " + description +
-		"\nmetadata:\n  type: " + string(e.Type) + "\n---\n\n" + body + "\n"
+		"\nmetadata:\n  type: " + string(e.Type) + group + "\n---\n\n" + body + "\n"
 }
 
 // Parse reads an entry file: this store's own, or one of Claude Code's
@@ -555,7 +834,7 @@ func Parse(text string) (Entry, error) {
 			continue
 		}
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
-		if indented && k != "type" {
+		if indented && k != "type" && k != "group" {
 			continue
 		}
 		if v == ">" || v == "|" || v == ">-" || v == "|-" {
@@ -574,5 +853,5 @@ func Parse(text string) (Entry, error) {
 		}
 	}
 	return Entry{Name: fields["name"], Description: fields["description"], Type: Type(fields["type"]),
-		Body: strings.TrimLeft(body, "\n")}, nil
+		Group: fields["group"], Body: strings.TrimLeft(body, "\n")}, nil
 }

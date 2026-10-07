@@ -4588,22 +4588,70 @@ export interface ProjectMemoryEntry {
    */
   body: string
   description: string
+
+  /**
+   * A group set with PUT /v1/projects/:id/memory-groups/:slug; absent or empty for
+   * a resident entry. An unknown group is refused with memory_group_not_found.
+   */
+  group?: string
   name: string
   type: ProjectMemoryType
 }
 
 /**
- * GET /v1/projects/:id/memory: every entry, and the index a launched session is
- * given. An index cut at its 8 KiB bound says so in index_cut and in its last line;
- * entries always lists every entry.
+ * A group of entries the index a launch carries names in one line instead of entry
+ * by entry.
+ */
+export interface ProjectMemoryGroup {
+  /**
+   * One line saying when to read the group, at most 256 bytes. Empty for a group an
+   * entry names that nobody described.
+   */
+  description: string
+
+  /**
+   * How many entries name the group.
+   */
+  entries: number
+
+  /**
+   * Lowercase letters, digits and single hyphens, at most 64 bytes.
+   */
+  slug: string
+}
+
+/**
+ * PUT /v1/projects/:id/memory-groups/:slug: the group's one-line description. The
+ * answer is a ProjectMemoryWriteAnswer whose name is the slug: created, updated or
+ * unchanged. A seventeenth group is refused with memory_full.
+ */
+export interface ProjectMemoryGroupSet {
+  description: string
+}
+
+/**
+ * GET /v1/projects/:id/memory: every entry, every group, and the index a launched
+ * session is given. The index lists resident entries and one line per group; when
+ * resident entries alone would pass its 8 KiB bound they are cut, which index_cut
+ * and the index's own note say, and the group lines are kept. entries always lists
+ * every entry.
  */
 export interface ProjectMemoryList {
   entries: ProjectMemorySummary[]
 
   /**
+   * Sorted by slug, at most 16.
+   */
+  groups: ProjectMemoryGroup[]
+
+  /**
    * Empty when there are no entries.
    */
   index: string
+
+  /**
+   * Whether the index left resident entries out.
+   */
   index_cut: boolean
 
   /**
@@ -4633,6 +4681,12 @@ export interface ProjectMemorySummary {
    * One line, at most 512 bytes.
    */
   description: string
+
+  /**
+   * The group the entry is filed under; absent for a resident entry, which the
+   * index lists by name.
+   */
+  group?: string
 
   /**
    * Lowercase letters, digits and single hyphens, at most 64 bytes.
