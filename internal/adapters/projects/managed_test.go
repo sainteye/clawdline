@@ -73,6 +73,38 @@ func TestTheManagedRootsAreJudgedByWhereAPathIs(t *testing.T) {
 	}
 }
 
+func TestRetiredProtectedScratchPathsStayOffTheProjectList(t *testing.T) {
+	home, own := managedHome(t)
+	protected := []string{filepath.Join(home, "Documents", "Codex"),
+		filepath.Join(home, "Library", "Application Support", "Clawdline", "worktrees")}
+	resolve := func(path string) string {
+		for _, root := range protected {
+			if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+				t.Errorf("resolved protected scratch path while listing Projects: %s", path)
+			}
+		}
+		return filepath.Clean(path)
+	}
+	durable := durableJudgeWithResolver(ManagedWorktreeRoots(own), resolve)
+	for _, path := range []string{
+		filepath.Join(home, "Documents", "Codex"),
+		filepath.Join(home, "Documents", "Codex", "old-checkout"),
+		filepath.Join(home, "Library", "Application Support", "Clawdline", "worktrees", "old-checkout"),
+	} {
+		if durable(path) {
+			t.Errorf("protected scratch path was offered as a Project: %s", path)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(home, "Documents", "Codex-other"),
+		filepath.Join(home, "Library", "Application Support", "Clawdline", "worktrees-other"),
+	} {
+		if !durable(path) {
+			t.Errorf("sibling was excluded as a scratch path: %s", path)
+		}
+	}
+}
+
 // The worktree lifecycle calls a checkout under either broker's root managed,
 // and ties it to the task that recorded it; one outside both is foreign.
 func TestTheLifecycleOwnsCheckoutsUnderEitherRoot(t *testing.T) {

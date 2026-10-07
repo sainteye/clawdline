@@ -99,8 +99,10 @@ ls -lh ~/.cache/whisper/          # ~570 MB. A few kilobytes means the download 
 ```
 
 That is the whole installation. Clawdline looks for `whisper-cli` in the usual places and for the
-largest `ggml-*.bin` in `~/.cache/whisper`, `~/Library/Application Support/Clawdline/models` or
-`~/models`, and switches over as soon as it finds both.
+largest `ggml-*.bin` in `~/.cache/whisper` or `~/models`, and switches over as soon as it finds
+both. An existing model in the retired app's Application Support can be selected explicitly with
+`whisper_model`; it is no longer searched automatically because macOS may request access to the
+other app's data.
 
 ### Models
 

@@ -81,6 +81,15 @@ names the commit, file and line, never the matched text. `docs/privacy-guard.md`
 Commit messages, comments and documentation are in **English**; the conversation with the person
 is in Traditional Chinese.
 
+## Keep filesystem searches inside the task's scope
+
+On macOS, a command started through Clawdline can make a privacy prompt name Clawdline even when
+the command itself is the reader. Search the named repository or task directory, not the whole home
+directory. Do not recursively enumerate `~`, `~/Library`, `~/Documents`, `~/Downloads`, `~/Music`,
+or the Photos library to discover files for a repository task. Open a protected location only when
+the task actually requires it and its exact path is known. The observed attribution and the
+permission prompts it caused are in `docs/working-rules.md`.
+
 ## How a commit reads here
 
 The subject is a sentence about what changed for a person, not a category:

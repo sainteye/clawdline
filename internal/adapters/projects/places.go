@@ -203,18 +203,42 @@ func scratchRoots(home, temporary string, managed []string) []string {
 // followed: `<root>/x` is under it, and `<root>-old/x`, or a directory that
 // merely shares the root's last name, is not.
 func durableJudge(managed []string) func(string) bool {
-	h := resolvedPath(home())
+	return durableJudgeWithResolver(managed, resolvedPath)
+}
+
+func durableJudgeWithResolver(managed []string, resolve func(string) string) func(string) bool {
+	h := resolve(home())
+	// These retired-app scratch directories can be protected by macOS. Merely
+	// building a Project list must not resolve them and ask for Documents or
+	// another app's data before a person has chosen a place there.
+	protected := []string{filepath.Join(h, "Documents", "Codex"),
+		filepath.Join(h, "Library", "Application Support", "Clawdline", "worktrees")}
 	var roots []string
 	for _, root := range scratchRoots(h, os.TempDir(), managed) {
 		if root == "" {
 			continue
 		}
-		roots = append(roots, resolvedPath(root))
+		if root == protected[0] || root == protected[1] {
+			continue
+		}
+		roots = append(roots, resolve(root))
 	}
 	return func(path string) bool {
-		path = resolvedPath(path)
+		// Check the spelling before following symlinks. This also skips any
+		// filesystem access for a known scratch path under a protected folder.
+		for _, root := range protected {
+			if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+				return false
+			}
+		}
+		path = resolve(path)
 		if path == h {
 			return false
+		}
+		for _, root := range protected {
+			if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+				return false
+			}
 		}
 		for _, root := range roots {
 			if path == root || strings.HasPrefix(path, root+"/") {

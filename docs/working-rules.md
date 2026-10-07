@@ -5,6 +5,22 @@ on every later call of that session. So `AGENTS.md` keeps the rules and this pag
 incidents, measurements and procedures behind them, moved here verbatim on 2026-09-25. Read the
 section a rule points to when you are about to do that thing.
 
+## Why searches stay inside the task's directory
+
+In a macOS privacy audit, TCC attributed requests from `find` and a shell to the Clawdline app that
+had started their terminal. The requested services included other-app data, Photos, media, Documents,
+and Downloads. The app's source did not directly enumerate those locations; the recursive command
+did. An app name on the system prompt therefore identifies the responsible launch chain, not
+necessarily the executable opening the file. For repository work, use a named repository path and
+`rg` rather than a recursive home-directory search. This avoids prompting for unrelated personal
+libraries and makes the search result relevant to the task.
+
+The local app bundle is signed ad hoc by `tools/package-macos.sh`. During the same audit, TCC
+reported that an existing code requirement did not match the newly installed bundle before it
+prompted again. A new bundle therefore needs its permissions checked as a new signed build; a
+stable signing identity is needed if grants must survive replacements. This does not make a broad
+filesystem search necessary.
+
 ## The retired Swift checkout (before 2026-09-22)
 
 > As `AGENTS.md` read until 2026-09-22, when the Swift checkout was archived and this repository

@@ -60,15 +60,14 @@ enum DictationEngine {
         return (out?.isEmpty == false) ? out : nil
     }
 
-    /// The largest `ggml-*.bin` in the usual places — largest because somebody
-    /// who downloaded two meant the big one. The same three places the Swift
-    /// app looks; the second is its model directory, read and never written.
+    /// The largest `ggml-*.bin` in the user's own model locations. Looking in
+    /// the retired app's Application Support at launch would request access to
+    /// another app's data even when dictation is never used.
     static func model() -> String? {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
         let places = [
             home.appendingPathComponent(".cache/whisper"),
-            home.appendingPathComponent("Library/Application Support/Clawdline/models"),
             home.appendingPathComponent("models"),
         ]
         var best: (path: String, size: Int)?
