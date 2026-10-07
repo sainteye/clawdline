@@ -1424,7 +1424,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - `technical-writer`——文件與 guide；
   - 行銷團隊，用在部落格、網站或文件 repository：`seo`（頁面與 metadata）、`content-writer`（在檔案裡寫文章）、
     `ai-search`（讓 AI 搜尋引用的頁面）、`social-media`、`instagram`、`email`（電子報）、`growth`（可量測的
-    實驗）與 `pr`（對外公告）。
+    實驗）、`pr`（對外公告）與 `zh-editor`（從讀者、主旨、小標架構撰寫或重寫整篇中文文章）。
   - 產品、品質與維運團隊：`product-manager`、`sprint-prioritizer`、`feedback-synthesizer`、`trend-researcher`、
     `ux-researcher`；`test-automation`、`accessibility`、`performance`、`api-tester`、`evidence-collector`
     （依證據逐項判 PASS／FAIL）；`sre`、`devops`、`incident-commander`、`finops` 與 `secrets`。
