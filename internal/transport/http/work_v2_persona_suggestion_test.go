@@ -14,6 +14,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/planner"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
@@ -33,7 +34,7 @@ func TestPersonaSuggestionRunsOnlyAfterTheExplicitPressAndReplays(t *testing.T) 
 	s.suggestPersona = func(_ context.Context, request planner.PersonaRequest, provider string) (planner.PersonaSuggestion, error) {
 		runs++
 		if provider != "codex" || request.Kind != "feature" || request.Title != "Tidy the notes" ||
-			request.Description != "Tidy them." || len(request.Candidates) != 43 {
+			request.Description != "Tidy them." || len(request.Candidates) != len(persona.IDs()) {
 			t.Fatalf("request=%+v provider=%q", request, provider)
 		}
 		return planner.PersonaSuggestion{Outcome: "recommend", PersonaID: "frontend"}, nil
