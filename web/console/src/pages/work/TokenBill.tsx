@@ -76,7 +76,7 @@ export function ItemUsageCard({ itemId, version }: { itemId: string; version: nu
   const line = reading.phase === "ready" ? cardLine(reading.value.bill) : null
   return <div ref={ref} className="work-usage-slot">
     {line && reading.phase === "ready" && <details className="work-usage">
-      <summary title={workWord("usageCardLabel")} aria-label={`${workWord("usageTitle")}: ${line}`}>{line}</summary>
+      <summary title={workWord("usageCardLabel")} aria-label={`${workWord("usageTitle")}: ${line}. ${workWord("usageCardLabel")}`}>{line}</summary>
       <ItemUsageBody usage={reading.value} />
     </details>}
   </div>
@@ -92,9 +92,10 @@ export function SessionUsage({ conversation }: { conversation: string }) {
   const { reading, retry } = useUsage(sessions, conversation, open)
   const ready = reading.phase === "ready" ? reading.value : null
   const line = ready && !ready.reason ? cardLine(ready.bill) : null
+  const loading = open && (reading.phase === "idle" || reading.phase === "loading")
   return <details className="work-usage-detail session-usage" onToggle={(ev) => setOpen((ev.currentTarget as HTMLDetailsElement).open)}>
-    <summary><b>{workWord("usageTitle")}</b>{line && <span>{line}</span>}</summary>
-    <ReadingState reading={reading} retry={retry} />
+    <summary><b>{workWord("usageTitle")}</b>{line && <span>{line}</span>}{loading && <span className="work-usage-spinner" aria-hidden="true" />}</summary>
+    <ReadingState reading={loading ? { phase: "loading" } : reading} retry={retry} />
     {ready && <SessionUsageBody usage={ready} />}
   </details>
 }
