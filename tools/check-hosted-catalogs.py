@@ -8,7 +8,7 @@ import sys
 from tempfile import TemporaryDirectory
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 LANGUAGES = ("en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de")
@@ -18,7 +18,10 @@ VALIDATOR = Path(__file__).resolve().parents[1] / "web/console/tools/validate-ca
 def catalog(origin: str, tag: str, destination: Path) -> None:
     url = origin.rstrip("/") + "/catalogs/" + quote(tag) + ".json"
     try:
-        with urlopen(url, timeout=20) as response:
+        # Cloudflare rejects urllib's default Python user agent even when the
+        # same public catalog is available to browsers and named clients.
+        request = Request(url, headers={"User-Agent": "clawdline-catalog-check/1"})
+        with urlopen(request, timeout=20) as response:
             content = response.read()
         data = json.loads(content)
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
