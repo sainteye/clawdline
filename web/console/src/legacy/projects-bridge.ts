@@ -7,13 +7,8 @@
 //
 // What differs, and why:
 //
-// - `board` reads `GET /v1/projects`, this daemon's name for the Board store's
-//   Project catalog, and hands the module the `{ board }` answer it expects. The
-//   original's `/v1/board` is the whole Board; this daemon's `/v1/board` is a
-//   different, older reading and is not touched here.
-// - `openBoard` is `BoardControls.open(place.boardProjectId, null, place)`, as
-//   there: a row that names a Board Project opens it on the Board page
-//   (`board-bridge.ts`). A row with no Board Project opens the Project here.
+// - The list reads `GET /v1/places`, the current directory catalog. The
+//   retired Board store never decides whether a Project is present.
 // - `openWorktreeOwner` is absent: the original opens the owner in the Board's
 //   session viewer, which this console does not have. The owner button is still
 //   drawn, as the module draws it, and does nothing.
@@ -25,10 +20,7 @@ import { machineWording } from "./machine-copy.js"
 import { drawIcon } from "./js/core/pixels.js"
 import { tint } from "./js/core/util.js"
 import { makeJSONFetch } from "@clawdline/core/refusal"
-import { bindProjectsPage as bindProjectsPageOriginal, readProjectPlaces } from "./js/view/projects.js"
-import { openBoard } from "./board-bridge.js"
-import { completeProjectSummary, currentProjectSummary } from "../pages/projects/project-list.js"
-import { catalogWord } from "../catalog.js"
+import { bindProjectsPage as bindProjectsPageOriginal } from "./js/view/projects.js"
 
 let projectReadRefusal: unknown = null
 let projectReadAttempt = 0
@@ -95,7 +87,7 @@ const jsonFetch = makeJSONFetch({
   words: { offline: machineWording(T.webOffline, "en"), requestFailed: T.webRequestFailed, notJSON: T.webNotJSON },
 })
 
-type Place = { id: string; boardProjectId?: string; path?: string; machine?: string }
+type Place = { id: string; projectId?: string; path?: string; machine?: string }
 
 export interface WorktreeSourceRow {
   worktreeId?: string
@@ -125,25 +117,6 @@ const transport = {
     }
     return jsonFetch("/v1/places")
   },
-  /** The Board catalog, in the envelope `readProjectPlaces` checks: `available`, `enabled`, `projects`. */
-  board: async () => {
-    const answer = await jsonFetch("/v1/projects")
-    const catalog = (answer.catalog ?? {}) as Record<string, unknown> & {
-      available?: boolean
-      projects?: Record<string, unknown>[]
-      readState?: { error?: { code: string; message: string } }
-    }
-    // The Project row opens Work System v2, so its numbers must come from the
-    // same store. Older daemons and failed summary reads may still carry the
-    // retired catalog's totals; remove those rather than placing unrelated
-    // numbers beside a link to the current Board.
-    const projects = catalog.projects?.map(currentProjectSummary)
-    const currentCatalog = projects ? { ...catalog, projects } : catalog
-    const board = catalog.available === false
-      ? { ...currentCatalog, error: catalog.readState?.error ?? { code: "board_unavailable", message: "Board unavailable" } }
-      : currentCatalog
-    return { board }
-  },
   projectWorktreeLifecycle: async (project: string) => {
     const answer = await jsonFetch("/v1/projects/" + encodeURIComponent(project) + "/worktrees")
     const rows = (answer.projectWorktreeLifecycle as { rows?: WorktreeSourceRow[] } | undefined)?.rows
@@ -159,22 +132,6 @@ const transport = {
 }
 
 /**
- * The part of `BoardControls.apply` (`input/board-settings.js`) that this page
- * shows: its lede, and the mode on the root. The drawer rows it also hides are
- * App's, and the Settings toggle is not on this console.
- */
-function applyBoardMode(board: { enabled?: unknown }): void {
-  if (typeof board?.enabled !== "boolean") return
-  const lede = document.getElementById("projects-lede")
-  if (lede) {
-    lede.textContent = board.enabled
-      ? catalogWord("projects", "boardLede")
-      : catalogWord("next", "projectsLede")
-  }
-  document.documentElement.dataset.boardMode = board.enabled ? "board" : "standard"
-}
-
-/**
  * Bind the page once its markup is in the document, with `main.js`'s
  * environment less the two surfaces this console does not have.
  */
@@ -185,40 +142,21 @@ export function bindProjects(doc: Document, navigate: (name: string) => void): P
     elements,
     {
       carries: () => true,
-      // The copied catalog reader used the removed usage projection only as a
-      // feature-presence flag before falling back from Board to local places.
-      // Supply that flag only to the catalog read; no Projects-page environment
-      // receives a worktree-usage reader, so the removed projection is unreachable.
       places: async () => {
         const attempt = ++projectReadAttempt
         projectReadRefusal = null
         try {
-          const answer = await (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<{
-            places?: Array<{ summaryCoverage?: unknown; activityReadStatus?: string; activitySourcePartial?: boolean }>
-          }>)(
-            { ...transport, projectWorktrees: () => Promise.resolve({}) },
-            applyBoardMode,
-          )
-          // The catalog's Project membership can be an older/stale read while
-          // the v2 item summary was read now. Qualify the activity from its own
-          // coverage instead of inheriting the retired catalog's read state.
-          for (const place of answer.places ?? []) {
-            if (!completeProjectSummary(place.summaryCoverage)) continue
-            place.activityReadStatus = "ready"
-            place.activitySourcePartial = false
-          }
-          return answer
+          return await transport.places()
         } catch (error) {
           if (attempt === projectReadAttempt) projectReadRefusal = error
           throw error
         }
       },
-      openBoard: (place: Place) => openBoard(place.boardProjectId, null, place),
       lifecycleAvailable: () => true,
       projectWorktreeLifecycle: (place: Place) => rememberWorktreeRead(() =>
-        transport.projectWorktreeLifecycle(place.boardProjectId || place.id)),
+        transport.projectWorktreeLifecycle(place.projectId || place.id)),
       projectWorktreeLifecycleRefresh: (place: Place) =>
-        rememberWorktreeRead(() => transport.projectWorktreeLifecycleRefresh(place.boardProjectId || place.id)),
+        rememberWorktreeRead(() => transport.projectWorktreeLifecycleRefresh(place.projectId || place.id)),
       drawIcon,
       tint,
       navigate,

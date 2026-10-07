@@ -6349,8 +6349,9 @@ const (
 var StartAvailabilityValues = []StartAvailability{StartAvailabilityOK, StartAvailabilityLow, StartAvailabilityExhausted, StartAvailabilityUnknown}
 
 // One directory a session can be started in. `id` is sixteen hex characters of
-// the path's SHA-256 and is the only part a client sends back; `path` is here
-// so two projects with one name can be told apart.
+// the path's SHA-256 and names session and project-file operations. `projectId`
+// identifies the containing repository for lifecycle reads. `path`
+// distinguishes projects with one name.
 type StartPlace struct {
 	// When this place was last worked in, Unix seconds.
 	At    int64  `json:"at"`
@@ -6358,6 +6359,10 @@ type StartPlace struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 	Path  string `json:"path"`
+
+	// The canonical repository identifier accepted by /v1/projects/:id/worktrees.
+	// Absent when an older daemon cannot supply it.
+	ProjectID string `json:"projectId,omitempty"`
 
 	// The repository this place's checkout clones, host/owner/name from its origin
 	// remote, or empty when it has none. Always sent, so a console can tell a machine

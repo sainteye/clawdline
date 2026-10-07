@@ -25,10 +25,14 @@ in the console.
 
 ## The Projects page
 
-Open **專案** (Projects). It lists directories an assistant has actually been run in and that still
-exist. Under **版本庫生命週期** (repository lifecycle) each repository shows its **工作樹**
+Open **專案** (Projects). It lists existing, durable directories explicitly added with
+`clawdline project add` or found in assistant history and live Sessions. The retired Board catalog
+does not decide whether a Project appears. Press a Project row to open its repository detail.
+Under **版本庫生命週期** (repository lifecycle) each repository shows its **工作樹**
 (worktrees), work that is **做完了，沒有落地** (delivered, not landed) and what is **已落地**
 (landed). Worktrees that belong to no project are listed apart. Press **重新觀測** to look again.
+**查看工作項目** opens the current Board filtered to that Project; Board membership and counts do
+not control the Project list.
 
 Each project has a pixel icon, used in the session list and on the Board. Icons are described in
 [project-icons.md](../project-icons.md).

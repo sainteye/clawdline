@@ -73,6 +73,9 @@ func (s *Server) projectReaders() *projectReaders {
 		ManagedWorktreeRoots: managed,
 		ProjectDirectories: func() []string {
 			dirs := projects.RegistryPaths()
+			for _, place := range places.List(s.liveDirectories(context.Background()), 40) {
+				dirs = append(dirs, place.Path)
+			}
 			return append(dirs, s.taskProjectDirs()...)
 		},
 		Tasks: func() projects.TaskEvidence { return s.lifecycleEvidence() },
@@ -195,8 +198,12 @@ func (s *Server) placesRoute(w http.ResponseWriter, r *http.Request) {
 		// project by (docs/schedules.md): the id is a digest of this path.
 		repo := projects.OriginRepo(p.Path)
 		grid, iconSource := s.icons.Resolve(p.Path)
+		var projectID string
+		if canonical, ok := projects.CanonicalProjectKey(p.Path); ok {
+			projectID = projects.ProjectID(canonical)
+		}
 		out.Places = append(out.Places, contract.StartPlace{ID: p.ID, Label: p.Label, Path: p.Path,
-			At: p.At.Unix(), Icon: wireIcon(grid), Repo: repo,
+			At: p.At.Unix(), Icon: wireIcon(grid), Repo: repo, ProjectID: projectID,
 			Setup: projectSetup(p.Path, repo, iconSource)})
 	}
 	writeJSON(w, out)

@@ -7605,8 +7605,9 @@ export const StartAvailabilityValues: readonly StartAvailability[] = ["ok", "low
 
 /**
  * One directory a session can be started in. `id` is sixteen hex characters of the
- * path's SHA-256 and is the only part a client sends back; `path` is here so two
- * projects with one name can be told apart.
+ * path's SHA-256 and names session and project-file operations. `projectId`
+ * identifies the containing repository for lifecycle reads. `path` distinguishes
+ * projects with one name.
  */
 export interface StartPlace {
   /**
@@ -7617,6 +7618,12 @@ export interface StartPlace {
   id: string
   label: string
   path: string
+
+  /**
+   * The canonical repository identifier accepted by /v1/projects/:id/worktrees.
+   * Absent when an older daemon cannot supply it.
+   */
+  projectId?: string
 
   /**
    * The repository this place's checkout clones, host/owner/name from its origin

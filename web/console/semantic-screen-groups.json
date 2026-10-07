@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4715,
+  "englishContentKeys": 4716,
   "riskKeys": 2059,
-  "nonRiskCount": 2656,
+  "nonRiskCount": 2657,
   "groups": [
     {
       "name": "bar / other",
@@ -1897,13 +1897,14 @@
     },
     {
       "name": "next / projects",
-      "count": 7,
+      "count": 8,
       "sources": [
         "src/next-strings.ts"
       ],
       "keys": [
         "next.projectsBack",
         "next.projectsLede",
+        "next.projectsOpenWork",
         "next.projectsRefreshObservation",
         "next.projectsRepositoryLifecycle",
         "next.projectsTitle",

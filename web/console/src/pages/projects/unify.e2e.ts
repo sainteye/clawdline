@@ -29,6 +29,7 @@ const chrome = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 // ---- the stand-in daemon
 
 const CLAUDE_TEXT = "Use the staging database for tests.\nNever deploy on Fridays.\n"
+const PROJECT_ID = "project-1234567890abcdef12345678"
 
 function plan(state: "drifting" | "unified" | "unknown", version: string) {
   const unified = state === "unified"
@@ -126,8 +127,10 @@ function daemon(): Server {
         emptyAuthoritative: true, epoch: 1, generation, provenance: "fixture" } })
     }
     if (path === "/v1/health") return json(res, 200, { ok: true })
-    // The Board summary is unavailable here, as on a machine without one; the rows come from the places.
-    if (path === "/v1/projects" && req.method === "GET") return json(res, 503, { error: "board_unavailable" })
+    // An enabled but empty retired Board must not hide a registered Project.
+    if (path === "/v1/projects" && req.method === "GET") return json(res, 200, {
+      catalog: { available: true, enabled: true, projects: [], readState: { status: "ready" } },
+    })
     if (path === "/v1/places" && refusePlaces) return json(res, 403, refusePlaces === "keyed"
       ? { error: "forbidden", detail: "Only this machine's own token may change its settings.", detail_key: "http.9989084eae5cdab3" }
       : { error: "forbidden", detail: "Only the Project owner can change this setting." })
@@ -135,7 +138,7 @@ function daemon(): Server {
       at: Date.now(),
       assistants: [{ id: "claude", label: "Claude Code", availability: "unknown" }],
       places: [{ id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(),
-        boardProjectId: "fixture-place", itemCount: 0,
+        projectId: PROJECT_ID,
         icon: { accent: "#D97757", cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]] },
         repo: "github.com/example/project",
         setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready", ...placeUnify } }],
@@ -144,7 +147,7 @@ function daemon(): Server {
       { id: "agents-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true },
       { id: "claude-file", name: "CLAUDE.md", location: "CLAUDE.md", source: "project", assistant: "claude", kind: "instruction", status: "ready", editable: true },
     ], truncated: false, skipped: [] })
-    if (path === "/v1/projects/fixture-place/worktrees" && refuseWorktrees) return json(res, 429, {
+    if (path === `/v1/projects/${PROJECT_ID}/worktrees` && refuseWorktrees) return json(res, 429, {
       error: "worktree_lifecycle_busy", detail: "Worktree lifecycle work is already queued on this machine; try again shortly.",
       detail_key: "http.37e9f28e30eb6248",
     })
@@ -457,8 +460,11 @@ test("phone: a copied worktree refusal shows its real translated producer detail
     reset()
     refuseWorktrees = true
     await tab.go("/#page=projects")
-    await tab.until("a Project worktree control is visible", `!!document.querySelector(".project-row-worktrees")?.offsetParent`)
-    await tab.run(`document.querySelector(".project-row-worktrees")?.click()`)
+    await tab.until("the registered Project is visible despite the empty Board", `!!document.querySelector('button.project-row[data-place-id="fixture-place"]')?.offsetParent`)
+    await tab.run(`document.querySelector('button.project-row[data-place-id="fixture-place"]')?.click()`)
+    await tab.until("the Project detail opens", `document.querySelector("#projects-detail-view")?.hidden === false`)
+    assert.equal(await tab.run(`document.getElementById("project-name")?.textContent`), "Example project")
+    assert.equal(await tab.run(`document.getElementById("project-open-work")?.textContent`), "查看工作項目")
     const translated = JSON.parse(readFileSync(join(dist, "catalogs/zh-Hant.json"), "utf8"))["http.37e9f28e30eb6248"]
     try {
       await tab.until("the keyed worktree detail is translated", `document.querySelector("#project-worktree-status span[data-catalog-refusal-detail]")?.textContent?.includes(${JSON.stringify(translated)})`)

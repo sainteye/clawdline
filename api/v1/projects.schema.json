@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "projects.schema.json",
   "title": "Projects",
-  "description": "What the Projects page reads. GET /v1/places is the Swift app's StartPoints list. GET /v1/projects is the Board store's Project catalog, read-only, joined with those places the way ProjectBoardIntegration joins them. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route. GET and POST /v1/projects/:id/unify plan and apply one rules file and one skills directory for Claude and Codex (docs/project-files.md, Unify). GET and POST /v1/projects/:id/memory list and add the Project's shared memory; GET, PUT and DELETE /v1/projects/:id/memory/:name show, update and forget one entry; PUT /v1/projects/:id/memory-groups/:slug creates a group or changes its description (docs/project-memory.md).",
+  "description": "GET /v1/places is the Projects page's directory catalog and the session-start list: durable, existing directories found in assistant history, live sessions or explicit registration. Its place id names session and project-file operations; projectId names repository lifecycle reads. GET /v1/projects is a legacy read of the retired Board store and does not decide Project membership. GET /v1/projects/:id/worktrees and POST /v1/projects/:id/worktrees/refresh are the worktree lifecycle read model; there is no cleanup route. GET and POST /v1/projects/:id/unify plan and apply one rules file and one skills directory for Claude and Codex (docs/project-files.md, Unify). GET and POST /v1/projects/:id/memory list and add the Project's shared memory; GET, PUT and DELETE /v1/projects/:id/memory/:name show, update and forget one entry; PUT /v1/projects/:id/memory-groups/:slug creates a group or changes its description (docs/project-memory.md).",
   "$defs": {
     "StartAvailability": {
       "description": "AssistantQuota.Availability. This daemon reads no quota, so it answers unknown.",
@@ -68,7 +68,7 @@
       }
     },
     "StartPlace": {
-      "description": "One directory a session can be started in. `id` is sixteen hex characters of the path's SHA-256 and is the only part a client sends back; `path` is here so two projects with one name can be told apart.",
+      "description": "One directory a session can be started in. `id` is sixteen hex characters of the path's SHA-256 and names session and project-file operations. `projectId` identifies the containing repository for lifecycle reads. `path` distinguishes projects with one name.",
       "type": "object",
       "additionalProperties": false,
       "required": ["at", "id", "label", "path", "repo"],
@@ -78,6 +78,7 @@
         "id": { "type": "string" },
         "label": { "type": "string" },
         "path": { "type": "string" },
+        "projectId": { "description": "The canonical repository identifier accepted by /v1/projects/:id/worktrees. Absent when an older daemon cannot supply it.", "type": "string" },
         "setup": { "$ref": "#/$defs/ProjectSetup" },
         "repo": {
           "description": "The repository this place's checkout clones, host/owner/name from its origin remote, or empty when it has none. Always sent, so a console can tell a machine whose projects have no origin from one whose Clawdline is too old to say. `id` is a digest of a path on this machine, so this is the name one project has on two machines; a schedule is moved between machines by it.",

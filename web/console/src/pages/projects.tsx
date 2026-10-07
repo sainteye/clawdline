@@ -2,16 +2,12 @@ import { catalogFormat, catalogWord, catalogWordLanguage, currentCatalogTag } fr
 import { createPortal } from "react-dom"
 import { ProjectTools } from "./projects/ProjectTools.js"
 import type { ProjectSetupHandle } from "./projects/ProjectSetup.js"
-import { activityUnknownScope, localizePinnedProjectStatus, projectActivityUsesEnglishFallback, projectActivityWords, projectListWords, projectOpenLabel, replaceSuffix } from "./projects/project-list.js"
+import { localizePinnedProjectStatus, projectOpenLabel } from "./projects/project-list.js"
 import { decoratePinnedWorktree } from "./projects/pinned-worktree-copy.js"
 import { useLayoutEffect, useRef, useState } from "react"
 import type { PageModule } from "./types.js"
 import { bindProjects, latestProjectReadRefusal, latestWorktreeReadRefusal, worktreeSourceRow, type ProjectsPage } from "../legacy/projects-bridge.js"
 import { machineWording } from "../legacy/machine-copy.js"
-import {
-  registerRetiredBoardProjectFallback,
-  type RetiredBoardProject,
-} from "../legacy/board-bridge.js"
 import { ActionConfirm, Info, requestPage, shown as overlayShown } from "../overlays/index.js"
 import sectionMarkup from "./projects/section.html?raw"
 import { nextWord, type NextWord } from "../next-strings.js"
@@ -19,18 +15,14 @@ import { workPageHash } from "../page-route.js"
 import { openTerminalPage } from "./terminal/navigate.js"
 import { showProjectRefusalDetail } from "./projects/refusal-detail.js"
 
-type ProjectTarget = RetiredBoardProject & {
-  id?: string
+type ProjectTarget = {
+  id: string
   label?: string
   path?: string
-  activeItemCount?: number
-  summaryCoverage?: unknown
-  activitySourcePartial?: boolean
-  activityReadStatus?: string
 }
 type BoundProjects = ProjectsPage & {
-  state: ProjectsPage["state"] & { places?: ProjectTarget[] | null }
-  openProject(project: RetiredBoardProject): Promise<void>
+  state: ProjectsPage["state"] & { places?: ProjectTarget[] | null; place?: ProjectTarget | null }
+  openLifecycle(project: ProjectTarget): Promise<void>
 }
 
 /**
@@ -81,18 +73,11 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
   }, [])
 
   useLayoutEffect(() => {
-    // The copied Projects view still calls its old `openBoard(place)` seam for
-    // rows joined to the frozen catalog. Keep the copy byte-for-byte, but send
-    // that repository to its scoped work page. Nothing here reads an old card.
     const bound = page.current ?? (bindProjects(document, navigate) as BoundProjects)
     page.current = bound
     const openWork = (project: ProjectTarget) => {
       const path = typeof project.path === "string" ? project.path.trim() : ""
-      if (!path) {
-        const { boardProjectId: _retired, ...ordinary } = project
-        void bound.openProject(ordinary)
-        return
-      }
+      if (!path) return
       const address = workPageHash(path, "projects")
       try {
         history.replaceState(history.state, "", address)
@@ -101,11 +86,9 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       }
       requestPage({ page: "work", hash: false })
     }
-    const unregister = registerRetiredBoardProjectFallback(openWork)
-    // The copied renderer owns its click listener and cannot be changed. Its
-    // rows do expose their place id, and the bound page retains the exact
-    // place answer, so capture the ordinary (non-retired-Board) rows here and
-    // give every Project the same route into its work.
+    // The copied renderer owns its click listener. Its ordinary branch opens
+    // retired usage detail, so capture the row and open the repository lifecycle
+    // instead. Work is a separate action inside that Project's detail.
     const rows = document.getElementById("projects-rows")
     const onProject = (ev: Event) => {
       const button = (ev.target as Element | null)?.closest<HTMLButtonElement>("button.project-row[data-place-id]")
@@ -114,12 +97,18 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
       if (!project?.path) return
       ev.preventDefault()
       ev.stopImmediatePropagation()
-      openWork(project)
+      void bound.openLifecycle(project)
     }
+    const onWork = () => {
+      const project = bound.state.place
+      if (project) openWork(project)
+    }
+    const work = document.getElementById("project-open-work")
     rows?.addEventListener("click", onProject, true)
+    work?.addEventListener("click", onWork)
     return () => {
       rows?.removeEventListener("click", onProject, true)
-      unregister()
+      work?.removeEventListener("click", onWork)
     }
   }, [])
 
@@ -138,49 +127,16 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
 
   useLayoutEffect(() => {
     const rows = document.getElementById("projects-rows")
-    const help = document.getElementById("projects-activity-help")
     const status = document.getElementById("projects-status")
-    if (!rows || !help || !status) return
+    if (!rows || !status) return
     const decorate = () => {
-      const words = projectListWords(document.documentElement.lang || navigator.language || "")
-      const unknownActivities: HTMLElement[] = []
       for (const button of rows.querySelectorAll<HTMLButtonElement>("button.project-row[data-place-id]")) {
         const place = page.current?.state.places?.find((candidate) => candidate.id === button.dataset.placeId)
         if (!place) continue
-        const activity = projectActivityWords(place)
-        const badge = button.querySelector<HTMLElement>(".project-row-activity")
-        if (badge && activity) {
-          if (badge.textContent !== activity.text) badge.textContent = activity.text
-          badge.className = `project-row-activity is-${activity.tone}`
-          if (projectActivityUsesEnglishFallback(place)) badge.lang = "en"
-          if (activity.tone === "unknown") unknownActivities.push(badge)
-        }
         const name = place.label || place.path || ""
-        const label = projectOpenLabel(name, activity?.text ?? null, false)
+        const label = projectOpenLabel(name, null, false)
         if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label)
-        if (projectActivityUsesEnglishFallback(place) || (catalogWordLanguage("legacy", "webProjectOpenLabel") === "en" && currentCatalogTag() !== "en")) button.lang = "en"
-      }
-      const rowCount = rows.querySelectorAll("button.project-row[data-place-id]").length
-      const scope = activityUnknownScope(rowCount, unknownActivities.length)
-      for (const activity of unknownActivities) {
-        activity.hidden = scope === "list"
-        const button = activity.closest<HTMLButtonElement>("button.project-row")
-        if (!button) continue
-        if (scope === "list") {
-          const current = button.getAttribute("aria-label") ?? ""
-          const next = projectOpenLabel(button.querySelector(".project-row-name")?.textContent ?? "", activity.textContent, true)
-          if (next !== current) button.setAttribute("aria-label", next)
-        }
-        button.setAttribute("aria-describedby", help.id)
-      }
-      for (const project of rows.querySelectorAll<HTMLButtonElement>("button.project-row[data-place-id]")) {
-        const lines = project.querySelectorAll<HTMLElement>(".project-row-path")
-        if (lines.length < 2) continue // The first line is the user's actual path.
-        const line = lines[lines.length - 1]
-        const value = line.textContent ?? ""
-        const next = replaceSuffix(value, words.boardBefore, words.boardAfter)
-        if (next !== value) line.textContent = next
-        if (catalogWordLanguage("literal", "28ce0b145abb") === "en" && currentCatalogTag() !== "en") line.lang = "en"
+        if (catalogWordLanguage("legacy", "webProjectOpenLabel") === "en" && currentCatalogTag() !== "en") button.lang = "en"
       }
       for (const project of rows.querySelectorAll<HTMLButtonElement>(".project-row[data-place-id]")) {
         const wrapper = project.closest<HTMLElement>(".project-row-wrap")
@@ -220,7 +176,6 @@ function ProjectsPageView({ shown }: { shown: boolean }) {
         wrapper.classList.add("has-terminal")
         wrapper.appendChild(terminal)
       }
-      help.hidden = scope === "none"
       const localizedStatus = localizePinnedProjectStatus(status.textContent ?? "")
       if (localizedStatus !== status.textContent) status.textContent = localizedStatus
       showProjectRefusalDetail(status, latestProjectReadRefusal())
