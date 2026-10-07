@@ -2475,7 +2475,7 @@
   "literal.000c45f69d2f": "這個範圍的 Plan 項目目前隱藏；開啟「顯示 Plan」即可查看。",
   "literal.00186c9a0293": "專案設定",
   "literal.00fae213888a": "沒有 origin remote",
-  "literal.0272dbb4a00f": "開始前先完整執行並閱讀 `clawdline guide zh-TW project`，再讀這個 repository 的 AGENTS.md、README、建置／部署腳本 與現有 process manager 設定。",
+  "literal.0272dbb4a00f": "開始前先完整執行並閱讀 `clawdline guide zh-TW project`，再讀這個 repository 的 AGENTS.md、README、建置／部署腳本與現有 process manager 設定。",
   "literal.035492ae6343": "建立待辦後上傳",
   "literal.038bac9c971f": "這台機器仍使用需要另行設定的舊版 AI 建議；請先更新 Clawdline。",
   "literal.03e05dc9c519": "沒有符合的角色",
