@@ -97,7 +97,7 @@ else
 fi
 
 echo
-printf '%s\n' "${summary[@]}"
+printf '%s\n' ${summary[@]+"${summary[@]}"}
 if [ "$failed" -eq 0 ]; then
   rm -rf "$logs"
   echo "check: every check passed"

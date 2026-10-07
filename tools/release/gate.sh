@@ -42,7 +42,7 @@ fi
 
 extra=()
 [[ "$version" =~ -test\.[0-9]+$ ]] && extra=(-pub "${CLAWDLINE_TEST_RELEASE_PUB:?a -test release is verified with CLAWDLINE_TEST_RELEASE_PUB}")
-go run ./tools/release verify "${extra[@]}" "$dir"
+go run ./tools/release verify ${extra[@]+"${extra[@]}"} "$dir"
 
 mkdir -p "$work/unpacked"
 for archive in "$dir"/*.tar.gz; do
@@ -65,7 +65,7 @@ esac
 if [ "$publish" = 1 ]; then
   latest=()
   [[ "$version" == *-* ]] || latest=(--latest)
-  gh release edit "$version" -R sainteye/clawdline --draft=false "${latest[@]}"
+  gh release edit "$version" -R sainteye/clawdline --draft=false ${latest[@]+"${latest[@]}"}
   echo "published $version"
 else
   echo "gate passed; publish with: tools/release/gate.sh $version --publish"

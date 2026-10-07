@@ -32,9 +32,7 @@ if [ -n "$cl" ] && { "$cl" 2>&1 || true; } | grep -q '|heavy|'; then
       echo "tools/heavy.sh: this clawdline predates --handoff; waiting in place" >&2
     fi
   fi
-  # macOS Bash 3.2 treats an empty array expansion as unset under nounset.
-  set +u
-  exec "$cl" heavy "${heavy_flags[@]}" -- "$@"
+  exec "$cl" heavy ${heavy_flags[@]+"${heavy_flags[@]}"} -- "$@"
 fi
 echo "tools/heavy.sh: no clawdline with \`heavy\` found; running without the compile slot" >&2
 exec "$@"

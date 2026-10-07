@@ -116,6 +116,6 @@ fi
 ( cd "$out" && shasum -a 256 ./*.tar.gz | sed 's# \./# #' >SHA256SUMS )
 args=(-version "$version" -commit "$commit" -committed-at "$committed_at" -channel "$channel" -base-url "$base_url")
 [ -z "$min_version" ] || args+=(-min-version "$min_version")
-go run ./tools/release manifest "${args[@]}" "$out"
+go run ./tools/release manifest ${args[@]+"${args[@]}"} "$out"
 echo "release $version ($commit) built in $out; sign it with: go run ./tools/release sign -key <file> $out"
 finished=1
