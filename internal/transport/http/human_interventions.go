@@ -76,7 +76,7 @@ func (s *Server) workV2HumanInterventions(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if len(parts) < 1 {
-		writeRefusal(w, http.StatusNotFound, "not_found", "Name a target conversation.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	target := decodeSegment(parts[0])
@@ -126,7 +126,7 @@ func (s *Server) workV2HumanInterventions(w http.ResponseWriter, r *http.Request
 		_, _ = w.Write(response)
 		return
 	}
-	writeRefusal(w, http.StatusNotFound, "not_found", "No such intervention action.")
+	writeNoSuchRoute(w, r)
 }
 
 func (s *Server) agentCreateHumanIntervention(w http.ResponseWriter, r *http.Request) {

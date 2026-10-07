@@ -1,5 +1,5 @@
 import { catalogWord, currentCatalogTag } from "../../catalog.js"
-import { RefusalError } from "@clawdline/core"
+import { RefusalError, asMachineNeedsUpdate } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { nextWord } from "../../next-strings.js"
 import { workWord } from "./words.js"
@@ -24,6 +24,9 @@ export function when(seconds: number | null | undefined): string {
  * which is not the same as "it failed" (refusal.ts).
  */
 export function failureWords(e: unknown): string {
+  // A machine older than the feature did not fail: it says it needs an
+  // update, on every work-page surface that shows a failure (docs/updates.md).
+  if (asMachineNeedsUpdate(e)) return nextWord("machineNeedsUpdate")
   if (e instanceof RefusalError) {
     if (e.code === "cloud_not_carried") return nextWord("cloudNotCarried")
     if (e.code === "version_conflict") return workWord("failedConflict")

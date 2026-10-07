@@ -98,6 +98,10 @@ type Publisher struct {
 	// Platform and Version fill the descriptor's `platform` and the app stamp.
 	Platform string
 	Version  string
+	// APILevel is the descriptor's `app.api_level`: which routes this daemon
+	// answers, so a newer console can say a feature needs an update before it
+	// asks for it. Zero leaves the key out, as a daemon before it had none.
+	APILevel int
 	// Router is this daemon's own routes — the same in-process dispatch a Cloud
 	// read goes through, so the rows a viewer sees are the rows the local
 	// console sees.
@@ -517,9 +521,13 @@ func (p *Publisher) publishDescriptor(ctx context.Context) {
 	// platform string, and anything it does not recognise gets **nothing** —
 	// no request, no refusal, no network traffic to read afterwards. Naming
 	// the words is both the honest answer and the debuggable one.
+	appStamp := map[string]any{"version": p.Version, "build": p.Version, "protocol": domaincloud.EnvelopeVersion}
+	if p.APILevel > 0 {
+		appStamp["api_level"] = p.APILevel
+	}
 	snapshot := map[string]any{
 		"at":  time.Now().Unix(),
-		"app": map[string]any{"version": p.Version, "build": p.Version, "protocol": domaincloud.EnvelopeVersion},
+		"app": appStamp,
 		"machine": map[string]any{
 			"name":     p.MachineName,
 			"platform": p.platform(),

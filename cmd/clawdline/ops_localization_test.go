@@ -16,12 +16,19 @@ func TestOpsCatalogNineLanguagesAndFormats(t *testing.T) {
 	if len(bundle.english) < 94 {
 		t.Fatalf("ops keys = %d, initial baseline is 94", len(bundle.english))
 	}
+	if len(bundle.baseline) < 94 {
+		t.Fatalf("ops initial baseline has %d keys", len(bundle.baseline))
+	}
 	for _, language := range []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 		translated, total := cliCatalogCoverage("ops", language)
-		if translated != total || total < 94 {
+		minimum := len(bundle.baseline)
+		if language == "en" || language == "zh-Hant" {
+			minimum = total
+		}
+		if translated < minimum || total < 94 {
 			t.Errorf("%s catalog coverage = %d/%d", language, translated, total)
 		}
-		if language != "en" && !validCLICatalog(bundle.english, bundle.locales[language], true) {
+		if language != "en" && (!validCLICatalog(bundle.english, bundle.locales[language], language == "zh-Hant") || !hasCLIBaseline(bundle.locales[language], bundle.baseline)) {
 			t.Errorf("%s catalog has missing, empty or incompatible formats", language)
 		}
 	}

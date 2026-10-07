@@ -18,6 +18,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
+	"github.com/sainteye/clawdline/internal/adapters/terminal/owned"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -92,7 +93,7 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		parts = append(parts, v)
 	}
 	if len(parts) < 2 || parts[0] == "" {
-		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No such route", "")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	// `…/as/<persona>` ends a start or a resume that names its assistant:
@@ -152,7 +153,7 @@ func (s *Server) placeRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		s.pastRoute(w, r, parts[0], assistant)
 	default:
-		writePlaceRefusal(w, http.StatusNotFound, "not_found", "No such route", "")
+		writeNoSuchRoute(w, r)
 	}
 }
 
@@ -246,7 +247,7 @@ func (s *Server) starter(reading startReading) app.Starter {
 			choice, _ := values.String("terminal")
 			return projects.ParseTerminalChoice(choice)
 		},
-		Launcher: terminal.NewLauncher(),
+		Launcher: newLauncher(),
 		Past: func(ctx context.Context, place projects.Place, assistant string) []projects.Past {
 			return s.past(ctx, place, assistant, reading, 200)
 		},
@@ -497,4 +498,12 @@ func writeStartRefusal(w http.ResponseWriter, err error) string {
 	writePlaceRefusal(w, http.StatusInternalServerError, "internal",
 		"This machine could not open that session.", "")
 	return "internal"
+}
+
+// newLauncher is the start route's launcher, whose new tmux panes get the
+// same UTF-8 LANG an owned terminal's shell does.
+func newLauncher() terminal.Launcher {
+	l := terminal.NewLauncher()
+	l.Lang = owned.Machine{}.Lang
+	return l
 }

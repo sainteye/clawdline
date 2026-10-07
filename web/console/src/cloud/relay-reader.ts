@@ -136,6 +136,14 @@ export interface CloudReadClient {
   lifecycle?(reason: string): boolean
   /** machine → the last inventory marker it published; present once one arrived. */
   readonly sessionInventoryByMachine?: Map<string, unknown>
+  /**
+   * machine → its last decrypted `orch/` snapshot. Read here only for
+   * `snapshot.app`'s `version` and `api_level` (`publishDescriptor`,
+   * internal/transport/cloud/publish.go), duck-typed: a machine from before
+   * those fields, or a copied client that keeps no such map, is unknown and
+   * says nothing, never zero.
+   */
+  readonly orchestratorSnapshots?: Map<string, unknown>
   events(listener: (event: CloudEvent) => void): () => void
   /** The current account rows, used here only to answer health for the chosen machine. */
   machines?(): Promise<{
@@ -256,6 +264,30 @@ export interface CloudReadClient {
  * the same fifteen seconds).
  */
 export const TRANSCRIPT_LINE_REREAD_MS = 15_000
+
+/**
+ * The copied client's words for "this machine does not have that word"
+ * (`UNSUPPORTED_CODES` and `_unsupportedRefusal`, legacy/js/net/cloud-client.js).
+ * The same three `machineNeedsUpdate` (core/src/refusal.ts) reads as "needs an
+ * update"; this file only uses them to attach the machine's version.
+ */
+const MACHINE_LACKS_WORD: ReadonlySet<string> = new Set(["unknown_command", "cloud_feature_unavailable", "cloud_machine_unsupported"])
+
+/**
+ * The chosen machine's Clawdline version and route level, out of the
+ * `app` object of its live `orch/` snapshot. Each is present only when the
+ * machine said it: absent is unknown, never zero.
+ */
+export function machineApp(client: CloudReadClient, machine: string): { version?: string; api_level?: number } {
+  const snapshot = client.orchestratorSnapshots?.get?.(machine)
+  const app = typeof snapshot === "object" && snapshot !== null ? (snapshot as { app?: unknown }).app : undefined
+  if (typeof app !== "object" || app === null) return {}
+  const { version, api_level } = app as { version?: unknown; api_level?: unknown }
+  return {
+    ...(typeof version === "string" && version ? { version: version.slice(0, 64) } : {}),
+    ...(typeof api_level === "number" && Number.isInteger(api_level) && api_level >= 0 ? { api_level } : {}),
+  }
+}
 
 /** The copied client's `AGENT_LIMIT`: the entries one subagent read carries. */
 export const CLOUD_AGENT_LIMIT = 200
@@ -871,6 +903,7 @@ export class RelayReader {
             ok: true,
             password: false,
             served_by: "cloud-machine-via-relay",
+            ...machineApp(client, this.machine),
           }
           this.note(method, path, "local")
           return json(200, health)
@@ -1026,7 +1059,8 @@ export class RelayReader {
         throw new TypeError(`${code}: ${message}`)
       }
       const status = typeof failure?.status === "number" && failure.status >= 400 && failure.status < 600 ? failure.status : 502
-      return this.refuse(method, path, status, code, message, authenticatedRefusalKey(error))
+      const version = MACHINE_LACKS_WORD.has(code) && this.client ? machineApp(this.client, this.machine).version : undefined
+      return this.refuse(method, path, status, code, message, authenticatedRefusalKey(error), version)
     }
   }
 
@@ -1512,9 +1546,9 @@ export class RelayReader {
     )
   }
 
-  private refuse(method: string, path: string, status: number, code: string, detail: string, detailKey: string | null = null): Response {
+  private refuse(method: string, path: string, status: number, code: string, detail: string, detailKey: string | null = null, version?: string): Response {
     this.note(method, path, "refused", code)
-    return json(status, { error: code, detail, route: path, ...(detailKey ? { detail_key: detailKey } : {}) })
+    return json(status, { error: code, detail, route: path, ...(detailKey ? { detail_key: detailKey } : {}), ...(version ? { version } : {}) })
   }
 
   private note(method: string, path: string, answer: SeamRow["answer"], code?: string, extra?: Partial<SeamRow>): void {

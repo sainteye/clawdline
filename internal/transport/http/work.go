@@ -148,7 +148,7 @@ func (s *Server) workRoute(w http.ResponseWriter, r *http.Request) {
 		s.workV2Route(w, r)
 		return
 	}
-	writeRefusal(w, http.StatusNotFound, "not_found", "No such board route.")
+	writeNoSuchRoute(w, r)
 }
 
 // workID is the shape of a work id: a lowercase UUID, as a dispatch's work_id

@@ -466,6 +466,9 @@ var Settables = []Settable{
 	{Name: "reopen_on_return", Kind: "bool"},
 	{Name: "planning_gate", Kind: "bool"},
 	{Name: "verify_gate", Kind: "bool"},
+	// A release install installs a newer stable release by itself when no
+	// session is busy (docs/updates.md). Off unless set.
+	{Name: "update_auto_apply", Kind: "bool"},
 	{Name: "follow_target", Kind: "bool"},
 	{Name: "codex_auto_name", Kind: "bool"},
 	{Name: "auto_name_assistant", Kind: "string", Choices: []string{"claude", "codex", "auto"},

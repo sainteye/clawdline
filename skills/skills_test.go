@@ -18,8 +18,9 @@ import (
 var routeInGuide = regexp.MustCompile(`/v1/[A-Za-z0-9_./<>{}%-]*`)
 
 // registered is every pattern a ServeMux in the transport registers, read from
-// its source: `mux.HandleFunc("…"` and `mux.Handle("…"`.
-var registered = regexp.MustCompile(`mux\.Handle(?:Func)?\("([^"]+)"`)
+// its source: a row of the route table (`Route{"*", "…"}`, server.go) and the
+// `mux.HandleFunc("…"` and `mux.Handle("…"` left outside it.
+var registered = regexp.MustCompile(`(?:mux\.Handle(?:Func)?\(|Route\{"[^"]*", )"([^"]+)"`)
 
 // transportPatterns reads the patterns the daemon serves. The catch-all "/"
 // is left out: it is the fallback that proxies or refuses, not a route.

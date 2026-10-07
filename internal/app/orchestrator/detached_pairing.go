@@ -91,7 +91,7 @@ this computer. Nobody is watching this tab: do the steps below and nothing else.
 
    If ` + "`clawdline`" + ` is not on that machine's PATH, find the binary first — ` + "`command -v clawdline`" + `,
    then ~/.local/bin/clawdline and /usr/local/bin/clawdline, then the ExecStart= line of
-   ` + "`systemctl --user cat clawdline`" + ` or ` + "`systemctl cat clawdline`" + ` — and run the same
+   ` + "`systemctl --user cat clawdline-next`" + ` or ` + "`systemctl cat clawdline-next`" + ` — and run the same
    command with that full path. Change nothing else on that machine, and do not run the
    command on this computer.
 

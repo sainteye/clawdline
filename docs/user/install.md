@@ -1,82 +1,102 @@
 # Install and first run
 
-After this page you have the Clawdline daemon running on your machine, the console open in your
-browser, and one Claude Code or Codex session showing in its list. Each step ends with a check.
-
-The longer version, with every environment variable and the reasoning behind it, is
-[getting-started.md](../getting-started.md).
+After this page Clawdline runs on your machine as a service that starts at login, the console
+is open in your browser, and one Claude Code or Codex session shows in its list. Each step ends
+with a check.
 
 ## Before you start
 
-Clawdline is pre-1.0 and has no release download. You build it from source on **macOS or Linux**.
-Windows builds, but cannot list or control sessions yet ([platforms.md](platforms.md)).
-
 | You need | Check |
 | --- | --- |
-| Go 1.25 or newer | `go version` |
-| Node.js with npm | `npm --version` |
+| macOS 13+ (Apple silicon or Intel) or Linux (x86-64 or ARM64) | `uname -sm` |
 | tmux | `tmux -V` |
 | Claude Code or Codex | `claude --version` or `codex --version` |
 | *(optional)* a Claude Code status line that writes `~/.claude/statusline-cache/rate-limits.json` | `ls ~/.claude/statusline-cache/rate-limits.json` |
 
-Nothing needs an account. Clawdline Cloud is optional and off by default.
+You do not need Go, Node.js, Xcode, an account or `sudo`. The installer checks tmux and the
+assistants itself and prints the exact command to install anything that is missing, for the
+package manager your machine has (Homebrew, apt, dnf, pacman, zypper or apk).
 
 The last row is the only one you can skip and still lose something visible: Claude Code hands its
-`5h`/`7d` plan percentages to the stdin of `statusLine.command` and to nothing else, so without
-one the Status Line's right edge reads `方案額度 未知` forever. [usage.md](usage.md) says what to
-configure; everything else works without it.
+`5h`/`7d` plan percentages only to the stdin of `statusLine.command`, so without one the Status
+Line's right edge reads `方案額度 未知`. [usage.md](usage.md) says what to configure.
 
-## 1. Build
-
-```sh
-git clone https://github.com/sainteye/clawdline.git ~/code/clawdline
-cd ~/code/clawdline
-
-(cd web && npm install && npm run build)
-go build -o bin/clawdline ./cmd/clawdline
-```
-
-The first command builds the console into `web/console/dist`. The second builds one binary that is
-both the daemon and the command line.
-
-**Check:** `ls web/console/dist/index.html` finds the file, and `./bin/clawdline version` prints a
-version.
-
-## 2. Start the daemon
+## 1. Install
 
 ```sh
-CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
 ```
 
-`CLAWDLINE_NEXT_WEB` tells the daemon where the console's files are. The daemon listens on
-`127.0.0.1:7727` only, keeps its state in `~/.config/clawdline-next`, and writes its log to
-`logs/daemon.log` inside that directory.
+It downloads the latest release for your system, checks it against the release's checksums and
+signature, and runs `clawdline setup` from it, which:
 
-**Check**, from a second terminal:
+- puts the release in `~/.local/share/clawdline-next/releases/<version>/` and links
+  `~/.local/bin/clawdline` to it — if `~/.local/bin` is not on your `PATH`, it prints the one
+  line that adds it to your shell's profile file (`~/.zshrc`, `~/.bashrc`, …), and every
+  command it prints uses the full path until then;
+- starts the daemon as a per-user service that comes back after logout and reboot: a
+  `systemd --user` unit on Linux, a LaunchAgent on macOS. On Linux it also turns on lingering,
+  so the service starts at boot and outlives your last logout; where your system reserves that
+  for an administrator, it says so and prints the one `sudo loginctl enable-linger` line to ask
+  for;
+- on a Mac with a desktop, also installs **Clawdline Next.app** into `~/Applications`;
+- checks that the console answers, that it is the release just installed, and that the daemon
+  can open and close a tmux session — then opens the console in your browser.
+
+Each check prints one ✓ line; `--verbose` adds the paths and versions behind it. The install ends
+with a **Next:** block: how to sign in (on a machine with no desktop, the address and the
+`ssh -L` line that reaches it from your laptop), how to start an assistant inside tmux, and how to
+turn autostart off or remove Clawdline, each with `--port` when you chose another port.
+
+"Next" in `Clawdline Next.app`, `clawdline-next.service` and `~/.config/clawdline-next` is this
+generation's internal name; the product is Clawdline.
+
+Options go after `sh -s --`:
 
 ```sh
-./bin/clawdline doctor
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:7727/    # 200 means the console is served
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh -s -- --headless
 ```
 
-`doctor` prints the version, port, state directory and store counts. A `501` from the second
-command means the daemon was started without `CLAWDLINE_NEXT_WEB`.
+| Option | Does |
+| --- | --- |
+| `--headless` | No desktop: no app, no browser; prints the sign-in address instead |
+| `--no-app` | macOS: the service only, no app |
+| `--no-autostart` | Start now, but not at login or boot |
+| `--channel beta` | Follow pre-releases too |
+| `--version vX.Y.Z` | Install that release instead of the latest |
+| `--port N` | Listen on another port than 7727 (it gets its own service name) |
+| `--verbose` | Also print the paths and versions behind each check |
+| `--adopt` | Take over an installation made from a source checkout (below) |
 
-## 3. Open the console
+**Check:** the installer ends with the console open (or its address printed), and
 
 ```sh
-./bin/clawdline open           # this browser can read and type into every session
+clawdline doctor          # version, port, state directory
 ```
+
+answers with the version you installed.
+
+## 2. Open the console
+
+The installer opens it for you. To open it again, or on another browser:
+
+```sh
+clawdline open           # sign this browser in
+clawdline open --print   # print the address instead (a machine with no desktop)
+```
+
+A browser signed in this way can read every session and type into it. (`--send` is still accepted
+for older scripts and changes nothing.)
 
 `open` creates a device for your browser and signs it in. The key travels in the address's
-fragment, which the browser never sends to a server. `--print` prints the address instead of
-opening a browser — use it on a headless machine, and treat the address like a password until it
-has been used.
+fragment, which the browser never sends to a server. Treat a printed address like a password
+until it has been used. On a machine with no desktop, reach it over an SSH port forward
+([remote-access.md](remote-access.md)).
 
 **Check:** the console loads and shows the session list. Its interface is in Traditional Chinese,
 the only language it ships so far; the other pages here give each label with its meaning.
 
-## 4. Put a session in the list
+## 3. Put a session in the list
 
 The daemon finds sessions running in tmux (and iTerm2 on a Mac). Start one:
 
@@ -90,25 +110,56 @@ claude            # or: codex
 Nothing was installed into Claude Code or Codex: the daemon reads what they already write under
 `~/.claude` and `~/.codex`, and reads their screens through tmux.
 
-To make a directory show up in the list of places to start a session before you have ever run an
-agent there:
+To list a directory among the places to start a session before you ever ran an agent there:
 
 ```sh
-./bin/clawdline project add ~/code/my-app ~/code/another-app
-./bin/clawdline project list
+clawdline project add ~/code/my-app ~/code/another-app
 ```
 
-## Next
+## Updates
 
-- Keep it running after you log out: the macOS app or a `systemd --user` service,
-  [platforms.md](platforms.md)
-- Work with sessions: [sessions.md](sessions.md)
-- Reach it from a phone: [remote-access.md](remote-access.md)
-- Something did not come up: [troubleshooting.md](troubleshooting.md)
+The daemon checks for a new release every few hours. When there is one, the console's Settings
+page and `clawdline update` say so; **立即更新** there, or `clawdline update --apply`, installs it.
+Every release is signature-checked before it is installed, and one that does not come up healthy
+is rolled back by itself. Automatic updates are off until you turn on **自動更新** on the Settings
+page or run `clawdline setting set update_auto_apply true`. [updates.md](../updates.md) has the
+whole of it.
+
+## When something already runs
+
+- **A daemon already answers on the port** (a `clawdline serve` you started, or an app built
+  from a checkout): the installer changes nothing and says how to stop it, or use `--port`.
+- **A Linux service deployed from a source checkout** (`tools/deploy-linux-user.sh`): the
+  installer leaves it alone unless you pass `--adopt`. After adopting, the machine follows
+  releases; deploying from the checkout again makes it follow commits again.
 
 ## Stop or remove it
 
-Stop the daemon with Ctrl-C in the terminal running `serve`. Everything it
-keeps is in `~/.config/clawdline-next` (or `CLAWDLINE_NEXT_DIR`); removing that directory and the
-checkout removes Clawdline. If you ran `clawdline skill install`, run `clawdline skill uninstall`
-first ([clawdfather-and-dispatch.md](clawdfather-and-dispatch.md)).
+```sh
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh -s -- --uninstall
+# or, with it installed:
+clawdline setup --uninstall           # service, link, app and releases
+clawdline setup --uninstall --purge   # and the state: devices, sessions, settings
+```
+
+Without `--purge` your state in `~/.config/clawdline-next` stays, so installing again picks up
+where you were. To delete it later, once the `clawdline` command is gone, run
+`rm -rf ~/.config/clawdline-next`, or the installer with `--uninstall --purge`, which removes it
+even when nothing else is left. Uninstall also removes the service's systemd drop-in directory
+(`~/.config/systemd/user/clawdline-next.service.d/`, where `systemctl --user edit` puts overrides). Terminals Clawdline opened keep running after either; while one is still open,
+`--purge` leaves the `tmux` folder they run from, and says how to reach them. If you ran `clawdline skill install`, run `clawdline skill uninstall` first
+([clawdfather-and-dispatch.md](clawdfather-and-dispatch.md)).
+
+## Build from source instead
+
+For working on Clawdline itself — you need Go 1.25+, Node.js with npm, and tmux:
+
+```sh
+git clone https://github.com/sainteye/clawdline.git && cd clawdline
+(cd web && npm install && npm run build)
+go build -o bin/clawdline ./cmd/clawdline
+CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
+```
+
+[getting-started.md](../getting-started.md) has every environment variable and the reasoning
+behind them; [platforms.md](platforms.md) says how a checkout keeps running as a service.

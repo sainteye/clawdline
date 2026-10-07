@@ -19,20 +19,35 @@ func entryLanguage(t *testing.T, language string) {
 }
 
 func TestEntryCatalogNineLanguagesAndFormatBranches(t *testing.T) {
-	english := cliCatalogGroups["entry"].english
+	bundle := cliCatalogGroups["entry"]
+	english := bundle.english
 	if len(english) < 120 {
 		t.Fatalf("entry catalog has %d keys; expected the entry, guide, skill, and usage copy", len(english))
 	}
+	if len(bundle.baseline) != 126 {
+		t.Fatalf("entry initial baseline has %d keys, expected 126", len(bundle.baseline))
+	}
 	for _, language := range []string{"en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 		translated, total := cliCatalogCoverage("entry", language)
-		if translated != len(english) || total != len(english) {
-			t.Errorf("%s coverage is %d/%d, expected %d/%d", language, translated, total, len(english), len(english))
+		minimum := len(bundle.baseline)
+		if language == "en" || language == "zh-Hant" {
+			minimum = len(english)
+		}
+		if translated < minimum || total != len(english) {
+			t.Errorf("%s coverage is %d/%d, expected at least %d/%d", language, translated, total, minimum, len(english))
 		}
 		if language == "en" {
 			continue
 		}
-		catalog := cliCatalogGroups["entry"].locales[language]
-		for key, source := range english {
+		catalog := bundle.locales[language]
+		for key, value := range catalog {
+			source := english[key]
+			if strings.TrimSpace(value) == "" || !sameCLIVerbs(source, value) {
+				t.Errorf("%s key %q is blank or changes format branches", language, key)
+			}
+		}
+		for _, key := range bundle.baseline {
+			source := english[key]
 			value, ok := catalog[key]
 			if !ok || strings.TrimSpace(value) == "" || !sameCLIVerbs(source, value) {
 				t.Errorf("%s key %q is absent, blank, or changes format branches", language, key)

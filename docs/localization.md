@@ -32,6 +32,16 @@ catalogs. This explicit cleanup prevents obsolete keys from invalidating whole
 catalogs at runtime. The maintenance procedure is in
 `web/console/catalog-baseline.md`.
 
+CLI catalog groups pin their first-release keys in
+`cmd/clawdline/cli_catalogs/<group>/baseline-keys.json`. Runtime loading
+rejects a secondary catalog missing one of those keys. English and
+Traditional Chinese must include every current key, while a later command's
+new keys may be absent from the other seven locales and then use the exact
+English sentence. A new command group begins with English and Traditional
+Chinese; its baseline is pinned when its first complete nine-language
+translation is released. Raw flags, paths, identifiers, and JSON stay as they
+were supplied.
+
 ## Shipped interface languages
 
 The shipped set is `en`, `zh-Hant` (Taiwan Traditional Chinese), `ja`,

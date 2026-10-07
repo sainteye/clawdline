@@ -785,6 +785,12 @@ snapshot nor another settings key crosses. Reading needs the paired line. Saving
 needs the machine's Cloud-command switch and the paired device's Send capability. The screen says
 that a successful assignment captures the pair, so changing it never looks retroactive.
 
+As of 2026-10-07, the Settings page's **立即更新** crosses as `update-apply`, which carries nothing
+but its request id to `POST /v1/update/apply` with body `{}`: a phone can start the update of the
+newest release of the machine's channel, but cannot name a version or force one. It is a command,
+so it needs the machine's Cloud-command switch and the paired device's Send capability. Its
+progress is read through the existing `update` word.
+
 Also as of 2026-09-28, `board-command` carries the Settings page's Board mode command as
 `{command}` to `POST /v1/board`; the AI-consent form remains accepted for older clients but is no
 longer shown or required. The command's own `requestId` is both the Cloud

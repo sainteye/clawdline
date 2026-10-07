@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4604,
-  "riskKeys": 2027,
-  "nonRiskCount": 2577,
+  "englishContentKeys": 4655,
+  "riskKeys": 2043,
+  "nonRiskCount": 2612,
   "groups": [
     {
       "name": "bar / other",
@@ -1773,7 +1773,7 @@
     },
     {
       "name": "next / other",
-      "count": 46,
+      "count": 81,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -1792,6 +1792,9 @@
         "next.infoContext",
         "next.infoContextUsed",
         "next.infoResetsInMinutes",
+        "next.machineNeedsUpdateLink",
+        "next.machineNeedsUpdateShort",
+        "next.machineNeedsUpdateVersion",
         "next.machineSessionScope",
         "next.menuCancel",
         "next.menuChooseAgain",
@@ -1823,7 +1826,39 @@
         "next.transcriptJumpNew",
         "next.transcriptRetry",
         "next.transcriptRetrying",
-        "next.transcriptTechnicalDetails"
+        "next.transcriptTechnicalDetails",
+        "next.updateApplyOlder",
+        "next.updateAuto",
+        "next.updateAutoBeta",
+        "next.updateAutoCloud",
+        "next.updateAutoOff",
+        "next.updateAutoOn",
+        "next.updateBanner",
+        "next.updateBannerDismiss",
+        "next.updateBannerGo",
+        "next.updateChannel",
+        "next.updateChannelBeta",
+        "next.updateChannelStable",
+        "next.updateChecked",
+        "next.updateCopied",
+        "next.updateCopy",
+        "next.updateDetails",
+        "next.updateDone",
+        "next.updateDoneAt",
+        "next.updateDownloading",
+        "next.updateHealthy",
+        "next.updateIsAhead",
+        "next.updateIsCurrent",
+        "next.updateLatest",
+        "next.updateNotes",
+        "next.updateNow",
+        "next.updateReloading",
+        "next.updateRetry",
+        "next.updateSending",
+        "next.updateStaged",
+        "next.updateStagedApp",
+        "next.updateTitle",
+        "next.updateVerifying"
       ]
     },
     {

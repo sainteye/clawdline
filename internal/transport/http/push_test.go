@@ -118,8 +118,8 @@ func pushCall(t *testing.T, s *Server, method, path, body, device string, local 
 	return rec
 }
 
-// TestThePushRoutesAreTheFourTheyAre. An unknown one is a 404 rather than a
-// prefix match on the nearest.
+// TestThePushRoutesAreTheFourTheyAre. An unknown one is 501 not_implemented
+// (writeNoSuchRoute) rather than a prefix match on the nearest.
 func TestThePushRoutesAreTheFourTheyAre(t *testing.T) {
 	s := pushServer(t)
 	for _, call := range []struct{ method, path string }{
@@ -130,7 +130,7 @@ func TestThePushRoutesAreTheFourTheyAre(t *testing.T) {
 		{http.MethodGet, "/v1/push/test"},
 	} {
 		rec := pushCall(t, s, call.method, call.path, "", "phone", false)
-		if rec.Code != http.StatusNotFound {
+		if rec.Code != http.StatusNotImplemented {
 			t.Errorf("%s %s: %d %s", call.method, call.path, rec.Code, rec.Body)
 		}
 	}

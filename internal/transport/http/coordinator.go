@@ -174,7 +174,7 @@ func (s *Server) orchestratorCoordinatorRoute(w http.ResponseWriter, r *http.Req
 				"the id and generation from GET /v1/orchestrator/coordinator.",
 			Extra: map[string]any{"implemented": false}})
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such coordinator route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

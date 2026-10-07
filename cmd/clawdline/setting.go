@@ -70,8 +70,9 @@ var settingKeys = map[string]struct {
 		},
 		takes: "a number of tokens from 50000 to 1000000, or off",
 	},
-	"planning_gate": {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
-	"verify_gate":   {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"planning_gate":     {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"verify_gate":       {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
+	"update_auto_apply": {parse: parseSettingBool, show: showSettingBool, takes: "on/off or true/false"},
 	"product_language": {
 		parse: func(s string) (any, bool) {
 			for _, language := range nextconfig.ProductLanguages {

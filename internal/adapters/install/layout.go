@@ -176,6 +176,14 @@ type ServiceFile struct {
 	Port   int    `json:"port"`
 	// Root is the layout root the service runs from.
 	Root string `json:"root"`
+	// File is the unit or plist setup wrote, so the uninstaller and the
+	// app's start-at-login switch need not compose its path.
+	File string `json:"file,omitempty"`
+	// Channel is the release channel the person chose (stable or beta).
+	Channel string `json:"channel,omitempty"`
+	// App is the app bundle setup installed, when it installed one; the
+	// uninstaller removes only that one.
+	App string `json:"app,omitempty"`
 }
 
 // ServiceFileName is its name in the state directory.

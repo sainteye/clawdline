@@ -69,3 +69,40 @@ func TestApplyOnMacOSPrintsTheCommandsAndFails(t *testing.T) {
 		t.Fatalf("%s", out.String())
 	}
 }
+
+// A failed check is one line in words with its code last, and a rollback
+// says that nothing is left to do and that auto-update will not retry it.
+func TestUpdateSaysFailuresOnceAndInWords(t *testing.T) {
+	var b strings.Builder
+	printUpdate(&b, contract.UpdateStatus{State: contract.UpdateStateUnknown, InstallKind: contract.UpdateInstallKindRelease,
+		Error:  "manifest_signature_invalid: the signature does not match the manifest",
+		Reason: "the release manifest could not be read: manifest_signature_invalid: the signature does not match the manifest"})
+	out := b.String()
+	if !strings.Contains(out, "state    unknown — the release could not be verified; nothing was changed. Try again later. (manifest_signature_invalid)\n") {
+		t.Errorf("the state line:\n%s", out)
+	}
+	if n := strings.Count(out, "signature"); n != 1 {
+		t.Errorf("the error is said %d times:\n%s", n, out)
+	}
+
+	b.Reset()
+	printUpdate(&b, contract.UpdateStatus{State: contract.UpdateStateUpdateAvailable, InstallKind: contract.UpdateInstallKindRelease,
+		Latest: contract.BuildStamp{Version: "v0.10.1"},
+		Apply: &contract.UpdateApply{State: contract.UpdateApplyStateRolledBack, From: "v0.10.0", To: "v0.10.1",
+			Error: &contract.UpdateApplyError{Code: "health_timeout", Detail: "dial tcp: connection refused"}}})
+	out = b.String()
+	for _, want := range []string{"v0.10.1 did not start, so Clawdline went back to v0.10.0. (health_timeout)",
+		"automatic updates will not try v0.10.1 again"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "dial tcp") {
+		t.Errorf("the Go error is shown:\n%s", out)
+	}
+
+	if got := rolledBackSentence("v0.10.1", "v0.10.0", "clawdline update --json"); got !=
+		"v0.10.1 did not start, so Clawdline went back to v0.10.0, which is running now. Nothing else to do; automatic updates will skip this version. Details: clawdline update --json" {
+		t.Errorf("rollback: %s", got)
+	}
+}

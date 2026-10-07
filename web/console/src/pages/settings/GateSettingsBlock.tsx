@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 import type { WorkGateSettingsSnapshot } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
 import { readWorkGateSettings, writeWorkGateSettings } from "./api.js"
+import { Switch } from "./Switch.js"
 import "./gate-settings.css"
 
 type GateKey = keyof WorkGateSettingsSnapshot
@@ -77,21 +78,22 @@ export function GateSettingsBlock({ shown }: { shown: boolean }) {
   const current = snapshot ? mode(snapshot.planning_gate, snapshot.verify_gate) : null
   const toggle = (key: GateKey, label: string, hint: string) => {
     const on = snapshot?.[key] === true
+    const title = "settings-gate-" + key + "-title"
+    const say = "settings-gate-" + key + "-say"
     return (
       <div className="settings-gate-row">
         <div>
-          <strong>{label}</strong>
-          <p className="say">{hint}</p>
+          <strong id={title}>{label}</strong>
+          <p className="say" id={say}>{hint}</p>
         </div>
-        <button
-          className={on ? "chip on" : "chip"}
-          type="button"
-          aria-pressed={snapshot ? String(on) as "true" | "false" : "false"}
+        <Switch
+          labelledBy={title}
+          describedBy={say}
+          on={on}
+          stateText={snapshot ? (on ? catalogWord("literal", "09b410f51b19") : catalogWord("literal", "862364ba6811")) : catalogWord("literal", "af53543a73b6")}
           disabled={!snapshot || busy !== null}
-          onClick={() => commit(key)}
-        >
-          {snapshot ? (on ? catalogWord("literal", "b6bef29d23da") : catalogWord("literal", "b6c180ac93e9")) : catalogWord("literal", "af53543a73b6")}
-        </button>
+          onToggle={() => commit(key)}
+        />
       </div>
     )
   }

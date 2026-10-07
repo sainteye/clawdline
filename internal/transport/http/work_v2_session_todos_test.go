@@ -179,7 +179,8 @@ func TestASessionAddsItsOwnTodosAndThePersonSeesWhoWroteThem(t *testing.T) {
 		t.Fatalf("complete: %d %s", done.Code, done.Body)
 	}
 
-	// Send and delete stay the person's: the Agent surface has no such route.
+	// Send and delete stay the person's: the Agent surface has no such route,
+	// and says so as a route it does not have (writeNoSuchRoute).
 	for _, c := range []struct{ method, suffix string }{
 		{http.MethodPost, "/" + created.Todos[1].ID + "/send"},
 		{http.MethodDelete, "/" + created.Todos[1].ID},
@@ -187,7 +188,7 @@ func TestASessionAddsItsOwnTodosAndThePersonSeesWhoWroteThem(t *testing.T) {
 	} {
 		got := httptest.NewRecorder()
 		s.workV2Route(got, agentWorkV2Request(c.method, path+c.suffix, `{}`, "agent-"+c.method+c.suffix))
-		if got.Code != http.StatusNotFound {
+		if got.Code != http.StatusNotImplemented {
 			t.Fatalf("%s %s: %d %s", c.method, c.suffix, got.Code, got.Body)
 		}
 	}

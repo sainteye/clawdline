@@ -1972,6 +1972,26 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/update"}
 			}},
 
+		// The Settings page's 「立即更新」 (docs/updates.md): install the newest
+		// release of this machine's channel. A command, so it needs the
+		// machine's Cloud-command switch like any other write; nothing but the
+		// request crosses, so a phone can neither name a version nor force one.
+		op{name: "update-apply",
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				p, ok := actionPlan(b, false)
+				if !ok || p.request == "" {
+					return plan{}, false
+				}
+				return p, true
+			},
+			route: func(p plan) LocalRequest {
+				return LocalRequest{Method: "POST", Path: "/v1/update/apply",
+					Body: []byte("{}"), Header: asDevice()}
+			}},
+
 		op{name: "agent", read: true,
 			decode: func(b body) (plan, bool) {
 				if !b.has("type", "session", "agent", "limit") {

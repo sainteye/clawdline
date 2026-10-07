@@ -264,6 +264,7 @@ export type WriteRoute =
   | { op: "board-command"; word: Carried<"board-command"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
   | { op: "update"; word: Carried<"update"> }
+  | { op: "update-apply"; word: Carried<"update-apply"> }
   // The sessions a reboot took away: one machine read and two machine
   // commands, none of them a session's — the rows are conversations the
   // machine no longer has a terminal for.
@@ -599,6 +600,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
   if (head === "settings" && a === "default-models" && segments.length === 2) {
     return { op: "default-models-update", word: "default-models-update" }
   }
+  if (head === "update" && a === "apply" && segments.length === 2) {
+    return { op: "update-apply", word: "update-apply" }
+  }
   if (head === "settings" && a === "work-gates" && segments.length === 2) {
     return { op: "work-gate-settings-update", word: "work-gate-settings-update" }
   }
@@ -829,6 +833,8 @@ function spellingOf(route: WriteRoute): Spelling {
     case "project-unify-apply":
     case "project-mirror-apply":
     case "project-mirror-detach":
+    // `updateApplyRoute` refuses with `writeRefusal` (internal/transport/http/update.go).
+    case "update-apply":
       return "flat"
     case "work-v2-create":
     case "work-v2-edit":
@@ -1498,6 +1504,18 @@ export class RelayWriter {
           throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: change it on the machine.`, 501)
         }
         return this.machineWorkV2(client, route.word, { changes: await bodyOf(init) }, headerOf(init, "idempotency-key"))
+      }
+      case "update-apply": {
+        // The press installs the newest release of the machine's channel and
+        // nothing else crosses: a version or `force` is the machine's own CLI.
+        for (const [key] of url.searchParams) {
+          throw failure("cloud_not_carried", `${url.pathname}?${key}= is not carried over Clawdline Cloud: update on the machine.`, 501)
+        }
+        const sent = await bodyOf(init)
+        if (Object.keys(sent).length > 0) {
+          throw failure("cloud_not_carried", "Choosing a release is not carried over Clawdline Cloud: run clawdline update on the machine.", 501)
+        }
+        return this.machineWorkV2(client, route.word, {}, headerOf(init, "idempotency-key"))
       }
       case "work-gate-settings-update": {
         for (const [key] of url.searchParams) {

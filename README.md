@@ -69,32 +69,25 @@ relay.
 
 ## Install
 
-Build from source on macOS or Linux. You need Go 1.25 or newer, Node.js with npm, tmux, and Claude
-Code or Codex.
+On macOS 13+ or Linux, with tmux and Claude Code or Codex:
 
 ```sh
-git clone https://github.com/sainteye/clawdline.git
-cd clawdline
-(cd web && npm install && npm run build)
-go build -o bin/clawdline ./cmd/clawdline
-
-CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
+curl -fsSL https://raw.githubusercontent.com/sainteye/clawdline/main/install.sh | sh
 ```
 
-In another terminal:
+It installs the latest signed release for your system as a per-user service that starts at login
+(no `sudo`, no Go or Node.js), adds the menu-bar app on a Mac, and opens the console in your
+browser. On a server, add `-s -- --headless` after `sh`. Run `claude` or `codex` inside tmux, and
+the session appears in the list.
 
-```sh
-./bin/clawdline doctor      # version, port, state directory
-./bin/clawdline open        # sign this browser in to read and send in sessions
-```
-
-Run `claude` or `codex` inside tmux, and the session appears in the list. Each step, with a check
-that it worked, is in [Install and first run](docs/user/install.md). `./bin/clawdline update`
-tells you when this machine trails the latest build ([Updates](docs/updates.md)).
+Each step with a check that it worked, every option, removal, and building from source are in
+[Install and first run](docs/user/install.md). A release updates itself from the console's Settings
+page or with `clawdline update --apply`, and rolls back by itself if it does not come up
+([Updates](docs/updates.md)).
 
 ## Limits
 
-- **Pre-1.0**, built from source, no release download yet.
+- **Pre-1.0**: expect changes between releases.
 - The console is in **Traditional Chinese** only for now.
 - **Windows** runs the daemon and console but cannot list sessions or open terminals. Linux runs
   headless under `systemd --user`; macOS has an optional native app ([Platforms](docs/user/platforms.md)).

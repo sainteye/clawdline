@@ -1198,7 +1198,7 @@ func (s *Server) workV2Route(w http.ResponseWriter, r *http.Request) {
 	case rest == "reset":
 		s.workV2Reset(w, r)
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "No such work-system v2 route.")
+		writeNoSuchRoute(w, r)
 	}
 }
 
@@ -3112,7 +3112,7 @@ func (s *Server) workV2Agent(w http.ResponseWriter, r *http.Request, parts []str
 			return
 		}
 	}
-	writeRefusal(w, http.StatusNotFound, "not_found", "No such Agent work-system route.")
+	writeNoSuchRoute(w, r)
 }
 
 // unacknowledgedCompletionWire is one completion notice a root has not

@@ -15,3 +15,16 @@ export function drawerEntries<T extends { id: string }>(rows: readonly T[], modu
   return rows.filter((row) => modules[row.id]?.drawer !== false)
 }
 
+
+/**
+ * Whether a page is withheld because this machine is too old for it: only
+ * when the page names a `requiresApiLevel` and the machine's level is *known*
+ * and lower. An unknown level — a daemon from before `api_level` — is offered
+ * the page, and the routes' own 501 says the rest; hiding on a guess would
+ * take a working page away from a machine that has it.
+ */
+export function pageNeedsUpdate(id: string, modules: Modules, apiLevel: number | undefined): boolean {
+  const requires = modules[id]?.requiresApiLevel
+  if (typeof requires !== "number" || typeof apiLevel !== "number") return false
+  return apiLevel < requires
+}

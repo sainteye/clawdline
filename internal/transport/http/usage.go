@@ -99,8 +99,7 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := strings.Split(strings.TrimPrefix(routePath(r), "/v1/usage/"), "/")
 	if len(parts) != 2 || parts[1] == "" {
-		writeRefusal(w, http.StatusNotFound, "not_found",
-			"Ask for /v1/usage/sessions/<conversation>, /v1/usage/tasks/<id> or /v1/usage/items/<id>.")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	kind, id := parts[0], parts[1]
@@ -128,8 +127,7 @@ func (s *Server) usageRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, usageItem(got, s.usageWindows(ctx)))
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found",
-			"Ask for /v1/usage/sessions/<conversation>, /v1/usage/tasks/<id> or /v1/usage/items/<id>.")
+		writeNoSuchRoute(w, r)
 	}
 }
 

@@ -1,6 +1,7 @@
 import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import type { MachineUsage } from "@clawdline/contract"
-import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
+import { RefusalError, TransportError, asMachineNeedsUpdate, isRefusal } from "@clawdline/core"
+import { nextWord } from "../next-strings.js"
 import { client } from "../client.js"
 
 /**
@@ -45,14 +46,16 @@ async function call(method: string, path: string): Promise<MachineUsage> {
 
 /** A failure as the dashboard says it. */
 export function failureWords(err: unknown, zh: boolean): string {
+  // A machine older than the usage route: the console's one needs-update
+  // sentence (machine/NeedsUpdate.tsx), not a failure.
+  if (asMachineNeedsUpdate(err)) return nextWord("machineNeedsUpdate")
   if (err instanceof RefusalError) {
     if (err.code === "machine_usage_unsupported") {
       return catalogWord("literal", "ed6c1de76c4f")
     }
-    if (err.code === "cloud_not_carried" || err.code === "unknown_command") {
-      return catalogWord("literal", "fabc8bde5489")
-    }
-    return catalogRefusalDetail(err)?.text || err.code
+    if (err.code === "cloud_not_carried") return nextWord("cloudNotCarried")
+    if (err.code === "unknown_command") return catalogWord("literal", "fabc8bde5489")
+    return catalogRefusalDetail(err)?.text || err.detail || err.code
   }
   if (err instanceof TransportError) {
     return catalogWord("literal", "eab8191e445c")

@@ -262,7 +262,7 @@ func TestUsageRefusesWhatItDoesNotKnow(t *testing.T) {
 		{"/v1/usage/tasks/task-9", http.StatusNotFound, "unknown_task"},
 		{"/v1/usage/items/10000000-0000-4000-8000-00000000ffff", http.StatusNotFound, "unknown_item"},
 		{"/v1/usage/sessions/a*b", http.StatusBadRequest, "bad_request"},
-		{"/v1/usage/projects/p", http.StatusNotFound, "not_found"},
+		{"/v1/usage/projects/p", http.StatusNotImplemented, "not_implemented"},
 	} {
 		code, body := u.get(tc.path, nil)
 		var r contract.Refusal
@@ -383,7 +383,7 @@ func TestUsageCompareCompactionAnswersTheGroups(t *testing.T) {
 		{"/v1/usage/compare-compaction?since=14w", http.StatusBadRequest},
 		{"/v1/usage/compare-compaction?limit=3", http.StatusBadRequest},
 		{"/v1/usage/compare-compaction?since=1d&since=2d", http.StatusBadRequest},
-		{"/v1/usage/compare-compaction/more", http.StatusNotFound},
+		{"/v1/usage/compare-compaction/more", http.StatusNotImplemented},
 	} {
 		code, body := u.get(tc.path, nil)
 		if code != tc.want {

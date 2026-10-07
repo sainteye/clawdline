@@ -1727,8 +1727,16 @@ type BrowserRequest struct {
 type BuildStamp struct {
 	CommittedAt string `json:"committed_at,omitempty"`
 
+	// Where the newest release's notes are read; only on `latest` of a release
+	// install.
+	NotesURL string `json:"notes_url,omitempty"`
+
 	// The full commit hash, or empty when it is not known.
 	Stamp string `json:"stamp"`
+
+	// The release version (vX.Y.Z): on a release install, the running release and the
+	// newest one of its channel. Absent for a source build.
+	Version string `json:"version,omitempty"`
 }
 
 // `none`: nothing is refused, removed or rotated; the limit is only reported.
@@ -2844,10 +2852,18 @@ type GitSnapshot struct {
 // GET /v1/health, open without a token: that this daemon is alive, which
 // implementation it is, and the two answers a page needs before it can be let
 // in — whether the asker's own credential is one this machine knows, and
-// whether a password door exists. Nothing else: no path, no port, nothing about
-// the work; those are in Diagnostics.
+// whether a password door exists — and which build answered (`version`,
+// `api_level`), so a console newer than this daemon can say a feature needs an
+// update rather than that it failed. Nothing else: no path, no port, nothing
+// about the work; those are in Diagnostics.
 type Health struct {
-	At int64 `json:"at"`
+	// Which set of routes this daemon answers: `api_level` in api/v1/routes.json when
+	// it was built, raised every time a route is added or removed. A console compares
+	// it with a feature's `requiresApiLevel` before it offers the feature. Absent from
+	// a daemon built before 2026-10-06, and from a reading that could not learn it;
+	// absent is unknown, not zero.
+	APILevel int64 `json:"api_level,omitempty"`
+	At       int64 `json:"at"`
 
 	// Whether the credential this request carried — the cookie or a bearer token —
 	// is one this machine lets in. It is about the asker and nothing else, and it is
@@ -2868,6 +2884,11 @@ type Health struct {
 	// Which implementation answered. This is how a reader tells the Go daemon from the
 	// Swift app on the same port.
 	ServedBy string `json:"served_by"`
+
+	// The daemon's own version, as `clawdline version` prints it: a release tag, or
+	// `devel+<revision>` for a build from a checkout. What a person is told when a
+	// feature needs a newer one. Absent when the reading could not learn it.
+	Version string `json:"version,omitempty"`
 }
 
 // Why /v1/health says ok:false. `broker_beat_stalled`: the broker's loop has
@@ -5620,6 +5641,9 @@ type SettingsRequest struct {
 	// `auto`, `iterm`, `iterm_native` or `tmux`.
 	Terminal *string `json:"terminal"`
 
+	// true or false.
+	UpdateAutoApply *bool `json:"update_auto_apply"`
+
 	// Whether future execution cycles capture independent verification. Null leaves
 	// the stored setting unchanged; absence in the settings file defaults to false.
 	VerifyGate *bool `json:"verify_gate"`
@@ -5785,6 +5809,11 @@ type SettingsSnapshot struct {
 	// tab; `iterm_native` runs it in the tab itself. Not the same question as
 	// scope_app.
 	Terminal *string `json:"terminal"`
+
+	// Whether this machine installs a newer stable release by itself when no session
+	// it started is busy (docs/updates.md). Only a release install acts on it. Null or
+	// absent is off, the default.
+	UpdateAutoApply *bool `json:"update_auto_apply"`
 
 	// Whether a newly assigned execution cycle captures independent verification.
 	// Absent means false; a later setting change never rewrites an in-flight cycle's
@@ -7136,11 +7165,88 @@ type TunnelStatus struct {
 	URL string `json:"url,omitempty"`
 }
 
+// The last update of a release install, as the updater recorded it in the state
+// directory.
+type UpdateApply struct {
+	// When the state was recorded (RFC3339 UTC).
+	At    string            `json:"at,omitempty"`
+	Error *UpdateApplyError `json:"error,omitempty"`
+
+	// The release that ran before it.
+	From string `json:"from,omitempty"`
+
+	// A macOS app bundle unpacked and waiting for the app to quit before it replaces
+	// the installed one.
+	StagedApp string           `json:"staged_app,omitempty"`
+	State     UpdateApplyState `json:"state"`
+
+	// The release it installs.
+	To string `json:"to,omitempty"`
+}
+
+// Why an update stopped or was rolled back: a stable code a person can look up
+// in docs/user/troubleshooting.md, and a sentence.
+type UpdateApplyError struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// POST /v1/update/apply, on a release install: install the newest release of
+// this machine's channel, or `version`. Answered 202 with the UpdateStatus once
+// the update has started; the rest is read from GET /v1/update.
+type UpdateApplyRequest struct {
+	// Install `version` even when it is not newer than the running release. Never
+	// below the release's `min_version`.
+	Force bool `json:"force,omitempty"`
+
+	// A release to install instead of the newest, vX.Y.Z.
+	Version string `json:"version,omitempty"`
+}
+
+// Where the last update of a release install stands. `idle`: none has run.
+// `downloading`, `verifying`, `staged`: the running daemon is fetching,
+// checking and unpacking it. `restarting`: the supervisor is switching to it.
+// `healthy`: the new release answered its health check. `rolled_back`: it did
+// not, and the previous release runs again; `error` says why. `failed`: it
+// stopped before switching, and the running release was never changed.
+type UpdateApplyState string
+
+const (
+	UpdateApplyStateIdle        UpdateApplyState = "idle"
+	UpdateApplyStateDownloading UpdateApplyState = "downloading"
+	UpdateApplyStateVerifying   UpdateApplyState = "verifying"
+	UpdateApplyStateStaged      UpdateApplyState = "staged"
+	UpdateApplyStateRestarting  UpdateApplyState = "restarting"
+	UpdateApplyStateHealthy     UpdateApplyState = "healthy"
+	UpdateApplyStateRolledBack  UpdateApplyState = "rolled_back"
+	UpdateApplyStateFailed      UpdateApplyState = "failed"
+)
+
+// UpdateApplyStateValues is every value the contract allows, in contract order.
+var UpdateApplyStateValues = []UpdateApplyState{UpdateApplyStateIdle, UpdateApplyStateDownloading, UpdateApplyStateVerifying, UpdateApplyStateStaged, UpdateApplyStateRestarting, UpdateApplyStateHealthy, UpdateApplyStateRolledBack, UpdateApplyStateFailed}
+
+// What kind of installation the running daemon belongs to (docs/updates.md).
+// `release`: a signed release in the install layout; the updater owns it.
+// `source_deploy`: a commit deployed from a source checkout into the layout.
+// `source_checkout`: a binary run from outside the layout. `none`: not known.
+type UpdateInstallKind string
+
+const (
+	UpdateInstallKindRelease        UpdateInstallKind = "release"
+	UpdateInstallKindSourceDeploy   UpdateInstallKind = "source_deploy"
+	UpdateInstallKindSourceCheckout UpdateInstallKind = "source_checkout"
+	UpdateInstallKindNone           UpdateInstallKind = "none"
+)
+
+// UpdateInstallKindValues is every value the contract allows, in contract order.
+var UpdateInstallKindValues = []UpdateInstallKind{UpdateInstallKindRelease, UpdateInstallKindSourceDeploy, UpdateInstallKindSourceCheckout, UpdateInstallKindNone}
+
 // How this machine's build stands against the cloud's latest (docs/updates.md).
 // `current`: the same commit. `update_available`: the cloud's commit is later.
 // `ahead`: this machine's is later. `differs`: the commits differ and a commit
 // time is missing on one side. `unknown`: no comparison could be made; `reason`
-// says why.
+// says why. A release install compares release versions instead of commits and
+// never reads the hosted BUILD.json.
 type UpdateState string
 
 const (
@@ -7157,21 +7263,33 @@ var UpdateStateValues = []UpdateState{UpdateStateCurrent, UpdateStateUpdateAvail
 // GET /v1/update: whether this machine trails the cloud's latest build.
 // Answered from the daemon's last background check; a request never waits on
 // the network. A failed check keeps the last good `latest` and says what failed
-// in `error`.
+// in `error`. On a release install `running` and `latest` also carry release
+// versions, `latest` is the signed manifest of this machine's channel, and
+// `apply` says where the last update stands.
 type UpdateStatus struct {
+	Apply *UpdateApply `json:"apply,omitempty"`
+
+	// Whether this machine installs a newer stable release by itself when no session
+	// it started is busy (the setting `update_auto_apply`).
+	AutoApply bool `json:"auto_apply,omitempty"`
+
+	// The release channel a release install follows: `stable` or `beta`.
+	Channel string `json:"channel,omitempty"`
+
 	// When the last successful check read the cloud's BUILD.json (RFC3339 UTC). Absent
 	// before the first success.
 	CheckedAt string `json:"checked_at,omitempty"`
 
 	// What the most recent check said when it failed after the last success.
-	Error  string     `json:"error,omitempty"`
-	Latest BuildStamp `json:"latest"`
+	Error       string            `json:"error,omitempty"`
+	InstallKind UpdateInstallKind `json:"install_kind,omitempty"`
+	Latest      BuildStamp        `json:"latest"`
 
 	// Why the state is `unknown`.
 	Reason  string     `json:"reason,omitempty"`
 	Running BuildStamp `json:"running"`
 
-	// The BUILD.json this daemon asks.
+	// The BUILD.json this daemon asks; on a release install, the manifest it reads.
 	SourceURL string      `json:"source_url"`
 	State     UpdateState `json:"state"`
 }

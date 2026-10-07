@@ -113,6 +113,10 @@ func fill(values map[string]string, key, value string) {
 	}
 }
 
+// Lang is lang, for the panes of the tmux server that is not this package's
+// (terminal.Launcher.Lang).
+func (m Machine) Lang(ctx context.Context) string { return m.lang(ctx) }
+
 // lang is the shell's LANG: this daemon's own when it is UTF-8; else on macOS
 // the machine's region (`AppleLocale`) as `<locale>.UTF-8` when that locale is
 // installed; else en_US.UTF-8, or C.UTF-8 where en_US.UTF-8 is not installed.

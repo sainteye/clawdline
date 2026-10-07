@@ -21,6 +21,8 @@ import {
   type Sort,
 } from "./model.js"
 import { failureWords, failureWordsLanguage, readMachineUsage } from "./read.js"
+import { NeedsUpdate } from "./NeedsUpdate.js"
+import { asMachineNeedsUpdate } from "@clawdline/core"
 import { Mark } from "../session/List.js"
 import { nextWord } from "../next-strings.js"
 import "./machine.css"
@@ -144,7 +146,9 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
           </button>
         </div>
 
-        {!usage && error ? <p className="machine-verdict" data-level="warn" lang={failureWordsLanguage(error)}>{failureWords(error, zh)}</p> : null}
+        {!usage && error ? (asMachineNeedsUpdate(error)
+          ? <NeedsUpdate update={asMachineNeedsUpdate(error)} className="machine-verdict" />
+          : <p className="machine-verdict" data-level="warn" lang={failureWordsLanguage(error)}>{failureWords(error, zh)}</p>) : null}
         {!usage && !error ? <Skeleton /> : null}
         <button className="machine-clawdfather" type="button" onClick={() => onClawdfather(steward?.id ?? null)}>
           <span className="clawdfather-crown" aria-hidden="true" />

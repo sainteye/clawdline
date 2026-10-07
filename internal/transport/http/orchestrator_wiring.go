@@ -184,7 +184,7 @@ func newBroker(s *Server) *orchestrator.Broker {
 			}
 			return h.NoticeRead(ctx, root, noticeID)
 		},
-		Launcher: terminal.NewLauncher(),
+		Launcher: newLauncher(),
 		// The person decided that asking for a new Claude Code session in a
 		// registered project answers Claude Code's workspace-trust question
 		// for that folder (projects.TrustClaudeProject).

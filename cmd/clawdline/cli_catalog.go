@@ -16,8 +16,9 @@ import (
 var cliCatalogFiles embed.FS
 
 type cliCatalogGroup struct {
-	english map[string]string
-	locales map[string]map[string]string
+	english  map[string]string
+	locales  map[string]map[string]string
+	baseline []string
 }
 
 var cliCatalogGroups = readCLICatalogs()
@@ -40,16 +41,42 @@ func readCLICatalogs() map[string]cliCatalogGroup {
 		if err != nil || len(english) == 0 {
 			continue
 		}
-		bundle := cliCatalogGroup{english: english, locales: make(map[string]map[string]string)}
+		var baseline []string
+		if data, err := cliCatalogFiles.ReadFile(path.Join(root, "baseline-keys.json")); err == nil {
+			if json.Unmarshal(data, &baseline) != nil || !validCLIBaseline(english, baseline) {
+				continue
+			}
+		}
+		bundle := cliCatalogGroup{english: english, locales: make(map[string]map[string]string), baseline: baseline}
 		for _, language := range []string{"zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"} {
 			selected, err := readCLICatalogFile(path.Join(root, language+".json"))
-			if err == nil && validCLICatalog(english, selected, language == "zh-Hant") {
+			if err == nil && validCLICatalog(english, selected, language == "zh-Hant") && hasCLIBaseline(selected, baseline) {
 				bundle.locales[language] = selected
 			}
 		}
 		groups[group] = bundle
 	}
 	return groups
+}
+
+func validCLIBaseline(english map[string]string, baseline []string) bool {
+	seen := make(map[string]bool, len(baseline))
+	for _, key := range baseline {
+		if key == "" || seen[key] || english[key] == "" {
+			return false
+		}
+		seen[key] = true
+	}
+	return true
+}
+
+func hasCLIBaseline(selected map[string]string, baseline []string) bool {
+	for _, key := range baseline {
+		if selected[key] == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func readCLICatalogFile(filename string) (map[string]string, error) {

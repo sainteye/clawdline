@@ -32,6 +32,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	psync "github.com/sainteye/clawdline/internal/adapters/projectsync"
+	"github.com/sainteye/clawdline/internal/adapters/release/updater"
 	"github.com/sainteye/clawdline/internal/adapters/skillmenu"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/subagents"
@@ -52,7 +53,10 @@ import (
 )
 
 type Server struct {
-	cfg       config.Config
+	cfg config.Config
+	// version is this build as `clawdline version` prints it, for /v1/health
+	// (SetVersion). Empty leaves `version` out of the answer.
+	version   string
 	proxy     *httputil.ReverseProxy
 	inventory app.Inventory
 	store     *store.Store
@@ -130,7 +134,11 @@ type Server struct {
 	// first use; StartScheduler starts its background refresh.
 	update     *updatecheck.Checker
 	updateOnce sync.Once
-	usage      *machineusage.Sampler
+	// releaseUpdate is set, on the same first use, when this daemon runs
+	// from a release install: it then answers GET /v1/update instead of
+	// update, and POST /v1/update/apply installs releases (update.go).
+	releaseUpdate *updater.Daemon
+	usage         *machineusage.Sampler
 	// beat is the broker's account of its last pass, read by /v1/diagnostics.
 	beat atomic.Pointer[orchestrator.Pulse]
 	// pulse is the scheduler's own account of its last pass, read by
@@ -354,236 +362,9 @@ func (s *Server) Handler() http.Handler {
 	// Every route is behind the gate, with no exception for loopback: see gate.go.
 	gate := s.gate()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/auth/", s.authRoute)
-	mux.HandleFunc("/v1/health", s.health)
-	mux.HandleFunc("/v1/diagnostics", s.diagnostics)
-	mux.HandleFunc("/v1/capacity", s.capacityRoute)
-	// The dashboard behind the session counts: this machine's CPU and memory and
-	// each session's share (machine_usage.go). Any paired device, as /v1/capacity.
-	mux.HandleFunc("/v1/machine/usage", s.machineUsageRoute)
-	// Whether this machine trails the cloud's latest build (update.go). Any
-	// paired device, as /v1/capacity.
-	mux.HandleFunc("/v1/update", s.updateRoute)
-	// What the line to app.clawdline.com is doing (cloud.go). This machine's
-	// own token only.
-	mux.HandleFunc("/v1/cloud/status", s.cloudStatusRoute)
-	// Pairing a browser with this Mac, and throwing one out again. Same rule:
-	// this machine's own token, because the first of them answers a link that
-	// hands over the account key.
-	mux.HandleFunc("/v1/cloud/pairing", s.cloudPairingRoute)
-	mux.HandleFunc("/v1/cloud/pairing/offer", s.cloudPairingOfferRoute)
-	mux.HandleFunc("/v1/cloud/pairing/agent", s.cloudPairingAgentRoute)
-	mux.HandleFunc("/v1/cloud/pairing/agent/", s.cloudPairingAgentTaskRoute)
-	mux.HandleFunc("/v1/cloud/devices/revoke", s.cloudDeviceRoute)
-	mux.HandleFunc("/v1/cloud/keys/rotate", s.cloudRotateRoute)
-	// The account-free way in from outside: what this daemon's cloudflared is
-	// doing (tunnel.go). This machine's own token only — a quick tunnel's
-	// address is its secret.
-	mux.HandleFunc("/v1/tunnel", s.tunnelRoute)
-	mux.HandleFunc("/v1/sessions", s.sessions)
-	// Everything under a session id is about that session: its info, which is
-	// a read, and otherwise an action on it. One handler rather than a route
-	// each, because the id is a path segment and Go's mux matches prefixes,
-	// not patterns.
-	mux.HandleFunc("/v1/sessions/", func(w http.ResponseWriter, r *http.Request) {
-		// The sessions a reboot took away: three fixed paths, asked before
-		// anything reads the next segment as a session id.
-		if s.restorableRoute(w, r) {
-			return
-		}
-		// The archived Sessions: two fixed paths, asked for the same reason.
-		if s.archivedRoute(w, r) {
-			return
-		}
-		// Everything below names a session by id, and only an assistant is
-		// one (agent_session_only.go).
-		if s.refuseOrdinaryShell(w, r) {
-			return
-		}
-		if sessionID, agentID, ok := agentPath(r); ok {
-			s.sessionAgentRoute(w, r, sessionID, agentID)
-			return
-		}
-		if sessionID, shellID, ok := shellPath(r); ok {
-			s.sessionShellRoute(w, r, sessionID, shellID)
-			return
-		}
-		if id, ok := infoPath(r); ok {
-			s.sessionInfoRoute(w, r, id)
-			return
-		}
-		// Watching a screen is a read and brings its own route (screen.go);
-		// sessionAction below refuses anything that is not a POST, so this has
-		// to be asked before it.
-		if id, ok := screenPath(r); ok {
-			s.sessionScreenRoute(w, r, id)
-			return
-		}
-		// A file patch is the nested Git read and must be recognised before the
-		// repository summary beside it.
-		if id, ok := gitDiffPath(r); ok {
-			s.sessionGitDiffRoute(w, r, id)
-			return
-		}
-		// A read as well (git.go): what the session's repository has changed,
-		// asked for when its panel opens.
-		if id, ok := gitPath(r); ok {
-			s.sessionGitRoute(w, r, id)
-			return
-		}
-		if id, ok := focusPath(r); ok {
-			s.sessionFocusRoute(w, r, id)
-			return
-		}
-		// A read (todos.go): the session detail's to-do panel.
-		if id, ok := todosPath(r); ok {
-			s.sessionTodosRead(w, r, id)
-			return
-		}
-		// A read (skills.go): the slash menu, asked for when `/` opens it.
-		if id, ok := skillsPath(r); ok {
-			s.sessionSkillsRoute(w, r, id)
-			return
-		}
-		// A read (links.go): everything this project has an address for,
-		// asked for when the Links sheet opens.
-		if id, ok := linksPath(r); ok {
-			s.sessionLinksRoute(w, r, id)
-			return
-		}
-		s.sessionAction(w, r)
-	})
-	// What this feature has done to the machine, published (screen.go).
-	mux.HandleFunc("/v1/screens", s.screensRoute)
-	mux.HandleFunc("/v1/terminals", s.terminalsRoute)
-	mux.HandleFunc("/v1/terminals/", s.terminalRoute)
-	mux.HandleFunc("/v1/events", s.events)
-	// Two `/v1/next/` names are still the only spelling of what they serve,
-	// and the Dashboard reads both: what is owed (obligations.go, now the
-	// broker's own records, D01) and the machine coordinator. The shadows
-	// that had a real name beside them — sessions, schedules, board — are
-	// gone (D07): a second spelling nobody reads is a second thing to keep
-	// in step with nothing.
-	mux.HandleFunc("/v1/next/obligations", s.obligations)
-	mux.HandleFunc("/v1/next/coordinator", s.coordinatorRoute)
-
-	mux.HandleFunc("/v1/board", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			s.boardWrite(w, r)
-			return
-		}
-		s.boardRead(w, r)
-	})
-	mux.HandleFunc("/v1/board/tracks", s.boardTracks)
-	// The v2 work board; participation routes under the same prefix are
-	// registered separately.
-	mux.HandleFunc("/v1/work/", s.workRoute)
-	// Where a person takes part: proposals, decisions, digests (proposals.go, T4).
-	s.participationRoutes(mux)
-	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
-	// One schedule, its save, its removal and its run; the Cloud bind
-	// command's local half; and moving schedules in and out (schedules.go).
-	mux.HandleFunc("/v1/orchestrator/schedules/", s.scheduleRoute)
-	mux.HandleFunc("/v1/orchestrator/schedule-webhooks/bind", s.scheduleWebhookBindRoute)
-	mux.HandleFunc("/v1/orchestrator/schedule-imports", s.scheduleImportRoute)
-	mux.HandleFunc("/v1/orchestrator/schedule-exports", s.scheduleExportRoute)
-	// The text somebody wrote once and presses instead of typing it again
-	// (snippets.go). This daemon's own store, never the Swift app's directory.
-	mux.HandleFunc("/v1/snippets", s.snippetsRoute)
-	mux.HandleFunc("/v1/snippets/", s.snippetRoute)
-	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
-	// The broker (orchestrator.go): everything under a task id, plus the five
-	// routes beside it. A child's own routes are let through the gate by
-	// `taskSecretRoute` and are authenticated by these handlers.
-	mux.HandleFunc("/v1/orchestrator/tasks/", s.orchestratorTaskRoute)
-	mux.HandleFunc("/v1/orchestrator/inventory", s.brokerInventory)
-	mux.HandleFunc("/v1/orchestrator/inflight", s.brokerInflight)
-	mux.HandleFunc("/v1/orchestrator/messages", s.brokerMessages)
-	mux.HandleFunc("/v1/orchestrator/whoami", s.brokerWhoAmI)
-	// What a run was: the message a person sent a session, which a relay of
-	// their words names (runs.go).
-	mux.HandleFunc("/v1/orchestrator/runs/", s.runRoute)
-	// The address book a wait, a relay or a handoff names sessions from, and
-	// under a session: its delivery receipt, its to-dos and the retired
-	// workflow route (workflow.go).
-	mux.HandleFunc("/v1/orchestrator/sessions", s.brokerAddressBook)
-	mux.HandleFunc("/v1/orchestrator/sessions/", s.brokerSessionRoute)
-	// What each assistant's account has left, every pending landing, a root's
-	// own notification, and the durable-report promotion this daemon does not
-	// keep (orchestrator.go).
-	mux.HandleFunc("/v1/orchestrator/assistants", s.brokerAssistants)
-	mux.HandleFunc("/v1/orchestrator/landings", s.brokerLandings)
-	mux.HandleFunc("/v1/orchestrator/notify", s.brokerMachineNotify)
-	mux.HandleFunc("/v1/orchestrator/durable-reports/promotions", s.brokerDurableReportPromotion)
-	// The coordination plane (W5): the machine role, file waits, leases (the
-	// compile slot and landing), the completion ledger's manual path, and
-	// detached automation (coordinator.go, waits.go).
-	mux.HandleFunc("/v1/orchestrator/coordinator", s.orchestratorCoordinatorRoute)
-	mux.HandleFunc("/v1/orchestrator/coordinator/", s.orchestratorCoordinatorRoute)
-	mux.HandleFunc("/v1/orchestrator/waits", s.waitsRoute)
-	mux.HandleFunc("/v1/orchestrator/waits/", s.waitsRoute)
-	mux.HandleFunc("/v1/orchestrator/leases", s.leasesRoute)
-	mux.HandleFunc("/v1/orchestrator/leases/", s.leasesRoute)
-	mux.HandleFunc("/v1/orchestrator/completions", s.completionsRoute)
-	mux.HandleFunc("/v1/orchestrator/completions/", s.completionsRoute)
-	mux.HandleFunc("/v1/orchestrator/detached-tasks", s.brokerDetached)
-	// A command run for a root instead of a tab, which wakes it when it ends
-	// (callbacks.go, orchestrator/callback.go).
-	mux.HandleFunc("/v1/orchestrator/callbacks", s.brokerCallback)
-	// The hand-over plane (handoffs.go, W6).
-	mux.HandleFunc("/v1/orchestrator/handoffs", s.handoffsRoute)
-	mux.HandleFunc("/v1/orchestrator/handoffs/", s.handoffsRoute)
-	mux.HandleFunc("/v1/orchestrator/root-assignments", s.rootAssignmentsRoute)
-	mux.HandleFunc("/v1/orchestrator/root-assignments/", s.rootAssignmentsRoute)
-	mux.HandleFunc("/v1/orchestrator/graphs", s.graphsRoute)
-	mux.HandleFunc("/v1/orchestrator/reclaim", s.reclaimRoute)
-	mux.HandleFunc("/v1/strings", s.strings)
-	mux.HandleFunc("/v1/settings", s.settingsRoute)
-	mux.HandleFunc("/v1/settings/default-models", s.defaultModelsRoute)
-	mux.HandleFunc("/v1/settings/work-gates", s.workGateSettingsRoute)
-	mux.HandleFunc("/v1/places", s.placesRoute)
-	// The input bar's server list (devstacks.go): what the projects' own
-	// `.devstack.json` files declare, and which declared ports answer.
-	mux.HandleFunc("/v1/devstacks", s.devStacksRoute)
-	// Starting and resuming a session in a place, and what was said there (start.go).
-	mux.HandleFunc("/v1/places/", s.placeRoute)
-	// The built-in personas a start or a dispatch may name (personas.go).
-	mux.HandleFunc("/v1/personas", s.personasRoute)
-	mux.HandleFunc("/v1/squad/events/head", s.squadEventHead)
-	mux.HandleFunc("/v1/squad/events", s.squadEvents)
-	mux.HandleFunc("/v1/squad/session-bindings", s.squadSessionBindings)
-	mux.HandleFunc("/v1/squad/session-snapshots/", s.squadRoute)
-	mux.HandleFunc("/v1/squad/session-events", s.squadSessionEvents)
-	mux.HandleFunc("/v1/squad/", s.squadRoute)
-	mux.HandleFunc("/v1/squad-packages/", s.squadPackagesRoute)
-	mux.HandleFunc("/v1/projects", s.projectCatalogRoute)
-	mux.HandleFunc("/v1/projects/", s.projectsRoute)
-	// Project settings a source machine offers and a mirror applies (project_sync.go).
-	mux.HandleFunc("/v1/project-sync/", s.projectSyncRoute)
-	// The Project Timeline reads this daemon's own history and stores nothing.
-	mux.HandleFunc("/v1/timeline", s.timelineRoute)
-	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
-	// The token ledger, read by a person or a session (usage.go).
-	mux.HandleFunc("/v1/usage/", s.usageRoute)
-	// Things waiting to be verified, kept until the person settles them (verify.go).
-	mux.HandleFunc("/v1/verifications", s.verificationsRoute)
-	mux.HandleFunc("/v1/verifications/", s.verificationsRoute)
-	// Pictures: stored by a session (machine token), read by id (images.go).
-	mux.HandleFunc("/v1/artifacts/images", s.imagesRoute)
-	mux.HandleFunc("/v1/artifacts/images/", s.imageRoute)
-	// A turn's status report, to a browser on this machine only (reports.go).
-	mux.HandleFunc("/reports/", s.reportRoute)
-	// Said out loud rather than typed (voice.go). Not a session route and not
-	// a send: this machine transcribes and answers with the text, and what
-	// happens to it afterwards is the composer's business.
-	mux.HandleFunc("/v1/voice", s.voiceRoute)
-	mux.HandleFunc("/v1/voice/language", s.voiceLanguageRoute)
-	// One transcribed sentence becomes an editable draft. This spends one
-	// local CLI model turn but starts no session (intent.go).
-	mux.HandleFunc("/v1/intents", s.intentRoute)
-	// Web Push: the key, the subscription, the test and the way back out
-	// (push.go). Read-level, as in the Swift app.
-	mux.HandleFunc("/v1/push/", s.pushRoute)
+	for _, rt := range s.routeTable() {
+		mux.HandleFunc(rt.Pattern, rt.handle)
+	}
 	// By default this daemon refuses what it has not implemented instead of
 	// borrowing it. Proxying is a scaffold, and a scaffold that never says what
 	// it is holding up cannot be removed on purpose — so it is asked for by
@@ -607,6 +388,252 @@ func (s *Server) Handler() http.Handler {
 	return gate.wrap(s.withDocuments(boundBodies(mux)))
 }
 
+// routeTable is every pattern this daemon registers for its API, in the order
+// Handler registers them, with the handler behind each. Handler reads it and
+// nothing else, and Routes publishes the patterns, so api/v1/routes.json and
+// what a request can actually reach are one list
+// (TestRouteTableMatchesRoutesJSON).
+func (s *Server) routeTable() []route {
+	table := []route{
+		{Route{"*", "/v1/auth/"}, s.authRoute},
+		{Route{"*", "/v1/health"}, s.health},
+		{Route{"*", "/v1/diagnostics"}, s.diagnostics},
+		{Route{"*", "/v1/capacity"}, s.capacityRoute},
+		// The dashboard behind the session counts: this machine's CPU and memory and
+		// each session's share (machine_usage.go). Any paired device, as /v1/capacity.
+		{Route{"*", "/v1/machine/usage"}, s.machineUsageRoute},
+		// Whether this machine trails the cloud's latest build (update.go). Any
+		// paired device, as /v1/capacity.
+		{Route{"*", "/v1/update"}, s.updateRoute},
+		// Installing a newer release on a release install (update.go). This
+		// machine's token, or a device that may send.
+		{Route{"*", "/v1/update/apply"}, s.updateApplyRoute},
+		// What the line to app.clawdline.com is doing (cloud.go). This machine's
+		// own token only.
+		{Route{"*", "/v1/cloud/status"}, s.cloudStatusRoute},
+		// Pairing a browser with this Mac, and throwing one out again. Same rule:
+		// this machine's own token, because the first of them answers a link that
+		// hands over the account key.
+		{Route{"*", "/v1/cloud/pairing"}, s.cloudPairingRoute},
+		{Route{"*", "/v1/cloud/pairing/offer"}, s.cloudPairingOfferRoute},
+		{Route{"*", "/v1/cloud/pairing/agent"}, s.cloudPairingAgentRoute},
+		{Route{"*", "/v1/cloud/pairing/agent/"}, s.cloudPairingAgentTaskRoute},
+		{Route{"*", "/v1/cloud/devices/revoke"}, s.cloudDeviceRoute},
+		{Route{"*", "/v1/cloud/keys/rotate"}, s.cloudRotateRoute},
+		// The account-free way in from outside: what this daemon's cloudflared is
+		// doing (tunnel.go). This machine's own token only — a quick tunnel's
+		// address is its secret.
+		{Route{"*", "/v1/tunnel"}, s.tunnelRoute},
+		{Route{"*", "/v1/sessions"}, s.sessions},
+		// Everything under a session id is about that session: its info, which is
+		// a read, and otherwise an action on it. One handler rather than a route
+		// each, because the id is a path segment and Go's mux matches prefixes,
+		// not patterns.
+		{Route{"*", "/v1/sessions/"}, func(w http.ResponseWriter, r *http.Request) {
+			// The sessions a reboot took away: three fixed paths, asked before
+			// anything reads the next segment as a session id.
+			if s.restorableRoute(w, r) {
+				return
+			}
+			// The archived Sessions: two fixed paths, asked for the same reason.
+			if s.archivedRoute(w, r) {
+				return
+			}
+			// Everything below names a session by id, and only an assistant is
+			// one (agent_session_only.go).
+			if s.refuseOrdinaryShell(w, r) {
+				return
+			}
+			if sessionID, agentID, ok := agentPath(r); ok {
+				s.sessionAgentRoute(w, r, sessionID, agentID)
+				return
+			}
+			if sessionID, shellID, ok := shellPath(r); ok {
+				s.sessionShellRoute(w, r, sessionID, shellID)
+				return
+			}
+			if id, ok := infoPath(r); ok {
+				s.sessionInfoRoute(w, r, id)
+				return
+			}
+			// Watching a screen is a read and brings its own route (screen.go);
+			// sessionAction below refuses anything that is not a POST, so this has
+			// to be asked before it.
+			if id, ok := screenPath(r); ok {
+				s.sessionScreenRoute(w, r, id)
+				return
+			}
+			// A file patch is the nested Git read and must be recognised before the
+			// repository summary beside it.
+			if id, ok := gitDiffPath(r); ok {
+				s.sessionGitDiffRoute(w, r, id)
+				return
+			}
+			// A read as well (git.go): what the session's repository has changed,
+			// asked for when its panel opens.
+			if id, ok := gitPath(r); ok {
+				s.sessionGitRoute(w, r, id)
+				return
+			}
+			if id, ok := focusPath(r); ok {
+				s.sessionFocusRoute(w, r, id)
+				return
+			}
+			// A read (todos.go): the session detail's to-do panel.
+			if id, ok := todosPath(r); ok {
+				s.sessionTodosRead(w, r, id)
+				return
+			}
+			// A read (skills.go): the slash menu, asked for when `/` opens it.
+			if id, ok := skillsPath(r); ok {
+				s.sessionSkillsRoute(w, r, id)
+				return
+			}
+			// A read (links.go): everything this project has an address for,
+			// asked for when the Links sheet opens.
+			if id, ok := linksPath(r); ok {
+				s.sessionLinksRoute(w, r, id)
+				return
+			}
+			s.sessionAction(w, r)
+		}},
+		// What this feature has done to the machine, published (screen.go).
+		{Route{"*", "/v1/screens"}, s.screensRoute},
+		{Route{"*", "/v1/terminals"}, s.terminalsRoute},
+		{Route{"*", "/v1/terminals/"}, s.terminalRoute},
+		{Route{"*", "/v1/events"}, s.events},
+		// Two `/v1/next/` names are still the only spelling of what they serve,
+		// and the Dashboard reads both: what is owed (obligations.go, now the
+		// broker's own records, D01) and the machine coordinator. The shadows
+		// that had a real name beside them — sessions, schedules, board — are
+		// gone (D07): a second spelling nobody reads is a second thing to keep
+		// in step with nothing.
+		{Route{"*", "/v1/next/obligations"}, s.obligations},
+		{Route{"*", "/v1/next/coordinator"}, s.coordinatorRoute},
+
+		{Route{"*", "/v1/board"}, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				s.boardWrite(w, r)
+				return
+			}
+			s.boardRead(w, r)
+		}},
+		{Route{"*", "/v1/board/tracks"}, s.boardTracks},
+		// The v2 work board; participation routes under the same prefix are
+		// registered separately.
+		{Route{"*", "/v1/work/"}, s.workRoute},
+		// Where a person takes part: proposals, decisions, digests (proposals.go, T4).
+	}
+	table = append(table, s.participationRoutes()...)
+	table = append(table, []route{
+		{Route{"*", "/v1/orchestrator/schedules"}, s.schedules},
+		// One schedule, its save, its removal and its run; the Cloud bind
+		// command's local half; and moving schedules in and out (schedules.go).
+		{Route{"*", "/v1/orchestrator/schedules/"}, s.scheduleRoute},
+		{Route{"*", "/v1/orchestrator/schedule-webhooks/bind"}, s.scheduleWebhookBindRoute},
+		{Route{"*", "/v1/orchestrator/schedule-imports"}, s.scheduleImportRoute},
+		{Route{"*", "/v1/orchestrator/schedule-exports"}, s.scheduleExportRoute},
+		// The text somebody wrote once and presses instead of typing it again
+		// (snippets.go). This daemon's own store, never the Swift app's directory.
+		{Route{"*", "/v1/snippets"}, s.snippetsRoute},
+		{Route{"*", "/v1/snippets/"}, s.snippetRoute},
+		{Route{"*", "/v1/orchestrator/tasks"}, s.tasksRoute},
+		// The broker (orchestrator.go): everything under a task id, plus the five
+		// routes beside it. A child's own routes are let through the gate by
+		// `taskSecretRoute` and are authenticated by these handlers.
+		{Route{"*", "/v1/orchestrator/tasks/"}, s.orchestratorTaskRoute},
+		{Route{"*", "/v1/orchestrator/inventory"}, s.brokerInventory},
+		{Route{"*", "/v1/orchestrator/inflight"}, s.brokerInflight},
+		{Route{"*", "/v1/orchestrator/messages"}, s.brokerMessages},
+		{Route{"*", "/v1/orchestrator/whoami"}, s.brokerWhoAmI},
+		// What a run was: the message a person sent a session, which a relay of
+		// their words names (runs.go).
+		{Route{"*", "/v1/orchestrator/runs/"}, s.runRoute},
+		// The address book a wait, a relay or a handoff names sessions from, and
+		// under a session: its delivery receipt, its to-dos and the retired
+		// workflow route (workflow.go).
+		{Route{"*", "/v1/orchestrator/sessions"}, s.brokerAddressBook},
+		{Route{"*", "/v1/orchestrator/sessions/"}, s.brokerSessionRoute},
+		// What each assistant's account has left, every pending landing, a root's
+		// own notification, and the durable-report promotion this daemon does not
+		// keep (orchestrator.go).
+		{Route{"*", "/v1/orchestrator/assistants"}, s.brokerAssistants},
+		{Route{"*", "/v1/orchestrator/landings"}, s.brokerLandings},
+		{Route{"*", "/v1/orchestrator/notify"}, s.brokerMachineNotify},
+		{Route{"*", "/v1/orchestrator/durable-reports/promotions"}, s.brokerDurableReportPromotion},
+		// The coordination plane (W5): the machine role, file waits, leases (the
+		// compile slot and landing), the completion ledger's manual path, and
+		// detached automation (coordinator.go, waits.go).
+		{Route{"*", "/v1/orchestrator/coordinator"}, s.orchestratorCoordinatorRoute},
+		{Route{"*", "/v1/orchestrator/coordinator/"}, s.orchestratorCoordinatorRoute},
+		{Route{"*", "/v1/orchestrator/waits"}, s.waitsRoute},
+		{Route{"*", "/v1/orchestrator/waits/"}, s.waitsRoute},
+		{Route{"*", "/v1/orchestrator/leases"}, s.leasesRoute},
+		{Route{"*", "/v1/orchestrator/leases/"}, s.leasesRoute},
+		{Route{"*", "/v1/orchestrator/completions"}, s.completionsRoute},
+		{Route{"*", "/v1/orchestrator/completions/"}, s.completionsRoute},
+		{Route{"*", "/v1/orchestrator/detached-tasks"}, s.brokerDetached},
+		// A command run for a root instead of a tab, which wakes it when it ends
+		// (callbacks.go, orchestrator/callback.go).
+		{Route{"*", "/v1/orchestrator/callbacks"}, s.brokerCallback},
+		// The hand-over plane (handoffs.go, W6).
+		{Route{"*", "/v1/orchestrator/handoffs"}, s.handoffsRoute},
+		{Route{"*", "/v1/orchestrator/handoffs/"}, s.handoffsRoute},
+		{Route{"*", "/v1/orchestrator/root-assignments"}, s.rootAssignmentsRoute},
+		{Route{"*", "/v1/orchestrator/root-assignments/"}, s.rootAssignmentsRoute},
+		{Route{"*", "/v1/orchestrator/graphs"}, s.graphsRoute},
+		{Route{"*", "/v1/orchestrator/reclaim"}, s.reclaimRoute},
+		{Route{"*", "/v1/strings"}, s.strings},
+		{Route{"*", "/v1/settings"}, s.settingsRoute},
+		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
+		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},
+		{Route{"*", "/v1/places"}, s.placesRoute},
+		// The input bar's server list (devstacks.go): what the projects' own
+		// `.devstack.json` files declare, and which declared ports answer.
+		{Route{"*", "/v1/devstacks"}, s.devStacksRoute},
+		// Starting and resuming a session in a place, and what was said there (start.go).
+		{Route{"*", "/v1/places/"}, s.placeRoute},
+		// The built-in personas a start or a dispatch may name (personas.go).
+		{Route{"*", "/v1/personas"}, s.personasRoute},
+		{Route{"*", "/v1/squad/events/head"}, s.squadEventHead},
+		{Route{"*", "/v1/squad/events"}, s.squadEvents},
+		{Route{"*", "/v1/squad/session-bindings"}, s.squadSessionBindings},
+		{Route{"*", "/v1/squad/session-snapshots/"}, s.squadRoute},
+		{Route{"*", "/v1/squad/session-events"}, s.squadSessionEvents},
+		{Route{"*", "/v1/squad/"}, s.squadRoute},
+		{Route{"*", "/v1/squad-packages/"}, s.squadPackagesRoute},
+		{Route{"*", "/v1/projects"}, s.projectCatalogRoute},
+		{Route{"*", "/v1/projects/"}, s.projectsRoute},
+		// Project settings a source machine offers and a mirror applies (project_sync.go).
+		{Route{"*", "/v1/project-sync/"}, s.projectSyncRoute},
+		// The Project Timeline reads this daemon's own history and stores nothing.
+		{Route{"*", "/v1/timeline"}, s.timelineRoute},
+		{Route{"*", "/v1/transcript"}, s.transcriptRoute},
+		// The token ledger, read by a person or a session (usage.go).
+		{Route{"*", "/v1/usage/"}, s.usageRoute},
+		// Things waiting to be verified, kept until the person settles them (verify.go).
+		{Route{"*", "/v1/verifications"}, s.verificationsRoute},
+		{Route{"*", "/v1/verifications/"}, s.verificationsRoute},
+		// Pictures: stored by a session (machine token), read by id (images.go).
+		{Route{"*", "/v1/artifacts/images"}, s.imagesRoute},
+		{Route{"*", "/v1/artifacts/images/"}, s.imageRoute},
+		// A turn's status report, to a browser on this machine only (reports.go).
+		{Route{"*", "/reports/"}, s.reportRoute},
+		// Said out loud rather than typed (voice.go). Not a session route and not
+		// a send: this machine transcribes and answers with the text, and what
+		// happens to it afterwards is the composer's business.
+		{Route{"*", "/v1/voice"}, s.voiceRoute},
+		{Route{"*", "/v1/voice/language"}, s.voiceLanguageRoute},
+		// One transcribed sentence becomes an editable draft. This spends one
+		// local CLI model turn but starts no session (intent.go).
+		{Route{"*", "/v1/intents"}, s.intentRoute},
+		// Web Push: the key, the subscription, the test and the way back out
+		// (push.go). Read-level, as in the Swift app.
+		{Route{"*", "/v1/push/"}, s.pushRoute},
+	}...)
+	return table
+}
+
 // health is the first route this daemon owns. It answers for itself and says so,
 // so that a reader can tell which of the two daemons replied.
 //
@@ -628,6 +655,8 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		At:       time.Now().Unix(),
 		Authed:   a.verdict.Allowed,
 		Password: a.gate != nil && a.gate.auth != nil && a.gate.auth.HasPassword(),
+		Version:  s.version,
+		APILevel: APILevel,
 	}
 	s.brokerHealth(&h)
 	s.capacityHealth(&h)
@@ -682,7 +711,7 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	go s.store.SweepReferenceImagesEvery(ctx, store.ReferenceImageSweepIntervalLimit)
 	// Whether this machine trails the cloud's latest build: read now and on
 	// its own clock, so GET /v1/update never waits on the network.
-	go s.updateChecker().Run(ctx)
+	go s.runUpdateCheck(ctx)
 }
 
 // schedulerTick is the clock's period: a minute, or CLAWDLINE_NEXT_TICK. The
@@ -778,11 +807,7 @@ func (s *Server) forwardUpstream(w http.ResponseWriter, r *http.Request) {
 // The list of these is exactly what P4 costs, and it is measured rather than
 // estimated: run the console against this daemon with nothing behind it and
 // read what it asks for.
-func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
-	log.Printf("not implemented: %s %s", r.Method, r.URL.Path)
-	writeRefusalAbout(w, http.StatusNotImplemented, "not_implemented",
-		"this daemon does not own that route yet", contract.Refusal{Route: r.URL.Path})
-}
+func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) { writeNoSuchRoute(w, r) }
 
 // Listen binds the daemon's address, and is the first thing `serve` does.
 //

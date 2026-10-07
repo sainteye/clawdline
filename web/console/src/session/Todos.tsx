@@ -1,7 +1,8 @@
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { RefusalError } from "@clawdline/core"
+import { RefusalError, asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
+import { NeedsUpdate } from "../machine/NeedsUpdate.js"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 import { prepareReferencePicture } from "../legacy/shots-bridge.js"
@@ -41,7 +42,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
   const [failure, setFailure] = useState("")
   // A failed read is its own state, apart from a failed action: the header
   // shows it, and only a later successful read clears it.
-  const [readFailure, setReadFailure] = useState<{ words: string; reason: string } | null>(null)
+  const [readFailure, setReadFailure] = useState<{ words: string; reason: string; update: MachineNeedsUpdate | null } | null>(null)
   const [reading, setReading] = useState(false)
   const [busy, setBusy] = useState("")
   const ticket = useRef(0)
@@ -71,7 +72,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
     } catch (e) {
       // The last good page stays: a refresh that failed marks it, it does
       // not blank it.
-      if (mine === ticket.current) setReadFailure({ words: failureWords(e), reason: readFailureReason(e) })
+      if (mine === ticket.current) setReadFailure({ words: failureWords(e), reason: readFailureReason(e), update: asMachineNeedsUpdate(e) })
     } finally {
       if (mine === ticket.current) setReading(false)
     }
@@ -137,12 +138,14 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             : page ? <TodoProgressSummary progress={todoProgress(page, row.sessionId)} />
             : !readFailure && <span id="session-todos-count">{L.strings.webLoading}</span>}
           {readReady && readFailure && <ReadFailure state={todoHeaderState(summary !== null, true)} reason={readFailure.reason}
-            retrying={reading} onRetry={() => { void refresh(true) }} />}
+            retrying={reading} onRetry={() => { void refresh(true) }} needsUpdate={!!readFailure.update} />}
           {attention.head}
         </summary>
         <div className="session-todos-body">
           {row.sessionId && <SessionUsage conversation={row.sessionId} />}
-          {readReady && readFailure && <p className="work-note" role="alert">{readFailure.words}</p>}
+          {readReady && readFailure && (readFailure.update
+            ? <NeedsUpdate update={readFailure.update} />
+            : <p className="work-note" role="alert">{readFailure.words}</p>)}
           {failure && <p className="work-note" role="alert">{failure}</p>}
           {page && hasAssigned && <section className="session-todos-list" aria-label={catalogWord("inline", "a5cec9091810")}>
             <p>{catalogWord("inline", "122ffc78d24e")}</p>
@@ -206,14 +209,17 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
  * asks again without opening or closing the fold; the reason is its title and
  * label, because a phone has no hover and the fold may be closed.
  */
-function ReadFailure({ state, reason, retrying, onRetry }: {
+function ReadFailure({ state, reason, retrying, needsUpdate = false, onRetry }: {
   state: "failed" | "stale" | "loading" | "loaded"
   reason: string
   retrying: boolean
+  /** The machine is too old for the read: 「需要更新」, not 「讀取失敗」. */
+  needsUpdate?: boolean
   onRetry: () => void
 }) {
-  const tip = nextWord("todosRetryTip", { reason })
-  const words = retrying ? nextWord("todosRetrying") : state === "stale" ? nextWord("todosRefreshFailed") : nextWord("todosReadFailed")
+  const tip = needsUpdate ? nextWord("machineNeedsUpdate") : nextWord("todosRetryTip", { reason })
+  const words = retrying ? nextWord("todosRetrying") : needsUpdate ? nextWord("machineNeedsUpdateShort")
+    : state === "stale" ? nextWord("todosRefreshFailed") : nextWord("todosReadFailed")
   return <button className="session-todos-failed" id={state === "failed" ? "session-todos-count" : undefined} type="button"
     data-state={state} title={tip} aria-label={`${words}. ${tip}`} aria-busy={retrying} disabled={retrying}
     onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); onRetry() }}>

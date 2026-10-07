@@ -226,4 +226,7 @@ function ArchivePageView({ shown }: { shown: boolean }) {
   )
 }
 
-export const page: PageModule = { id: "archive", Component: ArchivePageView }
+// `requiresApiLevel: 1` is the first route level a daemon reports
+// (`api_level`, api/v1/routes.json); the archive is the example that a page
+// can say which level it needs (pages/types.ts).
+export const page: PageModule = { id: "archive", requiresApiLevel: 1, Component: ArchivePageView }

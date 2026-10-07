@@ -67,7 +67,7 @@ func sessionVerbIs(r *http.Request, verb string, methods ...string) (string, boo
 func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 	id, verb, ok := sessionVerb(r)
 	if !ok {
-		writeRefusal(w, http.StatusNotFound, "not_found", "that is not a session action")
+		writeNoSuchRoute(w, r)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -222,7 +222,7 @@ func (s *Server) sessionAction(w http.ResponseWriter, r *http.Request) {
 			s.archiveSession(w, r, id, raw)
 		})
 	default:
-		writeRefusal(w, http.StatusNotFound, "not_found", "no such action on a session")
+		writeNoSuchRoute(w, r)
 	}
 }
 

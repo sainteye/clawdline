@@ -2,6 +2,8 @@ import { localizedLiteralMap } from "../../catalog.js"
 import { catalogFormat } from "../../catalog.js"
 import { catalogWord } from "../../catalog.js"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { asMachineNeedsUpdate } from "@clawdline/core"
+import { nextWord } from "../../next-strings.js"
 import type { ProjectPlace } from "../work/api.js"
 import { ProjectTreeIcon } from "./ProjectTreeIcon.js"
 import {
@@ -57,6 +59,7 @@ const STATUS: Record<ProjectFile["status"], string> = localizedLiteralMap({
 })
 
 function describe(error: unknown): string {
+  if (asMachineNeedsUpdate(error)) return nextWord("machineNeedsUpdate")
   if (error instanceof ProjectFileError) {
     switch (error.code) {
       case "file_changed": return catalogWord("literal", "591f563d21e9")

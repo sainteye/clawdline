@@ -187,6 +187,10 @@ func main() {
 		// The caller's side of a schedule webhook, from any machine; no
 		// daemon needed (webhook_fire.go).
 		webhookCommand(os.Args[2:])
+	case "setup":
+		// Install this release as the per-user service, repair it, or
+		// --uninstall it (setup.go). install.sh ends here.
+		setupCommand(os.Args[2:])
 	case "update":
 		// Whether this machine trails the cloud's latest build, and on Linux
 		// deploying it (update.go, docs/updates.md).
@@ -216,6 +220,13 @@ func serve() {
 	cfg.Port = port
 	// The log goes where it is bounded before anything else is said.
 	daemonLog(cfg)
+	// A release install's update, before the port and the store: a snapshot
+	// a rollback asked for goes back before the store is opened, and a new
+	// release that keeps failing its update gives it up here (update.go).
+	if !updateBootGuard(cfg.Dir) {
+		fmt.Fprintln(os.Stderr, cliCopy("entry", "main_boot_rollback", "clawdline: this release's update was rolled back; the service starts the previous release"))
+		os.Exit(1)
+	}
 	// The port before anything else is done. Everything below writes: the
 	// stable binary, the store, the broker's beat, the cloud line, the tunnel's
 	// Reclaim — which stops the cloudflared this state directory's pid file
@@ -240,6 +251,7 @@ func serve() {
 	if err != nil {
 		refuseToServe(1, err.Error())
 	}
+	srv.SetVersion(version)
 	// A device file that cannot be read stops the daemon here, rather than
 	// letting it listen and refuse everybody.
 	if err := srv.AuthReady(); err != nil {
@@ -325,8 +337,9 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 			}
 			cloudtransport.LocalAuthorizer(local, machine)(r)
 		},
-		Version: version,
-		Log:     func(format string, args ...any) { log.Printf(format, args...) },
+		Version:  version,
+		APILevel: httptransport.APILevel,
+		Log:      func(format string, args ...any) { log.Printf(format, args...) },
 		// The request queue is the register's `cloud.relay_queue` row.
 		QueueDepth: int(httptransport.CapacityLimit(capacity.CloudRelayQueue)),
 		// The outbound spool is its four rows: two global, one per wire
@@ -444,7 +457,7 @@ func terminalCommand(op string, args []string) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_clawdline_serve_doctor_guide_skill", "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|update|version>"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_with_setup_update", "usage: clawdline <serve|doctor|guide|skill|report|session|coordinator|usage|heavy|verify|setting|dispatch|callback|handoff|todo|note|item|send|notify|landings|leases|sessions|assistants|type|interrupt|close|open|pair|devices|tunnel|cloud|board|project|task|webhook|setup|update|version>"))
 	fmt.Fprintln(os.Stderr, "  "+cliCopy("core", "language_option", cliLanguageOptionEnglish))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_guide_topic_guide_list_the_agent", "  guide [topic] | guide -list   the agent guide this build carries; no daemon needed"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_skill_install_uninstall_put_this_build", "  skill <install|uninstall>     put this build's skill stub in ~/.claude/skills/clawdline, or put back what was there"))
@@ -452,9 +465,10 @@ func usage() {
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_session_report_summary_sentence_record_this", "  session report --summary <sentence>   record this session's finished turn: delivered, awaiting approval"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_coordinator_bind_conversation_id_register_this", "  coordinator bind [--conversation id]   register this machine-workspace Session, or rebind an offline role"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_usage_session_c_task_id_item", "  usage [--session c | --task id | --item id] [--json]   what it spent, by category; this session's own by default"))
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_update_json_apply_force_whether_this", "  update [--json] [--apply [--force]]   whether this machine trails the cloud's latest build; exit 0 current, 10 behind, 3 unknown"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_update_release_help", "  update [--apply [--version vX.Y.Z] [--force]] [--json] [--port n]   check or install a release; exit 0 current, 10 newer, 3 unknown"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_setup_help", "  setup [--headless] [--no-app] [--no-autostart] [--port n] [--uninstall [--purge]]   install this release as the per-user service; --help says more"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_heavy_reason_r_command_run_a", "  heavy [--reason r] -- <command…>   run a build or test suite after the machine's compile slot and enough memory"))
-	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_setting_get_set_key_value_product", "  setting <get|set> <key> <value>   product_language, planning_gate, verify_gate, or claude_auto_compact_window"))
+	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_setting_with_auto_apply", "  setting <get|set> <key> <value>   product_language, update_auto_apply, planning_gate, verify_gate, or claude_auto_compact_window"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_dispatch_title_t_claims_a_b", "  dispatch --title <t> --claims a,b < brief   dispatch an owned child: task.json, inventory and POST in one step"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_callback_title_t_command_run_a", "  callback --title <t> -- <command…>   run a command under the daemon and end the turn; its exit wakes this session"))
 	fmt.Fprintln(os.Stderr, cliCopy("entry", "main_handoff_summary_file_check_hand_this", "  handoff --summary <file> [--check]   hand this Session's work to a fresh Session at a milestone, with a bounded summary"))

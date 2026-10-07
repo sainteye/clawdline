@@ -2013,9 +2013,21 @@ export interface BuildStamp {
   committed_at?: string
 
   /**
+   * Where the newest release's notes are read; only on `latest` of a release
+   * install.
+   */
+  notes_url?: string
+
+  /**
    * The full commit hash, or empty when it is not known.
    */
   stamp: string
+
+  /**
+   * The release version (vX.Y.Z): on a release install, the running release and the
+   * newest one of its channel. Absent for a source build.
+   */
+  version?: string
 }
 
 /**
@@ -3318,10 +3330,20 @@ export interface GitSnapshot {
  * GET /v1/health, open without a token: that this daemon is alive, which
  * implementation it is, and the two answers a page needs before it can be let in
  * — whether the asker's own credential is one this machine knows, and whether a
- * password door exists. Nothing else: no path, no port, nothing about the work;
- * those are in Diagnostics.
+ * password door exists — and which build answered (`version`, `api_level`), so a
+ * console newer than this daemon can say a feature needs an update rather than that
+ * it failed. Nothing else: no path, no port, nothing about the work; those are in
+ * Diagnostics.
  */
 export interface Health {
+  /**
+   * Which set of routes this daemon answers: `api_level` in api/v1/routes.json when
+   * it was built, raised every time a route is added or removed. A console compares
+   * it with a feature's `requiresApiLevel` before it offers the feature. Absent
+   * from a daemon built before 2026-10-06, and from a reading that could not learn
+   * it; absent is unknown, not zero.
+   */
+  api_level?: number
   at: number
 
   /**
@@ -3351,6 +3373,13 @@ export interface Health {
    * the Swift app on the same port.
    */
   served_by: string
+
+  /**
+   * The daemon's own version, as `clawdline version` prints it: a release tag, or
+   * `devel+<revision>` for a build from a checkout. What a person is told when a
+   * feature needs a newer one. Absent when the reading could not learn it.
+   */
+  version?: string
 }
 
 /**
@@ -6700,6 +6729,11 @@ export interface SettingsRequest {
   terminal: string | null
 
   /**
+   * true or false.
+   */
+  update_auto_apply: boolean | null
+
+  /**
    * Whether future execution cycles capture independent verification. Null leaves
    * the stored setting unchanged; absence in the settings file defaults to false.
    */
@@ -6959,6 +6993,13 @@ export interface SettingsSnapshot {
    * scope_app.
    */
   terminal: string | null
+
+  /**
+   * Whether this machine installs a newer stable release by itself when no session
+   * it started is busy (docs/updates.md). Only a release install acts on it. Null
+   * or absent is off, the default.
+   */
+  update_auto_apply: boolean | null
 
   /**
    * Whether a newly assigned execution cycle captures independent verification.
@@ -8564,11 +8605,102 @@ export interface TunnelStatus {
 }
 
 /**
+ * The last update of a release install, as the updater recorded it in the state
+ * directory.
+ */
+export interface UpdateApply {
+  /**
+   * When the state was recorded (RFC3339 UTC).
+   */
+  at?: string
+  error?: UpdateApplyError
+
+  /**
+   * The release that ran before it.
+   */
+  from?: string
+
+  /**
+   * A macOS app bundle unpacked and waiting for the app to quit before it replaces
+   * the installed one.
+   */
+  staged_app?: string
+  state: UpdateApplyState
+
+  /**
+   * The release it installs.
+   */
+  to?: string
+}
+
+/**
+ * Why an update stopped or was rolled back: a stable code a person can look up in
+ * docs/user/troubleshooting.md, and a sentence.
+ */
+export interface UpdateApplyError {
+  code: string
+  detail?: string
+}
+
+/**
+ * POST /v1/update/apply, on a release install: install the newest release of this
+ * machine's channel, or `version`. Answered 202 with the UpdateStatus once the
+ * update has started; the rest is read from GET /v1/update.
+ */
+export interface UpdateApplyRequest {
+  /**
+   * Install `version` even when it is not newer than the running release. Never
+   * below the release's `min_version`.
+   */
+  force?: boolean
+
+  /**
+   * A release to install instead of the newest, vX.Y.Z.
+   */
+  version?: string
+}
+
+/**
+ * Where the last update of a release install stands. `idle`: none has run.
+ * `downloading`, `verifying`, `staged`: the running daemon is fetching, checking
+ * and unpacking it. `restarting`: the supervisor is switching to it. `healthy`: the
+ * new release answered its health check. `rolled_back`: it did not, and the
+ * previous release runs again; `error` says why. `failed`: it stopped before
+ * switching, and the running release was never changed.
+ */
+export type UpdateApplyState =
+    "idle"
+  | "downloading"
+  | "verifying"
+  | "staged"
+  | "restarting"
+  | "healthy"
+  | "rolled_back"
+  | "failed"
+
+export const UpdateApplyStateValues: readonly UpdateApplyState[] = ["idle", "downloading", "verifying", "staged", "restarting", "healthy", "rolled_back", "failed"] as const
+
+/**
+ * What kind of installation the running daemon belongs to (docs/updates.md).
+ * `release`: a signed release in the install layout; the updater owns it.
+ * `source_deploy`: a commit deployed from a source checkout into the layout.
+ * `source_checkout`: a binary run from outside the layout. `none`: not known.
+ */
+export type UpdateInstallKind =
+    "release"
+  | "source_deploy"
+  | "source_checkout"
+  | "none"
+
+export const UpdateInstallKindValues: readonly UpdateInstallKind[] = ["release", "source_deploy", "source_checkout", "none"] as const
+
+/**
  * How this machine's build stands against the cloud's latest (docs/updates.md).
  * `current`: the same commit. `update_available`: the cloud's commit is later.
  * `ahead`: this machine's is later. `differs`: the commits differ and a commit time
  * is missing on one side. `unknown`: no comparison could be made; `reason` says
- * why.
+ * why. A release install compares release versions instead of commits and never
+ * reads the hosted BUILD.json.
  */
 export type UpdateState =
     "current"
@@ -8582,9 +8714,25 @@ export const UpdateStateValues: readonly UpdateState[] = ["current", "update_ava
 /**
  * GET /v1/update: whether this machine trails the cloud's latest build. Answered
  * from the daemon's last background check; a request never waits on the network. A
- * failed check keeps the last good `latest` and says what failed in `error`.
+ * failed check keeps the last good `latest` and says what failed in `error`. On a
+ * release install `running` and `latest` also carry release versions, `latest` is
+ * the signed manifest of this machine's channel, and `apply` says where the last
+ * update stands.
  */
 export interface UpdateStatus {
+  apply?: UpdateApply
+
+  /**
+   * Whether this machine installs a newer stable release by itself when no session
+   * it started is busy (the setting `update_auto_apply`).
+   */
+  auto_apply?: boolean
+
+  /**
+   * The release channel a release install follows: `stable` or `beta`.
+   */
+  channel?: string
+
   /**
    * When the last successful check read the cloud's BUILD.json (RFC3339 UTC).
    * Absent before the first success.
@@ -8595,6 +8743,7 @@ export interface UpdateStatus {
    * What the most recent check said when it failed after the last success.
    */
   error?: string
+  install_kind?: UpdateInstallKind
   latest: BuildStamp
 
   /**
@@ -8604,7 +8753,7 @@ export interface UpdateStatus {
   running: BuildStamp
 
   /**
-   * The BUILD.json this daemon asks.
+   * The BUILD.json this daemon asks; on a release install, the manifest it reads.
    */
   source_url: string
   state: UpdateState
