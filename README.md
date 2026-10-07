@@ -45,21 +45,33 @@ The screenshots below show the current console with sample data.
   gets the result back, or hands its whole line of work to a successor. Claims stop overlapping
   writes, and Clawdline records whether the work actually reached the branch, not only that the
   child finished. [Dispatch and landing](docs/user/clawdfather-and-dispatch.md)
-- **Callbacks for long waits.** A Session can hand a long-running command to the daemon, end its
-  turn, and receive a completion notice. This replaces repeated polling with a completion
-  follow-up; actual token savings depend on the provider, context size and cache pricing. A callback
-  does not start a child Session. [Callbacks](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
+- **Callbacks for heavy work.** A Session can queue a long-running build, test suite, CI check or
+  deployment with the daemon and end its turn. The daemon waits for the Heavy Work slot, runs the
+  command, and sends a completion notice; the Session then reads the result and continues. That
+  avoids spending repeated Agent turns polling an idle command. It can reduce waiting tokens,
+  especially late in a large-context Session, but the amount saved depends on the provider's
+  context caching and pricing. The completion still needs one follow-up; a callback does not start
+  a child Session. [Callbacks](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
+
+  ```mermaid
+  flowchart LR
+    A["Agent queues build, CI or deploy"] --> B["Heavy Work queue"]
+    B --> C["Daemon runs command"]
+    C --> D["Completion notice"]
+    D --> E["Session reads result once"]
+  ```
+
 - **Notes when a person is needed.** An Agent can leave a concrete question or action in a
   Session's attention panel, with suggested replies when there is a choice. You can answer from
   there; the Agent continues independent work in the meantime. [Attention notes](docs/user/sessions.md#attention-notes-from-agents)
 
-  <img src="docs/assets/attention-note.png" width="760" alt="A sample Agent note requesting a decision, with suggested replies in the Session attention panel.">
+  <img src="docs/assets/attention-note-en.png" width="760" alt="A sample Agent note requesting a decision, with suggested replies in the Session attention panel.">
 
 - **To-dos for later.** Add a direct to-do to a Session while it is busy. The row stays there for
   the Session to pick up later; adding it does not send a message or wake the Session.
   [Session to-dos](docs/user/board.md#session-to-dos)
 
-  <img src="docs/assets/session-todo.png" width="390" alt="A sample Session to-do recorded for later, without interrupting the current turn.">
+  <img src="docs/assets/session-todo-en.png" width="390" alt="A sample Session to-do recorded for later, without interrupting the current turn.">
 
 - **A Board that follows delivery.** Assign a Feature, Issue or Epic to a session and follow it
   through implementation, verification, merge and deployment, each phase with evidence. Planning
@@ -67,18 +79,18 @@ The screenshots below show the current console with sample data.
   Questions for you appear on the card. The Board itself is off until you turn it on in Settings.
   [Board](docs/user/board.md)
 
-  <img src="docs/assets/board-item.png" width="760" alt="A sample Board feature with its description, review option, and Session assignment controls.">
+  <img src="docs/assets/board-item-en.png" width="760" alt="A sample Board feature with its description, review option, and Session assignment controls.">
 
 - **Agent squad and roles.** Start a session as a built-in role — architect, reviewer, technical writer and more —
   with its own handbook and skills. [Roles](docs/personas.md)
 
-  <img src="docs/assets/agent-squad.png" width="760" alt="A sample Agent squad showing role cards, definitions, handbooks, and skill settings.">
+  <img src="docs/assets/agent-squad-en.png" width="760" alt="A sample Agent squad showing role cards, definitions, handbooks, and skill settings.">
 
 - **Schedules and webhooks.** Save a task that a session runs on the local clock or by hand, with
   catch-up, timeouts and failure alerts. Cloud Pro also starts it from a webhook.
   [Schedules](docs/user/schedules.md)
 
-  <img src="docs/assets/schedule-webhook.png" width="680" alt="The schedule editor with webhook or manual triggering selected; webhook activation requires Cloud Pro.">
+  <img src="docs/assets/schedule-webhook-en.png" width="680" alt="The schedule editor with webhook or manual triggering selected; webhook activation requires Cloud Pro.">
 
 **Projects and machines**
 
@@ -111,7 +123,9 @@ page or with `clawdline update --apply`, and rolls back by itself if it does not
 ## Limits
 
 - **Pre-1.0**: expect changes between releases.
-- The console is in **Traditional Chinese** only for now.
+- The console supports **English, Traditional Chinese, Simplified Chinese, Japanese, Korean,
+  Spanish, Brazilian Portuguese, French and German**. Newer copy missing from a secondary
+  translation falls back to English ([Localization](docs/localization.md)).
 - **Windows** runs the daemon and console but cannot list sessions or open terminals. Linux runs
   headless under `systemd --user`; macOS has an optional native app ([Platforms](docs/user/platforms.md)).
 - Claude's **5h/7d plan percentages** need a Claude Code status line that writes

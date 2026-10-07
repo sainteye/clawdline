@@ -41,37 +41,47 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 - **派工，並留下合併證據。** Session 可以把範圍明確的工作派給子 Session、收回結果，或把整條
   工作線交接給新的 Session。寫入範圍（claims）會擋住彼此重疊的修改；Clawdline 記錄的是工作
   有沒有真的進到分支，而不只是子 Session 說它做完了。[派工與合併確認](docs/user/clawdfather-and-dispatch.md)
-- **耗時工作交給 callback 等結果。** Session 把命令交給常駐服務後可以結束這一輪，完成時再由
-  通知接續；以完成後的一次接續取代反覆查詢。實際省下多少 token 仍取決於模型供應商、
-  context 大小與快取價格。
+- **Callback 接手耗時工作。** Session 可以把編譯、測試、CI 檢查或部署命令排入 Heavy Work
+  佇列，然後結束這一輪。常駐服務等到執行額度、跑完命令，再送出完成通知；Session 讀取結果後
+  繼續工作。這能避免 Agent 閒置時反覆查詢，尤其在 context 已經很大的 Session 後期，有機會
+  減少等待 token；實際節省量仍取決於模型供應商的 context 快取與價格。完成後仍需要一次接續，
   Callback 不會另開子 Session。[Callback](docs/user/clawdfather-and-dispatch.md#callbacks-for-long-commands)
+
+  ```mermaid
+  flowchart LR
+    A["Agent 排入編譯、CI 或部署"] --> B["Heavy Work 佇列"]
+    B --> C["常駐服務執行命令"]
+    C --> D["完成通知"]
+    D --> E["Session 讀取一次結果"]
+  ```
+
 - **Agent 用便條紙請你處理。** Agent 可以在 Session 的「關注」面板留下具體問題或動作；需要
   選擇時附上建議回覆。你可在那裡回覆，Agent 也能先做不依賴答案的事。
   [關注便條紙](docs/user/sessions.md#attention-notes-from-agents)
 
-  <img src="docs/assets/attention-note.png" width="760" alt="示意 Agent 便條紙：在 Session 關注面板提出問題，並附上建議回覆。">
+  <img src="docs/assets/attention-note-zh-Hant.png" width="760" alt="示意 Agent 便條紙：在 Session 關注面板提出問題，並附上建議回覆。">
 
 - **替稍後的工作記待辦。** 在 Session 忙碌時直接新增待辦，留給它稍後領取；新增待辦不會
   傳訊息，也不會喚醒 Session。[Session 待辦](docs/user/board.md#session-to-dos)
 
-  <img src="docs/assets/session-todo.png" width="390" alt="示意 Session 待辦：先記下稍後要做的事，不打斷目前這一輪。">
+  <img src="docs/assets/session-todo-zh-Hant.png" width="390" alt="示意 Session 待辦：先記下稍後要做的事，不打斷目前這一輪。">
 
 - **一路追到交付的看板。** 把 Feature、Issue 或 Epic 指派給 Session，跟著它經過實作、驗證、
   合併與部署，每個階段都要附證據。規劃預設開啟：Feature 與 Epic 開工前要先有計畫，並通過獨立
   審查。需要你決定的問題會直接出現在卡片上。看板本身預設關閉，要先在設定裡開啟。
   [看板](docs/user/board.md)
 
-  <img src="docs/assets/board-item.png" width="760" alt="示意看板 Feature：包含說明、審查選項和 Session 指派控制。">
+  <img src="docs/assets/board-item-zh-Hant.png" width="760" alt="示意看板 Feature：包含說明、審查選項和 Session 指派控制。">
 
 - **Agent 小隊與角色。** 用內建角色開 Session，例如架構師、審查者、技術寫手，各自帶著自己的手冊與 skill。
   [角色](docs/personas.md)
 
-  <img src="docs/assets/agent-squad.png" width="760" alt="示意 Agent 小隊：可查看角色卡片、定義、手冊和技能設定。">
+  <img src="docs/assets/agent-squad-zh-Hant.png" width="760" alt="示意 Agent 小隊：可查看角色卡片、定義、手冊和技能設定。">
 
 - **排程與 Webhook。** 把任務存起來，讓 Session 依本機時鐘或手動執行，有補跑、逾時與失敗通知。
   Cloud Pro 還能用 Webhook 啟動。[排程](docs/user/schedules.md)
 
-  <img src="docs/assets/schedule-webhook.png" width="680" alt="排程編輯器選擇由 Webhook 或手動啟動；啟用 Webhook 需要 Cloud Pro。">
+  <img src="docs/assets/schedule-webhook-zh-Hant.png" width="680" alt="排程編輯器選擇由 Webhook 或手動啟動；啟用 Webhook 需要 Cloud Pro。">
 
 **專案與多台機器**
 
@@ -125,7 +135,8 @@ CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 ## 限制
 
 - **1.0 之前**：版本之間可能有變動。
-- 主控台目前只有**繁體中文**介面。
+- 主控台支援**英文、繁體中文、簡體中文、日文、韓文、西班牙文、巴西葡萄牙文、法文與德文**。
+  次要語言尚未翻譯的新文案會回退為英文（[語系機制](docs/localization.md)）。
 - **Windows** 能跑 daemon 與主控台，但還不能列出 Session，也不能開終端機。Linux 用
   `systemd --user` 在背景執行；macOS 另有選用的原生 App（[平台](docs/user/platforms.md)）。
 - Claude 的 **5h／7d 方案百分比**需要一個會寫入 `~/.claude/statusline-cache/rate-limits.json`
