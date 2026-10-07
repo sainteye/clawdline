@@ -130,6 +130,10 @@ type Refusal struct {
 	Applied uint64
 }
 
+// TerminalRefusal is the plain refusal inside r, so terminal.CodeOf reads its
+// code.
+func (r *Refusal) TerminalRefusal() *terminal.Refusal { return &r.Refusal }
+
 func refuse(code terminal.RefusalCode, detail string) *Refusal {
 	return &Refusal{Refusal: terminal.Refusal{Code: code, Detail: detail}}
 }

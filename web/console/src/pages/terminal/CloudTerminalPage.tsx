@@ -14,7 +14,7 @@ import { firstSize } from "./TerminalProjectList.js"
 import { KEY_ROW, bindTerminalKeyboard, isRegionKey, readClipboardPaste, withCtrl } from "./keys.js"
 import { holderWords, terminalRefusalWords, terminalShortID } from "./words.js"
 import { acquireVisibleTerminal, beginCloudTerminal, cloudTerminalBody, keyRefusalControl, keyRefusalNotice, reconnectCloudTerminal, shownKeyRefusal, type KeyRefusalNotice } from "./cloud-view.js"
-import { beginTerminalClose, observeTerminalEnded, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
+import { beginTerminalClose, observeTerminalEnded, observeTerminalRunning, settleTerminalClose, terminalCloseState, watchTerminalClose } from "../../cloud/terminal-close-state.js"
 import { centerCursorLine, followCursorLine } from "./cursor-line.js"
 import { CLOUD_TERMINAL_LIST_RETRY_DELAYS_MS, terminalListErrorKind } from "../../session/cloud-terminal-all.js"
 
@@ -300,17 +300,26 @@ export function CloudTerminalPage({ project, channelProject, machine, label, id,
       else setError(code)
     }
   })
-  const queryClose = () => void run("close-read", async () => {
+  // Settles an unknown close from the machine's own read: gone is ended, still there offers the
+  // close again, and an unreachable answer leaves it to TERMINAL_CLOSE_UNKNOWN_MS.
+  const readCloseOutcome = async (): Promise<void> => {
     if (!session) return
     try {
       const answer = await session.request("read", { terminal_id: id, client: TAB })
       const status = (answer.result as { status?: unknown } | undefined)?.status
       if (status === "closed") observeTerminalEnded(machine, id)
+      else if (status === "running" || status === "exited") observeTerminalRunning(machine, id)
     } catch (failure) {
       if (reason(failure) === "terminal_closed") observeTerminalEnded(machine, id)
       else throw failure
     }
-  })
+  }
+  const queryClose = () => void run("close-read", readCloseOutcome)
+  // An unknown close is read back once by itself, so the page does not wait for a press.
+  const closeUnknown = closeRecord?.status === "unknown" ? closeRecord.requestID : ""
+  useEffect(() => {
+    if (closeUnknown && session) queryClose()
+  }, [closeUnknown, session])
   const reconnect = () => void run("reconnect", async () => {
     if (!session) return
     setFirstFramePending(!snapshot.frame); setFrameTimedOut(false)

@@ -2424,11 +2424,13 @@ func Register() []Entry {
 			Sources: []string{"internal/transport/cloud.CloudTerminalHistoryCaptureBytesLimit"},
 		},
 		{
-			// Receipts kept per connection for a re-sent request id; each goes after CloudTerminalReceiptSeconds, and a request past the limit is refused terminal_busy.
+			// Receipts kept per connection for a re-sent request id; each goes after CloudTerminalReceiptSeconds, and at the limit the oldest goes early so the new request is answered.
 			Name: CloudTerminalReceipts, Class: Idempotency, Unit: Rows,
-			Limit: 512, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/transport/cloud.CloudTerminalReceiptsLimit"},
+			Limit: 512, AtLimit: EvictOldest,
+			Deviation: "limits §4.2 has an idempotency row refuse new requests rather than evict inside its window. Decided 2026-10-07: refusing here refused every key of a key held down past 12.8 s (40 a second against 512 in 15 s), while the bound exists only for memory and the viewer never resends a request id itself (cloud-terminal-wire.md); the oldest receipt, the least likely to be asked for again, goes instead, counted as Evicted and logged as stage receipt_evicted.",
+			Told:      []Channel{Diagnostics, Log},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/transport/cloud.CloudTerminalReceiptsLimit"},
 		},
 		{
 			Name: CloudTerminalKeySeconds, Class: Cache, Unit: Seconds,

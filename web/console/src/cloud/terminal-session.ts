@@ -256,7 +256,7 @@ export class CloudTerminalSession {
 
   /**
    * Upgrades the current relay connection to a direct one when nothing else is in motion. Only a tab
-   * holding the terminal's lease upgrades: the machine activates a rekeyed connection only for its holder.
+   * holding the terminal's lease upgrades: a watching tab has no keys for a direct path to speed up.
    */
   private maybeUpgrade(): void {
     if (!this.transport.directSupported?.() || !this.transport.prepareDirect || this.upgrading || this.carrier !== "relay" ||
@@ -765,6 +765,7 @@ export class CloudTerminalSession {
     this.activating = true
     const old = this.retiringConnection
     const current = this.connection
+    const terminal = this.terminal
     void this.request("activate_connection", { body: { old_connection: old, first_frame_seq: this.frameSeq } })
       .then((receipt) => {
         if (current !== this.connection || receipt.result?.connection !== current || receipt.result?.retired_connection !== old) {
@@ -776,7 +777,23 @@ export class CloudTerminalSession {
         this.set({})
         this.maybeUpgrade()
       })
-      .catch((error) => { this.inputUnknown = true; this.set({ state: "unknown", reason: (error as Error).message }) })
+      .catch((error) => {
+        // The machine will not move this tab onto the new connection, and asking again with the next
+        // frame is asked again forever (every 3 s for minutes on 2026-10-06). Nothing was typed by it:
+        // a fresh connection reads the terminal again, as after a discarded delta.
+        if ((error as { receiptStatus?: string })?.receiptStatus === "refused" && current === this.connection && terminal &&
+          (this.s.state as CloudTerminalState) !== "revoked") {
+          this.rotationReady = false
+          this.closeDirect()
+          if (this.carrier === "direct") this.observation?.record("carrier_changed", { connection: current, code: "relay" })
+          this.carrier = "relay"
+          this.active = false
+          this.set({ state: "synchronizing", reason: (error as Error).message, carrier: "relay" })
+          void this.reopen(terminal)
+          return
+        }
+        this.inputUnknown = true; this.set({ state: "unknown", reason: (error as Error).message })
+      })
       .finally(() => { this.activating = false })
   }
   private checkFreshness(): void {
@@ -803,7 +820,16 @@ export class CloudTerminalSession {
             return
           }
           const now = this.s.state as CloudTerminalState
-          if (this.epoch === epoch && now !== "revoked" && now !== "closed") this.forgetLease("terminal_input_state_unknown")
+          if (this.epoch !== epoch || now === "revoked" || now === "closed") return
+          // A lease that lapsed with every key answered (a background tab's timers slept past it)
+          // leaves no input in doubt: the tab just no longer holds the terminal, and takes it again.
+          if ((error.code === "lease_expired" || error.code === "not_controller") &&
+            !this.inFlightInput.length && this.nextSeq === this.confirmed + 1) {
+            this.epoch = null
+            this.set({ control: null, reason: error.code })
+            return
+          }
+          this.forgetLease("terminal_input_state_unknown")
         })
         .finally(() => { this.renewing = false; this.renewID = "" })
     }

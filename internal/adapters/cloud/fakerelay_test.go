@@ -63,6 +63,9 @@ type fakeRelay struct {
 	// silent makes the relay accept and then say nothing at all, for the
 	// liveness bound.
 	silent bool
+	// withhold makes the relay take publishes without answering them, while
+	// it still answers pings: the socket stays up and no ack comes.
+	withhold bool
 	// refuseAll answers every connection with this error frame, the way a
 	// plan that is full keeps refusing until a slot frees.
 	refuseAll *ErrorFrame
@@ -89,6 +92,13 @@ func (r *fakeRelay) URL() string {
 }
 
 func (r *fakeRelay) Close() { r.server.Close() }
+
+// Withhold stops, or resumes, answering publishes.
+func (r *fakeRelay) Withhold(on bool) {
+	r.mu.Lock()
+	r.withhold = on
+	r.mu.Unlock()
+}
 
 // Published answers a copy of everything that arrived.
 func (r *fakeRelay) Published() []json.RawMessage {
@@ -275,7 +285,11 @@ func (r *fakeRelay) serve(conn net.Conn, br *bufio.Reader) {
 			r.published = append(r.published, append(json.RawMessage(nil), publish.Envelope...))
 			failure := r.publishError
 			status := r.ackStatus
+			withhold := r.withhold
 			r.mu.Unlock()
+			if withhold {
+				continue
+			}
 			if failure != "" {
 				body, _ := json.Marshal(PublishErrorFrame{Type: FramePublishError, Ch: header.Ch, Seq: header.Seq, Code: failure})
 				_ = writeServerFrame(conn, opText, body)

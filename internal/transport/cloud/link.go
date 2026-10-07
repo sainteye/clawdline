@@ -266,7 +266,12 @@ type Link struct {
 	terminalMu                 sync.Mutex
 	terminalConnections        map[string]*terminalConnection
 	terminalRetireAfterReceipt map[string]*terminalConnection
-	terminalMetadata           func(context.Context, string, *terminalConnection) error
+	// terminalReceiptsEvicted counts the receipts let go early because their
+	// connection held CloudTerminalReceiptsLimit, since this process began;
+	// terminalReceiptEvictedAt is the last time.
+	terminalReceiptsEvicted  int64
+	terminalReceiptEvictedAt time.Time
+	terminalMetadata         func(context.Context, string, *terminalConnection) error
 	// terminalAfter runs f after d; tests replace it. Nil is time.AfterFunc.
 	terminalAfter      func(d time.Duration, f func())
 	machineIncarnation string
