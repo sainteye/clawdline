@@ -1,4 +1,4 @@
-import { catalogFormat } from "../../../catalog.js"
+import { catalogFormat, currentCatalogTag } from "../../../catalog.js"
 /**
  * The native settings window's typed words. Original Swift copy and this
  * cross-platform app's own additions remain as source references here;
@@ -358,9 +358,9 @@ export function voiceLanguageSaid(v: {
         return W.voiceWhyCatalog
       case "AppleLanguages":
       case "AppleLocale":
-        return fill(W.voiceWhyMachine, { where: "語言與地區設定", tag: tag(value) })
+        return fill(W.voiceWhyMachine, { where: catalogWord("settings", "voiceMachineLocale"), tag: tag(value) })
       case "Windows":
-        return fill(W.voiceWhyMachine, { where: "Windows 地區設定", tag: tag(value) })
+        return fill(W.voiceWhyMachine, { where: catalogWord("settings", "voiceWindowsLocale"), tag: tag(value) })
       default:
         // LANG, LC_ALL, LC_MESSAGES, LANGUAGE: the variable is named, because
         // it is the thing somebody would go and change. The leading space is
@@ -368,14 +368,26 @@ export function voiceLanguageSaid(v: {
         return fill(W.voiceWhyMachine, { where: catalogFormat("template", "24bd559cca30", [source]), tag: tag(value) })
     }
   }
-  const script = (value: string) => (value === "Hant" ? "繁體" : "簡體")
+  const script = (value: string) => {
+    try {
+      return new Intl.DisplayNames([currentCatalogTag()], { type: "script" }).of(value) ?? value
+    } catch {
+      return value === "Hant" ? "Traditional" : value === "Hans" ? "Simplified" : value
+    }
+  }
+  // The display-name table supplies the complete phrase (including each
+  // language's word order and inflection), not just the script adjective.
+  const chineseName = (value: string) =>
+    value === "Hant" || value === "Hans"
+      ? languageName(`zh-${value}`)
+      : catalogFormat("template", "145cded61d7b", [script(value)])
   if (v.setting !== "auto" && v.source === "voice_language") {
     return fill(W.voiceLanguageFixed, {
-      name: v.code === "zh" ? catalogFormat("template", "145cded61d7b", [script(v.script)]) : tag(v.tag),
+      name: v.code === "zh" ? chineseName(v.script) : tag(v.tag),
     })
   }
   if (v.code === "zh") {
-    return fill(W.voiceLanguageChinese, { name: catalogFormat("template", "145cded61d7b", [script(v.script)]), why: why(v.source, v.tag) })
+    return fill(W.voiceLanguageChinese, { name: chineseName(v.script), why: why(v.source, v.tag) })
   }
   if (!v.source) return W.voiceLanguageNobody
   if (!v.script) return fill(W.voiceLanguageDetectBare, { why: why(v.source, v.tag) })
@@ -394,7 +406,7 @@ export function voiceLanguageSaid(v: {
 export function languageName(value: string): string {
   const tag = value.split(/[.@]/)[0]!.replace(/_/g, "-")
   try {
-    return new Intl.DisplayNames(["zh-Hant"], { type: "language" }).of(tag) ?? value
+    return new Intl.DisplayNames([currentCatalogTag()], { type: "language" }).of(tag) ?? value
   } catch {
     return value
   }

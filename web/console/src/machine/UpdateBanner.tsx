@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from "react"
+import { catalogWordLanguage } from "../catalog.js"
 import { nextWord } from "../next-strings.js"
 import { SETTINGS_UPDATE_HREF } from "./needs-update-model.js"
 import { currentUpdateRead, subscribeUpdate } from "./update.js"
@@ -40,9 +41,9 @@ export function UpdateBanner() {
 
   return (
     <div className="update-banner" id="update-banner" role="status" data-version={version}>
-      <span className="update-banner-say">{nextWord("updateBanner", { version })}</span>
-      <a className="update-banner-go" href={SETTINGS_UPDATE_HREF}>{nextWord("updateBannerGo")}</a>
-      <button className="x" type="button" aria-label={nextWord("updateBannerDismiss")} title={nextWord("updateBannerDismiss")} onClick={dismiss}>
+      <span className="update-banner-say" lang={catalogWordLanguage("next", "updateBanner")}>{nextWord("updateBanner", { version })}</span>
+      <a className="update-banner-go" href={SETTINGS_UPDATE_HREF} lang={catalogWordLanguage("next", "updateBannerGo")}>{nextWord("updateBannerGo")}</a>
+      <button className="x" type="button" aria-label={nextWord("updateBannerDismiss")} title={nextWord("updateBannerDismiss")} lang={catalogWordLanguage("next", "updateBannerDismiss")} onClick={dismiss}>
         ×
       </button>
     </div>

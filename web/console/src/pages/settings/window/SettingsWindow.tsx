@@ -371,7 +371,7 @@ export function SettingsWindow() {
             <PopUp
               label={catalogWord("ui", "agentLanguage")}
               value={String(now("language"))}
-              options={LANGUAGES}
+              options={languages()}
               onPick={pick("language")}
             />
           </Row>
@@ -655,7 +655,7 @@ export function SettingsWindow() {
             <PopUp
               label={W.settingsVoiceLanguage}
               value={String(now("voice_language"))}
-              options={VOICE_LANGUAGES}
+              options={voiceLanguages()}
               onPick={pick("voice_language")}
             />
           </Row>
@@ -1397,18 +1397,20 @@ function hotkeyText(spec: string): string {
  */
 const LANGUAGE_TAGS = ["en", "zh-Hant", "zh-Hans", "ja", "ko", "es", "pt", "fr", "de", "ru", "it", "hi", "id", "tr"]
 
-const LANGUAGES = [
-  { label: W.settingsAuto, value: "auto" },
-  ...LANGUAGE_TAGS.map((tag) => {
-    let name = tag
-    try {
-      name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
-    } catch {
-      /* a runtime without the table shows the tag, which is still a thing you can pick */
-    }
-    return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
-  }),
-]
+function languages() {
+  return [
+    { label: W.settingsAuto, value: "auto" },
+    ...LANGUAGE_TAGS.map((tag) => {
+      let name = tag
+      try {
+        name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
+      } catch {
+        /* a runtime without the table shows the tag, which is still a thing you can pick */
+      }
+      return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
+    }),
+  ]
+}
 
 /**
  * What whisper can be told to read a recording as: Chinese by script, because
@@ -1417,18 +1419,20 @@ const LANGUAGES = [
  * as the General tab's are. A hand-written tag outside the list still shows —
  * `PopUp` keeps a value it does not hold.
  */
-const VOICE_LANGUAGES = [
-  { label: W.settingsVoiceLanguageFollow, value: "auto" },
-  ...["zh-Hant", "zh-Hans", "en", "ja", "ko", "es", "pt", "fr", "de", "it", "ru"].map((tag) => {
-    let name = tag
-    try {
-      name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
-    } catch {
-      /* the tag itself, as above */
-    }
-    return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
-  }),
-]
+function voiceLanguages() {
+  return [
+    { label: W.settingsVoiceLanguageFollow, value: "auto" },
+    ...["zh-Hant", "zh-Hans", "en", "ja", "ko", "es", "pt", "fr", "de", "it", "ru"].map((tag) => {
+      let name = tag
+      try {
+        name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
+      } catch {
+        /* the tag itself, as above */
+      }
+      return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
+    }),
+  ]
+}
 
 /** Said under a control that needs a shell and has none. Not a `Copy+Chinese` word: the
  *  original window is only ever inside one, so it never had a sentence for this. */

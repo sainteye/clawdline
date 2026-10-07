@@ -718,7 +718,9 @@
     min-height: 30px;
     padding: 6px 2px 8px;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    hyphens: auto;
   }
 }
 .sw-gate-mode { margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--dim); line-height: 1.55; overflow-wrap: anywhere; }

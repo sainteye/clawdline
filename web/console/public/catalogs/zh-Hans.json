@@ -4066,6 +4066,8 @@
   "settings.voiceWhyChosen": "这里选的是{tag}",
   "settings.voiceWhyLanguage": "「一般」标签页的语言是{tag}",
   "settings.voiceWhyMachine": "Clawdline 的语言是自动，而这台机器的{where}是{tag}",
+  "settings.voiceMachineLocale": "语言与地区设置",
+  "settings.voiceWindowsLocale": "Windows 区域设置",
   "settings.webCloudPair": "配对浏览器",
   "settings.webCloudPairAgain": "换一张",
   "settings.webCloudPairCancel": "停止等待",

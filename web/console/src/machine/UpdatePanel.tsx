@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type { UpdateStatus } from "@clawdline/contract"
+import { catalogWordLanguage } from "../catalog.js"
 import * as L from "../legacy/bridge.js"
 import { followsRelay } from "../client.js"
 import { nextWord } from "../next-strings.js"
@@ -45,11 +46,11 @@ function TechnicalDetails({ details }: { details: UpdateDetails }) {
   }
   return (
     <details className="update-details">
-      <summary>{nextWord("updateDetails")}</summary>
-      <pre className="update-details-text">{text}</pre>
+      <summary lang={catalogWordLanguage("next", "updateDetails")}>{nextWord("updateDetails")}</summary>
+      <pre className="update-details-text" lang="en">{text}</pre>
       <div className="update-details-row">
-        <button className="chip" type="button" onClick={copy}>{nextWord("updateCopy")}</button>
-        <span className="update-details-said" role="status">
+        <button className="chip" type="button" onClick={copy} lang={catalogWordLanguage("next", "updateCopy")}>{nextWord("updateCopy")}</button>
+        <span className="update-details-said" role="status" lang={catalogWordLanguage("next", copied === "yes" ? "updateCopied" : "updateCopyFailed")}>
           {copied === "yes" ? nextWord("updateCopied") : copied === "no" ? nextWord("updateCopyFailed") : ""}
         </span>
       </div>
@@ -203,7 +204,7 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   if (view.kind === "older") {
     const words = needsUpdateWords(null, known, nextWord)
     return (
-      <p className="say" id="settings-update-notice" role="status" tabIndex={-1} data-needs-update="update-apply">
+      <p className="say" id="settings-update-notice" role="status" tabIndex={-1} data-needs-update="update-apply" lang={catalogWordLanguage("next", "machineNeedsUpdate")}>
         {words.sentence}
         {words.version ? <> {words.version}</> : null}
       </p>
@@ -220,8 +221,8 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
   ) : null
   const problem = view.problem
   return (
-    <div className="block settings-update" id="settings-update" aria-busy={sending || view.restarting}>
-      <b id="settings-update-title" tabIndex={-1}>{nextWord("updateTitle")}</b>
+    <div className="block settings-update" id="settings-update" aria-busy={sending || view.restarting} lang={catalogWordLanguage("next", "updateTitle")}>
+      <b id="settings-update-title" tabIndex={-1} lang={catalogWordLanguage("next", "updateTitle")}>{nextWord("updateTitle")}</b>
       {view.facts.length > 0 ? (
         <dl className="update-facts">
           {view.facts.map((fact) => (
@@ -260,9 +261,9 @@ export function UpdatePanel({ shown }: { shown: boolean }) {
       {view.auto.shown ? (
         <div className="update-auto">
           <div>
-            <strong id="settings-update-auto-title">{nextWord("updateAuto")}</strong>
+            <strong id="settings-update-auto-title" lang={catalogWordLanguage("next", "updateAuto")}>{nextWord("updateAuto")}</strong>
             <p className="say" id="settings-update-auto-say">
-              {nextWord("updateAutoSay")}
+              <span lang={catalogWordLanguage("next", "updateAutoSay")}>{nextWord("updateAutoSay")}</span>
               {view.auto.beta ? <> {view.auto.beta}</> : null}
             </p>
           </div>

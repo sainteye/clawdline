@@ -4066,6 +4066,8 @@
   "settings.voiceWhyChosen": "Esta configuração é {tag}",
   "settings.voiceWhyLanguage": "A língua geral da aba é {tag}",
   "settings.voiceWhyMachine": "O idioma do Clawdline está em Automático, e o {where} desta máquina é {tag}",
+  "settings.voiceMachineLocale": "ajuste de idioma e região",
+  "settings.voiceWindowsLocale": "ajuste regional do Windows",
   "settings.webCloudPair": "Parear navegador",
   "settings.webCloudPairAgain": "Obter outro código",
   "settings.webCloudPairCancel": "Pára de esperar.",

@@ -4066,6 +4066,8 @@
   "settings.voiceWhyChosen": "Diese Einstellung ist {tag}",
   "settings.voiceWhyLanguage": "Die Sprache auf der Registerkarte „Allgemein“ ist {tag}",
   "settings.voiceWhyMachine": "Die Sprache von Clawdline steht auf „Automatisch“; für diesen Rechner ist bei {where} die Sprache {tag} eingestellt",
+  "settings.voiceMachineLocale": "der Sprach- und Regionseinstellung",
+  "settings.voiceWindowsLocale": "der Windows-Regionseinstellung",
   "settings.webCloudPair": "Browser koppeln",
   "settings.webCloudPairAgain": "Erhalten Sie einen anderen Code",
   "settings.webCloudPairCancel": "Aufhören warten",

@@ -4122,6 +4122,8 @@
   "settings.voiceWhyChosen": "This setting is {tag}",
   "settings.voiceWhyLanguage": "The General tab language is {tag}",
   "settings.voiceWhyMachine": "Clawdline's language is Automatic, and this machine's {where} is {tag}",
+  "settings.voiceMachineLocale": "language and region setting",
+  "settings.voiceWindowsLocale": "Windows regional setting",
   "settings.webCloudPair": "Pair browser",
   "settings.webCloudPairAgain": "Get another code",
   "settings.webCloudPairCancel": "Stop waiting",

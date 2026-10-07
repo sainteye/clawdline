@@ -4122,6 +4122,8 @@
   "settings.voiceWhyChosen": "這裡選的是{tag}",
   "settings.voiceWhyLanguage": "「一般」分頁的語言是{tag}",
   "settings.voiceWhyMachine": "Clawdline 的語言是自動，而這台機器的{where}是{tag}",
+  "settings.voiceMachineLocale": "語言與地區設定",
+  "settings.voiceWindowsLocale": "Windows 地區設定",
   "settings.webCloudPair": "配對瀏覽器",
   "settings.webCloudPairAgain": "換一張",
   "settings.webCloudPairCancel": "停止等待",
