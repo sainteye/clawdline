@@ -62,7 +62,39 @@ function localizeSummary(value: string): string {
   }).join(" · ")
 }
 
-/** Runs in the mutation microtask before paint. It leaves the original DOM and listeners intact. */
+/** The pinned renderer has fixed task rows. Remove facts that the source cannot substantiate. */
+export function hideUnrecordedWorktreeFacts(card: HTMLElement, row: WorktreeSourceRow): void {
+  if (!filled(row.owner?.title)) card.querySelector(".worktree-owner, .worktree-owner-link")?.remove()
+
+  if (!filled(row.context?.purpose)) card.querySelector(".worktree-purpose")?.remove()
+  if (!filled(row.context?.purpose) && !filled(row.context?.note) && !filled(row.context?.currentStatus)) {
+    card.querySelector(".worktree-story")?.remove()
+  }
+
+  const facts = card.querySelectorAll<HTMLElement>(".worktree-lifecycle-facts .worktree-fact")
+  const keys = ["created", "started", "ended", "taskState", "originSession"] as const
+  const keep = {
+    created: filled(row.context?.createdAt),
+    started: filled(row.context?.startedAt),
+    ended: filled(row.context?.finishedAt),
+    taskState: row.owner?.evidence === "exact_task_worktree_record"
+      && filled(row.context?.state) && row.context?.state !== "unknown",
+    originSession: filled(row.context?.originSession?.title),
+  }
+  facts.forEach((fact, index) => {
+    const key = (fact.dataset.worktreeFact as typeof keys[number] | undefined) ?? keys[index]
+    if (!key) return
+    fact.dataset.worktreeFact = key
+    if (!keep[key]) fact.remove()
+  })
+  if (!Object.values(keep).some(Boolean)) card.querySelector(".worktree-lifecycle-facts")?.remove()
+
+  if (row.owner?.evidence === "not_a_clawdline_managed_worktree") {
+    card.querySelector(".worktree-next-owner")?.remove()
+  }
+}
+
+/** Runs in the mutation microtask before paint, preserving recorded facts and listeners. */
 export function decoratePinnedWorktree(root: HTMLElement, rowFor: (id: string) => WorktreeSourceRow | undefined): void {
   const summary = root.querySelector<HTMLElement>("#project-worktree-summary")
   if (summary) write(summary, localizeSummary(summary.textContent ?? ""))
@@ -77,14 +109,6 @@ export function decoratePinnedWorktree(root: HTMLElement, rowFor: (id: string) =
     if (!filled(row.branch)) fixed(card.querySelector(".worktree-branch"), ["noBranch"])
     if (!filled(row.owner?.title)) fixed(card.querySelector(".worktree-owner, .worktree-owner-link"), ["ownerUnknown"])
     if (!filled(row.context?.purpose)) fixed(card.querySelector(".worktree-purpose"), ["purposeUnknown"])
-    if (!filled(row.context?.originSession?.title)) {
-      const origin = card.querySelectorAll<HTMLElement>(".worktree-lifecycle-facts .worktree-fact")
-      fixed(origin[4]?.querySelector(".worktree-fact-value, .worktree-origin-link") ?? null, ["originUnknown"])
-    }
-    if (!filled(row.context?.state)) {
-      const lifecycle = card.querySelectorAll<HTMLElement>(".worktree-lifecycle-facts .worktree-fact")
-      fixed(lifecycle[3]?.querySelector(".worktree-fact-value") ?? null, ["unknown"])
-    }
     for (const label of card.querySelectorAll<HTMLElement>(".worktree-tag")) fixed(label, tagKeys)
     for (const label of card.querySelectorAll<HTMLElement>(".worktree-fact-key")) fixed(label, factKeys)
     for (const value of card.querySelectorAll<HTMLElement>(".worktree-fact-value")) {
@@ -114,5 +138,6 @@ export function decoratePinnedWorktree(root: HTMLElement, rowFor: (id: string) =
     fixed(card.querySelector(".worktree-cleanup-assessment"), ["cleanupEligible", "cleanupUnavailable"])
     prefix(card.querySelector(".worktree-current-status"), "now")
     prefix(card.querySelector(".worktree-next-owner"), "nextOwner")
+    hideUnrecordedWorktreeFacts(card, row)
   }
 }
