@@ -138,13 +138,13 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 
 使用者的目標句子裡就有這一段，所以這一節寫得比別節細。
 
-### 4.1 已經做到的（都有實測紀錄，見 `docs/cloud-wire.md` §15–16）
+### 4.1 已經做到的（都有實測紀錄，見 `docs/records/cloud-wire-implementation-2026-09.md` §15–16）
 
 | 層 | 狀態 | 證據 |
 |---|---|---|
 | Envelope、canonical JSON、簽章、加密、時鐘、重送 | ✅ | `internal/domain/cloud/`；對舊 app 的 186 KB known-answer 向量（SHA-256 `ca354b68…`）比對 |
 | 傳輸（WSS `/v1/connect?role=machine`、退避重連、outbound spool） | ✅ | `internal/transport/cloud/`、`internal/adapters/cloud/`（共 14,605 行） |
-| 27 種操作 | 🔶 **接上 17 種、10 種回具名的 `unknown_command`** | `internal/app/cloudops/`；逐項表在 `cloud-wire.md` §10.5 |
+| 27 種操作 | 🔶 **接上 17 種、10 種回具名的 `unknown_command`** | `internal/app/cloudops/`；逐項表在 `records/cloud-wire-implementation-2026-09.md` §10.5 |
 | 接進 `clawdline serve`、`cloud_enabled`／`cloud_commands` 兩個開關 | ✅ | `cmd/clawdline/main.go` 的 `startCloudLine` |
 | 入站 roster（帳號裝置表、`caps` 實際生效） | ✅ | `internal/adapters/cloud/roster.go` |
 | **端到端：hosted console 真的操作這台 Mac** | ✅ **但只對本機複本** | mongod 27117＋api 8180＋relay `wrangler dev` 8787＋自簽 TLS 8443；console 是 `tools/build-web-app.py` 的產出，**一個位元組都沒改**。量到：機器卡「已連上」、11 個 session 全列、transcript 展開、從 console 送訊息進可拋棄 session |
@@ -155,11 +155,11 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 |---|---|---|
 | **配對（機器這一半）** 🔧 | **擋路** | Go 版沒有 QR／四階段 handover。端到端實測是用 devtools 把四筆 IndexedDB 直接種進去的，**證明的是傳輸與操作，不是配對**。有一個 in-flight task「Cloud 第五階段：配對（機器這一半）」正在做 |
 | **帳號與裝置核准** | **擋路** | 核准發生在帳號那一端。把 Go 版配進使用者真正的 Cloud 帳號**會動到帳號**，也要在已信任的裝置上按核准——`docs/remote.md` 設計原則 3 明寫「要先問他」 |
-| 正式環境從未連過 | 擋路 | `relay.clawdline.com`／`api.clawdline.com` **一個位元組都沒連過**。D1（2026-09-19）把機器這一邊準備到「只差使用者按一下」：操作手冊 `docs/cloud-cutover.md`，錯誤名稱與假扮正式端的測試見 `cloud-wire.md` §18 |
+| 正式環境從未連過 | 擋路 | `relay.clawdline.com`／`api.clawdline.com` **一個位元組都沒連過**。D1（2026-09-19）把機器這一邊準備到「只差使用者按一下」：操作手冊 `docs/cloud-cutover.md`，錯誤名稱與假扮正式端的測試見 `records/cloud-wire-implementation-2026-09.md` §18 |
 | 10 種操作沒有 | 中 | `agent`、`shell`、`skills`、`board.items`、`timeline`、`snippets`、`schedule`、`diagnostics.report`、`diagnostics.events`、`dispatch`。回 `unknown_command` 是誠實的——hosted console 會把它記進 `machineLacks` 不再問——但**那幾個按鈕在手機上就是不會動** |
 | `dispatch` 刻意拒絕 | 中 | hosted console 只送 `{task}`，本機 broker 要 materialized 的 `task.json`＋id＋secret，沒有 pinned wire shape，所以回 `cloud_dispatch_unpinned` 409（照舊版）。**從手機派工＝沒有** |
 | entitlements、推播、`ctlr/` 回覆軌、交接通道 | 中 | 都沒動 |
-| `sessions.snapshot` 與刪除屏障 | 低 | `/v1/sessions` 的 `scan.complete` 一直是 false，所以不發清單標記，代價是**消失的 session 不會從 console 上消失**（2026-09-25：`sessions.snapshot` 已由 `Publisher.Snapshot` 回答，見 `cloud-wire.md` §16.6） |
+| `sessions.snapshot` 與刪除屏障 | 低 | `/v1/sessions` 的 `scan.complete` 一直是 false，所以不發清單標記，代價是**消失的 session 不會從 console 上消失**（2026-09-25：`sessions.snapshot` 已由 `Publisher.Snapshot` 回答，見 `records/cloud-wire-implementation-2026-09.md` §16.6） |
 | `t/` 沒有主動推播 | 低 | transcript 即時更新在舊版靠 `transcript_signature` 變動觸發，Go 版還沒算那個簽章 |
 | Cloud 狀態沒有進契約 | 低 | `/v1/cloud/status` 的形狀沒進 `api/v1/`，設定頁自己寫型別 |
 
@@ -208,7 +208,7 @@ Feature Root、coordinator 表，以及自己從 transcript 算的用量），�
 | 設定頁的通知區塊 | 🔶 刻意 `hidden`，並寫明「push 是裝置與 Cloud 的功能，這裡不做」 |
 | cloudflared 監督 | ❌ 沒有 `RemoteTunnel` 的對應物，沒有任何程式寫 `cloudflared.yml` |
 | 本機配對（六位數） | ✅ `internal/transport/http/auth.go`＋`shell/darwin/Pairing.swift` |
-| Cloud 的四個 push 命令 | ❌ `cloud-wire.md:817` 把 WebPush 排在最後一波 |
+| Cloud 的四個 push 命令 | ❌ `records/cloud-wire-implementation-2026-09.md:218` 把 WebPush 排在最後一波 |
 
 有一個 in-flight task「推播：Web Push（手機通知）」正在做這一塊
 （claims `internal/adapters/push`、`internal/transport/http/push.go`、`web/console/public`、`docs/push.md`）。

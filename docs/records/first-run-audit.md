@@ -1,3 +1,4 @@
+<!-- clawdline-doc: kind=record audience=both -->
 # 一個不是他的人第一次打開 Clawdline 會撞到什麼
 
 2026-09-21 的盤點。**這是一份派工清單，不是修正紀錄**：這一輪沒有改任何產品程式碼。
@@ -299,7 +300,7 @@ B03（tmux 不在 `PATH`）也會影響 U9 的 Mac app，但算在 U4。
 
 #### M03〔實測〕新安裝拿到的派工規則，是作者那台機器的 house rules｜U1
 - **在哪**：第一次 `serve`。log 寫著 `orchestrator: projected the shipped dispatch policy into …`；之後每一次派工，這份文件都會被貼進 child 的 briefing（2026-09-25 起不再貼：briefing 只帶使用者自己的 local 檔，base 改成指出檔案路徑，見 `internal/app/orchestrator/policy.go` 的 `childPolicy`）。
-- **原字**：`# How work is handed out on this machine`，後面寫著 `**Clawdfather** is the exception…`、`Measured on one line here: the implementation cost $30.90…`、
+- **原字**：`# How work is handed out on this machine`，後面寫著 `**Clawdfather** is the exception…`、`Measured on one line here: the implementation cost [amount omitted]…`、
   `Until a focused Swift runner ships…`、`No count is copied back into \`test.sh\`…`
 - **為什麼幫不了**：這份文件被 `go:embed` 進 binary，當成產品的預設值，而且是「這台機器」的口吻。新使用者派出去的每一個 child，
   都會讀到一台它不在的機器上量出來的數字，以及它的 repo 裡不存在的 `test.sh`、Swift runner、Clawdfather。
