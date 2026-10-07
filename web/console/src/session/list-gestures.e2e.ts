@@ -329,7 +329,7 @@ function snapshot() {
       generation,
       provenance: "fixture",
       source,
-      notes: readingScenario === "refresh" ? ["session inventory refresh is in progress; prior rows are unverified"] : [],
+      notes: readingScenario === "refresh" ? ["session inventory refresh is in progress; rows from a source that has not answered it are unverified"] : [],
       sources: readingScenario === "refresh" ? [
         { source: "iterm", complete: false },
         { source: "ps", complete: false },

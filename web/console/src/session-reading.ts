@@ -19,6 +19,12 @@ function ageWords(seconds: number): string {
 // Three missed passes are the first point where the age becomes useful context.
 const retainedAgeNoteAfterSeconds = 30
 
+// The daemon appends detail after this prefix as its inventory reader evolves.
+// A refresh is a pending answer, not a terminal-source failure.
+export function inventoryRefreshInProgress(notes: readonly string[] | undefined): boolean {
+  return notes?.some((note) => note.startsWith("session inventory refresh is in progress;")) ?? false
+}
+
 /** The locale choice used by the session shell, without adding catalog keys. */
 export function sessionReadingChinese(): boolean {
   const lang =
@@ -91,7 +97,7 @@ export function scanFailureWords(
   if (openGap) {
     return catalogWord("literal", "2811b1d9d660")
   }
-  if (notes?.includes("session inventory refresh is in progress; prior rows are unverified")) return null
+  if (inventoryRefreshInProgress(notes)) return null
   const incomplete = (sources ?? []).find((source) => !source.complete)
   if (incomplete) {
     return catalogFormat("template", "cdf164a88db5", [incomplete.source])

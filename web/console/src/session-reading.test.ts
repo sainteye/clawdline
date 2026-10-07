@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node's strip-types runner.
-import { batchReadingWords, retainedStateWords, scanFailureWords, sessionCountState, totalSessionWords } from "./session-reading.ts"
+import { batchReadingWords, inventoryRefreshInProgress, retainedStateWords, scanFailureWords, sessionCountState, totalSessionWords } from "./session-reading.ts"
 
 const source = { observed_at: 1_000, provenance: "iterm", freshness: "unverified" as const }
 
@@ -47,9 +47,12 @@ test("a whole terminal-source failure says the next action instead of waiting fo
 })
 
 test("an inventory still refreshing is not an iTerm failure", () => {
+  const currentNote = "session inventory refresh is in progress; rows from a source that has not answered it are unverified"
+  assert.equal(inventoryRefreshInProgress([currentNote]), true)
+  assert.equal(inventoryRefreshInProgress(["iTerm2 apple event failed: exit status 1"]), false)
   assert.equal(
     scanFailureWords(
-      ["session inventory refresh is in progress; prior rows are unverified"],
+      [currentNote],
       [{ source: "iterm", complete: false }, { source: "ps", complete: false }, { source: "tmux", complete: false }],
       true,
     ),
