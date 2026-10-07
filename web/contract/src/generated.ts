@@ -4565,6 +4565,86 @@ export interface ProjectLinksReply {
 }
 
 /**
+ * One entry in full: the body of POST /v1/projects/:id/memory and of PUT
+ * /v1/projects/:id/memory/:name, whose name must be the path's, and the answer to
+ * GET /v1/projects/:id/memory/:name.
+ */
+export interface ProjectMemoryEntry {
+  /**
+   * Markdown, at most 64 KiB.
+   */
+  body: string
+  description: string
+  name: string
+  type: ProjectMemoryType
+}
+
+/**
+ * GET /v1/projects/:id/memory: every entry, and the index a launched session is
+ * given. An index cut at its 8 KiB bound says so in index_cut and in its last line;
+ * entries always lists every entry.
+ */
+export interface ProjectMemoryList {
+  entries: ProjectMemorySummary[]
+
+  /**
+   * Empty when there are no entries.
+   */
+  index: string
+  index_cut: boolean
+
+  /**
+   * The repository key the store is filed under: the key the broker names worktree
+   * directories by.
+   */
+  project_key: string
+}
+
+/**
+ * What a write did. `unchanged` is the same entry sent again, which is how a
+ * retried add or update is answered.
+ */
+export type ProjectMemoryOutcome =
+    "created"
+  | "updated"
+  | "unchanged"
+  | "forgotten"
+
+export const ProjectMemoryOutcomeValues: readonly ProjectMemoryOutcome[] = ["created", "updated", "unchanged", "forgotten"] as const
+
+/**
+ * One entry as a listing shows it, without its body.
+ */
+export interface ProjectMemorySummary {
+  /**
+   * One line, at most 512 bytes.
+   */
+  description: string
+
+  /**
+   * Lowercase letters, digits and single hyphens, at most 64 bytes.
+   */
+  name: string
+  type: ProjectMemoryType
+}
+
+/**
+ * An entry's kind, the four Claude Code's auto-memory uses.
+ */
+export type ProjectMemoryType =
+    "user"
+  | "feedback"
+  | "project"
+  | "reference"
+
+export const ProjectMemoryTypeValues: readonly ProjectMemoryType[] = ["user", "feedback", "project", "reference"] as const
+
+export interface ProjectMemoryWriteAnswer {
+  name: string
+  outcome: ProjectMemoryOutcome
+}
+
+/**
  * What the one git read found, which is a different question from what it produced.
  * A deploy row is a file named after the repository's GitHub remote, so four of
  * these five answers produce no deploy row — and only `unreadable` leaves it

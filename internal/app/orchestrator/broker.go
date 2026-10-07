@@ -97,6 +97,10 @@ type Broker struct {
 	// screen is a composer and not the workspace-trust dialog nothing may
 	// answer (openSession). Nil records nothing, which only a test wants.
 	TrustClaudeProject func(dir string) error
+	// Memory is the shared memory a session launched in dir is given
+	// (memory.Store.LaunchText): "" for a Project with none, and "" launches
+	// exactly as before it existed. Nil gives none, which only a test wants.
+	Memory func(dir string) string
 	// RootAssignmentSettled is told when a Feature Root left at a dialog
 	// (root_dialog.go) was briefed after all, or failed while it waited, so
 	// whoever asked for it — a Board item's new Session — can settle its own

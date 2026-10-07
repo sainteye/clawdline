@@ -327,6 +327,13 @@ const (
 	CacheSessionLinks = "cache.session_links"
 	// Directories a person explicitly keeps in the session-start list.
 	PlacesRegistered = "places.registered"
+	// A Project's shared memory (docs/project-memory.md): how many entries
+	// one Project holds, and how large one entry, its description and its
+	// name may be.
+	MemoryEntries          = "memory.entries"
+	MemoryEntryBytes       = "memory.entry_bytes"
+	MemoryDescriptionBytes = "memory.description_bytes"
+	MemoryNameBytes        = "memory.name_bytes"
 	// Which conversations were open in this boot and the one before it, so
 	// they can be offered back after a reboot (docs/session-restore.md).
 	SessionsRestoreRows    = "sessions.restore_rows"
@@ -1795,6 +1802,46 @@ func Register() []Entry {
 			Told:      []Channel{Diagnostics, Notice, Health},
 			EvictedBy: Person,
 			Projects:  true,
+		},
+		{
+			// <state dir>/memory/<repo key>/: one Project's shared memory
+			// entries. Each is a lesson somebody recorded, so nothing is let
+			// go at the limit: one more is refused with 409 memory_full in
+			// the answer to the add, and only a person (or a session they
+			// asked) forgets one.
+			Name: MemoryEntries, Class: Evidence, Unit: Rows,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health},
+			EvictedBy: Person,
+			Sources:   []string{"internal/adapters/memory.EntryCountLimit"},
+		},
+		{
+			// One entry's body. An add or update past it is refused before
+			// anything is written; the request body and the file read are
+			// the same bound with room for the other fields.
+			Name: MemoryEntryBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 10, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources: []string{"internal/adapters/memory.EntryBodyLimit", "internal/adapters/memory.entryFileReadLimit",
+				"internal/transport/http.memoryRequestBodyLimit"},
+		},
+		{
+			// One entry's one-line description: what the index a launched
+			// session is given repeats for every entry.
+			Name: MemoryDescriptionBytes, Class: Buffer, Unit: Bytes,
+			Limit: 512, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/memory.DescriptionByteLimit"},
+		},
+		{
+			// One entry's name, which is also its file name.
+			Name: MemoryNameBytes, Class: Buffer, Unit: Bytes,
+			Limit: 64, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/memory.nameByteLimit"},
 		},
 		{
 			// Conversations one boot records. They are read again from the

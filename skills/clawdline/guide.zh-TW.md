@@ -272,6 +272,28 @@ skill、指向別處的連結、Codex 看不到的規則，都由他決定。路
 `Idempotency-Key`；拒絕碼有 `plan_changed`、`plan_unknown`（Project 有一部分讀不到，所以什麼都沒改）
 與 `name_taken`（unify 要建立的名稱已經存在；不會覆寫任何東西）。
 
+**共用記憶：每個 Project 一份，Claude 與 Codex 共用。** 關於這個 Project 的教訓寫進它的 Clawdline
+memory，不要寫進你這個助理自己的記憶，下一個 Session 不論是哪個助理都讀得到。Clawdline 啟動的 Session
+已經拿到索引（每筆一行 `name — description`，依 type 分組，超過 8 KiB 會截斷並寫一行說明）；某行跟手上
+的事有關時再讀那一筆：
+
+```sh
+clawdline memory list                     # 索引；--json 是完整回答
+clawdline memory show <name>              # 一筆，含 frontmatter 與內文
+printf '%s\n' "<body>" | clawdline memory add --name <kebab-name> --description "<one line>" --type feedback
+clawdline memory update --name <name> --description "<one line>" --type project --body-file body.md
+clawdline memory forget <name>
+clawdline memory import --from-claude     # 只列計畫；--apply 才複製，已有的名稱跳過
+```
+
+`--project <dir>` 指定 Project（預設是目前目錄的 git top-level；linked worktree 算它主 repository 的
+Project）。type 是 `user`、`feedback`、`project`、`reference` 其中之一。exit 0 完成、1 被拒、2 用法錯、
+3 未知（daemon 沒回應：不能當作已寫入）。同一筆 add 兩次是 `unchanged`；名稱已被別的內容用掉是
+`memory_entry_exists`——改用 `update`。其他拒絕碼有 `memory_entry_invalid`、`memory_entry_not_found`
+與 `memory_full`；`memory_unreadable` 表示 store 讀不到，不代表裡面是空的。路由是
+`GET`/`POST /v1/projects/{place}/memory` 與 `GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`。
+import 只讀 Claude Code 的 `~/.claude/projects/<slug>/memory/`；Clawdline 從不寫那裡。
+
 ## 2a. Feature Root 的一般流程
 
 一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令

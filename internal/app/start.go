@@ -53,6 +53,10 @@ type Starter struct {
 	Squad                *store.Store
 	SquadDir             string
 	ResolveSquadSnapshot func(context.Context, string, string) (json.RawMessage, error)
+	// Memory is the shared memory a session launched in a place is given
+	// (memory.Store.LaunchText): "" for a Project with none, which launches
+	// exactly as before it existed. Nil gives none, which only a test wants.
+	Memory func(dir string) string
 }
 
 // Started is StartPoints.Outcome.started. Attach is filled for the one plan
@@ -115,8 +119,13 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 	if s.ResolveSquadSnapshot != nil && persona != "" {
 		preflightPersona = ""
 	}
+	memory := ""
+	if s.Memory != nil {
+		memory = s.Memory(place.Path)
+	}
 	launch, err := projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
-		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir})
+		Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: preflightPersona, PersonaDir: s.PersonaDir,
+		Memory: memory})
 	if err != nil {
 		if errors.Is(err, projects.ErrUnknownPersona) {
 			return Started{}, StartRefusal{Status: http.StatusBadRequest, Code: "unknown_persona", Message: err.Error()}
@@ -144,7 +153,7 @@ func (s Starter) Start(ctx context.Context, place projects.Place, assistant, mod
 		if prepared.files.PromptPath != "" {
 			launch, err = projects.Admit(projects.LaunchRequest{ProjectRoot: place.Path, Assistant: assistant,
 				Model: model, ReasoningEffort: effort, Resume: resume, Language: language, Persona: persona,
-				SquadPromptPath: prepared.files.PromptPath})
+				SquadPromptPath: prepared.files.PromptPath, Memory: memory})
 			if err != nil {
 				_ = s.Squad.FailSquadLaunch(ctx, prepared.launch.ID)
 				return Started{}, err

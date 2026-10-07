@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/config"
@@ -58,9 +59,12 @@ const (
 func launchScriptDir() string { return filepath.Join(config.Dir(), "launch-lines") }
 
 // typedLaunchLine is what is typed for line: line itself when it is short
-// enough, and otherwise the line that sources a script holding it.
+// enough and one line, and otherwise the line that sources a script holding
+// it. A line with a newline in it — a Project's memory handed to Claude Code
+// inside one quoted argument (projects.MemoryArgs) — would be typed as two
+// lines, the first ending inside an open quote, so it is always scripted.
 func typedLaunchLine(line string) (string, error) {
-	if len(line) <= MaxTypedLaunchBytes {
+	if len(line) <= MaxTypedLaunchBytes && !strings.ContainsAny(line, "\r\n") {
 		return line, nil
 	}
 	dir := launchScriptDir()

@@ -391,7 +391,9 @@ func TestSkillInstallSaysEachStep(t *testing.T) {
 	paths := skillfile.Paths{Home: filepath.Join(root, "home"), StateDir: filepath.Join(root, "state")}
 	var out, errs bytes.Buffer
 	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
-	if code := installSkill(&out, &errs, paths, now); code != 0 || !strings.Contains(out.String(), "Installed") {
+	if code := installSkill(&out, &errs, paths, now); code != 0 ||
+		!strings.Contains(out.String(), "Installed this build's stub at "+skillfile.StubPath(paths.Home)) ||
+		!strings.Contains(out.String(), "Installed this build's stub at "+skillfile.AgentsStubPath(paths.Home)) {
 		t.Fatalf("install: exit %d %q %q", code, out.String(), errs.String())
 	}
 	out.Reset()
@@ -402,8 +404,10 @@ func TestSkillInstallSaysEachStep(t *testing.T) {
 	if code := uninstallSkill(&out, &errs, paths); code != 0 || !strings.Contains(out.String(), "Put back") {
 		t.Fatalf("uninstall: exit %d %q", code, out.String())
 	}
-	if _, err := os.Lstat(skillfile.StubPath(paths.Home)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the stub is still there: %v", err)
+	for _, stub := range []string{skillfile.StubPath(paths.Home), skillfile.AgentsStubPath(paths.Home)} {
+		if _, err := os.Lstat(stub); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the stub is still there: %s %v", stub, err)
+		}
 	}
 }
 

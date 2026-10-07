@@ -391,7 +391,9 @@ func machineScoped(p string) bool {
 	}
 	if strings.HasPrefix(p, "/v1/projects/") {
 		parts := strings.Split(strings.TrimPrefix(p, "/v1/projects/"), "/")
-		return len(parts) >= 2 && parts[1] == "worktrees"
+		// A Project's shared memory: a session of either assistant reads
+		// and writes it through `clawdline memory` (project_memory.go).
+		return len(parts) >= 2 && (parts[1] == "worktrees" || parts[1] == "memory")
 	}
 	return false
 }
