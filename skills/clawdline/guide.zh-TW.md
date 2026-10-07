@@ -62,7 +62,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
 | `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
-| `clawdline heavy -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試（§11） |
+| `clawdline heavy [--handoff] -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試；`--handoff` 會把排隊等待交給 callback（§11） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
@@ -96,7 +96,7 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
 
-**等一個跑很久的指令。** `clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
+**等一個跑很久的指令。** 如果等待的是外部工作，例如排隊中的 `heavy`、CI 或 deploy，而且可能超過幾分鐘，使用 `clawdline callback`（或 `heavy --handoff`／`tools/check.sh`），然後結束這個 turn。完成時會收到通知；不要在後續 turn 輪詢，包括使用 `clawdline leases`。短時間等待與 child 使用下面的單次長等待方式。`clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
 跑完會自己結束。等它們要**一次等久一點**，不要每隔幾秒去看一次：每看一次就是一個 turn，要把整段
 context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種 turn（7,220 萬 token），大多花在排隊中的
 `heavy` 上。
@@ -123,10 +123,10 @@ context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種
   ```
 
   建置時把指令換成 `tools/heavy.sh …`，並保留退出碼；75 代表編譯額度或記憶體的等待逾時，
-  建置尚未執行。
+  建置尚未執行；76 代表 `heavy --handoff` 已啟動 callback，應結束這個 turn 並等待通知。
 
 `clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
-允許的長，就放到背景跑。
+允許的長，可用 `--handoff`：排隊時啟動 callback 並以 76 結束。`tools/check.sh` 預設啟用；child 或 callback 被拒絕時，仍在原處等待。
 
 **用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
 `X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
@@ -1500,6 +1500,8 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 **Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
 
 **編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。daemon 沒回應、或被它看不懂的理由拒絕時，它不會因此不編譯：照樣執行指令，並在 stderr 說明。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
+
+`heavy --handoff` 只在需要等待時啟動 callback，並以 **76** 結束，印出 callback ID 與已知的排隊位置。這時結束這個 turn，等待通知。`tools/check.sh` 預設啟用；child、缺少 conversation ID、callback 被拒絕或 daemon 無法連線時，仍在原處等待。
 
 - `POST /v1/orchestrator/leases`——
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。
