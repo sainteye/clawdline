@@ -544,9 +544,13 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
     }
   }, [])
   useEffect(() => {
-    const onPop = () => {
+    const onPop = (event: PopStateEvent) => {
       if (!phone()) return
-      if (viewRef.current === "detail") layoutRef.current.closeDetail()
+      // A document link from the attention card adds a browser history step.
+      // Its back gesture returns to the still-open Session, not its list,
+      // regardless of whether popstate or hashchange reaches us first.
+      if ((event.state as { view?: unknown } | null)?.view === "detail") return
+      if (pageRef.current === "sessions" && viewRef.current === "detail") layoutRef.current.closeDetail()
     }
     const onResize = () => {
       if (!phone()) setView("list")

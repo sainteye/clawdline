@@ -680,7 +680,6 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
       if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
       return result.value
     }
-    let documentTarget = ""
     try {
       await fetch(origin + "/__fixture/reset")
       await browser.send("Page.enable", {}, id); await browser.send("Runtime.enable", {}, id)
@@ -695,30 +694,29 @@ for (const [name, width, height] of [["desktop", 1280, 800], ["phone", 390, 844]
         await new Promise((r) => setTimeout(r, 50))
       }
       await run(`document.querySelector(".human-interventions-head").click()`)
-      assert.equal(await run(`document.querySelector(".human-intervention-document").textContent`), "在新分頁開啟文件")
-      assert.equal(await run(`document.querySelector(".human-intervention-document").target`), "_blank")
+      assert.equal(await run(`document.querySelector(".human-intervention-document").textContent`), "閱讀文件")
+      assert.equal(await run(`document.querySelector(".human-intervention-document").target`), "")
+      if (name === "phone") await run(`Object.defineProperty(navigator, "standalone", { value: true, configurable: true })`)
       const point = await run(`(() => { const el = document.querySelector(".human-intervention-document"); el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })()`)
       await browser.send("Target.activateTarget", { targetId })
       await browser.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 }, id)
       await browser.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 }, id)
-      while (!documentTarget) {
-        const targets = await browser.send("Target.getTargets")
-        documentTarget = targets.targetInfos.find((info: { targetId: string; url: string }) => info.targetId !== targetId && info.url === link)?.targetId ?? ""
-        if (Date.now() > deadline) assert.fail("clicking the note did not open a document tab: " + JSON.stringify(targets.targetInfos.map((info: { url: string }) => info.url)))
+      while (!(await run(`document.querySelector("#document-body")?.textContent?.includes("The document opened directly.")`))) {
+        if (Date.now() > deadline) assert.fail("document link did not open: " + JSON.stringify(await run(`({ page: document.documentElement.getAttribute("data-page"), hash: location.hash, hidden: document.getElementById("documents-page")?.hidden, status: document.getElementById("documents-status")?.textContent, body: document.getElementById("document-body")?.textContent?.slice(0, 120) })`)))
         await new Promise((r) => setTimeout(r, 50))
       }
-      const { sessionId: docID } = await browser.send("Target.attachToTarget", { targetId: documentTarget, flatten: true })
-      await browser.send("Runtime.enable", {}, docID)
-      await browser.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: name === "phone" }, docID)
-      while (!(await run(`document.querySelector("#document-body")?.textContent?.includes("The document opened directly.")`, docID))) {
-        if (Date.now() > deadline) assert.fail("document link did not open: " + JSON.stringify(await run(`({ page: document.documentElement.getAttribute("data-page"), hash: location.hash, hidden: document.getElementById("documents-page")?.hidden, status: document.getElementById("documents-status")?.textContent, body: document.getElementById("document-body")?.textContent?.slice(0, 120) })`, docID)))
+      assert.equal(await run(`location.href`), link)
+      assert.equal(await run(`document.documentElement.getAttribute("data-page")`), "documents")
+      assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`), true, JSON.stringify(await run(`({ width: document.documentElement.scrollWidth, bad: [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > ${width}).slice(0, 10).map(el => ({ tag: el.tagName, id: el.id, className: el.className, right: el.getBoundingClientRect().right })) })`)))
+      await run(`history.back()`)
+      while (!(await run(`document.documentElement.getAttribute("data-page") === "sessions" && location.hash === "#session=${SESSION}"`))) {
+        if (Date.now() > deadline) assert.fail("Back did not return to the Session")
         await new Promise((r) => setTimeout(r, 50))
       }
-      assert.equal(await run(`document.documentElement.getAttribute("data-page")`, docID), "documents")
-      assert.equal(await run(`document.documentElement.scrollWidth <= ${width}`, docID), true, JSON.stringify(await run(`({ width: document.documentElement.scrollWidth, bad: [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > ${width}).slice(0, 10).map(el => ({ tag: el.tagName, id: el.id, className: el.className, right: el.getBoundingClientRect().right })) })`, docID)))
       assert.equal(await run(`!!document.querySelector(".human-intervention-card")`), true, "the original note stays open")
+      if (name === "phone") assert.equal(await run(`history.state?.view`), "detail", "Back returns to the Session history entry")
+      assert.equal(await run(`document.getElementById("pane-detail")?.hidden`), false, "Back keeps the Session detail open")
     } finally {
-      if (documentTarget) await browser.send("Target.closeTarget", { targetId: documentTarget })
       await browser.send("Target.closeTarget", { targetId })
     }
   })
