@@ -18,10 +18,6 @@ daemon and return when it finishes; an Agent can leave a concrete request for yo
 attention panel; and you can save future work as a Session to-do without interrupting its current
 turn.
 
-<p align="center">
-  <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline updating the state of several Claude Code and Codex sessions.">
-</p>
-
 ## What it does
 
 **Basics — every day**
@@ -43,6 +39,8 @@ turn.
 
 **Coordinate work — what sets it apart**
 
+The screenshots below show the current console with sample data.
+
 - **Owned dispatch with landing evidence.** A session sends bounded work to a child session,
   gets the result back, or hands its whole line of work to a successor. Claims stop overlapping
   writes, and Clawdline records whether the work actually reached the branch, not only that the
@@ -54,19 +52,33 @@ turn.
 - **Notes when a person is needed.** An Agent can leave a concrete question or action in a
   Session's attention panel, with suggested replies when there is a choice. You can answer from
   there; the Agent continues independent work in the meantime. [Attention notes](docs/user/sessions.md#attention-notes-from-agents)
+
+  <img src="docs/assets/attention-note.png" width="760" alt="A sample Agent note requesting a decision, with suggested replies in the Session attention panel.">
+
 - **To-dos for later.** Add a direct to-do to a Session while it is busy. The row stays there for
   the Session to pick up later; adding it does not send a message or wake the Session.
   [Session to-dos](docs/user/board.md#session-to-dos)
+
+  <img src="docs/assets/session-todo.png" width="390" alt="A sample Session to-do recorded for later, without interrupting the current turn.">
+
 - **A Board that follows delivery.** Assign a Feature, Issue or Epic to a session and follow it
   through implementation, verification, merge and deployment, each phase with evidence. Planning
   is on by default: Features and Epics need a plan and an independent review before work starts.
   Questions for you appear on the card. The Board itself is off until you turn it on in Settings.
   [Board](docs/user/board.md)
-- **Roles.** Start a session as a built-in role — architect, reviewer, technical writer and more —
+
+  <img src="docs/assets/board-item.png" width="760" alt="A sample Board feature with its description, review option, and Session assignment controls.">
+
+- **Agent squad and roles.** Start a session as a built-in role — architect, reviewer, technical writer and more —
   with its own handbook and skills. [Roles](docs/personas.md)
+
+  <img src="docs/assets/agent-squad.png" width="760" alt="A sample Agent squad showing role cards, definitions, handbooks, and skill settings.">
+
 - **Schedules and webhooks.** Save a task that a session runs on the local clock or by hand, with
   catch-up, timeouts and failure alerts. Cloud Pro also starts it from a webhook.
   [Schedules](docs/user/schedules.md)
+
+  <img src="docs/assets/schedule-webhook.png" width="680" alt="The schedule editor with webhook or manual triggering selected; webhook activation requires Cloud Pro.">
 
 **Projects and machines**
 
@@ -77,10 +89,6 @@ turn.
   when you apply that plan. It never commits. [Unify](docs/project-files.md#unify)
 - **Optional encrypted Cloud.** Pair a phone or several machines through Clawdline Cloud's
   end-to-end encrypted relay. Off by default; a preview. [Remote access](docs/user/remote-access.md)
-
-<p align="center">
-  <img src="docs/assets/fleet-phone.png" width="390" alt="Clawdline on a phone, showing working, waiting, and child sessions across several projects.">
-</p>
 
 ## Install
 

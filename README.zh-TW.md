@@ -16,10 +16,6 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 可以在 Session 的「關注」面板留下需要你處理的事；你也能先替忙碌中的 Session 記下待辦，
 不打斷它眼前的工作。
 
-<p align="center">
-  <img src="docs/assets/sessions-live.gif" width="760" alt="Clawdline 即時更新多個 Claude Code 與 Codex Session 的狀態。">
-</p>
-
 ## 它能做什麼
 
 **基本功能：每天都會用到**
@@ -40,6 +36,8 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 
 **協調工作：Clawdline 和其他工具不同的地方**
 
+以下截圖取自目前的主控台，內容使用示意資料。
+
 - **派工，並留下合併證據。** Session 可以把範圍明確的工作派給子 Session、收回結果，或把整條
   工作線交接給新的 Session。寫入範圍（claims）會擋住彼此重疊的修改；Clawdline 記錄的是工作
   有沒有真的進到分支，而不只是子 Session 說它做完了。[派工與合併確認](docs/user/clawdfather-and-dispatch.md)
@@ -50,16 +48,30 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
 - **Agent 用便條紙請你處理。** Agent 可以在 Session 的「關注」面板留下具體問題或動作；需要
   選擇時附上建議回覆。你可在那裡回覆，Agent 也能先做不依賴答案的事。
   [關注便條紙](docs/user/sessions.md#attention-notes-from-agents)
+
+  <img src="docs/assets/attention-note.png" width="760" alt="示意 Agent 便條紙：在 Session 關注面板提出問題，並附上建議回覆。">
+
 - **替稍後的工作記待辦。** 在 Session 忙碌時直接新增待辦，留給它稍後領取；新增待辦不會
   傳訊息，也不會喚醒 Session。[Session 待辦](docs/user/board.md#session-to-dos)
+
+  <img src="docs/assets/session-todo.png" width="390" alt="示意 Session 待辦：先記下稍後要做的事，不打斷目前這一輪。">
+
 - **一路追到交付的看板。** 把 Feature、Issue 或 Epic 指派給 Session，跟著它經過實作、驗證、
   合併與部署，每個階段都要附證據。規劃預設開啟：Feature 與 Epic 開工前要先有計畫，並通過獨立
   審查。需要你決定的問題會直接出現在卡片上。看板本身預設關閉，要先在設定裡開啟。
   [看板](docs/user/board.md)
-- **角色。** 用內建角色開 Session，例如架構師、審查者、技術寫手，各自帶著自己的手冊與 skill。
+
+  <img src="docs/assets/board-item.png" width="760" alt="示意看板 Feature：包含說明、審查選項和 Session 指派控制。">
+
+- **Agent 小隊與角色。** 用內建角色開 Session，例如架構師、審查者、技術寫手，各自帶著自己的手冊與 skill。
   [角色](docs/personas.md)
+
+  <img src="docs/assets/agent-squad.png" width="760" alt="示意 Agent 小隊：可查看角色卡片、定義、手冊和技能設定。">
+
 - **排程與 Webhook。** 把任務存起來，讓 Session 依本機時鐘或手動執行，有補跑、逾時與失敗通知。
   Cloud Pro 還能用 Webhook 啟動。[排程](docs/user/schedules.md)
+
+  <img src="docs/assets/schedule-webhook.png" width="680" alt="排程編輯器選擇由 Webhook 或手動啟動；啟用 Webhook 需要 Cloud Pro。">
 
 **專案與多台機器**
 
@@ -70,10 +82,6 @@ Clawdline Cloud 透過端對端加密的中繼，讓手機或其他機器連回�
   會改檔案，而且不會替你 commit。[Unify](docs/project-files.md#unify)
 - **選用的加密 Cloud。** 透過 Clawdline Cloud 的端對端加密中繼，配對手機或多台機器。預設關閉，
   目前是預覽版。[遠端連線](docs/user/remote-access.md)
-
-<p align="center">
-  <img src="docs/assets/fleet-phone.png" width="390" alt="手機上的 Clawdline，顯示不同專案中正在工作、等待中與子 Session 的狀態。">
-</p>
 
 ## 安裝
 
