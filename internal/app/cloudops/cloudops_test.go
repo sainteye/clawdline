@@ -295,6 +295,21 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-schedules",
 		method: "GET", path: "/v1/orchestrator/schedules",
 	}, {
+		word:    "coordination.leases",
+		body:    map[string]any{"type": "coordination.leases", "session": machine, "request": "req-leases"},
+		session: machine, name: "read:req-leases",
+		method: "GET", path: "/v1/orchestrator/leases",
+	}, {
+		word:    "coordination.waits",
+		body:    map[string]any{"type": "coordination.waits", "session": machine, "request": "req-waits"},
+		session: machine, name: "read:req-waits",
+		method: "GET", path: "/v1/orchestrator/waits",
+	}, {
+		word:    "coordination.pauses",
+		body:    map[string]any{"type": "coordination.pauses", "session": machine, "request": "req-pauses"},
+		session: machine, name: "read:req-pauses",
+		method: "GET", path: "/v1/orchestrator/pauses",
+	}, {
 		// The whole machine's list, and no `?session=` on it: the wire has
 		// nowhere to put a session, so this read must not put one in the query
 		// either — a list filtered under a guessed session would be somebody

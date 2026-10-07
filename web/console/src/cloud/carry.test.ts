@@ -73,6 +73,10 @@ class FakeMac implements CloudWriteClient {
   tasks() {
     return Promise.resolve({ tasks: [] })
   }
+  _machineRequest(machine: string, word: string, _body: Record<string, unknown>, kind: string) {
+    this.asked.push(`${kind}:${machine}:${word}`)
+    return Promise.resolve({ at: 100, [word.split(".")[1]]: [] })
+  }
   machineDescriptor(machine: string) {
     return this.commands && machine === "mac-a" ? { machine: { commands: this.commands } } : null
   }
@@ -248,6 +252,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   // the guard reads the table.
   assert.ok("transcript" in CARRIED)
   assert.ok("schedules" in CARRIED)
+  assert.ok("coordination.leases" in CARRIED)
+  assert.ok("coordination.waits" in CARRIED)
+  assert.ok("coordination.pauses" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
   // 104, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
@@ -296,7 +303,26 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-unify-apply" in CARRIED)
   assert.ok(!("project-unify-plan" in DEFERRED))
   assert.ok(!("project-unify-apply" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 136)
+  assert.equal(Object.keys(CARRIED).length, 139)
+})
+
+test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
+  const mac = new FakeMac()
+  const reader = seam(mac)
+  for (const name of ["leases", "waits", "pauses"]) {
+    const path = `/v1/orchestrator/${name}`
+    const response = await reader.fetch(path)
+    assert.equal(response.status, 200, path)
+    assert.deepEqual(await response.json(), { at: 100, [name]: [] })
+    const row = reader.log[reader.log.length - 1]
+    assert.equal(row.answer, "relay")
+    assert.equal(row.word, `coordination.${name}`)
+  }
+  assert.deepEqual(mac.asked, [
+    "read:mac-a:coordination.leases",
+    "read:mac-a:coordination.waits",
+    "read:mac-a:coordination.pauses",
+  ])
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {

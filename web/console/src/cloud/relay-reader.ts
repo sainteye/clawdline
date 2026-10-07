@@ -781,6 +781,15 @@ export class RelayReader {
           this.note(method, path, "local")
           return json(200, list)
         }
+        case "/v1/orchestrator/leases":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "coordination.leases", {})
+        case "/v1/orchestrator/waits":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "coordination.waits", {})
+        case "/v1/orchestrator/pauses":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "coordination.pauses", {})
         case "/v1/orchestrator/schedules": {
           // The list under the session list, which on a phone drew nothing at
           // all: the word was in `DEFERRED` with a sentence saying schedules

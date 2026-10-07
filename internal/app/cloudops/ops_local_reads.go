@@ -441,6 +441,40 @@ func init() {
 				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/schedules"}
 			}},
 
+		// The Clawdfather coordination panel reads the same broker state on
+		// Cloud as it does on this machine. Each read is a fresh machine query;
+		// a descriptor snapshot would hide a newly granted lease or safe point.
+		op{name: "coordination.leases", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/leases"}
+			}},
+		op{name: "coordination.waits", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/waits"}
+			}},
+		op{name: "coordination.pauses", read: true,
+			decode: func(b body) (plan, bool) {
+				if !b.has("type", "session", "request") {
+					return plan{}, false
+				}
+				return machinePlan(b)
+			},
+			route: func(plan) LocalRequest {
+				return LocalRequest{Method: "GET", Path: "/v1/orchestrator/pauses"}
+			}},
+
 		// push-key is the first request of a registration and the one the
 		// whole feature stopped on: a phone that pressed "notify me" got as
 		// far as the iOS permission dialog and then asked this for the
