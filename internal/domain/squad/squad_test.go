@@ -4,11 +4,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/sainteye/clawdline/internal/domain/persona"
 )
 
 func TestSquadBuiltinsAndPolicy(t *testing.T) {
 	c := Builtins()
-	if len(c.Definitions) != 43 || len(c.Skills) != 24 {
+	if len(c.Definitions) != len(persona.IDs()) || len(c.Skills) != 24 {
 		t.Fatalf("builtins: %d definitions, %d skills", len(c.Definitions), len(c.Skills))
 	}
 	wantSkill := map[string]bool{}
@@ -69,7 +71,7 @@ func TestSquadBuiltinsAndPolicy(t *testing.T) {
 		}
 		ids[d.DefinitionID] = true
 	}
-	if len(ids) != 43 || ValidCustomID(BuiltinID("backend")) || !ValidCustomID("example.persona.writer") {
+	if len(ids) != len(persona.IDs()) || ValidCustomID(BuiltinID("backend")) || !ValidCustomID("example.persona.writer") {
 		t.Fatal("definition namespace collision")
 	}
 	e := Effective{ScopeID: "project-a", Personas: []EffectivePersona{
