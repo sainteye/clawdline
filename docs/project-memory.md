@@ -91,6 +91,19 @@ Session where the index came from, how to read an entry and to record Project le
   store that cannot be read is logged and the launch goes on without memory. A launch carrying more
   than 9 KiB of memory text is refused, which the 8 KiB index bound keeps from happening.
 
+Measured end to end on 2026-10-07 with a daemon of its own on an empty state directory and the
+exact shell command `projects.Admit` builds, invented facts in the descriptions:
+
+- Codex (codex-cli 0.160.1, `exec -s workspace-write`) recorded an entry with `clawdline memory
+  add`; Claude Code 2.1.292 launched with that memory and Read, Bash, Glob and Grep disallowed
+  named the fact; without the memory argument it answered that it did not know.
+- Claude Code recorded an entry; Codex launched with that memory and told to run no commands named
+  the fact in 3 of 3 runs, running none; without it, it did not know.
+- A fact only in an entry's body was not known to a session that could not run `memory show`: the
+  index is names and descriptions, so a description should say enough to tell when to read on.
+- codex-cli 0.160.1 ignores `-c` overrides placed before its `exec` subcommand; they are delivered
+  when they follow it, and to the interactive Codex that Clawdline launches.
+
 ## Import from Claude Code
 
 `clawdline memory import --from-claude` reads Claude Code's auto-memory for the Project,
