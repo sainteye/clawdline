@@ -18,6 +18,10 @@ export function ProjectTools({ shown, changed, setupRef }: { shown: boolean; cha
         <strong>{catalogWord("inline", "3b71e7c5c1b9")}</strong>
         <span>{catalogWord("inline", "0eb9b6dde40e")}</span>
       </span>
+      <span className="project-tools-toggle">
+        <span className="project-tools-expand">{catalogWord("projects", "toolsExpand")}</span>
+        <span className="project-tools-collapse">{catalogWord("projects", "toolsCollapse")}</span>
+      </span>
     </summary>
     <div className="project-tools-body">
       <p className="project-tools-intro">{catalogWord("inline", "4956bcafb9bc")}</p>

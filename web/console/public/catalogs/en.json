@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "Showing the last available directory while it updates.",
   "projects.statusUnavailable": "The project directory is temporarily unavailable; retrying shortly.",
   "projects.statusUpdateFailed": "Update failed; showing the last available project directory. ",
+  "projects.toolsCollapse": "Collapse",
+  "projects.toolsExpand": "Expand",
   "session.attentionAria": "Attention, {arg0} pending notes",
   "session.attentionText": "Attention · {arg0} pending",
   "settings.menuMascot": "Mascot",

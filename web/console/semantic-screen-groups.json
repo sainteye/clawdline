@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4602,
+  "englishContentKeys": 4604,
   "riskKeys": 2027,
-  "nonRiskCount": 2575,
+  "nonRiskCount": 2577,
   "groups": [
     {
       "name": "bar / other",
@@ -2095,7 +2095,7 @@
     },
     {
       "name": "projects / other",
-      "count": 6,
+      "count": 8,
       "sources": [
         "src/pages/projects/project-list.ts"
       ],
@@ -2105,7 +2105,9 @@
         "projects.activityPartial",
         "projects.boardLede",
         "projects.statusPreparing",
-        "projects.statusRetained"
+        "projects.statusRetained",
+        "projects.toolsCollapse",
+        "projects.toolsExpand"
       ]
     },
     {

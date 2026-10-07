@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "Affichage du dernier répertoire disponible pendant sa mise à jour.",
   "projects.statusUnavailable": "Le répertoire des projets est temporairement indisponible ; nouvelle tentative sous peu.",
   "projects.statusUpdateFailed": "Échec de la mise à jour ; affichage du dernier répertoire des projets disponible. ",
+  "projects.toolsCollapse": "Réduire",
+  "projects.toolsExpand": "Développer",
   "session.attentionAria": "Attention, {arg0} notes en suspens",
   "session.attentionText": "Attention · {arg0} en attente",
   "settings.menuMascot": "Mascotte",

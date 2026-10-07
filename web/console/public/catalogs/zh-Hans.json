@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "显示上次可用的项目目录，同时在后台更新。",
   "projects.statusUnavailable": "项目目录暂时无法获取，稍后自动重试。",
   "projects.statusUpdateFailed": "更新失败，当前保留上次的项目目录。 ",
+  "projects.toolsCollapse": "收起",
+  "projects.toolsExpand": "展开",
   "session.attentionAria": "关注，待处理 {arg0} 条便条",
   "session.attentionText": "关注 · 待处理 {arg0}",
   "settings.menuMascot": "吉祥物",

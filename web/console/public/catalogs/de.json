@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "Während der Aktualisierung wird das zuletzt verfügbare Verzeichnis angezeigt.",
   "projects.statusUnavailable": "Das Projektverzeichnis ist vorübergehend nicht verfügbar. Ein erneuter Versuch folgt in Kürze.",
   "projects.statusUpdateFailed": "Aktualisierung fehlgeschlagen; das zuletzt verfügbare Projektverzeichnis wird angezeigt. ",
+  "projects.toolsCollapse": "Einklappen",
+  "projects.toolsExpand": "Aufklappen",
   "session.attentionAria": "Achtung, {arg0} ausstehende Notizen",
   "session.attentionText": "Achtung · {arg0} ausstehend",
   "settings.menuMascot": "Maskottchen",

@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "Exibindo o último diretório disponível enquanto ele é atualizado.",
   "projects.statusUnavailable": "O diretório de projetos está temporariamente indisponível; nova tentativa em breve.",
   "projects.statusUpdateFailed": "A atualização falhou; exibindo o último diretório de projetos disponível. ",
+  "projects.toolsCollapse": "Recolher",
+  "projects.toolsExpand": "Expandir",
   "session.attentionAria": "Atenção, {arg0} notas pendentes",
   "session.attentionText": "Atenção · {arg0} pendente",
   "settings.menuMascot": "Mascote",

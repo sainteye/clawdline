@@ -37,7 +37,7 @@
     "literal": 728,
     "metadata": 2,
     "next": 731,
-    "projects": 10,
+    "projects": 12,
     "session": 2,
     "settings": 174,
     "template": 155,
@@ -45,7 +45,7 @@
     "verify": 69,
     "work": 199,
     "worktree": 54,
-    "total": 4604
+    "total": 4606
   },
   "unresolvedEnglish": [
     "settings.settingsTitle",

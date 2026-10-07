@@ -122,8 +122,18 @@ func TestSecondaryCatalogKeepsItsActualLanguageWhenOnlyNewKeysAreMissing(t *test
 		}
 		return got
 	}
+	if got := read(); got["lang"] != "en" {
+		t.Fatalf("partial catalog without a baseline was served: %#v", got)
+	}
+	if err := os.WriteFile(filepath.Join(root, "catalogs", "baseline-keys.json"), []byte(`{"version":1,"keys":["lang","dir","old"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if got := read(); got["lang"] != "ja" || got["old"] != "こんにちは {name}" || got["new"] != "" {
 		t.Fatalf("partial catalog was mixed or rejected: %#v", got)
+	}
+	writeCatalogFixture(t, root, "ja", `{"lang":"ja","dir":"ltr","new":"新しい項目"}`)
+	if got := read(); got["lang"] != "en" || got["old"] != "Hello {name}" {
+		t.Fatalf("missing first-release key did not atomically fall back: %#v", got)
 	}
 	writeCatalogFixture(t, root, "ja", `{"lang":"ja","dir":"ltr","old":"こんにちは {other}"}`)
 	if got := read(); got["lang"] != "en" || got["old"] != "Hello {name}" || got["new"] != "New item" {

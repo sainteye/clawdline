@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "更新中は、前回取得したプロジェクト一覧を表示しています。",
   "projects.statusUnavailable": "Project 一覧を一時的に取得できません。まもなく再試行します。",
   "projects.statusUpdateFailed": "更新に失敗しました。前回取得した Project 一覧を表示しています。 ",
+  "projects.toolsCollapse": "折りたたむ",
+  "projects.toolsExpand": "展開する",
   "session.attentionAria": "確認が必要です。未処理のメモ {arg0} 件",
   "session.attentionText": "確認が必要 · 未処理 {arg0} 件",
   "settings.menuMascot": "マスコット",

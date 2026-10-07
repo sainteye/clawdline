@@ -3936,6 +3936,8 @@
   "projects.statusRetained": "顯示上次可用的專案目錄，背景正在更新。",
   "projects.statusUnavailable": "專案目錄暫時無法取得，稍後自動重試。",
   "projects.statusUpdateFailed": "更新失敗，目前保留上次的專案目錄。 ",
+  "projects.toolsCollapse": "收合",
+  "projects.toolsExpand": "展開",
   "session.attentionAria": "關注，待處理 {arg0} 筆便條",
   "session.attentionText": "關注 · 待處理 {arg0}",
   "settings.menuMascot": "吉祥物",

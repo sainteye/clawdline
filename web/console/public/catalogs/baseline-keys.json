@@ -3938,6 +3938,8 @@
     "projects.statusRetained",
     "projects.statusUnavailable",
     "projects.statusUpdateFailed",
+    "projects.toolsCollapse",
+    "projects.toolsExpand",
     "session.attentionAria",
     "session.attentionText",
     "settings.menuMascot",

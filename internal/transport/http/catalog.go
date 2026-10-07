@@ -143,6 +143,40 @@ func catalogContentCount(catalog map[string]string) int {
 	return count
 }
 
+// The checked-in baseline is the first release's complete key set. A
+// secondary catalog may defer only keys added after it. If the baseline is
+// unavailable or invalid, an incomplete catalog cannot be served safely.
+func coversCatalogBaseline(root string, english, selected map[string]string) bool {
+	if len(selected) == len(english) {
+		return true
+	}
+	body, err := os.ReadFile(filepath.Join(root, "catalogs", "baseline-keys.json"))
+	if err != nil {
+		return false
+	}
+	var baseline struct {
+		Version int      `json:"version"`
+		Keys    []string `json:"keys"`
+	}
+	if err := json.Unmarshal(body, &baseline); err != nil || baseline.Version < 1 || len(baseline.Keys) == 0 {
+		return false
+	}
+	seen := make(map[string]bool, len(baseline.Keys))
+	for _, key := range baseline.Keys {
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+		if _, ok := english[key]; !ok {
+			return false
+		}
+		if _, ok := selected[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func equalMarkup(source, selected string) bool {
 	a := catalogMarkup.FindAllString(source, -1)
 	b := catalogMarkup.FindAllString(selected, -1)
@@ -176,7 +210,7 @@ func loadCatalog(root, requested string) (map[string]string, error) {
 		// complete nine-language baseline; their existing keys still must
 		// validate, and the client fills missing keys from English.
 		strict := requested == "zh-Hant"
-		if selected, err := readCatalogFile(root, requested); err == nil && validCatalog(english, selected, strict) {
+		if selected, err := readCatalogFile(root, requested); err == nil && validCatalog(english, selected, strict) && coversCatalogBaseline(root, english, selected) {
 			catalog, actual = selected, requested
 		}
 	}
