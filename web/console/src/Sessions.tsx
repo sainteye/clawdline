@@ -18,7 +18,7 @@ import { swipes } from "./session/swipe.js"
 import { pushShape, startPush, subscribePush, togglePush } from "./push/push.js"
 import { ScheduleSection } from "./pages/schedules.js"
 import { nextWord } from "./next-strings.js"
-import { batchReadingWords, scanFailureWords } from "./session-reading.js"
+import { batchReadingWords, inventoryRefreshInProgress, scanFailureWords } from "./session-reading.js"
 import { openNewWorkItem } from "./pages/work/new-item.js"
 import { sessionsPageHash, sessionsTerminalMode, sessionsTerminalRoute, type TerminalRoute } from "./page-route.js"
 import { TerminalList } from "./session/TerminalList.js"
@@ -133,7 +133,7 @@ export function SessionsPage({
   const open = rows.find((r) => r.id === openId) ?? null
   const T = L.strings
   const sourceFailure = scanFailureWords(scanNotes, scanSources)
-  const briefRefresh = scanNotes?.includes("session inventory refresh is in progress; prior rows are unverified") &&
+  const briefRefresh = inventoryRefreshInProgress(scanNotes) &&
     readingSource?.freshness === "unverified" && Date.now() / 1000 - readingSource.observed_at < 30
   const readingSaid = sourceFailure ?? (briefRefresh ? null : batchReadingWords(readingSource))
 
