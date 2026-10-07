@@ -40,6 +40,7 @@
   "devices.usage.list": "usage: clawdline devices [--json]",
   "devices.usage.revoke": "       clawdline devices revoke [--yes] <device-id>",
   "release.app_staged": "         the app is staged at %s and replaces the installed one when it quits\n",
+  "release.app_staged_short": "the app is staged at %s and replaces the installed one when it quits\n",
   "release.apply_state": "apply    %s",
   "release.at": " at %s",
   "release.auto_off": "off",

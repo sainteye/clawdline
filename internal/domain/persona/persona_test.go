@@ -16,8 +16,8 @@ func TestTheCatalogLoads(t *testing.T) {
 	want := []string{"architect", "backend", "frontend", "minimal-change",
 		"code-reviewer", "reality-checker", "security", "technical-writer",
 		"seo", "content-writer", "ai-search", "social-media",
-		"instagram", "email", "growth", "pr"}
-	// Other teams append after these; the first sixteen keep their order.
+		"instagram", "email", "growth", "pr", "zh-editor"}
+	// Other teams append after these; the first seventeen keep their order.
 	if got := strings.Join(IDs()[:len(want)], ","); got != strings.Join(want, ",") {
 		t.Fatalf("catalog order %s, want %s first", strings.Join(IDs(), ","), strings.Join(want, ","))
 	}
@@ -168,6 +168,10 @@ func TestAnOriginalPersonaNamesNoUpstream(t *testing.T) {
 	lead, ok := Known("zero-review-lead")
 	if !ok || lead.Source != Original || strings.Join(lead.Teams, ",") != "product,quality" {
 		t.Errorf("zero-review-lead = %+v", lead)
+	}
+	editor, ok := Known("zh-editor")
+	if !ok || editor.Source != Original || strings.Join(editor.Teams, ",") != "marketing" {
+		t.Errorf("zh-editor = %+v", editor)
 	}
 }
 

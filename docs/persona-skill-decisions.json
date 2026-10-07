@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "purpose": "Public research decisions for the built-in persona catalog; no skill is installed or adopted by this document.",
-  "reviewed_on": "2026-10-02",
+  "reviewed_on": "2026-10-06",
   "preview_definition": "Eligible for a person to read the pinned entry and reviewed bundled references; this is not a Console capability or permission to execute the skill.",
   "roles": [
     {
@@ -933,6 +933,12 @@
           }
         }
       ]
+    },
+    {
+      "id": "zh-editor",
+      "conclusion": "no_suitable_candidate",
+      "zero_preview_reason": "The public Chinese humanizer skills reviewed on 2026-10-06 (op7418/Humanizer-zh and acchuang/zh-tw-humanizer) edit sentences, not the reader, point, and structure of a whole article. The role's procedure is in the persona text itself.",
+      "candidates": []
     },
     {
       "id": "product-manager",

@@ -17,7 +17,7 @@ type Icon struct {
 // told apart by its colour and one accessory: a hard hat, server stripes, a
 // screen face, a needle, glasses, a ticked chest, a shield, a pen; and for the
 // marketing team a magnifier, a quill, a sparkle, a speech bubble, a camera,
-// an envelope, an up-arrow and a megaphone.
+// an envelope, an up-arrow, a megaphone and a red editing pen.
 const (
 	iconWidth  = 8
 	iconHeight = 7
@@ -241,6 +241,16 @@ var icons = map[string]art{
 			".BBBBBMM",
 			".BBBBmMM",
 			"..B..B.M",
+		}},
+	"zh-editor": {accent: 'B', palette: map[byte]string{'B': "#397b80", 'o': ink, 'A': "#f3e6bd", 'R': "#d34747", 'n': ink},
+		rows: [iconHeight]string{
+			"...AA.R.",
+			"...BB.R.",
+			".BBBBBR.",
+			".BoBBoR.",
+			".BBBBRn.",
+			".BBBBBB.",
+			"..B..B..",
 		}},
 	"ui-designer":      uiDesignerBot,
 	"ux-architect":     uxArchitectBot,

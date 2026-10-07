@@ -847,7 +847,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - `reality-checker` — 検証: 「機能する」前の証拠。
   - `security` — 権限、ペアリング、またはクラウドに触れる作業。
   - `technical-writer` — ドキュメントとガイド。
-  - マーケティング、ブログ、サイト、またはドキュメント リポジトリの場合: `seo` (ページとメタデータ)、`content-writer` (ファイルで作成された記事)、`ai-search` (AI 回答エンジンが引用できるページ)、`social-media`、`instagram`、`email` (ニュースレター)、 `growth` (測定実験) および `pr` (発表)。
+  - マーケティング、ブログ、サイト、またはドキュメント リポジトリの場合: `seo` (ページとメタデータ)、`content-writer` (ファイルで作成された記事)、`ai-search` (AI 回答エンジンが引用できるページ)、`social-media`、`instagram`、`email` (ニュースレター)、 `growth` (測定実験) および `pr` (発表)、`zh-editor` (読者・主題・見出し構成を踏まえて中国語の記事全体を執筆・再構成する役割)。
   - 製品、品質および操作: `product-manager`、`sprint-prioritizer`、`feedback-synthesizer`、`trend-researcher`、`ux-researcher`; `test-automation`、`accessibility`、`performance`、`api-tester`、`evidence-collector` (キャプチャされた証拠からの主張ごとに合格または不合格のルール)。 `sre`、`devops`、`incident-commander`、`finops`、`secrets`。
   - デザインとビジネス: `ui-designer` (プロジェクトのデザイン システムの画面)、`ux-architect` (フローとレイアウト構造)、`brand-guardian` (ブランドの一貫性)、`ui-finish-gate` (出荷前の視覚チェック)、`image-prompt` (画像生成プロンプト)、`pricing`、 `customer-success`、`support` (返信草案)、`analytics` (実際のデータからの回答)、`devrel` (実行されるサンプル)、および `privacy` (個人データのチェック。法的アドバイスではありません)。
   - `zero-review-lead` — 既存の機能またはプロセスをゼロから再検討するレビュー Epic を所有します。役割レンズを計画し、1 つの共有ファクト パックを持つ読み取り専用レビュー担当者の子としてディスパッチし、その証拠をターゲット設計に変換します。スキルは`zero-based-review`。

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/install"
 	"github.com/sainteye/clawdline/internal/contract"
 )
 
@@ -35,6 +36,17 @@ func TestNewReleaseCopyUsesChineseAndKeepsMachineValues(t *testing.T) {
 	for _, want := range []string{"安裝類型", "狀態", "vX.Y.Z", "https://example.invalid/release"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("update status lacks %q: %q", want, out.String())
+		}
+	}
+	out.Reset()
+	if code := setupRefuse(setupHost{errOut: &out}, &install.Refusal{
+		Code: install.CodePortHeld, Detail: "port 7727 belongs to another process",
+	}); code != 1 {
+		t.Fatalf("setup refusal exit = %d", code)
+	}
+	for _, want := range []string{"安裝未變更", "--port", install.CodePortHeld, "port 7727"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("setup safety refusal lacks %q: %q", want, out.String())
 		}
 	}
 }

@@ -49,6 +49,9 @@ CATALOG_KEY = re.compile(r'^\s*("(?:\\.|[^"\\])*")\s*:')
 def skipped(path):
     if path in SKIP_EXACT or any(path.startswith(p) for p in SKIP_PREFIX):
         return True
+    # CLI baseline manifests contain key names, not copy shown to a person.
+    if path.startswith("cmd/clawdline/cli_catalogs/") and path.endswith("/baseline-keys.json"):
+        return True
     # A _darwin file is built for macOS alone, so a Mac in one is this machine.
     base = os.path.basename(path)
     return base.endswith("_darwin.go") or base.endswith("_darwin_test.go")

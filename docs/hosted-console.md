@@ -88,11 +88,12 @@ clawdline callback --title "The hosted console serves <sha>" --timeout 20m -- \
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
 bundle has `CloudGate`. Builds that ship product catalogs also read every advertised language's
 hosted JSON through `tools/check-hosted-catalogs.py`, which runs the same catalog
-validator used during Console development. The initial multilingual release uses
-`--strict-catalogs` to require all nine catalogs to be complete. Later code
-changes require English and Taiwan Traditional Chinese to remain complete,
-while the checker reports missing new keys in the other seven languages so
-they can be translated in batches.
+validator used during Console development. The first multilingual release
+requires all nine catalogs to cover the frozen initial baseline and English
+and Taiwan Traditional Chinese to cover every current key. The ordinary
+checker enforces this and reports later missing keys in the other seven
+languages. Use `--strict-catalogs` for a translation catch-up that makes every
+current key complete in all nine languages.
 
 ## The check that answers the right question
 

@@ -7,8 +7,10 @@ Protocol names, JSON fields, error codes, and machine-readable CLI output stay
 stable. The retired Swift archive and its byte-for-byte console copies stay
 read-only.
 
-The first multilingual release must ship complete catalogs in all nine
-languages. For later code changes, maintain English and Taiwan Traditional
+The first frozen catalog baseline must be complete in all nine languages.
+Later keys may use the fallback policy below even if they reach the first
+multilingual deployment after that baseline was frozen. For later code
+changes, maintain English and Taiwan Traditional
 Chinese in the same change. The other seven languages can be updated in
 batches. A missing new key in one of those seven uses its English sentence and
 is counted as untranslated; an existing translated key must still have valid
@@ -45,7 +47,7 @@ were supplied.
 ## Shipped interface languages
 
 The shipped set is `en`, `zh-Hant` (Taiwan Traditional Chinese), `ja`,
-`zh-Hans`, `ko`, `es`, `pt-BR`, `fr`, and `de`. The initial advertised set must
+`zh-Hans`, `ko`, `es`, `pt-BR`, `fr`, and `de`. The frozen initial baseline must
 pass complete catalog validation. Later changes may leave secondary-language
 new keys untranslated under the fallback rule above. Voice recognition has a
 separate language list; a voice language does not imply an interface translation.
@@ -143,7 +145,8 @@ Test the failure cases above on local HTML, `/v1/strings`, and the Cloud bundle.
 Production acceptance requires the delivered commit in `BUILD.json`, a served
 main bundle passing `CloudGate`, and a readable, validated static catalog for
 every advertised language at the path the deployed Cloud configuration uses.
-The first multilingual deployment uses the strict nine-language catalog gate.
-Subsequent deployments require full English and Traditional Chinese parity,
-validate every present translation, and report the remaining languages'
+The first multilingual deployment validates all nine catalogs against the
+complete frozen baseline and requires full English and Traditional Chinese
+parity. Subsequent deployments retain those requirements, validate every
+present translation, and report the remaining languages'
 coverage without blocking on new untranslated keys.

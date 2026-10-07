@@ -45,13 +45,14 @@ The engineering team; the last column is every team the persona is in:
 | `security` | Security Engineer | — | engineering, operations |
 | `technical-writer` | Technical Writer | — | engineering, marketing |
 
-The marketing team, for a session working in a blog, a site or a docs repository. Each was
+The marketing team, for a session working in a blog, a site or a docs repository. Eight were
 adapted, not copied: upstream emoji, hype, invented metrics and tool-specific pipelines were
 dropped, and every one edits files in the repository, never posts or sends anything itself, and
-writes in the site's own language and locale (Taiwan usage for zh-TW). None is suggested for a
-Board kind. The eight below are in the marketing team only; `technical-writer` is in it too.
+writes in the site's own language and locale (Taiwan usage for zh-TW). `zh-editor` was written
+for Clawdline to work from reader, point and structure through a whole Chinese article. None is
+suggested for a Board kind. The nine below are in the marketing team only; `technical-writer` is in it too.
 
-| id | Name | 中文 | Adapted from |
+| id | Name | 中文 | Source |
 | --- | --- | --- | --- |
 | `seo` | SEO Specialist | SEO 專家 | [`marketing-seo-specialist.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-seo-specialist.md) |
 | `content-writer` | Content Writer | 文章寫手 | [`marketing-content-creator.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-content-creator.md), with the long-form voice of `marketing-book-co-author.md` |
@@ -61,6 +62,7 @@ Board kind. The eight below are in the marketing team only; `technical-writer` i
 | `email` | Email Strategist | 電子報策略師 | [`marketing-email-strategist.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-email-strategist.md) |
 | `growth` | Growth Hacker | 成長駭客 | [`marketing-growth-hacker.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-growth-hacker.md) |
 | `pr` | PR & Communications | 公關傳播 | [`marketing-pr-communications-manager.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/marketing/marketing-pr-communications-manager.md) |
+| `zh-editor` | Chinese Editor | 中文主編 | original |
 
 The product, quality and operations teams, adapted the same way: upstream emoji, hype, invented
 metrics and vendor-specific pipelines were dropped, and each works inside the repository and the
@@ -117,7 +119,8 @@ says it is not legal advice. None is suggested for a Board kind.
 | `devrel` | Developer Advocate | 開發者推廣 | business, marketing | [`specialized-developer-advocate.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/specialized-developer-advocate.md) |
 | `privacy` | Privacy & Compliance Officer | 隱私法遵官 | business, operations | [`data-privacy-officer.md`](https://github.com/msitarzewski/agency-agents/blob/053ddbbf392a1688fc7043d81529f47ef2cf86c8/specialized/data-privacy-officer.md) and `support-legal-compliance-checker.md` |
 
-One persona was written for Clawdline rather than adapted. `zero-review-lead` owns a review Epic
+Two personas were written for Clawdline rather than adapted. `zh-editor` is listed with the
+marketing team above. `zero-review-lead` owns a review Epic
 that re-examines an existing feature or process from zero: it plans the role lenses, gives every
 read-only reviewer child the same fact pack, and turns their evidence into a target design and
 work items. Its source is `original` (`persona.Original`), so its text ends with
@@ -438,7 +441,8 @@ persona, the conversation is restored with none rather than not at all.
 The catalog holds at most **64** personas (`persona.MaxPersonas`). Each injected text is at most
 **8 KiB** (`persona.MaxPersonaBytes`), counting the preamble, the body and the source line. Both
 are registered as `personas.catalog` and `personas.text_bytes`, and `/v1/diagnostics.capacity`
-reports them. See docs/limits.md N52. The 43 shipped texts are 3,782 to 5,149 bytes each (measured 2026-10-02).
+reports them. See docs/limits.md N52. The first 43 shipped texts were 3,782 to 5,149 bytes each
+(measured 2026-10-02); `zh-editor` was added later.
 
 One explicit AI role-classification turn is at most **16 KiB** of encoded input
 (`personas.suggestion_context_bytes`). The closed catalog and item kind/title stay; the end of an
@@ -465,7 +469,7 @@ Collector's per-claim verdict with FAIL as the default; see `experiments/persona
 
 ## Attribution
 
-Apart from `zero-review-lead`, which is original and under this repository's licence, the texts
+Apart from `zero-review-lead` and `zh-editor`, which are original and under this repository's licence, the texts
 are adapted from [agency-agents](https://github.com/msitarzewski/agency-agents) at commit
 `053ddbbf392a1688fc7043d81529f47ef2cf86c8`, which is MIT-licensed:
 Copyright (c) 2025 AgentLand Contributors. Each persona's `source` names the upstream files it was

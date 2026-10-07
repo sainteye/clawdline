@@ -1672,7 +1672,8 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - `technical-writer` — docs and guides;
   - marketing, for a blog, site or docs repository: `seo` (pages and metadata), `content-writer`
     (articles drafted in files), `ai-search` (pages AI answer engines can cite), `social-media`,
-    `instagram`, `email` (newsletters), `growth` (measured experiments) and `pr` (announcements).
+    `instagram`, `email` (newsletters), `growth` (measured experiments), `pr` (announcements) and
+    `zh-editor` (whole Chinese articles written or restructured from reader, point and heading outline).
   - product, quality and operations: `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`,
     `trend-researcher`, `ux-researcher`; `test-automation`, `accessibility`, `performance`,
     `api-tester`, `evidence-collector` (rules PASS or FAIL per claim from captured proof); `sre`, `devops`,

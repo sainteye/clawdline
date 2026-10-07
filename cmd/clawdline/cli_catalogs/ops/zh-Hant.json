@@ -40,6 +40,7 @@
   "devices.usage.list": "用法：clawdline devices [--json]",
   "devices.usage.revoke": "       clawdline devices revoke [--yes] <device-id>",
   "release.app_staged": "         App 已暫存於 %s，現有 App 結束後將取代它\n",
+  "release.app_staged_short": "App 已暫存於 %s，現有 App 結束後將取代它\n",
   "release.apply_state": "更新作業  %s",
   "release.at": "，時間：%s",
   "release.auto_off": "關",

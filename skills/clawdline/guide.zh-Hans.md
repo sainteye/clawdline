@@ -1659,7 +1659,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - 营销，适用于博客、网站或文档仓库：`seo`（页面与中继资料）、
     `content-writer`（在文件中起草文章）、`ai-search`（可供 AI 答案引擎引用的页面）、
     `social-media`、`instagram`、`email`（电子报）、`growth`（可量测实验）、
-    `pr`（公告）。
+    `pr`（公告）、`zh-editor`（依据读者、主题与标题大纲撰写或重写整篇中文文章）。
   - 产品、品质与营运：`product-manager`、`sprint-prioritizer`、`feedback-synthesizer`、
     `trend-researcher`、`ux-researcher`；`test-automation`、`accessibility`、`performance`、
     `api-tester`、`evidence-collector`（依搜集的证据逐项判定 PASS 或 FAIL）；

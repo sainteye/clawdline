@@ -220,13 +220,41 @@ func setupRefuse(h setupHost, err error) int {
 	var rel *release.Error
 	switch {
 	case errors.As(err, &r):
-		fmt.Fprintf(h.errOut, "clawdline setup: %s\n  (%s)\n", r.Detail, r.Code)
+		if summary := setupRefusalSummary(r.Code); summary != "" {
+			fmt.Fprintf(h.errOut, cliCopy("setup", "refusal_with_diagnostic", "clawdline setup: %s. Original diagnostic: %s\n  (%s)\n"), summary, r.Detail, r.Code)
+		} else {
+			fmt.Fprintf(h.errOut, "clawdline setup: %s\n  (%s)\n", r.Detail, r.Code)
+		}
 	case errors.As(err, &rel):
 		fmt.Fprintf(h.errOut, cliCopy("setup", "release_not_installed", "clawdline setup: the release was not installed: %s\n  (%s)\n"), rel.Detail, rel.Code)
 	default:
 		fmt.Fprintln(h.errOut, "clawdline setup:", err)
 	}
 	return 1
+}
+
+func setupRefusalSummary(code string) string {
+	if currentCLILanguage() != "zh-Hant" {
+		return ""
+	}
+	switch code {
+	case install.CodePortHeld:
+		return cliCopy("setup", "refusal_port_held", "Another process owns this port; setup changed nothing. Quit it first or choose another --port")
+	case install.CodeSourceDeploy:
+		return cliCopy("setup", "refusal_source_deploy", "This machine uses a source deployment; setup changed nothing. Use setup --adopt to switch to signed releases")
+	case install.CodeSignature, install.CodeTreeMismatch:
+		return cliCopy("setup", "refusal_unverified", "The release could not be verified; it was not installed")
+	case install.CodeChannelMismatch:
+		return cliCopy("setup", "refusal_channel", "This release is on another channel; choose the matching --channel")
+	case install.CodeUnsupported:
+		return cliCopy("setup", "refusal_platform", "This platform is not supported for setup")
+	case install.CodeServiceFailed, install.CodeNoUserManager:
+		return cliCopy("setup", "refusal_service", "The user service could not start; inspect the service manager and try again")
+	case install.CodeHealthFailed, install.CodeSessionCheck:
+		return cliCopy("setup", "refusal_health", "The installation did not pass its startup check; inspect the diagnostic before using it")
+	default:
+		return ""
+	}
 }
 
 func runSetup(h setupHost, o setupOptions) int {
@@ -251,7 +279,7 @@ func runSetup(h setupHost, o setupOptions) int {
 		return setupRefuse(h, err)
 	}
 	fmt.Fprintf(h.out, cliCopy("setup", "signature_verified", "✓ signature verified (%s)\n"), m.Version)
-	o.detail(h, "  release %s, commit %s, from %s\n", m.Version, m.Commit[:12], filepath.Dir(exe))
+	o.detail(h, cliCopy("setup", "verbose_release", "  release %s, commit %s, from %s\n"), m.Version, m.Commit[:12], filepath.Dir(exe))
 	if o.channel == "stable" && m.Channel == "beta" {
 		if o.channelSet {
 			return setupRefuse(h, &install.Refusal{Code: install.CodeChannelMismatch,
@@ -311,7 +339,7 @@ func runSetup(h setupHost, o setupOptions) int {
 	if err := linkBin(place.layout); err != nil {
 		fmt.Fprintf(h.errOut, cliCopy("setup", "warning", "warning: %v\n"), err)
 	} else {
-		o.detail(h, "  linked %s\n", place.layout.BinLink)
+		o.detail(h, cliCopy("setup", "verbose_linked", "  linked %s\n"), place.layout.BinLink)
 		command = tilde(h, place.layout.BinLink)
 		binDir := filepath.Dir(place.layout.BinLink)
 		if install.OnPath(h.getenv("PATH"), binDir) {
@@ -371,7 +399,7 @@ func runSetup(h setupHost, o setupOptions) int {
 		return setupRefuse(h, err)
 	}
 	fmt.Fprintln(h.out, cliCopy("setup", "service_started", "✓ service started"))
-	o.detail(h, "  %s (%s), written to %s\n", sf.Name, sf.Supervisor, unitFile)
+	o.detail(h, cliCopy("setup", "verbose_service", "  %s (%s), written to %s\n"), sf.Name, sf.Supervisor, unitFile)
 
 	// h. Prove it.
 	if err := proveInstall(h, place, o, m.Commit); err != nil {
@@ -553,7 +581,7 @@ func verifyRelease(h setupHost, l install.Layout, exe string, o setupOptions) (r
 			return release.Manifest{}, "", err
 		}
 	} else {
-		o.detail(h, "  no --archive: the manifest's signature is checked, the unpacked files are taken as installed\n")
+		o.detail(h, "%s", cliCopy("setup", "verbose_no_archive", "  no --archive: the manifest's signature is checked, the unpacked files are taken as installed\n"))
 	}
 	// Kept beside the release, so a later `setup` (a repair) and the updater
 	// can verify what is installed without downloading it again.
@@ -586,7 +614,7 @@ func readBounded(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%s is longer than %d bytes", path, limit)
+		return nil, fmt.Errorf(cliCopy("setup", "path_too_long", "%s is longer than %d bytes"), path, limit)
 	}
 	return b, nil
 }
@@ -658,7 +686,7 @@ func isExecutable(p string) bool {
 func linkBin(l install.Layout) error {
 	target := filepath.Join(l.Current, "clawdline")
 	if info, err := os.Lstat(l.BinLink); err == nil && info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("%s is a file setup did not make; it was left as it is, and %s is the installed command", l.BinLink, target)
+		return fmt.Errorf(cliCopy("setup", "foreign_link", "%s is a file setup did not make; it was left as it is, and %s is the installed command"), l.BinLink, target)
 	}
 	if err := os.MkdirAll(filepath.Dir(l.BinLink), 0o755); err != nil {
 		return err
@@ -916,7 +944,7 @@ func proveInstall(h setupHost, p setupPlace, o setupOptions, commit string) erro
 		time.Sleep(time.Second)
 	}
 	fmt.Fprintln(h.out, cliCopy("setup", "console_answers", "✓ console answers"))
-	o.detail(h, "  GET / 200, BUILD.json names %s\n", commit[:12])
+	o.detail(h, cliCopy("setup", "verbose_health", "  GET / 200, BUILD.json names %s\n"), commit[:12])
 	if o.noSessionCheck {
 		return nil
 	}
@@ -924,7 +952,7 @@ func proveInstall(h setupHost, p setupPlace, o setupOptions, commit string) erro
 		return &install.Refusal{Code: install.CodeSessionCheck, Detail: err.Error()}
 	}
 	fmt.Fprintln(h.out, cliCopy("setup", "tmux_works", "✓ tmux works"))
-	o.detail(h, "  started and closed one test terminal in tmux through the daemon\n")
+	o.detail(h, "%s", cliCopy("setup", "verbose_terminal", "  started and closed one test terminal in tmux through the daemon\n"))
 	return nil
 }
 
@@ -961,7 +989,7 @@ func sessionCheck(base, token, stateDir string) error {
 	resolved, _ := capacity.Resolve(capacity.Register(), os.Getenv(capacity.OverrideEnv))
 	registry.SetLimit(capacity.Limit(resolved, capacity.PlacesRegistered))
 	if _, err := registry.Add([]string{dir}, time.Now()); err != nil {
-		return fmt.Errorf(cliCopy("setup", "test_project_failed", cliCopy("setup", "test_project_failed", "could not register the throwaway project: %w")), err)
+		return fmt.Errorf(cliCopy("setup", "test_project_failed", "could not register the throwaway project: %w"), err)
 	}
 	defer func() {
 		_, _ = registry.Remove([]string{dir})
@@ -1007,12 +1035,11 @@ func sessionCheck(base, token, stateDir string) error {
 		}
 	}
 	if id == "" {
-		return fmt.Errorf("the daemon does not list the throwaway project %s it was given; a state directory under a "+
-			"temporary directory (/tmp) is never listed as a project, so there pass --no-session-check", dir)
+		return fmt.Errorf(cliCopy("setup", "test_project_not_listed", "the daemon does not list the throwaway project %s it was given; a state directory under a temporary directory (/tmp) is never listed as a project, so pass --no-session-check in that case"), dir)
 	}
 	var t contract.Terminal
 	if err := call(http.MethodPost, "/v1/terminals", contract.TerminalOpenRequest{ProjectID: id, Cols: 80, Rows: 24}, &t); err != nil {
-		return fmt.Errorf(cliCopy("setup", "test_terminal_failed", cliCopy("setup", "test_terminal_failed", "could not start a terminal (is tmux on the service's PATH?): %w")), err)
+		return fmt.Errorf(cliCopy("setup", "test_terminal_failed", "could not start a terminal (is tmux on the service's PATH?): %w"), err)
 	}
 	var c contract.TerminalControl
 	if err := call(http.MethodPost, "/v1/terminals/"+t.ID+"/control",
@@ -1076,13 +1103,13 @@ func runUninstall(h setupHost, o setupOptions) int {
 			tilde(h, place.stateDir), tilde(h, place.stateDir)))
 	}
 	for _, r := range removed {
-		fmt.Fprintln(h.out, "removed "+r)
+		fmt.Fprintf(h.out, cliCopy("setup", "removed", "removed %s\n"), r)
 	}
 	if len(removed) == 0 {
 		fmt.Fprintln(h.out, cliCopy("setup", "nothing_removed", "nothing of this install was found to remove"))
 	}
 	for _, k := range kept {
-		fmt.Fprintln(h.out, "kept "+k)
+		fmt.Fprintf(h.out, cliCopy("setup", "kept", "kept %s\n"), k)
 	}
 	return 0
 }

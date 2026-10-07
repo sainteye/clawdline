@@ -1766,7 +1766,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - Marketing, für ein Blog-, Website- oder Dokumentations-Repository: `seo` (Seiten und Metadaten),
     `content-writer` (in Dateien entworfene Artikel), `ai-search` (Seiten, die KI-Antwortmaschinen
     zitieren können), `social-media`, `instagram`, `email` (Newsletter), `growth` (gemessene Experimente)
-    und `pr` (Ankündigungen).
+    `pr` (Ankündigungen) und `zh-editor` (verfasst oder überarbeitet vollständige chinesische Artikel anhand von Leserschaft, Thema und Überschriftenstruktur).
   - Produkt, Qualität und Betrieb: `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`,
     `trend-researcher`, `ux-researcher`; `test-automation`, `accessibility`, `performance`,
     `api-tester`, `evidence-collector` (entscheidet PASS oder FAIL pro Behauptung anhand erfasster

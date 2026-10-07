@@ -19,6 +19,7 @@ import (
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
@@ -104,7 +105,7 @@ func TestSquadPrivateCatalogAndAuthorization(t *testing.T) {
 	status, raw := f.ask("GET", "/v1/squad/catalog", f.reader, "", "")
 	var catalog contract.SquadCatalog
 	if status != 200 || json.Unmarshal([]byte(raw), &catalog) != nil ||
-		len(catalog.Definitions) != 43 || len(catalog.Skills) != 24 {
+		len(catalog.Definitions) != len(persona.IDs()) || len(catalog.Skills) != 24 {
 		t.Fatalf("private catalog = %d, %s", status, raw)
 	}
 	launch, err := f.s.ResolveSquadLaunch(context.Background(), "backend", "")

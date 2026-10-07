@@ -843,7 +843,7 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
   - `reality-checker` — 검증, "동작한다"는 말보다 근거 우선.
   - `security` — 권한·페어링·Cloud 관련 작업.
   - `technical-writer` — 문서와 가이드.
-  - 마케팅용 블로그·사이트·문서 저장소: `seo`(페이지와 메타데이터), `content-writer`(파일에 쓰는 글), `ai-search`(AI 답변 엔진이 인용할 수 있는 페이지), `social-media`, `instagram`, `email`(뉴스레터), `growth`(측정된 실험), `pr`(발표문).
+  - 마케팅용 블로그·사이트·문서 저장소: `seo`(페이지와 메타데이터), `content-writer`(파일에 쓰는 글), `ai-search`(AI 답변 엔진이 인용할 수 있는 페이지), `social-media`, `instagram`, `email`(뉴스레터), `growth`(측정된 실험), `pr`(발표문), `zh-editor`(독자·주제·소제목 구성에 따라 중국어 글 전체를 작성하거나 재구성하는 역할).
   - 제품·품질·운영: `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`, `trend-researcher`, `ux-researcher`; `test-automation`, `accessibility`, `performance`, `api-tester`, `evidence-collector`(수집된 근거를 바탕으로 주장별 PASS·FAIL 판정); `sre`, `devops`, `incident-commander`, `finops`, `secrets`.
   - 디자인·사업: `ui-designer`(프로젝트 디자인 시스템의 화면), `ux-architect`(흐름과 레이아웃 구조), `brand-guardian`(브랜드 일관성), `ui-finish-gate`(출시 전 시각 검토), `image-prompt`(이미지 생성 프롬프트), `pricing`, `customer-success`, `support`(답변 초안), `analytics`(실제 데이터 기반 답변), `devrel`(실행되는 예제), `privacy`(개인정보 점검, 법률 자문 아님).
   - `zero-review-lead` — 기존 기능이나 절차를 처음부터 재검토하는 Epic 담당자. 역할별 관점을 계획하고 동일한 사실 자료 묶음으로 읽기 전용 검토 child를 배정해 그 근거를 목표 설계로 종합합니다. 스킬은 `zero-based-review`입니다.

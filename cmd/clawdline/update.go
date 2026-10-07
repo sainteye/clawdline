@@ -396,7 +396,7 @@ func applyRelease(stdout, stderr io.Writer, port int, version string, force bool
 		case contract.UpdateApplyStateHealthy:
 			fmt.Fprintf(stdout, cliCopy("ops", "release.is_running", "%s is running\n"), st.Apply.To)
 			if st.Apply.StagedApp != "" {
-				fmt.Fprintf(stdout, "the app is staged at %s and replaces the installed one when it quits\n", st.Apply.StagedApp)
+				fmt.Fprintf(stdout, cliCopy("ops", "release.app_staged_short", "the app is staged at %s and replaces the installed one when it quits\n"), st.Apply.StagedApp)
 			}
 			return 0
 		case contract.UpdateApplyStateRolledBack:

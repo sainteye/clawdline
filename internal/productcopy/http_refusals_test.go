@@ -34,8 +34,14 @@ func TestHTTPRefusalTextRequiresExactWireDetailAndKnownKey(t *testing.T) {
 			t.Errorf("%+v rendered %q", test, got)
 		}
 	}
-	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1192 || total != 1192 {
+	if translated, total := HTTPRefusalCoverage("zh-Hant"); translated != 1197 || total != 1197 {
 		t.Fatalf("Traditional Chinese coverage = %d/%d", translated, total)
+	}
+	const updateDetail = "force needs the version it installs"
+	updateKey := HTTPRefusalKey(updateDetail)
+	if updateKey == "" || HTTPRefusalText("zh-Hant", updateKey, updateDetail) == updateDetail ||
+		HTTPRefusalText("ja", updateKey, updateDetail) != updateDetail {
+		t.Fatal("new update refusal must translate in Traditional Chinese and fall back to English in Japanese")
 	}
 }
 

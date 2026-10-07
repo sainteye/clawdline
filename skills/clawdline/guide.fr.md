@@ -1548,7 +1548,7 @@ protocole. `GET /v1/personas` les liste ; Les identifiants (`teams` sur chaque 
 - `security` — modifications des autorisations, du jumelage ou Cloud ;
 - `technical-writer` — documentation et guides ; - Marketing, pour un blog, un site ou un dépôt de documents : `seo` (pages et métadonnées), `content-writer`
 (articles rédigés dans des fichiers), `ai-search` (pages que les moteurs de réponse d’IA peuvent citer), `social-media`,
-`instagram`, `email` (newsletters), `growth` (expériences mesurées) et `pr` (annonces).
+`instagram`, `email` (newsletters), `growth` (expériences mesurées) `pr` (annonces) et `zh-editor` (rédige ou restructure des articles entiers en chinois à partir du lectorat, du sujet et du plan des titres).
 - Produit, qualité et opérations : `product-manager`, `sprint-prioritizer`, `feedback-synthesizer`,
 `trend-researcher`, `ux-researcher` ; `test-automation`, `accessibility`, `performance`,
 `api-tester`, `evidence-collector` (règles RÉUSSI ou ÉCHEC par réclamation à partir de la preuve capturée) ; `sre`, `devops`,
