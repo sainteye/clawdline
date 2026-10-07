@@ -87,7 +87,9 @@ func statusWith(t *testing.T, door localDoor, token, path string) int {
 func TestDevicesRevokeRefusesTheBrowsersToken(t *testing.T) {
 	door := realDoor(t)
 	browser := openBrowser(t, door)
-	if code := statusWith(t, door, browser.Token, "/v1/sessions"); code != http.StatusOK {
+	// Credential revocation is independent of the terminal inventory, whose
+	// iTerm2 Apple Event can outlast this test's HTTP deadline.
+	if code := statusWith(t, door, browser.Token, "/v1/settings"); code != http.StatusOK {
 		t.Fatalf("the new browser was not let in: %d", code)
 	}
 
@@ -106,7 +108,7 @@ func TestDevicesRevokeRefusesTheBrowsersToken(t *testing.T) {
 		!strings.Contains(out.String(), "nothing was revoked") {
 		t.Fatalf("declined: exit %d: %s", code, out.String())
 	}
-	if code := statusWith(t, door, browser.Token, "/v1/sessions"); code != http.StatusOK {
+	if code := statusWith(t, door, browser.Token, "/v1/settings"); code != http.StatusOK {
 		t.Fatalf("a declined revoke took the key: %d", code)
 	}
 
@@ -117,7 +119,7 @@ func TestDevicesRevokeRefusesTheBrowsersToken(t *testing.T) {
 	if !strings.Contains(out.String(), "Browser on this machine") || !strings.Contains(out.String(), "revoked") {
 		t.Fatalf("revoke said:\n%s", out.String())
 	}
-	if code := statusWith(t, door, browser.Token, "/v1/sessions"); code != http.StatusUnauthorized {
+	if code := statusWith(t, door, browser.Token, "/v1/settings"); code != http.StatusUnauthorized {
 		t.Fatalf("the revoked browser's token still answers %d", code)
 	}
 	out.Reset()
@@ -144,7 +146,7 @@ func TestDevicesRoutesRefuseABrowser(t *testing.T) {
 		!strings.Contains(errs.String(), "forbidden") {
 		t.Fatalf("a browser revoked another: exit %d: %s", code, errs.String())
 	}
-	if code := statusWith(t, door, b.Token, "/v1/sessions"); code != http.StatusOK {
+	if code := statusWith(t, door, b.Token, "/v1/settings"); code != http.StatusOK {
 		t.Fatalf("the other browser lost its key: %d", code)
 	}
 }
