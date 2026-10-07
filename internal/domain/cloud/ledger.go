@@ -21,7 +21,7 @@ package cloud
 // (`CloudDurableStores.swift`) and the metrics snapshot. This ledger is
 // in-memory, which means a restart forgets every outcome and a repeated
 // request_id executes again. That is a real gap, written down in
-// docs/cloud-wire.md §15, not an oversight.
+// docs/records/cloud-wire-implementation-2026-09.md §15, not an oversight.
 
 import (
 	"errors"

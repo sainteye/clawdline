@@ -4,7 +4,7 @@
 # The shared-tree commit guard
 
 Several agent sessions share `/Users/<you>/code/clawdline`, and sharing a checkout means sharing
-one git index. [`AGENTS.md`](../AGENTS.md) has said for months what follows from that: stage by
+one git index. [`AGENTS.md`](../../AGENTS.md) has said for months what follows from that: stage by
 name, read `git diff --cached --stat` before committing, and look for *a path you did not stage
 yourself*. The rule is correct and it has been broken three times:
 

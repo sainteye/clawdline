@@ -1,3 +1,4 @@
+<!-- clawdline-doc: kind=spec audience=agent -->
 # AI squad v1 contract
 
 This document is the implementation contract for the AI squad Epic. The

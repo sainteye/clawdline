@@ -12,9 +12,9 @@ implemented.
 Three neighbouring pages own the rest, and this one does not restate or compete with them:
 
 - The **size** of a read and the resource model that replaces one-large-object responses belongs
-  to [read-path-architecture.md](read-path-architecture.md).
+  to [read-path-architecture.md](../read-path-architecture.md).
 - The **target Cloud data planes** — replicated status, transcript segments, a command job ledger,
-  live queries — belong to [cloud-request-architecture-v2.md](cloud-request-architecture-v2.md).
+  live queries — belong to [cloud-request-architecture-v2.md](../cloud-request-architecture-v2.md).
   Its section 11 already lists the whole-file spool rewrite, the global outbound sequence, and the
   synchronous read lane as concepts to remove rather than optimise. This page adds two days of
   fresh measurement to that diagnosis and does not propose a parallel architecture for it.

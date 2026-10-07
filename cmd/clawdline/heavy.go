@@ -46,7 +46,7 @@ import (
 //     pressure-stall average below a ceiling (machineusage, the same reading
 //     the dashboard draws).
 //
-// **It fails open, on purpose.** docs/machine-resource-scheduling.md records a
+// **It fails open, on purpose.** docs/records/machine-resource-scheduling-2026-09.md records a
 // lease that twice stopped a build from reaching its compiler — on the path
 // taken when the broker was not answering, which is the path after a crash,
 // exactly when somebody needs to rebuild. So a daemon that does not answer, or

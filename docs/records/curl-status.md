@@ -1,3 +1,4 @@
+<!-- clawdline-doc: kind=record audience=both -->
 # `curl` exits 0 when the server says no
 
 `curl` reports whether it managed to speak to a server. It does not report what the server said.

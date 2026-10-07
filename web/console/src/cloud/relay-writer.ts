@@ -337,7 +337,7 @@ const USAGE_WORD: Readonly<Record<string, Carried<"usage.session" | "usage.task"
 /**
  * The routes this daemon answers locally that have no command on the Cloud
  * wire at all — not on the Go daemon and not in the Swift app's vocabulary
- * (docs/cloud-wire.md §10.3). Each is refused by its own name, with where it
+ * (docs/records/cloud-operations-2026-09.md §10.3). Each is refused by its own name, with where it
  * can be done instead, rather than as a generic "not carried".
  */
 const NO_CLOUD_WORD: Readonly<Record<string, string>> = {

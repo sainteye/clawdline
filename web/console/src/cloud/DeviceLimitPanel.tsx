@@ -7,7 +7,7 @@ import { DeviceLimitRun, knownTier, type DeviceLimitState, type RecoveryDevice, 
  * (`device-limit.ts`): what the limit is, the devices using it, and a way to
  * remove one so this browser can carry on signing in. Every state it can be in
  * has a button on it, because a card with none is a dead end for a browser
- * that has no other page to go to (docs/first-run-audit.md B12).
+ * that has no other page to go to (docs/records/first-run-audit.md B12).
  */
 export function DeviceLimitPanel(props: {
   session: (RecoverySession & { signInURL(): string }) | null
