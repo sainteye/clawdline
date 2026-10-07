@@ -1,3 +1,4 @@
+import { catalogRefusalDetail, catalogWord } from "../../catalog.js"
 import type { ProjectUnifyApplied, ProjectUnifyPlan } from "@clawdline/contract"
 
 export interface ProjectFile {
@@ -33,16 +34,16 @@ export class ProjectFileError extends Error {
 async function answer<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response
   try { response = await fetch(url, { credentials: "same-origin", ...init }) }
-  catch { throw new ProjectFileError("network", "連線中斷；請重新讀取確認目前檔案狀態。", init?.method === "PUT") }
+  catch { throw new ProjectFileError("network", catalogWord("literal", "f1e5ad92e0dc"), init?.method === "PUT") }
   let data: any
   try { data = await response.json() }
-  catch { throw new ProjectFileError("invalid_response", "機器回覆無法讀取；請重新讀取確認。", init?.method === "PUT") }
+  catch { throw new ProjectFileError("invalid_response", catalogWord("literal", "098b08604e84"), init?.method === "PUT") }
   if (!response.ok) {
     const code = typeof data?.error === "string" ? data.error : data?.error?.code || "unavailable"
-    const detail = typeof data?.detail === "string" ? data.detail : data?.error?.message
+    const detail = catalogRefusalDetail(data)?.text
     const uncertain = init?.method === "PUT" && (data?.outcome === "unknown" || data?.error?.outcome === "unknown")
     const route = typeof data?.route === "string" ? data.route : undefined
-    throw new ProjectFileError(code, detail || "目前無法讀取這個檔案。", uncertain, response.status, route)
+    throw new ProjectFileError(code, detail || catalogWord("literal", "7f523f32a2c0"), uncertain, response.status, route)
   }
   return data as T
 }
@@ -69,10 +70,10 @@ const unifyRoute = (place: string) => `/v1/projects/${encodeURIComponent(place)}
 export async function readUnifyPlan(place: string): Promise<ProjectUnifyPlan> {
   let response: Response
   try { response = await fetch(unifyRoute(place), { credentials: "same-origin" }) }
-  catch { throw new ProjectFileError("network", "連線中斷；請重新檢查。") }
+  catch { throw new ProjectFileError("network", catalogWord("literal", "3eab3f330eea")) }
   let data: any
   try { data = await response.json() }
-  catch { throw new ProjectFileError("invalid_response", "機器回覆無法讀取；請重新檢查。") }
+  catch { throw new ProjectFileError("invalid_response", catalogWord("literal", "36d5d75c722f")) }
   if (!response.ok) throw refusal(data, false)
   return data as ProjectUnifyPlan
 }
@@ -91,10 +92,10 @@ export async function applyUnify(place: string, version: string, key: string): P
       headers: { "Content-Type": "application/json", "Idempotency-Key": key },
       body: JSON.stringify({ version }),
     })
-  } catch { throw new ProjectFileError("network", "連線中斷；套用結果待確認。", true) }
+  } catch { throw new ProjectFileError("network", catalogWord("literal", "460e4fdb7ab7"), true) }
   let data: any
   try { data = await response.json() }
-  catch { throw new ProjectFileError("invalid_response", "機器回覆無法讀取；套用結果待確認。", true) }
+  catch { throw new ProjectFileError("invalid_response", catalogWord("literal", "dfaaeab488da"), true) }
   if (data?.outcome === "stopped" && data?.plan && Array.isArray(data?.ran)) return data as ProjectUnifyApplied
   if (!response.ok) throw refusal(data, true)
   return data as ProjectUnifyApplied
@@ -102,7 +103,7 @@ export async function applyUnify(place: string, version: string, key: string): P
 
 function refusal(data: any, write: boolean): ProjectFileError {
   const code = typeof data?.error === "string" ? data.error : data?.error?.code || "unavailable"
-  const detail = typeof data?.detail === "string" ? data.detail : data?.error?.message
+  const detail = catalogRefusalDetail(data)?.text
   const uncertain = write && (data?.outcome === "unknown" || data?.error?.outcome === "unknown")
-  return new ProjectFileError(code, detail || "目前無法讀取共用狀態。", uncertain)
+  return new ProjectFileError(code, detail || catalogWord("literal", "101992e0e2e3"), uncertain)
 }

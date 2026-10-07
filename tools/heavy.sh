@@ -6,8 +6,8 @@
 # available memory, at a lower priority, and as the first thing the kernel
 # kills if memory still runs out (cmd/clawdline/heavy.go says why).
 #
-# Its exit status is the command's own, or 75 when `heavy`'s --max-wait passed
-# before the slot and memory were had and the command was not run.
+# Its exit status is the command's own, 75 when --max-wait passed before the
+# slot and memory were had, or 76 when HEAVY_HANDOFF=1 queued it as a callback.
 #
 # Sessions do not have `clawdline` on PATH, so this finds the installed one.
 # When there is none, or it predates `heavy`, the command runs directly and
@@ -23,7 +23,18 @@ for cand in "${CLAWDLINE:-}" "$(command -v clawdline 2>/dev/null || true)" \
 done
 
 if [ -n "$cl" ] && { "$cl" 2>&1 || true; } | grep -q '|heavy|'; then
-  exec "$cl" heavy ${HEAVY_REASON:+--reason "$HEAVY_REASON"} -- "$@"
+  heavy_flags=()
+  if [ -n "${HEAVY_REASON:-}" ]; then heavy_flags+=(--reason "$HEAVY_REASON"); fi
+  if [ "${HEAVY_HANDOFF:-}" = 1 ]; then
+    if "$cl" heavy --help 2>&1 | grep -q -- '--handoff'; then
+      heavy_flags+=(--handoff)
+    else
+      echo "tools/heavy.sh: this clawdline predates --handoff; waiting in place" >&2
+    fi
+  fi
+  # macOS Bash 3.2 treats an empty array expansion as unset under nounset.
+  set +u
+  exec "$cl" heavy "${heavy_flags[@]}" -- "$@"
 fi
 echo "tools/heavy.sh: no clawdline with \`heavy\` found; running without the compile slot" >&2
 exec "$@"

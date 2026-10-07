@@ -36,6 +36,8 @@ import { PairingQr, expiredFailure } from "./PairingQr.js"
 import { settingsFailureSentence } from "./failure.js"
 import { COMPACT_MAX, COMPACT_MIN, compactWindowText, compactWindowValue } from "./compact.js"
 import { gateModeOptions, gateModeText } from "./gate-mode.js"
+import { BrowserLanguageControl } from "../../../ui-language/BrowserLanguageControl.js"
+import { CATALOG_TAGS, catalogWord } from "../../../catalog.js"
 
 /**
  * The native "Clawdline 設定" window, as a web page.
@@ -337,7 +339,7 @@ export function SettingsWindow() {
               wide
               armed={recording}
               disabled={!has || pendingHotkey !== null}
-              title={has ? undefined : NO_SHELL}
+              title={has ? undefined : noShell()}
               onClick={() => {
                 if (recording) {
                   ask({ kind: "stopRecording" })
@@ -358,18 +360,24 @@ export function SettingsWindow() {
           {shell && (shell.failed || shell.trouble) ? (
             <p className="sw-said">{hotkeyTrouble(shell.trouble, shell.display, shell.hotkey)}</p>
           ) : !shell && !has ? (
-            <p className="sw-said">{NO_SHELL}</p>
+            <p className="sw-said">{noShell()}</p>
           ) : null}
           <p className="sw-hint">{W.settingsHotkeyHint}</p>
 
-          <Row label={W.settingsLanguage}>
+          <Row label={catalogWord("ui", "language")} hint={catalogWord("ui", "browserOnly")}>
+            <BrowserLanguageControl id="settings-window-ui-language" compact />
+          </Row>
+          <Row label={catalogWord("ui", "agentLanguage")} hint={catalogWord("ui", "agentLanguageHint")}>
             <PopUp
-              label={W.settingsLanguage}
+              label={catalogWord("ui", "agentLanguage")}
               value={String(now("language"))}
-              options={LANGUAGES}
+              options={languages()}
               onPick={pick("language")}
             />
           </Row>
+          {String(now("language")) !== "auto" && !CATALOG_TAGS.includes(String(now("language")) as (typeof CATALOG_TAGS)[number]) ? (
+            <p className="sw-said" role="status">{catalogWord("ui", "unsupportedAgentHint")}</p>
+          ) : null}
           <Row label={W.menuMascot}>
             <PopUp
               label={W.menuMascot}
@@ -647,7 +655,7 @@ export function SettingsWindow() {
             <PopUp
               label={W.settingsVoiceLanguage}
               value={String(now("voice_language"))}
-              options={VOICE_LANGUAGES}
+              options={voiceLanguages()}
               onPick={pick("voice_language")}
             />
           </Row>
@@ -922,7 +930,7 @@ export function SettingsWindow() {
               type="text"
               aria-label={W.webCloudPairCodeLabel}
               value={pairingCode}
-              placeholder="eyJhY2NvdW50X2lkIjoi…"
+              placeholder={catalogWord("inline", "d00ee507cd34")}
               spellCheck={false}
               autoComplete="off"
               autoCapitalize="off"
@@ -1084,17 +1092,17 @@ export function SettingsWindow() {
               onChange={flip("orchestrator_enabled")}
             />
           </Row>
-          <Row label="規劃 gate" hint="預設開啟。只在項目本輪第一次成功指派時擷取；之後改設定不會改動進行中的工作。">
-            <Switch label="規劃 gate" on={planning} onChange={flip("planning_gate")} />
+          <Row label={catalogWord("literal", "bc9e50e8ee8c")} hint={catalogWord("literal", "7daab4ee36ab")}>
+            <Switch label={catalogWord("literal", "bc9e50e8ee8c")} on={planning} onChange={flip("planning_gate")} />
           </Row>
-          <Row label="獨立驗證 gate" hint="預設關閉。開啟後，新指派的工作要以固定 Git 候選提交接受獨立檢查；無法驗證不算通過。">
-            <Switch label="獨立驗證 gate" on={verification} onChange={flip("verify_gate")} />
+          <Row label={catalogWord("literal", "b970bd3d556b")} hint={catalogWord("literal", "f4456928970e")}>
+            <Switch label={catalogWord("literal", "b970bd3d556b")} on={verification} onChange={flip("verify_gate")} />
           </Row>
           <p className="sw-gate-mode" role="status">{gateMode}</p>
-          <section className="sw-gate-overview" aria-label="四種 gate 模式">
-            <h3>四種模式</h3>
+          <section className="sw-gate-overview" aria-label={catalogWord("inline", "1153c988b83b")}>
+            <h3>{catalogWord("inline", "4013189dccd8")}</h3>
             <ul>{gateModes.map((mode) => <li key={mode.id} aria-current={mode.current ? "true" : undefined}>
-              <span><strong>{mode.label}</strong>{mode.default && <small>預設</small>}{mode.current && <small>目前</small>}</span>
+              <span><strong>{mode.label}</strong>{mode.default && <small>{catalogWord("inline", "09f725209f4b")}</small>}{mode.current && <small>{catalogWord("inline", "937f63a4fb51")}</small>}</span>
               <p>{mode.description}</p>
             </li>)}</ul>
           </section>
@@ -1231,7 +1239,7 @@ export function SettingsWindow() {
               <Note dot="warn">{W.settingsHooksStray}</Note>
             </Block>
           ) : null}
-          {!has ? <p className="sw-said">{NO_SHELL}</p> : null}
+          {!has ? <p className="sw-said">{noShell()}</p> : null}
           {[
             [W.settingsHooksWhatHead, W.settingsHooksWhat],
             [W.settingsHooksWithoutHead, W.settingsHooksWithout],
@@ -1389,18 +1397,20 @@ function hotkeyText(spec: string): string {
  */
 const LANGUAGE_TAGS = ["en", "zh-Hant", "zh-Hans", "ja", "ko", "es", "pt", "fr", "de", "ru", "it", "hi", "id", "tr"]
 
-const LANGUAGES = [
-  { label: W.settingsAuto, value: "auto" },
-  ...LANGUAGE_TAGS.map((tag) => {
-    let name = tag
-    try {
-      name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
-    } catch {
-      /* a runtime without the table shows the tag, which is still a thing you can pick */
-    }
-    return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
-  }),
-]
+function languages() {
+  return [
+    { label: W.settingsAuto, value: "auto" },
+    ...LANGUAGE_TAGS.map((tag) => {
+      let name = tag
+      try {
+        name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
+      } catch {
+        /* a runtime without the table shows the tag, which is still a thing you can pick */
+      }
+      return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
+    }),
+  ]
+}
 
 /**
  * What whisper can be told to read a recording as: Chinese by script, because
@@ -1409,19 +1419,21 @@ const LANGUAGES = [
  * as the General tab's are. A hand-written tag outside the list still shows —
  * `PopUp` keeps a value it does not hold.
  */
-const VOICE_LANGUAGES = [
-  { label: W.settingsVoiceLanguageFollow, value: "auto" },
-  ...["zh-Hant", "zh-Hans", "en", "ja", "ko", "es", "pt", "fr", "de", "it", "ru"].map((tag) => {
-    let name = tag
-    try {
-      name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
-    } catch {
-      /* the tag itself, as above */
-    }
-    return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
-  }),
-]
+function voiceLanguages() {
+  return [
+    { label: W.settingsVoiceLanguageFollow, value: "auto" },
+    ...["zh-Hant", "zh-Hans", "en", "ja", "ko", "es", "pt", "fr", "de", "it", "ru"].map((tag) => {
+      let name = tag
+      try {
+        name = new Intl.DisplayNames([tag], { type: "language" }).of(tag) ?? tag
+      } catch {
+        /* the tag itself, as above */
+      }
+      return { label: name.charAt(0).toUpperCase() + name.slice(1), value: tag }
+    }),
+  ]
+}
 
 /** Said under a control that needs a shell and has none. Not a `Copy+Chinese` word: the
  *  original window is only ever inside one, so it never had a sentence for this. */
-const NO_SHELL = "這一項要在 Clawdline app 裡才能改"
+const noShell = () => catalogWord("literal", "d2b869d818e1")

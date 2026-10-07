@@ -1,391 +1,10 @@
-<!-- retired-app-record: 新舊兩版的上限盤點，量於 2026-09-18 09:10–09:40；該 app 已於 2026-09-19 停用，7717 無人監聽 -->
+<!-- clawdline-doc: kind=spec audience=agent -->
+# Capacity and retention rules
 
-> **主體與時間：** 這份文件記錄的是 **新舊兩版的上限盤點**，量於 **2026-09-18 09:10–09:40**。
-> **舊 Swift app 已於 2026-09-19 停掉、取消登入時啟動，7717 現在沒有人在聽。**
-> 文中寫成現在式的「舊 app 還在跑」「7717」都是**量測當下**的事實，刻意保留，
-> 用來對照還有哪些功能要 migrate、當初怎麼實作——**不要照著它設定今天的 daemon**。
-
-> **整套工作系統（看板項目、Session 待辦、Backlog、GitHub Issue）怎麼運作、哪些已經做到，一份講完在 [`docs/work-system.md`](work-system.md)。**
-
-# 上限與保留策略：滿了之後誰會知道
-
-> **實作依據是 [`docs/design-decisions.md`](design-decisions.md)（2026-09-18 起）；本文保留為分析材料，與它衝突之處以它為準。**
-
-> 使用者原話（2026-09-18）：「你的時間軸已經滿了 <- 這本身就是一個設計問題」。
->
-> 起因是 `docs/timeline-design.md` §0：舊 app 的時間軸 entries 到了 2,000／2,000，**上限的行為是拒絕新寫入而不是淘汰**，
-> 2026-09-17 02:06 之後什麼都沒再記錄，沒有任何東西發出警報，畫面上也看不出來。
-> 使用者的意思不只是「把上限調大」，而是**一類缺陷**：系統裡每一個有界的東西，滿了之後會發生什麼、誰會知道。
->
-> 量測：2026-09-18 09:10–09:40，對**正在跑的**舊 app（7717）、新版（7727）與它們此刻的資料檔。
-> 舊 app 的原始碼在 `~/code/clawdline`（HEAD `85cf6003`），新版在本 repo `26c0152`。**全程唯讀。**
-> **本文只出文件，不改實作。** 沒量到的一律寫「未量」，不算通過。
-
----
-
-## 0. 五句話
-
-1. **「滿了就安靜拒絕」不是時間軸一個地方的事。** 兩個 app 合起來盤出 70 列（§2）。舊 app 裡**只有一個**上限滿了會主動告訴使用者
-   （看板 workflow 的 toast）；新版的 `/v1/health` 與 `/v1/diagnostics` 裡**沒有任何一個**填充度欄位。
-2. **下一面牆已經排好日期了**（§2.4）：看板收據約 5–8 天後開始 FIFO 淘汰、orchestrator 的 task 紀錄 **2026-09-28** 起開始被
-   30 天規則安靜刪除、看板卡片約一個月後撞上 2,000 張的拒絕上限。舊 app 的主 log 已經 **313 MB**，沒有輪替，一天最多長 62 MB。
-3. **缺陷分三類，另有一個橫跨三類的問題**（§3）：(a) 該淘汰卻拒絕、(b) 該拒絕卻無聲截斷或淘汰、(c) 根本沒有上限；
-   而**就算行為對了，大多也沒有人知道**。舊 app 自己有一個做對的範本：`/v1/health.http_reliability` 把每一個 HTTP 上限跟它的
-   `current／peak／refused／evicted` 放在一起。新版要做的，就是把這個形狀推廣到**所有**儲存。
-4. **統一規則是「類別決定行為」**（§4）：證據（落地紀錄、交付與驗證收據、安全稽核、task 本體）**永不淘汰**，到頂只能拒絕並大聲說；
-   只用來擋重送的冪等收據**按時間**過期，不按筆數；可重算的觀察**可以淘汰**；長文**摘要後移到冷層**；log **輪替**。每一個上限登記在一張表裡，
-   沒登記的上限本身就是缺陷，而且要能**故意塞滿、看到它叫**。
-5. **舊 app 那個滿掉的時間軸：凍結成唯讀的歷史，不搬、也不摘要。**（§6）2,000 筆裡 1,973 筆可以從 git 逐字重算，
-   27 筆 landing 裡有 **10 筆是測試假資料**（本文新發現：舊 app 的測試寫進了使用者正式的 store），剩下 17 筆在凍結的
-   `orchestrator.json` 裡有原始紀錄；部署證據 0 筆。搬過來只會把假資料當成證據一起搬。
-
----
-
-## 1. 三十秒版本
-
-| | 舊 app | 新版（`26c0152`） |
-|---|---|---|
-| 盤到的列（§2.2、§2.3） | 39 | 31 |
-| 到頂時會主動通知使用者的 | 1（看板 workflow toast） | 0 |
-| health／diagnostics 裡有填充度的 | HTTP 入口層有（`http_reliability`），儲存層 0 | 0（唯一的丟棄計數在 `/v1/cloud/status`） |
-| (a) 該淘汰卻拒絕 | 8 | 2 |
-| (b) 該拒絕卻無聲截斷或淘汰 | 10 | 11 |
-| (c) 沒有上限 | 8 | 11 |
-| 行為對、但沒人知道 | 5 | 2 |
-| 行為對、也有人知道 | 8（含範本 O26） | 3 |
-| 其他 | — | 2（N23 寫好沒接線、N31 health 本身） |
-| 已經滿了 | 時間軸 entries（100%）、看板 workflow runs（100%，靠 retire 運轉） | — |
-| 最近的牆 | 看板收據 5–8 天、task 紀錄 30 天規則 10 天 | 新 store 幾乎是空的（events 17 列），牆在「沒有上限」那一側 |
-
-分類的判準、每一列的證據與實測值在 §2、§3；一列同時有兩種問題時（N19、N27）按主要的那一類計。**新版的「空」不是好消息**：SQLite 裡沒有任何一句 `DELETE FROM`，task 目錄與 worktree
-沒有清掃，稽核檔沒有輪替——它不會撞牆，是因為它還沒開始長。
-
----
-
-## 2. 盤點：每一個上限
-
-### 2.1 怎麼量的
-
-- **原始碼**：兩個唯讀 subagent 各掃一邊（舊 app 的 `Sources/` 與 `Resources/web/`、新版的 `internal/`、`cmd/`、`web/`），
-  每一列帶 file:line。其中最重要的 9 條我親自重讀過（附錄 A 列出哪 9 條）。
-- **實測**：直接 `stat`／`wc`／`jq` 資料檔；SQLite 一律**先複製到本 task 的 `work/` 再開**（`usage.sqlite3` 與新版的
-  `clawdline.sqlite3`，連同 `-wal`，不含 `-shm`），不碰原檔；兩個 daemon 的 `/v1/health` 與新版 `/v1/diagnostics`（本機 token）。
-- **不讀的**：任何 token、`secrets/`、`push.json`（只記大小）、其他 task 的 `/tmp/.clawdline/<id>/` 內容（只記目錄數與 `du`）。
-- 「類」欄：**a／b／c** 見 §3；**✓** 行為與類別相符；**✓?** 行為對但沒人知道；**範本** 是值得照抄的做法。
-
-### 2.2 舊 app
-
-**儲存與派工**
-
-| # | 東西 | 上限（file:line） | 到頂時 | 誰會知道 | 永久消失？ | 現在（實測） | 類 |
-|---|---|---|---|---|---|---|---|
-| O1 | 時間軸 entries | 2,000（`ProjectTimelineStore.swift:7`） | **拒絕**（`:294-297`）；背景回填看到 `capacity` 就整個專案跳過（`ProjectTimelineIntegration.swift:58`） | 只有打開時間軸頁才看得到的被動文案（`timeline.js:137,149`）；log、audit、health 都沒有；broker 的 landing 觀察**連回傳值都不看**（`ProjectTimelineIntegration.swift:115`） | **是**：凍結後已有 **47 筆已驗證的 landing** 沒進時間軸 | **2,000／2,000（100%），自 09-17 02:06:58 凍結約 31 小時** | a |
-| O2 | 時間軸 events／檔案大小 | 20,000（`:8`）／8 MiB（`:10`） | 拒絕；**載入時超限整個 store 回 503**（`:77-86`） | 錯誤碼 | 否 | 2,000（10%）／2,495,417 B（29.8%） | a |
-| O3 | 時間軸 `requestReceipts` | 4,096（`:9`） | 拒絕且不過期；檢查在所有指令之前（`:157-158`），**到頂後連 `set_enabled` 都 507** | 錯誤碼；`capacity` 物件不報它 | 否，但指令 API 永久失效 | 0 | a |
-| O4 | 時間軸 checkpoints | 128（`:85, :223-225`） | 拒絕 | `historySourceIssues`＋頁面文案 | 游標會掉 | 13（10 個 `capacity`、2 個 `complete`） | a |
-| O5 | orchestrator task 紀錄 | 1,350 筆（`Config.swift:531`）＋ settled 滿 30 天（`:545`） | **淘汰**（`OrchestratorTaskShape.swift:904-911`）；只保護「已結束且擁有者還活著」與待落地的列；數量那條規則**不檢查是否已結束**（`:903-905`，實務上碰不到，潛在） | **沒人**：`removeTasks` 與刪目錄都沒有 audit、沒有 log（`Orchestrator.swift:10504, 10531`） | **是**：這是用量分類唯一的持久證據（F1：149 列永遠無法歸因） | 776／1,350（57%）；最舊一列 19.8 天 → **2026-09-28 起 30 天規則開始刪**。每天約 36 筆，穩態約 1,080 列，所以真正生效的是天數，不是筆數 | b |
-| O6 | `session_deliveries` | 最新 200 筆（`Orchestrator.swift:10495`） | 淘汰，**不看 settled**，未結清的交付也會被刪 | 沒人 | 是 | 105／200（53%） | b |
-| O7 | progress notes | 5 則、每則 300 字（`:5926-5929`） | 淘汰最舊 | 沒人 | 是 | — | ✓（進度類，淘汰是對的） |
-| O8 | 完成通知重送 | 8 次（`:1326`）→ `dead_letter` | 轉 dead letter | **只在 record 的 `dead_letter_at` 欄位**；沒有 audit、log、health | 通知沒送到 | — | ✓? |
-| O9 | agent notify | 每 task 5、每機 30／小時（`:4907`、`OrchestratorRegistry.swift:109`） | 拒絕 429 `notify_limit`／`rate_limited` | 呼叫端＋audit | 否 | — | ✓ |
-| O10 | `session_activity`、`closure_attestations`、`landing_paths`、`coordinator-successions` | 無（`OrchestratorEventPublisher.swift:90-95`、`OrchestratorLandingQueue.swift:483`、`Coordinator.swift:1415-1419`） | 只增不減；`landing_paths` 在 task 紀錄被刪之後還留著 | — | — | 990／50／260／4 | c |
-| O11 | `owned-storage.jsonl` | 30 天且路徑已不存在才壓實（`OwnedStorage.swift:256-257`） | **只要一行壞掉，壓實就永遠拒絕**（`:254-255`），而呼叫端 `_ = OwnedStorage.compact()` 忽略回傳（`Orchestrator.swift:10537`） | 沒人 | 否 | 666 行／231,201 B | c |
-| O12 | `durable-reports/` | 500 份／256 MiB（`DurableReportStore.swift:17-22`） | 拒絕 409 `durable_report_quota_reached`；**沒有刪除 API**；載入超過 500 份整個 store 不可用（`:386, :403`） | 錯誤碼 | 否，但之後永遠寫不進去 | 44 KB | a |
-| O13 | `usage.sqlite3` | 無保留（唯一的 DELETE 是去重，`UsageLedger.swift:1027`） | 只增不減 | — | — | 7.0 MB＋4.0 MB WAL；`usage_intervals` 2,183 列（08-27 起） | c（帳本是證據，不該刪；缺的是空間警報） |
-
-**看板**
-
-| # | 東西 | 上限（file:line） | 到頂時 | 誰會知道 | 永久消失？ | 現在（實測） | 類 |
-|---|---|---|---|---|---|---|---|
-| O14 | 卡片／專案 | 2,000／200（`ProjectBoardStore.swift:50-51`） | **拒絕**：手動建立 409 `item_capacity_reached`；自動匯入 refused 並記進 `ingestionCoverage.droppedCount`（`:1494-1517`） | 只在 board envelope 的欄位 | 新卡進不來 | 793／2,000（39.7%），近 7 天每天 41 張 → **約 29 天後（10 月中）撞牆**；專案 34／200 | a |
-| O15 | 收據 `(actor, requestId)` | 4,096（`:52`） | **FIFO 淘汰**（`:6660-6664`）；**錯誤回應也佔一格**（`:6573-6577`） | envelope 的 `idempotencyRetention.evictedReceipts`；但契約文件寫「never evicts」（`board-design.md` B8） | 失去重送保護 | 2,639／4,096（64%）；每個 revision 0.32–0.54 筆、每天約 580 個 revision → **推估 5–8 天後（約 9/23–9/26）開始淘汰** | b |
-| O16 | 檔案大小 | 32 MiB（`:57`） | 拒絕 409；**載入超限整個看板 503**（`:6151-6153`） | 錯誤碼 | 否，但之後寫入全失敗 | 4,393,721 B（13.1%） | a（遠） |
-| O17 | 每卡內嵌歷史＋`project-board-history/*.jsonl` | 內嵌 5（`:5683`）；每項 log 保留 2,000、超過 3,000 壓實（`ProjectBoardHistoryLog.swift:50-54, 160-164`） | 淘汰；**log 寫失敗被 `try?` 吞掉**（`ProjectBoardStore.swift:5702`），之後內嵌視窗一裁就永久消失，`historyDroppedCount` 卻照樣累加，看起來跟正常存進 log 一樣 | UI 算得出 evicted 數，但分不出「在 log 裡」還是「真的掉了」 | 部分 | 568 檔、12,915 行、單項最多 624 行（壓實門檻的 21%） | b |
-| O18 | workflow | runs 256、events／run 64、receipts 512、outbox 512（`ProjectBoardWorkflow.swift:69-75`） | runs 先 retire，不行才拒絕；receipts FIFO；outbox 滿了 429 | **全 app 唯一會跳 toast 的上限**，一頁只跳一次（`board-workflow-status.js:28-33`） | 部分 | **runs 256／256（100%，靠 retire 運轉）**；receipts 376／512（73%）；outbox 0 | ✓ |
-| O19 | 回應大小 | 1,000,000 B／500 張（`:53, :58`）；HTTP 2 MiB | 截斷並帶 `truncation.reason`、`itemsOmittedCount` | 欄位＋UI 一句 | 否 | — | ✓ |
-| O20 | 讀／寫佇列 | 4／8（`ProjectBoardRequestCoordinator.swift:24-26`） | 429＋`Retry-After: 1` | 呼叫端 | 否 | — | ✓ |
-
-**log 與稽核**
-
-| # | 東西 | 上限 | 到頂時 | 誰會知道 | 永久消失？ | 現在（實測） | 類 |
-|---|---|---|---|---|---|---|---|
-| O21 | `~/Library/Logs/Clawdline.log` | **無**（`Log.swift:11-31`：開檔、seek 到尾、寫、關） | 只增不減；第一次建立用預設 umask，**實際是 0644** | — | — | **313,624,555 B**、1,744,691 行，自 08-31 起；每天 0.6→**61.8 MB**（09-15 高峰），近三天 21–38 MB；**77% 是 `cloud:`**，其中 `durable outbound stage=drain_observation` 一天寫 3.6 萬行 | c |
-| O22 | `remote-audit.jsonl` | **無**（`RemoteAuth.swift:494-510`） | 只增不減；**沒有鎖、沒有 `O_APPEND`**（先 seek 再寫，多佇列可能互相覆蓋）；寫失敗 `try?` 吞掉——而這個函式的註解自稱「a security control and not bookkeeping」 | 沒人 | 寫失敗時是 | 5,745,166 B、36,130 行、31 天；**80.8% 的位元組是 `orchestrator.*` 營運事件**，裝置／配對／推播這類安全事件合計不到 1% | c |
-| O23 | `orchestrator.worktree.kept` | 無去重 | 同一個 dirty worktree **每 6 小時重寫一次** | audit 本身 | — | 3,699 筆來自 158 個 task，單一 task 188 次；佔 audit 位元組 11.5% | c |
-| O24 | `cloud-viewer-events.jsonl` | 4 MiB，輪替成 `.1`（`DiagnosticReport.swift:214-226`） | 輪替，最多兩檔 | — | 最舊的 | 1.4 MB | ✓（**全 app 唯一會輪替的 log**） |
-| O25 | `hooks/notification-census.log` | 400 行 → 留最新 200（`hook.sh`） | 淘汰 | — | 是（診斷用，可以） | 367／400 | ✓ |
-
-**遠端、Cloud 與 HTTP**
-
-| # | 東西 | 上限 | 到頂時 | 誰會知道 | 永久消失？ | 現在（實測） | 類 |
-|---|---|---|---|---|---|---|---|
-| O26 | SSE／HTTP 入口 | 連線 128、stream 16、每 stream 4 MiB、合計 16 MiB（`HTTPReliability.swift:94-104`） | 新 stream 503 `sse_capacity`；慢消費者**斷線**，重連拿完整快照；同 channel 快照合併 | **`/v1/health.http_reliability` 的 limits＋metrics**，外加 log | 不會（重連補快照） | streams peak 8／16、connections peak 12／128、`streams.evicted` 1、`write_error_evictions` 1 | **範本** |
-| O27 | 送出去重 | 10 分鐘，只在記憶體（`RemoteServer.swift:3680-3693`） | 過期淘汰；**重啟就清空** | 沒人 | 重啟後 client 重試可能打兩次字 | — | b |
-| O28 | Cloud command ledger | 24 小時；全域 10,000、每 actor 1,000（`CloudCommandLedger.swift:294-304`），`permitsEvictionAtCapacity=false` | 拒絕 429 `command_ledger_capacity`（不淘汰視窗內的） | 計數器 `ledger_capacity_refusals_total` 存在，**production 沒有任何地方讀** | 指令被拒 | 620／10,000（6%），全部 `completed`，`expiresAt − createdAt` 正好 24 小時 | ✓? |
-| O29 | Cloud outbound spool | 全域 2,000 列／16 MiB、每收件者 200 列／2 MiB、發送窗 8 列（`CloudOutboundSpool.swift:183-218`） | 拒絕（不踢掉還在用的列）；但 `failureDisposition` 把所有 spool 錯誤歸成 `.integrity`、**不重試**（`CloudAppBridge.swift:1294`） | 只有 log | 發布失敗 | 977／2,000（49%）；本行程 `window_refusal_attempts` 1,319、`writes_failed` 268 | ✓?（行為對、歸類錯） |
-| O30 | Cloud replay window | 每 sender 1,024 序號；**sender 4,096 個，行程存活期間不回收**（`CloudEnvelope.swift:375-402`） | 拒絕新 sender 直到重啟 | `cloud-status.json` 的 dropped 計數與最近 20 筆 | 是 | 未量（記憶體） | a |
-| O31 | Web Push 訂閱 | 無總數上限；同 endpoint／device 只留一筆（`WebPush.swift:271-280`） | 只有 404／410 會刪；**其他失效狀態永遠留著** | log＋audit | — | `push.json` 652 B（含秘密，只記大小） | c |
-| O32 | Web Push payload | `maxPayload`（`:122`） | 先拿掉 icon（有 log），再**二分法靜默截短 body**（`:596-606`） | 部分 | 部分 | — | b |
-| O33 | 請求與訊息 | body 20 MiB、訊息 100,000 字、plan 4,096（`RemoteServer.swift:650, 2015`） | 大多拒絕；**child summary 在 2,000 字處靜默截斷**（`Orchestrator.swift:7992`）；`result.json` 超過 2 MiB **當作不存在**（`:7987`）；手機送圖時解碼失敗的圖靜默跳過（`RemoteServer.swift:4263-4266`） | 大多只有錯誤碼 | summary 會被截掉 | — | b |
-| O34 | 家規 `dispatch-policy.md` | 16,000 字（`Orchestrator.swift:9303`） | 在段落處截斷，**並在簡報裡說**（`:9325-9335`）；local 規則先花預算（`:9338-9340`） | **只有讀簡報的 child 知道**；改檔的人沒有任何提示 | child 看不到被切的規則 | 15,037＋283 字＝**約 96%** | ✓?（錯的人知道） |
-
-**讀取、圖片與暫存**
-
-| # | 東西 | 上限 | 到頂時 | 誰會知道 | 永久消失？ | 現在（實測） | 類 |
-|---|---|---|---|---|---|---|---|
-| O35 | transcript 讀取 | 檔尾 8 MiB（`TranscriptRevisionWatch.swift:412`）；回應 150 KiB（`:445`） | 截斷；150 KiB 那層帶 `truncation`，**web client 完全不讀**；**8 MiB 之前的內容連旗標都沒有** | 沒人 | 否（原檔在），但看不到 | 最大的 Codex transcript **2,238,643,505 B**（8 MiB 只看得到 0.37%）；最大的 Claude 67.6 MB；`~/.codex/sessions` 12 GB、`~/.claude/projects` 2.7 GB | b |
-| O36 | session 圖片 | 24 小時、64 張、64 MiB、單張 12 MiB、墓碑 7 天、metadata 512（`SessionImageArtifact.swift:165-175`） | **淘汰最舊的，即使 transcript 還在引用**（`:555-561`） | 讀的人事後看到「Image expired」 | 是 | 13 張 PNG、71 筆 metadata（14%）、3.0 MB | b |
-| O37 | Drops（手機上傳的 PNG） | 40（`Drop.swift:193-202`） | 淘汰；**這些路徑已經打進 agent 的 prompt 裡** | log | 是 | 未量 | b |
-| O38 | worktree（dirty 就保留） | 無（`OrchestratorDraft.swift:1075-1136`） | 只增不減 | 重複的 audit（O23） | — | **508 MB**（6 個 repo）；`reclaimed-checkouts` 74 個、5.3 MB（30 天，會刪，有 audit） | c |
-| O39 | task 目錄 `/tmp/.clawdline/<id>` | settle 後 24 小時＋擁有者活著就留（`Config.swift:516`）；每輪最多 64 個 | 淘汰；**刪除時沒有 audit**（`Orchestrator.swift:10531`） | 沒人 | 是（含 `work/`） | 61 個、160 MB（只量 metadata） | ✓? |
-
-HTTP 入口層以外，舊 app 沒有任何 GET diagnostics route（只有 `POST /v1/diagnostics/report`）；`/v1/health` 的 key 是
-`ok, version, build, instance, protocol, write, auth, password, authed, http_reliability`（`RemoteServer.swift:1066-1109`），
-**沒有任何儲存層的填充度**。能看到填充度的只有三處：時間軸 GET 的 `capacity`（只有 entries／events／bytes，不含收據）、
-看板 envelope 的 `idempotencyRetention`＋`ingestionCoverage`、`GET /v1/orchestrator/storage`。
-
-### 2.3 新版（`26c0152`）
-
-新版是全新安裝：`~/.config/clawdline-next` 總共 528 KB；`clawdline.sqlite3` 的副本裡 `events` 17 列、`receipts` 5 列、`tasks` 0 列；
-`remote-audit.jsonl` 448 B；`tasks/` 0 個目錄。**所以「離上限多遠」在新版幾乎都是「還沒開始長」，要看的是它會不會長、長了誰知道。**
-
-| # | 東西 | 上限（file:line） | 到頂時 | 誰會知道 | 永久消失？ | 類 |
-|---|---|---|---|---|---|---|
-| N1 | SQLite 全部資料表（`events`、`receipts`、`tasks`、`obligations`、`board_commands`、`broker_*`） | **無**；全 repo 沒有一句 `DELETE FROM`；`events` 的註解明寫「never edited and never deleted」（`store/sqlite.go:33-35`） | 只增不減；broker 每 5 秒、每個 SSE 訂閱者每 2 秒都會讀出並解碼整張 `broker_tasks`（`orchestrator/broker.go:161-176`），成本跟著全部歷史長 | 只有 CLI `clawdline doctor` 印筆數（`cmd/clawdline/main.go:162-168`） | — | c |
-| N2 | 事件寫入失敗 | — | `Store.Append` 不記 log（`sqlite.go:238-243`），呼叫端一律 `_ =` 丟掉；`app/actions.go:414-416` 的註解說「logged by the store」，**不是真的** | 沒人 | **是**（磁碟滿就是它） | b |
-| N3 | broker 解不開的 record | — | `continue` 跳過（`broker.go:169-173`） | 沒人 | 看不見 | b |
-| N4 | 派工容量 | 每 root 5、每機 20；10 分鐘速率（`broker.go:94-127`） | 429 `over_capacity`／`rate_limited` | 呼叫端 | 否 | ✓ |
-| N5 | progress notes | 300 字；讀最新 5（`broker.go:100-107`） | HTTP 400；但**從 `progress.json` 來的超長筆記直接丟、不記 log**（`watch.go:103-105`） | 檔案那條沒人 | 部分 | b |
-| N6 | notify | 5／task、30／小時（`broker.go:103-109`） | 429 | 呼叫端 | 否 | ✓ |
-| N7 | 完成通知重送 | 8 次（`record.go:151-175`）. Since 2026-09-25 the holds have ceilings of their own: a busy lane or an occupied composer spends an attempt after **10 minutes** (`maxNoticeHold`), while a root showing something waiting to be answered holds for free for up to **12 hours** (`maxChoosingHold`); a dead letter at most **24 hours** old is typed once more when its root next reads idle (`maxRetypeAge`). All three are `parameter` lines on the capacity baseline, not rows: nothing accumulates | 轉 dead letter，寫 event `task.completion.dead_letter`; at the menu ceiling in one step, with `root_choosing` and the ceiling in its `last_error`. The idle re-type is one recorded attempt past the limit (`task.completion.retyped`), never a second push | **console 沒畫、health 沒有**；`KindDeadLetter` obligation 有定義（`domain/task/obligation.go:23`）但從未建立. A dead letter is pushed once; every unacknowledged notice — pending or dead — is on `GET /v1/orchestrator/completions` and on its root's own `GET /v1/work/v2/agent/session-todos/<conversation>` (`unacknowledged_completions`) until it is acknowledged | 是 | ✓? |
-| N8 | summary／title／kind／label | 2,000／60／40／120（`taskdir/finish.go`、`domain/work/proposals.go`、`orchestrator/draft.go`） | summary／kind／label 仍依各入口處理；title 超長或符合已量到的壞形狀會帶教學訊息拒絕，不再截斷 | 寫入者 | 否 | ✓ |
-| N9 | `result.json` | **無大小上限**（`taskdir/broker.go:162-176` 直接 `os.ReadFile`） | — | — | — | c |
-| N10 | task 目錄 `<Dir>/tasks/<id>` | **無清掃**（`taskdir.go:21`） | 只增不減 | — | — | c |
-| N11 | worktree `<Dir>/worktrees/…` | **無**；`RemoveWorktree`（`git/worktree.go:56-60`）沒有任何呼叫端 | 只增不減 | — | — | c |
-| N12 | `remote-audit.jsonl` | **無輪替**；`O_APPEND`＋0600（比舊版好，`devices/files.go:513-543`）；欄位值 256 B **靜默截斷**（`:75-77`） | 只增不減；寫失敗只記 log | log | 部分 | c |
-| N13 | 裝置清單 `remote.json` | 裝置數**無上限**，每次密碼登入新增一台（`auth/authority.go:718`）；讀取上限 4 MiB（`devices/files.go:70`） | **超過 4 MiB 時 auth 在啟動時整個失敗**（`gate.go:120-124`） | log | 服務中斷 | c（滿了是全面停擺） |
-| N14 | push 訂閱 | 無數量上限（`push/store.go:225-237`）；檔案讀取上限 1 MiB | 超過 1 MiB → `ErrUnreadable`，**所有推播都失敗** | log；notify 回 502 | — | c |
-| N15 | 圖片 | 照搬舊版 policy（`artifacts/artifact.go:59-70`）. Since 2026-09-26 every picture the daemon stores — drops, this store, and Board and to-do reference images — has a long edge of at most 1,600 px (`artifacts.MaxLongEdge`, the console's `LONG_EDGE`); a larger one is scaled down, not refused. A photograph is stored as JPEG (quality 90) and anything else as 8-bit PNG: a 146 KB phone JPEG had been a 1.19 MB 16-bit PNG | 淘汰最舊，**不記 log**（`store.go:365-372`）；讀者拿到 410 `artifact_expired` | 讀的人事後才知道 | 是 | b |
-| N16 | Drops | 兩個登記列：`artifacts.drops`（**256 MiB**，量位元組；`MaxDropsBytes`，另有來源 `DropsAgeLimit`）與 `artifacts.drops_young`（**1 張**：過去 24 小時內被位元組上限刪掉、當時還不到 24 小時的圖；`DropsYoungLimit`）。保留規則：超過 **7 天**的檔案刪掉，但**最新 40 張**（`DropsKeep`，是地板不是上限，所以不是登記列）不因年齡被刪；目錄超過 256 MiB 時不論年齡從最舊的刪起，只有剛寫入的那張不刪。2026-09-26 起不再「只留最新 40 張」：舊規則在每天都傳圖的人身上天天 40／40，每次都推「容量已滿」卻沒有任何事可做，而且一個下午傳 40 張就會刪掉幾分鐘前才打進 prompt 的檔案（`drops.go`） | 過期與超量都刪最舊的，有計數（expired／evicted）與 log；每次量測（capacity beat）也會先清掉過期的，一週沒人傳圖的快取不會一直讀成滿 | `artifacts.drops`：diagnostics、log，**不推播**——它滿代表位元組上限正在刪檔，這是快取在運作。`artifacts.drops_young`：diagnostics、log、**notice（推播）**，句子說哪些圖被提早刪掉、assistant 回頭讀會讀不到、需要時重新貼；過了一天沒有再發生只記下、不推「已恢復」 | 是 | ✓ |
-| N17 | transcript | 8 MiB 尾端、150 KiB 回應（`transcript/turns.go:36-39`、`http/transcript.go`） | 同舊版；React `Transcript.tsx` 不讀 `truncation` | 沒人 | 否 | b |
-| N18 | 記憶體快取（transcript titles） | 256 筆 LRU（`transcript/claude.go`、`transcript/lru.go`） | 淘汰最久未使用的讀數並計數 | diagnostics、notice | 是 | ✓ |
-| N19 | SSE（自己供應時） | 訂閱者數**無上限**；screen bus 每訂閱 chan 16，**滿了走 `default` 直接丟、沒有計數**（`http/screen.go:189-197`）；沒有 Last-Event-ID | 丟 | 沒人 | 下次變動才補回 | b（訂閱者無上限那一半是 c） |
-| N20 | Cloud 入站佇列 | 64（`cloud/relay.go:42`） | **丟最舊的請求**，記 log | `/v1/cloud/status.queue_dropped`；UI 有型別（`cloud.ts:77`）**但沒畫** | 是 | b |
-| N21 | Cloud replay window | 照搬（`cloud/replay.go:11-17`） | 拒絕新 sender | `inbound_dropped{reason}`，設定頁有警示點（`SettingsWindow.tsx:632-640`） | 是 | a |
-| N22 | Cloud spool | 五個登記列：`cloud.spool`（2,000）、`cloud.spool_bytes`（16 MiB）、`cloud.spool_channel_bytes`（4 MiB，單一 channel）、`cloud.spool_receipts`（4,096 筆墓碑）、`cloud.spool_refusals`（64 句，單一 channel，每句至多 4 KiB）。Since 2026-09-25 the machine-read reply channel also keeps a 1 MiB reserve for answers of at most 256 KiB (`largeAnswerByteLimit`, `smallAnswerReserveLimit`, on the admission baseline), and reference-image thumbnails are `cache.image_thumbs` (8 MiB, oldest let go) with a 480 px long edge (`artifacts.MaxThumbnailEdge`) | 拒絕；**而且會回一句具名的拒絕**給等在那條 channel 上的人（`cloud_read_busy` / `command_answer_undeliverable`，cloud-wire 9.5.1）。Every refused read gets its own refusal up to `cloud.spool_refusals`; past it the drop is logged with `operation=`. A large answer that would eat the reserve is refused `cloud_read_busy` (cloud-wire 9.5.2) | log、diagnostics、notice、**等的人本人** | 是 | ✓ |
-| N23 | Cloud command ledger | 照搬（`domain/cloud/ledger.go:49-66`） | **寫好了但沒接上**（`NewLedger` 沒有正式呼叫端）；註解承認重啟後會重複執行（`:19-23`） | — | — | （未接線） |
-| N24 | 看板收據 | 4,096（`board/board.go:56`） | FIFO；淘汰計數只存在檔案裡（`settings.go:205-208`），不上 wire | 沒人 | 是 | b |
-| N25 | 看板卡片／專案 | `MaximumItems = 2_000`、`MaximumProjects = 200`（`board/board.go:53-54`） | **宣告了，整個 codebase 沒有任何引用**——跟舊時間軸同一個數字，這次是名義上的上限 | — | — | c |
-| N26 | 看板快照與檔案 | 500 張／1 MB；檔案 32 MiB（`board.go:39-50`） | 快照截斷帶 `truncation`（✓）；檔案超限時載入回 503、整個看板不可用（同 O16） | 欄位 | 否 | a（遠） |
-| N27 | request body | 多數路由有；**`dispatch`、`orchestrator` 八條、`schedules`、`coordinator`、`actions` 沒有**（`server.go:434-438` 只設了 `ReadHeaderTimeout`）；auth body 超過 64 KiB **被截斷後當成 `{}`**（`auth.go:66-78`） | — | — | — | c（auth 截斷那一半是 b） |
-| N28 | 文件列表 | 200 列、走訪 4,000（`documents.go:366-394`） | **靜默截斷，沒有旗標** | 沒人 | 否 | b |
-| N29 | daemon log | Go 標準 `log` 寫 stderr，全 repo 沒有 `SetOutput`；打包的殼沒有轉向輸出（`shell/darwin/main.swift:300-322`） | 目前由啟動者導到 `/tmp/clawdline-next.log`（491 B，實測 `lsof`）；打包後去哪裡未驗證 | — | 可能遺失 | c |
-| N30 | scheduler | `MinInterval = 1m`（`schedule.go:54-60`） | 400；錯過的 tick 合併 | `/v1/diagnostics.scheduler` | 否 | ✓ |
-| N31 | health／diagnostics | — | `GET /v1/health` 只有 `at, ok, served_by`；`GET /v1/diagnostics` 是 `at, dir, ok, port, served_by, upstream, scheduler{…}`（實測 7727）。**沒有任何填充度、容量或丟棄數**；唯一的丟棄計數在 `/v1/cloud/status` | — | — | — |
-| N32 | Session inventory cache and iTerm2 listing backoff | **120 seconds**, registered as `cache.session_inventory`; overrides may only lower it. A failed iTerm2 listing backs off from the existing 5-second screen-backoff floor to this same registered ceiling. | The last complete rows for one failed terminal source expire and that source becomes `missing`. During a pending refresh or failure backoff, drawing readers receive bounded prior rows marked unverified; one refresh runs regardless of how many readers arrive. iTerm2 returns a named degraded `listing` gap during backoff without starting another Apple Event. A success clears the backoff. A terminal-confirmed close suppresses any older in-flight or retained copy inside the same window. Action and decision callers bypass retained observations entirely. | `/v1/diagnostics.capacity` reports retained age and expiry count; inventory notes name failure, backoff and pending refresh; the session list labels unverified rows and the batch | No; this is a reproducible observation cache. An unanswered iTerm2 source never proves absence, and expired rows are missing rather than current. | ✓ |
-| N33 | Spoken-intent planner | **4 KiB** per sentence, **2** queued turns, **30 seconds per CLI attempt**, **130 seconds** for a hosted-console request, and the last **4 KiB** of a failed turn's stderr, registered as `intent.request_bytes`, `intent.planner_queue`, `intent.planner_seconds`, `intent.cloud_wait_seconds`, and `intent.stderr_bytes` | An oversized sentence is refused before a model reads it; a third queued request receives 429 `busy`; a timed-out or unusable turn receives 502 `plan_failed`. Claude and the Codex fallback each get one bounded attempt. The Cloud deadline covers one 60-second turn ahead, one 60-second turn of its own, and 10 seconds of relay overhead. | The sender receives a typed refusal; all five rows are present in `/v1/diagnostics.capacity`; audit logs contain timing and outcome but never the sentence. | No; the route creates only an editable draft and starts nothing. | ✓ |
-| N34 | Manual session titles | **16 KiB** per request, **200 characters** per normalized title, **200 rows**, and **90 days**, registered as `session.title_request_bytes`, `session.title_characters`, `session.title_rows`, and `session.title_age` | Oversized input is refused by name. A successful write prunes expired rows, then evicts the oldest row if the retained set is full. Clearing a title removes its row and reveals the next label rung. | The sender receives a typed refusal; all five rows are present in `/v1/diagnostics.capacity`, and retained-row pressure is eligible for a notice. | Yes; an expired or oldest manual label can disappear, while the assistant/task/fallback label remains. | ✓ |
-| N35 | Requested user action on a Board item | **8 KiB** per item write, registered as `work.item_user_action_bytes` | The owning Agent receives `user_action_too_large`; existing item state is unchanged. The text is accepted only with `waiting_user` and is cleared with that condition. | The sender receives a typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N36 | Completion-correction reason on a Board item | **8 KiB** per correction, registered as `work.completion_reason_bytes` | The completing Agent receives `reason_too_large`; the terminal item, released assignment and event history remain unchanged. | The sender receives a typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N37 | Linux release health gate | **30 seconds**, registered as `deploy.health_seconds` | The unprivileged deploy refuses the new release, restores the previous atomic selector, and restarts that release. | The command reports the failed deployment and rollback; the row is present in `/v1/diagnostics.capacity`. | No; the new release is not kept active without health and exact-build evidence. | ✓ |
-| N38 | A Session's own to-dos | **20 rows** per call, registered as `session.todo_batch_rows`; each row under the existing 8 KiB (`session.direct_todo_bytes`), the call under the 96 KiB work request body (`work.request_body_bytes`, which `clawdline todo add` also applies to stdin), and the Session under its 500 open rows (`session.direct_todos`) | The whole call is refused by name (`too_many_todos`, `todo_too_large`, `todo_text_required`, `direct_todos_full`) and no row is written; a batch is never cut to the rows that fit. | The sender receives a typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N39 | Board items a Session creates on one of the person's messages | **5 items** per run, open or closed, registered as `run.created_items`; each item under the existing title, description (`work.item_description_bytes`) and 128-step (`work.steps_per_item`) bounds, the call under the 96 KiB work request body; the run keeps a 280-character excerpt of the message (`internal/app.runExcerptLimit`, on the page baseline) | The sixth create on one run is refused `run_items_exhausted`; more than 128 steps is refused `too_many_steps`; nothing of the item, its assignment or its steps is written. A longer message's excerpt is cut on a character boundary with an ellipsis; the message itself is not stored. | The sender receives a typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N40 | Open to-dos a turn receipt lists | **20 rows** and **120 characters** of each row's text, registered as `session.report_open_todo_rows` and `session.report_open_todo_characters`; the read behind it is the existing 100-row page of open direct to-dos | Rows past 20 are not listed and `open_todos_truncated` says so; a longer text is folded to one line and cut on a character boundary with an ellipsis. Nothing is removed from the store and the receipt is recorded either way. | The Session reporting its turn reads the flag in the answer, and `clawdline session report` says "At least N"; the rows are present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N41 | Landing detector (the broker records `landed` when a delivery branch was merged) | **16 pending landings** per look, one look every **12** beat passes (about a minute at the 5-second tick), and **10 seconds** of git per task: `landingDetectLimit`, `landingDetectEvery`, `landingDetectTimeout` in `orchestrator/landing_detect.go`. An immediate look made inside `item finish` or `item phase deploying` (`DetectLandingsFor`) asks at most the same 16 tasks and spends at most **20 seconds** in all (`landingDetectNowBudget`); tasks it did not reach are answered as not asked and left for the beat; the per-look count is a `parameter` line on the capacity baseline, not a row, because nothing accumulates | The rest wait for the next look, which starts after the last task examined, so every pending landing is reached. A task whose git questions time out or fail is skipped for that look; the others are still asked | The daemon log, once per task per distinct failure, and again only after the task looked fine; a recorded landing is a `landing.landed` event | No: nothing is dropped, a pending landing only waits for the next look | ✓ |
-| N42 | Token ledger reading (`transcript.LedgerState.Feed`, docs/token-ledger.md) | **64 MiB** per pass and **8 MiB** per line: `ledgerFeedLimit` and `ledgerLineLimit` in `transcript/ledger.go`, `read` lines on the capacity baseline, not rows, because a pass holds one line at a time and keeps only totals | A pass stops at the first line boundary past 64 MiB and says there is more; the next pass starts from the stored offset. A line past 8 MiB is skipped, 8 MiB at a time and across passes if need be, and counted (`overlong`); a line that does not decode is counted (`undecodable`); neither stops the pass. A file that shrank below the offset or whose first 4 KiB changed is read again from zero (`restarts`) | The counts in the session's ledger state | No: a skipped line's tokens are still in the next call's measured context; only which category they belong to is lost | ✓ |
-| N43 | Token ledger passes (`app.UsageLedger.Pass`, docs/token-ledger.md) | **32 transcripts** fed per pass, a pass a minute, and a look-back window of **7 days**: `usagePassLimit`, `usageWindowLimit` and `usageEvery` in `app/usage.go`; `parameter` lines on the capacity baseline, not rows, because a pass holds one transcript at a time and the table keeps one row of totals per transcript | The rest of the due transcripts wait for the next pass, which starts after the last one fed, so one that stays due (unreadable, or longer than one Feed) cannot starve the others. A transcript last written before the window keeps its stored totals and is not visited until it is written again. One that cannot be read is skipped for that pass (`transcript_unreadable`), one that is gone keeps its totals (`transcript_missing`); neither stops the pass | The daemon log: once when a pass meets the limit, until a pass no longer does, and once per transcript and reason, by conversation id; the reason is on the transcript's row | No: a transcript past the limit only waits; one outside the window keeps what was read | ✓ |
-| N44 | Compaction comparison (`app.UsageLedger.CompareCompaction`, `GET /v1/usage/compare-compaction`, docs/token-ledger.md "Did compacting early pay") | **500 child tasks** per answer, newest first; **50 excluded tasks** named; a group needs **5 tasks** before a share or rate is shown; a `since` of at most **3650 days**: `compareTaskLimit`, `compareExcludedLimit`, `compareTooFewLimit` and `compareSinceDaysLimit` in `app/usage_compare.go`; `page`, `parameter` and `admission` lines on the capacity baseline, not rows, because the answer is computed on each ask and nothing is kept | Past 500 the answer covers the newest and says `truncated`; past 50 the excluded count stays whole and `excluded_truncated` says the names are not all there; a group under 5 tasks says `too_few` and shows its counts with every percentage null; a longer `since` is a 400 `bad_request` | The answer itself; `clawdline usage --compare-compaction` prints each flag as a line | No: nothing is stored, and a narrower `since` reads the rest | ✓ |
-| N45 | Things waiting to be verified (`app.Verifications`, `/v1/verifications`, docs/verifications.md) | **200 records** open and closed together; **12 criteria** and **200 notes** a record; a title of **200** characters, a why of **4000**, a criterion of **500**, a note of **8000**, a closing reason of **2000**, a session name of **200**: `verificationTotalLimit` … `verificationAuthorLimit` in `app/verify.go`, and a Cloud sub-document of **64 KiB** (`verificationCloudBodyLimit`); `admission` lines on the capacity baseline, not rows, because each is refused at the door and nothing is kept past it | The 201st record is a 409 `verification_limit_reached`, the 201st note a 409 `notes_limit_reached`, anything longer a 400 `bad_request` naming the field; nothing is evicted — every record is something a person asked to be reminded of, and only a person deletes one | The refusal, in the answer to whoever asked | No: deleting a closed record makes room | ✓ |
-| N46 | Smart session title input | **12 KiB** of text per naming turn, read from the newest **400** transcript rows, registered as `naming.context_bytes` and `naming.tail_entries` | The opening request (a Clawdline launch line resolved to the assignment or task it names) gets a third; the latest reply an eighth; later requests fill the rest, each at most a tenth, newest first, so the oldest give way. `TASK_SECRET` values and machine-inserted blocks are removed before anything is measured. | Both rows are present in `/v1/diagnostics.capacity`; the audit line records timing and outcome, never the text. | No; a naming turn only saves a title. | ✓ |
-| N47 | Board items a Session claims, or assigns to a new Session, on one of the person's messages | **5 claims or assignments** per run, in any state, registered as `run.claimed_items`, mirroring N39; the call under the 96 KiB work request body | The sixth claim or assignment on one run is refused `run_claims_exhausted`; no assignment, owner or history row is written. | The sender receives a typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N48 | Board and to-do reference-image files (`store.ReferenceImagesDir`, `<state>/reference-images/<id>.png\|.jpg`) | The bytes are held by `work.image_bytes_total` (512 MiB, counted as the rows' `byte_count`, each proved against its file's sha256 on read). Three parameters on the baseline: **32 MiB** of pictures per step of the move out of SQLite (`ReferenceImageBatchLimit`), a file no row names is removed once **1 hour** old (`ReferenceImageOrphanAgeLimit`), swept at every Open and every **6 hours** (`ReferenceImageSweepIntervalLimit`) | A file the sweep removes is one no row names: its picture was deleted, or its row never committed; the count is logged and kept (`Store.ReferenceImageFileStats`). A row whose file is gone or differs is refused 410 `image_file_missing` / `image_file_mismatch`, logged, never served empty | The reader of the picture gets the named refusal; the daemon log carries each refusal and each sweep that removed something | No: only unnamed files are removed | ✓ |
-| N49 | Sessions a reboot took away (`app.SessionRestore`, `store.RecordBoot`, `/v1/sessions/restorable`, docs/session-restore.md) | **200 conversations** recorded per boot, **2 boots** kept (this one and the one before), **20 conversations** per restore, a recorded `last_seen` at most **300 seconds** stale while the open set is unchanged, the boot's own `last_seen` heartbeat at most **60 seconds** stale while complete readings arrive, and a **180-second** grace before the previous boot's last sight inside which a conversation that went is still offered, registered as `sessions.restore_rows`, `sessions.restore_boots`, `sessions.restore_batch`, `sessions.restore_seen_age`, `sessions.restore_heartbeat` and `sessions.restore_grace` (`restoreRowsLimit` … `restoreGraceLimit` in `app/session_restore.go`) | Past 200 the conversations that moved longest ago are not recorded, and past 200 rows the rows that went longest ago are deleted first; both are counted as evicted. A third boot deletes the oldest boot and its rows at the next write. A restore naming more than 20 is refused whole with `restore_batch_too_large` and opens nothing. An unchanged set is rewritten only once its `last_seen` is 300 seconds old; between rewrites the boot's `last_seen` alone is moved once it is 60 seconds old. A row that went more than 180 seconds before the previous boot was last seen expires from the offer (its row stays until its boot goes). | `/v1/diagnostics.capacity` carries all six rows, the evicted count on `sessions.restore_rows`; the sender of an oversized restore receives the typed refusal | Rows past 200 and boots older than the previous one cannot be offered back; a session closed outside Clawdline within 180 seconds of a restart is offered and can be dismissed; nothing a person wrote is lost | ✓ |
-| N50 | One background command's output (`GET /v1/sessions/{id}/shells/{shell}`, the Shell panel; Cloud word `shell`) | **1 MiB** of the output file's end per read, **64 KiB** when the reader names no window, never less than **1 KiB**, registered as `sessions.shell_output_bytes` (`transcript.MaxShellOutput`); the Cloud word's `bytes` field is pinned to the same 1 KiB–1 MiB | A larger ask is lowered to the limit and a smaller one raised to the floor; the answer starts at the first line boundary inside the window and says `truncated`. The file itself is Claude Code's and is never cut or copied. | The answer's `truncated`; the row is present in `/v1/diagnostics.capacity`. | No: the earlier output stays in the file on the machine. | ✓ |
-| N51 | Child items an Epic's owner Session breaks the Epic into (`POST /v1/work/v2/agent/items/<epic>/children`, work-system-v2 §6.5) | **32 items** per Epic, open or closed, registered as `epic.child_items` (`work.EpicChildLimit`); each child under the existing title, description and 128-step bounds, the call under the 96 KiB work request body | The thirty-third create is refused `epic_children_full` (507); nothing of the item, its steps or its assignment is written. | The sender receives a typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N52 | Built-in session personas (`internal/domain/persona`, `GET /v1/personas`, docs/personas.md) | **64 personas** in the catalog and **8 KiB** of injected text per persona (the precedence preamble, the body and its source line), registered as `personas.catalog` and `personas.text_bytes` (`persona.MaxPersonas`, `persona.MaxPersonaBytes`) | The catalog is compiled in and cannot grow while the daemon runs. A catalog past either bound does not load, and `TestTheCatalogLoads` fails before such a build ships; nothing is let go | `/v1/diagnostics.capacity` carries both rows, with the catalog size and the largest text as `used` | No; the 42 shipped texts inject 4-5 KiB each, the largest 5,149 bytes | ✓ |
-| N53 | Archived Sessions (`app.SessionArchive`, `store.ArchiveSession`, `/v1/sessions/archived`, docs/session-archive.md) | **500 conversations** kept in the archive and **20 conversations** per archive restore, registered as `sessions.archive_rows` and `sessions.archive_restore_batch` (`archiveRowsLimit`, `archiveBatchLimit` in `app/session_archive.go`) | Past 500 the conversation archived longest ago is dropped and counted as evicted. A restore naming more than 20 is refused whole with `archive_batch_too_large` and opens nothing. | `/v1/diagnostics.capacity` carries both rows, the evicted count on `sessions.archive_rows`; the sender of an oversized restore receives the typed refusal | A dropped row is no longer listed; its transcript stays in the assistant's own history and can be resumed from the place's past list while it is on it | ✓ |
-| N54 | Board items in one Console list page (`GET /v1/work/v2/items`) | **24 rows**, registered as `work.list_page_rows` (`app.WorkV2ListPageLimit`) | The answer carries `next_cursor`; pressing Load more reads the next newest-first keyset page. The rows and their evidence stay in the store. | The answer's `next_cursor`, the Console's Load more control, and `/v1/diagnostics.capacity` | No | ✓ |
-| N55 | One explicitly requested AI Board-role classification (`POST /v1/work/v2/items/<id>/persona-suggestion`, docs/personas.md) | **16 KiB** of encoded model input, registered as `personas.suggestion_context_bytes` (`personaSuggestionContextLimit`); it also shares `intent.planner_queue` (**2**) and `intent.planner_seconds` (**30 seconds**) | The closed persona catalog and item kind/title stay; the end of an overlong description is omitted until the input fits. A third small turn gets 429 `busy`, and a timed-out or unusable turn gets a typed refusal. No background retry occurs; the request receipt replays a possibly spent turn. | The sender receives a typed result/refusal; all three rows are in `/v1/diagnostics.capacity`; the audit line records provider, timing and outcome but never item text. | No; the turn only changes the browser's proposed selection, and assignment still needs a separate person press. | ✓ |
-| N56 | Settings writes (`POST /v1/settings`; the phone's narrow `POST /v1/settings/default-models`) | **64 KiB** per JSON body, registered as `settings.request_body_bytes` (`settingsRequestBodyLimit` and `defaultModelsCloudBodyLimit`) | A larger request is refused before it is copied into `config.json`. The Cloud route accepts only `codex_default_model` and `claude_default_model`, so the bound does not broaden which settings a paired phone may change. | The sender receives the route's typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N57 | Planning/verification gate contract (`api/v1/work-gates.schema.json`) | Fourteen exact registered rows, itemized below; their values come from `internal/contract/work_gates.go` and may only be lowered by a capacity override | Detailed round capacity fails closed until a person exports and digest-confirms eligible detail purge; result/evidence admission rejects the whole input; bounded reads/passes leave durable rows for the next read/pass; retry and owner observations expire at their named ceilings | Every row is in `/v1/diagnostics.capacity`; retained evidence also reaches health/notice, request-shape refusals reach the sender, and owner promotion owes one notice | Only the explicit person-confirmed round-detail purge removes eligible closed evidence; input rejection and bounded observations remove no durable work | ✓ |
-| N58 | Human intervention notes (`docs/human-interventions.md`) | **8 open** per target conversation, **2,000 rows** per machine, **5 recent resolved** per read; title **120 bytes**, summary/action/reason **500 bytes** each, detail **16 KiB**, document link and each suggestion draft **2 KiB**; registered as eight `session.human_intervention_*` rows | At eight open requests, creation or reopening refuses `interventions_full`. At 2,000 rows, creation first removes the oldest resolved row and durably increments the pruning count; if all rows are open it refuses. Overlong fields refuse the whole write. The read returns five recent resolved rows and keeps the rest until capacity needs space. | The sender gets a typed refusal, the card displays the pruning count, and `/v1/diagnostics.capacity` measures the open and total rows and names the field guards. | Only resolved convenience history is pruned; open human requests stay until the person resolves them. | ✓ |
-| N59 | Ordinary shells a person opens on this machine's own tmux server (`internal/adapters/terminal/owned`, `ports.OwnedTerminals`; the routes are N60) | **8 terminals** per machine (`terminal.count`, `terminal.MaxTerminals`); **4 KiB** per keystroke batch (`terminal.input_bytes`, `MaxInputBytes`); **1 MiB** per paste (`terminal.paste_bytes`, `MaxPasteBytes`); **2,000 lines** per history read (`terminal.history_lines`, `MaxHistoryLines`) | The ninth open is refused `terminals_full` and nothing is closed for it; an oversized batch or paste is refused `input_too_large` before a byte is typed; a larger history ask is lowered to 2,000 lines. The server itself keeps 5,000 lines of history per terminal (`history-limit` in its generated configuration). | The caller, in the refusal; the rows are present in `/v1/diagnostics.capacity`. | No: a refused open or input changes nothing, and older history stays in the server. | ✓ |
-| N60 | The terminal routes (`/v1/terminals*`, `internal/app/terminals`, `internal/transport/http/terminals.go`) and the terminal grants (`terminal-grants.json`, `internal/adapters/devices/grants.go`) | **16** terminal inputs in flight per machine in the terminals' own lane (`terminal.lane`, `terminals.LaneLimit`); **8** streams per terminal (`terminal.viewers`, `MaxViewers`) and **16** per machine (`terminal.streams`, `MaxStreams`); a control lease lasts **30 s** without a renewal, renewed every 10 s (`terminal.lease_seconds`, `MaxLeaseSeconds`); the grants file is read up to **256 KiB** (`terminal.grants_bytes`, `devices.MaxGrantsBytes`); a terminal request body is at most **6 MiB + 4 KiB** (`terminal.body_bytes`, `terminalBodyLimit`: a 1 MiB paste after JSON escaping) | A full lane refuses the input `terminal_busy` at once and types nothing — the Agent Sessions' lanes are separate and unaffected; a ninth viewer or a seventeenth stream is refused `terminal_viewers_full`; a lease not renewed for 30 s lapses and its next input is `lease_expired`; a larger grants file is unreadable, so it grants nobody (terminals only); a larger body is refused before it is read. | The caller, in the refusal; `/v1/diagnostics.capacity` measures the lane and the streams, and `/v1/diagnostics.terminals` says whether the grants file could be read and why not. | No: leases live in memory and a lapsed one only stops typing; a refused viewer or input changes nothing; an unreadable grants file is left for a person to repair. | ✓ |
-| N61 | Keystrokes one Console tab holds for one terminal (`web/console/src/pages/terminal/input-client.ts`; the routes are N60) | **64 KiB** waiting in the tab, in flight included (`MAX_QUEUED_BYTES`); batches of at most **4 KiB** (N59's `terminal.input_bytes`) gathered for **8 ms** or while one is in flight; **6 s** without a frame or a beat marks the screen stale (the daemon beats every 5 s) | Past 64 KiB no key is taken and the header says 「輸入塞滿」 until the daemon confirms enough; a stale screen takes no key until the stream is heard again; every byte not confirmed by `applied_through` is dropped on any lease change and the person is told to look at the screen first — nothing is replayed into a new lease. | The person, in the terminal's header. | Yes, on purpose: unconfirmed keystrokes are dropped rather than typed blind into a shell whose state is unknown (plan v3 D4). | Not in the capacity register: `TestEveryBoundIsRegistered` scans Go under `internal/` and `cmd/` only, so a Console-side bound has no row there yet. |
-| N62 | Cloud terminal transport and lease in one Console tab (`web/console/src/cloud/terminal-transport.ts`, `terminal-session.ts`; N61 covers the local Console) | **5 s** to confirm both relay subscriptions; **10 s** for an E2E machine receipt; **12 s** before the detail page stops waiting for its first frame and offers reconnect; at most **2** machines read together in the all-terminal list, leaving four of the eight relay channels for other activity; **6 s** frame freshness (same as N61); **10 min** maximum connection key lifetime; **4 KiB** per input batch (same as N59 and N61); **64 KiB** waiting input including in flight (same as N61); at most **4** published input/paste requests awaiting receipts in one tab, with later keys waiting in order; **1** verified complete frame arriving before terminal identification (`EARLY_FRAME_LIMIT`, registered as `cloud.terminal_early_frames`); the newest **128** content-free browser stage observations per page plus its first **16** failure-like ones (`cloud.terminal_observation_rows`). | A missing subscription or receipt fails the operation; a missing first frame leaves input disabled and offers reconnect; timed-out input is never retried and its effect is unknown. An expired key, stale frame or expired lease stops typing. Overlarge input is refused in the tab before publishing. A newer early frame replaces the pending one; the tab never acknowledges it until the terminal and lease have been verified. | The hosted Console labels the state and keeps input disabled until a verified fresh full frame and proven lease return. | Yes: unconfirmed input is dropped so it cannot be applied twice to a changed shell; a replaced early frame can be requested again. | The early-frame and browser-observation policies are registered in `internal/domain/capacity`; daemon diagnostics cannot measure live tab usage. After 128 the browser evicts its oldest diagnostic stages and samples its console lines (`docs/cloud-terminal-wire.md`, Diagnostics); this does not affect terminal delivery and no terminal content or identifiers are sent to Cloud. Other Console-only limits remain documented here because `TestEveryBoundIsRegistered` scans Go under `internal/` and `cmd/` only. The machine and relay own their separate authoritative bounds. |
-
-| N63 | Machine-side Cloud terminal admission and revocation (`internal/transport/cloud/terminal.go`; the ordinary terminal service remains N60) | **2 s** roster refresh and **2 s** refresh deadline; **16** connections per machine and **2** per viewer; **6 MiB + 4 KiB** per encrypted request; **64** remembered receipts per connection; **10 min** connection key lifetime; separate stateful ingress, list ingress and refusal lanes of **16** each, with one list worker; **3 s** maximum revoked registration hold; **15 s** maximum unconfirmed open or first-frame receipt hold (`cloud.terminal_unconfirmed_seconds`); **3 s** between freshly captured full frames for an idle Cloud terminal (`cloud.terminal_frame_heartbeat_seconds`), with at most one frame awaiting relay publish settlement per connection (`cloud.terminal_*` capacity rows). | An expired or failed authority refresh denies terminal operations; full connection, request, receipt or lane bounds refuse without applying input. A slow list occupies only its own bounded lane; a full list lane sends `terminal_busy` through the refusal lane where a key exists. Stateful connection operations and input keep their order. An idle screen is recaptured to keep an authorized viewer fresh, while a pending frame defers another publish; the watch retains the last delivered revision and retries the newest complete frame at its next 250 ms read instead of building a queue. Revocation immediately denies host effects, sends a keyed notice or correlated refusal while registered, then retires after relay settlement or the 3 s ceiling. An open connection without another verified request, or one whose first-frame receipt never settles, retires by the 15 s ceiling to free its viewer slot. | Typed terminal refusal where a registered response can be sent; otherwise diagnostics and logs expose the bounded failure. Ordinary Session messages use separate lanes. | Yes: a receipt or notice can be lost at the retirement deadline; the browser also stops input on stale frames and expired keys. | Registered in `internal/domain/capacity` and exposed by diagnostics. |
-| N64 | iTerm2 stall diagnosis (`internal/adapters/terminal/stall.go`, `stall_darwin.go`; wired in `internal/transport/http/server.go`) | Triggered by **5** timed-out iTerm2 Apple Events (killed at the run's own limit, or `-1712`) within **2 minutes** — an episode runs 8-11 a minute, while 19 of the 29 failure clusters logged 2026-09-23..10-02 cleared with at most 4. Holds the newest **32** failures (`iterm.stall_failures`) and the last **512 bytes** of osascript's stderr per failure (`iterm.stall_said_bytes`); writes at most one diagnosis per **30 minutes** (`iterm.stall_cooldown_seconds`); keeps the newest **20** files (`iterm.stall_diagnoses`); each step at most **30 s** (`iterm.stall_step_seconds`; the probe 3 s, `lsappinfo`/`sysctl`/`ps` 5 s) and **512 KiB** of output (`iterm.stall_section_bytes`). One diagnosis runs at a time, in its own goroutine. | Past 32 the oldest failure is let go (each is already a log line); a run inside the cooldown, or while a diagnosis is running, starts nothing; after a write the oldest files past 20 are removed; a step past its deadline is abandoned and recorded `timed out`, a failed step is recorded `failed` and the file goes on; output past 512 KiB is not written and the section says how many bytes. | The log: one `iterm: osascript failed: kind=… session=… elapsed=… reason=…` line per failure and one `iterm: stall diagnosis written: <path>` per file; the rows are in `/v1/diagnostics.capacity`. | Yes, on purpose: older failures and diagnoses go. Nothing a person wrote is touched. | ✓ |
-| N65 | Per-source answers while a refresh is pending | **30 seconds**, registered as `cache.source_answer`; overrides may only lower it. It is the scan budget: the longest one refresh may run. | Each scan records what every source answered as it answered. While a refresh waits on a slow source (iTerm2's list Apple Event, cut off at 10 seconds), a drawing keeps a source complete and its rows `current` only when that source's newest answer is complete, younger than this, and lists exactly the drawn rows. A source that has not answered a refresh older than the 2-second TTL, answered incompletely, or listed a row the drawing lacks is unverified and proves no absence. At this age a complete answer expires and its rows read unverified, as every source's did before 2026-10-02. | `/v1/diagnostics.capacity` reports the oldest recorded answer and how many drawings found one too old; the inventory note names a pending refresh only when a source is unverified | No; answers are re-recorded by every scan. A stalled iTerm2 never vouches for its rows, and a tmux answer the drawing lacks a row of cannot prove that row gone. | ✓ |
-| N66 | Store read-only connections (`internal/adapters/store/sqlite.go` `openReader`) | **4** connections, registered as `store.read_connections`. | Reads made outside a write use this pool and no longer queue behind the single write connection (D08, D25 unchanged for writes). Past the limit a reader waits for a connection on its own context and is refused when that context ends; writes never wait for a reader. Each connection is `query_only`, so SQLite refuses a write made through it. | `/v1/diagnostics.capacity`: connections in use, open, and the pool's wait count and total wait | No; a pool of connections to the same WAL file holds nothing of its own. | ✓ |
-| N67 | Hosted terminal Project list recovery (`web/console/src/pages/terminal/cloud-project.ts`, `web/console/src/cloud/relay-reader.ts`) | One read waits at most **10 s** for the tab's next Cloud client (a hidden tab keeps its connection and waits the same), within the page's **15 s** request deadline. After a failed Project list read, at most **6** automatic retries wait **1, 2, 4, 8, 16, 30 s** (61 s of scheduled delay in all); the return of the terminal host triggers an immediate fresh read. | Once the retry schedule is spent, the page stops automatic reads and leaves a manual Try again action. A temporarily missing connection reports `cloud_reconnecting`; no terminal `open`, `input`, or other write is held for reconnection or replayed. | The hosted page shows the read failure and retry state; input stays disabled until a verified terminal host, Project, frame, and lease are present. | No terminal content is removed. An unconfirmed input remains unconfirmed and is never resent by this recovery path. | These are Console-only bounds, like N61–N62; the Go capacity guard scans only `internal/` and `cmd/`, so it cannot register a JavaScript-only retry schedule in daemon diagnostics. |
-| N68 | Cloud terminal history (`internal/adapters/terminal/owned/server.go`, `internal/transport/cloud/terminal_history.go`) | **4 MiB** captured output, **4 KiB** per complete UTF-8 line, **8 KiB** serialized receipt (`cloud.terminal_history_*` capacity rows); the sealed publish frame is tested below **12 KiB**. | The Cloud path stops capture at its byte limit, refuses an overlong line with `terminal_history_line_too_large`, and returns the newest whole-line suffix with `truncated` and `omitted_lines` when older lines do not fit. A capture over its limit returns `terminal_history_too_large`. The local HTTP history path is unchanged. | The Cloud terminal page labels omitted older lines or displays the typed refusal; input remains governed by the separate lease and frame checks. | Yes: older history lines may be omitted from a Cloud reply, with their count shown. A later request reads the then-current newest history rather than a stored snapshot. | Registered in `internal/domain/capacity`; the machine bounds plaintext before sealing or publishing. |
-| N69 | Root landings one Board item keeps (`internal/adapters/store/root_landings.go`) | **64** rows per item, registered as `work.root_landings_per_item`; the legacy landing copies one item read lists are cut at the same 64. One row per item, repository, commit and target, so a landing recorded again adds none. | The 65th distinct landing is refused `507 landings_full` and the phase change it belonged to is not written; nothing is evicted. | The sender receives the typed refusal; the row is present in `/v1/diagnostics.capacity`. | No | ✓ |
-| N70 | Blocking findings a planning-gate refusal names (`work.PlanningGate`, `work.PlanReviewDispatchGate`) | **8** findings, registered as `planreview.blocking_listed` (`work.PlanReviewBlockingListLimit`). | The refusal (`feature_plan_review_blocking`, `epic_plan_review_blocking`) quotes the first eight blocking findings' summaries and counts the rest as "and N more". | The sender reads the typed refusal; the row is present in `/v1/diagnostics.capacity`. | Nothing is removed: the whole receipt stays on the review task. | ✓ |
-| N71 | A Session's own close waiting for its turn to end (`internal/transport/http/agent_close_schedule.go`, docs/session-closeability.md) | **16** waiting closes (`session.close_scheduled`, `maxScheduledCloses`); **1** per terminal (`session.close_scheduled_per_terminal`, `maxScheduledClosesPerTerminal`); **15 minutes** of waiting each (`session.close_scheduled_seconds`, `maxScheduledCloseWait`) | The 17th is refused `429 close_schedule_full` and nothing waits for it; a repeat for a waiting terminal answers the same 202 and adds nothing; a terminal still working after 15 minutes has its request dropped with `session.close_schedule_dropped` (`expired`). | The sender, in the refusal or the 202; the log and the event store for drops; the rows are in `/v1/diagnostics.capacity`. | Yes: the requests live in memory and a daemon restart drops them; the agent can ask again. Nothing is closed that a fresh audit does not read `safe`. | ✓ |
-| N72 | A root waiting for its children (`clawdline task wait`, `cmd/clawdline/task_wait.go`) | **32** task ids per wait (`waitIDLimit`); `--timeout` default **9 m**, at most **2 h** (`waitTimeoutLimit`); polls start at 1 s and double to **10 s** (`waitPollLimit`); each GET bounded at 15 s; **3** unreachable polls in a row (`waitReadLimit`) | More ids or a longer timeout is a usage error (exit 2); at the timeout the wait prints what settled, lists what is still running and exits 3; three unreachable polls, an unknown id or an unreadable answer exit 4, never 0. A settled task that failed exits 1; one that was cancelled (`clawdline task cancel`) exits 5 when none failed otherwise. Precedence: 4, then 3, then 1, then 5 | The caller reads the exit status and the stderr line | No: nothing is stored; run it again | ✓ |
-| N73 | Work-unit cursors (`store.AddWorkCursors`, `app.WorkUnitRecorder`, `GET /v1/usage/work-units`, docs/token-ledger.md "One unit of work") | **50 000 cursor rows** kept (`usage.work_cursor_rows`, `store.WorkCursorRowLimit`); **1024 edges** waiting for the cursor worker (`usage.work_cursor_queue`, `app.workCursorQueueLimit`); **500 units** per answer, most recent first (`usage.work_units_per_answer`, `app.workUnitAnswerLimit`); 64 behind cursors settled per pass | Past 50 000 rows the oldest go in the write that adds one (a journal: the ledger's own rows keep every session's cumulative totals). An edge posted to a full queue is not read: it is written as a `cursor_missing` marker before the queue drains, and past twice the limit it is counted and logged. Past 500 units the answer says `truncated` | `/v1/diagnostics.capacity` for all three; the daemon log once when the queue fills; the answer for the units | No: the queue only delays a cursor, and a narrower `since` reads the rest | ✓ |
-| N74 | Work samples and the before/after report (`app.UsageLedger.WorkSamplesBetween`, `GET /v1/usage/work-samples`, `clawdline usage --freeze-baseline`/`--work-report`, docs/token-ledger.md "Did a change make one unit of work cheaper") | **2000 child tasks** per answer, newest first (`workSampleLimit` in `app/usage_report.go`); a group needs **20 completed comparable units** in each period before it is judged (`workReportMinUnits`); a frozen baseline file is read to **16 MiB** (`workBaselineReadLimit` in `cmd/clawdline/usage_report.go`); `page`, `parameter` and `read` lines on the capacity baseline, not rows, because the answer is computed on each ask and the file is the person's | Past 2000 the answer covers the newest and says `truncated`, and the report prints that line; a group under 20 says `insufficient_evidence` with its counts; a larger file is refused by name | The answer and the report | No: nothing is stored by the daemon, and a narrower range reads the rest | ✓ |
-| N75 | A root cancelling a child it dispatched by mistake (`clawdline task cancel`, `POST /v1/orchestrator/tasks/<id>/cancel`, `internal/app/orchestrator/cancel.go`) | **500** bytes of reason after its whitespace is collapsed (`CancelReasonLimit`); **200** characters of Idempotency-Key (`cancelKeyLimit`); both on the capacity baseline, like N72 | A longer reason is refused `422 reason_too_long` (the CLI refuses it first, exit 2), an empty one `400 reason_required`; a longer key `400 bad_idempotency_key`. Nothing is cut and nothing is settled. | The sender, in the typed refusal | No: the task is left as it was | ✓ |
-| N76 | Milestone handoffs and their comparison (`orchestrator.CheckMilestoneSummary`, `POST /v1/orchestrator/handoffs` with `milestone`, `clawdline handoff`; `app.UsageLedger.CompareHandoff`, `GET /v1/usage/compare-handoff`; docs/handoff.md "Milestone handoffs", docs/token-ledger.md "Did handing over pay") | A milestone summary is at most **6 KiB** (`MilestoneSummaryLimit`), with no quoted or fenced block over **12 lines** (`milestoneVerbatimLines`); obligations.md lists at most **40 rows** per kind (`milestoneObligationRows`); a comparison reads at most **300 finished items**, newest first (`handoffItemLimit`), and computes a saving only when each compared group has **20 items** (`handoffComparableLimit`); `admission`, `page` and `parameter` lines on the capacity baseline, because nothing is kept | A longer summary, or one with a long block, is a 422 `bad_milestone_summary` naming each problem, and nothing is opened; past 40 rows obligations.md says how many more; past 300 items the answer says `truncated`; a group under 20 items makes the verdict `insufficient_evidence` with a null saving | The refusal's `problems`; `clawdline handoff --check`; the comparison's `truncated`, `too_few` and `verdict` | No: nothing is stored beyond the handoff record and its package | ✓ |
-| N77 | A turn's status report (`clawdline report`, `internal/adapters/turnreport`, the guide's "report" part) | A code file's whole text up to **70 000 bytes** (`fullTextLimit`), a Markdown file's up to **1 MiB** (`markdownLimit`); one commit's diff of one file up to **256 KiB** (`diffLimit`); **12 MiB** of text and diffs in one report (`reportLimit`); **500 commits** per report (`commitsLimit`); the daemon answers a kept report of at most **48 MiB** at `/reports/<id>` (`servedLimit`); `read`, `page` and `admission` lines on the capacity baseline, because the report is a file on the person's machine and nothing is kept by the daemon | A larger file carries only its diffs and says so; a longer diff is cut and says so; past 12 MiB the largest whole texts go first, then the largest diffs, each named in the report and on stderr; more than 500 commits is refused before anything is read; a larger kept page is not found | The report itself and the command's stderr | No: the person names fewer commits or reads the file in the repository | ✓ |
-
-N57 uses the exact names approved by the planning/verification gate plan. “Owner” below is the
-subsystem responsible for enforcing the bound; `Evicted by` is the capacity register's separate
-answer to who may let anything go.
-
-| Registry name | Limit | Class / unit | Owner | At limit | Told / evicted by |
-|---|---:|---|---|---|---|
-| `work_gate_round_details_per_item` | 64 | evidence / rows | Work v2 | refuse `verification_rounds_full`; person export plus digest/version-confirmed purge is the only recovery | diagnostics, notice, health / person |
-| `work_gate_round_details_per_store` | 10,000 | evidence / rows | Work v2 store | same refusal and recovery; eligible oldest items are listed, never auto-purged | diagnostics, notice, health / person |
-| `work_gate_tasks_per_round` | 2 | buffer / rows | coordinator and broker | refuse another dispatch and settle a technical escalation | diagnostics, sender / daemon |
-| `work_gate_claims_per_round` | 32 | buffer / rows | broker result admission | reject the entire result as a typed technical failure | diagnostics, sender / daemon |
-| `work_gate_evidence_strings_per_claim` | 8 | buffer / rows | broker result admission | reject the entire result as a typed technical failure | diagnostics, sender / daemon |
-| `work_gate_evidence_string_bytes` | 500 UTF-8 bytes | buffer / bytes | broker result admission | reject the entire result as a typed technical failure | diagnostics, sender / daemon |
-| `work_gate_result_bytes` | 64 KiB | buffer / bytes | broker HTTP | reject the upload before persistence | diagnostics, sender / daemon |
-| `work_gate_evidence_artifacts_per_task` | 8 | buffer / rows | broker evidence admission | reject the additional upload before persistence | diagnostics, sender / daemon |
-| `work_gate_evidence_artifact_bytes` | 2 MiB each | buffer / bytes | broker evidence admission | reject the upload before persistence | diagnostics, sender / daemon |
-| `work_gate_evidence_total_bytes_per_task` | 8 MiB | buffer / bytes | broker evidence admission | reject the upload before persistence | diagnostics, sender / daemon |
-| `work_gate_recent_rounds_per_item_read` | 10 | observation / rows | Work v2 read | return aggregates/latest plus the newest ten; older detail remains stored | diagnostics / daemon |
-| `work_gate_due_rows_per_pass` | 20 | observation / rows | gate coordinator | continue the next supervised pass from a stable cursor; no due row is dropped | diagnostics / daemon |
-| `work_gate_retry_backoff_seconds` | 300 seconds | cache / seconds | gate coordinator | expire/cap the delay so the queued row becomes due and visible | diagnostics / daemon |
-| `work_gate_owner_offline_grace_seconds` | 900 seconds | observation / seconds | gate coordinator | expire the stale live-owner observation, atomically promote to the person, notify once | diagnostics, notice / daemon |
-| `update.refresh_seconds` | 1800 seconds | observation / seconds | update check | read the cloud's BUILD.json again; the old answer is replaced only by a good new one ([updates.md](updates.md)) | diagnostics / daemon |
-| `update.fetch_timeout_seconds` | 10 seconds | observation / seconds | update check | abandon the read and show its error beside the last good answer | diagnostics / daemon |
-| `update.build_body_bytes` | 4096 bytes | buffer / bytes | update check | refuse the body as not a BUILD.json | diagnostics / daemon |
-| `release.manifest_bytes` | 65536 bytes | buffer / bytes | release manifest read | refuse as `manifest_malformed`; nothing is followed | diagnostics / daemon |
-| `release.signature_bytes` | 16384 bytes | buffer / bytes | release signature read | refuse as `manifest_signature_invalid` | diagnostics / daemon |
-| `release.check_interval_seconds` | 21600 seconds | observation / seconds | release check | read the channel's manifest again; a failed read keeps the last good one ([updates.md](updates.md#release-installs)) | diagnostics / daemon |
-| `release.check_jitter_seconds` | 1800 seconds | observation / seconds | release check | added at random to each interval so machines do not ask at once | diagnostics / daemon |
-| `release.fetch_timeout_seconds` | 30 seconds | observation / seconds | release check | abandon the read; `release_unreachable` beside the last good answer | diagnostics / daemon |
-| `release.download_timeout_seconds` | 900 seconds | buffer / seconds | update download | abandon the download as `download_failed`; nothing changed | diagnostics / daemon |
-| `release.artifact_bytes` | 512 MiB | buffer / bytes | update download | refuse the artifact as `download_failed` | diagnostics / daemon |
-| `release.list_bytes` | 1 MiB | buffer / bytes | beta release list | refuse the list as `release_unreachable` | diagnostics / daemon |
-| `release.archive_entries` | 20000 | buffer / rows | release unpack | refuse the archive as `archive_unsafe` | diagnostics / daemon |
-| `release.unpacked_bytes` | 2 GiB | buffer / bytes | release unpack | refuse the archive as `archive_unsafe` | diagnostics / daemon |
-| `release.smoke_timeout_seconds` | 15 seconds | buffer / seconds | update smoke run | refuse the release as `smoke_run_failed` | diagnostics / daemon |
-| `release.health_wait_seconds` | 60 seconds | buffer / seconds | update supervisor | roll back as `health_timeout` | diagnostics / daemon |
-| `release.pending_deadline_seconds` | 600 seconds | buffer / seconds | new release's boot guard | give the update up as `boot_guard` and start the old release | diagnostics / daemon |
-| `release.boot_attempts` | 3 | buffer / rows | new release's boot guard | the fourth start gives the update up as `boot_guard` | diagnostics / daemon |
-| `release.supervisor_runs` | 5 | buffer / rows | update supervisor | stop trying the new release; roll back as `supervisor_gave_up` | diagnostics / daemon |
-| `release.lock_stale_seconds` | 1800 seconds | idempotency / seconds | update.lock | take over a lock left by a process that died; a younger one refuses `update_in_progress` | diagnostics / daemon |
-| `release.backups_kept` | 2 | journal / rows | store snapshots | remove the oldest snapshot | diagnostics / daemon |
-| `release.previous_releases_kept` | 2 | journal / rows | releases/ | remove older releases after a healthy update; source deploys are kept | diagnostics / daemon |
-| `release.failed_versions` | 16 | journal / rows | failed.json | forget the oldest version that rolled back | diagnostics / daemon |
-| `release.state_file_bytes` | 64 KiB | buffer / bytes | updater state files | read the file as unreadable: `update_state_unreadable`, never idle | diagnostics / daemon |
-| `release.apply_follow_seconds` | 1500 seconds | buffer / seconds | `clawdline update --apply` | stop following and exit 3; the update continues | diagnostics / daemon |
-| `release.app_swap_poll_seconds` | 60 seconds | observation / seconds | staged macOS app | look again whether the app has quit | diagnostics / daemon |
-| `release.auto_apply_retry_seconds` | 300 seconds | observation / seconds | auto-apply held back by a busy session | look again whether the sessions are idle | diagnostics / daemon |
-| `update.apply_body_bytes` | 4096 bytes | buffer / bytes | POST /v1/update/apply | refuse the body as too large | diagnostics / daemon |
-
-另外兩件跟「誰會知道」直接相關的：`plan.md` §3.2 與 `cross-platform.md` 還寫 `scheduler` 在 `/v1/health`，實際已經在
-`/v1/diagnostics`；`git/changes.go:80-82` 的註解說「every file read goes through an `io.LimitReader`」，至少 6 處不是
-（`result.json`、`task.json`、`board/settings.go:61`、`nextconfig.go:119`、`pinned.go:277`、`identity.go:76`）。
-
-### 2.4 最近的牆（舊 app，今天還在用的那一個）
-
-| 什麼 | 何時 | 到時的樣子 | 依據 |
-|---|---|---|---|
-| 時間軸 entries | **已撞**（09-17 02:06:58） | 一切新紀錄被拒，含 47 筆已驗證的 landing | O1，實測 |
-| 看板收據 4,096 | **約 5–8 天**（9/23–9/26） | 開始 FIFO；重試可能變成重複執行，而且畫面不會說 | O15；外推（收據沒有時間戳，用 revision 比例換算） |
-| task 紀錄 30 天 | **2026-09-28** | 最舊的 task 紀錄每 6 小時被安靜刪掉一批；用量頁上那些任務變成「無法歸因」 | O5；最舊一列 created 08-29 13:12，settled 時間未逐列量 |
-| 看板卡片 2,000 | **約 29 天**（10 月中） | 新卡拒絕，自動匯入的任務不再出現在看板上 | O14；外推，近 7 天每天 41 張 |
-| 家規 16,000 字 | **已用約 96%** | 再加幾百字，主檔的最後一段規則就會被切掉（local 那份先花預算，不會被切），只有 child 看得到那句說明 | O34 |
-| `Clawdline.log` | 沒有牆，**是磁碟** | 近三天每天 21–38 MB，高峰 62 MB；目前 313 MB | O21 |
-
-**這張表裡的每一面牆，今天都沒有任何東西會在撞上時告訴使用者。**這些都在舊 app，本 task 不能改它；root 要不要先把它們轉告使用者，
-見 §8 第 1 項。
-
----
-
-## 3. 哪些是缺陷
-
-判準只有一個問題：**這筆資料是什麼類別，而它在到頂時的行為，是不是這個類別唯一正確的行為。**
-類別見 §4.2；這裡先用結果分組。
-
-### 3.1 (a) 該淘汰卻拒絕
-
-| 舊 | 新 | 為什麼該淘汰 |
-|---|---|---|
-| O1 時間軸 entries | —（未移植） | 98.7% 是 git 匯入的**觀察**，可以從 git 逐字重算（§6）；用同一個計數器擋住證據（landing）與觀察（git 歷史），觀察一滿，證據也跟著進不來 |
-| O2 時間軸 events／bytes、O4 checkpoints | — | 同上 |
-| O3 時間軸 `requestReceipts` | — | 冪等收據只需要活過重試視窗；滿了就讓整個指令 API 永久失效，是把「保護」變成「停機」 |
-| O12 durable-reports | — | 報告是敘事，可以移到冷層；沒有刪除 API，滿了就永遠滿 |
-| O14 看板卡片 | （N25 是名義上的上限，實際沒有執行，計在 c） | 已結案的卡是溫資料，該讓位給新卡，而不是讓新卡進不來 |
-| O16 看板檔案 | N26 | 遠，但同一形狀：載入超限就整個看板 503 |
-| O30 Cloud replay window | N21 | 閒置超過封包最長壽命的 sender，它的序號窗已經不可能再被重放利用，可以安全淘汰；不淘汰就要等重啟 |
-
-**原則：**拒絕只適合「不能淘汰」的東西（§4.2 的證據類）。可以重算、可以摘要、已經結案的東西佔住空間，讓新的東西進不來，
-這不叫保護，是**把遺忘的成本轉嫁給未來所有的寫入**。**而拒絕無論如何都要大聲**：拒絕的那一刻就是警報的那一刻。
-
-### 3.2 (b) 該拒絕卻無聲截斷、覆蓋或淘汰
-
-| 舊 | 新 | 丟的是什麼 | 應該怎樣 |
-|---|---|---|---|
-| O5 task 紀錄 1,350／30 天 | —（第一波不刪，但也沒警報） | **證據**：交付事實、用量歸因（F1：149 列） | 不刪（broker-design §6.1 L2）；空間吃緊時拒絕新派工並大聲說 |
-| O6 `session_deliveries` 200 | — | **未結清**的交付義務 | 未結清的永不淘汰；已結清的才是溫資料 |
-| O15 看板收據 FIFO | N24 | 冪等保護；錯誤回應也佔一格 | **按時間**過期（視窗外），視窗內滿了就拒絕新指令（429＋`Retry-After`），不淘汰視窗內的 |
-| O17 看板歷史 log 寫失敗被吞 | — | 歷史事實 | 寫失敗是具型別的結果，計入 diagnostics；內嵌視窗只裁已經確認寫進 log 的 |
-| O27 送出去重只在記憶體 | （`start.go` 的冪等快取同樣只在記憶體） | 重啟後重送會打兩次字 | 冪等收據落盤（舊 Board 已經這樣做），視窗內跨重啟有效 |
-| O32 推播 body 二分截短 | —（新版有 log） | 通知內容 | 截短可以，但要在內容裡標記「…」並計數 |
-| O33 summary 2,000 字截斷、`result.json` 超過 2 MiB 當作不存在 | N8、N9 | **child 的交付敘事**；「做完了」被讀成「沒做完」 | 全文存進 `broker_task_text`，截斷只發生在畫面；超大的 `result.json` 回具型別的拒絕 `result_too_large`，不當作不存在 |
-| O35 transcript 8 MiB 尾端無旗標、`truncation` 沒人讀 | N17 | 使用者看不到舊對話，而畫面讀起來像完整的 | 截斷一律帶旗標，前端一律畫出「更早的內容沒有載入」 |
-| O36 圖片淘汰仍被引用的 | N15 | **使用者的輸入** | 被 transcript 引用的圖以位元組預算保留，預算到頂時先告警再淘汰最舊的，淘汰要計數 |
-| O37 Drops 40 | N16 | 已經寫進 prompt 的檔案 | 同上 |
-| — | N2 事件寫入失敗被丟掉 | **事實**，磁碟滿時全部 | 寫入失敗是具型別的錯誤；`store.write_errors` 進 diagnostics；證據類寫不進去時 health `ok:false` |
-| — | N3 broker record 解不開就跳過 | task 從畫面上消失 | 計數並以 `unreadable` 列出現，不是消失 |
-| — | N5 `progress.json` 超長直接丟 | 進度 | 截斷並計數，或回寫一個具型別的拒絕 |
-| — | N19 screen bus 滿了丟 | 最新狀態 | **最新值 channel 要覆蓋，不是丟**——配對 watcher 的 `offer`（`authority.go:760`）已經是對的寫法 |
-| — | N20 Cloud 入站佇列丟最舊 | **指令** | 拒絕新的並告訴送的人（busy＋重試），不丟已經收下的 |
-| — | N27 auth body 截斷後當成 `{}`；N28 文件列表無旗標 | 請求內容／列表 | 拒絕 413；截斷一律帶旗標 |
-
-**原則：****用一個吵的失敗換一個安靜的失敗**（`board-design.md` §2.8 引用的 `80173fb1`，這份考古裡最該照搬的一句話）。
-截斷只能發生在**呈現**，不能發生在**儲存**；任何截斷、覆蓋、淘汰都要留下「掉了多少」的計數，而且讀的人要看得到。
-
-### 3.3 (c) 根本沒有上限
-
-| 舊 | 新 | 會長到哪裡 |
-|---|---|---|
-| O21 `Clawdline.log` 313 MB | N29（stderr，去向未定） | 磁碟 |
-| O22 `remote-audit.jsonl`、O23 kept 重複寫 | N12 | 磁碟；舊版的 `recentAudit(limit: 200)` 為了取最後 200 行會讀整個檔（雖然現在沒有呼叫者） |
-| O10 四個集合、O11 `owned-storage` | N1 SQLite 全部資料表 | 解碼成本跟著全部歷史長（N1 的每 2 秒全表解碼） |
-| O13 `usage.sqlite3` | — | 帳本本來就不該刪，缺的是空間警報 |
-| O31 推播訂閱 | N14 | 新版：超過 1 MiB 時**所有推播都失敗** |
-| O38 worktree 508 MB | N10、N11 | 磁碟；新版沒有任何清掃 |
-| — | N13 裝置清單 | **超過 4 MiB 時 auth 在啟動時整個失敗**——一個沒有上限的東西，最後撞上的是另一個東西的上限 |
-| — | N9、N27 | 單一請求的大小 |
-
-**原則：**「沒有上限」本身不是缺陷——**證據就不該有筆數上限**。缺陷是**沒有人知道它在長**。所以每一個沒有上限的東西，
-都要換成下面兩者之一：(1) 有明確的上限與到頂行為（log 輪替、快取 LRU、請求大小）；(2) 刻意不設筆數上限，但以位元組與磁碟空間
-登記、有成長速率與「預計多久會到」的預測，會叫（證據類）。N13 說明了第三種情形：**沒有上限的東西，會在別人的上限上爆炸**，
-所以讀取上限（4 MiB、1 MiB）也要登記，而且要比寫入端先叫。
-
-### 3.4 橫跨三類：行為對了，但沒有人知道
-
-O8／N7 dead letter、O28 ledger 的拒絕計數沒人讀、O34 家規截斷只有 child 知道、
-O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是「誰會知道」。
-
-反過來，舊 app 唯一做對的地方是 O26：`http_reliability` 在 `/v1/health` 裡把 `limits.streams: 16` 和
-`metrics.streams{current, peak, refused, evicted}` 放在一起。今天當場讀得到 `streams.evicted = 1`。**它的 HTTP 層滿了看得見，
-它的儲存層滿了看不見；差別不在技術，而在於前者有一張表，後者沒有。**
-
-**原則：**一個上限＝一個數值＋一個到頂行為＋一個計數器＋一個會被告知的人。四個缺一個，就是缺陷。
-
-### 3.5 順帶發現：舊 app 的測試寫進了使用者正式的時間軸
-
-時間軸 27 筆 `landed_to_git` 裡，**10 筆的 task id 是測試用的假值**（`10101010-2020-3030-4040-505050505050`、
-`30303030-4040-5050-6060-707070707070`，還有一個是 6、7、8、9、a 依序各自重複排成的 id…），標題是
-「a record naming the wrong commit」「landing state machine」「legacy pending row」，`effectiveAt` 是 `10`、`20`、`30`、`5300`
-（也就是 1970 年），觀察時間都是 2026-09-10 13:39 前後。這些 id 在舊 repo 的
-`Tests/LandingCurrencyTests.swift`、`OrchestratorLandingTests.swift` 等檔裡找得到。
-
-機制：`ProjectTimelineIntegration.observeBrokerRecord` 用的是 `storeForTesting ?? .shared`，而 `.shared` 的路徑寫死在
-`~/.config/clawdline/project-timeline.json`（`ProjectTimelineStore.swift:11, 95-99`）。landing 測試走到
-`Orchestrator.recordLandingInLedger`（`:2924-2928`）時沒有設 `storeForTesting`，就寫進了使用者的正式 store。
-
-**這跟容量有關**：測試吃掉了正式 store 的容量，而且把假資料混進了「證據」那一欄。新版的對應規則見 §4.8。
-
----
+For maintainers, this page collects the capacity rules and the N inventory rows cited by code.
+The [dated 2026-09-18 inventory](records/limits-2026-09-18.md) preserves the full measurements,
+retired-app comparison, analysis, and uncited rows. The implementation register is
+`internal/domain/capacity`; read it for the enforced current values.
 
 ## 4. 新版的統一規則
 
@@ -399,15 +18,14 @@ O39 task 目錄刪除沒有 audit——**這些都是對的行為**，缺的是�
 | `name` | 穩定的鍵：`audit.security`、`log.daemon`、`store.db`、`broker.task_text`、`board.receipts`、`sse.subscribers`、`cloud.relay_queue`… |
 | `class` | 資料類別（§4.2），**決定到頂時准許的行為** |
 | `unit`／`limit` | 筆數、位元組或天數，至少一個；**可注入，而且覆寫只准調小**（§4.7） |
-| `warn_at` | 預設 80%；可以逐列覆寫（例如看板檔案在 8 MiB 就該說，見 §5） |
+| `warn_at` | 預設 80%；可以逐列覆寫（例如看板檔案在 8 MiB 就該說，見[歷史分析 §5](records/limits-2026-09-18.md)） |
 | `at_limit` | `refuse`／`evict_oldest`／`expire`／`rotate`／`summarize`／`coalesce`／`disconnect`，必須是該類別准許的 |
 | `measure()` | 回傳 `used`、`oldest_at`；**要便宜**（`stat`、有索引的 `COUNT`，不讀整個檔——`recentAudit` 讀 5.7 MB 取 200 行就是反例）；**量不到回 `unknown`，不回 0**（broker-design F5） |
 | 計數器 | `refused`、`evicted`、`expired`、`rotated`、`dropped`、`write_errors`、`last_action_at`；行程內累計，重啟歸零並附 `counting_since` |
 | `owner` | 誰會被告知（§4.5） |
 
-登記表本身有兩道守衛：一個測試走過每一列，檢查 `at_limit` 是該類別准許的、`measure` 存在、`limit` 可注入；另一道掃 `internal/`
-裡的 `max…`／`…Limit`／`Maximum…` 常數與有界 channel，沒有對應登記就紅。**第二道守衛上線的第一天就應該紅在 N25**
-（`MaximumItems` 宣告了卻沒人用），這正好是它會紅的證明（`plan.md` §10：「那個守衛自己要能證明會紅」）。
+登記表有兩道守衛：一個檢查每列的類別、量測與上限；另一個掃描有界常數和 channel，要求對應登記。
+詳細的首次盤點與反例見[日期紀錄](records/limits-2026-09-18.md)。
 
 背景工作樹新增兩列。`sessions.agent_rows` 是每個 session 最多帶到畫面的 provider agent 數，限制 6，較舊列留在 provider 的原始紀錄並以
 `agents_reading.truncated` 明說省略數；`cache.background_agents` 有三張可重建的 LRU：immutable metadata（Claude sidecar 與 Codex rollout head 共用）、
@@ -426,9 +44,7 @@ Work v2 的看板項目與直接 Session 待辦參考圖片是使用者輸入，
 `work.image_bytes_per_item` 15 MiB、`work.image_bytes_total` 512 MiB；另有 buffer 列
 `work.image_request_body_bytes` 18 MiB（保留加密 Cloud envelope 的膨脹空間），同時約束本機 HTTP 與 Cloud 子文件。Diagnostics 分別量
 最滿主體（項目或直接待辦）的張數／位元組、最大單張及全庫位元組；不會為新圖片刪除既有參考資料。
-Since 2026-09-26 the pictures' bytes are files under `reference-images/` in the state directory, not
-BLOBs in `clawdline.sqlite3`; the rows keep each picture's metadata and sha256, and the byte readings
-above are the rows' `byte_count`, which a read proves against the file (N48).
+Reference-image bytes are files under `reference-images/`; the rows keep metadata, sha256 and byte counts (N48).
 
 `work.documents_per_item` measures the fullest item that can still receive
 documents. Its diagnostic note identifies writable items at the 32-document
@@ -457,9 +73,8 @@ item. Neither action silently removes retained evidence.
 | **診斷 log** `diagnostic_log` | daemon log | 可以 | 按大小輪替（10 MiB × 5），0600 |
 | **即時緩衝** `buffer` | SSE 每訂閱者緩衝、Cloud 入站佇列、終端機 lane | **丟了就要讓對方知道** | 最新值 channel `coalesce`；指令佇列 `refuse`（告訴送的人）；慢消費者 `disconnect` 後重拿快照（照 O26）。**絕不默默丟中間的一段** |
 
-**稽核要拆成兩份。**舊 audit 的位元組有 80.8% 是 `orchestrator.*`——那是營運紀錄，而且在新版已經是 store 裡的事件，不需要再寫一份；
-安全事件不到 1%，遠端寫入（`session.*`、`voice.*`、`place.*`…）約 18%。拆開之後，「稽核永不丟」每年只要十幾 MB，
-而不是跟著 broker 的每一次心跳一起長。
+**稽核要拆成安全事件與營運事件。**安全事件不刪；營運事件按狀態轉換留存。
+量測與理由見[日期紀錄](records/limits-2026-09-18.md)。
 
 ### 4.3 分層：熱／溫／冷——要，但層由類別決定，不由年齡決定
 
@@ -468,9 +83,6 @@ item. Neither action silently removes retained evidence.
 | **熱** | 活著的 task、未結清的 obligation、視窗內的冪等收據、最近的觀察 | SQLite 主表＋記憶體 | 熱路徑直接讀 | 工作集大小；分頁 |
 | **溫** | 已結案的 task 紀錄（L2）、90 天內的長文（L3）、看板已結案的卡與每項歷史、安全稽核的當前分段 | 同一個 SQLite，但**熱路徑不碰**（第一步就要讓 N1 的「每 2 秒解碼全表」只碰熱的） | 分頁、按需 | DB 位元組預算（預設 1 GiB 告警）＋磁碟剩餘 |
 | **冷** | 長文原文（摘要之後）、稽核的舊分段、舊 app 凍結下來的檔 | DB 之外、壓縮、append-only 的分段檔，`CLAWDLINE_NEXT_DIR/archive/` | 只有明確的工具（CLI、設定頁的「匯出」）會讀 | **只有人能刪**，而刪除本身寫進安全稽核 |
-
-量級：長文佔舊 task 列的 46%（broker-design §2.1），2.49 MB／769 筆＝每筆約 3.2 KB，每天 36 筆一年約 42 MB 原文，壓縮後約十 MB。
-所以「冷層不刪」付得起。
 
 ### 4.4 到頂時的行為，以及空間吃緊時的讓位順序
 
@@ -490,37 +102,18 @@ item. Neither action silently removes retained evidence.
 | `/v1/diagnostics.capacity`（本機 token） | 永遠 | 每一列的完整讀數（下面的形狀） |
 | `/v1/health`（公開） | **只在證據或安全稽核類到頂，或讓位走到第 5 步時** | `ok:false`＋`reason:"capacity_exhausted"`；**名字與數字不上公開的 health**，只在 diagnostics。warn／critical 不翻 `ok`，避免「一直是紅的」 |
 | 推播（既有的 `internal/adapters/push`） | 進入 `critical` 或 `full` 時；回到正常時一則「已恢復」 | 一則一句話：什麼、多滿、哪天會到、要做什麼。每列 24 小時最多一則；**預算與 agent 的 30／小時分開**，不跟 agent 搶 |
-| 畫面 | 任一列不是 `ok` 時 | 設定頁的「容量」區塊（`CapacityBlock`，Go 自己的區塊，不在 1:1 範圍內；經 Clawdline Cloud 的 `capacity` 讀取，手機也看得到）。每則容量推播都指向它。主畫面橫幅見 §8 第 3 項 |
+| 畫面 | 任一列不是 `ok` 時 | 設定頁的「容量」區塊（`CapacityBlock`，Go 自己的區塊，不在 1:1 範圍內；經 Clawdline Cloud 的 `capacity` 讀取，手機也看得到）。每則容量推播都指向它。主畫面橫幅見[歷史分析 §8](records/limits-2026-09-18.md) 第 3 項 |
 | store 的 `events` | 每次狀態轉換、每一批淘汰／過期／輪替 | `capacity.state{name, from, to}`、`capacity.evicted{name, count, oldest_at}`；**一批一筆，不是一項一筆**（O23 的反例） |
 | `clawdline doctor` | 手動 | 印整張表，給沒有瀏覽器的 Linux |
 
-`/v1/diagnostics.capacity` 的形狀：
-
-```json
-{"capacity": {
-  "counting_since": 1789694351,
-  "beat": {"at": 1789694400, "tick_seconds": 60},
-  "entries": [
-    {"name": "audit.security", "class": "security_audit", "unit": "bytes",
-     "used": 412300, "limit": 8388608, "ratio": 0.049, "state": "ok", "at_limit": "rotate",
-     "rotated": 0, "refused": 0, "evicted": 0, "oldest_at": 1789600000,
-     "growth_per_day": 31000, "projected_full_at": 1802000000},
-    {"name": "board.receipts", "class": "idempotency", "unit": "rows",
-     "used": 2639, "limit": 4096, "window_seconds": 86400, "state": "ok", "at_limit": "refuse",
-     "expired": 0, "refused": 0},
-    {"name": "store.db", "class": "evidence", "unit": "bytes",
-     "used": 69632, "limit": 1073741824, "disk_free_bytes": 180000000000, "state": "ok",
-     "at_limit": "refuse", "write_errors": 0}
-  ]
-}}
-```
+The dated [diagnostics payload example](records/limits-2026-09-18.md) is kept with the source inventory.
 
 ### 4.6 水位與預測
 
 - `ok` < 80% ≤ `warn` < 95% ≤ `critical` < 100% ≤ `full`；**另外有 `unknown`**（量不到），它不是 `ok`。
 - **遲滯**：往下要比門檻低 5 個百分點才回去，不然在 95% 附近會一直通知。
 - **預測**：用最近 7 天的成長算 `projected_full_at`。**距離到頂不到 14 天，就算比例還低也升到 `warn`**——撞牆前兩週說，
-  而不是撞牆那一刻說。§2.4 那張表就是這條規則今天會產出的東西。
+  而不是撞牆那一刻說。[§2.4](records/limits-2026-09-18.md) 那張表就是這條規則今天會產出的東西。
 - 量測用一個自己的 beat（60 秒，跟 scheduler 同一個節奏），而且**這個 beat 本身也要可觀察**（`plan.md` §3.2 的規則：
   「巡過但沒事」和「巡邏停了」在外面看起來都是安靜）。
 
@@ -542,268 +135,54 @@ item. Neither action silently removes retained evidence.
 
 **覆寫只准調小**，而且覆寫中的列在 diagnostics 標 `overridden: true`、log 記一行——防止有人（包括我們自己）把上限調大來讓警報閉嘴。
 
-**現成的滿載樣本**：舊時間軸 `project-timeline.json` 就是一份真實世界的 100% 樣本、看板檔是 64% 的收據樣本。
-等新版有時間軸或看板收據的讀取器時，拿它們的**副本**當 fixture，應該直接看到 `full`／`warn`。
+The test-isolation rule (§4.8) remains in the [dated source record](records/limits-2026-09-18.md).
 
-### 4.8 測試不能寫進正式的目錄
+## Code-cited inventory rows
 
-§3.5 的教訓寫成規則：**預設路徑在測試裡不可以解析到使用者的目錄。**新版的做法：所有 store 的預設路徑只從
-`CLAWDLINE_NEXT_DIR` 解析；測試的 helper 在 `testing.Testing()` 為真、而目錄解析結果落在 `$HOME` 底下時直接 panic。
-這條守衛也是一個上限——它限制的是「誰可以吃正式 store 的容量」。
+These rows retain their original N identifiers and dated wording. Verify a current value against
+`internal/domain/capacity` before changing behavior. The [complete inventory](records/limits-2026-09-18.md)
+contains every other row and its measurement context.
 
----
-
-## 5. 與既有文件的一致與分歧
-
-| 文件 | 那邊怎麼說 | 本文 | 一致？理由 |
-|---|---|---|---|
-| `broker-design.md` §6.1 L1 | 工作目錄 24 小時＋擁有者活著就保留 | 同（§4.2 `work`），另加：保留的數量與位元組進 diagnostics、重複的 kept 只記一次 | **一致**。補充：新版目前**連 L1 都沒有**（N10、N11） |
-| `broker-design.md` §6.1 L2 | 熱列不刪（每年約 97 MB） | 同（證據類） | **一致**。補充：「不刪」必須搭配 `store.db` 的位元組告警，否則就是另一個「沒人知道它在長」 |
-| `broker-design.md` §6.1 L3 | 長文 90 天，可設定（刪除） | 90 天後**留摘要、原文移到冷層**，不直接刪；review 的裁決、axes 與 finding metadata 是**證據**，留在 L2，只有散文進 L3 | **分歧**。理由：summary 是人唯一讀得懂的「這個 child 做了什麼」，冷層一年約十 MB 付得起（§4.3）；F1 的教訓是「刪掉的證據再也歸因不回來」，把裁決跟散文一起刪會重演 |
-| `broker-design.md` §6.2 | 事實落盤、觀察不落盤 | 同（§4.2 `observation`） | **一致** |
-| `broker-design.md` §6.6 | `broker{beat, notices, store, lane, landing}`；beat 停了 health `ok:false` | `capacity` 放在 `broker` 旁邊；health 的 `reason` 共用一個列舉（`broker_beat_stalled`、`capacity_exhausted`）；`broker.store` 管寫入健康，`capacity` 管填充度，不重複 | **一致**。注意：進行中的 broker B2＋B3 那個 task（認領 `api/v1`、`internal/adapters/store`）正在做這一塊，§7 第一步要排在它之後 |
-| `timeline-design.md` B1、§6 第 3 項 | 「不是改成自動刪除」；容量到了講出來，**由人決定封存** | **可重算的 git 歷史**（且沒有被看板引用的）自動淘汰；被引用的 12 筆釘住；landing／部署證據**永不自動淘汰**、用自己的預算；人決定的封存只留給證據 | **分歧**。理由：他們避開自動刪除，是怕「刪掉還被引用的」——這用釘住解決。git 歷史 100% 可從 git 重算（`ProjectTimelineGitImporter.swift:86-88`：標題＝commit subject，摘要與分類是常數）。**要人決定才能讓位，等於在沒人看的時候重演今天的凍結**，而使用者正在睡覺 |
-| `timeline-design.md` B3 | 用位元組與時間視窗當主要界線 | 同，再加**分類預算**：觀察滿了不能擠掉證據 | **一致** |
-| `timeline-design.md` §0 表 | `eventReceipts` 上限 4,096、`checkpoints` 12 | `eventReceipts` **沒有自己的上限**（4,096 是 `requestReceipts`，`ProjectTimelineStore.swift:9, 157`），它跟著 events 受 20,000 限制；checkpoints 現在 13 | **更正**（數字的小誤植，結論不變） |
-| `timeline-design.md` §2.1 | 27 筆 `landed_to_git` | 其中 10 筆是測試假資料（§3.5） | **補充**（新發現） |
-| `board-design.md` C1、§6 第 5 項 | 文件超過 8 MB 時在 `/v1/health` 講一次；只說，不自動清 | `board.store` 以 `warn_at = 8 MiB` 登記；數字放 `/v1/diagnostics`，不上公開的 health | **小分歧**。理由：新版公開的 health 刻意只有三個欄位；照 §4.5，只有證據類到頂才翻公開的 `ok` |
-| `board-design.md` B8 | 收據會 FIFO 淘汰；**把契約文件的句子改成**「收據會淘汰，且 `evictedReceipts` 會說」 | **改行為**：按時間過期、視窗內滿了拒絕新指令 | **分歧**。理由：FIFO 按筆數，在大量寫入時會淘汰**還在重試視窗內**的收據，重送就變成重複執行；而且錯誤回應也佔一格。舊 app 5–8 天內就會開始淘汰（§2.4） |
-| `board-design.md` C2 | `spans` 比照 `history` 做視窗＋`droppedCount` | 同（§4.2 `progress`／`observation`） | **一致** |
-| `board-design.md`（未提） | — | 卡片 2,000 張是**拒絕**型上限，舊 app 約一個月後撞到；新版宣告了但沒用（N25） | **補充**（新發現） |
-| `cutover.md` §3 | `orchestrator.json` 不轉檔、當成凍結的歷史；`remote-audit` 各自、不合併；時間軸「整個沒有移植」 | 時間軸同樣凍結、不轉檔（§6）；新版的稽核拆成兩份（§4.2） | **一致**。另外 B5「舊資料凍結並備份」應把 `project-timeline.json` 的 sha256 與筆數一起記下 |
-| `plan.md` §3.2 | `/v1/health` 的 `scheduler` | 實際在 `/v1/diagnostics` | **文件過時**，照實際 |
-| `plan.md` §11 | 所有上限可注入 | 同，另加「覆寫只准調小」 | **一致**。現況：新版除了 `orchestrator_max_children` 以外沒有任何上限可設定 |
-
----
-
-## 6. 舊 app 那個已經滿掉的時間軸：新版接手時怎麼處理那 2,000 筆
-
-**一句話：凍結成唯讀的歷史——原檔原樣留著、不搬進新版、也不做摘要；新版的時間軸從空的開始，git 歷史從 git 重新推導，
-landing 從新版自己的 landing 紀錄推導。**
-
-理由，全部是量的：
-
-| 那 2,000 筆裡是什麼 | 筆數 | 能不能從別處得到 | 所以 |
-|---|---:|---|---|
-| `git_history_observed` | 1,973（98.7%） | **能，逐字**：標題＝commit subject，摘要是常數句「Read-only Git history evidence…」，分類固定 `feature`、標籤固定 `["git"]`（`ProjectTimelineGitImporter.swift:86-88`）；`sourceID` 就是 `github:<repo>:<sha>` | 搬＝複製一份 git 已經有的東西 |
-| `landed_to_git`，task 在 `orchestrator.json` | 17 | **能**：原始 landing 紀錄在 `orchestrator.json`（也凍結，`cutover.md` §3） | 從那邊推導，不從時間軸 |
-| `landed_to_git`，測試假資料 | **10** | 不需要 | **搬過來就是把假資料當成證據** |
-| 部署／可用性證據 | 0 | — | 沒有任何獨有的東西 |
-| 有看板關聯的 entry | 12 | 看板那邊有項目 id | 新版若要保留這個連結，從看板側重建 |
-
-也就是說，**這 2,000 筆裡沒有任何一筆是只存在於這個檔案裡、而且是真的。**
-
-不選另外兩個選項的理由：
-
-- **原樣搬**：10 筆假 landing 會變成新版的「證據」；而且 2,000 筆會一進來就佔滿新版時間軸的觀察預算，等於把「已經滿了」一起搬過去。
-- **摘要**：摘要的價值在於原文會消失，但這裡的原文就在 git 裡，永遠不會消失。
-
-具體做法：
-
-1. **不寫它。**新版對 `~/.config/clawdline` 只有 `O_RDONLY`（`plan.md` §4），連它的 0644 權限（`timeline-design.md` B4）也不由新版修。
-2. `cutover.md` 的 B5 備份時，記下它的 sha256、大小（2,495,417 B）與 `revision`（2491），這樣之後說「凍結」是可驗證的。
-3. 新版的時間軸（如果做，`timeline-design.md` §6 第 4 項建議先不做）用 §4 的規則：git 歷史是 `observation` 類、可淘汰、被引用的釘住；
-   landing 是 `evidence` 類、自己的預算、永不自動淘汰。
-4. 凍結之後遺漏的那 **47 筆已驗證 landing**（09-17 02:06 之後、`landed_at` 晚於凍結時間、全部 `state: landed`）仍在
-   `orchestrator.json` 裡，**但那份檔案 30 天後會開始刪**（O5）。如果新版需要切換前的 landing 歷史，要在 2026-10 中之前從它讀出來；
-   這是一個有期限的決定，列在 §8。
-
----
-
-## 7. 最小可驗收的第一步，與實作順序
-
-### 7.1 第一步：一張登記表、一個 diagnostics 區塊、一個會叫的例子
-
-**範圍**（一個 child、一個隔離 worktree；排在 broker B2＋B3 那個 task 落地之後，因為它認領了 `api/v1` 與 `internal/adapters/store`）：
-
-1. `internal/domain/capacity`：`Entry`、`Class`、`State`、`Reading`、類別→准許行為的表、水位＋遲滯＋預測的純函式狀態機。
-2. 登記四列**今天就存在**的東西：
-   - `audit.security`：`remote-audit.jsonl`（N12，c）→ **改成按大小輪替**（8 MiB 一段、分段不刪、0600）。這是第一步唯一的行為改動，
-     因為它最小、最獨立、而且是 (c)。
-   - `store.db`：DB 檔大小＋磁碟剩餘（證據類，會翻 health）。只量，不改行為。
-   - `board.receipts`（N24，b）：先把現有的淘汰計數**搬上 wire**；行為（按時間過期）留到第三步。
-   - `cloud.relay_queue`（N20，b）：現有的 `queue_dropped` 接進來。行為留到第三步。
-3. `/v1/diagnostics.capacity`（§4.5 的形狀）與契約；`/v1/health` 在證據類 `full` 時 `ok:false, reason:"capacity_exhausted"`。
-4. §4.7 的第 1、2、3 層：表格測試、登記表守衛（附會紅的樣本；**上線第一天就該紅在 N25**，處理方式是登記它或刪掉它）、
-   `clawdline doctor capacity --drill audit.security`。
-
-**驗收**（一次 build、一次測試，照家規）：
-
-- `go test ./internal/domain/capacity ./internal/adapters/devices` 綠，而且新測試在「輪替被拿掉」的版本上會紅（讀它，或在那裡跑一次）。
-- 在拋棄式目錄上 `clawdline doctor capacity --drill audit.security` exit 0，印出 `ok → warn → critical → full → rotated=1`，正好一個通知意圖。
-- 拋棄式 daemon 的 `GET /v1/diagnostics` 出現四列，`store.db` 的 `used` 等於檔案實際大小；`board.receipts` 的 `used` 等於 fixture 裡的收據數（新版看板 store 若與舊檔同格式，可直接拿舊檔的**副本**當 fixture，應讀出 2,639／4,096；格式是否相同本文沒有驗證）。
-- `go run ./tools/contract-gen -check` 通過。
-
-### 7.2 之後的順序
-
-| 波 | 內容 | 為什麼排這裡 |
-|---|---|---|
-| 2 | **(c) 收口**：daemon log 寫進 `CLAWDLINE_NEXT_DIR/logs/`、10 MiB × 5 輪替、0600（N29）；稽核拆成安全與營運兩份（§4.2）；task 目錄與 worktree 的清掃（N10、N11，照 L1 與 `cutover.md` B4：未落地的先存成 patch）；裝置清單與推播訂閱的上限要比讀取上限先叫（N13、N14）；記憶體快取 LRU（N18）；`result.json` 與缺上限的 request body（N9、N27） | 都是「還沒開始長」的東西，現在改最便宜；N13 是會讓 auth 整個起不來的那一個 |
-| 3 | **(b) 收口**：看板收據按時間過期＋`receipt_expired`（N24）；Cloud 入站佇列改成拒絕並告訴送的人（N20）；screen bus 改覆蓋（N19）；`Store.Append` 的錯誤計數與證據寫入失敗翻 health（N2）；summary 全文存、只在畫面截斷（N8）；`progress.json` 超長計數（N5）；文件列表與 transcript 的截斷旗標，前端畫出來（N17、N28）；圖片與 drops 的「被引用就先告警」（N15、N16） | 每一項都是把一個安靜的失敗換成一個吵的 |
-| 4 | **broker 保留**（跟 broker 那條線一起）：L3 長文 90 天→摘要＋冷層；營運紀錄只記轉換；熱路徑不再解碼全表（N1） | 需要 broker 的 store 形狀先穩定 |
-| 5 | **通知與畫面**：容量的推播（獨立預算）、「容量」面板（原在 Dashboard，2026-09-21 隨該頁移除，2026-09-26 起在設定頁）、dead letter 與 spool 拒絕接上來（N7、N22） | 推播已經落地（`fb745a7`），但通知要有東西可說，所以排在登記表長滿之後 |
-| 6 | **看板與時間軸移植時**：分類預算、git 歷史可淘汰且釘住被引用的、已結案的卡讓位給新卡（取代 2,000 張的拒絕）、`MaximumItems` 要嘛真的執行、要嘛刪掉 | 跟著那兩個功能的移植走 |
-| 7 | 主畫面的橫幅 | 等 §8 第 3 項的決定 |
-
----
-
-## 8. 需要使用者拍板的
-
-> 使用者在睡覺。以下都選了安全的預設，而且都可以推翻。
-
-| # | 問題 | 我選的預設 | 為什麼 |
-|---|---|---|---|
-| 1 | **舊 app 的下一面牆（§2.4）要不要現在處理？** 最快的是看板收據 5–8 天後開始淘汰、task 紀錄 09-28 起被 30 天規則刪。舊 app 有設定鍵 `orchestrator_task_record_retention_days`（`Config.swift:545`）可以調大 | **只回報，不動**：本 task 不能碰舊 app 與 `~/.config/clawdline` | 調舊 app 的設定是使用者自己的事；新版的設計不依賴它。若使用者想延後 F1 那類遺失，把那個值調大是一行設定、零風險 |
-| 2 | 舊時間軸的 2,000 筆怎麼處理 | **凍結、不搬、不摘要**（§6） | 沒有任何一筆是只存在那裡而且是真的；10 筆是測試假資料 |
-| 3 | 主畫面要不要有容量橫幅？ | **先不放在 1:1 的頁面**；放設定頁的「容量」區塊＋推播（原本是 Dashboard，該頁已移除） | 橫幅需要 `zh-Hant.json` 沒有的新字串，是刻意偏離 1:1。但使用者的原話正是「畫面上看不出來」——**我建議做**，只是這要使用者決定 |
-| 4 | 長文 90 天之後：刪、還是移到冷層？ | **移到冷層**（與 broker-design §6.1 分歧，見 §5） | 冷層一年約十 MB；刪了就回不來 |
-| 5 | 可重算的 git 歷史：自動淘汰、還是等人決定？ | **自動淘汰，被引用的釘住**（與 timeline-design 分歧，見 §5） | 等人決定＝今天的凍結 |
-| 6 | 切換前那 47 筆 landing 要不要趁 `orchestrator.json` 開始刪之前讀出來？ | **先不讀**；列為有期限的決定（2026-10 中以前） | 新版的時間軸還沒決定要不要做 |
-
----
-
-## 9. 這份文件沒有量到的
-
-- **舊 app 的 task 紀錄逐列的 settled 時間**：用 created 推 30 天規則的生效日（09-28），settled 通常晚幾小時，實際日期可能晚一天。
-- **看板收據與卡片的到頂日期是外推**：收據沒有時間戳，用 revision 比例換算；卡片用近 7 天的速率線性外推。
-- **Cloud replay window 的 sender 數、Drops 的現況**：在記憶體或沒量。
-- **推播訂閱數**：`push.json` 含秘密，只記了大小（652 B），沒讀內容。
-- **新版打包後 daemon 的 stderr 去哪裡**：沒有實際從 Finder 啟動驗證。
-- **新版的成長速率**：新版 store 幾乎是空的，§4.6 的預測在新版上還沒有資料可算；§2.4 的日期全部是舊 app 的。
-- **§4 的設計沒有原型**：分類、讓位順序、水位都是設計，沒有量過成本；`measure()` 夠便宜這件事要在第一步量。
-- **`/tmp/.clawdline` 其他 task 目錄的內容**：照規則只量了目錄數與 `du`。
-- **Windows／Linux**：路徑、磁碟剩餘的讀法、log 目錄的慣例都沒有在那兩個平台上看過。
-
----
-
-## 附錄 A：數字從哪裡來
-
-**原始碼的逐列盤點**由兩個唯讀 subagent 完成（舊 app：`Sources/`＋`Resources/web/`；新版：`internal/`、`cmd/`、`web/`），
-兩邊都完整回來了。其中以下 9 條我親自重讀原始碼確認：
-
-1. 時間軸 entries 的拒絕與 `requestReceipts` 的檢查位置（`ProjectTimelineStore.swift:7-10, 157-158, 293-298`）
-2. `eventReceipts` 沒有自己的上限（同檔 `:45, 276, 303`）
-3. task 紀錄的數量規則不檢查是否已結束（`OrchestratorTaskShape.swift:871-912`）
-4. `Log.swift` 沒有輪替與權限（全檔）
-5. `RemoteAuth.audit` 沒有鎖、沒有 `O_APPEND`、寫失敗被吞（`RemoteAuth.swift:490-510`）
-6. spool 錯誤一律歸成 integrity 不重試（`CloudAppBridge.swift:1290-1296`）
-7. 家規截斷與 local 規則的預算順序（`Orchestrator.swift:9296-9340`）
-8. 時間軸測試寫進正式 store 的路徑（`ProjectTimelineIntegration.swift:9, 19, 78-80`；`ProjectTimelineStore.swift:11, 95-99`；`Orchestrator.swift:2924-2928`）
-9. 新版：`MaximumItems` 沒有引用、沒有 `DELETE FROM`、`Store.Append` 不記錯誤、screen bus 滿了丟、audit 用 `O_APPEND`＋0600
-
-**實測**（2026-09-18 09:10–09:40）：
-
-| 數字 | 怎麼量 |
-|---|---|
-| 時間軸各欄筆數、凍結時間、47 筆遺漏的 landing、10 筆假資料 | `python3` 讀 `project-timeline.json` 與 `orchestrator.json`（只讀 `id`、`landing`、`created` 等欄，不讀 `secret_hash`）；假資料的 id 在舊 repo `Tests/` 裡 `grep` 到 |
-| orchestrator 各集合、最舊一列、每天筆數 | 同上 |
-| 看板卡片、收據、revision、歷史檔 | `project-board.json`、`project-board-history/` |
-| `remote-audit.jsonl` 行數、天數、事件前綴的位元組佔比 | 逐行 `json.loads` |
-| `Clawdline.log` 大小、每日成長、各 tag 佔比 | `wc`、`awk` 依行首日期與第三欄分組 |
-| Cloud ledger 與 spool 筆數、狀態、保留時間 | `cloud-runtime/*/command-ledger.json`、`outbound-spool.json`（只讀狀態與時間欄）；spool 的累計計數取自 log 最後一行 `drain_observation` |
-| `usage.sqlite3`、新版 `clawdline.sqlite3` | 主檔＋`-wal` 複製到本 task 的 `work/` 後 `sqlite3` 計數 |
-| 圖片、worktree、task 目錄、reclaimed checkouts | `ls`、`du` |
-| transcript 規模 | `du`、`find -size`、最大檔的 `ls -l` |
-| 舊 `/v1/health` 的 `http_reliability` | `curl :7717/v1/health`（公開） |
-| 新 `/v1/health`、`/v1/diagnostics` | `curl :7727`，diagnostics 帶 `~/.config/clawdline-next/local-token` |
-| 新版 daemon 的 log 去向 | `lsof -p <pid>` |
-| 家規字數 | Python `len(str)`（與 Swift 的 `String.count` 在這份以英文為主的檔案上一致） |
-
-### Copied project marks
-
-`icons.saved` retains at most 512 explicitly copied marks without automatic eviction;
-`icons.side` rejects grids above 64 rows or columns; `icons.request_bytes` rejects a copy body
-above 96 KiB. A full registry still permits replacing an existing mark. See
-[project-icons.md](project-icons.md) for resolution, transfer and conflict behavior.
-
-### Project settings sync
-
-`projectsync.manifest_projects` offers at most 256 projects per manifest (the rest are listed as
-skipped, `manifest_full`); `projectsync.project_files` carries at most 64 files per project;
-`projectsync.file_bytes` skips a file above 256 KiB; `projectsync.path_bytes` refuses a path above
-512 bytes; `projectsync.entry_bytes` refuses one applied project above 4 MiB, over HTTP and over
-Cloud alike; `projectsync.mirrored` keeps at most 512 mirrored repositories without automatic
-eviction; `projectsync.clones` runs at most two clones at once and refuses a third with
-`429 clone_busy`. See [project-sync.md](project-sync.md).
-
-### Project instruction and skill files
-
-`projectfiles.list` stops an inventory at 128 file rows and marks it truncated.
-`projectfiles.scan_entries` reads at most 1,024 names from each skill or Project tree directory
-and marks any remainder truncated. `projectfiles.tree_path_bytes` refuses a tree request path
-above 4,096 bytes, and `projectfiles.tree_depth` refuses one deeper than 64 components.
-`projectfiles.file_bytes` rejects a text read or save above 128 KiB;
-`projectfiles.write_bytes` rejects a save request body above 256 KiB. These are per-request or
-per-directory bounds, so diagnostics reports no retained buffer. See
-[project-files.md](project-files.md).
-
-### A child that stalls after its briefing
-
-`stallIdleLimit` (5 minutes) is how long a child whose briefing was typed, and which has not signed
-for it, must read idle — its prompt drawn, its composer empty, no menu, no live working line — on
-every reading before it is typed one nudge naming its `CHILD.md`. `stallReportLimit` (5 minutes)
-is how long it must then stay idle and unsigned before the task ends `spawn_failed` with a
-`stalled` verdict and its root is sent a `task_stalled` notice. Both are `parameter` lines on the
-capacity baseline, not rows: nothing accumulates. At most one nudge per task, recorded on the
-task before it is typed (`task.nudged`). See [broker.md](broker.md), "A child that stalls after
-its briefing".
-
-### When launched sessions compact
-
-`claude_auto_compact_window` and a task.json's `auto_compact_window` take 0 (or null) for none, or a
-whole number of tokens from `minAutoCompactWindow` (50000) to `maxAutoCompactWindow` (1000000),
-both in `internal/app/orchestrator/compact.go`; the settings row in `nextconfig.Settables` holds the
-same two numbers and `TestTheWindowSettingHasTheBrokersBounds` keeps them equal. Below the minimum
-a session's first turn is already past the window and it compacts on nearly every call; above the
-maximum is past Claude Code's own 1M window, where the variable changes nothing. Outside the range
-the settings route answers `invalid_auto_compact_window` and a task.json `bad_task`; a hand-edited
-file with an out-of-range number launches with none. `maxAutoCompactWindow` is a `parameter` line on
-the capacity baseline, not a row: nothing accumulates. See [token-ledger.md](token-ledger.md),
-"Long-running sessions".
-
-### N58: offline squad package input
-
-An untrusted offline ZIP is admitted only within six registered bounds: `squadpackage.archive_bytes`
-(512 KiB of original ZIP bytes), `squadpackage.manifest_bytes` (128 KiB),
-`squadpackage.file_bytes` (64 KiB per definition or private settings file),
-`squadpackage.expanded_bytes` (4 MiB in total), `squadpackage.entries` (128 ZIP entries), and
-`squadpackage.expansion_ratio` (64 uncompressed bytes per compressed byte for any nonempty entry).
-All six are buffer rows that refuse the request before any catalog write, tell the sender with a
-typed package error, and appear in `/v1/diagnostics.capacity`; nothing is evicted. The parser
-checks declared ZIP sizes before decompression and actual bytes during the read. The
-`squadpackage.request_bytes` bound is 1 MiB for the HTTP and Cloud JSON/base64 envelope, large
-enough for the maximum encoded ZIP, and refuses a larger body before parsing. The source of each bound is in
-`internal/domain/squadpack/limits.go`.
-
-`squadpackage.preview_rows` holds at most 1,024 durable preview grants and refuses another
-preview at capacity; `squadpackage.preview_age` expires each grant after 900 seconds. Expired
-grants are pruned when a new preview is saved. A preview grant contains hashes and catalog
-metadata, never the ZIP bytes or private text. Adoption reuploads and revalidates the same ZIP.
-
-### N59: squad launch snapshots and skill receipts
-
-`squad.snapshot_bytes` refuses an immutable launch document larger than 1 MiB before storing or
-publishing it. `squad.recovery_page_rows` reads at most 256 pending intents in one recovery query,
-then follows a cursor to later pages. Pending launches do not refuse new Sessions at that count.
-Recovery does not evict a snapshot or abandon a pending launch. The page bound appears in
-`/v1/diagnostics.capacity`.
-
-The Console's add-skill flow refuses when enabled skill content for one role would exceed
-512 KiB (`squad.console_active_skill_bytes`). This conservative, person-visible bound leaves
-room under the 1 MiB launch limit for the role body, handbook, metadata and serialization.
-It applies to this Console flow; the server's snapshot bound remains authoritative for other
-writers. The declaration is `internal/domain/squad.MaxSquadConsoleActiveSkillBytes` and the
-matching Console constant is `ACTIVE_SKILL_BYTES` in `web/console/src/pages/squad/skill-create.ts`.
-
-The machine's skill source list clips each discovered name and description to 240
-characters (`squad.skill_source_summary_runes`) before sending the list, including
-through Cloud. The full `SKILL.md` is read only after a person selects its ID;
-the source scan and selected folder copy use the existing squad entity and
-64 KiB body limits.
-
-An agent's `client_event_id` is limited to 128 bytes (`squad.event_id_bytes`) and an event request
-to 4 KiB (`squad.event_body_bytes`). A receipt read returns at most 100 rows
-(`squad.event_page_rows`) with an `after` cursor and `has_more` flag. Invalid or oversized writes
-are refused before a receipt is committed. Stored receipts are evidence and are not evicted by
-this page bound. The sources are `internal/adapters/store/squad_launch.go`,
-`internal/adapters/store/squad_events.go`, and `internal/transport/http/squad_events.go`.
+| # | Thing | Limit (file:line) | At limit | Who knows | Lost? | Class |
+|---|---|---|---|---|---|---|
+| N1 | SQLite 全部資料表（`events`、`receipts`、`tasks`、`obligations`、`board_commands`、`broker_*`） | **無**；全 repo 沒有一句 `DELETE FROM`；`events` 的註解明寫「never edited and never deleted」（`store/sqlite.go:33-35`） | 只增不減；broker 每 5 秒、每個 SSE 訂閱者每 2 秒都會讀出並解碼整張 `broker_tasks`（`orchestrator/broker.go:161-176`），成本跟著全部歷史長 | 只有 CLI `clawdline doctor` 印筆數（`cmd/clawdline/main.go:162-168`） | — | c |
+| N2 | 事件寫入失敗 | — | `Store.Append` 不記 log（`sqlite.go:238-243`），呼叫端一律 `_ =` 丟掉；`app/actions.go:414-416` 的註解說「logged by the store」，**不是真的** | 沒人 | **是**（磁碟滿就是它） | b |
+| N5 | progress notes | 300 字；讀最新 5（`broker.go:100-107`） | HTTP 400；但**從 `progress.json` 來的超長筆記直接丟、不記 log**（`watch.go:103-105`） | 檔案那條沒人 | 部分 | b |
+| N6 | notify | 5／task、30／小時（`broker.go:103-109`） | 429 | 呼叫端 | 否 | ✓ |
+| N7 | 完成通知重送 | 8 次（`record.go:151-175`）. Since 2026-09-25 the holds have ceilings of their own: a busy lane or an occupied composer spends an attempt after **10 minutes** (`maxNoticeHold`), while a root showing something waiting to be answered holds for free for up to **12 hours** (`maxChoosingHold`); a dead letter at most **24 hours** old is typed once more when its root next reads idle (`maxRetypeAge`). All three are `parameter` lines on the capacity baseline, not rows: nothing accumulates | 轉 dead letter，寫 event `task.completion.dead_letter`; at the menu ceiling in one step, with `root_choosing` and the ceiling in its `last_error`. The idle re-type is one recorded attempt past the limit (`task.completion.retyped`), never a second push | **console 沒畫、health 沒有**；`KindDeadLetter` obligation 有定義（`domain/task/obligation.go:23`）但從未建立. A dead letter is pushed once; every unacknowledged notice — pending or dead — is on `GET /v1/orchestrator/completions` and on its root's own `GET /v1/work/v2/agent/session-todos/<conversation>` (`unacknowledged_completions`) until it is acknowledged | 是 | ✓? |
+| N8 | summary／title／kind／label | 2,000／60／40／120（`taskdir/finish.go`、`domain/work/proposals.go`、`orchestrator/draft.go`） | summary／kind／label 仍依各入口處理；title 超長或符合已量到的壞形狀會帶教學訊息拒絕，不再截斷 | 寫入者 | 否 | ✓ |
+| N9 | `result.json` | **無大小上限**（`taskdir/broker.go:162-176` 直接 `os.ReadFile`） | — | — | — | c |
+| N10 | task 目錄 `<Dir>/tasks/<id>` | **無清掃**（`taskdir.go:21`） | 只增不減 | — | — | c |
+| N11 | worktree `<Dir>/worktrees/…` | **無**；`RemoveWorktree`（`git/worktree.go:56-60`）沒有任何呼叫端 | 只增不減 | — | — | c |
+| N12 | `remote-audit.jsonl` | **無輪替**；`O_APPEND`＋0600（比舊版好，`devices/files.go:513-543`）；欄位值 256 B **靜默截斷**（`:75-77`） | 只增不減；寫失敗只記 log | log | 部分 | c |
+| N13 | 裝置清單 `remote.json` | 裝置數**無上限**，每次密碼登入新增一台（`auth/authority.go:718`）；讀取上限 4 MiB（`devices/files.go:70`） | **超過 4 MiB 時 auth 在啟動時整個失敗**（`gate.go:120-124`） | log | 服務中斷 | c（滿了是全面停擺） |
+| N14 | push 訂閱 | 無數量上限（`push/store.go:225-237`）；檔案讀取上限 1 MiB | 超過 1 MiB → `ErrUnreadable`，**所有推播都失敗** | log；notify 回 502 | — | c |
+| N15 | 圖片 | 照搬舊版 policy（`artifacts/artifact.go:59-70`）. Since 2026-09-26 every picture the daemon stores — drops, this store, and Board and to-do reference images — has a long edge of at most 1,600 px (`artifacts.MaxLongEdge`, the console's `LONG_EDGE`); a larger one is scaled down, not refused. A photograph is stored as JPEG (quality 90) and anything else as 8-bit PNG: a 146 KB phone JPEG had been a 1.19 MB 16-bit PNG | 淘汰最舊，**不記 log**（`store.go:365-372`）；讀者拿到 410 `artifact_expired` | 讀的人事後才知道 | 是 | b |
+| N16 | Drops | 兩個登記列：`artifacts.drops`（**256 MiB**，量位元組；`MaxDropsBytes`，另有來源 `DropsAgeLimit`）與 `artifacts.drops_young`（**1 張**：過去 24 小時內被位元組上限刪掉、當時還不到 24 小時的圖；`DropsYoungLimit`）。保留規則：超過 **7 天**的檔案刪掉，但**最新 40 張**（`DropsKeep`，是地板不是上限，所以不是登記列）不因年齡被刪；目錄超過 256 MiB 時不論年齡從最舊的刪起，只有剛寫入的那張不刪。2026-09-26 起不再「只留最新 40 張」：舊規則在每天都傳圖的人身上天天 40／40，每次都推「容量已滿」卻沒有任何事可做，而且一個下午傳 40 張就會刪掉幾分鐘前才打進 prompt 的檔案（`drops.go`） | 過期與超量都刪最舊的，有計數（expired／evicted）與 log；每次量測（capacity beat）也會先清掉過期的，一週沒人傳圖的快取不會一直讀成滿 | `artifacts.drops`：diagnostics、log，**不推播**——它滿代表位元組上限正在刪檔，這是快取在運作。`artifacts.drops_young`：diagnostics、log、**notice（推播）**，句子說哪些圖被提早刪掉、assistant 回頭讀會讀不到、需要時重新貼；過了一天沒有再發生只記下、不推「已恢復」 | 是 | ✓ |
+| N17 | transcript | 8 MiB 尾端、150 KiB 回應（`transcript/turns.go:36-39`、`http/transcript.go`） | 同舊版；React `Transcript.tsx` 不讀 `truncation` | 沒人 | 否 | b |
+| N18 | 記憶體快取（transcript titles） | 256 筆 LRU（`transcript/claude.go`、`transcript/lru.go`） | 淘汰最久未使用的讀數並計數 | diagnostics、notice | 是 | ✓ |
+| N19 | SSE（自己供應時） | 訂閱者數**無上限**；screen bus 每訂閱 chan 16，**滿了走 `default` 直接丟、沒有計數**（`http/screen.go:189-197`）；沒有 Last-Event-ID | 丟 | 沒人 | 下次變動才補回 | b（訂閱者無上限那一半是 c） |
+| N20 | Cloud 入站佇列 | 64（`cloud/relay.go:42`） | **丟最舊的請求**，記 log | `/v1/cloud/status.queue_dropped`；UI 有型別（`cloud.ts:77`）**但沒畫** | 是 | b |
+| N21 | Cloud replay window | 照搬（`cloud/replay.go:11-17`） | 拒絕新 sender | `inbound_dropped{reason}`，設定頁有警示點（`SettingsWindow.tsx:632-640`） | 是 | a |
+| N22 | Cloud spool | 五個登記列：`cloud.spool`（2,000）、`cloud.spool_bytes`（16 MiB）、`cloud.spool_channel_bytes`（4 MiB，單一 channel）、`cloud.spool_receipts`（4,096 筆墓碑）、`cloud.spool_refusals`（64 句，單一 channel，每句至多 4 KiB）。Since 2026-09-25 the machine-read reply channel also keeps a 1 MiB reserve for answers of at most 256 KiB (`largeAnswerByteLimit`, `smallAnswerReserveLimit`, on the admission baseline), and reference-image thumbnails are `cache.image_thumbs` (8 MiB, oldest let go) with a 480 px long edge (`artifacts.MaxThumbnailEdge`) | 拒絕；**而且會回一句具名的拒絕**給等在那條 channel 上的人（`cloud_read_busy` / `command_answer_undeliverable`，cloud-wire 9.5.1）。Every refused read gets its own refusal up to `cloud.spool_refusals`; past it the drop is logged with `operation=`. A large answer that would eat the reserve is refused `cloud_read_busy` (cloud-wire 9.5.2) | log、diagnostics、notice、**等的人本人** | 是 | ✓ |
+| N23 | Cloud command ledger | 照搬（`domain/cloud/ledger.go:49-66`） | **寫好了但沒接上**（`NewLedger` 沒有正式呼叫端）；註解承認重啟後會重複執行（`:19-23`） | — | — | （未接線） |
+| N24 | 看板收據 | 4,096（`board/board.go:56`） | FIFO；淘汰計數只存在檔案裡（`settings.go:205-208`），不上 wire | 沒人 | 是 | b |
+| N25 | 看板卡片／專案 | `MaximumItems = 2_000`、`MaximumProjects = 200`（`board/board.go:53-54`） | **宣告了，整個 codebase 沒有任何引用**——跟舊時間軸同一個數字，這次是名義上的上限 | — | — | c |
+| N27 | request body | 多數路由有；**`dispatch`、`orchestrator` 八條、`schedules`、`coordinator`、`actions` 沒有**（`server.go:434-438` 只設了 `ReadHeaderTimeout`）；auth body 超過 64 KiB **被截斷後當成 `{}`**（`auth.go:66-78`） | — | — | — | c（auth 截斷那一半是 b） |
+| N28 | 文件列表 | 200 列、走訪 4,000（`documents.go:366-394`） | **靜默截斷，沒有旗標** | 沒人 | 否 | b |
+| N29 | daemon log | Go 標準 `log` 寫 stderr，全 repo 沒有 `SetOutput`；打包的殼沒有轉向輸出（`shell/darwin/main.swift:300-322`） | 目前由啟動者導到 `/tmp/clawdline-next.log`（491 B，實測 `lsof`）；打包後去哪裡未驗證 | — | 可能遺失 | c |
+| N42 | Token ledger reading (`transcript.LedgerState.Feed`, docs/token-ledger.md) | **64 MiB** per pass and **8 MiB** per line: `ledgerFeedLimit` and `ledgerLineLimit` in `transcript/ledger.go`, `read` lines on the capacity baseline, not rows, because a pass holds one line at a time and keeps only totals | A pass stops at the first line boundary past 64 MiB and says there is more; the next pass starts from the stored offset. A line past 8 MiB is skipped, 8 MiB at a time and across passes if need be, and counted (`overlong`); a line that does not decode is counted (`undecodable`); neither stops the pass. A file that shrank below the offset or whose first 4 KiB changed is read again from zero (`restarts`) | The counts in the session's ledger state | No: a skipped line's tokens are still in the next call's measured context; only which category they belong to is lost | ✓ |
+| N43 | Token ledger passes (`app.UsageLedger.Pass`, docs/token-ledger.md) | **32 transcripts** fed per pass, a pass a minute, and a look-back window of **7 days**: `usagePassLimit`, `usageWindowLimit` and `usageEvery` in `app/usage.go`; `parameter` lines on the capacity baseline, not rows, because a pass holds one transcript at a time and the table keeps one row of totals per transcript | The rest of the due transcripts wait for the next pass, which starts after the last one fed, so one that stays due (unreadable, or longer than one Feed) cannot starve the others. A transcript last written before the window keeps its stored totals and is not visited until it is written again. One that cannot be read is skipped for that pass (`transcript_unreadable`), one that is gone keeps its totals (`transcript_missing`); neither stops the pass | The daemon log: once when a pass meets the limit, until a pass no longer does, and once per transcript and reason, by conversation id; the reason is on the transcript's row | No: a transcript past the limit only waits; one outside the window keeps what was read | ✓ |
+| N44 | Compaction comparison (`app.UsageLedger.CompareCompaction`, `GET /v1/usage/compare-compaction`, docs/token-ledger.md "Did compacting early pay") | **500 child tasks** per answer, newest first; **50 excluded tasks** named; a group needs **5 tasks** before a share or rate is shown; a `since` of at most **3650 days**: `compareTaskLimit`, `compareExcludedLimit`, `compareTooFewLimit` and `compareSinceDaysLimit` in `app/usage_compare.go`; `page`, `parameter` and `admission` lines on the capacity baseline, not rows, because the answer is computed on each ask and nothing is kept | Past 500 the answer covers the newest and says `truncated`; past 50 the excluded count stays whole and `excluded_truncated` says the names are not all there; a group under 5 tasks says `too_few` and shows its counts with every percentage null; a longer `since` is a 400 `bad_request` | The answer itself; `clawdline usage --compare-compaction` prints each flag as a line | No: nothing is stored, and a narrower `since` reads the rest | ✓ |
+| N45 | Things waiting to be verified (`app.Verifications`, `/v1/verifications`, docs/verifications.md) | **200 records** open and closed together; **12 criteria** and **200 notes** a record; a title of **200** characters, a why of **4000**, a criterion of **500**, a note of **8000**, a closing reason of **2000**, a session name of **200**: `verificationTotalLimit` … `verificationAuthorLimit` in `app/verify.go`, and a Cloud sub-document of **64 KiB** (`verificationCloudBodyLimit`); `admission` lines on the capacity baseline, not rows, because each is refused at the door and nothing is kept past it | The 201st record is a 409 `verification_limit_reached`, the 201st note a 409 `notes_limit_reached`, anything longer a 400 `bad_request` naming the field; nothing is evicted — every record is something a person asked to be reminded of, and only a person deletes one | The refusal, in the answer to whoever asked | No: deleting a closed record makes room | ✓ |
+| N48 | Board and to-do reference-image files (`store.ReferenceImagesDir`, `<state>/reference-images/<id>.png\|.jpg`) | The bytes are held by `work.image_bytes_total` (512 MiB, counted as the rows' `byte_count`, each proved against its file's sha256 on read). Three parameters on the baseline: **32 MiB** of pictures per step of the move out of SQLite (`ReferenceImageBatchLimit`), a file no row names is removed once **1 hour** old (`ReferenceImageOrphanAgeLimit`), swept at every Open and every **6 hours** (`ReferenceImageSweepIntervalLimit`) | A file the sweep removes is one no row names: its picture was deleted, or its row never committed; the count is logged and kept (`Store.ReferenceImageFileStats`). A row whose file is gone or differs is refused 410 `image_file_missing` / `image_file_mismatch`, logged, never served empty | The reader of the picture gets the named refusal; the daemon log carries each refusal and each sweep that removed something | No: only unnamed files are removed | ✓ |
+| N49 | Sessions a reboot took away (`app.SessionRestore`, `store.RecordBoot`, `/v1/sessions/restorable`, docs/session-restore.md) | **200 conversations** recorded per boot, **2 boots** kept (this one and the one before), **20 conversations** per restore, a recorded `last_seen` at most **300 seconds** stale while the open set is unchanged, the boot's own `last_seen` heartbeat at most **60 seconds** stale while complete readings arrive, and a **180-second** grace before the previous boot's last sight inside which a conversation that went is still offered, registered as `sessions.restore_rows`, `sessions.restore_boots`, `sessions.restore_batch`, `sessions.restore_seen_age`, `sessions.restore_heartbeat` and `sessions.restore_grace` (`restoreRowsLimit` … `restoreGraceLimit` in `app/session_restore.go`) | Past 200 the conversations that moved longest ago are not recorded, and past 200 rows the rows that went longest ago are deleted first; both are counted as evicted. A third boot deletes the oldest boot and its rows at the next write. A restore naming more than 20 is refused whole with `restore_batch_too_large` and opens nothing. An unchanged set is rewritten only once its `last_seen` is 300 seconds old; between rewrites the boot's `last_seen` alone is moved once it is 60 seconds old. A row that went more than 180 seconds before the previous boot was last seen expires from the offer (its row stays until its boot goes). | `/v1/diagnostics.capacity` carries all six rows, the evicted count on `sessions.restore_rows`; the sender of an oversized restore receives the typed refusal | Rows past 200 and boots older than the previous one cannot be offered back; a session closed outside Clawdline within 180 seconds of a restart is offered and can be dismissed; nothing a person wrote is lost | ✓ |
+| N50 | One background command's output (`GET /v1/sessions/{id}/shells/{shell}`, the Shell panel; Cloud word `shell`) | **1 MiB** of the output file's end per read, **64 KiB** when the reader names no window, never less than **1 KiB**, registered as `sessions.shell_output_bytes` (`transcript.MaxShellOutput`); the Cloud word's `bytes` field is pinned to the same 1 KiB–1 MiB | A larger ask is lowered to the limit and a smaller one raised to the floor; the answer starts at the first line boundary inside the window and says `truncated`. The file itself is Claude Code's and is never cut or copied. | The answer's `truncated`; the row is present in `/v1/diagnostics.capacity`. | No: the earlier output stays in the file on the machine. | ✓ |
+| N59 | Ordinary shells a person opens on this machine's own tmux server (`internal/adapters/terminal/owned`, `ports.OwnedTerminals`; the routes are N60) | **8 terminals** per machine (`terminal.count`, `terminal.MaxTerminals`); **4 KiB** per keystroke batch (`terminal.input_bytes`, `MaxInputBytes`); **1 MiB** per paste (`terminal.paste_bytes`, `MaxPasteBytes`); **2,000 lines** per history read (`terminal.history_lines`, `MaxHistoryLines`) | The ninth open is refused `terminals_full` and nothing is closed for it; an oversized batch or paste is refused `input_too_large` before a byte is typed; a larger history ask is lowered to 2,000 lines. The server itself keeps 5,000 lines of history per terminal (`history-limit` in its generated configuration). | The caller, in the refusal; the rows are present in `/v1/diagnostics.capacity`. | No: a refused open or input changes nothing, and older history stays in the server. | ✓ |
+| N60 | The terminal routes (`/v1/terminals*`, `internal/app/terminals`, `internal/transport/http/terminals.go`) and the terminal grants (`terminal-grants.json`, `internal/adapters/devices/grants.go`) | **16** terminal inputs in flight per machine in the terminals' own lane (`terminal.lane`, `terminals.LaneLimit`); **8** streams per terminal (`terminal.viewers`, `MaxViewers`) and **16** per machine (`terminal.streams`, `MaxStreams`); a control lease lasts **30 s** without a renewal, renewed every 10 s (`terminal.lease_seconds`, `MaxLeaseSeconds`); the grants file is read up to **256 KiB** (`terminal.grants_bytes`, `devices.MaxGrantsBytes`); a terminal request body is at most **6 MiB + 4 KiB** (`terminal.body_bytes`, `terminalBodyLimit`: a 1 MiB paste after JSON escaping) | A full lane refuses the input `terminal_busy` at once and types nothing — the Agent Sessions' lanes are separate and unaffected; a ninth viewer or a seventeenth stream is refused `terminal_viewers_full`; a lease not renewed for 30 s lapses and its next input is `lease_expired`; a larger grants file is unreadable, so it grants nobody (terminals only); a larger body is refused before it is read. | The caller, in the refusal; `/v1/diagnostics.capacity` measures the lane and the streams, and `/v1/diagnostics.terminals` says whether the grants file could be read and why not. | No: leases live in memory and a lapsed one only stops typing; a refused viewer or input changes nothing; an unreadable grants file is left for a person to repair. | ✓ |
+| N64 | iTerm2 stall diagnosis (`internal/adapters/terminal/stall.go`, `stall_darwin.go`; wired in `internal/transport/http/server.go`) | Triggered by **5** timed-out iTerm2 Apple Events (killed at the run's own limit, or `-1712`) within **2 minutes** — an episode runs 8-11 a minute, while 19 of the 29 failure clusters logged 2026-09-23..10-02 cleared with at most 4. Holds the newest **32** failures (`iterm.stall_failures`) and the last **512 bytes** of osascript's stderr per failure (`iterm.stall_said_bytes`); writes at most one diagnosis per **30 minutes** (`iterm.stall_cooldown_seconds`); keeps the newest **20** files (`iterm.stall_diagnoses`); each step at most **30 s** (`iterm.stall_step_seconds`; the probe 3 s, `lsappinfo`/`sysctl`/`ps` 5 s) and **512 KiB** of output (`iterm.stall_section_bytes`). One diagnosis runs at a time, in its own goroutine. | Past 32 the oldest failure is let go (each is already a log line); a run inside the cooldown, or while a diagnosis is running, starts nothing; after a write the oldest files past 20 are removed; a step past its deadline is abandoned and recorded `timed out`, a failed step is recorded `failed` and the file goes on; output past 512 KiB is not written and the section says how many bytes. | The log: one `iterm: osascript failed: kind=… session=… elapsed=… reason=…` line per failure and one `iterm: stall diagnosis written: <path>` per file; the rows are in `/v1/diagnostics.capacity`. | Yes, on purpose: older failures and diagnoses go. Nothing a person wrote is touched. | ✓ |
+| N73 | Work-unit cursors (`store.AddWorkCursors`, `app.WorkUnitRecorder`, `GET /v1/usage/work-units`, docs/token-ledger.md "One unit of work") | **50 000 cursor rows** kept (`usage.work_cursor_rows`, `store.WorkCursorRowLimit`); **1024 edges** waiting for the cursor worker (`usage.work_cursor_queue`, `app.workCursorQueueLimit`); **500 units** per answer, most recent first (`usage.work_units_per_answer`, `app.workUnitAnswerLimit`); 64 behind cursors settled per pass | Past 50 000 rows the oldest go in the write that adds one (a journal: the ledger's own rows keep every session's cumulative totals). An edge posted to a full queue is not read: it is written as a `cursor_missing` marker before the queue drains, and past twice the limit it is counted and logged. Past 500 units the answer says `truncated` | `/v1/diagnostics.capacity` for all three; the daemon log once when the queue fills; the answer for the units | No: the queue only delays a cursor, and a narrower `since` reads the rest | ✓ |
+| N74 | Work samples and the before/after report (`app.UsageLedger.WorkSamplesBetween`, `GET /v1/usage/work-samples`, `clawdline usage --freeze-baseline`/`--work-report`, docs/token-ledger.md "Did a change make one unit of work cheaper") | **2000 child tasks** per answer, newest first (`workSampleLimit` in `app/usage_report.go`); a group needs **20 completed comparable units** in each period before it is judged (`workReportMinUnits`); a frozen baseline file is read to **16 MiB** (`workBaselineReadLimit` in `cmd/clawdline/usage_report.go`); `page`, `parameter` and `read` lines on the capacity baseline, not rows, because the answer is computed on each ask and the file is the person's | Past 2000 the answer covers the newest and says `truncated`, and the report prints that line; a group under 20 says `insufficient_evidence` with its counts; a larger file is refused by name | The answer and the report | No: nothing is stored by the daemon, and a narrower range reads the rest | ✓ |
+| N75 | A root cancelling a child it dispatched by mistake (`clawdline task cancel`, `POST /v1/orchestrator/tasks/<id>/cancel`, `internal/app/orchestrator/cancel.go`) | **500** bytes of reason after its whitespace is collapsed (`CancelReasonLimit`); **200** characters of Idempotency-Key (`cancelKeyLimit`); both on the capacity baseline, like N72 | A longer reason is refused `422 reason_too_long` (the CLI refuses it first, exit 2), an empty one `400 reason_required`; a longer key `400 bad_idempotency_key`. Nothing is cut and nothing is settled. | The sender, in the typed refusal | No: the task is left as it was | ✓ |
+| N76 | Milestone handoffs and their comparison (`orchestrator.CheckMilestoneSummary`, `POST /v1/orchestrator/handoffs` with `milestone`, `clawdline handoff`; `app.UsageLedger.CompareHandoff`, `GET /v1/usage/compare-handoff`; docs/handoff.md "Milestone handoffs", docs/token-ledger.md "Did handing over pay") | A milestone summary is at most **6 KiB** (`MilestoneSummaryLimit`), with no quoted or fenced block over **12 lines** (`milestoneVerbatimLines`); obligations.md lists at most **40 rows** per kind (`milestoneObligationRows`); a comparison reads at most **300 finished items**, newest first (`handoffItemLimit`), and computes a saving only when each compared group has **20 items** (`handoffComparableLimit`); `admission`, `page` and `parameter` lines on the capacity baseline, because nothing is kept | A longer summary, or one with a long block, is a 422 `bad_milestone_summary` naming each problem, and nothing is opened; past 40 rows obligations.md says how many more; past 300 items the answer says `truncated`; a group under 20 items makes the verdict `insufficient_evidence` with a null saving | The refusal's `problems`; `clawdline handoff --check`; the comparison's `truncated`, `too_few` and `verdict` | No: nothing is stored beyond the handoff record and its package | ✓ |
+| N77 | A turn's status report (`clawdline report`, `internal/adapters/turnreport`, the guide's "report" part) | A code file's whole text up to **70 000 bytes** (`fullTextLimit`), a Markdown file's up to **1 MiB** (`markdownLimit`); one commit's diff of one file up to **256 KiB** (`diffLimit`); **12 MiB** of text and diffs in one report (`reportLimit`); **500 commits** per report (`commitsLimit`); the daemon answers a kept report of at most **48 MiB** at `/reports/<id>` (`servedLimit`); `read`, `page` and `admission` lines on the capacity baseline, because the report is a file on the person's machine and nothing is kept by the daemon | A larger file carries only its diffs and says so; a longer diff is cut and says so; past 12 MiB the largest whole texts go first, then the largest diffs, each named in the report and on stderr; more than 500 commits is refused before anything is read; a larger kept page is not found | The report itself and the command's stderr | No: the person names fewer commits or reads the file in the repository | ✓ |

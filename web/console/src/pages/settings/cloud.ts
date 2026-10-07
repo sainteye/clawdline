@@ -1,3 +1,4 @@
+import { catalogFormat } from "../../catalog.js"
 import { client } from "../../client.js"
 import { RefusalError, isRefusal } from "@clawdline/core"
 
@@ -14,7 +15,7 @@ import { RefusalError, isRefusal } from "@clawdline/core"
  * The shape is hand-written rather than generated from `api/v1/`. That is a
  * deliberate, recorded gap: regenerating the contract rewrites two files that
  * another task is holding open, and a card that reads six fields is not worth
- * a merge conflict across 218 types. `docs/cloud-wire.md` §16.3 carries it, and
+ * a merge conflict across 218 types. `docs/records/cloud-wire-implementation-2026-09.md` §16.3 carries it, and
  * the schema is the follow-up.
  */
 export type CloudViewer = {
@@ -133,7 +134,7 @@ async function cloudCall<T>(method: string, path: string, body?: unknown): Promi
   }
   if (!res.ok) {
     if (isRefusal(parsed)) throw new RefusalError(res.status, parsed, path)
-    throw new Error(`${path} 回答 ${res.status}`)
+    throw new Error(catalogFormat("template", "75357881ddad", [path, res.status]))
   }
   return parsed as T
 }

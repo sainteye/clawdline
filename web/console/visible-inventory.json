@@ -1,0 +1,3600 @@
+[
+  {
+    "id": "inline.a6971f01832f",
+    "file": "src/App.tsx",
+    "line": 822,
+    "kind": "jsx",
+    "value": "角色小隊"
+  },
+  {
+    "id": "inline.2c58f0c0b5ae",
+    "file": "src/Sessions.tsx",
+    "line": 324,
+    "kind": "title",
+    "value": "新增看板項目"
+  },
+  {
+    "id": "inline.2c58f0c0b5ae",
+    "file": "src/Sessions.tsx",
+    "line": 325,
+    "kind": "aria-label",
+    "value": "新增看板項目"
+  },
+  {
+    "id": "inline.6ebb2cb97b4d",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 247,
+    "kind": "jsx",
+    "value": "% CPU"
+  },
+  {
+    "id": "inline.6ebb2cb97b4d",
+    "file": "src/machine/MachineDashboard.tsx",
+    "line": 268,
+    "kind": "jsx",
+    "value": "% CPU"
+  },
+  {
+    "id": "inline.785626f3cb47",
+    "file": "src/overlays/Overlays.tsx",
+    "line": 83,
+    "kind": "aria-label",
+    "value": "Related Board work"
+  },
+  {
+    "id": "inline.81191ae00ea5",
+    "file": "src/overlays/Overlays.tsx",
+    "line": 118,
+    "kind": "jsx",
+    "value": "Run commit?"
+  },
+  {
+    "id": "inline.250f3493e97c",
+    "file": "src/overlays/Overlays.tsx",
+    "line": 120,
+    "kind": "jsx",
+    "value": "This sends commit to the current session."
+  },
+  {
+    "id": "inline.10c5dec4ddcc",
+    "file": "src/pages/Squad.tsx",
+    "line": 105,
+    "kind": "jsx",
+    "value": "項技能"
+  },
+  {
+    "id": "inline.df43ea8cf144",
+    "file": "src/pages/Squad.tsx",
+    "line": 119,
+    "kind": "aria-label",
+    "value": "技能詳情"
+  },
+  {
+    "id": "inline.05b36669c4ad",
+    "file": "src/pages/Squad.tsx",
+    "line": 122,
+    "kind": "jsx",
+    "value": "用途"
+  },
+  {
+    "id": "inline.c21db84c0653",
+    "file": "src/pages/Squad.tsx",
+    "line": 122,
+    "kind": "jsx",
+    "value": "來源"
+  },
+  {
+    "id": "inline.5f76b2bf82dd",
+    "file": "src/pages/Squad.tsx",
+    "line": 123,
+    "kind": "jsx",
+    "value": "版本"
+  },
+  {
+    "id": "inline.551356fbbc1e",
+    "file": "src/pages/Squad.tsx",
+    "line": 123,
+    "kind": "jsx",
+    "value": "授權"
+  },
+  {
+    "id": "inline.e01b94ddd5d5",
+    "file": "src/pages/Squad.tsx",
+    "line": 124,
+    "kind": "jsx",
+    "value": "狀態"
+  },
+  {
+    "id": "inline.7c7215c1a1ee",
+    "file": "src/pages/Squad.tsx",
+    "line": 125,
+    "kind": "jsx",
+    "value": "技能內容"
+  },
+  {
+    "id": "inline.b189237d831b",
+    "file": "src/pages/Squad.tsx",
+    "line": 126,
+    "kind": "jsx",
+    "value": "資料夾附檔"
+  },
+  {
+    "id": "inline.f975303092e1",
+    "file": "src/pages/Squad.tsx",
+    "line": 126,
+    "kind": "jsx",
+    "value": "此資料夾只有 SKILL.md。"
+  },
+  {
+    "id": "inline.401707655263",
+    "file": "src/pages/Squad.tsx",
+    "line": 127,
+    "kind": "jsx",
+    "value": "選擇一項技能以閱讀完整內容與來源。"
+  },
+  {
+    "id": "inline.23a2521dacc1",
+    "file": "src/pages/Squad.tsx",
+    "line": 663,
+    "kind": "jsx",
+    "value": "AI SQUAD / 角色小隊"
+  },
+  {
+    "id": "inline.7b2e2228ee05",
+    "file": "src/pages/Squad.tsx",
+    "line": 663,
+    "kind": "jsx",
+    "value": "選擇並了解你的角色小隊"
+  },
+  {
+    "id": "inline.c2ba5dc09493",
+    "file": "src/pages/Squad.tsx",
+    "line": 664,
+    "kind": "jsx",
+    "value": "查看角色定義、Project 手冊和已採納技能。設定變更只影響之後建立的 Session。"
+  },
+  {
+    "id": "inline.279e7da32fd3",
+    "file": "src/pages/Squad.tsx",
+    "line": 665,
+    "kind": "jsx",
+    "value": "設定範圍"
+  },
+  {
+    "id": "inline.6a1c5fd6909b",
+    "file": "src/pages/Squad.tsx",
+    "line": 666,
+    "kind": "jsx",
+    "value": "全域（預設）"
+  },
+  {
+    "id": "inline.78427b9ef6b7",
+    "file": "src/pages/Squad.tsx",
+    "line": 669,
+    "kind": "jsx",
+    "value": "正在重新讀取角色小隊…"
+  },
+  {
+    "id": "inline.d30b77c6b717",
+    "file": "src/pages/Squad.tsx",
+    "line": 669,
+    "kind": "jsx",
+    "value": "正在讀取角色小隊…"
+  },
+  {
+    "id": "inline.07244b042280",
+    "file": "src/pages/Squad.tsx",
+    "line": 670,
+    "kind": "jsx",
+    "value": "重試讀取"
+  },
+  {
+    "id": "inline.08228e7394ef",
+    "file": "src/pages/Squad.tsx",
+    "line": 671,
+    "kind": "jsx",
+    "value": "部分資料暫時無法讀取。下列內容可能不是最新狀態。"
+  },
+  {
+    "id": "inline.07244b042280",
+    "file": "src/pages/Squad.tsx",
+    "line": 671,
+    "kind": "jsx",
+    "value": "重試讀取"
+  },
+  {
+    "id": "inline.7bdb8640f903",
+    "file": "src/pages/Squad.tsx",
+    "line": 672,
+    "kind": "jsx",
+    "value": "此連線只有讀取權限；設定與私人資料包操作需要可寫入的配對裝置。"
+  },
+  {
+    "id": "inline.d13ccaf2da5f",
+    "file": "src/pages/Squad.tsx",
+    "line": 674,
+    "kind": "jsx",
+    "value": "小隊"
+  },
+  {
+    "id": "inline.5f791cc391b3",
+    "file": "src/pages/Squad.tsx",
+    "line": 674,
+    "kind": "jsx",
+    "value": "組"
+  },
+  {
+    "id": "inline.7a889ffdecb5",
+    "file": "src/pages/Squad.tsx",
+    "line": 675,
+    "kind": "aria-label",
+    "value": "小隊篩選"
+  },
+  {
+    "id": "inline.2878fe586472",
+    "file": "src/pages/Squad.tsx",
+    "line": 675,
+    "kind": "jsx",
+    "value": "全部角色"
+  },
+  {
+    "id": "inline.f438effc4cef",
+    "file": "src/pages/Squad.tsx",
+    "line": 677,
+    "kind": "jsx",
+    "value": "技能資料包"
+  },
+  {
+    "id": "inline.e035783117a9",
+    "file": "src/pages/Squad.tsx",
+    "line": 677,
+    "kind": "jsx",
+    "value": "讀入前會預覽來源、授權與衝突；預設匯出不含私人設定。"
+  },
+  {
+    "id": "inline.3d94747fe80d",
+    "file": "src/pages/Squad.tsx",
+    "line": 678,
+    "kind": "jsx",
+    "value": "讀入資料包"
+  },
+  {
+    "id": "inline.21ef789fd56d",
+    "file": "src/pages/Squad.tsx",
+    "line": 679,
+    "kind": "jsx",
+    "value": "匯出資料包"
+  },
+  {
+    "id": "inline.9d19a6eff5a7",
+    "file": "src/pages/Squad.tsx",
+    "line": 680,
+    "kind": "jsx",
+    "value": "角色名冊"
+  },
+  {
+    "id": "inline.7f40e97b7bdb",
+    "file": "src/pages/Squad.tsx",
+    "line": 680,
+    "kind": "jsx",
+    "value": "選一位角色查看完整定義與技能。"
+  },
+  {
+    "id": "inline.a880820a9cf3",
+    "file": "src/pages/Squad.tsx",
+    "line": 680,
+    "kind": "jsx",
+    "value": "位角色"
+  },
+  {
+    "id": "inline.b5ddf97c42d3",
+    "file": "src/pages/Squad.tsx",
+    "line": 681,
+    "kind": "jsx",
+    "value": "搜尋角色"
+  },
+  {
+    "id": "inline.1fa038b1af83",
+    "file": "src/pages/Squad.tsx",
+    "line": 681,
+    "kind": "placeholder",
+    "value": "名稱或用途"
+  },
+  {
+    "id": "inline.6dc87a09ba68",
+    "file": "src/pages/Squad.tsx",
+    "line": 685,
+    "kind": "jsx",
+    "value": "顯示全部角色"
+  },
+  {
+    "id": "inline.a614ac7abbc2",
+    "file": "src/pages/Squad.tsx",
+    "line": 687,
+    "kind": "jsx",
+    "value": "← 返回角色名冊"
+  },
+  {
+    "id": "inline.863e4b25f68c",
+    "file": "src/pages/Squad.tsx",
+    "line": 688,
+    "kind": "jsx",
+    "value": "角色檔案 / 詳情"
+  },
+  {
+    "id": "inline.230d9c9e189c",
+    "file": "src/pages/Squad.tsx",
+    "line": 690,
+    "kind": "jsx",
+    "value": "來源與版本"
+  },
+  {
+    "id": "inline.c21db84c0653",
+    "file": "src/pages/Squad.tsx",
+    "line": 691,
+    "kind": "jsx",
+    "value": "來源"
+  },
+  {
+    "id": "inline.5f76b2bf82dd",
+    "file": "src/pages/Squad.tsx",
+    "line": 692,
+    "kind": "jsx",
+    "value": "版本"
+  },
+  {
+    "id": "inline.1056aea86d65",
+    "file": "src/pages/Squad.tsx",
+    "line": 693,
+    "kind": "jsx",
+    "value": "SHA-256 是角色定義內容的指紋；內容變動時會更新，用來辨識使用的版本。"
+  },
+  {
+    "id": "inline.ed1d465abc34",
+    "file": "src/pages/Squad.tsx",
+    "line": 695,
+    "kind": "jsx",
+    "value": "查看／新增技能"
+  },
+  {
+    "id": "inline.3d6b6be71577",
+    "file": "src/pages/Squad.tsx",
+    "line": 696,
+    "kind": "jsx",
+    "value": "角色定義"
+  },
+  {
+    "id": "inline.c4ad0c22f59e",
+    "file": "src/pages/Squad.tsx",
+    "line": 697,
+    "kind": "jsx",
+    "value": "允許管理 agent 自動指派"
+  },
+  {
+    "id": "inline.4cbb34265f55",
+    "file": "src/pages/Squad.tsx",
+    "line": 697,
+    "kind": "jsx",
+    "value": "停用只影響管理 agent 的自動候選；你仍可手動指定此角色。"
+  },
+  {
+    "id": "inline.a53d571b6694",
+    "file": "src/pages/Squad.tsx",
+    "line": 699,
+    "kind": "jsx",
+    "value": "全域："
+  },
+  {
+    "id": "inline.d3f92dfb1617",
+    "file": "src/pages/Squad.tsx",
+    "line": 699,
+    "kind": "jsx",
+    "value": "· 生效："
+  },
+  {
+    "id": "inline.017bc5141405",
+    "file": "src/pages/Squad.tsx",
+    "line": 699,
+    "kind": "jsx",
+    "value": "· 來源："
+  },
+  {
+    "id": "inline.c07fb8c4d3e4",
+    "file": "src/pages/Squad.tsx",
+    "line": 700,
+    "kind": "jsx",
+    "value": "還原"
+  },
+  {
+    "id": "inline.f9e0aed45830",
+    "file": "src/pages/Squad.tsx",
+    "line": 701,
+    "kind": "jsx",
+    "value": "角色手冊"
+  },
+  {
+    "id": "inline.f3ad63524f05",
+    "file": "src/pages/Squad.tsx",
+    "line": 701,
+    "kind": "jsx",
+    "value": "保存背景知識與固定流程；Project 採整份覆寫。"
+  },
+  {
+    "id": "inline.aeca8d75fe70",
+    "file": "src/pages/Squad.tsx",
+    "line": 702,
+    "kind": "jsx",
+    "value": "全域手冊（唯讀）"
+  },
+  {
+    "id": "inline.a53d571b6694",
+    "file": "src/pages/Squad.tsx",
+    "line": 704,
+    "kind": "jsx",
+    "value": "全域："
+  },
+  {
+    "id": "inline.d3f92dfb1617",
+    "file": "src/pages/Squad.tsx",
+    "line": 704,
+    "kind": "jsx",
+    "value": "· 生效："
+  },
+  {
+    "id": "inline.017bc5141405",
+    "file": "src/pages/Squad.tsx",
+    "line": 704,
+    "kind": "jsx",
+    "value": "· 來源："
+  },
+  {
+    "id": "inline.cc133613eb04",
+    "file": "src/pages/Squad.tsx",
+    "line": 705,
+    "kind": "jsx",
+    "value": "手冊版本衝突"
+  },
+  {
+    "id": "inline.ca257eafc46c",
+    "file": "src/pages/Squad.tsx",
+    "line": 705,
+    "kind": "jsx",
+    "value": "伺服器目前版本"
+  },
+  {
+    "id": "inline.4d25dfc6d2aa",
+    "file": "src/pages/Squad.tsx",
+    "line": 705,
+    "kind": "jsx",
+    "value": "你的未儲存文字仍在編輯區。比較後可用目前版本重新儲存，或放棄草稿。"
+  },
+  {
+    "id": "inline.b6a364cc96dc",
+    "file": "src/pages/Squad.tsx",
+    "line": 706,
+    "kind": "jsx",
+    "value": "確認以目前版本儲存我的文字"
+  },
+  {
+    "id": "inline.2b48bf432592",
+    "file": "src/pages/Squad.tsx",
+    "line": 707,
+    "kind": "jsx",
+    "value": "放棄我的草稿"
+  },
+  {
+    "id": "inline.5d696ff0caa5",
+    "file": "src/pages/Squad.tsx",
+    "line": 709,
+    "kind": "jsx",
+    "value": "還原繼承"
+  },
+  {
+    "id": "inline.acf536aa74c6",
+    "file": "src/pages/Squad.tsx",
+    "line": 710,
+    "kind": "jsx",
+    "value": "專屬技能"
+  },
+  {
+    "id": "inline.f24523d8a047",
+    "file": "src/pages/Squad.tsx",
+    "line": 710,
+    "kind": "jsx",
+    "value": "項"
+  },
+  {
+    "id": "inline.ff8a8ba1428d",
+    "file": "src/pages/Squad.tsx",
+    "line": 710,
+    "kind": "jsx",
+    "value": "已採納的技能依優先順序排列；閱讀詳情不代表 Session 已使用。"
+  },
+  {
+    "id": "inline.467910ac6e5a",
+    "file": "src/pages/Squad.tsx",
+    "line": 711,
+    "kind": "jsx",
+    "value": "新增技能"
+  },
+  {
+    "id": "inline.b857d02a42b9",
+    "file": "src/pages/Squad.tsx",
+    "line": 712,
+    "kind": "jsx",
+    "value": "Project 技能清單是整份覆寫；加入後，未來全域新增的技能不會自動出現在此 Project，可還原全域繼承。"
+  },
+  {
+    "id": "inline.a53d571b6694",
+    "file": "src/pages/Squad.tsx",
+    "line": 713,
+    "kind": "jsx",
+    "value": "全域："
+  },
+  {
+    "id": "inline.b1e5fbf4d13e",
+    "file": "src/pages/Squad.tsx",
+    "line": 713,
+    "kind": "jsx",
+    "value": "項 · 生效："
+  },
+  {
+    "id": "inline.46a936b6b0c2",
+    "file": "src/pages/Squad.tsx",
+    "line": 713,
+    "kind": "jsx",
+    "value": "項 · 來源："
+  },
+  {
+    "id": "inline.e15fbe835198",
+    "file": "src/pages/Squad.tsx",
+    "line": 716,
+    "kind": "jsx",
+    "value": "此角色可使用此技能"
+  },
+  {
+    "id": "inline.53b2ef10cb82",
+    "file": "src/pages/Squad.tsx",
+    "line": 717,
+    "kind": "jsx",
+    "value": "上移優先順序"
+  },
+  {
+    "id": "inline.0bbb3f0291f8",
+    "file": "src/pages/Squad.tsx",
+    "line": 718,
+    "kind": "jsx",
+    "value": "下移優先順序"
+  },
+  {
+    "id": "inline.6e9cbfe78038",
+    "file": "src/pages/Squad.tsx",
+    "line": 719,
+    "kind": "jsx",
+    "value": "重新讀取技能"
+  },
+  {
+    "id": "inline.279e8d725148",
+    "file": "src/pages/Squad.tsx",
+    "line": 720,
+    "kind": "jsx",
+    "value": "生效："
+  },
+  {
+    "id": "inline.017bc5141405",
+    "file": "src/pages/Squad.tsx",
+    "line": 720,
+    "kind": "jsx",
+    "value": "· 來源："
+  },
+  {
+    "id": "inline.359872b069c2",
+    "file": "src/pages/Squad.tsx",
+    "line": 720,
+    "kind": "jsx",
+    "value": "尚無已採納技能"
+  },
+  {
+    "id": "inline.88f8f99241d8",
+    "file": "src/pages/Squad.tsx",
+    "line": 720,
+    "kind": "jsx",
+    "value": "這位角色仍可使用；公開研究候選不會自動安裝。"
+  },
+  {
+    "id": "inline.9f517bb49515",
+    "file": "src/pages/Squad.tsx",
+    "line": 721,
+    "kind": "jsx",
+    "value": "還原技能"
+  },
+  {
+    "id": "inline.dbdafa0c066d",
+    "file": "src/pages/Squad.tsx",
+    "line": 722,
+    "kind": "jsx",
+    "value": "技能使用動畫"
+  },
+  {
+    "id": "inline.49e8eaded35a",
+    "file": "src/pages/Squad.tsx",
+    "line": 722,
+    "kind": "jsx",
+    "value": "只在收到 Session 的新「已套用」收據時顯示；減少動態效果時改為靜態文字。"
+  },
+  {
+    "id": "inline.a53d571b6694",
+    "file": "src/pages/Squad.tsx",
+    "line": 724,
+    "kind": "jsx",
+    "value": "全域："
+  },
+  {
+    "id": "inline.d3f92dfb1617",
+    "file": "src/pages/Squad.tsx",
+    "line": 724,
+    "kind": "jsx",
+    "value": "· 生效："
+  },
+  {
+    "id": "inline.017bc5141405",
+    "file": "src/pages/Squad.tsx",
+    "line": 724,
+    "kind": "jsx",
+    "value": "· 來源："
+  },
+  {
+    "id": "inline.c07fb8c4d3e4",
+    "file": "src/pages/Squad.tsx",
+    "line": 725,
+    "kind": "jsx",
+    "value": "還原"
+  },
+  {
+    "id": "inline.79071ba84527",
+    "file": "src/pages/Squad.tsx",
+    "line": 727,
+    "kind": "jsx",
+    "value": "同機已配對讀者可讀取此機器的 Project 手冊；目前沒有逐 Project 讀者隔離。"
+  },
+  {
+    "id": "inline.50d3c28324cf",
+    "file": "src/pages/Squad.tsx",
+    "line": 728,
+    "kind": "jsx",
+    "value": "選擇角色"
+  },
+  {
+    "id": "inline.7abc9233fed1",
+    "file": "src/pages/Squad.tsx",
+    "line": 728,
+    "kind": "jsx",
+    "value": "從名冊選一位角色，即可閱讀定義、手冊和技能。"
+  },
+  {
+    "id": "inline.32639fb00553",
+    "file": "src/pages/Squad.tsx",
+    "line": 731,
+    "kind": "aria-label",
+    "value": "關閉資料包對話框"
+  },
+  {
+    "id": "inline.29868b5f3c58",
+    "file": "src/pages/Squad.tsx",
+    "line": 732,
+    "kind": "jsx",
+    "value": "讀入前先預覽新增、更新、衝突及受影響的角色與技能。來源與授權資訊仍須人工審查。目標範圍："
+  },
+  {
+    "id": "inline.de4290b91ba9",
+    "file": "src/pages/Squad.tsx",
+    "line": 733,
+    "kind": "jsx",
+    "value": "選擇本機 ZIP 檔"
+  },
+  {
+    "id": "inline.6c1b7c5ced5a",
+    "file": "src/pages/Squad.tsx",
+    "line": 735,
+    "kind": "jsx",
+    "value": "資料包預覽"
+  },
+  {
+    "id": "inline.3dd3d0b71ef3",
+    "file": "src/pages/Squad.tsx",
+    "line": 735,
+    "kind": "jsx",
+    "value": "目錄版本"
+  },
+  {
+    "id": "inline.6176ae2b39f4",
+    "file": "src/pages/Squad.tsx",
+    "line": 735,
+    "kind": "jsx",
+    "value": "· 摘要"
+  },
+  {
+    "id": "inline.d3dded3e1fce",
+    "file": "src/pages/Squad.tsx",
+    "line": 735,
+    "kind": "jsx",
+    "value": "來源："
+  },
+  {
+    "id": "inline.feb19f096641",
+    "file": "src/pages/Squad.tsx",
+    "line": 735,
+    "kind": "jsx",
+    "value": "（待審） · 授權："
+  },
+  {
+    "id": "inline.52144edb58e1",
+    "file": "src/pages/Squad.tsx",
+    "line": 735,
+    "kind": "jsx",
+    "value": "（待審）"
+  },
+  {
+    "id": "inline.0006d696d8e1",
+    "file": "src/pages/Squad.tsx",
+    "line": 736,
+    "kind": "jsx",
+    "value": "新增"
+  },
+  {
+    "id": "inline.da5930e53d54",
+    "file": "src/pages/Squad.tsx",
+    "line": 736,
+    "kind": "jsx",
+    "value": "無"
+  },
+  {
+    "id": "inline.3055a035f0eb",
+    "file": "src/pages/Squad.tsx",
+    "line": 737,
+    "kind": "jsx",
+    "value": "更新"
+  },
+  {
+    "id": "inline.da5930e53d54",
+    "file": "src/pages/Squad.tsx",
+    "line": 737,
+    "kind": "jsx",
+    "value": "無"
+  },
+  {
+    "id": "inline.a4678e1de0c9",
+    "file": "src/pages/Squad.tsx",
+    "line": 738,
+    "kind": "jsx",
+    "value": "依賴影響"
+  },
+  {
+    "id": "inline.da5930e53d54",
+    "file": "src/pages/Squad.tsx",
+    "line": 738,
+    "kind": "jsx",
+    "value": "無"
+  },
+  {
+    "id": "inline.d87dc3ea34a9",
+    "file": "src/pages/Squad.tsx",
+    "line": 739,
+    "kind": "jsx",
+    "value": "包內私人設定（預設不採納）"
+  },
+  {
+    "id": "inline.322b7c72c2cc",
+    "file": "src/pages/Squad.tsx",
+    "line": 739,
+    "kind": "jsx",
+    "value": "逐一選擇要採納的範圍；同機已配對讀者具有機器範圍讀取權。"
+  },
+  {
+    "id": "inline.33520f6091bc",
+    "file": "src/pages/Squad.tsx",
+    "line": 740,
+    "kind": "jsx",
+    "value": "採納"
+  },
+  {
+    "id": "inline.49e7168fd1fe",
+    "file": "src/pages/Squad.tsx",
+    "line": 740,
+    "kind": "jsx",
+    "value": "私人設定"
+  },
+  {
+    "id": "inline.e40e8e4c90a3",
+    "file": "src/pages/Squad.tsx",
+    "line": 741,
+    "kind": "jsx",
+    "value": "我確認採納上述私人設定"
+  },
+  {
+    "id": "inline.6cfed87bc1c2",
+    "file": "src/pages/Squad.tsx",
+    "line": 742,
+    "kind": "jsx",
+    "value": "衝突"
+  },
+  {
+    "id": "inline.7bb80895727d",
+    "file": "src/pages/Squad.tsx",
+    "line": 743,
+    "kind": "jsx",
+    "value": "取消此次採納"
+  },
+  {
+    "id": "inline.c055370cad67",
+    "file": "src/pages/Squad.tsx",
+    "line": 743,
+    "kind": "jsx",
+    "value": "保留現有並採納其餘項目"
+  },
+  {
+    "id": "inline.eb4698e366ec",
+    "file": "src/pages/Squad.tsx",
+    "line": 745,
+    "kind": "jsx",
+    "value": "預設只匯出可分享的定義。全域與每個 Project 的私人手冊及覆寫必須分別勾選；同機已配對讀者具有機器範圍讀取權。"
+  },
+  {
+    "id": "inline.c4ea52effc80",
+    "file": "src/pages/Squad.tsx",
+    "line": 746,
+    "kind": "jsx",
+    "value": "包含全域私人設定"
+  },
+  {
+    "id": "inline.107319b8b39d",
+    "file": "src/pages/Squad.tsx",
+    "line": 747,
+    "kind": "jsx",
+    "value": "包含"
+  },
+  {
+    "id": "inline.9817fd932985",
+    "file": "src/pages/Squad.tsx",
+    "line": 747,
+    "kind": "jsx",
+    "value": "的私人設定"
+  },
+  {
+    "id": "inline.c96fe5d5524b",
+    "file": "src/pages/Squad.tsx",
+    "line": 748,
+    "kind": "jsx",
+    "value": "即將下載："
+  },
+  {
+    "id": "inline.dd926ed1c017",
+    "file": "src/pages/Squad.tsx",
+    "line": 748,
+    "kind": "jsx",
+    "value": "可分享定義（包含自寫技能全文）"
+  },
+  {
+    "id": "inline.d7eb99194227",
+    "file": "src/pages/Squad.tsx",
+    "line": 749,
+    "kind": "jsx",
+    "value": "目錄含有完整技能資料夾。現有資料包格式無法保存附檔，因此暫時無法匯出。"
+  },
+  {
+    "id": "inline.1b8abcd48389",
+    "file": "src/pages/Squad.tsx",
+    "line": 750,
+    "kind": "jsx",
+    "value": "我確認將上述私人設定放入下載檔"
+  },
+  {
+    "id": "inline.45b244c624a8",
+    "file": "src/pages/Squad.tsx",
+    "line": 755,
+    "kind": "jsx",
+    "value": "為角色新增技能"
+  },
+  {
+    "id": "inline.1aef1dbef95c",
+    "file": "src/pages/Squad.tsx",
+    "line": 755,
+    "kind": "aria-label",
+    "value": "關閉新增技能對話框"
+  },
+  {
+    "id": "inline.c0506b0b753a",
+    "file": "src/pages/Squad.tsx",
+    "line": 756,
+    "kind": "jsx",
+    "value": "角色："
+  },
+  {
+    "id": "inline.83249fdc0b14",
+    "file": "src/pages/Squad.tsx",
+    "line": 756,
+    "kind": "jsx",
+    "value": "· 範圍："
+  },
+  {
+    "id": "inline.5f8e73fff7dd",
+    "file": "src/pages/Squad.tsx",
+    "line": 756,
+    "kind": "jsx",
+    "value": "。加入後只影響之後建立的 Session。"
+  },
+  {
+    "id": "inline.9737be2133ca",
+    "file": "src/pages/Squad.tsx",
+    "line": 757,
+    "kind": "jsx",
+    "value": "技能全文存於這部機器的全域目錄，同機已配對讀者可讀；純文字技能會包含在預設可分享資料包中。所選範圍只控制此角色能否使用。"
+  },
+  {
+    "id": "inline.f3405adf34b0",
+    "file": "src/pages/Squad.tsx",
+    "line": 758,
+    "kind": "aria-label",
+    "value": "關閉技能草稿"
+  },
+  {
+    "id": "inline.f8534db79f9d",
+    "file": "src/pages/Squad.tsx",
+    "line": 758,
+    "kind": "jsx",
+    "value": "要保留未送出的技能草稿嗎？"
+  },
+  {
+    "id": "inline.fc7d5b5c2ceb",
+    "file": "src/pages/Squad.tsx",
+    "line": 758,
+    "kind": "jsx",
+    "value": "保留後，可在這位角色的同一範圍重新開啟「新增技能」繼續編輯。"
+  },
+  {
+    "id": "inline.1e18232c29fd",
+    "file": "src/pages/Squad.tsx",
+    "line": 759,
+    "kind": "jsx",
+    "value": "保留草稿並關閉"
+  },
+  {
+    "id": "inline.1357dccf1e9b",
+    "file": "src/pages/Squad.tsx",
+    "line": 759,
+    "kind": "jsx",
+    "value": "捨棄草稿"
+  },
+  {
+    "id": "inline.24a05e3c2c3b",
+    "file": "src/pages/Squad.tsx",
+    "line": 759,
+    "kind": "jsx",
+    "value": "繼續編輯"
+  },
+  {
+    "id": "inline.a0c8796dcf10",
+    "file": "src/pages/Squad.tsx",
+    "line": 761,
+    "kind": "aria-label",
+    "value": "新增技能方式"
+  },
+  {
+    "id": "inline.1621c89c005c",
+    "file": "src/pages/Squad.tsx",
+    "line": 762,
+    "kind": "jsx",
+    "value": "建立新技能"
+  },
+  {
+    "id": "inline.2b2f66c0beb2",
+    "file": "src/pages/Squad.tsx",
+    "line": 763,
+    "kind": "jsx",
+    "value": "加入已建立技能"
+  },
+  {
+    "id": "inline.0509576cc5a4",
+    "file": "src/pages/Squad.tsx",
+    "line": 764,
+    "kind": "jsx",
+    "value": "匯入 Project／Claude Code／Codex 技能"
+  },
+  {
+    "id": "inline.d8ac7c87e3f0",
+    "file": "src/pages/Squad.tsx",
+    "line": 767,
+    "kind": "jsx",
+    "value": "技能名稱"
+  },
+  {
+    "id": "inline.9c9a28f5de45",
+    "file": "src/pages/Squad.tsx",
+    "line": 768,
+    "kind": "jsx",
+    "value": "用途摘要"
+  },
+  {
+    "id": "inline.9d30e17eeefd",
+    "file": "src/pages/Squad.tsx",
+    "line": 769,
+    "kind": "jsx",
+    "value": "建立後預設啟用，可回到技能詳情停用。內容最多 64 KiB。"
+  },
+  {
+    "id": "inline.7c7215c1a1ee",
+    "file": "src/pages/Squad.tsx",
+    "line": 770,
+    "kind": "jsx",
+    "value": "技能內容"
+  },
+  {
+    "id": "inline.02973078b98f",
+    "file": "src/pages/Squad.tsx",
+    "line": 771,
+    "kind": "jsx",
+    "value": "選擇技能"
+  },
+  {
+    "id": "inline.33c19ff0b762",
+    "file": "src/pages/Squad.tsx",
+    "line": 772,
+    "kind": "jsx",
+    "value": "請選擇"
+  },
+  {
+    "id": "inline.b9a72aaf401e",
+    "file": "src/pages/Squad.tsx",
+    "line": 772,
+    "kind": "jsx",
+    "value": "· 版本"
+  },
+  {
+    "id": "inline.97bf64285368",
+    "file": "src/pages/Squad.tsx",
+    "line": 773,
+    "kind": "jsx",
+    "value": "可選擇內建或先前建立的技能。已加入角色的技能可在清單中啟用、停用與排序。"
+  },
+  {
+    "id": "inline.087e4878b476",
+    "file": "src/pages/Squad.tsx",
+    "line": 775,
+    "kind": "jsx",
+    "value": "技能來源"
+  },
+  {
+    "id": "inline.985959785319",
+    "file": "src/pages/Squad.tsx",
+    "line": 775,
+    "kind": "jsx",
+    "value": "Project"
+  },
+  {
+    "id": "inline.246ef8c1130d",
+    "file": "src/pages/Squad.tsx",
+    "line": 775,
+    "kind": "jsx",
+    "value": "Claude Code"
+  },
+  {
+    "id": "inline.616efbe96852",
+    "file": "src/pages/Squad.tsx",
+    "line": 775,
+    "kind": "jsx",
+    "value": "Codex"
+  },
+  {
+    "id": "inline.2ba66ba73eff",
+    "file": "src/pages/Squad.tsx",
+    "line": 776,
+    "kind": "aria-label",
+    "value": "匯入方式"
+  },
+  {
+    "id": "inline.73c3351b4ca4",
+    "file": "src/pages/Squad.tsx",
+    "line": 777,
+    "kind": "jsx",
+    "value": "完整技能資料夾"
+  },
+  {
+    "id": "inline.c4a401f3689f",
+    "file": "src/pages/Squad.tsx",
+    "line": 778,
+    "kind": "jsx",
+    "value": "只複製 SKILL.md 文字"
+  },
+  {
+    "id": "inline.eb5b504885d3",
+    "file": "src/pages/Squad.tsx",
+    "line": 780,
+    "kind": "jsx",
+    "value": "從這部機器的技能目錄選擇。"
+  },
+  {
+    "id": "inline.be530b5551a2",
+    "file": "src/pages/Squad.tsx",
+    "line": 780,
+    "kind": "jsx",
+    "value": "完整資料夾會保存 SKILL.md 與附檔；文字方式只保存 SKILL.md。合計最多 64 KiB。Cloud 介面會經配對連線讀取清單，並只在選取技能後讀取其內容與附檔。"
+  },
+  {
+    "id": "inline.b71045effb84",
+    "file": "src/pages/Squad.tsx",
+    "line": 781,
+    "kind": "aria-label",
+    "value": "可加入的技能"
+  },
+  {
+    "id": "inline.113db9dc3197",
+    "file": "src/pages/Squad.tsx",
+    "line": 782,
+    "kind": "jsx",
+    "value": "可用技能"
+  },
+  {
+    "id": "inline.358a13c304aa",
+    "file": "src/pages/Squad.tsx",
+    "line": 782,
+    "kind": "jsx",
+    "value": "重新讀取"
+  },
+  {
+    "id": "inline.f57aace56ce8",
+    "file": "src/pages/Squad.tsx",
+    "line": 783,
+    "kind": "jsx",
+    "value": "搜尋技能"
+  },
+  {
+    "id": "inline.50c8b05ea375",
+    "file": "src/pages/Squad.tsx",
+    "line": 783,
+    "kind": "placeholder",
+    "value": "名稱、用途或位置"
+  },
+  {
+    "id": "inline.9fb52113c298",
+    "file": "src/pages/Squad.tsx",
+    "line": 784,
+    "kind": "jsx",
+    "value": "正在讀取技能清單…"
+  },
+  {
+    "id": "inline.b0c972ae30e5",
+    "file": "src/pages/Squad.tsx",
+    "line": 784,
+    "kind": "jsx",
+    "value": "這個來源沒有找到技能。請確認已選擇正確的 Project，或改選其他來源。"
+  },
+  {
+    "id": "inline.e627673e6a28",
+    "file": "src/pages/Squad.tsx",
+    "line": 785,
+    "kind": "aria-label",
+    "value": "選擇現有技能"
+  },
+  {
+    "id": "inline.e93b3a514ab9",
+    "file": "src/pages/Squad.tsx",
+    "line": 788,
+    "kind": "jsx",
+    "value": "沒有符合搜尋的技能。可清除搜尋再選。"
+  },
+  {
+    "id": "inline.80a6f335a94e",
+    "file": "src/pages/Squad.tsx",
+    "line": 790,
+    "kind": "jsx",
+    "value": "正在讀取所選技能…"
+  },
+  {
+    "id": "inline.d8ac7c87e3f0",
+    "file": "src/pages/Squad.tsx",
+    "line": 792,
+    "kind": "jsx",
+    "value": "技能名稱"
+  },
+  {
+    "id": "inline.9c9a28f5de45",
+    "file": "src/pages/Squad.tsx",
+    "line": 793,
+    "kind": "jsx",
+    "value": "用途摘要"
+  },
+  {
+    "id": "inline.57005f2f16cf",
+    "file": "src/pages/Squad.tsx",
+    "line": 794,
+    "kind": "jsx",
+    "value": "已讀取 SKILL.md"
+  },
+  {
+    "id": "inline.dd6ebd6aaecd",
+    "file": "src/pages/Squad.tsx",
+    "line": 794,
+    "kind": "jsx",
+    "value": "。請確認名稱與用途後加入。"
+  },
+  {
+    "id": "inline.7deeb1ebd38e",
+    "file": "src/pages/Squad.tsx",
+    "line": 795,
+    "kind": "jsx",
+    "value": "預覽 SKILL.md"
+  },
+  {
+    "id": "inline.7713cf1052e8",
+    "file": "src/pages/Squad.tsx",
+    "line": 797,
+    "kind": "jsx",
+    "value": "技能已建立在目錄中，正在加入角色；重試不會重複建立。"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/pages/Squad.tsx",
+    "line": 800,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.d32a04199db7",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 70,
+    "kind": "jsx",
+    "value": "複製專案圖示"
+  },
+  {
+    "id": "inline.d3000d0899a0",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 71,
+    "kind": "jsx",
+    "value": "在來源機器選擇專案並複製圖示，再切換機器、選擇目標專案並套用。圖示保留在此分頁，直到清除或關閉分頁。"
+  },
+  {
+    "id": "inline.d4a5e9562cbf",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 72,
+    "kind": "jsx",
+    "value": "此機器的專案"
+  },
+  {
+    "id": "inline.f7e540512d3c",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 74,
+    "kind": "jsx",
+    "value": "選擇專案"
+  },
+  {
+    "id": "inline.5c552391038f",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 79,
+    "kind": "jsx",
+    "value": "目前圖示"
+  },
+  {
+    "id": "inline.a6b2e420b2bc",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 80,
+    "kind": "jsx",
+    "value": "已複製圖示"
+  },
+  {
+    "id": "inline.4ac77ec01818",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 83,
+    "kind": "jsx",
+    "value": "複製圖示"
+  },
+  {
+    "id": "inline.c87eb0f2a589",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 91,
+    "kind": "jsx",
+    "value": "清除已複製圖示"
+  },
+  {
+    "id": "inline.358a13c304aa",
+    "file": "src/pages/projects/IconCopy.tsx",
+    "line": 95,
+    "kind": "jsx",
+    "value": "重新讀取"
+  },
+  {
+    "id": "inline.a58b39df6cd2",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 39,
+    "kind": "jsx",
+    "value": "正在讀取…"
+  },
+  {
+    "id": "inline.7e59d0f16293",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 40,
+    "kind": "jsx",
+    "value": "重試"
+  },
+  {
+    "id": "inline.b96e60969fd5",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 49,
+    "kind": "jsx",
+    "value": "這個資料夾沒有檔案。"
+  },
+  {
+    "id": "inline.03348feb5b04",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 50,
+    "kind": "jsx",
+    "value": "這個資料夾項目過多，僅顯示已讀取的部分。請在機器上查看其餘項目。"
+  },
+  {
+    "id": "inline.3336bfb819f5",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 108,
+    "kind": "jsx",
+    "value": "專案檔案"
+  },
+  {
+    "id": "inline.ea9cfe4f4afe",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 108,
+    "kind": "jsx",
+    "value": "逐層展開資料夾；選取檔案後才讀取文字內容。此處僅供閱讀，不會修改檔案。"
+  },
+  {
+    "id": "inline.9146d108b060",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 109,
+    "kind": "jsx",
+    "value": "重新讀取根目錄"
+  },
+  {
+    "id": "inline.3b92a032b6cc",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 114,
+    "kind": "jsx",
+    "value": "正在讀取資料夾…"
+  },
+  {
+    "id": "inline.7e59d0f16293",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 115,
+    "kind": "jsx",
+    "value": "重試"
+  },
+  {
+    "id": "inline.fb0d9c173c82",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 120,
+    "kind": "jsx",
+    "value": "從左側選擇文字檔，內容會顯示在這裡。"
+  },
+  {
+    "id": "inline.fdfd628f99b8",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 124,
+    "kind": "jsx",
+    "value": "返回檔案列表"
+  },
+  {
+    "id": "inline.2b3d59f666b3",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 126,
+    "kind": "jsx",
+    "value": "正在讀取檔案…"
+  },
+  {
+    "id": "inline.7e59d0f16293",
+    "file": "src/pages/projects/ProjectExplorer.tsx",
+    "line": 127,
+    "kind": "jsx",
+    "value": "重試"
+  },
+  {
+    "id": "inline.7a67b3e6ab4e",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 169,
+    "kind": "jsx",
+    "value": "指令與技能檔案"
+  },
+  {
+    "id": "inline.2c899f0c0469",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 170,
+    "kind": "jsx",
+    "value": "列出這個專案及本機全域找到的磁碟候選檔案；Session 實際採用的指令與技能可能因覆寫、外掛及啟動時間而不同。"
+  },
+  {
+    "id": "inline.db1659dac0df",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 171,
+    "kind": "jsx",
+    "value": "重新讀取清單"
+  },
+  {
+    "id": "inline.5751fdee7531",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 173,
+    "kind": "jsx",
+    "value": "檔案清單讀取失敗："
+  },
+  {
+    "id": "inline.fdf3ba351a22",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 173,
+    "kind": "jsx",
+    "value": "請按「重新讀取清單」。"
+  },
+  {
+    "id": "inline.2b3d59f666b3",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 174,
+    "kind": "jsx",
+    "value": "正在讀取檔案…"
+  },
+  {
+    "id": "inline.d4d68a08e0e6",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 177,
+    "kind": "aria-label",
+    "value": "專案指令與技能檔案"
+  },
+  {
+    "id": "inline.df2e1b644818",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 180,
+    "kind": "jsx",
+    "value": "沒有找到檔案。"
+  },
+  {
+    "id": "inline.e0e91da1e831",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 191,
+    "kind": "jsx",
+    "value": "選擇檔案查看實際內容與可編輯狀態。"
+  },
+  {
+    "id": "inline.bb3ee00241a5",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 195,
+    "kind": "jsx",
+    "value": "這是全域檔案，可能影響所有專案；此處僅供閱讀。"
+  },
+  {
+    "id": "inline.e3f57fd6eacc",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 200,
+    "kind": "jsx",
+    "value": "檔案內容"
+  },
+  {
+    "id": "inline.74aed729535a",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 203,
+    "kind": "jsx",
+    "value": "編輯檔案"
+  },
+  {
+    "id": "inline.9c6bde88026e",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 204,
+    "kind": "jsx",
+    "value": "儲存檔案"
+  },
+  {
+    "id": "inline.7a3efd8a888d",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 205,
+    "kind": "jsx",
+    "value": "取消編輯"
+  },
+  {
+    "id": "inline.c6438a8858d3",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 208,
+    "kind": "jsx",
+    "value": "複製草稿"
+  },
+  {
+    "id": "inline.ffeb28983cdb",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 209,
+    "kind": "jsx",
+    "value": "重新讀取檔案"
+  },
+  {
+    "id": "inline.b3980647fa20",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 215,
+    "kind": "jsx",
+    "value": "檔案數量超出清單上限，仍有項目未列出。"
+  },
+  {
+    "id": "inline.90ce0f66f094",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 216,
+    "kind": "jsx",
+    "value": "有"
+  },
+  {
+    "id": "inline.7851595d6a1c",
+    "file": "src/pages/projects/ProjectFiles.tsx",
+    "line": 216,
+    "kind": "jsx",
+    "value": "個技能資料夾無法安全讀取，已略過；請在機器上檢查連結或權限。"
+  },
+  {
+    "id": "inline.c6325b98fd0c",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 161,
+    "kind": "jsx",
+    "value": "專案能力健檢"
+  },
+  {
+    "id": "inline.7a181eee912c",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 162,
+    "kind": "jsx",
+    "value": "專案設定狀況"
+  },
+  {
+    "id": "inline.4ad26221870f",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 174,
+    "kind": "jsx",
+    "value": "查看健檢"
+  },
+  {
+    "id": "inline.c6325b98fd0c",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 205,
+    "kind": "jsx",
+    "value": "專案能力健檢"
+  },
+  {
+    "id": "inline.dfc889eaa026",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 208,
+    "kind": "aria-label",
+    "value": "關閉專案設定"
+  },
+  {
+    "id": "inline.c7fdddf79eaa",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 208,
+    "kind": "jsx",
+    "value": "關閉"
+  },
+  {
+    "id": "inline.a2d62aa7e4df",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 212,
+    "kind": "aria-label",
+    "value": "專案內容"
+  },
+  {
+    "id": "inline.c57e45ecd648",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 213,
+    "kind": "jsx",
+    "value": "設定與指引"
+  },
+  {
+    "id": "inline.a11ac5efe91d",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 218,
+    "kind": "jsx",
+    "value": "檔案"
+  },
+  {
+    "id": "inline.a33893db1b83",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 221,
+    "kind": "jsx",
+    "value": "正在讀取專案…"
+  },
+  {
+    "id": "inline.7e59d0f16293",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 222,
+    "kind": "jsx",
+    "value": "重試"
+  },
+  {
+    "id": "inline.0b2d6de09d19",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 223,
+    "kind": "jsx",
+    "value": "這個專案已不在清單中。請回專案列表重新選擇。"
+  },
+  {
+    "id": "inline.9efc27432575",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 228,
+    "kind": "jsx",
+    "value": "檢視這台機器的專案設定與指令檔案；可在下方編輯現有的專案檔案。缺少的設定仍可先交給 AI 檢查。"
+  },
+  {
+    "id": "inline.1f18df830a84",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 229,
+    "kind": "jsx",
+    "value": "配置完整"
+  },
+  {
+    "id": "inline.db8653492c3a",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 233,
+    "kind": "jsx",
+    "value": "讀取專案配置中…"
+  },
+  {
+    "id": "inline.76d12ea59749",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 237,
+    "kind": "jsx",
+    "value": "這台機器還沒有可檢查的專案。先在該目錄開過一次 assistant，或用"
+  },
+  {
+    "id": "inline.fa482be8fef0",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 237,
+    "kind": "jsx",
+    "value": "clawdline project add"
+  },
+  {
+    "id": "inline.7aa0955db160",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 237,
+    "kind": "jsx",
+    "value": "登記。"
+  },
+  {
+    "id": "inline.358a13c304aa",
+    "file": "src/pages/projects/ProjectSetup.tsx",
+    "line": 239,
+    "kind": "jsx",
+    "value": "重新讀取"
+  },
+  {
+    "id": "inline.58b55ad71df6",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 189,
+    "kind": "jsx",
+    "value": "專案設定同步"
+  },
+  {
+    "id": "inline.efd366b4e300",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 191,
+    "kind": "jsx",
+    "value": "選一台主要機器，這台會讀取它的專案名稱、圖示，以及沒有進 git 的"
+  },
+  {
+    "id": "inline.791c5105d4bf",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": ".claude/skills"
+  },
+  {
+    "id": "inline.84daedef39b3",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": ".claude/commands"
+  },
+  {
+    "id": "inline.a8532c746aa9",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": ".claude/agents"
+  },
+  {
+    "id": "inline.2b30dbf16241",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": "與"
+  },
+  {
+    "id": "inline.13230e1aea91",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": "CLAUDE.local.md"
+  },
+  {
+    "id": "inline.955dc54b5b20",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": "， 存成唯讀鏡像：之後在主要機器修改，打開這一頁就會更新過來。專案以 git"
+  },
+  {
+    "id": "inline.181fdd46fc4a",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 193,
+    "kind": "jsx",
+    "value": "origin"
+  },
+  {
+    "id": "inline.fc80320b2ca5",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 193,
+    "kind": "jsx",
+    "value": "對應，不看資料夾名稱。"
+  },
+  {
+    "id": "inline.fca16cae5b0e",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 194,
+    "kind": "jsx",
+    "value": ".claude/settings.local.json"
+  },
+  {
+    "id": "inline.7633dc8d1def",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 194,
+    "kind": "jsx",
+    "value": "含有這台的權限設定，不會同步。"
+  },
+  {
+    "id": "inline.e9bebcc7e5af",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 196,
+    "kind": "jsx",
+    "value": "跨機器同步需要從 Clawdline Cloud 開啟。也可以在主要機器執行"
+  },
+  {
+    "id": "inline.5f25c3304e10",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 196,
+    "kind": "jsx",
+    "value": "clawdline project export --out projects.json"
+  },
+  {
+    "id": "inline.92da784ad71b",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 196,
+    "kind": "jsx",
+    "value": "， 再到這台執行"
+  },
+  {
+    "id": "inline.321e64eaf5eb",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 197,
+    "kind": "jsx",
+    "value": "clawdline project import projects.json"
+  },
+  {
+    "id": "inline.12bc87aee711",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 200,
+    "kind": "jsx",
+    "value": "這台正在鏡像的專案"
+  },
+  {
+    "id": "inline.752c8278d622",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 203,
+    "kind": "jsx",
+    "value": "· 來自"
+  },
+  {
+    "id": "inline.fd63b0b7a79b",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 204,
+    "kind": "jsx",
+    "value": "改回本機設定"
+  },
+  {
+    "id": "inline.0622fb891fd0",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 214,
+    "kind": "jsx",
+    "value": "主要機器"
+  },
+  {
+    "id": "inline.106a58cc83a1",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 216,
+    "kind": "jsx",
+    "value": "選擇機器"
+  },
+  {
+    "id": "inline.bee4fb5a17bb",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 223,
+    "kind": "jsx",
+    "value": "」目前離線，要等它上線才能讀取它的專案。可以在「裝置」頁查看它的狀態。"
+  },
+  {
+    "id": "inline.11cf8d286937",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 240,
+    "kind": "jsx",
+    "value": "個本機檔案"
+  },
+  {
+    "id": "inline.f0796737e486",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 245,
+    "kind": "jsx",
+    "value": "不會同步的專案（"
+  },
+  {
+    "id": "inline.c1f001d63fef",
+    "file": "src/pages/projects/ProjectSync.tsx",
+    "line": 250,
+    "kind": "jsx",
+    "value": "這台還沒有的 repo，clone 到"
+  },
+  {
+    "id": "inline.3b71e7c5c1b9",
+    "file": "src/pages/projects/ProjectTools.tsx",
+    "line": 17,
+    "kind": "jsx",
+    "value": "專案管理"
+  },
+  {
+    "id": "inline.0eb9b6dde40e",
+    "file": "src/pages/projects/ProjectTools.tsx",
+    "line": 18,
+    "kind": "jsx",
+    "value": "設定健檢、跨機器同步與圖示工具"
+  },
+  {
+    "id": "inline.4956bcafb9bc",
+    "file": "src/pages/projects/ProjectTools.tsx",
+    "line": 22,
+    "kind": "jsx",
+    "value": "這些工具會改變專案如何顯示或在不同機器間共用；日常工作請直接從下方選擇專案。"
+  },
+  {
+    "id": "inline.da38f5af745f",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 37,
+    "kind": "jsx",
+    "value": "看得到"
+  },
+  {
+    "id": "inline.dca1ae03a159",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 39,
+    "kind": "jsx",
+    "value": "沒有規則檔或 skill。"
+  },
+  {
+    "id": "inline.da26afc0fb6a",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 44,
+    "kind": "jsx",
+    "value": "現在看不到 → 套用後看得到"
+  },
+  {
+    "id": "inline.eba3e2db2b11",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 63,
+    "kind": "jsx",
+    "value": "行不變）"
+  },
+  {
+    "id": "inline.1de4dda49ddb",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 74,
+    "kind": "jsx",
+    "value": "Claude 和 Codex 已看到相同的規則與 skills"
+  },
+  {
+    "id": "inline.83cc34a2d090",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 82,
+    "kind": "jsx",
+    "value": "無法判斷："
+  },
+  {
+    "id": "inline.846d711dc077",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 82,
+    "kind": "jsx",
+    "value": "。讀不到的項目修好之前不能套用；請在機器上檢查權限、大小或編碼後重新檢查。"
+  },
+  {
+    "id": "inline.da3f4f610025",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 83,
+    "kind": "jsx",
+    "value": "誰看得到什麼"
+  },
+  {
+    "id": "inline.c4dd64880f20",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 86,
+    "kind": "jsx",
+    "value": "會做的事（依順序）"
+  },
+  {
+    "id": "inline.1cc68b0adf7c",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 89,
+    "kind": "jsx",
+    "value": "會搬移："
+  },
+  {
+    "id": "inline.8c25cba32cc1",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 90,
+    "kind": "jsx",
+    "value": "會新增："
+  },
+  {
+    "id": "inline.072bd947d77d",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 95,
+    "kind": "jsx",
+    "value": "unify 不會替你決定的事"
+  },
+  {
+    "id": "inline.ca99a33b66f8",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 98,
+    "kind": "jsx",
+    "value": "你可以："
+  },
+  {
+    "id": "inline.e3066f2f2365",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 99,
+    "kind": "aria-label",
+    "value": "Codex 看不到的行"
+  },
+  {
+    "id": "inline.0f82608f5de7",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 102,
+    "kind": "jsx",
+    "value": "不會 commit 到 git：檔案只在這個專案的工作目錄裡改動，之後由你或某個 Session commit。"
+  },
+  {
+    "id": "inline.f5b3ce33e1f4",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 202,
+    "kind": "jsx",
+    "value": "Claude 與 Codex 共用"
+  },
+  {
+    "id": "inline.e0b340925204",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 203,
+    "kind": "jsx",
+    "value": "讓 Claude Code 與 Codex 讀到同一份規則和同一組 skills。"
+  },
+  {
+    "id": "inline.cb3cd0dff7fc",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 206,
+    "kind": "jsx",
+    "value": "重新檢查"
+  },
+  {
+    "id": "inline.cee2d4509617",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 207,
+    "kind": "jsx",
+    "value": "檢視變更"
+  },
+  {
+    "id": "inline.b622a21f5371",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 220,
+    "kind": "jsx",
+    "value": "· Claude 與 Codex 共用"
+  },
+  {
+    "id": "inline.c7fdddf79eaa",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 221,
+    "kind": "jsx",
+    "value": "關閉"
+  },
+  {
+    "id": "inline.b9c94d32232f",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 226,
+    "kind": "jsx",
+    "value": "套用到一半停下來了。"
+  },
+  {
+    "id": "inline.b14ed542c3c3",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 226,
+    "kind": "jsx",
+    "value": "每一項不是完成就是還原，不會留下改一半的檔案。"
+  },
+  {
+    "id": "inline.d097506c04c2",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 227,
+    "kind": "jsx",
+    "value": "已完成："
+  },
+  {
+    "id": "inline.00bd3b95cf68",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 228,
+    "kind": "jsx",
+    "value": "沒有完成："
+  },
+  {
+    "id": "inline.1f373bfba363",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 229,
+    "kind": "jsx",
+    "value": "下方是重新讀取後的預覽。"
+  },
+  {
+    "id": "inline.44f53aad2129",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 233,
+    "kind": "jsx",
+    "value": "正在重新讀取…"
+  },
+  {
+    "id": "inline.d9309fdbb465",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 238,
+    "kind": "jsx",
+    "value": "有項目讀不到，這次不能套用。"
+  },
+  {
+    "id": "inline.6b4db2323869",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 239,
+    "kind": "jsx",
+    "value": "沒有 unify 能自動做的變更；上面列出的項目需要你決定。"
+  },
+  {
+    "id": "inline.293b2cddd17b",
+    "file": "src/pages/projects/ProjectUnify.tsx",
+    "line": 241,
+    "kind": "jsx",
+    "value": "套用這些變更"
+  },
+  {
+    "id": "inline.c34776cd2efc",
+    "file": "src/pages/settings/CapacityBlock.tsx",
+    "line": 135,
+    "kind": "title",
+    "value": "POST /v1/orchestrator/completions/reconcile"
+  },
+  {
+    "id": "inline.6ef7c9b15ecd",
+    "file": "src/pages/settings/DefaultModelsBlock.tsx",
+    "line": 104,
+    "kind": "jsx",
+    "value": "high"
+  },
+  {
+    "id": "inline.b5255978be8e",
+    "file": "src/pages/settings/DefaultModelsBlock.tsx",
+    "line": 104,
+    "kind": "jsx",
+    "value": "xhigh"
+  },
+  {
+    "id": "inline.d00ee507cd34",
+    "file": "src/pages/settings/window/SettingsWindow.tsx",
+    "line": 925,
+    "kind": "placeholder",
+    "value": "eyJhY2NvdW50X2lkIjoi…"
+  },
+  {
+    "id": "inline.1153c988b83b",
+    "file": "src/pages/settings/window/SettingsWindow.tsx",
+    "line": 1094,
+    "kind": "aria-label",
+    "value": "四種 gate 模式"
+  },
+  {
+    "id": "inline.4013189dccd8",
+    "file": "src/pages/settings/window/SettingsWindow.tsx",
+    "line": 1095,
+    "kind": "jsx",
+    "value": "四種模式"
+  },
+  {
+    "id": "inline.09f725209f4b",
+    "file": "src/pages/settings/window/SettingsWindow.tsx",
+    "line": 1097,
+    "kind": "jsx",
+    "value": "預設"
+  },
+  {
+    "id": "inline.937f63a4fb51",
+    "file": "src/pages/settings/window/SettingsWindow.tsx",
+    "line": 1097,
+    "kind": "jsx",
+    "value": "目前"
+  },
+  {
+    "id": "inline.da2fd084302a",
+    "file": "src/pages/timeline.tsx",
+    "line": 110,
+    "kind": "aria-label",
+    "value": "Project Timeline"
+  },
+  {
+    "id": "inline.0d8b8b072dbd",
+    "file": "src/pages/work/ReferencePictures.tsx",
+    "line": 53,
+    "kind": "jsx",
+    "value": "參考圖片"
+  },
+  {
+    "id": "inline.1d961cda78c7",
+    "file": "src/pages/work/ReferencePictures.tsx",
+    "line": 61,
+    "kind": "jsx",
+    "value": "＋ 加入參考圖片"
+  },
+  {
+    "id": "inline.ec9bc59e916b",
+    "file": "src/pages/work/TokenBill.tsx",
+    "line": 207,
+    "kind": "jsx",
+    "value": "rules ·"
+  },
+  {
+    "id": "inline.afdb1f99a7e9",
+    "file": "src/pages/work/TokenBill.tsx",
+    "line": 209,
+    "kind": "jsx",
+    "value": "wait ·"
+  },
+  {
+    "id": "inline.36f6a4593f6a",
+    "file": "src/pages/work/WorkCompletionReport.tsx",
+    "line": 68,
+    "kind": "jsx",
+    "value": "寫於"
+  },
+  {
+    "id": "inline.288dc4aa648d",
+    "file": "src/pages/work/WorkCompletionReport.tsx",
+    "line": 74,
+    "kind": "jsx",
+    "value": "參考："
+  },
+  {
+    "id": "inline.7c8bd896636d",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 61,
+    "kind": "jsx",
+    "value": "處置"
+  },
+  {
+    "id": "inline.49e8de8e61c7",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 66,
+    "kind": "jsx",
+    "value": "給負責 Session 的具體方向"
+  },
+  {
+    "id": "inline.6f970e03b8cf",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 67,
+    "kind": "jsx",
+    "value": "新的驗收 Markdown"
+  },
+  {
+    "id": "inline.affef15cffea",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 68,
+    "kind": "jsx",
+    "value": "接手 Session"
+  },
+  {
+    "id": "inline.bf22013ec710",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 70,
+    "kind": "jsx",
+    "value": "選擇 Session"
+  },
+  {
+    "id": "inline.88e88c08f8b7",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 74,
+    "kind": "jsx",
+    "value": "決定原因"
+  },
+  {
+    "id": "inline.3052b22222ed",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 75,
+    "kind": "jsx",
+    "value": "這會授權目前固定的候選提交，不會產生 checker PASS；覆核種類與原因會保留在紀錄中。"
+  },
+  {
+    "id": "inline.2c787b36ee6a",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 76,
+    "kind": "jsx",
+    "value": "這會取消整個項目並釋放負責 Session。"
+  },
+  {
+    "id": "inline.7cfd32c58198",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 121,
+    "kind": "jsx",
+    "value": "驗證詳情容量與匯出"
+  },
+  {
+    "id": "inline.ad0453521a69",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 122,
+    "kind": "jsx",
+    "value": "詳情達容量上限時，先匯出可清除的已結束輪次，再核對匯出雜湊與項目版本後清除。進行中的輪次、最新狀態與累計數字不會被清除。"
+  },
+  {
+    "id": "inline.fbf0243ee7e6",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 125,
+    "kind": "jsx",
+    "value": "匯出輪次："
+  },
+  {
+    "id": "inline.b23b2fbe46a7",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 125,
+    "kind": "jsx",
+    "value": "· SHA-256："
+  },
+  {
+    "id": "inline.3294338af7c8",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 126,
+    "kind": "jsx",
+    "value": "我已確認匯出檔案保存完成"
+  },
+  {
+    "id": "inline.845e56fbb58d",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 127,
+    "kind": "jsx",
+    "value": "清除已匯出的舊詳情"
+  },
+  {
+    "id": "inline.01e580a9f105",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 139,
+    "kind": "aria-label",
+    "value": "驗證需要處理"
+  },
+  {
+    "id": "inline.5abf04119230",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 143,
+    "kind": "jsx",
+    "value": "目前由上層 Epic owner Session 決定；若該 Session 離線滿 15 分鐘，會改由你決定。可從 Epic 的子項清單追蹤負責 Session；此處沒有代替 Agent 行使的操作。"
+  },
+  {
+    "id": "inline.9737e4f2e725",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 171,
+    "kind": "aria-label",
+    "value": "規劃與獨立驗證"
+  },
+  {
+    "id": "inline.9737e4f2e725",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 172,
+    "kind": "jsx",
+    "value": "規劃與獨立驗證"
+  },
+  {
+    "id": "inline.47d0495491da",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 174,
+    "kind": "jsx",
+    "value": "正在讀取驗證證據…"
+  },
+  {
+    "id": "inline.68a78ae9f308",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 175,
+    "kind": "jsx",
+    "value": "驗證詳情讀取失敗："
+  },
+  {
+    "id": "inline.7e59d0f16293",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 175,
+    "kind": "jsx",
+    "value": "重試"
+  },
+  {
+    "id": "inline.ce6184e46a66",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 176,
+    "kind": "jsx",
+    "value": "尚未載入驗證詳情。"
+  },
+  {
+    "id": "inline.aa2938c4e84f",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 176,
+    "kind": "jsx",
+    "value": "讀取詳情"
+  },
+  {
+    "id": "inline.a24529fd35aa",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 177,
+    "kind": "jsx",
+    "value": "本輪擷取："
+  },
+  {
+    "id": "inline.fa13f75c4f30",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 177,
+    "kind": "jsx",
+    "value": "。後續修改全域設定不會改動本輪。"
+  },
+  {
+    "id": "inline.b1d809e93c19",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 178,
+    "kind": "jsx",
+    "value": "驗收條件（Markdown）"
+  },
+  {
+    "id": "inline.5f76b2bf82dd",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 180,
+    "kind": "jsx",
+    "value": "版本"
+  },
+  {
+    "id": "inline.d7e1f4d17c57",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 180,
+    "kind": "jsx",
+    "value": "· SHA-256"
+  },
+  {
+    "id": "inline.61d8b2decbe9",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 183,
+    "kind": "jsx",
+    "value": "驗證輪次"
+  },
+  {
+    "id": "inline.425305e25df9",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 183,
+    "kind": "jsx",
+    "value": "FAIL"
+  },
+  {
+    "id": "inline.1dd74b5e1e7c",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 184,
+    "kind": "jsx",
+    "value": "發現問題"
+  },
+  {
+    "id": "inline.23154087857c",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 184,
+    "kind": "jsx",
+    "value": "覆核通過"
+  },
+  {
+    "id": "inline.4d03d4102d36",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 190,
+    "kind": "jsx",
+    "value": "最近驗證證據"
+  },
+  {
+    "id": "inline.edd5f8a3232a",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 191,
+    "kind": "jsx",
+    "value": "目前沒有可顯示的驗證輪次。"
+  },
+  {
+    "id": "inline.9b4d84c4d0a4",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 194,
+    "kind": "jsx",
+    "value": "固定候選提交："
+  },
+  {
+    "id": "inline.e88de75bf9dc",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 195,
+    "kind": "jsx",
+    "value": "過期原因："
+  },
+  {
+    "id": "inline.9af9547ec91b",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 201,
+    "kind": "jsx",
+    "value": "證據附件："
+  },
+  {
+    "id": "inline.8c5574d18a73",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 203,
+    "kind": "jsx",
+    "value": "沒有可用的 checker 結果；這輪不能當作 PASS。"
+  },
+  {
+    "id": "inline.74f6181c1a32",
+    "file": "src/pages/work/WorkGate.tsx",
+    "line": 205,
+    "kind": "jsx",
+    "value": "只顯示最近的有界詳情；累計數字仍包含較早輪次。"
+  },
+  {
+    "id": "inline.7a6e9f7f44ea",
+    "file": "src/pages/work/WorkMilestones.tsx",
+    "line": 7,
+    "kind": "aria-label",
+    "value": "項目進度"
+  },
+  {
+    "id": "inline.457bc48e85a9",
+    "file": "src/pages/work/WorkSteps.tsx",
+    "line": 8,
+    "kind": "jsx",
+    "value": "TODO ·"
+  },
+  {
+    "id": "inline.68441095f928",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 370,
+    "kind": "jsx",
+    "value": "WORK SYSTEM V2"
+  },
+  {
+    "id": "inline.0072da457a09",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 370,
+    "kind": "jsx",
+    "value": "看板"
+  },
+  {
+    "id": "inline.e5a0a01cc43c",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 372,
+    "kind": "jsx",
+    "value": "＋ 建立項目"
+  },
+  {
+    "id": "inline.984a81d05631",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 379,
+    "kind": "jsx",
+    "value": "所有項目由你建立與指派；Session 負責推進實作、驗證、合併與部署。"
+  },
+  {
+    "id": "inline.ce34a838f587",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 383,
+    "kind": "aria-label",
+    "value": "篩選項目狀態"
+  },
+  {
+    "id": "inline.187097a69436",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 388,
+    "kind": "jsx",
+    "value": "顯示 Plan"
+  },
+  {
+    "id": "inline.60005ee63c14",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 392,
+    "kind": "aria-label",
+    "value": "搜尋標題與內容"
+  },
+  {
+    "id": "inline.60005ee63c14",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 392,
+    "kind": "placeholder",
+    "value": "搜尋標題與內容"
+  },
+  {
+    "id": "inline.0c2d1a3aeaff",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 394,
+    "kind": "aria-label",
+    "value": "清除搜尋"
+  },
+  {
+    "id": "inline.944fa4126f45",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 401,
+    "kind": "title",
+    "value": "規劃區"
+  },
+  {
+    "id": "inline.109be039b4c0",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 402,
+    "kind": "title",
+    "value": "待指派"
+  },
+  {
+    "id": "inline.f28461bb49c8",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 405,
+    "kind": "title",
+    "value": "已完成"
+  },
+  {
+    "id": "inline.075493f7aa67",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 406,
+    "kind": "title",
+    "value": "已關閉"
+  },
+  {
+    "id": "inline.075493f7aa67",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 407,
+    "kind": "jsx",
+    "value": "已關閉"
+  },
+  {
+    "id": "inline.c89d5d10a699",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 516,
+    "kind": "aria-label",
+    "value": "子項目"
+  },
+  {
+    "id": "inline.c89d5d10a699",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 518,
+    "kind": "jsx",
+    "value": "子項目"
+  },
+  {
+    "id": "inline.01f6acc771a3",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 521,
+    "kind": "aria-label",
+    "value": "子項目完成度"
+  },
+  {
+    "id": "inline.f738987d8bdc",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 550,
+    "kind": "jsx",
+    "value": "屬於 Epic："
+  },
+  {
+    "id": "inline.90b290a48f82",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 604,
+    "kind": "jsx",
+    "value": "Agent 提案"
+  },
+  {
+    "id": "inline.2be2b494050d",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 605,
+    "kind": "jsx",
+    "value": "先用白話說清楚，需要時再 Explain"
+  },
+  {
+    "id": "inline.e9dfb2772400",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 614,
+    "kind": "jsx",
+    "value": "建議建立"
+  },
+  {
+    "id": "inline.0dc513d1a44e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 617,
+    "kind": "jsx",
+    "value": "為什麼要做"
+  },
+  {
+    "id": "inline.3b61e4e93652",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 619,
+    "kind": "jsx",
+    "value": "Explain"
+  },
+  {
+    "id": "inline.b3b7ae4f6384",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 619,
+    "kind": "jsx",
+    "value": "詳細說明"
+  },
+  {
+    "id": "inline.e78cea7271c7",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 620,
+    "kind": "jsx",
+    "value": "會改什麼"
+  },
+  {
+    "id": "inline.e2a4b9a60cac",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 621,
+    "kind": "jsx",
+    "value": "完成後會看到什麼"
+  },
+  {
+    "id": "inline.44ae4672eed2",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 626,
+    "kind": "jsx",
+    "value": "接受並建立"
+  },
+  {
+    "id": "inline.0f7e826a2f9f",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 628,
+    "kind": "jsx",
+    "value": "拒絕"
+  },
+  {
+    "id": "inline.60ec1b4faaf6",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 646,
+    "kind": "aria-label",
+    "value": "這個項目需要你回答的問題"
+  },
+  {
+    "id": "inline.e3de4a9b5b50",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 649,
+    "kind": "jsx",
+    "value": "已收到回答：「"
+  },
+  {
+    "id": "inline.b56f36b529db",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 658,
+    "kind": "jsx",
+    "value": "到"
+  },
+  {
+    "id": "inline.2220fdf0d620",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 658,
+    "kind": "jsx",
+    "value": "還沒回答，就採用「"
+  },
+  {
+    "id": "inline.c85c228e97c0",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 733,
+    "kind": "jsx",
+    "value": "需要你處理"
+  },
+  {
+    "id": "inline.947720d10478",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 740,
+    "kind": "jsx",
+    "value": "本輪："
+  },
+  {
+    "id": "inline.9596ec6c7c96",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 852,
+    "kind": "jsx",
+    "value": "；若已指派，會解除目前指派。標題、描述、圖片、步驟與歷史紀錄都會保留。"
+  },
+  {
+    "id": "inline.bccb6492eb93",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 853,
+    "kind": "jsx",
+    "value": "轉換後的項目類型"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 866,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.c82438204056",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 868,
+    "kind": "jsx",
+    "value": "轉換失敗："
+  },
+  {
+    "id": "inline.6c459fe37882",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 874,
+    "kind": "aria-label",
+    "value": "項目操作"
+  },
+  {
+    "id": "inline.1ac7cfab4805",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 881,
+    "kind": "jsx",
+    "value": "改派"
+  },
+  {
+    "id": "inline.c0b3fbff51cc",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 883,
+    "kind": "jsx",
+    "value": "完成"
+  },
+  {
+    "id": "inline.e0d4485966bd",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 884,
+    "kind": "jsx",
+    "value": "編輯"
+  },
+  {
+    "id": "inline.827a48d61eb8",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 887,
+    "kind": "jsx",
+    "value": "轉成 Plan"
+  },
+  {
+    "id": "inline.3c8f5b363ab3",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 889,
+    "kind": "jsx",
+    "value": "刪除"
+  },
+  {
+    "id": "inline.5b58c9188a2f",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 894,
+    "kind": "aria-label",
+    "value": "確認標記完成"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 899,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.a7042be56aeb",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 900,
+    "kind": "jsx",
+    "value": "標記完成失敗："
+  },
+  {
+    "id": "inline.64d13f155730",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 903,
+    "kind": "jsx",
+    "value": "EPIC · 大型項目"
+  },
+  {
+    "id": "inline.589939ed89dd",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 904,
+    "kind": "jsx",
+    "value": "PLAN · 未排入執行"
+  },
+  {
+    "id": "inline.437b148fabf3",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 915,
+    "kind": "jsx",
+    "value": "轉成可執行項目"
+  },
+  {
+    "id": "inline.ee001bfec7fe",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 932,
+    "kind": "aria-label",
+    "value": "需要你做的事"
+  },
+  {
+    "id": "inline.ee001bfec7fe",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 933,
+    "kind": "jsx",
+    "value": "需要你做的事"
+  },
+  {
+    "id": "inline.77ba6068fc8e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 936,
+    "kind": "jsx",
+    "value": "前往回答"
+  },
+  {
+    "id": "inline.ee001bfec7fe",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 937,
+    "kind": "aria-label",
+    "value": "需要你做的事"
+  },
+  {
+    "id": "inline.ee001bfec7fe",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 938,
+    "kind": "jsx",
+    "value": "需要你做的事"
+  },
+  {
+    "id": "inline.b5e4c6c82f31",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 943,
+    "kind": "jsx",
+    "value": "若指派時規劃 gate 開啟，Session 須先寫計劃書並請 Child Session review，通過後才開始實作；關閉時可略過。"
+  },
+  {
+    "id": "inline.58f4894c12b1",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 944,
+    "kind": "jsx",
+    "value": "改派給其他 Session：目前的 phase、steps 與文件都會保留，新 Session 會被告知從哪裡接手；原本的 Session 會收到停止通知。"
+  },
+  {
+    "id": "inline.c8232bd59817",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 947,
+    "kind": "jsx",
+    "value": "指派給既有 Session"
+  },
+  {
+    "id": "inline.ae3df530a0ca",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 955,
+    "kind": "jsx",
+    "value": "開啟新 Session"
+  },
+  {
+    "id": "inline.d7c6293edaf2",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 956,
+    "kind": "aria-label",
+    "value": "新 Session 使用的助理"
+  },
+  {
+    "id": "inline.366cbb69bcce",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 969,
+    "kind": "jsx",
+    "value": "AI 建議："
+  },
+  {
+    "id": "inline.b4933eb2248e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 973,
+    "kind": "jsx",
+    "value": "AI 無法可靠判斷"
+  },
+  {
+    "id": "inline.56eb16ed4470",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 973,
+    "kind": "jsx",
+    "value": "保留目前的角色選擇，請手動決定。"
+  },
+  {
+    "id": "inline.cf865cda2b1b",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 992,
+    "kind": "jsx",
+    "value": "正在處理指派；你可以關閉視窗，完成後看板會更新。"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 993,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.0d8b8b072dbd",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1002,
+    "kind": "aria-label",
+    "value": "參考圖片"
+  },
+  {
+    "id": "inline.e17357ea2310",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1023,
+    "kind": "jsx",
+    "value": "＋ 參考圖片"
+  },
+  {
+    "id": "inline.31d7501ec843",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1030,
+    "kind": "jsx",
+    "value": "前往 Session ·"
+  },
+  {
+    "id": "inline.6959b4159575",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1031,
+    "kind": "jsx",
+    "value": "Session"
+  },
+  {
+    "id": "inline.1aaa1e3eda43",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1118,
+    "kind": "jsx",
+    "value": "計劃書"
+  },
+  {
+    "id": "inline.4f468f5b65d4",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1119,
+    "kind": "jsx",
+    "value": "Child Review"
+  },
+  {
+    "id": "inline.c4bde41c6d80",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1188,
+    "kind": "aria-label",
+    "value": "指派既有 Session"
+  },
+  {
+    "id": "inline.b7efeae38921",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1192,
+    "kind": "jsx",
+    "value": "選擇既有 Session"
+  },
+  {
+    "id": "inline.498ac2845b60",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1195,
+    "kind": "aria-label",
+    "value": "可指派的 Session"
+  },
+  {
+    "id": "inline.7b9c3fe68d48",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1198,
+    "kind": "jsx",
+    "value": "這個 Project 目前沒有可用的 Session。"
+  },
+  {
+    "id": "inline.3f44b79c30e6",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1229,
+    "kind": "jsx",
+    "value": "Session 狀況"
+  },
+  {
+    "id": "inline.926adfdf9989",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1231,
+    "kind": "jsx",
+    "value": "正在讀取看板與 TODO…"
+  },
+  {
+    "id": "inline.e85c2c330c2e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1231,
+    "kind": "jsx",
+    "value": "工作資訊讀取失敗："
+  },
+  {
+    "id": "inline.43da62a44d17",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1232,
+    "kind": "jsx",
+    "value": "尚未完成："
+  },
+  {
+    "id": "inline.8b35a4648619",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1232,
+    "kind": "jsx",
+    "value": "個看板項目 ·"
+  },
+  {
+    "id": "inline.f6f098a567d5",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1232,
+    "kind": "jsx",
+    "value": "個 TODO"
+  },
+  {
+    "id": "inline.7cd8f523be1c",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1233,
+    "kind": "title",
+    "value": "還在做"
+  },
+  {
+    "id": "inline.fc3806d4036b",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1236,
+    "kind": "title",
+    "value": "直接待辦"
+  },
+  {
+    "id": "inline.684134665ec0",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1239,
+    "kind": "title",
+    "value": "最近完成"
+  },
+  {
+    "id": "inline.ee52fbed3fad",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1242,
+    "kind": "jsx",
+    "value": "還有更多工作未列出；請進入 Session 查看完整清單。"
+  },
+  {
+    "id": "inline.1a1328fe795c",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1243,
+    "kind": "jsx",
+    "value": "展開 Session 清單後讀取它的工作資訊。"
+  },
+  {
+    "id": "inline.c7fdddf79eaa",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1287,
+    "kind": "aria-label",
+    "value": "關閉"
+  },
+  {
+    "id": "inline.308278979452",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1324,
+    "kind": "jsx",
+    "value": "EDIT WORK ITEM"
+  },
+  {
+    "id": "inline.9293ae04361c",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1324,
+    "kind": "jsx",
+    "value": "編輯看板項目"
+  },
+  {
+    "id": "inline.c7fdddf79eaa",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1325,
+    "kind": "aria-label",
+    "value": "關閉"
+  },
+  {
+    "id": "inline.6fe38ed1ee10",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1326,
+    "kind": "jsx",
+    "value": "標題"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1330,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.2f1f9c448f96",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1346,
+    "kind": "jsx",
+    "value": "DELETE WORK ITEM"
+  },
+  {
+    "id": "inline.4d05a8ee3b50",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1346,
+    "kind": "jsx",
+    "value": "刪除看板項目？"
+  },
+  {
+    "id": "inline.c7fdddf79eaa",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1347,
+    "kind": "aria-label",
+    "value": "關閉"
+  },
+  {
+    "id": "inline.8e71e614ab8e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1348,
+    "kind": "jsx",
+    "value": "會從看板與負責 Session 的待辦移除。執行紀錄仍會保留，避免工作憑空消失。"
+  },
+  {
+    "id": "inline.ec3a32317a03",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1351,
+    "kind": "jsx",
+    "value": "保留項目"
+  },
+  {
+    "id": "inline.cf3c6f547bd1",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1457,
+    "kind": "title",
+    "value": "用紅筆標記"
+  },
+  {
+    "id": "inline.985959785319",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1505,
+    "kind": "aria-label",
+    "value": "Project"
+  },
+  {
+    "id": "inline.985959785319",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1511,
+    "kind": "aria-label",
+    "value": "Project"
+  },
+  {
+    "id": "inline.24926b27517e",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1513,
+    "kind": "jsx",
+    "value": "所有 Project"
+  },
+  {
+    "id": "inline.c7fdddf79eaa",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1548,
+    "kind": "aria-label",
+    "value": "關閉"
+  },
+  {
+    "id": "inline.a2d091d25a73",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1549,
+    "kind": "jsx",
+    "value": "語音已填入草稿；按「建立」前不會新增看板項目。"
+  },
+  {
+    "id": "inline.985959785319",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1550,
+    "kind": "jsx",
+    "value": "Project"
+  },
+  {
+    "id": "inline.1588dd8c9e73",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1551,
+    "kind": "jsx",
+    "value": "類型"
+  },
+  {
+    "id": "inline.6fe38ed1ee10",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1556,
+    "kind": "jsx",
+    "value": "標題"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/pages/work/WorkV2.tsx",
+    "line": 1561,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.5d559e858210",
+    "file": "src/session/Detail.tsx",
+    "line": 234,
+    "kind": "aria-label",
+    "value": "Clawdfather"
+  },
+  {
+    "id": "inline.b949c922b6ef",
+    "file": "src/session/Detail.tsx",
+    "line": 797,
+    "kind": "jsx",
+    "value": "Git"
+  },
+  {
+    "id": "inline.9505cacb7c71",
+    "file": "src/session/Detail.tsx",
+    "line": 863,
+    "kind": "jsx",
+    "value": "commit"
+  },
+  {
+    "id": "inline.d107ea3629c3",
+    "file": "src/session/Detail.tsx",
+    "line": 877,
+    "kind": "jsx",
+    "value": "push"
+  },
+  {
+    "id": "inline.a4f8e0fcaaf8",
+    "file": "src/session/Interventions.tsx",
+    "line": 178,
+    "kind": "jsx",
+    "value": "關注"
+  },
+  {
+    "id": "inline.f77131e7ea4d",
+    "file": "src/session/Interventions.tsx",
+    "line": 180,
+    "kind": "jsx",
+    "value": "待處理"
+  },
+  {
+    "id": "inline.aa065ac6118d",
+    "file": "src/session/Interventions.tsx",
+    "line": 181,
+    "kind": "jsx",
+    "value": "操作失敗"
+  },
+  {
+    "id": "inline.88cd4f4d97f1",
+    "file": "src/session/Interventions.tsx",
+    "line": 182,
+    "kind": "jsx",
+    "value": "讀取失敗"
+  },
+  {
+    "id": "inline.656c48dad32b",
+    "file": "src/session/Interventions.tsx",
+    "line": 183,
+    "kind": "jsx",
+    "value": "載入中"
+  },
+  {
+    "id": "inline.9aaa26b21b0c",
+    "file": "src/session/Interventions.tsx",
+    "line": 187,
+    "kind": "jsx",
+    "value": "操作失敗，請展開關注便條查看。"
+  },
+  {
+    "id": "inline.0999edae13a4",
+    "file": "src/session/Interventions.tsx",
+    "line": 190,
+    "kind": "jsx",
+    "value": "需要你關注"
+  },
+  {
+    "id": "inline.1fa4945f108c",
+    "file": "src/session/Interventions.tsx",
+    "line": 190,
+    "kind": "jsx",
+    "value": "收起關注"
+  },
+  {
+    "id": "inline.7e59d0f16293",
+    "file": "src/session/Interventions.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": "重試"
+  },
+  {
+    "id": "inline.e43b3c54e4b6",
+    "file": "src/session/Interventions.tsx",
+    "line": 195,
+    "kind": "jsx",
+    "value": "目前沒有需要處理的便條。"
+  },
+  {
+    "id": "inline.003e313b739c",
+    "file": "src/session/Interventions.tsx",
+    "line": 197,
+    "kind": "jsx",
+    "value": "最近已處理（"
+  },
+  {
+    "id": "inline.d4918ae2fbb9",
+    "file": "src/session/Interventions.tsx",
+    "line": 200,
+    "kind": "jsx",
+    "value": "本機已清理"
+  },
+  {
+    "id": "inline.9bc3fbe63fbb",
+    "file": "src/session/Interventions.tsx",
+    "line": 200,
+    "kind": "jsx",
+    "value": "筆較舊的已處理便條。"
+  },
+  {
+    "id": "inline.de6c2fb83e07",
+    "file": "src/session/Interventions.tsx",
+    "line": 202,
+    "kind": "aria-label",
+    "value": "收起關注便條"
+  },
+  {
+    "id": "inline.0f6f6df015c6",
+    "file": "src/session/Interventions.tsx",
+    "line": 220,
+    "kind": "jsx",
+    "value": "送達"
+  },
+  {
+    "id": "inline.afc7f76a7d4f",
+    "file": "src/session/Interventions.tsx",
+    "line": 221,
+    "kind": "jsx",
+    "value": "來自"
+  },
+  {
+    "id": "inline.7ed8d242eabd",
+    "file": "src/session/Interventions.tsx",
+    "line": 223,
+    "kind": "jsx",
+    "value": "需要你做："
+  },
+  {
+    "id": "inline.b9fbb8ede4cb",
+    "file": "src/session/Interventions.tsx",
+    "line": 224,
+    "kind": "jsx",
+    "value": "原因："
+  },
+  {
+    "id": "inline.740cf7e11430",
+    "file": "src/session/Interventions.tsx",
+    "line": 225,
+    "kind": "jsx",
+    "value": "在新分頁開啟文件"
+  },
+  {
+    "id": "inline.61e5b2be1827",
+    "file": "src/session/Interventions.tsx",
+    "line": 226,
+    "kind": "jsx",
+    "value": "閱讀完整內容"
+  },
+  {
+    "id": "inline.c4636462e1de",
+    "file": "src/session/Interventions.tsx",
+    "line": 227,
+    "kind": "aria-label",
+    "value": "建議回覆"
+  },
+  {
+    "id": "inline.c4636462e1de",
+    "file": "src/session/Interventions.tsx",
+    "line": 228,
+    "kind": "jsx",
+    "value": "建議回覆"
+  },
+  {
+    "id": "inline.f51bfc3ed707",
+    "file": "src/session/Interventions.tsx",
+    "line": 239,
+    "kind": "jsx",
+    "value": "移到已處理"
+  },
+  {
+    "id": "inline.507ec6638095",
+    "file": "src/session/Interventions.tsx",
+    "line": 240,
+    "kind": "jsx",
+    "value": "重新開啟提醒"
+  },
+  {
+    "id": "inline.9ba541d50c44",
+    "file": "src/session/List.tsx",
+    "line": 351,
+    "kind": "jsx",
+    "value": "隸屬於 Epic 負責人的工作樹"
+  },
+  {
+    "id": "inline.0230c6b1d833",
+    "file": "src/session/StatusLine.tsx",
+    "line": 344,
+    "kind": "jsx",
+    "value": "ctx"
+  },
+  {
+    "id": "inline.aab5446b4b41",
+    "file": "src/session/Todos.tsx",
+    "line": 131,
+    "kind": "aria-label",
+    "value": "新增 Session 待辦"
+  },
+  {
+    "id": "inline.a5cec9091810",
+    "file": "src/session/Todos.tsx",
+    "line": 145,
+    "kind": "aria-label",
+    "value": "負責項目"
+  },
+  {
+    "id": "inline.122ffc78d24e",
+    "file": "src/session/Todos.tsx",
+    "line": 146,
+    "kind": "jsx",
+    "value": "這個 Session 尚未關閉的負責項目"
+  },
+  {
+    "id": "inline.fa7b5ebe86c4",
+    "file": "src/session/Todos.tsx",
+    "line": 152,
+    "kind": "aria-label",
+    "value": "最近完成的項目"
+  },
+  {
+    "id": "inline.4e221e79f8d1",
+    "file": "src/session/Todos.tsx",
+    "line": 153,
+    "kind": "jsx",
+    "value": "最近完成的看板項目"
+  },
+  {
+    "id": "inline.fc3806d4036b",
+    "file": "src/session/Todos.tsx",
+    "line": 156,
+    "kind": "aria-label",
+    "value": "直接待辦"
+  },
+  {
+    "id": "inline.13430167252e",
+    "file": "src/session/Todos.tsx",
+    "line": 162,
+    "kind": "aria-label",
+    "value": "最近完成的直接待辦"
+  },
+  {
+    "id": "inline.13430167252e",
+    "file": "src/session/Todos.tsx",
+    "line": 163,
+    "kind": "jsx",
+    "value": "最近完成的直接待辦"
+  },
+  {
+    "id": "inline.7fdc5e3bf06f",
+    "file": "src/session/Todos.tsx",
+    "line": 167,
+    "kind": "jsx",
+    "value": "目前沒有待辦。"
+  },
+  {
+    "id": "inline.3df6e2f5b818",
+    "file": "src/session/Todos.tsx",
+    "line": 169,
+    "kind": "aria-label",
+    "value": "收起 Session 待辦"
+  },
+  {
+    "id": "inline.aab5446b4b41",
+    "file": "src/session/Todos.tsx",
+    "line": 187,
+    "kind": "jsx",
+    "value": "新增 Session 待辦"
+  },
+  {
+    "id": "inline.0ffffc3e4124",
+    "file": "src/session/Todos.tsx",
+    "line": 188,
+    "kind": "jsx",
+    "value": "輸入你希望這個 Session 接下來完成的事情。"
+  },
+  {
+    "id": "inline.6c668a34f0bd",
+    "file": "src/session/Todos.tsx",
+    "line": 189,
+    "kind": "aria-label",
+    "value": "待辦內容"
+  },
+  {
+    "id": "inline.0006d696d8e1",
+    "file": "src/session/Todos.tsx",
+    "line": 192,
+    "kind": "jsx",
+    "value": "新增"
+  },
+  {
+    "id": "inline.2cd0f3be8738",
+    "file": "src/session/Todos.tsx",
+    "line": 193,
+    "kind": "jsx",
+    "value": "取消"
+  },
+  {
+    "id": "inline.75f18cd2c3bc",
+    "file": "src/session/Todos.tsx",
+    "line": 266,
+    "kind": "jsx",
+    "value": "結案報告"
+  },
+  {
+    "id": "inline.f28461bb49c8",
+    "file": "src/session/Todos.tsx",
+    "line": 268,
+    "kind": "aria-label",
+    "value": "已完成"
+  },
+  {
+    "id": "inline.10f660a1172d",
+    "file": "src/session/Todos.tsx",
+    "line": 273,
+    "kind": "jsx",
+    "value": "決定暫時無法載入，請稍後查看項目詳情。"
+  },
+  {
+    "id": "inline.36a658e510e2",
+    "file": "src/session/Todos.tsx",
+    "line": 274,
+    "kind": "aria-label",
+    "value": "待回答的問題"
+  },
+  {
+    "id": "inline.56bf73fe1d04",
+    "file": "src/session/Todos.tsx",
+    "line": 282,
+    "kind": "jsx",
+    "value": "正在送出「"
+  },
+  {
+    "id": "inline.5959a1a7afc2",
+    "file": "src/session/Todos.tsx",
+    "line": 308,
+    "kind": "aria-label",
+    "value": "恢復為未完成"
+  },
+  {
+    "id": "inline.c0b3fbff51cc",
+    "file": "src/session/Todos.tsx",
+    "line": 310,
+    "kind": "aria-label",
+    "value": "完成"
+  },
+  {
+    "id": "inline.7be342f85157",
+    "file": "src/session/Todos.tsx",
+    "line": 316,
+    "kind": "aria-label",
+    "value": "待辦參考圖片"
+  },
+  {
+    "id": "inline.18d1c08576de",
+    "file": "src/session/Todos.tsx",
+    "line": 323,
+    "kind": "aria-label",
+    "value": "刪除待辦"
+  },
+  {
+    "id": "inline.18d1c08576de",
+    "file": "src/session/Todos.tsx",
+    "line": 323,
+    "kind": "title",
+    "value": "刪除待辦"
+  },
+  {
+    "id": "inline.3f3af1ecebbd",
+    "file": "src/session/WorkTree.tsx",
+    "line": 33,
+    "kind": "jsx",
+    "value": "session"
+  }
+]

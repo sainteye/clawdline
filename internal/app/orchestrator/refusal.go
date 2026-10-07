@@ -14,6 +14,9 @@ type Refusal struct {
 	Status  int
 	Code    string
 	Message string
+	// RawMessage means the message includes runtime or external content and
+	// must not gain a catalog key merely because its bytes match fixed copy.
+	RawMessage bool `json:"-"`
 	// Extra is merged into the error object. It is `map[string]any` rather
 	// than a generated type because its shape differs per code, and the one
 	// thing it must never be is a second envelope.
@@ -28,6 +31,14 @@ func refuse(status int, code, message string) Refusal {
 
 func refuseWith(status int, code, message string, extra map[string]any) Refusal {
 	return Refusal{Status: status, Code: code, Message: message, Extra: extra}
+}
+
+func refuseRaw(status int, code, message string) Refusal {
+	return Refusal{Status: status, Code: code, Message: message, RawMessage: true}
+}
+
+func refuseRawWith(status int, code, message string, extra map[string]any) Refusal {
+	return Refusal{Status: status, Code: code, Message: message, RawMessage: true, Extra: extra}
 }
 
 // The refusals more than one route raises, spelled once.

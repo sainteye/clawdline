@@ -1,0 +1,27 @@
+.ui-language-control { min-width: 0; }
+.ui-language-label { display: block; font-weight: 650; margin-bottom: .4rem; }
+.ui-language-control select {
+  max-width: 100%; width: min(100%, 24rem); min-height: 2.75rem;
+  border: 1px solid #6d7280; border-radius: .55rem;
+  background: #25272e; color: #fff; padding: .35rem .65rem;
+  font: inherit;
+}
+.ui-language-control select:focus-visible { outline: 2px solid #9dc7ff; outline-offset: 2px; }
+.ui-language-hint, .ui-language-warning, .ui-language-status { margin: .45rem 0 0; line-height: 1.45; overflow-wrap: anywhere; }
+.ui-language-hint { color: #c5c9d2; }
+.ui-language-warning { color: #ffcb75; }
+.ui-language-status:not(:empty) { color: #c5c9d2; }
+.ui-language-control select:disabled { opacity: .7; }
+.ui-language-control.compact select {
+  width: min(210px, 38vw);
+  max-width: 210px;
+  min-height: 25px;
+  height: 25px;
+  padding: 0 9px;
+  border-color: var(--sw-chip-edge);
+  border-radius: 6px;
+  background: var(--sw-chip-fill);
+  color: var(--sw-label);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}

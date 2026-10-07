@@ -69,7 +69,7 @@ func projectCommand(args []string) {
 		asJSON := fs.Bool("json", false, "print the registry as JSON")
 		_ = fs.Parse(args[1:])
 		if fs.NArg() != 0 {
-			fail(fmt.Errorf("unexpected argument %q", fs.Arg(0)))
+			fail(fmt.Errorf(cliCopy("misc", "project.unexpected_argument", "unexpected argument %q"), fs.Arg(0)))
 		}
 		rows, err := registry.List()
 		if err != nil {
@@ -83,16 +83,16 @@ func projectCommand(args []string) {
 }
 
 func projectUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline project <add|remove|list> [--json] [directory…]")
-	fmt.Fprintln(os.Stderr, "       clawdline project export [--out file] [--name source]")
-	fmt.Fprintln(os.Stderr, "       clawdline project import [--clone] [--replace-source] <file>")
-	fmt.Fprintln(os.Stderr, "       clawdline project unify [--apply | --check] [--json] [directory]")
-	fmt.Fprintln(os.Stderr, "  add <directory…>      keep existing directories in the session-start list")
-	fmt.Fprintln(os.Stderr, "  remove <directory…>   forget directories without deleting them")
-	fmt.Fprintln(os.Stderr, "  list                  show explicitly registered directories")
-	fmt.Fprintln(os.Stderr, "  export                this machine's project settings (icons, names, untracked skills), as a file")
-	fmt.Fprintln(os.Stderr, "  import <file>         mirror another machine's project settings here; it owns them from then on")
-	fmt.Fprintln(os.Stderr, "  unify [directory]     show how Claude and Codex can share this Project's rules and skills; --apply does it")
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.usage_clawdline_project_add_remove.7aad3274", "usage: clawdline project <add|remove|list> [--json] [directory…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.clawdline_project_export_out_file_n.08105c5e", "       clawdline project export [--out file] [--name source]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.clawdline_project_import_clone_repl.fcdc6204", "       clawdline project import [--clone] [--replace-source] <file>"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.clawdline_project_unify_apply_check.4c4400ff", "       clawdline project unify [--apply | --check] [--json] [directory]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.add_directory_keep_existing_directo.69166d26", "  add <directory…>      keep existing directories in the session-start list"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.remove_directory_forget_directories.79c5aae6", "  remove <directory…>   forget directories without deleting them"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.list_show_explicitly_registered_dir.233ccc16", "  list                  show explicitly registered directories"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.export_this_machine_s_project_setti.62f59b09", "  export                this machine's project settings (icons, names, untracked skills), as a file"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.import_file_mirror_another_machine.f1f762b0", "  import <file>         mirror another machine's project settings here; it owns them from then on"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "project.unify_directory_show_how_claude_and.9b3b6da2", "  unify [directory]     show how Claude and Codex can share this Project's rules and skills; --apply does it"))
 }
 
 func printProjectRegistry(rows []projects.RegisteredPlace, asJSON bool) {

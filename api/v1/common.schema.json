@@ -56,6 +56,7 @@
       "required": ["detail", "error"],
       "properties": {
         "detail": { "type": "string" },
+        "detail_key": { "description": "Optional stable catalog key for this exact fixed English detail. Dynamic details have no key.", "type": "string" },
         "error": { "type": "string" },
         "route": { "type": "string" },
         "upstream": { "type": "string" }

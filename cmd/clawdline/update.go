@@ -77,14 +77,14 @@ func updateCommand(args []string) {
 	force := fs.Bool("force", false, "")
 	err := fs.Parse(args)
 	if errors.Is(err, flag.ErrHelp) {
-		fmt.Println(updateUsage)
+		fmt.Println(cliCopy("ops", "release.usage", updateUsage))
 		os.Exit(0)
 	}
 	if err != nil || fs.NArg() != 0 {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "clawdline update:", err)
 		}
-		fmt.Fprintln(os.Stderr, updateUsage)
+		fmt.Fprintln(os.Stderr, cliCopy("ops", "release.usage", updateUsage))
 		os.Exit(2)
 	}
 	st := updateStatus(*port)
@@ -106,7 +106,7 @@ func updateCommand(args []string) {
 		os.Exit(applyRelease(os.Stdout, os.Stderr, *port, *want, *force))
 	}
 	if *want != "" {
-		fmt.Fprintln(os.Stderr, "clawdline: --version installs a release, and this is not a release install")
+		fmt.Fprintln(os.Stderr, cliCopy("ops", "release.version_requires_release", "clawdline: --version installs a release, and this is not a release install"))
 		os.Exit(2)
 	}
 	os.Exit(applyUpdate(os.Stdout, os.Stderr, st, *force, runtime.GOOS, ".", execRunner{}))
@@ -157,58 +157,58 @@ func directUpdateStatus(ctx context.Context, webRoot string) contract.UpdateStat
 
 func printUpdate(w io.Writer, st contract.UpdateStatus) {
 	if st.InstallKind != "" {
-		fmt.Fprintf(w, "install  %s", st.InstallKind)
+		fmt.Fprintf(w, cliCopy("ops", "release.install_kind", "install  %s"), st.InstallKind)
 		if st.Channel != "" {
-			fmt.Fprintf(w, " (channel %s)", st.Channel)
+			fmt.Fprintf(w, cliCopy("ops", "release.channel", " (channel %s)"), st.Channel)
 		}
 		fmt.Fprintln(w)
 	}
 	line := func(name string, b contract.BuildStamp) {
 		stamp, at := b.Stamp, b.CommittedAt
 		if stamp == "" {
-			stamp = "(unknown)"
+			stamp = cliCopy("ops", "update.unknown_stamp", "(unknown)")
 		}
 		if b.Version != "" {
 			stamp = b.Version + " " + short(stamp)
 		}
 		if at == "" {
-			at = "time unknown"
+			at = cliCopy("ops", "update.unknown_time", "time unknown")
 		}
 		fmt.Fprintf(w, "%-8s %s  (%s)\n", name, stamp, at)
 	}
-	line("running", st.Running)
-	line("latest", st.Latest)
+	line(cliCopy("ops", "update.running", "running"), st.Running)
+	line(cliCopy("ops", "update.latest", "latest"), st.Latest)
 	// A failed check is said once, in words, with its code last: the
 	// reason the daemon gives for an unknown state repeats the same error.
 	switch {
 	case st.Error != "" && st.State == contract.UpdateStateUnknown:
-		fmt.Fprintf(w, "state    %s — %s\n", st.State, checkFailed(st.Error))
+		fmt.Fprintf(w, cliCopy("ops", "update.state", "state    %s")+" — %s\n", st.State, checkFailed(st.Error))
 	case st.Reason != "":
-		fmt.Fprintf(w, "state    %s — %s\n", st.State, st.Reason)
+		fmt.Fprintf(w, cliCopy("ops", "update.state", "state    %s")+" — %s\n", st.State, st.Reason)
 	default:
-		fmt.Fprintf(w, "state    %s\n", st.State)
+		fmt.Fprintf(w, cliCopy("ops", "update.state", "state    %s")+"\n", st.State)
 	}
 	if st.Error != "" && st.State != contract.UpdateStateUnknown {
-		fmt.Fprintf(w, "last check failed: %s\n", checkFailed(st.Error))
+		fmt.Fprintf(w, cliCopy("ops", "update.last_check_failed", "last check failed: %s\n"), checkFailed(st.Error))
 	}
 	if st.Latest.NotesURL != "" {
-		fmt.Fprintf(w, "notes    %s\n", st.Latest.NotesURL)
+		fmt.Fprintf(w, cliCopy("ops", "release.notes", "notes    %s\n"), st.Latest.NotesURL)
 	}
 	if a := st.Apply; a != nil {
-		fmt.Fprintf(w, "apply    %s", a.State)
+		fmt.Fprintf(w, cliCopy("ops", "release.apply_state", "apply    %s"), a.State)
 		if a.To != "" {
 			fmt.Fprintf(w, " %s → %s", a.From, a.To)
 		}
 		if a.At != "" {
-			fmt.Fprintf(w, " at %s", a.At)
+			fmt.Fprintf(w, cliCopy("ops", "release.at", " at %s"), a.At)
 		}
 		fmt.Fprintln(w)
 		if a.Error != nil {
 			switch a.State {
 			case contract.UpdateApplyStateRolledBack:
-				fmt.Fprintf(w, "         %s did not start, so Clawdline went back to %s. (%s)\n", a.To, a.From, a.Error.Code)
+				fmt.Fprintf(w, cliCopy("ops", "release.rolled_back", "         %s did not start, so Clawdline went back to %s. (%s)\n"), a.To, a.From, a.Error.Code)
 			case contract.UpdateApplyStateFailed:
-				fmt.Fprintf(w, "         the update to %s did not finish; nothing changed. (%s)\n", a.To, a.Error.Code)
+				fmt.Fprintf(w, cliCopy("ops", "release.failed", "         the update to %s did not finish; nothing changed. (%s)\n"), a.To, a.Error.Code)
 			default:
 				fmt.Fprintf(w, "         %s: %s\n", a.Error.Code, a.Error.Detail)
 			}
@@ -216,20 +216,20 @@ func printUpdate(w io.Writer, st contract.UpdateStatus) {
 		// The updater keeps a list of versions that rolled back here, and
 		// auto-apply never installs one of them again (updater.Apply).
 		if a.State == contract.UpdateApplyStateRolledBack && a.To != "" && a.To == st.Latest.Version {
-			fmt.Fprintf(w, "         automatic updates will not try %s again; a newer release, or update --apply, will.\n", a.To)
+			fmt.Fprintf(w, cliCopy("ops", "release.auto_skip", "         automatic updates will not try %s again; a newer release, or update --apply, will.\n"), a.To)
 		}
 		if a.StagedApp != "" {
-			fmt.Fprintf(w, "         the app is staged at %s and replaces the installed one when it quits\n", a.StagedApp)
+			fmt.Fprintf(w, cliCopy("ops", "release.app_staged", "         the app is staged at %s and replaces the installed one when it quits\n"), a.StagedApp)
 		}
 	}
 	if st.InstallKind == contract.UpdateInstallKindRelease {
-		auto := "off"
+		auto := cliCopy("ops", "release.auto_off", "off")
 		if st.AutoApply {
-			auto = "on"
+			auto = cliCopy("ops", "release.auto_on", "on")
 		}
-		fmt.Fprintf(w, "auto     %s (clawdline setting set %s on|off)\n", auto, httptransport.AutoApplySetting)
+		fmt.Fprintf(w, cliCopy("ops", "release.auto_status", "auto     %s (clawdline setting set %s on|off)\n"), auto, httptransport.AutoApplySetting)
 	}
-	fmt.Fprintf(w, "source   %s\n", st.SourceURL)
+	fmt.Fprintf(w, cliCopy("ops", "update.source", "source   %s\n"), st.SourceURL)
 }
 
 // runner runs a command in dir; a test replaces it.
@@ -251,42 +251,42 @@ func (execRunner) run(dir string, stdout, stderr io.Writer, name string, args ..
 func applyUpdate(stdout, stderr io.Writer, st contract.UpdateStatus, force bool, goos, dir string, r runner) int {
 	stamp := st.Latest.Stamp
 	if stamp == "" {
-		fmt.Fprintln(stderr, "clawdline: the cloud's latest build is not known, so there is nothing to apply")
+		fmt.Fprintln(stderr, cliCopy("ops", "update.latest_unknown", "clawdline: the cloud's latest build is not known, so there is nothing to apply"))
 		return updateExitUnknown
 	}
 	if (st.State == contract.UpdateStateCurrent || st.State == contract.UpdateStateAhead) && !force {
-		fmt.Fprintf(stderr, "clawdline: this machine is %s; nothing to apply (--force deploys %s anyway)\n", st.State, stamp)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.nothing_to_apply", "clawdline: this machine is %s; nothing to apply (--force deploys %s anyway)\n"), st.State, stamp)
 		return 1
 	}
 	switch goos {
 	case "linux":
 	case "darwin":
-		fmt.Fprintln(stderr, "clawdline: --apply does not replace an app bundle; run these from a source checkout:")
+		fmt.Fprintln(stderr, cliCopy("ops", "update.bundle_instructions", "clawdline: --apply does not replace an app bundle; run these from a source checkout:"))
 		fmt.Fprintf(stdout, "git fetch origin main\n")
 		fmt.Fprintf(stdout, "git worktree add -f \"$TMPDIR/clawdline-%s\" %s\n", short(stamp), stamp)
 		fmt.Fprintf(stdout, "cd \"$TMPDIR/clawdline-%s\" && tools/package-macos.sh\n", short(stamp))
 		return 1
 	default:
-		fmt.Fprintf(stderr, "clawdline: --apply is built for Linux only, not %s (docs/updates.md)\n", goos)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.linux_only", "clawdline: --apply is built for Linux only, not %s (docs/updates.md)\n"), goos)
 		return 1
 	}
 	var top strings.Builder
 	if err := r.run(dir, &top, io.Discard, "git", "rev-parse", "--show-toplevel"); err != nil {
-		fmt.Fprintln(stderr, "clawdline: --apply runs inside a Clawdline source checkout, and this directory is not one")
+		fmt.Fprintln(stderr, cliCopy("ops", "update.not_checkout", "clawdline: --apply runs inside a Clawdline source checkout, and this directory is not one"))
 		return 1
 	}
 	root := strings.TrimSpace(top.String())
 	deploy := filepath.Join(root, "tools", "deploy-linux-user.sh")
 	if _, err := os.Stat(deploy); err != nil {
-		fmt.Fprintf(stderr, "clawdline: --apply runs inside a Clawdline source checkout; %s has no tools/deploy-linux-user.sh\n", root)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.no_deploy_script", "clawdline: --apply runs inside a Clawdline source checkout; %s has no tools/deploy-linux-user.sh\n"), root)
 		return 1
 	}
 	if err := r.run(root, stdout, stderr, "git", "fetch", "origin", "main"); err != nil {
-		fmt.Fprintf(stderr, "clawdline: git fetch origin main failed: %v\n", err)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.fetch_failed", "clawdline: git fetch origin main failed: %v\n"), err)
 		return 1
 	}
 	if err := r.run(root, io.Discard, io.Discard, "git", "merge-base", "--is-ancestor", stamp, "origin/main"); err != nil {
-		fmt.Fprintf(stderr, "clawdline: %s is not on origin/main; refusing to deploy it\n", stamp)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.refuse_unmerged", "clawdline: %s is not on origin/main; refusing to deploy it\n"), stamp)
 		return 1
 	}
 	if err := r.run(root, stdout, stderr, deploy, "--rev", stamp); err != nil {
@@ -294,7 +294,7 @@ func applyUpdate(stdout, stderr io.Writer, st contract.UpdateStatus, force bool,
 		if errors.As(err, &ee) {
 			return ee.ExitCode()
 		}
-		fmt.Fprintf(stderr, "clawdline: %s: %v\n", deploy, err)
+		fmt.Fprintf(stderr, cliCopy("ops", "update.deploy_failed", "clawdline: %s: %v\n"), deploy, err)
 		return 1
 	}
 	return 0
@@ -309,13 +309,13 @@ func checkFailed(errText string) string {
 	switch code {
 	case release.CodeManifestMalformed, release.CodeManifestUnsigned, release.CodeSignatureInvalid,
 		release.CodeNoTrustedKey, release.CodeVersionUnparseable:
-		said = "the release could not be verified; nothing was changed. Try again later."
+		said = cliCopy("ops", "release.verify_failed", "the release could not be verified; nothing was changed. Try again later.")
 	case updater.CodeReleaseUnreachable:
-		said = "the update server could not be reached; nothing was changed. Try again later."
+		said = cliCopy("ops", "release.server_unreachable", "the update server could not be reached; nothing was changed. Try again later.")
 	case updater.CodeNoReleasePublished:
-		said = "no release is published yet; nothing was changed."
+		said = cliCopy("ops", "release.none_published", "no release is published yet; nothing was changed.")
 	default:
-		said = "the check for a newer release failed; nothing was changed. Try again later."
+		said = cliCopy("ops", "release.check_failed", "the check for a newer release failed; nothing was changed. Try again later.")
 	}
 	if code == "" || strings.ContainsAny(code, " \t") {
 		return said
@@ -343,23 +343,23 @@ const (
 // when the outcome could not be read in time.
 func applyRelease(stdout, stderr io.Writer, port int, version string, force bool) int {
 	if force && version == "" {
-		fmt.Fprintln(stderr, "clawdline: --force on a release install needs --version, the release it installs")
+		fmt.Fprintln(stderr, cliCopy("ops", "release.force_needs_version", "clawdline: --force on a release install needs --version, the release it installs"))
 		return 2
 	}
 	b, err := openBroker(port)
 	if err != nil {
-		fmt.Fprintf(stderr, "clawdline: the daemon is not answering, and an update is started by it: %v\n", err)
+		fmt.Fprintf(stderr, cliCopy("ops", "release.daemon_unavailable", "clawdline: the daemon is not answering, and an update is started by it: %v\n"), err)
 		return updateExitUnknown
 	}
 	b.client.Timeout = 2*updater.FetchTimeoutSecondsLimit*time.Second + 10*time.Second
 	a, err := b.request(http.MethodPost, "/v1/update/apply", nil, contract.UpdateApplyRequest{Version: version, Force: force}, "")
 	if err != nil {
-		fmt.Fprintf(stderr, "clawdline: asking the daemon to update: %v\n", err)
+		fmt.Fprintf(stderr, cliCopy("ops", "release.request_failed", "clawdline: asking the daemon to update: %v\n"), err)
 		return updateExitUnknown
 	}
 	if a.Status != http.StatusAccepted {
 		code, msg := a.refusal()
-		fmt.Fprintf(stderr, "clawdline: the update was refused: %s: %s\n", code, msg)
+		fmt.Fprintf(stderr, cliCopy("ops", "release.refused", "clawdline: the update was refused: %s: %s\n"), code, msg)
 		return 1
 	}
 	var started contract.UpdateStatus
@@ -368,7 +368,7 @@ func applyRelease(stdout, stderr io.Writer, port int, version string, force bool
 	if started.Apply != nil && started.Apply.To != "" {
 		to = started.Apply.To
 	}
-	fmt.Fprintf(stdout, "updating to %s\n", to)
+	fmt.Fprintf(stdout, cliCopy("ops", "release.updating_to", "updating to %s\n"), to)
 	b.client.Timeout = 5 * time.Second
 	deadline := time.Now().Add(applyFollowSecondsLimit * time.Second)
 	last := contract.UpdateApplyState("")
@@ -394,21 +394,21 @@ func applyRelease(stdout, stderr io.Writer, port int, version string, force bool
 		}
 		switch st.Apply.State {
 		case contract.UpdateApplyStateHealthy:
-			fmt.Fprintf(stdout, "%s is running\n", st.Apply.To)
+			fmt.Fprintf(stdout, cliCopy("ops", "release.is_running", "%s is running\n"), st.Apply.To)
 			if st.Apply.StagedApp != "" {
-				fmt.Fprintf(stdout, "the app is staged at %s and replaces the installed one when it quits\n", st.Apply.StagedApp)
+				fmt.Fprintf(stdout, cliCopy("ops", "release.app_staged_short", "the app is staged at %s and replaces the installed one when it quits\n"), st.Apply.StagedApp)
 			}
 			return 0
 		case contract.UpdateApplyStateRolledBack:
 			fmt.Fprintln(stderr, rolledBackSentence(st.Apply.To, st.Apply.From, details))
 			return 1
 		case contract.UpdateApplyStateFailed:
-			fmt.Fprintf(stderr, "The update to %s did not finish, so nothing changed: %s is still running. Details: %s\n",
+			fmt.Fprintf(stderr, cliCopy("ops", "release.failed_outcome", "The update to %s did not finish, so nothing changed: %s is still running. Details: %s\n"),
 				st.Apply.To, st.Apply.From, details)
 			return 1
 		}
 	}
-	fmt.Fprintln(stderr, "clawdline: the update's outcome could not be read in time; `clawdline update` shows it later")
+	fmt.Fprintln(stderr, cliCopy("ops", "release.outcome_timeout", "clawdline: the update's outcome could not be read in time; `clawdline update` shows it later"))
 	return updateExitUnknown
 }
 
@@ -416,8 +416,7 @@ func applyRelease(stdout, stderr io.Writer, port int, version string, force bool
 // not start and the updater went back: that nothing is left to do, and that
 // auto-apply will not install that version again.
 func rolledBackSentence(to, from, details string) string {
-	return fmt.Sprintf("%s did not start, so Clawdline went back to %s, which is running now. "+
-		"Nothing else to do; automatic updates will skip this version. Details: %s", to, from, details)
+	return fmt.Sprintf(cliCopy("ops", "release.rollback_sentence", "%s did not start, so Clawdline went back to %s, which is running now. Nothing else to do; automatic updates will skip this version. Details: %s"), to, from, details)
 }
 
 // updateFinishCommand is `clawdline update finish --state <dir> --root <dir>`,
@@ -430,7 +429,7 @@ func updateFinishCommand(args []string) int {
 	state := fs.String("state", "", "the daemon's state directory")
 	root := fs.String("root", "", "the install layout's root")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || *state == "" || *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: clawdline update finish --state <dir> --root <dir>")
+		fmt.Fprintln(os.Stderr, cliCopy("ops", "release.finish_usage", "usage: clawdline update finish --state <dir> --root <dir>"))
 		return 2
 	}
 	// The layout the service runs from is the one the update was started

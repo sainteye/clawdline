@@ -1,3 +1,5 @@
+import { catalogFormat } from "../catalog.js"
+import { catalogWord } from "../catalog.js"
 import type { MachineUsage, SessionRow } from "@clawdline/contract"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { RefusalError } from "@clawdline/core"
@@ -18,7 +20,7 @@ import {
   type Level,
   type Sort,
 } from "./model.js"
-import { failureWords, readMachineUsage } from "./read.js"
+import { failureWords, failureWordsLanguage, readMachineUsage } from "./read.js"
 import { NeedsUpdate } from "./NeedsUpdate.js"
 import { asMachineNeedsUpdate } from "@clawdline/core"
 import { Mark } from "../session/List.js"
@@ -128,36 +130,36 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
       >
         <div className="machine-head">
           <div className="machine-heading">
-            <h2 id="machine-title">{zh ? "機器負載" : "Machine load"}</h2>
+            <h2 id="machine-title">{catalogWord("literal", "0a0017caec11")}</h2>
             <span className="machine-sub">
               {usage ? (
                 <>
-                  {zh ? `${usage.cores} 核 · ${bytes(usage.memory_total_bytes)} 記憶體` : `${usage.cores} cores · ${bytes(usage.memory_total_bytes)} memory`}
+                  {catalogFormat("template", "7e8b4dfff169", [usage.cores, bytes(usage.memory_total_bytes)])}
                   <span className={`machine-live${stale ? " stale" : ""}`} aria-hidden="true" />
-                  {stale ? (zh ? "連不上，顯示上一次的讀數" : "unreachable — last reading shown") : zh ? "每 3 秒更新" : "every 3 s"}
+                  {stale ? (catalogWord("literal", "7361fddb7d5f")) : catalogWord("literal", "371d49dd8b8f")}
                 </>
-              ) : error ? null : zh ? "讀取中…" : "Reading…"}
+              ) : error ? null : catalogWord("literal", "f8533719e17a")}
             </span>
           </div>
-          <button className="machine-close" type="button" ref={closeRef} onClick={onClose} aria-label={zh ? "關閉" : "Close"}>
+          <button className="machine-close" type="button" ref={closeRef} onClick={onClose} aria-label={catalogWord("literal", "82860b805ea6")}>
             ×
           </button>
         </div>
 
         {!usage && error ? (asMachineNeedsUpdate(error)
           ? <NeedsUpdate update={asMachineNeedsUpdate(error)} className="machine-verdict" />
-          : <p className="machine-verdict" data-level="warn">{failureWords(error, zh)}</p>) : null}
+          : <p className="machine-verdict" data-level="warn" lang={failureWordsLanguage(error)}>{failureWords(error, zh)}</p>) : null}
         {!usage && !error ? <Skeleton /> : null}
         <button className="machine-clawdfather" type="button" onClick={() => onClawdfather(steward?.id ?? null)}>
           <span className="clawdfather-crown" aria-hidden="true" />
-          <span>{steward ? (zh ? "前往 Clawdfather" : "Go to Clawdfather") : nextWord("machineSessionStart")}</span>
+          <span>{steward ? (catalogWord("literal", "bb1756b831b9")) : nextWord("machineSessionStart")}</span>
         </button>
 
         {usage && v ? (
           <>
             <p className="machine-verdict" data-level={v.level} role="status" aria-live="polite">
               <LevelMark level={v.level} zh={zh} />
-              <span>{say(v, zh)}</span>
+              <span>{say(v, true)}</span>
             </p>
 
             <div className="machine-gauges">
@@ -171,7 +173,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
                 zh={zh}
               />
               <Gauge
-                label={zh ? "記憶體" : "Memory"}
+                label={catalogWord("literal", "e962e81b9996")}
                 value={`${Math.round(memoryPercent(usage))}%`}
                 percent={memoryPercent(usage)}
                 level={memoryLevel(usage)}
@@ -184,22 +186,22 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
                 value={usage.swap_total_bytes > 0 ? `${Math.round(swapPercent(usage))}%` : "—"}
                 percent={swapPercent(usage)}
                 level={swapLevel(usage)}
-                sub={usage.swap_total_bytes > 0 ? `${bytes(usage.swap_used_bytes)} / ${bytes(usage.swap_total_bytes)}` : zh ? "沒有設定 swap" : "no swap"}
+                sub={usage.swap_total_bytes > 0 ? `${bytes(usage.swap_used_bytes)} / ${bytes(usage.swap_total_bytes)}` : catalogWord("literal", "2826e9975083")}
                 zh={zh}
               />
             </div>
 
             {usage.pressure ? (
               <p className="machine-pressure">
-                <span className="machine-label">{zh ? "近 10 秒在等待" : "Waiting, last 10 s"}</span>
+                <span className="machine-label">{catalogWord("literal", "6965bbac3e3d")}</span>
                 <Wait name="CPU" value={usage.pressure.cpu_some} />
-                <Wait name={zh ? "記憶體" : "memory"} value={usage.pressure.memory_some} />
-                <Wait name={zh ? "磁碟" : "disk"} value={usage.pressure.io_some} />
+                <Wait name={catalogWord("literal", "35c033c1dbfc")} value={usage.pressure.memory_some} />
+                <Wait name={catalogWord("literal", "3f30b2c523df")} value={usage.pressure.io_some} />
               </p>
             ) : null}
 
             <section className="machine-section">
-              <h3>{zh ? "記憶體被誰用掉" : "Who holds the memory"}</h3>
+              <h3>{catalogWord("literal", "d173b3f0bd70")}</h3>
               <div className="machine-stack" role="img" aria-label={segments.map((s) => `${s.label} ${bytes(s.bytes)}`).join(", ")}>
                 {segments.map((s) => (
                   <i
@@ -210,17 +212,17 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
                 ))}
               </div>
               <div className="machine-scale">
-                <span>{zh ? `已用 ${bytes(usage.memory_used_bytes)}` : `${bytes(usage.memory_used_bytes)} used`}</span>
-                <span>{zh ? `可用 ${bytes(usage.memory_available_bytes)}` : `${bytes(usage.memory_available_bytes)} available`}</span>
+                <span>{catalogFormat("template", "b8faa287adb9", [bytes(usage.memory_used_bytes)])}</span>
+                <span>{catalogFormat("template", "ca37c38d230b", [bytes(usage.memory_available_bytes)])}</span>
               </div>
             </section>
 
             <section className="machine-section">
               <div className="machine-section-head">
-                <h3>{zh ? `各 session（${list.filter((r) => r.kind === "session").length}）` : `Sessions (${list.filter((r) => r.kind === "session").length})`}</h3>
-                <div className="machine-sort" role="group" aria-label={zh ? "排序" : "Sort"}>
+                <h3>{catalogFormat("template", "82697b4e4f82", [list.filter((r) => r.kind === "session").length])}</h3>
+                <div className="machine-sort" role="group" aria-label={catalogWord("literal", "bde9237d920d")}>
                   <button type="button" aria-pressed={sort === "memory"} onClick={() => setSort("memory")}>
-                    {zh ? "記憶體" : "Memory"}
+                    {catalogWord("literal", "e962e81b9996")}
                   </button>
                   <button type="button" aria-pressed={sort === "cpu"} onClick={() => setSort("cpu")}>
                     CPU
@@ -246,9 +248,9 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
                       <div className="machine-amounts">
                         <span className="machine-mem">
                           {bytes(r.rss)}
-                          {r.swap > 0 ? <em title={zh ? "被換到 swap 的部分" : "swapped out"}> +{bytes(r.swap)} swap</em> : null}
+                          {r.swap > 0 ? <em title={catalogWord("literal", "4f2ba7c98279")}> +{bytes(r.swap)} swap</em> : null}
                         </span>
-                        <span className="machine-cpu">{r.cpu.toFixed(r.cpu < 10 ? 1 : 0)}% CPU</span>
+                        <span className="machine-cpu">{r.cpu.toFixed(r.cpu < 10 ? 1 : 0)}{catalogWord("inline", "6ebb2cb97b4d")}</span>
                       </div>
                       <div className="machine-bar" aria-hidden="true">
                         <i style={{ width: `${Math.max(weight > 0 ? 1.5 : 0, (weight / top) * 100)}%`, background: r.color }} />
@@ -256,20 +258,20 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
                     </li>
                   )
                 })}
-                {list.length === 0 ? <li className="machine-empty">{zh ? "沒有正在跑的 session。" : "No sessions are running."}</li> : null}
+                {list.length === 0 ? <li className="machine-empty">{catalogWord("literal", "4420cacfb8e8")}</li> : null}
               </ul>
             </section>
 
             {usage.others.length > 0 ? (
               <details className="machine-others">
-                <summary>{zh ? "session 以外的程序" : "Outside any session"}</summary>
+                <summary>{catalogWord("literal", "5d2f213c46e2")}</summary>
                 <ul>
                   {usage.others.map((o) => (
                     <li key={o.name}>
                       <span className="machine-title">{o.name}</span>
-                      <span className="machine-detail">{zh ? `${o.processes} 個` : `×${o.processes}`}</span>
+                      <span className="machine-detail">{catalogFormat("template", "c4e5c8cf3d7b", [o.processes])}</span>
                       <span className="machine-mem">{bytes(o.rss_bytes)}</span>
-                      <span className="machine-cpu">{o.cpu_percent.toFixed(o.cpu_percent < 10 ? 1 : 0)}% CPU</span>
+                      <span className="machine-cpu">{o.cpu_percent.toFixed(o.cpu_percent < 10 ? 1 : 0)}{catalogWord("inline", "6ebb2cb97b4d")}</span>
                     </li>
                   ))}
                 </ul>
@@ -277,9 +279,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
             ) : null}
 
             <p className="machine-note">
-              {zh
-                ? `CPU 是最近 ${(usage.interval_ms / 1000).toFixed(1)} 秒的平均，以整台機器 ${usage.cores} 核為 100%。每個 session 包含它開的 shell 和編譯等子程序；程序間共用的記憶體會重複計入。`
-                : `CPU is the average over the last ${(usage.interval_ms / 1000).toFixed(1)} s, with all ${usage.cores} cores as 100%. A session includes the shells and builds it started; memory shared between processes is counted in each.`}
+              {catalogFormat("template", "37d294810b2a", [(usage.interval_ms / 1000).toFixed(1), usage.cores])}
             </p>
           </>
         ) : null}
@@ -289,7 +289,7 @@ export function MachineDashboard({ sessions, onClose, onClawdfather }: {
 }
 
 function LevelMark({ level, zh }: { level: Level; zh: boolean }) {
-  const word = level === "bad" ? (zh ? "過載" : "Overloaded") : level === "warn" ? (zh ? "偏高" : "Busy") : zh ? "正常" : "OK"
+  const word = level === "bad" ? (catalogWord("literal", "0547c3976b56")) : level === "warn" ? (catalogWord("literal", "de1f4ca207b0")) : catalogWord("literal", "96e69c58bf8b")
   const icon = level === "bad" ? "!" : level === "warn" ? "▲" : "✓"
   return (
     <span className="machine-level" data-level={level}>

@@ -42,15 +42,15 @@ func verifyCommand(args []string) {
 
 func verifyUsage() {
 	for _, line := range []string{
-		"usage: clawdline verify list [--json]",
-		"       clawdline verify show <id> [--json]",
-		"       clawdline verify add --title <text> --due <when> --criterion <text> [--criterion <text> …]",
-		"                            [--why <text>] [--started <when>] [--compaction-since 14d] [--schedule <id>]",
-		"       clawdline verify note <id> <text>",
-		"       clawdline verify done <id> --accepted|--rejected <reason>",
-		"       clawdline verify delete <id> [--force]",
-		"  <when> is 2026-10-03 09:00 (this machine's zone), 2026-10-03, RFC 3339, or 7d / 36h from now",
-		"  every form takes --port n (default CLAWDLINE_NEXT_PORT, else 7727)",
+		cliCopy("verify", "usage.list", "usage: clawdline verify list [--json]"),
+		cliCopy("verify", "usage.show", "       clawdline verify show <id> [--json]"),
+		cliCopy("verify", "usage.add", "       clawdline verify add --title <text> --due <when> --criterion <text> [--criterion <text> …]"),
+		cliCopy("verify", "usage.add_options", "                            [--why <text>] [--started <when>] [--compaction-since 14d] [--schedule <id>]"),
+		cliCopy("verify", "usage.note", "       clawdline verify note <id> <text>"),
+		cliCopy("verify", "usage.done", "       clawdline verify done <id> --accepted|--rejected <reason>"),
+		cliCopy("verify", "usage.delete", "       clawdline verify delete <id> [--force]"),
+		cliCopy("verify", "usage.when", "  <when> is 2026-10-03 09:00 (this machine's zone), 2026-10-03, RFC 3339, or 7d / 36h from now"),
+		cliCopy("verify", "usage.port", "  every form takes --port n (default CLAWDLINE_NEXT_PORT, else 7727)"),
 	} {
 		fmt.Fprintln(os.Stderr, line)
 	}
@@ -98,19 +98,19 @@ func runVerify(stdout, stderr io.Writer, b *broker, sub string, args []string, g
 		fs.SetOutput(io.Discard)
 		asJSON := fs.Bool("json", false, "")
 		if fs.Parse(args) != nil || fs.NArg() != 0 {
-			return misuse("takes only --json")
+			return misuse(cliCopy("verify", "misuse.list_arguments", "takes only --json"))
 		}
 		return verifyList(stdout, stderr, b, *asJSON, now)
 	case "show":
 		id, rest, ok := verifyID(args)
 		if !ok {
-			return misuse("names one record: clawdline verify show <id>")
+			return misuse(cliCopy("verify", "misuse.show_id", "names one record: clawdline verify show <id>"))
 		}
 		fs := flag.NewFlagSet("verify show", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		asJSON := fs.Bool("json", false, "")
 		if fs.Parse(rest) != nil || fs.NArg() != 0 {
-			return misuse("takes only --json after the id")
+			return misuse(cliCopy("verify", "misuse.show_arguments", "takes only --json after the id"))
 		}
 		return verifyShow(stdout, stderr, b, id, *asJSON, now)
 	case "add":
@@ -118,14 +118,14 @@ func runVerify(stdout, stderr io.Writer, b *broker, sub string, args []string, g
 	case "note":
 		id, rest, ok := verifyID(args)
 		if !ok || len(rest) != 1 || strings.TrimSpace(rest[0]) == "" {
-			return misuse(`names one record and one note: clawdline verify note <id> "…"`)
+			return misuse(cliCopy("verify", "misuse.note_arguments", `names one record and one note: clawdline verify note <id> "…"`))
 		}
 		body := contract.VerificationNoteCreate{Text: rest[0], Session: conversationOf(getenv)}
 		return verifyWrite(stdout, stderr, b, http.MethodPost, "/v1/verifications/"+url.PathEscape(id)+"/notes", nil, body, newKey("verify-note"))
 	case "done":
 		id, rest, ok := verifyID(args)
 		if !ok || len(rest) != 2 {
-			return misuse(`names one record, a verdict and the reason: clawdline verify done <id> --accepted|--rejected "reason"`)
+			return misuse(cliCopy("verify", "misuse.done_arguments", `names one record, a verdict and the reason: clawdline verify done <id> --accepted|--rejected "reason"`))
 		}
 		var status contract.VerificationStatus
 		switch rest[0] {
@@ -134,14 +134,14 @@ func runVerify(stdout, stderr io.Writer, b *broker, sub string, args []string, g
 		case "--rejected":
 			status = contract.VerificationStatusRejected
 		default:
-			return misuse("the verdict is --accepted or --rejected")
+			return misuse(cliCopy("verify", "misuse.done_verdict", "the verdict is --accepted or --rejected"))
 		}
 		return verifyWrite(stdout, stderr, b, http.MethodPost, "/v1/verifications/"+url.PathEscape(id)+"/close", nil,
 			contract.VerificationClose{Status: status, Reason: rest[1]}, "")
 	case "delete":
 		id, rest, ok := verifyID(args)
 		if !ok {
-			return misuse("names exactly one record: clawdline verify delete <id> [--force]")
+			return misuse(cliCopy("verify", "misuse.delete_id", "names exactly one record: clawdline verify delete <id> [--force]"))
 		}
 		var query url.Values
 		switch {
@@ -149,7 +149,7 @@ func runVerify(stdout, stderr io.Writer, b *broker, sub string, args []string, g
 		case len(rest) == 1 && rest[0] == "--force":
 			query = url.Values{"force": {"1"}}
 		default:
-			return misuse("takes one id and, for a record still open, --force")
+			return misuse(cliCopy("verify", "misuse.delete_arguments", "takes one id and, for a record still open, --force"))
 		}
 		a, err := b.request(http.MethodDelete, "/v1/verifications/"+url.PathEscape(id), query, nil, "")
 		if err != nil {
@@ -159,10 +159,10 @@ func runVerify(stdout, stderr io.Writer, b *broker, sub string, args []string, g
 		if !a.ok() {
 			return report(stdout, stderr, "verify", a)
 		}
-		fmt.Fprintln(stdout, "deleted "+id)
+		fmt.Fprintln(stdout, cliCopy("verify", "output.deleted_prefix", "deleted ")+id)
 		return 0
 	}
-	return misuse("is not a subcommand: list, show, add, note, done or delete")
+	return misuse(cliCopy("verify", "misuse.unknown_subcommand", "is not a subcommand: list, show, add, note, done or delete"))
 }
 
 // verifyID is the one id every subcommand but list and add starts with.
@@ -199,10 +199,10 @@ func verifyAdd(stdout, stderr io.Writer, b *broker, args []string, now time.Time
 	var criteria repeated
 	fs.Var(&criteria, "criterion", "")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		return misuse("reads --title, --due, --criterion (repeatable), --why, --started, --compaction-since and --schedule")
+		return misuse(cliCopy("verify", "misuse.add_flags", "reads --title, --due, --criterion (repeatable), --why, --started, --compaction-since and --schedule"))
 	}
 	if strings.TrimSpace(*title) == "" || *due == "" || len(criteria) == 0 {
-		return misuse("needs --title, --due and at least one --criterion")
+		return misuse(cliCopy("verify", "misuse.add_required", "needs --title, --due and at least one --criterion"))
 	}
 	body := contract.VerificationCreate{Title: *title, Why: *why, Criteria: criteria, ScheduleID: *schedule}
 	at, err := parseWhen(*due, now)
@@ -247,7 +247,7 @@ func parseWhen(raw string, now time.Time) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("%q is not 2026-10-03 09:00, 2026-10-03, RFC 3339, or 7d / 36h", raw)
+	return time.Time{}, fmt.Errorf(cliCopy("verify", "misuse.when_format", "%q is not 2026-10-03 09:00, 2026-10-03, RFC 3339, or 7d / 36h"), raw)
 }
 
 // verifyWrite sends one change and prints the record as it now stands.
@@ -279,11 +279,11 @@ func verifyList(stdout, stderr io.Writer, b *broker, asJSON bool, now time.Time)
 	}
 	var list contract.VerificationList
 	if json.Unmarshal(a.Body, &list) != nil {
-		fmt.Fprintln(stderr, "clawdline verify: the daemon's answer could not be read; --json prints it as it came")
+		fmt.Fprintln(stderr, cliCopy("verify", "error.unreadable_response", "clawdline verify: the daemon's answer could not be read; --json prints it as it came"))
 		return 1
 	}
 	if len(list.Verifications) == 0 {
-		fmt.Fprintln(stdout, "nothing is waiting to be verified")
+		fmt.Fprintln(stdout, cliCopy("verify", "output.empty_list", "nothing is waiting to be verified"))
 		return 0
 	}
 	at := time.Unix(list.At, 0)
@@ -304,7 +304,7 @@ func verifyShow(stdout, stderr io.Writer, b *broker, id string, asJSON bool, now
 	}
 	var d contract.VerificationDetail
 	if json.Unmarshal(a.Body, &d) != nil {
-		fmt.Fprintln(stderr, "clawdline verify: the daemon's answer could not be read; --json prints it as it came")
+		fmt.Fprintln(stderr, cliCopy("verify", "error.unreadable_response", "clawdline verify: the daemon's answer could not be read; --json prints it as it came"))
 		return 1
 	}
 	writeVerification(stdout, d.Verification, time.Unix(d.At, 0))
@@ -312,9 +312,9 @@ func verifyShow(stdout, stderr io.Writer, b *broker, id string, asJSON bool, now
 		fmt.Fprintln(stdout, "")
 		switch {
 		case d.Data.Error != "":
-			fmt.Fprintf(stdout, "data (%s): %s\n", d.Data.Kind, d.Data.Error)
+			fmt.Fprintf(stdout, cliCopy("verify", "output.data_error", "data (%s): %s\n"), d.Data.Kind, d.Data.Error)
 		case d.Data.CompactionCompare != nil:
-			fmt.Fprintf(stdout, "data (%s):\n", d.Data.Kind)
+			fmt.Fprintf(stdout, cliCopy("verify", "output.data_heading", "data (%s):\n"), d.Data.Kind)
 			writeCompactionComparison(stdout, *d.Data.CompactionCompare)
 		}
 	}
@@ -325,9 +325,9 @@ func verifyShow(stdout, stderr io.Writer, b *broker, id string, asJSON bool, now
 // their marks, where its data comes from, the notes, and the verdict.
 func writeVerification(w io.Writer, v contract.Verification, at time.Time) {
 	fmt.Fprintf(w, "%s  %s — %s, %s\n", v.ID, v.Title, v.Status, verifyDue(v, at))
-	fmt.Fprintf(w, "started %s, due %s\n", verifyTime(v.StartedAt), verifyTime(v.DueAt))
+	fmt.Fprintf(w, cliCopy("verify", "output.started_due", "started %s, due %s\n"), verifyTime(v.StartedAt), verifyTime(v.DueAt))
 	if v.Why != "" {
-		fmt.Fprintln(w, "why: "+v.Why)
+		fmt.Fprintln(w, cliCopy("verify", "output.why_prefix", "why: ")+v.Why)
 	}
 	for _, c := range v.Criteria {
 		mark := " "
@@ -340,20 +340,20 @@ func writeVerification(w io.Writer, v contract.Verification, at time.Time) {
 		fmt.Fprintf(w, "  [%s] %d. %s\n", mark, c.Index, c.Text)
 	}
 	if v.Source != nil {
-		fmt.Fprintf(w, "data: %s since %s\n", v.Source.Kind, v.Source.Since)
+		fmt.Fprintf(w, cliCopy("verify", "output.source_since", "data: %s since %s\n"), v.Source.Kind, v.Source.Since)
 	}
 	if v.ScheduleID != "" {
-		fmt.Fprintln(w, "schedule: "+v.ScheduleID)
+		fmt.Fprintln(w, cliCopy("verify", "output.schedule_prefix", "schedule: ")+v.ScheduleID)
 	}
 	for _, n := range v.Notes {
-		who := "person"
+		who := cliCopy("verify", "output.author_person", "person")
 		if n.AuthorKind == contract.VerificationAuthorKindSession {
-			who = "session"
+			who = cliCopy("verify", "output.author_session", "session")
 			if n.Author != "" {
 				who += " " + n.Author
 			}
 		}
-		fmt.Fprintf(w, "note %s (%s): %s\n", verifyTime(n.At), who, n.Text)
+		fmt.Fprintf(w, cliCopy("verify", "output.note", "note %s (%s): %s\n"), verifyTime(n.At), who, n.Text)
 	}
 	if v.Status != contract.VerificationStatusOpen {
 		fmt.Fprintf(w, "%s %s: %s\n", v.Status, verifyTime(v.ClosedAt), v.CloseReason)
@@ -368,7 +368,7 @@ func verifyTime(unix int64) string {
 // ago it passed.
 func verifyDue(v contract.Verification, at time.Time) string {
 	if v.Status != contract.VerificationStatusOpen {
-		return "closed"
+		return cliCopy("verify", "output.closed", "closed")
 	}
 	d := time.Unix(v.DueAt, 0).Sub(at)
 	late := d < 0
@@ -376,14 +376,14 @@ func verifyDue(v contract.Verification, at time.Time) string {
 		d = -d
 	}
 	days, hours := int(d/(24*time.Hour)), int(d%(24*time.Hour)/time.Hour)
-	span := fmt.Sprintf("%dd %dh", days, hours)
+	span := fmt.Sprintf(cliCopy("verify", "output.duration_days", "%dd %dh"), days, hours)
 	if days == 0 {
-		span = fmt.Sprintf("%dh %dm", hours, int(d%time.Hour/time.Minute))
+		span = fmt.Sprintf(cliCopy("verify", "output.duration_hours", "%dh %dm"), hours, int(d%time.Hour/time.Minute))
 	}
 	if late {
-		return "overdue by " + span
+		return cliCopy("verify", "output.overdue_prefix", "overdue by ") + span
 	}
-	return "due in " + span
+	return cliCopy("verify", "output.due_prefix", "due in ") + span
 }
 
 // verifyTally is how many criteria have been marked, and how.
@@ -397,5 +397,5 @@ func verifyTally(v contract.Verification) string {
 			failed++
 		}
 	}
-	return fmt.Sprintf("%d passed, %d failed of %d", passed, failed, len(v.Criteria))
+	return fmt.Sprintf(cliCopy("verify", "output.tally", "%d passed, %d failed of %d"), passed, failed, len(v.Criteria))
 }

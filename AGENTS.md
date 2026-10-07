@@ -48,6 +48,7 @@ tools/heavy.sh go test ./...
 go run ./tools/contract-gen -check      # Go and TypeScript are generated together
 tools/check-legacy-css.sh               # the byte-for-byte copies still match
 tools/check-machine-words.sh            # no shown sentence calls the machine a Mac
+tools/check-shell-expansions.sh         # no $name runs into a non-ASCII character
 tools/check-private.sh                  # nothing of the person's is in a public repo
 tools/check-private.sh -history -new    # no commit behind it added one either
 ( cd web && npm run check && ../tools/heavy.sh npm run build )   # when anything under web/ changed
@@ -55,7 +56,9 @@ tools/check-private.sh -history -new    # no commit behind it added one either
 
 - **Every compile, test suite or bundle build goes through `tools/heavy.sh`** (`clawdline heavy`).
   Wrap the whole script once; wait for it with one long wait. If it exits 75 before acquiring the
-  slot, run it later. See `docs/working-rules.md` for the incident and procedure.
+  slot, run it later. A queued `tools/check.sh` hands itself to a callback and exits 76: a root
+  ends its turn and waits for the notice; a child waits in place. See `docs/working-rules.md` for
+  the incident and procedure.
 
 - A test that needs a Unix facility asks for it through a per-platform file
   (`gone_unix_test.go` beside `gone_other_test.go`), not through `syscall` inline.
@@ -78,6 +81,26 @@ names the commit, file and line, never the matched text. `docs/privacy-guard.md`
 
 Commit messages, comments and documentation are in **English**; the conversation with the person
 is in Traditional Chinese.
+
+## Keep filesystem searches inside the task's scope
+
+On macOS, a command started through Clawdline can make a privacy prompt name Clawdline even when
+the command itself is the reader. Search the named repository or task directory, not the whole home
+directory. Do not recursively enumerate `~`, `~/Library`, `~/Documents`, `~/Downloads`, `~/Music`,
+or the Photos library to discover files for a repository task. Open a protected location only when
+the task actually requires it and its exact path is known. The observed attribution and the
+permission prompts it caused are in `docs/working-rules.md`.
+
+## Maintaining product translations
+
+When changing product-generated, person-facing copy, update English and Taiwan Traditional Chinese
+in the same change. Other shipped languages may be translated in batches; do not require their
+files to change with every code edit. A missing newer translation falls back to English and is
+counted in the localization coverage report. Keep placeholders, plural forms, and markup valid in
+every existing translation. An outdated translated guide section falls back to its current English
+section so it cannot show obsolete commands. The first multilingual release requires a complete
+baseline in every shipped language; later routine changes use the two-language gate. The resolver,
+fallback and release checks are in [docs/localization.md](docs/localization.md).
 
 ## How a commit reads here
 

@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import * as L from "../../legacy/bridge.js"
 import type { WorkV2Document, WorkV2Item } from "./api.js"
 import { completionReportsNewestFirst } from "./completion-report-order.js"
@@ -14,18 +16,20 @@ export function completionReports(item: WorkV2Item): WorkV2Document[] {
 
 /** A durable, user-readable conclusion. It is narrative, not a substitute for lifecycle receipts. */
 export function WorkCompletionReports({ item, expanded = false }: { item: WorkV2Item; expanded?: boolean }) {
-  return <WorkDocuments documents={completionReports(item)} label="結案報告" expanded={expanded}
-    authority={() => "Agent 調查結論 · 驗證、合併與部署證據另列於項目進度"} />
+  return <WorkDocuments documents={completionReports(item)} label={catalogWord("literal", "60ff8d468b52")} expanded={expanded}
+    authority={() => catalogWord("literal", "64c3025365fb")} />
 }
 
-const PLAN_TITLE: Partial<Record<WorkV2Document["role"], string>> = { plan: "計劃書", plan_review: "Child Review" }
+function planTitle(role: WorkV2Document["role"]): string {
+  return role === "plan" ? catalogWord("literal", "b59b29087e27") : role === "plan_review" ? catalogWord("inline", "4f468f5b65d4") : ""
+}
 
 /** An Epic's plan and the Child Session reviews of it, each plan followed by its review. */
 export function WorkEpicPlanDocuments({ item }: { item: WorkV2Item }) {
-  return <WorkDocuments documents={epicPlanDocuments(item.documents)} label="計劃書與 Review"
+  return <WorkDocuments documents={epicPlanDocuments(item.documents)} label={catalogWord("literal", "9c6e1e391888")}
     authority={(document) => document.role === "plan_review"
-      ? `Child Session 對計劃書的 review${document.reference ? ` · Task ${document.reference.slice(0, 8)}` : ""}`
-      : "負責 Session 寫的實作計劃 · 實作前須經 Child Session review"} />
+      ? catalogFormat("template", "9a81824f07e6", [document.reference ? ` · Task ${document.reference.slice(0, 8)}` : ""])
+      : catalogWord("literal", "79fd72ac8a6c")} />
 }
 
 const BEFORE_STEPS = new Set(["spec", "design"])
@@ -64,14 +68,14 @@ function WorkDocuments({ documents, label, heading, authority, expanded = false 
     {heading && <h4 className="work-document-group-heading"><span>{heading}</span><small>{documents.length}</small></h4>}
     {documents.map((document, index) => <details className="work-completion-report" data-role={document.role} key={document.id} open={expanded}>
       <summary><WorkIcon name="check" /><span className="work-completion-report-title">
-        <strong>{document.title || PLAN_TITLE[document.role] || label}</strong>
-        <time dateTime={new Date(document.created_at * 1000).toISOString()}>寫於 {when(document.created_at)}</time>
+        <strong>{document.title || planTitle(document.role) || label}</strong>
+        <time dateTime={new Date(document.created_at * 1000).toISOString()}>{catalogWord("inline", "36f6a4593f6a")} {when(document.created_at)}</time>
       </span>
         {documents.length > 1 && <small>{index + 1} / {documents.length}</small>}</summary>
       <p className="work-completion-report-authority">{authority(document)}</p>
       <div className="work-completion-report-body"
         dangerouslySetInnerHTML={{ __html: L.richTextHTML(completionReportText(document.body)) }} />
-      {document.reference && <p className="work-completion-report-reference">參考：{document.reference}</p>}
+      {document.reference && <p className="work-completion-report-reference">{catalogWord("inline", "288dc4aa648d")}{document.reference}</p>}
     </details>)}
   </section>
 }

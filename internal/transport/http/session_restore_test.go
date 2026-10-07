@@ -118,6 +118,15 @@ func TestRestoreAndDismissNeedASenderAndAKey(t *testing.T) {
 	}
 	if rec := restoreCall(t, s, asSender(restorePost(restorePath, "k-bad", `{"conversation":["x"]}`), "phone")); rec.Code != http.StatusBadRequest {
 		t.Errorf("an unknown field: %d %s", rec.Code, rec.Body)
+	} else {
+		var refusal map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &refusal); err != nil ||
+			refusal["error"] != "bad_request" || refusal["detail"] != "unknown field conversation" {
+			t.Fatalf("unknown field refusal changed: %v %s", err, rec.Body)
+		}
+		if _, hasKey := refusal["detail_key"]; hasKey {
+			t.Fatalf("client-supplied field gained a fixed-copy key: %s", rec.Body)
+		}
 	}
 }
 

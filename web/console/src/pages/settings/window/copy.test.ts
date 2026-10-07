@@ -1,12 +1,27 @@
 // The sentence under the voice language picker:
 //   node --test web/console/src/pages/settings/window/copy.test.ts
-import { test } from "node:test"
+import { afterEach, beforeEach, test } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import chinese from "../../../../public/catalogs/zh-Hant.json" with { type: "json" }
+// @ts-expect-error -- Node runs the TypeScript source test directly.
+import { activateCatalog, resetCatalogForTest } from "../../../catalog.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { voiceLanguageSaid } from "./copy.ts"
 
 const said = (v: Partial<Parameters<typeof voiceLanguageSaid>[0]>) =>
   voiceLanguageSaid({ setting: "auto", code: "", script: "", source: "", tag: "", script_source: "", script_tag: "", ...v })
+
+let oldDocument: typeof globalThis.document
+beforeEach(() => {
+  oldDocument = globalThis.document
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } } })
+  assert.equal(activateCatalog(chinese, "zh-Hant"), "zh-Hant")
+})
+afterEach(() => {
+  resetCatalogForTest()
+  Object.defineProperty(globalThis, "document", { configurable: true, value: oldDocument })
+})
 
 // Each of the three machines the daemon's own test is run as says which one it
 // was, so a Simplified transcript is never an answer nobody could have seen.
@@ -48,4 +63,17 @@ test("an explicit choice is said as a choice", () => {
     "每段錄音都當成繁體中文來讀。",
   )
   assert.equal(said({ setting: "en", code: "en", source: "voice_language", tag: "en" }), "每段錄音都當成英文來讀。")
+})
+
+test("Voice composes complete Chinese names and readable sentences in every catalog", () => {
+  for (const tag of ["en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de"] as const) {
+    const catalog = JSON.parse(readFileSync(new URL(`../../../../public/catalogs/${tag}.json`, import.meta.url), "utf8"))
+    assert.equal(activateCatalog(catalog, tag), tag)
+    const displayNames = new Intl.DisplayNames([tag], { type: "language" })
+    const fixed = said({ setting: "zh-Hans", code: "zh", script: "Hans", source: "voice_language", tag: "zh-Hans" })
+    const automatic = said({ code: "zh", script: "Hant", source: "AppleLanguages", tag: "zh-Hant-TW" })
+    assert.ok(fixed.includes(displayNames.of("zh-Hans")!), `${tag}: ${fixed}`)
+    assert.ok(automatic.includes(displayNames.of("zh-Hant")!), `${tag}: ${automatic}`)
+    assert.doesNotMatch(fixed + automatic, /\{(?:name|why|where|tag)\}|\(으\)로|です\s+です|。\s*。/u, tag)
+  }
 })

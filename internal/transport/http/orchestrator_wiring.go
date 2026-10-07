@@ -185,6 +185,9 @@ func newBroker(s *Server) *orchestrator.Broker {
 			return h.NoticeRead(ctx, root, noticeID)
 		},
 		Launcher: newLauncher(),
+		// Every session the broker opens in a Project — a child, a handoff,
+		// a Board item's Session — is given that Project's shared memory.
+		Memory: s.memoryLaunchText,
 		// The person decided that asking for a new Claude Code session in a
 		// registered project answers Claude Code's workspace-trust question
 		// for that folder (projects.TrustClaudeProject).
@@ -383,10 +386,9 @@ func brokerLanguage(s *Server) string {
 			return lang
 		}
 	}
-	// This daemon ships one catalog and /v1/strings defaults to it, so the one
-	// line a child says out loud defaults to the same language rather than to
-	// English nobody chose.
-	return defaultCatalog
+	// Keep the pre-localization authoring fallback independently of product
+	// copy. A new English UI default is not an instruction to existing agents.
+	return agentVoiceFallbackLanguage
 }
 
 func brokerMaxChildren(s *Server) int {

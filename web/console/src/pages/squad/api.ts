@@ -1,3 +1,4 @@
+import { catalogRefusalDetail, catalogWord } from "../../catalog.js"
 import { client, mayWriteThroughCurrentTransport } from "../../client.js"
 import type { SquadReceipt, SquadSession, SquadView } from "./model.js"
 import { squadView, type WireCatalog, type WireSettings } from "./wire.js"
@@ -72,18 +73,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response
   try { response = await fetch(client.url(path), { ...init, signal: controller.signal }) }
   catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw new SquadError("timeout", "角色小隊服務回應逾時。", 0)
-    throw new SquadError("offline", "目前無法連線至角色小隊服務。", 0)
+    if (error instanceof Error && error.name === "AbortError") throw new SquadError("timeout", catalogWord("literal", "fe3afeb22bf7"), 0)
+    throw new SquadError("offline", catalogWord("literal", "e03cb38f7707"), 0)
   }
   finally { clearTimeout(timer) }
   let value: unknown
   try { value = await response.json() }
-  catch { throw new SquadError("invalid_response", "角色小隊服務回傳了無法讀取的資料。", response.status) }
+  catch { throw new SquadError("invalid_response", catalogWord("literal", "59dd020f4f72"), response.status) }
   if (!response.ok) {
     const body = value as { error?: string | { code?: string; message?: string }; detail?: string }
     const code = typeof body?.error === "string" ? body.error : body?.error?.code ?? "request_failed"
-    const detail = body?.detail || (typeof body?.error === "object" ? body.error.message : "") || "請求失敗（" + response.status + "）。"
-    throw new SquadError(code, detail, response.status)
+    const detail = catalogRefusalDetail(body) || { text: catalogWord("literal", "cd4cc76ef07a") + response.status + "）。" }
+    throw new SquadError(code, detail.text, response.status)
   }
   return value as T
 }
@@ -104,12 +105,12 @@ function base64Of(bytes: Uint8Array): string {
 
 function conflictReason(code?: string): string {
   switch (code) {
-    case "reserved_id": return "內建項目不能覆蓋"
-    case "name_conflict": return "名稱已由其他 ID 使用"
-    case "version_content_conflict": return "版本相同但內容不同"
-    case "version_downgrade": return "資料包版本比現有版本舊"
-    case "version_incomparable": return "版本無法比較"
-    default: return code || "目錄衝突"
+    case "reserved_id": return catalogWord("literal", "bff186284aa2")
+    case "name_conflict": return catalogWord("literal", "82f4174d0598")
+    case "version_content_conflict": return catalogWord("literal", "3cad597f3ac5")
+    case "version_downgrade": return catalogWord("literal", "b65ed7e2e286")
+    case "version_incomparable": return catalogWord("literal", "50ed5fc5bdc6")
+    default: return code || catalogWord("literal", "0e6e08f8f616")
   }
 }
 
@@ -129,7 +130,7 @@ class HttpSquadAPI implements SquadAPI {
     if (!scopeId) return {}
     let row = this.scopes.get(scopeId)
     if (!row) { await this.loadScopes(); row = this.scopes.get(scopeId) }
-    if (!row) throw new SquadError("unknown_project", "找不到這個 Project 範圍；請重新讀取清單。", 404)
+    if (!row) throw new SquadError("unknown_project", catalogWord("literal", "5ef9a2399e25"), 404)
     return row.place_id ? { place_id: row.place_id } : { scope_id: scopeId }
   }
 
@@ -152,7 +153,7 @@ class HttpSquadAPI implements SquadAPI {
 
   private async skillSourcePath(scopeId: string, provider: "project" | "claude-code" | "codex", extra: Record<string, string> = {}) {
     const ref = await this.scopeRef(scopeId)
-    if (provider === "project" && !ref.place_id) throw new SquadError("project_required", "請先在角色小隊選擇已登錄的 Project。", 400)
+    if (provider === "project" && !ref.place_id) throw new SquadError("project_required", catalogWord("literal", "d41a4cbb075f"), 400)
     return "/v1/squad/skill-sources?" + new URLSearchParams({ provider, ...(ref.place_id ? { place_id: ref.place_id } : {}), ...extra })
   }
   async skillSources(scopeId: string, provider: "project" | "claude-code" | "codex"): Promise<SkillSourceRow[]> {
@@ -198,7 +199,7 @@ class HttpSquadAPI implements SquadAPI {
   restoreMotion(scopeId: string, expectedVersion: number) { return this.motionWrite(scopeId, false, false, expectedVersion) }
 
   async preview(file: File, scopeId: string): Promise<PackPreview> {
-    if (file.size > 512 * 1024) throw new SquadError("archive_too_large", "資料包超過 512 KiB 上限。", 413)
+    if (file.size > 512 * 1024) throw new SquadError("archive_too_large", catalogWord("literal", "63c65dff6ab8"), 413)
     const archiveBase64 = base64Of(new Uint8Array(await file.arrayBuffer()))
     const target = scopeId || "global"
     const reply = await request<{ archive_digest: string; preview_digest: string; preview_token: string; catalog_version: number;

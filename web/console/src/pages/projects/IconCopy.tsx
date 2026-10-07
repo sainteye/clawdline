@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useState } from "react"
 import { RefusalError } from "@clawdline/core"
 import type { Icon } from "@clawdline/contract"
@@ -33,7 +35,7 @@ export function IconCopy({ shown, changed }: { shown: boolean; changed: () => vo
     setPlaces([])
     void readProjectPlaces().then(answer => {
       if (active) { setPlaces(answer.places); setError("") }
-    }).catch(e => { if (active) setError(failureSentence(e, "無法完成圖示操作，請重試。")) })
+    }).catch(e => { if (active) setError(failureSentence(e, catalogWord("literal", "69ef68c71337"))) })
     return () => { active = false }
   }, [shown])
 
@@ -43,10 +45,10 @@ export function IconCopy({ shown, changed }: { shown: boolean; changed: () => vo
       sessionStorage.setItem(key, JSON.stringify(place.icon))
       setCopied(place.icon as Icon)
       setError("")
-      setMessage("已複製圖示。切換到目標機器後，回到 Projects 選擇目標專案並套用。")
+      setMessage(catalogWord("literal", "b956e61ad141"))
     } catch {
       // refusal-ok: only synchronous sessionStorage writes can throw here; no network operation is inside this block.
-      setError("瀏覽器無法暫存圖示，請允許此分頁使用儲存空間後重試。")
+      setError(catalogWord("literal", "2c7adeb9a241"))
     }
   }
 
@@ -56,43 +58,43 @@ export function IconCopy({ shown, changed }: { shown: boolean; changed: () => vo
     try {
       const result = await copyProjectIcon(place.id, copied, place.icon)
       setPlaces(rows => rows.map(p => p.id === place.id ? { ...p, icon: result.icon } : p))
-      setMessage(`已將圖示儲存到 ${place.label}。`)
+      setMessage(catalogFormat("template", "40fa08f129b0", [place.label]))
       changed()
     } catch (e) {
       setError(e instanceof RefusalError && e.code === "icon_changed"
-        ? "目標圖示已變更，請重新讀取並確認後再套用。"
-        : failureSentence(e, "無法完成圖示操作，請重試。"))
+        ? catalogWord("literal", "67778891527f")
+        : failureSentence(e, catalogWord("literal", "69ef68c71337")))
     }
     finally { setBusy(false) }
   }
 
   return <details className="project-icon-copy" hidden={!shown}>
-    <summary>複製專案圖示</summary>
-    <p>在來源機器選擇專案並複製圖示，再切換機器、選擇目標專案並套用。圖示保留在此分頁，直到清除或關閉分頁。</p>
-    <label>此機器的專案
+    <summary>{catalogWord("inline", "d32a04199db7")}</summary>
+    <p>{catalogWord("inline", "d3000d0899a0")}</p>
+    <label>{catalogWord("inline", "d4a5e9562cbf")}
       <select value={selected} disabled={busy} onChange={e => { setSelected(e.target.value); setMessage("") }}>
-        <option value="">選擇專案</option>
+        <option value="">{catalogWord("inline", "f7e540512d3c")}</option>
         {places.map(p => <option key={p.id} value={p.id}>{p.label} — {p.path}</option>)}
       </select>
     </label>
     <div className="project-icon-preview">
-      {place?.icon ? <span>目前圖示 <Mark icon={place.icon as Icon} cellPx={4} /></span> : null}
-      {copied && <span>已複製圖示 <Mark icon={copied} cellPx={4} /></span>}
+      {place?.icon ? <span>{catalogWord("inline", "5c552391038f")} <Mark icon={place.icon as Icon} cellPx={4} /></span> : null}
+      {copied && <span>{catalogWord("inline", "a6b2e420b2bc")} <Mark icon={copied} cellPx={4} /></span>}
     </div>
     <div className="project-icon-actions">
-      <button type="button" disabled={!place?.icon || busy} onClick={copy}>複製圖示</button>
-      <button type="button" disabled={!place?.icon || !copied || busy} onClick={() => void apply()}>{busy ? "儲存中…" : "將已複製圖示套用到此專案"}</button>
+      <button type="button" disabled={!place?.icon || busy} onClick={copy}>{catalogWord("inline", "4ac77ec01818")}</button>
+      <button type="button" disabled={!place?.icon || !copied || busy} onClick={() => void apply()}>{busy ? catalogWord("literal", "9a2a8b2fd5fc") : catalogWord("literal", "05fe9a9feb68")}</button>
       <button type="button" disabled={!copied || busy} onClick={() => {
         try { sessionStorage.removeItem(key); setCopied(null); setMessage("") }
         catch {
           // refusal-ok: this block only removes a browser sessionStorage key, not a remote resource.
-          setError("無法清除暫存圖示，請關閉此分頁。")
+          setError(catalogWord("literal", "cc98d5c65273"))
         }
-      }}>清除已複製圖示</button>
+      }}>{catalogWord("inline", "c87eb0f2a589")}</button>
       <button type="button" disabled={busy} onClick={() => {
         setSelected(""); setMessage("")
-        void readProjectPlaces().then(p => { setPlaces(p.places); setError("") }).catch(e => setError(failureSentence(e, "無法完成圖示操作，請重試。")))
-      }}>重新讀取</button>
+        void readProjectPlaces().then(p => { setPlaces(p.places); setError("") }).catch(e => setError(failureSentence(e, catalogWord("literal", "69ef68c71337"))))
+      }}>{catalogWord("inline", "358a13c304aa")}</button>
     </div>
     {message && <p role="status">{message}</p>}
     {error && <p role="alert">{error}</p>}

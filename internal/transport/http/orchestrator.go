@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/work"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The broker's routes.
@@ -311,7 +312,7 @@ func (s *Server) brokerLanding(w http.ResponseWriter, r *http.Request, id string
 		}
 	}
 	if len(unknown) > 0 {
-		writeAuthRefusal(w, http.StatusBadRequest, "bad_request",
+		writeRawAuthRefusal(w, http.StatusBadRequest, "bad_request",
 			"Unknown landing field(s): "+strings.Join(sortedStrings(unknown), ", ")+".")
 		return
 	}
@@ -1002,7 +1003,7 @@ func writeBrokerError(w http.ResponseWriter, err error) {
 		writeBrokerRefusal(w, ref)
 		return
 	}
-	writeAuthRefusal(w, http.StatusInternalServerError, "internal", err.Error())
+	writeRawAuthRefusal(w, http.StatusInternalServerError, "internal", err.Error())
 }
 
 func writeBrokerRefusal(w http.ResponseWriter, ref orchestrator.Refusal) {
@@ -1011,11 +1012,17 @@ func writeBrokerRefusal(w http.ResponseWriter, ref orchestrator.Refusal) {
 		"message":    ref.Message,
 		"request_id": requestID(),
 	}
+	if !ref.RawMessage {
+		if key := productcopy.HTTPRefusalKey(ref.Message); key != "" {
+			body["detail_key"] = key
+			markFixedRefusalKey(w, key)
+		}
+	}
 	for k, v := range ref.Extra {
 		// The envelope's own three keys are never overwritten by an extra: a
 		// refusal that could rename its own code is a refusal a caller cannot
 		// branch on.
-		if k == "code" || k == "message" || k == "request_id" {
+		if k == "code" || k == "message" || k == "request_id" || k == "detail_key" {
 			continue
 		}
 		body[k] = v

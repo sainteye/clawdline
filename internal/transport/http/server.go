@@ -203,7 +203,7 @@ func New(cfg config.Config) (*Server, error) {
 			// A refusal has to name which hop failed. "The upstream is not
 			// running" and "this daemon is broken" are different problems for
 			// the reader.
-			writeRefusalAbout(w, http.StatusBadGateway, "upstream_unreachable", err.Error(),
+			writeRawRefusalAbout(w, http.StatusBadGateway, "upstream_unreachable", err.Error(),
 				contract.Refusal{Upstream: upstream.String()})
 		}
 	}
@@ -570,6 +570,8 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/orchestrator/waits/"}, s.waitsRoute},
 		{Route{"*", "/v1/orchestrator/leases"}, s.leasesRoute},
 		{Route{"*", "/v1/orchestrator/leases/"}, s.leasesRoute},
+		{Route{"*", "/v1/orchestrator/pauses"}, s.sessionPausesRoute},
+		{Route{"*", "/v1/orchestrator/pauses/"}, s.sessionPausesRoute},
 		{Route{"*", "/v1/orchestrator/completions"}, s.completionsRoute},
 		{Route{"*", "/v1/orchestrator/completions/"}, s.completionsRoute},
 		{Route{"*", "/v1/orchestrator/detached-tasks"}, s.brokerDetached},

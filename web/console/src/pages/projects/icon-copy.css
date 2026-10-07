@@ -55,6 +55,8 @@
 .project-readiness-capability.is-missing .project-readiness-state,
 .project-readiness-capability.is-attention .project-readiness-state { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .project-readiness-action { width: 100%; min-height: 40px; margin-top: auto; }
+.project-readiness-capability.has-action { grid-template-columns: 8px minmax(0, 1fr) auto auto; }
+.project-readiness-row-action { min-height: 32px; padding: 4px 10px; font-size: 12px; white-space: nowrap; }
 .project-setup-refresh { margin-top: 14px; }
 .project-setup-loading, .project-setup-empty, .project-setup-dialog [role="alert"] { margin: 16px 0 0; color: var(--dim); line-height: 1.5; }
 .project-setup-dialog [role="alert"] { color: var(--bad); }
@@ -69,4 +71,5 @@
   .project-setup-heading > p { font-size: 13px; }
   .project-readiness-list { grid-template-columns: 1fr; }
   .project-readiness-action, .project-setup-refresh { min-height: 44px; }
+  .project-readiness-row-action { min-height: 40px; }
 }

@@ -2,7 +2,7 @@
 
 Clawdline Cloud is an optional way to read and act on a machine from the hosted console, including a phone. The Go daemon owns sessions, tasks, commands and local authorization. It opens an outbound connection to the Cloud relay; the hosted React console is built from this repository's `web/console`. Cloud is off by default, and a Cloud failure does not stop the local daemon.
 
-This page describes the **public repository's machine and browser code**. The account control plane, relay deployment, billing, retention and production operations belong to a private service repository and cannot be verified from this checkout. Its private `PROTOCOL.md` is the service-side contract; [cloud-wire.md](cloud-wire.md) records the public-side wire implementation and test evidence. Local tests are not proof of current production behavior.
+This page describes the **public repository's machine and browser code**. The account control plane, relay deployment, billing, retention and production operations belong to a private service repository and cannot be verified from this checkout. Its private `PROTOCOL.md` is the service-side contract; [cloud-wire.md](cloud-wire.md) specifies the public-side wire format; [the dated implementation record](records/cloud-wire-implementation-2026-09.md) holds test evidence. Local tests are not proof of current production behavior.
 
 ## Components and trust boundary
 

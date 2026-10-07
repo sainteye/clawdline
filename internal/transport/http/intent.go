@@ -64,7 +64,7 @@ func (s *Server) planSentence(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := int(CapacityLimit(capacity.IntentRequestBytes))
 	if len([]byte(body.Text)) > limit {
-		writeRefusal(w, http.StatusBadRequest, "bad_request",
+		writeRawRefusal(w, http.StatusBadRequest, "bad_request",
 			fmt.Sprintf("That was %d bytes and the limit is %d. This plans a sentence, not a document.", len([]byte(body.Text)), limit))
 		return
 	}

@@ -1117,7 +1117,7 @@ func (l *Link) authority(ctx context.Context, sender string, requiresWriteGate b
 		// The clock guard is not wired yet; the transport admits on the relay's
 		// own timestamp window today. Saying `true` here is reporting what is
 		// actually checked rather than claiming a check that does not run —
-		// see docs/cloud-wire.md §16.4.
+		// see docs/records/cloud-wire-implementation-2026-09.md §16.4.
 		ClockReady:     true,
 		RosterReadable: readable,
 	}

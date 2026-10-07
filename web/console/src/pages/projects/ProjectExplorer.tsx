@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useRef, useState } from "react"
 import type { ProjectPlace } from "../work/api.js"
 import { ProjectTreeIcon } from "./ProjectTreeIcon.js"
@@ -8,17 +10,17 @@ import "./project-explorer.css"
 function failure(reason: unknown): string {
   if (reason instanceof ProjectFileError) {
     switch (reason.code) {
-      case "not_text": return "這不是可預覽的 UTF-8 文字檔。請在機器上開啟。"
-      case "file_too_large": return "檔案超過文字預覽的大小上限。請在機器上開啟。"
-      case "unsafe_file": return "檔案或資料夾是連結，或已在讀取時變動。請重新讀取資料夾。"
-      case "file_permission": case "forbidden": return "這個連線沒有讀取權限。請在機器上檢查。"
-      case "file_not_found": return "檔案已移動或刪除。請重新讀取資料夾。"
-      case "project_not_found": return "專案已不在這台機器的清單中。請回專案列表重新選擇。"
-      case "cloud_not_carried": case "cloud_feature_unavailable": return "這台機器尚未提供檔案樹。請確認機器與 Cloud 的版本。"
-      default: return "目前無法讀取。請檢查機器與連線後重試。"
+      case "not_text": return catalogWord("literal", "ef78406e2d2a")
+      case "file_too_large": return catalogWord("literal", "3d56bf3cb7fb")
+      case "unsafe_file": return catalogWord("literal", "fffb2491d13a")
+      case "file_permission": case "forbidden": return catalogWord("literal", "2233fee94e8e")
+      case "file_not_found": return catalogWord("literal", "d244c8aec386")
+      case "project_not_found": return catalogWord("literal", "e04c8f261fd5")
+      case "cloud_not_carried": case "cloud_feature_unavailable": return catalogWord("literal", "bdfe8879aeee")
+      default: return catalogWord("literal", "febcaa56ae82")
     }
   }
-  return "目前無法讀取。請檢查機器與連線後重試。"
+  return catalogWord("literal", "febcaa56ae82")
 }
 
 function DirectoryRows({ listing, listings, loading, errors, selected, open, choose, retry }: {
@@ -36,18 +38,18 @@ function DirectoryRows({ listing, listings, loading, errors, selected, open, cho
       {entry.kind === "directory" ? <details className="project-explorer-folder" onToggle={event => { if (event.currentTarget.open) open(entry.path) }}>
         <summary><span aria-hidden="true" className="project-explorer-caret">▸</span><ProjectTreeIcon kind="folder" /><span>{entry.name}</span></summary>
         <div className="project-explorer-children">
-          {loading.has(entry.path) && <p role="status">正在讀取…</p>}
-          {errors[entry.path] && <p role="alert">{errors[entry.path]} <button type="button" onClick={() => retry(entry.path)}>重試</button></p>}
+          {loading.has(entry.path) && <p role="status">{catalogWord("inline", "a58b39df6cd2")}</p>}
+          {errors[entry.path] && <p role="alert">{errors[entry.path]} <button type="button" onClick={() => retry(entry.path)}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
           {listings[entry.path] && <DirectoryRows listing={listings[entry.path]} listings={listings} loading={loading} errors={errors} selected={selected} open={open} choose={choose} retry={retry} />}
         </div>
       </details> : entry.kind === "file" ? <button type="button" className="project-explorer-file" aria-current={selected === entry.path ? "true" : undefined} onClick={() => choose(entry)}>
         <ProjectTreeIcon kind="file" /><span>{entry.name}</span>
-      </button> : <span className="project-explorer-unavailable" title={entry.kind === "link" ? "連結不會從檔案樹開啟" : "不支援的檔案類型"}>
-        <ProjectTreeIcon kind={entry.kind} /><span>{entry.name}</span><small>{entry.kind === "link" ? "連結" : "無法預覽"}</small>
+      </button> : <span className="project-explorer-unavailable" title={entry.kind === "link" ? catalogWord("literal", "fafba231d972") : catalogWord("literal", "bdff2374d8c9")}>
+        <ProjectTreeIcon kind={entry.kind} /><span>{entry.name}</span><small>{entry.kind === "link" ? catalogWord("literal", "eacc3c13a4ba") : catalogWord("literal", "0bdbbebb7c1e")}</small>
       </span>}
     </li>)}
-    {listing.entries.length === 0 && <li className="project-explorer-empty">這個資料夾沒有檔案。</li>}
-    {listing.truncated && <li className="project-explorer-truncated" role="status">這個資料夾項目過多，僅顯示已讀取的部分。請在機器上查看其餘項目。</li>}
+    {listing.entries.length === 0 && <li className="project-explorer-empty">{catalogWord("inline", "b96e60969fd5")}</li>}
+    {listing.truncated && <li className="project-explorer-truncated" role="status">{catalogWord("inline", "03348feb5b04")}</li>}
   </ul>
 }
 
@@ -105,26 +107,26 @@ export function ProjectExplorer({ place }: { place: ProjectPlace }) {
   const root = listings[""]
   return <section className="project-explorer" aria-labelledby="project-explorer-title">
     <div className="project-explorer-head">
-      <div><h3 id="project-explorer-title">專案檔案</h3><p>逐層展開資料夾；選取檔案後才讀取文字內容。此處僅供閱讀，不會修改檔案。</p></div>
-      <button type="button" disabled={loading.has("")} onClick={() => void load("")}>重新讀取根目錄</button>
+      <div><h3 id="project-explorer-title">{catalogWord("inline", "3336bfb819f5")}</h3><p>{catalogWord("inline", "ea9cfe4f4afe")}</p></div>
+      <button type="button" disabled={loading.has("")} onClick={() => void load("")}>{catalogWord("inline", "9146d108b060")}</button>
     </div>
     <div className="project-explorer-layout">
-      <nav ref={nav} className="project-explorer-nav" aria-label={`${place.label} 的檔案樹`}>
+      <nav ref={nav} className="project-explorer-nav" aria-label={catalogFormat("template", "b744f91deceb", [place.label])}>
         <strong className="project-explorer-root">{place.label}</strong>
-        {loading.has("") && <p role="status">正在讀取資料夾…</p>}
-        {errors[""] && <p role="alert">{errors[""]} <button type="button" onClick={() => void load("")}>重試</button></p>}
+        {loading.has("") && <p role="status">{catalogWord("inline", "3b92a032b6cc")}</p>}
+        {errors[""] && <p role="alert">{errors[""]} <button type="button" onClick={() => void load("")}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
         {root && <DirectoryRows listing={root} listings={listings} loading={loading} errors={errors} selected={selected}
           open={directory => { if (!listings[directory]) void load(directory) }} choose={entry => void choose(entry)} retry={directory => void load(directory)} />}
       </nav>
       <div className="project-explorer-preview">
-        {!selected && <p className="project-explorer-hint">從左側選擇文字檔，內容會顯示在這裡。</p>}
+        {!selected && <p className="project-explorer-hint">{catalogWord("inline", "fb0d9c173c82")}</p>}
         {selected && <>
           <div className="project-explorer-preview-head">
             <div><h4 ref={heading} tabIndex={-1}>{selected.split("/").at(-1)}</h4><code>{selected}</code></div>
-            <button type="button" onClick={() => { const row = nav.current?.querySelector<HTMLButtonElement>('button[aria-current="true"]'); row?.scrollIntoView({ block: "nearest" }); row?.focus({ preventScroll: true }) }}>返回檔案列表</button>
+            <button type="button" onClick={() => { const row = nav.current?.querySelector<HTMLButtonElement>('button[aria-current="true"]'); row?.scrollIntoView({ block: "nearest" }); row?.focus({ preventScroll: true }) }}>{catalogWord("inline", "fdfd628f99b8")}</button>
           </div>
-          {fileLoading && <p role="status">正在讀取檔案…</p>}
-          {fileError && <p role="alert">{fileError} <button type="button" onClick={() => void choose({ name: selected.split("/").at(-1) ?? selected, path: selected, kind: "file" })}>重試</button></p>}
+          {fileLoading && <p role="status">{catalogWord("inline", "2b3d59f666b3")}</p>}
+          {fileError && <p role="alert">{fileError} <button type="button" onClick={() => void choose({ name: selected.split("/").at(-1) ?? selected, path: selected, kind: "file" })}>{catalogWord("inline", "7e59d0f16293")}</button></p>}
           {content && <pre className="project-explorer-text" tabIndex={0}>{content.text}</pre>}
         </>}
       </div>

@@ -86,11 +86,16 @@ function document() {
   const html = readFileSync(join(dist, "index.html"), "utf8")
   const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
   words.lang = "zh-Hant"; words.dir = "ltr"
-  return html.replace("<!-- clawdline:strings -->", "<script>window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>").replace("<!-- clawdline:cloud -->", "")
+  return html.replace("<!-- clawdline:strings -->", "<script>localStorage.setItem('ui_language','zh-Hant');window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>").replace("<!-- clawdline:cloud -->", "")
 }
 function fixture(): Server {
   return createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://fixture").pathname
+    if (path === "/v1/strings") {
+      const tag = new URL(req.url ?? "/", "http://fixture").searchParams.get("lang")
+      if (tag !== "zh-Hant") return json(res, 400, { error: "unsupported_language" })
+      return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+    }
     if (path === "/v1/squad/catalog") {
       if (req.method === "POST") {
         const chunks: Buffer[] = []
@@ -582,7 +587,8 @@ test("an existing receipt and a read stay quiet while a new bound applied receip
       if (Date.now() > deadline) throw new Error("new bound applied receipt did not animate")
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
-    assert.match(await evaluate('document.querySelector("#squad .squad-use").textContent'), /角色 Session 回報使用 草稿整理/)
+    assert.equal(await evaluate('document.querySelector("#squad .squad-use").textContent'), '角色 Session 回報已使用「草稿整理」。')
+    assert.equal(await evaluate('document.querySelector("#squad .squad-use").getAttribute("lang")'), 'zh-Hant')
     await new Promise((resolve) => setTimeout(resolve, 2500))
     bindingDelayMs = 700
     const before = bindingReads
@@ -809,8 +815,8 @@ test("a lost create reply and failed role write recover without another catalog 
       }
       await evaluate('document.querySelector("#squad dialog[aria-labelledby=squad-skill-dialog-title] .squad-actions button").click()')
       const secondDeadline = Date.now() + 5_000
-      while (!(await evaluate('document.querySelector("#squad .squad-dialog-error")?.textContent.includes("目錄已建立")'))) {
-        if (Date.now() > secondDeadline) throw new Error("partial success was not shown")
+      while (!(await evaluate('(() => { const text = document.querySelector("#squad .squad-dialog-error")?.textContent || ""; return text.includes("技能已加入目錄") && text.includes("尚未確認是否加入角色設定") })()'))) {
+        if (Date.now() > secondDeadline) throw new Error("partial success was not shown: " + await evaluate('document.querySelector("#squad .squad-dialog-error")?.textContent'))
         await new Promise((resolve) => setTimeout(resolve, 50))
       }
       assert.equal(await evaluate('document.querySelector("#squad .squad-skill-form input").value'), "可恢復技能")

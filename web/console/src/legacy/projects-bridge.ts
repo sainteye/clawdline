@@ -28,6 +28,26 @@ import { makeJSONFetch } from "@clawdline/core/refusal"
 import { bindProjectsPage as bindProjectsPageOriginal, readProjectPlaces } from "./js/view/projects.js"
 import { openBoard } from "./board-bridge.js"
 import { completeProjectSummary, currentProjectSummary } from "../pages/projects/project-list.js"
+import { catalogWord } from "../catalog.js"
+
+let projectReadRefusal: unknown = null
+let projectReadAttempt = 0
+let worktreeReadRefusal: unknown = null
+let worktreeReadAttempt = 0
+
+/** The copied renderer consumes the error code; its host may also show the explicit wire detail. */
+export const latestProjectReadRefusal = (): unknown => projectReadRefusal
+export const latestWorktreeReadRefusal = (): unknown => worktreeReadRefusal
+
+async function rememberWorktreeRead<T>(read: () => Promise<T>): Promise<T> {
+  const attempt = ++worktreeReadAttempt
+  worktreeReadRefusal = null
+  try { return await read() }
+  catch (error) {
+    if (attempt === worktreeReadAttempt) worktreeReadRefusal = error
+    throw error
+  }
+}
 
 /** `net/client.js`'s LOCAL_MACHINE: a page served by this daemon is looking at this machine. */
 const LOCAL_MACHINE = "this-mac"
@@ -77,6 +97,20 @@ const jsonFetch = makeJSONFetch({
 
 type Place = { id: string; boardProjectId?: string; path?: string; machine?: string }
 
+export interface WorktreeSourceRow {
+  worktreeId?: string
+  branch?: string
+  target?: string
+  owner?: { title?: string } | null
+  context?: { purpose?: string; state?: string; originSession?: { title?: string } } | null
+  cleanup?: { blockers?: Array<{ code?: string }> } | null
+}
+let latestWorktreeRows = new Map<string, WorktreeSourceRow>()
+
+export function worktreeSourceRow(id: string): WorktreeSourceRow | undefined {
+  return latestWorktreeRows.get(id)
+}
+
 const post = (body: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -112,10 +146,14 @@ const transport = {
   },
   projectWorktreeLifecycle: async (project: string) => {
     const answer = await jsonFetch("/v1/projects/" + encodeURIComponent(project) + "/worktrees")
+    const rows = (answer.projectWorktreeLifecycle as { rows?: WorktreeSourceRow[] } | undefined)?.rows
+    latestWorktreeRows = new Map(Array.isArray(rows) ? rows.filter(row => row?.worktreeId).map(row => [row.worktreeId!, row]) : [])
     return { ...answer, machine: LOCAL_MACHINE }
   },
   projectWorktreeLifecycleRefresh: async (project: string) => {
     const answer = await jsonFetch("/v1/projects/" + encodeURIComponent(project) + "/worktrees/refresh", post({}))
+    const rows = (answer.projectWorktreeLifecycle as { rows?: WorktreeSourceRow[] } | undefined)?.rows
+    latestWorktreeRows = new Map(Array.isArray(rows) ? rows.filter(row => row?.worktreeId).map(row => [row.worktreeId!, row]) : [])
     return { ...answer, machine: LOCAL_MACHINE }
   },
 }
@@ -127,13 +165,11 @@ const transport = {
  */
 function applyBoardMode(board: { enabled?: unknown }): void {
   if (typeof board?.enabled !== "boolean") return
-  const zh = /^zh/i.test(document.documentElement.lang || navigator.language || "")
-  const words = (en: string, chinese: string) => (zh ? chinese : en)
   const lede = document.getElementById("projects-lede")
   if (lede) {
     lede.textContent = board.enabled
-      ? words("Choose a project to see its work, progress and results.", "選擇專案，了解正在進行的工作與已落地的成果。")
-      : words("Directories an assistant has actually been run in, and that are still there.", "assistant 真的跑過、而且還在的目錄。")
+      ? catalogWord("projects", "boardLede")
+      : catalogWord("next", "projectsLede")
   }
   document.documentElement.dataset.boardMode = board.enabled ? "board" : "standard"
 }
@@ -154,27 +190,35 @@ export function bindProjects(doc: Document, navigate: (name: string) => void): P
       // Supply that flag only to the catalog read; no Projects-page environment
       // receives a worktree-usage reader, so the removed projection is unreachable.
       places: async () => {
-        const answer = await (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<{
-          places?: Array<{ summaryCoverage?: unknown; activityReadStatus?: string; activitySourcePartial?: boolean }>
-        }>)(
-          { ...transport, projectWorktrees: () => Promise.resolve({}) },
-          applyBoardMode,
-        )
-        // The catalog's Project membership can be an older/stale read while
-        // the v2 item summary was read now. Qualify the activity from its own
-        // coverage instead of inheriting the retired catalog's read state.
-        for (const place of answer.places ?? []) {
-          if (!completeProjectSummary(place.summaryCoverage)) continue
-          place.activityReadStatus = "ready"
-          place.activitySourcePartial = false
+        const attempt = ++projectReadAttempt
+        projectReadRefusal = null
+        try {
+          const answer = await (readProjectPlaces as (t: unknown, onMode?: unknown) => Promise<{
+            places?: Array<{ summaryCoverage?: unknown; activityReadStatus?: string; activitySourcePartial?: boolean }>
+          }>)(
+            { ...transport, projectWorktrees: () => Promise.resolve({}) },
+            applyBoardMode,
+          )
+          // The catalog's Project membership can be an older/stale read while
+          // the v2 item summary was read now. Qualify the activity from its own
+          // coverage instead of inheriting the retired catalog's read state.
+          for (const place of answer.places ?? []) {
+            if (!completeProjectSummary(place.summaryCoverage)) continue
+            place.activityReadStatus = "ready"
+            place.activitySourcePartial = false
+          }
+          return answer
+        } catch (error) {
+          if (attempt === projectReadAttempt) projectReadRefusal = error
+          throw error
         }
-        return answer
       },
       openBoard: (place: Place) => openBoard(place.boardProjectId, null, place),
       lifecycleAvailable: () => true,
-      projectWorktreeLifecycle: (place: Place) => transport.projectWorktreeLifecycle(place.boardProjectId || place.id),
+      projectWorktreeLifecycle: (place: Place) => rememberWorktreeRead(() =>
+        transport.projectWorktreeLifecycle(place.boardProjectId || place.id)),
       projectWorktreeLifecycleRefresh: (place: Place) =>
-        transport.projectWorktreeLifecycleRefresh(place.boardProjectId || place.id),
+        rememberWorktreeRead(() => transport.projectWorktreeLifecycleRefresh(place.boardProjectId || place.id)),
       drawIcon,
       tint,
       navigate,

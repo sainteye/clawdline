@@ -2,13 +2,11 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -43,7 +41,7 @@ func (s *Server) tasksList(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.tasksPayload(r.Context(), cursor, limit)
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
 	if state := q.Get("state"); state != "" {
@@ -217,50 +215,36 @@ func onScreen(items []session.Session) []swiftstore.OnScreen {
 // strings answers with the localisation catalog, from the console bundle.
 //
 // The catalog ships beside the console rather than inside this binary because
-// it belongs to the screen: the same copy is what the Swift app's console
-// reads, copied under web/console/public/strings, and the drift guard compares
-// them. Serving a second, independently maintained set of words would give the
-// two apps different names for the same thing, which is the failure this whole
-// replication exists to avoid.
+// it belongs to the screen. Local and hosted consoles use the same catalogs
+// under web/console/public/catalogs, including the metadata and partial
+// secondary-language policy.
 //
-// An empty answer is honest and is what a build with no catalog gets: the
-// console has built-in English and uses it, which is a visible degradation
-// rather than a fault.
+// An unavailable English catalog answers a typed 503. Invalid selected
+// catalogs answer with the complete English catalog and its actual language.
 //
 // This is the one route with no generated type, because its keys are the
 // catalog's own and a schema listing them would be the catalog.
 func (s *Server) strings(w http.ResponseWriter, r *http.Request) {
-	lang := r.URL.Query().Get("lang")
-	if lang == "" {
-		lang = defaultCatalog
-	}
-	// The name is used as a path segment, so anything that is not a plain tag
-	// is refused rather than cleaned: a "fixed" path is a path somebody did not
-	// ask for.
-	for _, ch := range lang {
-		if !(ch == '-' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+	values, present := r.URL.Query()["lang"]
+	lang := ""
+	if present {
+		if len(values) != 1 {
 			writeRefusal(w, http.StatusBadRequest, "bad_request", "that is not a language tag")
 			return
 		}
+		lang = values[0]
 	}
-	root := WebRoot()
-	if root == "" {
-		writeJSON(w, map[string]string{})
+	if !present {
+		lang = defaultCatalog
+	}
+	if !validCatalogTag(lang) {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "that is not a language tag")
 		return
 	}
-	body, err := os.ReadFile(filepath.Join(root, "strings", lang+".json"))
+	catalog, err := loadCatalog(WebRoot(), nextconfig.ResolveProductLanguage(lang))
 	if err != nil {
-		writeJSON(w, map[string]string{})
+		writeRefusal(w, http.StatusServiceUnavailable, "catalog_unreadable", "English console catalog is unavailable")
 		return
 	}
-	var catalog map[string]any
-	if err := json.Unmarshal(body, &catalog); err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "catalog_unreadable", err.Error())
-		return
-	}
-	// The page sets its own lang and dir from these, so they travel with the
-	// words rather than being guessed at the other end.
-	catalog["lang"] = lang
-	catalog["dir"] = "ltr"
 	writeJSON(w, catalog)
 }

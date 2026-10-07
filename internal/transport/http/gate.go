@@ -24,6 +24,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // The gate is in front of every route, and it is the Swift app's
@@ -391,7 +392,9 @@ func machineScoped(p string) bool {
 	}
 	if strings.HasPrefix(p, "/v1/projects/") {
 		parts := strings.Split(strings.TrimPrefix(p, "/v1/projects/"), "/")
-		return len(parts) >= 2 && parts[1] == "worktrees"
+		// A Project's shared memory: a session of either assistant reads
+		// and writes it through `clawdline memory` (project_memory.go).
+		return len(parts) >= 2 && (parts[1] == "worktrees" || parts[1] == "memory")
 	}
 	return false
 }
@@ -850,7 +853,20 @@ func writeAuthRefusal(w http.ResponseWriter, status int, code, message string) {
 	writeAuthError(w, status, contract.AuthError{Code: code, Message: message})
 }
 
+func writeRawAuthRefusal(w http.ResponseWriter, status int, code, message string) {
+	writeAuthErrorWithSource(w, status, contract.AuthError{Code: code, Message: message}, false)
+}
+
 func writeAuthError(w http.ResponseWriter, status int, e contract.AuthError) {
+	writeAuthErrorWithSource(w, status, e, true)
+}
+
+func writeAuthErrorWithSource(w http.ResponseWriter, status int, e contract.AuthError, fixed bool) {
+	e.DetailKey = ""
+	if fixed {
+		e.DetailKey = productcopy.HTTPRefusalKey(e.Message)
+	}
+	markFixedRefusalKey(w, e.DetailKey)
 	e.RequestID = requestID()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

@@ -66,3 +66,27 @@ func TestSessionLanguageFollowsClawdlineAndDefersToThePersonsClaudeSettings(t *t
 		t.Fatalf("with no reader, SessionLanguage = %q, want none", got)
 	}
 }
+
+func TestProductLanguageDoesNotChangeAgentLanguage(t *testing.T) {
+	dir := t.TempDir()
+	b := &Broker{Dir: dir}
+	if got := b.ProductLanguage(); got != "en" {
+		t.Fatalf("new installation product language = %q", got)
+	}
+	if _, err := nextconfig.Open(dir).Set(map[string]any{"language": "zh-Hant", "voice_language": "ja", "product_language": "de"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.ProductLanguage(); got != "de" {
+		t.Fatalf("product language = %q", got)
+	}
+	if got := b.SessionLanguage("codex"); got != "zh-Hant" {
+		t.Fatalf("agent language changed to %q", got)
+	}
+	values, err := nextconfig.Open(dir).Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := values.String("voice_language"); got != "ja" {
+		t.Fatalf("voice preference changed to %q", got)
+	}
+}

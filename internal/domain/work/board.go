@@ -775,14 +775,21 @@ type Command struct {
 // Refusal is a command the rules will not carry out, and why. Nothing was
 // written.
 type Refusal struct {
-	Status  int
-	Code    string
-	Message string
+	Status     int
+	Code       string
+	Message    string
+	RawMessage bool
 }
 
 func (r *Refusal) Error() string { return r.Code + ": " + r.Message }
 
 func refuse(status int, code, format string, args ...any) *Refusal {
+	return &Refusal{Status: status, Code: code, Message: fmt.Sprintf(format, args...), RawMessage: len(args) > 0}
+}
+
+// refuseFixed is for a formatted sentence whose arguments are authored
+// constants, so the rendered result is fixed copy on every request.
+func refuseFixed(status int, code, format string, args ...any) *Refusal {
 	return &Refusal{Status: status, Code: code, Message: fmt.Sprintf(format, args...)}
 }
 

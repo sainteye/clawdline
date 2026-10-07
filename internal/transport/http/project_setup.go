@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/devstack"
+	"github.com/sainteye/clawdline/internal/adapters/projectfiles"
 	"github.com/sainteye/clawdline/internal/adapters/projectlinks"
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -77,5 +78,24 @@ func projectSetup(cwd, repo string, iconSource icon.Source) *contract.ProjectSet
 	case devstack.InspectionUnreadable:
 		out.Servers = contract.ProjectServerSetupAttention
 	}
+	out.Unify, out.UnifyCount = unifySetup(cwd)
 	return out
+}
+
+// unifySetup is the readiness card's unify row: the same Plan the unify route
+// answers with (docs/project-files.md, Unify), which reads the repository
+// root and writes nothing. It is computed inline: Plan is bounded by
+// projectfiles.MaxScanEntries per skill tree, and on this repository it added
+// too little to the places answer to be worth a lazy read (the measurement is
+// in docs/project-files.md). A place that cannot be planned is unknown,
+// never unified.
+func unifySetup(cwd string) (contract.ProjectUnifyStatus, int64) {
+	plan, err := projectfiles.Plan(cwd)
+	if err != nil {
+		return contract.ProjectUnifyStatusUnknown, 0
+	}
+	if plan.Status != contract.ProjectUnifyStatusDrifting {
+		return plan.Status, 0
+	}
+	return plan.Status, int64(len(plan.Actions) + len(plan.Conflicts))
 }

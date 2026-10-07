@@ -41,7 +41,7 @@ Call it `BIN` below, and substitute the real path; do not run `BIN` literally.
 BIN guide              # the core every session needs, and a list of the other parts
 BIN guide dispatch     # one part, when the work in front of you needs it
 BIN guide all          # the whole guide
-BIN guide zh-TW        # for a person reading along; agents read the English guide
+BIN guide zh-Hant      # Taiwan Traditional Chinese; zh-TW remains an alias
 BIN guide -sections    # the names of the parts
 ```
 

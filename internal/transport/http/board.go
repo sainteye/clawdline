@@ -206,7 +206,7 @@ func (s *Server) boardWrite(w http.ResponseWriter, r *http.Request) {
 func writeBoardEnvelope(w http.ResponseWriter, env boardstore.Envelope, status int, applied bool) {
 	body, err := json.Marshal(map[string]any{"board": env})
 	if err != nil {
-		writeRefusal(w, http.StatusInternalServerError, "internal", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 	if len(body) > boardstore.MaximumResponseBytes {
@@ -233,10 +233,10 @@ func writeBoardRefusal(w http.ResponseWriter, err error, applied bool) {
 		if applied {
 			message = "The command was saved, but its view is unavailable: " + message
 		}
-		writeRefusal(w, refusal.Status, refusal.Code, message)
+		writeRawRefusal(w, refusal.Status, refusal.Code, message)
 		return
 	}
-	writeRefusal(w, http.StatusServiceUnavailable, "board_unavailable", err.Error())
+	writeRawRefusal(w, http.StatusServiceUnavailable, "board_unavailable", err.Error())
 }
 
 func clampInt(raw string, fallback, low, high int) int {

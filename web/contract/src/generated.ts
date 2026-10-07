@@ -293,6 +293,12 @@ export interface AuthError {
    * not_found, store_unavailable, unsupported_media_type.
    */
   code: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English message. Dynamic
+   * messages have no key.
+   */
+  detail_key?: string
   message: string
 
   /**
@@ -2514,6 +2520,12 @@ export interface CloseReason {
  */
 export interface CloseRefusal {
   detail: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English detail. Dynamic
+   * details have no key.
+   */
+  detail_key?: string
   error: string
   reasons: CloseReason[]
 }
@@ -3717,8 +3729,9 @@ export interface LeaseRequest {
 export type LeaseResource =
     "heavy_compile"
   | "landing"
+  | "daemon_restart"
 
-export const LeaseResourceValues: readonly LeaseResource[] = ["heavy_compile", "landing"] as const
+export const LeaseResourceValues: readonly LeaseResource[] = ["heavy_compile", "landing", "daemon_restart"] as const
 
 export interface LeaseWaiter {
   holder: string
@@ -4565,6 +4578,86 @@ export interface ProjectLinksReply {
 }
 
 /**
+ * One entry in full: the body of POST /v1/projects/:id/memory and of PUT
+ * /v1/projects/:id/memory/:name, whose name must be the path's, and the answer to
+ * GET /v1/projects/:id/memory/:name.
+ */
+export interface ProjectMemoryEntry {
+  /**
+   * Markdown, at most 64 KiB.
+   */
+  body: string
+  description: string
+  name: string
+  type: ProjectMemoryType
+}
+
+/**
+ * GET /v1/projects/:id/memory: every entry, and the index a launched session is
+ * given. An index cut at its 8 KiB bound says so in index_cut and in its last line;
+ * entries always lists every entry.
+ */
+export interface ProjectMemoryList {
+  entries: ProjectMemorySummary[]
+
+  /**
+   * Empty when there are no entries.
+   */
+  index: string
+  index_cut: boolean
+
+  /**
+   * The repository key the store is filed under: the key the broker names worktree
+   * directories by.
+   */
+  project_key: string
+}
+
+/**
+ * What a write did. `unchanged` is the same entry sent again, which is how a
+ * retried add or update is answered.
+ */
+export type ProjectMemoryOutcome =
+    "created"
+  | "updated"
+  | "unchanged"
+  | "forgotten"
+
+export const ProjectMemoryOutcomeValues: readonly ProjectMemoryOutcome[] = ["created", "updated", "unchanged", "forgotten"] as const
+
+/**
+ * One entry as a listing shows it, without its body.
+ */
+export interface ProjectMemorySummary {
+  /**
+   * One line, at most 512 bytes.
+   */
+  description: string
+
+  /**
+   * Lowercase letters, digits and single hyphens, at most 64 bytes.
+   */
+  name: string
+  type: ProjectMemoryType
+}
+
+/**
+ * An entry's kind, the four Claude Code's auto-memory uses.
+ */
+export type ProjectMemoryType =
+    "user"
+  | "feedback"
+  | "project"
+  | "reference"
+
+export const ProjectMemoryTypeValues: readonly ProjectMemoryType[] = ["user", "feedback", "project", "reference"] as const
+
+export interface ProjectMemoryWriteAnswer {
+  name: string
+  outcome: ProjectMemoryOutcome
+}
+
+/**
  * What the one git read found, which is a different question from what it produced.
  * A deploy row is a file named after the repository's GitHub remote, so four of
  * these five answers produce no deploy row — and only `unreadable` leaves it
@@ -4616,6 +4709,20 @@ export interface ProjectSetup {
   server_count: number
   servers: ProjectServerSetup
   sync: ProjectSyncSetup
+
+  /**
+   * Whether this Project's Claude and Codex sessions read the same rules and
+   * skills: the status of the unify plan (GET /v1/projects/:id/unify), read from
+   * disk with the same bounded, read-only Plan. Absent from a daemon older than
+   * this field, which a console shows as unknown.
+   */
+  unify?: ProjectUnifyStatus
+
+  /**
+   * With `unify: drifting`, how many planned changes and conflicts the plan holds;
+   * each counts once. Absent otherwise.
+   */
+  unify_count?: number
 }
 
 /**
@@ -5032,6 +5139,12 @@ export const RecordedLandingSourceValues: readonly RecordedLandingSource[] = ["t
  */
 export interface Refusal {
   detail: string
+
+  /**
+   * Optional stable catalog key for this exact fixed English detail. Dynamic
+   * details have no key.
+   */
+  detail_key?: string
   error: string
   route?: string
   upstream?: string
@@ -6294,6 +6407,49 @@ export interface SessionModel {
 }
 
 /**
+ * One durable pause and wake receipt. Safe point is receiver acknowledged, never
+ * inferred from delivery.
+ */
+export interface SessionPause {
+  accepted_at: number
+  delivered_at?: number
+  delivery_error?: string
+  id: string
+  observed_at?: number
+  reason: string
+  requester_session_id: string
+  resumed_at?: number
+  safe_at?: number
+  state: string
+  target_session_id: string
+  wake_condition: string
+  wake_delivered_at?: number
+  wake_error?: string
+  wake_requested_at?: number
+}
+
+/**
+ * GET /v1/orchestrator/pauses.
+ */
+export interface SessionPauseList {
+  at: number
+  pauses: SessionPause[]
+  source: string
+}
+
+/**
+ * POST /v1/orchestrator/pauses. Only the registered online coordinator may request
+ * a pause. A duplicate request_id with identical details is idempotent.
+ */
+export interface SessionPauseRequest {
+  reason: string
+  request_id: string
+  requester_session_id: string
+  target_session_id: string
+  wake_condition: string
+}
+
+/**
  * One assistant session. Fields that cannot be supported are absent rather than
  * invented; a reader that handles absence handles this too.
  */
@@ -6574,7 +6730,7 @@ export interface SettingsRequest {
   hotkey: string | null
 
   /**
-   * `auto` or a language tag the catalog resolves.
+   * Existing agent and Board authoring language and voice auto fallback.
    */
   language: string | null
 
@@ -6648,6 +6804,12 @@ export interface SettingsRequest {
    * stored setting unchanged; absence in the settings file defaults to true.
    */
   planning_gate: boolean | null
+
+  /**
+   * One of the nine shipped product-copy tags; changes daemon notifications and
+   * human-readable CLI copy only.
+   */
+  product_language: string | null
 
   /**
    * Notify when a session reports a delivery.
@@ -6814,8 +6976,8 @@ export interface SettingsSnapshot {
   hotkey: string | null
 
   /**
-   * `auto`, or one of the catalog's tags (`zh-Hant`, `en`, …). This build ships
-   * only zh-Hant; the key is written so a later one can read it.
+   * Existing agent and Board authoring language and voice auto fallback. Its stored
+   * value and behavior are preserved independently of product language.
    */
   language: string | null
 
@@ -6904,6 +7066,12 @@ export interface SettingsSnapshot {
    * snapshot.
    */
   planning_gate: boolean | null
+
+  /**
+   * Daemon notifications and human-readable CLI copy. Absent, malformed or
+   * unsupported saved values render as English.
+   */
+  product_language: string | null
 
   /**
    * Notify when a session reports a delivery.

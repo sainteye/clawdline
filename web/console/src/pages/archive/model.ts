@@ -52,7 +52,7 @@ function stamp(at: number, timeZone?: string): string {
 /** What became of one entry's Restore press. */
 export type Outcome =
   | { kind: "restoring" }
-  | { kind: "failed"; code?: string; message?: string }
+  | { kind: "failed"; code?: string; message?: string; messageLang?: string }
 
 export type ArchiveEntryWord =
   | "archiveRestoring"

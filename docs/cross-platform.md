@@ -368,7 +368,7 @@ the thing they already did.* **What is missing is not code but guidance.**
 
 | | Where the executable comes from | Search paths (already written) | Where the model comes from | Model paths (already written) |
 |---|---|---|---|---|
-| **macOS** | `brew install whisper-cpp` | `/opt/homebrew/bin`, `/usr/local/bin` | `download-ggml-model.sh`, or reuse one the old app downloaded | `~/.cache/whisper`, `~/Library/Application Support/Clawdline/models` |
+| **macOS** | `brew install whisper-cpp` | `/opt/homebrew/bin`, `/usr/local/bin` | `download-ggml-model.sh`; an old app model can be selected explicitly with `whisper_model` | `~/.cache/whisper`, `~/models` |
 | **Linux** | **No mainstream distribution package.** In practice you build it: `git clone whisper.cpp && cmake -B build && cmake --build build -j` | `/usr/local/bin`, `/usr/bin`, `/opt/whisper.cpp/build/bin`, `~/.local/bin`, `~/whisper.cpp/build/bin` | Same as above | `~/.cache/whisper`, `~/.local/share/whisper`, `/usr/share/whisper`, `/opt/whisper.cpp/models` |
 | **Windows** | The official release has a prebuilt zip; unzip it into `%LOCALAPPDATA%\whisper.cpp\` | `%LOCALAPPDATA%\whisper.cpp[\bin]`, `%ProgramFiles%\whisper.cpp[\bin]` | Same as above | `%LOCALAPPDATA%\whisper`, `%LOCALAPPDATA%\whisper.cpp\models` |
 

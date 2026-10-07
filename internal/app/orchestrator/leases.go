@@ -42,6 +42,7 @@ import (
 const (
 	ResourceCompile = "heavy_compile"
 	ResourceLanding = "landing"
+	ResourceRestart = "daemon_restart"
 	// compileKey is the compile slot's one key: the machine has one slot.
 	compileKey = "machine"
 )
@@ -224,6 +225,11 @@ func leaseKey(req LeaseRequest) (string, error) {
 			return "", refuse(http.StatusBadRequest, "bad_lease", "The compile slot is the machine's; it takes no checkout.")
 		}
 		return compileKey, nil
+	case ResourceRestart:
+		if req.Checkout != "" {
+			return "", refuse(http.StatusBadRequest, "bad_lease", "The daemon restart slot takes no checkout.")
+		}
+		return compileKey, nil
 	case ResourceLanding:
 		dir := strings.TrimSpace(req.Checkout)
 		if dir == "" || !filepath.IsAbs(dir) {
@@ -234,10 +240,10 @@ func leaseKey(req LeaseRequest) (string, error) {
 		}
 		return filepath.Clean(dir), nil
 	case "":
-		return "", refuse(http.StatusBadRequest, "bad_lease", "resource is required: heavy_compile or landing.")
+		return "", refuse(http.StatusBadRequest, "bad_lease", "resource is required: heavy_compile, landing or daemon_restart.")
 	}
 	return "", refuseWith(http.StatusBadRequest, "unknown_resource",
-		"This machine leases heavy_compile and landing only.", map[string]any{"resource": req.Resource})
+		"This machine leases heavy_compile, landing and daemon_restart only.", map[string]any{"resource": req.Resource})
 }
 
 func validLeaseRequest(req LeaseRequest) error {
@@ -335,7 +341,7 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 		}
 		if mine < 0 {
 			if line := b.leaseLine(); len(waiters) >= line {
-				return change, refuseWith(http.StatusTooManyRequests, "queue_full",
+				return change, refuseRawWith(http.StatusTooManyRequests, "queue_full",
 					fmt.Sprintf("%d askers are already waiting for this lease; nothing was queued.", line),
 					map[string]any{"retry_after": 30, "limit": line})
 			}
@@ -353,7 +359,7 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 				position++
 			}
 		}
-		if holderFree && position == 1 {
+		if holderFree && len(st.Blockers) == 0 && position == 1 {
 			w := waiters[mine]
 			lease := uuidLike()
 			change.SetHolder = &store.LeaseRow{
@@ -371,6 +377,9 @@ func (b *Broker) Acquire(ctx context.Context, req LeaseRequest) (LeaseAnswer, er
 		why := "queued_behind_others"
 		if position == 1 {
 			why = "holder_proving"
+			if len(st.Blockers) > 0 {
+				why = "conflicting_resource_held"
+			}
 			if st.Holder != nil {
 				if p, ok := proofs[st.Holder.RequestID]; ok && p.verdict == "unknown" {
 					why = "evidence_unknown"

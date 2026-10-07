@@ -73,7 +73,7 @@ function language(): "en" | "zh-Hant" {
     (typeof document !== "undefined" && document.documentElement.lang) ||
     (typeof navigator !== "undefined" && navigator.language) ||
     "en"
-  return lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"
+  return /^zh-hant(?:-|$)/i.test(lang) || /^zh-(?:tw|hk|mo)(?:-|$)/i.test(lang) ? "zh-Hant" : "en"
 }
 
 /** The persona's name in the page's language. */

@@ -56,7 +56,7 @@ func (s *Server) machineUsageRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusNotImplemented, "machine_usage_unsupported", err.Error())
 		return
 	case err != nil:
-		writeRefusal(w, http.StatusServiceUnavailable, "machine_usage_unreadable", err.Error())
+		writeRawRefusal(w, http.StatusServiceUnavailable, "machine_usage_unreadable", err.Error())
 		return
 	}
 	writeJSON(w, machineUsageWire(u, func(key string) (contract.MachineUsageGroup, bool) {

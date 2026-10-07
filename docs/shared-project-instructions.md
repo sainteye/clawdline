@@ -1,9 +1,9 @@
 # Shared project instructions: one source a Project's Claude and Codex sessions both read
 
-Status: **partly built, 2026-10-06.** The rules-and-skills part is built as **unify**
+Status: **built, 2026-10-07.** The rules-and-skills part is built as **unify**
 (`clawdline project unify`, `GET`/`POST /v1/projects/{place}/unify`, `/clawdline unify`;
-`docs/project-files.md`, Unify). Project memory (§2.3, §4 "Memory index in every launch",
-`clawdline memory`) is the remaining part and is not built. Claims about how Clawdline behaves
+`docs/project-files.md`, Unify). Project memory (§2.3, §4) is built as `clawdline memory`
+(`docs/project-memory.md`); folding memory entries into `unify --check` is not. Claims about how Clawdline behaves
 today cite the file and line they were read from; anything not checked is labelled *assumption*.
 
 ## 1. The problem
@@ -18,7 +18,7 @@ files, and nothing keeps them together:
 | Project skills | `.claude/skills/<name>/SKILL.md` | `.agents/skills`, `.codex/skills` | Browses each provider's folders separately to build the squad catalog (`internal/transport/http/squad_skill_sources.go:55-82`); copies nothing across |
 | The Clawdline skill | `~/.claude/skills/clawdline/SKILL.md` | — | Installed for Claude only (`internal/adapters/skillfile/skillfile.go:87-89`) |
 | Role / persona prompt | System prompt via `--append-system-prompt-file` (`internal/adapters/projects/launch.go:194,288`) | A `-c developer_instructions` sentence telling Codex to read the file (`launch.go:198,279-285`), which also replaces the person's own `developer_instructions` for that session (`docs/personas.md:206-209`) | Same file, two delivery strengths |
-| Project memory | Claude's own auto-memory under `~/.claude/projects/<slug>/memory/` (*assumption*: Claude Code behaviour, not Clawdline's) | Nothing equivalent found | None. No route, store or launch input (only the ledger classifies reads of `MEMORY.md`, `internal/adapters/transcript/ledger.go:1171-1172`) |
+| Project memory | Claude's own auto-memory under `~/.claude/projects/<slug>/memory/` (*assumption*: Claude Code behaviour, not Clawdline's) | Nothing equivalent found | Before 2026-10-07: none. Now one store per Project (`docs/project-memory.md`) |
 
 The result, seen on this repository: `CLAUDE.md` is a pointer to `AGENTS.md` by hand convention
 (`CLAUDE.md:1`), there is no `.agents/` directory, and whatever Claude's auto-memory has learned
@@ -55,8 +55,8 @@ assistant asked with its file tools disabled so it could not read the files itse
 | Skill only in `.claude/skills/<n>/` (copy) | sees it | does **not** see it |
 | `.claude/skills/<n>` a relative link to `../../.agents/skills/<n>` | sees it | sees it (via `.agents`) |
 
-Items 1 and 2 are checked and applied by unify (`docs/project-files.md`, Unify); items 3 and 4's
-memory half are not built yet.
+Items 1 and 2 are checked and applied by unify (`docs/project-files.md`, Unify); item 3 is the
+memory store (`docs/project-memory.md`); item 4's memory half is not in `unify --check` yet.
 
 Things deliberately left alone: the person's home-scope files (`~/.claude/CLAUDE.md`,
 `~/.codex/AGENTS.md`) stay theirs — Clawdline reads them for the report and never writes them
@@ -106,20 +106,23 @@ never does) and over `integrate` (which already means landing work in this repos
 
 ## 4. Launch changes (the product side)
 
-- **Memory index in every launch.** Clawdline writes the Project's memory index to a private file
-  (beside the squad launch files) and passes it through the channel each assistant already has:
-  Claude `--append-system-prompt-file`, Codex the existing `developer_instructions` value
-  (`launch.go:302-308` already joins several instructions into one). Both get the same file.
+- **Memory index in every launch. Built 2026-10-07, not as first planned.** Both assistants are
+  given the same text, the index and one sentence before it, inline: Codex inside its one
+  `developer_instructions` value (after the role, before the Note instruction), Claude as one
+  `--append-system-prompt` argument beside its role file. A private file was dropped because
+  Claude Code 2.1.292 was measured keeping only the last of two `--append-system-prompt-file`
+  flags, while an inline `--append-system-prompt` beside a file flag kept both
+  (`docs/project-memory.md`, Launch delivery). A Project with no entries launches with the
+  arguments it had before.
 - **Writing memory.** `clawdline memory add|update|forget --project <place>` writes the store; the
   `clawdline` skill tells both assistants to use it instead of their own memory for Project lessons.
   This is what makes a lesson learned in a Codex session reach the next Claude session.
-- **Clawdline skill for Codex.** `clawdline skill install` also writes `~/.agents/skills/clawdline/`
-  (*assumption* for the home directory: Codex 0.160.1 was measured loading a Project's
-  `.agents/skills`, §2; home skills there are what the skill browser assumes at
-  `squad_skill_sources.go:80`, not yet measured).
-- **Codex delivery strength.** Codex is told to read the role and memory files rather than given
-  them. Whether it reliably does is not measured; the end-to-end step in §3.5 measures it per
-  Project.
+- **Clawdline skill for Codex. Built 2026-10-07.** `clawdline skill install` also writes
+  `~/.agents/skills/clawdline/SKILL.md`, and `uninstall` restores what was there. Codex 0.160.1 was
+  measured loading a home skill from `$HOME/.agents/skills` (with the skill it quoted the skill's
+  description; with the skill moved away it answered that there was none).
+- **Codex delivery strength.** Codex is still told to read the role file rather than given it;
+  memory is given to it inline, so it does not depend on Codex choosing to read a file.
 
 ## 5. Decisions for the person
 
@@ -144,8 +147,8 @@ never does) and over `integrate` (which already means landing work in this repos
 |---|---|
 | Claude Code expands `@AGENTS.md` inside `CLAUDE.md` | **Confirmed 2026-10-06** (Claude Code 2.1.291; §2 table) |
 | Codex loads project `.agents/skills` | **Confirmed 2026-10-06** (codex-cli 0.160.1; §2 table) |
-| Codex loads `~/.agents/skills` | Not measured; same experiment with a home skill |
-| Codex reliably reads a file it is only told to read | Twenty launches with a memory-only fact; count correct answers |
+| Codex loads `~/.agents/skills` | **Confirmed 2026-10-07** (codex-cli 0.160.1; §4) |
+| Codex reliably reads a file it is only told to read | Not measured; no longer on the memory path, which is inline (§4) |
 | Linked skill directories survive clone and Windows | Clone the scratch Project on the Windows build target |
 
 ## 7. Order of work
@@ -153,7 +156,7 @@ never does) and over `integrate` (which already means landing work in this repos
 1. The four experiments in §6 (cheap; they decide P2 and the shape of §4). The first two are done
    (§2 table); P2 is decided.
 2. Memory store + `clawdline memory` + launch delivery (§4) — the one change that gives both
-   assistants the same memory. **Remaining.**
+   assistants the same memory. **Built 2026-10-07** (`docs/project-memory.md`).
 3. Inventory additions and `--check` (§3.1, §3.5). **Built for rules and skills** as unify
    (`clawdline project unify --check`); memory entries are not part of it yet.
 4. The unify flow and the Project card status (§3.2-§3.6).

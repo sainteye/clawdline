@@ -64,18 +64,18 @@ func cancelArgs(args []string) (cancelInvocation, error) {
 		args = args[1:]
 	}
 	if len(words) != 1 {
-		return cancelInvocation{}, errors.New("exactly one task id is required")
+		return cancelInvocation{}, errors.New(cliCopy("misc", "task_cancel.id_required", "exactly one task id is required"))
 	}
 	id := strings.TrimSpace(words[0])
 	if !orchestrator.IsTaskID(id) {
-		return cancelInvocation{}, fmt.Errorf("%q is not a task id", id)
+		return cancelInvocation{}, fmt.Errorf(cliCopy("misc", "task_cancel.invalid_id", "%q is not a task id"), id)
 	}
 	r := strings.Join(strings.Fields(*reason), " ")
 	switch {
 	case r == "":
-		return cancelInvocation{}, errors.New(`--reason is required: say why, e.g. --reason "wrong brief"`)
+		return cancelInvocation{}, errors.New(cliCopy("misc", "task_cancel.reason_required", `--reason is required: say why, e.g. --reason "wrong brief"`))
 	case len(r) > orchestrator.CancelReasonLimit:
-		return cancelInvocation{}, fmt.Errorf("--reason is %d bytes; at most %d", len(r), orchestrator.CancelReasonLimit)
+		return cancelInvocation{}, fmt.Errorf(cliCopy("misc", "task_cancel.reason_too_long", "--reason is %d bytes; at most %d"), len(r), orchestrator.CancelReasonLimit)
 	}
 	return cancelInvocation{port: *port, id: id, reason: r, conversation: strings.TrimSpace(*conversation),
 		key: strings.TrimSpace(*key)}, nil
@@ -84,7 +84,7 @@ func cancelArgs(args []string) (cancelInvocation, error) {
 func cancelCommand(args []string) {
 	inv, err := cancelArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "clawdline task cancel:", err)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "task_cancel.clawdline_task_cancel.7ae32955", "clawdline task cancel:"), err)
 		taskUsage()
 	}
 	b, err := openBroker(inv.port)
@@ -107,7 +107,7 @@ func cancelTask(stdout, stderr io.Writer, b *broker, inv cancelInvocation, geten
 	if conversation == "" {
 		var err error
 		if conversation, _, err = conversationFromEnv(getenv); err != nil {
-			fmt.Fprintf(stderr, "clawdline task cancel: %s Nothing was cancelled.\n", conversationRefusal(err, "--conversation"))
+			fmt.Fprintf(stderr, cliCopy("misc", "task_cancel.clawdline_task_cancel_s_nothing_was.71ff8294", "clawdline task cancel: %s Nothing was cancelled.\n"), conversationRefusal(err, "--conversation"))
 			return 2
 		}
 	}
@@ -121,7 +121,7 @@ func cancelTask(stdout, stderr io.Writer, b *broker, inv cancelInvocation, geten
 	}
 	a, err := b.request(http.MethodPost, "/v1/orchestrator/tasks/"+url.PathEscape(inv.id)+"/cancel", nil, body, key)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline task cancel:", err)
+		fmt.Fprintln(stderr, cliCopy("misc", "task_cancel.clawdline_task_cancel.7ae32955", "clawdline task cancel:"), err)
 		return 1
 	}
 	if !a.ok() {
@@ -129,12 +129,12 @@ func cancelTask(stdout, stderr io.Writer, b *broker, inv cancelInvocation, geten
 	}
 	var got contract.BrokerCancelResult
 	if json.Unmarshal(a.Body, &got) != nil || got.Task.ID == "" {
-		fmt.Fprintln(stderr, "clawdline task cancel: the daemon answered without the task it cancelled")
+		fmt.Fprintln(stderr, cliCopy("misc", "task_cancel.clawdline_task_cancel_the_daemon_an.44be6b5a", "clawdline task cancel: the daemon answered without the task it cancelled"))
 		return 1
 	}
 	line := "cancelled " + got.Task.ID
 	if got.Replayed {
-		line += " (already cancelled by this request; nothing was done again)"
+		line += cliCopy("misc", "task_cancel.replayed", " (already cancelled by this request; nothing was done again)")
 	}
 	fmt.Fprintln(stdout, line)
 	writeTaskView(stdout, got.Task)

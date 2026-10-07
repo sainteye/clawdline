@@ -13,7 +13,7 @@
 // already deployed against the relay that is running today, and the places
 // where they look over-careful are usually the places where they were taught
 // something. Where this port differs, the difference is written down in
-// `docs/cloud-wire.md` §15 with the reason; nothing here is a redesign.
+// `docs/records/cloud-wire-implementation-2026-09.md` §15 with the reason; nothing here is a redesign.
 //
 // Three rules carried over intact, because each of them was a bug once:
 //

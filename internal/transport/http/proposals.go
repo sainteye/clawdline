@@ -59,6 +59,7 @@ func (s *Server) participation() *app.Participation {
 		return p.(*app.Participation)
 	}
 	p := app.NewParticipation(s.work())
+	p.ProductLanguage = s.productLanguage
 	p.ProposalLimit = CapacityLimit(capacity.ProposalsOpen)
 	p.DecisionLimit = CapacityLimit(capacity.DecisionsOpen)
 	p.DigestLimit = CapacityLimit(capacity.WorkDigests)
@@ -740,7 +741,7 @@ func (s *Server) workProposalsRoute(w http.ResponseWriter, r *http.Request) {
 		answer, err := work.ParseAnswer(body.Answer)
 		var refused *work.Refusal
 		if errors.As(err, &refused) {
-			writeRefusal(w, refused.Status, refused.Code, refused.Message)
+			writeRawRefusal(w, refused.Status, refused.Code, refused.Message)
 			return
 		}
 		actor, principal, relay, ok := workActor(w, r, body.Via)

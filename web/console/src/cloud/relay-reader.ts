@@ -26,6 +26,7 @@ import type { CarriedWord, CarryTable } from "./carry.js"
 import type { Health, SessionRow, SessionsSnapshot, TaskList, TaskRow, TranscriptPage } from "@clawdline/contract"
 import type { StreamHandle, StreamHandlers, StreamTransport } from "@clawdline/core"
 import type { CloudWriteClient, WriteHost, WriteRoute } from "./relay-writer.js"
+import { authenticatedRefusalKey } from "./refusal-client.js"
 
 /** One machine and one of its sessions, as the relay's channels name them. */
 export interface CloudIdentity {
@@ -296,7 +297,7 @@ export const CLOUD_SHELL_BYTES = 64 * 1024
 /**
  * The longest an answer is reused with nothing on its row moving at all. A
  * Swift Mac puts `transcript_signature` on the row and the page re-reads when
- * it changes; the Go daemon does not compute one yet (docs/cloud-wire.md
+ * it changes; the Go daemon does not compute one yet (docs/records/cloud-wire-implementation-2026-09.md
  * §16.6), so a row can stay still while its transcript grows. This is the
  * bound on how stale that can make the page.
  */
@@ -780,6 +781,15 @@ export class RelayReader {
           this.note(method, path, "local")
           return json(200, list)
         }
+        case "/v1/orchestrator/leases":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "coordination.leases", {})
+        case "/v1/orchestrator/waits":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "coordination.waits", {})
+        case "/v1/orchestrator/pauses":
+          this.only(url, path)
+          return await this.machineRead(init?.signal, method, path, "coordination.pauses", {})
         case "/v1/orchestrator/schedules": {
           // The list under the session list, which on a phone drew nothing at
           // all: the word was in `DEFERRED` with a sentence saying schedules
@@ -1058,10 +1068,8 @@ export class RelayReader {
         throw new TypeError(`${code}: ${message}`)
       }
       const status = typeof failure?.status === "number" && failure.status >= 400 && failure.status < 600 ? failure.status : 502
-      // A machine too old for the word: the refusal carries the machine's own
-      // version when its descriptor said one, so the screen can name it.
       const version = MACHINE_LACKS_WORD.has(code) && this.client ? machineApp(this.client, this.machine).version : undefined
-      return this.refuse(method, path, status, code, message, version)
+      return this.refuse(method, path, status, code, message, authenticatedRefusalKey(error), version)
     }
   }
 
@@ -1547,9 +1555,9 @@ export class RelayReader {
     )
   }
 
-  private refuse(method: string, path: string, status: number, code: string, detail: string, version?: string): Response {
+  private refuse(method: string, path: string, status: number, code: string, detail: string, detailKey: string | null = null, version?: string): Response {
     this.note(method, path, "refused", code)
-    return json(status, { error: code, detail, route: path, ...(version ? { version } : {}) })
+    return json(status, { error: code, detail, route: path, ...(detailKey ? { detail_key: detailKey } : {}), ...(version ? { version } : {}) })
   }
 
   private note(method: string, path: string, answer: SeamRow["answer"], code?: string, extra?: Partial<SeamRow>): void {

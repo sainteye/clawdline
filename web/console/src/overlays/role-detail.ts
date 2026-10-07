@@ -20,7 +20,7 @@ let reading: RoleReading | null = null
 let readError: { error: unknown } | null = null
 let request = 0
 
-const word = (names: WireNames): string => names[document.documentElement.lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"] || names.en
+const word = (names: WireNames): string => names[document.documentElement.lang === "zh-Hant" ? "zh-Hant" : "en"] || names.en
 
 async function readRole(conversation: string, persona: string): Promise<RoleReading> {
   if (conversation) {

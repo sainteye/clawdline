@@ -1,14 +1,14 @@
 /*
  * Words this app says that the Swift app never did (design-decisions D35).
  *
- * The copied catalog, `public/strings/zh-Hant.json`, is the Swift app's and
- * stays byte for byte; a sentence it has no key for goes here instead, in the
- * two languages this machine's person reads, and nowhere else. Every one of
- * them is a place this app deliberately says more than the one it replicates:
- * the Swift app cut the same things and said nothing (docs/limits.md §3.2).
+ * The copied `public/strings/zh-Hant.json` stays byte for byte. This typed
+ * table is the English source for new app copy; the maintained nine-language
+ * catalogs under `public/catalogs/` supply the words shown on screen.
  *
  * Holes are `{name}`, as the copied catalog's are.
  */
+
+import { catalogWord } from "./catalog.js"
 
 const words = {
   en: {
@@ -1734,16 +1734,9 @@ const words = {
 
 export type NextWord = keyof (typeof words)["en"]
 
-/** The page's language as the copied catalog set it, or the browser's. */
-function language(): "en" | "zh-Hant" {
-  const lang = (typeof document !== "undefined" && document.documentElement.lang) ||
-    (typeof navigator !== "undefined" && navigator.language) || "en"
-  return lang.toLowerCase().startsWith("zh") ? "zh-Hant" : "en"
-}
-
 /** One sentence, its holes filled. */
 export function nextWord(key: NextWord, holes: Record<string, string | number> = {}): string {
-  return words[language()][key].replace(/\{(\w+)\}/g, (all, name: string) =>
+  return catalogWord("next", key).replace(/\{(\w+)\}/g, (all, name: string) =>
     name in holes ? String(holes[name]) : all,
   )
 }

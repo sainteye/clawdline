@@ -69,6 +69,10 @@ func badGraph(message string) error {
 	return refuse(http.StatusUnprocessableEntity, "bad_task", "graph: "+message)
 }
 
+func badGraphRaw(message string) error {
+	return refuseRaw(http.StatusUnprocessableEntity, "bad_task", "graph: "+message)
+}
+
 // admitGraph reads and checks a brief's `graph`. Absent or null is no graph.
 func admitGraph(raw json.RawMessage) (*Graph, error) {
 	if len(raw) == 0 || string(raw) == "null" {
@@ -78,7 +82,7 @@ func admitGraph(raw json.RawMessage) (*Graph, error) {
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&g); err != nil {
-		return nil, badGraph("must be an object with id, destination, current_node and nodes: " + err.Error())
+		return nil, badGraphRaw("must be an object with id, destination, current_node and nodes: " + err.Error())
 	}
 	if !uuidShape.MatchString(g.ID) {
 		return nil, badGraph("id must be a lowercase UUID.")
@@ -100,19 +104,19 @@ func admitGraph(raw json.RawMessage) (*Graph, error) {
 		}
 		ids[n.ID] = true
 		if t := utf8.RuneCountInString(strings.TrimSpace(n.Title)); t == 0 || t > graphTitleLimit {
-			return nil, badGraph("node " + n.ID + ": title must be 1–120 characters.")
+			return nil, badGraphRaw("node " + n.ID + ": title must be 1–120 characters.")
 		}
 		if !kinds[n.Kind] {
-			return nil, badGraph("node " + n.ID + ": kind must be one of " + strings.Join(GraphKinds, ", ") + ".")
+			return nil, badGraphRaw("node " + n.ID + ": kind must be one of " + strings.Join(GraphKinds, ", ") + ".")
 		}
 		if len(n.Acceptance) == 0 || len(n.Acceptance) > graphListLimit || !lines(n.Acceptance) {
-			return nil, badGraph("node " + n.ID + ": acceptance must be 1–8 lines of at most 300 characters.")
+			return nil, badGraphRaw("node " + n.ID + ": acceptance must be 1–8 lines of at most 300 characters.")
 		}
 	}
 	for _, n := range g.Nodes {
 		for _, d := range n.DependsOn {
 			if d == n.ID || !ids[d] {
-				return nil, badGraph("node " + n.ID + " depends on " + d + ", which is not another node of this graph.")
+				return nil, badGraphRaw("node " + n.ID + " depends on " + d + ", which is not another node of this graph.")
 			}
 		}
 	}

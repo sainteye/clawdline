@@ -80,13 +80,13 @@ func (s *Server) settingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		changes, refusal := settingsChanges(body)
 		if refusal != nil {
-			writeRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
+			writeRawRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
 			return
 		}
 		// A key that turns on what this machine has no way to do is refused
 		// by name, not stored for nothing to act on (capabilities.go, W7).
 		if refusal := platformSettingRefusal(s.desktopHost().Capabilities(r.Context()), runtime.GOOS, changes); refusal != nil {
-			writeRefusal(w, http.StatusNotImplemented, refusal.code, refusal.message)
+			writeRawRefusal(w, http.StatusNotImplemented, refusal.code, refusal.message)
 			return
 		}
 		var (
@@ -143,13 +143,13 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		for name := range body {
 			if name != "codex_default_model" && name != "claude_default_model" && name != "codex_default_effort" {
-				writeRefusal(w, http.StatusBadRequest, "bad_request", "not a default model key: "+name)
+				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a default model key: "+name)
 				return
 			}
 		}
 		changes, refusal := settingsChanges(body)
 		if refusal != nil {
-			writeRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
+			writeRawRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
 			return
 		}
 		var (
@@ -207,13 +207,13 @@ func (s *Server) workGateSettingsRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		for name := range body {
 			if name != "planning_gate" && name != "verify_gate" {
-				writeRefusal(w, http.StatusBadRequest, "bad_request", "not a work gate setting key: "+name)
+				writeRawRefusal(w, http.StatusBadRequest, "bad_request", "not a work gate setting key: "+name)
 				return
 			}
 		}
 		changes, refusal := settingsChanges(body)
 		if refusal != nil {
-			writeRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
+			writeRawRefusal(w, http.StatusBadRequest, refusal.code, refusal.message)
 			return
 		}
 		var err error
@@ -407,10 +407,10 @@ func settingsSnapshot(f *nextconfig.File, v nextconfig.Values) settingsSnapshotW
 func writeSettingsFailure(w http.ResponseWriter, f *nextconfig.File, err error) {
 	switch {
 	case errors.Is(err, nextconfig.ErrNotObject):
-		writeRefusal(w, http.StatusConflict, "settings_file_invalid", f.Path()+" is not a JSON object; it was left as it is")
+		writeRawRefusal(w, http.StatusConflict, "settings_file_invalid", f.Path()+" is not a JSON object; it was left as it is")
 	case errors.Is(err, nextconfig.ErrForeignDir):
-		writeRefusal(w, http.StatusInternalServerError, "settings_dir_refused", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "settings_dir_refused", err.Error())
 	default:
-		writeRefusal(w, http.StatusInternalServerError, "settings_unavailable", err.Error())
+		writeRawRefusal(w, http.StatusInternalServerError, "settings_unavailable", err.Error())
 	}
 }

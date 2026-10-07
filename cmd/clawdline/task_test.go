@@ -200,6 +200,17 @@ func TestTaskFinishWithNoBrokerStillReports(t *testing.T) {
 	if !strings.Contains(out.String(), "Nothing is lost") {
 		t.Fatalf("said: %s", out.String())
 	}
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	out.Reset()
+	errs.Reset()
+	secondDir := taskTestDir(t, taskTestResult(taskTestSecret))
+	if code := finishTask(&out, &errs, secondDir, port, true, http.DefaultClient); code != 0 ||
+		!strings.Contains(out.String(), "Es gingen keine Daten verloren") ||
+		!strings.Contains(out.String(), "result.json") {
+		t.Fatalf("German offline completion lost its saved result: %d %q %q", code, out.String(), errs.String())
+	}
 }
 
 // A result the broker says is not this task's is published and refused: the

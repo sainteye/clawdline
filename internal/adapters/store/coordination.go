@@ -60,6 +60,22 @@ CREATE TABLE IF NOT EXISTS lease_waiters (
   asked_at      INTEGER NOT NULL,
   PRIMARY KEY (resource, key, request_id)
 );
+CREATE TABLE IF NOT EXISTS session_pauses (
+  target_session TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL UNIQUE,
+  requester_session TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  wake_condition TEXT NOT NULL,
+  accepted_at INTEGER NOT NULL,
+  delivered_at INTEGER NOT NULL DEFAULT 0,
+  observed_at INTEGER NOT NULL DEFAULT 0,
+  safe_at INTEGER NOT NULL DEFAULT 0,
+  wake_requested_at INTEGER NOT NULL DEFAULT 0,
+  wake_delivered_at INTEGER NOT NULL DEFAULT 0,
+  resumed_at INTEGER NOT NULL DEFAULT 0,
+  delivery_error TEXT NOT NULL DEFAULT '',
+  wake_error TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS waits (
   id                TEXT    PRIMARY KEY,
   repository        TEXT    NOT NULL,
@@ -286,6 +302,8 @@ type LeaseState struct {
 	Key      string
 	Holder   *LeaseRow
 	Waiters  []LeaseRow
+	// Blockers are holders of other resources that must not overlap this one.
+	Blockers []LeaseRow
 }
 
 // LeaseChange is what a decision writes. The rows it names replace or remove
@@ -361,7 +379,32 @@ func readLease(ctx context.Context, q querier, resource, key string) (LeaseState
 		}
 		st.Waiters = append(st.Waiters, w)
 	}
-	return st, rows.Err()
+	if err := rows.Err(); err != nil {
+		return st, err
+	}
+	var blockers *sql.Rows
+	if resource == "daemon_restart" {
+		blockers, err = q.QueryContext(ctx, `SELECT `+leaseColumns+` FROM leases WHERE resource IN ('heavy_compile', 'landing')`)
+	} else if resource == "heavy_compile" || resource == "landing" {
+		blockers, err = q.QueryContext(ctx, `SELECT `+leaseColumns+` FROM leases WHERE resource = 'daemon_restart'`)
+	}
+	if err != nil {
+		return st, err
+	}
+	if blockers != nil {
+		defer blockers.Close()
+		for blockers.Next() {
+			h, err := scanHolder(blockers)
+			if err != nil {
+				return st, err
+			}
+			st.Blockers = append(st.Blockers, h)
+		}
+		if err := blockers.Err(); err != nil {
+			return st, err
+		}
+	}
+	return st, nil
 }
 
 // Lease reads one lease outside any write.
@@ -515,6 +558,27 @@ func (s *Store) OpenWaits(ctx context.Context) ([]WaitRow, error) {
 		return nil, err
 	}
 	return openWaits(ctx, s.rd)
+}
+
+// WaitByID reads a wait including a fully released one. A pause may wake on
+// that durable release receipt after the open-waits projection drops it.
+func (s *Store) WaitByID(ctx context.Context, id string) (WaitRow, error) {
+	if err := reading(); err != nil {
+		return WaitRow{}, err
+	}
+	var w WaitRow
+	var paths string
+	var created, released int64
+	err := s.rd.QueryRowContext(ctx, `SELECT id, repository, paths, owner, release_condition, created_at,
+	 released_at, release_commit, release_note FROM waits WHERE id = ?`, id).Scan(&w.ID, &w.Repository, &paths,
+		&w.Owner, &w.ReleaseCondition, &created, &released, &w.ReleaseCommit, &w.ReleaseNote)
+	if err != nil {
+		return WaitRow{}, classify(err)
+	}
+	_ = json.Unmarshal([]byte(paths), &w.Paths)
+	w.CreatedAt, w.ReleasedAt = timeOrZero(created), timeOrZero(released)
+	w.Waiters, err = waitersOf(ctx, s.rd, id)
+	return w, classify(err)
 }
 
 func openWaits(ctx context.Context, q querier) ([]WaitRow, error) {

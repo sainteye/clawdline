@@ -9,6 +9,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/swiftstore"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 	"github.com/sainteye/clawdline/internal/transport/cloud"
 )
@@ -51,6 +52,51 @@ func payloadError(t *testing.T, a cloudops.Answer) map[string]any {
 		t.Fatalf("payload %s: %v", a.Payload, err)
 	}
 	return out.Error
+}
+
+func TestCloudCarriesOnlyKeysMarkedByTheLocalRefusalWriter(t *testing.T) {
+	const detail = "That task already finished."
+	const key = "http.ee71993f567fd4fe"
+	for _, tc := range []struct {
+		name    string
+		handler http.Handler
+		wantKey bool
+	}{
+		{"fixed writer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeRefusal(w, http.StatusConflict, "task_finished", detail)
+		}), true},
+		{"nested auth writer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeAuthRefusal(w, http.StatusConflict, "task_finished", detail)
+		}), true},
+		{"nested broker writer", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeBrokerRefusal(w, orchestrator.Refusal{
+				Status: http.StatusConflict, Code: "task_finished", Message: detail,
+			})
+		}), true},
+		{"raw writer with coincident text", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeRawRefusal(w, http.StatusConflict, "task_finished", detail)
+		}), false},
+		{"external JSON with copied valid key", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": "task_finished", "detail": detail, "detail_key": key,
+			})
+		}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bridge := cloudops.Bridge{MachineID: "mac-01", Router: cloud.Router{Handler: tc.handler},
+				AllowCommands: func() bool { return true }}
+			got := payloadError(t, bridge.Handle(context.Background(), sealed(t, 45, map[string]any{
+				"type": "screen", "session": "%4"})))
+			if got["code"] != "task_finished" || got["message"] != detail {
+				t.Fatalf("route refusal changed: %#v", got)
+			}
+			if gotKey, ok := got["detail_key"].(string); ok != tc.wantKey || ok && gotKey != key {
+				t.Fatalf("detail_key = %q, present=%t: %#v", gotKey, ok, got)
+			}
+		})
+	}
 }
 
 // F1 end to end: the page answered the prompt for `rm -rf build`; by the time

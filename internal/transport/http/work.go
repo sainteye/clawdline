@@ -186,7 +186,7 @@ func workQuery(w http.ResponseWriter, r *http.Request, allowed ...string) (map[s
 	out := map[string]string{}
 	for key, v := range r.URL.Query() {
 		if !known[key] || len(v) != 1 || v[0] == "" || len(v[0]) > 1024 {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "Unknown or repeated query field "+key+".")
+			writeRawRefusal(w, http.StatusBadRequest, "bad_request", "Unknown or repeated query field "+key+".")
 			return nil, false
 		}
 		out[key] = v[0]
@@ -200,14 +200,25 @@ func writeWorkError(w http.ResponseWriter, err error) {
 		if we.Current != nil {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(we.Status)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": we.Code, "detail": we.Message,
-				"current": workItemOf(*we.Current, false)})
+			body := map[string]any{"error": we.Code, "detail": we.Message,
+				"current": workItemOf(*we.Current, false)}
+			if !we.RawMessage {
+				if key := fixedRefusalKey(we.Message); key != "" {
+					body["detail_key"] = key
+					markFixedRefusalKey(w, key)
+				}
+			}
+			_ = json.NewEncoder(w).Encode(body)
 			return
 		}
 		if we.Status == http.StatusServiceUnavailable {
 			w.Header().Set("Retry-After", "1")
 		}
-		writeRefusal(w, we.Status, we.Code, we.Message)
+		if we.RawMessage {
+			writeRawRefusal(w, we.Status, we.Code, we.Message)
+		} else {
+			writeRefusal(w, we.Status, we.Code, we.Message)
+		}
 		return
 	}
 	writeRefusal(w, http.StatusServiceUnavailable, "store_unavailable", "The board could not be read or written.")
@@ -269,6 +280,8 @@ func readWorkBody(w http.ResponseWriter, r *http.Request, into any) ([]byte, boo
 		if strings.Contains(err.Error(), "unknown field") {
 			msg = "The body has a field a board command does not take (" + strings.TrimPrefix(err.Error(), "json: ") +
 				"). An item's state is decided by its facts and by the commands, never set."
+			writeRawRefusal(w, http.StatusBadRequest, "invalid_command", msg)
+			return nil, false
 		}
 		writeRefusal(w, http.StatusBadRequest, "invalid_command", msg)
 		return nil, false

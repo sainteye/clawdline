@@ -102,7 +102,7 @@ func (a Actions) turn(ctx context.Context, s session.Session) (func(), error) {
 	defer cancel()
 	release, err := a.lanes().Acquire(wait, lane.TerminalKey(string(s.Backend), s.ID))
 	if err != nil {
-		return nil, Refusal{Code: "busy", Detail: err.Error(), Cause: err}
+		return nil, Refusal{RawDetail: true, Code: "busy", Detail: err.Error(), Cause: err}
 	}
 	return release, nil
 }
@@ -111,6 +111,9 @@ func (a Actions) turn(ctx context.Context, s session.Session) (func(), error) {
 type Refusal struct {
 	Code   string
 	Detail string
+	// RawDetail marks runtime or external content that must not be keyed by
+	// catalog string equality when the HTTP transport writes this refusal.
+	RawDetail bool `json:"-"`
 	// Reasons is filled when a close is refused, so the caller can say what is
 	// in the way rather than only that something is.
 	Reasons []task.CloseReason
@@ -164,14 +167,16 @@ func findInInventory(inv session.Inventory, id string) (session.Session, error) 
 	source := session.SourceForID(id)
 	if proves, why := inv.ProvesAbsence(source); !proves {
 		return session.Session{}, Refusal{
-			Code: "session_unknown",
+			Code:      "session_unknown",
+			RawDetail: true,
 			Detail: fmt.Sprintf("this reading of the machine (%s) does not answer for %s, so %s is not absent, "+
 				"it is unseen: %s", inv.Provenance, sourceName(source), id, why),
 		}
 	}
 	return session.Session{}, Refusal{
-		Code:   "session_not_found",
-		Detail: fmt.Sprintf("no session %s in a complete reading of %s on this machine", id, sourceName(source)),
+		Code:      "session_not_found",
+		RawDetail: true,
+		Detail:    fmt.Sprintf("no session %s in a complete reading of %s on this machine", id, sourceName(source)),
 	}
 }
 
@@ -202,8 +207,9 @@ func (a Actions) host(s session.Session) (ports.TerminalHost, error) {
 		}
 	}
 	return nil, Refusal{
-		Code:   "backend_unsupported",
-		Detail: fmt.Sprintf("nothing on this machine drives a %q session", s.Backend),
+		Code:      "backend_unsupported",
+		RawDetail: true,
+		Detail:    fmt.Sprintf("nothing on this machine drives a %q session", s.Backend),
 	}
 }
 
@@ -284,7 +290,7 @@ func sendRefusal(s session.Session, err error) Refusal {
 		code = "send_unsubmitted"
 	}
 	log.Printf("send: %s to session %s: %v", code, s.ID, err)
-	return Refusal{Code: code, Detail: err.Error(), Cause: err}
+	return Refusal{RawDetail: true, Code: code, Detail: err.Error(), Cause: err}
 }
 
 // questionOnScreen refuses a line for a session whose fresh reading has a
@@ -331,7 +337,8 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 	keys, ok := h.(ports.KeyHost)
 	if !ok || a.Inventory.Screen == nil {
 		return s, beforeTheFirstByte(Refusal{Code: "backend_unsupported",
-			Detail: fmt.Sprintf("nothing on this machine presses keys into and reads a %q session", s.Backend)})
+			RawDetail: true,
+			Detail:    fmt.Sprintf("nothing on this machine presses keys into and reads a %q session", s.Backend)})
 	}
 	if err := questionOnScreen(s); err != nil {
 		return s, err
@@ -344,7 +351,7 @@ func (a Actions) SendPrepared(ctx context.Context, id, text string, prepare orch
 	press := func(b []byte) error { return keys.Keystroke(ctx, s, b) }
 	look := func() (string, bool) { return a.Inventory.Screen.Capture(ctx, s) }
 	if err := prepare(ctx, press, look); err != nil {
-		return s, Refusal{Code: "send_withheld", Detail: err.Error(), Cause: err}
+		return s, Refusal{RawDetail: true, Code: "send_withheld", Detail: err.Error(), Cause: err}
 	}
 	if err := h.Send(ctx, s, text); err != nil {
 		return s, sendRefusal(s, err)
@@ -537,7 +544,7 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	borrowed, err := lender.Borrow(work)
 	if err != nil {
 		if s.Assistant == session.AssistantCodex {
-			return "", Refusal{Code: "pictures_unavailable", Detail: "Codex image attachment could not borrow the pasteboard: " + err.Error()}
+			return "", Refusal{RawDetail: true, Code: "pictures_unavailable", Detail: "Codex image attachment could not borrow the pasteboard: " + err.Error()}
 		}
 		log.Printf("send: the pasteboard could not be borrowed, sending paths: %v", err)
 		return sendPaths()
@@ -552,7 +559,7 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	typed := false
 	if text != "" {
 		if err := typer.Type(work, s, text); err != nil {
-			return "", Refusal{Code: "send_failed", Detail: err.Error()}
+			return "", Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 		}
 		typed = true
 	}
@@ -560,7 +567,7 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 	for _, p := range paths {
 		if err := lender.Offer(work, borrowed, p); err != nil {
 			if s.Assistant == session.AssistantCodex {
-				return "", Refusal{Code: "send_failed", Detail: "Codex image attachment could not load the picture: " + err.Error()}
+				return "", Refusal{RawDetail: true, Code: "send_failed", Detail: "Codex image attachment could not load the picture: " + err.Error()}
 			}
 			// Its bytes would not load. The path still works and is only plainer.
 			asPath++
@@ -569,19 +576,19 @@ func (a Actions) deliverPictures(ctx context.Context, s session.Session, h ports
 				words = " " + words
 			}
 			if err := typer.Type(work, s, words); err != nil {
-				return "", Refusal{Code: "send_failed", Detail: err.Error()}
+				return "", Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 			}
 			typed = true
 			continue
 		}
 		if err := keys.Keystroke(work, s, keyPaste); err != nil {
-			return "", Refusal{Code: "send_failed", Detail: err.Error()}
+			return "", Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 		}
 		typed = true
 		time.Sleep(pictureSettle)
 	}
 	if err := keys.Keystroke(work, s, keyReturn); err != nil {
-		return "", Refusal{Code: "send_failed", Detail: err.Error()}
+		return "", Refusal{RawDetail: true, Code: "send_failed", Detail: err.Error()}
 	}
 	if asPath > 0 {
 		log.Printf("send: %d image(s) went as paths", asPath)
@@ -640,7 +647,7 @@ func (a Actions) Interrupt(ctx context.Context, id string) (session.Session, err
 	}
 	defer release()
 	if err := h.Interrupt(ctx, s); err != nil {
-		return s, Refusal{Code: "interrupt_failed", Detail: err.Error()}
+		return s, Refusal{RawDetail: true, Code: "interrupt_failed", Detail: err.Error()}
 	}
 	a.record(ctx, "session.interrupted", s.ID, nil)
 	return s, nil
@@ -670,9 +677,10 @@ func (a Actions) Close(ctx context.Context, id string, force bool) (session.Sess
 	case task.CloseBlocked:
 		if !force {
 			return s, Refusal{
-				Code:    "close_blocked",
-				Detail:  fmt.Sprintf("still owed: %s", summarise(c.Reasons)),
-				Reasons: c.Reasons,
+				Code:      "close_blocked",
+				RawDetail: true,
+				Detail:    fmt.Sprintf("still owed: %s", summarise(c.Reasons)),
+				Reasons:   c.Reasons,
 			}
 		}
 	}
@@ -736,8 +744,9 @@ func (a Actions) closer(s session.Session) (func(context.Context, session.Sessio
 	if session.SourceForID(s.ID) == "ps" {
 		if a.Processes == nil {
 			return nil, Refusal{
-				Code:   "backend_unsupported",
-				Detail: "this session is only a process on " + s.TTY + ", and nothing on this machine can end one",
+				Code:      "backend_unsupported",
+				RawDetail: true,
+				Detail:    "this session is only a process on " + s.TTY + ", and nothing on this machine can end one",
 			}
 		}
 		return a.Processes.CloseProcess, nil
@@ -800,7 +809,7 @@ func closeRefusal(err error) error {
 		// answer it, nothing else can happen to that terminal.
 		return Refusal{Code: "close_needs_a_person", Detail: failure.Message, Cause: err}
 	}
-	return Refusal{Code: "close_failed", Detail: err.Error(), Cause: err}
+	return Refusal{RawDetail: true, Code: "close_failed", Detail: err.Error(), Cause: err}
 }
 
 var errOwedUnwired = errors.New("this daemon has no reader for what sessions owe")

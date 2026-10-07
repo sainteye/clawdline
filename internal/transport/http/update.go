@@ -88,7 +88,7 @@ func (s *Server) updateApplyRoute(w http.ResponseWriter, r *http.Request) {
 		dec := json.NewDecoder(bytes.NewReader(body))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&req); err != nil {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not an update request: "+err.Error())
+			writeRawRefusal(w, http.StatusBadRequest, "bad_request", "that body is not an update request: "+err.Error())
 			return
 		}
 	}
@@ -113,11 +113,15 @@ func (s *Server) updateApplyRoute(w http.ResponseWriter, r *http.Request) {
 			if ue.Code == updater.CodeReleaseUnreachable {
 				status = http.StatusBadGateway
 			}
-			writeRefusal(w, status, ue.Code, ue.Detail)
+			writeRawRefusal(w, status, ue.Code, ue.Detail)
 		case errors.As(err, &re):
-			writeRefusal(w, http.StatusBadGateway, re.Code, re.Detail)
+			if re.Code == release.CodeManifestUnsigned && re.Detail == "the release has a manifest and no manifest.sig.json" {
+				writeRefusal(w, http.StatusBadGateway, re.Code, re.Detail)
+			} else {
+				writeRawRefusal(w, http.StatusBadGateway, re.Code, re.Detail)
+			}
 		default:
-			writeRefusal(w, http.StatusInternalServerError, "update_failed", err.Error())
+			writeRawRefusal(w, http.StatusInternalServerError, "update_failed", err.Error())
 		}
 		return
 	}

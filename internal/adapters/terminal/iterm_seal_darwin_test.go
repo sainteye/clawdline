@@ -189,10 +189,9 @@ func TestAnUnreadableWindowReachesTheReadingWithItsIDOnIt(t *testing.T) {
 
 // The listing the adapter takes from this machine, with nothing changed on it.
 //
-// It is skipped where iTerm2 is not running, because the point of it is the
-// real Apple Event: the walk this repository ships must go on returning the
-// gaps in the shape the seal reads, and a mock of osascript would prove only
-// that the mock agrees with itself.
+// It is skipped where iTerm2 is not running or cannot answer an Apple Event,
+// because the point of it is the real walk: once iTerm2 answers, its gaps must
+// keep the shape the seal reads. A failed event must still be incomplete.
 func TestTheRealListingCarriesWhateverItCouldNotRead(t *testing.T) {
 	it := NewITerm()
 	inv, err := it.Inventory(context.Background())
@@ -201,6 +200,12 @@ func TestTheRealListingCarriesWhateverItCouldNotRead(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(inv.Notes, " "), "iTerm2 is not running") {
 		t.Skip("iTerm2 is not running on this machine")
+	}
+	if strings.Contains(strings.Join(inv.Notes, " "), "iTerm2 apple event failed") {
+		if inv.Complete {
+			t.Fatal("a failed Apple Event was treated as a complete listing")
+		}
+		t.Skip("iTerm2 did not answer its Apple Event on this machine")
 	}
 	for _, g := range inv.Gaps {
 		if g.Source != "iterm" {

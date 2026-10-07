@@ -84,9 +84,16 @@ clawdline callback --title "The hosted console serves <sha>" --timeout 20m -- \
   sh -c '<the deploy above> && tools/wait-hosted-console.sh <sha>'
 ```
 
-`tools/wait-hosted-console.sh <sha> [--deadline 15m]` polls `BUILD.json` until its stamp is
+`tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]` polls `BUILD.json` until its stamp is
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
-bundle has `CloudGate`.
+bundle has `CloudGate`. Builds that ship product catalogs also read every advertised language's
+hosted JSON through `tools/check-hosted-catalogs.py`, which runs the same catalog
+validator used during Console development. The first multilingual release
+requires all nine catalogs to cover the frozen initial baseline and English
+and Taiwan Traditional Chinese to cover every current key. The ordinary
+checker enforces this and reports later missing keys in the other seven
+languages. Use `--strict-catalogs` for a translation catch-up that makes every
+current key complete in all nine languages.
 
 ## The check that answers the right question
 

@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 // W5: the coordination plane. Every test here names the failure it closes and
@@ -222,13 +224,17 @@ func TestADeadLetterPushesThePersonOnce(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(pushes) != 1 || pushes[0].title != deadLetterTitle || pushes[0].tag != "dead-letter-"+r.ID ||
+	if len(pushes) != 1 || pushes[0].title != productcopy.Format("en", "dead.title", nil) || pushes[0].tag != "dead-letter-"+r.ID ||
 		!strings.Contains(pushes[0].body, r.Title) {
 		t.Fatalf("dead-letter pushes: %+v", pushes)
 	}
 	effects, err := b.Store.Effects(ctx, EffectDeadLetterPush, r.ID)
 	if err != nil || len(effects) != 1 || effects[0].State != "done" {
 		t.Fatalf("the push is not one finished effect: %v %+v", err, effects)
+	}
+	var intent deadLetterEffect
+	if err := json.Unmarshal(effects[0].Payload, &intent); err != nil || intent.Language != "en" {
+		t.Fatalf("the intent did not persist the default product language: %v %+v", err, intent)
 	}
 }
 

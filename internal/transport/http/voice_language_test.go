@@ -129,6 +129,8 @@ func TestVoiceAutoFollowsClawdlineThenTheMachine(t *testing.T) {
 		// An explicit voice language outranks all of it.
 		{"voice_language zh-CN", `{"voice_language":"zh-CN","language":"zh-Hant"}`, macSaying("(\n    \"zh-Hant-TW\"\n)\n", ""),
 			saidHans, saidHans, "-l zh", whisper.Seeds["zh-Hans"], whisper.FromVoiceLanguage, "Hans"},
+		{"product copy does not override voice_language", `{"voice_language":"zh-CN","language":"zh-Hant","product_language":"de"}`, macSaying("(\n    \"zh-Hant-TW\"\n)\n", ""),
+			saidHans, saidHans, "-l zh", whisper.Seeds["zh-Hans"], whisper.FromVoiceLanguage, "Hans"},
 		{"voice_language zh-TW", `{"voice_language":"zh-TW"}`, linuxWith(map[string]string{"LANG": "zh_CN.UTF-8"}),
 			saidHans, saidHant, "-l zh", whisper.Seeds["zh-Hant"], whisper.FromVoiceLanguage, "Hant"},
 

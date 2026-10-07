@@ -39,6 +39,62 @@ func TestItemNameSendsTheCurrentConversationAndReportsTheSavedName(t *testing.T)
 	}
 }
 
+func TestItemHumanLabelsTranslateWithoutChangingNamesOrRawDocuments(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	s, b := newStandIn(t, func(r *http.Request) (int, string) {
+		return 200, `{"ok":true,"stored_title":"Raw Session name","display_title":"User's original title"}`
+	})
+	var out, errs bytes.Buffer
+	if code := sessionItem(&out, &errs, b, "name", itemFlags{}, []string{"item-1", "Raw Session name"},
+		thinConversation, "", envOf(nil)); code != 0 {
+		t.Fatalf("name exit %d: %s", code, errs.String())
+	}
+	if !strings.Contains(out.String(), "Session-Name: Raw Session name") ||
+		!strings.Contains(out.String(), "Angezeigter Name: User's original title") ||
+		!strings.Contains(string(s.requests()[0].Body), `"title":"Raw Session name"`) {
+		t.Fatalf("translated labels changed source data or request: %q, %+v", out.String(), s.requests())
+	}
+	_, b = newStandIn(t, func(r *http.Request) (int, string) { return 200, itemWithBodies })
+	out.Reset()
+	errs.Reset()
+	if code := sessionItem(&out, &errs, b, "show", itemFlags{docID: "d1"}, []string{"item-1"}, "", "", envOf(nil)); code != 0 ||
+		out.String() != "# Plan\nFirst do this.\n" {
+		t.Fatalf("show --doc changed raw content: exit %d stdout %q stderr %q", code, out.String(), errs.String())
+	}
+}
+
+func TestItemLocalizedAddAndChildKeepDescriptionWireKey(t *testing.T) {
+	previous := commandLanguage
+	commandLanguage = "de"
+	t.Cleanup(func() { commandLanguage = previous })
+	for _, tc := range []struct {
+		op    string
+		args  []string
+		flags itemFlags
+	}{
+		{"add", nil, itemFlags{project: "p1", kind: "feature", title: "Raw title", description: "Raw description", run: itemRun}},
+		{"child", []string{"epic-1"}, itemFlags{kind: "feature", title: "Raw title", description: "Raw description"}},
+	} {
+		t.Run(tc.op, func(t *testing.T) {
+			s, b := newStandIn(t, func(r *http.Request) (int, string) { return 201, createdItem })
+			var out, errs bytes.Buffer
+			if code := sessionItem(&out, &errs, b, tc.op, tc.flags, tc.args, thinConversation, "", envOf(nil)); code != 0 {
+				t.Fatalf("%s exit %d: %s", tc.op, code, errs.String())
+			}
+			var body map[string]any
+			if got := s.requests(); len(got) != 1 || json.Unmarshal(got[0].Body, &body) != nil ||
+				body["description"] != "Raw description" || body["title"] != "Raw title" {
+				t.Fatalf("%s request did not preserve wire fields: %+v", tc.op, got)
+			}
+			if _, changed := body["Beschreibung"]; changed {
+				t.Fatalf("%s translated a wire key: %#v", tc.op, body)
+			}
+		})
+	}
+}
+
 // `item add` reads this conversation's latest run, then posts the item with
 // its steps in the order given, under a key it prints before asking; the
 // write's answer is printed as what was written and the item's head — never

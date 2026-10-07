@@ -252,12 +252,8 @@ func (t Transcriber) modelDirs() []string {
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		if home != "" {
-			// The Swift app's own place, read and never written: a machine
-			// that already downloaded a model for the bar should not have to
-			// download it twice.
-			dirs = append(dirs, filepath.Join(home, "Library", "Application Support", "Clawdline", "models"))
-		}
+		// A model in another app's Application Support can still be selected
+		// explicitly with whisper_model. Do not probe that location by default.
 	case "windows":
 		if base := os.Getenv("LOCALAPPDATA"); base != "" {
 			dirs = append(dirs, filepath.Join(base, "whisper"), filepath.Join(base, "whisper.cpp", "models"))

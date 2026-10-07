@@ -34,22 +34,22 @@ import (
 // and exactly one notice was produced.
 func capacityCommand(args []string) {
 	fs := flag.NewFlagSet("doctor capacity", flag.ContinueOnError)
-	name := fs.String("drill", "", "the row to fill on purpose: "+strings.Join(drillNames(), ", "))
-	dir := fs.String("dir", "", "a throwaway state directory, empty or not there yet (default: a new temporary one)")
-	limit := fs.String("limit", "", "the limit to run the row at; it may only be lower than the register's (default: 4KiB for a row of bytes, 20 for a row of rows)")
-	keep := fs.Bool("keep", false, "leave the directory behind to look at")
+	name := fs.String("drill", "", cliCopy("ops", "capacity.flag.drill", "the row to fill on purpose: ")+strings.Join(drillNames(), ", "))
+	dir := fs.String("dir", "", cliCopy("ops", "capacity.flag.dir", "a throwaway state directory, empty or not there yet (default: a new temporary one)"))
+	limit := fs.String("limit", "", cliCopy("ops", "capacity.flag.limit", "the limit to run the row at; it may only be lower than the register's (default: 4KiB for a row of bytes, 20 for a row of rows)"))
+	keep := fs.Bool("keep", false, cliCopy("ops", "capacity.flag.keep", "leave the directory behind to look at"))
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
 	}
 	if *name == "" {
-		fmt.Fprintf(os.Stderr, "usage: clawdline doctor capacity --drill <%s> [--dir D] [--limit N] [--keep]\n", strings.Join(drillNames(), "|"))
+		fmt.Fprintf(os.Stderr, cliCopy("ops", "capacity.usage", "usage: clawdline doctor capacity --drill <%s> [--dir D] [--limit N] [--keep]\n"), strings.Join(drillNames(), "|"))
 		os.Exit(2)
 	}
 	d, ok := drills[*name]
 	if !ok {
 		// Named, not ignored: the register may have the row, and the drill
 		// does not fill it.
-		fmt.Fprintf(os.Stderr, "clawdline: %s has no drill; the rows with one are: %s\n", *name, strings.Join(drillNames(), ", "))
+		fmt.Fprintf(os.Stderr, cliCopy("ops", "capacity.no_drill", "clawdline: %s has no drill; the rows with one are: %s\n"), *name, strings.Join(drillNames(), ", "))
 		os.Exit(2)
 	}
 	if *limit == "" {
@@ -57,7 +57,7 @@ func capacityCommand(args []string) {
 	}
 	resolved, problems := capacity.Resolve(capacity.Register(), *name+"="+*limit)
 	if len(problems) > 0 {
-		fmt.Fprintf(os.Stderr, "clawdline: %s\n", strings.Join(problems, "; "))
+		fmt.Fprintf(os.Stderr, cliCopy("ops", "capacity.problems", "clawdline: %s\n"), strings.Join(problems, "; "))
 		os.Exit(2)
 	}
 	var row capacity.Resolved
@@ -90,7 +90,7 @@ func capacityCommand(args []string) {
 		}
 		for _, e := range events {
 			if e.Kind == capacity.EventNotify {
-				notices = append(notices, fmt.Sprintf("%v at %v of %v", e.Payload["state"], e.Payload["used"], e.Payload["limit"]))
+				notices = append(notices, fmt.Sprintf(cliCopy("ops", "capacity.notice", "%v at %v of %v"), e.Payload["state"], e.Payload["used"], e.Payload["limit"]))
 			}
 		}
 		last = st
@@ -118,33 +118,33 @@ func capacityCommand(args []string) {
 		}
 	}
 
-	fmt.Printf("dir       %s\n", path)
-	fmt.Printf("row       %s (%s), limit %d %s, at the limit: %s\n", row.Entry.Name, row.Entry.Class, row.Limit, row.Entry.Unit, row.Entry.AtLimit)
-	fmt.Printf("wrote     %d times through the row's own writer\n", written)
-	fmt.Printf("states    %s → %s=%d\n", strings.Join(states, " → "), d.action, counterOf(last.Reading, d.action))
+	fmt.Printf(cliCopy("ops", "capacity.dir", "dir       %s\n"), path)
+	fmt.Printf(cliCopy("ops", "capacity.row", "row       %s (%s), limit %d %s, at the limit: %s\n"), row.Entry.Name, row.Entry.Class, row.Limit, row.Entry.Unit, row.Entry.AtLimit)
+	fmt.Printf(cliCopy("ops", "capacity.wrote", "wrote     %d times through the row's own writer\n"), written)
+	fmt.Printf(cliCopy("ops", "capacity.states", "states    %s → %s=%d\n"), strings.Join(states, " → "), d.action, counterOf(last.Reading, d.action))
 	if refusal != nil {
-		fmt.Printf("refusal   %v\n", refusal)
+		fmt.Printf(cliCopy("ops", "capacity.refusal", "refusal   %v\n"), refusal)
 	}
 	if unexpected != nil {
-		fmt.Printf("error     %v\n", unexpected)
+		fmt.Printf(cliCopy("ops", "capacity.error", "error     %v\n"), unexpected)
 	}
-	fmt.Printf("notices   %d", len(notices))
+	fmt.Printf(cliCopy("ops", "capacity.notices", "notices   %d"), len(notices))
 	if len(notices) > 0 {
-		fmt.Printf(" (%s; %d more held back by the one-a-day rule)", strings.Join(notices, ", "), last.Suppressed)
+		fmt.Printf(cliCopy("ops", "capacity.more_notices", " (%s; %d more held back by the one-a-day rule)"), strings.Join(notices, ", "), last.Suppressed)
 	}
 	fmt.Println()
 	body, _ := json.MarshalIndent(httptransport.CapacityEntry(last), "          ", "  ")
-	fmt.Printf("row now   %s\n", body)
+	fmt.Printf(cliCopy("ops", "capacity.row_now", "row now   %s\n"), body)
 
 	want := []string{"ok", "warn", "critical", "full"}
 	climbed := len(states) >= len(want) && strings.Join(states[:len(want)], ",") == strings.Join(want, ",")
 	refusedAsTyped := d.refusal == nil || refusal != nil
 	if !climbed || counterOf(last.Reading, d.action) != 1 || !refusedAsTyped || unexpected != nil ||
 		len(notices) != 1 || last.Reading.Failing {
-		fmt.Printf("result    FAILED: the row did not go ok → warn → critical → full, act (%s) exactly once and produce exactly one notice\n", d.action)
+		fmt.Printf(cliCopy("ops", "capacity.failed", "result    FAILED: the row did not go ok → warn → critical → full, act (%s) exactly once and produce exactly one notice\n"), d.action)
 		os.Exit(1)
 	}
-	fmt.Println("result    ok")
+	fmt.Println(cliCopy("ops", "capacity.ok", "result    ok"))
 }
 
 // drillDir is the directory the drill may fill, and how to put it away.
@@ -165,7 +165,7 @@ func drillDir(dir string, keep bool) (string, func(), error) {
 	}
 	for _, theirs := range append(foreignDirs(), config.Dir()) {
 		if t, err := filepath.Abs(theirs); err == nil && (abs == t || strings.HasPrefix(abs, t+string(filepath.Separator))) {
-			return "", nil, fmt.Errorf("%s is a state directory in use, not a throwaway one", dir)
+			return "", nil, fmt.Errorf(cliCopy("ops", "capacity.dir_in_use", "%s is a state directory in use, not a throwaway one"), dir)
 		}
 	}
 	entries, err := os.ReadDir(abs)
@@ -177,10 +177,10 @@ func drillDir(dir string, keep bool) (string, func(), error) {
 		// has something. Either way, not ours to fill.
 		for _, e := range entries {
 			if e.Name() == devices.LocalTokenFile || e.Name() == store.DBFile {
-				return "", nil, fmt.Errorf("%s is a daemon's state directory (it has %s)", dir, e.Name())
+				return "", nil, fmt.Errorf(cliCopy("ops", "capacity.daemon_dir", "%s is a daemon's state directory (it has %s)"), dir, e.Name())
 			}
 		}
-		return "", nil, fmt.Errorf("%s is not empty; the drill fills only a directory made for it", dir)
+		return "", nil, fmt.Errorf(cliCopy("ops", "capacity.dir_not_empty", "%s is not empty; the drill fills only a directory made for it"), dir)
 	}
 	// Made here, so removed here unless asked to keep it; an empty directory
 	// that was already there is left as it was found, empty.

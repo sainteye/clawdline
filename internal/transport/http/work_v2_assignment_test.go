@@ -92,8 +92,8 @@ func TestCompletingAnAssignedItemRecordsAndSendsItsNotification(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
 		t.Fatal(err)
 	}
-	if answer.Item.ClosedAt == nil || pushed.Terminal != p.s.ID || pushed.Title != "看板項目已完成" ||
-		pushed.Body != "「Queued assignment」已完成" || pushed.Tag != "work-item-"+v.Item.ID {
+	if answer.Item.ClosedAt == nil || pushed.Terminal != p.s.ID || pushed.Title != "Board item completed" ||
+		pushed.Body != "Queued assignment is complete." || pushed.Tag != "work-item-"+v.Item.ID {
 		t.Fatalf("answer/push: %+v %+v", answer.Item, pushed)
 	}
 	effects, err := s.store.Effects(context.Background(), orchestrator.EffectWorkItemCompletedPush, v.Item.ID)

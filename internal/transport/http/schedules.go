@@ -128,10 +128,14 @@ func writeScheduleReply(w http.ResponseWriter, reply app.ScheduleReply) {
 		// A broker refusal, carried whole: the same envelope, with what it
 		// says about the blocking task or the retry inside `error`.
 		writeBrokerRefusal(w, orchestrator.Refusal{
-			Status: reply.Status, Code: reply.Code, Message: reply.Message, Extra: reply.Extra})
+			Status: reply.Status, Code: reply.Code, Message: reply.Message, RawMessage: reply.RawMessage, Extra: reply.Extra})
 		return
 	}
-	writeAuthRefusal(w, reply.Status, reply.Code, reply.Message)
+	if reply.RawMessage {
+		writeRawAuthRefusal(w, reply.Status, reply.Code, reply.Message)
+	} else {
+		writeAuthRefusal(w, reply.Status, reply.Code, reply.Message)
+	}
 }
 
 // scheduleRaw is the bytes a schedule write sent, read once: they are part of

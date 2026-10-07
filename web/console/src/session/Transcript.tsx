@@ -1,3 +1,4 @@
+import { catalogWord } from "../catalog.js"
 import {
   useCallback,
   useEffect,
@@ -1105,7 +1106,7 @@ function entryHTML(v: View, e: Entry, at: number): ReactElement {
     // The label is the original's own literal; the catalog has no key for it.
     body += L.workflowRecordHTML(record, {
       escape: esc,
-      label: /^zh/i.test(document.documentElement.lang || "") ? "看板紀錄" : "Board record",
+      label: catalogWord("literal", "0fcf854c8ac2"),
     })
   }
   // An assistant turn carries pictures when it wrote an image marker into its

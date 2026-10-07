@@ -299,13 +299,14 @@ func TestTheTokenIsReadOnlyFromThisAppsDirectory(t *testing.T) {
 	}
 }
 
-// The guide prints without a daemon, in either language, and lists itself.
+// The guide prints without a daemon, resolves language aliases, and lists itself.
 func TestGuidePrints(t *testing.T) {
 	var out, errs bytes.Buffer
 	if code := printGuide(&out, &errs, nil); code != 0 || !strings.Contains(out.String(), "\n# Clawdline guide") ||
 		!strings.Contains(out.String(), "`clawdline guide dispatch`") {
 		t.Fatalf("exit %d: %.40q", code, out.String())
 	}
+	englishCore := out.String()
 	core := out.Len()
 	out.Reset()
 	if code := printGuide(&out, &errs, []string{"all"}); code != 0 || out.Len() <= core*4 {
@@ -325,15 +326,42 @@ func TestGuidePrints(t *testing.T) {
 		t.Fatalf("sections = %q", out.String())
 	}
 	out.Reset()
-	if code := printGuide(&out, &errs, []string{"-list"}); code != 0 || out.String() != "en\nzh-TW\n" {
+	if code := printGuide(&out, &errs, []string{"-list"}); code != 0 || out.String() != "en\nzh-Hant\nja\nzh-Hans\nko\nes\npt-BR\nfr\nde\n" {
 		t.Fatalf("list = %q", out.String())
 	}
 	out.Reset()
 	if code := printGuide(&out, &errs, []string{"zh-TW"}); code != 0 || out.Len() == 0 {
 		t.Fatalf("zh-TW: exit %d", code)
 	}
-	if code := printGuide(&out, &errs, []string{"fr"}); code != 1 {
-		t.Fatalf("unknown topic: exit %d", code)
+	zhTW := out.String()
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-Hant"}); code != 0 || out.String() != zhTW {
+		t.Fatalf("zh-TW alias: exit %d: %.60q", code, out.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"ru"}); code != 0 || out.String() != englishCore {
+		t.Fatalf("unknown language fallback: exit %d: %.60q", code, out.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-Hans"}); code != 0 {
+		t.Fatalf("zh-Hans: exit %d: %q", code, errs.String())
+	}
+	zhHans := out.String()
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"zh-Hans-CN"}); code != 0 || out.String() != zhHans {
+		t.Fatalf("zh-Hans-CN alias: exit %d: %.60q", code, out.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"fr"}); code != 0 || out.Len() == 0 || out.String() == englishCore {
+		t.Fatalf("French guide: exit %d: %.60q", code, out.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"de", "board"}); code != 0 || !strings.Contains(out.String(), "\n## 10.") {
+		t.Fatalf("German board: exit %d: %.60q", code, out.String())
+	}
+	out.Reset()
+	if code := printGuide(&out, &errs, []string{"en", "nosuchpart"}); code != 1 || !strings.Contains(errs.String(), "no such section") {
+		t.Fatalf("unknown section: exit %d: %q", code, errs.String())
 	}
 	out.Reset()
 	if code := printGuide(&out, &errs, []string{"child"}); code != 0 ||
@@ -391,7 +419,9 @@ func TestSkillInstallSaysEachStep(t *testing.T) {
 	paths := skillfile.Paths{Home: filepath.Join(root, "home"), StateDir: filepath.Join(root, "state")}
 	var out, errs bytes.Buffer
 	now := time.Date(2026, 9, 19, 6, 0, 0, 0, time.UTC)
-	if code := installSkill(&out, &errs, paths, now); code != 0 || !strings.Contains(out.String(), "Installed") {
+	if code := installSkill(&out, &errs, paths, now); code != 0 ||
+		!strings.Contains(out.String(), "Installed this build's stub at "+skillfile.StubPath(paths.Home)) ||
+		!strings.Contains(out.String(), "Installed this build's stub at "+skillfile.AgentsStubPath(paths.Home)) {
 		t.Fatalf("install: exit %d %q %q", code, out.String(), errs.String())
 	}
 	out.Reset()
@@ -402,8 +432,10 @@ func TestSkillInstallSaysEachStep(t *testing.T) {
 	if code := uninstallSkill(&out, &errs, paths); code != 0 || !strings.Contains(out.String(), "Put back") {
 		t.Fatalf("uninstall: exit %d %q", code, out.String())
 	}
-	if _, err := os.Lstat(skillfile.StubPath(paths.Home)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("the stub is still there: %v", err)
+	for _, stub := range []string{skillfile.StubPath(paths.Home), skillfile.AgentsStubPath(paths.Home)} {
+		if _, err := os.Lstat(stub); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("the stub is still there: %s %v", stub, err)
+		}
 	}
 }
 

@@ -42,6 +42,7 @@ import {
 } from "./js/net/document-links.js"
 import { bindDocumentsPage as bindDocumentsPageOriginal } from "./js/view/documents.js"
 import { nextWord } from "../next-strings.js"
+import { adaptDocumentsCopy } from "../pages/documents/copy-adapter.js"
 
 const hosted = !!import.meta.env.VITE_HOSTED_CONSOLE
 
@@ -57,6 +58,7 @@ export interface DocumentLocator extends DocumentIdentity {
   task?: string
   path: string
 }
+type DocumentListRow = DocumentLocator & { bytes: number; title?: string }
 
 /** What `bindDocumentsPage` hands back. */
 export interface DocumentsPage {
@@ -163,7 +165,7 @@ function wrongMachine(): Error & { code?: string } {
  * when a document is open, and cleared by every listing that is not cut. The
  * Swift app cut the same listing and drew nothing.
  */
-async function list(value: unknown): Promise<{ documents: DocumentLocator[] }> {
+async function list(value: unknown): Promise<{ documents: DocumentListRow[] }> {
   const identity = (normalizeDocumentIdentity as (v: unknown) => DocumentIdentity)(value)
   if (!hosted && identity.machine !== LOCAL_SESSION_MACHINE) throw wrongMachine()
   if (hosted && identity.machine === LOCAL_SESSION_MACHINE) throw wrongMachine()
@@ -177,12 +179,12 @@ async function list(value: unknown): Promise<{ documents: DocumentLocator[] }> {
     },
   )
   const listing = hosted ? cloudDocumentListing(body, identity)
-    : (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentLocator[] })(body, identity)
+    : (localDocumentListing as (b: unknown, i: DocumentIdentity) => { documents: DocumentListRow[] })(body, identity)
   sayCut(headers[0]?.get("X-Clawdline-Truncated") ?? null)
   return listing
 }
 
-function cloudDocumentListing(body: unknown, identity: DocumentIdentity): { documents: DocumentLocator[] } {
+function cloudDocumentListing(body: unknown, identity: DocumentIdentity): { documents: DocumentListRow[] } {
   if (!body || typeof body !== "object" || Array.isArray(body) ||
     Object.keys(body).length !== 1 || !Array.isArray((body as { documents?: unknown }).documents)) {
     throw typed("The document listing is invalid.", "bad_payload")
@@ -197,7 +199,7 @@ function cloudDocumentListing(body: unknown, identity: DocumentIdentity): { docu
     if (!Number.isSafeInteger(row.bytes) || Number(row.bytes) < 0 || typeof row.modified !== "number" || !Number.isFinite(row.modified)) {
       throw typed("The document listing is invalid.", "bad_payload")
     }
-    return { ...locator, bytes: row.bytes, modified: row.modified, ...(typeof row.title === "string" ? { title: row.title } : {}) }
+    return { ...locator, bytes: Number(row.bytes), modified: row.modified, ...(typeof row.title === "string" ? { title: row.title } : {}) }
   }) }
 }
 
@@ -251,7 +253,10 @@ async function read(value: unknown): Promise<unknown> {
       /* a refusal that is not JSON is still a refusal; its status names it */
     }
     const said = refusalOf(body, response)
-    throw typed(said.message, said.code)
+    const failure = typed(said.message, said.code) as Error & { detail?: string; detailKey?: string }
+    if (said.detail) failure.detail = said.detail
+    if (said.detailKey) failure.detailKey = said.detailKey
+    throw failure
   }
   try {
     return (documentBytesAnswer as (l: unknown, m: string, b: Uint8Array) => unknown)(
@@ -292,14 +297,18 @@ const jsonFetch = makeJSONFetch({
  * `busy` and `store_unavailable` all ended as the same "The document could not
  * be read." The daemon had named it; this function is where the name was lost.
  */
-function refusalOf(body: Record<string, unknown> | null, response: Response): { code: string; message: string } {
+function refusalOf(body: Record<string, unknown> | null, response: Response): { code: string; message: string; detail?: string; detailKey?: string } {
   const raw = body?.error
   if (typeof raw === "string" && raw) {
-    return { code: raw, message: typeof body?.detail === "string" ? body.detail : raw }
+    return { code: raw, message: typeof body?.detail === "string" ? body.detail : raw,
+      ...(typeof body?.detail === "string" ? { detail: body.detail } : {}),
+      ...(typeof body?.detail_key === "string" ? { detailKey: body.detail_key } : {}) }
   }
   if (raw && typeof raw === "object") {
-    const nested = raw as { code?: string; message?: string }
-    if (nested.code) return { code: nested.code, message: nested.message || nested.code }
+    const nested = raw as { code?: string; message?: string; detail_key?: string }
+    if (nested.code) return { code: nested.code, message: nested.message || nested.code,
+      ...(typeof nested.message === "string" ? { detail: nested.message } : {}),
+      ...(typeof nested.detail_key === "string" ? { detailKey: nested.detail_key } : {}) }
   }
   return {
     code: "http_" + response.status,
@@ -324,6 +333,12 @@ function words(): Record<string, string> {
 export function bindDocuments(doc: Document, navigate: (page: string) => void): DocumentsPage {
   const table: Record<string, Element | null> = {}
   for (const [slot, id] of Object.entries(DOCUMENTS_ELEMENTS)) table[slot] = doc.getElementById(id)
+  // React Detail owns the menu row and already reads its nine-language literal.
+  // Do not let the copied page overwrite that button with its two-language table.
+  table.menu = null
+  let rows: { scope: "project" | "task"; path: string; title?: string; task?: string; bytes: number }[] = []
+  let answer: { scope: "project" | "task"; path: string; byte_count: number } | null = null
+  let error: unknown = null
   const listView = table.listView
   if (listView && !cutNote) {
     cutNote = doc.createElement("p")
@@ -333,13 +348,39 @@ export function bindDocuments(doc: Document, navigate: (page: string) => void): 
     cutNote.hidden = true
     listView.appendChild(cutNote)
   }
-  return (bindDocumentsPageOriginal as (e: unknown, s: unknown) => DocumentsPage)(table, {
+  const page = table.page as HTMLElement | null
+  if (page) adaptDocumentsCopy(page, { rows: () => rows, answer: () => answer, error: () => error })
+  const original = (bindDocumentsPageOriginal as (e: unknown, s: unknown) => DocumentsPage)(table, {
     document: doc,
-    language: () => doc.documentElement.lang || navigator.language || "en",
-    list,
-    read,
+    // The copied controller has only English and Chinese words. Its DOM is
+    // translated before paint by the owned adapter from the selected catalog.
+    language: () => "en",
+    list: async (identity: unknown) => {
+      error = null; answer = null; rows = []
+      try {
+        const result = await list(identity) as { documents: typeof rows }
+        rows = result.documents
+        return result
+      } catch (caught) { error = caught; throw caught }
+    },
+    read: async (locator: unknown) => {
+      error = null; answer = null
+      try {
+        const result = await read(locator) as NonNullable<typeof answer>
+        answer = result
+        return result
+      } catch (caught) { error = caught; throw caught }
+    },
     shareOrigin: () => hosted ? "https://app.clawdline.com" : null,
     navigator: () => navigator,
     navigate: (name: string) => navigate(name),
   })
+  return {
+    ...original,
+    openSessionError: (caught: unknown) => { error = caught; return original.openSessionError(caught) },
+    openDirect: (locator: unknown, caught?: unknown) => {
+      error = caught ?? null
+      return original.openDirect(locator, caught)
+    },
+  }
 }

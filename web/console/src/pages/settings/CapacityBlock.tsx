@@ -1,3 +1,5 @@
+import { catalogFormat } from "../../catalog.js"
+import { catalogWord } from "../../catalog.js"
 import { useEffect, useState } from "react"
 import type { CapacityEntry, CapacityPanel } from "@clawdline/contract"
 import * as L from "../../legacy/bridge.js"
@@ -51,13 +53,13 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
 
   const copyHeaderDiagnostics = async () => {
     const rows = headerReadDiagnostics()
-    if (!rows.length) { setDiagnosticStatus(words("No recent header reads recorded", "近期沒有標題讀取紀錄")); return }
+    if (!rows.length) { setDiagnosticStatus(catalogWord("literal", "712dbdd9c3f0")); return }
     try {
       await navigator.clipboard.writeText(JSON.stringify(rows, null, 2))
-      setDiagnosticStatus(words("Anonymous read stages copied", "已複製匿名讀取停點"))
+      setDiagnosticStatus(catalogWord("literal", "be28f5f7d1a9"))
     } catch {
       // refusal-ok: a clipboard write is refused by the browser's permission, which carries no machine code to name.
-      setDiagnosticStatus(words("Could not copy; check clipboard access", "無法複製，請檢查剪貼簿權限"))
+      setDiagnosticStatus(catalogWord("literal", "ec06934bf3cc"))
     }
   }
 
@@ -72,7 +74,7 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
           setFailure("")
         })
         .catch((error: unknown) => {
-          if (live) setFailure(L.failureSentence(error, words("Capacity unavailable", "讀不到容量")))
+          if (live) setFailure(L.failureSentence(error, catalogWord("literal", "aff43bfb749b")))
         })
     void read()
     const timer = setInterval(read, POLL_MS)
@@ -90,10 +92,10 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
 
   return (
     <div className="block settings-capacity" id="settings-capacity">
-      <b id="settings-capacity-title">{words("Capacity", "容量")}</b>
+      <b id="settings-capacity-title">{catalogWord("literal", "6ea9f84cc7ae")}</b>
       <div className="row">
         <button className="chip" type="button" onClick={() => void copyHeaderDiagnostics()}>
-          {words("Copy recent Session read diagnostics", "複製近期 Session 讀取診斷")}
+          {catalogWord("literal", "e47d3117e261")}
         </button>
         <span role="status">{diagnosticStatus}</span>
       </div>
@@ -102,45 +104,36 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
           ? summary(rows)
           : failure
             ? ""
-            : words("Reading…", "讀取中…")}
+            : catalogWord("literal", "51062dc6381b")}
       </p>
       <p className="said" id="settings-capacity-status" role="status">
-        {failure && panel ? words("Showing the last reading. ", "顯示上一次讀到的。") + failure : failure}
+        {failure && panel ? catalogWord("literal", "6f684cb2905c") + failure : failure}
       </p>
       {panel?.completions_error && (
         <p className="cap-warn">
-          {words(
-            "Completion notices could not be read, so whether any are dead letters is unknown: ",
-            "完成通知讀不到，所以不知道有沒有 dead letter：",
-          ) + panel.completions_error}
+          {catalogWord("literal", "7331776e6ff4") + panel.completions_error}
         </p>
       )}
       {beat && !beat.running && (
         <p className="cap-warn">
-          {words(
-            "The capacity patrol is not running on this daemon, so every row below is unknown.",
-            "容量巡邏沒有在這個 daemon 跑，所以下面每一列都是未知。",
-          )}
+          {catalogWord("literal", "4c7b4ddb78d8")}
         </p>
       )}
       {beat?.stalled && (
         <p className="cap-warn">
-          {words(
-            "The capacity patrol has stalled: no pass finished in over three ticks, so the numbers below are old.",
-            "容量巡邏停了：超過三輪沒有完成，下面的數字是舊的。",
-          )}
+          {catalogWord("literal", "2f93135491a8")}
         </p>
       )}
       {dead > 0 && (
-        <p className="cap-warn cap-dead" title="POST /v1/orchestrator/completions/reconcile">
+        <p className="cap-warn cap-dead" title={catalogWord("inline", "c34776cd2efc")}>
           {words(
             `${dead} completion notices were never taken up to the end (dead letter); each was pushed once when it happened.`,
-            `${dead} 則完成通知送到最後都沒被收下（dead letter）；當時已推播過一次。`,
+            catalogFormat("template", "d4bddd9e5d03", [dead]),
           )}
         </p>
       )}
       {panel && loud.length === 0 && !all && rows.length > 0 && (
-        <p className="say">{words("Every row is below its warning line.", "每一列都在告警門檻以下。")}</p>
+        <p className="say">{catalogWord("literal", "1a2fd5039544")}</p>
       )}
       {listed.length > 0 && (
         <ul className="cap-rows">
@@ -153,8 +146,8 @@ export function CapacityBlock({ shown }: { shown: boolean }) {
         <div className="row">
           <button className="chip" id="settings-capacity-all" type="button" aria-expanded={all} onClick={() => setAll((v) => !v)}>
             {all
-              ? words("Only rows that need a look", "只看要注意的")
-              : words(`Show all ${rows.length} rows`, `展開全部 ${rows.length} 列`)}
+              ? catalogWord("literal", "73576f2cee8d")
+              : words(`Show all ${rows.length} rows`, catalogFormat("template", "6b7df3d81439", [rows.length]))}
           </button>
         </div>
       )}
@@ -182,7 +175,7 @@ function CapacityRow({ row }: { row: CapacityEntry }) {
         <span>{evicts(row)}</span>
         <span>{lastAlert(row)}</span>
         {row.projected_full_at ? <span>{fullBy(row.projected_full_at)}</span> : null}
-        {row.overridden && <span>{words("Limit lowered by override", "上限被調小了")}</span>}
+        {row.overridden && <span>{catalogWord("literal", "0bd13da58a88")}</span>}
         {counted && <span>{counted}</span>}
       </div>
       {why && <p className="cap-note">{why}</p>}

@@ -4,7 +4,7 @@
  * `POST /v1/auth/session` answers `409 device_limit_reached` when the account
  * already has as many viewer devices as its plan allows. Before this, the card
  * said so and stopped: no list, no button, and no other page a signed-out
- * browser could reach to remove an old device (docs/first-run-audit.md B12).
+ * browser could reach to remove an old device (docs/records/first-run-audit.md B12).
  *
  * The control plane already has the way out (PROTOCOL.md, "Viewer-capacity
  * recovery"): while the account is at its ceiling, the same short-lived OAuth

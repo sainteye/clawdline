@@ -4,7 +4,9 @@
 # Every check AGENTS.md requires before a commit, in one command, ending with
 # one line per check and an exit code: 0 every check passed, 1 at least one
 # did not, 2 this script was called wrongly, 75 the compile slot or memory was
-# not had within heavy's --max-wait and nothing was checked (run it again). A
+# not had within heavy's --max-wait and nothing was checked (run it again),
+# or 76 when a queued check was handed to a callback (end this turn and wait
+# for its notice). A
 # check that answers "could not tell" (check-private.sh's 3, for one) is not a
 # pass, so it counts as failed.
 #
@@ -35,7 +37,7 @@ done
 # script marks its own second run rather than trusting CLAWDLINE_HEAVY alone.
 if [ -z "${CLAWDLINE_HEAVY:-}" ] && [ -z "${CLAWDLINE_CHECK_WRAPPED:-}" ]; then
   export CLAWDLINE_CHECK_WRAPPED=1
-  HEAVY_REASON="${HEAVY_REASON:-tools/check.sh}" exec tools/heavy.sh "$0" "$@"
+  HEAVY_REASON="${HEAVY_REASON:-tools/check.sh}" HEAVY_HANDOFF="${HEAVY_HANDOFF:-1}" exec tools/heavy.sh "$0" "$@"
 fi
 
 if [ "$web" = auto ]; then
@@ -84,6 +86,7 @@ check "go test ./..." go test ./...
 check "contract-gen -check" go run ./tools/contract-gen -check
 check "check-legacy-css.sh" tools/check-legacy-css.sh
 check "check-machine-words.sh" tools/check-machine-words.sh
+check "check-shell-expansions.sh" tools/check-shell-expansions.sh
 check "check-private.sh" tools/check-private.sh
 check "check-private.sh -history -new" tools/check-private.sh -history -new
 if [ "$web" = yes ]; then

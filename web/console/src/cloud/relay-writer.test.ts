@@ -8,6 +8,7 @@
 // handed.
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import type { TranscriptPage } from "@clawdline/contract"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity, type CloudRow } from "./relay-reader.ts"
@@ -15,6 +16,10 @@ import { RelayReader, TRANSCRIPT_EXPECT_MS, type CloudEvent, type CloudIdentity,
 import { CARRIED_READS, RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
 // The copied client's own failure constructor: what the machine's refusal really becomes.
 import { failureFromMac } from "../legacy/js/net/cloud-failure.js"
+import { CatalogCloudClient } from "./refusal-client.js"
+import japanese from "../../public/catalogs/ja.json" with { type: "json" }
+// @ts-expect-error -- Node runs the source test with type stripping.
+import { activateCatalog, catalogRefusalDetail, resetCatalogForTest } from "../catalog.ts"
 
 type Call = [string, ...unknown[]]
 
@@ -40,6 +45,8 @@ class FakeClient implements CloudWriteClient {
   transcriptAsks = 0
   signature = "1-1"
   fail: Record<string, Error | undefined> = {}
+  /** What `_machineRequestAs` settles with, as the copied client resolves a payload's `body`. */
+  machineAnswer: unknown = undefined
   events(_listener: (event: CloudEvent) => void) {
     return () => {}
   }
@@ -144,7 +151,7 @@ class FakeClient implements CloudWriteClient {
   _machineRequestAs(request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number) {
     const args: unknown[] = [request, machine, word, body, kind]
     if (timeoutMs !== undefined) args.push(timeoutMs)
-    return this.act("_machineRequestAs", args, { ok: true })
+    return this.act("_machineRequestAs", args, this.machineAnswer ?? { ok: true })
   }
   updateSchedule(id: string, schedule: unknown) {
     return this.act("updateSchedule", [id, schedule], { ok: true, schedule: { id, title: "a schedule" } })
@@ -825,6 +832,53 @@ test("a refused Work v2 create settles as the route's flat refusal", async () =>
   })
 })
 
+test("a signed Cloud refusal keeps its detail key through flat and nested writes", async () => {
+  const verified = new CatalogCloudClient({ relayURL: "wss://relay.example.test/v1/connect", deviceToken: "fixture" })
+  let signed: Error | null = null
+  verified.events((event: { type?: string; error?: Error }) => { if (event.type === "read") signed = event.error ?? null })
+  const detail = "No decision has that id."
+  const key = "http.2abbea69ae9bec02"
+  verified._applySnapshot({ kind: "transcript", machine: "mac-a", session: "s1" }, {
+    read: "action:press-1", status: 404,
+    error: { code: "decision_not_found", layer: "mac_route", message: detail, detail_key: key, ref: REF },
+  }, { seq: 3, ts: "2026-10-07T00:00:00Z" }, false)
+  assert.ok(signed, "the copied CloudClient emitted its parsed refusal")
+  const client = new FakeClient()
+  client.fail._machineRequestAs = signed
+  const { reader } = seam(client)
+  const id = "10000000-0000-4000-8000-000000000001"
+  const nested = await reader.fetch(`/v1/work/decisions/${id}`, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-1" }))
+  const nestedBody = await json(nested) as { error: { detail_key?: string; message?: string } }
+  assert.equal(nestedBody.error.detail_key, key)
+  assert.equal(nestedBody.error.message, detail)
+  const oldDocument = globalThis.document
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "en", dir: "ltr", setAttribute() {} } } })
+  try {
+    assert.equal(activateCatalog(japanese, "ja"), "ja")
+    assert.deepEqual(catalogRefusalDetail(nestedBody), { text: japanese[key], lang: "ja" })
+  } finally {
+    resetCatalogForTest()
+    Object.defineProperty(globalThis, "document", { configurable: true, value: oldDocument })
+  }
+
+  verified._applySnapshot({ kind: "transcript", machine: "mac-a", session: "s1" }, {
+    read: "action:press-2", status: 403,
+    error: { code: "forbidden", layer: "mac_route", message: "Only this machine's own token may change its settings.",
+      detail_key: "http.9989084eae5cdab3" },
+  }, { seq: 4, ts: "2026-10-07T00:00:01Z" }, false)
+  client.fail._machineRequestAs = signed ?? undefined
+  const flat = await reader.fetch("/v1/work/v2/items", post({
+    project_id: "cloud-p1", kind: "issue", title: "A", description: "B", deployment_policy: "agent_decides",
+  }, { "Idempotency-Key": "press-create-2" }))
+  assert.equal((await json(flat) as { detail_key?: string }).detail_key, "http.9989084eae5cdab3")
+
+  const raw = failureFromMac({ code: "decision_not_found", layer: "mac_route", message: detail }, 404, REF)
+  ;(raw as Error & { detailKey?: string }).detailKey = key
+  client.fail._machineRequestAs = raw
+  const untrusted = await reader.fetch(`/v1/work/decisions/${id}`, post({ answer: "Proceed" }, { "Idempotency-Key": "press-decision-2" }))
+  assert.equal(((await json(untrusted)).error as { detail_key?: string }).detail_key, undefined)
+})
+
 test("a Board reference picture is read as machine-scoped bytes", async () => {
   const client = new FakeClient()
   const { reader } = seam(client)
@@ -1398,6 +1452,35 @@ test("a unify apply keeps its key and Project machine, and carries only the plan
   assert.deepEqual(client.calls, [], "only the first apply reached the machine")
   assert.equal(writeRoute("POST", "/v1/projects/cloud-p1/unify/extra"), null)
   assert.equal(writeRoute("PUT", "/v1/projects/cloud-p1/unify"), null)
+})
+
+test("a unify apply that stopped part-way over Cloud carries the local route's stopped answer", async () => {
+  const client = new FakeClient()
+  const { reader } = seam(client)
+  const stopped = {
+    outcome: "stopped",
+    ran: [{ kind: "rules_add_import", paths: ["CLAUDE.md"], description: "Add the import.", edits: [] }],
+    failed: { kind: "skill_link", paths: [".claude/skills/review"], description: "Link review.", edits: [] },
+    plan: { status: "drifting", version: "plan-v2", links_available: true, rules: {}, skills: [], actions: [], conflicts: [] },
+    error: "file_permission",
+    detail: "Unify stopped: A file or directory could not be written with this machine's permissions.",
+  }
+  // `cloudops.stoppedUnify` sends this as the payload's body beside status 500,
+  // and the copied client settles a body whatever the status.
+  client.machineAnswer = stopped
+  const raw = await reader.fetch("/v1/projects/cloud-p1/unify", { ...post({ version: "plan-v1" }), headers: { "Idempotency-Key": "unify-stopped" } })
+  assert.equal(raw.status, 500, "the same status the local route answers")
+  const answer = await raw.json()
+  assert.equal(answer.outcome, "stopped")
+  assert.deepEqual(answer.ran.map((action: { kind: string }) => action.kind), ["rules_add_import"])
+  assert.equal(answer.failed?.kind, "skill_link")
+  assert.equal(answer.plan.version, "plan-v2")
+  assert.equal(answer.error, "file_permission")
+  const api = readFileSync(new URL("../pages/projects/project-files-api.ts", import.meta.url), "utf8")
+  assert.match(api, /data\?\.outcome === "stopped"[\s\S]*return data as ProjectUnifyApplied/)
+  // The screen's stopped view is drawn from exactly that answer.
+  const source = readFileSync(new URL("../pages/projects/ProjectUnify.tsx", import.meta.url), "utf8")
+  assert.match(source, /answer\.outcome === "stopped"[\s\S]*setStopped\(\{ ran: answer\.ran, failed: answer\.failed/)
 })
 
 test("a project settings apply and detach reach the mirror as its own words, and a read reaches the machine", async () => {

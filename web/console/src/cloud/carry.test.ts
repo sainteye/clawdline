@@ -20,7 +20,7 @@ import { RelayReader, type CloudIdentity, type CloudRow, type CloudSessions } fr
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { RelayWriter, writeRoute, type CloudWriteClient } from "./relay-writer.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { BUILTIN_TAG, DEFAULT_TAG, catalogTag, catalogURL } from "./strings.ts"
+import { BUILTIN_TAG, DEFAULT_TAG, bundledCatalog, catalogTag, catalogURL } from "./strings.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { contextCell } from "../session/context.ts"
 
@@ -72,6 +72,10 @@ class FakeMac implements CloudWriteClient {
   }
   tasks() {
     return Promise.resolve({ tasks: [] })
+  }
+  _machineRequest(machine: string, word: string, _body: Record<string, unknown>, kind: string) {
+    this.asked.push(`${kind}:${machine}:${word}`)
+    return Promise.resolve({ at: 100, [word.split(".")[1]]: [] })
   }
   machineDescriptor(machine: string) {
     return this.commands && machine === "mac-a" ? { machine: { commands: this.commands } } : null
@@ -248,6 +252,9 @@ test("one word, one list, and every route names a word the table carries", () =>
   // the guard reads the table.
   assert.ok("transcript" in CARRIED)
   assert.ok("schedules" in CARRIED)
+  assert.ok("coordination.leases" in CARRIED)
+  assert.ok("coordination.waits" in CARRIED)
+  assert.ok("coordination.pauses" in CARRIED)
   assert.ok("snippets" in CARRIED)
   assert.ok("timeline" in CARRIED)
   // 104, counted on this tree — including the spoken-intent planner, Work v2 list/detail/search reads and person actions,
@@ -296,7 +303,26 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("project-unify-apply" in CARRIED)
   assert.ok(!("project-unify-plan" in DEFERRED))
   assert.ok(!("project-unify-apply" in DEFERRED))
-  assert.equal(Object.keys(CARRIED).length, 136)
+  assert.equal(Object.keys(CARRIED).length, 139)
+})
+
+test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
+  const mac = new FakeMac()
+  const reader = seam(mac)
+  for (const name of ["leases", "waits", "pauses"]) {
+    const path = `/v1/orchestrator/${name}`
+    const response = await reader.fetch(path)
+    assert.equal(response.status, 200, path)
+    assert.deepEqual(await response.json(), { at: 100, [name]: [] })
+    const row = reader.log[reader.log.length - 1]
+    assert.equal(row.answer, "relay")
+    assert.equal(row.word, `coordination.${name}`)
+  }
+  assert.deepEqual(mac.asked, [
+    "read:mac-a:coordination.leases",
+    "read:mac-a:coordination.waits",
+    "read:mac-a:coordination.pauses",
+  ])
 })
 
 test("a first Session recovery extends the wire only when the machine advertises the new word", () => {
@@ -674,8 +700,8 @@ test("the seam says what this machine can do that this bundle never asks for", a
 
 test("the words are this build's own catalog, and the document says which", async () => {
   // One file, shipped in the bundle and served by the daemon from the same
-  // place (`public/strings/`), so there is nothing for it to drift from.
-  const shipped = JSON.parse(readFileSync(resolve(console_, "public/strings", DEFAULT_TAG + ".json"), "utf8")) as Record<string, string>
+  // place (`public/catalogs/`), so there is nothing for it to drift from.
+  const shipped = JSON.parse(readFileSync(resolve(console_, "public/catalogs", DEFAULT_TAG + ".json"), "utf8")) as Record<string, string>
   assert.equal(shipped.lang, DEFAULT_TAG, "the shipped catalog names the language it is in")
   assert.equal(shipped.dir, "ltr")
 
@@ -683,25 +709,36 @@ test("the words are this build's own catalog, and the document says which", asyn
   // in one language before the words land and another after.
   const document = readFileSync(resolve(console_, "index.html"), "utf8")
   assert.match(document, new RegExp(`<html lang="${DEFAULT_TAG}"`), "index.html does not ship " + DEFAULT_TAG)
-  assert.notEqual(DEFAULT_TAG, BUILTIN_TAG)
+  assert.equal(DEFAULT_TAG, BUILTIN_TAG)
 
   // A declaration with no aliases is the one on the hosted build, and it used
   // to mean no catalog at all rather than the default one.
   assert.equal(catalogTag({ build: "b1", strings: {} }, ["en-US"]), DEFAULT_TAG)
   assert.equal(catalogTag({ build: "b1", strings: {} }, []), DEFAULT_TAG)
-  // A declared alias still decides, longest first.
+  // Cloud and local use the same script-aware resolver; legacy aliases do not override it.
   const declared = { build: "b1", strings: { zh: "zh-Hans", "zh-hant": "zh-Hant", ja: "ja" } }
   assert.equal(catalogTag(declared, ["zh-Hant-TW", "en"]), "zh-Hant")
+  assert.equal(catalogTag(declared, ["zh-Hant-CN"]), "zh-Hant")
+  assert.equal(catalogTag(declared, ["zh-Hans-TW"]), "zh-Hans")
+  assert.equal(catalogTag(declared, ["zh-Latn-TW"]), "en")
   assert.equal(catalogTag(declared, ["zh-CN"]), "zh-Hans")
-  assert.equal(catalogTag(declared, ["de"]), DEFAULT_TAG)
+  assert.equal(catalogTag(declared, ["de"]), "de")
 
   // Where it is read from: the build's immutable directory when the
   // declaration names one, the document's own otherwise.
-  assert.equal(catalogURL(declared, "zh-Hant", "https://app.example/x/"), "/app/b1/strings/zh-Hant.json")
+  assert.equal(catalogURL(declared, "zh-Hant", "https://app.example/x/"), "/app/b1/catalogs/zh-Hant.json")
   assert.equal(
     catalogURL({ build: "", strings: {} }, "zh-Hant", "https://app.example/x/"),
-    "https://app.example/x/strings/zh-Hant.json",
+    "https://app.example/x/catalogs/zh-Hant.json",
   )
+})
+
+test("the Cloud relay returns English for a damaged static catalog", async () => {
+  const config = { build: "", strings: {} }
+  const fetchDamaged = async () => ({ ok: true, json: async () => ({ lang: "ja", dir: "ltr", "legacy.webMenu": "" }) }) as Response
+  const answer = await bundledCatalog(config, ["ja-JP"], "https://app.example/", fetchDamaged as typeof fetch)
+  assert.equal(answer.lang, "en")
+  assert.equal(answer["legacy.webMenu"], "Menu")
 })
 
 test("the capacity block's read is carried, so the block a capacity push names opens on a phone", () => {

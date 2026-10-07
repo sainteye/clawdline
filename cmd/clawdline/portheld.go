@@ -32,7 +32,7 @@ func refuseToServe(code int, reason string) {
 	// A terminal already has the line, because the log mirrors to it, and so
 	// does a stderr the log never left (daemonLog could not open the file).
 	if log.Writer() != os.Stderr && !stderrIsTerminal() {
-		fmt.Fprintln(os.Stderr, "clawdline:", reason)
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "portheld.clawdline.f8aa7cdb", "clawdline:"), reason)
 	}
 	os.Exit(code)
 }
@@ -61,38 +61,38 @@ func refuseHeldPort(host string, port int, bindErr error) {
 func heldPortSentence(ctx context.Context, host string, port int, bindErr error,
 	holderOf func(context.Context, int) (process.Holder, error),
 	ask func(ctx context.Context, url string) (int, []byte, error)) (string, bool) {
-	where := fmt.Sprintf("port %d on %s", port, host)
+	where := fmt.Sprintf(cliCopy("misc", "portheld.where", "port %d on %s"), port, host)
 	holder, lookupErr := holderOf(ctx, port)
 	inUse := errors.Is(bindErr, syscall.EADDRINUSE)
 	if lookupErr != nil && !inUse {
-		return fmt.Sprintf("could not listen on %s: %v", where, bindErr), false
+		return fmt.Sprintf(cliCopy("misc", "portheld.listen_failed", "could not listen on %s: %v"), where, bindErr), false
 	}
 
 	var b strings.Builder
 	switch {
 	case lookupErr == nil:
-		fmt.Fprintf(&b, "%s is already held by pid %d", where, holder.PID)
+		fmt.Fprintf(&b, cliCopy("misc", "portheld.s_is_already_held_by_pid_d.ccdb9ffd", "%s is already held by pid %d"), where, holder.PID)
 		if holder.Command != "" {
 			fmt.Fprintf(&b, " (%s)", holder.Command)
 		}
 		if !holder.Started.IsZero() {
-			fmt.Fprintf(&b, ", running since %s (%s ago)", holder.Started.Format("2006-01-02 15:04:05 -0700"),
+			fmt.Fprintf(&b, cliCopy("misc", "portheld.running_since_s_s_ago.4e544694", ", running since %s (%s ago)"), holder.Started.Format("2006-01-02 15:04:05 -0700"),
 				time.Since(holder.Started).Round(time.Second))
 		}
 	case errors.Is(lookupErr, process.ErrNoHolder):
 		// The system lists nobody and the bind still failed: the holder let go
 		// in between, or it is out of this user's sight.
-		fmt.Fprintf(&b, "%s is already in use (%v), and the system lists no listener there now", where, bindErr)
+		fmt.Fprintf(&b, cliCopy("misc", "portheld.s_is_already_in_use_v_and_the_syste.a9514c24", "%s is already in use (%v), and the system lists no listener there now"), where, bindErr)
 	default:
-		fmt.Fprintf(&b, "%s is already in use (%v), and the system would not say by whom: %v", where, bindErr, lookupErr)
+		fmt.Fprintf(&b, cliCopy("misc", "portheld.s_is_already_in_use_v_and_the_syste.58c0958c", "%s is already in use (%v), and the system would not say by whom: %v"), where, bindErr, lookupErr)
 	}
 	b.WriteString(". ")
 	b.WriteString(describeHolderAnswers(ctx, host, port, ask))
-	b.WriteString(" This daemon has started nothing and is exiting.")
+	b.WriteString(cliCopy("misc", "portheld.this_daemon_has_started_nothing_and.42f3a707", " This daemon has started nothing and is exiting."))
 	if lookupErr == nil {
-		fmt.Fprintf(&b, " Stop pid %d by its PID if it should not be there, or give this daemon another port with CLAWDLINE_NEXT_PORT.", holder.PID)
+		fmt.Fprintf(&b, cliCopy("misc", "portheld.stop_pid_d_by_its_pid_if_it_should.38d5484a", " Stop pid %d by its PID if it should not be there, or give this daemon another port with CLAWDLINE_NEXT_PORT."), holder.PID)
 	} else {
-		b.WriteString(" Give this daemon another port with CLAWDLINE_NEXT_PORT.")
+		b.WriteString(cliCopy("misc", "portheld.give_this_daemon_another_port_with.fab8b91b", " Give this daemon another port with CLAWDLINE_NEXT_PORT."))
 	}
 	return b.String(), true
 }
@@ -108,31 +108,31 @@ func describeHolderAnswers(ctx context.Context, host string, port int, ask func(
 
 	status, body, err := ask(ctx, base+"/v1/health")
 	if err != nil {
-		return fmt.Sprintf("It does not answer HTTP there (%v).", err)
+		return fmt.Sprintf(cliCopy("misc", "portheld.http_unanswered", "It does not answer HTTP there (%v)."), err)
 	}
 	var health struct {
 		ServedBy string `json:"served_by"`
 	}
 	if json.Unmarshal(body, &health) != nil || health.ServedBy == "" {
-		return fmt.Sprintf("It is not a Clawdline daemon: /v1/health answered %d without saying what it is.", status)
+		return fmt.Sprintf(cliCopy("misc", "portheld.not_daemon", "It is not a Clawdline daemon: /v1/health answered %d without saying what it is."), status)
 	}
-	who := fmt.Sprintf("It answers /v1/health as %s", health.ServedBy)
+	who := fmt.Sprintf(cliCopy("misc", "portheld.health_identity", "It answers /v1/health as %s"), health.ServedBy)
 
 	status, body, err = ask(ctx, base+"/")
 	switch {
 	case err != nil:
-		return fmt.Sprintf("%s, and / did not answer (%v).", who, err)
+		return fmt.Sprintf(cliCopy("misc", "portheld.console_unanswered", "%s, and / did not answer (%v)."), who, err)
 	case status == http.StatusOK:
-		return who + ", and serves a console at /."
+		return fmt.Sprintf(cliCopy("misc", "portheld.console_served", "%s, and serves a console at /."), who)
 	}
 	var refusal struct {
 		Error string `json:"error"`
 	}
 	_ = json.Unmarshal(body, &refusal)
 	if refusal.Error != "" {
-		return fmt.Sprintf("%s, and / answers %d %s: it serves no console.", who, status, refusal.Error)
+		return fmt.Sprintf(cliCopy("misc", "portheld.console_refused", "%s, and / answers %d %s: it serves no console."), who, status, refusal.Error)
 	}
-	return fmt.Sprintf("%s, and / answers %d: it serves no console.", who, status)
+	return fmt.Sprintf(cliCopy("misc", "portheld.console_missing", "%s, and / answers %d: it serves no console."), who, status)
 }
 
 // askPort is one GET, bounded by ctx, reading at most 64 KiB of the answer.

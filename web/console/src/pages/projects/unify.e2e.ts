@@ -73,9 +73,15 @@ let changeBeforeNextApply = false
 // or apply and lose the answer on the way back.
 let nextApply: "apply" | "stop" | "lose" = "apply"
 let applies: { key: string; version: unknown; status: number }[] = []
+let refusePlaces: "raw" | "keyed" | null = null
+let refuseWorktrees = false
+
+// What `/v1/places` says in `setup` about unify: the readiness card's row.
+let placeUnify: Record<string, unknown> = {}
 
 function reset() {
-  unifyState = "drifting"; unifyVersion = "plan-one"; failPlanReads = 0; changeBeforeNextApply = false; nextApply = "apply"; applies = []
+  unifyState = "drifting"; unifyVersion = "plan-one"; failPlanReads = 0; changeBeforeNextApply = false; nextApply = "apply"; applies = []; refusePlaces = null; refuseWorktrees = false
+  placeUnify = { unify: "drifting", unify_count: 4 }
 }
 
 const TYPES: Record<string, string> = {
@@ -104,7 +110,7 @@ function page(): string {
   const words = JSON.parse(readFileSync(join(dist, "strings", "zh-Hant.json"), "utf8"))
   words.lang = "zh-Hant"
   words.dir = "ltr"
-  const slot = "<script>window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
+  const slot = "<script>localStorage.setItem('ui_language','zh-Hant');window.__strings=" + JSON.stringify(words).replaceAll("</", "<\\/") + "</script>"
   return html.replace("<!-- clawdline:strings -->", slot).replace("<!-- clawdline:cloud -->", "")
 }
 
@@ -113,6 +119,7 @@ function daemon(): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture")
     const path = url.pathname
+    if (path === "/v1/strings") return json(res, 200, JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
     if (path === "/v1/sessions") {
       generation++
       return json(res, 200, { at: Date.now(), sessions: [], scan: { complete: true, completed: { complete: true, sequence: generation },
@@ -121,18 +128,26 @@ function daemon(): Server {
     if (path === "/v1/health") return json(res, 200, { ok: true })
     // The Board summary is unavailable here, as on a machine without one; the rows come from the places.
     if (path === "/v1/projects" && req.method === "GET") return json(res, 503, { error: "board_unavailable" })
+    if (path === "/v1/places" && refusePlaces) return json(res, 403, refusePlaces === "keyed"
+      ? { error: "forbidden", detail: "Only this machine's own token may change its settings.", detail_key: "http.9989084eae5cdab3" }
+      : { error: "forbidden", detail: "Only the Project owner can change this setting." })
     if (path === "/v1/places") return json(res, 200, {
       at: Date.now(),
       assistants: [{ id: "claude", label: "Claude Code", availability: "unknown" }],
       places: [{ id: "fixture-place", label: "Example project", path: "/tmp/fixture", at: Date.now(),
+        boardProjectId: "fixture-place", itemCount: 0,
         icon: { accent: "#D97757", cells: [["#D97757", "#D97757"], ["#D97757", "#141416"]] },
         repo: "github.com/example/project",
-        setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready" } }],
+        setup: { icon: "generated", deploy: "ready", deploy_activity: "idle", servers: "missing", server_count: 0, sync: "ready", ...placeUnify } }],
     })
     if (path === "/v1/projects/fixture-place/files" && req.method === "GET") return json(res, 200, { files: [
       { id: "agents-file", name: "AGENTS.md", location: "AGENTS.md", source: "project", assistant: "codex", kind: "instruction", status: "ready", editable: true },
       { id: "claude-file", name: "CLAUDE.md", location: "CLAUDE.md", source: "project", assistant: "claude", kind: "instruction", status: "ready", editable: true },
     ], truncated: false, skipped: [] })
+    if (path === "/v1/projects/fixture-place/worktrees" && refuseWorktrees) return json(res, 429, {
+      error: "worktree_lifecycle_busy", detail: "Worktree lifecycle work is already queued on this machine; try again shortly.",
+      detail_key: "http.37e9f28e30eb6248",
+    })
     if (path === "/v1/projects/fixture-place/unify" && req.method === "GET") {
       if (failPlanReads > 0) { failPlanReads--; return json(res, 503, { error: "unavailable", detail: "the fixture refused one read" }) }
       return json(res, 200, plan(unifyState, unifyVersion))
@@ -248,7 +263,7 @@ class Browser {
   close() { this.ws.close() }
 }
 
-type Size = { width: number; height: number; mobile: boolean }
+type Size = { width: number; height: number; mobile: boolean; scheme?: "light" | "dark" }
 
 class Tab {
   private b: Browser
@@ -268,8 +283,9 @@ class Tab {
     const { sessionId } = await b.send("Target.attachToTarget", { targetId, flatten: true })
     await b.send("Page.enable", {}, sessionId)
     await b.send("Runtime.enable", {}, sessionId)
-    await b.send("Emulation.setDeviceMetricsOverride", { ...size, deviceScaleFactor: 1 }, sessionId)
-    await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] }, sessionId)
+    const { scheme = "dark", ...metrics } = size
+    await b.send("Emulation.setDeviceMetricsOverride", { ...metrics, deviceScaleFactor: 1 }, sessionId)
+    await b.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, sessionId)
     return new Tab(b, sessionId, targetId, origin)
   }
 
@@ -337,6 +353,7 @@ before(async () => {
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok))
   const address = server.address()
   origin = "http://127.0.0.1:" + (typeof address === "object" && address ? address.port : 0)
+  console.log(`Projects fixture origin: ${origin}; page: ${origin}/#page=projects`)
   profile = mkdtempSync(join(tmpdir(), "clawdline-unify-"))
   browserProcess = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
     "--no-first-run", "--no-default-browser-check", "about:blank"])
@@ -357,7 +374,7 @@ after(async () => {
   if (browserProcess && browserProcess.exitCode === null) {
     const gone = new Promise((ok) => browserProcess.once("exit", ok))
     browserProcess.kill()
-    await gone
+    await Promise.race([gone, new Promise((ok) => setTimeout(ok, 5000))])
   }
   server?.closeAllConnections()
   await new Promise<void>((ok) => (server ? server.close(() => ok()) : ok()))
@@ -414,6 +431,48 @@ async function scrollShots(tab: Tab, name: string) {
   }
   await tab.run(`document.querySelector(".project-unify-dialog-body").scrollTop = 0`)
 }
+
+test("phone: a copied Projects refusal retains its code and exposes raw detail as English", () =>
+  inTab(PHONE, async (tab) => {
+    reset()
+    refusePlaces = "raw"
+    await tab.go("/#page=projects")
+    const detail = await tab.until("the Project refusal detail is visible", `document.querySelector("#projects-status span[data-catalog-refusal-detail]")?.textContent`)
+    assert.equal(detail, " · Only the Project owner can change this setting.")
+    assert.equal(await tab.run(`document.querySelector("#projects-status span[data-catalog-refusal-detail]")?.lang`), "en")
+    assert.equal(await tab.run(`document.documentElement.lang`), "zh-Hant")
+    assert.match(await tab.run(`document.getElementById("projects-status")?.textContent`), /forbidden/u)
+    assert.equal(await tab.run(`document.querySelectorAll("#projects-status span[data-catalog-refusal-detail]").length`), 1)
+    assert.equal(await tab.run(`document.documentElement.scrollWidth <= 390`), true)
+    refusePlaces = "keyed"
+    await tab.go("/?fixture=keyed#page=projects")
+    const translated = JSON.parse(readFileSync(join(dist, "catalogs/zh-Hant.json"), "utf8"))["http.9989084eae5cdab3"]
+    await tab.until("the keyed Project detail is translated", `document.querySelector("#projects-status span[data-catalog-refusal-detail]")?.textContent?.includes(${JSON.stringify(translated)})`)
+    assert.equal(await tab.run(`document.querySelector("#projects-status span[data-catalog-refusal-detail]")?.lang`), "")
+    assert.equal(await tab.run(`document.querySelectorAll("#projects-status span[data-catalog-refusal-detail]").length`), 1)
+  }))
+
+test("phone: a copied worktree refusal shows its real translated producer detail", () =>
+  inTab(PHONE, async (tab) => {
+    reset()
+    refuseWorktrees = true
+    await tab.go("/#page=projects")
+    await tab.until("a Project worktree control is visible", `!!document.querySelector(".project-row-worktrees")?.offsetParent`)
+    await tab.run(`document.querySelector(".project-row-worktrees")?.click()`)
+    const translated = JSON.parse(readFileSync(join(dist, "catalogs/zh-Hant.json"), "utf8"))["http.37e9f28e30eb6248"]
+    try {
+      await tab.until("the keyed worktree detail is translated", `document.querySelector("#project-worktree-status span[data-catalog-refusal-detail]")?.textContent?.includes(${JSON.stringify(translated)})`)
+    } catch (error) {
+      const snapshot = await tab.run(`({status: document.getElementById("project-worktree-status")?.textContent,
+        lifecycle: document.getElementById("project-worktree-lifecycle")?.outerHTML?.slice(0, 1800),
+        detail: document.querySelector("#project-worktree-status span[data-catalog-refusal-detail]")?.textContent})`)
+      throw new Error(JSON.stringify(snapshot), { cause: error })
+    }
+    assert.match(await tab.run(`document.getElementById("project-worktree-status")?.textContent`), /worktree_lifecycle_busy/u)
+    assert.equal(await tab.run(`document.querySelector("#project-worktree-status span[data-catalog-refusal-detail]")?.lang`), "")
+    assert.equal(await tab.run(`document.querySelectorAll("#project-worktree-status span[data-catalog-refusal-detail]").length`), 1)
+    assert.equal(await tab.run(`document.documentElement.scrollWidth <= 390`), true)
+  }))
 
 test("desk: a failed read says 無法判斷, the preview shows both columns, and apply after a changed plan reaches 已共用", () =>
   inTab(DESK, async (tab) => {
@@ -568,4 +627,71 @@ test("desk: a lost apply answer rereads the plan and says 已共用 only because
     await tab.until("the reread confirms", `document.querySelector(".project-unify-notice")?.textContent === "重新讀取後確認：已共用。"`)
     assert.equal(await tab.run(STATUS), "已共用")
     assert.deepEqual(applies.map(a => a.status), [504])
+  }))
+
+// ---- the readiness card's 「Claude／Codex 共用」 row
+
+/** Opens the health check's full list, as the Projects page's 查看健檢 does. */
+async function openHealthCheck(tab: Tab) {
+  await tab.go("/#page=projects")
+  await tab.until("查看健檢 appears", `(() => { const b = document.querySelector("button.project-setup-open"); if (!b) return false; b.click(); return true })()`)
+  await tab.until("the health check opens", `document.querySelector(".project-setup-dialog")?.open`)
+}
+
+const UNIFY_ROW = `(() => { const row = [...document.querySelectorAll(".project-readiness-capability")].find(r => r.querySelector("strong")?.textContent === "Claude／Codex 共用")
+  return row && { text: row.querySelector("strong + span")?.textContent, state: row.querySelector(".project-readiness-state")?.textContent,
+    button: row.querySelector("button")?.textContent ?? null, right: Math.round(row.getBoundingClientRect().right),
+    buttonRight: Math.round(row.querySelector("button")?.getBoundingClientRect().right ?? 0) } })()`
+
+const SIDEWAYS = `(() => { const body = document.querySelector(".project-setup-dialog-body")
+  return { page: document.documentElement.scrollWidth > innerWidth, body: body.scrollWidth > body.clientWidth } })()`
+
+for (const [name, size] of [["phone", PHONE], ["desk light", { ...DESK, scheme: "light" as const }]] as const) {
+  test(`${name}: the readiness row says 有落差（4 項）, and 檢視共用 from the keyboard opens that Project's preview`, () =>
+    inTab(size, async (tab) => {
+      reset()
+      await openHealthCheck(tab)
+      const row = await tab.until("the unify row is drawn", UNIFY_ROW)
+      assert.equal(row.text, "有落差（4 項）")
+      assert.equal(row.state, "需檢查")
+      assert.equal(row.button, "檢視共用")
+      assert.ok(row.buttonRight <= row.right, "the button stays inside its row: " + JSON.stringify(row))
+      assert.deepEqual(await tab.run(SIDEWAYS), { page: false, body: false }, "nothing scrolls sideways")
+      await tab.run(`[...document.querySelectorAll(".project-readiness-capability")].find(r => r.querySelector("button"))?.scrollIntoView({ block: "center" })`)
+      await tab.shot(`unify-row-${name.replace(" ", "-")}-1-card`)
+      await tab.until("檢視共用 takes focus", `(() => { const b = ${button("檢視共用")}; if (!b) return false; b.focus(); return document.activeElement === b })()`)
+      await tab.press("Enter")
+      await tab.until("the preview opens", `document.querySelector(".project-unify-dialog")?.open`)
+      assert.match(await tab.run(`document.querySelector(".project-unify-dialog-title, #project-unify-dialog-title").textContent`), /Example project · Claude 與 Codex 共用/)
+      assert.match(await tab.run(`document.querySelector("#project-setup-title").textContent`), /Example project · 設定/, "the settings view is scoped to that Project")
+      await tab.shot(`unify-row-${name.replace(" ", "-")}-2-preview`)
+      await tab.press("Escape")
+      await tab.until("focus returns to 檢視變更", `document.activeElement?.textContent === "檢視變更"`)
+    }))
+}
+
+test("phone: a machine that cannot plan says 未知, and its preview says what could not be read", () =>
+  inTab(PHONE, async (tab) => {
+    reset()
+    unifyState = "unknown"
+    placeUnify = { unify: "unknown" }
+    await openHealthCheck(tab)
+    const row = await tab.until("the unify row is drawn", UNIFY_ROW)
+    assert.match(row.text, /^未知/)
+    assert.equal(row.state, "未知")
+    await tab.run(`${button("檢視共用")}.click()`)
+    await tab.until("the preview opens", `document.querySelector(".project-unify-dialog")?.open`)
+    assert.match(await tab.run(`document.querySelector(".project-unify-verdict.is-unknown").textContent`), /讀不到 CLAUDE\.md/)
+    await tab.shot("unify-row-phone-3-unknown")
+  }))
+
+test("phone: an older machine that sends no unify status shows 未知 and offers no button", () =>
+  inTab(PHONE, async (tab) => {
+    reset()
+    placeUnify = {}
+    await openHealthCheck(tab)
+    const row = await tab.until("the unify row is drawn", UNIFY_ROW)
+    assert.match(row.text, /^未知/)
+    assert.equal(row.button, null)
+    await tab.shot("unify-row-phone-4-older")
   }))

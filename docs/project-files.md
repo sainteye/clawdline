@@ -138,13 +138,33 @@ says so. Any other refusal that is not one sent before an action ran (`plan_unkn
 `bad_request`, the Cloud gates) also rereads the plan and says some actions may have run. At phone
 width the preview fills the screen and the columns stack; closing it returns focus to 檢視變更.
 
-The console has no readiness-card row for unify: the card list is drawn from `/v1/places`, which
-carries no unify status, and one plan read per card would be a new request per Project on every
-open of the Projects health check.
+The Projects health check's readiness card has a 「Claude／Codex 共用」 row
+(`web/console/src/pages/projects/project-setup.ts`): 已共用, 有落差（n 項） with the same count, or
+未知. Its status comes from the places answer: `GET /v1/places` carries `setup.unify` (`unified`,
+`drifting` or `unknown`) and, when drifting, `setup.unify_count`, computed by the same read-only
+`Plan` for each place (`internal/transport/http/project_setup.go`). A place that cannot be planned
+is `unknown`, never `unified`. A daemon older than the field sends neither; the row then says 未知,
+offers no button and is left out of the card's score, and a missing count is not shown as 0. The
+row's 檢視共用 opens that Project's settings view and, once its plan is read, the preview above; a
+plan that cannot be read leaves the preview shut and moves focus to the block's status line, which
+says why.
+
+It is computed inline rather than lazily. `Plan` reads two rules files, three Claude-only paths and
+the two skills directories, and is bounded by `MaxScanEntries` per skill tree. Measured on this
+repository on 2026-10-07 with `placesRoute` called directly (21 runs each, median): one place
+0.22 ms before and 0.47 ms after; forty places inside this repository 3.29 ms before and 7.56 ms
+after — about 0.1 ms per place, on a route the console reads when the health check opens. This
+repository has no skills directories, so the number is the rules-file cost; a repository with large
+skill trees costs more, up to the bound. If that becomes noticeable, the field can move to a
+per-Project read the way the unify block reads its plan.
 
 The paired Cloud console carries both words (`web/console/src/cloud/carry.ts`):
 `project-unify-plan`, a read available to a paired device with read access even when the remote
 write switch is off, and `project-unify-apply`, which needs the remote write gate and carries the
-request's idempotency key. Over Cloud a stopped run arrives as a plain refusal — the machine's
-answer of what ran and the recomputed plan are not in the refusal fields the Cloud bridge forwards —
-so the console rereads the plan, as above.
+request's idempotency key. A stopped run crosses whole: the Cloud bridge sends the
+`ProjectUnifyApplied` body — `ran`, `failed`, the recomputed plan, and the refusal's `error` and
+`detail` — as the answer's `body` beside status 500 (`cloudops.stoppedUnify`), not as an `error`,
+whose fields the reader filters by code. The console's Cloud writer answers it as the local route
+does, `500` with that body, so the screen shows the same stopped view on either transport. Any
+other refusal still crosses as an `error`, and a lost answer is still uncertain and rereads the
+plan.

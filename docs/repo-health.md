@@ -1,3 +1,4 @@
+<!-- clawdline-doc: kind=spec audience=agent -->
 # Governance review: one process, started by hand, that keeps a project the right size
 
 Status: **proposed design, 2026-10-06.** Nothing here is built. Every claim about how Clawdline

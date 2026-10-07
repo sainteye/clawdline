@@ -1,3 +1,5 @@
+import { catalogFormat } from "../catalog.js"
+import { catalogWord } from "../catalog.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { RefusalError, asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
 import { NeedsUpdate } from "../machine/NeedsUpdate.js"
@@ -129,7 +131,7 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
         }}>
         <summary>
           <b>{workWord("todosTitle")}</b>
-          <button className="session-todos-add" type="button" aria-label="新增 Session 待辦"
+          <button className="session-todos-add" type="button" aria-label={catalogWord("inline", "aab5446b4b41")}
             onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setAdding(true) }}><WorkIcon name="add" /></button>
           {!readReady ? <span id="session-todos-count">{nextWord("sessionNotStartedShort")}</span>
             : summary ? <TodoProgressSummary progress={summary} />
@@ -145,31 +147,31 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             ? <NeedsUpdate update={readFailure.update} />
             : <p className="work-note" role="alert">{readFailure.words}</p>)}
           {failure && <p className="work-note" role="alert">{failure}</p>}
-          {page && hasAssigned && <section className="session-todos-list" aria-label="負責項目">
-            <p>這個 Session 尚未關閉的負責項目</p>
+          {page && hasAssigned && <section className="session-todos-list" aria-label={catalogWord("inline", "a5cec9091810")}>
+            <p>{catalogWord("inline", "122ffc78d24e")}</p>
             {page.assigned_items.map((item) => (
               <SessionOwnedItem item={item} decisions={page.open_decisions?.filter((decision) => decision.work_id === item.id) ?? []}
                 decisionsError={page.decisions_error} key={item.id} onOpen={() => openWorkItem(item)} onAnswered={() => void refresh(true)} />
             ))}
           </section>}
-          {page && hasRecent && <section className="session-todos-list session-recent-work" aria-label="最近完成的項目">
-            <p>最近完成的看板項目</p>
+          {page && hasRecent && <section className="session-todos-list session-recent-work" aria-label={catalogWord("inline", "fa7b5ebe86c4")}>
+            <p>{catalogWord("inline", "4e221e79f8d1")}</p>
             {page.recent_items.map((item) => <SessionOwnedItem item={item} completed key={item.id} onOpen={() => openWorkItem(item)} />)}
           </section>}
-          {page && hasDirect && <section className="session-todos-list" aria-label="直接待辦">
+          {page && hasDirect && <section className="session-todos-list" aria-label={catalogWord("inline", "fc3806d4036b")}>
             {openDirect.map((todo) => (
               <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
                 onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />
             ))}
           </section>}
-          {page && hasCompletedDirect && <section className="session-todos-list session-recent-todos" aria-label="最近完成的直接待辦">
-            <p>最近完成的直接待辦</p>
+          {page && hasCompletedDirect && <section className="session-todos-list session-recent-todos" aria-label={catalogWord("inline", "13430167252e")}>
+            <p>{catalogWord("inline", "13430167252e")}</p>
             {completedDirect.map((todo) => <DirectTodo key={todo.id} todo={todo} conversation={row.sessionId} busy={busy === todo.id}
               onAction={(action) => { void run(todo.id, () => directTodoActionV2(rowID, todo.id, action)) }} />)}
           </section>}
-          {empty && <p className="session-todos-empty">目前沒有待辦。</p>}
+          {empty && <p className="session-todos-empty">{catalogWord("inline", "7fdc5e3bf06f")}</p>}
         </div>
-        <button className="session-todos-backdrop" type="button" tabIndex={-1} aria-label="收起 Session 待辦"
+        <button className="session-todos-backdrop" type="button" tabIndex={-1} aria-label={catalogWord("inline", "3df6e2f5b818")}
           onClick={() => setOpen(false)} />
       </details>
       {attention.live}
@@ -187,13 +189,13 @@ export function Todos({ row, onReplySent, onCompose }: { row: SessionRow | null;
             }
           }).then((ok) => { if (ok) { setText(""); setImages([]); setAdding(false); setOpen(true) } })
         }}>
-          <h2 id="session-todo-modal-title">新增 Session 待辦</h2>
-          <p>輸入你希望這個 Session 接下來完成的事情。</p>
-          <VoiceTextarea value={text} autoFocus maxLength={8192} aria-label="待辦內容" onValue={setText} />
-          <PendingPictures images={images} busy={busy === "new"} note="建立待辦後上傳" onChange={setImages} />
+          <h2 id="session-todo-modal-title">{catalogWord("inline", "aab5446b4b41")}</h2>
+          <p>{catalogWord("inline", "0ffffc3e4124")}</p>
+          <VoiceTextarea value={text} autoFocus maxLength={8192} aria-label={catalogWord("inline", "6c668a34f0bd")} onValue={setText} />
+          <PendingPictures images={images} busy={busy === "new"} note={catalogWord("literal", "035492ae6343")} onChange={setImages} />
           <div className="work-actions">
-            <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>新增</button>
-            <button className="chip" type="button" onClick={() => { setAdding(false); setImages([]) }}>取消</button>
+            <button className="chip on" type="submit" disabled={busy === "new" || !text.trim()}>{catalogWord("inline", "0006d696d8e1")}</button>
+            <button className="chip" type="button" onClick={() => { setAdding(false); setImages([]) }}>{catalogWord("inline", "2cd0f3be8738")}</button>
           </div>
         </form>
       </div>}
@@ -240,7 +242,7 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
     setErrors((current) => ({ ...current, [decision.id]: "" }))
     try {
       await answerDecision(decision.id, option.id)
-      setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` }))
+      setReceipts((current) => ({ ...current, [decision.id]: catalogFormat("template", "3ab185f67611", [option.label]) }))
       onAnswered?.()
     } catch (error) {
       // refusal-ok: a named refusal goes to failureWords (pages/work/shared.ts), which ends in failureSentence; anything else is re-read before it is called anything.
@@ -250,42 +252,42 @@ function SessionOwnedItem({ item, decisions = [], decisionsError, completed = fa
         try {
           const latest = (await readDecision(decision.id)).decision
           if (latest.state === "answered" && latest.answer === option.id) {
-            setReceipts((current) => ({ ...current, [decision.id]: `已回答：${option.label}` }))
+            setReceipts((current) => ({ ...current, [decision.id]: catalogFormat("template", "3ab185f67611", [option.label]) }))
             onAnswered?.()
           } else if (latest.state === "open") {
-            setErrors((current) => ({ ...current, [decision.id]: "回答尚未確認，請稍後再試。" }))
+            setErrors((current) => ({ ...current, [decision.id]: catalogWord("literal", "eb5d91602c3f") }))
           } else {
-            setErrors((current) => ({ ...current, [decision.id]: "決定狀態已變更，請查看項目詳情。" }))
+            setErrors((current) => ({ ...current, [decision.id]: catalogWord("literal", "2fc474e2ef13") }))
           }
         } catch (readError) {
-          setErrors((current) => ({ ...current, [decision.id]: `送出結果尚未確認，請稍後查看決定。${failureWords(readError)}` }))
+          setErrors((current) => ({ ...current, [decision.id]: catalogFormat("template", "ad7d5cc31425", [failureWords(readError)]) }))
         }
       }
     } finally { submitting.current = false; setPending(null) }
   }
   return <article className={`session-owned-item${completed ? " completed" : ""}`} data-phase={item.phase}>
     <button className="session-owned-summary" type="button" onClick={onOpen}
-      aria-label={hasReport ? `開啟「${item.title}」的結案報告` : `查看「${item.title}」的項目詳情`}>
+      aria-label={hasReport ? catalogFormat("template", "1f5e91ec371f", [item.title]) : catalogFormat("template", "ef7d5e84ea0c", [item.title])}>
       <Mark icon={item.project.icon as SessionRow["icon"]} cellPx={3} />
-      <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? `已完成 ${when(item.closed_at)}` : phaseName(item.phase)}
-        {item.condition ? <span className="session-work-condition"> · {item.decision_id && receipts[item.decision_id] ? "已收到回答" : conditionName(item.condition)}</span> : null}</small>
-        {hasReport && <em className="session-owned-report">結案報告</em>}</span>
+      <span><b>{item.title}</b><small>{item.project.label} · {item.kind} · {completed ? catalogFormat("template", "0452d5f2c3a3", [when(item.closed_at)]) : phaseName(item.phase)}
+        {item.condition ? <span className="session-work-condition"> · {item.decision_id && receipts[item.decision_id] ? catalogWord("literal", "9dbb156d1439") : conditionName(item.condition)}</span> : null}</small>
+        {hasReport && <em className="session-owned-report">{catalogWord("inline", "75f18cd2c3bc")}</em>}</span>
       <span className="session-owned-state">
-        {completed && <span className="session-owned-complete" role="img" aria-label="已完成"><WorkIcon name="check" /></span>}
+        {completed && <span className="session-owned-complete" role="img" aria-label={catalogWord("inline", "f28461bb49c8")}><WorkIcon name="check" /></span>}
         <span className="session-owned-open"><WorkIcon name="open" /></span>
       </span>
     </button>
     {decisionsError && item.condition === "waiting_user" && item.decision_id && !receipts[item.decision_id] &&
-      <p className="session-owned-decision-note">決定暫時無法載入，請稍後查看項目詳情。</p>}
-    {decisions.map((decision) => <section className="session-owned-decision" key={decision.id} aria-label="待回答的問題">
+      <p className="session-owned-decision-note">{catalogWord("inline", "10f660a1172d")}</p>}
+    {decisions.map((decision) => <section className="session-owned-decision" key={decision.id} aria-label={catalogWord("inline", "36a658e510e2")}>
       <p>{decision.question}</p>
       {receipts[decision.id] ? <p role="status" className="session-owned-decision-receipt">{receipts[decision.id]}</p>
         : <div className="session-owned-options">{decision.options.map((option) =>
           <button className="chip danger session-decision-answer" type="button" key={option.id} disabled={!!pending}
             aria-busy={pending?.decision === decision.id && pending.option === option.id}
             onClick={() => void answer(decision, option)}>
-            {pending?.decision === decision.id && pending.option === option.id ? "送出中…" : option.label}</button>)}</div>}
-      {pending?.decision === decision.id && <p role="status" className="session-owned-decision-note">正在送出「{pending.label}」…</p>}
+            {pending?.decision === decision.id && pending.option === option.id ? catalogWord("literal", "84b95f498939") : option.label}</button>)}</div>}
+      {pending?.decision === decision.id && <p role="status" className="session-owned-decision-note">{catalogWord("inline", "56bf73fe1d04")}{pending.label}」…</p>}
       {errors[decision.id] && <p role="alert" className="session-owned-decision-note">{errors[decision.id]}</p>}
     </section>)}
     {Object.entries(receipts).filter(([id]) => !decisions.some((decision) => decision.id === id)).map(([id, words]) =>
@@ -306,27 +308,27 @@ function DirectTodo({ todo, conversation, busy, onAction }: { todo: DirectTodoV2
     const timer = window.setTimeout(() => setNow(Math.floor(Date.now() / 1000)), Math.max(0, send.until - now) * 1000 + 250)
     return () => window.clearTimeout(timer)
   }, [send.kind, send.kind === "wait" ? send.until : 0, now])
-  const receipt = todo.read_at ? { mark: "✓✓", words: "已同步到 Session，尚未完成", state: "read" }
-    : todo.sent_at ? { mark: "✓", words: "已傳送，等待 Session 同步", state: "sent" }
-      : { mark: "", words: "尚未傳送；Session 會在下一次讀取待辦時看到", state: "unsent" }
+  const receipt = todo.read_at ? { mark: "✓✓", words: catalogWord("literal", "9e5c6601f40b"), state: "read" }
+    : todo.sent_at ? { mark: "✓", words: catalogWord("literal", "246e7ec1af00"), state: "sent" }
+      : { mark: "", words: catalogWord("literal", "ecd46b6ac930"), state: "unsent" }
   return <article className={`session-direct-todo${completed ? " completed" : ""}`} data-author={own ? "session" : "person"}>
     {completed
-      ? <button className="session-todo-check completed" type="button" disabled={busy} aria-label="恢復為未完成"
+      ? <button className="session-todo-check completed" type="button" disabled={busy} aria-label={catalogWord("inline", "5959a1a7afc2")}
         onClick={() => onAction("reopen")}><WorkIcon name="boxChecked" /></button>
-      : <button className="session-todo-check" type="button" disabled={busy} aria-label="完成" onClick={() => onAction("complete")}><WorkIcon name="box" /></button>}
-    <div><b>{todo.text}</b><small>{completed ? `完成 ${when(todo.completed_at!)}` : when(todo.created_at)} {own
+      : <button className="session-todo-check" type="button" disabled={busy} aria-label={catalogWord("inline", "c0b3fbff51cc")} onClick={() => onAction("complete")}><WorkIcon name="box" /></button>}
+    <div><b>{todo.text}</b><small>{completed ? catalogFormat("template", "753c4151ac3b", [when(todo.completed_at!)]) : when(todo.created_at)} {own
       && <span className="session-todo-author" aria-label={workWord("todoAddedBySessionLabel")}
         title={workWord("todoAddedBySessionLabel")}>{workWord("todoAddedBySession")}</span>}{(completed || !own) && <span
       className="session-todo-receipt" data-state={completed ? "completed" : receipt.state}
-      aria-label={completed ? "已完成" : receipt.words}>{completed ? "已完成" : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span>}</small></div>
-    {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label="待辦參考圖片">
+      aria-label={completed ? catalogWord("literal", "2de32e306def") : receipt.words}>{completed ? catalogWord("literal", "2de32e306def") : <><span className="session-todo-receipt-mark" aria-hidden="true">{receipt.mark}</span>{receipt.words}</>}</span>}</small></div>
+    {!!todo.images?.length && <div className="work-reference-images session-todo-images" role="group" aria-label={catalogWord("inline", "7be342f85157")}>
       {todo.images.map((image) => <ReferenceImage key={image.id} image={image} compact />)}
     </div>}
     <div className="work-actions session-todo-actions">
       {send.kind !== "none" && <button className={`chip session-todo-send${send.kind === "send" ? " on danger" : ""}`} type="button" disabled={busy || send.kind === "wait"}
-        title={send.kind === "wait" ? "剛傳送過；兩分鐘內 Session 沒讀取才能再送" : undefined}
+        title={send.kind === "wait" ? catalogWord("literal", "d433aa4d8170") : undefined}
         onClick={() => onAction("send")}><WorkIcon name="send" />{send.label}</button>}
-      <button className="session-todo-delete" type="button" disabled={busy} aria-label="刪除待辦" title="刪除待辦"
+      <button className="session-todo-delete" type="button" disabled={busy} aria-label={catalogWord("inline", "18d1c08576de")} title={catalogWord("inline", "18d1c08576de")}
         onClick={() => onAction("delete")}><WorkIcon name="delete" /></button>
     </div>
   </article>
@@ -337,27 +339,27 @@ function ReferenceImage({ image, compact = false }: { image: WorkV2Image; compac
   // the link opens the original, read on the press (`useReferenceImage`).
   const { source, failed, full, fullFailed, openFull } = useReferenceImage(image.id)
   if (compact) return source ? <a className="session-todo-image-link" href={full || source} target="_blank" rel="noreferrer"
-    aria-label={`開啟參考圖片 ${image.title}`} title={image.title} onClick={openFull}>
+    aria-label={catalogFormat("template", "8dfb0e13886c", [image.title])} title={image.title} onClick={openFull}>
     <span>{image.title}</span><span aria-hidden={fullFailed ? undefined : "true"} role={fullFailed ? "alert" : undefined}>{fullFailed || "↗"}</span>
   </a> : <div className="session-todo-image-link" data-state={failed ? "failed" : "loading"} role={failed ? "alert" : undefined}>
-    <span title={image.title}>{image.title}</span><span>{failed || "載入中…"}</span>
+    <span title={image.title}>{image.title}</span><span>{failed || catalogWord("literal", "c7821df3194e")}</span>
   </div>
   return <figure className="work-reference-image">
-    {source ? <a href={full || source} target="_blank" rel="noreferrer" aria-label={`開啟參考圖片 ${image.title}`} onClick={openFull}>
+    {source ? <a href={full || source} target="_blank" rel="noreferrer" aria-label={catalogFormat("template", "8dfb0e13886c", [image.title])} onClick={openFull}>
       <img src={source} alt={image.title} width={image.width} height={image.height} />
-    </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || "載入圖片…"}</div>}
+    </a> : <div className="work-reference-loading" role={failed ? "alert" : undefined}>{failed || catalogWord("literal", "7d2bc8bc67a4")}</div>}
     <figcaption title={image.title} role={fullFailed ? "alert" : undefined}>{fullFailed || image.title}</figcaption>
   </figure>
 }
 
 function phaseName(phase: string): string {
-  return ({ created: "建立", assigning: "認領中", assigned: "已認領", implementing: "實作", verifying: "驗證", merging: "合併", deploying: "部署", done: "完成", cancelled: "取消" } as Record<string, string>)[phase] ?? phase
+  return ({ created: catalogWord("literal", "5d0b1461d0c0"), assigning: catalogWord("literal", "775daf422b09"), assigned: catalogWord("literal", "43e6adeeb78b"), implementing: catalogWord("literal", "e2efb01c573a"), verifying: catalogWord("literal", "736549851a31"), merging: catalogWord("literal", "94c354556cdd"), deploying: catalogWord("literal", "3a031cf6791f"), done: catalogWord("literal", "47ce622b0195"), cancelled: catalogWord("literal", "f86d38340530") } as Record<string, string>)[phase] ?? phase
 }
 
 function conditionName(condition: string): string {
-  return ({ waiting_user: "等待你的決定", blocked: "遇到阻礙", evidence_unknown: "缺少可驗證證據",
-    owner_required: "等待負責人", owner_offline: "負責 Session 離線", assignment_failed: "指派失敗",
-    assigned_unnotified: "已指派，尚未通知" } as Record<string, string>)[condition] ?? condition
+  return ({ waiting_user: catalogWord("literal", "4cf6534d4865"), blocked: catalogWord("literal", "ec0c4df4aa0d"), evidence_unknown: catalogWord("literal", "b25bb9d26c5f"),
+    owner_required: catalogWord("literal", "1f0eacfd6542"), owner_offline: catalogWord("literal", "63c6995a9c0c"), assignment_failed: catalogWord("literal", "2afc5c12a7c1"),
+    assigned_unnotified: catalogWord("literal", "4811e0a75040") } as Record<string, string>)[condition] ?? condition
 }
 
 /**
@@ -369,9 +371,9 @@ function conditionName(condition: string): string {
 function TodoProgressSummary({ progress }: { progress: TodoProgress }) {
   const total = progress.done + progress.active + progress.waiting
   const parts: { key: keyof TodoProgress; icon: "check" | "half" | "circle"; word: string }[] = [
-    { key: "done", icon: "check", word: "完成" },
-    { key: "active", icon: "half", word: "進行中" },
-    { key: "waiting", icon: "circle", word: "未開始" },
+    { key: "done", icon: "check", word: catalogWord("literal", "47ce622b0195") },
+    { key: "active", icon: "half", word: catalogWord("literal", "7f161e90beaf") },
+    { key: "waiting", icon: "circle", word: catalogWord("literal", "785fe57babc4") },
   ]
   return <span className="session-todos-progress" id="session-todos-count" role="img" aria-label={todoProgressLabel(progress)}
     title={todoProgressLabel(progress)}>

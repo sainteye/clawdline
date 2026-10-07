@@ -1,14 +1,15 @@
 # Clawdline 使用指南
 
-這是 `clawdline guide` 的繁體中文版。兩者內容有出入時，以英文版（`clawdline guide`）為準。
+這是 `clawdline guide` 的臺灣繁體中文版。正式語言標籤是 `zh-Hant`，舊的 `zh-TW` 仍可用。
+兩者內容有出入時，以英文版（`clawdline guide`）為準。
 
 給跑在裝了 **Clawdline Next** 的機器上的助理 session 看，Claude Code 或 Codex 都一樣。這份指南只寫
 這個 daemon 今天有提供的東西，其他一概不寫：下面每一條路由都是印出這份指南的那個 build 註冊的，
-少了一條，就會有測試失敗。要看請重新執行 `clawdline guide zh-TW`（英文版是 `clawdline guide`），
-不要相信手上的副本。`clawdline guide zh-TW` 只印每個 session 都需要的核心，並列出其他部分；做到某一
-部分的工作時再印那一部分（`clawdline guide zh-TW dispatch`），要全文用 `clawdline guide zh-TW all`。
+少了一條，就會有測試失敗。要看請重新執行 `clawdline guide zh-Hant`（英文版是 `clawdline guide`），
+不要相信手上的副本。`clawdline guide zh-Hant` 只印每個 session 都需要的核心，並列出其他部分；做到某一
+部分的工作時再印那一部分（`clawdline guide zh-Hant dispatch`），要全文用 `clawdline guide zh-Hant all`。
 印出的內容（核心也一樣）第一行是 `guide-version: <sha256>`；同一個指令加上 `--since <hash>` 再執行，
-內容沒變時只印一行 `unchanged <hash>`。`clawdline guide zh-TW refused <code>` 印出說明該拒絕碼的
+內容沒變時只印一行 `unchanged <hash>`。`clawdline guide zh-Hant refused <code>` 印出說明該拒絕碼的
 部分；沒有任何部分提到它時，exit 1，stdout 不印任何東西。
 
 這份指南裡，項目清單的一列叫 **step**，task 可以改的路徑叫它的 **writes**，項目歸誰負責叫
@@ -46,7 +47,7 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 否則你是 **root**：一個有人正在跟你對話的一般 session。後面的內容都是寫給你的。
 
 如果訊息寫著 *"You are an independently owned Clawdline Feature Root …"*，或有看板項目指派給你，接著印出
-`clawdline guide zh-TW feature-root`：它是從讀項目到 `done` 的完整一般流程，比較少見的工作也會指出該印哪個部分。
+`clawdline guide zh-Hant feature-root`：它是從讀項目到 `done` 的完整一般流程，比較少見的工作也會指出該印哪個部分。
 
 ## 2. 連上 daemon
 
@@ -56,13 +57,13 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 
 | 指令 | 做什麼 |
 |---|---|
-| `clawdline guide [zh-TW]` | 這份指南。不需要 daemon |
+| `clawdline guide [lang]` | 這份指南。不需要 daemon |
 | `clawdline session report --summary "…"` | 記錄你已經完成的 turn（§7） |
 | `clawdline session close [--dry-run] [--terminal id]` | 稽核並關閉已完成的 Session，絕不強制（§2a） |
 | `clawdline dispatch --title "…" --claims a,b < brief.md` | 派出一個 owned child（§4） |
-| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-TW feature-root`、§10） |
+| `clawdline item show\|steps\|name\|phase\|step-add\|step-done\|doc\|acceptance <item id> …` | 讀取並推進你負責的看板項目（`clawdline guide zh-Hant feature-root`、§10） |
 | `clawdline todo add\|list\|done` | 這個 Session 自己的待辦，只在使用者要求時（§10） |
-| `clawdline heavy -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試（§11） |
+| `clawdline heavy [--handoff] -- <command…>` | 在機器唯一的編譯槽裡跑 build 或測試；`--handoff` 會把排隊等待交給 callback（§11） |
 | `clawdline send --to <terminal> "…"` | 把一則訊息轉進另一個 session（§8） |
 | `clawdline notify --title "…" --body "…"` | 推播一則通知給使用者（§9） |
 | `clawdline note create --body-file <JSON> [--target <terminal>]` | 在 Session 上方留下需要人處理的便條（§9a） |
@@ -81,6 +82,11 @@ Swift app 已於 2026-09-19 退役：它被停掉、取消了登入時啟動，p
 | `clawdline task finish <task dir>` | child 的完成動作。root 永遠不執行它 |
 | `clawdline webhook fire [--url-file <path>] [--deliver-within 60s] [--timeout 60m] [--no-wait]` | 從任何一台機器透過 Cloud webhook 啟動一個排程，並等它的結果；exit code 說明它怎麼結束（「排程」一節）。不需要 daemon |
 
+沒有明確指定指南語言時，CLI 依序採用指令前的 `--lang <tag>`、`CLAWDLINE_LANG`、已儲存的
+`product_language`，最後才用英文。明確指定 `clawdline guide <tag>` 會覆蓋此選擇；不支援的標籤
+會顯示英文。`clawdline guide -list` 列出九種正式語言標籤。這項偏好只影響 CLI 對人可讀的文字，
+不改協定欄位或 Agent 的語言。
+
 上面那些 orchestration 指令（`webhook fire` 除外）成功時會印出 daemon 回的 JSON；被拒絕時印出
 `refused, <status> <code>: <message>`，接著每行一個 refusal 帶的純量 `key: value`，最後是 remediation，exit code 是 1。Cloud 指令另有自己給人看的成功與錯誤輸出。
 `--port` 可以覆寫 port。
@@ -96,7 +102,7 @@ token 讀。帳本還沒讀到、或已經讀不到的 session 會回它的原�
 或 `transcript_unreadable`，絕不回一個空的總數；沒人認得的 id 回 404 `unknown_session`、
 `unknown_task` 或 `unknown_item`。帳本是否還在讀，看 `/v1/diagnostics` 裡的 `usage`。
 
-**等一個跑很久的指令。** `clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
+**等一個跑很久的指令。** 如果等待的是外部工作，例如排隊中的 `heavy`、CI 或 deploy，而且可能超過幾分鐘，使用 `clawdline callback`（或 `heavy --handoff`／`tools/check.sh`），然後結束這個 turn。完成時會收到通知；不要在後續 turn 輪詢，包括使用 `clawdline leases`。短時間等待與 child 使用下面的單次長等待方式。`clawdline heavy`、`clawdline dispatch` 和跑很久的測試，等待期間都不印東西，
 跑完會自己結束。等它們要**一次等久一點**，不要每隔幾秒去看一次：每看一次就是一個 turn，要把整段
 context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種 turn（7,220 萬 token），大多花在排隊中的
 `heavy` 上。
@@ -123,10 +129,10 @@ context 重讀一遍。一次 token 檢查在十個項目裡數到 520 個這種
   ```
 
   建置時把指令換成 `tools/heavy.sh …`，並保留退出碼；75 代表編譯額度或記憶體的等待逾時，
-  建置尚未執行。
+  建置尚未執行；76 代表 `heavy --handoff` 已啟動 callback，應結束這個 turn 並等待通知。
 
 `clawdline heavy` 最多等 `--max-wait`（預設 30 分鐘），之後不執行指令、以 75 結束；要等的時間比你的工具
-允許的長，就放到背景跑。
+允許的長，可用 `--handoff`：排隊時啟動 callback 並以 76 結束。`tools/check.sh` 預設啟用；child 或 callback 被拒絕時，仍在原處等待。
 
 **用 curl 呼叫 orchestrator 路由。** 從 `<state dir>/orchestrator-token` 讀取憑證，放進
 `X-Clawdline-Orchestrator` header。避免把憑證放在指令參數：使用
@@ -272,6 +278,28 @@ skill、指向別處的連結、Codex 看不到的規則，都由他決定。路
 `Idempotency-Key`；拒絕碼有 `plan_changed`、`plan_unknown`（Project 有一部分讀不到，所以什麼都沒改）
 與 `name_taken`（unify 要建立的名稱已經存在；不會覆寫任何東西）。
 
+**共用記憶：每個 Project 一份，Claude 與 Codex 共用。** 關於這個 Project 的教訓寫進它的 Clawdline
+memory，不要寫進你這個助理自己的記憶，下一個 Session 不論是哪個助理都讀得到。Clawdline 啟動的 Session
+已經拿到索引（每筆一行 `name — description`，依 type 分組，超過 8 KiB 會截斷並寫一行說明）；某行跟手上
+的事有關時再讀那一筆：
+
+```sh
+clawdline memory list                     # the index; --json for the full answer
+clawdline memory show <name>              # one entry, frontmatter and body
+printf '%s\n' "<body>" | clawdline memory add --name <kebab-name> --description "<one line>" --type feedback
+clawdline memory update --name <name> --description "<one line>" --type project --body-file body.md
+clawdline memory forget <name>
+clawdline memory import --from-claude     # a plan; --apply copies, skipping names already stored
+```
+
+`--project <dir>` 指定 Project（預設是目前目錄的 git top-level；linked worktree 算它主 repository 的
+Project）。type 是 `user`、`feedback`、`project`、`reference` 其中之一。exit 0 完成、1 被拒、2 用法錯、
+3 未知（daemon 沒回應：不能當作已寫入）。同一筆 add 兩次是 `unchanged`；名稱已被別的內容用掉是
+`memory_entry_exists`——改用 `update`。其他拒絕碼有 `memory_entry_invalid`、`memory_entry_not_found`
+與 `memory_full`；`memory_unreadable` 表示 store 讀不到，不代表裡面是空的。路由是
+`GET`/`POST /v1/projects/{place}/memory` 與 `GET`/`PUT`/`DELETE /v1/projects/{place}/memory/{name}`。
+import 只讀 Claude Code 的 `~/.claude/projects/<slug>/memory/`；Clawdline 從不寫那裡。
+
 ## 2a. Feature Root 的一般流程
 
 一般的 Feature Root——負責一張看板項目的 Session——要執行的就是下面這些，依序。每一步都是指令：指令
@@ -320,7 +348,7 @@ clawdline dispatch --title "…" --claims a.go,b.go --isolation worktree --work-
 - brief 要自己就講得清楚。把你已經查證過的事實寫進去，每一條附上 `file:line` 或顯示它的指令，child
   就不必重新找一次。
 - 調查或 Explore child 的 brief 還要寫明停止條件——回答了就結束任務的那個問題——以及 turn 上限。
-- 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-TW dispatch`。
+- 只讀的工作用 `--claims ""`。所有旗標和拒絕代碼在 `clawdline guide zh-Hant dispatch`。
 
 **5. 若有 child 結束**，你的輸入框會被打進一行 `<clawdline-notice>`。執行 `clawdline task show <task id>`，
 再整合交付；讀了就會關掉通知，不必另外 ACK。**派工之後就結束這個 turn**：通知會叫醒你，而開著 turn
@@ -334,7 +362,7 @@ merge** 進 target。**merge 會自己記下 landing**，幾分鐘內：不要�
 `done` 就沒有持有者，這時送報告會回 `409 not_item_owner`。
 
 ```sh
-clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
+clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
 ```
 
 寫給提出問題的人讀，用 Markdown，不放私密資料。
@@ -346,7 +374,7 @@ child 的 landing 可提供 commit、target、remote；自行落地則明確指�
 ```sh
 clawdline item finish <item id> --verification "what was run and what it showed" \
   --commit <sha> --target main --remote origin \
-  --deployment "what went live, where, which version"      # 已落地的 child 可省略 landing 旗標
+  --deployment "what went live, where, which version"      # omit landing flags for a landed child
 ```
 
 也可以一次推進一個 phase：
@@ -368,7 +396,7 @@ turn，通知來了再收尾 item：
 ```sh
 clawdline callback --title "The hosted console serves <sha>" --work-id <item id> --timeout 20m -- \
   sh -c './deploy.sh <sha> && tools/wait-hosted-console.sh <sha>'
-# …通知來了：clawdline task show <callback id>，然後
+# … the notice: clawdline task show <callback id>, then
 clawdline item finish <item id> … --deployment "what went live, where, which version (callback <callback id>)"
 ```
 
@@ -382,10 +410,10 @@ broker 在任務結束後，依 `clawdline guide child` 的 child 分頁規則�
 **被拒絕時。** `version_conflict`：同一個指令再跑一次，它會重讀版本。`steps_incomplete`：還有 step
 沒勾。其他代碼：先看 §12，再看涵蓋它的那個部分。
 
-**比較少見的工作，各一個部分：** `clawdline guide zh-TW board`——提案、決策、待辦、重開已完成項目、
-等待使用者、gate 與所有 phase 拒絕；`clawdline guide zh-TW epic`——計畫、計畫審查、Epic 的子項目、
-persona；`clawdline guide zh-TW landing`——手動 landing、交接、Root 指派；
-`clawdline guide zh-TW running`——卡住的 child、leftover、respawn。
+**比較少見的工作，各一個部分：** `clawdline guide zh-Hant board`——提案、決策、待辦、重開已完成項目、
+等待使用者、gate 與所有 phase 拒絕；`clawdline guide zh-Hant epic`——計畫、計畫審查、Epic 的子項目、
+persona；`clawdline guide zh-Hant landing`——手動 landing、交接、Root 指派；
+`clawdline guide zh-Hant running`——卡住的 child、leftover、respawn。
 
 ## 3. 派工之前：先讀已經存在的東西
 
@@ -425,7 +453,7 @@ owned child 是掛在你底下、範圍有限的 task。**彙整、整合和 lan
 ```sh
 clawdline dispatch --title "…" --claims a.go,b.go [--isolation worktree] [--assistant codex] \
   [--permission-mode ask|edits|full] [--timeout 90] [--kind k] [--deliverable p] [--model m] \
-  [--persona <id>] [--work-id uuid …] [--label "…"] [--project-dir D] < brief.md     # 或 --instructions-file brief.md
+  [--persona <id>] [--work-id uuid …] [--task-id uuid] [--label "…"] [--project-dir D] < brief.md     # or --instructions-file brief.md
 ```
 
 它會產生 id 和 secret、讀 inventory 拿 `generation` 和 `task_root`、寫 `task.json`、送出 task；遇到
@@ -447,8 +475,8 @@ child 的 assistant 預設跟你一樣，`--assistant` 可以改；project 預�
 **1. 選一個 id 和一個 secret。**
 
 ```sh
-TASK_ID=$(uuidgen | tr 'A-Z' 'a-z')     # 36 個字元，小寫
-SECRET=$(openssl rand -hex 32)          # 64 個小寫 hex
+TASK_ID=$(uuidgen | tr 'A-Z' 'a-z')     # 36 characters, lowercase
+SECRET=$(openssl rand -hex 32)          # 64 lowercase hex
 ```
 
 secret 由你放在 POST body 交給 daemon，再由 daemon 打進 child 的那一行交給 child。它不在
@@ -746,8 +774,8 @@ child、detached task 或 handoff 假裝成 Root 指派。
    conversation 與 run：
 
 ```json
-{"title":"早晨巡檢","at":"09:00","days":"daily","place_id":"<place id>",
- "assistant":"codex","instructions":"檢查昨夜錯誤，回報可執行的發現。",
+{"title":"Morning sweep","at":"09:00","days":"daily","place_id":"<place id>",
+ "assistant":"codex","instructions":"Inspect the overnight failures and report actionable findings.",
  "session_id":"<conversation id>","via":{"run":"<run id>"}}
 ```
 
@@ -785,7 +813,7 @@ task secret 把讀數寫成那筆紀錄上的一則紀錄——不用 orchestrat
 ```sh
 curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
-  -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<讀數>"}'
+  -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```
 
 只寫得進 `schedule_id` 正是啟動這個 task 的排程的那筆紀錄（否則回 `schedule_mismatch`），署名為
@@ -848,7 +876,7 @@ clawdline report --repo <project> --status status.md [--notes notes.txt] [--lang
 **送出。**
 
 ```sh
-clawdline send --to <terminal id> "text"        # 或從 stdin 送文字
+clawdline send --to <terminal id> "text"        # or text on stdin
 ```
 
 這就是 `POST /v1/orchestrator/messages`，帶 `{from_session, to_session, text}` 和一個
@@ -898,15 +926,15 @@ clawdline notify --title "At most 80 characters" --body "At most 500 characters"
 
 **要在對話中請使用者選擇之前**，先建立一張 `answer` 便條，寫清楚實際問題、決策所需的取捨，以及二至四個完整的建議回覆。點一下按鈕就會把回覆當成對話訊息送出，所以每個 `draft` 單獨閱讀也要清楚。建立後，在對話中簡短提示即可。建立便條或便條被標記為已處理，都不是使用者的答覆；收到對話訊息（點選送出的回覆或使用者自己打的）後，才能執行依賴該決定的動作。建立失敗時，說明失敗並直接在對話中提問。只有需要人判斷的決定才用便條；Agent 能自行決定的例行選擇不用。
 
-把便條內容寫成 JSON 檔。沒有 `--target` 時，CLI 透過 `whoami` 找到本存活 Root 的 terminal id。若目標是另一個 Session，才用通訊錄中的存活目標 **terminal id**（`clawdline guide zh-TW send`）指定 `--target`。`--from` 預設由環境取得本存活 Root 的 conversation id。CLI 自行讀取機器憑證並補上來源、目標身分，不會把憑證放進命令列；成功時印出持久便條 id。結果不確定而需重試時，沿用印出的 `--key`。
+把便條內容寫成 JSON 檔。沒有 `--target` 時，CLI 透過 `whoami` 找到本存活 Root 的 terminal id。若目標是另一個 Session，才用通訊錄中的存活目標 **terminal id**（`clawdline guide zh-Hant send`）指定 `--target`。`--from` 預設由環境取得本存活 Root 的 conversation id。CLI 自行讀取機器憑證並補上來源、目標身分，不會把憑證放進命令列；成功時印出持久便條 id。結果不確定而需重試時，沿用印出的 `--key`。
 
 ```json
-{"kind":"answer","title":"請選擇日期","summary":"發布日期需要你決定。","action":"方便時請選一個日期。","reason":"只有你能決定日期。","options":[{"label":"週二","draft":"週二可以。"},{"label":"週三","draft":"週三可以。"}]}
+{"kind":"answer","title":"Choose a date","summary":"One release date needs your choice.","action":"Choose a date when you have a moment.","reason":"Only you can choose it.","options":[{"label":"Tuesday","draft":"Tuesday works for me."},{"label":"Wednesday","draft":"Wednesday works for me."}]}
 ```
 
 ```sh
 clawdline note create --body-file note.json
-# 要寫給另一個 Session：clawdline note create --target <terminal-id> --body-file note.json
+# For another Session: clawdline note create --target <terminal-id> --body-file note.json
 ```
 
 `kind` 可為 `read`、`answer`、`action` 或 `report`；`title`、`summary`、`action`、`reason` 必填。`answer` 可提供二至四個選項，每個選項的 `draft` 是按鈕顯示的建議回覆。使用者點一下，Console 就把它當成對話訊息直接送到便條所在的 Session，後面附上便條 ID、標題和待回覆事項，讓接收的 Session 知道使用者回答的是哪張便條；按鈕不顯示這段脈絡。送出成功後，便條才會移到最近已處理。送出失敗時，便條維持待處理，關注按鈕會說明回覆沒有送出。較長內容放 `detail`；`document_url` 可指向真正可讀的 Cloud 文件，建立便條前先驗證文件路徑與檔案。依實際收到的對話訊息行事，不看便條狀態：使用者手動標記已處理的便條，並沒有送出任何訊息。若工作確實卡在答覆上，另記錄等待使用者的狀態，並按既有規則發送一次關注通知。便條本身不推播，也不喚醒 Agent。
@@ -927,16 +955,16 @@ Issue 項目並指派給其他 Session（`clawdline guide epic`）。
 
 ```
 clawdline item add --project <place id> --kind feature|issue|epic|refactor|plan --title "…" \
-  --step "第一步" --step "第二步" …   [--description-file f | description 從 stdin] [--assign-self]
+  --step "first step" --step "second step" …   [--description-file f | description on stdin] [--assign-self]
 ```
 
 範例。使用者寫：「開一個看板項目整理 release notes，TODO：起草、檢查連結、發佈。」這就是一條指令，
 別的都不做：
 
 ```
-echo "下次 release 前把 release notes 整理好。" | \
-  clawdline item add --project <place id> --kind feature --title "整理 release notes" \
-  --step "起草" --step "檢查連結" --step "發佈"
+echo "Clean up the release notes before the next release." | \
+  clawdline item add --project <place id> --kind feature --title "Clean up the release notes" \
+  --step "Draft the notes" --step "Check the links" --step "Publish"
 ```
 
 - `item add` 會讀這個對話最新的 run（`GET /v1/orchestrator/sessions/<conversation>/run`），除非用
@@ -1047,7 +1075,7 @@ POST /v1/work/v2/agent/proposals     (Idempotency-Key required)
 
 ```
 POST /v1/orchestrator/decisions     (Idempotency-Key required)
-{"session_id": "…", "work_id": "<這個問題所屬的看板項目>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
+{"session_id": "…", "work_id": "<the Board item this is about>", "question": "…", "options": [{"id": "a", "label": "…"}, …],
  "default": "a", "blocking": true, "due_in_minutes": 1440}
 ```
 
@@ -1108,7 +1136,7 @@ conversation 必須是這個 daemon 認得的 live Session（`conversation_id_ma
 ```
 POST /v1/work/v2/agent/items/<id>/reopen     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>",
- "reason": "仍未完成的具體行為或驗收主張"}
+ "reason": "The concrete behavior or acceptance claim that remains unfinished"}
 ```
 
 只有在對方明確指向你剛完成的項目時才使用。這條路由只接受最後由同一個 Session 釋放指派的
@@ -1175,14 +1203,14 @@ condition 也不會。phase 不是 `…/edit` 的欄位（`phase_not_editable`�
 才執行那一步：
 
 ```
-clawdline item phase <item id> implementing                  # 開始動手時
-clawdline item phase <item id> verifying                     # 改動已經在了，開始檢查
-clawdline item phase <item id> merging --verification "跑了什麼、結果是什麼"
+clawdline item phase <item id> implementing                  # when you start
+clawdline item phase <item id> verifying                     # the change exists; now check it
+clawdline item phase <item id> merging --verification "what was run and what it showed"
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin
 clawdline item phase <item id> deploying --commit <sha> --target main --remote origin --landing-project <place id>
-clawdline item phase <item id> deploying --no-landing-reason "為什麼沒有程式碼要 land"
-clawdline item phase <item id> done --deployment "上線了什麼、在哪裡、哪個版本"
-clawdline item phase <item id> done --no-deployment-reason "為什麼不需要部署"
+clawdline item phase <item id> deploying --no-landing-reason "why there is no code to land"
+clawdline item phase <item id> done --deployment "what went live, where, which version"
+clawdline item phase <item id> done --no-deployment-reason "why nothing needs deploying"
 ```
 
 指令會先讀項目的 version，印出 Idempotency-Key（用 `--key` 重送同一筆寫入），成功後印出項目。它就是
@@ -1264,14 +1292,14 @@ step 勾成完成。
 步驟。單純一次就改完的事**不要**拆 steps，也不要為了有清單而湊數。做下去發現比想像的大，再補上那一步。
 
 ```
-clawdline item step-add <item id> "接上 route" "補一個測試" "寫進 guide"
+clawdline item step-add <item id> "Wire the route" "Cover it with a test" "Say it in the guide"
 ```
 
 標題直接當參數給，或從 stdin 一行一個（空行略過）。指令每加一個標題前都會重讀項目，寫入前先印出
 Idempotency-Key，最後印出精簡回執及 `item show` 提示。每個標題就是一次只有 owner 能送的請求：
 
 ```
-POST /v1/work/v2/agent/items/<id>/steps     （必須帶 Idempotency-Key）
+POST /v1/work/v2/agent/items/<id>/steps     (Idempotency-Key required)
 {"expected_version": <version>, "session_id": "<conversation id>", "title": "…", "position": <n>}
 ```
 
@@ -1284,11 +1312,11 @@ POST /v1/work/v2/agent/items/<id>/steps     （必須帶 Idempotency-Key）
 不需要報告。把發生了什麼、root cause、修改內容、驗證方式，以及仍存在的邊界寫進一個檔案，然後：
 
 ```
-clawdline item doc <item id> --role completion_report --title "結案報告" --body-file report.md
+clawdline item doc <item id> --role completion_report --title "Completion report" --body-file report.md
 ```
 
 它替你送出 `POST /v1/work/v2/agent/items/<id>/documents`（欄位列在本節的 Epic 部分，
-`clawdline guide zh-TW epic`）。自己組的 curl 沒帶指令讀的憑證，打這條路由會回 `401 unauthorized`。body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成原始 debug log，也不要放入私密資料。只有
+`clawdline guide zh-Hant epic`）。自己組的 curl 沒帶指令讀的憑證，打這條路由會回 `401 unauthorized`。body 是 Markdown，最多 64 KiB。寫給提出問題的人讀，不要貼成原始 debug log，也不要放入私密資料。只有
 尚未結案的 active owner 能加入；版本衝突時先重讀。結案報告是具名敘述，不取代驗證、landing 或部署
 證據；有報告時，它會留在已關閉的看板項目，並可從 Session 的「最近完成」列直接打開。
 
@@ -1383,7 +1411,7 @@ clawdline item doc <item id> --role completion_report --title "結案報告" --b
 
 ```
 clawdline item child <epic id> --kind feature|issue --title "…" [--step "…"]… \
-  [--description-file f | 描述從 stdin] [--deploy policy] \
+  [--description-file f | description on stdin] [--deploy policy] \
   [--assign-terminal <terminal id> | --assign-new [--assistant claude|codex] [--model m] [--persona <id>]]
 clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant a] [--model m] [--persona <id>])
 ```
@@ -1497,9 +1525,15 @@ clawdline item assign <child id> (--terminal <terminal id> | --new [--assistant 
 - `409 owner_busy` 和 `502 request_delivery_failed` 表示 **wait 已經記下來了**，只是還沒通知到 owner。
   `502 release_incomplete` 會列出還有誰沒通知到：再送一次 release。
 
-**Lease。** 兩種資源：`heavy_compile`（整台機器唯一的重度編譯名額）和 `landing`（每份 checkout 一個）。
+**Lease。** 三種資源：`heavy_compile`（整台機器唯一的重度編譯名額）、`landing`（每份 checkout 一個）與 `daemon_restart`（整台機器唯一的重新啟動時段）。
 
 **編譯或跑測試套件時，用 `clawdline heavy -- <指令>` 包起來，不要直接跑。** 它會先排 `heavy_compile`，等機器有足夠的可用記憶體（機器的四分之一，最多 1 GB，且記憶體等待不超過 10%），再以較低優先權執行；在 Linux 上，記憶體真的不夠時，核心會先砍它而不是互動中的 session。執行期間續租，結束後釋放，並保留指令本身的 exit code。daemon 沒回應、或被它看不懂的理由拒絕時，它不會因此不編譯：照樣執行指令，並在 stderr 說明。等超過 `--max-wait`（預設 30 分鐘）還沒拿到編譯位置和記憶體時，它會放棄排隊、不執行指令，以 **75** 結束——這個代碼不會跟指令本身的失敗混在一起；晚點再跑一次。等待期間只在開始等時印一行、等完時印一行，中間什麼都不印：等它就一次等久一點（§2「等一個跑很久的指令」）。`heavy` 裡面再呼叫 `heavy` 會直接執行。`--min-available 1500M` 可要求更多記憶體，`--no-slot` 只檢查記憶體。repository 裡有 `tools/heavy.sh` 的話，用 `tools/heavy.sh <指令>` 就會自動找到執行檔。
+
+Root 的 `heavy` 預設在需要等待時啟動 callback，並以 **76** 結束，印出 callback ID 與已知的排隊位置。這時結束這個 turn，等待通知。`tools/check.sh` 預設啟用；child、缺少 conversation ID、callback 被拒絕或 daemon 無法連線時，仍在原處等待。
+
+**Session 暫停與喚醒。** 排列衝突工作前，先讀 `docs/session-resource-coordination.md`。`clawdline coordination status` 顯示持久化的暫停回執。`clawdline coordination pause --reason "…" --wake "lease:heavy_compile" <目標對話 ID>…` 接受指令並嘗試送達。收件 Session 完成重要命令後執行 `clawdline coordination observed <指令 ID>`，到安全停點再執行 `clawdline coordination safe <指令 ID>`，然後結束模型回合。只有最後一筆收件者回執代表已暫停。條件成立後執行 `wake <指令 ID>`；收件者執行 `resumed <指令 ID>`，且仍須先取得租約或確認等待已釋放，才能工作。`retry <指令 ID>` 可重試失敗或結果不明的送達。新的已註冊 Clawdfather 可以喚醒離線前任留下的 Session。候位期間不要讓模型回合定期輪詢。
+
+主線落地或 daemon 重新啟動須使用 `clawdline coordination run --resource landing --checkout /絕對路徑 -- <指令>` 或 `--resource daemon_restart -- <指令>`。沒有授予租約時不會執行，執行期間續租，結束後釋放。Root 候位操作預設交給 callback，以 **76** 結束，完成後通知 Session。callback 可維持候位，模型回合不必留著。編譯用 `heavy`。重新啟動仍須遵守既有 maintenance 流程，並在之後確認 `GET /`。
 
 - `POST /v1/orchestrator/leases`——
   `{"request_id": "<uuid>", "resource", "checkout" (landing only), "holder", "reason", "session_id", "pid"}`。

@@ -1,3 +1,4 @@
+import { catalogWord } from "./catalog.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
@@ -17,6 +18,7 @@ import { pageFromHash } from "./page-route.js"
 import { workWord } from "./pages/work/words.js"
 import { verifyWord } from "./pages/verify/words.js"
 import { nextWord } from "./next-strings.js"
+import { bootLocalCatalog } from "./catalog.js"
 import { namesSession, sessionFragment, sessionsInFragment } from "./session/address.js"
 import { hasDocumentIntent } from "./legacy/documents-bridge.js"
 import { NewBuild } from "./NewBuild.js"
@@ -255,14 +257,10 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
     setFilterState(q)
   }
 
-  // The catalog, from the slot the daemon filled if it filled one, and from
-  // /v1/strings if it did not. Either way the page is uncovered afterwards,
-  // whatever the outcome: a console that stayed hidden because a translation
-  // failed would be worse than one that starts in English.
+  // The door starts this promise too. Its single result is a complete selected
+  // catalog or the bundled English fallback, with lang and dir set first.
   useEffect(() => {
-    const inline = (window as { __strings?: Record<string, string> }).__strings
-    const get = async () => inline ?? (await client.strings())
-    void L.loadStrings(get, () => setLoaded((n) => n + 1)).finally(() => {
+    void bootLocalCatalog().finally(() => {
       document.documentElement.classList.remove("booting")
       if (landOnBrand.current) {
         landOnBrand.current = false
@@ -835,8 +833,7 @@ export default function App({ aside }: { aside?: ReactNode | ((light: Connection
             onClick={() => go("squad")}
             title={tooOldTitle("squad")}
           >
-            <SidebarIcon name="squad" />
-            角色小隊
+            <SidebarIcon name="squad" />{catalogWord("inline", "a6971f01832f")}
             {tooOldMark("squad")}
           </button>
           {/* 封存 (docs/session-archive.md): the Sessions archived from the
@@ -965,7 +962,7 @@ function Counts({
   // state, and `next-strings.ts` on why these are two words and not one).
   if (recovering && reading.phase === "ready") bits.push({ cls: "part quiet", text: nextWord("sessionsListWaitTitle") })
   if (rows.length > 0 && !working && !waiting && !unknown && !shells && !recovering) {
-    bits.push({ cls: "part quiet", text: sessionReadingChinese() ? "都很安靜" : "all quiet" })
+    bits.push({ cls: "part quiet", text: catalogWord("literal", "1b40e6344265") })
   }
   return (
     <div
@@ -975,7 +972,7 @@ function Counts({
       tabIndex={0}
       data-waiting={waiting > 0 ? "true" : undefined}
       aria-label={bits.map((bit) => bit.text).join(" · ")}
-      title={sessionReadingChinese() ? "機器負載：CPU、記憶體與各 session 的用量" : "Machine load: CPU, memory and each session's share"}
+      title={catalogWord("literal", "b9fcf1d5c799")}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {

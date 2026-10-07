@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/git"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
 )
@@ -53,5 +55,24 @@ func TestTheCallbackRouteStartsACommandForTheOrchestratorTokenOnly(t *testing.T)
 	rec = send(http.MethodPost, body(""), machine)
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || !got.Replayed {
 		t.Fatalf("a resend was not a replay: %d %s", rec.Code, rec.Body)
+	}
+	// The callback writes its task directory after the route has returned.
+	// Wait for that work to settle before TempDir removes the test server's state.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		record, _, err := s.broker.Record(context.Background(), got.Task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.State.Terminal() {
+			if record.State != orchestrator.StateSuccess {
+				t.Fatalf("callback settled as %s: %s", record.State, record.Verdict)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("callback is still %s after 5s", record.State)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

@@ -19,7 +19,7 @@ func readCommand(name, path string, args []string) {
 	fs.SetOutput(io.Discard)
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		fmt.Fprintf(os.Stderr, "usage: clawdline %s [--port n]\n", name)
+		fmt.Fprintf(os.Stderr, cliCopy("misc", "relay.usage_clawdline_s_port_n.e0024b64", "usage: clawdline %s [--port n]\n"), name)
 		os.Exit(2)
 	}
 	b, err := openBroker(*port)
@@ -41,7 +41,7 @@ func landingsCommand(args []string) {
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	workID := fs.String("work-id", "", "a Board item id: list the landings recorded for it")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: clawdline landings [--work-id id] [--port n]")
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "relay.usage_clawdline_landings_work_id_id.d06cc2c7", "usage: clawdline landings [--work-id id] [--port n]"))
 		os.Exit(2)
 	}
 	path := "/v1/orchestrator/landings"
@@ -85,7 +85,7 @@ func sendCommand(args []string) {
 			fail(err)
 		}
 		if len(data) > relayInputLimit {
-			fail(fmt.Errorf("the message on stdin is larger than %d bytes, the most the daemon reads", relayInputLimit))
+			fail(fmt.Errorf(cliCopy("misc", "relay.message_too_large", "the message on stdin is larger than %d bytes, the most the daemon reads"), relayInputLimit))
 		}
 		text = string(data)
 	}
@@ -97,30 +97,30 @@ func sendCommand(args []string) {
 }
 
 func sendUsage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline send --to <terminal id> [--from id] [--key k] [--port n] [text…]")
-	fmt.Fprintln(os.Stderr, "  relays text into another session's composer; with no text arguments it is read from stdin")
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "relay.usage_clawdline_send_to_terminal_id.5473b1c8", "usage: clawdline send --to <terminal id> [--from id] [--key k] [--port n] [text…]"))
+	fmt.Fprintln(os.Stderr, cliCopy("misc", "relay.relays_text_into_another_session_s.4141e207", "  relays text into another session's composer; with no text arguments it is read from stdin"))
 	os.Exit(2)
 }
 
 // relayMessage is the command, answering its exit status.
 func relayMessage(stdout, stderr io.Writer, b *broker, to, from, text, key string, getenv func(string) string) int {
 	if strings.TrimSpace(to) == "" {
-		fmt.Fprintln(stderr, "clawdline send: --to is required: the recipient's terminal id")
+		fmt.Fprintln(stderr, cliCopy("misc", "relay.clawdline_send_to_is_required_the_r.e38db4e1", "clawdline send: --to is required: the recipient's terminal id"))
 		return 2
 	}
 	if strings.TrimSpace(text) == "" {
-		fmt.Fprintln(stderr, "clawdline send: there is no text to send")
+		fmt.Fprintln(stderr, cliCopy("misc", "relay.clawdline_send_there_is_no_text_to.c80dc607", "clawdline send: there is no text to send"))
 		return 2
 	}
 	if from == "" {
 		var err error
 		if from, _, err = conversationFromEnv(getenv); err != nil {
-			fmt.Fprintf(stderr, "clawdline send: %s Nothing was sent.\n", conversationRefusal(err, "--from"))
+			fmt.Fprintf(stderr, cliCopy("misc", "relay.clawdline_send_s_nothing_was_sent.9b2b65d4", "clawdline send: %s Nothing was sent.\n"), conversationRefusal(err, "--from"))
 			return 2
 		}
 	}
 	if from == "" {
-		fmt.Fprintf(stderr, "clawdline send: cannot tell who is sending: none of %s is set. Pass --from.\n",
+		fmt.Fprintf(stderr, cliCopy("misc", "relay.clawdline_send_cannot_tell_who_is_s.d7a9f4bb", "clawdline send: cannot tell who is sending: none of %s is set. Pass --from.\n"),
 			strings.Join(conversationEnv, ", "))
 		return 2
 	}
@@ -133,8 +133,8 @@ func relayMessage(stdout, stderr io.Writer, b *broker, to, from, text, key strin
 	a, err := b.request(http.MethodPost, "/v1/orchestrator/messages", nil,
 		map[string]string{"from_session": from, "to_session": to, "text": text}, key)
 	if err != nil {
-		fmt.Fprintln(stderr, "clawdline send:", err)
-		fmt.Fprintf(stderr, "To retry the same message: clawdline send --key %s …\n", key)
+		fmt.Fprintln(stderr, cliCopy("misc", "relay.clawdline_send.c2fd59f3", "clawdline send:"), err)
+		fmt.Fprintf(stderr, cliCopy("misc", "relay.to_retry_the_same_message_clawdline.8019a979", "To retry the same message: clawdline send --key %s …\n"), key)
 		return 1
 	}
 	return report(stdout, stderr, "send", a)
@@ -150,7 +150,7 @@ func notifyCommand(args []string) {
 	session := fs.String("session", "", "the terminal id the notification opens (optional)")
 	port := fs.Int("port", 0, "the daemon's port (default CLAWDLINE_NEXT_PORT, else 7727)")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 || *title == "" || *body == "" {
-		fmt.Fprintln(os.Stderr, "usage: clawdline notify --title <1–80 characters> --body <1–500 characters> [--session terminal] [--port n]")
+		fmt.Fprintln(os.Stderr, cliCopy("misc", "relay.usage_clawdline_notify_title_1_80_c.83c8c10c", "usage: clawdline notify --title <1–80 characters> --body <1–500 characters> [--session terminal] [--port n]"))
 		os.Exit(2)
 	}
 	b, err := openBroker(*port)

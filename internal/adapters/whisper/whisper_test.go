@@ -72,6 +72,22 @@ func TestConfiguredPathsComeFirstAndDoNotBlock(t *testing.T) {
 	if got, _, err := t2.Ready(); err != nil || got != filepath.Join(bins, "whisper-cli") {
 		t.Fatalf("fell back to = %s (%v)", got, err)
 	}
+	selected := filepath.Join(t.TempDir(), "Application Support", "Clawdline", "models", "ggml-old.bin")
+	if err := os.MkdirAll(filepath.Dir(selected), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, selected, 4096)
+	if got, ok := (Transcriber{Model: selected, ModelDirs: []string{models}}).findModel(); !ok || got != selected {
+		t.Fatalf("explicitly selected model = %s (found %v)", got, ok)
+	}
+}
+
+func TestDefaultModelSearchDoesNotProbeRetiredAppData(t *testing.T) {
+	for _, dir := range (Transcriber{}).modelDirs() {
+		if strings.Contains(dir, filepath.Join("Application Support", "Clawdline")) {
+			t.Errorf("default model search includes another app's data: %s", dir)
+		}
+	}
 }
 
 // The whole run, with the process replaced: the arguments whisper is given,

@@ -133,9 +133,21 @@ func TestApplyingAnUpdateNeedsSendAndAReleaseInstall(t *testing.T) {
 	}
 	if rec := (call{path: "/v1/update/apply", body: `{"force":true}`, headers: bearer(f.send)}).do(h); rec.Code != http.StatusBadRequest {
 		t.Fatalf("force without a version: %d %s", rec.Code, rec.Body)
+	} else {
+		var refused contract.Refusal
+		if err := json.Unmarshal(rec.Body.Bytes(), &refused); err != nil || refused.Error != "bad_request" ||
+			refused.Detail != "force needs the version it installs" || refused.DetailKey != "http.53e1be922753ea67" {
+			t.Fatalf("fixed update refusal lost wire detail or explicit catalog key: %s (%v)", rec.Body, err)
+		}
 	}
 	if rec := (call{path: "/v1/update/apply", body: `{"nonsense":1}`, headers: bearer(f.send)}).do(h); rec.Code != http.StatusBadRequest {
 		t.Fatalf("an unknown field: %d %s", rec.Code, rec.Body)
+	} else {
+		var refused contract.Refusal
+		if err := json.Unmarshal(rec.Body.Bytes(), &refused); err != nil || refused.Error != "bad_request" ||
+			!strings.Contains(refused.Detail, "nonsense") || refused.DetailKey != "" {
+			t.Fatalf("parser detail was mistaken for fixed copy: %s (%v)", rec.Body, err)
+		}
 	}
 	// Installed without a service, a release install cannot restart.
 	rec := (call{path: "/v1/update/apply", headers: bearer(f.send)}).do(h)

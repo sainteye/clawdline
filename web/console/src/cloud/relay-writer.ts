@@ -32,6 +32,7 @@
 // Nothing is imported at run time, so `node --test` loads it as it is.
 import type { CarriedWord } from "./carry.js"
 import type { CloudIdentity, CloudReadClient, CloudRow, SeamRow } from "./relay-reader.js"
+import { authenticatedRefusalKey } from "./refusal-client.js"
 
 // One admitted request may wait behind one turn, and each turn may try two
 // 30-second CLIs. Ten seconds leaves the relay enough room to deliver either
@@ -337,7 +338,7 @@ const USAGE_WORD: Readonly<Record<string, Carried<"usage.session" | "usage.task"
 /**
  * The routes this daemon answers locally that have no command on the Cloud
  * wire at all — not on the Go daemon and not in the Swift app's vocabulary
- * (docs/cloud-wire.md §10.3). Each is refused by its own name, with where it
+ * (docs/records/cloud-operations-2026-09.md §10.3). Each is refused by its own name, with where it
  * can be done instead, rather than as a generic "not carried".
  */
 const NO_CLOUD_WORD: Readonly<Record<string, string>> = {
@@ -955,6 +956,11 @@ export class RelayWriter {
       // An archive is a close first: its answer is the same existence fact.
       if (route.op === "end" || route.op === "archive") this.host.closed(route.session)
       this.host.note({ method, path, answer: "relay", word: route.word, ms })
+      // A unify apply that stopped part-way crosses as its body beside a 500
+      // (`cloudops.stoppedUnify`), so the copied client settles it rather than
+      // filtering it to a code. It is the local route's answer again: a 500
+      // whose body says what ran, what failed and the plan read again.
+      if (route.op === "project-unify-apply" && isStoppedUnify(body)) return json(500, cleanAnswer(body))
       return json(200, cleanAnswer(body))
     } catch (error) {
       return this.refuse(route, method, path, started, spelling, error as CloudFailureLike)
@@ -1801,6 +1807,7 @@ export class RelayWriter {
     const session = route.op === "focus" ? null : sessionOf(route)
     if (session) this.host.wrote(session, outcome === "not_done" ? "refused" : "unknown")
     const ref = refOf(error)
+    const detailKey = authenticatedRefusalKey(error)
     this.host.note({
       method,
       path,
@@ -1818,6 +1825,7 @@ export class RelayWriter {
       // machine's own route, whose code the page reads as it does locally.
       ...(outcome ? { outcome } : {}),
       word: route.word,
+      ...(detailKey ? { detail_key: detailKey } : {}),
     }
     // The fields each reader acts on, where the machine sent them: a blocked
     // close's `reasons`, a closed terminal's `app`, a missing Whisper's `reason`.
@@ -1861,6 +1869,13 @@ function refOf(error: CloudFailureLike): string | null {
   if (!ref || !Number.isSafeInteger(ref.seq)) return null
   const sender = String(ref.sender ?? "").replace(/^web_/, "").slice(0, 8)
   return (sender ? sender + "·" : "") + String(ref.seq)
+}
+
+/** A unify apply's answer that says it stopped part-way: the shape `applyUnify` reads as one. */
+function isStoppedUnify(body: unknown): boolean {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return false
+  const answer = body as Record<string, unknown>
+  return answer.outcome === "stopped" && Array.isArray(answer.ran) && !!answer.plan && typeof answer.plan === "object"
 }
 
 /** A successful answer as the local route gives it: the client's own bookkeeping taken off. */

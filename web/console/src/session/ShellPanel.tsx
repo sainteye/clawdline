@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { SessionRow, SessionShell, ShellOutputReply } from "@clawdline/contract"
+import { catalogRefusalDetail } from "../catalog.js"
 import * as L from "../legacy/bridge.js"
 import { openShell, SHELL_BEAT_MS, SHELL_WINDOW_BYTES, stepShell, sticksToBottom, type ShellRead, type ShellView } from "./background.js"
 
@@ -180,9 +181,9 @@ export async function readShell(sessionID: string, shellID: string): Promise<She
     const raw = data?.error
     const err: { code?: string; message?: string } =
       typeof raw === "string"
-        ? { code: raw, message: typeof data?.detail === "string" ? data.detail : raw }
+        ? { code: raw, message: catalogRefusalDetail(data)?.text || raw }
         : raw && typeof raw === "object"
-          ? (raw as { code?: string; message?: string })
+          ? { ...(raw as { code?: string; message?: string }), message: catalogRefusalDetail(data)?.text || (raw as { message?: string }).message }
           : { code: "http_" + res.status, message: res.statusText || L.strings.webRequestFailed }
     const failure = new Error(err.message || err.code) as Error & { code?: string }
     failure.code = err.code

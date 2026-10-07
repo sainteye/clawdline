@@ -240,6 +240,8 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 		// would let a broken bridge quietly delete every iTerm row.
 		inv.Complete = false
 		inv.Notes = append(inv.Notes, "iTerm2 apple event failed: "+err.Error())
+		inv.Gaps = append(inv.Gaps, session.Gap{Source: "iterm", Scope: "listing",
+			Detail: "iTerm2 Apple Event failed"})
 		i.failedListing(now)
 		return inv, nil
 	}
@@ -253,6 +255,8 @@ func (i *ITerm) Inventory(ctx context.Context) (session.Inventory, error) {
 	if err := json.Unmarshal(out, &answer); err != nil {
 		inv.Complete = false
 		inv.Notes = append(inv.Notes, "iTerm2 answer was unreadable: "+err.Error())
+		inv.Gaps = append(inv.Gaps, session.Gap{Source: "iterm", Scope: "listing",
+			Detail: "iTerm2 answer was unreadable"})
 		i.failedListing(now)
 		return inv, nil
 	}

@@ -246,6 +246,8 @@ const machineInstructions = `# Clawdfather machine workspace
 
 This directory is managed by Clawdline and is outside every Project. Work here as a machine steward: inspect and report on Sessions, tasks, waits and landings with source and observation time; use Clawdline's supported setting and project import/export operations when authorized.
 
+For Session resource coordination, read ` + "`clawdline guide coordination`" + ` and ` + "`docs/session-resource-coordination.md`" + ` in the Clawdline Project. Order operations from current, sourced observations. Ask a Session to reach a safe point with ` + "`clawdline coordination pause`" + `; only its ` + "`coordination safe`" + ` receipt means paused. Wake it with ` + "`coordination wake`" + ` after its condition holds. Use the existing leases, waits and callbacks; do not poll from a parked model turn or kill an important command.
+
 Do not edit source code in any Project, including Clawdline. When the person requests engineering work through Clawdline, create a Board item in the target Project first, then delegate it to a Project Session with ` + "`clawdline item add --project <id> --kind feature --title <title> --assign-new`" + `. The created item's owner handles implementation, child dispatch, verification, landing and deployment. If the person has not explicitly asked for an item, file a proposal for them to accept; do not create an item or dispatch code work on your own. Never dispatch a code task directly from this machine Session or mark another owner's work complete. This directory is an organizational boundary, not an operating system sandbox.
 
 Opening this Session does not register the machine role. After your conversation ID is available, run ` + "`clawdline coordinator bind`" + ` in this Session. If the command is not on PATH, use the daemon's installed binary at ` + "`../bin/clawdline`" + ` from this workspace (` + "`../bin/clawdline.exe`" + ` on Windows). The command uses this conversation ID and rebinds an older role only if it is proven offline. Read ` + "`clawdline guide coordination`" + ` for the receipt and limits. Do not treat an unknown reading as offline.
@@ -310,13 +312,13 @@ func decodeClosed(w http.ResponseWriter, r *http.Request, into any, allowed ...s
 	}
 	if len(unknown) > 0 {
 		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusBadRequest, Code: "bad_request",
-			Message: "Unknown field(s): " + strings.Join(sortedStrings(unknown), ", ") + "."})
+			Message: "Unknown field(s): " + strings.Join(sortedStrings(unknown), ", ") + ".", RawMessage: true})
 		return false
 	}
 	encoded, _ := json.Marshal(raw)
 	if err := json.Unmarshal(encoded, into); err != nil {
 		writeBrokerRefusal(w, orchestrator.Refusal{Status: http.StatusBadRequest, Code: "bad_request",
-			Message: "A field has the wrong type: " + err.Error()})
+			Message: "A field has the wrong type: " + err.Error(), RawMessage: true})
 		return false
 	}
 	return true
@@ -325,7 +327,7 @@ func decodeClosed(w http.ResponseWriter, r *http.Request, into any, allowed ...s
 func writeCoordinatorError(w http.ResponseWriter, err error) {
 	var ref app.RoleRefusal
 	if errors.As(err, &ref) {
-		writeBrokerRefusal(w, orchestrator.Refusal{Status: ref.Status, Code: ref.Code, Message: ref.Message, Extra: ref.Extra})
+		writeBrokerRefusal(w, orchestrator.Refusal{Status: ref.Status, Code: ref.Code, Message: ref.Message, RawMessage: ref.RawMessage, Extra: ref.Extra})
 		return
 	}
 	writeBrokerError(w, err)
