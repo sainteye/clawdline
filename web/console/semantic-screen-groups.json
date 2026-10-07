@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4671,
-  "riskKeys": 2048,
-  "nonRiskCount": 2623,
+  "englishContentKeys": 4680,
+  "riskKeys": 2050,
+  "nonRiskCount": 2630,
   "groups": [
     {
       "name": "bar / other",
@@ -3007,7 +3007,7 @@
     },
     {
       "name": "work / other",
-      "count": 56,
+      "count": 63,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -3045,6 +3045,13 @@
         "work.newToBoard",
         "work.owner",
         "work.ownerYou",
+        "work.phaseAssigned",
+        "work.phaseAssigning",
+        "work.phaseCreated",
+        "work.phaseDeploying",
+        "work.phaseImplementing",
+        "work.phaseMerging",
+        "work.phaseVerifying",
         "work.rank",
         "work.rankNone",
         "work.reasonRedispatched",

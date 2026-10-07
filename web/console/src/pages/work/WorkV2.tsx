@@ -32,6 +32,7 @@ import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
 import { completeConfirmWords } from "./complete-item.js"
+import { phaseName } from "./phase-name.js"
 import { confirmDecisionAnswer, decisionsForWorkItem, matchingDecisionAnswer, proposalsForProject, withoutAnsweredDecision, withoutAnsweredWait, type DecisionAnswerStatus } from "./board-attention.js"
 import { conditionWords, deploymentWords, needsPerson, nextActionWords, ownerOnlineWords, phaseStayWords } from "./board-card-facts.js"
 import {
@@ -1564,8 +1565,4 @@ function NewWorkModal({ places, initialProject, initialDraft, busy, failure, onR
     {failure && <p className="work-note" role="alert">{failure}</p>}
     <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready}>{busy ? catalogWord("literal", "aca2a4fc28ff") : catalogWord("literal", "c5d8aaa266d8")}</button><button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
   </form></div>
-}
-
-function phaseName(phase: string): string {
-  return ({ created: catalogWord("literal", "c5d8aaa266d8"), assigning: catalogWord("literal", "4b623c82cb16"), assigned: catalogWord("literal", "dc759c07b306"), implementing: catalogWord("literal", "8bbd4591bf7e"), verifying: catalogWord("literal", "b6164286b3c0"), merging: catalogWord("literal", "0ac70837dd33"), deploying: catalogWord("literal", "059b1cdc97bd"), done: catalogWord("literal", "05c50e80b5d9"), cancelled: catalogWord("literal", "dc47baa800c8") } as Record<string, string>)[phase] ?? phase
 }
