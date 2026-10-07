@@ -233,6 +233,8 @@ export const ActionConfirm = {
     // Why the broker cannot yet say it is safe, and which one thing moves each of those.
     const why = closes(kind) ? closeabilityLines(row) : []
     const closeable = closes(kind) ? closeabilityOf(row) : null
+    const unstartedCodex = kind === "end" && row?.assistant === "codex" && row?.identity === "no_record" &&
+      !row?.sessionId && closeable?.state === "safe"
     const version = (row?.closeability as { version?: unknown } | undefined)?.version
     const help = closeabilityHelpModel(closeable)
     const pinned = typeof version === "string" && version ? version : null
@@ -246,7 +248,7 @@ export const ActionConfirm = {
       closeNotes: closes(kind) ? closeabilityPlainReasons(row) : [],
       closeability: closeable && closeable.state, help, work: [], recentWork: [], directTodos: [],
       closeabilityVersion: pinned,
-      workState: closes(kind) ? "loading" : "ready", workTruncated: false,
+      workState: closes(kind) && !unstartedCodex ? "loading" : "ready", workTruncated: false,
       release, force: release.length > 0, request: mintRequest(),
     }
     this.busy = false
@@ -273,7 +275,7 @@ export const ActionConfirm = {
     const cancel = node<HTMLButtonElement>("action-confirm-cancel")
     const first = ((asked && asked.focus === "cancel") || this.pending.workState === "loading") && cancel ? cancel : go
     first.focus({ preventScroll: true })
-    if (closes(kind)) void this.loadOpenWork(this.pending)
+    if (closes(kind) && !unstartedCodex) void this.loadOpenWork(this.pending)
   },
 
   async loadOpenWork(pending: Pending): Promise<void> {

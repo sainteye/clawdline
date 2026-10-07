@@ -598,7 +598,8 @@ func (s *Server) sessionRow(in rowInput) sessionRowWire {
 		Live:          in.live,
 		TerminalState: state,
 		Bound: in.live.Assistant != "" && in.live.PID != 0 &&
-			!in.live.ProcessStart.IsZero() && in.live.ConversationID != "",
+			!in.live.ProcessStart.IsZero() && (in.live.ConversationID != "" ||
+			item.Assistant == session.AssistantCodex && item.Binding == session.BindingNoRecord),
 		Matches: in.matches,
 		// The completeness that decides whether this row's reading is stale is
 		// the completeness of the source that lists this row, not the AND over
