@@ -4066,6 +4066,8 @@
   "settings.voiceWhyChosen": "この設定は{tag}です。",
   "settings.voiceWhyLanguage": "「一般」タブの言語は {tag} です",
   "settings.voiceWhyMachine": "Clawdline の言語設定は自動で、この端末の {where} は {tag} です",
+  "settings.voiceMachineLocale": "言語と地域の設定",
+  "settings.voiceWindowsLocale": "Windows の地域設定",
   "settings.webCloudPair": "ブラウザをペアリング",
   "settings.webCloudPairAgain": "別のコードを取得する",
   "settings.webCloudPairCancel": "待機を停止",

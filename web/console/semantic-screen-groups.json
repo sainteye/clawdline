@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 4660,
+  "englishContentKeys": 4662,
   "riskKeys": 2046,
-  "nonRiskCount": 2614,
+  "nonRiskCount": 2616,
   "groups": [
     {
       "name": "bar / other",
@@ -2577,7 +2577,7 @@
     },
     {
       "name": "settings / other",
-      "count": 94,
+      "count": 96,
       "sources": [
         "src/pages/settings/window/copy.ts"
       ],
@@ -2656,9 +2656,11 @@
         "settings.settingsWidth",
         "settings.voiceLanguageChinese",
         "settings.voiceLanguageFixed",
+        "settings.voiceMachineLocale",
         "settings.voiceWhyChosen",
         "settings.voiceWhyLanguage",
         "settings.voiceWhyMachine",
+        "settings.voiceWindowsLocale",
         "settings.webCloudPairAgain",
         "settings.webCloudPairClose",
         "settings.webCloudPairCopied",
